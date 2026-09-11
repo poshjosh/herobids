@@ -35,16 +35,22 @@ repo-of-record moves to herobids (a working-location change — Traderton is NOT
 - [x] Spec + L3a prompt written.
 - [x] L3a — REST client + config + signer.  ← **DONE** (committed on `consume-traderton`)
 - [x] L3b — rewire the READ path to the client.  ← **DONE** (committed on `consume-traderton`; prompt: `002-l3b-implementer-prompt.md`)
-- [ ] L3c writes → L3d delete trading packages → L3e differential + staging + merge gate.
+- [ ] **L3c — rewire the SIDE-EFFECTING path.  ← NEXT** (plan: `003-l3c-plan.md`)
+- [ ] L3-P1 provision_venue_account (Traderton-side; before L3e) → L3d delete trading packages + `bots` table → L3e differential + staging + merge gate.
 
 ## Handoff note (read this — you are picking up mid-project)
 This work began in the **traderton** repo (extraction + the M2 REST boundary F, all complete) and
-**handed off to here** at the start of L3. Nothing in the consumption work is implemented yet —
-**no rewire, no deletion; only this spec + the L3a prompt exist.** Your first action is **L3a**
-(`001-l3a-implementer-prompt.md`): build the Traderton REST client + config + signer, unit-tested
-against a stubbed boundary. Run the loop — investigate → (the prompt is the plan) → implement →
-review → test → **pause for the human before L3b.** Do not skip ahead to rewiring/deleting trading
-code; the slice order is deliberate (read path before write path; delete last).
+**handed off to here** at the start of L3. **L3a (REST client + signer) and L3b (read path) are DONE**
+and committed on `consume-traderton`. **Your next action is L3c** — rewire the side-effecting path per
+`003-l3c-plan.md`. Run the loop: investigate → implement → review → test → **pause for the human before
+L3d.** Do not skip ahead to deleting trading packages (L3d) or building provisioning (L3-P1, Traderton-side);
+the slice order is deliberate (reads before writes; delete last).
+
+**Cross-boundary decisions settled 2026-09-08 (authority: `traderton/docs/CANONICAL-STATE.md` §3.1/§3.2):**
+inject **`ownerId`+`actor` ONLY** (Traderton resolves the venue account; nothing else crosses the wire —
+D2 corrected); **`pending_approval` is produced pre-boundary in herobids, never crosses the wire** (D3);
+**herobids owns NO `bots` table / NO maxBots** — `create_bot`/`start_bot` are boundary-only, Traderton owns
+bots + the limit (#4); venue-account provisioning into Traderton is its own later slice (L3-P1, P1).
 
 The full decision record (D1–D5, the repo-of-record/doc-placement plan) is authoritative in the
 sibling repo: `traderton/docs/CANONICAL-STATE.md` §3.1 (L3 decisions) + §5.1 (doc placement +
