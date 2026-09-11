@@ -1,9 +1,56 @@
 # L3d Plan — delete the in-tree trading code (the deletion register)
 
-**Status:** LIVE register (authored 2026-09-08). **L3c APPENDS to this as it defers deletions**, then L3d
-executes it. **Branch:** `consume-traderton` ONLY. **Do NOT edit the sibling `traderton` repo.**
-**Depends on:** L3c committed + reviewed (nothing here is deleted until side-effecting traffic goes to the
-boundary). **Authority for decisions:** `traderton/docs/CANONICAL-STATE.md` §3.1/§3.2.
+**Status:** LIVE register (authored 2026-09-08; L3d scope confirmed 2026-09-10). **L3c APPENDED its
+deferred deletions here**; L3d executes it **in dependency order across a few passes** (see §F — this is the
+honest shape of the work, not scope creep). **Branch:** `consume-traderton` ONLY. **Do NOT edit the sibling
+`traderton` repo.** **Depends on:** L3c committed + reviewed. **Authority for decisions:**
+`traderton/docs/CANONICAL-STATE.md` §3.1/§3.2.
+
+## §F — L3d scope decision (CONFIRMED 2026-09-10, human) — path (B): closers now, re-points/deletes deferred
+
+L3d is NOT one big delete. The register's §D audit + the current code show three dependencies that make a
+single-pass "delete the trading DB + packages" impossible without either stranding platform surface or
+producing an unreviewable slice with hidden cross-repo dependencies. **Confirmed decision: path (B) — land
+the legally-urgent closers now (the #4 leak: maxBots policy + the in-process engine-drive paths), and carry
+the rest as tracked, dependency-ordered follow-slices.**
+
+**THIS L3d pass DOES (the legal-isolation closers + safe deletions):**
+- **L3d-1** — rewire the remaining in-process engine drivers to the boundary (§E step 3: `ApprovalService.executeApproval` + `credentials.ts` credential-rotation restart) AND **relocate the credential event-builders out of `@herobids/engine`** (see below).
+- **L3d-3** — delete §B maxBots enforcement/policy + the `bots` **WRITE** path (the #4 closers). **NOT the `bots` table.**
+- **L3d-4** — delete §C's logged dead code.
+- **L3d-5** — delete §A worker execution slices + the trading-only packages that have **no KEEP-side reader**, leaf-first.
+
+**THIS L3d pass EXPLICITLY DOES NOT (out of scope — tracked as follow-slices):**
+- **`venue_accounts` / `user_credentials` deletion** — BLOCKED. herobids does not yet call Traderton's
+  `provision_venue_account` (verified: no reference in `apps/`), and these tables are live platform surface
+  (`routes/accounts.ts`, `routes/credentials.ts`, `plan-guards.ts`, `trading-provisioner.ts`,
+  `credential-dependents.ts`). Deleting now strands credential/venue-account management. Gated on **L3-P1b**.
+- **The `bots` TABLE deletion** — its §D disposition-(b) readers (reporting/teardown/dashboard/etc.) are not
+  yet re-pointed. Deferred to **L3d-reporting** (then the table drop).
+- **The §D (b) reporting re-points** — substantial behavioral work with a POSSIBLE second cross-repo
+  dependency (boundary reporting-read surfaces for fills/journal/blueprint-from-bot may not exist yet).
+  Deferred to **L3d-reporting**.
+
+**INTERIM STATE after L3d-3 (record + accept):** the **`bots` table becomes a READ-ONLY VESTIGE** — nothing
+in herobids writes it (new bots live only in Traderton), but the §D (b) reporting endpoints still READ it, so
+they serve **increasingly stale bot data** until L3d-reporting re-points them. This is a **known, tracked
+interim condition, not a silent correctness bug.** Deleted after L3d-reporting + L3-P1b.
+
+**Engine-deletion prerequisite (add to §E):** `apps/api/src/routes/credentials.ts` (a KEEP platform route)
+imports `credentialCreatedEvent` / `credentialRotatedEvent` / `credentialDeletedEvent` from
+`@herobids/engine`. These are **platform** audit events (`userId`-shaped; the traderton side dropped them as
+platform-owned) → **relocate them to `@herobids/domain` (or a platform module), do NOT delete**, BEFORE
+`@herobids/engine` is deleted. (Consistent: they stay in herobids, just not inside the engine package.)
+
+**New tracked follow-slices (each its own investigate→propose→pause; sequenced):**
+1. **L3d-reporting** — re-point the §D (b) consumers at boundary reads; then drop the `bots` table.
+   Gated on confirming the needed boundary read surfaces exist (a possible cross-repo dependency to surface
+   BEFORE starting, not discover mid-delete).
+2. **L3-P1b** — herobids collects venue secrets and calls Traderton's `provision_venue_account`, then updates
+   its own `connections.resolvedVenueAccountId` (the mirror of the `trading-provisioner` seam;
+   credential-handling on the herobids side). L3-P1 (the traderton tool) is done; L3-P1b is herobids' work,
+   yet-to-be-planned.
+3. **The `venue_accounts` / `user_credentials` deletion** — only AFTER L3-P1b is live.
 
 ## Why this doc exists (read this)
 
@@ -126,21 +173,31 @@ for L3d.
 | `apps/api/src/plan-guards.ts:checkBotLimit` | maxBots policy | (a) | #4 closer — last caller removed in L3c (§C #14) |
 | `apps/worker/src/services/approval-service.ts:ApprovalService.executeApproval (submitDecisionForExecution)` | engine submit (post-approve execute) | (b) | **SEAM/GAP:** the human-approve → execute path (D3 "on approve, call submit_decision as a plain execute") still drives the in-process engine. NOT in L3c's listed fusion points (plan §1 scopes only `handleDecisionSubmit`), so L3c did NOT rewire it. Must be re-pointed at the boundary `submit_decision` invoke (same payload build as the handler) BEFORE `@herobids/engine` is deleted — L3d prerequisite or a dedicated follow-slice. Flagged here so it is not lost. |
 
-## §E — Execution order (L3d)
+## §E — Execution order (L3d — path (B), per §F)
 
-1. Confirm §D is complete (no un-audited consumers).
-2. Delete §B first (maxBots + `bots` — the legal closers), verify build/suite green.
-3. **Rewire the remaining in-process engine drivers to the boundary BEFORE deleting `@herobids/engine` (step 5).** These are live in-process trading paths L3c did not touch (not in its `handleDecisionSubmit`/bot-lifecycle scope) — deleting the engine without rewiring them would break execution, and leaving them would survive cutover as an in-process trading path (the exact leak the split closes):
-   - `apps/worker/src/services/approval-service.ts:ApprovalService.executeApproval` → replace `submitDecisionForExecution` with the boundary `submit_decision` invoke (reuse `buildSubmitDecisionPayload` + the handler's invoke+poll mapping); the human-approve→execute path must go through the boundary. (Recorded in §D as the SEAM/GAP.)
+**This-pass steps (the closers + safe deletions):**
+1. Confirm §D is complete (no un-audited consumers) + §F scope recorded.
+2. **Engine-deletion prerequisites — rewire/relocate BEFORE any `@herobids/engine` deletion (step 6):**
+   - `apps/worker/src/services/approval-service.ts:ApprovalService.executeApproval` → replace `submitDecisionForExecution` with the boundary `submit_decision` invoke (reuse `buildSubmitDecisionPayload` + the handler's invoke+poll mapping); the human-approve→execute path must go through the boundary. (§D SEAM/GAP.)
    - `apps/api/src/routes/credentials.ts` credential-rotation restart + any other `trading-instance-lifecycle` enqueuer (§D) → boundary or removed with the runtime slice.
-   Verify build/suite green after this step.
+   - **Relocate** `credentialCreatedEvent`/`credentialRotatedEvent`/`credentialDeletedEvent` from `@herobids/engine` → `@herobids/domain` (or a platform module); update `credentials.ts` import. (Platform audit events; do NOT delete.)
+   Verify build/suite green.
+3. Delete §B — maxBots enforcement/policy + the `bots` **WRITE** path (the #4 closers). **Leave the `bots` table + repo READ surface in place** (read-only vestige, §F). Verify build/suite green.
 4. Delete §C's logged items.
-5. Delete §A (packages, worker exec slices, trading DB) leaf-first; build + suite green after each.
-6. Delete `venue_accounts`/`user_credentials` only AFTER L3-P1 (Traderton provisioning) is live.
-7. Full herobids build/lint/suite green; run the L3e differential. Pause for human.
+5. Delete §A worker execution slices + the trading-only packages **with no KEEP-side reader**, leaf-first; build + suite green after each. A package still imported by a KEEP route stays until its tendril (step 2 relocation) clears.
+6. Full herobids build/lint/suite green. Do NOT commit — the coordinator commits per sub-slice. Pause for human before L3e.
 
-## Done criteria (L3d)
+**Deferred to follow-slices (NOT this pass — see §F):**
+7. **L3d-reporting:** re-point the §D (b) consumers at boundary reads (gated on confirming boundary read surfaces exist); THEN delete the `bots` table + repo.
+8. **L3-P1b:** herobids calls Traderton `provision_venue_account`.
+9. Delete `venue_accounts`/`user_credentials` — only AFTER L3-P1b is live.
 
-- §B, §C, §A all deleted; no `@herobids/{engine,venues,market-data,strategy,backtesting}` import remains in
-  the platform code; no `bots` table; no maxBots logic anywhere in herobids.
+## Done criteria (L3d this pass, path (B))
+
+- §E steps 2–5 done: no in-process engine-drive path remains (ApprovalService + credential-rotation rewired);
+  credential event-builders relocated out of `@herobids/engine`; §B maxBots policy + `bots` WRITE path gone;
+  §C dead code gone; §A worker exec slices + no-KEEP-reader trading packages gone.
+- The `bots` table remains as a read-only vestige (tracked, §F); `venue_accounts`/`user_credentials` remain
+  (gated on L3-P1b). Any `@herobids/{engine,…}` package still imported by a KEEP route is recorded as a
+  remaining tendril for its follow-slice.
 - Build + lint + full suite green. Do NOT commit — the coordinator commits. Pause for human before L3e.
