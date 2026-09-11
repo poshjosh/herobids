@@ -1,7 +1,7 @@
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { venueAccounts, userCredentials, backtestRuns, agents, connections } from '@herobids/db';
-import { eq, and, inArray } from 'drizzle-orm';
+import { venueAccounts, userCredentials, agents, connections } from '@herobids/db';
+import { eq, and } from 'drizzle-orm';
 import { ok, err } from '@herobids/domain';
 
 export {
@@ -49,25 +49,6 @@ export async function checkCredentialLimit(db: Database, config: PlansConfig, us
       limit: limits.maxCredentials,
       current: rows.length,
       params: { resource: 'credential', limit: limits.maxCredentials, current: rows.length },
-    });
-  }
-  return ok(undefined);
-}
-
-/** Check if user can create a new backtest run (concurrent limit) */
-export async function checkBacktestLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
-  const resolved = resolvePlanForCheck(config, planId, isAdmin);
-  if (resolved.isAdminBypass) return ok(undefined);
-  const limits = resolved.entitlements.limits;
-  const rows = await db.select({ id: backtestRuns.id }).from(backtestRuns)
-    .where(and(eq(backtestRuns.userId, userId), inArray(backtestRuns.status, ['pending', 'running'])));
-  if (rows.length >= limits.maxConcurrentBacktests) {
-    return err({
-      code: 'plan.limit_exceeded',
-      message: `Concurrent backtest limit reached (${limits.maxConcurrentBacktests})`,
-      limit: limits.maxConcurrentBacktests,
-      current: rows.length,
-      params: { resource: 'backtest', limit: limits.maxConcurrentBacktests, current: rows.length },
     });
   }
   return ok(undefined);

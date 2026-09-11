@@ -65,7 +65,6 @@ export const RotateCredentialSchema = z.object({
 
 export const JournalQuerySchema = z.object({
   actorId: z.string().optional(),
-  backtestRunId: z.string().optional(),
   type: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
   offset: z.coerce.number().int().min(0).default(0),

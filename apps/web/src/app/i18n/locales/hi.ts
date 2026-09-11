@@ -723,7 +723,6 @@ export const messages: Record<string, string> = {
   'ai_parse_error': 'AI ने अमान्य JSON लौटाया।',
   'ai_invalid_config': 'AI प्रतिक्रिया में आवश्यक कॉन्फ़िग अनुभाग (strategy, risk, execution) गायब हैं।',
   'rate_limited': 'दर सीमा पार हो गई। कृपया पुनः प्रयास से पहले प्रतीक्षा करें।',
-  'corpus_not_found': 'कॉर्पस नहीं मिला या आपका नहीं है।',
   'validation_error': 'अनुरोध सत्यापन विफल।',
   'invalid_state': 'इस कार्रवाई के लिए संसाधन अमान्य स्थिति में है।',
   'plan_limit': 'यह कार्रवाई आपकी वर्तमान योजना में उपलब्ध नहीं है।',

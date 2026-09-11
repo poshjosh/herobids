@@ -23,8 +23,6 @@ export { FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepos
 export type { InsertFill, UpsertPosition, InsertExecutionPlan, UpsertOrder, InsertBalanceSnapshot, InsertDecision } from './repositories.js';
 export { ReconciliationEventRepository } from './reconciliation-repository.js';
 export type { InsertReconciliationEvent, ReconciliationEventQuery } from './reconciliation-repository.js';
-export { BacktestingRepository } from './backtesting-repository.js';
-export type { InsertDecisionContext, InsertCorpus, InsertMarketEvent } from './backtesting-repository.js';
 export { LlmArtifactRepository } from './llm-artifact-repository.js';
 export type { InsertLlmArtifact, LlmArtifactSource } from './llm-artifact-repository.js';
 export { AlertDeliveryRepository } from './alert-delivery-repository.js';

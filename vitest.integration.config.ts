@@ -20,7 +20,6 @@ export default defineConfig({
       '@herobids/engine': new URL('./packages/engine/src/index.ts', import.meta.url).pathname,
       '@herobids/venues': new URL('./packages/venues/src/index.ts', import.meta.url).pathname,
       '@herobids/strategy': new URL('./packages/strategy/src/index.ts', import.meta.url).pathname,
-      '@herobids/backtesting': new URL('./packages/backtesting/src/index.ts', import.meta.url).pathname,
     },
   },
 });

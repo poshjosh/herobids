@@ -770,17 +770,15 @@ export interface Position {
 export interface JournalEvent {
   id: string;
   actorId: string | null;
-  backtestRunId: string | null;
   type: string;
   payload: Record<string, unknown>;
   createdAt: string;
 }
 
 export const journal = {
-  query: (params: { actorId?: string; backtestRunId?: string; type?: string; limit?: number; offset?: number }) => {
+  query: (params: { actorId?: string; type?: string; limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params.actorId) qs.set('actorId', params.actorId);
-    if (params.backtestRunId) qs.set('backtestRunId', params.backtestRunId);
     if (params.type) qs.set('type', params.type);
     if (params.limit) qs.set('limit', String(params.limit));
     if (params.offset) qs.set('offset', String(params.offset));

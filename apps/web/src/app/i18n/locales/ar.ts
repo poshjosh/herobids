@@ -723,7 +723,6 @@ export const messages: Record<string, string> = {
   'ai_parse_error': 'أرجع الذكاء الاصطناعي JSON غير صالح.',
   'ai_invalid_config': 'استجابة الذكاء الاصطناعي تفتقد أقسام الإعدادات المطلوبة (strategy, risk, execution).',
   'rate_limited': 'تم تجاوز حد الطلبات. يرجى الانتظار قبل المحاولة مجدداً.',
-  'corpus_not_found': 'مجموعة البيانات غير موجودة أو لا تنتمي إليك.',
   'validation_error': 'فشل التحقق من صحة الطلب.',
   'invalid_state': 'المورد في حالة غير صالحة لهذه العملية.',
   'plan_limit': 'هذا الإجراء غير متاح في خطتك الحالية.',

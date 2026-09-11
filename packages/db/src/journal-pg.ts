@@ -7,7 +7,6 @@ import { journalEvents } from './schema/index.js';
 export interface JournalEntryInput {
   actorType?: string;
   actorId?: string;
-  backtestRunId?: string;
   type: string;
   payload: Record<string, unknown>;
 }
@@ -33,7 +32,6 @@ export class PgJournal implements JournalPort {
       id: crypto.randomUUID(),
       actorType: entry.actorType ?? null,
       actorId: entry.actorId ?? null,
-      backtestRunId: entry.backtestRunId ?? null,
       type: entry.type,
       payload: entry.payload,
     });
@@ -46,7 +44,6 @@ export class PgJournal implements JournalPort {
         id: crypto.randomUUID(),
         actorType: entry.actorType ?? null,
         actorId: entry.actorId ?? null,
-        backtestRunId: entry.backtestRunId ?? null,
         type: entry.type,
         payload: entry.payload,
       })),
@@ -56,7 +53,6 @@ export class PgJournal implements JournalPort {
   /** Query journal events with optional filters */
   async query(filters: {
     actorId?: string;
-    backtestRunId?: string;
     type?: string;
     limit?: number;
     offset?: number;
@@ -64,9 +60,6 @@ export class PgJournal implements JournalPort {
     const conditions: SQL[] = [];
     if (filters.actorId) {
       conditions.push(eq(journalEvents.actorId, filters.actorId));
-    }
-    if (filters.backtestRunId) {
-      conditions.push(eq(journalEvents.backtestRunId, filters.backtestRunId));
     }
     if (filters.type) {
       conditions.push(eq(journalEvents.type, filters.type));

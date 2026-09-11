@@ -847,7 +847,6 @@ export const messages: Record<string, string> = {
   'ai_parse_error': 'AI returned invalid JSON.',
   'ai_invalid_config': 'AI response is missing required config sections (strategy, risk, execution).',
   'rate_limited': 'Rate limit exceeded. Please wait before trying again.',
-  'corpus_not_found': 'Corpus not found or does not belong to you.',
   'validation_error': 'Request validation failed.',
   'invalid_state': 'The resource is in an invalid state for this operation.',
   'plan_limit': 'This action is not available on your current plan.',

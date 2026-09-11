@@ -1,6 +1,5 @@
 import Redis from 'ioredis';
 import { createLogger } from './logger.js';
-import { BacktestRuntime } from './backtest-runtime.js';
 import { EvaluationRuntime } from './agent-evaluation/index.js';
 import { ManualReviewRuntime } from './manual-review-runtime.js';
 import type { ManualReviewRunnerFactory } from './manual-review-runtime.js';
@@ -764,23 +763,6 @@ const publicStreamPool = streamConnectors.size > 0
   : undefined;
 
 
-// Start backtest runtime (BullMQ consumer for bounded backtest jobs)
-const backtestRuntime = new BacktestRuntime(
-  {
-    redis: redisConnection,
-    concurrency: appConfig.backtesting.concurrency,
-    maxDataGapMs: appConfig.backtesting.maxDataGapMs,
-    defaultWarmUpFrames: appConfig.backtesting.warmupLookbackBars,
-    validationThresholds: {
-      maxDecisionDivergencePct: appConfig.llmValidation.maxDecisionDivergencePct,
-      maxPnlRegressionPct: appConfig.llmValidation.maxPnlRegressionPct,
-    },
-    openRouterProviderControls: appConfig.llm.openRouterProviderControls,
-  },
-  db,
-);
-backtestRuntime.start();
-
 // Start evaluation runtime (BullMQ consumer for agent evaluation jobs)
 const evaluationRuntime = new EvaluationRuntime(
   {
@@ -1313,7 +1295,6 @@ process.on('SIGTERM', async () => {
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
-  await backtestRuntime.stop();
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
@@ -1342,7 +1323,6 @@ process.on('SIGINT', async () => {
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
-  await backtestRuntime.stop();
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();

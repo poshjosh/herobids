@@ -13,7 +13,7 @@ export const journalEvents = pgTable('journal_events', {
   actorType: text('actor_type'),
   /** Stable identifier of the actor (nullable — null for system events) */
   actorId: text('actor_id'),
-  /** Optional backtest run scope — null for live events */
+  /** Retained vestige of the dropped backtesting capability — always null; kept to avoid a risky migration on the live journal_events table. */
   backtestRunId: text('backtest_run_id'),
   /** Event type, e.g. "decision.created", "order.filled", "risk.breach" */
   type: text('type').notNull(),

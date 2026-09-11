@@ -8,7 +8,6 @@
     { "path": "packages/venues" },
     { "path": "packages/llm" },
     { "path": "packages/strategy" },
-    { "path": "packages/backtesting" },
     { "path": "packages/market-data" },
     { "path": "apps/api" },
     { "path": "apps/worker" },

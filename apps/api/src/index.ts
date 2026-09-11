@@ -10,7 +10,6 @@ import { venueAccountRoutes } from './routes/accounts.js';
 import { credentialRoutes } from './routes/credentials.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
 import { reconciliationRoutes } from './routes/reconciliation.js';
-import { backtestRoutes, BACKTEST_QUEUE_NAME } from './routes/backtests.js';
 import { authRoutes } from './routes/auth.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { billingRoutes } from './routes/billing.js';
@@ -54,7 +53,7 @@ import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as os from 'node:os';
-import type { LifecycleJob, BacktestJob } from './types.js';
+import type { LifecycleJob } from './types.js';
 import { syncSystemSkills } from './sync-system-skills.js';
 import { ServerHealthPublisher } from '@herobids/domain';
 import { parseAppVersion, checkPostgres, checkRedis, getRunningSessionCount, getRunningContainerCount } from './admin-utils.js';
@@ -207,10 +206,6 @@ const tradertonBotClient = (appConfig.boundary.baseUrl && appConfig.boundary.hma
     })
   : undefined;
 
-const backtestQueue = new Queue<BacktestJob>(BACKTEST_QUEUE_NAME, {
-  connection: redisConnection,
-});
-
 const evaluationQueue = new Queue<EvaluationJobData>(EVALUATION_QUEUE_NAME, {
   connection: redisConnection,
 });
@@ -277,7 +272,6 @@ await credentialRoutes(app, db, appConfig.plans);
 await journalRoutes(app, db);
 await positionRoutes(app, db);
 await reconciliationRoutes(app, db);
-await backtestRoutes(app, backtestQueue, db, appConfig.plans);
 await dashboardRoutes(app, db, appConfig.plans);
 
 // ── Core platform services ─────────────────────────────────────────────────

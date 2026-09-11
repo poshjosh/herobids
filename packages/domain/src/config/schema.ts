@@ -101,13 +101,6 @@ export const MarkingConfigSchema = z.object({
   oracleVsCurrency: z.string().min(1).default('usd'),
 });
 
-export const BacktestingConfigSchema = z.object({
-  warmupLookbackBars: z.number().int().min(1).default(200),
-  maxDataGapMs: z.number().min(1).default(60_000),
-  persistJournal: z.boolean().default(true),
-  concurrency: z.number().int().min(1).default(2),
-});
-
 export const EvaluationThresholdsSchema = z.object({
   toolFailureRatePct: z.number().min(0).max(100).default(20),
   highDrawdownPct: z.number().min(0).max(100).default(20),
@@ -494,13 +487,6 @@ export const LlmRuntimeConfigSchema = z.object({
   retry: LlmRetryConfigSchema.default({}),
   scout: LlmScoutConfigSchema.default({}),
   thinking: LlmThinkingConfigSchema.default({}),
-});
-
-export const LlmValidationConfigSchema = z.object({
-  requirePinnedModel: z.boolean().default(true),
-  minReplayContexts: z.number().int().min(1).default(100),
-  maxDecisionDivergencePct: z.number().min(0).max(100).default(20),
-  maxPnlRegressionPct: z.number().min(0).max(100).default(10),
 });
 
 export const ApiConfigSchema = z.object({
@@ -1721,7 +1707,6 @@ export const AppConfigSchema = z.object({
   reconciliation: ReconciliationConfigSchema.default({}),
   streams: StreamConfigSchema.default({}),
   marking: MarkingConfigSchema.default({}),
-  backtesting: BacktestingConfigSchema.default({}),
   evaluation: EvaluationConfigSchema.default({}),
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
   marketData: MarketDataConfigSchema.optional(),
@@ -1730,7 +1715,6 @@ export const AppConfigSchema = z.object({
   worker: WorkerConfigSchema.default({}),
   agentRuntime: AgentRuntimeConfigSchema,
   llm: LlmRuntimeConfigSchema.default({}),
-  llmValidation: LlmValidationConfigSchema.default({}),
   liveRollout: LiveRolloutConfigSchema.default({}),
   integrations: z.object({
     gmail: GmailIntegrationConfigSchema,
@@ -1926,13 +1910,11 @@ export type AgentRuntimePolicy = z.infer<typeof AgentRuntimePolicySchema>;
 /** Per-tier resource profile — maps plan tier IDs (e.g. 'free', 'pro') to resource constraints. */
 export type AgentResourceProfilesConfig = AgentRuntimeConfig['resourceProfiles'];
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
-export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
 export type EvaluationConfig = z.infer<typeof EvaluationConfigSchema>;
 export type EvaluationThresholds = z.infer<typeof EvaluationThresholdsSchema>;
 export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type OpenRouterProviderControlsConfig = z.infer<typeof OpenRouterProviderControlsSchema>;
-export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
 export type SimulationConfig = AppConfig['simulation'];
 export type AgentRiskDefaultsConfig = AppConfig['agentRiskDefaults'];

@@ -661,27 +661,6 @@ venues:
     });
   });
 
-  describe('backtesting config', () => {
-    it('applies Zod default for backtesting.concurrency when omitted', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.backtesting.concurrency).toBe(2);
-    });
-
-    it('loads explicit backtesting.concurrency from YAML', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-backtesting:
-  concurrency: 4
-`);
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.backtesting.concurrency).toBe(4);
-    });
-  });
-
   describe('execution shadow config', () => {
     it('applies Zod defaults for shadowPollIntervalMs and shadowQuoteSlippageBps', () => {
       writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);

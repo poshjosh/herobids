@@ -166,12 +166,6 @@ marking:
   oracleTimeoutMs: 10000           # CoinGecko request timeout in ms
   oracleVsCurrency: usd            # quote currency for oracle price lookups
 
-backtesting:
-  warmupLookbackBars: 200
-  maxDataGapMs: 60000
-  persistJournal: true
-  concurrency: 2       # BullMQ consumer concurrency for backtest jobs
-
 # Agent evaluation — automated run analysis
 evaluation:
   storageRoot: app-data/evaluation-output  # absolute path or relative to CWD
@@ -695,12 +689,6 @@ agentRuntime:
         - "localhost"
         - "0.0.0.0"
         - "[::1]"
-
-llmValidation:
-  requirePinnedModel: true
-  minReplayContexts: 100
-  maxDecisionDivergencePct: 20
-  maxPnlRegressionPct: 10
 
 # ── Platform Assessor ──────────────────────────────────────────────────────
 # On-demand per-symbol assessment — no scheduled background generation.

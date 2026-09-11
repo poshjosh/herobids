@@ -34,7 +34,6 @@ const logger = createLogger('evaluation-runtime');
 
 /**
  * EvaluationRuntime — processes agent evaluation jobs via BullMQ.
- * Follows the same pattern as BacktestRuntime.
  */
 export class EvaluationRuntime {
   private worker: Worker<EvaluationJobData> | undefined;
