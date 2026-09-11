@@ -73,12 +73,22 @@ delete anyway, and which would re-introduce the exact in-process trading path cu
 in review; it differs deliberately from L3b's read fallback (reads are safe to serve locally; side effects
 are not).
 
+## Deferred-deletion discipline (MANDATORY — the dropped-work guard)
+
+L3c rewires but **does not delete** trading packages / the `bots` table / maxBots logic (that is L3d). Every
+piece of dead code L3c leaves behind (disabled maxBots call, orphaned `bots` write, now-unused trading
+import) MUST be recorded in **`004-l3d-plan.md` §C** (the deferred-deletion append log) — one line per item,
+`path:symbol` + reason. **Deferral is only allowed if the item lands in `004` §C.** This is a hard
+done-criterion below: an empty §C after L3c means dead trading-policy code (the legal-isolation leak #4
+exists to close) is tracked nowhere. Do NOT rely on this conversation or memory — `004` is the durable home.
+
 ## Investigation items to complete IN L3c (before/as you rewire)
 
-- **`bots`-table consumer audit (for #4 / L3d):** enumerate every reader/writer of the herobids `bots`
-  table (the API route, listings, any UI/query, `agent-create-normalization` maxBots) and confirm each is
-  trading-path (deletable at L3d) or gets re-pointed at `list_bots`/`get_bot_status` over the boundary.
-  Record the list so L3d's deletion is safe.
+- **`bots`-table + trading-repo consumer audit (for #4 / L3d):** enumerate every reader/writer of the
+  herobids `bots` table + trading repos (the API route, listings, any UI/query, `agent-create-normalization`
+  maxBots) and confirm each is trading-path (deletable at L3d) or gets re-pointed at
+  `list_bots`/`get_bot_status` over the boundary. **Record the full list in `004-l3d-plan.md` §D** — L3d
+  will not delete a table/module until its consumers are all there.
 - **Approval gate `venueAccountId` read:** the approval snapshot currently reads the trading intake's
   `venueAccountId`. With the engine gone, confirm the approval snapshot needs no trading value the boundary
   won't return — source any needed id from the connection grant (kept), not the engine. (Was subtlety D-c.)
@@ -101,5 +111,6 @@ are not).
 - All five side-effecting tools + both call sites route to the boundary; `ownerId`+`actor` only; no `bots`
   write / no maxBots / no venue-stamp; approval stays pre-boundary.
 - herobids build + lint green; the full worker suite green (side-effecting tests re-pointed at the stub).
-- The `bots`-consumer audit list recorded (feeds L3d).
+- **`004-l3d-plan.md` §C populated** with every deferred deletion L3c left behind (the dropped-work guard —
+  MANDATORY; do not leave §C empty if any dead code remains), and **§D populated** with the consumer audit.
 - Do NOT commit — the coordinator commits on the branch. **Then PAUSE for human review before L3d.**
