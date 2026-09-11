@@ -34,5 +34,3 @@ export type { GeneratedWalletPublic, GeneratedWalletSecrets, WalletGenerationPro
 export type { SwapConfirmationPoller, SwapConfirmationStatus, SwapConfirmationError } from './swap-confirmation-poller.js';
 export { VenueCandleFetcher } from './candle-fetcher.js';
 export type { GeckoCandleFetcherConfig } from './candle-fetcher.js';
-export { BrowserlessAdapter } from './browserless-adapter.js';
-export type { BrowserlessAdapterConfig } from './browserless-adapter.js';

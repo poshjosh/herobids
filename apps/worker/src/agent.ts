@@ -81,7 +81,7 @@ import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET
 import { buildTickGateState, isUserMessageType, extractUserMessageText } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
-import { BrowserlessAdapter } from '@herobids/venues';
+import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
 import { createTradertonClient, type TradertonClientConfig } from '@herobids/domain/traderton';
 import { createTradertonReadBoundary } from './traderton/read-adapter.js';
