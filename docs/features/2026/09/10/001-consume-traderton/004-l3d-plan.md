@@ -87,6 +87,13 @@ side-effecting write path (`create_bot`/`start_bot`/`stop_bot`/`adjust_bot_confi
 `submit_decision`); every remaining `bots`-table READER below is left in place by L3c and dispositioned here
 for L3d.
 
+> **Actor/container-slice readers are covered by §A wholesale.** In-container / actor-runtime-slice `bots`
+> readers that are deleted as part of §A's worker execution slices — e.g.
+> `apps/worker/src/startup-context.ts:resolveBotStartupContext`, the `agent.ts` `toolBotRepo` binding, and
+> `apps/worker/src/tools/resolvers.ts` (bot-name resolver) — are NOT individually re-listed below; they are
+> all disposition (a), deleted with the actor/runtime slice, and none is a side-effecting engine path. The
+> table below enumerates the platform-adjacent + API readers that need an explicit per-consumer decision.
+
 ### `bots`-table + trading-repo consumers
 
 | consumer (`path:symbol`) | of | disposition | notes |

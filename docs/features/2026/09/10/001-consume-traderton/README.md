@@ -35,7 +35,7 @@ repo-of-record moves to herobids (a working-location change — Traderton is NOT
 - [x] Spec + L3a prompt written.
 - [x] L3a — REST client + config + signer.  ← **DONE** (committed on `consume-traderton`)
 - [x] L3b — rewire the READ path to the client.  ← **DONE** (committed on `consume-traderton`; prompt: `002-l3b-implementer-prompt.md`)
-- [ ] **L3c — rewire the SIDE-EFFECTING path.  ← NEXT** (plan: `003-l3c-plan.md`; L3c MUST populate `004-l3d-plan.md` §C/§D as it defers deletions).
+- [x] **L3c — rewire the SIDE-EFFECTING path.  ← DONE** (committed on `consume-traderton`; plan: `003-l3c-plan.md`; deferred deletions recorded in `004-l3d-plan.md` §C/§D).
 - [ ] L3-P1 provision_venue_account (Traderton-side; before L3e) → **L3d delete trading packages + `bots` table + maxBots** (register: `004-l3d-plan.md`) → L3e differential + staging + merge gate.
 
 ## Handoff note (read this — you are picking up mid-project)
