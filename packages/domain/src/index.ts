@@ -49,6 +49,12 @@ export * from './review-pre-check.js';
 export * from './blueprint.js';
 export * from './plan-entitlements.js';
 export * from './external-skill-provider-http.js';
+// NOTE: the Traderton REST boundary transport (client + 005 contract + HMAC
+// signer) is NOT exported from this top-level barrel — it pulls node:crypto +
+// fetch, which must not enter the browser (apps/web) bundle. It is exposed via
+// the `@herobids/domain/traderton` SUBPATH export (see package.json) that only
+// apps/worker + apps/api import. `TradertonReadResult` (a pure type) lives in
+// ./trading/tool-contract.ts and IS barrel-exported for the read tools.
 export * from './text-search.js';
 export * from './pagination.js';
 export * from './infra/server-health.js';

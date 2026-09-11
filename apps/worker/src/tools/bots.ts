@@ -198,41 +198,22 @@ const stopBotTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { botId } = params as z.infer<typeof StopBotParamsSchema>;
 
-    if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available', fault: false };
-    }
-
-    const stopTarget = await ctx.botRepo.getBotById(botId);
-    if (!stopTarget || stopTarget.creatorType !== 'agent' || stopTarget.creatorId !== ctx.agentId) {
-      return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
-    }
-
-    const previousStatus = stopTarget.status;
-
-    if (previousStatus !== 'running') {
-      await ctx.botRepo.markBotStopped(botId);
-      return { success: true, data: { ok: true, botId, previousStatus, note: 'bot was not running' } };
-    }
-
-    await ctx.botRepo.markBotStopped(botId);
+    // L3c: route the side effect through the broker's rewired MANAGE_BOT path
+    // (consistent with create_bot/start_bot), which invokes the Traderton
+    // boundary. The direct botRepo write + `bot:stop` redis signal are removed —
+    // herobids owns no bot state. Ownership is enforced boundary-side via the
+    // injected subject. See 004-l3d-plan.md §C.
     try {
-      await ctx.redis.publish(`bot:stop:${botId}`, '1');
+      await ctx.publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
+        action: 'stop',
+        botId,
+      });
     } catch (err) {
-      logger.error({ err, botId }, 'Failed to publish bot:stop signal — restoring previous runtime state');
-      try {
-        await ctx.botRepo.restoreBotRuntimeState({
-          botId,
-          status: stopTarget.status,
-          startedAt: stopTarget.startedAt,
-          stoppedAt: stopTarget.stoppedAt,
-        });
-      } catch (rollbackErr) {
-        logger.error({ rollbackErr, botId }, 'CRITICAL: failed to restore bot state after stop signal failure');
-      }
-      return { success: false, data: { ok: false, botId, previousStatus, note: 'failed to signal bot stop' }, fault: false };
+      logger.error({ err, botId }, 'Failed to submit bot stop');
+      return { success: false, data: { ok: false, botId, note: 'failed to submit bot stop' }, fault: false };
     }
 
-    return { success: true, data: { ok: true, botId, previousStatus, note: 'bot stopped' } };
+    return { success: true, data: { ok: true, botId, note: 'bot stop submitted' } };
   },
 };
 
@@ -252,22 +233,10 @@ const startBotTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { botId, rationale } = params as z.infer<typeof StartBotParamsSchema>;
 
-    if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available', fault: false };
-    }
-
-    const startTarget = await ctx.botRepo.getBotById(botId);
-    if (!startTarget || startTarget.creatorType !== 'agent' || startTarget.creatorId !== ctx.agentId) {
-      return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
-    }
-
-    if (startTarget.status === 'running') {
-      return { success: false, error: `bot ${botId} is already running`, fault: false };
-    }
-
-    // Do NOT mark the bot running here — the broker handles the status transition
-    // atomically via tryMarkBotRunningWithLimit when it processes the start action.
-    // Pre-marking bypasses the limit check (two concurrent starts could both pass).
+    // L3c: publish MANAGE_BOT to the broker's rewired path, which invokes the
+    // boundary. The local botRepo ownership/status pre-check is removed —
+    // herobids owns no bot state; the boundary validates ownership + status from
+    // the injected subject. See 004-l3d-plan.md §C.
     try {
       await ctx.publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
         action: 'start',
@@ -275,7 +244,7 @@ const startBotTool: AgentTool = {
         rationale,
       });
     } catch (err) {
-      logger.error({ err, botId }, 'Failed to enqueue direct bot start');
+      logger.error({ err, botId }, 'Failed to submit bot start');
       return { success: false, data: { ok: false, botId, note: 'failed to submit bot start' }, fault: false };
     }
 
@@ -309,17 +278,8 @@ const AdjustBotConfigParamsSchema = z.object({
   }).describe('Partial config object to merge with existing bot config'),
 });
 
-function deepMergeConfig(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
-  const result = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    if (value && typeof value === 'object' && !Array.isArray(value) && result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])) {
-      result[key] = deepMergeConfig(result[key] as Record<string, unknown>, value as Record<string, unknown>);
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
-}
+// L3c: deepMergeConfig removed — the bot-config merge moved behind the boundary
+// (Traderton owns the config). See 004-l3d-plan.md §C.
 
 const adjustBotConfigTool: AgentTool = {
   name: 'adjust_bot_config',
@@ -330,16 +290,9 @@ const adjustBotConfigTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { botId, config } = params as z.infer<typeof AdjustBotConfigParamsSchema>;
 
-    if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available', fault: false };
-    }
-
-    const configTarget = await ctx.botRepo.getBotById(botId);
-    if (!configTarget || configTarget.creatorType !== 'agent' || configTarget.creatorId !== ctx.agentId) {
-      return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
-    }
-
-    // Enforce mode-rank: agent must not escalate a bot's execution mode beyond its own.
+    // Enforce mode-rank: agent must not escalate a bot's execution mode beyond
+    // its own. This is a platform gate on a platform-owned value (ctx.executionMode)
+    // — kept. The broker re-checks it too (defence-in-depth).
     const requestedMode = config.execution?.mode;
     if (requestedMode) {
       const check = checkModeEscalation(requestedMode, ctx.executionMode);
@@ -348,10 +301,22 @@ const adjustBotConfigTool: AgentTool = {
       }
     }
 
-    const merged = deepMergeConfig(configTarget.config, config);
-    await ctx.botRepo.updateBotConfig(botId, merged);
+    // L3c: route the config change through the broker's rewired MANAGE_BOT path,
+    // which invokes the boundary. The base-config read + deep-merge + botRepo
+    // write are removed — Traderton owns the bot config and performs the merge.
+    // Ownership is enforced boundary-side. See 004-l3d-plan.md §C.
+    try {
+      await ctx.publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
+        action: 'adjust_config',
+        botId,
+        config,
+      });
+    } catch (err) {
+      logger.error({ err, botId }, 'Failed to submit bot config adjustment');
+      return { success: false, data: { ok: false, botId, note: 'failed to submit config adjustment' }, fault: false };
+    }
 
-    return { success: true, data: { ok: true, botId, note: 'config updated — takes effect on next bot tick' } };
+    return { success: true, data: { ok: true, botId, note: 'config adjustment submitted — takes effect on next bot tick' } };
   },
 };
 

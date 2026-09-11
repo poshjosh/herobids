@@ -1,8 +1,37 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { PlansConfig } from '@herobids/domain';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 
 const TEST_USER_ID = 'user-1';
+
+/**
+ * L3c: a stubbed TradertonClient. POST/stop/start/adjust now route bot side
+ * effects over this boundary instead of a local bots-table write + lifecycle
+ * queue. The stub records invoke calls so tests can assert toolName + subject +
+ * payload, and returns a scripted client result.
+ */
+function makeTradertonClient(
+  result: TradertonClientResult = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { id: 'bot-1', status: 'stopped', userId: TEST_USER_ID, connectionId: 'binding-1' } },
+): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn().mockResolvedValue(result);
+  return { client: { invoke } as unknown as TradertonClient, invoke };
+}
+
+/**
+ * Build a db mock whose `select().from().where()` resolves the connection
+ * ownership lookup (the only db read POST /bots still performs). `connectionRows`
+ * is what the connection lookup returns ([] → 404).
+ */
+function makeCreateDb(connectionRows: Array<Record<string, unknown>>) {
+  return {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(connectionRows),
+      }),
+    }),
+  } as unknown as import('@herobids/db').Database;
+}
 
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID, planId = 'free', isAdmin = false) {
   app.decorateRequest('userId', '');
@@ -93,15 +122,20 @@ describe('bot routes', () => {
     xadd: vi.fn().mockResolvedValue(undefined),
   } as unknown as import('ioredis').Redis;
 
-  it('returns 400 when bot config is invalid before the worker sees it', async () => {
+  it('forwards trading-config validation to the boundary (no client-side BotConfigSchema 400)', async () => {
+    // L3c: BotConfigSchema validation MOVED behind the boundary. A config that
+    // the old route rejected (missing decisionMode) is now forwarded verbatim —
+    // Traderton's create_bot owns the trading-config validation. The route only
+    // still runs the CreateInstanceSchema envelope check + the plan/ownership gates.
     const { botRoutes } = await import('./bots.js');
 
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
-    const db = { transaction: vi.fn() };
+    const db = makeCreateDb([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
+    const { client, invoke } = makeTradertonClient();
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -120,42 +154,25 @@ describe('bot routes', () => {
       },
     });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('validation_error');
-    const issues = res.json<{ details: Array<{ path: string[] }> }>().details;
-    expect(issues.some((issue) => issue.path.includes('decisionMode'))).toBe(true);
+    // No client-side validation_error — the create is forwarded to the boundary.
+    expect(res.statusCode).toBe(201);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0].toolName).toBe('create_bot');
   });
 
-  it('returns 403 when trading instance limit is reached', async () => {
+  it('no longer enforces the maxBots limit client-side — Traderton owns the limit', async () => {
+    // Previously the route rejected with plan.limit_exceeded once maxBots was
+    // reached. That limit now lives behind the boundary; the route forwards
+    // regardless and lets Traderton own acceptance.
     const { botRoutes } = await import('./bots.js');
 
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
-
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        let selectCallCount = 0;
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockImplementation(() => {
-                selectCallCount++;
-                if (selectCallCount === 1) {
-                  return Promise.resolve([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
-                }
-                return Promise.resolve([{ id: 'inst-1' }, { id: 'inst-2' }, { id: 'inst-3' }]);
-              }),
-            }),
-          }),
-          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-        };
-        return callback(tx);
-      }),
-    };
+    const db = makeCreateDb([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
+    const { client, invoke } = makeTradertonClient();
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -168,52 +185,22 @@ describe('bot routes', () => {
       },
     });
 
-    expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).error).toBe('plan.limit_exceeded');
+    // The create succeeds regardless of how many bots the user already has.
+    expect(res.statusCode).toBe(201);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0].toolName).toBe('create_bot');
   });
 
-  it('bypasses trading instance limit for admins', async () => {
+  it('creates a bot for an admin without any client-side limit gate', async () => {
     const { botRoutes } = await import('./bots.js');
 
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
-    const createdBot = {
-      id: 'new-bot-id',
-      userId: TEST_USER_ID,
-      venueAccountId: 'va-1',
-      connectionId: 'binding-1',
-      config: validConfig,
-      status: 'stopped',
-      creatorType: 'user',
-      creatorId: TEST_USER_ID,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      startedAt: null,
-      stoppedAt: null,
-    };
-
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockImplementation(() => Promise.resolve([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }])),
-            }),
-          }),
-          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-        };
-        return callback(tx);
-      }),
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([createdBot]),
-        }),
-      }),
-    };
+    const db = makeCreateDb([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
+    const { client } = makeTradertonClient();
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free', true);
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -227,58 +214,23 @@ describe('bot routes', () => {
     });
 
     expect(res.statusCode).toBe(201);
+    // The 201 body is the boundary payload verbatim.
     expect(JSON.parse(res.body).userId).toBe(TEST_USER_ID);
   });
 
-  it('returns 201 and creates bot when under limit', async () => {
+  it('returns 201 with the boundary payload and forwards create_bot with a user subject', async () => {
     const { botRoutes } = await import('./bots.js');
 
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
-    const createdBot = {
-      id: 'new-bot-id',
-      userId: TEST_USER_ID,
-      venueAccountId: 'va-1',
-      connectionId: 'binding-1',
-      config: validConfig,
-      status: 'stopped',
-      creatorType: 'user',
-      creatorId: TEST_USER_ID,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      startedAt: null,
-      stoppedAt: null,
-    };
-
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        let selectCallCount = 0;
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockImplementation(() => {
-                selectCallCount++;
-                if (selectCallCount === 1) {
-                  return Promise.resolve([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
-                }
-                return Promise.resolve([]);
-              }),
-            }),
-          }),
-          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-        };
-        return callback(tx);
-      }),
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([createdBot]),
-        }),
-      }),
-    };
+    const db = makeCreateDb([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success', requestId: 'r', correlationId: 'c',
+      payload: { id: 'new-bot-id', status: 'stopped', userId: TEST_USER_ID, connectionId: 'binding-1' },
+    });
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -296,6 +248,16 @@ describe('bot routes', () => {
     expect(body.userId).toBe(TEST_USER_ID);
     expect(body.status).toBe('stopped');
     expect(body.connectionId).toBe('binding-1');
+
+    // The boundary was invoked with create_bot + a platform-owned user subject.
+    expect(invoke).toHaveBeenCalledTimes(1);
+    const arg = invoke.mock.calls[0]![0];
+    expect(arg.toolName).toBe('create_bot');
+    expect(arg.subject).toEqual({ ownerId: TEST_USER_ID, actor: { type: 'user', id: TEST_USER_ID } });
+    expect(arg.payload.connectionId).toBe('binding-1');
+    // No local bots insert / no venueAccountId stamped into the payload.
+    expect(arg.payload).not.toHaveProperty('venueAccountId');
+    expect(db.transaction).toBeUndefined();
   });
 
   it('returns 400 when both connectionId and venueAccountId are provided', async () => {
@@ -326,36 +288,20 @@ describe('bot routes', () => {
     expect(res.json().error).toBe('validation_error');
   });
 
-  it('returns 400 when a connection cannot supply a venue account id', async () => {
+  it('forwards to the boundary even when the connection has no resolved venue account (Traderton resolves the account)', async () => {
+    // L3c: venue-account resolution MOVED behind the boundary — Traderton resolves
+    // the account from the subject. The route no longer rejects a connection with a
+    // null resolvedVenueAccountId; it forwards the connectionId and lets Traderton
+    // own account resolution.
     const { botRoutes } = await import('./bots.js');
 
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
-
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        let selectCallCount = 0;
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockImplementation(() => {
-                selectCallCount++;
-                if (selectCallCount === 1) {
-                  return Promise.resolve([{ id: 'binding-1', resolvedVenueAccountId: null }]);
-                }
-                return Promise.resolve([]);
-              }),
-            }),
-          }),
-          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-        };
-        return callback(tx);
-      }),
-    };
+    const db = makeCreateDb([{ id: 'binding-1', resolvedVenueAccountId: null }]);
+    const { client, invoke } = makeTradertonClient();
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -368,71 +314,28 @@ describe('bot routes', () => {
       },
     });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('connection.missing_venue_account');
+    expect(res.statusCode).toBe(201);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0].payload.connectionId).toBe('binding-1');
   });
 
-  // Regression: bug 001 — test payloads used venueAccountId (old field) and the mock DB
-  // returned { id } instead of { id, resolvedVenueAccountId }. Both caused the route to fail.
-  // This test verifies the bot's venueAccountId is sourced from the connection's
-  // resolvedVenueAccountId so the field mapping can never silently regress.
-  it('maps resolvedVenueAccountId from the connection to the created bot venueAccountId', async () => {
+  // L3c: the route no longer writes a bots row nor stamps a venueAccountId — it
+  // forwards the connectionId to the boundary and Traderton resolves the account
+  // from the subject. This proves the connectionId is forwarded and NO venue
+  // account is injected client-side.
+  it('forwards the connectionId to the boundary and injects no venueAccountId', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
-    let capturedBotInsert: Record<string, unknown> | undefined;
-    const createdBot = {
-      id: 'new-bot',
-      userId: TEST_USER_ID,
-      venueAccountId: 'va-42',
-      connectionId: 'binding-42',
-      config: validConfig,
-      status: 'stopped',
-      creatorType: 'user',
-      creatorId: TEST_USER_ID,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      startedAt: null,
-      stoppedAt: null,
-    };
-
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        let selectCount = 0;
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockImplementation(() => {
-                selectCount++;
-                // First call: connection lookup — must return { id, resolvedVenueAccountId }
-                if (selectCount === 1) {
-                  return Promise.resolve([{ id: 'binding-42', resolvedVenueAccountId: 'va-42' }]);
-                }
-                // Subsequent calls: bot limit check — no existing bots
-                return Promise.resolve([]);
-              }),
-            }),
-          }),
-          insert: vi.fn().mockReturnValue({
-            values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
-              capturedBotInsert = vals;
-              return Promise.resolve(undefined);
-            }),
-          }),
-        };
-        return callback(tx);
-      }),
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([createdBot]),
-        }),
-      }),
-    };
+    const db = makeCreateDb([{ id: 'binding-42', resolvedVenueAccountId: 'va-42' }]);
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success', requestId: 'r', correlationId: 'c',
+      payload: { id: 'new-bot', status: 'stopped', userId: TEST_USER_ID, connectionId: 'binding-42' },
+    });
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -446,35 +349,26 @@ describe('bot routes', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    // Critical: venueAccountId in the INSERT must come from connection.resolvedVenueAccountId
-    expect(capturedBotInsert!['venueAccountId']).toBe('va-42');
-    expect(capturedBotInsert!['connectionId']).toBe('binding-42');
+    const arg = invoke.mock.calls[0]![0];
+    expect(arg.toolName).toBe('create_bot');
+    expect(arg.payload.connectionId).toBe('binding-42');
+    // No venueAccountId is stamped into the payload — Traderton owns resolution.
+    expect(arg.payload).not.toHaveProperty('venueAccountId');
+    expect(arg.subject).toEqual({ ownerId: TEST_USER_ID, actor: { type: 'user', id: TEST_USER_ID } });
   });
 
-  // Regression: bug 001 — when the DB returns an empty array for the binding lookup
-  // (binding not found), the route must return 404, not a 500 TypeError on undefined.
-  it('returns 404 when connectionId references a nonexistent connection', async () => {
+  // Connection-ownership is a herobids-side authz gate (KEPT). An unknown/unowned
+  // connectionId must 404 BEFORE the boundary is touched.
+  it('returns 404 when connectionId references a nonexistent connection — boundary NOT called', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([]), // no binding found
-            }),
-          }),
-          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-        };
-        return callback(tx);
-      }),
-    };
+    const db = makeCreateDb([]); // no connection found
+    const { client, invoke } = makeTradertonClient();
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -489,6 +383,7 @@ describe('bot routes', () => {
 
     expect(res.statusCode).toBe(404);
     expect(res.json<{ error: string }>().error).toBe('not_found');
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   // Regression: bug 2026-06-09-004 — web client was sending venueAccountId
@@ -522,68 +417,22 @@ describe('bot routes', () => {
     expect(issues.some((issue) => issue.path.includes('connectionId'))).toBe(true);
   });
 
-  // Regression: Phase 3 — when a user has two Hyperliquid connections each with
-  // different resolvedVenueAccountId values, creating a bot with connection-2
-  // must resolve to va-002, never to va-001. This proves the route does not
-  // accidentally cross-wire connection A to venue account B.
-  it('resolves the correct venue account when user has multiple Hyperliquid connections', async () => {
+  // When a user has multiple connections, the route must forward the SPECIFIC
+  // connectionId the caller chose (connection-2), never cross-wire to another.
+  // Account resolution itself now happens behind the boundary from the subject.
+  it('forwards the specific connectionId chosen by the caller (no cross-wiring)', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
-    let capturedBotInsert: Record<string, unknown> | undefined;
-    const createdBot = {
-      id: 'new-bot',
-      userId: TEST_USER_ID,
-      venueAccountId: 'va-002',
-      connectionId: 'connection-2',
-      config: validConfig,
-      status: 'stopped',
-      creatorType: 'user',
-      creatorId: TEST_USER_ID,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      startedAt: null,
-      stoppedAt: null,
-    };
-
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        let selectCount = 0;
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockImplementation(() => {
-                selectCount++;
-                // First call: connection lookup for connection-2
-                // Must return its own resolvedVenueAccountId (va-002), not va-001
-                if (selectCount === 1) {
-                  return Promise.resolve([{ id: 'connection-2', resolvedVenueAccountId: 'va-002' }]);
-                }
-                // Subsequent calls: bot limit check — no existing bots
-                return Promise.resolve([]);
-              }),
-            }),
-          }),
-          insert: vi.fn().mockReturnValue({
-            values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
-              capturedBotInsert = vals;
-              return Promise.resolve(undefined);
-            }),
-          }),
-        };
-        return callback(tx);
-      }),
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([createdBot]),
-        }),
-      }),
-    };
+    const db = makeCreateDb([{ id: 'connection-2', resolvedVenueAccountId: 'va-002' }]);
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success', requestId: 'r', correlationId: 'c',
+      payload: { id: 'new-bot', status: 'stopped', userId: TEST_USER_ID, connectionId: 'connection-2' },
+    });
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -597,8 +446,34 @@ describe('bot routes', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    // Critical: venueAccountId must be 'va-002' (connection-2's own), NOT 'va-001'
-    expect(capturedBotInsert!['venueAccountId']).toBe('va-002');
-    expect(capturedBotInsert!['connectionId']).toBe('connection-2');
+    const arg = invoke.mock.calls[0]![0];
+    // Critical: the forwarded connectionId is connection-2 (the caller's choice).
+    expect(arg.payload.connectionId).toBe('connection-2');
+    expect(arg.payload).not.toHaveProperty('venueAccountId');
+  });
+
+  it('returns 503 when no trading boundary is configured (no silent local fallback)', async () => {
+    const { botRoutes } = await import('./bots.js');
+    const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
+
+    const db = makeCreateDb([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
+
+    const app = Fastify();
+    decorateWithAuth(app, TEST_USER_ID, 'free');
+    // No tradertonClient passed → the boundary is unconfigured.
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/bots',
+      payload: {
+        connectionId: 'binding-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC-PERP',
+        config: validConfig,
+      },
+    });
+
+    expect(res.statusCode).toBe(503);
   });
 });

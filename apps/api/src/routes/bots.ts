@@ -5,16 +5,17 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, connections, blueprints, blueprintRevisions, PgJournal, fills, journalEvents, agents } from '@herobids/db';
+import { bots, connections, blueprints, blueprintRevisions, PgJournal, fills, journalEvents } from '@herobids/db';
 import type { PlansConfig, AgentRiskDefaultsConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
   UpdateInstanceConfigSchema,
 } from '../schemas.js';
-import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
+import { checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import { canonicalizeExecutionMode } from './agent-config-helpers.js';
-import { BotConfigSchema, INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 import { projectBotToBlueprintPayload } from '../services/blueprint-projection.js';
 import { buildBlueprintDetail } from './blueprints.js';
 import type { LifecycleJob } from '../types.js';
@@ -32,7 +33,27 @@ function normalizeBotConfig(config: Record<string, unknown>, venue: string, symb
   return normalized;
 }
 
-export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig, agentRiskDefaults?: AgentRiskDefaultsConfig): Promise<void> {
+export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig, _agentRiskDefaults?: AgentRiskDefaultsConfig, tradertonClient?: TradertonClient): Promise<void> {
+  // L3c: route a user-initiated bot side effect to the Traderton boundary,
+  // injecting ownerId + actor(type:'user') ONLY (D2). Traderton owns bots + the
+  // limit and resolves the venue account from the subject. Returns the typed
+  // client result. NO silent fallback to the in-process lifecycle queue.
+  const invokeBoundary = async (
+    toolName: 'create_bot' | 'start_bot' | 'stop_bot' | 'adjust_bot_config',
+    payload: Record<string, unknown>,
+    userId: string,
+  ): Promise<TradertonClientResult> => {
+    if (!tradertonClient) {
+      return { kind: 'transport_error', requestId: '', retryable: true, message: 'trading boundary not configured' };
+    }
+    return tradertonClient.invoke({
+      toolName,
+      payload,
+      subject: { ownerId: userId, actor: { type: 'user', id: userId } },
+      deadlineMs: 30_000,
+    });
+  };
+
   // Create bot
   app.post('/bots', async (request, reply) => {
     const parsed = CreateInstanceSchema.safeParse(request.body);
@@ -93,33 +114,13 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
-    const configCheck = BotConfigSchema.safeParse(resolvedConfig);
-    if (!configCheck.success) {
-      return reply.status(400).send({ error: 'validation_error', details: configCheck.error.issues });
-    }
-
-    const id = crypto.randomUUID();
-    const now = new Date();
-
     const botExecutionMode = (resolvedConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
 
-    // Validate execution capability for the bot's venue + mode combination
-    const botVenueType = venueTypeFromProvider(parsed.data.venue);
-    if (botVenueType && botExecutionMode) {
-      const capCheck = validateExecutionCapability({
-        actorType: 'bot',
-        executionMode: botExecutionMode as 'paper' | 'shadow' | 'live',
-        venueType: botVenueType,
-      });
-      if (!capCheck.ok) {
-        return reply.status(400).send({
-          error: `execution_capability.${capCheck.error.code}`,
-          message: capCheck.error.message,
-        });
-      }
-    }
-
-    // Live-mode plan gate
+    // Live-mode plan gate (a platform plan/entitlement check — KEPT). The
+    // trading-config validation (BotConfigSchema) + execution-capability check
+    // MOVE behind the boundary (Traderton's copied create_bot owns them). maxBots
+    // (checkBotLimit) is DROPPED — Traderton owns the limit (#4). See
+    // 004-l3d-plan.md §C/§D.
     if (plansConfig && botExecutionMode === 'live') {
       const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free', request.isAdmin);
       if (!liveCheck.ok) {
@@ -127,102 +128,46 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
-    if (plansConfig) {
-      const planId = request.userPlanId || 'free';
-      const result = await db.transaction(async (tx) => {
-        // Advisory lock: serialise concurrent bot creates for the same user.
-        // hashtext() returns int4; the two-argument form takes (int4, int4).
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(1, hashtext(${request.userId}))`);
-
-        // Verify connection ownership inside the transaction.
-        const [conn] = await tx.select({ id: connections.id, provider: connections.provider, credentialId: connections.credentialId, resolvedVenueAccountId: connections.resolvedVenueAccountId }).from(connections)
-          .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)));
-        if (!conn) return { kind: 'not_found' as const };
-        if (!conn.resolvedVenueAccountId) return { kind: 'missing_venue_account' as const };
-
-        // Atomic count-and-insert: re-check the limit inside the lock.
-        const planCheck = await checkBotLimit(tx as unknown as Database, plansConfig, request.userId, planId, request.isAdmin);
-        if (!planCheck.ok) return { kind: 'limit' as const, error: planCheck.error };
-
-        try {
-          await tx.insert(bots).values({
-            id,
-            userId: request.userId,
-            venueAccountId: conn.resolvedVenueAccountId,
-            connectionId,
-            config: resolvedConfig,
-            blueprintId,
-            configSnapshot,
-            status: 'stopped',
-            creatorType: 'user',
-            creatorId: request.userId,
-            createdAt: now,
-            updatedAt: now,
-          });
-        } catch (err: unknown) {
-          // Blueprint was deleted between the pre-transaction lookup and the insert.
-          if ((err as { code?: string }).code === '23503') {
-            return { kind: 'blueprint_deleted' as const };
-          }
-          throw err;
-        }
-        return { kind: 'ok' as const };
-      });
-
-      if (result.kind === 'not_found') {
-        return reply.status(404).send({ error: 'not_found', message: 'Connection not found' });
-      }
-      if (result.kind === 'missing_venue_account') {
-        return reply.status(400).send({ error: 'connection.missing_venue_account', message: 'No venue account found for this connection. Please complete trading setup first.' });
-      }
-      if (result.kind === 'blueprint_deleted') {
-        return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
-      }
-      if (result.kind === 'limit') {
-        return reply.status(403).send(errorPayload(result.error.code, result.error.message, result.error.params));
-      }
-    } else {
-      // No plan config — verify connection ownership then insert directly.
-      const [conn] = await db.select({ id: connections.id, provider: connections.provider, resolvedVenueAccountId: connections.resolvedVenueAccountId }).from(connections)
-        .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)));
-      if (!conn) {
-        return reply.status(404).send({ error: 'not_found', message: 'Connection not found' });
-      }
-      if (!conn.resolvedVenueAccountId) {
-        return reply.status(400).send({ error: 'connection.missing_venue_account', message: 'No venue account found for this connection. Please complete trading setup first.' });
-      }
-
-      try {
-        await db.insert(bots).values({
-          id,
-          userId: request.userId,
-          venueAccountId: conn.resolvedVenueAccountId,
-          connectionId,
-          config: resolvedConfig,
-          blueprintId,
-          configSnapshot,
-          status: 'stopped',
-          creatorType: 'user',
-          creatorId: request.userId,
-          createdAt: now,
-          updatedAt: now,
-        });
-      } catch (err: unknown) {
-        // Blueprint was deleted between the pre-transaction lookup and the insert.
-        if ((err as { code?: string }).code === '23503') {
-          return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
-        }
-        throw err;
-      }
+    // Platform authz (KEPT): verify the connection belongs to this user before
+    // acting. It is NOT injected into the envelope (D2) — herobids injects
+    // ownerId + actor only; Traderton resolves the venue account from the subject.
+    const [conn] = await db.select({ id: connections.id, resolvedVenueAccountId: connections.resolvedVenueAccountId }).from(connections)
+      .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)));
+    if (!conn) {
+      return reply.status(404).send({ error: 'not_found', message: 'Connection not found' });
     }
 
-    const [bot] = await db.select().from(bots).where(eq(bots.id, id));
+    // L3c: create the bot over the Traderton boundary — no bots-table write, no
+    // maxBots, no venue-stamp (#4/D2). connectionId is forwarded so Traderton can
+    // resolve the account grant. NO silent fallback to a local insert.
+    const result = await invokeBoundary('create_bot', {
+      connectionId,
+      config: resolvedConfig,
+      ...(blueprintId ? { blueprintId } : {}),
+      ...(configSnapshot ? { configSnapshot } : {}),
+    }, request.userId);
+
+    if (result.kind === 'transport_error') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not created.', {}));
+    }
+    if (result.kind === 'in_progress') {
+      return reply.status(503).send(errorPayload('boundary.in_progress', 'Bot creation did not complete in time. Please retry.', {}));
+    }
+    if (result.kind === 'failure') {
+      const status = result.code === 'validation.invalid_payload' ? 400
+        : result.code === 'authorization.denied' ? 403
+        : result.code === 'not_found.resource' ? 404
+        : result.code === 'rate_limit.exceeded' ? 429
+        : 502;
+      return reply.status(status).send(errorPayload(result.code, result.message, {}));
+    }
+
     // Notify callers using the deprecated inline config field to migrate to blueprintId.
     if (usingDeprecatedInlineConfig) {
       void reply.header('Deprecation', 'true');
       void reply.header('Link', '</blueprints>; rel="deprecation"; title="Use blueprintId instead of config"');
     }
-    return reply.status(201).send(bot as Record<string, unknown>);
+    return reply.status(201).send(result.payload as Record<string, unknown>);
   });
 
   // Update bot config
@@ -315,13 +260,26 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
-    // Restart if running to pick up new config
+    // L3c: apply the config change over the boundary instead of enqueuing a
+    // trading-instance-lifecycle restart. Traderton owns the bot config + the
+    // restart; herobids injects ownerId + actor(user) only (D2). NO silent
+    // fallback to the lifecycle queue. (The local db.update(bots) above is a
+    // DELETE-side write tracked in 004-l3d-plan.md §D — L3d removes it.)
     if (existing.status === 'running') {
-      await queue.add('restart-instance', {
-        command: 'restart',
+      const adjustResult = await invokeBoundary('adjust_bot_config', {
         botId: id,
-        config: { ...parsed.data.config, connectionId: existing.connectionId, venueAccountId: existing.venueAccountId, userId: existing.userId },
-      });
+        config: parsed.data.config,
+      }, request.userId);
+      if (adjustResult.kind === 'transport_error' || adjustResult.kind === 'in_progress') {
+        return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the config change was not applied to the running bot.', {}));
+      }
+      if (adjustResult.kind === 'failure') {
+        const status = adjustResult.code === 'validation.invalid_payload' ? 400
+          : adjustResult.code === 'authorization.denied' ? 403
+          : adjustResult.code === 'not_found.resource' ? 404
+          : 502;
+        return reply.status(status).send(errorPayload(adjustResult.code, adjustResult.message, {}));
+      }
     }
 
     return reply.send({ status: 'updated', botId: id });
@@ -536,8 +494,19 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(200).send({ status: 'already_stopped', botId: id });
     }
 
-    // Enqueue stop job on the lifecycle queue
-    await queue.add('stop-instance', { command: 'stop', botId: id });
+    // L3c: stop over the boundary instead of the lifecycle queue. herobids
+    // injects ownerId + actor(user) only (D2); Traderton owns the bot. NO silent
+    // fallback to the queue.
+    const stopResult = await invokeBoundary('stop_bot', { botId: id }, request.userId);
+    if (stopResult.kind === 'transport_error' || stopResult.kind === 'in_progress') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not stopped.', {}));
+    }
+    if (stopResult.kind === 'failure') {
+      const status = stopResult.code === 'authorization.denied' ? 403
+        : stopResult.code === 'not_found.resource' ? 404
+        : 502;
+      return reply.status(status).send(errorPayload(stopResult.code, stopResult.message, {}));
+    }
 
     return reply.status(202).send({ status: 'stopping', botId: id });
   });
@@ -555,53 +524,11 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(200).send({ status: 'already_running', botId: id });
     }
 
-    // Enforce agent-level maxBots limit for agent-created bots.
-    // Non-agent bots (user-created, system) are not subject to this limit.
-    if (bot.creatorType === 'agent' && bot.creatorId) {
-      const [agentRow] = await db.select({ maxBots: agents.maxBots })
-        .from(agents)
-        .where(eq(agents.id, bot.creatorId))
-        .limit(1);
-      const maxBots = agentRow?.maxBots ?? agentRiskDefaults?.maxBots ?? 5;
-      const runningRows = await db
-        .select({ id: bots.id })
-        .from(bots)
-        .where(and(
-          eq(bots.creatorType, 'agent'),
-          eq(bots.creatorId, bot.creatorId),
-          eq(bots.status, 'running'),
-        ));
-      if (runningRows.length >= maxBots) {
-        return reply.status(409).send({
-          error: 'max_bots_reached',
-          message: `Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before starting a new one.`,
-        });
-      }
-    }
-
-    // Resolve execution mode from config for capability validation
+    // L3c: maxBots is DROPPED (#4 — Traderton owns the limit); the execution-
+    // capability + config-preflight validations MOVE behind the boundary. The
+    // live-mode plan gate (a platform entitlement check) is KEPT.
     const execConfig = (bot.config as Record<string, unknown> | undefined)?.['execution'] as Record<string, unknown> | undefined;
     const executionMode = (execConfig?.['mode'] as string | undefined) ?? 'paper';
-
-    // Validate execution capability
-    const [conn] = await db.select({ provider: connections.provider }).from(connections)
-      .where(eq(connections.id, bot.connectionId));
-    const botVenueType = conn ? venueTypeFromProvider(conn.provider) : undefined;
-    if (botVenueType) {
-      const capCheck = validateExecutionCapability({
-        actorType: 'bot',
-        executionMode: executionMode as 'paper' | 'shadow' | 'live',
-        venueType: botVenueType,
-      });
-      if (!capCheck.ok) {
-        return reply.status(400).send({
-          error: `execution_capability.${capCheck.error.code}`,
-          message: capCheck.error.message,
-        });
-      }
-    }
-
-    // Live-mode plan gate
     if (plansConfig && executionMode === 'live') {
       const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free', request.isAdmin);
       if (!liveCheck.ok) {
@@ -609,24 +536,20 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
-    // Preflight: validate persisted config before enqueuing start.
-    // A persisted invalid config (legacy, corrupted, etc.) must not be pushed
-    // through start → fail → retry cycles.
-    const configCheck = BotConfigSchema.safeParse(bot.config as Record<string, unknown>);
-    if (!configCheck.success) {
-      return reply.status(400).send({
-        error: 'config_invalid',
-        message: 'Bot config is invalid — cannot start. Fix the config before retrying.',
-        details: configCheck.error.issues,
-      });
+    // L3c: start over the boundary instead of the lifecycle queue. NO silent
+    // fallback to the queue.
+    const startResult = await invokeBoundary('start_bot', { botId: id }, request.userId);
+    if (startResult.kind === 'transport_error' || startResult.kind === 'in_progress') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not started.', {}));
     }
-
-    // Enqueue start job on the lifecycle queue
-    await queue.add('start-instance', {
-      command: 'start',
-      botId: id,
-      config: { ...bot.config as Record<string, unknown>, connectionId: bot.connectionId, venueAccountId: bot.venueAccountId, userId: bot.userId },
-    });
+    if (startResult.kind === 'failure') {
+      const status = startResult.code === 'validation.invalid_payload' ? 400
+        : startResult.code === 'authorization.denied' ? 403
+        : startResult.code === 'not_found.resource' ? 404
+        : startResult.code === 'rate_limit.exceeded' ? 429
+        : 502;
+      return reply.status(status).send(errorPayload(startResult.code, startResult.message, {}));
+    }
 
     return reply.status(202).send({ status: 'starting', botId: id });
   });

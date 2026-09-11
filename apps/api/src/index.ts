@@ -49,6 +49,7 @@ import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig } from './config.js';
 import { ExternalSkillProviderHttp } from '@herobids/domain';
+import { createTradertonClient } from '@herobids/domain/traderton';
 import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -191,6 +192,21 @@ const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
   connection: redisConnection,
 });
 
+// L3c: the SECOND Traderton client — constructed at the API composition root for
+// user-initiated bot side effects (POST /bots, start/stop, PATCH restart). The
+// subject actor is type:'user' with ownerId = request.userId, bound per-request
+// inside botRoutes. Undefined when unconfigured (no baseUrl/secret) → the write
+// endpoints return a typed precondition; NO silent fallback to the lifecycle queue.
+const tradertonBotClient = (appConfig.boundary.baseUrl && appConfig.boundary.hmacSecret)
+  ? createTradertonClient({
+      baseUrl: appConfig.boundary.baseUrl,
+      consumerId: appConfig.boundary.consumerId,
+      keyId: appConfig.boundary.keyId,
+      hmacSecret: appConfig.boundary.hmacSecret,
+      requestTimeoutMs: appConfig.boundary.requestTimeoutMs,
+    })
+  : undefined;
+
 const backtestQueue = new Queue<BacktestJob>(BACKTEST_QUEUE_NAME, {
   connection: redisConnection,
 });
@@ -255,7 +271,7 @@ await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCa
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
 // venue_accounts to trading bindings and further reframe bots as internals.
-await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, appConfig.agentRiskDefaults);
+await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, appConfig.agentRiskDefaults, tradertonBotClient);
 await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues);
 await credentialRoutes(app, lifecycleQueue, db, appConfig.plans);
 await journalRoutes(app, db);

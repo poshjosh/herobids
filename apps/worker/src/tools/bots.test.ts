@@ -49,17 +49,18 @@ function makeBotRecord(overrides: Partial<{
   };
 }
 
-describe('adjust_bot_config — mode-rank enforcement', () => {
-  // ── Mode escalation rejections ─────────────────────────────────────────
+describe('adjust_bot_config — L3c: mode-rank gate + boundary routing', () => {
+  // The mode-escalation gate (a platform check on ctx.executionMode) stays in the
+  // tool and rejects BEFORE any side effect. Allowed adjustments now publish
+  // MANAGE_BOT to the broker (which invokes the boundary) instead of writing
+  // ctx.botRepo directly — herobids owns no bot state; ownership is enforced
+  // boundary-side.
 
-  it('rejects paper agent adjusting bot to shadow mode', async () => {
-    const ctx = makeCtx({
-      executionMode: 'paper',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord()),
-        updateBotConfig: vi.fn(async () => undefined),
-      } as unknown as ToolContext['botRepo'],
-    });
+  // ── Mode escalation rejections (publish NOT called) ────────────────────
+
+  it('rejects paper agent adjusting bot to shadow mode — MANAGE_BOT NOT published', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({ executionMode: 'paper', publishToInbound });
 
     const result = await adjustBotConfigTool.execute(
       { botId: 'bot-1', config: { execution: { mode: 'shadow' } } },
@@ -69,16 +70,12 @@ describe('adjust_bot_config — mode-rank enforcement', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('shadow');
     expect(result.error).toContain('paper');
+    expect(publishToInbound).not.toHaveBeenCalled();
   });
 
-  it('rejects paper agent adjusting bot to live mode', async () => {
-    const ctx = makeCtx({
-      executionMode: 'paper',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord()),
-        updateBotConfig: vi.fn(async () => undefined),
-      } as unknown as ToolContext['botRepo'],
-    });
+  it('rejects paper agent adjusting bot to live mode — MANAGE_BOT NOT published', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({ executionMode: 'paper', publishToInbound });
 
     const result = await adjustBotConfigTool.execute(
       { botId: 'bot-1', config: { execution: { mode: 'live' } } },
@@ -88,16 +85,12 @@ describe('adjust_bot_config — mode-rank enforcement', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('live');
     expect(result.error).toContain('paper');
+    expect(publishToInbound).not.toHaveBeenCalled();
   });
 
-  it('rejects shadow agent adjusting bot to live mode', async () => {
-    const ctx = makeCtx({
-      executionMode: 'shadow',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord()),
-        updateBotConfig: vi.fn(async () => undefined),
-      } as unknown as ToolContext['botRepo'],
-    });
+  it('rejects shadow agent adjusting bot to live mode — MANAGE_BOT NOT published', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({ executionMode: 'shadow', publishToInbound });
 
     const result = await adjustBotConfigTool.execute(
       { botId: 'bot-1', config: { execution: { mode: 'live' } } },
@@ -106,21 +99,14 @@ describe('adjust_bot_config — mode-rank enforcement', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('live');
-    expect(result.error).toContain('paper');
-    expect(result.error).toContain('shadow');
+    expect(publishToInbound).not.toHaveBeenCalled();
   });
 
-  // ── Allowed adjustments ────────────────────────────────────────────────
+  // ── Allowed adjustments publish MANAGE_BOT adjust_config ────────────────
 
-  it('allows paper agent adjusting bot to paper mode', async () => {
-    const updateBotConfig = vi.fn(async () => undefined);
-    const ctx = makeCtx({
-      executionMode: 'paper',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord()),
-        updateBotConfig,
-      } as unknown as ToolContext['botRepo'],
-    });
+  it('allows paper→paper and publishes MANAGE_BOT adjust_config', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({ executionMode: 'paper', publishToInbound });
 
     const result = await adjustBotConfigTool.execute(
       { botId: 'bot-1', config: { execution: { mode: 'paper' } } },
@@ -128,56 +114,15 @@ describe('adjust_bot_config — mode-rank enforcement', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(updateBotConfig).toHaveBeenCalledTimes(1);
-  });
-
-  it('allows shadow agent adjusting bot to shadow mode', async () => {
-    const updateBotConfig = vi.fn(async () => undefined);
-    const ctx = makeCtx({
-      executionMode: 'shadow',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord({ config: { execution: { mode: 'shadow' }, symbol: 'SOL/USDC' } })),
-        updateBotConfig,
-      } as unknown as ToolContext['botRepo'],
-    });
-
-    const result = await adjustBotConfigTool.execute(
-      { botId: 'bot-1', config: { execution: { mode: 'shadow' } } },
-      ctx,
-    );
-
-    expect(result.success).toBe(true);
-    expect(updateBotConfig).toHaveBeenCalledTimes(1);
-  });
-
-  it('allows shadow agent to downgrade bot to paper mode', async () => {
-    const updateBotConfig = vi.fn(async () => undefined);
-    const ctx = makeCtx({
-      executionMode: 'shadow',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord()),
-        updateBotConfig,
-      } as unknown as ToolContext['botRepo'],
-    });
-
-    const result = await adjustBotConfigTool.execute(
-      { botId: 'bot-1', config: { execution: { mode: 'paper' } } },
-      ctx,
-    );
-
-    expect(result.success).toBe(true);
-    expect(updateBotConfig).toHaveBeenCalledTimes(1);
+    expect(publishToInbound).toHaveBeenCalledTimes(1);
+    const [type, payload] = publishToInbound.mock.calls[0]!;
+    expect(type).toBe('agent.manage_bot');
+    expect(payload).toEqual({ action: 'adjust_config', botId: 'bot-1', config: { execution: { mode: 'paper' } } });
   });
 
   it('allows live agent adjusting bot to any mode', async () => {
-    const updateBotConfig = vi.fn(async () => undefined);
-    const ctx = makeCtx({
-      executionMode: 'live',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord()),
-        updateBotConfig,
-      } as unknown as ToolContext['botRepo'],
-    });
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({ executionMode: 'live', publishToInbound });
 
     const result = await adjustBotConfigTool.execute(
       { botId: 'bot-1', config: { execution: { mode: 'live' } } },
@@ -185,20 +130,12 @@ describe('adjust_bot_config — mode-rank enforcement', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(updateBotConfig).toHaveBeenCalledTimes(1);
+    expect(publishToInbound).toHaveBeenCalledTimes(1);
   });
 
-  // ── No execution.mode in adjustment ─────────────────────────────────────
-
-  it('no-op when execution.mode is absent from the adjustment', async () => {
-    const updateBotConfig = vi.fn(async () => undefined);
-    const ctx = makeCtx({
-      executionMode: 'paper',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord()),
-        updateBotConfig,
-      } as unknown as ToolContext['botRepo'],
-    });
+  it('publishes MANAGE_BOT when execution.mode is absent from the adjustment', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({ executionMode: 'paper', publishToInbound });
 
     const result = await adjustBotConfigTool.execute(
       { botId: 'bot-1', config: { symbol: 'BTC/USDC' } },
@@ -206,27 +143,55 @@ describe('adjust_bot_config — mode-rank enforcement', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(updateBotConfig).toHaveBeenCalledTimes(1);
+    expect(publishToInbound).toHaveBeenCalledTimes(1);
   });
 
-  // ── Ownership check (existing behaviour, unchanged) ────────────────────
-
-  it('rejects when bot is not owned by the agent', async () => {
-    const ctx = makeCtx({
-      executionMode: 'paper',
-      botRepo: {
-        getBotById: vi.fn(async () => makeBotRecord({ creatorId: 'other-agent' })),
-        updateBotConfig: vi.fn(async () => undefined),
-      } as unknown as ToolContext['botRepo'],
-    });
+  it('surfaces a publish failure as a non-fault tool failure', async () => {
+    const publishToInbound = vi.fn(async () => { throw new Error('redis down'); });
+    const ctx = makeCtx({ executionMode: 'paper', publishToInbound });
 
     const result = await adjustBotConfigTool.execute(
-      { botId: 'bot-1', config: { execution: { mode: 'paper' } } },
+      { botId: 'bot-1', config: { symbol: 'BTC/USDC' } },
       ctx,
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('not owned');
+    expect(result.fault).toBe(false);
+  });
+});
+
+describe('stop_bot / start_bot — L3c: boundary routing via MANAGE_BOT', () => {
+  const stopBotTool = botManagementTools.find((t) => t.name === 'stop_bot')!;
+  const startBotTool = botManagementTools.find((t) => t.name === 'start_bot')!;
+
+  it('stop_bot publishes MANAGE_BOT stop (no direct botRepo write)', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({ publishToInbound });
+
+    const result = await stopBotTool.execute({ botId: 'bot-1' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(publishToInbound).toHaveBeenCalledWith('agent.manage_bot', { action: 'stop', botId: 'bot-1' });
+  });
+
+  it('start_bot publishes MANAGE_BOT start', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({ publishToInbound });
+
+    const result = await startBotTool.execute({ botId: 'bot-1', rationale: 'resume' }, ctx);
+
+    expect(result.success).toBe(true);
+    expect(publishToInbound).toHaveBeenCalledWith('agent.manage_bot', { action: 'start', botId: 'bot-1', rationale: 'resume' });
+  });
+
+  it('stop_bot surfaces a publish failure as a non-fault failure', async () => {
+    const publishToInbound = vi.fn(async () => { throw new Error('redis down'); });
+    const ctx = makeCtx({ publishToInbound });
+
+    const result = await stopBotTool.execute({ botId: 'bot-1' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.fault).toBe(false);
   });
 });
 

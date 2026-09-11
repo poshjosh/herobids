@@ -4,6 +4,52 @@ import { CapabilityPolicyEngine } from './capability-policy.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
+import type { TradertonClientResult } from '@herobids/domain/traderton';
+import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+
+/**
+ * L3c: the number of positional ctor args before the trailing
+ * `sideEffectBoundary`. Bot lifecycle now routes over the Traderton REST
+ * boundary; the botStart/botLimitCheck/botStop/botRestart/agentRiskDefaults
+ * params are dead. `makeBrokerArgs` fills the gap so tests only wire the
+ * boundary + the params they still care about (redis..botRepo).
+ */
+
+/** A stubbed side-effecting boundary whose invokeAndAwait returns a scripted result. */
+function makeBoundary(result: TradertonClientResult = { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} }): {
+  boundary: TradertonSideEffectBoundary;
+  invokeAndAwait: ReturnType<typeof vi.fn>;
+  invoke: ReturnType<typeof vi.fn>;
+} {
+  const invokeAndAwait = vi.fn().mockResolvedValue(result);
+  const invoke = vi.fn().mockResolvedValue(result);
+  return { boundary: { invoke, invokeAndAwait }, invokeAndAwait, invoke };
+}
+
+/**
+ * Build the trailing ctor args (telegram..sideEffectBoundary) for a broker that
+ * routes bot lifecycle over the boundary. Only `botRepo` (ownership + bot_query
+ * reads) and the boundary are meaningful now — the lifecycle callbacks are dead.
+ */
+function makeBoundaryBrokerArgs(botRepo: unknown, boundary: TradertonSideEffectBoundary): unknown[] {
+  return [
+    undefined,   // telegram
+    botRepo,     // botRepo (ownership gate + bot_query reads)
+    undefined,   // _botStart (dead)
+    undefined,   // _botLimitCheck (dead)
+    undefined,   // botLiveCheck
+    undefined,   // _botStop (dead)
+    undefined,   // _botRestart (dead)
+    undefined,   // emailClient
+    undefined,   // onAgentConfigUpdate
+    undefined,   // _agentRiskDefaults (dead)
+    undefined,   // brandImageUrl
+    undefined,   // db
+    undefined,   // operatorModelDefaults
+    undefined,   // plansConfig
+    boundary,    // sideEffectBoundary
+  ];
+}
 
 // Module-level mocks for skill management functions used by handleManageAgentSkills
 vi.mock('@herobids/db', async (importOriginal) => {
@@ -502,24 +548,11 @@ describe('AgentMessageBroker', () => {
       };
     }
 
-    const mockDbSelect = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
-        }),
-      }),
-    });
-
+    // L3c: create routes over the boundary — the botRepo only needs the
+    // ownership gate (isConnectionOwnedBy). No bots-table writes remain.
     function makeBotRepo() {
       return {
-        db: { select: mockDbSelect },
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-new-001' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       };
     }
 
@@ -539,15 +572,14 @@ describe('AgentMessageBroker', () => {
       agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
 
       const botRepo = makeBotRepo();
+      const { boundary, invokeAndAwait } = makeBoundary();
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
         agentRepo as any,
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const e1 = makeManageBotEnvelope();
@@ -566,8 +598,9 @@ describe('AgentMessageBroker', () => {
       // Strict object identity proves reuse. If the engine were rebuilt and the map entry
       // overwritten, this would be a different reference even though policySig looks identical.
       expect(engineAfterSecond).toBe(engineAfterFirst);
-      // Both requests succeeded (createBot called twice confirms neither was denied)
-      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(2);
+      // Both requests succeeded (boundary create_bot invoked twice confirms neither was denied).
+      expect(invokeAndAwait).toHaveBeenCalledTimes(2);
+      expect(invokeAndAwait.mock.calls.every((call) => call[0].toolName === 'create_bot')).toBe(true);
     });
 
     it('rebuilds engine when toolPolicy changes between calls', async () => {
@@ -577,15 +610,14 @@ describe('AgentMessageBroker', () => {
       agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
 
       const botRepo = makeBotRepo();
+      const { boundary } = makeBoundary();
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
         agentRepo as any,
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       // First call: policy v1 — manage_bot enabled → should be accepted
@@ -613,23 +645,23 @@ describe('AgentMessageBroker', () => {
       agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
 
       const botRepo = makeBotRepo();
+      const { boundary, invokeAndAwait } = makeBoundary();
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
         agentRepo as any,
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       // manage_bot is disabled in DEFAULT_CAPABILITY_GRANTS — no override → denied
+      // before lifecycle runs, so the boundary is never touched.
       const e1 = makeManageBotEnvelope();
       const result = await brokerWithBot.processInbound(e1);
       expect(result.accepted).toBe(false);
       expect(result.error).toMatch(/capability_denied/);
-      expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
+      expect(invokeAndAwait).not.toHaveBeenCalled();
     });
   });
 
@@ -954,107 +986,50 @@ describe('AgentMessageBroker', () => {
       agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor());
     });
 
-    it('emits instance status with bot list after create_and_start', async () => {
+    it('routes create_and_start to the boundary create_bot and emits a lightweight running status', async () => {
       const botRepo = {
-        db: instanceStatusDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-abc' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([
-          { id: 'bot-abc', status: 'running', config: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, symbol: 'BTC-USD' } },
-        ]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       };
 
+      const { boundary, invokeAndAwait } = makeBoundary({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { id: 'bot-abc' } });
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
         agentRepo as any,
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
       expect(result.accepted).toBe(true);
 
+      // Routed to the boundary with the create_bot tool + platform-owned subject only.
+      expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+      const arg = invokeAndAwait.mock.calls[0]![0];
+      expect(arg.toolName).toBe('create_bot');
+      expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-123' } });
+      // Subject carries ownerId + actor ONLY — no venue account resolution leaked.
+      expect(arg.subject).not.toHaveProperty('venueAccountId');
+      expect(arg.subject).not.toHaveProperty('venue');
+      expect(arg.subject).not.toHaveProperty('venueType');
+      // Payload forwards the connectionId so Traderton can resolve the account grant.
+      expect(arg.payload.connectionId).toBe('binding-1');
+      expect(arg.payload).not.toHaveProperty('venueAccountId');
+      expect(arg.payload).not.toHaveProperty('botId');
+      expect(arg.payload.config).not.toHaveProperty('venueAccountId');
+
+      // create_bot no longer writes the bots table nor enforces a client-side limit.
+      expect(botRepo).not.toHaveProperty('tryCreateBotWithLimit');
+
+      // Post-create status is a lightweight running signal — no managedBots list
+      // (the authoritative list now lives behind the boundary's list_bots).
       expect((eventPublisher as any).emitInstanceStatus).toHaveBeenCalledWith(
         'agent-123',
-        expect.objectContaining({
-          status: 'running',
-          reason: 'bot_created',
-          managedBots: [
-            expect.objectContaining({ id: 'bot-abc', status: 'running', strategyPreset: 'momentum', symbol: 'BTC-USD' }),
-          ],
-        }),
+        expect.objectContaining({ status: 'running', reason: 'bot_created' }),
       );
-    });
-
-    it('emits instance status with empty bot list when agent has no bots', async () => {
-      const botRepo = {
-        db: instanceStatusDbMock,
-        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-xyz' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
-      };
-
-      const brokerWithBot = new AgentMessageBroker(
-        {} as any,
-        agentRepo as any,
-        decisionHandler,
-        sessionManager,
-        eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
-      );
-
-      await brokerWithBot.processInbound(makeManageBotEnvelope());
-
-      expect((eventPublisher as any).emitInstanceStatus).toHaveBeenCalledWith(
-        'agent-123',
-        expect.objectContaining({ managedBots: [] }),
-      );
-    });
-
-    it('emits bot with undefined strategyPreset when config has none', async () => {
-      const botRepo = {
-        db: instanceStatusDbMock,
-        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-min' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([
-          { id: 'bot-min', status: 'stopped', config: {} },
-        ]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
-      };
-
-      const brokerWithBot = new AgentMessageBroker(
-        {} as any,
-        agentRepo as any,
-        decisionHandler,
-        sessionManager,
-        eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
-      );
-
-      await brokerWithBot.processInbound(makeManageBotEnvelope());
-
-      const call = (eventPublisher as any).emitInstanceStatus.mock.calls[0];
-      expect(call[1].managedBots[0].strategyPreset).toBeUndefined();
-      expect(call[1].managedBots[0].symbol).toBeUndefined();
+      const statusArg = (eventPublisher as any).emitInstanceStatus.mock.calls[0][1];
+      expect(statusArg).not.toHaveProperty('managedBots');
     });
 
     it('uses the requested connection by connectionId when provided', async () => {
@@ -1078,27 +1053,10 @@ describe('AgentMessageBroker', () => {
         defaultConnectionByFamily: { trading: 'binding-1' },
       }));
 
-      const mockDbV2 = {
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }]),
-            }),
-          }),
-        }),
-      };
-
       const botRepo = {
-        db: mockDbV2,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-targeted' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }),
       };
-      const botStart = vi.fn().mockResolvedValue(undefined);
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1106,9 +1064,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        botStart,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1120,14 +1076,14 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
+      // Ownership gate runs against the requested connectionId.
       expect(botRepo.isConnectionOwnedBy).toHaveBeenCalledWith('binding-2', 'user-1');
-      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
-        connectionId: 'binding-2',
-        venueAccountId: 'va-002',
-      }));
-      expect(botStart).toHaveBeenCalledWith('bot-targeted', 'user-1', 'binding-2', expect.objectContaining({
-        venueAccountId: 'va-002',
-      }));
+      // The requested connectionId is forwarded to the boundary — no venue account resolution.
+      const arg = invokeAndAwait.mock.calls[0]![0];
+      expect(arg.toolName).toBe('create_bot');
+      expect(arg.payload.connectionId).toBe('binding-2');
+      expect(arg.payload).not.toHaveProperty('venueAccountId');
+      expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-123' } });
     });
 
     it('resolves the connection by connectionId when provided', async () => {
@@ -1149,27 +1105,10 @@ describe('AgentMessageBroker', () => {
         defaultConnectionByFamily: { trading: 'binding-1' },
       }));
 
-      const mockDbByConn = {
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }]),
-            }),
-          }),
-        }),
-      };
-
       const botRepo = {
-        db: mockDbByConn,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-by-connectionid' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }),
       };
-      const botStart = vi.fn().mockResolvedValue(undefined);
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1177,9 +1116,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        botStart,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1191,20 +1128,14 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
-        connectionId: 'binding-2',
-        venueAccountId: 'va-002',
-      }));
+      expect(invokeAndAwait.mock.calls[0]![0].payload.connectionId).toBe('binding-2');
     });
 
-    it('rejects when connectionId does not match any granted connection', async () => {
+    it('rejects when connectionId does not match any granted connection — boundary NOT called', async () => {
       const botRepo = {
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-never' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1212,9 +1143,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1227,7 +1156,7 @@ describe('AgentMessageBroker', () => {
 
       expect(result.accepted).toBe(false);
       expect(result.error).toMatch(/no trading capability connection found with connectionid nonexistent/i);
-      expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
+      expect(invokeAndAwait).not.toHaveBeenCalled();
     });
 
     it('uses the default connection when no connectionId is provided', async () => {
@@ -1264,12 +1193,9 @@ describe('AgentMessageBroker', () => {
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-default' }),
         tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }),
       };
-      const botStart = vi.fn().mockResolvedValue(undefined);
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1277,9 +1203,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        botStart,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1290,10 +1214,8 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
-        connectionId: 'binding-2',
-        venueAccountId: 'va-002',
-      }));
+      // The agent's default trading connection (binding-2) is forwarded.
+      expect(invokeAndAwait.mock.calls[0]![0].payload.connectionId).toBe('binding-2');
     });
 
     it('falls back to default connection when no connectionId is provided', async () => {
@@ -1317,26 +1239,10 @@ describe('AgentMessageBroker', () => {
         defaultConnectionByFamily: { trading: 'binding-1' },
       }));
 
-      const mockDbAmbiguous = {
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }]),
-            }),
-          }),
-        }),
-      };
-
       const botRepo = {
-        db: mockDbAmbiguous,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-ambiguous' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }),
       };
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1344,9 +1250,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       // No connectionId provided — broker falls back to default connection
@@ -1358,31 +1262,14 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
-        connectionId: 'binding-1',
-        venueAccountId: 'va-002',
-      }));
+      expect(invokeAndAwait.mock.calls[0]![0].payload.connectionId).toBe('binding-1');
     });
 
-    it('rejects create_and_start when resolved binding is not owned by agent user', async () => {
-      const mockDbNotOwned = {
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
-            }),
-          }),
-        }),
-      };
-
+    it('rejects create_and_start when resolved connection is not owned by agent user — boundary NOT called', async () => {
       const botRepo = {
-        db: mockDbNotOwned,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(false),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-never' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1390,42 +1277,29 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
       expect(result.accepted).toBe(false);
-      expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
+      // Ownership gate (herobids-side authz) blocks BEFORE any boundary call.
+      expect(invokeAndAwait).not.toHaveBeenCalled();
       expect((eventPublisher as any).emitInstanceStatus).not.toHaveBeenCalled();
     });
 
-    it('rejects create_and_start when agent has reached maxBots limit', async () => {
+    it('no longer enforces a client-side maxBots limit — Traderton owns the limit', async () => {
+      // Previously the broker rejected once the agent hit maxBots. That limit now
+      // lives behind the boundary (Traderton's create_bot). The broker forwards
+      // regardless of maxBots and lets the boundary own acceptance.
       agentRepo.getAgent.mockResolvedValue({
         id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 2,
         toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
       });
 
-      const mockDbMaxBots = {
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
-            }),
-          }),
-        }),
-      };
-
       const botRepo = {
-        db: mockDbMaxBots,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(2), // at limit
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-over' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1433,17 +1307,43 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
+      expect(result.accepted).toBe(true);
+      // No client-side limit gate — the create is forwarded to the boundary.
+      expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+      expect(invokeAndAwait.mock.calls[0]![0].toolName).toBe('create_bot');
+    });
+
+    it('rejects create_and_start when the boundary returns a failure', async () => {
+      const botRepo = {
+        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
+      };
+      const { boundary, invokeAndAwait } = makeBoundary({
+        kind: 'failure', requestId: 'r', correlationId: 'c', code: 'risk.exceeded', message: 'over cap', retryable: false,
+      });
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
       expect(result.accepted).toBe(false);
-      expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
+      // The failure code is surfaced in the processing error.
+      expect(result.error).toMatch(/risk\.exceeded/);
+      expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+      // No running status is emitted on a rejected create.
+      expect((eventPublisher as any).emitInstanceStatus).not.toHaveBeenCalled();
     });
 
-    it('clamps create_and_start risk.maxOrderNotional to the agent capital limit', async () => {
+    it('clamps create_and_start risk.maxOrderNotional to the agent capital limit before forwarding', async () => {
       agentRepo.getAgent.mockResolvedValue({
         id: 'agent-123',
         userId: 'user-1',
@@ -1453,27 +1353,10 @@ describe('AgentMessageBroker', () => {
         toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
       });
 
-      const mockDbCap = {
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
-            }),
-          }),
-        }),
-      };
-
       const botRepo = {
-        db: mockDbCap,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-cap' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       };
-      const botStart = vi.fn().mockResolvedValue(undefined);
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1481,15 +1364,13 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        botStart,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
         payload: {
           action: 'create_and_start',
-          venueAccountId: 'va-001',
+          connectionId: 'binding-1',
           config: {
             venue: 'hyperliquid',
             symbol: 'BTC-USD',
@@ -1501,38 +1382,22 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      // maxDrawdownPct is not a RiskConfigSchema field — it is stripped by
-      // BotConfigSchema.safeParse() validation. The capital clamp on
-      // maxOrderNotional (2500 → 1000) is what this test cares about.
-      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
-        config: expect.objectContaining({
-          risk: expect.objectContaining({ maxOrderNotional: 1000 }),
-        }),
+      // The platform capital clamp (maxOrderNotional 2500 → 1000) is applied to the
+      // config forwarded to the boundary. BotConfigSchema no longer runs here, so
+      // maxDrawdownPct passes through untouched.
+      const arg = invokeAndAwait.mock.calls[0]![0];
+      expect(arg.toolName).toBe('create_bot');
+      expect(arg.payload.config).toEqual(expect.objectContaining({
+        risk: expect.objectContaining({ maxOrderNotional: 1000, maxDrawdownPct: 10 }),
       }));
-      expect(botStart).toHaveBeenCalledWith(
-        'bot-cap',
-        'user-1',
-        'binding-1',
-        expect.objectContaining({
-          risk: expect.objectContaining({ maxOrderNotional: 1000 }),
-          venueAccountId: 'va-001',
-        }),
-      );
+      expect(arg.payload.config).not.toHaveProperty('venueAccountId');
     });
 
-    it('enqueues a stop job for stop_bot', async () => {
+    it('routes stop to the boundary stop_bot with botId + subject only', async () => {
       const botRepo = {
-        getBotById: vi.fn().mockResolvedValue({
-          id: 'bot-stop',
-          userId: 'user-1',
-          venueAccountId: 'va-001',
-          status: 'running',
-          config: {},
-          creatorType: 'agent',
-          creatorId: 'agent-123',
-        }),
+        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
       };
-      const botStop = vi.fn().mockResolvedValue(undefined);
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1540,12 +1405,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
-        undefined,
-        undefined,
-        botStop,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1553,29 +1413,18 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botStop).toHaveBeenCalledWith('bot-stop', 'user-1');
+      expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+      const arg = invokeAndAwait.mock.calls[0]![0];
+      expect(arg.toolName).toBe('stop_bot');
+      expect(arg.payload).toEqual({ botId: 'bot-stop' });
+      expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-123' } });
     });
 
-    it('restores prior runtime state when start enqueue fails', async () => {
+    it('routes start to the boundary start_bot then emits a running status', async () => {
       const botRepo = {
-        getBotById: vi.fn().mockResolvedValue({
-          id: 'bot-start',
-          userId: 'user-1',
-          connectionId: 'binding-1',
-          venueAccountId: 'va-001',
-          status: 'stopped',
-          startedAt: null,
-          stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
-          config: { strategy: { type: 'dca' }, symbol: 'ETH/USDC' },
-          creatorType: 'agent',
-          creatorId: 'agent-123',
-        }),
-        updateBotConfig: vi.fn().mockResolvedValue(undefined),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        restoreBotRuntimeState: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
+        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
       };
-      const botStart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1583,64 +1432,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        botStart,
-      );
-
-      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
-        payload: { action: 'start', botId: 'bot-start' },
-      }));
-
-      expect(result.accepted).toBe(false);
-      expect(botRepo.tryMarkBotRunningWithLimit).toHaveBeenCalledWith('bot-start', 'agent', 'agent-123', 5);
-      expect(botRepo.restoreBotRuntimeState).toHaveBeenCalledWith({
-        botId: 'bot-start',
-        status: 'stopped',
-        startedAt: null,
-        stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
-      });
-    });
-
-    it('reapplies the agent capital clamp before starting an existing bot', async () => {
-      agentRepo.getAgent.mockResolvedValue({
-        id: 'agent-123',
-        userId: 'user-1',
-        status: 'active',
-        maxBots: 5,
-        capital: '750',
-        toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-      });
-
-      const botRepo = {
-        getBotById: vi.fn().mockResolvedValue({
-          id: 'bot-start',
-          userId: 'user-1',
-          connectionId: 'binding-1',
-          venueAccountId: 'va-001',
-          status: 'stopped',
-          startedAt: null,
-          stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
-          config: { strategy: { type: 'dca' }, risk: { maxOrderNotional: 1500, maxDrawdownPct: 10 }, symbol: 'ETH/USDC' },
-          creatorType: 'agent',
-          creatorId: 'agent-123',
-        }),
-        updateBotConfig: vi.fn().mockResolvedValue(undefined),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        restoreBotRuntimeState: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
-      };
-      const botStart = vi.fn().mockResolvedValue(undefined);
-
-      const brokerWithBot = new AgentMessageBroker(
-        {} as any,
-        agentRepo as any,
-        decisionHandler,
-        sessionManager,
-        eventPublisher,
-        undefined,
-        botRepo as any,
-        botStart,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1648,33 +1440,23 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-start', {
-        strategy: { type: 'dca' }, risk: { maxOrderNotional: 750, maxDrawdownPct: 10 }, symbol: 'ETH/USDC',
-      });
-      expect(botStart).toHaveBeenCalledWith('bot-start', 'user-1', 'binding-1', {
-        strategy: { type: 'dca' }, risk: { maxOrderNotional: 750, maxDrawdownPct: 10 }, symbol: 'ETH/USDC',
-      });
+      const arg = invokeAndAwait.mock.calls[0]![0];
+      expect(arg.toolName).toBe('start_bot');
+      expect(arg.payload).toEqual({ botId: 'bot-start' });
+      expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-123' } });
+      expect((eventPublisher as any).emitInstanceStatus).toHaveBeenCalledWith(
+        'agent-123',
+        expect.objectContaining({ status: 'running', reason: 'bot_started' }),
+      );
     });
 
-    it('still fails gracefully when start enqueue AND rollback both fail', async () => {
+    it('propagates a boundary failure on start as a rejected result', async () => {
       const botRepo = {
-        getBotById: vi.fn().mockResolvedValue({
-          id: 'bot-start',
-          userId: 'user-1',
-          connectionId: 'binding-1',
-          venueAccountId: 'va-001',
-          status: 'stopped',
-          startedAt: null,
-          stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
-          config: { strategy: { type: 'dca' }, symbol: 'ETH/USDC' },
-          creatorType: 'agent',
-          creatorId: 'agent-123',
-        }),
-        updateBotConfig: vi.fn().mockResolvedValue(undefined),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        restoreBotRuntimeState: vi.fn().mockRejectedValue(new Error('DB also down')),
+        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
       };
-      const botStart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
+      const { boundary } = makeBoundary({
+        kind: 'failure', requestId: 'r', correlationId: 'c', code: 'not_found.resource', message: 'no such bot', retryable: false,
+      });
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1682,40 +1464,23 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        botStart,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
-        payload: { action: 'start', botId: 'bot-start' },
+        payload: { action: 'start', botId: 'bot-missing' },
       }));
 
       expect(result.accepted).toBe(false);
-      expect(botRepo.restoreBotRuntimeState).toHaveBeenCalled();
+      expect(result.error).toMatch(/not_found\.resource/);
+      expect((eventPublisher as any).emitInstanceStatus).not.toHaveBeenCalled();
     });
 
-    it('merges config and restarts a running bot for adjust_bot_config', async () => {
+    it('adjusts config over the boundary adjust_bot_config with the partial config + subject', async () => {
       const botRepo = {
-        getBotById: vi.fn().mockResolvedValue({
-          id: 'bot-run',
-          userId: 'user-1',
-          connectionId: 'binding-1',
-          venueAccountId: 'va-001',
-          status: 'running',
-          config: {
-            strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
-            risk: { maxDrawdownPct: 10 },
-            symbol: 'BTC-USD',
-            venue: 'hyperliquid',
-            venueType: 'orderbook',
-          },
-          creatorType: 'agent',
-          creatorId: 'agent-123',
-        }),
-        updateBotConfig: vi.fn().mockResolvedValue(undefined),
+        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
       };
-      const botRestart = vi.fn().mockResolvedValue(undefined);
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1723,13 +1488,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
-        undefined,
-        undefined,
-        undefined,
-        botRestart,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1741,19 +1500,20 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
-        strategy: expect.objectContaining({ type: 'momentum', threshold: 5 }),
-        risk: expect.objectContaining({ maxDrawdownPct: 10 }),
+      // The boundary owns the base-config read/merge/validate/restart. herobids
+      // forwards only the PARTIAL update (no base merge here).
+      expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+      const arg = invokeAndAwait.mock.calls[0]![0];
+      expect(arg.toolName).toBe('adjust_bot_config');
+      expect(arg.payload.botId).toBe('bot-run');
+      expect(arg.payload.config).toEqual(expect.objectContaining({
+        strategy: { threshold: 5 },
         execution: { mode: 'paper' },
       }));
-      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'binding-1', expect.objectContaining({
-        strategy: expect.objectContaining({ type: 'momentum', threshold: 5 }),
-        risk: expect.objectContaining({ maxDrawdownPct: 10 }),
-        execution: { mode: 'paper' },
-      }));
+      expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-123' } });
     });
 
-    it('clamps adjusted risk.maxOrderNotional to agent capital', async () => {
+    it('clamps adjusted risk.maxOrderNotional to agent capital before forwarding', async () => {
       agentRepo.getAgent.mockResolvedValue({
         id: 'agent-123',
         userId: 'user-1',
@@ -1764,25 +1524,9 @@ describe('AgentMessageBroker', () => {
       });
 
       const botRepo = {
-        getBotById: vi.fn().mockResolvedValue({
-          id: 'bot-run',
-          userId: 'user-1',
-          venueAccountId: 'va-001',
-          connectionId: 'binding-1',
-          status: 'running',
-          config: {
-            strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
-            risk: { maxDrawdownPct: 10, maxOrderNotional: 2000 },
-            symbol: 'BTC-USD',
-            venue: 'hyperliquid',
-            venueType: 'orderbook',
-          },
-          creatorType: 'agent',
-          creatorId: 'agent-123',
-        }),
-        updateBotConfig: vi.fn().mockResolvedValue(undefined),
+        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
       };
-      const botRestart = vi.fn().mockResolvedValue(undefined);
+      const { boundary, invokeAndAwait } = makeBoundary();
 
       const brokerWithBot = new AgentMessageBroker(
         {} as any,
@@ -1790,13 +1534,7 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        botRepo as any,
-        vi.fn().mockResolvedValue(undefined),
-        undefined,
-        undefined,
-        undefined,
-        botRestart,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1808,38 +1546,23 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
-        strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
-        risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: 750 }),
-      }));
-      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'binding-1', expect.objectContaining({
-        strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
-        risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: 750 }),
+      // The capital clamp (1500 → 750) is applied to the partial config before it
+      // reaches the boundary. No base-config read/merge happens here.
+      const arg = invokeAndAwait.mock.calls[0]![0];
+      expect(arg.toolName).toBe('adjust_bot_config');
+      expect(arg.payload.config).toEqual(expect.objectContaining({
+        risk: expect.objectContaining({ maxOrderNotional: 750 }),
       }));
     });
 
-    describe('adjust_config rollback', () => {
-      it('restores the prior config when restart enqueue fails', async () => {
+    describe('adjust_config boundary failures', () => {
+      it('rejects the adjust when the boundary returns a failure', async () => {
         const botRepo = {
-          getBotById: vi.fn().mockResolvedValue({
-            id: 'bot-run',
-            userId: 'user-1',
-            venueAccountId: 'va-001',
-            status: 'running',
-            config: {
-              strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
-              risk: { maxDrawdownPct: 10 },
-              symbol: 'BTC-USD',
-              venue: 'hyperliquid',
-              venueType: 'orderbook',
-            },
-            creatorType: 'agent',
-            creatorId: 'agent-123',
-          }),
-          updateBotConfig: vi.fn().mockResolvedValue(undefined),
-          restoreBotConfig: vi.fn().mockResolvedValue(undefined),
+          isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         };
-        const botRestart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
+        const { boundary, invokeAndAwait } = makeBoundary({
+          kind: 'failure', requestId: 'r', correlationId: 'c', code: 'validation.invalid_payload', message: 'bad config', retryable: false,
+        });
 
         const brokerWithBot = new AgentMessageBroker(
           {} as any,
@@ -1847,13 +1570,7 @@ describe('AgentMessageBroker', () => {
           decisionHandler,
           sessionManager,
           eventPublisher,
-          undefined,
-          botRepo as any,
-          vi.fn().mockResolvedValue(undefined),
-          undefined,
-          undefined,
-          undefined,
-          botRestart,
+          ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1865,35 +1582,17 @@ describe('AgentMessageBroker', () => {
         }));
 
         expect(result.accepted).toBe(false);
-        expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
-          strategy: expect.objectContaining({ threshold: 5 }),
-        }));
-        expect(botRepo.restoreBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
-          strategy: expect.objectContaining({ threshold: 2 }),
-        }));
+        expect(result.error).toMatch(/validation\.invalid_payload/);
+        expect(invokeAndAwait).toHaveBeenCalledTimes(1);
       });
 
-      it('still fails gracefully when restart enqueue AND config rollback both fail', async () => {
+      it('rejects the adjust when the boundary is unreachable (transport_error)', async () => {
         const botRepo = {
-          getBotById: vi.fn().mockResolvedValue({
-            id: 'bot-run',
-            userId: 'user-1',
-            venueAccountId: 'va-001',
-            status: 'running',
-            config: {
-              strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
-              risk: { maxDrawdownPct: 10 },
-              symbol: 'BTC-USD',
-              venue: 'hyperliquid',
-              venueType: 'orderbook',
-            },
-            creatorType: 'agent',
-            creatorId: 'agent-123',
-          }),
-          updateBotConfig: vi.fn().mockResolvedValue(undefined),
-          restoreBotConfig: vi.fn().mockRejectedValue(new Error('DB also down')),
+          isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         };
-        const botRestart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
+        const { boundary } = makeBoundary({
+          kind: 'transport_error', requestId: 'r', retryable: true, message: 'unreachable',
+        });
 
         const brokerWithBot = new AgentMessageBroker(
           {} as any,
@@ -1901,13 +1600,7 @@ describe('AgentMessageBroker', () => {
           decisionHandler,
           sessionManager,
           eventPublisher,
-          undefined,
-          botRepo as any,
-          vi.fn().mockResolvedValue(undefined),
-          undefined,
-          undefined,
-          undefined,
-          botRestart,
+          ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -1919,30 +1612,16 @@ describe('AgentMessageBroker', () => {
         }));
 
         expect(result.accepted).toBe(false);
-        expect(botRepo.restoreBotConfig).toHaveBeenCalled();
+        expect(result.error).toMatch(/unreachable/i);
       });
 
-      it('fails without enqueue when the DB update fails', async () => {
+      it('forwards the partial config regardless of the target bot state (state is owned by the boundary)', async () => {
+        // The broker no longer reads the bot or gates on running/stopped state.
+        // It forwards the partial config; the boundary owns merge + restart.
         const botRepo = {
-          getBotById: vi.fn().mockResolvedValue({
-            id: 'bot-run',
-            userId: 'user-1',
-            venueAccountId: 'va-001',
-            status: 'running',
-            config: {
-              strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
-              risk: { maxDrawdownPct: 10 },
-              symbol: 'BTC-USD',
-              venue: 'hyperliquid',
-              venueType: 'orderbook',
-            },
-            creatorType: 'agent',
-            creatorId: 'agent-123',
-          }),
-          updateBotConfig: vi.fn().mockRejectedValue(new Error('DB connection lost')),
-          restoreBotConfig: vi.fn().mockResolvedValue(undefined),
+          isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         };
-        const botRestart = vi.fn().mockResolvedValue(undefined);
+        const { boundary, invokeAndAwait } = makeBoundary();
 
         const brokerWithBot = new AgentMessageBroker(
           {} as any,
@@ -1950,62 +1629,7 @@ describe('AgentMessageBroker', () => {
           decisionHandler,
           sessionManager,
           eventPublisher,
-          undefined,
-          botRepo as any,
-          vi.fn().mockResolvedValue(undefined),
-          undefined,
-          undefined,
-          undefined,
-          botRestart,
-        );
-
-        const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
-          payload: {
-            action: 'adjust_config',
-            botId: 'bot-run',
-            config: { strategy: { threshold: 5 } },
-          },
-        }));
-
-        expect(result.accepted).toBe(false);
-        expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.any(Object));
-        expect(botRestart).not.toHaveBeenCalled();
-        expect(botRepo.restoreBotConfig).not.toHaveBeenCalled();
-      });
-
-      it('does NOT enqueue restart when bot is not running', async () => {
-        const botRepo = {
-          getBotById: vi.fn().mockResolvedValue({
-            id: 'bot-stopped',
-            userId: 'user-1',
-            venueAccountId: 'va-001',
-            status: 'stopped',
-            config: {
-              strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
-              symbol: 'BTC-USD',
-              venue: 'hyperliquid',
-              venueType: 'orderbook',
-            },
-            creatorType: 'agent',
-            creatorId: 'agent-123',
-          }),
-          updateBotConfig: vi.fn().mockResolvedValue(undefined),
-        };
-        const botRestart = vi.fn().mockResolvedValue(undefined);
-
-        const brokerWithBot = new AgentMessageBroker(
-          {} as any,
-          agentRepo as any,
-          decisionHandler,
-          sessionManager,
-          eventPublisher,
-          undefined,
-          botRepo as any,
-          vi.fn().mockResolvedValue(undefined),
-          undefined,
-          undefined,
-          undefined,
-          botRestart,
+          ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
@@ -2017,32 +1641,21 @@ describe('AgentMessageBroker', () => {
         }));
 
         expect(result.accepted).toBe(true);
-        expect(botRestart).not.toHaveBeenCalled();
-        expect(botRepo.updateBotConfig).toHaveBeenCalled();
+        expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+        expect(invokeAndAwait.mock.calls[0]![0].toolName).toBe('adjust_bot_config');
+        expect(invokeAndAwait.mock.calls[0]![0].payload.botId).toBe('bot-stopped');
       });
     });
 
     describe('execution mode constraint', () => {
-      const execModeDbMock = {
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
-            }),
-          }),
-        }),
-      };
-
+      // L3c: create routes over the boundary — only the ownership gate remains.
       const makeBotRepo = () => ({
-        db: execModeDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-exec-mode' }),
-        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
-        getBotsByCreator: vi.fn().mockResolvedValue([]),
-        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       });
+
+      // A shared boundary captured per-test in beforeEach so assertions can read
+      // whether create_bot was invoked (allowed) or not (mode-escalation rejected).
+      let execBoundary: ReturnType<typeof makeBoundary>;
 
       const makeLiveBotEnvelope = () => makeManageBotEnvelope({
         payload: {
@@ -2097,6 +1710,7 @@ describe('AgentMessageBroker', () => {
         });
         agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
         agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor());
+        execBoundary = makeBoundary();
       });
 
       it('rejects paper agent creating a live-mode bot', async () => {
@@ -2109,13 +1723,14 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
         expect(result.accepted).toBe(false);
         expect(result.error).toMatch(/cannot create a bot with execution mode "live".*permitted execution modes: paper/i);
-        expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
+        // Mode escalation is a platform gate that rejects BEFORE the boundary.
+        expect(execBoundary.invokeAndAwait).not.toHaveBeenCalled();
       });
 
       it('rejects shadow agent creating a live-mode bot', async () => {
@@ -2128,13 +1743,13 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
         expect(result.accepted).toBe(false);
         expect(result.error).toMatch(/cannot create a bot with execution mode "live".*permitted execution modes: paper, shadow/i);
-        expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
+        expect(execBoundary.invokeAndAwait).not.toHaveBeenCalled();
       });
 
       it('allows paper agent to create a paper-mode bot', async () => {
@@ -2147,12 +1762,13 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makePaperBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait.mock.calls[0]![0].toolName).toBe('create_bot');
       });
 
       it('allows live agent to create a live-mode bot', async () => {
@@ -2165,12 +1781,12 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
       });
 
       it('rejects live bot creation when botLiveCheck callback throws (plan gate)', async () => {
@@ -2185,18 +1801,20 @@ describe('AgentMessageBroker', () => {
         );
 
         const botRepo = makeBotRepo();
+        // botLiveCheck sits at positional index for the botLiveCheck param.
+        const args = makeBoundaryBrokerArgs(botRepo, execBoundary.boundary);
+        args[4] = botLiveCheck; // botLiveCheck slot in makeBoundaryBrokerArgs
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined), // botStart
-          undefined, // botLimitCheck
-          botLiveCheck, // botLiveCheck
+          ...(args as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
         expect(result.accepted).toBe(false);
         expect(result.error).toMatch(/not available on your plan/);
         expect(botLiveCheck).toHaveBeenCalledWith('user-1');
-        expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
+        // The plan gate rejects before the boundary create_bot.
+        expect(execBoundary.invokeAndAwait).not.toHaveBeenCalled();
       });
 
       it('allows shadow agent to create a paper-mode bot', async () => {
@@ -2209,12 +1827,12 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makePaperBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
       });
 
       it('rejects paper agent creating a shadow-mode bot', async () => {
@@ -2227,13 +1845,13 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeShadowBotEnvelope());
         expect(result.accepted).toBe(false);
         expect(result.error).toMatch(/cannot create a bot with execution mode "shadow".*permitted execution modes: paper/i);
-        expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
+        expect(execBoundary.invokeAndAwait).not.toHaveBeenCalled();
       });
 
       it('allows shadow agent to create a shadow-mode bot', async () => {
@@ -2246,12 +1864,12 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeShadowBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
       });
 
       it('allows live agent to create a paper-mode bot', async () => {
@@ -2264,12 +1882,12 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makePaperBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
       });
 
       it('allows live agent to create a shadow-mode bot', async () => {
@@ -2282,34 +1900,20 @@ describe('AgentMessageBroker', () => {
         const botRepo = makeBotRepo();
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+          ...(makeBoundaryBrokerArgs(botRepo, execBoundary.boundary) as [any]),
         );
 
         const result = await brokerWithBot.processInbound(makeShadowBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
       });
 
       describe('adjust_config mode escalation guard', () => {
+        // L3c: adjust routes over the boundary. The mode gate reads the requested
+        // mode from the PARTIAL config (not the bot), so no bot read is needed —
+        // only the ownership gate remains on the repo.
         const makeAdjustConfigBotRepo = () => ({
           isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-          getBotById: vi.fn().mockResolvedValue({
-            id: 'bot-shadow',
-            userId: 'user-1',
-            status: 'running',
-            connectionId: 'binding-1',
-            config: {
-              venue: 'hyperliquid',
-              venueType: 'orderbook',
-              symbol: 'BTC-USD',
-              strategy: { type: 'momentum', decisionMode: 'mechanical' },
-              execution: { mode: 'shadow' },
-            },
-          }),
-          updateBotConfig: vi.fn().mockResolvedValue(undefined),
-          getBotsByCreator: vi.fn().mockResolvedValue([]),
-          getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
-        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
         });
 
         const makeAdjustLiveEnvelope = () => makeManageBotEnvelope({
@@ -2344,15 +1948,17 @@ describe('AgentMessageBroker', () => {
           });
 
           const botRepo = makeAdjustConfigBotRepo();
+          const { boundary, invokeAndAwait } = makeBoundary();
           const brokerWithBot = new AgentMessageBroker(
             {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-            undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+            ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustLiveEnvelope());
           expect(result.accepted).toBe(false);
           expect(result.error).toMatch(/cannot adjust a bot to execution mode "live".*permitted execution modes: paper, shadow/i);
-          expect(botRepo.updateBotConfig).not.toHaveBeenCalled();
+          // Mode gate rejects before the boundary adjust_bot_config.
+          expect(invokeAndAwait).not.toHaveBeenCalled();
         });
 
         it('rejects paper agent escalating a bot to live mode via adjust_config', async () => {
@@ -2363,15 +1969,16 @@ describe('AgentMessageBroker', () => {
           });
 
           const botRepo = makeAdjustConfigBotRepo();
+          const { boundary, invokeAndAwait } = makeBoundary();
           const brokerWithBot = new AgentMessageBroker(
             {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-            undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+            ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustLiveEnvelope());
           expect(result.accepted).toBe(false);
           expect(result.error).toMatch(/cannot adjust a bot to execution mode "live".*permitted execution modes: paper/i);
-          expect(botRepo.updateBotConfig).not.toHaveBeenCalled();
+          expect(invokeAndAwait).not.toHaveBeenCalled();
         });
 
         it('allows live agent to escalate a bot to live mode via adjust_config', async () => {
@@ -2382,15 +1989,16 @@ describe('AgentMessageBroker', () => {
           });
 
           const botRepo = makeAdjustConfigBotRepo();
+          const { boundary, invokeAndAwait } = makeBoundary();
           const brokerWithBot = new AgentMessageBroker(
             {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-            undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
-            undefined, undefined,
+            ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustLiveEnvelope());
           expect(result.accepted).toBe(true);
-          expect(botRepo.updateBotConfig).toHaveBeenCalled();
+          expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+          expect(invokeAndAwait.mock.calls[0]![0].toolName).toBe('adjust_bot_config');
         });
 
         it('rejects paper agent escalating a bot to shadow mode via adjust_config', async () => {
@@ -2401,15 +2009,16 @@ describe('AgentMessageBroker', () => {
           });
 
           const botRepo = makeAdjustConfigBotRepo();
+          const { boundary, invokeAndAwait } = makeBoundary();
           const brokerWithBot = new AgentMessageBroker(
             {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-            undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+            ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustShadowEnvelope());
           expect(result.accepted).toBe(false);
           expect(result.error).toMatch(/cannot adjust a bot to execution mode "shadow".*permitted execution modes: paper/i);
-          expect(botRepo.updateBotConfig).not.toHaveBeenCalled();
+          expect(invokeAndAwait).not.toHaveBeenCalled();
         });
 
         it('allows shadow agent to adjust a bot to shadow mode', async () => {
@@ -2420,14 +2029,15 @@ describe('AgentMessageBroker', () => {
           });
 
           const botRepo = makeAdjustConfigBotRepo();
+          const { boundary, invokeAndAwait } = makeBoundary();
           const brokerWithBot = new AgentMessageBroker(
             {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-            undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+            ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustShadowEnvelope());
           expect(result.accepted).toBe(true);
-          expect(botRepo.updateBotConfig).toHaveBeenCalled();
+          expect(invokeAndAwait).toHaveBeenCalledTimes(1);
         });
 
         it('allows paper agent to adjust a bot to paper mode', async () => {
@@ -2438,14 +2048,15 @@ describe('AgentMessageBroker', () => {
           });
 
           const botRepo = makeAdjustConfigBotRepo();
+          const { boundary, invokeAndAwait } = makeBoundary();
           const brokerWithBot = new AgentMessageBroker(
             {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-            undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+            ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustPaperEnvelope());
           expect(result.accepted).toBe(true);
-          expect(botRepo.updateBotConfig).toHaveBeenCalled();
+          expect(invokeAndAwait).toHaveBeenCalledTimes(1);
         });
 
         it('allows live agent to adjust a bot to paper mode', async () => {
@@ -2456,15 +2067,15 @@ describe('AgentMessageBroker', () => {
           });
 
           const botRepo = makeAdjustConfigBotRepo();
+          const { boundary, invokeAndAwait } = makeBoundary();
           const brokerWithBot = new AgentMessageBroker(
             {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
-            undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
-            undefined, undefined,
+            ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustPaperEnvelope());
           expect(result.accepted).toBe(true);
-          expect(botRepo.updateBotConfig).toHaveBeenCalled();
+          expect(invokeAndAwait).toHaveBeenCalledTimes(1);
         });
       });
     });
@@ -2621,25 +2232,18 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     };
   }
 
-  const mockDbSelect = vi.fn().mockReturnValue({
-    from: vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
-      }),
-    }),
-  });
-
+  // L3c: create routes over the boundary — only the ownership gate remains.
   function makeBotRepo() {
     return {
-      db: { select: mockDbSelect },
       isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-      tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-new-001' }),
-      tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
-      markBotRunning: vi.fn().mockResolvedValue(undefined),
-      getBotsByCreator: vi.fn().mockResolvedValue([]),
-      getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
-      getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
     };
+  }
+
+  /** Read strategy.params from the config forwarded to the boundary create_bot. */
+  function forwardedStrategyParams(invokeAndAwait: ReturnType<typeof vi.fn>): Record<string, unknown> | undefined {
+    const arg = invokeAndAwait.mock.calls[0]![0] as { payload: { config: Record<string, unknown> } };
+    const strategy = arg.payload.config['strategy'] as Record<string, unknown>;
+    return strategy['params'] as Record<string, unknown> | undefined;
   }
 
   it('stamps agent modelPolicy provider/model into strategy.params for llm bots', async () => {
@@ -2648,30 +2252,25 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     agentRepo.getUserAiModelConfig.mockResolvedValue(null);
 
     const botRepo = makeBotRepo();
+    const { boundary, invokeAndAwait } = makeBoundary();
     const broker = new AgentMessageBroker(
       {} as any, // redis
       agentRepo as any,
       mockDecisionHandler(),
       mockSessionManager(),
       mockEventPublisher(),
-      undefined, // telegram
-      botRepo as any,
-      vi.fn().mockResolvedValue(undefined), // botStart
+      ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
     );
 
     const envelope = makeLlmManageBotEnvelope();
     const result = await broker.processInbound(envelope);
 
     expect(result.accepted).toBe(true);
-    expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
+    expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+    expect(invokeAndAwait.mock.calls[0]![0].toolName).toBe('create_bot');
 
-    // Extract the config passed to createBot
-    const createBotCall = (botRepo.tryCreateBotWithLimit as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>;
-    const createBotArg = createBotCall[0] as Record<string, unknown>;
-    const config = createBotArg['config'] as Record<string, unknown>;
-    const strategy = config['strategy'] as Record<string, unknown>;
-    const params = strategy['params'] as Record<string, unknown>;
-
+    // The LLM provider/model stamp is applied to the config forwarded to the boundary.
+    const params = forwardedStrategyParams(invokeAndAwait)!;
     expect(params['provider']).toBe('openrouter');
     expect(params['model']).toBe('openai/gpt-4o'); // heavy model preferred for bot
   });
@@ -2686,24 +2285,21 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     });
 
     const botRepo = makeBotRepo();
+    const { boundary, invokeAndAwait } = makeBoundary();
     const broker = new AgentMessageBroker(
       {} as any,
       agentRepo as any,
       mockDecisionHandler(),
       mockSessionManager(),
       mockEventPublisher(),
-      undefined,
-      botRepo as any,
-      vi.fn().mockResolvedValue(undefined),
+      ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
     );
 
     const envelope = makeLlmManageBotEnvelope();
     const result = await broker.processInbound(envelope);
 
     expect(result.accepted).toBe(true);
-    const createBotArg = ((botRepo.tryCreateBotWithLimit as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
-    const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown>;
-
+    const params = forwardedStrategyParams(invokeAndAwait)!;
     expect(params['provider']).toBe('openai');
     expect(params['model']).toBe('gpt-4o');
   });
@@ -2713,15 +2309,14 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
 
     const botRepo = makeBotRepo();
+    const { boundary, invokeAndAwait } = makeBoundary();
     const broker = new AgentMessageBroker(
       {} as any,
       agentRepo as any,
       mockDecisionHandler(),
       mockSessionManager(),
       mockEventPublisher(),
-      undefined,
-      botRepo as any,
-      vi.fn().mockResolvedValue(undefined),
+      ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
     );
 
     const envelope = makeLlmManageBotEnvelope({
@@ -2736,10 +2331,8 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     const result = await broker.processInbound(envelope);
     expect(result.accepted).toBe(true);
 
-    const createBotArg = ((botRepo.tryCreateBotWithLimit as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
-    const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown> | undefined;
-
     // params should not have provider/model stamped for mechanical
+    const params = forwardedStrategyParams(invokeAndAwait);
     expect(params?.['provider']).toBeUndefined();
     expect(params?.['model']).toBeUndefined();
   });
@@ -2749,15 +2342,14 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
 
     const botRepo = makeBotRepo();
+    const { boundary, invokeAndAwait } = makeBoundary();
     const broker = new AgentMessageBroker(
       {} as any,
       agentRepo as any,
       mockDecisionHandler(),
       mockSessionManager(),
       mockEventPublisher(),
-      undefined,
-      botRepo as any,
-      vi.fn().mockResolvedValue(undefined),
+      ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
     );
 
     const envelope = makeLlmManageBotEnvelope({
@@ -2772,9 +2364,7 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     const result = await broker.processInbound(envelope);
     expect(result.accepted).toBe(true);
 
-    const createBotArg = ((botRepo.tryCreateBotWithLimit as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
-    const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown> | undefined;
-
+    const params = forwardedStrategyParams(invokeAndAwait);
     expect(params?.['provider']).toBeUndefined();
     expect(params?.['model']).toBeUndefined();
   });

@@ -24,8 +24,6 @@ import {
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
   AGENT_RUNTIME_ACTIVITY_TYPES,
-  BotConfigSchema,
-  venueTypeFromProvider,
   deriveStrategyPreset,
   extractStrategyFromConfig,
   checkModeEscalation,
@@ -46,6 +44,8 @@ import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './capability-
 import type { CapabilityGrant } from './capability-policy.js';
 import { assessStrategyPresetTool } from '../tools/assess-strategy-preset.js';
 import { changeStrategyPresetTool } from '../tools/change-strategy-preset.js';
+import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import type { TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('agent-message-broker');
@@ -107,18 +107,29 @@ export class AgentMessageBroker {
     private readonly eventPublisher: InstanceEventPublisher,
     private readonly telegram?: TelegramClient,
     private readonly botRepo?: BotRepository,
-    private readonly botStart?: BotStartCallback,
-    private readonly botLimitCheck?: BotLimitCheckCallback,
+    // L3c: the bot-lifecycle callbacks (botStart/botStop/botRestart) + the maxBots
+    // limit check are DEAD — lifecycle now routes over the boundary (invokeBotLifecycle).
+    // Retained as unused positional ctor params for composition-root/test compat;
+    // deleted in L3d (see 004-l3d-plan.md §C).
+    _botStart?: BotStartCallback,
+    _botLimitCheck?: BotLimitCheckCallback,
     private readonly botLiveCheck?: BotLiveCheckCallback,
-    private readonly botStop?: BotStopCallback,
-    private readonly botRestart?: BotRestartCallback,
+    _botStop?: BotStopCallback,
+    _botRestart?: BotRestartCallback,
     private readonly emailClient?: EmailClient,
     readonly onAgentConfigUpdate?: (agentId: string, config: Record<string, unknown> | null) => void,
-    private readonly agentRiskDefaults?: AgentRiskDefaultsConfig,
+    // L3c: agentRiskDefaults was only used for the maxBots default (removed). Kept
+    // as an unused positional ctor param; deleted in L3d.
+    _agentRiskDefaults?: AgentRiskDefaultsConfig,
     private readonly brandImageUrl?: string,
     private readonly db?: Database,
     private readonly operatorModelDefaults?: OperatorModelDefaults,
     readonly plansConfig?: PlansConfig,
+    // L3c: the Traderton side-effecting boundary. When present, bot lifecycle
+    // (create/start/stop/adjust) routes over REST instead of the in-process
+    // lifecycle queue + actor. When absent (unconfigured), lifecycle actions
+    // fail with a typed precondition — NEVER a silent fall back to the engine.
+    private readonly sideEffectBoundary?: TradertonSideEffectBoundary,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -549,6 +560,40 @@ export class AgentMessageBroker {
     // Agents should use the dedicated send_email tool for email delivery.
   }
 
+  /**
+   * L3c: route a bot-lifecycle side effect to the Traderton boundary, injecting
+   * `ownerId` + `actor` only (D2). Throws a descriptive error on any non-success
+   * outcome (transport, in_progress, or a typed failure) so `processInbound`'s
+   * catch marks the message failed — matching the pre-L3c throw-based error path.
+   * NO silent fallback to the in-process engine (L3c posture).
+   */
+  private async invokeBotLifecycle(
+    toolName: 'create_bot' | 'start_bot' | 'stop_bot' | 'adjust_bot_config',
+    payload: Record<string, unknown>,
+    subject: TradertonSubject,
+  ): Promise<TradertonClientResult> {
+    if (!this.sideEffectBoundary) {
+      throw new Error('Trading boundary is not configured — bot lifecycle actions are unavailable.');
+    }
+    const result = await this.sideEffectBoundary.invokeAndAwait({
+      toolName,
+      payload,
+      subject,
+      deadlineMs: 30_000,
+    });
+    if (result.kind === 'success') {
+      return result;
+    }
+    if (result.kind === 'failure') {
+      throw new Error(`Bot ${toolName} rejected by trading boundary: ${result.message} (${result.code})`);
+    }
+    if (result.kind === 'transport_error') {
+      throw new Error(`Bot ${toolName} failed — trading boundary is unreachable: ${result.message}`);
+    }
+    // in_progress after poll-to-deadline
+    throw new Error(`Bot ${toolName} did not reach a terminal outcome within the deadline.`);
+  }
+
   private async handleManageBot(agentId: string, _envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {
     const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) throw new Error('Agent not found');
@@ -557,6 +602,13 @@ export class AgentMessageBroker {
     if (!activeSession || activeSession.status !== 'running') {
       throw new Error('No running session for agent');
     }
+
+    // L3c: inject ownerId + actor ONLY. Traderton owns bots + resolves the venue
+    // account from the subject (D2/#4). herobids stamps nothing else.
+    const subject: TradertonSubject = {
+      ownerId: agent.userId,
+      actor: { type: 'agent', id: agent.id },
+    };
 
     if (payload.action === 'create_and_start') {
       if (!payload.config) throw new Error('config is required for create_and_start');
@@ -591,31 +643,19 @@ export class AgentMessageBroker {
         throw new Error('No ready trading capability connection found for this agent — cannot create bot');
       }
 
-      // Resolve venue account from the connection's resolvedVenueAccountId directly.
-      const connRow = await this.botRepo!.getResolvedVenueAccount(connection.connectionId);
-      if (!connRow || !connRow.resolvedVenueAccountId) {
-        throw new Error(`Connection ${connection.connectionId} has no resolved venue account — cannot create bot`);
-      }
-
-      // Security: verify the connection belongs to the agent's own user before creating the bot.
+      // Security: verify the connection belongs to the agent's own user before
+      // acting. This is herobids-side platform authz (KEEP) — it gates WHETHER the
+      // caller may act; it is NOT injected into the envelope (D2). The venue-account
+      // resolution + venue-stamp (getResolvedVenueAccount/venueTypeFromProvider) are
+      // REMOVED — Traderton resolves the venue account from the subject (see
+      // 004-l3d-plan.md §C).
       const owned = await this.botRepo!.isConnectionOwnedBy(connection.connectionId, agent.userId);
       if (!owned) {
         throw new Error(`Trading connection ${connection.connectionId} not found or not owned by this agent's user`);
       }
 
-      // Enforce subscription-wide plan bot cap (same limit the API enforces for direct bot creation).
-      if (this.botLimitCheck) {
-        await this.botLimitCheck(agent.userId);
-      }
-
-      // Stamp venue/venueType unconditionally — agent-provided values are discarded
-      const venueType = venueTypeFromProvider(connRow.venue);
-      if (!venueType) {
-        throw new Error(`Unsupported venue "${connRow.venue}" resolved from trading connection — cannot create bot`);
-      }
+      // Apply the agent's capital limit (platform policy — kept). No venue-stamp.
       const rawConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
-      rawConfig['venue'] = connRow.venue;
-      rawConfig['venueType'] = venueType;
 
       // Stamp agent-resolved LLM provider/model into strategy.params for llm/hybrid bots.
       // Agent-created bots must inherit the creator's LLM selection so they don't silently
@@ -657,328 +697,95 @@ export class AgentMessageBroker {
         }
       }
 
-      // Validate the full config against BotConfigSchema before persisting
-      const validation = BotConfigSchema.safeParse(rawConfig);
-      if (!validation.success) {
-        const issues = validation.error.issues.map((i) =>
-          `${i.path.join('.') || 'root'}: ${i.message}`
-        ).join('; ');
-        throw new Error(`Bot config is invalid: ${issues}`);
-      }
-
-      const validatedConfig = validation.data;
-
-      // Safety gate: agent execution mode must not be exceeded by bot execution mode.
-      // Paper agents can only create paper bots; shadow agents can create paper or shadow;
-      // live agents can create any mode.
-      // Read execution mode from canonical executionDefaults.mode (no legacy column fallback)
+      // Safety gate: agent execution mode must not be exceeded by bot execution
+      // mode (platform policy — kept). Read the mode from the raw config; the full
+      // BotConfigSchema validation + swap-symbol + venue validation are TRADING
+      // concerns that MOVE behind the boundary (Traderton's copied create_bot tool
+      // owns them). See 004-l3d-plan.md §C.
       const agentMode = agent.executionDefaults?.mode ?? 'paper';
-      const botMode = validatedConfig.execution.mode ?? 'paper';
+      const botMode = ((rawConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined) ?? 'paper';
       const modeCheck = checkModeEscalation(botMode, agentMode, 'create');
       if (!modeCheck.allowed) {
         throw new Error(modeCheck.error);
       }
 
-      // Safety gate: plan-level live execution eligibility.
-      // Mirrors the API-level check that the agent broker path previously bypassed.
+      // Safety gate: plan-level live execution eligibility (platform policy — kept).
       if (botMode === 'live' && this.botLiveCheck) {
         await this.botLiveCheck(agent.userId);
       }
 
-      // Safety gate: swap-venue symbol validation.
-      // Each swap-venue binding maps to a specific chain (e.g. Base, Solana).
-      // Reject bot creation when the symbol format is wrong or when the symbol
-      // parts look like raw addresses instead of human-readable tickers.
-      // Per-token network validity is enforced downstream by token safety.
-      if (venueType === 'swap' && payload.config.symbol) {
-        const symbol = payload.config.symbol;
-        if (typeof symbol !== 'string') {
-          throw new Error(
-            `Invalid symbol type. Expected a string BASE/QUOTE format (e.g. "ETH/USDC"), got ${typeof symbol}.`,
-          );
-        }
-        const parts = symbol.split('/');
-        if (parts.length !== 2 || !parts[0] || !parts[1]) {
-          throw new Error(
-            `Invalid symbol format "${symbol}". ` +
-            `Swap venues require BASE/QUOTE format (e.g. "ETH/USDC" for 1inch on Base).`,
-          );
-        }
-        // Reject raw addresses — agents must use human-readable symbols.
-        const looksLikeAddress = (s: string) => s.startsWith('0x') || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
-        if (looksLikeAddress(parts[0]!) || looksLikeAddress(parts[1]!)) {
-          throw new Error(
-            `Symbol "${symbol}" looks like a raw token address. ` +
-            `Use a human-readable symbol (e.g. "ETH/USDC"), not a contract address.`,
-          );
-        }
-      }
-
-      // Atomically check agent-level maxBots limit and create the bot.
-      // The count + insert happen inside a single transaction so two concurrent
-      // creates cannot both see "under limit" and both create.
-      const maxBots = agent.maxBots ?? this.agentRiskDefaults?.maxBots ?? 5;
-      const createResult = await this.botRepo!.tryCreateBotWithLimit({
-        userId: agent.userId,
+      // L3c: create the bot over the boundary — no bots-table write, no maxBots,
+      // no venue-stamp (#4/D2). Traderton owns bots + the limit and resolves the
+      // venue account from the subject. `create_bot` is no-bot (no botId). The
+      // connectionId is forwarded so Traderton can resolve the account grant.
+      await this.invokeBotLifecycle('create_bot', {
         connectionId: connection.connectionId,
-        venueAccountId: connRow.resolvedVenueAccountId,
-        config: validatedConfig,
-        creatorType: 'agent',
-        creatorId: agent.id,
-        maxBots,
-      });
+        config: rawConfig,
+      }, subject);
 
-      if (!createResult.created) {
-        throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
-      }
+      logger.info({ agentId: agent.id }, 'Agent created bot via manage_bot (boundary)');
 
-      const botId = createResult.botId!;
-
-      logger.info({ agentId: agent.id, botId }, 'Agent created bot via manage_bot');
-
-      if (this.botStart) {
-        // Atomically claim a running slot for the newly created bot.
-        const claimed = await this.botRepo!.tryMarkBotRunningWithLimit(
-          botId, 'agent', agent.id, maxBots,
-        );
-        if (!claimed) {
-          // Shouldn't happen since we just created under the limit, but defend against races.
-          throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
-        }
-        await this.botStart(botId, agent.userId, connection.connectionId, {
-          ...validatedConfig,
-          venueAccountId: connRow.resolvedVenueAccountId,
-        });
-        logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
-      }
-
-      // Notify the agent of the updated bot list so it can reflect current state in its next tick.
-      const agentBots = await this.botRepo!.getBotsByCreator('agent', agent.id);
+      // Notify the agent that a bot was created. The authoritative bot list now
+      // lives behind the boundary (list_bots) — herobids no longer reads its own
+      // bots table here. Emit a lightweight status so the next tick refreshes.
       await this.eventPublisher.emitInstanceStatus(agent.id, {
         status: 'running',
         reason: 'bot_created',
         updatedAt: new Date().toISOString(),
-        managedBots: agentBots.map((b) => ({
-          id: b.id,
-          status: b.status,
-          strategyPreset: this.deriveStrategyPresetFromBotConfig(b.config as Record<string, unknown>),
-          symbol: (b.config as Record<string, unknown>)?.['symbol'] as string | undefined,
-        })),
       });
       return;
     }
 
     if (payload.action === 'start') {
       if (!payload.botId) throw new Error('botId is required for start');
-      if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
 
-      const bot = await this.botRepo.getBotById(payload.botId);
-      if (!bot || bot.userId !== agent.userId) {
-        throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
-      }
+      // L3c: start over the boundary — bot-scoped (payload carries botId). No
+      // bots-table read/write, no maxBots, no lifecycle enqueue (#4). Traderton
+      // owns the bot + its config + the limit and validates ownership from the
+      // subject. See 004-l3d-plan.md §C.
+      await this.invokeBotLifecycle('start_bot', { botId: payload.botId }, subject);
 
-      const persistedConfig = bot.config as Record<string, unknown>;
-      const effectiveConfig = applyAgentCapitalLimit(persistedConfig, agent.capital ?? null);
-      if (!configsEqual(persistedConfig, effectiveConfig)) {
-        await this.botRepo.updateBotConfig(payload.botId, effectiveConfig);
-      }
-
-      // Preflight: validate persisted config before marking running.
-      // A persisted invalid config (legacy, corrupted, etc.) must not be pushed
-      // through start → fail → retry cycles.
-      const configValidation = BotConfigSchema.safeParse(effectiveConfig);
-      if (!configValidation.success) {
-        const details = configValidation.error.issues.map((i) =>
-          `${i.path.join('.') || 'root'}: ${i.message}`
-        ).join('; ');
-        throw new Error(`Bot config is invalid — cannot start. Fix the config before retrying: ${details}`);
-      }
-
-      // Enforce agent-level maxBots limit for new starts.
-      // Reclaim (bot already running) is exempt — the bot already holds a slot.
-      const maxBots = agent.maxBots ?? this.agentRiskDefaults?.maxBots ?? 5;
-      const isReclaim = bot.status === 'running';
-
-      // Consistency model: we mark the bot running in DB then enqueue the
-      // lifecycle start job.  If the process crashes between these two steps
-      // the bot will be marked 'running' with no active actor — the worker's
-      // periodic reclaim sweep (WorkerRuntime.reclaimOrphans) detects this and
-      // re-starts the actor, converging DB and runtime without manual intervention.
-      if (this.botStart) {
-        if (isReclaim) {
-          // Reclaim: bot already running, just remark it (preserve startedAt) and enqueue.
-          await this.botRepo.markBotRunning(payload.botId);
-        } else {
-          // New start: atomically check limit and claim a slot.
-          const claimed = await this.botRepo.tryMarkBotRunningWithLimit(
-            payload.botId, bot.creatorType, bot.creatorId ?? '', maxBots,
-          );
-          if (!claimed) {
-            throw new Error(
-              `Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before starting a new one.`,
-            );
-          }
-        }
-        try {
-          // venueAccountId is resolved via startupContext at job processing
-          // time — no longer passed in the config payload to avoid stale/dual sources of truth.
-          await this.botStart(payload.botId, agent.userId, bot.connectionId, {
-            ...effectiveConfig,
-          });
-        } catch (err) {
-          logger.error({ botId: payload.botId, err }, 'Failed to enqueue start job during start action');
-          try {
-            await this.botRepo.restoreBotRuntimeState({
-              botId: payload.botId,
-              status: bot.status,
-              startedAt: bot.startedAt,
-              stoppedAt: bot.stoppedAt,
-            });
-          } catch (rollbackErr) {
-            logger.error({ botId: payload.botId, rollbackErr }, 'CRITICAL: rollback after start enqueue failure also failed — bot may be marked running without an actor until reclaim sweep');
-          }
-          throw new Error('Bot start failed: unable to enqueue lifecycle start. Please try again.');
-        }
-      } else {
-        if (isReclaim) {
-          await this.botRepo.markBotRunning(payload.botId);
-        } else {
-          const claimed = await this.botRepo.tryMarkBotRunningWithLimit(
-            payload.botId, bot.creatorType, bot.creatorId ?? '', maxBots,
-          );
-          if (!claimed) {
-            throw new Error(
-              `Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before starting a new one.`,
-            );
-          }
-        }
-      }
-
-      const agentBots = await this.botRepo.getBotsByCreator('agent', agent.id);
       await this.eventPublisher.emitInstanceStatus(agent.id, {
         status: 'running',
         reason: 'bot_started',
         updatedAt: new Date().toISOString(),
-        managedBots: agentBots.map((b) => ({
-          id: b.id,
-          status: b.status,
-          strategyPreset: this.deriveStrategyPresetFromBotConfig(b.config as Record<string, unknown>),
-          symbol: (b.config as Record<string, unknown>)?.['symbol'] as string | undefined,
-        })),
       });
       return;
     }
 
     if (payload.action === 'stop') {
       if (!payload.botId) throw new Error('botId is required for stop');
-      if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
 
-      const bot = await this.botRepo.getBotById(payload.botId);
-      if (!bot || bot.userId !== agent.userId) {
-        throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
-      }
-
-      if (this.botStop) {
-        await this.botStop(payload.botId, agent.userId);
-      } else {
-        await this.botRepo.markBotStopped(payload.botId);
-      }
+      // L3c: stop over the boundary — bot-scoped. No bots-table write. Traderton
+      // owns the bot + validates ownership from the subject.
+      await this.invokeBotLifecycle('stop_bot', { botId: payload.botId }, subject);
       return;
     }
 
     if (payload.action === 'adjust_config') {
       if (!payload.botId) throw new Error('botId is required for adjust_config');
       if (!payload.config) throw new Error('config is required for adjust_config');
-      if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
 
-      const bot = await this.botRepo.getBotById(payload.botId);
-      if (!bot || bot.userId !== agent.userId) {
-        throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
-      }
+      // L3c: the base config + merge + BotConfigSchema validation + LLM-param
+      // preservation + restart now live behind the boundary (Traderton owns the
+      // bot config). herobids forwards the partial update + applies the platform
+      // gates it still owns: the agent capital limit and the mode-escalation
+      // ceiling (an agent must not raise a bot's mode beyond its own).
+      const partialConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
 
-      const baseConfig = bot.config as Record<string, unknown>;
-      const mergedConfig = applyAgentCapitalLimit(
-        mergeBotConfig(baseConfig, payload.config),
-        agent.capital ?? null,
-      );
-
-      // Preserve previously stamped LLM provider/model for agent-created llm/hybrid bots.
-      // The agent tool contract does not expose provider/model, so the merge should not
-      // accidentally drop them from strategy.params.
-      if (bot.creatorType === 'agent') {
-        const baseStrategy = extractStrategyFromConfig(baseConfig);
-        const mergedStrategy = extractStrategyFromConfig(mergedConfig);
-        if (
-          baseStrategy && mergedStrategy &&
-          baseStrategy.type !== 'dca' &&
-          (baseStrategy.decisionMode === 'llm' || baseStrategy.decisionMode === 'hybrid')
-        ) {
-          const baseParams = (baseStrategy.params ?? {}) as Record<string, unknown>;
-          const mergedParams = (mergedStrategy.params ?? {}) as Record<string, unknown>;
-          const preservedProvider = baseParams['provider'] as string | undefined;
-          const preservedModel = baseParams['model'] as string | undefined;
-          if (preservedProvider && !mergedParams['provider']) {
-            (mergedConfig['strategy'] as Record<string, unknown>)['params'] = {
-              ...mergedParams,
-              provider: preservedProvider,
-            };
-          }
-          if (preservedModel && !mergedParams['model']) {
-            (mergedConfig['strategy'] as Record<string, unknown>)['params'] = {
-              ...((mergedConfig['strategy'] as Record<string, unknown>)?.['params'] as Record<string, unknown> ?? {}),
-              model: preservedModel,
-            };
-          }
+      const requestedMode = (partialConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
+      if (requestedMode) {
+        const agentModeForAdjust = agent.executionDefaults?.mode ?? 'paper';
+        const modeCheck = checkModeEscalation(requestedMode, agentModeForAdjust, 'adjust');
+        if (!modeCheck.allowed) {
+          throw new Error(modeCheck.error);
         }
       }
 
-      // Validate the merged config against BotConfigSchema before persisting
-      const validation = BotConfigSchema.safeParse(mergedConfig);
-      if (!validation.success) {
-        const issues = validation.error.issues.map((i) =>
-          `${i.path.join('.') || 'root'}: ${i.message}`
-        ).join('; ');
-        throw new Error(`Bot config is invalid after merge: ${issues}`);
-      }
-
-      // Safety gate: agent execution mode must not be exceeded by bot execution mode after merge.
-      // Mirrors the create_and_start guard — prevents escalation via adjust_config.
-      const adjustedBotMode = validation.data.execution.mode ?? 'paper';
-      const agentModeForAdjust = agent.executionDefaults?.mode ?? 'paper';
-      const modeCheck = checkModeEscalation(adjustedBotMode, agentModeForAdjust, 'adjust');
-      if (!modeCheck.allowed) {
-        throw new Error(modeCheck.error);
-      }
-
-      // Consistency model: we persist the merged config then enqueue a restart.
-      // If the process crashes between these steps the bot keeps running with
-      // the old in-memory config while DB holds the new config.  On the next
-      // restart (manual, crash recovery, or deploy) the new config is picked up
-      // from DB, converging without manual intervention.
-      await this.botRepo.updateBotConfig(payload.botId, mergedConfig);
-
-      if (bot.status === 'running' && this.botRestart) {
-        try {
-          // venueAccountId is resolved via startupContext at job processing
-          // time — no longer passed in the config payload to avoid stale/dual sources of truth.
-          await this.botRestart(payload.botId, agent.userId, bot.connectionId, {
-            ...mergedConfig,
-          });
-        } catch (err) {
-          logger.error(
-            { botId: payload.botId, err },
-            'Failed to enqueue restart job during adjust_config',
-          );
-          try {
-            await this.botRepo.restoreBotConfig(payload.botId, bot.config as Record<string, unknown>);
-          } catch (rollbackErr) {
-            logger.error({ botId: payload.botId, rollbackErr }, 'CRITICAL: config rollback after restart enqueue failure also failed — DB holds new config but running actor has old config until next restart');
-          }
-          throw new Error(
-            'Config adjustment failed: unable to enqueue restart. Please try again.',
-          );
-        }
-      }
+      await this.invokeBotLifecycle('adjust_bot_config', {
+        botId: payload.botId,
+        config: partialConfig,
+      }, subject);
 
       return;
     }
@@ -1868,24 +1675,8 @@ export class AgentMessageBroker {
   }
 }
 
-function mergeBotConfig(baseConfig: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
-  const merged: Record<string, unknown> = { ...baseConfig };
-
-  for (const [key, value] of Object.entries(patch)) {
-    const current = merged[key];
-    if (isPlainObject(current) && isPlainObject(value)) {
-      merged[key] = mergeBotConfig(current, value);
-    } else {
-      merged[key] = value;
-    }
-  }
-
-  return merged;
-}
-
-function configsEqual(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
+// L3c: mergeBotConfig + configsEqual were removed — the bot-config merge/compare
+// moved behind the boundary (Traderton owns the bot config). See 004-l3d-plan.md §C.
 
 function applyAgentCapitalLimit(config: Record<string, unknown>, capital: string | number | null | undefined): Record<string, unknown> {
   const capitalLimit = parsePositiveDecimal(capital);

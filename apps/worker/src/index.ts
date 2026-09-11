@@ -64,6 +64,8 @@ import {
   NomadClient,
   buildServiceRegistry,
 } from './agents/index.js';
+import { createTradertonClient } from '@herobids/domain/traderton';
+import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
 import { ApprovalService } from './services/approval-service.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
@@ -864,6 +866,50 @@ const intakeResolver: DecisionIntakeResolver = {
   },
 };
 
+// L3c: construct the Traderton side-effecting boundary from operator config
+// (appConfig.boundary). When baseUrl + hmacSecret are unset (unconfigured), leave
+// it undefined so the handler/broker return a typed precondition — NO silent
+// fallback to the in-process engine (differs from L3b's read fallback). The HMAC
+// secret lives only in the client; it never reaches a tool.
+const sideEffectBoundary = (() => {
+  const b = appConfig.boundary;
+  if (!b.baseUrl || !b.hmacSecret) {
+    logger.info(
+      { hasBaseUrl: !!b.baseUrl, hasSecret: !!b.hmacSecret },
+      'Traderton side-effecting boundary not configured — submit_decision + bot lifecycle will return precondition.not_ready',
+    );
+    return undefined;
+  }
+  const client = createTradertonClient({
+    baseUrl: b.baseUrl,
+    consumerId: b.consumerId,
+    keyId: b.keyId,
+    hmacSecret: b.hmacSecret,
+    requestTimeoutMs: b.requestTimeoutMs,
+  });
+  logger.info({ baseUrl: b.baseUrl }, 'Traderton side-effecting boundary enabled — submit_decision + bot lifecycle route over REST');
+  return createTradertonSideEffectBoundary(client);
+})();
+
+// L3c: resolve the approval-snapshot venue-account id from the connection grant
+// (a KEEP platform value), NOT the engine. Picks the agent's ready trading
+// connection's resolvedVenueAccountId. Returns null when none exists.
+const approvalVenueAccountResolver = async (agentId: string): Promise<string | null> => {
+  try {
+    const descriptor = await agentRepo.getRuntimeCapabilityDescriptor(agentId);
+    const trading = descriptor.grantedConnectionsByFamily['trading'] ?? [];
+    const defaultConnectionId = descriptor.defaultConnectionByFamily['trading'];
+    const chosen = trading.find((c) => c.connectionId === defaultConnectionId && c.readiness.effectiveReady)
+      ?? trading.find((c) => c.readiness.effectiveReady);
+    if (!chosen) return null;
+    const row = await botRepo.getResolvedVenueAccount(chosen.connectionId);
+    return row?.resolvedVenueAccountId ?? null;
+  } catch (err) {
+    logger.warn({ agentId, err }, 'Failed to resolve approval-snapshot venue account from connection grant');
+    return null;
+  }
+};
+
 const agentDecisionHandler = new AgentDecisionHandler(
   agentRepo,
   intakeResolver,
@@ -876,6 +922,9 @@ const agentDecisionHandler = new AgentDecisionHandler(
   decisionApprovalRepo,
   appConfig.agentApprovals.ttlMs,
   appConfig.alerts.telegram.botToken || undefined,
+  sideEffectBoundary,
+  30_000,
+  approvalVenueAccountResolver,
 );
 
 const approvalService = new ApprovalService({
@@ -1607,6 +1656,7 @@ const agentBroker = new AgentMessageBroker(
   db,
   appConfig.agentRuntime.llm.modelDefaults,
   appConfig.plans,
+  sideEffectBoundary,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

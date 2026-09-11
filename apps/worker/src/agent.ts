@@ -83,9 +83,9 @@ import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScou
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { BrowserlessAdapter } from '@herobids/venues';
 import { createToolRegistry } from './tools/index.js';
-import { createTradertonClient, type TradertonClientConfig } from './traderton/client.js';
+import { createTradertonClient, type TradertonClientConfig } from '@herobids/domain/traderton';
 import { createTradertonReadBoundary } from './traderton/read-adapter.js';
-import type { TradertonSubject } from './traderton/contract.js';
+import type { TradertonSubject } from '@herobids/domain/traderton';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
 import { extractCeilings, extractCreatorInput, resolveProfile } from './agent-risk-limits.js';

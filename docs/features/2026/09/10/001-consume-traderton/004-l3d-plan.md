@@ -55,7 +55,24 @@ deletions** — leaving them is the leak.
 
 | # | `path:symbol` | kind | left by | delete-at |
 |---|---------------|------|---------|-----------|
-| _(seeded empty — L3c appends)_ | | | | L3d |
+| 1 | `apps/worker/src/agents/agent-decision-handler.ts:import { submitDecisionForExecution, DecisionContextHashMismatchError, validatePerTradeLevels } from '@herobids/engine'` | unused-import | L3c (engine call replaced by boundary invoke+poll; per-trade validation relocated behind boundary) | L3d |
+| 2 | `apps/worker/src/agents/agent-decision-handler.ts:import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine'` | unused-import | L3c (intake pipeline replaced by boundary payload build) | L3d |
+| 3 | `apps/worker/src/agents/agent-decision-handler.ts:DecisionIntakeResolver` + `_intakeResolver` ctor param | dead | L3c (engine-backed intake — getIntakeDeps/getDecisionContext/getPosition no longer called on the rewired direct path; retained as unused positional ctor param for composition-root/ApprovalService compat; approval-snapshot venueAccountId now from the connection grant) | L3d |
+| 3b | `apps/worker/src/agents/agent-decision-handler.ts:actorsWithSuccessfulContext` | dead | L3c (removed — the no_context startup-vs-persistent tracking belonged to the engine intake path) | L3d (already removed in L3c) |
+| 4 | `apps/worker/src/agents/agent-decision-handler.ts:validatePerTradeLevels usage + POSITION_GROWING_INTENTS/formatLevelValidationMessage per-trade block` | relocated | L3c (per-trade stopLoss/takeProfit validation moved behind the boundary — Traderton owns mark-price-dependent validation) | L3d |
+| 5 | `apps/worker/src/agents/agent-decision-handler.ts:equity-snapshot publish (intakeDeps.equityTracker / publishEquitySnapshot)` | relocated | L3c (equity/drawdown snapshot depended on engine-sourced equityTracker; moves behind the boundary) | L3d |
+| 6 | `apps/worker/src/agents/agent-message-broker.ts:imports venueTypeFromProvider + BotConfigSchema (removed in L3c); mergeBotConfig + configsEqual functions (removed in L3c)` | unused-import/dead | L3c (venue-stamp + local bot-config validate/merge/compare moved behind the boundary — already removed in L3c) | L3d (already removed) |
+| 7 | `apps/worker/src/agents/agent-message-broker.ts:BotLimitCheckCallback + botLimitCheck ctor param` | dead | L3c (maxBots enforcement removed — Traderton owns the limit) | L3d |
+| 8 | `apps/worker/src/agents/agent-message-broker.ts:BotStartCallback/BotStopCallback/BotRestartCallback + botStart/botStop/botRestart ctor params` | dead | L3c (lifecycle enqueue→actor kickoff replaced by boundary invoke) | L3d |
+| 9 | `apps/worker/src/agents/agent-message-broker.ts:botRepo write calls in handleManageBot (getResolvedVenueAccount/tryCreateBotWithLimit/tryMarkBotRunningWithLimit/markBotRunning/markBotStopped/updateBotConfig/restoreBot*)` | orphaned | L3c (bots-table writes removed from the rewired lifecycle path — herobids owns no bot state) | L3d |
+| 10 | `apps/worker/src/index.ts:botLimitCheckCallback (maxBots plan cap)` | dead | L3c (no longer passed to the broker) | L3d |
+| 11 | `apps/worker/src/index.ts:botStartCallback/botStopCallback/botRestartCallback (enqueueLifecycle wrappers)` | dead | L3c (broker no longer drives the lifecycle queue for agent bots) | L3d |
+| 12 | `apps/api/src/routes/bots.ts:imports checkBotLimit + BotConfigSchema + agents (removed in L3c)` | unused-import/dead | L3c (maxBots dropped from POST /bots + start; trading-config validation moved behind boundary — already removed in L3c) | L3d (already removed) |
+| 13 | `apps/api/src/routes/bots.ts:_agentRiskDefaults param + POST /bots/:id/start agent maxBots block` | dead | L3c (maxBots enforcement removed — Traderton owns the limit; param retained unused for signature/test compat) | L3d |
+| 13b | `apps/api/src/routes/bots.ts:PATCH /bots/:id/config db.update(bots) write + local ownership reads on POST/start/stop/PATCH` | orphaned | L3c (write path rewired to the boundary; the local bots-table reads/writes on the rewired endpoints are DELETE-side — see §D) | L3d |
+| 13c | `apps/api/src/routes/bots.ts:validateExecutionCapability/venueTypeFromProvider (still used by PATCH /bots/:id/config capability check)` | orphaned | L3c (the capability check on the rewired write endpoints was removed; PATCH-config still uses it locally — a DELETE-side reader per §D) | L3d |
+| 14 | `apps/api/src/plan-guards.ts:checkBotLimit` | dead | L3c (last caller removed from routes/bots.ts) | L3d |
+| 15 | `apps/api/src/agents/agent-create-normalization.ts:maxBots resolution (~:368–390) + AgentCreateParams.maxBots/normalized maxBots` | dead | L3c investigation (#4 — herobids owns no bot cap; recorded, not touched in L3c) | L3d |
 
 ## §D — Consumer audit (from L3c; must be complete before deleting)
 
@@ -64,18 +81,56 @@ confirmed either (a) trading-path/deletable or (b) re-pointed at a boundary read
 (`list_bots`/`get_bot_status`). **L3d does not delete a table/module until its consumers are all in this
 list as (a) or (b).**
 
+**Legend:** disposition (a) = trading-path/deletable at L3d; (b) = must be re-pointed at a boundary read tool
+(`list_bots`/`get_bot_status`) or an equivalent boundary surface before deletion. L3c rewired only the
+side-effecting write path (`create_bot`/`start_bot`/`stop_bot`/`adjust_bot_config` in broker + API, and
+`submit_decision`); every remaining `bots`-table READER below is left in place by L3c and dispositioned here
+for L3d.
+
+### `bots`-table + trading-repo consumers
+
 | consumer (`path:symbol`) | of | disposition | notes |
 |--------------------------|----|-------------|-------|
-| _(L3c fills)_ | | | |
+| `apps/worker/src/agents/agent-message-broker.ts:handleManageBot` | bots write + maxBots + venue-stamp | (a) | REWIRED in L3c to boundary invoke; residual dead write/limit calls logged in §C #6–#9 |
+| `apps/worker/src/agents/agent-message-broker.ts:handleBotQuery (list_bots/get_bot_status/get_analytics)` | bots read via botRepo | (b) | agent bot-query path; re-point at `list_bots`/`get_bot_status`/`get_analytics` boundary tools (L3b rewired the tool-facing reads; this broker query path is a parallel reader still on botRepo) |
+| `apps/worker/src/tools/bots.ts:list_bots/get_bot_status` | bots read (fallback branch) | (b) | L3b already routes to boundary when configured; the direct-DB fallback branch is deletable once fallback removed |
+| `apps/worker/src/tools/bots.ts:stop_bot/adjust_bot_config/start_bot/create_bot` | bots read/write | (a) | REWIRED in L3c to route side effects through the boundary; local botRepo pre-checks/writes deletable |
+| `apps/worker/src/index.ts:cascadeStopAgentBots (getBotsByCreator)` | bots read + stop enqueue | (a) | agent-crash cascade stop; trading lifecycle — deletable with the actor/runtime slice |
+| `apps/worker/src/index.ts:botLimitCheckCallback / botStart*/botStop*/botRestart* / reclaim (from bots where status=running)` | bots read/write + lifecycle | (a) | trading lifecycle wiring — deletable with runtime.ts/WorkerRuntime |
+| `apps/worker/src/index.ts:onInstanceCrashed/onInstanceStopped userId/creator lookups` | bots read | (a) | trading event fan-out — deletable with the actor/runtime slice |
+| `apps/worker/src/market-intelligence/assessment-identity-resolver.ts:resolve (venueAccountId from bots)` | bots read | (a) | resolves the agent's venue account from a bot row for market-assessment identity; trading-path — deletable (Traderton resolves venue accounts) |
+| `apps/api/src/routes/bots.ts:POST /bots, POST /bots/:id/start, POST /bots/:id/stop, PATCH /bots/:id/config` | bots write + lifecycle enqueue + maxBots | (a) | REWIRED in L3c write path to boundary; reporting reads below are (b) |
+| `apps/api/src/routes/bots.ts:GET /bots, GET /bots/:id, GET /bots/:id/costs, /sessions, /events, /journal, /journal/summary` | bots + fills + journalEvents read | (b) | reporting-read endpoints over DELETE-side tables; re-point at boundary read tools (or a new reporting surface) before deleting the tables. Not rewired in L3c per plan §4. |
+| `apps/api/src/routes/bots.ts:DELETE /bots/:id` | bots delete + queue.getJobs | (a) | bot deletion; trading-path — deletable |
+| `apps/api/src/routes/bots.ts:POST /bots/:id/blueprints` | bots read (project to blueprint) | (b) | reads a bot's config to seed a blueprint; needs a boundary read (`get_bot_status` config) or blueprint-from-bot removal |
+| `apps/api/src/routes/reconciliation.ts` | bots read (ownership + venueAccountId) | (a) | reconciliation is a trading concern — deletable with reconciliation-events |
+| `apps/api/src/routes/accounts.ts` | bots read (blocking/concurrent bots on venue account) | (a) | venue-account teardown guard; trading-path — deletable (venue_accounts move to Traderton at L3-P1) |
+| `apps/api/src/routes/connections.ts` | bots read (blocking/concurrent bots on connection) | (b) | connection teardown guard — connections are KEEP (platform); re-point the "has running bots?" guard at a boundary `list_bots` query |
+| `apps/api/src/routes/exports.ts` | bots + fills read (data export) | (b) | user data export spans platform + trading; re-point trading slices at boundary reads or scope export to platform data |
+| `apps/api/src/routes/billing.ts` | bots read (resolve bot IDs for fills/ledger) | (b) | billing ledger resolves bot→fills; re-point at a boundary reporting read (fills are DELETE-side) |
+| `apps/api/src/routes/dashboard.ts` | bots read (dashboard counts + venue accounts) | (b) | dashboard summary; re-point at boundary `list_bots`/analytics |
+| `apps/api/src/routes/capabilities/trading.ts` | bots read (bots on connections) | (b) | trading-capability readiness; re-point at boundary `list_bots` scoped by connection |
+| `apps/api/src/routes/actor-health.ts` | bots read (status) | (b) | bot health endpoint; re-point at boundary `get_bot_status` |
+| `apps/api/src/routes/admin.ts` | bots count | (a) | admin metric count over the bots table; deletable (or re-point at a boundary count) |
+| `apps/api/src/services/blueprint-performance-scorer.ts` | bots read (agent's bots) | (b) | scores blueprint performance from a bot's fills; re-point at boundary analytics/reporting |
+| `apps/api/src/routes/credentials.ts:PATCH credential → restart running instances (queue.add restart-instance)` | lifecycle enqueue (third path) | (a) | THIRD `trading-instance-lifecycle` enqueuing site (see investigation item 3) — credential-rotation restart; trading lifecycle — deletable with runtime.ts. NOT in L3c's five-tool scope; flagged for L3d. |
+| `apps/api/src/index.ts:lifecycleQueue (new Queue 'trading-instance-lifecycle')` + `apps/worker/src/runtime.ts:WorkerRuntime consumer` | lifecycle queue | (a) | the queue itself + its consumer; deletable once no enqueuing site remains (broker done in L3c; API bots route done in L3c; credentials.ts + credentials restart remain → L3d) |
+| `apps/api/src/agents/agent-create-normalization.ts:maxBots resolution` | maxBots policy | (a) | #4 legal-isolation closer — herobids owns no bot cap; deletable (recorded §C #15) |
+| `apps/api/src/plan-guards.ts:checkBotLimit` | maxBots policy | (a) | #4 closer — last caller removed in L3c (§C #14) |
+| `apps/worker/src/services/approval-service.ts:ApprovalService.executeApproval (submitDecisionForExecution)` | engine submit (post-approve execute) | (b) | **SEAM/GAP:** the human-approve → execute path (D3 "on approve, call submit_decision as a plain execute") still drives the in-process engine. NOT in L3c's listed fusion points (plan §1 scopes only `handleDecisionSubmit`), so L3c did NOT rewire it. Must be re-pointed at the boundary `submit_decision` invoke (same payload build as the handler) BEFORE `@herobids/engine` is deleted — L3d prerequisite or a dedicated follow-slice. Flagged here so it is not lost. |
 
 ## §E — Execution order (L3d)
 
 1. Confirm §D is complete (no un-audited consumers).
 2. Delete §B first (maxBots + `bots` — the legal closers), verify build/suite green.
-3. Delete §C's logged items.
-4. Delete §A (packages, worker exec slices, trading DB) leaf-first; build + suite green after each.
-5. Delete `venue_accounts`/`user_credentials` only AFTER L3-P1 (Traderton provisioning) is live.
-6. Full herobids build/lint/suite green; run the L3e differential. Pause for human.
+3. **Rewire the remaining in-process engine drivers to the boundary BEFORE deleting `@herobids/engine` (step 5).** These are live in-process trading paths L3c did not touch (not in its `handleDecisionSubmit`/bot-lifecycle scope) — deleting the engine without rewiring them would break execution, and leaving them would survive cutover as an in-process trading path (the exact leak the split closes):
+   - `apps/worker/src/services/approval-service.ts:ApprovalService.executeApproval` → replace `submitDecisionForExecution` with the boundary `submit_decision` invoke (reuse `buildSubmitDecisionPayload` + the handler's invoke+poll mapping); the human-approve→execute path must go through the boundary. (Recorded in §D as the SEAM/GAP.)
+   - `apps/api/src/routes/credentials.ts` credential-rotation restart + any other `trading-instance-lifecycle` enqueuer (§D) → boundary or removed with the runtime slice.
+   Verify build/suite green after this step.
+4. Delete §C's logged items.
+5. Delete §A (packages, worker exec slices, trading DB) leaf-first; build + suite green after each.
+6. Delete `venue_accounts`/`user_credentials` only AFTER L3-P1 (Traderton provisioning) is live.
+7. Full herobids build/lint/suite green; run the L3e differential. Pause for human.
 
 ## Done criteria (L3d)
 

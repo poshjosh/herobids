@@ -61,6 +61,15 @@ Treat CANONICAL-STATE as the source of truth for state/decisions/invariants unti
 
 Non-blocking findings from the L3a code review (no CRITICAL/HIGH). Recorded per the coordinator loop.
 
+### L3c — rewire the SIDE-EFFECTING path to the client
+Non-blocking findings from the L3c code review (no CRITICAL/HIGH; decisions A and B judged acceptable).
+- **M1 (ADDRESSED):** the reviewer recommended promoting the `ApprovalService.executeApproval` in-process-engine rewire from a §D note to an explicit ordered step in `004-l3d-plan.md` §E before the `@herobids/engine` deletion. Done — §E now has step 3 covering ApprovalService + the `credentials.ts` lifecycle-enqueue path as engine-deletion prerequisites.
+- **Decision A (client relocation — ACCEPTED):** the L3a transport client (`contract`/`sign`/`client` + tests) was moved from `apps/worker/src/traderton/` to `packages/domain/src/traderton/` behind a `@herobids/domain/traderton` subpath export, because the API cannot import the worker. Verified a PURE MOVE (byte-identical; HMAC parity preserved), respects `domain ← apps` direction, kept out of the top-level barrel so `node:crypto`/`fetch` stay out of the `apps/web` bundle. No new L3a risk.
+- **Decision B (ApprovalService left on the engine — ACCEPTED for L3c):** the human-approve→execute path still drives the in-process engine; correct per plan §1 scope (only `handleDecisionSubmit`). Dispositioned in `004` §D as a SEAM/GAP and now scheduled in §E step 3 as an engine-deletion prerequisite.
+- **L1 (style):** API `botRoutes` still takes the lifecycle queue (now only used by DELETE for pending-start cleanup) — deletable in L3d (§D).
+- **L2 (style):** engine type-only import kept in the handler for the resolver interface (recorded §C #1–2, deletable L3d).
+- **L3 (style):** two "not ready" code namespaces (`precondition.not_ready` vs `boundary.*`) — intentional.
+
 ### L3b — rewire the READ path to the client
 Non-blocking findings from the L3b code review (no CRITICAL/HIGH).
 - **L1 (test style):** read-tool test stubs use `as unknown as ToolContext['botRepo']`. Acceptable in test files (the strict-TS ban targets source), but a typed `Partial<>`/factory would read cleaner. Optional.

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { mapClientResultToReadResult, createTradertonReadBoundary } from './read-adapter.js';
-import type { TradertonClient, TradertonClientResult } from './client.js';
-import type { TradertonSubject } from './contract.js';
+import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
 
 describe('mapClientResultToReadResult', () => {
   it('maps success — payload becomes data', () => {

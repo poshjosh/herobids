@@ -11,8 +11,7 @@
 // tool or the domain port.
 
 import type { TradertonReadResult } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult } from './client.js';
-import type { TradertonSubject } from './contract.js';
+import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
 
 /** The narrow port the read tools consume via `ctx.tradertonBoundary`. */
 export interface TradertonReadBoundary {

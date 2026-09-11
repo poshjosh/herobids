@@ -16,6 +16,10 @@
     "./config/presets-loader": {
       "import": "./dist/config/presets-loader.js",
       "types": "./dist/config/presets-loader.d.ts"
+    },
+    "./traderton": {
+      "import": "./dist/traderton/index.js",
+      "types": "./dist/traderton/index.d.ts"
     }
   },
   "scripts": {
