@@ -121,15 +121,16 @@ deletions** — leaving them is the leak.
 | 7 | `apps/worker/src/agents/agent-message-broker.ts:BotLimitCheckCallback + botLimitCheck ctor param` | dead | L3c (maxBots enforcement removed — Traderton owns the limit) | L3d |
 | 8 | `apps/worker/src/agents/agent-message-broker.ts:BotStartCallback/BotStopCallback/BotRestartCallback + botStart/botStop/botRestart ctor params` | dead | L3c (lifecycle enqueue→actor kickoff replaced by boundary invoke) | L3d |
 | 9 | `apps/worker/src/agents/agent-message-broker.ts:botRepo write calls in handleManageBot (getResolvedVenueAccount/tryCreateBotWithLimit/tryMarkBotRunningWithLimit/markBotRunning/markBotStopped/updateBotConfig/restoreBot*)` | orphaned | L3c (bots-table writes removed from the rewired lifecycle path — herobids owns no bot state) | L3d |
-| 10 | `apps/worker/src/index.ts:botLimitCheckCallback (maxBots plan cap)` | dead | L3c (no longer passed to the broker) | L3d |
+| 10 | `apps/worker/src/index.ts:botLimitCheckCallback (maxBots plan cap)` | dead | L3c (no longer passed to the broker) | ~~L3d~~ **DONE (L3d-3):** callback definition deleted; broker call site now passes `undefined` for the `_botLimitCheck` positional (broker signature kept stable — the positional stays as a dead param alongside the other dead positionals, per §B lower-risk guidance) |
 | 11 | `apps/worker/src/index.ts:botStartCallback/botStopCallback/botRestartCallback (enqueueLifecycle wrappers)` | dead | L3c (broker no longer drives the lifecycle queue for agent bots) | L3d |
 | 12 | `apps/api/src/routes/bots.ts:imports checkBotLimit + BotConfigSchema + agents (removed in L3c)` | unused-import/dead | L3c (maxBots dropped from POST /bots + start; trading-config validation moved behind boundary — already removed in L3c) | L3d (already removed) |
 | 13 | `apps/api/src/routes/bots.ts:_agentRiskDefaults param + POST /bots/:id/start agent maxBots block` | dead | L3c (maxBots enforcement removed — Traderton owns the limit; param retained unused for signature/test compat) | L3d |
 | 13b | `apps/api/src/routes/bots.ts:PATCH /bots/:id/config db.update(bots) write + local ownership reads on POST/start/stop/PATCH` | orphaned | L3c (write path rewired to the boundary; the local bots-table reads/writes on the rewired endpoints are DELETE-side — see §D) | L3d |
 | 13c | `apps/api/src/routes/bots.ts:validateExecutionCapability/venueTypeFromProvider (still used by PATCH /bots/:id/config capability check)` | orphaned | L3c (the capability check on the rewired write endpoints was removed; PATCH-config still uses it locally — a DELETE-side reader per §D) | L3d |
-| 14 | `apps/api/src/plan-guards.ts:checkBotLimit` | dead | L3c (last caller removed from routes/bots.ts) | L3d |
-| 15 | `apps/api/src/agents/agent-create-normalization.ts:maxBots resolution (~:368–390) + AgentCreateParams.maxBots/normalized maxBots` | dead | L3c investigation (#4 — herobids owns no bot cap; recorded, not touched in L3c) | L3d |
+| 14 | `apps/api/src/plan-guards.ts:checkBotLimit` | dead | L3c (last caller removed from routes/bots.ts) | ~~L3d~~ **DONE (L3d-3):** `checkBotLimit` + the `checkTradingInstanceLimit` alias deleted; the now-orphaned `bots` import dropped from `plan-guards.ts` |
+| 15 | `apps/api/src/agents/agent-create-normalization.ts:maxBots resolution (~:368–390) + AgentCreateParams.maxBots/normalized maxBots` | ~~dead~~ **RECLASSIFIED (L3d-3): NOT enforcement — informational** | L3c investigation (#4 — recorded, not touched in L3c) | **MOVED → informational-maxBots follow-slice (row #17).** L3d-3 found this resolution is not an enforcement/limit throw: it *clamps then persists* the informational `agents.maxBots` column (consumed by `agent-session-manager.ts`'s guardrail capability descriptor + defaulted for `chat.ts` agent create). Deleting it would break the informational maxBots field, which L3d-3 scope explicitly leaves intact. Deferred with the rest of the informational surface. |
 | 16 | `packages/engine/src/journal.ts:credentialDecryptedEvent/credentialUsedEvent + CredentialDecryptedPayload/CredentialUsedPayload` | orphaned-once-engine-callers-gone | L3d-1 (their ONLY callers are DELETE-side §A engine slices — `venue-adapter-factory.ts`, `trading-actor.ts`, `agent-trading-actor.ts`; kept in the engine so those slices still compile until §A deletion. The platform-owned created/rotated/deleted builders were relocated to `@herobids/domain` — NOT these two, which have no KEEP-side consumer.) | L3d-5 (deleted with `packages/engine`) |
+| 17 | **informational `maxBots` surface** — `agents.maxBots` DB column; the agent create/edit schema (`routes/agents.ts` create `maxBots` + PATCH `maxBots`, `routes/chat.ts` agent create) + their plan-clamp; the resolution in `agent-create-normalization.ts` (§C #15) that populates the column; the guardrail capability descriptor (`agent-session-manager.ts` `maxBots` in the runtime/capability payload → `runtime-composition.ts` prompt lines); evaluation reads (`evidence-assembler.ts`, `platform-docs-data.ts`); exports/connections read-through (`routes/exports.ts`, `routes/connections.ts`); the web client field | not-enforcement (informational/config guardrail) | L3d-3 (found while deleting §B enforcement — this is NOT a bot-cap throw; it is an informational per-agent guardrail number surfaced to the agent + UI. Removing it is a larger frontend + DB-schema change beyond §B; left entirely intact per L3d-3 scope) | **dedicated maxBots-field-cleanup follow-slice** (own investigate→propose→pause: drop the `agents.maxBots` column + migration, the create/edit schema field, the capability-descriptor guardrail line, docs, and the web UI together) |
 
 ## §D — Consumer audit (from L3c; must be complete before deleting)
 
@@ -214,6 +215,32 @@ for L3d.
 
 
 ## §G — L3d sub-slice progress + review findings
+
+### L3d-3 — maxBots enforcement + residual non-lifecycle `bots` WRITE deletion — DONE (implemented; not yet committed — coordinator commits)
+Landed §E step 3 (the #4 closers). Deleted the remaining maxBots **enforcement** from herobids:
+- `apps/api/src/plan-guards.ts` — deleted `checkBotLimit` + the `checkTradingInstanceLimit` alias (§C #14); dropped the now-orphaned `bots` import (its only use).
+- `apps/worker/src/index.ts` — deleted the `botLimitCheckCallback` definition (the maxBots plan-cap that read `bots` and threw) (§C #10); the `AgentMessageBroker` call site now passes `undefined` for the `_botLimitCheck` positional.
+
+**Broker ctor positional-param decision (per §B lower-risk guidance):** the broker signature was **kept stable**.
+L3c already reduced `_botLimitCheck` to an unused positional param sitting among several other dead positionals
+(`_botStart`/`_botStop`/`_botRestart`/`_agentRiskDefaults`). Deleting one positional would shift all following
+positions and force edits across every call site + test. So L3d-3 only deleted the *callback definition* and
+passes `undefined`; the dead positional is removed wholesale later when the surrounding dead positionals go.
+No broker call sites or tests changed. Build + lint + api/worker suites green (no test referenced the deleted
+enforcement).
+
+**Scope decision — informational maxBots LEFT intact (§C #15 reclassified → #17):** while deleting §B
+enforcement, L3d-3 found the `agent-create-normalization.ts` maxBots resolution (§C #15) is **not** an
+enforcement throw — it clamps + persists the **informational** `agents.maxBots` column, which feeds the agent's
+guardrail capability descriptor (`agent-session-manager.ts`) and the `chat.ts` create default. Deleting it would
+break the informational maxBots field, which L3d-3 scope explicitly leaves intact. Recorded the whole
+informational surface as new tracked item **§C #17** (dedicated maxBots-field-cleanup follow-slice) and left it
+untouched. The `bots` **table + repo READ surface** were also left intact (read-only vestige, §F) — L3d-3 removed
+no `bots` read; the runtime/actor-lifecycle `bots` writes (`tryMarkBotRunningWithLimit` on API start,
+`markBotRunning`/`markBotStopped`) are LEFT for wholesale deletion with the runtime slice in L3d-5.
+
+**Verification:** `pnpm build` + `pnpm lint` green; api suite 1386 passed, worker suite 3436 passed, domain
+995 passed (only the KNOWN-unrelated `packages/domain/src/config/presets.test.ts` ENOENT fixture failure).
 
 ### L3d-1 — engine-driver rewires + credential-event relocation — DONE (committed; reviewed PASS)
 Landed §E step 2. `ApprovalService.executeApproval` rewired to the boundary (`submit_decision` invoke+poll,

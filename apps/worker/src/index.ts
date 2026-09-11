@@ -1600,24 +1600,6 @@ const botRestartCallback = async (botId: string, userId: string, connectionId: s
   });
 };
 
-// Enforce the subscription-level bot cap when an agent tries to create a bot.
-// Uses the user's actual planId so free-tier users can't create unlimited bots via agents.
-const botLimitCheckCallback = async (userId: string): Promise<void> => {
-  if (!appConfig.plans) return;
-  const userRows = await db.select({ planId: users.planId, isAdmin: users.isAdmin }).from(users).where(eq(users.id, userId)).limit(1);
-  if (userRows[0]?.isAdmin) {
-    return;
-  }
-  const planId = userRows[0]?.planId ?? appConfig.plans.defaultPlanId;
-  const plan = appConfig.plans.plans[planId] ?? appConfig.plans.plans[appConfig.plans.defaultPlanId];
-  if (!plan) return;
-  const maxBots = plan.entitlements.limits.maxBots;
-  const botRows = await db.select({ id: bots.id }).from(bots).where(eq(bots.userId, userId));
-  if (botRows.length >= maxBots) {
-    throw new Error(`Bot limit reached (${maxBots} on your plan). Stop or delete a bot before creating a new one.`);
-  }
-};
-
 // Enforce plan-level live execution eligibility when an agent creates a live-mode bot.
 // Mirrors the API-level checkLiveEnabled gate that the agent broker path previously bypassed.
 const botLiveCheckCallback = async (userId: string): Promise<void> => {
@@ -1644,7 +1626,7 @@ const agentBroker = new AgentMessageBroker(
   workerTelegram,
   botRepo,
   botStartCallback,
-  botLimitCheckCallback,
+  undefined, // _botLimitCheck (dead — maxBots enforcement removed in L3d-3; Traderton owns the limit)
   botLiveCheckCallback,
   botStopCallback,
   botRestartCallback,

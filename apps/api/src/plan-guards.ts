@@ -1,6 +1,6 @@
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { bots, venueAccounts, userCredentials, backtestRuns, agents, connections } from '@herobids/db';
+import { venueAccounts, userCredentials, backtestRuns, agents, connections } from '@herobids/db';
 import { eq, and, inArray } from 'drizzle-orm';
 import { ok, err } from '@herobids/domain';
 
@@ -53,28 +53,6 @@ export async function checkCredentialLimit(db: Database, config: PlansConfig, us
   }
   return ok(undefined);
 }
-
-/** Check if user can create a new bot */
-export async function checkBotLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
-  const resolved = resolvePlanForCheck(config, planId, isAdmin);
-  if (resolved.isAdminBypass) return ok(undefined);
-  const limits = resolved.entitlements.limits;
-  const rows = await db.select({ id: bots.id }).from(bots)
-    .where(eq(bots.userId, userId));
-  if (rows.length >= limits.maxBots) {
-    return err({
-      code: 'plan.limit_exceeded',
-      message: `Bot limit reached (${limits.maxBots})`,
-      limit: limits.maxBots,
-      current: rows.length,
-      params: { resource: 'bot', limit: limits.maxBots, current: rows.length },
-    });
-  }
-  return ok(undefined);
-}
-
-/** Check if user can create a new trading instance (alias for checkBotLimit) */
-export const checkTradingInstanceLimit = checkBotLimit;
 
 /** Check if user can create a new backtest run (concurrent limit) */
 export async function checkBacktestLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
