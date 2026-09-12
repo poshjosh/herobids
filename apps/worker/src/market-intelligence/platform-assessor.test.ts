@@ -217,6 +217,11 @@ function makeDeps(overrides?: Partial<PlatformAssessorDeps>): PlatformAssessorDe
       { key: 'trend_following_v1', entry: makeMockPresetEntry('trend_following_v1', 'swing', 'trend-following') },
     ]),
     callLlm: vi.fn(async (_prompt: string) => ({ text: '{}', usage: { provider: 'test', model: 'test', inputTokens: 0, outputTokens: 0, reasoningTokens: 0 } })),
+    // Orderbook/perp preset scoring routes over this boundary (L3 Q2). Default:
+    // a signal + candles evaluated → scanHealth 'healthy'.
+    scoreCandidateBoundary: {
+      invoke: vi.fn(async () => ({ kind: 'success' as const, data: { signal: { confidence: 0.5 }, candlesEvaluated: 100 } })),
+    },
     ...overrides,
   };
 }
@@ -449,7 +454,7 @@ describe('PlatformAssessor', () => {
   });
 
   describe('generateScorecards', () => {
-    it('returns one entry per preset', () => {
+    it('returns one entry per preset', async () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
       const candles = makeMockCandles(100);
@@ -459,7 +464,7 @@ describe('PlatformAssessor', () => {
         { key: 'p3', entry: makeMockPresetEntry('p3', 'swing', 'trend-following') },
       ];
 
-      const result = assessor.generateScorecards(identity, candles, presets);
+      const result = await assessor.generateScorecards(identity, candles, presets);
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('expected ok');
       const scorecards = result.data;
@@ -468,19 +473,19 @@ describe('PlatformAssessor', () => {
       expect(scorecards.every((s) => ['healthy', 'degraded', 'no_signal', 'stale'].includes(s.scanHealth))).toBe(true);
     });
 
-    it('returns empty array for empty presets', () => {
+    it('returns empty array for empty presets', async () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
       const candles = makeMockCandles(100);
 
-      const result = assessor.generateScorecards(identity, candles, []);
+      const result = await assessor.generateScorecards(identity, candles, []);
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('expected ok');
       const scorecards = result.data;
       expect(scorecards).toHaveLength(0);
     });
 
-    it('skips DCA presets', () => {
+    it('skips DCA presets', async () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
       const candles = makeMockCandles(100);
@@ -489,7 +494,7 @@ describe('PlatformAssessor', () => {
         { key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') },
       ];
 
-      const result = assessor.generateScorecards(identity, candles, presets);
+      const result = await assessor.generateScorecards(identity, candles, presets);
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('expected ok');
       const scorecards = result.data;
@@ -497,12 +502,20 @@ describe('PlatformAssessor', () => {
       expect(scorecards[0]!.presetKey).toBe('momentum_v1');
     });
 
-    it('returns error when runner throws', () => {
-      const assessor = new PlatformAssessor(makeConfig(), makeDeps());
+    it('propagates an error when the boundary reports an infrastructure failure', async () => {
+      // The boundary failing (e.g. candle provider down) must surface as an error
+      // Result — NOT a synthesized scan-health. Orderbook/perp scoring routes over
+      // the boundary, so a failing boundary is the infra-failure case here.
+      const deps = makeDeps({
+        scoreCandidateBoundary: {
+          invoke: vi.fn(async () => ({ kind: 'failure' as const, code: 'upstream.transient', message: 'down', retryable: true })),
+        },
+      });
+      const assessor = new PlatformAssessor(makeConfig(), deps);
       const identity = makeIdentity();
-      // Passing null candles with a non-empty presets list causes the runner to throw
-      // (the loop body executes and accesses candles.length / iterates over candles)
-      const result = assessor.generateScorecards(identity, null as unknown as PriceCandle[], [
+      const candles = makeMockCandles(100);
+
+      const result = await assessor.generateScorecards(identity, candles, [
         { key: 'p1', entry: makeMockPresetEntry('p1', 'momentum', 'trend-following') },
       ]);
       expect(result.ok).toBe(false);
@@ -511,7 +524,7 @@ describe('PlatformAssessor', () => {
       }
     });
 
-    it('returns PresetScorecardEntry with evaluationScope field set', () => {
+    it('returns PresetScorecardEntry with evaluationScope field set', async () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
       const candles = makeMockCandles(100);
@@ -520,7 +533,7 @@ describe('PlatformAssessor', () => {
         { key: 'mean_reversion_v1', entry: makeMockPresetEntry('mean_reversion_v1', 'range', 'mean-reverting') },
       ];
 
-      const result = assessor.generateScorecards(identity, candles, presets);
+      const result = await assessor.generateScorecards(identity, candles, presets);
 
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('expected ok');
@@ -540,7 +553,7 @@ describe('PlatformAssessor', () => {
       const presets = [
         { key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') },
       ];
-      const scorecardsResult = assessor.generateScorecards(identity, candles, presets);
+      const scorecardsResult = await assessor.generateScorecards(identity, candles, presets);
       expect(scorecardsResult.ok).toBe(true);
       if (!scorecardsResult.ok) throw new Error('expected ok');
       const scorecards = scorecardsResult.data;

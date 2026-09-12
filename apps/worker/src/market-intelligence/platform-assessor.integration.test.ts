@@ -160,6 +160,11 @@ function makeDeps(overrides?: Partial<PlatformAssessorDeps>): PlatformAssessorDe
       text: '{}',
       usage: { provider: 'test', model: 'test', inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
     })),
+    // Orderbook/perp preset scoring routes over this boundary (L3 Q2). A fixed
+    // signal + candles-evaluated gives deterministic, reproducible scorecards.
+    scoreCandidateBoundary: {
+      invoke: vi.fn(async () => ({ kind: 'success' as const, data: { signal: { confidence: 0.5 }, candlesEvaluated: 100 } })),
+    },
     ...overrides,
   };
 }
@@ -345,12 +350,19 @@ describe('PlatformAssessor integration', () => {
       }));
 
       // Create TWO separate PlatformAssessor instances
+      // Shared boundary: same fixed scoring outcome for both assessors, so the
+      // orderbook/perp preset scorecards are identical.
+      const makeSharedScoreBoundary = () => ({
+        invoke: vi.fn(async () => ({ kind: 'success' as const, data: { signal: { confidence: 0.5 }, candlesEvaluated: 100 } })),
+      });
+
       const assessorA = new PlatformAssessor(makeConfig(), {
         db: makeDbMock() as unknown as PlatformAssessorDeps['db'],
         redis: makeRedisMock() as unknown as PlatformAssessorDeps['redis'],
         evidencePorts: makeSharedEvidencePorts(),
         getPresets: vi.fn(() => sharedPresets),
         callLlm: sharedCallLlm,
+        scoreCandidateBoundary: makeSharedScoreBoundary(),
       });
 
       const assessorB = new PlatformAssessor(makeConfig(), {
@@ -359,6 +371,7 @@ describe('PlatformAssessor integration', () => {
         evidencePorts: makeSharedEvidencePorts(),
         getPresets: vi.fn(() => sharedPresets),
         callLlm: sharedCallLlm,
+        scoreCandidateBoundary: makeSharedScoreBoundary(),
       });
 
       const identity = makeIdentity();
@@ -423,8 +436,8 @@ describe('PlatformAssessor integration', () => {
       ];
 
       // Generate scorecards twice from the same candles
-      const result1 = assessor.generateScorecards(identity, snapshot.symbolCandles.value as PriceCandle[], presets);
-      const result2 = assessor.generateScorecards(identity, snapshot.symbolCandles.value as PriceCandle[], presets);
+      const result1 = await assessor.generateScorecards(identity, snapshot.symbolCandles.value as PriceCandle[], presets);
+      const result2 = await assessor.generateScorecards(identity, snapshot.symbolCandles.value as PriceCandle[], presets);
 
       expect(result1.ok).toBe(true);
       expect(result2.ok).toBe(true);

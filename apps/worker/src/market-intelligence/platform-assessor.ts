@@ -23,7 +23,7 @@ import type {
 } from '@herobids/domain';
 import { err, ok, type Result } from '@herobids/domain';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
-import { createPresetScorecardRunner } from './preset-scorecard-runner.js';
+import { createPresetScorecardRunner, type ScoreCandidateBoundary } from './preset-scorecard-runner.js';
 import { rankPresetsViaLlm, type LlmRankerConfig } from './llm-ranker.js';
 import { eq } from 'drizzle-orm';
 
@@ -80,6 +80,13 @@ export interface PlatformAssessorDeps {
   getPresets(styleTier: string): Array<{ key: string; entry: PresetEntry }>;
   /** LLM provider for assessment ranking (used in 009). */
   callLlm(prompt: string): Promise<{ text: string; usage: LlmCallUsage }>;
+  /**
+   * The `score_candidate` read boundary for orderbook/perp preset scoring (L3
+   * Q2 re-point). Bound to a SYSTEM subject by the worker composition root.
+   * Optional — when absent, orderbook scoring returns a propagated error rather
+   * than scoring in-process (the boundary owns candle fetching + scoring).
+   */
+  scoreCandidateBoundary?: ScoreCandidateBoundary;
   /** Logger instance */
   logger?: Logger;
 }
@@ -150,7 +157,7 @@ export class PlatformAssessor {
       const candles = extractCandlesFromSnapshot(evidence);
 
       // Step 5: Generate scorecards using the deterministic runner
-      const scorecardsResult = this.generateScorecards(identity, candles, presets);
+      const scorecardsResult = await this.generateScorecards(identity, candles, presets);
       if (!scorecardsResult.ok) {
         return scorecardsResult; // propagate the error
       }
@@ -325,16 +332,25 @@ export class PlatformAssessor {
 
   // ── Scorecard Generation ───────────────────────────────────────────────
 
-  /** Generate deterministic per-preset scorecards using PresetScorecardRunner. */
-  generateScorecards(
+  /**
+   * Generate deterministic per-preset scorecards using PresetScorecardRunner.
+   *
+   * Async because orderbook/perp scoring now routes over the Traderton
+   * `score_candidate` boundary (candles fetched behind the boundary). Swap/dex
+   * scoring stays in-process from the pre-fetched `candles` (the swap re-point
+   * is deferred; see the runner). Boundary infrastructure failures propagate as
+   * an error Result rather than being reported as a scan-health outcome.
+   */
+  async generateScorecards(
     identity: MarketAssessmentIdentity,
     candles: PriceCandle[],
     presets: Array<{ key: string; entry: PresetEntry }>,
-  ): Result<PresetScorecardEntry[]> {
+  ): Promise<Result<PresetScorecardEntry[]>> {
     try {
-      const runner = createPresetScorecardRunner({});
-      const result = runner.generateScorecards({ identity, presets, candles });
-      return ok(result);
+      const runner = createPresetScorecardRunner({
+        scoreCandidateBoundary: this.deps.scoreCandidateBoundary,
+      });
+      return await runner.generateScorecards({ identity, presets, candles });
     } catch (caught) {
       const errorMessage = caught instanceof Error ? caught.message : String(caught);
       return err({

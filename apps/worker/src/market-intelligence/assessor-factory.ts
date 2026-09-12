@@ -10,6 +10,7 @@ import { callLlmProvider, type LlmProviderConfig, type LlmRequest, type OpenRout
 import { PlatformAssessor, type PlatformAssessorRuntimeConfig, type PlatformAssessorDeps, type LlmCallUsage } from './platform-assessor.js';
 import type { LlmRankerConfig } from './llm-ranker.js';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
+import type { ScoreCandidateBoundary } from './preset-scorecard-runner.js';
 import type { PresetEntry } from '@herobids/domain';
 
 // ── Factory Result ──────────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ export interface AssessorFactoryResult {
  * @param getPresets - Function to load presets for a style tier.
  * @param logger - Optional logger instance.
  * @param openRouterProviderControls - Optional OpenRouter privacy/routing controls applied to platform LLM requests.
+ * @param scoreCandidateBoundary - Optional `score_candidate` read boundary (SYSTEM-subject-bound) for orderbook/perp scoring.
  * @throws If llmConfig is provided but its provider is not in the loaded registry.
  */
 export function createPlatformAssessor(
@@ -59,6 +61,7 @@ export function createPlatformAssessor(
   getPresets: (styleTier: string) => Array<{ key: string; entry: PresetEntry }>,
   logger?: Logger,
   openRouterProviderControls?: OpenRouterProviderControls,
+  scoreCandidateBoundary?: ScoreCandidateBoundary,
 ): AssessorFactoryResult {
   const log = logger ?? createLogger('assessor-factory');
 
@@ -178,6 +181,7 @@ export function createPlatformAssessor(
     evidencePorts,
     getPresets,
     callLlm: platformCallLlm,
+    scoreCandidateBoundary,
     logger: log,
   };
 

@@ -2,10 +2,10 @@ import type {
   MarketAssessmentIdentity,
   AssessmentData,
   AssessmentUnavailable,
+  TradertonReadResult,
 } from '@herobids/domain';
 import { err, ok } from '@herobids/domain';
 import type { PriceCandle, RegimeResult } from '@herobids/market-data';
-import { evaluateRegime, getRequiredRegimeCandleCount } from '@herobids/market-data';
 import type { ScannerCandleTarget } from '@herobids/strategy';
 import type {
   AssessmentEvidencePorts,
@@ -33,6 +33,38 @@ function identityToScannerTarget(identity: MarketAssessmentIdentity): ScannerCan
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/** The subset of the boundary `check_regime` success payload the adapter needs. */
+interface RegimeBoundaryPayload {
+  pass: boolean;
+  reasons: string[];
+  details: Record<string, unknown>;
+  freshness?: { provider: string; source: 'upstream' | 'cache'; ageMs: number; isStale: boolean };
+}
+
+/** Narrow the boundary `check_regime` success payload (`unknown` over the wire). */
+function parseRegimePayload(data: unknown): RegimeBoundaryPayload {
+  const record = (data ?? {}) as Record<string, unknown>;
+  const rawFreshness = record['freshness'];
+  let freshness: RegimeBoundaryPayload['freshness'];
+  if (rawFreshness && typeof rawFreshness === 'object') {
+    const f = rawFreshness as Record<string, unknown>;
+    freshness = {
+      provider: typeof f['provider'] === 'string' ? f['provider'] : 'binance',
+      source: f['source'] === 'cache' ? 'cache' : 'upstream',
+      ageMs: typeof f['ageMs'] === 'number' ? f['ageMs'] : 0,
+      isStale: f['isStale'] === true,
+    };
+  }
+  return {
+    pass: record['pass'] === true,
+    reasons: Array.isArray(record['reasons']) ? (record['reasons'] as string[]) : [],
+    details: (record['details'] && typeof record['details'] === 'object')
+      ? (record['details'] as Record<string, unknown>)
+      : {},
+    ...(freshness ? { freshness } : {}),
+  };
+}
+
 function makeAssessmentData<T>(
   data: T,
   source: string,
@@ -51,11 +83,25 @@ function makeAssessmentData<T>(
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
+/**
+ * The narrow `check_regime` read-boundary port (L3 Q2 regime re-point). The
+ * composition root binds a SYSTEM subject + deadline. When absent, regime
+ * evidence is unavailable (no in-process candle/regime fallback).
+ */
+export interface CheckRegimeBoundary {
+  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+}
+
 export interface CreateEvidencePortsParams {
   /** Shared scanner candle fetcher (may be undefined when market data is not configured). */
   scannerCandleFetcher:
     | ((target: ScannerCandleTarget, interval: string, limit: number) => Promise<PriceCandle[]>)
     | undefined;
+  /**
+   * The `check_regime` read boundary for regime evidence (L3 Q2). When absent,
+   * regime evidence returns a structured unavailable error.
+   */
+  checkRegimeBoundary?: CheckRegimeBoundary;
   /** Freshness window for regime evidence (ms). Default: 5 min. */
   regimeFreshnessMs?: number;
   /** Freshness window for candle evidence (ms). Default: 5 min. */
@@ -63,10 +109,13 @@ export interface CreateEvidencePortsParams {
 }
 
 /**
- * Create real evidence ports backed by the worker's scanner candle fetcher.
+ * Create real evidence ports backed by the worker's scanner candle fetcher and
+ * the Traderton `check_regime` boundary.
  *
- * Regime and candle adapters use the shared `scannerCandleFetcher` path for
- * orderbook/perp identities. Swap/dex identities return structured unavailable.
+ * The candle adapter uses the shared `scannerCandleFetcher` path for
+ * orderbook/perp identities. The regime adapter routes over the `check_regime`
+ * boundary (L3 Q2 — candles fetched behind the boundary). Swap/dex identities
+ * return structured unavailable.
  *
  * Liquidity and breadth are explicitly unavailable in the first shipped slice
  * per the implementation plan — no fabricated neutral values.
@@ -74,18 +123,24 @@ export interface CreateEvidencePortsParams {
 export function createEvidencePorts(params: CreateEvidencePortsParams): AssessmentEvidencePorts {
   const {
     scannerCandleFetcher,
+    checkRegimeBoundary,
     regimeFreshnessMs = DEFAULT_REGIME_FRESHNESS_MS,
     candleFreshnessMs = DEFAULT_CANDLE_FRESHNESS_MS,
   } = params;
 
   // ── Regime adapter ────────────────────────────────────────────────────
+  //
+  // L3 Q2: regime evidence is evaluated over the Traderton `check_regime`
+  // boundary (candles fetched behind the boundary). Same mapping the coordinator
+  // uses: success → AssessmentData; failure/transport_error → err (never a
+  // synthesized regime). Only orderbook/perp identities are supported.
 
   const regimeAdapter: AssessmentRegimeSource = {
     getRegime: async (identity: MarketAssessmentIdentity) => {
-      if (!scannerCandleFetcher) {
+      if (!checkRegimeBoundary) {
         return err({
           code: 'assessment.evidence_unavailable',
-          message: 'Scanner candle fetcher not configured',
+          message: 'Regime boundary not configured',
         });
       }
 
@@ -97,28 +152,38 @@ export function createEvidencePorts(params: CreateEvidencePortsParams): Assessme
         });
       }
 
-      try {
-        const requiredCandles = getRequiredRegimeCandleCount({});
+      const result = await checkRegimeBoundary.invoke({
+        toolName: 'check_regime',
+        payload: { benchmarkSymbol: target.providerSymbol },
+      });
 
-        const candleFetcher = async (symbol: string): Promise<PriceCandle[]> => {
-          return scannerCandleFetcher(
-            { venueType: 'orderbook', providerSymbol: symbol },
-            '1d',
-            requiredCandles,
-          );
-        };
-
-        const regimeResult: RegimeResult = await evaluateRegime(
-          { benchmarkSymbol: target.providerSymbol },
-          candleFetcher,
-        );
-
-        return ok(
-          makeAssessmentData(regimeResult, 'computed-regime', 'binance', regimeFreshnessMs),
-        );
-      } catch (caught) {
-        const message = caught instanceof Error ? caught.message : String(caught);
-        return err({ code: 'assessment.regime_failed', message });
+      switch (result.kind) {
+        case 'success': {
+          const payload = parseRegimePayload(result.data);
+          const regimeResult: RegimeResult = {
+            pass: payload.pass,
+            reasons: payload.reasons,
+            details: payload.details as RegimeResult['details'],
+          };
+          const source = payload.freshness?.source === 'cache' ? 'cached-regime' : 'computed-regime';
+          const provider = payload.freshness?.provider ?? 'binance';
+          return ok(makeAssessmentData(regimeResult, source, provider, regimeFreshnessMs));
+        }
+        case 'failure':
+          return err({
+            code: 'assessment.regime_failed',
+            message: `check_regime failed (${result.code}): ${result.message}`,
+          });
+        case 'transport_error':
+          return err({
+            code: 'assessment.evidence_unavailable',
+            message: `Regime boundary unreachable: ${result.message}`,
+          });
+        case 'in_progress':
+          return err({
+            code: 'assessment.evidence_unavailable',
+            message: 'Regime boundary invocation is still in progress',
+          });
       }
     },
   };

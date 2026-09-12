@@ -3,9 +3,52 @@ import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
 import { createLeaderElection, type LeaderElection } from './leader-election.js';
 import type { ProviderRegistry } from '@herobids/market-data';
+import type { TradertonReadResult } from '@herobids/domain';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type { MarketMonitor } from './monitor.js';
 import { recordProviderSuccess, recordProviderFailure, recordFreshnessMode, recordRateLimitThrottle, isRateLimitThrottle } from './provider-counters.js';
+
+/**
+ * The narrow `check_regime` read-boundary port the coordinator consumes (L3 Q2
+ * regime re-point). Structurally identical to the read tools' boundary; the
+ * composition root binds a SYSTEM subject + deadline. When absent, regime
+ * refresh records a provider failure and writes an unavailable snapshot.
+ */
+export interface CheckRegimeBoundary {
+  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+}
+
+/** The subset of the boundary `check_regime` success payload the coordinator needs. */
+interface RegimeBoundaryPayload {
+  pass: boolean;
+  reasons: string[];
+  details: Record<string, unknown>;
+  freshness?: { provider: string; source: 'upstream' | 'cache'; ageMs: number; isStale: boolean };
+}
+
+/** Narrow the boundary `check_regime` success payload (`unknown` over the wire). */
+function parseRegimePayload(data: unknown): RegimeBoundaryPayload {
+  const record = (data ?? {}) as Record<string, unknown>;
+  const rawFreshness = record['freshness'];
+  let freshness: RegimeBoundaryPayload['freshness'];
+  if (rawFreshness && typeof rawFreshness === 'object') {
+    const f = rawFreshness as Record<string, unknown>;
+    freshness = {
+      provider: typeof f['provider'] === 'string' ? f['provider'] : 'binance',
+      source: f['source'] === 'cache' ? 'cache' : 'upstream',
+      ageMs: typeof f['ageMs'] === 'number' ? f['ageMs'] : 0,
+      isStale: f['isStale'] === true,
+    };
+  }
+  return {
+    pass: record['pass'] === true,
+    reasons: Array.isArray(record['reasons']) ? (record['reasons'] as string[]) : [],
+    details: (record['details'] && typeof record['details'] === 'object')
+      ? (record['details'] as Record<string, unknown>)
+      : {},
+    ...(freshness ? { freshness } : {}),
+  };
+}
 
 const logger = createLogger('market-data-coordinator');
 
@@ -33,6 +76,13 @@ export interface CoordinatorDeps {
   publisher: InstanceEventPublisher;
   /** Optional monitor — started/stopped with this coordinator under the same leader lease. */
   monitor?: MarketMonitor;
+  /**
+   * The `check_regime` read boundary (L3 Q2 regime re-point). Bound to a SYSTEM
+   * subject by the worker composition root. When absent, regime refresh records
+   * a provider failure and writes an unavailable snapshot (no in-process
+   * candle/regime fallback).
+   */
+  checkRegimeBoundary?: CheckRegimeBoundary;
 }
 
 export interface MarketDataCoordinator {
@@ -55,7 +105,7 @@ export function createMarketDataCoordinator(
     discoveryMaxResults = 50,
   } = config;
 
-  const { redis, providerRegistry } = deps;
+  const { redis, providerRegistry, checkRegimeBoundary } = deps;
 
   let leaderElection: LeaderElection | undefined;
   let discoveryTimer: ReturnType<typeof setInterval> | undefined;
@@ -356,60 +406,106 @@ export function createMarketDataCoordinator(
 
   async function refreshRegime(): Promise<void> {
     for (const benchmarkSymbol of benchmarkSymbols) {
-      try {
-        const { getRequiredRegimeCandleCount } = await import('@herobids/market-data');
-        const requiredCandles = getRequiredRegimeCandleCount({});
-        const candleResult = await providerRegistry.binance.candles(benchmarkSymbol, { interval: '1h', limit: requiredCandles });
+      // L3 Q2: regime is evaluated over the Traderton `check_regime` boundary
+      // (candles fetched behind the boundary). No in-process candle fetch. When
+      // the boundary is unconfigured, record a failure + write an unavailable
+      // snapshot — never fall back to a local regime computation.
+      if (!checkRegimeBoundary) {
         if (stopped) return;
-        const candles = candleResult.data;
+        void recordProviderFailure(redis, 'binance', 'regime');
+        await writeRegimeSnapshot(benchmarkSymbol, {
+          benchmarkSymbol,
+          evaluatedAt: new Date().toISOString(),
+          freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: regimePollMs * 2 },
+          pass: false,
+          reasons: ['Regime boundary not configured'],
+          details: {},
+        });
+        await recordRegimeError(benchmarkSymbol);
+        continue;
+      }
 
-        if (!candles || candles.length === 0) {
-          if (stopped) return;
+      const result = await checkRegimeBoundary.invoke({
+        toolName: 'check_regime',
+        payload: { benchmarkSymbol },
+      });
+      if (stopped) return;
+
+      switch (result.kind) {
+        case 'success': {
+          const payload = parseRegimePayload(result.data);
+          // Re-source provider/freshness telemetry from the boundary result (parity).
+          void recordProviderSuccess(redis, 'binance', 'regime');
+          void recordFreshnessMode(
+            redis,
+            'binance',
+            'regime',
+            payload.freshness?.source === 'upstream' ? 'fresh' : 'cached',
+          );
+          await writeRegimeSnapshot(benchmarkSymbol, {
+            benchmarkSymbol,
+            evaluatedAt: new Date().toISOString(),
+            freshness: {
+              state: 'fresh',
+              ageMs: payload.freshness?.ageMs ?? 0,
+              maxAllowedAgeMs: regimePollMs * 2,
+            },
+            pass: payload.pass,
+            reasons: payload.reasons,
+            details: payload.details,
+          });
+          logger.debug({ benchmarkSymbol, pass: payload.pass }, 'Regime snapshot refreshed');
+          break;
+        }
+        case 'failure': {
+          logger.error({ code: result.code, message: result.message, benchmarkSymbol }, 'Regime refresh failed');
+          if (result.code === 'rate_limit.exceeded') {
+            void recordRateLimitThrottle(redis, 'binance', 'regime');
+          } else {
+            void recordProviderFailure(redis, 'binance', 'regime');
+          }
           await writeRegimeSnapshot(benchmarkSymbol, {
             benchmarkSymbol,
             evaluatedAt: new Date().toISOString(),
             freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: regimePollMs * 2 },
             pass: false,
-            reasons: ['No candle data available'],
+            reasons: [result.message],
             details: {},
           });
-          continue;
+          await recordRegimeError(benchmarkSymbol);
+          break;
         }
-
-        // Use evaluateRegime from market-data — import dynamically to avoid circular deps
-        const { evaluateRegime } = await import('@herobids/market-data');
-        const regimeResult = await evaluateRegime({ benchmarkSymbol }, async () => candles);
-        if (stopped) return;
-
-        const snapshot = {
-          benchmarkSymbol,
-          evaluatedAt: new Date().toISOString(),
-          freshness: { state: 'fresh' as const, ageMs: 0, maxAllowedAgeMs: regimePollMs * 2 },
-          pass: regimeResult.pass,
-          reasons: regimeResult.reasons,
-          details: regimeResult.details,
-        };
-
-        if (stopped) return;
-        await writeRegimeSnapshot(benchmarkSymbol, snapshot);
-        void recordProviderSuccess(redis, 'binance', 'regime');
-        void recordFreshnessMode(redis, 'binance', 'regime', candleResult.meta.freshness.source === 'upstream' ? 'fresh' : 'cached');
-        logger.debug({ benchmarkSymbol, pass: regimeResult.pass }, 'Regime snapshot refreshed');
-      } catch (err) {
-        if (stopped) return;
-        logger.error({ err, benchmarkSymbol }, 'Regime refresh failed');
-        if (isRateLimitThrottle(err)) {
-          void recordRateLimitThrottle(redis, 'binance', 'regime');
-        } else {
+        case 'transport_error': {
+          logger.error({ message: result.message, benchmarkSymbol }, 'Regime refresh failed — boundary unreachable');
           void recordProviderFailure(redis, 'binance', 'regime');
+          await writeRegimeSnapshot(benchmarkSymbol, {
+            benchmarkSymbol,
+            evaluatedAt: new Date().toISOString(),
+            freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: regimePollMs * 2 },
+            pass: false,
+            reasons: [result.message],
+            details: {},
+          });
+          await recordRegimeError(benchmarkSymbol);
+          break;
         }
-        await redis.set('market-intel:last-error', JSON.stringify({
-          source: 'regime',
-          benchmarkSymbol,
-          occurredAt: new Date().toISOString(),
-        }), 'EX', 3600);
+        case 'in_progress':
+          // Non-terminal — record nothing and leave the existing snapshot
+          // unchanged (a later poll refreshes it).
+          logger.debug({ benchmarkSymbol }, 'Regime refresh in progress — leaving snapshot unchanged');
+          break;
       }
     }
+  }
+
+  /** Record a regime refresh error marker (best-effort). */
+  async function recordRegimeError(benchmarkSymbol: string): Promise<void> {
+    if (stopped) return;
+    await redis.set('market-intel:last-error', JSON.stringify({
+      source: 'regime',
+      benchmarkSymbol,
+      occurredAt: new Date().toISOString(),
+    }), 'EX', 3600);
   }
 
   async function writeRegimeSnapshot(benchmarkSymbol: string, snapshot: Record<string, unknown>): Promise<void> {

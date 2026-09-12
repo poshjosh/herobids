@@ -38,7 +38,9 @@ import {
   buildServiceRegistry,
 } from './agents/index.js';
 import { createTradertonClient } from '@herobids/domain/traderton';
+import type { TradertonSubject } from '@herobids/domain/traderton';
 import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
+import { createTradertonReadBoundary } from './traderton/read-adapter.js';
 import { ApprovalService } from './services/approval-service.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
 import { DockerRuntimeDocumentMaterializer } from './agents/docker-document-materializer.js';
@@ -490,6 +492,38 @@ const sideEffectBoundary = (() => {
   return createTradertonSideEffectBoundary(client);
 })();
 
+// L3 Q2: a SYSTEM-subject read boundary for the shared worker's market-intel
+// read tools (`score_candidate`, `check_regime`). Unlike the per-agent read
+// boundary (built in the agent container with an agent subject), this runs in
+// the shared worker process and serves platform-owned market intelligence, so
+// it binds a fixed SYSTEM subject. `score_candidate`/`check_regime` are
+// read-market-data — the boundary resolver short-circuits, so a system subject
+// suffices. Undefined when the boundary is unconfigured (baseUrl/hmacSecret
+// absent) — callers then propagate a typed "boundary unavailable" outcome.
+const systemReadBoundary = (() => {
+  const b = appConfig.boundary;
+  if (!b.baseUrl || !b.hmacSecret) {
+    logger.info(
+      { hasBaseUrl: !!b.baseUrl, hasSecret: !!b.hmacSecret },
+      'Traderton system read boundary not configured — market-intel scoring/regime tools return a typed boundary-unavailable outcome',
+    );
+    return undefined;
+  }
+  const client = createTradertonClient({
+    baseUrl: b.baseUrl,
+    consumerId: b.consumerId,
+    keyId: b.keyId,
+    hmacSecret: b.hmacSecret,
+    requestTimeoutMs: b.requestTimeoutMs,
+  });
+  const subject: TradertonSubject = {
+    ownerId: b.consumerId,
+    actor: { type: 'system', id: 'market-intel' },
+  };
+  logger.info({ baseUrl: b.baseUrl }, 'Traderton system read boundary enabled — market-intel scoring/regime route over REST');
+  return createTradertonReadBoundary(client, subject, b.requestTimeoutMs);
+})();
+
 // L3c: resolve the approval-snapshot venue-account id from the connection grant
 // (a KEEP platform value), NOT the engine. Picks the agent's ready trading
 // connection's resolvedVenueAccountId. Returns null when none exists.
@@ -916,7 +950,14 @@ const marketIntelCoordinator = appConfig.marketData
           enabled: miConfig.enabled,
           discoveryMaxResults: appConfig.marketData.discovery.maxResults,
         },
-        { redis: redisClient, providerRegistry: sharedMarketDataRegistry!, publisher: eventPublisher, monitor: marketMonitor },
+        {
+          redis: redisClient,
+          providerRegistry: sharedMarketDataRegistry!,
+          publisher: eventPublisher,
+          monitor: marketMonitor,
+          // L3 Q2: regime evaluation routes over the SYSTEM read boundary.
+          checkRegimeBoundary: systemReadBoundary,
+        },
       );
       return coordinator;
     })()
@@ -944,7 +985,8 @@ if (providersYaml?.providers) {
 
 // Real evidence ports backed by the worker's scanner candle fetcher.
 // Liquidity and breadth remain explicitly unavailable in the first shipped slice.
-const evidencePorts = createEvidencePorts({ scannerCandleFetcher });
+// L3 Q2: regime evidence routes over the SYSTEM read boundary (check_regime).
+const evidencePorts = createEvidencePorts({ scannerCandleFetcher, checkRegimeBoundary: systemReadBoundary });
 
 const getPresets = createPresetCatalog();
 
@@ -957,6 +999,8 @@ const { assessor: platformAssessor, llmConfig: platformLlmConfig } = createPlatf
   getPresets,
   logger,
   appConfig.llm.openRouterProviderControls,
+  // L3 Q2: orderbook/perp preset scoring routes over the SYSTEM read boundary.
+  systemReadBoundary,
 );
 
 const usageBillingRepo = new UsageBillingRepository(
