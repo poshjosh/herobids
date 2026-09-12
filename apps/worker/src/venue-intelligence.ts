@@ -1,4 +1,199 @@
+import type { RegimeResult } from '@herobids/market-data';
 import type { RuntimePositionSnapshot, RuntimeSessionMetrics } from './runtime-composition.js';
+
+// ── Traderton read-boundary payload parsers ────────────────────────────────
+//
+// The B2 re-point routes the regime tick-gate + venue-intelligence reads over
+// the Traderton READ boundary (`check_regime`, `get_market_overview`,
+// `discover_tokens`, `search_tokens`). Boundary payloads arrive as `unknown`
+// over REST, so these helpers narrow them into the exact in-process shapes the
+// consumers already build — preserving every field, freshness, and telemetry
+// hook without a behaviour change. They are pure (no I/O) and unit-tested; the
+// agent-runtime wiring calls them behind the boundary-present gate and keeps
+// the in-process registry path as the fallback when the boundary is absent.
+
+/** The `{ isStale, ageMs }` subset the venue-intel `providerFreshness` helper consumes. */
+export interface BoundaryFreshness {
+  isStale: boolean;
+  ageMs: number;
+}
+
+/** Narrow a boundary `freshness` object (`unknown` over the wire) to `{ isStale, ageMs }`. */
+function parseBoundaryFreshness(value: unknown): BoundaryFreshness {
+  const record = (value && typeof value === 'object') ? (value as Record<string, unknown>) : {};
+  return {
+    isStale: record['isStale'] === true,
+    ageMs: typeof record['ageMs'] === 'number' ? record['ageMs'] : 0,
+  };
+}
+
+function toNullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** Freshness re-sourced from a `check_regime` boundary success payload (parity with the coordinator). */
+export interface RegimeBoundaryFreshness {
+  provider: string;
+  source: 'upstream' | 'cache';
+  ageMs: number;
+  isStale: boolean;
+}
+
+/** A `check_regime` boundary success payload narrowed into the in-process `RegimeResult` + freshness. */
+export interface ParsedRegimeBoundaryPayload {
+  regime: RegimeResult;
+  freshness: RegimeBoundaryFreshness | null;
+}
+
+function parseRegimeDetails(value: unknown): RegimeResult['details'] {
+  const d = (value && typeof value === 'object') ? (value as Record<string, unknown>) : {};
+  const emaAlignment = d['emaAlignment'] === 'bearish' ? 'bearish' : 'bullish';
+  const marketStructure =
+    d['marketStructure'] === 'higherHighs' ? 'higherHighs'
+      : d['marketStructure'] === 'lowerHighs' ? 'lowerHighs'
+        : 'mixed';
+  const num = (key: string): number => (typeof d[key] === 'number' && Number.isFinite(d[key]) ? d[key] as number : 0);
+  return {
+    benchmarkSymbol: typeof d['benchmarkSymbol'] === 'string' ? d['benchmarkSymbol'] : '',
+    currentPrice: num('currentPrice'),
+    emaFast: num('emaFast'),
+    emaSlow: num('emaSlow'),
+    emaTrend: num('emaTrend'),
+    emaAlignment,
+    adxValue: num('adxValue'),
+    choppy: d['choppy'] === true,
+    vwap: num('vwap'),
+    priceAboveVwap: d['priceAboveVwap'] === true,
+    marketStructure,
+  };
+}
+
+/**
+ * Narrow a `check_regime` boundary success payload into the in-process
+ * `RegimeResult` the tick gate consumes (`pass`/`reasons`/`details`) plus the
+ * freshness the runtime re-sources into its regime telemetry (parity with the
+ * coordinator's `parseRegimePayload`).
+ */
+export function parseRegimeBoundaryPayload(data: unknown): ParsedRegimeBoundaryPayload {
+  const record = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+  const rawFreshness = record['freshness'];
+  let freshness: RegimeBoundaryFreshness | null = null;
+  if (rawFreshness && typeof rawFreshness === 'object') {
+    const f = rawFreshness as Record<string, unknown>;
+    freshness = {
+      provider: typeof f['provider'] === 'string' ? f['provider'] : 'binance',
+      source: f['source'] === 'cache' ? 'cache' : 'upstream',
+      ageMs: typeof f['ageMs'] === 'number' ? f['ageMs'] : 0,
+      isStale: f['isStale'] === true,
+    };
+  }
+  return {
+    regime: {
+      pass: record['pass'] === true,
+      reasons: Array.isArray(record['reasons'])
+        ? (record['reasons'] as unknown[]).filter((r): r is string => typeof r === 'string')
+        : [],
+      details: parseRegimeDetails(record['details']),
+    },
+    freshness,
+  };
+}
+
+/** A single `get_market_overview` per-symbol entry narrowed from the boundary payload. */
+export interface MarketOverviewEntry {
+  symbol: string;
+  price: number | null;
+  change24hPct: number | null;
+  volume24hUsd: number | null;
+  fundingRate: number | null;
+  openInterest: number | null;
+  markOracleSpreadPct: number | null;
+  longShortRatio: number | null;
+}
+
+/** A `get_market_overview` boundary success payload narrowed into per-symbol entries + freshness. */
+export interface ParsedMarketOverviewPayload {
+  overview: MarketOverviewEntry[];
+  freshness: BoundaryFreshness;
+}
+
+/**
+ * Narrow a `get_market_overview` boundary success payload into the per-symbol
+ * fields the perps venue-intelligence signal consumes. Every field the source
+ * tool returns (`symbol`, `price`, `change24hPct`, `volume24hUsd`,
+ * `fundingRate`, `openInterest`, `markOracleSpreadPct`, `longShortRatio`) is
+ * preserved so the signal is byte-for-byte equivalent to the in-process path.
+ */
+export function parseMarketOverviewPayload(data: unknown): ParsedMarketOverviewPayload {
+  const record = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+  const rawOverview = Array.isArray(record['overview']) ? record['overview'] : [];
+  const overview: MarketOverviewEntry[] = rawOverview.map((raw) => {
+    const o = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {};
+    return {
+      symbol: typeof o['symbol'] === 'string' ? o['symbol'] : '',
+      price: toNullableNumber(o['price']),
+      change24hPct: toNullableNumber(o['change24hPct']),
+      volume24hUsd: toNullableNumber(o['volume24hUsd']),
+      fundingRate: toNullableNumber(o['fundingRate']),
+      openInterest: toNullableNumber(o['openInterest']),
+      markOracleSpreadPct: toNullableNumber(o['markOracleSpreadPct']),
+      longShortRatio: toNullableNumber(o['longShortRatio']),
+    };
+  });
+  return { overview, freshness: parseBoundaryFreshness(record['freshness']) };
+}
+
+/**
+ * A DEX token narrowed from a `discover_tokens` / `search_tokens` boundary
+ * payload. Carries exactly the fields the venue-intel DEX signal consumes
+ * (verified against the source tools: `priceUsd`, `liquidityUsd`,
+ * `volume24hUsd`, `priceChange24hPct`, `network`, `address`, `symbol`,
+ * `poolCreatedAt`, `discoveryVectors`).
+ */
+export interface DexBoundaryToken {
+  symbol: string;
+  network: string;
+  address: string;
+  priceUsd: number;
+  liquidityUsd: number;
+  volume24hUsd: number;
+  priceChange24hPct: number;
+  poolCreatedAt: string | null;
+  discoveryVectors: string[];
+}
+
+function parseDexToken(raw: unknown): DexBoundaryToken {
+  const t = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {};
+  return {
+    symbol: typeof t['symbol'] === 'string' ? t['symbol'] : '',
+    network: typeof t['network'] === 'string' ? t['network'] : '',
+    address: typeof t['address'] === 'string' ? t['address'] : '',
+    priceUsd: typeof t['priceUsd'] === 'number' ? t['priceUsd'] : 0,
+    liquidityUsd: typeof t['liquidityUsd'] === 'number' ? t['liquidityUsd'] : 0,
+    volume24hUsd: typeof t['volume24hUsd'] === 'number' ? t['volume24hUsd'] : 0,
+    priceChange24hPct: typeof t['priceChange24hPct'] === 'number' ? t['priceChange24hPct'] : 0,
+    poolCreatedAt: typeof t['poolCreatedAt'] === 'string' ? t['poolCreatedAt'] : null,
+    discoveryVectors: Array.isArray(t['discoveryVectors'])
+      ? (t['discoveryVectors'] as unknown[]).filter((v): v is string => typeof v === 'string')
+      : [],
+  };
+}
+
+/** A `discover_tokens` / `search_tokens` boundary success payload narrowed into tokens + freshness. */
+export interface ParsedDexTokensPayload {
+  tokens: DexBoundaryToken[];
+  freshness: BoundaryFreshness;
+}
+
+/** Narrow a `discover_tokens` or `search_tokens` boundary success payload into DEX tokens + freshness. */
+export function parseDexTokensPayload(data: unknown): ParsedDexTokensPayload {
+  const record = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+  const rawTokens = Array.isArray(record['tokens']) ? record['tokens'] : [];
+  return {
+    tokens: rawTokens.map(parseDexToken),
+    freshness: parseBoundaryFreshness(record['freshness']),
+  };
+}
 
 /**
  * Build a map from `${network}:${SYMBOL}` to a discovered token object.

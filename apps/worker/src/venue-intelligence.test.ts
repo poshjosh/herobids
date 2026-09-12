@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDiscoveryNetworkMap, buildDiscoveryAddressMap, collectDexTrackedSymbols, collectDexTrackedTargets, findDexPositionForTarget, collectPerpsTrackedSymbols, normalizeTrackedSymbol } from './venue-intelligence.js';
+import { buildDiscoveryNetworkMap, buildDiscoveryAddressMap, collectDexTrackedSymbols, collectDexTrackedTargets, findDexPositionForTarget, collectPerpsTrackedSymbols, normalizeTrackedSymbol, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload } from './venue-intelligence.js';
 import type { RuntimeSessionMetrics } from './runtime-composition.js';
 
 function buildSessionMetrics(): RuntimeSessionMetrics {
@@ -202,5 +202,217 @@ describe('buildDiscoveryAddressMap', () => {
     const token = { network: 'Solana', address: '0xABC123', symbol: 'TEST' };
     const map = buildDiscoveryAddressMap([token]);
     expect(map.has('solana:0xabc123')).toBe(true);
+  });
+});
+
+// ── B2 read-boundary payload parsers ────────────────────────────────────────
+// These narrow the Traderton `check_regime` / `get_market_overview` /
+// `discover_tokens` / `search_tokens` success payloads (which arrive as
+// `unknown` over REST) into the exact in-process shapes the regime tick gate +
+// venue-intelligence consumers already build. The runtime boundary re-point in
+// agent.ts relies on these to preserve field/freshness parity, so they mirror
+// the mapping the coordinator's parseRegimePayload asserts.
+
+describe('parseRegimeBoundaryPayload', () => {
+  it('maps a check_regime success payload into a RegimeResult plus freshness', () => {
+    const parsed = parseRegimeBoundaryPayload({
+      ok: true,
+      pass: true,
+      reasons: ['bullish', 'trend confirmed'],
+      details: {
+        benchmarkSymbol: 'BTC',
+        currentPrice: 65000,
+        emaFast: 1,
+        emaSlow: 2,
+        emaTrend: 3,
+        emaAlignment: 'bullish',
+        adxValue: 27.5,
+        choppy: false,
+        vwap: 64000,
+        priceAboveVwap: true,
+        marketStructure: 'higherHighs',
+      },
+      freshness: { provider: 'binance', source: 'upstream', ageMs: 1234, isStale: false },
+    });
+
+    expect(parsed.regime.pass).toBe(true);
+    expect(parsed.regime.reasons).toEqual(['bullish', 'trend confirmed']);
+    expect(parsed.regime.details).toEqual({
+      benchmarkSymbol: 'BTC',
+      currentPrice: 65000,
+      emaFast: 1,
+      emaSlow: 2,
+      emaTrend: 3,
+      emaAlignment: 'bullish',
+      adxValue: 27.5,
+      choppy: false,
+      vwap: 64000,
+      priceAboveVwap: true,
+      marketStructure: 'higherHighs',
+    });
+    expect(parsed.freshness).toEqual({ provider: 'binance', source: 'upstream', ageMs: 1234, isStale: false });
+  });
+
+  it('reports a failing regime with an absent freshness as null', () => {
+    const parsed = parseRegimeBoundaryPayload({ ok: true, pass: false, reasons: ['choppy'], details: {} });
+    expect(parsed.regime.pass).toBe(false);
+    expect(parsed.regime.reasons).toEqual(['choppy']);
+    expect(parsed.freshness).toBeNull();
+  });
+
+  it('defaults a cache freshness source and stale flag from the boundary payload', () => {
+    const parsed = parseRegimeBoundaryPayload({
+      pass: true,
+      reasons: [],
+      details: {},
+      freshness: { source: 'cache', ageMs: 5000, isStale: true },
+    });
+    expect(parsed.freshness).toEqual({ provider: 'binance', source: 'cache', ageMs: 5000, isStale: true });
+  });
+
+  it('narrows a malformed payload without throwing', () => {
+    const parsed = parseRegimeBoundaryPayload(null);
+    expect(parsed.regime.pass).toBe(false);
+    expect(parsed.regime.reasons).toEqual([]);
+    expect(parsed.regime.details.emaAlignment).toBe('bullish');
+    expect(parsed.regime.details.marketStructure).toBe('mixed');
+    expect(parsed.freshness).toBeNull();
+  });
+
+  it('drops non-string reasons entries', () => {
+    const parsed = parseRegimeBoundaryPayload({ pass: true, reasons: ['ok', 42, null], details: {} });
+    expect(parsed.regime.reasons).toEqual(['ok']);
+  });
+});
+
+describe('parseMarketOverviewPayload', () => {
+  it('preserves every per-symbol perps field the venue-intel signal renders', () => {
+    const parsed = parseMarketOverviewPayload({
+      ok: true,
+      overview: [
+        {
+          symbol: 'BTC',
+          price: 65000,
+          change24hPct: 1.5,
+          volume24hUsd: 1_000_000,
+          fundingRate: 0.0001,
+          openInterest: 2500,
+          markOracleSpreadPct: 0.05,
+          longShortRatio: 1.8,
+        },
+      ],
+      freshness: { source: 'upstream', ageMs: 0, isStale: false },
+    });
+
+    expect(parsed.overview).toEqual([
+      {
+        symbol: 'BTC',
+        price: 65000,
+        change24hPct: 1.5,
+        volume24hUsd: 1_000_000,
+        fundingRate: 0.0001,
+        openInterest: 2500,
+        markOracleSpreadPct: 0.05,
+        longShortRatio: 1.8,
+      },
+    ]);
+    expect(parsed.freshness).toEqual({ isStale: false, ageMs: 0 });
+  });
+
+  it('coerces missing or non-numeric fields to null and preserves stale freshness', () => {
+    const parsed = parseMarketOverviewPayload({
+      overview: [{ symbol: 'ETH', longShortRatio: null }],
+      freshness: { isStale: true, ageMs: 8000 },
+    });
+
+    expect(parsed.overview[0]).toEqual({
+      symbol: 'ETH',
+      price: null,
+      change24hPct: null,
+      volume24hUsd: null,
+      fundingRate: null,
+      openInterest: null,
+      markOracleSpreadPct: null,
+      longShortRatio: null,
+    });
+    expect(parsed.freshness).toEqual({ isStale: true, ageMs: 8000 });
+  });
+
+  it('narrows a malformed payload to an empty overview', () => {
+    const parsed = parseMarketOverviewPayload({});
+    expect(parsed.overview).toEqual([]);
+    expect(parsed.freshness).toEqual({ isStale: false, ageMs: 0 });
+  });
+});
+
+describe('parseDexTokensPayload', () => {
+  it('preserves every DEX field the venue-intel signal + discovery join consume', () => {
+    const parsed = parseDexTokensPayload({
+      ok: true,
+      tokens: [
+        {
+          symbol: 'BONK',
+          network: 'solana',
+          address: 'DezX',
+          priceUsd: 0.000012,
+          liquidityUsd: 500_000,
+          volume24hUsd: 250_000,
+          priceChange24hPct: 12.5,
+          poolCreatedAt: '2026-06-09T00:00:00.000Z',
+          discoveryVectors: ['trending', 'volume'],
+        },
+      ],
+      freshness: { source: 'upstream', ageMs: 100, isStale: false },
+    });
+
+    expect(parsed.tokens).toEqual([
+      {
+        symbol: 'BONK',
+        network: 'solana',
+        address: 'DezX',
+        priceUsd: 0.000012,
+        liquidityUsd: 500_000,
+        volume24hUsd: 250_000,
+        priceChange24hPct: 12.5,
+        poolCreatedAt: '2026-06-09T00:00:00.000Z',
+        discoveryVectors: ['trending', 'volume'],
+      },
+    ]);
+    expect(parsed.freshness).toEqual({ isStale: false, ageMs: 100 });
+  });
+
+  it('narrows a missing poolCreatedAt to null and missing vectors to an empty array', () => {
+    const parsed = parseDexTokensPayload({
+      tokens: [{ symbol: 'WIF', network: 'solana', address: 'addr' }],
+      freshness: { isStale: true, ageMs: 4000 },
+    });
+
+    expect(parsed.tokens[0]).toEqual({
+      symbol: 'WIF',
+      network: 'solana',
+      address: 'addr',
+      priceUsd: 0,
+      liquidityUsd: 0,
+      volume24hUsd: 0,
+      priceChange24hPct: 0,
+      poolCreatedAt: null,
+      discoveryVectors: [],
+    });
+    expect(parsed.freshness).toEqual({ isStale: true, ageMs: 4000 });
+  });
+
+  it('drops non-string discovery vectors and narrows a malformed payload', () => {
+    const parsed = parseDexTokensPayload({ tokens: [{ symbol: 'A', network: 'n', address: 'x', discoveryVectors: ['v', 3, null] }] });
+    expect(parsed.tokens[0]?.discoveryVectors).toEqual(['v']);
+    expect(parseDexTokensPayload(undefined).tokens).toEqual([]);
+  });
+
+  it('parses the address map join key produced from a boundary discovery payload', () => {
+    const parsed = parseDexTokensPayload({
+      tokens: [{ symbol: 'SOL', network: 'Solana', address: '0xABC', poolCreatedAt: '2026-06-01T00:00:00.000Z', discoveryVectors: ['trending'] }],
+    });
+    const map = buildDiscoveryAddressMap(parsed.tokens);
+    expect(map.get('solana:0xabc')?.poolCreatedAt).toBe('2026-06-01T00:00:00.000Z');
+    expect(map.get('solana:0xabc')?.discoveryVectors).toEqual(['trending']);
   });
 });
