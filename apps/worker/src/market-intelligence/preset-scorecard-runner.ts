@@ -8,9 +8,7 @@ import type {
   TradertonReadResult,
 } from '@herobids/domain';
 import { computePresetBehaviorVersion, err, ok, type Result } from '@herobids/domain';
-import { scoreCandidate } from '@herobids/strategy';
 import type {
-  CandidateContext,
   IndicatorConfig,
   ScanConfig,
 } from '@herobids/strategy';
@@ -18,11 +16,12 @@ import type {
 // ── Deps ────────────────────────────────────────────────────────────────────
 
 /**
- * The narrow `score_candidate` read-boundary port the runner consumes for
- * orderbook/perp scoring (L3 Q2 re-point). Structurally identical to the read
- * tools' `ctx.tradertonBoundary`; the composition root binds a SYSTEM subject +
- * deadline. When absent, orderbook scoring cannot proceed (the caller supplies
- * it; the assessor threads one from the worker composition root).
+ * The narrow `score_candidate` read-boundary port the runner consumes for ALL
+ * scoring — orderbook/perp AND swap/dex (the swap arm now routes over the
+ * boundary too; the boundary resolves the token → pool behind it). Structurally
+ * identical to the read tools' `ctx.tradertonBoundary`; the composition root
+ * binds a SYSTEM subject + deadline. When absent, scoring cannot proceed (the
+ * caller supplies it; the assessor threads one from the worker composition root).
  */
 export interface ScoreCandidateBoundary {
   invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
@@ -30,9 +29,9 @@ export interface ScoreCandidateBoundary {
 
 export interface PresetScorecardRunnerDeps {
   /**
-   * The `score_candidate` boundary for orderbook/perp scoring. Swap/dex scoring
-   * stays in-process (see the swap carve-out in generateScorecards). Optional so
-   * unit tests can drive the swap path (in-process) without a boundary stub.
+   * The `score_candidate` boundary for ALL scoring — orderbook/perp and swap/dex.
+   * The boundary fetches candles (and, for swap, resolves the token → pool) behind
+   * itself. Optional so unit tests can assert the boundary-unavailable degrade.
    */
   scoreCandidateBoundary?: ScoreCandidateBoundary;
 }
@@ -43,12 +42,15 @@ export interface PresetScorecardRunner {
   /**
    * Generate deterministic scorecards for all presets in a style tier.
    *
-   * Orderbook/perp presets are scored over the Traderton `score_candidate`
-   * boundary (candles fetched behind the boundary). Swap/dex presets are scored
-   * in-process from the pre-fetched `candles` (the swap re-point is DEFERRED —
-   * the boundary needs a pool address the identity does not carry). Returns an
-   * error Result when the boundary reports an infrastructure failure so the
-   * caller can propagate it (never synthesizing a fake scan-health).
+   * ALL presets are scored over the Traderton `score_candidate` boundary. For
+   * orderbook/perp the boundary fetches candles from the provider symbol; for
+   * swap/dex it resolves the token (network + address) → its canonical pool and
+   * scores that pool's candles — all behind the boundary. Returns an error
+   * Result when the boundary reports an infrastructure failure so the caller can
+   * propagate it (never synthesizing a fake scan-health).
+   *
+   * `candles` is retained on the signature for the (unchanged) public shape but
+   * is no longer consumed — the boundary owns candle fetching for every arm.
    */
   generateScorecards(params: {
     identity: MarketAssessmentIdentity;
@@ -71,7 +73,7 @@ export class PresetScorecardRunnerImpl implements PresetScorecardRunner {
     presets: Array<{ key: string; entry: PresetEntry }>;
     candles: PriceCandle[];
   }): Promise<Result<PresetScorecardEntry[]>> {
-    const { identity, presets, candles } = params;
+    const { identity, presets } = params;
     const symbol = resolveSymbol(identity);
     const isOrderbookLike =
       identity.instrumentKind === 'orderbook' || identity.instrumentKind === 'perp';
@@ -89,34 +91,39 @@ export class PresetScorecardRunnerImpl implements PresetScorecardRunner {
         signalBias,
       };
 
-      let entryResult: Result<PresetScorecardEntry>;
-      if (isOrderbookLike) {
-        // Re-point orderbook/perp scoring to the boundary `score_candidate` tool.
-        // The boundary fetches candles itself from the identifiers; providerSymbol
-        // = identity.symbol reproduces the old in-process behaviour by construction
-        // (the old path passed identity.symbol as the candidate symbol).
-        entryResult = await this.scoreOrderbookViaBoundary({
-          identity,
-          symbol,
-          presetKey,
-          presetBehaviorVersion,
-          scanConfig,
-        });
-      } else {
-        // Swap/dex carve-out: the boundary re-point is DEFERRED (score_candidate
-        // needs a pool address the identity lacks). Keep the existing in-process
-        // scoreCandidate path for swap ONLY so we do not degrade swap parity.
-        entryResult = ok(
-          scoreSwapInProcess({
+      // Build the venue-specific `score_candidate` payload, then score over the
+      // boundary. Orderbook/perp pass a provider symbol; swap/dex pass the token
+      // identity (network + tokenAddress) and the boundary resolves the pool.
+      const payload = isOrderbookLike
+        ? {
+            // The boundary fetches candles itself from the identifiers; providerSymbol
+            // = identity.symbol reproduces the old in-process behaviour by construction
+            // (the old path passed identity.symbol as the candidate symbol).
             symbol,
-            candles,
-            venueFamily: identity.venueFamily,
-            presetKey,
-            presetBehaviorVersion,
-            scanConfig,
-          }),
-        );
-      }
+            instrumentId: symbol,
+            venueType: 'orderbook' as const,
+            providerSymbol: symbol,
+            venue: identity.venueFamily,
+            config: scanConfig,
+          }
+        : {
+            // Swap/dex: pass only the token identity the runner already has; the
+            // boundary resolves network + tokenAddress → the canonical pool, then
+            // scores that pool's candles (token→pool lookup stays behind the boundary).
+            symbol,
+            instrumentId: symbol,
+            venueType: 'swap' as const,
+            network: (identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>).network,
+            tokenAddress: (identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>).address,
+            venue: identity.venueFamily,
+            config: scanConfig,
+          };
+
+      const entryResult = await this.scoreViaBoundary({
+        payload,
+        presetKey,
+        presetBehaviorVersion,
+      });
 
       if (!entryResult.ok) {
         return entryResult;
@@ -127,13 +134,16 @@ export class PresetScorecardRunnerImpl implements PresetScorecardRunner {
     return ok(output);
   }
 
-  /** Score an orderbook/perp candidate over the `score_candidate` boundary. */
-  private async scoreOrderbookViaBoundary(input: {
-    identity: MarketAssessmentIdentity;
-    symbol: string;
+  /**
+   * Score a candidate over the `score_candidate` boundary and map the boundary
+   * result to a scorecard entry (or an error Result for infrastructure failures).
+   * Shared by the orderbook/perp and swap/dex arms — each builds its own payload;
+   * the invoke + result mapping is identical.
+   */
+  private async scoreViaBoundary(input: {
+    payload: unknown;
     presetKey: string;
     presetBehaviorVersion: string;
-    scanConfig: ScanConfig;
   }): Promise<Result<PresetScorecardEntry>> {
     if (!this.scoreCandidateBoundary) {
       return err({
@@ -142,18 +152,9 @@ export class PresetScorecardRunnerImpl implements PresetScorecardRunner {
       });
     }
 
-    const payload = {
-      symbol: input.symbol,
-      instrumentId: input.symbol,
-      venueType: 'orderbook' as const,
-      providerSymbol: input.symbol,
-      venue: input.identity.venueFamily,
-      config: input.scanConfig,
-    };
-
     const result = await this.scoreCandidateBoundary.invoke({
       toolName: 'score_candidate',
-      payload,
+      payload: input.payload,
     });
 
     switch (result.kind) {
@@ -236,35 +237,6 @@ function buildScorecardEntry(input: {
     scanHealth,
     evaluationScope: 'single_symbol_dry_run',
   };
-}
-
-/** Score a swap/dex candidate in-process from pre-fetched candles (deferred re-point). */
-function scoreSwapInProcess(input: {
-  symbol: string;
-  candles: PriceCandle[];
-  venueFamily: string;
-  presetKey: string;
-  presetBehaviorVersion: string;
-  scanConfig: ScanConfig;
-}): PresetScorecardEntry {
-  const candidate: CandidateContext = {
-    symbol: input.symbol,
-    instrumentId: input.symbol,
-    candles: input.candles,
-    venue: input.venueFamily,
-    // Swap identities carried venueType undefined in the source in-process path.
-    venueType: undefined,
-  };
-
-  const signal = scoreCandidate(candidate, input.scanConfig);
-
-  return buildScorecardEntry({
-    presetKey: input.presetKey,
-    presetBehaviorVersion: input.presetBehaviorVersion,
-    hasSignal: signal !== null,
-    confidence: signal?.confidence ?? null,
-    candlesEvaluated: input.candles.length,
-  });
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

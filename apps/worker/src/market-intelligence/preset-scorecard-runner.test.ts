@@ -9,8 +9,8 @@ import { scoreCandidate } from '@herobids/strategy';
 import type { PriceCandle } from '@herobids/market-data';
 import type { MarketAssessmentIdentity, PresetEntry, TradertonReadResult } from '@herobids/domain';
 
-// Mock scoreCandidate so we can inspect candidate context for the swap (in-process)
-// path. Orderbook/perp scoring routes over the boundary and never calls this.
+// Mock scoreCandidate so tests can assert the swap arm no longer calls in-process
+// scoring — ALL scoring (orderbook/perp AND swap/dex) now routes over the boundary.
 vi.mock('@herobids/strategy', async () => {
   const actual = await vi.importActual<typeof import('@herobids/strategy')>('@herobids/strategy');
   return { ...actual, scoreCandidate: vi.fn() };
@@ -271,8 +271,8 @@ describe('PresetScorecardRunner', () => {
     });
   });
 
-  describe('generateScorecards (swap/dex — in-process carve-out)', () => {
-    it('scores swap identities in-process via scoreCandidate (deferred re-point)', async () => {
+  describe('generateScorecards (swap/dex — boundary path)', () => {
+    it('routes swap scoring over the boundary with a swap token payload (network + tokenAddress), not in-process', async () => {
       const { boundary, invoke } = stubBoundary({ kind: 'success', data: { signal: null, candlesEvaluated: 0 } });
       const runner = makeRunner({ scoreCandidateBoundary: boundary });
       const identity: MarketAssessmentIdentity = {
@@ -290,19 +290,49 @@ describe('PresetScorecardRunner', () => {
       const result = await runner.generateScorecards({ identity, presets, candles });
 
       expect(result.ok).toBe(true);
-      // swap path does NOT call the boundary
-      expect(invoke).not.toHaveBeenCalled();
-      // swap path DOES call in-process scoreCandidate with the resolved symbol + candles
-      expect(scoreCandidate).toHaveBeenCalledTimes(1);
-      const candidateArg = vi.mocked(scoreCandidate).mock.calls[0]![0]!;
-      expect(candidateArg.symbol).toBe('solana:0xabc');
-      expect(candidateArg.candles).toBe(candles);
-      expect(candidateArg.venueType).toBeUndefined();
+      // swap path DOES call the boundary with a swap token payload
+      expect(invoke).toHaveBeenCalledTimes(1);
+      const call = invoke.mock.calls[0]![0] as { toolName: string; payload: Record<string, unknown> };
+      expect(call.toolName).toBe('score_candidate');
+      expect(call.payload.venueType).toBe('swap');
+      expect(call.payload.network).toBe('solana');
+      expect(call.payload.tokenAddress).toBe('0xabc');
+      expect(call.payload.symbol).toBe('solana:0xabc');
+      expect(call.payload.instrumentId).toBe('solana:0xabc');
+      expect(call.payload.venue).toBe('jupiter');
+      // no pool address is passed — the boundary resolves it
+      expect(call.payload.poolAddress).toBeUndefined();
+      // in-process scoreCandidate is NOT used on the boundary path
+      expect(scoreCandidate).not.toHaveBeenCalled();
     });
 
-    it('maps an in-process signal to scanHealth=healthy for swap', async () => {
-      vi.mocked(scoreCandidate).mockReturnValue({ confidence: 0.6 } as unknown as ReturnType<typeof scoreCandidate>);
-      const runner = makeRunner({});
+    it('routes dex identities over the boundary too (venueType=swap payload)', async () => {
+      const { boundary, invoke } = stubBoundary({ kind: 'success', data: { signal: null, candlesEvaluated: 0 } });
+      const runner = makeRunner({ scoreCandidateBoundary: boundary });
+      const identity: MarketAssessmentIdentity = {
+        instrumentKind: 'dex',
+        venueFamily: 'uniswap',
+        styleTier: 'standard',
+        network: 'ethereum',
+        address: '0xdef',
+      };
+      const presets = [{ key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') }];
+
+      await runner.generateScorecards({ identity, presets, candles: [] });
+
+      const call = invoke.mock.calls[0]![0] as { toolName: string; payload: Record<string, unknown> };
+      expect(call.payload.venueType).toBe('swap');
+      expect(call.payload.network).toBe('ethereum');
+      expect(call.payload.tokenAddress).toBe('0xdef');
+      expect(scoreCandidate).not.toHaveBeenCalled();
+    });
+
+    it('maps a boundary signal to scanHealth=healthy with topConfidence for swap', async () => {
+      const { boundary } = stubBoundary({
+        kind: 'success',
+        data: { signal: { confidence: 0.6, action: 'go_long' }, candlesEvaluated: 200 },
+      });
+      const runner = makeRunner({ scoreCandidateBoundary: boundary });
       const identity: MarketAssessmentIdentity = {
         instrumentKind: 'swap',
         venueFamily: 'jupiter',
@@ -311,15 +341,58 @@ describe('PresetScorecardRunner', () => {
         address: '0xabc',
       };
       const presets = [{ key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') }];
-      const candles = makeMockCandles(100);
 
-      const result = await runner.generateScorecards({ identity, presets, candles });
+      const result = await runner.generateScorecards({ identity, presets, candles: [] });
 
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('expected ok');
       const entry = result.data[0]!;
       expect(entry.scanHealth).toBe('healthy');
       expect(entry.topConfidence).toBe(0.6);
+      expect(scoreCandidate).not.toHaveBeenCalled();
+    });
+
+    it('propagates a swap boundary failure as an error Result (no synthesized stale)', async () => {
+      const { boundary } = stubBoundary({
+        kind: 'failure',
+        code: 'swap_pool_unresolved',
+        message: 'no pool for token',
+        retryable: false,
+      });
+      const runner = makeRunner({ scoreCandidateBoundary: boundary });
+      const identity: MarketAssessmentIdentity = {
+        instrumentKind: 'swap',
+        venueFamily: 'jupiter',
+        styleTier: 'economy',
+        network: 'solana',
+        address: '0xabc',
+      };
+      const presets = [{ key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') }];
+
+      const result = await runner.generateScorecards({ identity, presets, candles: [] });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected err');
+      expect(result.error.code).toBe('assessment.scorecard_failed');
+    });
+
+    it('returns an error when the boundary is not configured (swap)', async () => {
+      const runner = makeRunner({}); // no boundary
+      const identity: MarketAssessmentIdentity = {
+        instrumentKind: 'swap',
+        venueFamily: 'jupiter',
+        styleTier: 'economy',
+        network: 'solana',
+        address: '0xabc',
+      };
+      const presets = [{ key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') }];
+
+      const result = await runner.generateScorecards({ identity, presets, candles: [] });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected err');
+      expect(result.error.code).toBe('assessment.scorecard_boundary_unavailable');
+      expect(scoreCandidate).not.toHaveBeenCalled();
     });
 
     it('handles unknown instrumentKind gracefully', async () => {
