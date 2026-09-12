@@ -5,7 +5,7 @@ import type { RegimeResult } from '@herobids/market-data';
 import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
-import type { PositionIndicatorUpdate, SymbolFetchOutcome } from './technical-phase.js';
+import type { PositionIndicatorUpdate, SymbolFetchOutcome } from './scan-types.js';
 import type { WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from './watch-types.js';
 import type { CoverageEvaluationResult } from './position-coverage.js';
 import { fmtUsd } from './fmt.js';
