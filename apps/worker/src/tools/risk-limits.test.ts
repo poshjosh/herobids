@@ -22,6 +22,7 @@ function makeCtx(opts: {
   agentConfigOps?: ToolContext['agentConfigOps'];
   agentRepo?: ToolContext['agentRepo'];
   tradertonWriteBoundary?: ToolContext['tradertonWriteBoundary'];
+  tradertonBoundary?: ToolContext['tradertonBoundary'];
 } = {}): ToolContext {
   return {
     agentId: 'agent-1',
@@ -34,6 +35,7 @@ function makeCtx(opts: {
     agentConfigOps: opts.agentConfigOps,
     agentRepo: opts.agentRepo,
     tradertonWriteBoundary: opts.tradertonWriteBoundary,
+    tradertonBoundary: opts.tradertonBoundary,
   };
 }
 
@@ -251,6 +253,34 @@ describe('get_risk_limits tool', () => {
     const result = await getRiskLimitsTool.execute({}, ctx);
     expect(result.success).toBe(false);
     expect(result.error).toContain('not available');
+  });
+
+  it('routes the read through the boundary when configured (does NOT touch riskContractOps)', async () => {
+    const boundaryData = { ok: true, limits: { maxOpenPositions: { value: 7 } }, runtime: {} };
+    const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: boundaryData });
+    const getContract = vi.fn();
+    const ctx = makeCtx({
+      tradertonBoundary: { invoke },
+      riskContractOps: { getContract, adjustOverrides: vi.fn() },
+    });
+
+    const result = await getRiskLimitsTool.execute({}, ctx);
+
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_risk_limits', payload: {} });
+    expect(getContract).not.toHaveBeenCalled(); // boundary sourced, not in-process
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(boundaryData);
+  });
+
+  it('falls back to the in-process read when the boundary is absent (read-fallback posture)', async () => {
+    const contract = makeContract();
+    const ctx = makeCtx({
+      riskContractOps: { getContract: vi.fn().mockResolvedValue(contract), adjustOverrides: vi.fn() },
+    });
+    const result = await getRiskLimitsTool.execute({}, ctx);
+    expect(result.success).toBe(true);
+    const limits = (result.data as Record<string, unknown>).limits as Record<string, unknown>;
+    expect(limits.maxOpenPositions).toEqual({ value: 10, source: 'default', mutable: true, ceiling: 10 });
   });
 });
 

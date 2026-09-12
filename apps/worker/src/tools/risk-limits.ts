@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext, ResolvedAgentRiskContract, ResolvedAgentRiskProfile, AgentRiskProfileField } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapWriteResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult, mapWriteResultToToolResult } from './traderton-read.js';
 
 /** Deadline for the adjust_risk_limits boundary write (invoke + poll), in ms. */
 const ADJUST_RISK_LIMITS_DEADLINE_MS = 30_000;
@@ -17,6 +17,16 @@ const getRiskLimitsTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(GetRiskLimitsParamsSchema),
   category: 'read-database',
   async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
+    // L3: route the read through the Traderton boundary when configured. The
+    // Traderton `get_risk_limits` tool returns the identical composite shape
+    // (limits 5+4 + runtime), so parity holds by construction. Read-fallback
+    // posture: when the boundary is absent, fall back to the in-process
+    // riskContractOps read (transitional, unlike the fail-closed adjust write).
+    if (ctx.tradertonBoundary) {
+      const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_risk_limits', payload: {} });
+      return mapReadResultToToolResult(result);
+    }
+
     if (!ctx.riskContractOps) {
       return { success: false, error: 'risk contract not available in this context' };
     }
