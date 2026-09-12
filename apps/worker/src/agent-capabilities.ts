@@ -21,14 +21,23 @@ export function deriveHasTradingCapability(resolvedSkills: SkillDefinition[]): b
 export function deriveTradingTickWorkPlan(
   resolvedSkills: SkillDefinition[],
   marketDataRegistryAvailable: boolean,
+  tradertonBoundaryAvailable = false,
 ): TradingTickWorkPlan {
   const hasTradingCapability = deriveHasTradingCapability(resolvedSkills);
-  const shouldUseMarketData = hasTradingCapability && marketDataRegistryAvailable;
+  // Regime can be evaluated either in-process (registry) OR over the Traderton
+  // `check_regime` boundary — so it is enabled when EITHER source is available.
+  // This keeps the ratified regime re-point reachable in the target end-state
+  // (boundary present, in-process registry removed) and matches the coordinator's
+  // presence-based regime gate + venue-intelligence's capability-only gate.
+  const canEvaluateRegime = hasTradingCapability && (marketDataRegistryAvailable || tradertonBoundaryAvailable);
+  // Volatility candles have NO boundary tool yet (deferred), so they stay
+  // strictly registry-dependent.
+  const shouldFetchVolatilityCandles = hasTradingCapability && marketDataRegistryAvailable;
 
   return {
     hasTradingCapability,
-    shouldEvaluateRegime: shouldUseMarketData,
-    shouldFetchVolatilityCandles: shouldUseMarketData,
+    shouldEvaluateRegime: canEvaluateRegime,
+    shouldFetchVolatilityCandles,
     shouldRecordRegimeEvaluation: hasTradingCapability,
     shouldRefreshVenueIntelligence: hasTradingCapability,
     shouldRecordPerformanceInputs: hasTradingCapability,

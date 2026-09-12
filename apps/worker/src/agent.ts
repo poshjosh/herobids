@@ -751,7 +751,11 @@ function refreshCapabilityPolicy(): void {
 }
 
 function getTradingTickWorkPlan() {
-  return deriveTradingTickWorkPlan(runtimeState.runtimeDescriptor.resolvedSkills, marketDataRegistry != null);
+  return deriveTradingTickWorkPlan(
+    runtimeState.runtimeDescriptor.resolvedSkills,
+    marketDataRegistry != null,
+    tradertonReadBoundary != null,
+  );
 }
 
 function isRuntimeActiveWatchSummary(value: unknown): value is RuntimeActiveWatchSummary {
@@ -1192,6 +1196,9 @@ async function refreshVenueIntelligence(): Promise<void> {
             continue;
           }
           const longShortRatio = bybitTracked ? entry.longShortRatio : null;
+          // Parity with the in-process path: when bybit is tracked but its
+          // long/short ratio is unavailable, annotate the freshness note.
+          const bybitRatioUnavailable = bybitTracked && entry.longShortRatio === null;
           signals.push({
             kind: 'perps',
             instrument: symbol,
@@ -1204,7 +1211,9 @@ async function refreshVenueIntelligence(): Promise<void> {
               { label: '24h change', value: entry.change24hPct === null ? 'unavailable' : `${entry.change24hPct.toFixed(2)}%` },
               { label: 'Long/short ratio', value: longShortRatio === null ? 'unavailable' : longShortRatio.toFixed(2) },
             ],
-            freshness: providerFreshness(parsed.freshness, 'hyperliquid'),
+            freshness: bybitRatioUnavailable
+              ? providerFreshness(parsed.freshness, 'hyperliquid', 'Bybit ratio unavailable')
+              : providerFreshness(parsed.freshness, 'hyperliquid'),
           });
           if (parsed.freshness.ageMs > 0) {
             recordSignalStaleness('price', parsed.freshness.ageMs);

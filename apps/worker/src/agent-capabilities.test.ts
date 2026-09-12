@@ -77,4 +77,17 @@ describe('deriveTradingTickWorkPlan', () => {
       shouldRecordPerformanceInputs: true,
     });
   });
+
+  it('evaluates regime over the boundary when the in-process registry is absent but the boundary is present', () => {
+    // Target end-state: registry removed, regime sourced over check_regime. Regime
+    // must still evaluate; volatility candles stay registry-only (no boundary tool).
+    expect(deriveTradingTickWorkPlan([BASE_SKILL, TRADING_SKILL], false, true)).toEqual({
+      hasTradingCapability: true,
+      shouldEvaluateRegime: true,
+      shouldFetchVolatilityCandles: false,
+      shouldRecordRegimeEvaluation: true,
+      shouldRefreshVenueIntelligence: true,
+      shouldRecordPerformanceInputs: true,
+    });
+  });
 });
