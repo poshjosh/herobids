@@ -2,6 +2,21 @@ import { describe, it, expect, vi } from 'vitest';
 import { checkConnectionLimit, checkLiveEnabled, checkVenueAccountLimit, resolvePlanEntitlements } from './plan-guards.js';
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+
+/**
+ * A stubbed TradertonClient whose `invoke` resolves to a scripted result. The
+ * venue-account count is now sourced from the boundary (`count_venue_accounts`),
+ * so the limit check calls this instead of the local DB.
+ */
+function makeTradertonClient(result: TradertonClientResult): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn().mockResolvedValue(result);
+  return { client: { invoke } as unknown as TradertonClient, invoke };
+}
+
+function countResult(count: number): TradertonClientResult {
+  return { kind: 'success', requestId: 'r', correlationId: 'c', payload: { count } };
+}
 
 // Mock minimal plan config
 function makePlansConfig(overrides: Partial<PlansConfig> = {}): PlansConfig {
@@ -139,14 +154,112 @@ describe('checkLiveEnabled', () => {
 });
 
 describe('checkVenueAccountLimit', () => {
-  it('short-circuits for admins before querying the db', async () => {
-    const db = { select: vi.fn() } as unknown as Database;
+  it('short-circuits for admins before calling the boundary', async () => {
+    const { client, invoke } = makeTradertonClient(countResult(99));
     const config = makePlansConfig();
 
-    const result = await checkVenueAccountLimit(db, config, 'user-1', 'free', true);
+    const result = await checkVenueAccountLimit(client, config, 'user-1', 'free', true);
 
     expect(result.ok).toBe(true);
-    expect(db.select).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('allows creation when the boundary count is under the plan limit', async () => {
+    const { client, invoke } = makeTradertonClient(countResult(2)); // free maxVenueAccounts = 3
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(client, config, 'user-1', 'free', false);
+
+    expect(result.ok).toBe(true);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    const call = invoke.mock.calls[0]![0];
+    expect(call.toolName).toBe('count_venue_accounts');
+    expect(call.payload).toEqual({});
+    expect(call.subject).toEqual({ ownerId: 'user-1', actor: { type: 'user', id: 'user-1' } });
+  });
+
+  it('rejects with plan.limit_exceeded when the boundary count is at the limit', async () => {
+    const { client } = makeTradertonClient(countResult(3)); // free maxVenueAccounts = 3
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(client, config, 'user-1', 'free', false);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('plan.limit_exceeded');
+      expect(result.error.limit).toBe(3);
+      expect(result.error.current).toBe(3);
+      expect(result.error.params).toEqual({ resource: 'venue_account', limit: 3, current: 3 });
+    }
+  });
+
+  it('rejects with plan.limit_exceeded when the boundary count is over the limit', async () => {
+    const { client } = makeTradertonClient(countResult(5));
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(client, config, 'user-1', 'free', false);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('plan.limit_exceeded');
+  });
+
+  it('fails closed with precondition.not_ready when no boundary client is configured', async () => {
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(undefined, config, 'user-1', 'free', false);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('precondition.not_ready');
+      expect(result.error.params).toEqual({ resource: 'venue_account' });
+    }
+  });
+
+  it('fails closed with precondition.not_ready on a boundary failure', async () => {
+    const { client } = makeTradertonClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'upstream.transient',
+      message: 'boundary error',
+      retryable: true,
+    });
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(client, config, 'user-1', 'free', false);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('precondition.not_ready');
+  });
+
+  it('fails closed with precondition.not_ready on a transport error', async () => {
+    const { client } = makeTradertonClient({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boundary down' });
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(client, config, 'user-1', 'free', false);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('precondition.not_ready');
+  });
+
+  it('fails closed with precondition.not_ready when the boundary is in progress', async () => {
+    const { client } = makeTradertonClient({ kind: 'in_progress', requestId: 'r', correlationId: 'c' });
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(client, config, 'user-1', 'free', false);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('precondition.not_ready');
+  });
+
+  it('fails closed with precondition.not_ready when the payload has no numeric count', async () => {
+    const { client } = makeTradertonClient({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { count: 'nope' } });
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(client, config, 'user-1', 'free', false);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('precondition.not_ready');
   });
 });
 

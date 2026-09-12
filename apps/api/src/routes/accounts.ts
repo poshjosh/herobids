@@ -60,11 +60,22 @@ export async function venueAccountRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    // Plan enforcement
+    // Plan enforcement. The venue-account count is sourced from the Traderton
+    // boundary (`count_venue_accounts`) — the system of record after L3-P1b.
+    //
+    // NOTE (transitional mismatch): this endpoint still CREATES the venue
+    // account LOCALLY (a separate, not-yet-re-pointed concern). Checking the
+    // boundary count while creating locally is a known transitional mismatch —
+    // acceptable because the boundary is the intended source of truth and the
+    // local creation here is a pending re-point (obligation) that is going away.
+    //
+    // Fail-closed: on boundary unavailability checkVenueAccountLimit returns a
+    // `precondition.not_ready` error (503), never a silent allow.
     if (plansConfig) {
-      const planCheck = await checkVenueAccountLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+      const planCheck = await checkVenueAccountLimit(tradertonClient, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
       if (!planCheck.ok) {
-        return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
+        const status = planCheck.error.code === 'precondition.not_ready' ? 503 : 403;
+        return reply.status(status).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }
     }
 

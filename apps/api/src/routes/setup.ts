@@ -285,13 +285,31 @@ async function createTradingProviderLink(
   input: CreateTradingProviderLinkInput,
 ): Promise<CreateProviderLinkResult> {
   const { userId, planId, admin, provider, label, connectionId, normalizedSecrets, resolvedVenueAccountRef, wallet, now } = input;
+  const client = deps.tradertonClient;
+
+  // ── Phase 0 — pre-provision plan-limit check (venue accounts) ──────────────
+  // The venue-account count now lives behind the boundary, so this check makes
+  // a boundary HTTP call and MUST run BEFORE provisioning (never inside the
+  // Phase-2 DB transaction). On a limit/precondition failure we return before
+  // provisioning, so there is nothing to compensate. The connection-limit check
+  // stays local and is re-checked under the advisory lock in Phase 2.
+  if (plansConfig) {
+    const venueAccountCheck = await checkVenueAccountLimit(client, plansConfig, userId, planId, admin);
+    if (!venueAccountCheck.ok) {
+      // precondition.not_ready → boundary unavailable → fault (503); any other
+      // limit failure → limit (403). No provision has run yet.
+      if (venueAccountCheck.error.code === 'precondition.not_ready') {
+        return { kind: 'fault', code: venueAccountCheck.error.code, message: venueAccountCheck.error.message, params: venueAccountCheck.error.params };
+      }
+      return { kind: 'limit', error: venueAccountCheck.error };
+    }
+  }
 
   // ── Phase 1 — provision over the boundary ──────────────────────────────────
   // The credential + venue account are created behind the boundary; the tool
   // returns metadata only (venueAccountId — never the credentialId or secrets).
   // The idempotencyKey is the pre-minted connectionId so a transport retry
   // reuses the same provisioning request (005 §Deadlines/Retries).
-  const client = deps.tradertonClient;
   const provisionResult = client
     ? await client.invoke({
         toolName: 'provision_venue_account',
@@ -333,9 +351,11 @@ async function createTradingProviderLink(
 
   // ── Phase 2 — local platform half (connection only) ────────────────────────
   // Insert ONLY the connections row: credentialId is null (the boundary owns the
-  // credential), resolvedVenueAccountId is the boundary's venueAccountId. Plan
-  // limits are re-checked here under the advisory lock so the over-limit
-  // protection is preserved end-to-end.
+  // credential), resolvedVenueAccountId is the boundary's venueAccountId. The
+  // connection limit is re-checked here under the advisory lock so the
+  // over-limit protection is preserved end-to-end. The venue-account limit was
+  // already checked pre-provision (Phase 0) — it sources its count from the
+  // boundary and so cannot run inside this transaction.
   try {
     const txResult = await db.transaction(async (tx) => {
       if (plansConfig) {
@@ -344,11 +364,6 @@ async function createTradingProviderLink(
         const connectionCheck = await checkConnectionLimit(tx as unknown as Database, plansConfig, userId, planId, admin);
         if (!connectionCheck.ok) {
           return { kind: 'limit' as const, error: connectionCheck.error };
-        }
-
-        const venueAccountCheck = await checkVenueAccountLimit(tx as unknown as Database, plansConfig, userId, planId, admin);
-        if (!venueAccountCheck.ok) {
-          return { kind: 'limit' as const, error: venueAccountCheck.error };
         }
       }
 

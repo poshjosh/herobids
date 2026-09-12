@@ -365,6 +365,100 @@ describe('POST /venue-accounts credential validation', () => {
     expect(body.venueProfile?.authenticated).toBe(true);
   });
 
+  it('rejects with 403 plan.limit_exceeded when the boundary venue-account count is at the limit', async () => {
+    // The plan limit is enforced from the boundary count (count_venue_accounts).
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: { count: 3 },
+    });
+    const plansConfig = {
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          entitlements: { skills: {}, agents: {}, limits: { maxVenueAccounts: 3 } },
+          usage: {},
+        },
+      },
+    };
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db, plansConfig as any, undefined, client);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: { venue: 'hyperliquid', label: 'Over-limit Account' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('plan.limit_exceeded');
+    expect(invoke.mock.calls[0]![0].toolName).toBe('count_venue_accounts');
+  });
+
+  it('allows creation with 201 when the boundary venue-account count is under the limit', async () => {
+    const { client } = makeTradertonClient({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: { count: 1 },
+    });
+    const plansConfig = {
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          entitlements: { skills: {}, agents: {}, limits: { maxVenueAccounts: 3 } },
+          usage: {},
+        },
+      },
+    };
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db, plansConfig as any, undefined, client);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: { venue: 'hyperliquid', label: 'Under-limit Account' },
+    });
+
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('fails closed with 503 when the boundary is unavailable during the plan-limit check', async () => {
+    const { client } = makeTradertonClient({
+      kind: 'transport_error',
+      requestId: 'r',
+      retryable: true,
+      message: 'boundary down',
+    });
+    const plansConfig = {
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          entitlements: { skills: {}, agents: {}, limits: { maxVenueAccounts: 3 } },
+          usage: {},
+        },
+      },
+    };
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db, plansConfig as any, undefined, client);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: { venue: 'hyperliquid', label: 'Account' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(JSON.parse(res.body).error).toBe('precondition.not_ready');
+  });
+
   it('returns 400 when credential is deleted between validation and insert (FK race)', async () => {
     // Credential lookup succeeds (not yet deleted)
     credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', provider: 'hyperliquid' }];

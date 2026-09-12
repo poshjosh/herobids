@@ -43,8 +43,20 @@ function makeTradertonClient(
     correlationId: 'c',
     payload: { venueAccountId: 'va-new', venue: 'hyperliquid', label: 'label' },
   },
+  /**
+   * The count returned for `count_venue_accounts` (the pre-provision plan-limit
+   * check, sourced from the boundary after L3-P1b). Defaults to 0 so trading
+   * links pass the venue-account limit and reach provisioning. Set at/over the
+   * plan limit to exercise the pre-provision limit gate.
+   */
+  venueAccountCount = 0,
 ): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
-  const invoke = vi.fn().mockResolvedValue(result);
+  const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
+    if (input.toolName === 'count_venue_accounts') {
+      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { count: venueAccountCount } } as TradertonClientResult);
+    }
+    return Promise.resolve(result);
+  });
   return { client: { invoke } as unknown as TradertonClient, invoke };
 }
 
@@ -495,7 +507,7 @@ describe('POST /setup/provider-link', () => {
     expect(transactionCallCount).toBe(0);
   });
 
-  it('checks plan quota before generating a wallet or calling the boundary', async () => {
+  it('enforces the Phase-2 connection quota under the advisory lock (compensating the provision)', async () => {
     const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
     const { client, invoke } = makeTradertonClient();
     const plansConfig = {
@@ -513,15 +525,13 @@ describe('POST /setup/provider-link', () => {
     };
     const app = Fastify();
     decorateWithAuth(app);
-    // Phase-2 for trading re-checks connection limit under the advisory lock:
-    // slot 0 = connection count (over limit), so provisioning still ran, then
-    // compensation deprovisions. To verify the boundary was NOT called at all we
-    // instead assert on a NON-trading credential-limit gate below; here we cover
-    // the generated trading path with a connection limit of 1 (allowed) but a
-    // venue-account limit of 0 so the pre-provision check would not gate — this
-    // path checks limits inside phase 2. Keep the free plan's connection limit
-    // permissive and assert quota is honoured.
-    await setupRoutes(app, buildMockDb([[{ id: 'existing-credential' }]]), plansConfig as any, generatedWalletDeps(walletGenerator, { tradertonClient: client }));
+    // Pre-provision venue-account check passes (boundary count defaults to 0 < 1),
+    // provisioning runs, then Phase-2 re-checks the connection limit under the
+    // advisory lock: the first select slot returns one existing connection row,
+    // so maxConnections:1 trips, the provision is compensated, and the caller
+    // sees a 403 limit. (The venue-account limit is now checked pre-provision
+    // from the boundary — no longer inside the transaction.)
+    await setupRoutes(app, buildMockDb([[{ id: 'existing-connection' }]]), plansConfig as any, generatedWalletDeps(walletGenerator, { tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -534,9 +544,13 @@ describe('POST /setup/provider-link', () => {
       },
     });
 
-    // maxConnections:1 with one existing connection row → phase-2 limit gate trips,
-    // provisioning is compensated, and the caller sees a 403 limit.
     expect(res.statusCode).toBe(403);
+    // count_venue_accounts (Phase 0) → provision_venue_account → deprovision (compensation).
+    expect(invoke.mock.calls.map((c) => c[0].toolName)).toEqual([
+      'count_venue_accounts',
+      'provision_venue_account',
+      'deprovision_venue_account',
+    ]);
   });
 
   it('propagates a compensating deprovision on phase-2 failure and returns 500', async () => {
@@ -715,8 +729,12 @@ describe('POST /setup/provider-link', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('enforces venue account plan limit for capability=trading (compensating the provision)', async () => {
-    const { client, invoke } = makeTradertonClient();
+  it('enforces venue account plan limit for capability=trading before provisioning (boundary count)', async () => {
+    // The venue-account count is sourced from the boundary (count_venue_accounts)
+    // and checked pre-provision (Phase 0). With the count at the limit, the check
+    // trips BEFORE any provision — so nothing is provisioned and there is nothing
+    // to compensate.
+    const { client, invoke } = makeTradertonClient(undefined, 1); // boundary reports 1 venue account
     const plansConfig = {
       defaultPlanId: 'free',
       plans: {
@@ -747,9 +765,7 @@ describe('POST /setup/provider-link', () => {
       },
     };
 
-    // Phase-2 select order under the advisory lock: [connections count, venueAccounts count].
-    // Return an existing venue account so the venueAccount limit (1) is hit.
-    const db = buildMockDb([[], [{ id: 'existing-va' }]]);
+    const db = buildMockDb();
 
     const app = Fastify();
     decorateWithAuth(app);
@@ -763,8 +779,46 @@ describe('POST /setup/provider-link', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.json<{ error: string }>().error).toBe('plan.limit_exceeded');
-    // The provision happened before the phase-2 limit trip, so it is compensated.
-    expect(invoke.mock.calls.map((c) => c[0].toolName)).toEqual(['provision_venue_account', 'deprovision_venue_account']);
+    // Only the pre-provision count ran — no provision, no compensation, no local write.
+    expect(invoke.mock.calls.map((c) => c[0].toolName)).toEqual(['count_venue_accounts']);
+    expect(insertedValues).toHaveLength(0);
+    expect(transactionCallCount).toBe(0);
+  });
+
+  it('fails closed with 503 when the pre-provision venue-account count is unavailable', async () => {
+    // The pre-provision count fails (transport error) → precondition.not_ready →
+    // 503, and provisioning never runs.
+    const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
+      if (input.toolName === 'count_venue_accounts') {
+        return Promise.resolve({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boundary down' } as TradertonClientResult);
+      }
+      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { venueAccountId: 'va-new' } } as TradertonClientResult);
+    });
+    const client = { invoke } as unknown as TradertonClient;
+    const plansConfig = {
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          entitlements: { skills: {}, agents: {}, limits: { maxConnections: 5, maxCredentials: 5, maxVenueAccounts: 5 } },
+          usage: {},
+        },
+      },
+    };
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb(), plansConfig as any, baseDeps({ tradertonClient: client }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: { ...VALID_HL_PAYLOAD, capability: 'trading' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toBe('precondition.not_ready');
+    expect(invoke.mock.calls.map((c) => c[0].toolName)).toEqual(['count_venue_accounts']);
+    expect(insertedValues).toHaveLength(0);
+    expect(transactionCallCount).toBe(0);
   });
 });
 

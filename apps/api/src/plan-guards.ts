@@ -1,6 +1,7 @@
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { venueAccounts, userCredentials, agents, connections } from '@herobids/db';
+import { userCredentials, agents, connections } from '@herobids/db';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import { eq, and } from 'drizzle-orm';
 import { ok, err } from '@herobids/domain';
 
@@ -18,19 +19,65 @@ export {
 
 import { resolvePlanForCheck, type PlanCheckResult } from '@herobids/domain';
 
-/** Check if user can create a new venue account */
-export async function checkVenueAccountLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
+/**
+ * Check if user can create a new venue account.
+ *
+ * Venue accounts are owned by Traderton (behind the boundary) after L3-P1b, so
+ * the count is sourced from the boundary's `count_venue_accounts` read tool
+ * rather than a local table — herobids still ENFORCES its own plan limit, but
+ * reads the true count from the system of record. This MUST NOT run inside a DB
+ * transaction (it makes a boundary HTTP call).
+ *
+ * Fails closed: when the boundary is unavailable (no client, transport error,
+ * in-progress, failure, or a malformed payload) the check returns a
+ * `precondition.not_ready` error rather than silently allowing — a venue
+ * account cannot be provisioned without the boundary anyway.
+ */
+export async function checkVenueAccountLimit(
+  tradertonClient: TradertonClient | undefined,
+  config: PlansConfig,
+  userId: string,
+  planId: string,
+  isAdmin: boolean,
+): Promise<PlanCheckResult> {
   const resolved = resolvePlanForCheck(config, planId, isAdmin);
   if (resolved.isAdminBypass) return ok(undefined);
   const limits = resolved.entitlements.limits;
-  const rows = await db.select({ id: venueAccounts.id }).from(venueAccounts).where(eq(venueAccounts.userId, userId));
-  if (rows.length >= limits.maxVenueAccounts) {
+
+  // A fail-closed precondition error. `limit`/`current` are required by
+  // PlanCheckResult but inert here (the check never reached a count); consumers
+  // branch on `code` and surface it as a 503.
+  const unavailable = () =>
+    err({
+      code: 'precondition.not_ready',
+      message: 'Trading service is unavailable — cannot verify the venue-account limit.',
+      limit: limits.maxVenueAccounts,
+      current: 0,
+      params: { resource: 'venue_account' },
+    });
+
+  if (!tradertonClient) return unavailable();
+
+  const result = await tradertonClient.invoke({
+    toolName: 'count_venue_accounts',
+    payload: {},
+    subject: { ownerId: userId, actor: { type: 'user', id: userId } },
+    deadlineMs: 30_000,
+  });
+
+  if (result.kind !== 'success') return unavailable();
+
+  const payload = result.payload as { count?: unknown } | null;
+  if (typeof payload?.count !== 'number') return unavailable();
+  const count = payload.count;
+
+  if (count >= limits.maxVenueAccounts) {
     return err({
       code: 'plan.limit_exceeded',
       message: `Venue account limit reached (${limits.maxVenueAccounts})`,
       limit: limits.maxVenueAccounts,
-      current: rows.length,
-      params: { resource: 'venue_account', limit: limits.maxVenueAccounts, current: rows.length },
+      current: count,
+      params: { resource: 'venue_account', limit: limits.maxVenueAccounts, current: count },
     });
   }
   return ok(undefined);
