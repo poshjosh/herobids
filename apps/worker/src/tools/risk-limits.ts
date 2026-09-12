@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext, ResolvedAgentRiskContract, ResolvedAgentRiskProfile, AgentRiskProfileField } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { mapWriteResultToToolResult } from './traderton-read.js';
+
+/** Deadline for the adjust_risk_limits boundary write (invoke + poll), in ms. */
+const ADJUST_RISK_LIMITS_DEADLINE_MS = 30_000;
 
 // --- get_risk_limits ---
 
@@ -76,10 +80,6 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(AdjustRiskLimitsParamsSchema),
   category: 'write-database',
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
-    if (!ctx.riskContractOps) {
-      return { success: false, error: 'risk contract not available in this context' };
-    }
-
     const p = params as z.infer<typeof AdjustRiskLimitsParamsSchema>;
 
     // Collect only fields that were explicitly provided
@@ -94,26 +94,28 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
       return { success: false, error: 'No fields provided to adjust', fault: false };
     }
 
-    const result = await ctx.riskContractOps.adjustOverrides(overrides);
-
-    if (!result.ok) {
-      return { success: false, error: result.error, fault: false };
+    // L3d: route the risk-limit WRITE through the Traderton side-effecting
+    // boundary. Traderton owns the risk contract; herobids no longer mutates it
+    // in-process. FAIL-CLOSED — when the write boundary is absent we return a
+    // typed precondition rather than falling back to ctx.riskContractOps (the
+    // read path `get_risk_limits` still uses riskContractOps). The boundary
+    // returns the same success shape this tool built in-process, so parity holds.
+    if (!ctx.tradertonWriteBoundary) {
+      return {
+        success: false,
+        error: 'trading boundary not configured',
+        errorCode: 'precondition.not_ready',
+        fault: false,
+      };
     }
 
-    return {
-      success: true,
-      data: {
-        ok: true,
-        note: 'Risk limits updated. Changes take effect on next decision cycle.',
-        limits: result.contract ? {
-          maxOpenPositions: formatField(result.contract.maxOpenPositions),
-          maxPositionSizePct: formatField(result.contract.maxPositionSizePct),
-          stopLossPct: formatField(result.contract.stopLossPct),
-          stopLossCooldownMs: formatField(result.contract.stopLossCooldownMs),
-          maxDrawdownPct: formatField(result.contract.maxDrawdownPct),
-        } : undefined,
-      },
-    };
+    const result = await ctx.tradertonWriteBoundary.invokeAndAwait({
+      toolName: 'adjust_risk_limits',
+      payload: overrides,
+      deadlineMs: ADJUST_RISK_LIMITS_DEADLINE_MS,
+    });
+
+    return mapWriteResultToToolResult(result);
   },
 };
 

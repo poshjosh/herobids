@@ -165,6 +165,26 @@ export interface TradingToolContext {
   tradertonBoundary?: {
     invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
   };
+  /**
+   * The Traderton REST SIDE-EFFECTING boundary port (L3d). When present, the
+   * write path of side-effecting tools (currently `adjust_risk_limits`) routes
+   * the mutation through the boundary. Subject-bound at construction by the
+   * worker adapter (the tool never sees the subject/caller/signing material);
+   * the tool only names a tool + forwards its already-validated payload.
+   *
+   * `invokeAndAwait` performs the signed invoke and, if the boundary returns
+   * `in_progress`, polls to the deadline for a synchronous feel. Returns the raw
+   * client result union so the tool preserves the failure `code`/`retryable`
+   * verbatim. When ABSENT, the write path HARD-FAILS (`precondition.not_ready`)
+   * — there is NO in-process fallback for the write (fail-closed).
+   */
+  tradertonWriteBoundary?: {
+    invokeAndAwait(input: {
+      toolName: string;
+      payload: unknown;
+      deadlineMs: number;
+    }): Promise<import('../traderton/client.js').TradertonClientResult>;
+  };
   /** Redis client for agent memory, watches, and pub/sub */
   redis: {
     hset: (key: string, field: string, value: string) => Promise<number>;

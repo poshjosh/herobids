@@ -21,6 +21,7 @@ function makeCtx(opts: {
   botRepo?: ToolContext['botRepo'];
   agentConfigOps?: ToolContext['agentConfigOps'];
   agentRepo?: ToolContext['agentRepo'];
+  tradertonWriteBoundary?: ToolContext['tradertonWriteBoundary'];
 } = {}): ToolContext {
   return {
     agentId: 'agent-1',
@@ -32,6 +33,7 @@ function makeCtx(opts: {
     botRepo: opts.botRepo,
     agentConfigOps: opts.agentConfigOps,
     agentRepo: opts.agentRepo,
+    tradertonWriteBoundary: opts.tradertonWriteBoundary,
   };
 }
 
@@ -253,75 +255,121 @@ describe('get_risk_limits tool', () => {
 });
 
 describe('adjust_risk_limits tool', () => {
-  it('successfully adjusts mutable fields', async () => {
-    const updatedContract = makeContract({
-      maxOpenPositions: { effectiveValue: 7, source: 'agent_override', mutable: true, operatorCeiling: 10, overrideValue: 7 },
+  it('routes the write through the boundary and returns the boundary success payload', async () => {
+    const successPayload = {
+      ok: true,
+      note: 'Risk limits updated. Changes take effect on next decision cycle.',
+      limits: { maxOpenPositions: { value: 7, source: 'agent_override', mutable: true, ceiling: 10 } },
+    };
+    const invokeAndAwait = vi.fn().mockResolvedValue({
+      kind: 'success',
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+      payload: successPayload,
     });
-    const adjustOverrides = vi.fn().mockResolvedValue({ ok: true, contract: updatedContract });
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(makeContract()),
-        adjustOverrides,
-      },
-    });
+    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
 
     const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 7 }, ctx);
 
     expect(result.success).toBe(true);
-    expect(adjustOverrides).toHaveBeenCalledWith({ maxOpenPositions: 7 });
+    // The tool forwards ONLY the explicitly-provided overrides as the payload.
+    expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+    const call = invokeAndAwait.mock.calls[0]![0] as { toolName: string; payload: unknown; deadlineMs: number };
+    expect(call.toolName).toBe('adjust_risk_limits');
+    expect(call.payload).toEqual({ maxOpenPositions: 7 });
+    expect(call.deadlineMs).toBeGreaterThan(0);
+    // Boundary success shape passes through unchanged (parity).
     const data = result.data as Record<string, unknown>;
     expect(data.ok).toBe(true);
     expect(data.note).toContain('next decision cycle');
   });
 
-  it('passes null to reset a field to default', async () => {
-    const adjustOverrides = vi.fn().mockResolvedValue({ ok: true, contract: makeContract() });
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(makeContract()),
-        adjustOverrides,
-      },
+  it('forwards a null override to reset a field to default', async () => {
+    const invokeAndAwait = vi.fn().mockResolvedValue({
+      kind: 'success',
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+      payload: { ok: true, note: 'Risk limits updated.' },
     });
+    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
 
     const result = await adjustRiskLimitsTool.execute({ stopLossCooldownMs: null }, ctx);
 
     expect(result.success).toBe(true);
-    expect(adjustOverrides).toHaveBeenCalledWith({ stopLossCooldownMs: null });
+    const call = invokeAndAwait.mock.calls[0]![0] as { payload: unknown };
+    expect(call.payload).toEqual({ stopLossCooldownMs: null });
   });
 
-  it('returns error when adjustment is rejected', async () => {
-    const adjustOverrides = vi.fn().mockResolvedValue({ ok: false, error: "Field 'maxOpenPositions' is creator-configured" });
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(makeContract()),
-        adjustOverrides,
-      },
+  it('maps a boundary failure to a typed non-fault failure preserving code', async () => {
+    const invokeAndAwait = vi.fn().mockResolvedValue({
+      kind: 'failure',
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+      code: 'validation.invalid_payload',
+      message: "Field 'maxOpenPositions' is creator-configured",
+      retryable: false,
     });
+    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
 
     const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 3 }, ctx);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('creator-configured');
+    expect(result.errorCode).toBe('validation.invalid_payload');
+    expect(result.fault).toBe(false);
   });
 
-  it('returns error when no fields are provided', async () => {
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn(),
-        adjustOverrides: vi.fn(),
-      },
-    });
+  it('maps a boundary in_progress to a precondition.not_ready failure', async () => {
+    const invokeAndAwait = vi.fn().mockResolvedValue({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
+    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+
+    const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 3 }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.fault).toBe(false);
+  });
+
+  it('maps a boundary transport_error to a retryable fault', async () => {
+    const invokeAndAwait = vi.fn().mockResolvedValue({ kind: 'transport_error', requestId: 'req-1', retryable: true, message: 'down' });
+    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+
+    const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 3 }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('boundary.transport_error');
+    expect(result.retryable).toBe(true);
+    expect(result.fault).toBe(true);
+  });
+
+  it('returns error when no fields are provided (before touching the boundary)', async () => {
+    const invokeAndAwait = vi.fn();
+    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
 
     const result = await adjustRiskLimitsTool.execute({}, ctx);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('No fields provided');
+    expect(invokeAndAwait).not.toHaveBeenCalled();
   });
 
-  it('returns error when riskContractOps is not available', async () => {
-    const ctx = makeCtx();
+  it('HARD-FAILS with precondition.not_ready when the write boundary is absent (no in-process fallback)', async () => {
+    const adjustOverrides = vi.fn();
+    const ctx = makeCtx({
+      // riskContractOps present (read path uses it) but NO write boundary.
+      riskContractOps: {
+        getContract: vi.fn(),
+        adjustOverrides,
+      },
+    });
+
     const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 5 }, ctx);
+
     expect(result.success).toBe(false);
-    expect(result.error).toContain('not available');
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.error).toContain('boundary not configured');
+    expect(result.fault).toBe(false);
+    // The in-process riskContractOps.adjustOverrides is NEVER called (fail-closed).
+    expect(adjustOverrides).not.toHaveBeenCalled();
   });
 });

@@ -84,7 +84,8 @@ import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTracked
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
 import { createTradertonClient, type TradertonClientConfig } from '@herobids/domain/traderton';
-import { createTradertonReadBoundary } from './traderton/read-adapter.js';
+import { createTradertonReadBoundary, type TradertonReadBoundary } from './traderton/read-adapter.js';
+import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
 import type { TradertonSubject } from '@herobids/domain/traderton';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
@@ -1799,8 +1800,17 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
   // direct-DB behaviour. This is a transitional L3b affordance — L3c/L3d tighten
   // it (require the boundary and remove the fallback). The HMAC secret lives in
   // the client only; it never reaches a tool.
-  const tradertonReadBoundary = (() => {
-    if (!BOUNDARY_CONFIG_RAW) return undefined;
+  // Build BOTH the read boundary (L3b) and the side-effecting write boundary
+  // (L3d) from the SAME client + agent subject. The read boundary backs the
+  // rewired read tools (with a transitional direct-DB fallback); the write
+  // boundary backs the `adjust_risk_limits` WRITE (fail-closed — no in-process
+  // fallback). Both are gated identically (undefined when baseUrl/hmacSecret/
+  // ownerId absent). The subject is bound here so the tools never see it.
+  const { read: tradertonReadBoundary, write: tradertonWriteBoundary } = ((): {
+    read: TradertonReadBoundary | undefined;
+    write: ToolContext['tradertonWriteBoundary'];
+  } => {
+    if (!BOUNDARY_CONFIG_RAW) return { read: undefined, write: undefined };
 
     let boundaryConfig: TradertonClientConfig;
     try {
@@ -1814,16 +1824,16 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       };
     } catch (err) {
       logger.warn({ err }, 'Failed to parse BOUNDARY_CONFIG_JSON — read tools fall back to direct DB');
-      return undefined;
+      return { read: undefined, write: undefined };
     }
 
     const ownerId = agentConfig.userId ?? '';
     if (!boundaryConfig.baseUrl || !boundaryConfig.hmacSecret || !ownerId) {
       logger.info(
         { hasBaseUrl: !!boundaryConfig.baseUrl, hasSecret: !!boundaryConfig.hmacSecret, hasOwnerId: !!ownerId },
-        'Traderton boundary not fully configured — read tools use direct DB (transitional L3b fallback)',
+        'Traderton boundary not fully configured — read tools use direct DB; adjust_risk_limits write hard-fails',
       );
-      return undefined;
+      return { read: undefined, write: undefined };
     }
 
     const subject: TradertonSubject = {
@@ -1831,8 +1841,25 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       actor: { type: 'agent', id: AGENT_ID! },
     };
     const client = createTradertonClient(boundaryConfig);
-    logger.info({ baseUrl: boundaryConfig.baseUrl }, 'Traderton read boundary enabled — read tools route over REST');
-    return createTradertonReadBoundary(client, subject, boundaryConfig.requestTimeoutMs);
+    logger.info({ baseUrl: boundaryConfig.baseUrl }, 'Traderton read + write boundaries enabled — read tools + risk-limit writes route over REST');
+
+    const read = createTradertonReadBoundary(client, subject, boundaryConfig.requestTimeoutMs);
+
+    // Bind the agent subject to the side-effecting adapter so the ToolContext
+    // port exposes a subject-less invokeAndAwait (the tool supplies only tool
+    // name + payload + deadline).
+    const sideEffectBoundary = createTradertonSideEffectBoundary(client);
+    const write: ToolContext['tradertonWriteBoundary'] = {
+      invokeAndAwait: (input) =>
+        sideEffectBoundary.invokeAndAwait({
+          toolName: input.toolName,
+          payload: input.payload,
+          subject,
+          deadlineMs: input.deadlineMs,
+        }),
+    };
+
+    return { read, write };
   })();
 
   // Build tool context from agent runtime state
@@ -1845,6 +1872,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     authorizationMode: (agentConfig.authorizationMode ?? 'direct') as 'direct' | 'approval_required',
     permissionLevel: agentPermissionLevel,
     tradertonBoundary: tradertonReadBoundary,
+    tradertonWriteBoundary,
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),
