@@ -2,11 +2,10 @@ import type { Redis } from 'ioredis';
 import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
 import { createLeaderElection, type LeaderElection } from './leader-election.js';
-import type { ProviderRegistry } from '@herobids/market-data';
 import type { TradertonReadResult } from '@herobids/domain';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type { MarketMonitor } from './monitor.js';
-import { recordProviderSuccess, recordProviderFailure, recordFreshnessMode, recordRateLimitThrottle, isRateLimitThrottle } from './provider-counters.js';
+import { recordProviderSuccess, recordProviderFailure, recordFreshnessMode, recordRateLimitThrottle } from './provider-counters.js';
 
 /**
  * The narrow `check_regime` read-boundary port the coordinator consumes (L3 Q2
@@ -15,6 +14,18 @@ import { recordProviderSuccess, recordProviderFailure, recordFreshnessMode, reco
  * refresh records a provider failure and writes an unavailable snapshot.
  */
 export interface CheckRegimeBoundary {
+  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+}
+
+/**
+ * The narrow `discover_tokens` read-boundary port the coordinator consumes (the
+ * discovery re-point). Structurally identical to the regime boundary; the
+ * composition root binds the same SYSTEM subject + deadline. When absent,
+ * discovery refresh records a provider failure and writes an unavailable
+ * snapshot (no in-process discovery fallback — the discovery engine is gone
+ * from herobids).
+ */
+export interface DiscoveryBoundary {
   invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
 }
 
@@ -50,6 +61,66 @@ function parseRegimePayload(data: unknown): RegimeBoundaryPayload {
   };
 }
 
+/** A discovery token as narrowed from the boundary `discover_tokens` payload. */
+interface DiscoveryBoundaryToken {
+  network: string;
+  address: string;
+  symbol: string;
+  name?: string | null;
+  priceUsd?: number | null;
+  liquidityUsd?: number | null;
+  volume24hUsd?: number | null;
+  poolAddress?: string | null;
+  poolCreatedAt?: string | null;
+  discoveryVectors?: string[];
+}
+
+/** The subset of the boundary `discover_tokens` success payload the coordinator needs. */
+interface DiscoveryBoundaryPayload {
+  tokens: DiscoveryBoundaryToken[];
+  freshness: { source: 'upstream' | 'cache' } | null;
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === 'number' ? value : null;
+}
+
+/** Narrow the boundary `discover_tokens` success payload (`unknown` over the wire). */
+function parseDiscoveryPayload(data: unknown): DiscoveryBoundaryPayload {
+  const record = (data ?? {}) as Record<string, unknown>;
+  const rawTokens = Array.isArray(record['tokens']) ? record['tokens'] : [];
+  const tokens: DiscoveryBoundaryToken[] = rawTokens.map((raw) => {
+    const t = (raw ?? {}) as Record<string, unknown>;
+    return {
+      network: typeof t['network'] === 'string' ? t['network'] : '',
+      address: typeof t['address'] === 'string' ? t['address'] : '',
+      symbol: typeof t['symbol'] === 'string' ? t['symbol'] : '',
+      name: optionalString(t['name']),
+      priceUsd: optionalNumber(t['priceUsd']),
+      liquidityUsd: optionalNumber(t['liquidityUsd']),
+      volume24hUsd: optionalNumber(t['volume24hUsd']),
+      poolAddress: optionalString(t['poolAddress']),
+      poolCreatedAt: optionalString(t['poolCreatedAt']),
+      discoveryVectors: Array.isArray(t['discoveryVectors'])
+        ? (t['discoveryVectors'] as unknown[]).filter((v): v is string => typeof v === 'string')
+        : [],
+    };
+  });
+
+  const rawFreshness = record['freshness'];
+  let freshness: DiscoveryBoundaryPayload['freshness'] = null;
+  if (rawFreshness && typeof rawFreshness === 'object') {
+    const f = rawFreshness as Record<string, unknown>;
+    freshness = { source: f['source'] === 'cache' ? 'cache' : 'upstream' };
+  }
+
+  return { tokens, freshness };
+}
+
 const logger = createLogger('market-data-coordinator');
 
 export interface CoordinatorConfig {
@@ -72,7 +143,6 @@ export interface CoordinatorConfig {
 
 export interface CoordinatorDeps {
   redis: Redis;
-  providerRegistry: ProviderRegistry;
   publisher: InstanceEventPublisher;
   /** Optional monitor — started/stopped with this coordinator under the same leader lease. */
   monitor?: MarketMonitor;
@@ -83,6 +153,13 @@ export interface CoordinatorDeps {
    * candle/regime fallback).
    */
   checkRegimeBoundary?: CheckRegimeBoundary;
+  /**
+   * The `discover_tokens` read boundary (discovery re-point). Bound to the same
+   * SYSTEM subject by the worker composition root. When absent, discovery
+   * refresh records a provider failure and writes an unavailable snapshot (no
+   * in-process discovery fallback).
+   */
+  discoveryBoundary?: DiscoveryBoundary;
 }
 
 export interface MarketDataCoordinator {
@@ -105,7 +182,7 @@ export function createMarketDataCoordinator(
     discoveryMaxResults = 50,
   } = config;
 
-  const { redis, providerRegistry, checkRegimeBoundary } = deps;
+  const { redis, checkRegimeBoundary, discoveryBoundary } = deps;
 
   let leaderElection: LeaderElection | undefined;
   let discoveryTimer: ReturnType<typeof setInterval> | undefined;
@@ -251,65 +328,107 @@ export function createMarketDataCoordinator(
     await pipeline.exec();
   }
 
+  /** Record a rate-limit throttle for both discovery providers (they share one call). */
+  function recordDiscoveryThrottle(): void {
+    void recordRateLimitThrottle(redis, 'dexscreener', 'discovery');
+    void recordRateLimitThrottle(redis, 'geckoterminal', 'discovery');
+  }
+
+  /** Record a generic provider failure for both discovery providers. */
+  function recordDiscoveryFailure(): void {
+    void recordProviderFailure(redis, 'dexscreener', 'discovery');
+    void recordProviderFailure(redis, 'geckoterminal', 'discovery');
+  }
+
   async function refreshDiscovery(): Promise<void> {
     const snapshotId = crypto.randomUUID();
     const capturedAt = new Date().toISOString();
 
-    try {
-      const result = await providerRegistry.discovery.discover({ networks, maxResults: discoveryMaxResults });
+    // Discovery is sourced over the Traderton `discover_tokens` boundary (the
+    // discovery re-point). No in-process discovery. When the boundary is
+    // unconfigured, record a failure + write an unavailable snapshot — never
+    // fall back to a local discovery computation.
+    if (!discoveryBoundary) {
       if (stopped) return;
-      const tokens = result.data ?? [];
-
-      const snapshot = {
-        snapshotId,
-        capturedAt,
-        freshness: {
-          state: 'fresh' as const,
-          ageMs: 0,
-          maxAllowedAgeMs: discoveryMaxAgeMs,
-        },
-        sources: {
-          discovery: { ok: true, freshness: 'fresh' },
-        },
-        tokens: tokens.map((token, idx) => ({
-          network: token.network,
-          address: token.address,
-          symbol: token.symbol,
-          name: token.name,
-          priceUsd: token.priceUsd,
-          liquidityUsd: token.liquidityUsd,
-          volume24hUsd: token.volume24hUsd,
-          poolAddress: token.poolAddress ?? null,
-          poolCreatedAt: token.poolCreatedAt ?? null,
-          discoveryVectors: token.discoveryVectors,
-          rank: idx + 1,
-        })),
-      };
-
-      await writeDiscoveryState(snapshot);
-      if (stopped) return;
-
-      // Record success and freshness counters for the discovery providers.
-      // dexscreener and geckoterminal run together in a single discover() call,
-      // so both share the same freshness observation from the aggregated result.
-      const discoveryFreshnessMode = result.meta.freshness.source === 'upstream' ? 'fresh' : 'cached';
-      void recordProviderSuccess(redis, 'dexscreener', 'discovery');
-      void recordProviderSuccess(redis, 'geckoterminal', 'discovery');
-      void recordFreshnessMode(redis, 'dexscreener', 'discovery', discoveryFreshnessMode);
-      void recordFreshnessMode(redis, 'geckoterminal', 'discovery', discoveryFreshnessMode);
-
-      logger.debug({ snapshotId, tokenCount: tokens.length }, 'Discovery snapshot refreshed');
-    } catch (err) {
-      if (stopped) return;
-      logger.error({ err }, 'Discovery refresh failed — marking stale');
-      if (isRateLimitThrottle(err)) {
-        void recordRateLimitThrottle(redis, 'dexscreener', 'discovery');
-        void recordRateLimitThrottle(redis, 'geckoterminal', 'discovery');
-      } else {
-        void recordProviderFailure(redis, 'dexscreener', 'discovery');
-        void recordProviderFailure(redis, 'geckoterminal', 'discovery');
-      }
+      recordDiscoveryFailure();
       await markDiscoveryStale(snapshotId, capturedAt);
+      return;
+    }
+
+    const result = await discoveryBoundary.invoke({
+      toolName: 'discover_tokens',
+      payload: { networks, maxResults: discoveryMaxResults },
+    });
+    if (stopped) return;
+
+    switch (result.kind) {
+      case 'success': {
+        const payload = parseDiscoveryPayload(result.data);
+        const tokens = payload.tokens;
+
+        const snapshot = {
+          snapshotId,
+          capturedAt,
+          freshness: {
+            state: 'fresh' as const,
+            ageMs: 0,
+            maxAllowedAgeMs: discoveryMaxAgeMs,
+          },
+          sources: {
+            discovery: { ok: true, freshness: 'fresh' },
+          },
+          tokens: tokens.map((token, idx) => ({
+            network: token.network,
+            address: token.address,
+            symbol: token.symbol,
+            name: token.name,
+            priceUsd: token.priceUsd,
+            liquidityUsd: token.liquidityUsd,
+            volume24hUsd: token.volume24hUsd,
+            poolAddress: token.poolAddress ?? null,
+            poolCreatedAt: token.poolCreatedAt ?? null,
+            discoveryVectors: token.discoveryVectors,
+            rank: idx + 1,
+          })),
+        };
+
+        await writeDiscoveryState(snapshot);
+        if (stopped) return;
+
+        // Record success and freshness counters for the discovery providers.
+        // dexscreener and geckoterminal run together in a single discovery
+        // result, so both share the same freshness observation from the
+        // aggregated boundary payload.
+        const discoveryFreshnessMode = payload.freshness?.source === 'upstream' ? 'fresh' : 'cached';
+        void recordProviderSuccess(redis, 'dexscreener', 'discovery');
+        void recordProviderSuccess(redis, 'geckoterminal', 'discovery');
+        void recordFreshnessMode(redis, 'dexscreener', 'discovery', discoveryFreshnessMode);
+        void recordFreshnessMode(redis, 'geckoterminal', 'discovery', discoveryFreshnessMode);
+
+        logger.debug({ snapshotId, tokenCount: tokens.length }, 'Discovery snapshot refreshed');
+        break;
+      }
+      case 'failure': {
+        logger.error({ code: result.code, message: result.message }, 'Discovery refresh failed — marking stale');
+        if (result.code === 'rate_limit.exceeded') {
+          recordDiscoveryThrottle();
+        } else {
+          recordDiscoveryFailure();
+        }
+        await markDiscoveryStale(snapshotId, capturedAt);
+        break;
+      }
+      case 'transport_error': {
+        logger.error({ message: result.message }, 'Discovery refresh failed — boundary unreachable');
+        recordDiscoveryFailure();
+        await markDiscoveryStale(snapshotId, capturedAt);
+        break;
+      }
+      case 'in_progress':
+        // Non-terminal — record nothing and leave the existing snapshot
+        // unchanged (a later poll refreshes it).
+        logger.debug({ snapshotId }, 'Discovery refresh in progress — leaving snapshot unchanged');
+        break;
     }
   }
 

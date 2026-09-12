@@ -952,11 +952,12 @@ const marketIntelCoordinator = appConfig.marketData
         },
         {
           redis: redisClient,
-          providerRegistry: sharedMarketDataRegistry!,
           publisher: eventPublisher,
           monitor: marketMonitor,
           // L3 Q2: regime evaluation routes over the SYSTEM read boundary.
           checkRegimeBoundary: systemReadBoundary,
+          // Discovery re-point: discovery routes over the same SYSTEM read boundary.
+          discoveryBoundary: systemReadBoundary,
         },
       );
       return coordinator;

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TradertonReadResult } from '@herobids/domain';
 
 const mockState = vi.hoisted(() => ({
   onLeaderAcquired: undefined as (() => void) | undefined,
@@ -80,17 +81,22 @@ function makeRedisMock() {
   } as any;
 }
 
-function makeProviderRegistryMock() {
-  return {
-    discovery: {
-      discover: vi.fn(() => new Promise((_resolve, reject) => {
-        setTimeout(() => reject(new Error('discovery failed')), 1_000);
-      })),
-    },
-    binance: {
-      candles: vi.fn().mockResolvedValue({ data: [] }),
-    },
-  } as any;
+/** A stubbed read boundary whose invoke resolves a fixed result + records calls. */
+function stubBoundary(result: TradertonReadResult): { boundary: { invoke: ReturnType<typeof vi.fn> }; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn(async () => result);
+  return { boundary: { invoke }, invoke };
+}
+
+/**
+ * A read boundary whose invoke resolves the fixed result only after `delayMs`
+ * of (fake) time has elapsed — used to exercise the elapsed-age path in
+ * markDiscoveryStale after a failed refresh.
+ */
+function makeDelayedBoundary(result: TradertonReadResult, delayMs: number): { boundary: { invoke: ReturnType<typeof vi.fn> }; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn(() => new Promise<TradertonReadResult>((resolve) => {
+    setTimeout(() => resolve(result), delayMs);
+  }));
+  return { boundary: { invoke }, invoke };
 }
 
 function makePublisherMock() {
@@ -117,8 +123,12 @@ describe('createMarketDataCoordinator', () => {
 
   it('marks discovery stale with a real age after refresh failure', async () => {
     const redis = makeRedisMock();
-    const providerRegistry = makeProviderRegistryMock();
     const publisher = makePublisherMock();
+    // A transport error resolved 1_000ms later — mirrors the elapsed-age path.
+    const { boundary: discoveryBoundary } = makeDelayedBoundary(
+      { kind: 'transport_error', message: 'unreachable', retryable: true },
+      1_000,
+    );
 
     redis._store.set('market-intel:discovery:latest', JSON.stringify({
       snapshotId: 'snap-1',
@@ -137,7 +147,7 @@ describe('createMarketDataCoordinator', () => {
         benchmarkSymbols: ['BTC'],
         enabled: true,
       },
-      { redis, providerRegistry, publisher },
+      { redis, publisher, discoveryBoundary },
     );
 
     coordinator.start();
@@ -161,9 +171,258 @@ describe('createMarketDataCoordinator', () => {
     expect(meta.sourceStats.discovery.freshness).toBe('stale');
   });
 
+  it('writes a fresh discovery snapshot and records success + freshness from the boundary result', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+    const { boundary: discoveryBoundary, invoke } = stubBoundary({
+      kind: 'success',
+      data: {
+        ok: true,
+        tokens: [
+          {
+            network: 'solana',
+            address: 'So1111',
+            symbol: 'FOO',
+            name: 'Foo Token',
+            priceUsd: 1.23,
+            liquidityUsd: 50_000,
+            volume24hUsd: 12_000,
+            poolAddress: 'pool-1',
+            poolCreatedAt: '2026-06-09T00:00:00.000Z',
+            discoveryVectors: ['trending'],
+          },
+          {
+            network: 'solana',
+            address: 'So2222',
+            symbol: 'BAR',
+            priceUsd: 4.56,
+            liquidityUsd: 80_000,
+            volume24hUsd: 22_000,
+            discoveryVectors: ['volume'],
+          },
+        ],
+        freshness: { provider: 'dexscreener', source: 'upstream', ageMs: 0, isStale: false },
+      },
+    });
+
+    const coordinator = createMarketDataCoordinator(
+      {
+        workerId: 'worker-1',
+        discoveryPollMs: 30_000,
+        regimePollMs: 60_000,
+        networks: ['solana'],
+        benchmarkSymbols: ['BTC'],
+        enabled: true,
+        discoveryMaxResults: 50,
+      },
+      { redis, publisher, discoveryBoundary },
+    );
+
+    coordinator.start();
+    mockState.onLeaderAcquired?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(invoke).toHaveBeenCalledWith({
+      toolName: 'discover_tokens',
+      payload: { networks: ['solana'], maxResults: 50 },
+    });
+
+    const latest = JSON.parse(redis._store.get('market-intel:discovery:latest')!);
+    expect(latest.freshness.state).toBe('fresh');
+    expect(latest.tokens).toHaveLength(2);
+    expect(latest.tokens[0]).toMatchObject({
+      network: 'solana',
+      address: 'So1111',
+      symbol: 'FOO',
+      name: 'Foo Token',
+      priceUsd: 1.23,
+      liquidityUsd: 50_000,
+      volume24hUsd: 12_000,
+      poolAddress: 'pool-1',
+      poolCreatedAt: '2026-06-09T00:00:00.000Z',
+      discoveryVectors: ['trending'],
+      rank: 1,
+    });
+    // Missing optional fields narrow to null; rank continues from position.
+    expect(latest.tokens[1]).toMatchObject({
+      symbol: 'BAR',
+      name: null,
+      poolAddress: null,
+      poolCreatedAt: null,
+      rank: 2,
+    });
+
+    // Both discovery providers share the one boundary result (parity).
+    const counters = redis._hashStore.get('market-intel:provider-counters:v2')!;
+    expect(counters.get('dexscreener:discovery:success')).toBe('1');
+    expect(counters.get('geckoterminal:discovery:success')).toBe('1');
+    expect(counters.get('dexscreener:discovery:freshnessModeFresh')).toBe('1');
+    expect(counters.get('geckoterminal:discovery:freshnessModeFresh')).toBe('1');
+  });
+
+  it('records cached freshness for both discovery providers when the boundary reports a cache source', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+    const { boundary: discoveryBoundary } = stubBoundary({
+      kind: 'success',
+      data: {
+        ok: true,
+        tokens: [],
+        freshness: { provider: 'dexscreener', source: 'cache', ageMs: 5_000, isStale: false },
+      },
+    });
+
+    const coordinator = createMarketDataCoordinator(
+      {
+        workerId: 'worker-1',
+        discoveryPollMs: 30_000,
+        regimePollMs: 60_000,
+        networks: ['solana'],
+        benchmarkSymbols: ['BTC'],
+        enabled: true,
+      },
+      { redis, publisher, discoveryBoundary },
+    );
+
+    coordinator.start();
+    mockState.onLeaderAcquired?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const counters = redis._hashStore.get('market-intel:provider-counters:v2')!;
+    expect(counters.get('dexscreener:discovery:freshnessModeCached')).toBe('1');
+    expect(counters.get('geckoterminal:discovery:freshnessModeCached')).toBe('1');
+  });
+
+  it('records a rate-limit throttle and unavailable snapshot when discovery reports rate_limit.exceeded', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+    const { boundary: discoveryBoundary } = stubBoundary({
+      kind: 'failure',
+      code: 'rate_limit.exceeded',
+      message: 'throttled',
+      retryable: true,
+    });
+
+    const coordinator = createMarketDataCoordinator(
+      {
+        workerId: 'worker-1',
+        discoveryPollMs: 30_000,
+        regimePollMs: 60_000,
+        networks: ['solana'],
+        benchmarkSymbols: ['BTC'],
+        enabled: true,
+      },
+      { redis, publisher, discoveryBoundary },
+    );
+
+    coordinator.start();
+    mockState.onLeaderAcquired?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const latest = JSON.parse(redis._store.get('market-intel:discovery:latest')!);
+    expect(latest.freshness.state).toBe('unavailable');
+
+    const counters = redis._hashStore.get('market-intel:provider-counters:v2')!;
+    expect(counters.get('dexscreener:discovery:rateLimitThrottleCount')).toBe('1');
+    expect(counters.get('geckoterminal:discovery:rateLimitThrottleCount')).toBe('1');
+    // NOT counted as a generic failure
+    expect(counters.get('dexscreener:discovery:failure')).toBeUndefined();
+    expect(counters.get('geckoterminal:discovery:failure')).toBeUndefined();
+  });
+
+  it('records a provider failure and unavailable snapshot on a discovery transport error', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+    const { boundary: discoveryBoundary } = stubBoundary({ kind: 'transport_error', message: 'unreachable', retryable: true });
+
+    const coordinator = createMarketDataCoordinator(
+      {
+        workerId: 'worker-1',
+        discoveryPollMs: 30_000,
+        regimePollMs: 60_000,
+        networks: ['solana'],
+        benchmarkSymbols: ['BTC'],
+        enabled: true,
+      },
+      { redis, publisher, discoveryBoundary },
+    );
+
+    coordinator.start();
+    mockState.onLeaderAcquired?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const latest = JSON.parse(redis._store.get('market-intel:discovery:latest')!);
+    expect(latest.freshness.state).toBe('unavailable');
+
+    const counters = redis._hashStore.get('market-intel:provider-counters:v2')!;
+    expect(counters.get('dexscreener:discovery:failure')).toBe('1');
+    expect(counters.get('geckoterminal:discovery:failure')).toBe('1');
+  });
+
+  it('records a provider failure and unavailable snapshot on a generic discovery failure', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+    const { boundary: discoveryBoundary } = stubBoundary({
+      kind: 'failure',
+      code: 'boundary.unavailable',
+      message: 'nope',
+      retryable: true,
+    });
+
+    const coordinator = createMarketDataCoordinator(
+      {
+        workerId: 'worker-1',
+        discoveryPollMs: 30_000,
+        regimePollMs: 60_000,
+        networks: ['solana'],
+        benchmarkSymbols: ['BTC'],
+        enabled: true,
+      },
+      { redis, publisher, discoveryBoundary },
+    );
+
+    coordinator.start();
+    mockState.onLeaderAcquired?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const latest = JSON.parse(redis._store.get('market-intel:discovery:latest')!);
+    expect(latest.freshness.state).toBe('unavailable');
+
+    const counters = redis._hashStore.get('market-intel:provider-counters:v2')!;
+    expect(counters.get('dexscreener:discovery:failure')).toBe('1');
+    expect(counters.get('geckoterminal:discovery:failure')).toBe('1');
+  });
+
+  it('records a provider failure and unavailable snapshot when the discovery boundary is absent', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+
+    const coordinator = createMarketDataCoordinator(
+      {
+        workerId: 'worker-1',
+        discoveryPollMs: 30_000,
+        regimePollMs: 60_000,
+        networks: ['solana'],
+        benchmarkSymbols: ['BTC'],
+        enabled: true,
+      },
+      { redis, publisher },
+    );
+
+    coordinator.start();
+    mockState.onLeaderAcquired?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const latest = JSON.parse(redis._store.get('market-intel:discovery:latest')!);
+    expect(latest.freshness.state).toBe('unavailable');
+
+    const counters = redis._hashStore.get('market-intel:provider-counters:v2')!;
+    expect(counters.get('dexscreener:discovery:failure')).toBe('1');
+    expect(counters.get('geckoterminal:discovery:failure')).toBe('1');
+  });
+
   it('writes a fresh regime snapshot and records success + freshness from the boundary result', async () => {
     const redis = makeRedisMock();
-    const providerRegistry = makeProviderRegistryMock();
     const publisher = makePublisherMock();
     const invoke = vi.fn(async () => ({
       kind: 'success' as const,
@@ -185,7 +444,7 @@ describe('createMarketDataCoordinator', () => {
         benchmarkSymbols: ['BTC'],
         enabled: true,
       },
-      { redis, providerRegistry, publisher, checkRegimeBoundary: { invoke } },
+      { redis, publisher, checkRegimeBoundary: { invoke } },
     );
 
     coordinator.start();
@@ -208,7 +467,6 @@ describe('createMarketDataCoordinator', () => {
 
   it('records a rate-limit throttle and unavailable snapshot when the boundary reports rate_limit.exceeded', async () => {
     const redis = makeRedisMock();
-    const providerRegistry = makeProviderRegistryMock();
     const publisher = makePublisherMock();
     const invoke = vi.fn(async () => ({
       kind: 'failure' as const,
@@ -226,7 +484,7 @@ describe('createMarketDataCoordinator', () => {
         benchmarkSymbols: ['BTC'],
         enabled: true,
       },
-      { redis, providerRegistry, publisher, checkRegimeBoundary: { invoke } },
+      { redis, publisher, checkRegimeBoundary: { invoke } },
     );
 
     coordinator.start();
@@ -244,7 +502,6 @@ describe('createMarketDataCoordinator', () => {
 
   it('records a provider failure and unavailable snapshot on a transport error', async () => {
     const redis = makeRedisMock();
-    const providerRegistry = makeProviderRegistryMock();
     const publisher = makePublisherMock();
     const invoke = vi.fn(async () => ({ kind: 'transport_error' as const, message: 'unreachable', retryable: true as const }));
 
@@ -257,7 +514,7 @@ describe('createMarketDataCoordinator', () => {
         benchmarkSymbols: ['BTC'],
         enabled: true,
       },
-      { redis, providerRegistry, publisher, checkRegimeBoundary: { invoke } },
+      { redis, publisher, checkRegimeBoundary: { invoke } },
     );
 
     coordinator.start();
@@ -273,8 +530,9 @@ describe('createMarketDataCoordinator', () => {
 
   it('rewrites a parseable snapshot missing freshness as unavailable', async () => {
     const redis = makeRedisMock();
-    const providerRegistry = makeProviderRegistryMock();
     const publisher = makePublisherMock();
+    // Discovery boundary fails so markDiscoveryStale runs against the prior snapshot.
+    const { boundary: discoveryBoundary } = stubBoundary({ kind: 'transport_error', message: 'unreachable', retryable: true });
 
     redis._store.set('market-intel:discovery:latest', JSON.stringify({
       snapshotId: 'snap-2',
@@ -292,7 +550,7 @@ describe('createMarketDataCoordinator', () => {
         benchmarkSymbols: ['BTC'],
         enabled: true,
       },
-      { redis, providerRegistry, publisher },
+      { redis, publisher, discoveryBoundary },
     );
 
     coordinator.start();
