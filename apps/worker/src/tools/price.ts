@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { mapReadResultToToolResult } from './traderton-read.js';
 
 // Supported chain identifiers for the price tool.
 // 'hyperliquid' routes to the execution (mark) price source.
@@ -111,6 +112,20 @@ const getPriceTool: AgentTool<TradingToolContext> = {
         retryable: false,
         fault: false,
       };
+    }
+
+    // L3: route the read through the Traderton boundary when configured. The
+    // Traderton `get_price` tool is byte-identical (same validation, address
+    // auto-detection from the symbol, and success shape), so parity holds by
+    // construction — no `address` arg is passed here since the boundary tool
+    // does its own detection. In-process fallback below is transitional, used
+    // only when the boundary is absent.
+    if (ctx.tradertonBoundary) {
+      const result = await ctx.tradertonBoundary.invoke({
+        toolName: 'get_price',
+        payload: { symbol: trimmedSymbol, chain },
+      });
+      return mapReadResultToToolResult(result);
     }
 
     if (!ctx.priceService) {

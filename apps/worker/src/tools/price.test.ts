@@ -133,6 +133,80 @@ describe('get_price tool', () => {
 
     expect(getPrice).toHaveBeenCalledWith('BTC', 'hyperliquid', undefined);
   });
+
+  it('routes the read through the boundary when configured (does NOT touch priceService)', async () => {
+    const boundaryData = {
+      ok: true,
+      symbol: 'SOL',
+      chain: 'solana',
+      priceUsd: 155,
+      source: 'oracle',
+      fetchedAt: '2026-06-09T00:00:00.000Z',
+      stale: false,
+    };
+    const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: boundaryData });
+    const getPrice = vi.fn();
+
+    const result = await getPriceTool!.execute(
+      { symbol: 'SOL', chain: 'solana' },
+      makeContext({ tradertonBoundary: { invoke }, priceService: { getPrice } }),
+    );
+
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_price', payload: { symbol: 'SOL', chain: 'solana' } });
+    expect(getPrice).not.toHaveBeenCalled(); // boundary sourced, not in-process
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(boundaryData);
+  });
+
+  it('does not pass address over the boundary for address-shaped symbols (boundary self-detects)', async () => {
+    const evmAddress = '0x6982508145454Ce325dDbE47a25d4ec3d2311933';
+    const invoke = vi.fn().mockResolvedValue({
+      kind: 'success',
+      data: { ok: true, symbol: evmAddress, chain: 'ethereum', priceUsd: 0.00001, source: 'oracle', fetchedAt: '2026-06-09T00:00:00.000Z', stale: false },
+    });
+
+    const result = await getPriceTool!.execute(
+      { symbol: evmAddress, chain: 'ethereum' },
+      makeContext({ tradertonBoundary: { invoke } }),
+    );
+
+    expect(result.success).toBe(true);
+    // Payload carries only { symbol, chain } — no address arg (unlike the in-process path).
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_price', payload: { symbol: evmAddress, chain: 'ethereum' } });
+  });
+
+  it('maps a boundary validation failure to a typed non-fault failure preserving code', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      kind: 'failure',
+      code: 'validation.invalid_payload',
+      message: 'unknown symbol',
+      retryable: false,
+    });
+
+    const result = await getPriceTool!.execute(
+      { symbol: 'SOL', chain: 'solana' },
+      makeContext({ tradertonBoundary: { invoke } }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('unknown symbol');
+    expect(result.errorCode).toBe('validation.invalid_payload');
+    expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
+  });
+
+  it('short-circuits on invalid symbol BEFORE calling the boundary', async () => {
+    const invoke = vi.fn();
+
+    const result = await getPriceTool!.execute(
+      { symbol: 'So11111111111111111111111111111111111111112', chain: 'ethereum' },
+      makeContext({ tradertonBoundary: { invoke } }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('ethereum');
+    expect(invoke).not.toHaveBeenCalled();
+  });
 });
 
 describe('isOnChainAddress', () => {
