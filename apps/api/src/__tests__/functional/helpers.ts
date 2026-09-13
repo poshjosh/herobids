@@ -106,6 +106,8 @@ export function parseRedisUrl(url: string) {
  *   get_owner_bot_status → owner-scoped status { ok, id, status, config, ... }; not found /
  *                          not owned → not_found.resource failure (drives the 404 + ownership cases)
  *   start_bot / stop_bot → flip the recorded status; not found / not owned → not_found.resource
+ *   delete_bot           → remove the recorded bot; not found / not owned → not_found.resource;
+ *                          running → validation.invalid_payload w/ details.errorCode:'bot.running' (→ 409)
  *
  * Ownership is enforced by scoping every read/mutation to `subject.ownerId`, so
  * the "rejects non-owned bot" cases are TRUE reds (404 from the owner check, not
@@ -241,6 +243,25 @@ export function makeStubTradertonClient(): TradertonClient {
           bot.status = 'stopped';
           bot.stoppedAt = new Date().toISOString();
           return Promise.resolve(ok({ ok: true, botId: id }));
+        }
+        case 'delete_bot': {
+          // Wave A1: the authoritative bot delete. Owner-scoped: a bot owned by
+          // another user resolves as not_found (drives the 404). A running bot is
+          // refused with the dedicated `bot.running` code — mirroring the real
+          // boundary, a fault:false failure surfaces as validation.invalid_payload
+          // carrying details.errorCode (the route maps that errorCode to 409).
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          if (bot.status === 'running') {
+            return Promise.resolve(failure(
+              'validation.invalid_payload',
+              'Cannot delete a running bot. Stop it first.',
+              { errorCode: 'bot.running' },
+            ));
+          }
+          bots.delete(id);
+          return Promise.resolve(ok({ ok: true, botId: id, deleted: true }));
         }
         default:
           return Promise.resolve(ok({ ok: true }));

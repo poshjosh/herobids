@@ -98,12 +98,12 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
 
   // ── DELETE /bots/:id ───────────────────────────────────────────────
 
-  // consume-traderton (ratified contract): create_bot over the boundary returns
-  // { botId } and the stub boundary records the bot owner-scoped. DELETE/stop/
-  // start now resolve existence/ownership/status over the (stubbed) boundary
-  // (`get_owner_bot_status`) rather than the local bots table, so these are TRUE
-  // reds — the "rejects non-owned bot" cases 404 from the owner check (the bot
-  // exists but is owned by another user), not from an empty table.
+  // Wave A1 (ratified): DELETE now routes over the authoritative `delete_bot`
+  // boundary tool (the stub records/removes the bot owner-scoped). DELETE/stop/
+  // start resolve existence/ownership/status over the (stubbed) boundary
+  // (`get_owner_bot_status`), so these are TRUE reds — the "rejects non-owned
+  // bot" cases 404 from the owner check (the bot exists but is owned by another
+  // user), not from an empty table.
   it('DELETE /bots/:id — deletes stopped bot, returns 204', async () => {
     const res = await ctx.app.inject({
       method: 'DELETE',
@@ -111,10 +111,14 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(204);
-    // NOTE: DELETE stays LOCAL for now — there is no boundary delete tool yet, so
-    // the boundary-owned bot record persists. We therefore do NOT assert a
-    // subsequent GET returns 404 (the boundary read would still find it). The
-    // deletion of the boundary-owned bot is a deferred concern.
+    // Wave A1: the boundary delete is authoritative, so the bot is GONE — a
+    // subsequent boundary read (GET) resolves not-found → 404.
+    const getRes = await ctx.app.inject({
+      method: 'GET',
+      url: `/bots/${botId}`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(getRes.statusCode).toBe(404);
   });
 
   it('DELETE /bots/:id — rejects non-owned bot, returns 404', async () => {
@@ -124,6 +128,23 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
       headers: { Authorization: `Bearer ${otherUserToken}` },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('DELETE /bots/:id — refuses to delete a running bot, returns 409', async () => {
+    // Start the bot first so the boundary reports it running.
+    const startRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/bots/${botId}/start`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(startRes.statusCode).toBe(202);
+
+    const res = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/bots/${botId}`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(409);
   });
 
   // ── POST /bots/:id/stop ────────────────────────────────────────────

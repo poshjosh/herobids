@@ -40,7 +40,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   // limit and resolves the venue account from the subject. Returns the typed
   // client result. NO silent fallback to the in-process lifecycle queue.
   const invokeBoundary = async (
-    toolName: 'create_bot' | 'start_bot' | 'stop_bot' | 'adjust_bot_config',
+    toolName: 'create_bot' | 'start_bot' | 'stop_bot' | 'adjust_bot_config' | 'delete_bot',
     payload: Record<string, unknown>,
     userId: string,
   ): Promise<TradertonClientResult> => {
@@ -576,13 +576,11 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     // fallback (ruling 5). The boundary resolves existence/ownership so the
     // ownership check is NOT weakened.
     //
-    // KNOWN PARITY GAP (tracked — traderton 001 ledger, bot re-point follow-on):
-    // there is no boundary `delete_bot` tool yet, so DELETE removes only the LOCAL
-    // mirror row; the boundary-owned bot persists in Traderton. This is acceptable
-    // in the interim ONLY because the local mirror is the pre-existing trading DB
-    // scheduled for L3d deletion, and a stopped bot is inert. When the mirror is
-    // gone (or a delete tool lands), DELETE must route over the boundary. Do NOT
-    // treat this local delete as authoritative bot removal.
+    // Wave A1: the `delete_bot` boundary tool is now AUTHORITATIVE. The delete
+    // routes over the boundary (fail-closed, 503 when absent — same posture as
+    // create/stop/start); the local `db.delete(bots)` below is the INTERIM
+    // mirror-sync removed at D1 with the table, and runs BOUNDARY-FIRST (only
+    // after the boundary delete succeeds — S5). It is NOT authoritative removal.
     const resolved = await resolveBotForLifecycle(id, request.userId);
     if (resolved.kind === 'unavailable') {
       return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not deleted.', {}));
@@ -604,9 +602,31 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       await pendingStart.remove();
     }
 
-    // Owner-scope the local-mirror delete (defense-in-depth): the boundary gate
-    // above already resolved ownership, but scope the delete too so it can never
-    // touch a row the caller does not own.
+    // Wave A1 (S4/S5): the AUTHORITATIVE delete over the boundary. herobids
+    // injects ownerId + actor(user) only (D2); Traderton owns the bot. NO silent
+    // fallback — a missing boundary fails closed (503). The running-guard code
+    // rides in the boundary failure `details.errorCode` (`bot.running`), mapped
+    // to 409 here (mirrors how create/stop preserve dedicated codes).
+    const deleteResult = await invokeBoundary('delete_bot', { botId: id }, request.userId);
+    if (deleteResult.kind === 'transport_error' || deleteResult.kind === 'in_progress') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not deleted.', {}));
+    }
+    if (deleteResult.kind === 'failure') {
+      const runningCode = deleteResult.details?.['errorCode'];
+      const status = runningCode === 'bot.running' ? 409
+        : deleteResult.code === 'not_found.resource' ? 404
+        : deleteResult.code === 'authorization.denied' ? 403
+        : 502;
+      if (status === 409) {
+        return reply.status(409).send(errorPayload('bot.running', deleteResult.message, {}));
+      }
+      return reply.status(status).send(errorPayload(deleteResult.code, deleteResult.message, {}));
+    }
+
+    // Boundary-first (S5): the authoritative delete succeeded — now remove the
+    // interim local mirror row, owner-scoped (defense-in-depth: the row can never
+    // belong to another user). If the boundary delete had failed, the local row
+    // is left intact and the mapped error is returned above.
     await db.delete(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
     return reply.status(204).send();
   });
