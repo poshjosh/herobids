@@ -86,6 +86,7 @@ import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
 import { createTradertonClient, type TradertonClientConfig } from '@herobids/domain/traderton';
 import { createTradertonReadBoundary, type TradertonReadBoundary } from './traderton/read-adapter.js';
+import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js';
 import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
 import type { TradertonSubject } from '@herobids/domain/traderton';
 import { initEmailTools } from './tools/email.js';
@@ -3294,16 +3295,23 @@ async function runTick(): Promise<void> {
 
             // go_long with sizeUsd: convert USD to base units via PriceService.
             if (intent === 'go_long' && sizeUsd !== undefined && pricingIdentity) {
-              if (!priceService) {
+              // Read-fallback posture (ruling 5): prefer the Traderton read
+              // boundary when present, fall back to the in-process price service
+              // when absent. Fail closed only when NEITHER is available.
+              if (!tradertonReadBoundary && !priceService) {
                 throw new Error(
-                  `Hybrid sizing: priceService unavailable — cannot convert USD size for ${symbol}`,
+                  `Hybrid sizing: no price source (boundary or in-process) — cannot convert USD size for ${symbol}`,
                 );
               }
+
+              const hybridPriceService = tradertonReadBoundary
+                ? createBoundaryPriceService(tradertonReadBoundary)
+                : priceService!;
 
               const sizingResult = await resolveHybridTargetSize({
                 instrumentId: symbol,
                 sizeUsd,
-                priceService,
+                priceService: hybridPriceService,
                 pricingIdentity,
               });
 
