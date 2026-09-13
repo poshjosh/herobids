@@ -927,7 +927,7 @@ const marketMonitor = createMarketMonitor(
     enabled: miConfig.enabled && Boolean(appConfig.marketData),
     evaluationIntervalMs: miConfig.evaluationIntervalMs,
     families: {
-      watchThresholds: miConfig.families.watchThresholds.enabled,
+      watchThresholds: false, // B3 Option C (004 decision-log): watch state now lives behind the boundary; the local watch-threshold push loop is DISABLED until B3-monitor re-points it over check_watches. Prevents split-brain against the now-remote watch set.
       discoveryDeltas: miConfig.families.discoveryDeltas.enabled,
       regimeChanges: miConfig.families.regimeChanges.enabled,
     },

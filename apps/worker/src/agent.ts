@@ -58,7 +58,6 @@ import {
   updatePortfolioSummary,
   recordVenueSignals,
   recordActiveWatchSummary,
-  summarizeActiveWatches,
   recordPositionCoverage,
   computeMarketEventDigest,
   bufferWakeEnvelope,
@@ -68,7 +67,11 @@ import {
   type RuntimeCompositionState,
   type RuntimeFreshness,
 } from './runtime-composition.js';
-import { parseWatch, toRuntimeActiveWatch } from './watch-types.js';
+import {
+  parseRuntimeActiveWatch,
+  parseBoundaryWatchList,
+  deriveActiveWatchSummaryFrom,
+} from './agent-watch-view.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
 import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
@@ -772,13 +775,48 @@ function isRuntimeActiveWatchSummary(value: unknown): value is RuntimeActiveWatc
     && summary.lines.every((line) => typeof line === 'string');
 }
 
-function parseRuntimeActiveWatch(raw: string): RuntimeActiveWatch | null {
-  const watch = parseWatch(raw);
-  if (!watch) return null;
-  return toRuntimeActiveWatch(watch);
+/**
+ * Single per-tick load of the agent's active watch view.
+ *
+ * Performs at most ONE `list_watches` boundary fetch (or the local Redis
+ * fallback) and derives BOTH the raw watch list and the tick-gate summary from
+ * that single source, so the two tick readers no longer double-fetch.
+ *
+ * - `raw` is always populated (empty on error/absent).
+ * - `summary` is the empty-stable summary on success, or `null` when summary
+ *   derivation throws — preserving the "watch state unknown → force evaluation"
+ *   contract at the gate site.
+ */
+async function loadActiveWatches(
+  agentId: string,
+): Promise<{ raw: RuntimeActiveWatch[]; summary: RuntimeActiveWatchSummary | null }> {
+  const raw = await loadRawActiveWatches(agentId);
+  try {
+    return { raw, summary: deriveActiveWatchSummaryFrom(raw) };
+  } catch (err) {
+    logger.warn({ err, agentId }, 'Failed to derive active watch summary for tick context');
+    return { raw, summary: null };
+  }
 }
 
 async function loadRawActiveWatches(agentId: string): Promise<RuntimeActiveWatch[]> {
+  // B3: watch state now lives Traderton-side. When the read boundary is present,
+  // source the agent's watch view over `list_watches` so the tick gate never
+  // reads a stale local set (split-brain). The boundary returns the identical
+  // WatchEntry shape, so we re-serialize + reuse the same parse/convert helpers.
+  // Any non-success outcome (or absent boundary) falls back to the local read.
+  if (tradertonReadBoundary) {
+    try {
+      const result = await tradertonReadBoundary.invoke({ toolName: 'list_watches', payload: {} });
+      if (result.kind === 'success') {
+        return parseBoundaryWatchList(result.data);
+      }
+      logger.warn({ agentId, kind: result.kind }, 'list_watches over boundary did not succeed — falling back to local read');
+    } catch (err) {
+      logger.warn({ err, agentId }, 'list_watches over boundary threw — falling back to local read');
+    }
+  }
+
   try {
     const rawWatches = await redis.hgetall(`agent:watches:${agentId}`);
     return Object.values(rawWatches ?? {})
@@ -792,6 +830,15 @@ async function loadRawActiveWatches(agentId: string): Promise<RuntimeActiveWatch
 
 async function loadActiveWatchSummary(agentId: string): Promise<RuntimeActiveWatchSummary | null> {
   try {
+    // B3: when the read boundary is present, derive the summary from the
+    // boundary-sourced raw watches (loadRawActiveWatches already routes over
+    // `list_watches`). The local summary-cache read below would go stale against
+    // the now-remote watch set, so it is only the no-boundary fallback.
+    if (tradertonReadBoundary) {
+      const watches = await loadRawActiveWatches(agentId);
+      return deriveActiveWatchSummaryFrom(watches);
+    }
+
     const summaryKey = `agent:watches:summary:${agentId}`;
     const cachedSummary = await redis.hget(summaryKey, 'summary');
     if (cachedSummary) {
@@ -807,15 +854,7 @@ async function loadActiveWatchSummary(agentId: string): Promise<RuntimeActiveWat
     }
 
     const watches = await loadRawActiveWatches(agentId);
-
-    if (watches.length === 0) {
-      // Return an empty summary (not null) so the tick gate produces a stable
-      // digest. A null return would cause computeWatchSummaryDigest to emit
-      // "__unknown__" which forces an LLM evaluation on every single tick.
-      return { totalCount: 0, uniqueCount: 0, lines: [], overflowCount: 0 };
-    }
-
-    return summarizeActiveWatches(watches);
+    return deriveActiveWatchSummaryFrom(watches);
   } catch (err) {
     logger.warn({ err, agentId }, 'Failed to load active watch summary for tick context');
     return null;
@@ -2849,9 +2888,15 @@ async function runTick(): Promise<void> {
     // cheap to load. Stored in a local to avoid a second load later.
     let activeWatchSummaryForGate: RuntimeActiveWatchSummary | null = null;
     let watchSummaryDigest: string | undefined;
+    // Single per-tick watch load: one `list_watches` boundary fetch feeds BOTH
+    // the tick-gate summary (here) and the raw watch list used later for
+    // watch-notification dedup — no second fetch.
+    let rawActiveWatches: RuntimeActiveWatch[] | null = null;
     if (tradingTickWorkPlan.hasTradingCapability) {
       try {
-        activeWatchSummaryForGate = await loadActiveWatchSummary(AGENT_ID!);
+        const activeWatches = await loadActiveWatches(AGENT_ID!);
+        rawActiveWatches = activeWatches.raw;
+        activeWatchSummaryForGate = activeWatches.summary;
         watchSummaryDigest = computeWatchSummaryDigest(activeWatchSummaryForGate);
       } catch (err) {
         logger.warn({ err }, 'Failed to load active watch summary for tick gate — forcing full evaluation (watch state unknown)');
@@ -3568,7 +3613,10 @@ async function runTick(): Promise<void> {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
     });
 
-    const rawWatches = await loadRawActiveWatches(AGENT_ID!);
+    // Reuse the raw watch list already loaded before the gate decision so a tick
+    // makes at most ONE list_watches boundary fetch. Fall back to a fresh load
+    // only when the gate load did not run (no trading capability) or failed.
+    const rawWatches = rawActiveWatches ?? await loadRawActiveWatches(AGENT_ID!);
 
     // ── Watch-notification dedup ──────────────────────────────────────────
     // A triggered watch only forces escalation ONCE per crossing. After the
