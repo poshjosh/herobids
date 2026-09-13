@@ -157,8 +157,13 @@ export function makeStubTradertonClient(): TradertonClient {
     ...(details ? { details } : {}),
   });
 
+  // Reproduce the REAL boundary dispatcher mapping: a tool's fault:false
+  // `not_found.resource` errorCode is surfaced on the wire as the generic
+  // `validation.invalid_payload` code with the original under `details.errorCode`.
+  // (A top-level `not_found.resource` code would NOT exercise the route's unwrap
+  // and would be a false green.)
   const notFound = (): TradertonClientResult =>
-    failure('not_found.resource', 'Bot not found');
+    failure('validation.invalid_payload', 'Bot not found', { errorCode: 'not_found.resource' });
 
   return {
     invoke: (input: InvokeToolInput): Promise<TradertonClientResult> => {
@@ -227,6 +232,37 @@ export function makeStubTradertonClient(): TradertonClient {
             creatorType: 'user',
             creatorId: bot.ownerId,
           }));
+        }
+        // Wave A2 owner-scoped bot read-wave. Each resolves the bot owner-scoped
+        // (not owned → not_found.resource, driving the 404 + ownership cases) and
+        // returns the SAME payload shape Traderton's tool returns today. The
+        // aggregation lives in Traderton — this double returns plausible
+        // owner-scoped values, enough for the endpoints to pass through.
+        case 'get_owner_bot_costs': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          return Promise.resolve(ok({ ok: true, botId: id, feesByCurrency: { USDC: '0' } }));
+        }
+        case 'get_owner_bot_sessions': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          const limit = typeof p['limit'] === 'number' ? (p['limit'] as number) : 20;
+          const offset = typeof p['offset'] === 'number' ? (p['offset'] as number) : 0;
+          return Promise.resolve(ok({ ok: true, botId: id, sessions: [], limit, offset }));
+        }
+        case 'get_owner_bot_journal_summary': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          return Promise.resolve(ok({ ok: true, botId: id, tradeCount: 0, feesByCurrency: {} }));
+        }
+        case 'get_owner_bot_journal': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          return Promise.resolve(ok({ ok: true, events: [] }));
         }
         case 'start_bot': {
           const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';

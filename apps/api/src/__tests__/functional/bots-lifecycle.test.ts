@@ -271,3 +271,108 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
     expect(JSON.parse(liveRes.body).error).toContain('live');
   });
 });
+
+// ── Wave A2: owner-scoped bot read endpoints ─────────────────────────────────
+//
+// GET /bots/:id/costs | /sessions | /events | /journal | /journal/summary now
+// route over the owner-scoped boundary read tools (get_owner_bot_costs /
+// get_owner_bot_sessions / get_owner_bot_journal / get_owner_bot_journal_summary).
+// Light assertions over the stubbed boundary: the endpoint returns 200 with the
+// preserved response shape, and a bot owned by another user resolves not-found
+// → 404 (the owner check is NOT weakened).
+describe.skipIf(SKIP)('Bot read endpoints (Wave A2) — functional', () => {
+  let token: string;
+  let otherUserToken: string;
+  let botId: string;
+
+  beforeEach(async () => {
+    if (SKIP) return;
+    token = await registerUser(ctx.app, ctx.db, 'reads@test.test', 'testpassword123', 'Reads User');
+    otherUserToken = await registerUser(ctx.app, ctx.db, 'reads-other@test.test', 'testpassword456', 'Reads Other');
+    const created = await createBot(token);
+    botId = created.botId;
+  });
+
+  it('GET /bots/:id/costs — returns 200 with { botId, feesByCurrency }', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/bots/${botId}/costs`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ botId: string; feesByCurrency: Record<string, string> }>();
+    expect(body.botId).toBe(botId);
+    expect(typeof body.feesByCurrency).toBe('object');
+  });
+
+  it('GET /bots/:id/costs — rejects non-owned bot, returns 404', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/bots/${botId}/costs`,
+      headers: { Authorization: `Bearer ${otherUserToken}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('GET /bots/:id/sessions — returns 200 with { botId, sessions, limit, offset }', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/bots/${botId}/sessions`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ botId: string; sessions: unknown[]; limit: number; offset: number }>();
+    expect(body.botId).toBe(botId);
+    expect(Array.isArray(body.sessions)).toBe(true);
+    expect(body.limit).toBe(20);
+    expect(body.offset).toBe(0);
+  });
+
+  it('GET /bots/:id/events — returns 200 with { botId, events }', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/bots/${botId}/events`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ botId: string; events: unknown[] }>();
+    expect(body.botId).toBe(botId);
+    expect(Array.isArray(body.events)).toBe(true);
+  });
+
+  it('GET /bots/:id/journal — returns 200 with { botId, events, limit, offset }', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/bots/${botId}/journal`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ botId: string; events: unknown[]; limit: number; offset: number }>();
+    expect(body.botId).toBe(botId);
+    expect(Array.isArray(body.events)).toBe(true);
+    expect(body.limit).toBe(50);
+    expect(body.offset).toBe(0);
+  });
+
+  it('GET /bots/:id/journal/summary — returns 200 with { botId, tradeCount, feesByCurrency }', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/bots/${botId}/journal/summary`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ botId: string; tradeCount: number; feesByCurrency: Record<string, string> }>();
+    expect(body.botId).toBe(botId);
+    expect(typeof body.tradeCount).toBe('number');
+    expect(typeof body.feesByCurrency).toBe('object');
+  });
+
+  it('GET /bots/:id/journal/summary — rejects non-owned bot, returns 404', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/bots/${botId}/journal/summary`,
+      headers: { Authorization: `Bearer ${otherUserToken}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});

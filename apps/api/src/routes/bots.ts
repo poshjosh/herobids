@@ -64,7 +64,13 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   // mapping (in_progress/transport_error become typed retryable failures).
   const hasReadBoundary = tradertonClient !== undefined;
   const readBoundary = async (
-    toolName: 'list_owner_bots' | 'get_owner_bot_status',
+    toolName:
+      | 'list_owner_bots'
+      | 'get_owner_bot_status'
+      | 'get_owner_bot_costs'
+      | 'get_owner_bot_sessions'
+      | 'get_owner_bot_journal_summary'
+      | 'get_owner_bot_journal',
     payload: Record<string, unknown>,
     userId: string,
   ): Promise<TradertonReadResult> => {
@@ -80,8 +86,20 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     switch (result.kind) {
       case 'success':
         return { kind: 'success', data: result.payload };
-      case 'failure':
-        return { kind: 'failure', code: result.code, message: result.message, retryable: result.retryable };
+      case 'failure': {
+        // The boundary dispatcher maps a tool's fault:false errorCode (e.g.
+        // `not_found.resource`) onto the closed wire code `validation.invalid_payload`
+        // and carries the ORIGINAL under `details.errorCode`. TradertonReadResult
+        // has no `details` field, so unwrap it HERE: when the wire code is the
+        // generic validation code and a tool errorCode is present, surface the
+        // tool errorCode as `code` so the read handlers' not_found.resource → 404
+        // mapping fires. (Mirrors accounts.ts `toolErrorCode` + the delete path.)
+        const toolCode = result.details?.['errorCode'];
+        const code = result.code === 'validation.invalid_payload' && typeof toolCode === 'string'
+          ? toolCode
+          : result.code;
+        return { kind: 'failure', code, message: result.message, retryable: result.retryable };
+      }
       case 'in_progress':
         return { kind: 'in_progress' };
       case 'transport_error':
@@ -415,9 +433,29 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     return reply.send(bot as Record<string, unknown>);
   });
 
-  // GET /bots/:id/costs — total fees from fills for this bot
+  // GET /bots/:id/costs — total fees from fills for this bot.
+  // Wave A2: re-pointed to the owner-scoped boundary read (`get_owner_bot_costs`)
+  // with a local-table fallback (ruling 5). Aggregation stays in Traderton — the
+  // boundary returns the identical `{ botId, feesByCurrency }` shape; herobids is
+  // a thin pass-through. not_found.resource → 404; transport/in_progress → 503;
+  // other failure → 502. The local aggregation is the ABSENT-boundary fallback
+  // (removed at D1 with the table, not now).
   app.get<{ Params: { id: string } }>('/bots/:id/costs', async (request, reply) => {
     const { id } = request.params;
+    if (hasReadBoundary) {
+      const result = await readBoundary('get_owner_bot_costs', { botId: id }, request.userId);
+      if (result.kind === 'success') {
+        const data = (result.data ?? {}) as Record<string, unknown>;
+        return reply.send({ botId: id, feesByCurrency: data['feesByCurrency'] ?? {} });
+      }
+      if (result.kind === 'failure') {
+        if (result.code === 'not_found.resource') {
+          return reply.status(404).send({ error: 'not_found' });
+        }
+        return reply.status(502).send(errorPayload(result.code, result.message, {}));
+      }
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot costs.', {}));
+    }
     const [bot] = await db.select({ id: bots.id }).from(bots)
       .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
     if (!bot) return reply.status(404).send({ error: 'not_found' });
@@ -440,11 +478,35 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     });
   });
 
-  // GET /bots/:id/sessions — lifecycle sessions derived by pairing instance.started / instance.stopped events
+  // GET /bots/:id/sessions — lifecycle sessions derived by pairing instance.started / instance.stopped events.
+  // Wave A2: re-pointed to the owner-scoped boundary read (`get_owner_bot_sessions`)
+  // with a local-table fallback (ruling 5). The boundary applies the SAME
+  // limit/offset clamping and returns the identical
+  // `{ botId, sessions, limit, offset }` shape; herobids is a thin pass-through.
   app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string } }>('/bots/:id/sessions', async (request, reply) => {
     const { id } = request.params;
     const limit = Math.min(parseInt(request.query.limit ?? '20', 10), 100);
     const offset = parseInt(request.query.offset ?? '0', 10);
+
+    if (hasReadBoundary) {
+      const result = await readBoundary('get_owner_bot_sessions', { botId: id, limit, offset }, request.userId);
+      if (result.kind === 'success') {
+        const data = (result.data ?? {}) as Record<string, unknown>;
+        return reply.send({
+          botId: id,
+          sessions: data['sessions'] ?? [],
+          limit: data['limit'] ?? limit,
+          offset: data['offset'] ?? offset,
+        });
+      }
+      if (result.kind === 'failure') {
+        if (result.code === 'not_found.resource') {
+          return reply.status(404).send({ error: 'not_found' });
+        }
+        return reply.status(502).send(errorPayload(result.code, result.message, {}));
+      }
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot sessions.', {}));
+    }
 
     const [bot] = await db.select({ id: bots.id }).from(bots)
       .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
@@ -504,10 +566,28 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     return reply.send({ botId: id, sessions: page, limit, offset });
   });
 
-  // GET /bots/:id/events — recent journal events for this bot
+  // GET /bots/:id/events — recent journal events for this bot.
+  // Wave A2: re-pointed to the owner-scoped boundary read (`get_owner_bot_journal`,
+  // called with just `limit` — the /events call shape) with a local-table
+  // fallback (ruling 5). Response shape `{ botId, events }` is preserved.
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/bots/:id/events', async (request, reply) => {
     const { id } = request.params;
     const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 500);
+
+    if (hasReadBoundary) {
+      const result = await readBoundary('get_owner_bot_journal', { botId: id, limit }, request.userId);
+      if (result.kind === 'success') {
+        const data = (result.data ?? {}) as Record<string, unknown>;
+        return reply.send({ botId: id, events: data['events'] ?? [] });
+      }
+      if (result.kind === 'failure') {
+        if (result.code === 'not_found.resource') {
+          return reply.status(404).send({ error: 'not_found' });
+        }
+        return reply.status(502).send(errorPayload(result.code, result.message, {}));
+      }
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot events.', {}));
+    }
 
     const [bot] = await db.select({ id: bots.id }).from(bots)
       .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
@@ -519,11 +599,30 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     return reply.send({ botId: id, events });
   });
 
-  // GET /bots/:id/journal — paginated journal events with optional type filter
+  // GET /bots/:id/journal — paginated journal events with optional type filter.
+  // Wave A2: re-pointed to the owner-scoped boundary read (`get_owner_bot_journal`,
+  // called with type + limit + offset) with a local-table fallback (ruling 5).
+  // Response shape `{ botId, events, limit, offset }` is preserved — the same
+  // journal tool serves BOTH /events and /journal.
   app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string; type?: string } }>('/bots/:id/journal', async (request, reply) => {
     const { id } = request.params;
     const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
     const offset = parseInt(request.query.offset ?? '0', 10);
+
+    if (hasReadBoundary) {
+      const result = await readBoundary('get_owner_bot_journal', { botId: id, type: request.query.type, limit, offset }, request.userId);
+      if (result.kind === 'success') {
+        const data = (result.data ?? {}) as Record<string, unknown>;
+        return reply.send({ botId: id, events: data['events'] ?? [], limit, offset });
+      }
+      if (result.kind === 'failure') {
+        if (result.code === 'not_found.resource') {
+          return reply.status(404).send({ error: 'not_found' });
+        }
+        return reply.status(502).send(errorPayload(result.code, result.message, {}));
+      }
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot journal.', {}));
+    }
 
     const [bot] = await db.select({ id: bots.id }).from(bots)
       .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
@@ -535,9 +634,31 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     return reply.send({ botId: id, events, limit, offset });
   });
 
-  // GET /bots/:id/journal/summary — aggregate stats from fills for this bot
+  // GET /bots/:id/journal/summary — aggregate stats from fills for this bot.
+  // Wave A2: re-pointed to the owner-scoped boundary read
+  // (`get_owner_bot_journal_summary`) with a local-table fallback (ruling 5).
+  // Response shape `{ botId, tradeCount, feesByCurrency }` is preserved.
   app.get<{ Params: { id: string } }>('/bots/:id/journal/summary', async (request, reply) => {
     const { id } = request.params;
+    if (hasReadBoundary) {
+      const result = await readBoundary('get_owner_bot_journal_summary', { botId: id }, request.userId);
+      if (result.kind === 'success') {
+        const data = (result.data ?? {}) as Record<string, unknown>;
+        return reply.send({
+          botId: id,
+          tradeCount: data['tradeCount'] ?? 0,
+          feesByCurrency: data['feesByCurrency'] ?? {},
+        });
+      }
+      if (result.kind === 'failure') {
+        if (result.code === 'not_found.resource') {
+          return reply.status(404).send({ error: 'not_found' });
+        }
+        return reply.status(502).send(errorPayload(result.code, result.message, {}));
+      }
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot journal summary.', {}));
+    }
+
     const [bot] = await db.select({ id: bots.id }).from(bots)
       .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
     if (!bot) return reply.status(404).send({ error: 'not_found' });
