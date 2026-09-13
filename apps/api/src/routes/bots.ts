@@ -15,6 +15,7 @@ import { checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import { canonicalizeExecutionMode } from './agent-config-helpers.js';
 import { INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import type { TradertonReadResult } from '@herobids/domain';
 import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 import { projectBotToBlueprintPayload } from '../services/blueprint-projection.js';
 import { buildBlueprintDetail } from './blueprints.js';
@@ -52,6 +53,69 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       subject: { ownerId: userId, actor: { type: 'user', id: userId } },
       deadlineMs: 30_000,
     });
+  };
+
+  // Bot READS route over the owner-scoped Traderton boundary tools
+  // (`list_owner_bots` / `get_owner_bot_status`). The read boundary is present
+  // exactly when the write `tradertonClient` is — they share the same transport
+  // + subject (ownerId + actor(user)); a read is a single synchronous invoke.
+  // When ABSENT, callers fall back to the local `bots` mirror (transitional —
+  // ledger ruling 5). This mirrors the worker read-adapter's client→read-result
+  // mapping (in_progress/transport_error become typed retryable failures).
+  const hasReadBoundary = tradertonClient !== undefined;
+  const readBoundary = async (
+    toolName: 'list_owner_bots' | 'get_owner_bot_status',
+    payload: Record<string, unknown>,
+    userId: string,
+  ): Promise<TradertonReadResult> => {
+    if (!tradertonClient) {
+      return { kind: 'transport_error', message: 'trading boundary not configured', retryable: true };
+    }
+    const result = await tradertonClient.invoke({
+      toolName,
+      payload,
+      subject: { ownerId: userId, actor: { type: 'user', id: userId } },
+      deadlineMs: 30_000,
+    });
+    switch (result.kind) {
+      case 'success':
+        return { kind: 'success', data: result.payload };
+      case 'failure':
+        return { kind: 'failure', code: result.code, message: result.message, retryable: result.retryable };
+      case 'in_progress':
+        return { kind: 'in_progress' };
+      case 'transport_error':
+        return { kind: 'transport_error', message: result.message, retryable: true };
+    }
+  };
+
+  // Resolve a bot's existence + status + config + ownership for the lifecycle
+  // handlers (DELETE/stop/start). When the boundary is present it is the source
+  // of truth (owner-scoped: a bot not owned by this user resolves as
+  // not-found); otherwise fall back to the local `bots` mirror (ruling 5). The
+  // lifecycle ACTION still routes over the write boundary — this only resolves
+  // the pre-action existence/ownership/status gate.
+  type ResolvedBot =
+    | { kind: 'found'; status: string; config: Record<string, unknown> }
+    | { kind: 'not_found' }
+    | { kind: 'unavailable' };
+  const resolveBotForLifecycle = async (id: string, userId: string): Promise<ResolvedBot> => {
+    if (hasReadBoundary) {
+      const result = await readBoundary('get_owner_bot_status', { botId: id }, userId);
+      if (result.kind === 'success') {
+        const data = (result.data ?? {}) as Record<string, unknown>;
+        const status = typeof data['status'] === 'string' ? data['status'] : 'stopped';
+        const config = (data['config'] as Record<string, unknown> | undefined) ?? {};
+        return { kind: 'found', status, config };
+      }
+      if (result.kind === 'failure') {
+        return result.code === 'not_found.resource' ? { kind: 'not_found' } : { kind: 'unavailable' };
+      }
+      return { kind: 'unavailable' };
+    }
+    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, userId)));
+    if (!bot) return { kind: 'not_found' };
+    return { kind: 'found', status: bot.status, config: (bot.config as Record<string, unknown>) ?? {} };
   };
 
   // Create bot
@@ -159,6 +223,18 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         : result.code === 'not_found.resource' ? 404
         : result.code === 'rate_limit.exceeded' ? 429
         : 502;
+      // B1: preserve the paper_swap identity. When the boundary rejects a
+      // paper+swap config, its `details.errorCode` names the specific
+      // execution-capability violation. Surface THAT code/message in the 400 so
+      // the client sees the paper_swap identity, not a generic validation error.
+      const paperSwapCode = result.details?.['errorCode'];
+      if (paperSwapCode === 'execution_capability.paper_swap_not_supported') {
+        return reply.status(status).send(errorPayload(
+          'execution_capability.paper_swap_not_supported',
+          result.message,
+          {},
+        ));
+      }
       return reply.status(status).send(errorPayload(result.code, result.message, {}));
     }
 
@@ -167,7 +243,15 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       void reply.header('Deprecation', 'true');
       void reply.header('Link', '</blueprints>; rel="deprecation"; title="Use blueprintId instead of config"');
     }
-    return reply.status(201).send(result.payload as Record<string, unknown>);
+    // A1: the create_bot boundary success carries `botId`. Return 201 with the
+    // payload, ensuring an `id` field is present (existing clients/tests read
+    // `.id`). Keep `botId` too so callers reading either key work.
+    const createPayload = (result.payload ?? {}) as Record<string, unknown>;
+    const createdBotId = createPayload['botId'] ?? createPayload['id'];
+    return reply.status(201).send({
+      ...createPayload,
+      ...(createdBotId !== undefined ? { id: createdBotId, botId: createdBotId } : {}),
+    });
   });
 
   // Update bot config
@@ -285,15 +369,45 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     return reply.send({ status: 'updated', botId: id });
   });
 
-  // List bots
+  // List bots — re-pointed to the owner-scoped boundary read (ruling 1) with a
+  // local-table fallback when the boundary is absent (ruling 5). Traderton owns
+  // the bots; the boundary returns owner-scoped summaries.
   app.get('/bots', async (request, reply) => {
+    if (hasReadBoundary) {
+      const result = await readBoundary('list_owner_bots', {}, request.userId);
+      if (result.kind === 'success') {
+        const data = (result.data ?? {}) as Record<string, unknown>;
+        const list = Array.isArray(data['bots']) ? (data['bots'] as unknown[]) : [];
+        return reply.send({ bots: list });
+      }
+      if (result.kind === 'transport_error' || result.kind === 'in_progress') {
+        return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not list bots.', {}));
+      }
+      return reply.status(502).send(errorPayload(result.code, result.message, {}));
+    }
     const botList = await db.select().from(bots).where(eq(bots.userId, request.userId));
     return reply.send({ bots: botList.map((b) => b as Record<string, unknown>) });
   });
 
-  // Get single bot
+  // Get single bot — re-pointed to the owner-scoped boundary read (ruling 1)
+  // with a local-table fallback (ruling 5). A boundary not-found (the bot does
+  // not exist or is not owned by this user) maps to 404, matching the local
+  // ownership-scoped lookup.
   app.get<{ Params: { id: string } }>('/bots/:id', async (request, reply) => {
     const { id } = request.params;
+    if (hasReadBoundary) {
+      const result = await readBoundary('get_owner_bot_status', { botId: id }, request.userId);
+      if (result.kind === 'success') {
+        return reply.send((result.data ?? {}) as Record<string, unknown>);
+      }
+      if (result.kind === 'failure') {
+        if (result.code === 'not_found.resource') {
+          return reply.status(404).send({ error: 'not_found' });
+        }
+        return reply.status(502).send(errorPayload(result.code, result.message, {}));
+      }
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot.', {}));
+    }
     const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
     if (!bot) {
       return reply.status(404).send({ error: 'not_found' });
@@ -458,12 +572,26 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   app.delete<{ Params: { id: string } }>('/bots/:id', async (request, reply) => {
     const { id } = request.params;
 
-    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) {
+    // Existence + ownership + status gate over the boundary (ruling 1), local
+    // fallback (ruling 5). The boundary resolves existence/ownership so the
+    // ownership check is NOT weakened.
+    //
+    // KNOWN PARITY GAP (tracked — traderton 001 ledger, bot re-point follow-on):
+    // there is no boundary `delete_bot` tool yet, so DELETE removes only the LOCAL
+    // mirror row; the boundary-owned bot persists in Traderton. This is acceptable
+    // in the interim ONLY because the local mirror is the pre-existing trading DB
+    // scheduled for L3d deletion, and a stopped bot is inert. When the mirror is
+    // gone (or a delete tool lands), DELETE must route over the boundary. Do NOT
+    // treat this local delete as authoritative bot removal.
+    const resolved = await resolveBotForLifecycle(id, request.userId);
+    if (resolved.kind === 'unavailable') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not deleted.', {}));
+    }
+    if (resolved.kind === 'not_found') {
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    if (bot.status === 'running') {
+    if (resolved.status === 'running') {
       return reply.status(409).send({ error: 'conflict', message: 'Cannot delete a running bot. Stop it first.' });
     }
 
@@ -476,7 +604,10 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       await pendingStart.remove();
     }
 
-    await db.delete(bots).where(eq(bots.id, id));
+    // Owner-scope the local-mirror delete (defense-in-depth): the boundary gate
+    // above already resolved ownership, but scope the delete too so it can never
+    // touch a row the caller does not own.
+    await db.delete(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
     return reply.status(204).send();
   });
 
@@ -484,13 +615,18 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   app.post<{ Params: { id: string } }>('/bots/:id/stop', async (request, reply) => {
     const { id } = request.params;
 
-    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) {
+    // Existence + ownership + status gate over the boundary (ruling 1), local
+    // fallback (ruling 5). The stop ACTION still routes over the write boundary.
+    const resolved = await resolveBotForLifecycle(id, request.userId);
+    if (resolved.kind === 'unavailable') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not stopped.', {}));
+    }
+    if (resolved.kind === 'not_found') {
       return reply.status(404).send({ error: 'not_found' });
     }
 
     // Already in a terminal state — no-op to preserve crash forensic data
-    if (bot.status === 'stopped' || bot.status === 'crashed') {
+    if (resolved.status === 'stopped' || resolved.status === 'crashed') {
       return reply.status(200).send({ status: 'already_stopped', botId: id });
     }
 
@@ -515,19 +651,24 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   app.post<{ Params: { id: string } }>('/bots/:id/start', async (request, reply) => {
     const { id } = request.params;
 
-    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) {
+    // Existence + ownership + status gate over the boundary (ruling 1), local
+    // fallback (ruling 5). The start ACTION still routes over the write boundary.
+    const resolved = await resolveBotForLifecycle(id, request.userId);
+    if (resolved.kind === 'unavailable') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not started.', {}));
+    }
+    if (resolved.kind === 'not_found') {
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    if (bot.status === 'running') {
+    if (resolved.status === 'running') {
       return reply.status(200).send({ status: 'already_running', botId: id });
     }
 
     // L3c: maxBots is DROPPED (#4 — Traderton owns the limit); the execution-
     // capability + config-preflight validations MOVE behind the boundary. The
     // live-mode plan gate (a platform entitlement check) is KEPT.
-    const execConfig = (bot.config as Record<string, unknown> | undefined)?.['execution'] as Record<string, unknown> | undefined;
+    const execConfig = resolved.config['execution'] as Record<string, unknown> | undefined;
     const executionMode = (execConfig?.['mode'] as string | undefined) ?? 'paper';
     if (plansConfig && executionMode === 'live') {
       const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free', request.isAdmin);

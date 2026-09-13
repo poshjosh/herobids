@@ -25,7 +25,7 @@ import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
 import { generateWallet } from '@herobids/venues';
 import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult, InvokeToolInput } from '@herobids/domain/traderton';
+import type { TradertonClient, TradertonClientResult, InvokeToolInput, TradertonBoundaryFailureCode } from '@herobids/domain/traderton';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { LlmRuntimeConfigSchema } from '@herobids/domain';
 import { syncSystemSkills } from '../../sync-system-skills.js';
@@ -91,33 +91,156 @@ export function parseRedisUrl(url: string) {
  * It faithfully mirrors the real boundary tools' success payloads:
  *   count_venue_accounts    → { count: 0 }   (under any plan limit → provisioning proceeds)
  *   provision_venue_account → { venueAccountId, venue, label }
- *   deprovision_venue_account / create_bot / start_bot / stop_bot → generic success
+ *   deprovision_venue_account → generic success
  *
- * NOTE: bot LIFECYCLE tests (bots-lifecycle) are intentionally NOT served by
- * this stub — herobids' DELETE/stop/start read the LOCAL bots table while
- * create_bot is an async boundary submit that writes no local row. That split is
- * an unsettled post-migration design question (bot ownership / sync-vs-async),
- * tracked separately — not paved over here.
+ * BOT lifecycle (consume-traderton re-point): Traderton now owns bots. This stub
+ * is a coherent in-memory test double for the bot boundary tools so the
+ * bots-lifecycle suite exercises the full create → read → stop/start flow over
+ * the (single) boundary client — which serves BOTH the write path
+ * (create/stop/start, via `invokeBoundary`) and the owner-scoped READ path
+ * (list/status, via the route's `readBoundary`, derived from the same client):
+ *   create_bot           → records a bot (id, owner, status:'stopped', config), returns { botId }
+ *                          paper+swap config → validation.invalid_payload failure with
+ *                          details.errorCode:'execution_capability.paper_swap_not_supported'
+ *   list_owner_bots      → owner-scoped summaries { id, status, strategyPreset, symbol, ... }
+ *   get_owner_bot_status → owner-scoped status { ok, id, status, config, ... }; not found /
+ *                          not owned → not_found.resource failure (drives the 404 + ownership cases)
+ *   start_bot / stop_bot → flip the recorded status; not found / not owned → not_found.resource
+ *
+ * Ownership is enforced by scoping every read/mutation to `subject.ownerId`, so
+ * the "rejects non-owned bot" cases are TRUE reds (404 from the owner check, not
+ * from an empty local table).
  */
+interface StubBot {
+  id: string;
+  ownerId: string;
+  status: string;
+  config: Record<string, unknown>;
+  strategyPreset: string | null;
+  symbol: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  stoppedAt: string | null;
+}
+
+function isPaperSwapConfig(config: Record<string, unknown>): boolean {
+  const execMode = (config['execution'] as Record<string, unknown> | undefined)?.['mode'];
+  const hasSwapAssets = config['swapAssets'] !== undefined;
+  const venue = typeof config['venue'] === 'string' ? (config['venue'] as string) : undefined;
+  const swapVenue = hasSwapAssets || venue === '1inch' || venue === 'jupiter';
+  return execMode === 'paper' && swapVenue;
+}
+
 export function makeStubTradertonClient(): TradertonClient {
+  const bots = new Map<string, StubBot>();
+  let seq = 0;
+
   const ok = (payload: unknown): TradertonClientResult => ({
     kind: 'success',
     requestId: 'fn-test',
     correlationId: 'fn-test',
     payload,
   });
+  const failure = (
+    code: TradertonBoundaryFailureCode,
+    message: string,
+    details?: Record<string, unknown>,
+  ): TradertonClientResult => ({
+    kind: 'failure',
+    requestId: 'fn-test',
+    correlationId: 'fn-test',
+    code,
+    message,
+    retryable: false,
+    ...(details ? { details } : {}),
+  });
+
+  const notFound = (): TradertonClientResult =>
+    failure('not_found.resource', 'Bot not found');
+
   return {
     invoke: (input: InvokeToolInput): Promise<TradertonClientResult> => {
+      const ownerId = input.subject.ownerId;
+      const p = (input.payload ?? {}) as Record<string, unknown>;
       switch (input.toolName) {
         case 'count_venue_accounts':
           return Promise.resolve(ok({ count: 0 }));
-        case 'provision_venue_account': {
-          const p = (input.payload ?? {}) as Record<string, unknown>;
+        case 'provision_venue_account':
           return Promise.resolve(ok({
             venueAccountId: 'va-new',
             venue: p['venue'] ?? 'hyperliquid',
             label: p['label'] ?? 'test',
           }));
+        case 'create_bot': {
+          const config = (p['config'] as Record<string, unknown> | undefined) ?? {};
+          if (isPaperSwapConfig(config)) {
+            return Promise.resolve(failure(
+              'validation.invalid_payload',
+              'paper execution mode is not supported for swap venues',
+              { errorCode: 'execution_capability.paper_swap_not_supported' },
+            ));
+          }
+          const id = `bot-${++seq}`;
+          const strategy = config['strategy'] as Record<string, unknown> | undefined;
+          bots.set(id, {
+            id,
+            ownerId,
+            status: 'stopped',
+            config,
+            strategyPreset: typeof strategy?.['type'] === 'string' ? (strategy['type'] as string) : null,
+            symbol: typeof config['symbol'] === 'string' ? (config['symbol'] as string) : null,
+            createdAt: new Date().toISOString(),
+            startedAt: null,
+            stoppedAt: null,
+          });
+          return Promise.resolve(ok({ botId: id }));
+        }
+        case 'list_owner_bots': {
+          const owned = [...bots.values()].filter((b) => b.ownerId === ownerId);
+          return Promise.resolve(ok({
+            bots: owned.map((b) => ({
+              id: b.id,
+              status: b.status,
+              strategyPreset: b.strategyPreset,
+              symbol: b.symbol,
+              createdAt: b.createdAt,
+              creatorType: 'user',
+              creatorId: b.ownerId,
+            })),
+          }));
+        }
+        case 'get_owner_bot_status': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          return Promise.resolve(ok({
+            ok: true,
+            id: bot.id,
+            status: bot.status,
+            strategyPreset: bot.strategyPreset,
+            symbol: bot.symbol,
+            config: bot.config,
+            startedAt: bot.startedAt,
+            stoppedAt: bot.stoppedAt,
+            creatorType: 'user',
+            creatorId: bot.ownerId,
+          }));
+        }
+        case 'start_bot': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          bot.status = 'running';
+          bot.startedAt = new Date().toISOString();
+          return Promise.resolve(ok({ ok: true, botId: id }));
+        }
+        case 'stop_bot': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          bot.status = 'stopped';
+          bot.stoppedAt = new Date().toISOString();
+          return Promise.resolve(ok({ ok: true, botId: id }));
         }
         default:
           return Promise.resolve(ok({ ok: true }));

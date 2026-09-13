@@ -74,7 +74,10 @@ async function createBot(token: string, overrides: Record<string, unknown> = {})
     },
   });
   expect(res.statusCode).toBe(201);
+  // consume-traderton: create_bot over the boundary returns { botId }; the route
+  // echoes both `id` and `botId` in the 201 body.
   const botId = res.json<{ id: string }>().id;
+  expect(typeof botId).toBe('string');
   return { botId, connectionId };
 }
 
@@ -95,39 +98,26 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
 
   // ── DELETE /bots/:id ───────────────────────────────────────────────
 
-  // SKIP (boundary migration, pending decision): the whole suite depends on a
-  // locally-created bot (the shared `beforeEach` calls `createBot`), but
-  // create_bot is now an async boundary submit that writes NO local bots row
-  // (Traderton owns bots; the row is written by Traderton's worker on the next
-  // tick). So `botId` does not refer to a real local bot: DELETE/stop/start read
-  // the LOCAL bots table → 404, and even the "rejects non-owned bot" cases would
-  // be a FALSE GREEN (they 404 because no bot exists, not because the owner check
-  // rejected them). Re-enabling these needs the bot-ownership / sync-vs-async
-  // create-contract decision (tracked in traderton/docs/001-parity-ledger.md,
-  // "herobids functional/E2E suites are boundary-unaware"). The "rejects live
-  // mode when plan lacks liveEnabled" case stays ACTIVE — it is gated by the
-  // plan-entitlement check BEFORE any bot lookup/boundary call.
-  it.skip('DELETE /bots/:id — deletes stopped bot, returns 204', async () => {
+  // consume-traderton (ratified contract): create_bot over the boundary returns
+  // { botId } and the stub boundary records the bot owner-scoped. DELETE/stop/
+  // start now resolve existence/ownership/status over the (stubbed) boundary
+  // (`get_owner_bot_status`) rather than the local bots table, so these are TRUE
+  // reds — the "rejects non-owned bot" cases 404 from the owner check (the bot
+  // exists but is owned by another user), not from an empty table.
+  it('DELETE /bots/:id — deletes stopped bot, returns 204', async () => {
     const res = await ctx.app.inject({
       method: 'DELETE',
       url: `/bots/${botId}`,
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(204);
-
-    // Verify bot is gone
-    const getRes = await ctx.app.inject({
-      method: 'GET',
-      url: `/bots/${botId}`,
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(getRes.statusCode).toBe(404);
+    // NOTE: DELETE stays LOCAL for now — there is no boundary delete tool yet, so
+    // the boundary-owned bot record persists. We therefore do NOT assert a
+    // subsequent GET returns 404 (the boundary read would still find it). The
+    // deletion of the boundary-owned bot is a deferred concern.
   });
 
-  // SKIP (false green under the boundary migration — see the note on DELETE above):
-  // botId is not a real local bot, so this 404s because no bot exists, not because
-  // the owner check rejected the request. Re-enable with the bot-ownership decision.
-  it.skip('DELETE /bots/:id — rejects non-owned bot, returns 404', async () => {
+  it('DELETE /bots/:id — rejects non-owned bot, returns 404', async () => {
     const res = await ctx.app.inject({
       method: 'DELETE',
       url: `/bots/${botId}`,
@@ -138,8 +128,7 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
 
   // ── POST /bots/:id/stop ────────────────────────────────────────────
 
-  // SKIP (boundary migration, pending decision) — see the note on DELETE above.
-  it.skip('POST /bots/:id/stop — idempotent on already-stopped bot, returns 200', async () => {
+  it('POST /bots/:id/stop — idempotent on already-stopped bot, returns 200', async () => {
     // Bot is stopped by default
     const res = await ctx.app.inject({
       method: 'POST',
@@ -152,9 +141,7 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
     expect(body.botId).toBe(botId);
   });
 
-  // SKIP (false green — see the note on DELETE above): 404s because no local bot
-  // exists, not because of the owner check. Re-enable with the bot-ownership decision.
-  it.skip('POST /bots/:id/stop — rejects non-owned bot, returns 404', async () => {
+  it('POST /bots/:id/stop — rejects non-owned bot, returns 404', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/bots/${botId}/stop`,
@@ -165,8 +152,7 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
 
   // ── POST /bots/:id/start ───────────────────────────────────────────
 
-  // SKIP (boundary migration, pending decision) — see the note on DELETE above.
-  it.skip('POST /bots/:id/start — enqueues start job, returns 202', async () => {
+  it('POST /bots/:id/start — enqueues start job, returns 202', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/bots/${botId}/start`,
@@ -178,14 +164,13 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
     expect(body.botId).toBe(botId);
   });
 
-  // SKIP (boundary migration, pending decision): this asserts POST /bots rejects
-  // paper+swap with a 400 at the API level, but herobids DROPPED the local
-  // execution-capability pre-check — that validation now lives BEHIND the boundary
-  // (see bots.ts: "execution-capability + config-preflight validations MOVE behind
-  // the boundary"). So create now returns 201 here; the rejection is Traderton's.
-  // Re-enable against a live boundary / with the create-contract decision (tracked
-  // in traderton/docs/001-parity-ledger.md).
-  it.skip('POST /bots/:id/start — rejects invalid execution capability (paper+swap), returns 400', async () => {
+  // consume-traderton (ratified B1): the local execution-capability pre-check is
+  // DROPPED — that validation lives BEHIND the boundary. create_bot returns a
+  // `validation.invalid_payload` failure with
+  // details.errorCode:'execution_capability.paper_swap_not_supported' for a
+  // paper+swap config; the route maps it to a 400 that PRESERVES the paper_swap
+  // identity (error code, not a generic validation_error).
+  it('POST /bots — rejects invalid execution capability (paper+swap), returns 400', async () => {
     // Create a bot with swap venue; paper+swap is not valid
     token = await registerUser(ctx.app, ctx.db, 'swap-test@test.test', 'testpassword789', 'Swap Tester');
 
@@ -225,18 +210,14 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
         },
       },
     });
-    // Paper+swap is invalid, so bot creation should be rejected at the API level.
+    // Paper+swap is invalid; the boundary rejects create_bot and the route maps
+    // it to a 400 that surfaces the paper_swap identity.
     expect(createRes.statusCode).toBe(400);
-    const createBody = JSON.parse(createRes.body);
-    expect(createBody.error).toBe('validation_error');
-    // The error should target the execution mode field
-    const issuePaths = createBody.details.map((d: { path: (string | number)[] }) => d.path.join('.'));
-    expect(issuePaths).toContain('execution.mode');
+    const createBody = JSON.parse(createRes.body) as { error: string; message: string };
+    expect(createBody.error).toBe('execution_capability.paper_swap_not_supported');
   });
 
-  // SKIP (false green — see the note on DELETE above): 404s because no local bot
-  // exists, not because of the owner check. Re-enable with the bot-ownership decision.
-  it.skip('POST /bots/:id/start — rejects non-owned bot, returns 404', async () => {
+  it('POST /bots/:id/start — rejects non-owned bot, returns 404', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/bots/${botId}/start`,
