@@ -23,7 +23,9 @@ import { skillsRoutes } from '../../routes/skills.js';
 import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
+import { generateWallet } from '@herobids/venues';
 import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
+import type { TradertonClient, TradertonClientResult, InvokeToolInput } from '@herobids/domain/traderton';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { LlmRuntimeConfigSchema } from '@herobids/domain';
 import { syncSystemSkills } from '../../sync-system-skills.js';
@@ -75,6 +77,55 @@ export function parseRedisUrl(url: string) {
   };
 }
 
+/**
+ * A stubbed Traderton REST boundary client for functional tests.
+ *
+ * On `consume-traderton`, trading provider-links provision their venue account
+ * over the boundary (`provision_venue_account`) and the venue-account plan-limit
+ * check is sourced from the boundary (`count_venue_accounts`) — herobids no
+ * longer writes trading credentials/venue-accounts locally. Without a client the
+ * routes fail closed (503). This stub returns scripted success so the
+ * connection-dependent functional suites exercise the real post-provision local
+ * write (the connection row + resolvedVenueAccountId) instead of stalling at 503.
+ *
+ * It faithfully mirrors the real boundary tools' success payloads:
+ *   count_venue_accounts    → { count: 0 }   (under any plan limit → provisioning proceeds)
+ *   provision_venue_account → { venueAccountId, venue, label }
+ *   deprovision_venue_account / create_bot / start_bot / stop_bot → generic success
+ *
+ * NOTE: bot LIFECYCLE tests (bots-lifecycle) are intentionally NOT served by
+ * this stub — herobids' DELETE/stop/start read the LOCAL bots table while
+ * create_bot is an async boundary submit that writes no local row. That split is
+ * an unsettled post-migration design question (bot ownership / sync-vs-async),
+ * tracked separately — not paved over here.
+ */
+export function makeStubTradertonClient(): TradertonClient {
+  const ok = (payload: unknown): TradertonClientResult => ({
+    kind: 'success',
+    requestId: 'fn-test',
+    correlationId: 'fn-test',
+    payload,
+  });
+  return {
+    invoke: (input: InvokeToolInput): Promise<TradertonClientResult> => {
+      switch (input.toolName) {
+        case 'count_venue_accounts':
+          return Promise.resolve(ok({ count: 0 }));
+        case 'provision_venue_account': {
+          const p = (input.payload ?? {}) as Record<string, unknown>;
+          return Promise.resolve(ok({
+            venueAccountId: 'va-new',
+            venue: p['venue'] ?? 'hyperliquid',
+            label: p['label'] ?? 'test',
+          }));
+        }
+        default:
+          return Promise.resolve(ok({ ok: true }));
+      }
+    },
+  } as unknown as TradertonClient;
+}
+
 /** Build a fully wired Fastify app for functional testing. */
 export async function buildApp() {
   // Clear LLM API key env vars to prevent them from leaking into the test
@@ -91,10 +142,13 @@ export async function buildApp() {
   // Dummy key only for OpenRouter — enough for provider discovery, not for real LLM calls.
   process.env['LLM_API_KEY_OPENROUTER'] = 'test-functional-key';
 
-  // Dummy credential encryption key so /setup/provider-link and /credentials
-  // can encrypt without a real production key. Must be exactly 64 hex chars (32 bytes).
-  const savedCredentialKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
-  process.env['CREDENTIAL_ENCRYPTION_KEY'] = '0000000000000000000000000000000000000000000000000000000000000001';
+  // Dummy credential encryption key so /setup/provider-link and /credentials can
+  // encrypt without a real production key. Must be exactly 64 hex chars (32 bytes).
+  // Kept set for the app lifetime (NOT restored) — getEncryptionKey() reads it at
+  // request time, so restoring/deleting it would make /credentials 500 mid-test.
+  // It is process-local test material, not a secret.
+  const TEST_CREDENTIAL_ENCRYPTION_KEY = '0000000000000000000000000000000000000000000000000000000000000001';
+  process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_CREDENTIAL_ENCRYPTION_KEY;
 
   const db = createDatabase(DB_URL);
   const redisConn = parseRedisUrl(REDIS_URL);
@@ -197,7 +251,8 @@ export async function buildApp() {
   await agentRoutes(app, db, testPlansConfig as any);
   await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any);
   await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient);
-  await botRoutes(app, lifecycleQueue, db, redisClient, testPlansConfig as any);
+  const stubTradertonClient = makeStubTradertonClient();
+  await botRoutes(app, lifecycleQueue, db, redisClient, testPlansConfig as any, stubTradertonClient);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)
   await telegramWebhookHandler(app, db, redisClient);
@@ -225,7 +280,11 @@ export async function buildApp() {
   await datasetRoutes(app, db, redisClient);
   await exportRoutes(app, db);
 
-  await setupRoutes(app, db, testPlansConfig as any);
+  await setupRoutes(app, db, testPlansConfig as any, {
+    venues: {} as import('@herobids/domain').AppConfig['venues'],
+    generateWallet,
+    tradertonClient: stubTradertonClient,
+  });
 
   await app.ready();
 
@@ -242,12 +301,10 @@ export async function buildApp() {
   }
   process.env['LLM_API_KEY_OPENROUTER'] = 'test-functional-key';
 
-  // Restore credential encryption key to its original value.
-  if (savedCredentialKey === undefined) {
-    delete process.env['CREDENTIAL_ENCRYPTION_KEY'];
-  } else {
-    process.env['CREDENTIAL_ENCRYPTION_KEY'] = savedCredentialKey;
-  }
+  // Re-assert the dummy CREDENTIAL_ENCRYPTION_KEY (mirrors the OpenRouter re-set
+  // above): getEncryptionKey() reads process.env at REQUEST time, so it must stay
+  // set for the app lifetime. NOT restored — it is process-local test material.
+  process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_CREDENTIAL_ENCRYPTION_KEY;
 
   return { app, db, redisClient, lifecycleQueue };
 }
