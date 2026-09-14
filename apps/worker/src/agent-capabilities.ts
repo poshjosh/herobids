@@ -3,7 +3,7 @@ import type { SkillDefinition } from '@herobids/domain';
 export interface TradingTickWorkPlan {
   hasTradingCapability: boolean;
   shouldEvaluateRegime: boolean;
-  shouldFetchVolatilityCandles: boolean;
+  shouldFetchVolatilityPct: boolean;
   shouldRecordRegimeEvaluation: boolean;
   shouldRefreshVenueIntelligence: boolean;
   shouldRecordPerformanceInputs: boolean;
@@ -30,14 +30,16 @@ export function deriveTradingTickWorkPlan(
   // (boundary present, in-process registry removed) and matches the coordinator's
   // presence-based regime gate + venue-intelligence's capability-only gate.
   const canEvaluateRegime = hasTradingCapability && (marketDataRegistryAvailable || tradertonBoundaryAvailable);
-  // Volatility candles have NO boundary tool yet (deferred), so they stay
-  // strictly registry-dependent.
-  const shouldFetchVolatilityCandles = hasTradingCapability && marketDataRegistryAvailable;
+  // Volatility (ATR%) is derived either in-process (registry candles) OR over the
+  // Traderton `get_volatility` boundary (B5) — enabled when EITHER source is
+  // available, mirroring the regime gate. Only the derived number crosses the
+  // boundary; raw candles stay Traderton-side (legal isolation).
+  const shouldFetchVolatilityPct = hasTradingCapability && (marketDataRegistryAvailable || tradertonBoundaryAvailable);
 
   return {
     hasTradingCapability,
     shouldEvaluateRegime: canEvaluateRegime,
-    shouldFetchVolatilityCandles,
+    shouldFetchVolatilityPct,
     shouldRecordRegimeEvaluation: hasTradingCapability,
     shouldRefreshVenueIntelligence: hasTradingCapability,
     shouldRecordPerformanceInputs: hasTradingCapability,

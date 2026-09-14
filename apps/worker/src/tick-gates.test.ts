@@ -954,8 +954,8 @@ describe('shouldSkipTick', () => {
     expect(second.skip).toBe(false);
   });
 
-  it('returns current interval without throwing when fetchVolatilityCandles fails', async () => {
-    const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('AbortError: This operation was aborted'));
+  it('returns current interval without throwing when fetchVolatilityPct fails', async () => {
+    const fetchVolatilityPct = vi.fn().mockRejectedValue(new Error('AbortError: This operation was aborted'));
 
     const result = await shouldSkipTick(
       {
@@ -964,7 +964,7 @@ describe('shouldSkipTick', () => {
         currentTickIntervalMs: 60_000,
         baseTickIntervalMs: 900_000,
       },
-      { fetchVolatilityCandles },
+      { fetchVolatilityPct },
     );
 
     expect(result.nextTickIntervalMs).toBe(60_000);
@@ -972,12 +972,12 @@ describe('shouldSkipTick', () => {
     expect(result.degradationReason).toBe('adaptive_interval_unavailable');
   });
 
-  it('returns base interval fallback when fetchVolatilityCandles fails and no current interval is set', async () => {
-    const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('timeout'));
+  it('returns base interval fallback when fetchVolatilityPct fails and no current interval is set', async () => {
+    const fetchVolatilityPct = vi.fn().mockRejectedValue(new Error('timeout'));
 
     const result = await shouldSkipTick(
       { tickNumber: 1, hasOpenPositions: false, baseTickIntervalMs: 600_000 },
-      { fetchVolatilityCandles },
+      { fetchVolatilityPct },
     );
 
     expect(result.nextTickIntervalMs).toBe(600_000);
@@ -985,7 +985,7 @@ describe('shouldSkipTick', () => {
   });
 
   it('preserves adaptive-interval degradation metadata on session skips', async () => {
-    const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('timeout'));
+    const fetchVolatilityPct = vi.fn().mockRejectedValue(new Error('timeout'));
 
     const result = await shouldSkipTick(
       {
@@ -996,7 +996,7 @@ describe('shouldSkipTick', () => {
         currentTickIntervalMs: 60_000,
         baseTickIntervalMs: 900_000,
       },
-      { fetchVolatilityCandles },
+      { fetchVolatilityPct },
     );
 
     expect(result.skip).toBe(true);
@@ -1005,7 +1005,7 @@ describe('shouldSkipTick', () => {
   });
 
   it('preserves adaptive-interval degradation metadata when positions are open', async () => {
-    const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('timeout'));
+    const fetchVolatilityPct = vi.fn().mockRejectedValue(new Error('timeout'));
 
     const result = await shouldSkipTick(
       {
@@ -1014,7 +1014,7 @@ describe('shouldSkipTick', () => {
         currentTickIntervalMs: 60_000,
         baseTickIntervalMs: 900_000,
       },
-      { fetchVolatilityCandles },
+      { fetchVolatilityPct },
     );
 
     expect(result.skip).toBe(false);
@@ -1022,7 +1022,7 @@ describe('shouldSkipTick', () => {
     expect(result.degradationReason).toBe('adaptive_interval_unavailable');
   });
 
-  it('makes no candle calls and returns deterministically when fetchVolatilityCandles is undefined', async () => {
+  it('makes no candle calls and returns deterministically when fetchVolatilityPct is undefined', async () => {
     const result = await shouldSkipTick(
       { tickNumber: 1, hasOpenPositions: false, baseTickIntervalMs: 900_000 },
       {},
@@ -1455,7 +1455,7 @@ describe('adaptive interval helpers', () => {
 
   it('doubles the interval in low-volatility conditions', () => {
     const result = resolveAdaptiveIntervalMs({
-      candles: lowVolCandles,
+      volatilityPct: calculateAtrPercent(lowVolCandles),
       baseTickIntervalMs: 60_000,
       currentTickIntervalMs: 60_000,
     });
@@ -1465,7 +1465,7 @@ describe('adaptive interval helpers', () => {
 
   it('halves the interval in higher-volatility conditions without going below base', () => {
     const result = resolveAdaptiveIntervalMs({
-      candles: highVolCandles,
+      volatilityPct: calculateAtrPercent(highVolCandles),
       baseTickIntervalMs: 60_000,
       currentTickIntervalMs: 240_000,
     });
@@ -1475,7 +1475,7 @@ describe('adaptive interval helpers', () => {
 
   it('treats an explicit base cadence as the floor while still allowing slowdown and recovery', () => {
     const slowed = resolveAdaptiveIntervalMs({
-      candles: lowVolCandles,
+      volatilityPct: calculateAtrPercent(lowVolCandles),
       baseTickIntervalMs: 600_000,
       currentTickIntervalMs: 600_000,
     });
@@ -1483,7 +1483,7 @@ describe('adaptive interval helpers', () => {
     expect(slowed.nextTickIntervalMs).toBe(1_200_000);
 
     const recovered = resolveAdaptiveIntervalMs({
-      candles: highVolCandles,
+      volatilityPct: calculateAtrPercent(highVolCandles),
       baseTickIntervalMs: 600_000,
       currentTickIntervalMs: slowed.nextTickIntervalMs,
     });

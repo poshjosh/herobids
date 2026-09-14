@@ -49,7 +49,7 @@ describe('deriveTradingTickWorkPlan', () => {
     expect(deriveTradingTickWorkPlan([BASE_SKILL, TASK_MANAGEMENT_SKILL], true)).toEqual({
       hasTradingCapability: false,
       shouldEvaluateRegime: false,
-      shouldFetchVolatilityCandles: false,
+      shouldFetchVolatilityPct: false,
       shouldRecordRegimeEvaluation: false,
       shouldRefreshVenueIntelligence: false,
       shouldRecordPerformanceInputs: false,
@@ -60,7 +60,7 @@ describe('deriveTradingTickWorkPlan', () => {
     expect(deriveTradingTickWorkPlan([BASE_SKILL, TRADING_SKILL], true)).toEqual({
       hasTradingCapability: true,
       shouldEvaluateRegime: true,
-      shouldFetchVolatilityCandles: true,
+      shouldFetchVolatilityPct: true,
       shouldRecordRegimeEvaluation: true,
       shouldRefreshVenueIntelligence: true,
       shouldRecordPerformanceInputs: true,
@@ -71,20 +71,20 @@ describe('deriveTradingTickWorkPlan', () => {
     expect(deriveTradingTickWorkPlan([BASE_SKILL, BOT_MANAGEMENT_SKILL], false)).toEqual({
       hasTradingCapability: true,
       shouldEvaluateRegime: false,
-      shouldFetchVolatilityCandles: false,
+      shouldFetchVolatilityPct: false,
       shouldRecordRegimeEvaluation: true,
       shouldRefreshVenueIntelligence: true,
       shouldRecordPerformanceInputs: true,
     });
   });
 
-  it('evaluates regime over the boundary when the in-process registry is absent but the boundary is present', () => {
-    // Target end-state: registry removed, regime sourced over check_regime. Regime
-    // must still evaluate; volatility candles stay registry-only (no boundary tool).
+  it('evaluates regime and volatility over the boundary when the in-process registry is absent but the boundary is present', () => {
+    // Target end-state: registry removed, regime sourced over check_regime and
+    // volatility over get_volatility (B5). Both must still evaluate over the boundary.
     expect(deriveTradingTickWorkPlan([BASE_SKILL, TRADING_SKILL], false, true)).toEqual({
       hasTradingCapability: true,
       shouldEvaluateRegime: true,
-      shouldFetchVolatilityCandles: false,
+      shouldFetchVolatilityPct: true,
       shouldRecordRegimeEvaluation: true,
       shouldRefreshVenueIntelligence: true,
       shouldRecordPerformanceInputs: true,

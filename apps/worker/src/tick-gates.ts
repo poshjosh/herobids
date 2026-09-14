@@ -55,7 +55,15 @@ export interface TickGateState {
 
 export interface TickGateDependencies {
   evaluateRegime?: () => Promise<RegimeResult>;
-  fetchVolatilityCandles?: () => Promise<PriceCandle[]>;
+  /**
+   * Returns the pre-computed volatility measure (ATR%) driving adaptive tick
+   * cadence, or null when there is no usable reading (treated as "no
+   * adjustment"). The ATR% is derived UPSTREAM of this callback — over the
+   * Traderton `get_volatility` boundary when present, else in-process from
+   * registry candles via {@link calculateAtrPercent}. Deriving it upstream keeps
+   * raw candles out of the tick gate and off the boundary path (legal isolation).
+   */
+  fetchVolatilityPct?: () => Promise<number | null>;
 }
 
 export interface TradingHoursConfig {
@@ -347,13 +355,13 @@ export function calculateAtrPercent(candles: PriceCandle[]): number | null {
 }
 
 export function resolveAdaptiveIntervalMs(params: {
-  candles?: PriceCandle[];
+  volatilityPct?: number | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
 }): { nextTickIntervalMs: number; volatilityPct?: number } {
   const baseTickIntervalMs = params.baseTickIntervalMs ?? DEFAULT_BASE_INTERVAL_MS;
   const currentTickIntervalMs = params.currentTickIntervalMs ?? baseTickIntervalMs;
-  const volatilityPct = params.candles ? calculateAtrPercent(params.candles) : null;
+  const volatilityPct = params.volatilityPct ?? null;
 
   if (volatilityPct === null) {
     return { nextTickIntervalMs: currentTickIntervalMs };
@@ -411,11 +419,11 @@ export async function shouldSkipTick(
   };
 
   const adaptiveInterval =
-    enabledGates.adaptiveInterval && dependencies.fetchVolatilityCandles
+    enabledGates.adaptiveInterval && dependencies.fetchVolatilityPct
       ? await (async () => {
           try {
             return resolveAdaptiveIntervalMs({
-              candles: await dependencies.fetchVolatilityCandles!(),
+              volatilityPct: await dependencies.fetchVolatilityPct!(),
               baseTickIntervalMs: state.baseTickIntervalMs,
               currentTickIntervalMs: state.currentTickIntervalMs,
             });

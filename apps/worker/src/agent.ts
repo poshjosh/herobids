@@ -74,7 +74,7 @@ import {
 } from './agent-watch-view.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
-import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
+import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, calculateAtrPercent, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
@@ -760,6 +760,24 @@ function getTradingTickWorkPlan() {
     marketDataRegistry != null,
     tradertonReadBoundary != null,
   );
+}
+
+/**
+ * Narrow the `get_volatility` boundary success payload (`unknown` over the wire)
+ * to the derived ATR% value the adaptive-interval gate consumes. The boundary
+ * returns `{ ok, volatilityPct: number | null, freshness? }` — a null
+ * `volatilityPct` is a valid result (insufficient candles) meaning "no
+ * adjustment", so it is passed through as null rather than treated as an error.
+ * A missing/malformed number also degrades to null.
+ */
+function parseVolatilityBoundaryPayload(data: unknown): number | null {
+  if (data && typeof data === 'object') {
+    const value = (data as Record<string, unknown>)['volatilityPct'];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
 }
 
 function isRuntimeActiveWatchSummary(value: unknown): value is RuntimeActiveWatchSummary {
@@ -2998,10 +3016,40 @@ async function runTick(): Promise<void> {
               );
             }
             : undefined,
-          fetchVolatilityCandles: tradingTickWorkPlan.shouldFetchVolatilityCandles
+          // B5 RE-POINT: when the Traderton read boundary is configured, the
+          // volatility (ATR%) driving adaptive tick cadence is derived BEHIND the
+          // boundary by `get_volatility` (candles fetched there, only the derived
+          // number crosses back) instead of the in-process registry — raw candles
+          // never enter this process on the boundary path (legal isolation). A
+          // non-success boundary result is surfaced as a throw so `shouldSkipTick`
+          // treats it EXACTLY like a failed in-process read (adaptiveIntervalDegraded
+          // → fallback interval), MIRRORING the regime re-point above. When the
+          // boundary is absent, the in-process registry fallback derives ATR% via
+          // `calculateAtrPercent` over the fetched candles.
+          fetchVolatilityPct: tradingTickWorkPlan.shouldFetchVolatilityPct
             ? async () => {
+              if (tradertonReadBoundary) {
+                recordMarketDataAttempt('binance');
+                const result = await tradertonReadBoundary.invoke({
+                  toolName: 'get_volatility',
+                  payload: {},
+                });
+                if (result.kind === 'success') {
+                  return parseVolatilityBoundaryPayload(result.data);
+                }
+                // failure / transport_error / in_progress → volatility unavailable,
+                // handled identically to a thrown in-process read (degrade + fallback).
+                throw new Error(
+                  result.kind === 'failure'
+                    ? `get_volatility failed: ${result.code}`
+                    : result.kind === 'transport_error'
+                      ? 'get_volatility transport error'
+                      : 'get_volatility in progress',
+                );
+              }
               recordMarketDataAttempt('binance');
-              return marketDataRegistry!.binance.candles('BTC', { interval: '1h', limit: 24 }).then((providerResult) => providerResult.data);
+              const providerResult = await marketDataRegistry!.binance.candles('BTC', { interval: '1h', limit: 24 });
+              return calculateAtrPercent(providerResult.data);
             }
             : undefined,
         },
