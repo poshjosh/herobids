@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createMarketMonitor } from './monitor.js';
+import { createMarketMonitor, type TriggeredWatch } from './monitor.js';
 
 // ---------------------------------------------------------------------------
 // Redis mock factory
@@ -47,8 +47,8 @@ function makeRedisMock(overrides: Record<string, unknown> = {}) {
       let deleted = 0;
       for (const key of keys) {
         if (store.delete(key)) deleted++;
+        if (sset.delete(key)) deleted++;
       }
-      if (sset.delete(key)) deleted++;
       return deleted;
     }),
     exists: vi.fn(async (key: string) => (store.has(key) ? 1 : 0)),
@@ -203,6 +203,50 @@ function makeDiscoverySnapshot(tokens: Array<{
   });
 }
 
+// ---------------------------------------------------------------------------
+// Boundary port helpers (B3-monitor)
+//
+// Watch evaluation authority lives in Traderton; the monitor sources triggered
+// (edge-up) + reset (edge-down) watches from the `evaluateAgentWatches` port.
+// These helpers build the port's return shape + a scripted fake port.
+// ---------------------------------------------------------------------------
+
+// Use the exported TriggeredWatch type so the fixtures track the real port
+// contract (e.g. `purpose` is the WatchPurpose enum, not a loose string).
+type TriggeredWatchLike = TriggeredWatch;
+
+function makeTriggeredWatch(overrides: Partial<TriggeredWatchLike> = {}): TriggeredWatchLike {
+  return {
+    watchId: overrides.watchId ?? DEFAULT_WATCH_ID,
+    symbol: overrides.symbol ?? 'SOL',
+    chain: overrides.chain ?? 'solana',
+    condition: overrides.condition ?? 'above',
+    thresholdPrice: overrides.thresholdPrice ?? 200,
+    currentPrice: overrides.currentPrice ?? 204,
+    priceSource: overrides.priceSource ?? 'discovery_snapshot',
+    stale: overrides.stale ?? false,
+    ...(overrides.note !== undefined ? { note: overrides.note } : {}),
+    ...(overrides.purpose !== undefined ? { purpose: overrides.purpose } : {}),
+    ...(overrides.instrument !== undefined ? { instrument: overrides.instrument } : {}),
+    ...(overrides.coverage !== undefined ? { coverage: overrides.coverage } : {}),
+    ...(overrides.schemaVersion !== undefined ? { schemaVersion: overrides.schemaVersion } : {}),
+    ...(overrides.resolvedSymbol !== undefined ? { resolvedSymbol: overrides.resolvedSymbol } : {}),
+    ...(overrides.resolvedChain !== undefined ? { resolvedChain: overrides.resolvedChain } : {}),
+  };
+}
+
+/**
+ * Build a fake `evaluateAgentWatches` port. `byAgent` maps agentId → the
+ * {triggered, reset} result returned for that agent; unmapped agents return
+ * empty. The returned mock records calls for assertions.
+ */
+function makeWatchPort(byAgent: Record<string, { triggered?: TriggeredWatchLike[]; reset?: string[] }>) {
+  return vi.fn(async (agentId: string) => {
+    const entry = byAgent[agentId] ?? {};
+    return { triggered: entry.triggered ?? [], reset: entry.reset ?? [] };
+  });
+}
+
 // ===========================================================================
 // evaluate() — disabled monitor
 // ===========================================================================
@@ -233,32 +277,18 @@ describe('createMarketMonitor — watch thresholds', () => {
     publisher = makePublisherMock();
   });
 
-  function seedWatch(agentId: string, watchData: ReturnType<typeof makeWatch>) {
+  /** Mark an agent active + subscribed so the boundary port is invoked for it. */
+  function activateAgent(agentId: string) {
     redis.sadd('agent:sessions:active', agentId);
-    redis._hstore.set(`agent:watches:${agentId}`, new Map([['watch-1', watchData]]));
-    redis._scanKeys.push(`agent:watches:${agentId}`);
   }
 
-  function seedDiscoveryPrice(symbol: string, network: string, priceUsd: number, fresh = true) {
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([{
-      network, address: `0x${symbol}`, symbol, priceUsd,
-    }]));
-    // Override snapshot if stale requested
-    if (!fresh) {
-      redis._store.set('market-intel:discovery:latest', JSON.stringify({
-        snapshotId: 'snap-stale',
-        capturedAt: new Date().toISOString(),
-        freshness: { state: 'stale' },
-        tokens: [{ network, address: `0x${symbol}`, symbol, priceUsd, discoveryVectors: [], rank: 1, liquidityUsd: 0, volume24hUsd: 0 }],
-      }));
-    }
-  }
+  it('emits market.watch.triggered on triggered entry (above)', async () => {
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, currentPrice: 204, stale: false })] },
+    });
 
-  it('emits market.watch.triggered on false→true edge crossing (above)', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 204);
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
@@ -267,15 +297,19 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.monitorType).toBe('watch_threshold');
     expect(payload.symbol).toBe('SOL');
     expect(payload.condition).toBe('above');
+    expect(payload.thresholdPrice).toBe(200);
     expect(payload.currentPrice).toBe(204);
+    expect(payload.priceSource).toBe('discovery_snapshot');
     expect(payload.stale).toBe(false);
   });
 
-  it('emits market.watch.triggered on false→true edge crossing (below)', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'below', thresholdPrice: 100, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 95);
+  it('emits market.watch.triggered on triggered entry (below)', async () => {
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({ symbol: 'SOL', condition: 'below', thresholdPrice: 100, currentPrice: 95 })] },
+    });
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
@@ -284,198 +318,131 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.currentPrice).toBe(95);
   });
 
-  it('does NOT emit when condition is already true (no edge transition)', async () => {
-    // lastConditionMet: true means it already fired — no new edge
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: true }));
-    seedDiscoveryPrice('SOL', 'solana', 204);
+  it('maps effectiveSymbol/effectiveChain from resolved fields on the triggered entry', async () => {
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({ symbol: 'WSOL', chain: 'any', resolvedSymbol: 'SOL', resolvedChain: 'solana', currentPrice: 204 })] },
+    });
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
-  });
-
-  it('does NOT emit when condition is false and price is still below threshold', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 150); // below threshold
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
-  });
-
-  it('does NOT emit when price data is unavailable', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'UNKNOWN', condition: 'above', thresholdPrice: 50, lastConditionMet: false }));
-    // No discovery snapshot — price unavailable
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
-  });
-
-  it('skips summary cache hashes when scanning active watches', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 204);
-
-    redis._hstore.set('agent:watches:summary:agent-1', new Map([
-      ['summary', JSON.stringify({ totalCount: 1, uniqueCount: 1, overflowCount: 0, lines: ['ignored'] })],
-    ]));
-    redis._scanKeys.push('agent:watches:summary:agent-1');
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    expect(redis.hgetall).toHaveBeenCalledTimes(1);
-    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
-  });
-
-  it('marks payload stale when discovery snapshot is stale', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 204, false /* stale */);
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
     const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
-    expect(payload.stale).toBe(true);
+    // Payload carries the resolved identity, not the original "any"/"WSOL"
+    expect(payload.symbol).toBe('SOL');
+    expect(payload.chain).toBe('solana');
+  });
+
+  it('does NOT emit when the port returns no triggered entries', async () => {
+    activateAgent('agent-1');
+    const port = makeWatchPort({ 'agent-1': { triggered: [], reset: [] } });
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the evaluateAgentWatches port is not configured', async () => {
+    activateAgent('agent-1');
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
   });
 
   it('suppresses second emission when dedupe key is already set', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 204);
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] },
+    });
 
-    // Pre-populate dedupe key
+    // Pre-populate the platform dedupe key for this watch's cross:above.
     redis._store.set(`market-monitor:dedupe:watch:${DEFAULT_WATCH_ID}:cross:above`, '1');
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
     expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
     expect(monitor.getMetrics().eventsSuppressed).toBe(1);
   });
 
-  it('enqueues a wake request after a watch trigger', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 204);
+  it('dedupe suppresses a re-triggered watch on a second evaluate cycle', async () => {
+    activateAgent('agent-1');
+    const triggered = [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })];
+    const port = makeWatchPort({ 'agent-1': { triggered } });
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
+
+    // Cycle 1: emits + records dedupe.
+    await monitor.evaluate();
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+
+    // Cycle 2: same triggered entry — dedupe key set from cycle 1 suppresses it.
+    await monitor.evaluate();
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    expect(monitor.getMetrics().eventsSuppressed).toBe(1);
+  });
+
+  it('enqueues a wake request after a watch trigger', async () => {
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] },
+    });
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
-    // Wake is enqueued (coalesced) — flush wakes immediately
-    // Simulate time passing past coalescing window by directly flushing
-    // by calling evaluate again after cooldown; use metrics to confirm the enqueue
     expect(monitor.getMetrics().eventsEmitted).toBe(1);
+    // Wake bucket enqueued (coalesced) under the source-scoped key.
+    expect(redis._store.has('market-monitor:wake:agent-1:watch_threshold')).toBe(true);
   });
 
   it('increments eventsEmitted counter on each trigger', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 204);
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] },
+    });
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
     expect(monitor.getMetrics().eventsEmitted).toBe(1);
   });
 
-  it('uses price from regime snapshot when not in discovery snapshot', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'BTC', chain: 'hyperliquid', condition: 'above', thresholdPrice: 60_000, lastConditionMet: false }));
-    // Regime snapshot for BTC
-    redis._store.set('market-intel:regime:BTC', JSON.stringify({
-      benchmarkSymbol: 'BTC',
-      freshness: { state: 'fresh' },
-      pass: true,
-      details: { currentPrice: 65_000 },
-    }));
+  it('maps priceSource + stale straight through from the triggered entry', async () => {
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204, priceSource: 'regime_snapshot', stale: true })] },
+    });
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
     const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
-    expect(payload.currentPrice).toBe(65_000);
     expect(payload.priceSource).toBe('regime_snapshot');
+    expect(payload.stale).toBe(true);
   });
 
-  it('uses resolvedChain/resolvedSymbol for regime fallback when discovery snapshot unavailable', async () => {
-    // Seed a watch with pinned identity but NO discovery price
-    seedWatch('agent-1', makeWatch({
-      symbol: 'UNKNOWN',
-      chain: 'any',
-      resolvedChain: 'solana',
-      resolvedSymbol: 'SOL',
-      condition: 'above',
-      thresholdPrice: 200,
-      lastConditionMet: false,
-    }));
-    // Seed regime snapshot under the resolved symbol
-    redis._store.set('market-intel:regime:SOL', JSON.stringify({
-      benchmarkSymbol: 'SOL',
-      freshness: { state: 'fresh' },
-      pass: true,
-      details: { currentPrice: 204 },
-    }));
+  it('populates purpose, instrument, positionKey, and schemaVersion in payload when present on the triggered entry', async () => {
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({
+        symbol: 'SOL',
+        condition: 'above',
+        thresholdPrice: 200,
+        currentPrice: 204,
+        purpose: 'stop_loss',
+        instrument: { venue: 'hyperliquid', instrumentId: 'SOL-USD' },
+        coverage: { positionKey: 'pos-sol-stop-1' },
+        schemaVersion: 2,
+      })] },
+    });
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
-    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
-    expect(payload.currentPrice).toBe(204);
-    expect(payload.priceSource).toBe('regime_snapshot');
-    // Verify the payload carries the resolved identity, not "any"
-    expect(payload.chain).toBe('solana');
-    expect(payload.symbol).toBe('SOL');
-  });
-
-  it('uses fallback regime key under watch.symbol when effectiveSymbol differs', async () => {
-    // Seed a watch where resolvedSymbol differs from watch.symbol (e.g. wrapped token)
-    seedWatch('agent-1', makeWatch({
-      symbol: 'WSOL',
-      chain: 'solana',
-      resolvedChain: 'solana',
-      resolvedSymbol: 'SOL',
-      condition: 'above',
-      thresholdPrice: 200,
-      lastConditionMet: false,
-    }));
-    // Regime snapshot keyed under the original symbol, NOT the resolved symbol
-    redis._store.set('market-intel:regime:WSOL', JSON.stringify({
-      benchmarkSymbol: 'WSOL',
-      freshness: { state: 'fresh' },
-      pass: true,
-      details: { currentPrice: 205 },
-    }));
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
-    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
-    expect(payload.currentPrice).toBe(205);
-    expect(payload.priceSource).toBe('regime_snapshot');
-    // Verify the payload carries the resolved identity
-    expect(payload.chain).toBe('solana');
-    expect(payload.symbol).toBe('SOL');
-  });
-
-  it('populates purpose, instrument, positionKey, and schemaVersion in payload when present on watch', async () => {
-    seedWatch('agent-1', makeWatch({
-      symbol: 'SOL',
-      condition: 'above',
-      thresholdPrice: 200,
-      lastConditionMet: false,
-      purpose: 'stop_loss',
-      instrumentVenue: 'hyperliquid',
-      instrumentId: 'SOL-USD',
-      positionKey: 'pos-sol-stop-1',
-      schemaVersion: 2,
-    }));
-    seedDiscoveryPrice('SOL', 'solana', 204);
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
@@ -487,21 +454,22 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.schemaVersion).toBe(2);
   });
 
-  it('populates only partial new fields when watch has some but not all metadata', async () => {
-    seedWatch('agent-1', makeWatch({
-      symbol: 'ETH',
-      chain: 'ethereum',
-      condition: 'below',
-      thresholdPrice: 3000,
-      lastConditionMet: false,
-      purpose: 'entry',
-      instrumentVenue: 'hyperliquid',
-      instrumentId: 'ETH-USD',
-      // no positionKey
-    }));
-    seedDiscoveryPrice('ETH', 'ethereum', 2950);
+  it('populates only partial new fields when the triggered entry has some but not all metadata', async () => {
+    activateAgent('agent-1');
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({
+        symbol: 'ETH',
+        chain: 'ethereum',
+        condition: 'below',
+        thresholdPrice: 3000,
+        currentPrice: 2950,
+        purpose: 'entry',
+        instrument: { venue: 'hyperliquid', instrumentId: 'ETH-USD' },
+        // no coverage/positionKey
+      })] },
+    });
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
     await monitor.evaluate();
 
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
@@ -510,49 +478,6 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.instrumentVenue).toBe('hyperliquid');
     expect(payload.instrumentId).toBe('ETH-USD');
     expect(payload.positionKey).toBeUndefined();
-  });
-
-  it('uses resolvedChain/resolvedSymbol for price lookup when pinned identity present', async () => {
-    // Watch created with chain="any", resolved to solana
-    seedWatch('agent-1', makeWatch({
-      symbol: 'SOL',
-      chain: 'any',
-      resolvedChain: 'solana',
-      resolvedSymbol: 'SOL',
-      condition: 'above',
-      thresholdPrice: 200,
-      lastConditionMet: false,
-    }));
-    // Discovery snapshot has price under the resolved identity key
-    seedDiscoveryPrice('SOL', 'solana', 204);
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    // Must trigger — proving resolved identity (solana:SOL) was used, not original (any:SOL)
-    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
-    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
-    expect(payload.currentPrice).toBe(204);
-  });
-
-  it('falls back to watch.chain/watch.symbol when resolved fields are absent', async () => {
-    // Watch with no resolvedChain/resolvedSymbol (e.g. created before price service was available)
-    seedWatch('agent-1', makeWatch({
-      symbol: 'BTC',
-      chain: 'hyperliquid',
-      condition: 'above',
-      thresholdPrice: 60_000,
-      lastConditionMet: false,
-    }));
-    // Discovery snapshot has price under the original identity key
-    seedDiscoveryPrice('BTC', 'hyperliquid', 65_000);
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
-    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
-    expect(payload.currentPrice).toBe(65_000);
   });
 });
 
@@ -582,23 +507,34 @@ describe('createMarketMonitor — family toggles', () => {
     expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
   });
 
-  it('clears the dedupe key when the condition resets to false', async () => {
+  it('clears the dedupe key on reset so a re-trigger fires again', async () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
-
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: true })],
-    ]));
-    redis._scanKeys.push('agent:watches:agent-1');
     redis.sadd('agent:sessions:active', 'agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 150 },
-    ]));
 
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    const triggered = [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })];
+    // Cycle 1: triggered → emits + sets dedupe.
+    // Cycle 2: reset[watchId] → clears both cross:above and cross:below dedupe keys.
+    // Cycle 3: triggered again → emits again (not suppressed).
+    const port = vi.fn(async (_agentId: string) => ({ triggered: [] as ReturnType<typeof makeTriggeredWatch>[], reset: [] as string[] }))
+      .mockResolvedValueOnce({ triggered, reset: [] })
+      .mockResolvedValueOnce({ triggered: [], reset: [DEFAULT_WATCH_ID] })
+      .mockResolvedValueOnce({ triggered, reset: [] });
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
+
+    // Cycle 1 — first trigger emits.
     await monitor.evaluate();
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
 
+    // Cycle 2 — reset clears BOTH cross keys.
+    await monitor.evaluate();
     expect(redis.del).toHaveBeenCalledWith(`market-monitor:dedupe:watch:${DEFAULT_WATCH_ID}:cross:above`);
+    expect(redis.del).toHaveBeenCalledWith(`market-monitor:dedupe:watch:${DEFAULT_WATCH_ID}:cross:below`);
+
+    // Cycle 3 — re-trigger fires again because dedupe was cleared.
+    await monitor.evaluate();
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledTimes(2);
   });
 
   it('skips discovery evaluation when discoveryDeltas=false', async () => {
@@ -893,14 +829,18 @@ describe('createMarketMonitor — metrics', () => {
   });
 
   it('increments evaluationFailures when an evaluation cycle throws', async () => {
+    // The outer evaluate() try/catch increments evaluationFailures. Make the
+    // active-agent lookup (smembers, called by getSubscribedAgentIds inside
+    // evaluateWatches) throw so the whole cycle fails.
     const redis = makeRedisMock({
-      scan: vi.fn().mockRejectedValue(new Error('Redis gone')),
+      smembers: vi.fn().mockRejectedValue(new Error('Redis gone')),
     });
     const publisher = makePublisherMock();
+    const port = makeWatchPort({});
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -911,15 +851,15 @@ describe('createMarketMonitor — metrics', () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
 
-    redis._hstore.set('agent:watches:agent-1', new Map([['w1', makeWatch({ condition: 'above', thresholdPrice: 100, lastConditionMet: false })]]));
-    redis._scanKeys.push('agent:watches:agent-1');
     redis.sadd('agent:sessions:active', 'agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([{ network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 }]));
+    const port = makeWatchPort({
+      'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 100, currentPrice: 204 })] },
+    });
     redis._store.set(`market-monitor:dedupe:watch:${DEFAULT_WATCH_ID}:cross:above`, '1');
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -943,23 +883,21 @@ describe('createMarketMonitor — wake coalescing', () => {
   it('increments wakeRequestsCoalesced when second event arrives for same agent before flush', async () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
+    redis.sadd('agent:sessions:active', 'agent-1');
 
-    // Two watches for the same agent that will both trigger
+    // Two distinct triggered watches for the same agent → two wakes coalesce.
     const W1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
     const W2 = 'b2c3d4e5-f6a7-8901-bcde-f12345678901';
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      [W1, makeWatch({ watchId: W1, symbol: 'SOL', condition: 'above', thresholdPrice: 100, lastConditionMet: false })],
-      [W2, makeWatch({ watchId: W2, symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
-    ]));
-    redis._scanKeys.push('agent:watches:agent-1');
-    redis.sadd('agent:sessions:active', 'agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 },
-    ]));
+    const port = makeWatchPort({
+      'agent-1': { triggered: [
+        makeTriggeredWatch({ watchId: W1, condition: 'above', thresholdPrice: 100, currentPrice: 200 }),
+        makeTriggeredWatch({ watchId: W2, condition: 'above', thresholdPrice: 150, currentPrice: 200 }),
+      ] },
+    });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -971,23 +909,19 @@ describe('createMarketMonitor — wake coalescing', () => {
   it('caps coalesced eventIds at MAX_COALESCED_EVENT_IDS (5)', async () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
+    redis.sadd('agent:sessions:active', 'agent-1');
 
-    // 6 watches for same agent — generate valid UUIDs to pass WatchEntrySchema validation
-    const watches = new Map<string, string>();
+    // 6 distinct triggered watches for the same agent.
+    const triggered = [];
     for (let i = 1; i <= 6; i++) {
       const watchId = `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`;
-      watches.set(watchId, makeWatch({ watchId, symbol: 'SOL', condition: 'above', thresholdPrice: i, lastConditionMet: false }));
+      triggered.push(makeTriggeredWatch({ watchId, condition: 'above', thresholdPrice: i, currentPrice: 200 }));
     }
-    redis._hstore.set('agent:watches:agent-1', watches);
-    redis._scanKeys.push('agent:watches:agent-1');
-    redis.sadd('agent:sessions:active', 'agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 },
-    ]));
+    const port = makeWatchPort({ 'agent-1': { triggered } });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -1001,20 +935,20 @@ describe('createMarketMonitor — wake coalescing', () => {
   it('clears pending wake buckets when stopped', async () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
+    redis.sadd('agent:sessions:active', 'agent-1');
 
     const W1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
     const W2 = 'b2c3d4e5-f6a7-8901-bcde-f12345678901';
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      [W1, makeWatch({ watchId: W1, symbol: 'SOL', condition: 'above', thresholdPrice: 100, lastConditionMet: false })],
-      [W2, makeWatch({ watchId: W2, symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
-    ]));
-    redis._scanKeys.push('agent:watches:agent-1');
-    redis.sadd('agent:sessions:active', 'agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([{ network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 }]));
+    const port = makeWatchPort({
+      'agent-1': { triggered: [
+        makeTriggeredWatch({ watchId: W1, condition: 'above', thresholdPrice: 100, currentPrice: 200 }),
+        makeTriggeredWatch({ watchId: W2, condition: 'above', thresholdPrice: 150, currentPrice: 200 }),
+      ] },
+    });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
     expect(monitor.getMetrics().wakeRequestsCoalesced).toBe(1);
@@ -1046,12 +980,11 @@ describe('createMarketMonitor — mode-based delivery', () => {
   // --- backward compatibility (no mode configured = wake) ---
 
   it('defaults to wake mode when no wakePolicy is configured (watch threshold)', async () => {
-    seedWatchInRedis();
-    seedDiscoveryPriceInRedis('SOL', 'solana', 204);
+    const port = makeWatchPort({ 'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -1064,15 +997,14 @@ describe('createMarketMonitor — mode-based delivery', () => {
   // --- watch threshold: context mode ---
 
   it('emits event but does NOT enqueue wake when watch_threshold mode is context', async () => {
-    seedWatchInRedis();
-    seedDiscoveryPriceInRedis('SOL', 'solana', 204);
+    const port = makeWatchPort({ 'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       {
         families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false },
         wakePolicy: { watch_threshold: { mode: 'context' } },
       },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -1085,15 +1017,14 @@ describe('createMarketMonitor — mode-based delivery', () => {
   // --- watch threshold: wake mode (explicit) ---
 
   it('emits event and enqueues wake when watch_threshold mode is wake', async () => {
-    seedWatchInRedis();
-    seedDiscoveryPriceInRedis('SOL', 'solana', 204);
+    const port = makeWatchPort({ 'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       {
         families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false },
         wakePolicy: { watch_threshold: { mode: 'wake' } },
       },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -1104,15 +1035,14 @@ describe('createMarketMonitor — mode-based delivery', () => {
   // --- watch threshold: batched mode ---
 
   it('emits event and enqueues wake when watch_threshold mode is batched', async () => {
-    seedWatchInRedis();
-    seedDiscoveryPriceInRedis('SOL', 'solana', 204);
+    const port = makeWatchPort({ 'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       {
         families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false },
         wakePolicy: { watch_threshold: { mode: 'batched' } },
       },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -1257,19 +1187,6 @@ describe('createMarketMonitor — mode-based delivery', () => {
     expect(redis._store.has('market-monitor:wake:agent-1:regime_change')).toBe(false);
   });
 
-  // --- helpers reused across mode-based delivery tests ---
-
-  function seedWatchInRedis() {
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
-    ]));
-  }
-
-  function seedDiscoveryPriceInRedis(symbol: string, network: string, priceUsd: number) {
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network, address: `0x${symbol}`, symbol, priceUsd },
-    ]));
-  }
 });
 
 // ===========================================================================
@@ -1407,39 +1324,29 @@ describe('createMarketMonitor — subscription filtering (C4)', () => {
   // C4.3 — evaluateWatches excludes stopped agents even with stale watch keys
   // -----------------------------------------------------------------------
 
-  it('skips agents not in agent:sessions:active even if watch keys remain', async () => {
-    // Seed a watch key for agent-1 but do NOT add to active set
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
-    ]));
-    redis._scanKeys.push('agent:watches:agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
-    ]));
+  it('skips agents not in agent:sessions:active — port not invoked, no emit', async () => {
+    // agent-1 is NOT added to the active set. The boundary port would trigger
+    // a watch if invoked, but it must never be called for an inactive agent.
+    const port = makeWatchPort({ 'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
-    // No watch event emitted despite price crossing threshold — agent is not active
+    // Port never invoked for the inactive agent → no watch event emitted.
+    expect(port).not.toHaveBeenCalled();
     expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
   });
 
-  it('emits watch event for active agent with watch key', async () => {
+  it('emits watch event for active subscribed agent', async () => {
     addActiveAgent('agent-1');
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
-    ]));
-    redis._scanKeys.push('agent:watches:agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
-    ]));
+    const port = makeWatchPort({ 'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
@@ -1447,6 +1354,8 @@ describe('createMarketMonitor — subscription filtering (C4)', () => {
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
     const [agentId] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
     expect(agentId).toBe('agent-1');
+    // The boundary port was invoked for the subscribed agent.
+    expect(port).toHaveBeenCalledWith('agent-1');
   });
 
   // -----------------------------------------------------------------------
@@ -1455,58 +1364,47 @@ describe('createMarketMonitor — subscription filtering (C4)', () => {
 
   it('reads wake prefs once per agent per evaluation cycle', async () => {
     addActiveAgent('agent-1');
-    // Two watches for the same agent
+    // Two triggered watches for the same agent in one cycle.
     const W1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
     const W2 = 'b2c3d4e5-f6a7-8901-bcde-f12345678901';
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      [W1, makeWatch({ watchId: W1, symbol: 'SOL', condition: 'above', thresholdPrice: 100, lastConditionMet: false })],
-      [W2, makeWatch({ watchId: W2, symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
-    ]));
-    redis._scanKeys.push('agent:watches:agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 },
-    ]));
+    const port = makeWatchPort({
+      'agent-1': { triggered: [
+        makeTriggeredWatch({ watchId: W1, condition: 'above', thresholdPrice: 100, currentPrice: 200 }),
+        makeTriggeredWatch({ watchId: W2, condition: 'above', thresholdPrice: 150, currentPrice: 200 }),
+      ] },
+    });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
-    // Both watches trigger, but prefs are only read once (hoisted before the per-watch loop).
-    // The get spy is called for agent:wake:prefs:agent-1 exactly once (per agent).
-    // Also called during watch evaluation for price lookups, but those are hgetall.
-    const prefsCalls = redis.get.mock.calls.filter(
-      (c: [string]) => c[0] === 'agent:wake:prefs:agent-1',
-    );
-    expect(prefsCalls).toHaveLength(1);
+    // The boundary port is invoked once per agent per cycle — subscription
+    // resolution (which reads prefs) is hoisted before the per-watch loop, so
+    // two triggered watches for the same agent do not cause a second lookup.
+    expect(port).toHaveBeenCalledTimes(1);
+    expect(port).toHaveBeenCalledWith('agent-1');
+    // Both triggered watches still emit.
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledTimes(2);
   });
 
-  // Edge: agent with prefs that exclude watch_threshold — prefs still read once, then skipped
-  it('reads prefs once then skips all watches when watch_threshold not in subscribedSources', async () => {
+  // Edge: agent with prefs that exclude watch_threshold — the port is never invoked for it.
+  it('does not invoke the port when watch_threshold not in subscribedSources', async () => {
     addActiveAgent('agent-1');
     setWakePrefs('agent-1', { subscribedSources: ['discovery_delta'] });
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
-    ]));
-    redis._scanKeys.push('agent:watches:agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
-    ]));
+    const port = makeWatchPort({ 'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
-    // Watch event NOT emitted — agent only wants discovery_delta
+    // Agent only wants discovery_delta → not subscribed to watch_threshold →
+    // port not invoked, no watch event emitted.
+    expect(port).not.toHaveBeenCalled();
     expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
-    // Prefs fetched once
-    const prefsCalls = redis.get.mock.calls.filter(
-      (c: [string]) => c[0] === 'agent:wake:prefs:agent-1',
-    );
-    expect(prefsCalls).toHaveLength(1);
   });
 
   // -----------------------------------------------------------------------
@@ -1537,21 +1435,16 @@ describe('createMarketMonitor — subscription filtering (C4)', () => {
   it('treats malformed prefs JSON as all sources for watch thresholds (fail open)', async () => {
     addActiveAgent('agent-1');
     redis._store.set('agent:wake:prefs:agent-1', '{not valid}');
-    redis._hstore.set('agent:watches:agent-1', new Map([
-      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
-    ]));
-    redis._scanKeys.push('agent:watches:agent-1');
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
-    ]));
+    const port = makeWatchPort({ 'agent-1': { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
     await monitor.evaluate();
 
-    // Watch event should still fire (fail open)
+    // Malformed prefs → treated as subscribed to all sources → port invoked, event fires.
+    expect(port).toHaveBeenCalledWith('agent-1');
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
   });
 
@@ -1605,68 +1498,30 @@ describe('createMarketMonitor — subscription filtering (C4)', () => {
 describe('scanner_gated agent detection (004)', () => {
   const SCANNER_GATED_KEY = 'agent:scanner_gated';
 
-  // Helper: seed a watch for a scanner-gated agent with correct key patterns
-  function seedScannerGatedWatch(
+  // Helper: mark an agent active + scanner-gated and script a triggered watch
+  // over the boundary port.
+  function makeScannerGatedPort(
     redis: ReturnType<typeof makeRedisMock>,
     agentId: string,
-    overrides: Parameters<typeof makeWatch>[0] = {},
+    triggered: ReturnType<typeof makeTriggeredWatch>[],
   ) {
     redis.sadd('agent:sessions:active', agentId);
-    const watchData = makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false, ...overrides });
-    redis._hstore.set(`agent:watches:${agentId}`, new Map([['watch-1', watchData]]));
-    redis._scanKeys.push(`agent:watches:${agentId}`);
     redis._store.set(`${SCANNER_GATED_KEY}:${agentId}`, '1');
-    return watchData;
+    return makeWatchPort({ [agentId]: { triggered } });
   }
-
-  it('evaluates watches for scanner_gated agents and updates lastCheckedAt', async () => {
-    const redis = makeRedisMock();
-    const publisher = makePublisherMock();
-
-    const agentId = 'agent-gated-1';
-    seedScannerGatedWatch(redis, agentId);
-    // Seed discovery snapshot with price data above threshold → should trigger
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
-    ]));
-
-    const monitor = createMarketMonitor(
-      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
-    );
-
-    await monitor.evaluate();
-
-    // Verify the watch was evaluated: hset was called with updated lastCheckedAt
-    const hsetCalls = (redis.hset as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (call: unknown[]) => typeof call[0] === 'string' && call[0] === `agent:watches:${agentId}`,
-    );
-    expect(hsetCalls.length).toBeGreaterThanOrEqual(1);
-
-    // The updated watch JSON should contain a recent lastCheckedAt
-    const updatedWatchJson = hsetCalls[0]?.[2] as string;
-    expect(updatedWatchJson).toBeDefined();
-    const updated = JSON.parse(updatedWatchJson!) as { lastCheckedAt: string };
-    expect(updated.lastCheckedAt).toBeDefined();
-    // Should be within the last few seconds
-    const lastChecked = new Date(updated.lastCheckedAt).getTime();
-    expect(Date.now() - lastChecked).toBeLessThan(10_000);
-  });
 
   it('emits watch event but does NOT enqueue wake for scanner_gated agents (context-only)', async () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
 
     const agentId = 'agent-gated-2';
-    seedScannerGatedWatch(redis, agentId);
-    // Seed discovery snapshot with price above threshold → trigger
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
-    ]));
+    const port = makeScannerGatedPort(redis, agentId, [
+      makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 }),
+    ]);
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
 
     await monitor.evaluate();
@@ -1677,45 +1532,8 @@ describe('scanner_gated agent detection (004)', () => {
     );
     expect(triggerCalls.length).toBe(1);
 
-    // No wake should be enqueued for the scanner-gated agent
-    const wakeCalls = publisher.emitAgentWake.mock.calls.filter(
-      (call: unknown[]) => call[0]?.agentId === agentId,
-    );
-    expect(wakeCalls.length).toBe(0);
-  });
-
-  it('does NOT trigger when price is below threshold for scanner_gated agent', async () => {
-    const redis = makeRedisMock();
-    const publisher = makePublisherMock();
-
-    const agentId = 'agent-gated-3';
-    seedScannerGatedWatch(redis, agentId);
-    // Seed discovery snapshot with price below threshold → no trigger
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 150 },
-    ]));
-
-    const monitor = createMarketMonitor(
-      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
-    );
-
-    await monitor.evaluate();
-
-    // No trigger — price below threshold
-    const triggerCalls = publisher.emitMarketWatchTriggered.mock.calls.filter(
-      (call: unknown[]) => call[0] === agentId,
-    );
-    expect(triggerCalls.length).toBe(0);
-
-    // lastCheckedAt should still be updated (watch was evaluated)
-    const hsetCalls = (redis.hset as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (call: unknown[]) => typeof call[0] === 'string' && call[0] === `agent:watches:${agentId}`,
-    );
-    expect(hsetCalls.length).toBeGreaterThanOrEqual(1);
-    const updatedWatchJson = hsetCalls[0]?.[2] as string;
-    const updated = JSON.parse(updatedWatchJson!) as { lastCheckedAt: string };
-    expect(updated.lastCheckedAt).toBeDefined();
+    // No wake bucket should be enqueued for the scanner-gated agent (context-only).
+    expect(redis._store.has(`market-monitor:wake:${agentId}:watch_threshold`)).toBe(false);
   });
 
   it('discovery_delta uses context-only delivery for scanner_gated agents (no wake)', async () => {
@@ -1748,28 +1566,24 @@ describe('scanner_gated agent detection (004)', () => {
 
     const agentId = 'agent-normal';
     redis.sadd('agent:sessions:active', agentId);
-    const watchData = makeWatch({ symbol: 'SOL', thresholdPrice: 200, condition: 'above', lastConditionMet: false });
-    redis._hstore.set(`agent:watches:${agentId}`, new Map([['watch-1', watchData]]));
-    redis._scanKeys.push(`agent:watches:${agentId}`);
-    // Deliberately NOT setting scanner_gated key — key is absent
-    // Seed discovery price to trigger
-    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
-    ]));
+    // Deliberately NOT setting scanner_gated key — key is absent.
+    const port = makeWatchPort({ [agentId]: { triggered: [makeTriggeredWatch({ condition: 'above', thresholdPrice: 200, currentPrice: 204 })] } });
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
-      { redis, publisher },
+      { redis, publisher, evaluateAgentWatches: port },
     );
 
     // Should not throw; fail-open means agent is not blocked
     await expect(monitor.evaluate()).resolves.toBeUndefined();
 
-    // Non-gated agent should get the event emitted (wake is coalesced for later flush)
+    // Non-gated agent should get the event emitted AND a wake bucket enqueued
+    // (not context-only), since scanner-gated detection failed open to "not gated".
     const triggerCalls = publisher.emitMarketWatchTriggered.mock.calls.filter(
       (call: unknown[]) => call[0] === agentId,
     );
     expect(triggerCalls.length).toBe(1);
     expect(monitor.getMetrics().eventsEmitted).toBe(1);
+    expect(redis._store.has(`market-monitor:wake:${agentId}:watch_threshold`)).toBe(true);
   });
 });

@@ -48,6 +48,7 @@ import { StubRuntimeDocumentMaterializer } from './agents/stub-document-material
 import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService, resolveActivePresetState } from './market-intelligence/index.js';
+import type { TriggeredWatch } from './market-intelligence/index.js';
 import type { ReviewScheduler } from './market-intelligence/index.js';
 import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
 import { createPresetCatalog } from './market-intelligence/preset-catalog-adapter.js';
@@ -922,12 +923,53 @@ await alertDispatcher.start();
 // started and stopped by the coordinator as it gains/loses the lease,
 // ensuring evaluation never races across multiple worker processes.
 const miConfig = appConfig.marketIntelligence;
+
+// B3-monitor: watch evaluation authority lives in Traderton. This port invokes
+// the owner-scoped `check_watches` over the side-effecting boundary and returns
+// the edge-up triggered watches + edge-down reset watchIds. The monitor keeps
+// all the platform wake machinery (dedupe, rate-limit, emit, enqueue). When the
+// boundary is unconfigured the port is undefined and the monitor no-ops watch
+// wakes (in-process eval was removed in B3 — no local fallback).
+const evaluateAgentWatches = sideEffectBoundary
+  ? async (agentId: string): Promise<{ triggered: TriggeredWatch[]; reset: string[] }> => {
+      // Resolve the agent's owner (fail-open → empty on miss). check_watches is
+      // owner-scoped, so a per-agent subject is required (the SYSTEM read
+      // boundary is insufficient).
+      const [row] = await db.select({ userId: agents.userId }).from(agents).where(eq(agents.id, agentId)).limit(1);
+      const ownerId = row?.userId;
+      if (!ownerId) {
+        logger.warn({ agentId }, 'evaluateAgentWatches: no ownerId — skipping');
+        return { triggered: [], reset: [] };
+      }
+      const subject: TradertonSubject = { ownerId, actor: { type: 'agent', id: agentId } };
+      const result = await sideEffectBoundary.invokeAndAwait({
+        toolName: 'check_watches',
+        payload: { removeTriggered: false },
+        subject,
+        deadlineMs: 30_000,
+      });
+      if (result.kind !== 'success') {
+        logger.warn({ agentId, kind: result.kind }, 'check_watches over boundary did not succeed');
+        return { triggered: [], reset: [] };
+      }
+      // The boundary returns WatchEntry & { currentPrice, priceSource, stale }
+      // objects that structurally match TriggeredWatch.
+      const data = result.payload as { triggered?: TriggeredWatch[]; reset?: string[] };
+      return {
+        triggered: Array.isArray(data.triggered) ? data.triggered : [],
+        reset: Array.isArray(data.reset) ? data.reset : [],
+      };
+    }
+  : undefined;
+
 const marketMonitor = createMarketMonitor(
   {
     enabled: miConfig.enabled && Boolean(appConfig.marketData),
     evaluationIntervalMs: miConfig.evaluationIntervalMs,
     families: {
-      watchThresholds: false, // B3 Option C (004 decision-log): watch state now lives behind the boundary; the local watch-threshold push loop is DISABLED until B3-monitor re-points it over check_watches. Prevents split-brain against the now-remote watch set.
+      // B3-monitor: re-enabled — watch wakes now source triggered/reset from
+      // Traderton `check_watches` via the evaluateAgentWatches port below.
+      watchThresholds: miConfig.families.watchThresholds.enabled,
       discoveryDeltas: miConfig.families.discoveryDeltas.enabled,
       regimeChanges: miConfig.families.regimeChanges.enabled,
     },
@@ -935,7 +977,7 @@ const marketMonitor = createMarketMonitor(
     wakeCooldownMs: miConfig.wakeCooldownMs,
     wakePolicy: miConfig.wakePolicy,
   },
-  { redis: redisClient, publisher: eventPublisher },
+  { redis: redisClient, publisher: eventPublisher, evaluateAgentWatches },
 );
 
 const marketIntelCoordinator = appConfig.marketData

@@ -10,13 +10,39 @@ import type {
   AgentWakePayload,
   AgentWakeSource,
   WatchThresholdWakeContext,
+  WatchPurpose,
   DiscoveryDeltaWakeContext,
   RegimeChangeWakeContext,
 } from '@herobids/domain';
-import { summarizeActiveWatches } from '../runtime-composition.js';
-import { type WatchEntry, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
 
 const logger = createLogger('market-monitor');
+
+/**
+ * A watch that crossed its threshold (false→true edge), as returned by the
+ * Traderton boundary `check_watches` and consumed by the wake machinery.
+ *
+ * Structurally a subset of the boundary's `WatchEntry & { currentPrice,
+ * priceSource, stale }` triggered-entry shape — the fields the monitor reads
+ * to dedupe, rate-limit, build the payload, and enqueue the wake. Evaluation
+ * authority lives in Traderton (B3); the monitor only delivers.
+ */
+export interface TriggeredWatch {
+  watchId: string;
+  symbol: string;
+  chain: string;
+  condition: 'above' | 'below';
+  thresholdPrice: number;
+  currentPrice: number;
+  priceSource: string;
+  stale: boolean;
+  note?: string;
+  purpose?: WatchPurpose;
+  instrument?: { venue?: string; instrumentId?: string };
+  coverage?: { positionKey?: string };
+  schemaVersion?: number;
+  resolvedSymbol?: string;
+  resolvedChain?: string;
+}
 
 // --- Rate limit constants ---
 const MAX_EVENTS_PER_AGENT_PER_MINUTE = 20;
@@ -87,6 +113,11 @@ export async function isAgentScannerGated(
 export interface MonitorDeps {
   redis: Redis;
   publisher: InstanceEventPublisher;
+  /** Evaluate an agent's watches over the Traderton boundary (check_watches).
+   *  Returns the edge-up triggered watches + edge-down reset watchIds. Undefined
+   *  when the boundary is unconfigured — evaluateWatches then no-ops (watch wakes
+   *  require the boundary; in-process eval was removed in B3). */
+  evaluateAgentWatches?: (agentId: string) => Promise<{ triggered: TriggeredWatch[]; reset: string[] }>;
 }
 
 interface PendingWake {
@@ -148,7 +179,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     discoveryDeltas: config.families?.discoveryDeltas ?? true,
     regimeChanges: config.families?.regimeChanges ?? true,
   };
-  const { redis, publisher } = deps;
+  const { redis, publisher, evaluateAgentWatches } = deps;
 
   let evaluationTimer: ReturnType<typeof setInterval> | undefined;
   let wakeFlushTimer: ReturnType<typeof setInterval> | undefined;
@@ -210,178 +241,137 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   // Watch threshold evaluation
   // -----------------------------------------------------------------------
 
-  async function refreshSummaryCache(agentId: string, watches: WatchEntry[]): Promise<void> {
-    try {
-      const summary = summarizeActiveWatches(watches.map(toRuntimeActiveWatch));
-      if (summary.totalCount === 0) {
-        await redis.hdel(`agent:watches:summary:${agentId}`, 'summary');
-      } else {
-        await redis.hset(`agent:watches:summary:${agentId}`, 'summary', JSON.stringify(summary));
-      }
-    } catch (err) {
-      logger.warn({ err, agentId }, 'Failed to refresh watch summary cache from monitor');
-    }
-  }
-
   async function evaluateWatches(): Promise<void> {
     if (stopped) return;
-    // Find all agent watch keys
-    const watchKeys = await scanKeys('agent:watches:*');
+    // Evaluation authority for watches lives in Traderton (B3). Without the
+    // boundary port there is no source of triggered/reset watches — no-op.
+    if (!evaluateAgentWatches) return;
+
+    // Active + subscribed to watch_threshold (folds in agent:sessions:active +
+    // agent:wake:prefs). Stopped/crashed agents and agents that opted out are
+    // excluded here, so the per-agent loop below only delivers to recipients.
+    const agentIds = await getSubscribedAgentIds('watch_threshold');
     if (stopped) return;
 
-    for (const key of watchKeys) {
-      const agentId = key.replace('agent:watches:', '');
-      if (agentId.startsWith('summary:')) continue;
-
-      // Only evaluate watches for agents with an active session.
-      // Stopped/crashed agents should not receive watch-threshold events
-      // due to stale watch keys left behind after a session ends.
-      const isActive = await redis.sismember('agent:sessions:active', agentId);
-      if (!isActive) continue;
-
-      // 004: Scanner-gated agents still have watches evaluated for safety
-      // (stop-loss/take-profit), but wake delivery uses context-only mode
-      // so they are not woken up for watch threshold crossings. This is
-      // consistent with discovery_delta and regime_change handling.
-      const agentScannerGated = await checkScannerGated(agentId);
-
-      // Fetch wake prefs once per agent per cycle — hoisted to avoid duplicate
-      // redis.get calls inside the per-watch processing loop.
-      let agentSubscribedSources: AgentWakeSource[] | null = null;
-      const prefsJson = await redis.get(`agent:wake:prefs:${agentId}`);
-      if (prefsJson) {
-        try {
-          const prefs = JSON.parse(prefsJson) as { subscribedSources?: AgentWakeSource[] };
-          agentSubscribedSources = prefs.subscribedSources ?? null;
-        } catch { /* malformed → proceed as if all sources are subscribed */ }
+    // 004: Pre-compute scanner_gated agents so we can switch to context-only
+    // delivery inside the per-watch loop without redundant Redis calls
+    // (mirrors evaluateDiscoveryDeltas / evaluateRegimeChanges).
+    const scannerGatedAgentIds = new Set<string>();
+    for (const agentId of agentIds) {
+      if (await checkScannerGated(agentId)) {
+        scannerGatedAgentIds.add(agentId);
       }
+    }
 
-      // If agent has explicit prefs and doesn't include watch_threshold, skip all watches for this agent.
-      if (agentSubscribedSources !== null && !agentSubscribedSources.includes('watch_threshold')) continue;
-
-      const raw = await redis.hgetall(key);
-      if (!raw || Object.keys(raw).length === 0) continue;
-
-      const watches: WatchEntry[] = [];
-      for (const value of Object.values(raw)) {
-        const parsed = parseWatch(value);
-        if (parsed) {
-          watches.push(parsed);
-        }
-      }
-
-      if (watches.length === 0) continue;
-
-      const refreshedWatches: WatchEntry[] = [];
-
-      // Get latest price data from shared state
-      const priceMap = await getLatestPrices(watches);
+    for (const agentId of agentIds) {
       if (stopped) return;
 
-      for (const watch of watches) {
-        const effectiveChain = watch.resolvedChain ?? watch.chain;
-        const effectiveSymbol = watch.resolvedSymbol ?? watch.symbol;
-        const priceKey = `${effectiveChain}:${effectiveSymbol}`;
-        const priceData = priceMap.get(priceKey);
-        if (!priceData) {
-          refreshedWatches.push(watch);
-          continue;
-        }
-
-        const conditionMet = watch.condition === 'above'
-          ? priceData.priceUsd >= watch.thresholdPrice
-          : priceData.priceUsd <= watch.thresholdPrice;
-
-        // Edge trigger: only fire on false -> true transition
-        const isTriggered = watch.lastConditionMet === false && conditionMet;
-
-        // Always update lastCheckedAt so staleness is observable in the API/context.
-        // Only persist the full entry if the condition state changed (or on first check).
-        const conditionChanged = conditionMet !== watch.lastConditionMet;
-        const updated: WatchEntry = { ...watch, lastConditionMet: conditionMet, lastCheckedAt: new Date().toISOString() };
-        await redis.hset(key, watch.watchId, JSON.stringify(updated));
-        if (conditionChanged && !conditionMet) {
-          // When condition resets to false, clear the dedupe key so the next
-          // false→true crossing is not suppressed within the same day.
-          await redis.del(`market-monitor:dedupe:watch:${watch.watchId}:cross:${watch.condition}`);
-        }
-
-        if (isTriggered) {
-          if (stopped) return;
-          // Check dedupe
-          const dedupeKey = `watch:${watch.watchId}:cross:${watch.condition}`;
-          const suppressed = await checkDedupe(dedupeKey, 0); // No time-based cooldown for watches
-          if (suppressed) { metrics.eventsSuppressed++; continue; }
-
-          // Check rate limit
-          const rateLimited = await checkRateLimit(agentId, 'watch_threshold');
-          if (rateLimited) { metrics.eventsSuppressed++; continue; }
-
-          const eventId = crypto.randomUUID();
-          const payload: MarketWatchTriggeredPayload = {
-            eventId,
-            monitorType: 'watch_threshold',
-            watchId: watch.watchId,
-            symbol: effectiveSymbol,
-            chain: effectiveChain,
-            condition: watch.condition,
-            thresholdPrice: watch.thresholdPrice,
-            currentPrice: priceData.priceUsd,
-            priceSource: priceData.source,
-            stale: priceData.stale,
-            ...(watch.note ? { note: watch.note } : {}),
-            triggeredAt: new Date().toISOString(),
-            ...(watch.purpose ? { purpose: watch.purpose } : {}),
-            ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
-            ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
-            ...(watch.coverage?.positionKey ? { positionKey: watch.coverage.positionKey } : {}),
-            ...(watch.schemaVersion ? { schemaVersion: watch.schemaVersion } : {}),
-          };
-
-          await publisher.emitMarketWatchTriggered(agentId, payload);
-          await recordDedupe(dedupeKey);
-          await incrementRateCounter(agentId, 'watch_threshold');
-          const watchWakeMode = getWakeMode('watch_threshold');
-          // context mode: emit the event to the outbound stream but do NOT
-          // enqueue agent.wake — the runtime records it as pending context.
-          // wake and batched modes both enqueue; the per-source cooldown
-          // mechanism already defers batched wakes until eligibility.
-          // 004: scanner_gated agents always get context-only delivery for
-          // watch_threshold, consistent with discovery_delta and regime_change.
-          const effectiveWatchMode = agentScannerGated ? 'context' : watchWakeMode;
-          if (effectiveWatchMode !== 'context') {
-            await enqueueWake(
-              agentId,
-              eventId,
-              `${effectiveSymbol} crossed ${watch.condition === 'above' ? 'above' : 'below'} ${watch.thresholdPrice}`,
-              'watch_threshold',
-              {
-                symbol: effectiveSymbol,
-                chain: effectiveChain,
-                condition: watch.condition,
-                thresholdPrice: watch.thresholdPrice,
-                currentPrice: priceData.priceUsd,
-                stale: priceData.stale,
-                triggeredAt: payload.triggeredAt,
-                watchId: watch.watchId,
-                ...(watch.note ? { note: watch.note } : {}),
-                ...(watch.purpose ? { purpose: watch.purpose } : {}),
-                ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
-                ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
-                ...(watch.coverage?.positionKey ? { positionKey: watch.coverage.positionKey } : {}),
-                ...(watch.schemaVersion ? { schemaVersion: watch.schemaVersion } : {}),
-              },
-            );
-          }
-          metrics.eventsEmitted++;
-          logger.info({ agentId, watchId: watch.watchId, symbol: effectiveSymbol, pinnedChain: effectiveChain }, 'Watch triggered');
-        }
-
-        refreshedWatches.push(updated);
+      let result: { triggered: TriggeredWatch[]; reset: string[] };
+      try {
+        result = await evaluateAgentWatches(agentId);
+      } catch (err) {
+        // Fail open per agent: a boundary error for one agent must not block others.
+        logger.warn({ err, agentId }, 'evaluateAgentWatches failed for agent — skipping this cycle');
+        continue;
       }
 
-      // Refresh the cached summary so the agent sees updated watch state on next tick.
-      await refreshSummaryCache(agentId, refreshedWatches);
+      // RESET: clear the platform wake-dedupe key for each edge-down watch so a
+      // re-cross isn't suppressed (parity with main, which del'd
+      // `market-monitor:dedupe:watch:{watchId}:cross:{condition}` on reset). The
+      // reset list carries only watchId (not condition), so clear BOTH the
+      // cross:above and cross:below keys — harmless if absent.
+      for (const watchId of result.reset) {
+        try {
+          await redis.del(`market-monitor:dedupe:watch:${watchId}:cross:above`);
+          await redis.del(`market-monitor:dedupe:watch:${watchId}:cross:below`);
+        } catch (err) {
+          // A persistently failing del would silently suppress future re-cross
+          // wakes (the dedupe key never clears). Log it — parity with main,
+          // where the del error propagated to evaluate()'s catch. Continue so
+          // one bad key doesn't block the rest of the agent's triggered set.
+          logger.warn({ err, agentId, watchId }, 'Failed to clear watch dedupe key on reset');
+        }
+      }
+
+      const agentScannerGated = scannerGatedAgentIds.has(agentId);
+
+      // TRIGGERED: run the platform wake machinery per entry —
+      // dedupe → rate-limit → emit → enqueue. Only the SOURCE of triggered
+      // watches changed (boundary instead of local price eval); the delivery
+      // logic below is unchanged from main.
+      for (const w of result.triggered) {
+        if (stopped) return;
+        const effectiveSymbol = w.resolvedSymbol ?? w.symbol;
+        const effectiveChain = w.resolvedChain ?? w.chain;
+
+        // Check dedupe
+        const dedupeKey = `watch:${w.watchId}:cross:${w.condition}`;
+        const suppressed = await checkDedupe(dedupeKey, 0); // No time-based cooldown for watches
+        if (suppressed) { metrics.eventsSuppressed++; continue; }
+
+        // Check rate limit
+        const rateLimited = await checkRateLimit(agentId, 'watch_threshold');
+        if (rateLimited) { metrics.eventsSuppressed++; continue; }
+
+        const eventId = crypto.randomUUID();
+        const payload: MarketWatchTriggeredPayload = {
+          eventId,
+          monitorType: 'watch_threshold',
+          watchId: w.watchId,
+          symbol: effectiveSymbol,
+          chain: effectiveChain,
+          condition: w.condition,
+          thresholdPrice: w.thresholdPrice,
+          currentPrice: w.currentPrice,
+          priceSource: w.priceSource,
+          stale: w.stale,
+          ...(w.note ? { note: w.note } : {}),
+          triggeredAt: new Date().toISOString(),
+          ...(w.purpose ? { purpose: w.purpose } : {}),
+          ...(w.instrument?.venue ? { instrumentVenue: w.instrument.venue } : {}),
+          ...(w.instrument?.instrumentId ? { instrumentId: w.instrument.instrumentId } : {}),
+          ...(w.coverage?.positionKey ? { positionKey: w.coverage.positionKey } : {}),
+          ...(w.schemaVersion ? { schemaVersion: w.schemaVersion } : {}),
+        };
+
+        await publisher.emitMarketWatchTriggered(agentId, payload);
+        await recordDedupe(dedupeKey);
+        await incrementRateCounter(agentId, 'watch_threshold');
+        const watchWakeMode = getWakeMode('watch_threshold');
+        // context mode: emit the event to the outbound stream but do NOT
+        // enqueue agent.wake — the runtime records it as pending context.
+        // wake and batched modes both enqueue; the per-source cooldown
+        // mechanism already defers batched wakes until eligibility.
+        // 004: scanner_gated agents always get context-only delivery for
+        // watch_threshold, consistent with discovery_delta and regime_change.
+        const effectiveWatchMode = agentScannerGated ? 'context' : watchWakeMode;
+        if (effectiveWatchMode !== 'context') {
+          await enqueueWake(
+            agentId,
+            eventId,
+            `${effectiveSymbol} crossed ${w.condition === 'above' ? 'above' : 'below'} ${w.thresholdPrice}`,
+            'watch_threshold',
+            {
+              symbol: effectiveSymbol,
+              chain: effectiveChain,
+              condition: w.condition,
+              thresholdPrice: w.thresholdPrice,
+              currentPrice: w.currentPrice,
+              stale: w.stale,
+              triggeredAt: payload.triggeredAt,
+              watchId: w.watchId,
+              ...(w.note ? { note: w.note } : {}),
+              ...(w.purpose ? { purpose: w.purpose } : {}),
+              ...(w.instrument?.venue ? { instrumentVenue: w.instrument.venue } : {}),
+              ...(w.instrument?.instrumentId ? { instrumentId: w.instrument.instrumentId } : {}),
+              ...(w.coverage?.positionKey ? { positionKey: w.coverage.positionKey } : {}),
+              ...(w.schemaVersion ? { schemaVersion: w.schemaVersion } : {}),
+            },
+          );
+        }
+        metrics.eventsEmitted++;
+        logger.info({ agentId, watchId: w.watchId, symbol: effectiveSymbol, pinnedChain: effectiveChain }, 'Watch triggered');
+      }
     }
   }
 
@@ -907,54 +897,6 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       keys.push(...batch);
     } while (cursor !== '0');
     return keys;
-  }
-
-  async function getLatestPrices(watches: WatchEntry[]): Promise<Map<string, { priceUsd: number; source: string; stale: boolean }>> {
-    const priceMap = new Map<string, { priceUsd: number; source: string; stale: boolean }>();
-
-    // Try to get prices from shared discovery snapshot first
-    const snapshotRaw = await redis.get('market-intel:discovery:latest');
-    if (snapshotRaw) {
-      try {
-        const snapshot = JSON.parse(snapshotRaw) as {
-          freshness: { state: string };
-          tokens: Array<{ network: string; address: string; symbol: string; priceUsd: number }>;
-        };
-        const isStale = snapshot.freshness?.state !== 'fresh';
-        for (const token of snapshot.tokens ?? []) {
-          priceMap.set(`${token.network}:${token.symbol}`, { priceUsd: token.priceUsd, source: 'discovery_snapshot', stale: isStale });
-          priceMap.set(`${token.network}:${token.address}`, { priceUsd: token.priceUsd, source: 'discovery_snapshot', stale: isStale });
-        }
-      } catch { /* ignore parse errors */ }
-    }
-
-    // For watches not found in discovery snapshot, check regime (for perp symbols)
-    for (const watch of watches) {
-      const effectiveChain = watch.resolvedChain ?? watch.chain;
-      const effectiveSymbol = watch.resolvedSymbol ?? watch.symbol;
-      const key = `${effectiveChain}:${effectiveSymbol}`;
-      if (priceMap.has(key)) continue;
-
-      // Try regime snapshot for benchmark symbols (use effective symbol for pinned watches)
-      let regimeRaw = await redis.get(`market-intel:regime:${effectiveSymbol}`);
-      if (!regimeRaw && effectiveSymbol !== watch.symbol) {
-        regimeRaw = await redis.get(`market-intel:regime:${watch.symbol}`);
-      }
-      if (regimeRaw) {
-        try {
-          const regime = JSON.parse(regimeRaw) as { details: { currentPrice?: number }; freshness?: { state: string } };
-          if (regime.details?.currentPrice) {
-            priceMap.set(key, {
-              priceUsd: regime.details.currentPrice,
-              source: 'regime_snapshot',
-              stale: regime.freshness?.state !== 'fresh',
-            });
-          }
-        } catch { /* ignore */ }
-      }
-    }
-
-    return priceMap;
   }
 
   /**
