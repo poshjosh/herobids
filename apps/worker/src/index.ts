@@ -55,7 +55,6 @@ import { AssessmentRequestService } from './market-intelligence/assessment-reque
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
 import { BrowserPoolHealthPublisher } from './browser-pool-health-publisher.js';
-import { createProviderRegistry, TokenBucketRateLimiter, type RedisEvalClient } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 /** Slash commands registered with the Telegram Bot API so they appear in the client command picker. */
 const TELEGRAM_AGENT_COMMANDS: Array<{ command: string; description: string }> = [
@@ -119,59 +118,16 @@ const agentDocumentsRootDir = process.env['AGENT_DOCUMENTS_DIR'] ?? resolve(proc
 const documentsRepo = new AgentDocumentsRepository(db);
 const documentStore = new LocalDocumentStore(agentDocumentsRootDir);
 
-const sharedMarketDataRegistry = appConfig.marketData
-  ? await createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient, discoverySeenClient: redisClient })
-  : undefined;
-
 // L3d-5: the swap token-safety adapter (swapTokenSafety) was only consumed by the
 // deleted in-process trading actors + engine-backed intake. Removed with the actor
 // slice.
 
-// ── Technical scanner infrastructure ──────────────────────────────────────────
-// Venue-aware candidate discovery, candle fetching, and pre-filtering for
-// hybrid/scanner_gated agents. Discovery branches by the agent's active
-// orderbook binding venue (Hyperliquid or Bybit). Candle fetching uses an
-// explicit ScannerCandleTarget — no venue-global assumptions.
-
-import { createScannerCandleFetcher } from './scanner-candle-fetcher.js';
-
-/** Capacity policy values sourced from operator config. */
-const scannerCapacity = appConfig.marketData?.binance?.scanner ?? {
-  maxRequestsPerMinute: 50,
-  maxConcurrentScans: 4,
-  maxCandidates: 20,
-};
-
-// Phase 2: per-worker scanner rate limiter to prevent scanner candle traffic
-// from exhausting the shared Binance budget (200 RPM). Operator-config owned.
-const scannerRateLimiter = new TokenBucketRateLimiter({
-  requestsPerMinute: scannerCapacity.maxRequestsPerMinute,
-  burstCapacity: scannerCapacity.maxRequestsPerMinute,
-  maxWaitMs: 5_000, // short wait — scanner batches are time-sensitive
-});
-
-// GeckoTerminal candle rate limiter for swap scanner traffic.
-// Budget sourced from operator config: marketData.geckoterminal.candles.requestsPerMinute (15 RPM).
-const geckoTerminalCandleBudget = appConfig.marketData?.geckoterminal?.candles ?? ({ requestsPerMinute: 15 } as const);
-const geckoTerminalCandleBudgetRpm = geckoTerminalCandleBudget.requestsPerMinute;
-const geckoTerminalCandleBudgetBurst = ('burstCapacity' in geckoTerminalCandleBudget ? geckoTerminalCandleBudget.burstCapacity : undefined) ?? geckoTerminalCandleBudgetRpm;
-const geckoTerminalCandleBudgetMaxWait = ('maxWaitMs' in geckoTerminalCandleBudget ? geckoTerminalCandleBudget.maxWaitMs : undefined) ?? 5_000;
-const geckoTerminalScannerLimiter = new TokenBucketRateLimiter({
-  requestsPerMinute: geckoTerminalCandleBudgetRpm,
-  burstCapacity: geckoTerminalCandleBudgetBurst,
-  maxWaitMs: geckoTerminalCandleBudgetMaxWait,
-});
-
-// Phase 3: venue-agnostic scanner candle fetcher. Uses an explicit
-// ScannerCandleTarget instead of assuming Hyperliquid.
-const scannerCandleFetcher = sharedMarketDataRegistry
-  ? createScannerCandleFetcher({
-      binanceConfig: sharedMarketDataRegistry.configs.binance,
-      geckoTerminalConfig: sharedMarketDataRegistry.configs.geckoterminal,
-      scannerRateLimiter,
-      geckoTerminalRateLimiter: geckoTerminalScannerLimiter,
-    })
-  : undefined;
+// D1-b: the in-process market-data registry (`createProviderRegistry`) and the
+// scanner candle fetcher (`createScannerCandleFetcher`) were the LAST market-data
+// authority in the worker process — their sole consumer was the market-assessment
+// evidence path. That path now sources DERIVED evidence over the SYSTEM read
+// boundary (get_volatility + score_candidate; see createEvidencePorts below), so
+// the registry + fetcher are removed. No raw candles are fetched in-process.
 
 // L3d-5: the cross-scan candle-fetch circuit breaker + in-cycle retry config
 // were only wired into the deleted in-process AgentTradingActor scan loop.
@@ -1013,10 +969,15 @@ if (providersYaml?.providers) {
   }
 }
 
-// Real evidence ports backed by the worker's scanner candle fetcher.
+// Real evidence ports backed entirely by the SYSTEM read boundary.
 // Liquidity and breadth remain explicitly unavailable in the first shipped slice.
-// L3 Q2: regime evidence routes over the SYSTEM read boundary (check_regime).
-const evidencePorts = createEvidencePorts({ scannerCandleFetcher, checkRegimeBoundary: systemReadBoundary });
+// L3 Q2: regime evidence routes over the boundary (check_regime).
+// D1-b: candle evidence is DERIVED over the boundary (get_volatility +
+// score_candidate) — no raw candles fetched in-process.
+const evidencePorts = createEvidencePorts({
+  checkRegimeBoundary: systemReadBoundary,
+  readBoundary: systemReadBoundary,
+});
 
 const getPresets = createPresetCatalog();
 

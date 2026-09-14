@@ -221,7 +221,17 @@ export class PlatformAssessor {
       regimeResult.data.source,
     );
 
-    // 2. Symbol candles
+    // 2. Derived candle evidence (D1-b).
+    //
+    // The candle port now returns DERIVED scalars sourced over the Traderton
+    // boundary (volatility + candle-window/count) — NEVER raw OHLCV. The raw
+    // candle array that this path used to carry is dropped: it was stored on the
+    // snapshot's `symbolCandles.value` and fed to `generateScorecards`, but
+    // NEITHER consumer read the OHLCV bodies (the ranker reads only
+    // `symbolCandles.state`, and the scorecard runner routes over `score_candidate`
+    // ignoring the passed candles). Feeding the same derived scalars is therefore
+    // behaviour-preserving for the ranker. Dropping the unconsumed raw array is an
+    // accepted Intentional-divergence (004 "Q2").
     const candlesResult = await ports.candles.getCandles({
       identity,
       interval: '15m',
@@ -240,11 +250,18 @@ export class PlatformAssessor {
         message: 'Candle evidence is stale',
       });
     }
-    const rawCandles = candlesResult.data.data;
-    const symbolCandles: EvidenceValue<ReadonlyArray<PriceCandle>> = makeAvailable(
-      rawCandles,
-      candlesResult.data.source,
-    );
+    const derivedCandles = candlesResult.data.data;
+    // `symbolCandles` is kept as an availability FLAG (human-approved sub-choice):
+    // the field's shape is unchanged (`EvidenceValue<ReadonlyArray<PriceCandle>>`
+    // per the domain snapshot type) but carries an EMPTY array — no OHLCV bodies.
+    // `candlesEvaluated > 0` behind the boundary is the availability signal.
+    const symbolCandles: EvidenceValue<ReadonlyArray<PriceCandle>> =
+      derivedCandles.candlesEvaluated > 0
+        ? makeAvailable<ReadonlyArray<PriceCandle>>([], candlesResult.data.source)
+        : makeUnavailable(
+            'assessment.candles_unavailable',
+            'No candles were evaluated behind the boundary',
+          );
 
     // 3. Liquidity
     const liquidityResult = await ports.liquidity.getLiquidity(identity);
@@ -307,13 +324,22 @@ export class PlatformAssessor {
       );
     }
 
-    // 5. Compute volatility from candle data
-    const volatility = computeVolatilityEvidence(rawCandles);
+    // 5. Volatility — consumed from the boundary-derived read (D1-b rework). The
+    // FULL derivation (absolute-units ATR + percentile-classified regime) happens
+    // behind the boundary (get_volatility); the port passes the resulting
+    // VolatilityEvidence through verbatim. A null reading means no usable
+    // volatility. No local classification here.
+    const volatility: EvidenceValue<VolatilityEvidence> =
+      derivedCandles.volatility !== null
+        ? makeAvailable<VolatilityEvidence>(derivedCandles.volatility, 'boundary-derived')
+        : makeUnavailable(
+            'assessment.volatility_insufficient_data',
+            'No usable volatility reading from the boundary',
+          );
 
-    // 6. Build scorecard input
-    const candleArr = rawCandles as readonly PriceCandle[];
+    // 6. Build scorecard input from the boundary-derived candle-window + count.
     const scorecardInput: EvidenceValue<ScorecardInput> = makeAvailable<ScorecardInput>(
-      buildScorecardInput(identity, candleArr),
+      buildScorecardInput(identity, derivedCandles.candleWindow, derivedCandles.candlesEvaluated),
       'computed',
     );
 
@@ -546,80 +572,6 @@ function makeUnavailable(reasonCode: string, message: string): EvidenceValue<nev
   };
 }
 
-// ── Volatility Computation ──────────────────────────────────────────────────
-
-const ATR_LOOKBACK_PERIODS = 14;
-const VOLATILITY_LOW_PERCENTILE = 25;
-const VOLATILITY_HIGH_PERCENTILE = 75;
-const VOLATILITY_EXTREME_PERCENTILE = 95;
-const VOLATILITY_CALCULATION_VERSION = '1.0.0';
-
-/** Compute ATR and classify volatility regime from candle data. */
-function computeVolatilityEvidence(
-  candles: readonly PriceCandle[],
-): EvidenceValue<VolatilityEvidence> {
-  if (candles.length < 2) {
-    return makeUnavailable(
-      'assessment.volatility_insufficient_data',
-      `Need at least 2 candles for ATR, got ${candles.length}`,
-    );
-  }
-
-  const trueRanges: number[] = [];
-  for (let i = 1; i < candles.length; i++) {
-    const current = candles[i]!;
-    const prev = candles[i - 1]!;
-    const tr = Math.max(
-      current.high - current.low,
-      Math.abs(current.high - prev.close),
-      Math.abs(current.low - prev.close),
-    );
-    trueRanges.push(tr);
-  }
-
-  const lookback = Math.min(ATR_LOOKBACK_PERIODS, trueRanges.length);
-  const recentTRs = trueRanges.slice(-lookback);
-  const atr = recentTRs.reduce((sum, tr) => sum + tr, 0) / recentTRs.length;
-
-  // Classify regime by comparing current ATR against the candle distribution.
-  // Use the most recent trueRange as the "current" ATR for classification.
-  const currentATR = recentTRs[recentTRs.length - 1] ?? atr;
-
-  // Build a sorted copy of true ranges for percentile computation
-  const sortedTRs = [...trueRanges].sort((a, b) => a - b);
-
-  let volatilityRegime: VolatilityEvidence['volatilityRegime'];
-  if (currentATR >= percentileValue(sortedTRs, VOLATILITY_EXTREME_PERCENTILE)) {
-    volatilityRegime = 'extreme';
-  } else if (currentATR >= percentileValue(sortedTRs, VOLATILITY_HIGH_PERCENTILE)) {
-    volatilityRegime = 'high';
-  } else if (currentATR <= percentileValue(sortedTRs, VOLATILITY_LOW_PERCENTILE)) {
-    volatilityRegime = 'low';
-  } else {
-    volatilityRegime = 'normal';
-  }
-
-  return makeAvailable<VolatilityEvidence>(
-    {
-      averageTrueRange: Math.round(atr * 1e8) / 1e8,
-      volatilityRegime,
-      calculationVersion: VOLATILITY_CALCULATION_VERSION,
-    },
-    'computed',
-  );
-}
-
-/** Compute the value at a given percentile from a sorted array. */
-function percentileValue(sorted: number[], pct: number): number {
-  if (sorted.length === 0) return 0;
-  const idx = ((pct / 100) * (sorted.length - 1));
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo]!;
-  const frac = idx - lo;
-  return (sorted[lo]! * (1 - frac)) + (sorted[hi]! * frac);
-}
-
 // ── Scorecard Input Builder ─────────────────────────────────────────────────
 
 /** Resolve a canonical symbol string from a MarketAssessmentIdentity for scorecard input. */
@@ -638,20 +590,20 @@ function resolveSymbolForScorecard(identity: MarketAssessmentIdentity): string {
 
 function buildScorecardInput(
   identity: MarketAssessmentIdentity,
-  candles: readonly PriceCandle[],
+  candleWindow: { start: string; end: string } | null,
+  candlesEvaluated: number,
 ): ScorecardInput {
   const symbol = resolveSymbolForScorecard(identity);
 
-  const start = candles.length > 0 ? candles[0]!.timestamp : new Date(0).toISOString();
-  const end =
-    candles.length > 0
-      ? candles[candles.length - 1]!.timestamp
-      : new Date(0).toISOString();
+  const window = candleWindow ?? {
+    start: new Date(0).toISOString(),
+    end: new Date(0).toISOString(),
+  };
 
   return {
     symbol,
-    candleWindow: { start, end },
-    candlesAvailable: candles.length,
+    candleWindow: window,
+    candlesAvailable: candlesEvaluated,
   };
 }
 

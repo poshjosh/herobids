@@ -1,13 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PlatformAssessor } from './platform-assessor.js';
 import type { PlatformAssessorRuntimeConfig, PlatformAssessorDeps } from './platform-assessor.js';
-import type { AssessmentEvidencePorts } from './assessment-ports.js';
+import type { AssessmentEvidencePorts, DerivedCandleEvidence } from './assessment-ports.js';
 import type {
   MarketAssessmentIdentity,
   PresetEntry,
   RegimeResult,
   AssessmentData,
-  VolatilityEvidence,
   LiquidityEvidence,
   BreadthEvidence,
 } from '@herobids/domain';
@@ -32,25 +31,14 @@ function makeConfig(overrides?: Partial<PlatformAssessorRuntimeConfig>): Platfor
   return { enabled: true, maxConcurrentAssessments: 1, cacheFreshnessMs: 60_000, ...overrides };
 }
 
-function makeMockCandles(count: number): PriceCandle[] {
-  const candles: PriceCandle[] = [];
-  let price = 50000;
-  for (let i = 0; i < count; i++) {
-    const open = price;
-    const close = price + (Math.random() - 0.5) * 200;
-    const high = Math.max(open, close) + Math.random() * 100;
-    const low = Math.min(open, close) - Math.random() * 100;
-    candles.push({
-      timestamp: new Date(Date.now() - (count - i) * 3_600_000).toISOString(),
-      open,
-      high,
-      low,
-      close,
-      volume: Math.random() * 100,
-    });
-    price = close;
-  }
-  return candles;
+// D1-b: derived candle evidence over the boundary (no raw OHLCV).
+function makeDerivedCandles(overrides?: Partial<DerivedCandleEvidence>): DerivedCandleEvidence {
+  return {
+    volatility: { averageTrueRange: 0.75, volatilityRegime: 'normal', calculationVersion: '1.0.0' },
+    candleWindow: { start: '2026-07-19T09:00:00.000Z', end: '2026-07-19T10:00:00.000Z' },
+    candlesEvaluated: 48,
+    ...overrides,
+  };
 }
 
 function makeMockPresetEntry(key: string, strategyType: string, signalBias: string): PresetEntry {
@@ -123,7 +111,7 @@ function makeDeps(overrides?: Partial<PlatformAssessorDeps>): PlatformAssessorDe
       getRegime: vi.fn(async () => ok(makeAvailableAssessmentData(makeRegimeResult(), 'test-regime'))),
     },
     candles: {
-      getCandles: vi.fn(async () => ok(makeAvailableAssessmentData(makeMockCandles(100), 'test-candles'))),
+      getCandles: vi.fn(async () => ok(makeAvailableAssessmentData(makeDerivedCandles(), 'test-candles'))),
     },
     liquidity: {
       getLiquidity: vi.fn(async () =>
@@ -169,40 +157,6 @@ function makeDeps(overrides?: Partial<PlatformAssessorDeps>): PlatformAssessorDe
   };
 }
 
-// ── Fixed-seed candles for deterministic tests ─────────────────────────────
-
-const FIXED_NOW = new Date('2026-07-19T10:00:00.000Z').getTime();
-
-function makeDeterministicCandles(count: number): PriceCandle[] {
-  const candles: PriceCandle[] = [];
-  let price = 50000;
-  const seed = 12345;
-  // Simple LCG for deterministic "randomness"
-  let rng = seed;
-  const nextFloat = () => {
-    rng = (rng * 1103515245 + 12345) & 0x7fffffff;
-    return rng / 0x7fffffff;
-  };
-
-  for (let i = 0; i < count; i++) {
-    const open = price;
-    const change = (nextFloat() - 0.5) * 200;
-    const close = price + change;
-    const high = Math.max(open, close) + nextFloat() * 100;
-    const low = Math.min(open, close) - nextFloat() * 100;
-    candles.push({
-      timestamp: new Date(FIXED_NOW - (count - i) * 3_600_000).toISOString(),
-      open: Math.round(open * 100) / 100,
-      high: Math.round(high * 100) / 100,
-      low: Math.round(low * 100) / 100,
-      close: Math.round(close * 100) / 100,
-      volume: Math.round(nextFloat() * 10000) / 100,
-    });
-    price = close;
-  }
-  return candles;
-}
-
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('PlatformAssessor integration', () => {
@@ -231,9 +185,10 @@ describe('PlatformAssessor integration', () => {
         expect(snapshot.regime.value.details.benchmarkSymbol).toBe('BTC');
       }
 
+      // D1-b: symbolCandles is an availability FLAG (empty array, no OHLCV).
       expect(snapshot.symbolCandles.state).toBe('available');
       if (snapshot.symbolCandles.state === 'available') {
-        expect(snapshot.symbolCandles.value.length).toBeGreaterThan(0);
+        expect(snapshot.symbolCandles.value).toHaveLength(0);
       }
 
       expect(snapshot.volatility.state).toBe('available');
@@ -304,8 +259,8 @@ describe('PlatformAssessor integration', () => {
 
   describe('shared artifact immunity — second agent cannot influence result', () => {
     it('two assessors with same evidence ports produce identical results', async () => {
-      // Shared evidence ports — both assessors see the same market data
-      const sharedDeterministicCandles = makeDeterministicCandles(100);
+      // Shared evidence ports — both assessors see the same derived market data
+      const sharedDerivedCandles = makeDerivedCandles();
       const sharedRegime = makeRegimeResult();
 
       const makeSharedEvidencePorts = (): AssessmentEvidencePorts => ({
@@ -314,7 +269,7 @@ describe('PlatformAssessor integration', () => {
         },
         candles: {
           getCandles: vi.fn(async () =>
-            ok(makeAvailableAssessmentData([...sharedDeterministicCandles], 'shared-candles')),
+            ok(makeAvailableAssessmentData({ ...sharedDerivedCandles }, 'shared-candles')),
           ),
         },
         liquidity: {
@@ -409,11 +364,10 @@ describe('PlatformAssessor integration', () => {
   // ── Test 6: Snapshot immutability ───────────────────────────────────────
 
   describe('snapshot immutability — scorecards reproducible from snapshot', () => {
-    it('generates identical scorecards from the same candles', async () => {
-      const deterministicCandles = makeDeterministicCandles(100);
+    it('generates identical scorecards over the boundary regardless of the (empty) snapshot candles', async () => {
       const deps = makeDeps();
       deps.evidencePorts.candles.getCandles = vi.fn(async () =>
-        ok(makeAvailableAssessmentData([...deterministicCandles], 'test-candles')),
+        ok(makeAvailableAssessmentData(makeDerivedCandles(), 'test-candles')),
       );
 
       const assessor = new PlatformAssessor(makeConfig(), deps);
@@ -424,7 +378,7 @@ describe('PlatformAssessor integration', () => {
       expect(evidenceResult.ok).toBe(true);
       if (!evidenceResult.ok) throw new Error('expected ok');
 
-      // Extract candles from snapshot
+      // D1-b: symbolCandles is an availability flag carrying an empty array.
       const snapshot = evidenceResult.data;
       expect(snapshot.symbolCandles.state).toBe('available');
       if (snapshot.symbolCandles.state !== 'available') throw new Error('expected available candles');
@@ -488,7 +442,7 @@ describe('PlatformAssessor integration', () => {
       const deps = makeDeps();
       deps.evidencePorts.candles.getCandles = vi.fn(async () =>
         ok({
-          data: makeMockCandles(100),
+          data: makeDerivedCandles(),
           source: 'test-candles',
           provider: 'test',
           observedAt: new Date(Date.now() - 600_000).toISOString(),

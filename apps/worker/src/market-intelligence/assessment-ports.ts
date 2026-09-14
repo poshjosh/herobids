@@ -2,12 +2,13 @@ import type { Result } from '@herobids/domain';
 import type {
   MarketAssessmentIdentity,
   AssessmentData,
+  VolatilityEvidence,
   LiquidityEvidence,
   BreadthEvidence,
   AssessmentUnavailable,
   AssessmentMarketCohort,
 } from '@herobids/domain';
-import type { PriceCandle, RegimeResult } from '@herobids/market-data';
+import type { RegimeResult } from '@herobids/market-data';
 
 // ── CandleInterval ──────────────────────────────────────────────────────────
 //
@@ -39,21 +40,41 @@ export type CandleInterval = '5m' | '15m' | '1h' | '4h' | '1d';
 //   an arbitrary pool.
 
 /**
- * Fetches candles for a given assessment identity.
+ * Derived candle evidence sourced over the Traderton read boundary — NEVER raw
+ * OHLCV (D1-b re-point). The boundary fetches candles behind itself and returns
+ * only derived scalars:
+ *   - `volatility`: the derived VolatilityEvidence (absolute-units ATR +
+ *     percentile-classified regime, derived Traderton-side from `get_volatility`),
+ *     or null when the boundary reports no usable reading.
+ *   - `candleWindow`: first/last candle timestamps of the scored series (from
+ *     `score_candidate`), or null when zero candles were evaluated.
+ *   - `candlesEvaluated`: the count of candles the boundary evaluated.
  *
- * Orderbook/perp identities route to the configured orderbook candle adapter.
- * Swap/dex identities must first resolve `network + token address` to a pool
- * address before fetching.
+ * `candlesEvaluated > 0` is the availability signal the assessor keeps as the
+ * `symbolCandles` flag (no OHLCV bodies carried).
+ */
+export interface DerivedCandleEvidence {
+  volatility: VolatilityEvidence | null;
+  candleWindow: { start: string; end: string } | null;
+  candlesEvaluated: number;
+}
+
+/**
+ * Fetches DERIVED candle evidence for a given assessment identity over the
+ * Traderton read boundary (D1-b). Raw candles are fetched behind the boundary
+ * and reduced to the derived scalars in {@link DerivedCandleEvidence} — no OHLCV
+ * bodies cross the boundary or enter this process.
+ *
+ * Orderbook/perp identities route to `get_volatility` + `score_candidate`.
  *
  * Unsupported identities → `assessment.evidence_unsupported_identity`
- * Unresolved DEX pools → `assessment.evidence_pool_unresolved`
  */
 export interface AssessmentCandleSource {
   getCandles(input: {
     identity: MarketAssessmentIdentity;
     interval: CandleInterval;
     minimumCandles: number;
-  }): Promise<Result<AssessmentData<ReadonlyArray<PriceCandle>>>>;
+  }): Promise<Result<AssessmentData<DerivedCandleEvidence>>>;
 }
 
 /**

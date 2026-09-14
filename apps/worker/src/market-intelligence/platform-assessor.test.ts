@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PlatformAssessor } from './platform-assessor.js';
 import type { PlatformAssessorRuntimeConfig, PlatformAssessorDeps } from './platform-assessor.js';
-import type { AssessmentEvidencePorts } from './assessment-ports.js';
+import type { AssessmentEvidencePorts, DerivedCandleEvidence } from './assessment-ports.js';
 import { ok, err } from '@herobids/domain';
 import {
   AssessmentEvidenceSnapshotSchema,
@@ -108,6 +108,21 @@ function makeMockCandles(count: number): PriceCandle[] {
   return candles;
 }
 
+// ── Mock derived candle evidence ─────────────────────────────────────────────
+//
+// D1-b: the candle port returns DERIVED scalars over the boundary, not raw
+// OHLCV. This mirrors the shape createEvidencePorts produces from get_volatility
+// (volatility) + score_candidate (candleWindow + count).
+
+function makeDerivedCandles(overrides?: Partial<DerivedCandleEvidence>): DerivedCandleEvidence {
+  return {
+    volatility: { averageTrueRange: 0.75, volatilityRegime: 'normal', calculationVersion: '1.0.0' },
+    candleWindow: { start: '2026-07-19T09:00:00.000Z', end: '2026-07-19T10:00:00.000Z' },
+    candlesEvaluated: 48,
+    ...overrides,
+  };
+}
+
 // ── Mock preset entry ──────────────────────────────────────────────────────
 
 function makeMockPresetEntry(key: string, strategyType: string, signalBias: string): PresetEntry {
@@ -180,7 +195,7 @@ function makeDeps(overrides?: Partial<PlatformAssessorDeps>): PlatformAssessorDe
     },
     candles: {
       getCandles: vi.fn(async () => ok({
-        data: makeMockCandles(100),
+        data: makeDerivedCandles(),
         source: 'test-candles',
         provider: 'test',
         observedAt: new Date().toISOString(),
@@ -356,7 +371,7 @@ describe('PlatformAssessor', () => {
     it('returns assessment.evidence_stale when candles are stale', async () => {
       const deps = makeDeps();
       deps.evidencePorts.candles.getCandles = vi.fn(async () =>
-        ok(makeExpiredAssessmentData(makeMockCandles(100), 'test-candles')),
+        ok(makeExpiredAssessmentData(makeDerivedCandles(), 'test-candles')),
       );
       const assessor = new PlatformAssessor(makeConfig(), deps);
 
@@ -428,11 +443,11 @@ describe('PlatformAssessor', () => {
       }
     });
 
-    it('returns ok with unavailable volatility when < 2 candles provided', async () => {
+    it('returns ok with unavailable volatility when the boundary reports no reading', async () => {
       const deps = makeDeps();
       deps.evidencePorts.candles.getCandles = vi.fn(async () =>
         ok({
-          data: makeMockCandles(1),
+          data: makeDerivedCandles({ volatility: null }),
           source: 'test-candles',
           provider: 'test',
           observedAt: new Date().toISOString(),
@@ -449,6 +464,70 @@ describe('PlatformAssessor', () => {
         if (result.data.volatility.state === 'unavailable') {
           expect(result.data.volatility.reasonCode).toContain('volatility');
         }
+      }
+    });
+
+    it('marks symbolCandles unavailable when no candles were evaluated behind the boundary', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.candles.getCandles = vi.fn(async () =>
+        ok({
+          data: makeDerivedCandles({ candlesEvaluated: 0, candleWindow: null }),
+          source: 'test-candles',
+          provider: 'test',
+          observedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        }),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.symbolCandles.state).toBe('unavailable');
+        // scorecardInput still builds from the (empty) derived window + count.
+        expect(result.data.scorecardInput.state).toBe('available');
+        if (result.data.scorecardInput.state === 'available') {
+          expect(result.data.scorecardInput.value.candlesAvailable).toBe(0);
+        }
+      }
+    });
+
+    it('derives volatility, candle-window, and count from the boundary read', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.candles.getCandles = vi.fn(async () =>
+        ok({
+          data: makeDerivedCandles({
+            volatility: { averageTrueRange: 2.5, volatilityRegime: 'extreme', calculationVersion: '1.0.0' },
+            candleWindow: { start: '2026-01-01T00:00:00.000Z', end: '2026-01-01T12:00:00.000Z' },
+            candlesEvaluated: 24,
+          }),
+          source: 'boundary-derived',
+          provider: 'binance',
+          observedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        }),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('expected ok');
+      expect(result.data.symbolCandles.state).toBe('available');
+      if (result.data.volatility.state === 'available') {
+        // Passed through verbatim from the boundary-derived VolatilityEvidence:
+        // absolute-units ATR (H1), percentile regime label (H2), Traderton version.
+        expect(result.data.volatility.value.averageTrueRange).toBe(2.5);
+        expect(result.data.volatility.value.volatilityRegime).toBe('extreme');
+        expect(result.data.volatility.value.calculationVersion).toBe('1.0.0');
+      }
+      if (result.data.scorecardInput.state === 'available') {
+        expect(result.data.scorecardInput.value.candleWindow).toEqual({
+          start: '2026-01-01T00:00:00.000Z',
+          end: '2026-01-01T12:00:00.000Z',
+        });
+        expect(result.data.scorecardInput.value.candlesAvailable).toBe(24);
       }
     });
   });
