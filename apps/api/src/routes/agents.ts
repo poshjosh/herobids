@@ -31,6 +31,7 @@ import {
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import {
   AgentRiskDefaultsSchema,
   AgentRuntimePolicyOverridesSchema,
@@ -354,6 +355,8 @@ export async function agentRoutes(
   agentCostEstimates?: AgentCostEstimatesConfig,
   redisClient?: Redis,
   operatorModelDefaults?: ModelDefaults,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const approvalRepo = new DecisionApprovalRepository(db);
 
@@ -1826,7 +1829,7 @@ export async function agentRoutes(
   app.post<{ Params: { id: string } }>('/agents/:id/start', async (request, reply) => {
     const { id } = request.params;
 
-    const result = await startAgent(db, id, request.userId);
+    const result = await startAgent(db, id, request.userId, tradertonReadClient, tradertonReadTimeoutMs);
     if (!result.ok) {
       if (result.error.code === 'agent.not_found') {
         return reply.status(404).send({ error: 'not_found' });
@@ -2030,7 +2033,7 @@ export async function agentRoutes(
   app.post<{ Params: { id: string } }>('/agents/:id/stop', async (request, reply) => {
     const { id } = request.params;
 
-    const result = await stopAgent(db, id, request.userId);
+    const result = await stopAgent(db, id, request.userId, tradertonReadClient, tradertonReadTimeoutMs);
     if (!result.ok) {
       if (result.error.code === 'agent.not_found') {
         return reply.status(404).send({ error: 'not_found' });

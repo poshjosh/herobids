@@ -55,6 +55,7 @@ import {
   refreshForkCount,
 } from '../services/blueprint-scoring.js';
 import { recomputeBlueprintPerformanceScore } from '../services/blueprint-performance-scorer.js';
+import type { TradertonClient } from '@herobids/domain/traderton';
 
 // --- Request schemas ---
 
@@ -357,6 +358,8 @@ export async function blueprintRoutes(
   agentRiskDefaults: AgentRiskDefaultsConfig,
   executionCapabilityResolver: BlueprintExecutionCapabilityResolver,
   plansConfig: PlansConfig,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   // Periodic score recomputation (matches skills.ts pattern)
   const scoreRefreshTimer = setInterval(() => {
@@ -388,7 +391,7 @@ export async function blueprintRoutes(
           .from(blueprints)
           .where(eq(blueprints.publicationStatus, 'published'));
         for (const row of rows) {
-          await recomputeBlueprintPerformanceScore(db, row.id);
+          await recomputeBlueprintPerformanceScore(db, row.id, tradertonReadClient, tradertonReadTimeoutMs);
         }
       } catch (error: unknown) {
         app.log.error({ err: error }, '[blueprints] failed periodic performance score recomputation');

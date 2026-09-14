@@ -4,6 +4,7 @@ import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions, users } from '@herobids/db';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import { ok, err, type Result } from '@herobids/domain';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import { ensurePublishedBlueprintForAgent } from './agent-blueprint-sync-service.js';
 import { recomputeBlueprintPerformanceScore } from './blueprint-performance-scorer.js';
 
@@ -23,6 +24,8 @@ export async function startAgent(
   db: Database,
   agentId: string,
   userId: string,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ): Promise<Result<{ status: string; sessionId?: string }, AgentLifecycleError>> {
   const sessionId = crypto.randomUUID();
   const now = new Date();
@@ -125,7 +128,7 @@ export async function startAgent(
 
     // Ensure the agent has a published blueprint matching its current config.
     // Loud failure: if sync fails, revert the agent claim and fail the start request.
-    const blueprintSyncResult = await ensurePublishedBlueprintForAgent(db, agentId, userId);
+    const blueprintSyncResult = await ensurePublishedBlueprintForAgent(db, agentId, userId, tradertonReadClient, tradertonReadTimeoutMs);
     if (!blueprintSyncResult.ok) {
       // Revert the agent claim and runtime session so we don't leave stale state.
       // Use a transaction with status guards: if the worker already claimed the
@@ -169,7 +172,7 @@ export async function startAgent(
     // guaranteed ok here. Isolated in its own try/catch to prevent synchronous
     // throw from corrupting the start result.
     try {
-      recomputeBlueprintPerformanceScore(db, blueprintSyncResult.data.blueprintId).catch((err) => {
+      recomputeBlueprintPerformanceScore(db, blueprintSyncResult.data.blueprintId, tradertonReadClient, tradertonReadTimeoutMs).catch((err) => {
         console.error('Failed to recompute blueprint performance score on agent start', { err, agentId });
       });
     } catch {
@@ -299,6 +302,8 @@ export async function stopAgent(
   db: Database,
   agentId: string,
   userId: string,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ): Promise<Result<{ status: string }, AgentLifecycleError>> {
   const now = new Date();
 
@@ -341,7 +346,7 @@ export async function stopAgent(
     const stoppedBlueprintId = result.kind === 'stopped' ? result.blueprintId : undefined;
     if (stoppedBlueprintId) {
       try {
-        recomputeBlueprintPerformanceScore(db, stoppedBlueprintId).catch((err) => {
+        recomputeBlueprintPerformanceScore(db, stoppedBlueprintId, tradertonReadClient, tradertonReadTimeoutMs).catch((err) => {
           console.error('Failed to recompute blueprint performance score on agent stop', { err, agentId });
         });
       } catch {

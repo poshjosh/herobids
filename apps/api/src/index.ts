@@ -263,7 +263,7 @@ await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClie
 await connectionsOauthRoutes(app, db, appConfig, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults);
+await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
@@ -281,7 +281,7 @@ await dashboardRoutes(app, db, appConfig.plans);
 // billing is disabled so the web UI can render the "not enabled" state.
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
-await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans);
+await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await analyticsRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
