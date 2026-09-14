@@ -1,5 +1,5 @@
 import type { Database } from '@herobids/db';
-import { agents, bots, venueAccounts, agentPresetBindings } from '@herobids/db';
+import { agents, agentPresetBindings } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import type {
   AssessmentIdentityResolver,
@@ -17,6 +17,14 @@ export interface AssessmentIdentityResolverDeps {
   instrumentCache: VenueInstrumentCache;
   /** Resolve a swap/dex token to { network, address }. Returns null if unresolved. */
   resolveToken?: (symbol: string, network?: string) => Promise<{ network: string; address: string } | null>;
+  /**
+   * Resolve the agent's venue binding over the Traderton boundary
+   * (get_agent_venue_binding). Returns derived binding metadata or null when the
+   * agent has no resolvable bot-path binding. Optional — when unconfigured, the
+   * bot-path is skipped and resolution falls through to the local
+   * `agents.unifiedConfig.technical.filters` fallback. (D1-c2)
+   */
+  resolveVenueBinding?: (agentId: string) => Promise<{ venueFamily: string; venueType?: string | null } | null>;
 }
 
 /**
@@ -24,9 +32,9 @@ export interface AssessmentIdentityResolverDeps {
  * and token resolution.
  *
  * Resolution strategy:
- * 1. Venue family and instrument kind: resolved from agent's bot binding
- *    (via venue account profile), fallback to agent's unifiedConfig.technical.filters,
- *    or explicit caller-provided values.
+ * 1. Venue family and instrument kind: resolved from the agent's bot binding
+ *    over the Traderton boundary (resolveVenueBinding port), fallback to agent's
+ *    unifiedConfig.technical.filters, or explicit caller-provided values.
  * 2. Style tier: resolved from active preset binding (agent_preset_bindings),
  *    or explicit caller-provided value.
  * 3. Symbol validation: orderbook/perp uses VenueInstrumentCache (fail-closed);
@@ -144,28 +152,21 @@ export class AssessmentIdentityResolverImpl implements AssessmentIdentityResolve
     venueFamily: string;
     instrumentKind: 'orderbook' | 'perp' | 'swap' | 'dex';
   } | null> {
-    // Try to resolve from bot bindings first (most common path)
-    const [bot] = await this.deps.db
-      .select({ venueAccountId: bots.venueAccountId })
-      .from(bots)
-      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, agentId)))
-      .limit(1);
-
-    if (bot?.venueAccountId) {
-      const [va] = await this.deps.db
-        .select({ venueFamily: venueAccounts.venue, venueProfile: venueAccounts.venueProfile })
-        .from(venueAccounts)
-        .where(eq(venueAccounts.id, bot.venueAccountId))
-        .limit(1);
-
-      if (va) {
-        if (!va.venueProfile) return null; // Cannot infer instrument kind without profile
-        if (va.venueFamily) {
-          return {
-            venueFamily: va.venueFamily,
-            instrumentKind: this.inferInstrumentKind(va.venueProfile.venueType),
-          };
-        }
+    // Try to resolve from bot bindings first (most common path). The bot →
+    // venue-account read is resolved SERVER-SIDE over the Traderton boundary
+    // (get_agent_venue_binding, D1-c2): the injected port returns derived binding
+    // metadata ({ venueFamily, venueType }), never raw bots/venue_accounts rows.
+    // A binding is returned only when the agent has an agent-owned bot bound to a
+    // venue account that carries a venue profile — the port encodes the same null
+    // semantics the local read used to (no bot / no venueAccountId / no profile →
+    // null). When the port is unconfigured we skip the bot-path entirely.
+    if (this.deps.resolveVenueBinding) {
+      const binding = await this.deps.resolveVenueBinding(agentId);
+      if (binding) {
+        return {
+          venueFamily: binding.venueFamily,
+          instrumentKind: this.inferInstrumentKind(binding.venueType ?? undefined),
+        };
       }
     }
 

@@ -83,24 +83,14 @@ function makeMockInstrumentCache(overrides?: Partial<{
 
 // ── Helpers to build DB select queue results ──────────────────────────────
 
-/** A bot row that references a venue account. */
-function botRow(venueAccountId: string) {
-  return { venueAccountId };
-}
-
-/** A venue account row with a profile that specifies venueType. */
-function venueAccountRow(venueFamily: string, venueType: 'orderbook' | 'swap') {
-  return {
-    venueFamily,
-    venueProfile: {
-      venue: venueFamily,
-      venueType,
-      availableSymbols: ['BTC', 'ETH'],
-      supportedExecutionModes: ['paper'],
-      authenticated: true,
-      probedAt: new Date().toISOString(),
-    },
-  };
+/**
+ * A stub for the injected `resolveVenueBinding` boundary port (D1-c2). Returns
+ * the derived binding metadata the Traderton `get_agent_venue_binding` tool
+ * would return for the agent's bot-path. Pass `null` to model the bot-path
+ * resolving to no binding (no agent-owned bot / no venueAccountId / no profile).
+ */
+function bindingPort(binding: { venueFamily: string; venueType?: string | null } | null) {
+  return vi.fn().mockResolvedValue(binding);
 }
 
 /** An agent row with unifiedConfig.technical.filters. */
@@ -144,11 +134,12 @@ describe('AssessmentIdentityResolverImpl', () => {
 
   describe('venue/instrument resolution', () => {
     it('resolves venue/instrument from bot binding', async () => {
-      const resolver = createResolver([
-        [botRow('va-1')],                            // bot query
-        [venueAccountRow('hyperliquid', 'orderbook')], // venue account query
-        [presetBindingRow('standard')],                // style tier query
-      ]);
+      const resolver = createResolver(
+        [
+          [presetBindingRow('standard')], // style tier query (bot-path via port)
+        ],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-1',
@@ -168,11 +159,13 @@ describe('AssessmentIdentityResolverImpl', () => {
     });
 
     it('falls back to unified config when no bot binding exists', async () => {
-      const resolver = createResolver([
-        [],                                           // bot query → empty
-        [agentRow('hyperliquid', 'perp')],             // agent fallback
-        [presetBindingRow('premium')],                 // style tier
-      ]);
+      const resolver = createResolver(
+        [
+          [agentRow('hyperliquid', 'perp')], // agent fallback
+          [presetBindingRow('premium')],     // style tier
+        ],
+        { resolveVenueBinding: bindingPort(null) }, // bot-path resolves to no binding
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-2',
@@ -191,10 +184,12 @@ describe('AssessmentIdentityResolverImpl', () => {
     });
 
     it('returns no_binding when neither bot nor unified config exists', async () => {
-      const resolver = createResolver([
-        [],  // bot query → empty
-        [],  // agent fallback → empty
-      ]);
+      const resolver = createResolver(
+        [
+          [], // agent fallback → empty
+        ],
+        { resolveVenueBinding: bindingPort(null) }, // bot-path resolves to no binding
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-3',
@@ -232,11 +227,12 @@ describe('AssessmentIdentityResolverImpl', () => {
 
   describe('style tier resolution', () => {
     it('resolves style tier from agent_preset_bindings', async () => {
-      const resolver = createResolver([
-        [botRow('va-1')],
-        [venueAccountRow('hyperliquid', 'orderbook')],
-        [presetBindingRow('premium')],
-      ]);
+      const resolver = createResolver(
+        [
+          [presetBindingRow('premium')],
+        ],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-5',
@@ -250,11 +246,12 @@ describe('AssessmentIdentityResolverImpl', () => {
     });
 
     it('returns no_style_tier when no active default binding exists', async () => {
-      const resolver = createResolver([
-        [botRow('va-1')],
-        [venueAccountRow('hyperliquid', 'orderbook')],
-        [], // no preset binding
-      ]);
+      const resolver = createResolver(
+        [
+          [], // no preset binding
+        ],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-6',
@@ -268,10 +265,10 @@ describe('AssessmentIdentityResolverImpl', () => {
     });
 
     it('uses explicit styleTier and skips binding lookup', async () => {
-      const resolver = createResolver([
-        [botRow('va-1')],
-        [venueAccountRow('hyperliquid', 'orderbook')],
-      ]);
+      const resolver = createResolver(
+        [],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-7',
@@ -291,11 +288,12 @@ describe('AssessmentIdentityResolverImpl', () => {
   describe('venue instrument cache', () => {
     it('fails closed when venue instrument cache is not ready', async () => {
       mockInstrumentCache = makeMockInstrumentCache({ isVenueReady: false });
-      const resolver = createResolver([
-        [botRow('va-1')],
-        [venueAccountRow('hyperliquid', 'orderbook')],
-        [presetBindingRow('standard')],
-      ]);
+      const resolver = createResolver(
+        [
+          [presetBindingRow('standard')],
+        ],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-8',
@@ -313,11 +311,12 @@ describe('AssessmentIdentityResolverImpl', () => {
         isVenueReady: true,
         knownSymbols: new Set(['ETH']), // BTC not in set
       });
-      const resolver = createResolver([
-        [botRow('va-1')],
-        [venueAccountRow('hyperliquid', 'orderbook')],
-        [presetBindingRow('standard')],
-      ]);
+      const resolver = createResolver(
+        [
+          [presetBindingRow('standard')],
+        ],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-9',
@@ -336,11 +335,12 @@ describe('AssessmentIdentityResolverImpl', () => {
         isVenueReady: true,
         knownSymbols: new Set(['BTC', 'ETH']),
       });
-      const resolver = createResolver([
-        [botRow('va-1')],
-        [venueAccountRow('hyperliquid', 'orderbook')],
-        [presetBindingRow('standard')],
-      ]);
+      const resolver = createResolver(
+        [
+          [presetBindingRow('standard')],
+        ],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-10',
@@ -361,11 +361,12 @@ describe('AssessmentIdentityResolverImpl', () => {
         isVenueReady: true,
         knownSymbols: null, // venue not configured → fail-open at domain level
       });
-      const resolver = createResolver([
-        [botRow('va-1')],
-        [venueAccountRow('hyperliquid', 'orderbook')],
-        [presetBindingRow('standard')],
-      ]);
+      const resolver = createResolver(
+        [
+          [presetBindingRow('standard')],
+        ],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-11',
@@ -382,11 +383,10 @@ describe('AssessmentIdentityResolverImpl', () => {
     it('fails when token resolver is not configured', async () => {
       const resolver = createResolver(
         [
-          [botRow('va-2')],
-          [venueAccountRow('jupiter', 'swap')],
           [presetBindingRow('standard')],
         ],
         // resolveToken not provided
+        { resolveVenueBinding: bindingPort({ venueFamily: 'jupiter', venueType: 'swap' }) },
       );
 
       const result = await resolver.resolveIdentity({
@@ -408,11 +408,9 @@ describe('AssessmentIdentityResolverImpl', () => {
 
       const resolver = createResolver(
         [
-          [botRow('va-2')],
-          [venueAccountRow('jupiter', 'swap')],
           [presetBindingRow('standard')],
         ],
-        { resolveToken },
+        { resolveToken, resolveVenueBinding: bindingPort({ venueFamily: 'jupiter', venueType: 'swap' }) },
       );
 
       const result = await resolver.resolveIdentity({
@@ -436,11 +434,9 @@ describe('AssessmentIdentityResolverImpl', () => {
 
       const resolver = createResolver(
         [
-          [botRow('va-2')],
-          [venueAccountRow('jupiter', 'swap')],
           [presetBindingRow('standard')],
         ],
-        { resolveToken },
+        { resolveToken, resolveVenueBinding: bindingPort({ venueFamily: 'jupiter', venueType: 'swap' }) },
       );
 
       const result = await resolver.resolveIdentity({
@@ -491,11 +487,12 @@ describe('AssessmentIdentityResolverImpl', () => {
         isVenueReady: true,
         knownSymbols: new Set(['BTC']),
       });
-      const resolver = createResolver([
-        [botRow('va-1')],
-        [venueAccountRow('hyperliquid', 'orderbook')],
-        [presetBindingRow('standard')],
-      ]);
+      const resolver = createResolver(
+        [
+          [presetBindingRow('standard')],
+        ],
+        { resolveVenueBinding: bindingPort({ venueFamily: 'hyperliquid', venueType: 'orderbook' }) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-17',
@@ -512,13 +509,18 @@ describe('AssessmentIdentityResolverImpl', () => {
   // ── Edge cases ─────────────────────────────────────────────────────────
 
   describe('edge cases', () => {
-    it('returns missing_venue when binding has no venueFamily', async () => {
-      // Bot exists but venue account has no venueFamily
-      const resolver = createResolver([
-        [{ venueAccountId: 'va-no-venue' }],
-        [{ venueFamily: null, venueProfile: { venueType: 'orderbook' } }],
-        [], // agent fallback → no unifiedConfig
-      ]);
+    // The bot-path's raw null cases (no agent-owned bot / no venueAccountId / no
+    // venueProfile) are now resolved SERVER-SIDE by the Traderton
+    // get_agent_venue_binding tool, which collapses them all to a null binding
+    // over the port. Here we assert the resolver's LOCAL handling of a null
+    // binding: it falls through to the unifiedConfig fallback, then to no_binding.
+    it('falls through to no_binding when the port returns a null binding and unifiedConfig is empty', async () => {
+      const resolver = createResolver(
+        [
+          [], // agent fallback → no unifiedConfig
+        ],
+        { resolveVenueBinding: bindingPort(null) },
+      );
 
       const result = await resolver.resolveIdentity({
         agentId: 'agent-18',
@@ -531,11 +533,12 @@ describe('AssessmentIdentityResolverImpl', () => {
       }
     });
 
-    it('returns null binding when venue account has no venueProfile', async () => {
+    it('skips the bot-path and uses unifiedConfig when no resolveVenueBinding port is configured', async () => {
+      // Port unconfigured → bot-path skipped entirely; resolution relies on the
+      // local unifiedConfig fallback (platform table, stays local).
       const resolver = createResolver([
-        [{ venueAccountId: 'va-no-profile' }],
-        [{ venueFamily: 'hyperliquid', venueProfile: null }],
-        [], // agent fallback → no unifiedConfig
+        [agentRow('hyperliquid', 'orderbook')], // agent fallback
+        [presetBindingRow('standard')],          // style tier
       ]);
 
       const result = await resolver.resolveIdentity({
@@ -543,9 +546,10 @@ describe('AssessmentIdentityResolverImpl', () => {
         symbol: 'BTC',
       });
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.code).toBe('assessment.identity.no_binding');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.venueFamily).toBe('hyperliquid');
+        expect(result.data.instrumentKind).toBe('orderbook');
       }
     });
   });
