@@ -271,8 +271,8 @@ await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCa
 await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, tradertonBotClient);
 await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues, tradertonBotClient);
 await credentialRoutes(app, db, appConfig.plans);
-await journalRoutes(app, db);
-await positionRoutes(app, db);
+await journalRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await positionRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await reconciliationRoutes(app, db);
 await dashboardRoutes(app, db, appConfig.plans);
 
