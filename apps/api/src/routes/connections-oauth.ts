@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { connections, userCredentials, users } from '@herobids/db';
+import { connections, platformCredentials, users } from '@herobids/db';
 import { eq, sql } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import {
@@ -368,7 +368,7 @@ export async function connectionsOauthRoutes(
         encryptionKey,
       );
 
-      await tx.insert(userCredentials).values({
+      await tx.insert(platformCredentials).values({
         id: credentialId,
         userId: stateUserId,
         provider: 'gmail',

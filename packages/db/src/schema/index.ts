@@ -1,6 +1,7 @@
 export { instruments } from './instruments.js';
 export { venueAccounts } from './venue-accounts.js';
 export { userCredentials } from './user-credentials.js';
+export { platformCredentials } from './platform-credentials.js';
 // portfolios REMOVED — no MVP benefit; user thinks in wallets/accounts
 export { blueprints } from './blueprints.js';
 export { blueprintRevisions } from './blueprint-revisions.js';

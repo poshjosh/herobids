@@ -1,5 +1,5 @@
 import type { Database } from '@herobids/db';
-import { connections, userCredentials, agentConnections } from '@herobids/db';
+import { connections, platformCredentials, agentConnections } from '@herobids/db';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { decryptCredential, encryptCredential } from './crypto.js';
 import { ok, err, getProviderIdsForRuntimeFamily, type Result } from '@herobids/domain';
@@ -55,11 +55,11 @@ export async function resolveGmailTokens(
       credentialId: connections.credentialId,
       connectionId: connections.id,
       email: sql<string>`${connections.profile} ->> 'email'`,
-      encryptedData: userCredentials.encryptedData,
+      encryptedData: platformCredentials.encryptedData,
     })
     .from(agentConnections)
     .innerJoin(connections, eq(connections.id, agentConnections.connectionId))
-    .innerJoin(userCredentials, eq(userCredentials.id, connections.credentialId))
+    .innerJoin(platformCredentials, eq(platformCredentials.id, connections.credentialId))
     .where(whereClause)
     .limit(1);
 
@@ -129,9 +129,9 @@ export async function resolveGmailTokens(
   // Re-encrypt and update DB
   const { encryptedData, encryptionMeta } = encryptCredential(JSON.stringify(newTokens), encryptionKey);
   await db
-    .update(userCredentials)
+    .update(platformCredentials)
     .set({ encryptedData, encryptionMeta: encryptionMeta as Record<string, unknown>, updatedAt: new Date() })
-    .where(eq(userCredentials.id, row.credentialId));
+    .where(eq(platformCredentials.id, row.credentialId));
 
   return ok({ accessToken: fresh.access_token, email: tokens.email, credentialId: row.credentialId, connectionId: row.connectionId });
 }

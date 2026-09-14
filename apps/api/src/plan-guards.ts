@@ -1,6 +1,6 @@
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { userCredentials, agents, connections } from '@herobids/db';
+import { platformCredentials, agents, connections } from '@herobids/db';
 import type { TradertonClient } from '@herobids/domain/traderton';
 import { eq, and } from 'drizzle-orm';
 import { ok, err } from '@herobids/domain';
@@ -88,7 +88,10 @@ export async function checkCredentialLimit(db: Database, config: PlansConfig, us
   const resolved = resolvePlanForCheck(config, planId, isAdmin);
   if (resolved.isAdminBypass) return ok(undefined);
   const limits = resolved.entitlements.limits;
-  const rows = await db.select({ id: userCredentials.id }).from(userCredentials).where(eq(userCredentials.userId, userId));
+  // D1-cred: post-split this entitlement counts NON-trading (platform) credentials
+  // only. Trading-credential quota is covered separately by checkVenueAccountLimit
+  // (count_venue_accounts over the boundary).
+  const rows = await db.select({ id: platformCredentials.id }).from(platformCredentials).where(eq(platformCredentials.userId, userId));
   if (rows.length >= limits.maxCredentials) {
     return err({
       code: 'plan.limit_exceeded',

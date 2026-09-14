@@ -15,7 +15,7 @@ export const connections = pgTable('connections', {
   userId: text('user_id').notNull().references(() => users.id),
   /**
    * Soft reference to a credential. For herobids-owned (non-trading) links this
-   * names a local `user_credentials` row; for trading links it is null — the
+   * names a local `platform_credentials` row; for trading links it is null — the
    * credential lives behind the Traderton boundary (decision-13 soft-reference
    * pattern). No FK: the boundary owns credential/venue-account lifecycle, so a
    * hard constraint into a Traderton-owned table would be invalid.

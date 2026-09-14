@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { userCredentials, connections } from '@herobids/db';
+import { platformCredentials, connections } from '@herobids/db';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
 import type { TradertonClient } from '@herobids/domain/traderton';
 import { deriveSolanaAddress } from '@herobids/venues';
@@ -234,7 +234,7 @@ export async function createProviderLink(
 
       const { encryptedData, encryptionMeta } = encryptCredential(JSON.stringify(normalizedSecrets), encryptionKey);
 
-      await tx.insert(userCredentials).values({
+      await tx.insert(platformCredentials).values({
         id: credentialId,
         userId,
         provider,
