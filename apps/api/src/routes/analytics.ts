@@ -1,8 +1,30 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, inArray, gte, lte, desc } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { journalEvents, positions, bots, agents, agentRuntimeSessions } from '@herobids/db';
+import { agents, agentRuntimeSessions } from '@herobids/db';
+import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import { errorPayload } from '../error-payload.js';
+import {
+  createTradertonReadBoundary,
+  loadAgentEvidence,
+  loadBoundaryObject,
+  toJournalRow,
+  toPositionRow,
+  type TradertonReadBoundary,
+  type ReadBoundaryError,
+  type JournalRow as ReadJournalRow,
+  type PositionRow as ReadPositionRow,
+} from './exports-traderton.js';
+
+/** Fallback read deadline when the operator boundary timeout is not supplied. */
+const DEFAULT_READ_TIMEOUT_MS = 10_000;
+
+const boundaryUnconfiguredError = {
+  status: 503,
+  code: 'precondition.not_ready',
+  message: 'Trading service is unavailable — the read could not be produced.',
+} as const;
 
 // --- Schemas ---
 
@@ -54,24 +76,51 @@ type BotMeta = { id: string; executionMode: string | null; decisionMode: string 
 type SessionRange = { sessionId: string; start: number; end: number | null };
 type GroupData = { period: string; eventCount: number; decisionCount: number; fillCount: number; realizedPnl: number };
 
+type AnalyticsResult = { groupBy: AnalyticsQuery['groupBy']; groups: GroupData[] };
+
+/** Row shape of `list_owner_bots` — the owner's bots with their creator provenance. */
+type OwnerBotSummary = { id: string; creatorType?: string | null; creatorId?: string | null };
+
 // --- Analytics computation ---
+//
+// Re-pointed for c4.2-analytics: the THREE trading reads (bot metadata, journal
+// events, positions) now source over the Traderton read boundary instead of the
+// local `bots`/`journalEvents`/`positions` tables. The `agents` +
+// `agentRuntimeSessions` reads stay LOCAL (platform tables). The aggregation
+// logic (filtering, grouping, PnL summation) is preserved VERBATIM — only the
+// data source changed.
 
-async function computeAnalytics(db: Database, userId: string, query: AnalyticsQuery) {
-  // 1. Fetch user bots with config to extract executionMode and strategyPreset
-  const userBotRows = await db.select({ id: bots.id, config: bots.config })
-    .from(bots).where(eq(bots.userId, userId));
+async function computeAnalytics(
+  db: Database,
+  boundary: TradertonReadBoundary,
+  userId: string,
+  query: AnalyticsQuery,
+): Promise<{ ok: true; result: AnalyticsResult } | { ok: false; error: ReadBoundaryError }> {
+  // 1. Fetch owner bots with config to extract executionMode and strategyPreset.
+  //    Sourced over the boundary: list_owner_bots resolves the owner's bot ids +
+  //    creator provenance; get_owner_bot_status fetches each bot's RAW config.
+  //    (N+1 per the ruling — greenfield has few bots; strategyPreset from
+  //    list_owner_bots is a lossy label, so the RAW config fields are required.)
+  const listed = await loadAgentEvidence<OwnerBotSummary>(
+    boundary, 'list_owner_bots', {}, 'bots', (r) => r as OwnerBotSummary,
+  );
+  if (!listed.ok) return { ok: false, error: listed.error };
+  const ownerBotSummaries = listed.rows;
 
-  const botMeta: BotMeta[] = userBotRows.map((b) => {
-    const config = b.config as Record<string, unknown>;
+  const botMeta: BotMeta[] = [];
+  for (const summary of ownerBotSummaries) {
+    const statusResult = await loadBoundaryObject(boundary, 'get_owner_bot_status', { botId: summary.id });
+    if (!statusResult.ok) return { ok: false, error: statusResult.error };
+    const config = (statusResult.data['config'] as Record<string, unknown> | undefined) ?? {};
     const execution = config['execution'] as Record<string, unknown> | undefined;
     const strategy = config['strategy'] as Record<string, unknown> | undefined;
-    return {
-      id: b.id,
+    botMeta.push({
+      id: summary.id,
       executionMode: (execution?.['mode'] as string | undefined) ?? null,
       decisionMode: (strategy?.['decisionMode'] as string | undefined) ?? null,
       strategyType: (strategy?.['type'] as string | undefined) ?? null,
-    };
-  });
+    });
+  }
 
   // 2. Filter by botIds/agentIds. With no filters, include all user bots.
   const hasExplicitFilter = (query.botIds?.length ?? 0) > 0 || (query.agentIds?.length ?? 0) > 0;
@@ -81,15 +130,22 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
     targetMeta.push(...botMeta.filter((b) => requestedSet.has(b.id)));
   }
 
-  // 3. Expand by agentIds — add bots managed by those agents (still user-scoped)
+  // 3. Expand by agentIds — add bots managed by those agents (still user-scoped).
+  //    The agents read stays LOCAL (platform table). The agent-managed bots are a
+  //    subset of the owner's already-fetched bots, so they derive from the
+  //    ownerBotSummaries' creatorType='agent' / creatorId provenance — no extra
+  //    boundary call needed.
   if (query.agentIds && query.agentIds.length > 0) {
     const userAgentRows = await db.select({ id: agents.id }).from(agents)
       .where(and(eq(agents.userId, userId), inArray(agents.id, query.agentIds)));
     const agentIdList = userAgentRows.map((a) => a.id);
     if (agentIdList.length > 0) {
-      const agentBotRows = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.creatorType, 'agent'), inArray(bots.creatorId, agentIdList)));
-      const agentBotIdSet = new Set(agentBotRows.map((b) => b.id));
+      const agentIdSet = new Set(agentIdList);
+      const agentBotIdSet = new Set(
+        ownerBotSummaries
+          .filter((b) => b.creatorType === 'agent' && b.creatorId !== null && b.creatorId !== undefined && agentIdSet.has(b.creatorId))
+          .map((b) => b.id),
+      );
       const existing = new Set(targetMeta.map((b) => b.id));
       for (const b of botMeta) {
         if (agentBotIdSet.has(b.id) && !existing.has(b.id)) {
@@ -117,9 +173,9 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
   }
 
   const targetBotIds = targetMeta.map((b) => b.id);
-  if (targetBotIds.length === 0) return { groupBy: query.groupBy, groups: [] };
+  if (targetBotIds.length === 0) return { ok: true, result: { groupBy: query.groupBy, groups: [] } };
 
-  // 5. Resolve session ranges for filter / groupBy=session
+  // 5. Resolve session ranges for filter / groupBy=session (LOCAL platform reads).
   let sessionRanges: SessionRange[] = [];
   const needsSessions = query.groupBy === 'session' || (query.sessions && query.sessions.length > 0);
   if (needsSessions) {
@@ -156,15 +212,18 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
     }
   }
 
-  // 6. Fetch journal events
-  const timeConditions = [];
-  if (query.from) timeConditions.push(gte(journalEvents.createdAt, new Date(query.from)));
-  if (query.to) timeConditions.push(lte(journalEvents.createdAt, new Date(query.to)));
-
-  const rawEvents = await db.select().from(journalEvents)
-    .where(and(inArray(journalEvents.actorId, targetBotIds), ...timeConditions))
-    .orderBy(desc(journalEvents.createdAt))
-    .limit(10_000);
+  // 6. Fetch journal events over the boundary. The tool applies the botIds
+  //    intersection + createdAt window + limit + desc order server-side —
+  //    equivalent to the old local `.where(inArray + time).orderBy(desc).limit`.
+  const journalLoaded = await loadAgentEvidence<ReadJournalRow>(
+    boundary,
+    'get_owner_journal',
+    { botIds: targetBotIds, from: query.from, to: query.to, limit: 10_000 },
+    'events',
+    toJournalRow,
+  );
+  if (!journalLoaded.ok) return { ok: false, error: journalLoaded.error };
+  const rawEvents = journalLoaded.rows;
 
   // Apply sessions filter if specific sessions were requested
   const filteredEvents = query.sessions && query.sessions.length > 0
@@ -174,16 +233,19 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
       }))
     : rawEvents;
 
-  // 7. Fetch positions for PnL aggregation.
-  // Filter by closedAt (same field used for grouping) so the time window is consistent.
-  const rawPosRows = await db.select().from(positions)
-    .where(and(
-      eq(positions.actorType, 'bot'),
-      inArray(positions.actorId, targetBotIds),
-      ...(query.from ? [gte(positions.closedAt, new Date(query.from))] : []),
-      ...(query.to ? [lte(positions.closedAt, new Date(query.to))] : []),
-    ))
-    .limit(10_000);
+  // 7. Fetch positions for PnL aggregation over the boundary. The tool applies
+  //    the botIds intersection + closedAt window + limit server-side —
+  //    equivalent to the old local positions query (actorType='bot' is applied
+  //    inside the tool). closedAt is the field used for both time filter + grouping.
+  const posLoaded = await loadAgentEvidence<ReadPositionRow>(
+    boundary,
+    'get_owner_positions',
+    { botIds: targetBotIds, from: query.from, to: query.to, limit: 10_000 },
+    'positions',
+    toPositionRow,
+  );
+  if (!posLoaded.ok) return { ok: false, error: posLoaded.error };
+  const rawPosRows = posLoaded.rows;
 
   // Apply the same session-range filter to positions that was applied to events.
   // Without this, a sessions=[...] query returns scoped event counts but unscoped PnL.
@@ -270,12 +332,19 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
   }
 
   const sortedGroups = Object.values(groups).sort((a, b) => a.period.localeCompare(b.period));
-  return { groupBy: query.groupBy, groups: sortedGroups };
+  return { ok: true, result: { groupBy: query.groupBy, groups: sortedGroups } };
 }
 
 // --- Route module ---
 
-export async function analyticsRoutes(app: FastifyInstance, db: Database): Promise<void> {
+export async function analyticsRoutes(
+  app: FastifyInstance,
+  db: Database,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
+): Promise<void> {
+  const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
+
   // GET /analytics — query analytics via URL params
   app.get<{ Querystring: unknown }>('/analytics', async (request, reply) => {
     const parsed = AnalyticsQuerySchema.safeParse(request.query);
@@ -283,8 +352,19 @@ export async function analyticsRoutes(app: FastifyInstance, db: Database): Promi
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const result = await computeAnalytics(db, request.userId, parsed.data);
-    return reply.send(result);
+    if (!tradertonReadClient) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+      );
+    }
+    const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+    const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
+
+    const computed = await computeAnalytics(db, boundary, request.userId, parsed.data);
+    if (!computed.ok) {
+      return reply.status(computed.error.status).send(errorPayload(computed.error.code, computed.error.message));
+    }
+    return reply.send(computed.result);
   });
 
   // POST /analytics/query — same as GET but via JSON body for complex queries
@@ -294,7 +374,18 @@ export async function analyticsRoutes(app: FastifyInstance, db: Database): Promi
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const result = await computeAnalytics(db, request.userId, parsed.data);
-    return reply.send(result);
+    if (!tradertonReadClient) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+      );
+    }
+    const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+    const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
+
+    const computed = await computeAnalytics(db, boundary, request.userId, parsed.data);
+    if (!computed.ok) {
+      return reply.status(computed.error.status).send(errorPayload(computed.error.code, computed.error.message));
+    }
+    return reply.send(computed.result);
   });
 }

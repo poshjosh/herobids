@@ -482,7 +482,7 @@ export async function buildApp() {
   await telegramWebhookHandler(app, db, redisClient);
   await agentInteractivityRoutes(app, db, redisClient, undefined, undefined, testPlansConfig as any);
 
-  await analyticsRoutes(app, db);
+  await analyticsRoutes(app, db, stubTradertonClient, 10_000);
 
   const stubLlmConfig = LlmRuntimeConfigSchema.parse({
     provider: 'openai',

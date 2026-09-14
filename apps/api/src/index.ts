@@ -283,7 +283,7 @@ await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans);
 await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
-await analyticsRoutes(app, db);
+await analyticsRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);
 const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
