@@ -9,7 +9,6 @@ import {
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { createDatabase, PgJournal, AlertDeliveryRepository, AgentRepository, BotRepository, UsageBillingRepository, DecisionFailureRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { PublicStreamPool } from '@herobids/venues';
 import { AGENT_STREAM_MAXLEN, type ProvidersYaml, ok, err } from '@herobids/domain';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
@@ -19,7 +18,6 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
-import { buildPublicStreamConnectors } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
 import { TelegramClient, forceReply, PlatformAlertService, createEmailClient } from './alerting/index.js';
 import type { EmailClientConfig } from './alerting/index.js';
@@ -787,17 +785,6 @@ const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, even
 // L3d-5: the strategy factory (createStrategy) + reconciliation config were only
 // consumed by the deleted in-process trading actors. Removed with the actor slice.
 
-// Worker-scoped public stream pool — one WebSocket per venue, fan-out to all actors.
-// Initialised when at least one orderbook venue has a wsUrl configured.
-const publicStreamConfig = appConfig.streams.public;
-
-const streamConnectors = buildPublicStreamConnectors(appConfig.venues);
-
-const publicStreamPool = streamConnectors.size > 0
-  ? new PublicStreamPool(publicStreamConfig, streamConnectors)
-  : undefined;
-
-
 // Start evaluation runtime (BullMQ consumer for agent evaluation jobs)
 const evaluationRuntime = new EvaluationRuntime(
   {
@@ -1322,7 +1309,6 @@ process.on('SIGTERM', async () => {
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
-  await publicStreamPool?.shutdown();
   await agentCleanupSubscriber?.quit();
   await approvalExecuteSubscriber?.quit();
   await redisClient.quit();
@@ -1349,7 +1335,6 @@ process.on('SIGINT', async () => {
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
-  await publicStreamPool?.shutdown();
   await agentCleanupSubscriber?.quit();
   await approvalExecuteSubscriber?.quit();
   await redisClient.quit();
