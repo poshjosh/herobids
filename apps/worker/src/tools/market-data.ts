@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
-import { CANDLE_PROVIDERS } from '@herobids/market-data';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult } from './traderton-read.js';
 
@@ -73,10 +72,12 @@ const discoverTokensTool: AgentTool<TradingToolContext> = {
 
 // --- check_regime ---
 
-const regimeCandleProvider = CANDLE_PROVIDERS.binance;
+// Inlined verbatim from CANDLE_PROVIDERS.binance.symbolFormatHint to keep trading
+// market-data code out of the agent bundle (isolation; source string copied verbatim).
+const REGIME_SYMBOL_FORMAT_HINT = "Base ticker (e.g. 'BTC', 'SOL')";
 
 const CheckRegimeParamsSchema = z.object({
-  benchmarkSymbol: z.string().optional().transform(v => v === '' ? undefined : v).describe(`Benchmark symbol for regime evaluation. ${regimeCandleProvider.symbolFormatHint}. Defaults to "BTC".`),
+  benchmarkSymbol: z.string().optional().transform(v => v === '' ? undefined : v).describe(`Benchmark symbol for regime evaluation. ${REGIME_SYMBOL_FORMAT_HINT}. Defaults to "BTC".`),
   // coerce: LLMs may send numbers as strings
   emaFast: z.coerce.number().int().positive().optional().describe('Fast EMA period (default 20)'),
   emaSlow: z.coerce.number().int().positive().optional().describe('Slow EMA period (default 50)'),
