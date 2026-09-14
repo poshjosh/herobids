@@ -326,7 +326,7 @@ await agentEvaluationRoutes(app, evaluationQueue, db, {
 await platformAssessmentReviewRoutes(app, manualReviewQueue, db, {
   platformAssessorEnabled: appConfig.platformAssessor?.enabled ?? false,
 });
-await actorHealthRoutes(app, db, redisClient);
+await actorHealthRoutes(app, db, redisClient, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
 
 // ── Tool schema & discovery endpoints ─────────────────────────────────────
