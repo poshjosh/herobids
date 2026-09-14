@@ -273,7 +273,7 @@ await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues, tradertonBo
 await credentialRoutes(app, db, appConfig.plans);
 await journalRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await positionRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
-await reconciliationRoutes(app, db);
+await reconciliationRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await dashboardRoutes(app, db, appConfig.plans);
 
 // ── Core platform services ─────────────────────────────────────────────────

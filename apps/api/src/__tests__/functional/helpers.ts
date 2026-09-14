@@ -287,6 +287,12 @@ export function makeStubTradertonClient(): TradertonClient {
           if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
           return Promise.resolve(ok({ ok: true, positions: [] }));
         }
+        case 'get_owner_bot_reconciliation_events': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          return Promise.resolve(ok({ ok: true, botId: id, venueAccountId: 'va-stub', events: [] }));
+        }
         // Account-level owner reads are NOT bot-scoped — a user with no bots
         // yields empty evidence (the export empty-case parity).
         case 'get_owner_fills':
