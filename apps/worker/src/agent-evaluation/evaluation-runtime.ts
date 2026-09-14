@@ -8,6 +8,7 @@ import { eq, and, lt } from 'drizzle-orm';
 import type { EvaluationJobData } from '@herobids/db';
 import type { EvaluationThresholds } from '@herobids/domain';
 import type { UsageBillingRepository } from '@herobids/db';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import { runEvaluation } from './run-evaluation.js';
 import { createRedisSnapshotClient, type RedisSnapshotClient } from './collectors/redis-snapshot.js';
 
@@ -24,6 +25,14 @@ export interface EvaluationRuntimeConfig {
   thresholds: EvaluationThresholds;
   /** Optional billing repository for recording narrative LLM usage */
   usageBillingRepo?: UsageBillingRepository;
+  /**
+   * Traderton read boundary client for sourcing agent trading evidence
+   * (fills / journal / positions). When absent, the boundary is unconfigured
+   * and evaluation of trading evidence fails closed at port-invocation time.
+   */
+  tradertonReadClient?: TradertonClient;
+  /** Per-request deadline for boundary reads (ms). */
+  tradertonReadTimeoutMs?: number;
 }
 
 // ── Logger ──────────────────────────────────────────────────────────────────
@@ -87,6 +96,8 @@ export class EvaluationRuntime {
           maxAttempts: job.opts.attempts ?? 3,
           redis: this.snapshotClient,
           usageBillingRepo: this.config.usageBillingRepo,
+          tradertonReadClient: this.config.tradertonReadClient,
+          tradertonReadTimeoutMs: this.config.tradertonReadTimeoutMs,
         });
 
         logger.info({ runId, agentId }, 'Evaluation completed');

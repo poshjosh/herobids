@@ -1,10 +1,6 @@
 import type { Database } from '@herobids/db';
 import {
-  loadAgentFills,
-  loadAgentJournalEvents,
   loadAgentRuntimeSessions,
-  loadAgentPositions,
-  loadAgentBotIds,
   AgentRepository,
   billingUsageEvents,
 } from '@herobids/db';
@@ -15,6 +11,29 @@ import {
   collectPresetAssessmentEvidence,
   type PresetAssessmentEvidence,
 } from './preset-assessment-evidence.js';
+import type { FillRow, JournalRow, PositionRow } from './evidence-row-mappers.js';
+
+// ── Ports ───────────────────────────────────────────────────────────────────
+
+/**
+ * Agent-scoped trading evidence, sourced over the Traderton read boundary.
+ *
+ * Fills, journal events, and positions are Traderton-owned data: the boundary
+ * tools (`get_agent_fills` / `get_agent_journal_events` / `get_agent_positions`)
+ * resolve the agent's owned bots server-side, so the assembler no longer
+ * pre-resolves bot IDs. Each method returns the herobids row shapes the
+ * analyzers expect, with date columns rehydrated from the boundary's ISO
+ * strings (see evidence-row-mappers).
+ *
+ * This is core evaluation evidence — the port MUST succeed. Its methods throw
+ * on a boundary failure so the run aborts (no local fallback), mirroring the
+ * mandatory-boundary posture of the side-effecting path.
+ */
+export interface AgentEvidencePort {
+  getFills(opts: { from?: Date; to?: Date }): Promise<FillRow[]>;
+  getJournalEvents(opts: { from?: Date; to?: Date }): Promise<JournalRow[]>;
+  getPositions(opts: { from?: Date; to?: Date; at?: Date }): Promise<PositionRow[]>;
+}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -39,6 +58,12 @@ export interface EvidenceAssemblyContext {
   scope: ResolvedEvaluationScope;
   store: EvaluationArtifactStore;
   runId: string;
+  /**
+   * Port for agent trading evidence (fills / journal / positions) over the
+   * Traderton read boundary. REQUIRED — core evidence must succeed. The
+   * orchestrator builds it per-run from a read boundary + the agent's subject.
+   */
+  agentEvidencePort: AgentEvidencePort;
   /**
    * Resolved time bounds for session-scoped evaluations.
    * When provided, overrides scope-based time filter resolution.
@@ -100,31 +125,33 @@ function scopeTimeFilter(
 export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<EvidenceManifest> {
   const entries: EvidenceManifestEntry[] = [];
   const timeFilter = scopeTimeFilter(ctx.scope, ctx.sessionTimestamps);
+  const from = timeFilter?.from;
+  const to = timeFilter?.to;
+  const at = timeFilter?.at;
 
-  // Pre-fetch bot IDs once — shared across fills, journal, and positions loaders
-  // to avoid querying the bots table 4 times per evaluation run.
-  const botIds = await loadAgentBotIds(ctx.db, ctx.agentId);
-  const loaderOpts = { ...timeFilter, botIds };
+  // Fills / journal / positions are Traderton-owned — sourced over the read
+  // boundary. The boundary tools resolve agent-owned bots server-side, so no
+  // local bot-ID pre-resolution is needed.
 
   // ── Fills (core — must succeed) ────────────────────────────────────────
-  const fills = await loadAgentFills(ctx.db, ctx.agentId, loaderOpts);
+  const fills = await ctx.agentEvidencePort.getFills({ from, to });
   // Write raw data — redaction happens after analysis in the orchestrator
   await ctx.store.write(ctx.runId, 'fills.json', JSON.stringify(fills, null, 2));
   entries.push({ artifactName: 'fills.json', collected: true, itemCount: fills.length });
 
   // ── Journal events (core — must succeed) ───────────────────────────────
-  const journal = await loadAgentJournalEvents(ctx.db, ctx.agentId, loaderOpts);
+  const journal = await ctx.agentEvidencePort.getJournalEvents({ from, to });
   await ctx.store.write(ctx.runId, 'journal.json', JSON.stringify(journal, null, 2));
   entries.push({ artifactName: 'journal.json', collected: true, itemCount: journal.length });
 
-  // ── Runtime sessions (core — must succeed) ─────────────────────────────
+  // ── Runtime sessions (core — must succeed, PLATFORM-local) ─────────────
+  // agent_runtime_sessions is a platform table (not Traderton) — stays local.
   const sessions = await loadAgentRuntimeSessions(ctx.db, ctx.agentId, timeFilter);
   await ctx.store.write(ctx.runId, 'sessions.json', JSON.stringify(sessions, null, 2));
   entries.push({ artifactName: 'sessions.json', collected: true, itemCount: sessions.length });
 
   // ── Positions snapshot (core — must succeed) ───────────────────────────
-  const at = timeFilter?.at;
-  const positions = await loadAgentPositions(ctx.db, ctx.agentId, { ...(at ? { at } : {}), botIds });
+  const positions = await ctx.agentEvidencePort.getPositions({ ...(at ? { at } : {}) });
   await ctx.store.write(ctx.runId, 'positions.json', JSON.stringify(positions, null, 2));
   entries.push({ artifactName: 'positions.json', collected: true, itemCount: positions.length });
 

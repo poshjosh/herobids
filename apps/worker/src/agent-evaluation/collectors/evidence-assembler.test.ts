@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { EvidenceAssemblyContext, EvidenceManifest } from './evidence-assembler.js';
+import type { EvidenceAssemblyContext, EvidenceManifest, AgentEvidencePort } from './evidence-assembler.js';
 import type { EvaluationArtifactStore, EvaluationArtifactRef } from '@herobids/domain';
 
 // ── Mocks ───────────────────────────────────────────────────────────────────
@@ -11,13 +11,12 @@ const mockAgentRepoConstructor = vi.fn(function (this: unknown) {
 
 const mockCollectContainerLogs = vi.fn();
 
+// Only the PLATFORM-local reads stay on the @herobids/db loaders: runtime
+// sessions, agent metadata (AgentRepository), and billing usage events.
+// Fills / journal / positions now come over the AgentEvidencePort.
 vi.mock('@herobids/db', () => ({
   AgentRepository: mockAgentRepoConstructor,
-  loadAgentFills: vi.fn().mockResolvedValue([]),
-  loadAgentJournalEvents: vi.fn().mockResolvedValue([]),
   loadAgentRuntimeSessions: vi.fn().mockResolvedValue([]),
-  loadAgentPositions: vi.fn().mockResolvedValue([]),
-  loadAgentBotIds: vi.fn().mockResolvedValue([]),
   billingUsageEvents: {
     meterKey: 'meter_key',
     quantity: 'quantity',
@@ -67,6 +66,15 @@ function mockDb() {
   } as unknown as ReturnType<typeof mockDb>;
 }
 
+function makeEvidencePort(overrides?: Partial<AgentEvidencePort>): AgentEvidencePort {
+  return {
+    getFills: vi.fn().mockResolvedValue([]),
+    getJournalEvents: vi.fn().mockResolvedValue([]),
+    getPositions: vi.fn().mockResolvedValue([]),
+    ...overrides,
+  };
+}
+
 function makeContext(overrides?: Partial<EvidenceAssemblyContext>): EvidenceAssemblyContext {
   return {
     db: mockDb(),
@@ -74,6 +82,7 @@ function makeContext(overrides?: Partial<EvidenceAssemblyContext>): EvidenceAsse
     scope: { type: 'session', sessionId: 'sess-1' },
     store: makeStore().store,
     runId: 'run-test-1',
+    agentEvidencePort: makeEvidencePort(),
     ...overrides,
   };
 }
@@ -232,5 +241,67 @@ describe('assembleEvidence — unified-agent-config.json', () => {
     const fillsEntry = manifest.entries.find((e) => e.artifactName === 'fills.json');
     expect(fillsEntry).toBeDefined();
     expect(fillsEntry!.collected).toBe(true);
+  });
+});
+
+describe('assembleEvidence — agent evidence port', () => {
+  beforeEach(() => {
+    mockGetAgent.mockReset().mockResolvedValue(null);
+    mockCollectContainerLogs.mockReset().mockResolvedValue({
+      artifactName: 'container-logs.txt',
+      collected: false,
+      error: 'Container logs unavailable',
+    });
+  });
+
+  it('writes fills/journal/positions from the port with matching item counts', async () => {
+    const fills = [{ id: 'f1' }, { id: 'f2' }];
+    const journal = [{ id: 'j1' }];
+    const positions = [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }];
+    const port = makeEvidencePort({
+      getFills: vi.fn().mockResolvedValue(fills),
+      getJournalEvents: vi.fn().mockResolvedValue(journal),
+      getPositions: vi.fn().mockResolvedValue(positions),
+    });
+
+    const { store, written } = makeStore();
+    const ctx = makeContext({ store, agentEvidencePort: port });
+
+    const manifest = await assembleEvidence(ctx);
+
+    expect(JSON.parse(written.get('fills.json')!)).toEqual(fills);
+    expect(JSON.parse(written.get('journal.json')!)).toEqual(journal);
+    expect(JSON.parse(written.get('positions.json')!)).toEqual(positions);
+
+    expect(manifest.entries.find((e) => e.artifactName === 'fills.json')!.itemCount).toBe(2);
+    expect(manifest.entries.find((e) => e.artifactName === 'journal.json')!.itemCount).toBe(1);
+    expect(manifest.entries.find((e) => e.artifactName === 'positions.json')!.itemCount).toBe(3);
+  });
+
+  it('passes resolved time bounds to the port for a timeRange scope', async () => {
+    const from = new Date('2026-01-01T00:00:00Z');
+    const to = new Date('2026-02-01T00:00:00Z');
+    const port = makeEvidencePort();
+
+    const { store } = makeStore();
+    const ctx = makeContext({ store, agentEvidencePort: port, scope: { type: 'timeRange', from, to } });
+
+    await assembleEvidence(ctx);
+
+    expect(port.getFills).toHaveBeenCalledWith({ from, to });
+    expect(port.getJournalEvents).toHaveBeenCalledWith({ from, to });
+    // positions uses the `at` snapshot (scope end), not from/to
+    expect(port.getPositions).toHaveBeenCalledWith({ at: to });
+  });
+
+  it('propagates a port failure — core evidence must succeed (throws)', async () => {
+    const port = makeEvidencePort({
+      getFills: vi.fn().mockRejectedValue(new Error('boundary unavailable')),
+    });
+
+    const { store } = makeStore();
+    const ctx = makeContext({ store, agentEvidencePort: port });
+
+    await expect(assembleEvidence(ctx)).rejects.toThrow('boundary unavailable');
   });
 });

@@ -12,10 +12,13 @@ import {
   type UsageBillingRepository,
   type InsertUsageEvent,
 } from '@herobids/db';
-import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore, EvaluationThresholds } from '@herobids/domain';
+import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore, EvaluationThresholds, TradertonReadResult } from '@herobids/domain';
+import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 import { createLogger } from '../logger.js';
-import { assembleEvidence } from './collectors/evidence-assembler.js';
+import { createTradertonReadBoundary, type TradertonReadBoundary } from '../traderton/read-adapter.js';
+import { assembleEvidence, type AgentEvidencePort } from './collectors/evidence-assembler.js';
+import { toFillRow, toJournalRow, toPositionRow, type FillRow, type JournalRow, type PositionRow } from './collectors/evidence-row-mappers.js';
 import { analyzeCore } from './analyzers/core.js';
 import { analyzeTrading } from './analyzers/trading.js';
 import { analyzeSecurity } from './analyzers/security.js';
@@ -61,6 +64,92 @@ export interface RunEvaluationContext {
   redis?: { snapshot: () => Promise<Record<string, unknown>> };
   /** Optional billing repository for recording narrative LLM usage */
   usageBillingRepo?: UsageBillingRepository;
+  /**
+   * Traderton read boundary client used to source agent trading evidence
+   * (fills / journal / positions). The per-agent {@link AgentEvidencePort} is
+   * built inside runEvaluation, binding the agent's subject once the owner is
+   * resolved. When absent, the boundary is unconfigured: the port fails closed
+   * on first use with a clear error (core evidence cannot be sourced).
+   */
+  tradertonReadClient?: TradertonClient;
+  /** Per-request deadline for boundary reads (ms). Defaults to 10_000. */
+  tradertonReadTimeoutMs?: number;
+  /**
+   * Test seam: inject a pre-built evidence port, bypassing the boundary client
+   * construction. Production wiring leaves this undefined and relies on
+   * {@link tradertonReadClient}.
+   */
+  agentEvidencePort?: AgentEvidencePort;
+}
+
+// ── Agent evidence port ───────────────────────────────────────────────────────
+
+/**
+ * Adapt a Traderton read boundary into the {@link AgentEvidencePort} the
+ * evidence assembler consumes. Each method invokes the matching agent-scoped
+ * read tool, narrows the success payload, and rehydrates date columns. Any
+ * non-success outcome throws — core evaluation evidence must succeed.
+ */
+export function buildAgentEvidencePort(boundary: TradertonReadBoundary): AgentEvidencePort {
+  const toIso = (d?: Date): string | undefined => (d ? d.toISOString() : undefined);
+
+  const narrowArray = (result: TradertonReadResult, toolName: string, key: string): unknown[] => {
+    switch (result.kind) {
+      case 'success': {
+        const data = result.data;
+        if (typeof data !== 'object' || data === null) {
+          throw new Error(`Boundary tool ${toolName} returned a non-object payload`);
+        }
+        const arr = (data as Record<string, unknown>)[key];
+        if (!Array.isArray(arr)) {
+          throw new Error(`Boundary tool ${toolName} payload missing "${key}" array`);
+        }
+        return arr;
+      }
+      case 'failure':
+        throw new Error(`Boundary tool ${toolName} failed (${result.code}): ${result.message}`);
+      case 'transport_error':
+        throw new Error(`Boundary tool ${toolName} transport error: ${result.message}`);
+      case 'in_progress':
+        throw new Error(`Boundary tool ${toolName} returned in_progress — expected a synchronous read`);
+    }
+  };
+
+  return {
+    async getFills(opts: { from?: Date; to?: Date }): Promise<FillRow[]> {
+      const result = await boundary.invoke({
+        toolName: 'get_agent_fills',
+        payload: { from: toIso(opts.from), to: toIso(opts.to) },
+      });
+      return narrowArray(result, 'get_agent_fills', 'fills').map(toFillRow);
+    },
+    async getJournalEvents(opts: { from?: Date; to?: Date }): Promise<JournalRow[]> {
+      const result = await boundary.invoke({
+        toolName: 'get_agent_journal_events',
+        payload: { from: toIso(opts.from), to: toIso(opts.to) },
+      });
+      return narrowArray(result, 'get_agent_journal_events', 'events').map(toJournalRow);
+    },
+    async getPositions(opts: { from?: Date; to?: Date; at?: Date }): Promise<PositionRow[]> {
+      const result = await boundary.invoke({
+        toolName: 'get_agent_positions',
+        payload: { from: toIso(opts.from), to: toIso(opts.to), at: toIso(opts.at) },
+      });
+      return narrowArray(result, 'get_agent_positions', 'positions').map(toPositionRow);
+    },
+  };
+}
+
+/**
+ * A fail-closed port used when the Traderton read boundary is unconfigured.
+ * Evaluation of trading evidence cannot proceed without the boundary, so every
+ * method throws a clear error (mirrors the mandatory-boundary posture).
+ */
+function unconfiguredEvidencePort(): AgentEvidencePort {
+  const fail = (): never => {
+    throw new Error('evaluation requires the Traderton read boundary — it is not configured');
+  };
+  return { getFills: fail, getJournalEvents: fail, getPositions: fail };
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -106,6 +195,36 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       }
     }
 
+    // ── Step 0b: Build the agent evidence port ────────────────────────────
+    // Resolve the owner (agents.userId) — same lookup the billing block uses —
+    // to bind the agent subject, then adapt the Traderton read boundary into
+    // the AgentEvidencePort the assembler consumes. A test may inject the port
+    // directly; production builds it from the read client. When neither is
+    // present, the boundary is unconfigured → a fail-closed port.
+    let agentEvidencePort: AgentEvidencePort;
+    if (ctx.agentEvidencePort) {
+      agentEvidencePort = ctx.agentEvidencePort;
+    } else if (ctx.tradertonReadClient) {
+      const [ownerRow] = await db
+        .select({ userId: agents.userId })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1);
+      const ownerId = ownerRow?.userId;
+      if (!ownerId) {
+        throw new Error(`Cannot resolve owner for agent ${agentId} — evidence port requires an owner subject`);
+      }
+      const subject: TradertonSubject = { ownerId, actor: { type: 'agent', id: agentId } };
+      const boundary = createTradertonReadBoundary(
+        ctx.tradertonReadClient,
+        subject,
+        ctx.tradertonReadTimeoutMs ?? 10_000,
+      );
+      agentEvidencePort = buildAgentEvidencePort(boundary);
+    } else {
+      agentEvidencePort = unconfiguredEvidencePort();
+    }
+
     // ── Step 1: Assemble evidence (raw, unredacted) ───────────────────────
     logger.info({ runId, agentId }, 'Collecting evidence');
     const manifest = await assembleEvidence({
@@ -116,6 +235,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       runId,
       sessionTimestamps,
       redis: ctx.redis,
+      agentEvidencePort,
     });
     logger.info({ runId, entries: manifest.entries.filter((e) => e.collected).length }, 'Evidence collected');
 

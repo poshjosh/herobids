@@ -741,6 +741,30 @@ const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, even
 // L3d-5: the strategy factory (createStrategy) + reconciliation config were only
 // consumed by the deleted in-process trading actors. Removed with the actor slice.
 
+// Traderton read client for the evaluation runtime — sources agent trading
+// evidence (fills / journal / positions) over the boundary. Uses the SAME
+// operator config as the system read boundary. When unconfigured (baseUrl /
+// hmacSecret absent), leave it undefined: the per-agent evidence port then
+// fails closed at invocation time (evaluation of trading evidence cannot
+// proceed without the boundary) — mirroring the fail-fast boundary posture.
+const evaluationReadClient = (() => {
+  const b = appConfig.boundary;
+  if (!b.baseUrl || !b.hmacSecret) {
+    logger.info(
+      { hasBaseUrl: !!b.baseUrl, hasSecret: !!b.hmacSecret },
+      'Traderton read boundary not configured for evaluation — agent evidence port will fail closed',
+    );
+    return undefined;
+  }
+  return createTradertonClient({
+    baseUrl: b.baseUrl,
+    consumerId: b.consumerId,
+    keyId: b.keyId,
+    hmacSecret: b.hmacSecret,
+    requestTimeoutMs: b.requestTimeoutMs,
+  });
+})();
+
 // Start evaluation runtime (BullMQ consumer for agent evaluation jobs)
 const evaluationRuntime = new EvaluationRuntime(
   {
@@ -750,6 +774,8 @@ const evaluationRuntime = new EvaluationRuntime(
     maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
     thresholds: appConfig.evaluation.thresholds,
     usageBillingRepo: new UsageBillingRepository(db),
+    tradertonReadClient: evaluationReadClient,
+    tradertonReadTimeoutMs: appConfig.boundary.requestTimeoutMs,
   },
   db,
 );

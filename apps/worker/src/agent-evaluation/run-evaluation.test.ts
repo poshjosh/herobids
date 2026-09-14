@@ -157,6 +157,42 @@ describe('runEvaluation', () => {
     expect(EVIDENCE_ARTIFACTS_FOR_REDACTION).toContain('unified-agent-config.json');
   });
 
+  it('aborts the run (final attempt) when the injected evidence port fails in the assembler', async () => {
+    // Make the assembler exercise the port so a boundary failure propagates.
+    mockAssembleEvidence.mockImplementationOnce(async (ctx) => {
+      await ctx.agentEvidencePort.getFills({});
+      return { entries: [], scope: { type: 'allTime' as const } };
+    });
+
+    const failingPort = {
+      getFills: vi.fn().mockRejectedValue(new Error('boundary unavailable')),
+      getJournalEvents: vi.fn(),
+      getPositions: vi.fn(),
+    };
+
+    const { store } = makeStore();
+
+    await expect(
+      runEvaluation({
+        db: {} as never,
+        runId: 'run-boundary-fail',
+        agentId: 'agent-boundary-fail',
+        resolvedScope: { type: 'allTime' },
+        includeNarrative: false,
+        thresholds,
+        store,
+        storageRoot: '/tmp/eval-artifacts',
+        attemptNumber: 1,
+        maxAttempts: 1,
+        agentEvidencePort: failingPort,
+      }),
+    ).rejects.toThrow('boundary unavailable');
+
+    expect(failingPort.getFills).toHaveBeenCalledTimes(1);
+    expect(mockMarkFailed).toHaveBeenCalledTimes(1);
+    expect(mockMarkSucceeded).not.toHaveBeenCalled();
+  });
+
   it('redacts unified-agent-config.json and persists it in the final artifact manifest', async () => {
     const { store, written } = makeStore();
 
