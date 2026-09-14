@@ -56,7 +56,7 @@ import { AssessmentRequestService } from './market-intelligence/assessment-reque
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
 import { BrowserPoolHealthPublisher } from './browser-pool-health-publisher.js';
-import { createProviderRegistry, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
+import { createProviderRegistry, TokenBucketRateLimiter, type RedisEvalClient } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 /** Slash commands registered with the Telegram Bot API so they appear in the client command picker. */
 const TELEGRAM_AGENT_COMMANDS: Array<{ command: string; description: string }> = [
@@ -1170,73 +1170,11 @@ try {
   logger.error({ err }, 'Failed to initialise review schedulers');
 }
 
-// ── Economic calendar background refresh ─────────────────────────────────
-// The worker periodically fetches Forex Factory economic calendar data via
-// Scrapfly and writes it to a shared Redis cache. Agent tick loops read
-// exclusively from cache (cacheOnly mode), so they never block on a network
-// call for economic calendar data.
-let economicCalendarRefreshInterval: ReturnType<typeof setInterval> | undefined;
-const ecConfig = appConfig.marketData?.economicCalendar;
-const SCRAPFLY_API_KEY = process.env['SCRAPFLY_API_KEY'];
-
-if (ecConfig?.enabled && SCRAPFLY_API_KEY) {
-  const ecProvider = new CompositeEconomicCalendarProvider({
-    daysForward: ecConfig.daysForward,
-    minImpact: ecConfig.minImpact,
-    currencies: ecConfig.currencies,
-    maxEvents: ecConfig.maxEventsInContext,
-    forexFactory: {
-      baseUrl: ecConfig.forexFactory.baseUrl,
-      requestTimeoutMs: ecConfig.forexFactory.requestTimeoutMs,
-      requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
-      userAgent: ecConfig.forexFactory.userAgent,
-      rateLimiter: new TokenBucketRateLimiter({
-        requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
-      }),
-      fetchFn: createScrapflyFetch({
-        apiKey: SCRAPFLY_API_KEY,
-        baseUrl: appConfig.marketData!.scrapfly.baseUrl,
-        asp: appConfig.marketData!.scrapfly.asp,
-        requestTimeoutMs: appConfig.marketData!.scrapfly.requestTimeoutMs,
-      }),
-      parseHtmlFn: createFallbackCalendarParser({
-        baseUrl: appConfig.llm.baseUrl,
-        model: appConfig.llm.model,
-        timeoutMs: appConfig.llm.timeoutMs,
-      }),
-    } satisfies ForexFactoryAdapterConfig,
-    cache: new RedisProviderResponseCache(redisClient, 'market-data:cache:'),
-    cacheTtlMs: ecConfig.cacheTtlMs,
-  } satisfies CompositeEconomicCalendarConfig);
-
-  // Initial fetch on startup — warm the cache before any agent starts.
-  ecProvider.getUpcomingEvents().then((result) => {
-    if (result.ok) {
-      logger.info({ eventCount: result.data.events.length }, 'Economic calendar initial cache warmed');
-    } else {
-      logger.warn({ error: result.error }, 'Economic calendar initial fetch failed');
-    }
-  }).catch((err) => {
-    logger.error({ err }, 'Economic calendar initial fetch threw');
-  });
-
-  // Periodic refresh.
-  economicCalendarRefreshInterval = setInterval(() => {
-    ecProvider.getUpcomingEvents().then((result) => {
-      if (result.ok) {
-        logger.info({ eventCount: result.data.events.length }, 'Economic calendar cache refreshed');
-      } else {
-        logger.warn({ error: result.error }, 'Economic calendar refresh failed');
-      }
-    }).catch((err) => {
-      logger.error({ err }, 'Economic calendar refresh threw');
-    });
-  }, ecConfig.refreshIntervalMs);
-
-  logger.info({ refreshIntervalMs: ecConfig.refreshIntervalMs }, 'Economic calendar background refresh started');
-} else if (ecConfig?.enabled && !SCRAPFLY_API_KEY) {
-  logger.warn('Economic calendar enabled but SCRAPFLY_API_KEY not set — background refresh disabled');
-}
+// ── Economic calendar acquisition (owned by Traderton — slice B6) ─────────
+// The economic-calendar fetch + refresh loop now run Traderton-side. The
+// herobids worker no longer scrapes Forex Factory or writes the shared cache;
+// agent ticks read the calendar over the Traderton boundary
+// (`get_economic_calendar`, cache-only).
 
 // ── LLM Pricing Refresh ─────────────────────────────────────────────────────
 
@@ -1326,7 +1264,6 @@ process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
   clearInterval(pricingRefreshInterval);
   clearInterval(approvalExpiryInterval);
-  clearInterval(economicCalendarRefreshInterval);
   browserPoolHealthPublisher?.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
@@ -1354,7 +1291,6 @@ process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
   clearInterval(pricingRefreshInterval);
   clearInterval(approvalExpiryInterval);
-  clearInterval(economicCalendarRefreshInterval);
   browserPoolHealthPublisher?.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();

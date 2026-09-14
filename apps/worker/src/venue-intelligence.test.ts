@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDiscoveryNetworkMap, buildDiscoveryAddressMap, collectDexTrackedSymbols, collectDexTrackedTargets, findDexPositionForTarget, collectPerpsTrackedSymbols, normalizeTrackedSymbol, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload } from './venue-intelligence.js';
+import { buildDiscoveryNetworkMap, buildDiscoveryAddressMap, collectDexTrackedSymbols, collectDexTrackedTargets, findDexPositionForTarget, collectPerpsTrackedSymbols, normalizeTrackedSymbol, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, parseEconomicCalendarBoundaryPayload } from './venue-intelligence.js';
 import type { RuntimeSessionMetrics } from './runtime-composition.js';
 
 function buildSessionMetrics(): RuntimeSessionMetrics {
@@ -414,5 +414,48 @@ describe('parseDexTokensPayload', () => {
     const map = buildDiscoveryAddressMap(parsed.tokens);
     expect(map.get('solana:0xabc')?.poolCreatedAt).toBe('2026-06-01T00:00:00.000Z');
     expect(map.get('solana:0xabc')?.discoveryVectors).toEqual(['trending']);
+  });
+});
+
+describe('parseEconomicCalendarBoundaryPayload', () => {
+  it('passes through the events array from a get_economic_calendar success payload', () => {
+    const events = [
+      {
+        time: '2026-07-09T14:00:00Z',
+        currency: 'USD',
+        event: 'CPI y/y',
+        impact: 'high',
+        forecast: '3.1%',
+        previous: '3.0%',
+        sources: ['forexfactory'],
+      },
+    ];
+    const parsed = parseEconomicCalendarBoundaryPayload({
+      ok: true,
+      events,
+      sources: ['forexfactory'],
+      fetchedAt: '2026-07-08T00:00:00Z',
+    });
+    expect(parsed).toEqual(events);
+  });
+
+  it('returns an empty array when events is missing', () => {
+    expect(parseEconomicCalendarBoundaryPayload({ ok: true, sources: [], fetchedAt: 'x' })).toEqual([]);
+  });
+
+  it('returns an empty array when events is not an array', () => {
+    expect(parseEconomicCalendarBoundaryPayload({ ok: true, events: 'not-an-array' })).toEqual([]);
+  });
+
+  it('returns an empty array for a null or non-object payload', () => {
+    expect(parseEconomicCalendarBoundaryPayload(null)).toEqual([]);
+    expect(parseEconomicCalendarBoundaryPayload(undefined)).toEqual([]);
+    expect(parseEconomicCalendarBoundaryPayload(42)).toEqual([]);
+  });
+
+  it('drops non-object entries from the events array', () => {
+    const good = { time: 't', currency: 'USD', event: 'e', impact: 'low', forecast: null, previous: null, sources: [] };
+    const parsed = parseEconomicCalendarBoundaryPayload({ events: [good, null, 3, 'x'] });
+    expect(parsed).toEqual([good]);
   });
 });

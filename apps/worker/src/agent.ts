@@ -20,13 +20,8 @@ import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel } from '@herobids/domain';
 import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
 import {
-  CompositeEconomicCalendarProvider,
-  RedisProviderResponseCache,
-  TokenBucketRateLimiter,
   createProviderRegistry,
   createPriceService,
-  type CompositeEconomicCalendarConfig,
-  type ForexFactoryAdapterConfig,
   type MarketDataConfig,
   type ProviderRegistry,
   type PriceService,
@@ -84,7 +79,7 @@ import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState, isUserMessageType, extractUserMessageText } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
-import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, type RegimeBoundaryFreshness } from './venue-intelligence.js';
+import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, parseEconomicCalendarBoundaryPayload, type RegimeBoundaryFreshness } from './venue-intelligence.js';
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
 import { createTradertonClient, type TradertonClientConfig } from '@herobids/domain/traderton';
@@ -1062,46 +1057,10 @@ function buildTradertonBoundaries(): {
 
 const { read: tradertonReadBoundary, write: tradertonWriteBoundary } = buildTradertonBoundaries();
 
-// ── LLM-based HTML parser for economic calendar ──────────────────────────
-// createLlmCalendarParser is imported from @herobids/market-data.
-
-// ── Economic calendar provider (optional) ──────────────────────────────────
-let economicCalendarProvider: CompositeEconomicCalendarProvider | null = null;
-if (marketDataConfig?.economicCalendar?.enabled) {
-  const ecConfig = marketDataConfig.economicCalendar;
-
-  // Use Redis-backed cache shared across agent runtimes
-  const redisCache = new RedisProviderResponseCache(redis, 'market-data:cache:');
-
-  // Agent reads economic calendar exclusively from the shared Redis cache
-  // (cacheOnly mode). The actual scraping via Scrapfly is done by the worker
-  // process's background refresh interval — the agent never fetches from source.
-  const forexFactoryConfig: ForexFactoryAdapterConfig = {
-    baseUrl: ecConfig.forexFactory.baseUrl,
-    requestTimeoutMs: ecConfig.forexFactory.requestTimeoutMs,
-    requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
-    userAgent: ecConfig.forexFactory.userAgent,
-    rateLimiter: new TokenBucketRateLimiter({
-      requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
-    }),
-  };
-
-  const compositeConfig: CompositeEconomicCalendarConfig = {
-    daysForward: ecConfig.daysForward,
-    minImpact: ecConfig.minImpact,
-    currencies: ecConfig.currencies,
-    maxEvents: ecConfig.maxEventsInContext,
-    forexFactory: forexFactoryConfig,
-    cache: redisCache,
-    cacheTtlMs: ecConfig.cacheTtlMs,
-  };
-
-  economicCalendarProvider = new CompositeEconomicCalendarProvider(compositeConfig);
-
-  logger.info('Economic calendar provider initialized');
-} else {
-  logger.info('Economic calendar disabled — set marketData.economicCalendar.enabled: true to enable');
-}
+// ── Economic calendar (read over the Traderton boundary) ───────────────────
+// The economic-calendar fetch + provider are owned by Traderton (slice B6).
+// The per-tick read routes through `tradertonReadBoundary` (get_economic_calendar,
+// cache-only) — no in-process provider or fetch runs in the herobids process.
 
 // ---------------------------------------------------------------------------
 // Tool Registry
@@ -3547,26 +3506,24 @@ async function runTick(): Promise<void> {
       });
     }
 
-    // ── Economic calendar fetch ──────────────────────────────────────────
-    if (economicCalendarProvider) {
+    // ── Economic calendar read (Traderton boundary, cache-only) ───────────
+    // The fetch + provider live Traderton-side (slice B6). Read over the
+    // boundary when present; any non-success / absent boundary omits the macro
+    // block for this tick (null-tolerant degrade — same as a disabled calendar).
+    if (tradertonReadBoundary) {
       try {
-        const startMs = Date.now();
-        const result = await economicCalendarProvider.getUpcomingEvents({ cacheOnly: true });
-        if (result.ok) {
-          runtimeState.metrics.macroEvents = result.data.events;
-          const elapsedMs = Date.now() - startMs;
-          logger.info({
-            eventCount: result.data.events.length,
-            sources: result.data.sources,
-            elapsedMs,
-          }, 'Economic calendar fetched');
+        const result = await tradertonReadBoundary.invoke({ toolName: 'get_economic_calendar', payload: {} });
+        if (result.kind === 'success') {
+          const events = parseEconomicCalendarBoundaryPayload(result.data);
+          runtimeState.metrics.macroEvents = events;
+          logger.info({ eventCount: events.length }, 'Economic calendar read over boundary');
         } else {
           runtimeState.metrics.macroEvents = null;
-          logger.warn({ error: result.error }, 'Economic calendar fetch failed — block omitted for this tick');
+          logger.warn({ kind: result.kind }, 'Economic calendar boundary read unavailable — block omitted for this tick');
         }
       } catch (err) {
         runtimeState.metrics.macroEvents = null;
-        logger.warn({ err }, 'Economic calendar provider threw — block omitted for this tick');
+        logger.warn({ err }, 'Economic calendar boundary read threw — block omitted for this tick');
       }
     } else {
       runtimeState.metrics.macroEvents = null;
