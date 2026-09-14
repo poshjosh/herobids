@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the dead public market-data WebSocket stream pool from the worker (`public-stream-routing.ts` + its test; the `PublicStreamPool` construction and shutdown calls in `index.ts`). The pool was constructed but never subscribed/consumed — a leftover of the trading-market-data extraction. No observable behavior changes. (Part of the trading-isolation cutover: the `@herobids/venues` `PublicStreamPool` value import no longer runs in the agent process.)
+
 ## v0.3.0 - 2026-09-07
 
 ### Changed
