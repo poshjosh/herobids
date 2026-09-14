@@ -1,5 +1,7 @@
-// API-local seam for the agent-export endpoints that source trading evidence
-// over the Traderton read boundary (D1-c1 Sub-step 5).
+// API-local seam for the export endpoints that source trading evidence over the
+// Traderton read boundary. Introduced for the agent-export endpoints (D1-c1
+// Sub-step 5); also backs the bot-level + account-level export endpoints (c4.2)
+// via the owner-scoped read tools + `loadBoundaryObject`.
 //
 // This mirrors the worker's read-adapter + evidence-row-mappers (a copy, never
 // a cross-app import — apps/worker is not a dependency of apps/api). The seam is
@@ -37,8 +39,21 @@ function mapClientResultToReadResult(result: TradertonClientResult): TradertonRe
   switch (result.kind) {
     case 'success':
       return { kind: 'success', data: result.payload };
-    case 'failure':
-      return { kind: 'failure', code: result.code, message: result.message, retryable: result.retryable };
+    case 'failure': {
+      // The boundary dispatcher maps a tool's fault:false errorCode (e.g.
+      // `not_found.resource`, raised by the owner-scoped bot tools for an
+      // unowned/absent bot) onto the closed wire code `validation.invalid_payload`
+      // and carries the ORIGINAL under `details.errorCode`. TradertonReadResult
+      // has no `details` field, so unwrap it HERE: when the wire code is the
+      // generic validation code and a tool errorCode is present, surface the
+      // tool errorCode as `code` so the bot-export handlers' not_found.resource
+      // → 404 mapping can fire. (Mirrors bots.ts `readBoundary`.)
+      const toolCode = result.details?.['errorCode'];
+      const code = result.code === 'validation.invalid_payload' && typeof toolCode === 'string'
+        ? toolCode
+        : result.code;
+      return { kind: 'failure', code, message: result.message, retryable: result.retryable };
+    }
     case 'in_progress':
       return { kind: 'in_progress' };
     case 'transport_error':
@@ -166,28 +181,51 @@ export async function loadAgentEvidence<T>(
       }
       return { ok: true, rows: arr.map(mapRow) };
     }
+    default:
+      return { ok: false, error: mapNonSuccessToError(result) };
+  }
+}
+
+/**
+ * Invoke a read tool that returns a single object payload (e.g.
+ * `get_owner_bot_status`) and return the whole record on success, or a typed
+ * {@link ReadBoundaryError} for any non-success outcome. Used where the caller
+ * needs a scalar field (like `config`) rather than an evidence array.
+ */
+export async function loadBoundaryObject(
+  boundary: TradertonReadBoundary,
+  toolName: string,
+  payload: unknown,
+): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: ReadBoundaryError }> {
+  const result = await boundary.invoke({ toolName, payload });
+  if (result.kind === 'success') {
+    const data = result.data;
+    if (typeof data !== 'object' || data === null) {
+      throw new Error(`Boundary tool ${toolName} returned a non-object payload`);
+    }
+    return { ok: true, data: data as Record<string, unknown> };
+  }
+  return { ok: false, error: mapNonSuccessToError(result) };
+}
+
+/** Map any non-success read outcome to the HTTP-shaped {@link ReadBoundaryError}. */
+function mapNonSuccessToError(
+  result: Exclude<TradertonReadResult, { kind: 'success' }>,
+): ReadBoundaryError {
+  switch (result.kind) {
     case 'failure':
-      return {
-        ok: false,
-        error: { status: 502, code: result.code, message: result.message },
-      };
+      return { status: 502, code: result.code, message: result.message };
     case 'transport_error':
       return {
-        ok: false,
-        error: {
-          status: 503,
-          code: 'precondition.not_ready',
-          message: 'Trading service is unavailable — the export could not be produced.',
-        },
+        status: 503,
+        code: 'precondition.not_ready',
+        message: 'Trading service is unavailable — the export could not be produced.',
       };
     case 'in_progress':
       return {
-        ok: false,
-        error: {
-          status: 503,
-          code: 'boundary.in_progress',
-          message: 'The trading read did not complete in time. Please retry.',
-        },
+        status: 503,
+        code: 'boundary.in_progress',
+        message: 'The trading read did not complete in time. Please retry.',
       };
   }
 }

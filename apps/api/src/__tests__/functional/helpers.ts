@@ -271,6 +271,37 @@ export function makeStubTradertonClient(): TradertonClient {
           if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
           return Promise.resolve(ok({ ok: true, events: [] }));
         }
+        // c4.2 export evidence reads. The bot-scoped fills/positions resolve the
+        // bot owner-scoped (unowned → not_found.resource, driving the export 404),
+        // then return an empty evidence array — enough for the export endpoints to
+        // pass through fillsToCsv/computeReport with no rows.
+        case 'get_owner_bot_fills': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          return Promise.resolve(ok({ ok: true, fills: [] }));
+        }
+        case 'get_owner_bot_positions': {
+          const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
+          const bot = bots.get(id);
+          if (!bot || bot.ownerId !== ownerId) return Promise.resolve(notFound());
+          return Promise.resolve(ok({ ok: true, positions: [] }));
+        }
+        // Account-level owner reads are NOT bot-scoped — a user with no bots
+        // yields empty evidence (the export empty-case parity).
+        case 'get_owner_fills':
+          return Promise.resolve(ok({ ok: true, fills: [] }));
+        case 'get_owner_journal':
+          return Promise.resolve(ok({ ok: true, events: [] }));
+        case 'get_owner_positions':
+          return Promise.resolve(ok({ ok: true, positions: [] }));
+        // Agent-scoped evidence reads for the /agents/:id/export/* endpoints.
+        case 'get_agent_fills':
+          return Promise.resolve(ok({ ok: true, fills: [] }));
+        case 'get_agent_journal_events':
+          return Promise.resolve(ok({ ok: true, events: [] }));
+        case 'get_agent_positions':
+          return Promise.resolve(ok({ ok: true, positions: [] }));
         case 'start_bot': {
           const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
           const bot = bots.get(id);
@@ -465,7 +496,7 @@ export async function buildApp() {
   await syncSystemSkills(db);
   await skillsRoutes(app, db, testPlansConfig as any);
   await datasetRoutes(app, db, redisClient);
-  await exportRoutes(app, db);
+  await exportRoutes(app, db, stubTradertonClient);
 
   await setupRoutes(app, db, testPlansConfig as any, {
     venues: {} as import('@herobids/domain').AppConfig['venues'],

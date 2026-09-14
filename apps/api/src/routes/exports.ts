@@ -1,10 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
-import { eq, and, gte, lte, inArray, asc } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
-  bots,
   agents,
   agentSkills,
   fills,
@@ -17,9 +16,11 @@ import { errorPayload } from '../error-payload.js';
 import {
   createTradertonReadBoundary,
   loadAgentEvidence,
+  loadBoundaryObject,
   toFillRow,
   toJournalRow,
   toPositionRow,
+  type TradertonReadBoundary,
   type FillRow as ReadFillRow,
   type JournalRow as ReadJournalRow,
   type PositionRow as ReadPositionRow,
@@ -373,6 +374,49 @@ export async function exportRoutes(
     return createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
   };
 
+  /**
+   * Build a read boundary bound to the requesting user's OWNER subject for a
+   * bot/account export. The owner-scoped read tools (`get_owner_*`) key off the
+   * subject's ownerId; the actor is the user itself — matching the setup/bots
+   * write endpoints (`{ ownerId: userId, actor: { type: 'user', id: userId } }`).
+   * Returns null when the boundary is unconfigured so the endpoint can surface a
+   * typed precondition (mandatory-boundary posture — no local read).
+   */
+  const userReadBoundary = (userId: string) => {
+    if (!tradertonReadClient) return null;
+    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
+    return createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
+  };
+
+  /**
+   * Map a boundary load error to an HTTP response. The owner-scoped bot tools
+   * raise `not_found.resource` for an unowned/absent bot — the seam surfaces
+   * that as the failure code, and this preserves the OLD endpoint's 404
+   * `{ error: 'not_found' }` body (the ownership check now lives in the tool).
+   * Any other failure surfaces via the shared error payload (503/502).
+   */
+  const sendLoadError = (reply: FastifyReply, error: ReadBoundaryError) => {
+    if (error.code === 'not_found.resource') {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    return reply.status(error.status).send(errorPayload(error.code, error.message));
+  };
+
+  /**
+   * Load a single owned bot's config over `get_owner_bot_status` (which returns
+   * the bot incl. `config`). An unowned/absent bot surfaces not_found.resource
+   * for the 404 mapping. Returns the config object (defaulting to {}).
+   */
+  const loadBotStatus = async (
+    boundary: TradertonReadBoundary,
+    botId: string,
+  ): Promise<{ ok: true; config: Record<string, unknown> } | { ok: false; error: ReadBoundaryError }> => {
+    const loaded = await loadBoundaryObject(boundary, 'get_owner_bot_status', { botId });
+    if (!loaded.ok) return { ok: false, error: loaded.error };
+    const config = (loaded.data['config'] as Record<string, unknown> | undefined) ?? {};
+    return { ok: true, config };
+  };
+
   const boundaryUnconfiguredError: ReadBoundaryError = {
     status: 503,
     code: 'precondition.not_ready',
@@ -389,15 +433,23 @@ export async function exportRoutes(
       const parsed = TradesQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
 
-      const [bot] = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-      if (!bot) return reply.status(404).send({ error: 'not_found' });
-
-      const conditions = [eq(fills.actorType, 'bot'), eq(fills.actorId, id)];
-      if (parsed.data.from) conditions.push(gte(fills.filledAt, new Date(parsed.data.from)));
-      if (parsed.data.to) conditions.push(lte(fills.filledAt, new Date(parsed.data.to)));
-
-      const rows = await db.select().from(fills).where(and(...conditions));
+      const boundary = userReadBoundary(request.userId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      // Ownership is the tool's responsibility: an unowned/absent bot returns
+      // not_found.resource, which sendLoadError maps to the old 404 body.
+      const loaded = await loadAgentEvidence<ReadFillRow>(
+        boundary,
+        'get_owner_bot_fills',
+        { botId: id, from: parsed.data.from, to: parsed.data.to },
+        'fills',
+        toFillRow,
+      );
+      if (!loaded.ok) return sendLoadError(reply, loaded.error);
+      const rows = loaded.rows;
 
       if (parsed.data.format === 'csv') {
         void reply.header('Content-Type', 'text/csv');
@@ -419,15 +471,29 @@ export async function exportRoutes(
       const parsed = JournalQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
 
-      const [bot] = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-      if (!bot) return reply.status(404).send({ error: 'not_found' });
-
-      const conditions = [eq(journalEvents.actorId, id)];
-      if (parsed.data.from) conditions.push(gte(journalEvents.createdAt, new Date(parsed.data.from)));
-      if (parsed.data.to) conditions.push(lte(journalEvents.createdAt, new Date(parsed.data.to)));
-
-      const rows = await db.select().from(journalEvents).where(and(...conditions));
+      const boundary = userReadBoundary(request.userId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      // TOOL GAP: get_owner_bot_journal takes type/limit/offset, NOT from/to. The
+      // OLD endpoint filtered journal events by createdAt in [from, to]. To
+      // preserve that parity we fetch the bot journal and apply the date window
+      // in-app over the rehydrated `createdAt` (mirrors the plan's option (a)).
+      const loaded = await loadAgentEvidence<ReadJournalRow>(
+        boundary,
+        'get_owner_bot_journal',
+        { botId: id },
+        'events',
+        toJournalRow,
+      );
+      if (!loaded.ok) return sendLoadError(reply, loaded.error);
+      const from = parsed.data.from ? new Date(parsed.data.from) : null;
+      const to = parsed.data.to ? new Date(parsed.data.to) : null;
+      const rows = loaded.rows.filter((r) =>
+        (from === null || r.createdAt >= from) && (to === null || r.createdAt <= to),
+      );
 
       if (parsed.data.format === 'md') {
         void reply.header('Content-Type', 'text/markdown');
@@ -449,11 +515,16 @@ export async function exportRoutes(
       const parsed = ConfigQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
 
-      const [bot] = await db.select({ id: bots.id, config: bots.config }).from(bots)
-        .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-      if (!bot) return reply.status(404).send({ error: 'not_found' });
+      const boundary = userReadBoundary(request.userId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const status = await loadBotStatus(boundary, id);
+      if (!status.ok) return sendLoadError(reply, status.error);
 
-      const clean = sanitizeConfig(bot.config as Record<string, unknown>);
+      const clean = sanitizeConfig(status.config);
 
       if (parsed.data.format === 'yaml') {
         void reply.header('Content-Type', 'application/yaml');
@@ -475,18 +546,21 @@ export async function exportRoutes(
       const parsed = ReportQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
 
-      const [bot] = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-      if (!bot) return reply.status(404).send({ error: 'not_found' });
-
-      const [fillRows, closedPositions] = await Promise.all([
-        db.select().from(fills).where(and(eq(fills.actorType, 'bot'), eq(fills.actorId, id))),
-        db.select().from(positions).where(and(
-          eq(positions.actorType, 'bot'),
-          eq(positions.actorId, id),
-        )),
-      ]);
-      const report = computeReport(fillRows, closedPositions);
+      const boundary = userReadBoundary(request.userId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const fillsLoaded = await loadAgentEvidence<ReadFillRow>(
+        boundary, 'get_owner_bot_fills', { botId: id }, 'fills', toFillRow,
+      );
+      if (!fillsLoaded.ok) return sendLoadError(reply, fillsLoaded.error);
+      const positionsLoaded = await loadAgentEvidence<ReadPositionRow>(
+        boundary, 'get_owner_bot_positions', { botId: id }, 'positions', toPositionRow,
+      );
+      if (!positionsLoaded.ok) return sendLoadError(reply, positionsLoaded.error);
+      const report = computeReport(fillsLoaded.rows, positionsLoaded.rows);
 
       if (parsed.data.format === 'csv') {
         void reply.header('Content-Type', 'text/csv');
@@ -506,20 +580,33 @@ export async function exportRoutes(
     async (request, reply) => {
       const { id } = request.params;
 
-      const [bot] = await db.select({ id: bots.id, config: bots.config }).from(bots)
-        .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-      if (!bot) return reply.status(404).send({ error: 'not_found' });
+      const boundary = userReadBoundary(request.userId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      // Ownership resolves via the first boundary call (get_owner_bot_fills →
+      // not_found.resource for an unowned/absent bot → 404).
+      const fillsLoaded = await loadAgentEvidence<ReadFillRow>(
+        boundary, 'get_owner_bot_fills', { botId: id }, 'fills', toFillRow,
+      );
+      if (!fillsLoaded.ok) return sendLoadError(reply, fillsLoaded.error);
+      const journalLoaded = await loadAgentEvidence<ReadJournalRow>(
+        boundary, 'get_owner_bot_journal', { botId: id }, 'events', toJournalRow,
+      );
+      if (!journalLoaded.ok) return sendLoadError(reply, journalLoaded.error);
+      const positionsLoaded = await loadAgentEvidence<ReadPositionRow>(
+        boundary, 'get_owner_bot_positions', { botId: id }, 'positions', toPositionRow,
+      );
+      if (!positionsLoaded.ok) return sendLoadError(reply, positionsLoaded.error);
+      const status = await loadBotStatus(boundary, id);
+      if (!status.ok) return sendLoadError(reply, status.error);
 
-      const [fillRows, journalRows, closedPositions] = await Promise.all([
-        db.select().from(fills).where(and(eq(fills.actorType, 'bot'), eq(fills.actorId, id))),
-        db.select().from(journalEvents).where(eq(journalEvents.actorId, id)),
-        db.select().from(positions).where(and(
-          eq(positions.actorType, 'bot'),
-          eq(positions.actorId, id),
-        )),
-      ]);
-      const clean = sanitizeConfig(bot.config as Record<string, unknown>);
-      const report = computeReport(fillRows, closedPositions);
+      const fillRows = fillsLoaded.rows;
+      const journalRows = journalLoaded.rows;
+      const clean = sanitizeConfig(status.config);
+      const report = computeReport(fillRows, positionsLoaded.rows);
 
       const zip = buildZip([
         { name: 'trades.csv', data: Buffer.from(fillsToCsv(fillRows)) },
@@ -543,30 +630,24 @@ export async function exportRoutes(
       const parsed = TradesQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
 
-      // Fetch all bot IDs owned by this user to scope the fills query
-      const userBots = await db.select({ id: bots.id }).from(bots)
-        .where(eq(bots.userId, request.userId));
-      const botIds = userBots.map((b) => b.id);
-
-      if (botIds.length === 0) {
-        if (parsed.data.format === 'csv') {
-          void reply.header('Content-Type', 'text/csv');
-          void reply.header('Content-Disposition', 'attachment; filename="trades.csv"');
-          return reply.send(TRADES_CSV_HEADERS);
-        }
-        void reply.header('Content-Type', 'application/json');
-        void reply.header('Content-Disposition', 'attachment; filename="trades.json"');
-        return reply.send([]);
+      const boundary = userReadBoundary(request.userId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
       }
-
-      const conditions = [
-        eq(fills.actorType, 'bot'),
-        inArray(fills.actorId, botIds),
-      ];
-      if (parsed.data.from) conditions.push(gte(fills.filledAt, new Date(parsed.data.from)));
-      if (parsed.data.to) conditions.push(lte(fills.filledAt, new Date(parsed.data.to)));
-
-      const rows = await db.select().from(fills).where(and(...conditions));
+      // The tool returns ALL owner-bot fills; a user with no bots yields
+      // { fills: [] } — so the empty-case parity (header-only CSV / []) falls out
+      // of the shared fillsToCsv / fillsToJsonArray helpers with no special-case.
+      const loaded = await loadAgentEvidence<ReadFillRow>(
+        boundary,
+        'get_owner_fills',
+        { from: parsed.data.from, to: parsed.data.to },
+        'fills',
+        toFillRow,
+      );
+      if (!loaded.ok) return sendLoadError(reply, loaded.error);
+      const rows = loaded.rows;
 
       if (parsed.data.format === 'csv') {
         void reply.header('Content-Type', 'text/csv');
@@ -582,19 +663,22 @@ export async function exportRoutes(
 
   // GET /export/bundle — ZIP of all user data
   app.get('/export/bundle', async (request, reply) => {
-    const userBots = await db.select({ id: bots.id, config: bots.config }).from(bots)
-      .where(eq(bots.userId, request.userId));
-    const botIds = userBots.map((b) => b.id);
+    const boundary = userReadBoundary(request.userId);
+    if (!boundary) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+      );
+    }
+    const fillsLoaded = await loadAgentEvidence<ReadFillRow>(boundary, 'get_owner_fills', {}, 'fills', toFillRow);
+    if (!fillsLoaded.ok) return sendLoadError(reply, fillsLoaded.error);
+    const journalLoaded = await loadAgentEvidence<ReadJournalRow>(boundary, 'get_owner_journal', {}, 'events', toJournalRow);
+    if (!journalLoaded.ok) return sendLoadError(reply, journalLoaded.error);
+    const positionsLoaded = await loadAgentEvidence<ReadPositionRow>(boundary, 'get_owner_positions', {}, 'positions', toPositionRow);
+    if (!positionsLoaded.ok) return sendLoadError(reply, positionsLoaded.error);
 
-    const [allFills, allJournal, allPositions] = botIds.length > 0
-      ? await Promise.all([
-          db.select().from(fills).where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds))),
-          db.select().from(journalEvents).where(inArray(journalEvents.actorId, botIds)),
-          db.select().from(positions).where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds))),
-        ])
-      : [[], [], []];
-
-    const report = computeReport(allFills, allPositions);
+    const allFills = fillsLoaded.rows;
+    const allJournal = journalLoaded.rows;
+    const report = computeReport(allFills, positionsLoaded.rows);
 
     const zip = buildZip([
       { name: 'trades.csv', data: Buffer.from(fillsToCsv(allFills)) },
