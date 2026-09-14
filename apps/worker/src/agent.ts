@@ -20,13 +20,6 @@ import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel } from '@herobids/domain';
 import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
 import {
-  createProviderRegistry,
-  createPriceService,
-  type MarketDataConfig,
-  type ProviderRegistry,
-  type PriceService,
-  type TokenInfo,
-  evaluateRegime,
   type RegimeParams,
 } from '@herobids/market-data';
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
@@ -67,9 +60,9 @@ import {
   parseBoundaryWatchList,
   deriveActiveWatchSummaryFrom,
 } from './agent-watch-view.js';
-import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
+import { deriveHasTradingCapability, deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
-import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, calculateAtrPercent, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
+import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
@@ -111,7 +104,6 @@ const AGENT_CONFIG_RAW = process.env['AGENT_CONFIG'] ?? '{}';
 // TOOL_POLICY is forwarded into the container and enforced here for direct-tier tools.
 // Brokered tools are also enforced by the broker, but the container adds a second gate.
 const TOOL_POLICY_RAW = process.env['TOOL_POLICY'] ?? '{}';
-const MARKET_DATA_CONFIG_RAW = process.env['MARKET_DATA_CONFIG_JSON'];
 const AGENT_RUNTIME_CONFIG_RAW = process.env['AGENT_RUNTIME_CONFIG_JSON'];
 const LLM_PROVIDER = process.env['LLM_PROVIDER'];
 const LLM_BASE_URL = process.env['LLM_BASE_URL'];
@@ -665,10 +657,6 @@ function recordMarketDataRecovery(provider: string): void {
   }
 }
 
-function recordMarketDataFallback(): void {
-  marketDataRuntimeTelemetry.fallbackActivations += 1;
-}
-
 function recordSignalStaleness(kind: 'price' | 'discovery', ageMs: number): void {
   if (kind === 'price') {
     marketDataRuntimeTelemetry.maxPriceStalenessMs = Math.max(marketDataRuntimeTelemetry.maxPriceStalenessMs, ageMs);
@@ -752,7 +740,6 @@ function refreshCapabilityPolicy(): void {
 function getTradingTickWorkPlan() {
   return deriveTradingTickWorkPlan(
     runtimeState.runtimeDescriptor.resolvedSkills,
-    marketDataRegistry != null,
     tradertonReadBoundary != null,
   );
 }
@@ -956,36 +943,6 @@ const usageBillingService = createUsageBillingService(db, {
 });
 
 // ---------------------------------------------------------------------------
-// Market data (optional — enables search_tokens and check_regime tools)
-// ---------------------------------------------------------------------------
-
-let marketDataConfig: MarketDataConfig | null = null;
-if (MARKET_DATA_CONFIG_RAW) {
-  try {
-    marketDataConfig = JSON.parse(MARKET_DATA_CONFIG_RAW) as MarketDataConfig;
-  } catch (err) {
-    logger.warn({ err }, 'Failed to parse MARKET_DATA_CONFIG_JSON — market-data tools will be unavailable');
-  }
-}
-
-let marketDataRegistry: ProviderRegistry | null = null;
-if (marketDataConfig) {
-  marketDataRegistry = await createProviderRegistry(marketDataConfig, { redisClient: redis, discoverySeenClient: redis });
-} else {
-  logger.warn('MARKET_DATA_CONFIG_JSON not set — market-data intelligence tools will be unavailable');
-  for (const tool of MARKET_DATA_TOOLS) {
-    permanentlyExcludedTools.add(tool);
-  }
-  applyToolVisibility();
-}
-
-// Price service — built on top of the provider registry.
-// Only available when market data is configured.
-const priceService: PriceService | null = marketDataRegistry
-  ? createPriceService(marketDataRegistry)
-  : null;
-
-// ---------------------------------------------------------------------------
 // Traderton REST boundaries (L3b read + L3d write)
 // ---------------------------------------------------------------------------
 // Build the Traderton REST read boundary (L3b) + side-effecting write boundary
@@ -995,10 +952,11 @@ const priceService: PriceService | null = marketDataRegistry
 //
 // GATE: only enable the boundaries when a real baseUrl + hmacSecret are set AND
 // the platform owner id (agentConfig.userId) is non-empty. When any is missing,
-// both stay undefined — read tools + read re-points fall back to the existing
-// in-process paths (direct DB / marketDataRegistry); the `adjust_risk_limits`
-// write hard-fails (fail-closed). The HMAC secret lives in the client only; it
-// never reaches a tool. The subject is bound here so the tools never see it.
+// both stay undefined — read tools fall back to direct DB where available and
+// market-data reads are unavailable (in-process market-data removed in B7); the
+// `adjust_risk_limits` write hard-fails (fail-closed). The HMAC secret lives in
+// the client only; it never reaches a tool. The subject is bound here so the
+// tools never see it.
 function buildTradertonBoundaries(): {
   read: TradertonReadBoundary | undefined;
   write: ToolContext['tradertonWriteBoundary'];
@@ -1057,6 +1015,30 @@ function buildTradertonBoundaries(): {
 
 const { read: tradertonReadBoundary, write: tradertonWriteBoundary } = buildTradertonBoundaries();
 
+// Fail-fast startup guard (B7): in-process market-data has been removed, so the
+// Traderton read boundary is the SOLE source of market data. A trading agent
+// without a boundary cannot function — crash at startup rather than silently
+// degrade every regime/volatility/venue/price read. Non-trading agents are
+// unaffected (they never touch the market-data reads).
+if (deriveHasTradingCapability(runtimeState.runtimeDescriptor.resolvedSkills) && !tradertonReadBoundary) {
+  throw new Error(
+    'Trading agent requires a Traderton read boundary (BOUNDARY_CONFIG_JSON) — in-process market-data has been removed (B7). Configure the boundary or remove trading skills.',
+  );
+}
+
+// Re-key the market-data tool visibility exclusion to the boundary (B7): the
+// market-data tools (search_tokens, check_regime, …) are backed solely by the
+// Traderton read boundary now. When the boundary is absent, hide them. Mirrors
+// the DATABASE_DEPENDENT_TOOLS exclusion pattern. A trading agent without a
+// boundary already threw above; this branch only fires for a non-trading agent
+// with no boundary, correctly hiding the market-data tools.
+if (!tradertonReadBoundary) {
+  for (const tool of MARKET_DATA_TOOLS) {
+    permanentlyExcludedTools.add(tool);
+  }
+  applyToolVisibility();
+}
+
 // ── Economic calendar (read over the Traderton boundary) ───────────────────
 // The economic-calendar fetch + provider are owned by Traderton (slice B6).
 // The per-tick read routes through `tradertonReadBoundary` (get_economic_calendar,
@@ -1089,32 +1071,6 @@ if (db && process.env['GMAIL_CLIENT_ID'] && process.env['CREDENTIAL_ENCRYPTION_K
     redirectUri: process.env['GMAIL_REDIRECT_URI'] ?? '',
     dailySendLimit: dailySendLimit && !isNaN(dailySendLimit) ? dailySendLimit : undefined,
   });
-}
-
-function filterSearchResults(
-  rawResults: TokenInfo[],
-  options?: { network?: string; minLiquidityUsd?: number; limit?: number },
-) {
-  const minLiquidityUsd = options?.minLiquidityUsd ?? 10_000;
-  const limit = options?.limit ?? 10;
-  const network = options?.network?.toLowerCase();
-  const filtered = rawResults
-    .filter((token: TokenInfo) => token.liquidityUsd >= minLiquidityUsd)
-    .filter((token: TokenInfo) => !network || token.network.toLowerCase() === network)
-    .sort((left: TokenInfo, right: TokenInfo) => right.liquidityUsd - left.liquidityUsd);
-
-  const deduped: typeof filtered = [];
-  const seen = new Set<string>();
-  for (const token of filtered) {
-    const key = `${token.network}:${token.address}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    deduped.push(token);
-  }
-
-  return deduped.slice(0, limit);
 }
 
 function estimateLlmCostUsd(model: string, tokensUsed: number): number {
@@ -1150,12 +1106,11 @@ function extractTradingProviders(): Set<string> {
 }
 
 async function refreshVenueIntelligence(): Promise<void> {
-  // B2 RE-POINT 2: venue intelligence reads route over the Traderton read
-  // boundary when configured (`get_market_overview` for perps, `discover_tokens`
-  // + `search_tokens` for DEX). When the boundary is absent, the in-process
-  // `marketDataRegistry` path is kept as the read fallback. The early return
-  // stands only when NEITHER a boundary NOR a registry is available.
-  if (!tradertonReadBoundary && !marketDataRegistry) {
+  // Venue intelligence reads route over the Traderton read boundary
+  // (`get_market_overview` for perps, `discover_tokens` + `search_tokens` for
+  // DEX). In-process market-data has been removed (B7) — the boundary is the
+  // sole source, so the early return stands whenever the boundary is absent.
+  if (!tradertonReadBoundary) {
     recordVenueSignals(runtimeState, []);
     return;
   }
@@ -1258,74 +1213,6 @@ async function refreshVenueIntelligence(): Promise<void> {
           });
         }
       }
-    } else {
-      try {
-        recordMarketDataAttempt('hyperliquid');
-        const assetContexts = await marketDataRegistry!.hyperliquid.assetContexts();
-        recordMarketDataRecovery('hyperliquid');
-        const assetMap = new Map(assetContexts.data.map((asset) => [asset.asset.toUpperCase(), asset] as const));
-        for (const symbol of trackedPerpsSymbols) {
-          const asset = assetMap.get(symbol);
-          if (!asset) {
-            signals.push({
-              kind: 'perps',
-              instrument: symbol,
-              venue: 'hyperliquid',
-              fields: [{ label: 'Status', value: 'unavailable' }],
-              freshness: { state: 'unavailable', provider: 'hyperliquid', note: 'asset context unavailable' },
-            });
-            continue;
-          }
-
-          let longShortRatio: number | null = null;
-          let bybitRatioUnavailable = false;
-          if (bybitTracked) {
-            try {
-              recordMarketDataAttempt('bybit');
-              const ratioResult = await marketDataRegistry!.bybit.longShortRatio(`${symbol}USDT`);
-              longShortRatio = ratioResult.data[0]?.longShortRatio ?? null;
-              recordMarketDataRecovery('bybit');
-            } catch (err) {
-              logger.warn({ err, symbol }, 'Failed to fetch Bybit crowding ratio for venue intelligence');
-              bybitRatioUnavailable = true;
-              recordMarketDataFallback();
-              recordMarketDataRejection('bybit', { priority: 'execution' });
-            }
-          }
-
-          signals.push({
-            kind: 'perps',
-            instrument: symbol,
-            venue: venueLabel,
-            fields: [
-              { label: 'Funding', value: asset.fundingRate === null ? 'unavailable' : `${(asset.fundingRate * 100).toFixed(4)}%` },
-              { label: 'Open interest', value: asset.openInterest === null ? 'unavailable' : asset.openInterest.toFixed(2) },
-              { label: 'Mark/oracle spread', value: asset.markOracleSpreadPct === null ? 'unavailable' : `${asset.markOracleSpreadPct.toFixed(3)}%` },
-              { label: '24h volume', value: asset.volume24hUsd === null ? 'unavailable' : `$${asset.volume24hUsd.toFixed(0)}` },
-              { label: '24h change', value: asset.priceChange24hPct === null ? 'unavailable' : `${asset.priceChange24hPct.toFixed(2)}%` },
-              { label: 'Long/short ratio', value: longShortRatio === null ? 'unavailable' : longShortRatio.toFixed(2) },
-            ],
-            freshness: bybitRatioUnavailable
-              ? providerFreshness(assetContexts.meta.freshness, 'hyperliquid', 'Bybit ratio unavailable')
-              : providerFreshness(assetContexts.meta.freshness, 'hyperliquid'),
-          });
-          if (assetContexts.meta.freshness.ageMs > 0) {
-            recordSignalStaleness('price', assetContexts.meta.freshness.ageMs);
-          }
-        }
-      } catch (err) {
-        logger.warn({ err }, 'Failed to refresh perps venue intelligence');
-        recordMarketDataRejection('hyperliquid', { priority: 'execution' });
-        for (const symbol of trackedPerpsSymbols) {
-          signals.push({
-            kind: 'perps',
-            instrument: symbol,
-            venue: 'hyperliquid',
-            fields: [{ label: 'Status', value: 'unavailable' }],
-            freshness: { state: 'unavailable', provider: 'hyperliquid', note: 'venue intelligence fetch failed' },
-          });
-        }
-      }
     }
   }
 
@@ -1372,58 +1259,35 @@ async function refreshVenueIntelligence(): Promise<void> {
         logger.warn({ err }, 'Failed to fetch DEX discovery context for venue intelligence');
         recordMarketDataRejection('aggregated-discovery', { priority: 'discovery' });
       }
-    } else {
-      try {
-        recordMarketDataAttempt('aggregated-discovery');
-        const discoveryResult = await marketDataRegistry!.discovery.discover({ maxResults: 25 });
-        recordMarketDataRecovery('aggregated-discovery');
-        discoveryFreshness = providerFreshness(discoveryResult.meta.freshness, discoveryResult.meta.provider);
-        recordSignalStaleness('discovery', discoveryResult.meta.freshness.ageMs);
-        discoveryByNetworkAddress = buildDiscoveryAddressMap(discoveryResult.data);
-      } catch (err) {
-        logger.warn({ err }, 'Failed to fetch DEX discovery context for venue intelligence');
-        recordMarketDataRejection('aggregated-discovery', { priority: 'discovery' });
-      }
     }
 
     for (const target of trackedDexTargets.slice(0, marketIntelligencePolicy.maxRefreshedDexTargetsPerTick)) {
       try {
         recordMarketDataAttempt('dexscreener');
-        let topToken: DexSearchToken | undefined;
-        let searchFreshness: { isStale: boolean; ageMs: number };
-        if (tradertonReadBoundary) {
-          // Boundary search: `search_tokens` returns tokens carrying every field
-          // the signal renders; herobids still applies its own network filter +
-          // top-pick to preserve the in-process selection behaviour.
-          const result = await tradertonReadBoundary.invoke({
-            toolName: 'search_tokens',
-            payload: { query: target.symbol, ...(target.network ? { network: target.network } : {}) },
-          });
-          if (result.kind !== 'success') {
-            throw new Error(
-              result.kind === 'failure'
-                ? `search_tokens failed: ${result.code}`
-                : result.kind === 'transport_error'
-                  ? 'search_tokens transport error'
-                  : 'search_tokens in progress',
-            );
-          }
-          recordMarketDataRecovery('dexscreener');
-          const parsedSearch = parseDexTokensPayload(result.data);
-          const filtered = target.network
-            ? parsedSearch.tokens.filter((token) => token.network.toLowerCase() === target.network)
-            : parsedSearch.tokens;
-          topToken = filtered[0];
-          searchFreshness = parsedSearch.freshness;
-        } else {
-          const searchResult = await marketDataRegistry!.dexscreener.search(target.symbol);
-          recordMarketDataRecovery('dexscreener');
-          const filteredSearchResults = target.network
-            ? searchResult.data.filter((token) => token.network.toLowerCase() === target.network)
-            : searchResult.data;
-          topToken = filterSearchResults(filteredSearchResults, { limit: 1 })[0];
-          searchFreshness = searchResult.meta.freshness;
+        // Boundary search (B7): `search_tokens` returns tokens carrying every
+        // field the signal renders; herobids still applies its own network
+        // filter + top-pick to preserve the selection behaviour. The boundary is
+        // guaranteed present (early return + startup guard).
+        const result = await tradertonReadBoundary!.invoke({
+          toolName: 'search_tokens',
+          payload: { query: target.symbol, ...(target.network ? { network: target.network } : {}) },
+        });
+        if (result.kind !== 'success') {
+          throw new Error(
+            result.kind === 'failure'
+              ? `search_tokens failed: ${result.code}`
+              : result.kind === 'transport_error'
+                ? 'search_tokens transport error'
+                : 'search_tokens in progress',
+          );
         }
+        recordMarketDataRecovery('dexscreener');
+        const parsedSearch = parseDexTokensPayload(result.data);
+        const filtered = target.network
+          ? parsedSearch.tokens.filter((token) => token.network.toLowerCase() === target.network)
+          : parsedSearch.tokens;
+        const topToken: DexSearchToken | undefined = filtered[0];
+        const searchFreshness: { isStale: boolean; ageMs: number } = parsedSearch.freshness;
         const position = findDexPositionForTarget(sessionMetrics.openPositions, target);
         // Join discovery metadata by network:address to prevent same-symbol fakes from inheriting metadata.
         const discoveryToken = topToken
@@ -2085,13 +1949,10 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     },
     publishToInbound,
     botRepo: toolBotRepo,
-    marketDataRegistry: marketDataRegistry ?? undefined,
-    marketDataConfig: marketDataConfig as unknown as Record<string, unknown> ?? undefined,
     recordMarketDataAttempt,
     recordMarketDataRejection,
     capabilityEngine,
     sessionMetrics,
-    priceService: priceService ?? undefined,
     riskContractOps: buildRiskContractOps(),
     agentConfigOps,
     executionConfig: agentConfigOps
@@ -2935,9 +2796,9 @@ async function runTick(): Promise<void> {
     // freshness is captured here so the post-gate `recordRegimeEvaluation` can
     // re-source its provider/freshness telemetry from `data.freshness` (parity
     // with the coordinator's regime re-point). A non-success boundary result is
-    // surfaced as a throw so `shouldSkipTick` treats it EXACTLY like a failed
-    // in-process evaluateRegime today (regime null → degraded, gating unchanged).
-    // When the boundary is absent, the in-process evaluateRegime path is kept.
+    // surfaced as a throw so `shouldSkipTick` treats it as a failed regime read
+    // (regime null → degraded, gating unchanged). In-process market-data has
+    // been removed (B7) — the boundary is the sole source.
     // Holder object (not a bare `let`) so the freshness captured inside the
     // async regime callback is visible to the post-gate telemetry without
     // tripping control-flow narrowing on a closure-assigned local.
@@ -2948,67 +2809,59 @@ async function runTick(): Promise<void> {
         {
           evaluateRegime: tradingTickWorkPlan.shouldEvaluateRegime
             ? async () => {
+              // Boundary-only (B7): `shouldEvaluateRegime` is gated on the
+              // boundary being present, and the startup guard hard-fails a
+              // trading agent without one, so the boundary is guaranteed here.
               const params: RegimeParams = {};
-              if (tradertonReadBoundary) {
-                recordMarketDataAttempt('binance');
-                const result = await tradertonReadBoundary.invoke({
-                  toolName: 'check_regime',
-                  payload: { ...(params.benchmarkSymbol ? { benchmarkSymbol: params.benchmarkSymbol } : {}) },
-                });
-                if (result.kind === 'success') {
-                  const parsed = parseRegimeBoundaryPayload(result.data);
-                  regimeBoundaryCapture.freshness = parsed.freshness;
-                  return parsed.regime;
-                }
-                // failure / transport_error / in_progress → regime unavailable,
-                // handled identically to a thrown in-process evaluation.
-                throw new Error(
-                  result.kind === 'failure'
-                    ? `check_regime failed: ${result.code}`
-                    : result.kind === 'transport_error'
-                      ? 'check_regime transport error'
-                      : 'check_regime in progress',
-                );
+              recordMarketDataAttempt('binance');
+              const result = await tradertonReadBoundary!.invoke({
+                toolName: 'check_regime',
+                payload: { ...(params.benchmarkSymbol ? { benchmarkSymbol: params.benchmarkSymbol } : {}) },
+              });
+              if (result.kind === 'success') {
+                const parsed = parseRegimeBoundaryPayload(result.data);
+                regimeBoundaryCapture.freshness = parsed.freshness;
+                return parsed.regime;
               }
-              return evaluateRegime(params, (symbol) =>
-                (recordMarketDataAttempt('binance'), marketDataRegistry!.binance.candles(symbol, { interval: '1h', limit: 200 })).then((providerResult) => providerResult.data),
+              // failure / transport_error / in_progress → regime unavailable,
+              // handled identically to a thrown in-process evaluation.
+              throw new Error(
+                result.kind === 'failure'
+                  ? `check_regime failed: ${result.code}`
+                  : result.kind === 'transport_error'
+                    ? 'check_regime transport error'
+                    : 'check_regime in progress',
               );
             }
             : undefined,
-          // B5 RE-POINT: when the Traderton read boundary is configured, the
-          // volatility (ATR%) driving adaptive tick cadence is derived BEHIND the
-          // boundary by `get_volatility` (candles fetched there, only the derived
-          // number crosses back) instead of the in-process registry — raw candles
-          // never enter this process on the boundary path (legal isolation). A
-          // non-success boundary result is surfaced as a throw so `shouldSkipTick`
-          // treats it EXACTLY like a failed in-process read (adaptiveIntervalDegraded
-          // → fallback interval), MIRRORING the regime re-point above. When the
-          // boundary is absent, the in-process registry fallback derives ATR% via
-          // `calculateAtrPercent` over the fetched candles.
+          // B5 RE-POINT: the volatility (ATR%) driving adaptive tick cadence is
+          // derived BEHIND the Traderton boundary by `get_volatility` (candles
+          // fetched there, only the derived number crosses back) — raw candles
+          // never enter this process (legal isolation). A non-success boundary
+          // result is surfaced as a throw so `shouldSkipTick` treats it EXACTLY
+          // like a failed read (adaptiveIntervalDegraded → fallback interval),
+          // MIRRORING the regime re-point above. In-process market-data has been
+          // removed (B7) — the boundary is the sole source.
           fetchVolatilityPct: tradingTickWorkPlan.shouldFetchVolatilityPct
             ? async () => {
-              if (tradertonReadBoundary) {
-                recordMarketDataAttempt('binance');
-                const result = await tradertonReadBoundary.invoke({
-                  toolName: 'get_volatility',
-                  payload: {},
-                });
-                if (result.kind === 'success') {
-                  return parseVolatilityBoundaryPayload(result.data);
-                }
-                // failure / transport_error / in_progress → volatility unavailable,
-                // handled identically to a thrown in-process read (degrade + fallback).
-                throw new Error(
-                  result.kind === 'failure'
-                    ? `get_volatility failed: ${result.code}`
-                    : result.kind === 'transport_error'
-                      ? 'get_volatility transport error'
-                      : 'get_volatility in progress',
-                );
-              }
+              // Boundary-only (B7): gated on the boundary being present.
               recordMarketDataAttempt('binance');
-              const providerResult = await marketDataRegistry!.binance.candles('BTC', { interval: '1h', limit: 24 });
-              return calculateAtrPercent(providerResult.data);
+              const result = await tradertonReadBoundary!.invoke({
+                toolName: 'get_volatility',
+                payload: {},
+              });
+              if (result.kind === 'success') {
+                return parseVolatilityBoundaryPayload(result.data);
+              }
+              // failure / transport_error / in_progress → volatility unavailable,
+              // handled identically to a thrown in-process read (degrade + fallback).
+              throw new Error(
+                result.kind === 'failure'
+                  ? `get_volatility failed: ${result.code}`
+                  : result.kind === 'transport_error'
+                    ? 'get_volatility transport error'
+                    : 'get_volatility in progress',
+              );
             }
             : undefined,
         },
@@ -3037,7 +2890,7 @@ async function runTick(): Promise<void> {
           : { state: 'fresh', provider: 'binance' }
         : {
             state: 'unavailable',
-            note: (tradertonReadBoundary || marketDataRegistry) ? 'regime not evaluated' : 'market-data registry unavailable',
+            note: tradertonReadBoundary ? 'regime not evaluated' : 'market-data unavailable',
           };
       recordRegimeEvaluation(runtimeState, skipDecision.regime ?? null, regimeFreshness);
     }
@@ -3347,18 +3200,16 @@ async function runTick(): Promise<void> {
 
             // go_long with sizeUsd: convert USD to base units via PriceService.
             if (intent === 'go_long' && sizeUsd !== undefined && pricingIdentity) {
-              // Read-fallback posture (ruling 5): prefer the Traderton read
-              // boundary when present, fall back to the in-process price service
-              // when absent. Fail closed only when NEITHER is available.
-              if (!tradertonReadBoundary && !priceService) {
+              // Boundary-only (B7): the Traderton read boundary is the sole
+              // price source — in-process market-data has been removed. Fail
+              // closed when the boundary is absent.
+              if (!tradertonReadBoundary) {
                 throw new Error(
-                  `Hybrid sizing: no price source (boundary or in-process) — cannot convert USD size for ${symbol}`,
+                  `Hybrid sizing: no price source (Traderton boundary absent) — cannot convert USD size for ${symbol}`,
                 );
               }
 
-              const hybridPriceService = tradertonReadBoundary
-                ? createBoundaryPriceService(tradertonReadBoundary)
-                : priceService!;
+              const hybridPriceService = createBoundaryPriceService(tradertonReadBoundary);
 
               const sizingResult = await resolveHybridTargetSize({
                 instrumentId: symbol,

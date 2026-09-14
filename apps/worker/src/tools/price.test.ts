@@ -58,80 +58,32 @@ describe('get_price tool', () => {
     expect(getPrice).not.toHaveBeenCalled();
   });
 
-  it('returns the shared price-service payload for valid lookups', async () => {
+  it('degrades (fail-closed) when no Traderton boundary is configured, without touching the price service', async () => {
+    const getPrice = vi.fn();
+
     const result = await getPriceTool!.execute(
       { symbol: 'SOL', chain: 'solana' },
-      makeContext({
-        priceService: {
-          getPrice: vi.fn().mockResolvedValue({
-            ok: true,
-            data: {
-              priceUsd: 155,
-              source: 'oracle',
-              fetchedAt: '2026-06-09T00:00:00.000Z',
-              stale: false,
-            },
-          }),
-        },
-      }),
+      makeContext({ priceService: { getPrice } }),
     );
 
-    expect(result.success).toBe(true);
-    expect(result.data).toMatchObject({
-      ok: true,
-      symbol: 'SOL',
-      chain: 'solana',
-      priceUsd: 155,
-      source: 'oracle',
-      stale: false,
-    });
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('market_data_not_configured');
+    expect(result.retryable).toBe(false);
+    expect(getPrice).not.toHaveBeenCalled();
   });
 
-  it('passes address-shaped symbol as address argument for identity-aware lookup', async () => {
+  it('degrades for address-shaped symbols when no boundary is configured', async () => {
     const evmAddress = '0x6982508145454Ce325dDbE47a25d4ec3d2311933';
-    const getPrice = vi.fn().mockResolvedValue({
-      ok: true,
-      data: { priceUsd: 0.00001, source: 'oracle', fetchedAt: '2026-06-09T00:00:00.000Z', stale: false },
-    });
+    const getPrice = vi.fn();
 
     const result = await getPriceTool!.execute(
       { symbol: evmAddress, chain: 'ethereum' },
       makeContext({ priceService: { getPrice } }),
     );
 
-    expect(result.success).toBe(true);
-    // Must pass the address as 3rd argument so the price service uses strict identity
-    expect(getPrice).toHaveBeenCalledWith(evmAddress, 'ethereum', evmAddress);
-  });
-
-  it('passes Solana mint as address argument for identity-aware lookup', async () => {
-    const mint = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
-    const getPrice = vi.fn().mockResolvedValue({
-      ok: true,
-      data: { priceUsd: 0.00002, source: 'oracle', fetchedAt: '2026-06-09T00:00:00.000Z', stale: false },
-    });
-
-    const result = await getPriceTool!.execute(
-      { symbol: mint, chain: 'solana' },
-      makeContext({ priceService: { getPrice } }),
-    );
-
-    expect(result.success).toBe(true);
-    expect(getPrice).toHaveBeenCalledWith(mint, 'solana', mint);
-  });
-
-  it('does not pass address for plain ticker symbols', async () => {
-    const getPrice = vi.fn().mockResolvedValue({
-      ok: true,
-      data: { priceUsd: 67000, source: 'execution', fetchedAt: '2026-06-09T00:00:00.000Z', stale: false },
-    });
-
-    await getPriceTool!.execute(
-      { symbol: 'BTC', chain: 'hyperliquid' },
-      makeContext({ priceService: { getPrice } }),
-    );
-
-    expect(getPrice).toHaveBeenCalledWith('BTC', 'hyperliquid', undefined);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('market_data_not_configured');
+    expect(getPrice).not.toHaveBeenCalled();
   });
 
   it('routes the read through the boundary when configured (does NOT touch priceService)', async () => {

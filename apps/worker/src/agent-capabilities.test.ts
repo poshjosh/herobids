@@ -56,7 +56,7 @@ describe('deriveTradingTickWorkPlan', () => {
     });
   });
 
-  it('enables market-data and trading follow-up work for a trading agent with market data access', () => {
+  it('enables market-data and trading follow-up work for a trading agent with a boundary', () => {
     expect(deriveTradingTickWorkPlan([BASE_SKILL, TRADING_SKILL], true)).toEqual({
       hasTradingCapability: true,
       shouldEvaluateRegime: true,
@@ -67,7 +67,7 @@ describe('deriveTradingTickWorkPlan', () => {
     });
   });
 
-  it('keeps trading follow-up work enabled even when market data is unavailable', () => {
+  it('keeps trading follow-up work enabled even when the boundary is unavailable', () => {
     expect(deriveTradingTickWorkPlan([BASE_SKILL, BOT_MANAGEMENT_SKILL], false)).toEqual({
       hasTradingCapability: true,
       shouldEvaluateRegime: false,
@@ -78,10 +78,11 @@ describe('deriveTradingTickWorkPlan', () => {
     });
   });
 
-  it('evaluates regime and volatility over the boundary when the in-process registry is absent but the boundary is present', () => {
-    // Target end-state: registry removed, regime sourced over check_regime and
-    // volatility over get_volatility (B5). Both must still evaluate over the boundary.
-    expect(deriveTradingTickWorkPlan([BASE_SKILL, TRADING_SKILL], false, true)).toEqual({
+  it('evaluates regime and volatility over the boundary when the boundary is present', () => {
+    // Target end-state (B7): in-process registry removed, regime sourced over
+    // check_regime and volatility over get_volatility (B5) — both evaluate over
+    // the boundary, which is now the sole source.
+    expect(deriveTradingTickWorkPlan([BASE_SKILL, TRADING_SKILL], true)).toEqual({
       hasTradingCapability: true,
       shouldEvaluateRegime: true,
       shouldFetchVolatilityPct: true,

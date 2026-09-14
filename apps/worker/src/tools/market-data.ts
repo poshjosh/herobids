@@ -1,118 +1,8 @@
 import { z } from 'zod';
-import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
-import {
-  evaluateRegime,
-  applyTokenSearchPolicy,
-  CANDLE_PROVIDERS,
-  type TokenInfo,
-  type RegimeParams,
-  type ProviderRegistry,
-  type MarketDataConfig,
-} from '@herobids/market-data';
-import {
-  executeDiscoverTokensTool,
-  executeFundingRatesTool,
-  executeMarketOverviewTool,
-} from '../intelligence-tools.js';
+import { CANDLE_PROVIDERS } from '@herobids/market-data';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult } from './traderton-read.js';
-
-const logger = createLogger('tools:market-data');
-
-async function enrichDiscoveryTokenPrices(
-  tokens: Array<Record<string, unknown>>,
-  priceService: TradingToolContext['priceService'],
-): Promise<Array<Record<string, unknown>>> {
-  if (!priceService || tokens.length === 0) {
-    return tokens;
-  }
-
-  const symbolNetworkCounts = new Map<string, number>();
-  for (const token of tokens) {
-    const symbol = typeof token['symbol'] === 'string' ? token['symbol'] : null;
-    const chain = typeof token['network'] === 'string' ? token['network'] : null;
-    if (!symbol || !chain) {
-      continue;
-    }
-
-    const key = `${chain.toLowerCase()}:${symbol.toUpperCase()}`;
-    symbolNetworkCounts.set(key, (symbolNetworkCounts.get(key) ?? 0) + 1);
-  }
-
-  const uniqueLookupKeys = new Set<string>();
-  const priceResults = new Map<string, Awaited<ReturnType<NonNullable<TradingToolContext['priceService']>['getPrice']>>>();
-
-  for (const token of tokens) {
-    const symbol = typeof token['symbol'] === 'string' ? token['symbol'] : null;
-    const chain = typeof token['network'] === 'string' ? token['network'] : null;
-    if (!symbol || !chain) {
-      continue;
-    }
-
-    const key = `${chain.toLowerCase()}:${symbol.toUpperCase()}`;
-    if ((symbolNetworkCounts.get(key) ?? 0) !== 1 || uniqueLookupKeys.has(key)) {
-      continue;
-    }
-
-    uniqueLookupKeys.add(key);
-    const address = typeof token['address'] === 'string' ? token['address'] : undefined;
-    priceResults.set(key, await priceService.getPrice(symbol, chain, address));
-  }
-
-  return Promise.all(tokens.map(async (token) => {
-    const symbol = typeof token['symbol'] === 'string' ? token['symbol'] : null;
-    const chain = typeof token['network'] === 'string' ? token['network'] : null;
-    if (!symbol || !chain) {
-      return token;
-    }
-
-    const key = `${chain.toLowerCase()}:${symbol.toUpperCase()}`;
-    if ((symbolNetworkCounts.get(key) ?? 0) !== 1) {
-      return token;
-    }
-
-    const result = priceResults.get(key);
-    if (!result || !result.ok || !result.data) {
-      return token;
-    }
-
-    return {
-      ...token,
-      priceUsd: result.data.priceUsd,
-      priceSource: result.data.source,
-      priceFetchedAt: result.data.fetchedAt,
-      priceStale: result.data.stale,
-    };
-  }));
-}
-
-/** @deprecated Use searchTokensWithPolicy through the provider registry facade instead. Kept as fallback. */
-function filterSearchResults(
-  rawResults: TokenInfo[],
-  options?: { network?: string; minLiquidityUsd?: number; limit?: number },
-) {
-  const minLiquidityUsd = options?.minLiquidityUsd ?? 10_000;
-  const limit = options?.limit ?? 10;
-  const network = options?.network?.toLowerCase();
-  const filtered = rawResults
-    .filter((token: TokenInfo) => token.liquidityUsd >= minLiquidityUsd)
-    .filter((token: TokenInfo) => !network || token.network.toLowerCase() === network)
-    .sort((left: TokenInfo, right: TokenInfo) => right.liquidityUsd - left.liquidityUsd);
-
-  const deduped: typeof filtered = [];
-  const seen = new Set<string>();
-  for (const token of filtered) {
-    const key = `${token.network}:${token.address}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    deduped.push(token);
-  }
-
-  return deduped.slice(0, limit);
-}
 
 // --- search_tokens ---
 
@@ -137,64 +27,16 @@ const searchTokensTool: AgentTool<TradingToolContext> = {
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { query, network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit } = params as z.infer<typeof SearchTokensParamsSchema>;
 
-    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
-    if (ctx.tradertonBoundary) {
-      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
-        toolName: 'search_tokens',
-        payload: { query, network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit },
-      }));
+    // L3: route the read over the Traderton boundary. When the boundary is
+    // absent the tool degrades (fail-closed) — there is no in-process path.
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    if (!ctx.marketDataRegistry) {
-      return {
-        success: false,
-        error: 'market_data_not_configured',
-        retryable: false,
-      };
-    }
-
-    try {
-      ctx.recordMarketDataAttempt?.('dexscreener');
-
-      // Use shared token policy when marketDataConfig is available
-      if (ctx.marketDataConfig) {
-        const searchResult = await ctx.marketDataRegistry.dexscreener.search(query);
-        const candidates = applyTokenSearchPolicy(
-          searchResult.data as TokenInfo[],
-          ctx.marketDataConfig as unknown as MarketDataConfig,
-          { network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit },
-        );
-        return {
-          success: true,
-          data: { ok: true, tokens: candidates, freshness: searchResult.meta.freshness },
-        };
-      }
-
-      // Fallback to legacy filtering when no config available
-      const searchResult = await ctx.marketDataRegistry.dexscreener.search(query);
-      const results = filterSearchResults(searchResult.data as TokenInfo[], {
-        network,
-        minLiquidityUsd,
-        limit,
-      });
-
-      return {
-        success: true,
-        data: { ok: true, tokens: results, freshness: searchResult.meta.freshness },
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      if (message.includes('Rate limit exceeded')) {
-        ctx.recordMarketDataRejection?.('dexscreener', { priority: 'discovery' });
-        return {
-          success: false,
-          error: 'rate_limit',
-          retryable: true,
-        };
-      }
-      logger.warn({ err, tool: 'search_tokens' }, 'search_tokens failed');
-      return { success: false, error: message, retryable: false, fault: false };
-    }
+    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+      toolName: 'search_tokens',
+      payload: { query, network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit },
+    }));
   },
 };
 
@@ -216,46 +58,16 @@ const discoverTokensTool: AgentTool<TradingToolContext> = {
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { network, limit, minLiquidityUsd } = params as z.infer<typeof DiscoverTokensParamsSchema>;
 
-    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
-    if (ctx.tradertonBoundary) {
-      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
-        toolName: 'discover_tokens',
-        payload: { network, limit, minLiquidityUsd },
-      }));
+    // L3: route the read over the Traderton boundary. When the boundary is
+    // absent the tool degrades (fail-closed) — there is no in-process path.
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    if (!ctx.marketDataRegistry) {
-      return {
-        success: false,
-        error: 'market_data_not_configured',
-        retryable: false,
-      };
-    }
-
-    try {
-      const result = await executeDiscoverTokensTool(
-        ctx.marketDataRegistry as unknown as ProviderRegistry,
-        params as z.infer<typeof DiscoverTokensParamsSchema>,
-        { onAttempt: ctx.recordMarketDataAttempt ?? (() => {}) },
-      );
-      const tokens = Array.isArray(result['tokens'])
-        ? await enrichDiscoveryTokenPrices(result['tokens'] as Array<Record<string, unknown>>, ctx.priceService)
-        : result['tokens'];
-
-      return { success: true, data: { ...result, tokens } };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      if (message.includes('Rate limit exceeded')) {
-        ctx.recordMarketDataRejection?.('aggregated-discovery', { priority: 'discovery' });
-        return {
-          success: false,
-          error: 'rate_limit',
-          retryable: true,
-        };
-      }
-      logger.warn({ err, tool: 'discover_tokens' }, 'discover_tokens failed');
-      return { success: false, error: message, retryable: false, fault: false };
-    }
+    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+      toolName: 'discover_tokens',
+      payload: { network, limit, minLiquidityUsd },
+    }));
   },
 };
 
@@ -287,57 +99,16 @@ const checkRegimeTool: AgentTool<TradingToolContext> = {
       benchmarkSymbol, emaFast, emaSlow, emaTrend, adxMin, emaAlignment, marketStructure, priceAboveVwap, disableWhenChoppy,
     } = params as z.infer<typeof CheckRegimeParamsSchema>;
 
-    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
-    if (ctx.tradertonBoundary) {
-      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
-        toolName: 'check_regime',
-        payload: { benchmarkSymbol, emaFast, emaSlow, emaTrend, adxMin, emaAlignment, marketStructure, priceAboveVwap, disableWhenChoppy },
-      }));
+    // L3: route the read over the Traderton boundary. When the boundary is
+    // absent the tool degrades (fail-closed) — there is no in-process path.
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    if (!ctx.marketDataRegistry) {
-      return {
-        success: false,
-        error: 'market_data_not_configured',
-        retryable: false,
-      };
-    }
-
-    const regimeParams = params as RegimeParams;
-
-    try {
-      const result = await evaluateRegime(regimeParams, async (symbol) => {
-        ctx.recordMarketDataAttempt?.(regimeCandleProvider.id);
-        try {
-          return await regimeCandleProvider.fetchCandles(ctx.marketDataRegistry!, symbol, {
-            interval: '1h',
-            limit: 200,
-          });
-        } catch (fetchErr: unknown) {
-          const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-          if (msg.includes('400') || msg.includes('status 400') || msg.includes('Bad Request')) {
-            throw new Error(
-              `Symbol not available on ${regimeCandleProvider.id}: "${symbol}". ` +
-              `Use a major benchmark like BTC, ETH, or SOL for regime evaluation.`,
-            );
-          }
-          throw fetchErr;
-        }
-      });
-      return { success: true, data: { ok: true, ...result } };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      if (message.includes('Rate limit exceeded')) {
-        ctx.recordMarketDataRejection?.(regimeCandleProvider.id, { priority: 'execution' });
-        return {
-          success: false,
-          error: 'rate_limit',
-          retryable: true,
-        };
-      }
-      logger.warn({ err, tool: 'check_regime' }, 'check_regime failed');
-      return { success: false, error: message, retryable: false, fault: false };
-    }
+    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+      toolName: 'check_regime',
+      payload: { benchmarkSymbol, emaFast, emaSlow, emaTrend, adxMin, emaAlignment, marketStructure, priceAboveVwap, disableWhenChoppy },
+    }));
   },
 };
 
@@ -357,34 +128,16 @@ const getFundingRatesTool: AgentTool<TradingToolContext> = {
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { symbols, venue } = params as z.infer<typeof GetFundingRatesParamsSchema>;
 
-    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
-    if (ctx.tradertonBoundary) {
-      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
-        toolName: 'get_funding_rates',
-        payload: { symbols, venue },
-      }));
+    // L3: route the read over the Traderton boundary. When the boundary is
+    // absent the tool degrades (fail-closed) — there is no in-process path.
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    if (!ctx.marketDataRegistry) {
-      return {
-        success: false,
-        error: 'market_data_not_configured',
-        retryable: false,
-      };
-    }
-
-    try {
-      const result = await executeFundingRatesTool(
-        ctx.marketDataRegistry as unknown as ProviderRegistry,
-        params as z.infer<typeof GetFundingRatesParamsSchema>,
-        { onAttempt: ctx.recordMarketDataAttempt ?? (() => {}) },
-      );
-      return { success: true, data: result };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      logger.warn({ err, tool: 'get_funding_rates' }, 'get_funding_rates failed');
-      return { success: false, error: message, retryable: false, fault: false };
-    }
+    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+      toolName: 'get_funding_rates',
+      payload: { symbols, venue },
+    }));
   },
 };
 
@@ -404,34 +157,16 @@ const getMarketOverviewTool: AgentTool<TradingToolContext> = {
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { venue, symbols } = params as z.infer<typeof GetMarketOverviewParamsSchema>;
 
-    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
-    if (ctx.tradertonBoundary) {
-      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
-        toolName: 'get_market_overview',
-        payload: { venue, symbols },
-      }));
+    // L3: route the read over the Traderton boundary. When the boundary is
+    // absent the tool degrades (fail-closed) — there is no in-process path.
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    if (!ctx.marketDataRegistry) {
-      return {
-        success: false,
-        error: 'market_data_not_configured',
-        retryable: false,
-      };
-    }
-
-    try {
-      const result = await executeMarketOverviewTool(
-        ctx.marketDataRegistry as unknown as ProviderRegistry,
-        params as z.infer<typeof GetMarketOverviewParamsSchema>,
-        { onAttempt: ctx.recordMarketDataAttempt ?? (() => {}) },
-      );
-      return { success: true, data: result };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      logger.warn({ err, tool: 'get_market_overview' }, 'get_market_overview failed');
-      return { success: false, error: message, retryable: false, fault: false };
-    }
+    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+      toolName: 'get_market_overview',
+      payload: { venue, symbols },
+    }));
   },
 };
 

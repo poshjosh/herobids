@@ -114,60 +114,23 @@ const getPriceTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    // L3: route the read through the Traderton boundary when configured. The
-    // Traderton `get_price` tool is byte-identical (same validation, address
-    // auto-detection from the symbol, and success shape), so parity holds by
-    // construction — no `address` arg is passed here since the boundary tool
-    // does its own detection. In-process fallback below is transitional, used
-    // only when the boundary is absent.
-    if (ctx.tradertonBoundary) {
-      const result = await ctx.tradertonBoundary.invoke({
-        toolName: 'get_price',
-        payload: { symbol: trimmedSymbol, chain },
-      });
-      return mapReadResultToToolResult(result);
-    }
-
-    if (!ctx.priceService) {
+    // L3: route the read through the Traderton boundary. When the boundary is
+    // absent the tool degrades (fail-closed) — there is no in-process path. The
+    // Traderton `get_price` tool does its own address auto-detection from the
+    // symbol, so only { symbol, chain } is forwarded.
+    if (!ctx.tradertonBoundary) {
       return {
         success: false,
-        error: 'price_service_not_configured',
+        error: 'market_data_not_configured',
         retryable: false,
       };
     }
 
-    const address = isOnChainAddress(trimmedSymbol, chain) ? trimmedSymbol : undefined;
-    const result = await ctx.priceService.getPrice(trimmedSymbol, chain as SupportedChain, address);
-
-    if (!result || typeof result !== 'object' || !('ok' in result)) {
-      return {
-        success: false,
-        error: 'price lookup failed',
-        fault: false,
-      };
-    }
-
-    if (!result.ok) {
-      return {
-        success: false,
-        error: result.error?.message ?? 'price lookup failed',
-        retryable: result.error?.code === 'price.source_failed',
-        fault: false,
-      };
-    }
-
-    return {
-      success: true,
-      data: {
-        ok: true,
-        symbol: trimmedSymbol,
-        chain,
-        priceUsd: result.data?.priceUsd,
-        source: result.data?.source,
-        fetchedAt: result.data?.fetchedAt,
-        stale: result.data?.stale,
-      },
-    };
+    const result = await ctx.tradertonBoundary.invoke({
+      toolName: 'get_price',
+      payload: { symbol: trimmedSymbol, chain },
+    });
+    return mapReadResultToToolResult(result);
   },
 };
 
