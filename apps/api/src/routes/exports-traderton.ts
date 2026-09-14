@@ -1,0 +1,193 @@
+// API-local seam for the agent-export endpoints that source trading evidence
+// over the Traderton read boundary (D1-c1 Sub-step 5).
+//
+// This mirrors the worker's read-adapter + evidence-row-mappers (a copy, never
+// a cross-app import — apps/worker is not a dependency of apps/api). The seam is
+// transport + row-shape narrowing ONLY — no trading logic:
+//
+//   - `createTradertonReadBoundary` binds the per-request subject VALUES + the
+//     deadline onto a concrete `TradertonClient`, and maps the client result
+//     into the domain-clean `TradertonReadResult`. The agent endpoints build one
+//     boundary per request bound to the REQUESTING USER's subject.
+//   - `toFillRow` / `toJournalRow` / `toPositionRow` rehydrate the date-typed
+//     columns (which arrive as ISO strings over JSON) back into `Date` objects
+//     so the existing CSV/JSON/markdown mappers — which call `.toISOString()`
+//     and re-serialize the rows — produce byte-identical output to the previous
+//     in-process DB-loader path. Numeric/decimal columns are already strings and
+//     pass through unchanged; additive Traderton columns pass through harmlessly.
+//   - `narrowReadArray` narrows a success payload's `{ fills | events | positions }`
+//     array; any non-success outcome is surfaced to the caller as a typed error
+//     so the endpoint can return the right HTTP status (never silently empty).
+
+import type { fills, journalEvents, positions } from '@herobids/db';
+import type { TradertonReadResult } from '@herobids/domain';
+import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+
+export type FillRow = typeof fills.$inferSelect;
+export type JournalRow = typeof journalEvents.$inferSelect;
+export type PositionRow = typeof positions.$inferSelect;
+
+/** The narrow read boundary the agent-export endpoints consume. */
+export interface TradertonReadBoundary {
+  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+}
+
+/** Map a concrete L3a client result into the domain-clean read result. */
+function mapClientResultToReadResult(result: TradertonClientResult): TradertonReadResult {
+  switch (result.kind) {
+    case 'success':
+      return { kind: 'success', data: result.payload };
+    case 'failure':
+      return { kind: 'failure', code: result.code, message: result.message, retryable: result.retryable };
+    case 'in_progress':
+      return { kind: 'in_progress' };
+    case 'transport_error':
+      return { kind: 'transport_error', message: result.message, retryable: true };
+  }
+}
+
+/**
+ * Build the read boundary adapter. The subject VALUES + per-request deadline are
+ * bound here, so the caller only supplies a tool name + payload. A read is a
+ * single synchronous invoke within `deadlineMs` — it does NOT poll.
+ */
+export function createTradertonReadBoundary(
+  client: TradertonClient,
+  subject: TradertonSubject,
+  deadlineMs: number,
+): TradertonReadBoundary {
+  return {
+    async invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult> {
+      const result = await client.invoke({
+        toolName: input.toolName,
+        payload: input.payload,
+        subject,
+        deadlineMs,
+      });
+      return mapClientResultToReadResult(result);
+    },
+  };
+}
+
+// ── Row-shape narrowing + date rehydration ────────────────────────────────────
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('Expected an object row from the Traderton read boundary');
+  }
+  return value as Record<string, unknown>;
+}
+
+/** Rehydrate an ISO string (or Date) into a Date. Throws on missing/invalid values. */
+function toDate(value: unknown, field: string): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  throw new Error(`Invalid date for field "${field}": ${String(value)}`);
+}
+
+/** Null-safe date rehydration for nullable timestamp columns. */
+function toNullableDate(value: unknown, field: string): Date | null {
+  if (value === null || value === undefined) return null;
+  return toDate(value, field);
+}
+
+/** Narrow a boundary record into a fill row, rehydrating `filledAt` / `createdAt`. */
+export function toFillRow(record: unknown): FillRow {
+  const r = asRecord(record);
+  return {
+    ...r,
+    filledAt: toDate(r['filledAt'], 'filledAt'),
+    createdAt: toDate(r['createdAt'], 'createdAt'),
+  } as FillRow;
+}
+
+/** Narrow a boundary record into a journal-event row, rehydrating `createdAt`. */
+export function toJournalRow(record: unknown): JournalRow {
+  const r = asRecord(record);
+  return {
+    ...r,
+    createdAt: toDate(r['createdAt'], 'createdAt'),
+  } as JournalRow;
+}
+
+/**
+ * Narrow a boundary record into a position row, rehydrating `openedAt`,
+ * `updatedAt`, and the nullable `closedAt`.
+ */
+export function toPositionRow(record: unknown): PositionRow {
+  const r = asRecord(record);
+  return {
+    ...r,
+    openedAt: toDate(r['openedAt'], 'openedAt'),
+    closedAt: toNullableDate(r['closedAt'], 'closedAt'),
+    updatedAt: toDate(r['updatedAt'], 'updatedAt'),
+  } as PositionRow;
+}
+
+// ── Boundary → HTTP error mapping ─────────────────────────────────────────────
+
+/**
+ * A non-success read outcome, normalized into an HTTP status + error payload
+ * shape. Mirrors the API's existing boundary-error conventions (setup.ts /
+ * accounts.ts): a transport/in-progress precondition is a retryable 503; a
+ * terminal boundary failure surfaces its `code` (default 502).
+ */
+export interface ReadBoundaryError {
+  status: number;
+  code: string;
+  message: string;
+}
+
+/**
+ * Invoke a read tool and narrow its success payload's array field. Returns the
+ * narrowed rows on success, or a typed {@link ReadBoundaryError} for any
+ * non-success outcome. Never returns an empty array to mask a failure.
+ */
+export async function loadAgentEvidence<T>(
+  boundary: TradertonReadBoundary,
+  toolName: string,
+  payload: unknown,
+  arrayKey: string,
+  mapRow: (record: unknown) => T,
+): Promise<{ ok: true; rows: T[] } | { ok: false; error: ReadBoundaryError }> {
+  const result = await boundary.invoke({ toolName, payload });
+  switch (result.kind) {
+    case 'success': {
+      const data = result.data;
+      if (typeof data !== 'object' || data === null) {
+        throw new Error(`Boundary tool ${toolName} returned a non-object payload`);
+      }
+      const arr = (data as Record<string, unknown>)[arrayKey];
+      if (!Array.isArray(arr)) {
+        throw new Error(`Boundary tool ${toolName} payload missing "${arrayKey}" array`);
+      }
+      return { ok: true, rows: arr.map(mapRow) };
+    }
+    case 'failure':
+      return {
+        ok: false,
+        error: { status: 502, code: result.code, message: result.message },
+      };
+    case 'transport_error':
+      return {
+        ok: false,
+        error: {
+          status: 503,
+          code: 'precondition.not_ready',
+          message: 'Trading service is unavailable — the export could not be produced.',
+        },
+      };
+    case 'in_progress':
+      return {
+        ok: false,
+        error: {
+          status: 503,
+          code: 'boundary.in_progress',
+          message: 'The trading read did not complete in time. Please retry.',
+        },
+      };
+  }
+}

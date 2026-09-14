@@ -10,11 +10,21 @@ import {
   fills,
   journalEvents,
   positions,
-  loadAgentFills,
-  loadAgentJournalEvents,
   loadAgentRuntimeSessions,
-  loadAgentPositions,
 } from '@herobids/db';
+import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import { errorPayload } from '../error-payload.js';
+import {
+  createTradertonReadBoundary,
+  loadAgentEvidence,
+  toFillRow,
+  toJournalRow,
+  toPositionRow,
+  type FillRow as ReadFillRow,
+  type JournalRow as ReadJournalRow,
+  type PositionRow as ReadPositionRow,
+  type ReadBoundaryError,
+} from './exports-traderton.js';
 
 // --- Rate limiter (5 req / 60 s per user) ---
 
@@ -327,8 +337,47 @@ function applyRateLimit(app: FastifyInstance): void {
 
 // --- Route module ---
 
-export async function exportRoutes(app: FastifyInstance, db: Database): Promise<void> {
+/** Fallback read deadline when the operator boundary timeout is not supplied. */
+const DEFAULT_READ_TIMEOUT_MS = 10_000;
+
+/**
+ * Register the export routes.
+ *
+ * The AGENT trading-evidence endpoints (trades/journal/costs/bundle) source
+ * their fills/journal/positions over the Traderton read boundary (D1-c1). Pass
+ * the Traderton read client (the same `createTradertonClient` instance used for
+ * user-initiated writes); each request builds a per-request read boundary bound
+ * to the REQUESTING USER's subject. When the client is unconfigured the agent
+ * trading-evidence endpoints return a typed precondition (503) — there is NO
+ * silent fallback to a local trading read. The bot/account endpoints and the
+ * agent sessions/config endpoints remain entirely herobids-local.
+ */
+export async function exportRoutes(
+  app: FastifyInstance,
+  db: Database,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
+): Promise<void> {
   applyRateLimit(app);
+
+  const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
+
+  /**
+   * Build a read boundary bound to the requesting user's subject for an agent
+   * export. Returns null when the boundary is unconfigured so the endpoint can
+   * surface a typed precondition (mandatory-boundary posture — no local read).
+   */
+  const agentReadBoundary = (userId: string, agentId: string) => {
+    if (!tradertonReadClient) return null;
+    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
+    return createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
+  };
+
+  const boundaryUnconfiguredError: ReadBoundaryError = {
+    status: 503,
+    code: 'precondition.not_ready',
+    message: 'Trading service is unavailable — the export could not be produced.',
+  };
 
   // ── Bot exports ────────────────────────────────────────────────────────────
 
@@ -572,10 +621,25 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      const rows = await loadAgentFills(db, id, {
-        from: parsed.data.from ? new Date(parsed.data.from) : undefined,
-        to: parsed.data.to ? new Date(parsed.data.to) : undefined,
-      });
+      const boundary = agentReadBoundary(request.userId, id);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const loaded = await loadAgentEvidence<ReadFillRow>(
+        boundary,
+        'get_agent_fills',
+        { from: parsed.data.from, to: parsed.data.to },
+        'fills',
+        toFillRow,
+      );
+      if (!loaded.ok) {
+        return reply.status(loaded.error.status).send(
+          errorPayload(loaded.error.code, loaded.error.message),
+        );
+      }
+      const rows = loaded.rows;
 
       if (parsed.data.format === 'csv') {
         void reply.header('Content-Type', 'text/csv');
@@ -601,10 +665,25 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      const rows = await loadAgentJournalEvents(db, id, {
-        from: parsed.data.from ? new Date(parsed.data.from) : undefined,
-        to: parsed.data.to ? new Date(parsed.data.to) : undefined,
-      });
+      const boundary = agentReadBoundary(request.userId, id);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const loaded = await loadAgentEvidence<ReadJournalRow>(
+        boundary,
+        'get_agent_journal_events',
+        { from: parsed.data.from, to: parsed.data.to },
+        'events',
+        toJournalRow,
+      );
+      if (!loaded.ok) {
+        return reply.status(loaded.error.status).send(
+          errorPayload(loaded.error.code, loaded.error.message),
+        );
+      }
+      const rows = loaded.rows;
 
       if (parsed.data.format === 'md') {
         void reply.header('Content-Type', 'text/markdown');
@@ -638,7 +717,25 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      const fillRows = await loadAgentFills(db, id);
+      const boundary = agentReadBoundary(request.userId, id);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const loaded = await loadAgentEvidence<ReadFillRow>(
+        boundary,
+        'get_agent_fills',
+        {},
+        'fills',
+        toFillRow,
+      );
+      if (!loaded.ok) {
+        return reply.status(loaded.error.status).send(
+          errorPayload(loaded.error.code, loaded.error.message),
+        );
+      }
+      const fillRows = loaded.rows;
 
       if (fillRows.length === 0) {
         void reply.header('Content-Type', 'text/csv');
@@ -728,11 +825,33 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
       if (!agent) return reply.status(404).send({ error: 'not_found' });
       const skillIds = await listSkillIdsForAgent(db, id);
 
-      // Use shared loaders sequentially (each calls loadAgentBotIds internally;
-      // sequential calls keep mock DB select ordering deterministic for tests).
-      const allFills = await loadAgentFills(db, id);
-      const allPositions = await loadAgentPositions(db, id);
-      const journalRows = await loadAgentJournalEvents(db, id);
+      // Trading evidence (fills/positions/journal) is sourced over the Traderton
+      // read boundary bound to the requesting user's subject. Sessions stay a
+      // LOCAL read — agent_runtime_sessions is a platform table (004 D1-c1) — so
+      // this path is intentionally mixed (boundary reads + one local read).
+      const boundary = agentReadBoundary(request.userId, id);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      // All-time (no from/to; positions: no from/to/at) — parity with the prior
+      // no-opts loader calls.
+      const fillsLoaded = await loadAgentEvidence<ReadFillRow>(boundary, 'get_agent_fills', {}, 'fills', toFillRow);
+      if (!fillsLoaded.ok) {
+        return reply.status(fillsLoaded.error.status).send(errorPayload(fillsLoaded.error.code, fillsLoaded.error.message));
+      }
+      const positionsLoaded = await loadAgentEvidence<ReadPositionRow>(boundary, 'get_agent_positions', {}, 'positions', toPositionRow);
+      if (!positionsLoaded.ok) {
+        return reply.status(positionsLoaded.error.status).send(errorPayload(positionsLoaded.error.code, positionsLoaded.error.message));
+      }
+      const journalLoaded = await loadAgentEvidence<ReadJournalRow>(boundary, 'get_agent_journal_events', {}, 'events', toJournalRow);
+      if (!journalLoaded.ok) {
+        return reply.status(journalLoaded.error.status).send(errorPayload(journalLoaded.error.code, journalLoaded.error.message));
+      }
+      const allFills = fillsLoaded.rows;
+      const allPositions = positionsLoaded.rows;
+      const journalRows = journalLoaded.rows;
       const sessions = await loadAgentRuntimeSessions(db, id);
 
       const agentConfig = sanitizeConfig({

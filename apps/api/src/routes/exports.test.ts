@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { exportRoutes, clearRateLimitStore } from './exports.js';
 import type { Database } from '@herobids/db';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 
 const TEST_USER_ID = 'user-1';
 const TEST_BOT_ID = 'bot-1';
@@ -130,6 +131,66 @@ function buildDb(selectSequence: unknown[][]): Database {
       return makeChain(val as unknown[]);
     }),
   } as unknown as Database;
+}
+
+// ─── Traderton read-boundary stub for AGENT trading-evidence endpoints ─────────
+//
+// The agent trades/journal/costs/bundle endpoints now source fills/journal/
+// positions over the Traderton read boundary. The boundary returns tool payloads
+// as JSON, so date columns arrive as ISO strings (the seam rehydrates them to
+// Date). These ISO-shaped samples mirror the DB-shaped samples above.
+
+const nowIso = now.toISOString();
+
+const sampleAgentFillIso = { ...sampleAgentFill, filledAt: nowIso, createdAt: nowIso };
+const sampleBotFillIso = { ...sampleFill, filledAt: nowIso, createdAt: nowIso };
+const sampleAgentPositionIso = { ...sampleAgentPosition, openedAt: nowIso, closedAt: null, updatedAt: nowIso };
+const sampleBotPositionIso = { ...samplePosition, openedAt: nowIso, closedAt: nowIso, updatedAt: nowIso };
+const sampleAgentJournalEventIso = { ...sampleAgentJournalEvent, createdAt: nowIso };
+const sampleBotJournalEventIso = { ...sampleJournalEvent, createdAt: nowIso };
+
+/** Which agent-scoped read tool an invocation targets. */
+type ReadToolPayloads = {
+  get_agent_fills?: unknown[];
+  get_agent_journal_events?: unknown[];
+  get_agent_positions?: unknown[];
+};
+
+/**
+ * Build a stub Traderton read client whose `invoke` returns a success payload
+ * with the given rows per tool (keyed by the tool's array field). Every call
+ * records the bound subject so tests can assert the per-request user subject.
+ */
+function makeReadClient(payloads: ReadToolPayloads): {
+  client: TradertonClient;
+  invoke: ReturnType<typeof vi.fn>;
+} {
+  const keyFor: Record<string, string> = {
+    get_agent_fills: 'fills',
+    get_agent_journal_events: 'events',
+    get_agent_positions: 'positions',
+  };
+  const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
+    const key = keyFor[input.toolName];
+    const rows = (payloads as Record<string, unknown[] | undefined>)[input.toolName] ?? [];
+    const result: TradertonClientResult = {
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: key ? { [key]: rows } : {},
+    };
+    return Promise.resolve(result);
+  });
+  return { client: { invoke } as unknown as TradertonClient, invoke };
+}
+
+/** A read client whose `invoke` resolves to a scripted non-success result. */
+function makeFailingReadClient(result: TradertonClientResult): {
+  client: TradertonClient;
+  invoke: ReturnType<typeof vi.fn>;
+} {
+  const invoke = vi.fn().mockResolvedValue(result);
+  return { client: { invoke } as unknown as TradertonClient, invoke };
 }
 
 beforeEach(() => {
@@ -496,49 +557,193 @@ describe('export route rate limiting', () => {
 // ─── Agent exports ────────────────────────────────────────────────────────────
 
 describe('GET /agents/:id/export/trades', () => {
-  it('returns CSV with agent-native and bot fills', async () => {
-    // agent lookup + agent bots + agentFills + botFills
-    const db = buildDb([
-      [{ id: TEST_AGENT_ID }],
-      [{ id: TEST_BOT_ID }],
-      [sampleAgentFill],
-      [sampleFill],
-    ]);
+  it('returns CSV with agent-native and bot fills from the read boundary', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]); // owner check only — fills come over the boundary
+    const { client, invoke } = makeReadClient({ get_agent_fills: [sampleAgentFillIso, sampleBotFillIso] });
     const app = Fastify();
     decorateWithAuth(app);
-    await exportRoutes(app, db);
+    await exportRoutes(app, db, client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/trades` });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/csv/);
     expect(res.body).toContain('ETH-PERP');
     expect(res.body).toContain('BTC-PERP');
+
+    // The boundary was invoked with get_agent_fills bound to the requesting
+    // user's subject (per-request USER subject).
+    expect(invoke).toHaveBeenCalledTimes(1);
+    const arg = invoke.mock.calls[0]![0] as { toolName: string; subject: { ownerId: string; actor: { type: string; id: string } } };
+    expect(arg.toolName).toBe('get_agent_fills');
+    expect(arg.subject).toEqual({ ownerId: TEST_USER_ID, actor: { type: 'agent', id: TEST_AGENT_ID } });
   });
 
-  it('returns agent-native fills when agent has no bots', async () => {
-    // agent lookup + agent bots (empty) + agentFills + botFills (skipped)
-    const db = buildDb([
-      [{ id: TEST_AGENT_ID }],
-      [],
-      [sampleAgentFill],
-    ]);
+  it('returns agent-native fills when agent has no bot fills', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const { client } = makeReadClient({ get_agent_fills: [sampleAgentFillIso] });
     const app = Fastify();
     decorateWithAuth(app);
-    await exportRoutes(app, db);
+    await exportRoutes(app, db, client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/trades` });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('ETH-PERP');
   });
 
-  it('returns 404 for unknown agent', async () => {
+  it('returns JSON when format=json with rehydrated dates', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const { client } = makeReadClient({ get_agent_fills: [sampleAgentFillIso] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db, client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/trades?format=json` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Array<Record<string, unknown>>>();
+    expect(body[0]!['date']).toBe(nowIso);
+    expect(body[0]!['symbol']).toBe('ETH-PERP');
+  });
+
+  it('returns 404 for unknown agent before touching the boundary', async () => {
     const db = buildDb([[]]);
+    const { client, invoke } = makeReadClient({});
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db, client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/unknown/export/trades' });
+    expect(res.statusCode).toBe(404);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 when the read boundary is unconfigured', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db); // no read client
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/trades` });
+    expect(res.statusCode).toBe(503);
+    expect(res.json<Record<string, unknown>>()['error']).toBe('precondition.not_ready');
+  });
+
+  it('returns 503 on a boundary transport error', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const { client } = makeFailingReadClient({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boundary down' });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db, client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/trades` });
+    expect(res.statusCode).toBe(503);
+    expect(res.json<Record<string, unknown>>()['error']).toBe('precondition.not_ready');
+  });
+
+  it('returns 502 and surfaces the code on a terminal boundary failure', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const { client } = makeFailingReadClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'authorization.denied',
+      message: 'not allowed',
+      retryable: false,
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db, client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/trades` });
+    expect(res.statusCode).toBe(502);
+    expect(res.json<Record<string, unknown>>()['error']).toBe('authorization.denied');
+  });
+});
+
+describe('GET /agents/:id/export/journal', () => {
+  it('returns CSV by default from the read boundary', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const { client, invoke } = makeReadClient({ get_agent_journal_events: [sampleAgentJournalEventIso, sampleBotJournalEventIso] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db, client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/journal` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.body).toContain('id,actor_type,actor_id,type,created_at');
+    expect(res.body).toContain('decision.submitted');
+    expect(res.body).toContain(nowIso);
+
+    const arg = invoke.mock.calls[0]![0] as { toolName: string };
+    expect(arg.toolName).toBe('get_agent_journal_events');
+  });
+
+  it('returns Markdown when format=md', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const { client } = makeReadClient({ get_agent_journal_events: [sampleAgentJournalEventIso] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db, client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/journal?format=md` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/markdown/);
+    expect(res.body).toContain('# Journal Export');
+    expect(res.body).toContain('decision.submitted');
+  });
+
+  it('returns 503 when the read boundary is unconfigured', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
     const app = Fastify();
     decorateWithAuth(app);
     await exportRoutes(app, db);
 
-    const res = await app.inject({ method: 'GET', url: '/agents/unknown/export/trades' });
-    expect(res.statusCode).toBe(404);
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/journal` });
+    expect(res.statusCode).toBe(503);
+  });
+});
+
+describe('GET /agents/:id/export/costs', () => {
+  it('returns fee totals by currency from boundary fills', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const { client, invoke } = makeReadClient({ get_agent_fills: [sampleAgentFillIso, sampleBotFillIso] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db, client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/costs` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.body).toContain('currency,total_fees');
+    // 2.40 (agent) + 5.00 (bot) = 7.40 USDC
+    expect(res.body).toContain('USDC,7.4');
+
+    const arg = invoke.mock.calls[0]![0] as { toolName: string; payload: Record<string, unknown> };
+    expect(arg.toolName).toBe('get_agent_fills');
+    // costs is all-time — no time filter
+    expect(arg.payload).toEqual({});
+  });
+
+  it('returns just the header for an agent with no fills', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const { client } = makeReadClient({ get_agent_fills: [] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db, client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/costs` });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('currency,total_fees\n');
+  });
+
+  it('returns 503 when the read boundary is unconfigured', async () => {
+    const db = buildDb([[{ id: TEST_AGENT_ID }]]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/costs` });
+    expect(res.statusCode).toBe(503);
   });
 });
 
@@ -569,53 +774,38 @@ describe('GET /agents/:id/export/config', () => {
 });
 
 describe('GET /agents/:id/export/bundle', () => {
-  // Query order: agents, skills, loadAgentBotIds(fills), agentFills, botFills,
-  //   loadAgentBotIds(positions), agentPositions, botPositions,
-  //   loadAgentBotIds(journal), agentJournal, botJournal, sessions
+  // DB reads: agent lookup, skills, then (sessions — local). Fills / positions /
+  // journal come over the read boundary; sessions stays a LOCAL loader read.
+  const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
+
+  const bundleDb = () => buildDb([
+    [agentRow], // agent lookup
+    [],         // skills
+    [],         // loadAgentRuntimeSessions (local)
+  ]);
+
+  const bundlePayloads = () => ({
+    get_agent_fills: [sampleAgentFillIso, sampleBotFillIso],
+    get_agent_positions: [sampleAgentPositionIso, sampleBotPositionIso],
+    get_agent_journal_events: [sampleAgentJournalEventIso, sampleBotJournalEventIso],
+  });
+
   it('returns a JSON bundle', async () => {
-    const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
-    const db = buildDb([
-      [agentRow],                    // agent lookup
-      [],                            // skills
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (fills)
-      [sampleAgentFill],             // agentFills
-      [sampleFill],                  // botFills
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (positions)
-      [sampleAgentPosition],         // agentPositions
-      [samplePosition],              // botPositions
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (journal)
-      [sampleAgentJournalEvent],     // agentJournal
-      [sampleJournalEvent],          // botJournal
-      [],                            // sessions
-    ]);
+    const { client } = makeReadClient(bundlePayloads());
     const app = Fastify();
     decorateWithAuth(app);
-    await exportRoutes(app, db);
+    await exportRoutes(app, bundleDb(), client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/json/);
   });
 
-  it('agent bundle JSON contains expected keys', async () => {
-    const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
-    const db = buildDb([
-      [agentRow],                    // agent lookup
-      [],                            // skills
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (fills)
-      [sampleAgentFill],             // agentFills
-      [sampleFill],                  // botFills
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (positions)
-      [sampleAgentPosition],         // agentPositions
-      [samplePosition],              // botPositions
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (journal)
-      [sampleAgentJournalEvent],     // agentJournal
-      [sampleJournalEvent],          // botJournal
-      [],                            // sessions
-    ]);
+  it('agent bundle JSON contains expected keys and sources sessions locally', async () => {
+    const { client, invoke } = makeReadClient(bundlePayloads());
     const app = Fastify();
     decorateWithAuth(app);
-    await exportRoutes(app, db);
+    await exportRoutes(app, bundleDb(), client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
     expect(res.statusCode).toBe(200);
@@ -625,28 +815,22 @@ describe('GET /agents/:id/export/bundle', () => {
     expect(body).toHaveProperty('journal');
     expect(body).toHaveProperty('sessions');
     expect(body).toHaveProperty('exportedAt');
+
+    // Trading evidence over the boundary (fills, positions, journal) — sessions
+    // is NOT one of them (it stays a local loader read).
+    const tools = invoke.mock.calls.map((c) => (c[0] as { toolName: string }).toolName);
+    expect(tools).toEqual(['get_agent_fills', 'get_agent_positions', 'get_agent_journal_events']);
   });
 
   it('includes agent-native fills when agent has no bots', async () => {
-    const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
-    const db = buildDb([
-      [agentRow],                    // agent lookup
-      [],                            // skills
-      // loadAgentFills: botIds + agentFills
-      [],                            // loadAgentBotIds (fills)
-      [sampleAgentFill],             // agentFills
-      // loadAgentPositions: botIds + agentPositions
-      [],                            // loadAgentBotIds (positions)
-      [sampleAgentPosition],         // agentPositions
-      // loadAgentJournalEvents: botIds + agentJournal
-      [],                            // loadAgentBotIds (journal)
-      [sampleAgentJournalEvent],     // agentJournal
-      // loadAgentRuntimeSessions
-      [],                            // sessions
-    ]);
+    const { client } = makeReadClient({
+      get_agent_fills: [sampleAgentFillIso],
+      get_agent_positions: [sampleAgentPositionIso],
+      get_agent_journal_events: [sampleAgentJournalEventIso],
+    });
     const app = Fastify();
     decorateWithAuth(app);
-    await exportRoutes(app, db);
+    await exportRoutes(app, bundleDb(), client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
     expect(res.statusCode).toBe(200);
@@ -654,31 +838,15 @@ describe('GET /agents/:id/export/bundle', () => {
     const trades = body['trades'] as Array<Record<string, unknown>>;
     expect(trades).toHaveLength(1);
     expect(trades[0]!['symbol']).toBe('ETH-PERP');
+    // dates round-trip back to the same ISO strings (byte parity)
+    expect(trades[0]!['filledAt']).toBe(nowIso);
   });
 
   it('includes both agent-native and bot fills in trades', async () => {
-    const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
-    const db = buildDb([
-      [agentRow],                    // agent lookup
-      [],                            // skills
-      // loadAgentFills: botIds + agentFills + botFills
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (fills)
-      [sampleAgentFill],             // agentFills
-      [sampleFill],                  // botFills
-      // loadAgentPositions: botIds + agentPositions + botPositions
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (positions)
-      [sampleAgentPosition],         // agentPositions
-      [samplePosition],              // botPositions
-      // loadAgentJournalEvents: botIds + agentJournal + botJournal
-      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (journal)
-      [sampleAgentJournalEvent],     // agentJournal
-      [sampleJournalEvent],          // botJournal
-      // loadAgentRuntimeSessions
-      [],                            // sessions
-    ]);
+    const { client } = makeReadClient(bundlePayloads());
     const app = Fastify();
     decorateWithAuth(app);
-    await exportRoutes(app, db);
+    await exportRoutes(app, bundleDb(), client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
     expect(res.statusCode).toBe(200);
@@ -688,5 +856,26 @@ describe('GET /agents/:id/export/bundle', () => {
     const symbols = trades.map((t) => t['symbol']);
     expect(symbols).toContain('ETH-PERP');
     expect(symbols).toContain('BTC-PERP');
+  });
+
+  it('returns 503 when the read boundary is unconfigured', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, bundleDb());
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
+    expect(res.statusCode).toBe(503);
+  });
+
+  it('returns 502 when a boundary read fails', async () => {
+    const { client } = makeFailingReadClient({
+      kind: 'failure', requestId: 'r', correlationId: 'c', code: 'not_found.resource', message: 'nope', retryable: false,
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, bundleDb(), client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
+    expect(res.statusCode).toBe(502);
   });
 });
