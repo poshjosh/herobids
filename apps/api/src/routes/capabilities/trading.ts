@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
-import { eq, and, desc, inArray, isNull, sum, count, sql, or } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { deriveReadiness } from '@herobids/db';
 import type { RuntimeAssignmentRow } from '@herobids/db';
@@ -10,15 +10,24 @@ import {
   connections,
   agentConnectionAudit,
   agentConnections,
-  bots,
-  fills,
-  journalEvents,
-  positions,
   agentRuntimeSessions,
 } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { getProviderIdsForRuntimeFamily, getRuntimeFamiliesForProvider, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
+import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
 import { z } from 'zod';
+import { errorPayload } from '../../error-payload.js';
+import {
+  createTradertonReadBoundary,
+  loadAgentEvidence,
+  toFillRow,
+  toJournalRow,
+  toPositionRow,
+  type FillRow as ReadFillRow,
+  type JournalRow as ReadJournalRow,
+  type PositionRow as ReadPositionRow,
+  type ReadBoundaryError,
+} from '../exports-traderton.js';
 const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume'] as const;
 type TradingAction = typeof SUPPORTED_ACTIONS[number];
 
@@ -123,10 +132,6 @@ function latestAssignmentPerConnection(rows: TradingAssignmentRow[]): TradingAss
   return latest;
 }
 
-function allConnectionIds(rows: TradingAssignmentRow[]): string[] {
-  return [...new Set(rows.map((row) => row.connectionId))];
-}
-
 /**
  * Find the currently effective assignment for an agent (newest active assignment).
  * Returns the assignment row or undefined if no active assignment exists.
@@ -144,13 +149,38 @@ async function selectTradingConnectionResourceRows(db: Database, userId: string)
     .where(eq(connections.userId, userId));
 }
 
+/** Fallback read deadline when the operator boundary timeout is not supplied. */
+const DEFAULT_READ_TIMEOUT_MS = 10_000;
+
 export async function tradingCapabilityRoutes(
   app: FastifyInstance,
   db: Database,
   _plansConfig: PlansConfig | undefined,
   _budgets: RuntimeBudgetPolicy,
   _redisClient?: Redis,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ): Promise<void> {
+  const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
+
+  /**
+   * Build a read boundary bound to the requesting user's subject for an agent's
+   * trading evidence. Returns null when the boundary is unconfigured so the
+   * endpoint can surface a typed precondition (mandatory-boundary posture — no
+   * local trading read). Mirrors `agentReadBoundary` in exports.ts.
+   */
+  const agentReadBoundary = (userId: string, agentId: string) => {
+    if (!tradertonReadClient) return null;
+    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
+    return createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
+  };
+
+  const boundaryUnconfiguredError: ReadBoundaryError = {
+    status: 503,
+    code: 'precondition.not_ready',
+    message: 'Trading service is unavailable — the request could not be produced.',
+  };
+
   app.get('/capabilities/trading', async (_request, reply) => {
     return reply.send({
       family: 'trading',
@@ -235,9 +265,27 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const rows = await selectAgentTradingAssignmentRows(db, agentId);
-      const connectionIds = allConnectionIds(rows);
-      if (connectionIds.length === 0) {
+      const boundary = agentReadBoundary(request.userId, agentId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const loaded = await loadAgentEvidence<ReadPositionRow>(
+        boundary,
+        'get_agent_positions',
+        {},
+        'positions',
+        toPositionRow,
+      );
+      if (!loaded.ok) {
+        return reply.status(loaded.error.status).send(
+          errorPayload(loaded.error.code, loaded.error.message),
+        );
+      }
+      const positionRows = loaded.rows;
+
+      if (positionRows.length === 0) {
         return reply.send({
           agentId,
           family: 'trading',
@@ -248,35 +296,15 @@ export async function tradingCapabilityRoutes(
         });
       }
 
-      const botRows = await db
-        .select({ id: bots.id })
-        .from(bots)
-        .where(inArray(bots.connectionId, connectionIds));
-      const botIds = botRows.map((bot) => bot.id);
-
-      const positionOwners = [
-        and(eq(positions.actorType, 'agent'), eq(positions.actorId, agentId)),
-      ];
-      if (botIds.length > 0) {
-        positionOwners.push(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
-      }
-
-      const [pnlResult] = await db
-        .select({ totalPnl: sum(positions.realizedPnl) })
-        .from(positions)
-        .where(or(...positionOwners));
-
-      const [openResult] = await db
-        .select({ openCount: count(positions.id) })
-        .from(positions)
-        .where(and(or(...positionOwners), isNull(positions.closedAt)));
+      const totalPnl = positionRows.reduce((acc, p) => acc + parseFloat(p.realizedPnl), 0);
+      const openPositionCount = positionRows.filter((p) => p.closedAt === null).length;
 
       return reply.send({
         agentId,
         family: 'trading',
         agentStatus: agent.status,
-        totalPnl: parseFloat(pnlResult?.totalPnl ?? '0').toFixed(6),
-        openPositionCount: openResult?.openCount ?? 0,
+        totalPnl: totalPnl.toFixed(6),
+        openPositionCount,
         updatedAt: new Date().toISOString(),
       });
     },
@@ -442,42 +470,48 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const connectionIds = allConnectionIds(await selectAgentTradingAssignmentRows(db, agentId));
-      if (connectionIds.length === 0) {
-        return reply.send({ agentId, family: 'trading', items: [], limit, offset });
+      const boundary = agentReadBoundary(request.userId, agentId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const fillsLoaded = await loadAgentEvidence<ReadFillRow>(
+        boundary,
+        'get_agent_fills',
+        {},
+        'fills',
+        toFillRow,
+      );
+      if (!fillsLoaded.ok) {
+        return reply.status(fillsLoaded.error.status).send(
+          errorPayload(fillsLoaded.error.code, fillsLoaded.error.message),
+        );
+      }
+      const eventsLoaded = await loadAgentEvidence<ReadJournalRow>(
+        boundary,
+        'get_agent_journal_events',
+        {},
+        'events',
+        toJournalRow,
+      );
+      if (!eventsLoaded.ok) {
+        return reply.status(eventsLoaded.error.status).send(
+          errorPayload(eventsLoaded.error.code, eventsLoaded.error.message),
+        );
       }
 
-      const botRows = await db
-        .select({ id: bots.id })
-        .from(bots)
-        .where(inArray(bots.connectionId, connectionIds));
-      const botIds = botRows.map((bot) => bot.id);
-
-      const fillOwners = [
-        and(eq(fills.actorType, 'agent'), eq(fills.actorId, agentId)),
-      ];
-      const eventOwners = [
-        and(eq(journalEvents.actorType, 'agent'), eq(journalEvents.actorId, agentId)),
-      ];
-      if (botIds.length > 0) {
-        fillOwners.push(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)));
-        eventOwners.push(and(eq(journalEvents.actorType, 'bot'), inArray(journalEvents.actorId, botIds)));
-      }
-
-      const [recentFills, recentEvents] = await Promise.all([
-        db
-          .select()
-          .from(fills)
-          .where(or(...fillOwners))
-          .orderBy(desc(fills.filledAt))
-          .limit(fetchCount),
-        db
-          .select()
-          .from(journalEvents)
-          .where(or(...eventOwners))
-          .orderBy(desc(journalEvents.createdAt))
-          .limit(fetchCount),
-      ]);
+      // The boundary returns ALL agent-scoped rows unordered. Reproduce the
+      // previous per-source ordering (fills by filledAt desc, events by
+      // createdAt desc) and the per-source fetch cap before the merge.
+      const recentFills = fillsLoaded.rows
+        .slice()
+        .sort((a, b) => b.filledAt.getTime() - a.filledAt.getTime())
+        .slice(0, fetchCount);
+      const recentEvents = eventsLoaded.rows
+        .slice()
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, fetchCount);
 
       const fillItems = recentFills.map((f) => ({
         type: 'fill' as const,
@@ -521,8 +555,40 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const connectionIds = allConnectionIds(await selectAgentTradingAssignmentRows(db, agentId));
-      if (connectionIds.length === 0) {
+      const boundary = agentReadBoundary(request.userId, agentId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const fillsLoaded = await loadAgentEvidence<ReadFillRow>(
+        boundary,
+        'get_agent_fills',
+        {},
+        'fills',
+        toFillRow,
+      );
+      if (!fillsLoaded.ok) {
+        return reply.status(fillsLoaded.error.status).send(
+          errorPayload(fillsLoaded.error.code, fillsLoaded.error.message),
+        );
+      }
+      const positionsLoaded = await loadAgentEvidence<ReadPositionRow>(
+        boundary,
+        'get_agent_positions',
+        {},
+        'positions',
+        toPositionRow,
+      );
+      if (!positionsLoaded.ok) {
+        return reply.status(positionsLoaded.error.status).send(
+          errorPayload(positionsLoaded.error.code, positionsLoaded.error.message),
+        );
+      }
+      const fillRows = fillsLoaded.rows;
+      const positionRows = positionsLoaded.rows;
+
+      if (fillRows.length === 0 && positionRows.length === 0) {
         return reply.send({
           agentId,
           family: 'trading',
@@ -534,53 +600,22 @@ export async function tradingCapabilityRoutes(
         });
       }
 
-      const botRows = await db
-        .select({ id: bots.id })
-        .from(bots)
-        .where(inArray(bots.connectionId, connectionIds));
-      const botIds = botRows.map((bot) => bot.id);
-
-      const fillOwners = [
-        and(eq(fills.actorType, 'agent'), eq(fills.actorId, agentId)),
-      ];
-      const positionOwners = [
-        and(eq(positions.actorType, 'agent'), eq(positions.actorId, agentId)),
-      ];
-      if (botIds.length > 0) {
-        fillOwners.push(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)));
-        positionOwners.push(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
+      // Group fills by fee currency, summing the fee decimals in-app (previously
+      // a DB `sum(fee)` grouped by `feeCurrency`). Null currency → 'unknown'.
+      const feeTotals: Record<string, number> = {};
+      for (const row of fillRows) {
+        const currency = row.feeCurrency ?? 'unknown';
+        feeTotals[currency] = (feeTotals[currency] ?? 0) + parseFloat(row.fee ?? '0');
       }
-
-      const [fillCountResult, feeRows, pnlResult, openResult, allPositions] = await Promise.all([
-        db
-          .select({ tradeCount: count(fills.id) })
-          .from(fills)
-          .where(or(...fillOwners)),
-        db
-          .select({ feeCurrency: fills.feeCurrency, total: sum(fills.fee) })
-          .from(fills)
-          .where(or(...fillOwners))
-          .groupBy(fills.feeCurrency),
-        db
-          .select({ totalPnl: sum(positions.realizedPnl) })
-          .from(positions)
-          .where(or(...positionOwners)),
-        db
-          .select({ openCount: count(positions.id) })
-          .from(positions)
-          .where(and(or(...positionOwners), isNull(positions.closedAt))),
-        db
-          .select({ realizedPnl: positions.realizedPnl, closedAt: positions.closedAt })
-          .from(positions)
-          .where(or(...positionOwners)),
-      ]);
-
       const feesByCurrency: Record<string, string> = {};
-      for (const row of feeRows) {
-        feesByCurrency[row.feeCurrency ?? 'unknown'] = row.total ?? '0';
+      for (const [currency, total] of Object.entries(feeTotals)) {
+        feesByCurrency[currency] = String(total);
       }
 
-      const closed = allPositions.filter((p) => p.closedAt !== null);
+      const totalPnl = positionRows.reduce((acc, p) => acc + parseFloat(p.realizedPnl), 0);
+      const openPositionCount = positionRows.filter((p) => p.closedAt === null).length;
+
+      const closed = positionRows.filter((p) => p.closedAt !== null);
       const winRate =
         closed.length >= 2
           ? closed.filter((p) => parseFloat(p.realizedPnl) > 0).length / closed.length
@@ -589,11 +624,11 @@ export async function tradingCapabilityRoutes(
       return reply.send({
         agentId,
         family: 'trading',
-        tradeCount: fillCountResult[0]?.tradeCount ?? 0,
-        totalPnl: parseFloat(pnlResult[0]?.totalPnl ?? '0').toFixed(6),
+        tradeCount: fillRows.length,
+        totalPnl: totalPnl.toFixed(6),
         winRate,
         feesByCurrency,
-        openPositionCount: openResult[0]?.openCount ?? 0,
+        openPositionCount,
       });
     },
   );
@@ -619,57 +654,78 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const connectionIds = allConnectionIds(await selectAgentTradingAssignmentRows(db, agentId));
-      if (connectionIds.length === 0) {
+      const boundary = agentReadBoundary(request.userId, agentId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+      const positionsLoaded = await loadAgentEvidence<ReadPositionRow>(
+        boundary,
+        'get_agent_positions',
+        {},
+        'positions',
+        toPositionRow,
+      );
+      if (!positionsLoaded.ok) {
+        return reply.status(positionsLoaded.error.status).send(
+          errorPayload(positionsLoaded.error.code, positionsLoaded.error.message),
+        );
+      }
+
+      // No positions → no exitPrice reconstruction needed; skip the fills fetch.
+      if (positionsLoaded.rows.length === 0) {
         return reply.send({ agentId, family: 'trading', items: [], limit, offset });
       }
 
-      const botRows = await db
-        .select({ id: bots.id })
-        .from(bots)
-        .where(inArray(bots.connectionId, connectionIds));
-      const botIds = botRows.map((bot) => bot.id);
-
-      const positionOwners = [
-        and(eq(positions.actorType, 'agent'), eq(positions.actorId, agentId)),
-      ];
-      if (botIds.length > 0) {
-        positionOwners.push(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
+      const fillsLoaded = await loadAgentEvidence<ReadFillRow>(
+        boundary,
+        'get_agent_fills',
+        {},
+        'fills',
+        toFillRow,
+      );
+      if (!fillsLoaded.ok) {
+        return reply.status(fillsLoaded.error.status).send(
+          errorPayload(fillsLoaded.error.code, fillsLoaded.error.message),
+        );
       }
 
-      const positionRows = await db
-        .select({
-          id: positions.id,
-          actorType: positions.actorType,
-          actorId: positions.actorId,
-          venue: positions.venue,
-          symbol: positions.symbol,
-          side: positions.side,
-          size: positions.size,
-          entryPrice: positions.entryPrice,
-          realizedPnl: positions.realizedPnl,
-          openedAt: positions.openedAt,
-          closedAt: positions.closedAt,
-          exitPrice: sql<string | null>`(
-            SELECT ${fills.price}
-            FROM ${fills}
-            WHERE ${fills.actorType} = ${positions.actorType}
-              AND ${fills.actorId} = ${positions.actorId}
-              AND ${fills.venueAccountId} = ${positions.venueAccountId}
-              AND ${fills.venue} = ${positions.venue}
-              AND ${fills.symbol} = ${positions.symbol}
-              AND ${fills.filledAt} <= ${positions.closedAt}
-            ORDER BY ${fills.filledAt} DESC
-            LIMIT 1
-          )`,
-        })
-        .from(positions)
-        .where(or(...positionOwners))
-        .orderBy(desc(positions.openedAt))
-        .limit(limit)
-        .offset(offset);
+      const allFills = fillsLoaded.rows;
 
-      const items = positionRows.map((row) => {
+      // Reproduce the previous `ORDER BY openedAt DESC` + limit/offset at the DB.
+      const pagedPositions = positionsLoaded.rows
+        .slice()
+        .sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime())
+        .slice(offset, offset + limit);
+
+      /**
+       * Reconstruct the correlated-subquery exitPrice in-app: the latest fill
+       * (by filledAt) matching the position's actor/venueAccount/venue/symbol
+       * with `filledAt <= closedAt`. Only closed positions carry an exitPrice.
+       */
+      const exitPriceFor = (position: ReadPositionRow): string | null => {
+        if (position.closedAt === null) return null;
+        const closedAtMs = position.closedAt.getTime();
+        let latest: ReadFillRow | null = null;
+        for (const fill of allFills) {
+          if (
+            fill.actorType === position.actorType &&
+            fill.actorId === position.actorId &&
+            fill.venueAccountId === position.venueAccountId &&
+            fill.venue === position.venue &&
+            fill.symbol === position.symbol &&
+            fill.filledAt.getTime() <= closedAtMs
+          ) {
+            if (latest === null || fill.filledAt.getTime() > latest.filledAt.getTime()) {
+              latest = fill;
+            }
+          }
+        }
+        return latest?.price ?? null;
+      };
+
+      const items = pagedPositions.map((row) => {
         const isClosed = row.closedAt !== null;
         const holdMs = isClosed
           ? row.closedAt!.getTime() - row.openedAt.getTime()
@@ -681,7 +737,7 @@ export async function tradingCapabilityRoutes(
           side: row.side,
           size: row.size,
           entryPrice: row.entryPrice,
-          exitPrice: isClosed ? (row.exitPrice ?? null) : null,
+          exitPrice: isClosed ? exitPriceFor(row) : null,
           realizedPnl: parseFloat(row.realizedPnl).toFixed(6),
           status: isClosed ? 'closed' : 'open',
           openedAt: row.openedAt.toISOString(),

@@ -247,7 +247,10 @@ const authMailer = createAuthMailer(appConfig.alerts, appConfig.alerts.email.bra
 await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans, authMailer);
 
 // ── Capability routes (primary public surface) ────────────────────────────
-await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient);
+// The AGENT trading-evidence endpoints (state/activity/outcomes/positions)
+// source fills/journal/positions over the Traderton read boundary, bound
+// per-request to the requesting user's subject — same client used for writes.
+await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────
 await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradertonBotClient });
@@ -279,7 +282,7 @@ await dashboardRoutes(app, db, appConfig.plans);
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults);
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);

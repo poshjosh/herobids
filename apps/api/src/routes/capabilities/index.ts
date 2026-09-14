@@ -6,6 +6,7 @@ import { agents, connections, agentConnections, deriveReadiness, chooseLatest } 
 import type { RuntimeAssignmentRow } from '@herobids/db';
 import type { CapabilityReadiness, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { getRuntimeFamiliesForProvider } from '@herobids/domain';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import { tradingCapabilityRoutes } from './trading.js';
 
 export async function capabilityRoutes(
@@ -14,6 +15,8 @@ export async function capabilityRoutes(
   plansConfig: PlansConfig | undefined,
   budgets: RuntimeBudgetPolicy,
   redisClient?: Redis,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const knownFamilies = ['trading'] as const;
 
@@ -92,5 +95,5 @@ export async function capabilityRoutes(
     },
   );
 
-  await tradingCapabilityRoutes(app, db, plansConfig, budgets, redisClient);
+  await tradingCapabilityRoutes(app, db, plansConfig, budgets, redisClient, tradertonReadClient, tradertonReadTimeoutMs);
 }
