@@ -32,7 +32,6 @@ import { platformAssessmentReviewRoutes } from './routes/agent-platform-assessme
 import { actorHealthRoutes } from './routes/actor-health.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
-import { generateWallet } from '@herobids/venues';
 import { toolSchemaRoutes } from './routes/tool-schemas.js';
 import { agentToolsRoutes } from './routes/agent-tools.js';
 import { venueDefaultsRoutes } from './routes/venue-defaults.js';
@@ -251,7 +250,7 @@ await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPl
 await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient);
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────
-await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, generateWallet, tradertonClient: tradertonBotClient });
+await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradertonBotClient });
 await providerRoutes(app, appConfig.venues);
 
 // ── Platform primitives ───────────────────────────────────────────────────

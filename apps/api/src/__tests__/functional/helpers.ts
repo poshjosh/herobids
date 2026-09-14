@@ -23,7 +23,6 @@ import { skillsRoutes } from '../../routes/skills.js';
 import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
-import { generateWallet } from '@herobids/venues';
 import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import type { TradertonClient, TradertonClientResult, InvokeToolInput, TradertonBoundaryFailureCode } from '@herobids/domain/traderton';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
@@ -172,12 +171,20 @@ export function makeStubTradertonClient(): TradertonClient {
       switch (input.toolName) {
         case 'count_venue_accounts':
           return Promise.resolve(ok({ count: 0 }));
-        case 'provision_venue_account':
+        case 'provision_venue_account': {
+          // In generate mode the boundary mints the keypair and returns the
+          // public wallet ({ address, network }); manual mode returns null.
+          const generate = p['generate'] as { network?: unknown } | undefined;
+          const wallet = generate && typeof generate.network === 'string'
+            ? { address: '0xGeneratedBoundaryWallet', network: generate.network }
+            : null;
           return Promise.resolve(ok({
             venueAccountId: 'va-new',
             venue: p['venue'] ?? 'hyperliquid',
             label: p['label'] ?? 'test',
+            wallet,
           }));
+        }
         case 'create_bot': {
           const config = (p['config'] as Record<string, unknown> | undefined) ?? {};
           if (isPaperSwapConfig(config)) {
@@ -462,7 +469,6 @@ export async function buildApp() {
 
   await setupRoutes(app, db, testPlansConfig as any, {
     venues: {} as import('@herobids/domain').AppConfig['venues'],
-    generateWallet,
     tradertonClient: stubTradertonClient,
   });
 

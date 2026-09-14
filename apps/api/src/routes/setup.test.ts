@@ -127,29 +127,18 @@ const VALID_HL_PAYLOAD = {
   },
 };
 
-const GENERATED_HL_WALLET = {
-  wallet: {
-    provider: 'hyperliquid' as const,
-    custodyMode: 'direct' as const,
-    address: '0x1111111111111111111111111111111111111111',
-    network: 'Hyperliquid',
-  },
-  secrets: {
-    apiKey: '0x1111111111111111111111111111111111111111',
-    secret: `0x${'a'.repeat(64)}`,
-    walletAddress: '0x1111111111111111111111111111111111111111',
-  },
-};
-
 function baseDeps(overrides: Record<string, unknown> = {}) {
   return {
     venues: {},
-    generateWallet: vi.fn().mockReturnValue(GENERATED_HL_WALLET),
     ...overrides,
   } as any;
 }
 
-function generatedWalletDeps(walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET), extra: Record<string, unknown> = {}) {
+// Generated wallets are minted BEHIND the boundary (provision_venue_account
+// generate mode) — herobids no longer holds a local wallet generator. This
+// helper just enables wallet generation for hyperliquid so the generated path
+// passes its pre-boundary capability check.
+function generatedWalletDeps(extra: Record<string, unknown> = {}) {
   return {
     venues: {
       hyperliquid: {
@@ -157,7 +146,6 @@ function generatedWalletDeps(walletGenerator = vi.fn().mockReturnValue(GENERATED
         walletGeneration: { enabled: true },
       },
     },
-    generateWallet: walletGenerator,
     ...extra,
   } as any;
 }
@@ -415,12 +403,24 @@ describe('POST /setup/provider-link', () => {
     expect(invoke.mock.calls[1]![0].payload).toEqual({ venueAccountId: 'va-new' });
   });
 
-  it('creates an encrypted generated wallet setup and returns only public wallet data', async () => {
-    const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
-    const { client, invoke } = makeTradertonClient();
+  it('mints the generated wallet behind the boundary (generate mode) and returns the boundary-sourced public wallet', async () => {
+    // The keypair is minted behind the boundary: the provision success payload
+    // carries data.wallet ({ address, network }) — never a private key. herobids
+    // forwards only generate:{network} and threads the returned address to the user.
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: {
+        venueAccountId: 'va-new',
+        venue: 'hyperliquid',
+        label: 'Generated Hyperliquid Wallet',
+        wallet: { address: '0xBoundaryMintedAddress', network: 'Hyperliquid' },
+      },
+    });
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps(walletGenerator, { tradertonClient: client }));
+    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -434,30 +434,33 @@ describe('POST /setup/provider-link', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(walletGenerator).toHaveBeenCalledWith({ provider: 'hyperliquid', enabled: true, network: 'Hyperliquid' });
-    // The generated wallet address is forwarded as the venueAccountRef in the boundary payload.
+    // The boundary is invoked in generate mode: generate:{network}, NO secrets,
+    // NO venueAccountRef (the keypair is minted behind the boundary).
     expect(invoke).toHaveBeenCalledTimes(1);
-    expect(invoke.mock.calls[0]![0].payload).toMatchObject({
-      venueAccountRef: GENERATED_HL_WALLET.wallet.address,
+    const payload = invoke.mock.calls[0]![0].payload;
+    expect(payload).toEqual({
+      venue: 'hyperliquid',
+      label: 'Generated Hyperliquid Wallet',
+      generate: { network: 'Hyperliquid' },
     });
+    expect(payload).not.toHaveProperty('secrets');
+    expect(payload).not.toHaveProperty('venueAccountRef');
+
+    // The user-facing wallet address comes from the boundary result.
     const body = res.json<Record<string, unknown>>();
     expect(body['wallet']).toEqual({
-      address: GENERATED_HL_WALLET.wallet.address,
+      address: '0xBoundaryMintedAddress',
       network: 'Hyperliquid',
       fundingInstructionId: 'hyperliquid-mainnet',
       custodyMode: 'direct',
     });
-    // The secrets never leave the process in the response.
-    expect(JSON.stringify(body)).not.toContain(GENERATED_HL_WALLET.secrets.secret);
-    expect(JSON.stringify(body)).not.toContain('apiKey');
   });
 
-  it('rejects client-supplied secrets in generated mode before generation, boundary call, or persistence', async () => {
-    const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+  it('rejects client-supplied secrets in generated mode before any boundary call or persistence', async () => {
     const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps(walletGenerator, { tradertonClient: client }));
+    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -472,20 +475,17 @@ describe('POST /setup/provider-link', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(walletGenerator).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
     expect(insertedValues).toHaveLength(0);
     expect(transactionCallCount).toBe(0);
   });
 
   it('rejects generated setup when wallet creation is disabled — no boundary call', async () => {
-    const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
     const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDb(), undefined, {
       venues: { hyperliquid: { baseUrl: 'https://api.hyperliquid.xyz', walletGeneration: { enabled: false } } },
-      generateWallet: walletGenerator,
       tradertonClient: client,
     } as any);
 
@@ -502,13 +502,11 @@ describe('POST /setup/provider-link', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json<{ error: string }>().error).toBe('wallet_generation.disabled');
-    expect(walletGenerator).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
     expect(transactionCallCount).toBe(0);
   });
 
   it('enforces the Phase-2 connection quota under the advisory lock (compensating the provision)', async () => {
-    const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
     const { client, invoke } = makeTradertonClient();
     const plansConfig = {
       defaultPlanId: 'free',
@@ -531,7 +529,7 @@ describe('POST /setup/provider-link', () => {
     // so maxConnections:1 trips, the provision is compensated, and the caller
     // sees a 403 limit. (The venue-account limit is now checked pre-provision
     // from the boundary — no longer inside the transaction.)
-    await setupRoutes(app, buildMockDb([[{ id: 'existing-connection' }]]), plansConfig as any, generatedWalletDeps(walletGenerator, { tradertonClient: client }));
+    await setupRoutes(app, buildMockDb([[{ id: 'existing-connection' }]]), plansConfig as any, generatedWalletDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',

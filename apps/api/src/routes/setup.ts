@@ -5,8 +5,7 @@ import type { Database } from '@herobids/db';
 import { userCredentials, connections } from '@herobids/db';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
 import type { TradertonClient } from '@herobids/domain/traderton';
-import { generateWallet, deriveSolanaAddress } from '@herobids/venues';
-import type { WalletGenerationRequest, WalletGenerationResult } from '@herobids/venues';
+import { deriveSolanaAddress } from '@herobids/venues';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { canonicalizeVenueSecrets, validateVenueSecrets } from './credentials.js';
 import { checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
@@ -25,9 +24,19 @@ function credentialValidationPayload(errors: ReturnType<typeof validateVenueSecr
   });
 }
 
+/**
+ * The public wallet returned by a generated trading link. The keypair is minted
+ * BEHIND the Traderton boundary (`provision_venue_account` generate mode); only
+ * the public address + network cross back — never the private key. Surfaced to
+ * the user so they can fund the generated address.
+ */
+export interface ProvisionedWallet {
+  address: string;
+  network: string;
+}
+
 export interface SetupRouteDeps {
   venues: AppConfig['venues'];
-  generateWallet: (request: WalletGenerationRequest) => WalletGenerationResult;
   /**
    * The Traderton REST boundary client. Trading provider links provision their
    * venue account (+ credential) over this boundary — herobids never writes
@@ -49,7 +58,7 @@ export interface CreateProviderLinkInput {
 }
 
 export type CreateProviderLinkResult =
-  | { kind: 'ok'; credentialId: string | null; connectionId: string; provider: string; label: string; venueAccountId: string | null; wallet: WalletGenerationResult['wallet'] | null }
+  | { kind: 'ok'; credentialId: string | null; connectionId: string; provider: string; label: string; venueAccountId: string | null; wallet: ProvisionedWallet | null }
   | { kind: 'limit'; error: { code: string; message: string; params?: Record<string, unknown> } }
   | { kind: 'validation'; errors: ReturnType<typeof validateVenueSecrets> }
   | { kind: 'error'; code: string; message: string; params?: Record<string, unknown> }
@@ -67,11 +76,15 @@ export type CreateProviderLinkResult =
  * - Trading links (capability = "trading") move the credential + venue account
  *   behind the Traderton boundary (L3-P1b). herobids performs NO local trading
  *   credential/venue-account write. The flow is:
- *     Phase 0 — validation, plan-limit checks, wallet generation, secret
- *               canonicalisation + validation, venueAccountRef resolution
- *               (all local, no remote work).
- *     Phase 1 — `provision_venue_account` over the boundary (create the
- *               credential + venue account; returns metadata only).
+ *     Phase 0 — validation, plan-limit checks, and (manual mode only) secret
+ *               canonicalisation + validation + venueAccountRef resolution
+ *               (all local, no remote work). GENERATED wallets are NO LONGER
+ *               minted locally (D1-3b): generate mode is requested over the
+ *               boundary in Phase 1 and Traderton mints the keypair.
+ *     Phase 1 — `provision_venue_account` over the boundary. Manual mode passes
+ *               the validated secrets; generate mode passes `{ generate:{network} }`
+ *               and the boundary mints the keypair + returns the public wallet
+ *               address (never the private key). Returns metadata only.
  *     Phase 2 — a local transaction inserting ONLY the `connections` row
  *               (credentialId = null; resolvedVenueAccountId = the boundary's
  *               venueAccountId), re-checking plan limits under the advisory lock.
@@ -132,31 +145,45 @@ export async function createProviderLink(
   const connectionId = crypto.randomUUID();
   const now = new Date();
 
-  // ── Phase 0 — all local, no-remote work ───────────────────────────────────
-  // Generate the wallet (if requested), canonicalise + validate the secrets,
-  // and resolve the venueAccountRef BEFORE any boundary call so a boundary
-  // invocation only ever carries validated inputs.
-  const generated = credentialMode === 'generated'
-    ? deps.generateWallet({ provider, enabled: walletCapability!.available, network: walletCapability!.network })
-    : undefined;
-  const normalizedSecrets = generated
-    ? canonicalizeVenueSecrets(provider, generated.secrets)
-    : manualSecrets!;
+  const isTrading = capability === 'trading';
+
+  // ── Generated + trading path — mint BEHIND the boundary ────────────────────
+  // The keypair is no longer minted in-process. Instead we thread a `generate`
+  // intent through to `provision_venue_account` (generate mode), which mints the
+  // keypair behind the boundary and returns the public address only. The network
+  // is the wallet-capability network — the same value previously passed to the
+  // local generator. (The schema enforces generated ⇒ capability = "trading",
+  // and every wallet-generation provider is a trading venue, so a generated link
+  // is always a trading link.)
+  if (credentialMode === 'generated') {
+    return createTradingProviderLink(db, plansConfig, deps, {
+      userId,
+      planId,
+      admin,
+      provider,
+      label,
+      connectionId,
+      mode: { kind: 'generate', network: walletCapability!.network },
+      now,
+    });
+  }
+
+  // ── Phase 0 (manual) — all local, no-remote work ───────────────────────────
+  // Canonicalise + validate the secrets and resolve the venueAccountRef BEFORE
+  // any boundary call so a boundary invocation only ever carries validated
+  // inputs.
+  const normalizedSecrets = manualSecrets!;
   const venueErrors = validateVenueSecrets(provider, normalizedSecrets);
   if (venueErrors.length > 0) {
     return { kind: 'validation', errors: venueErrors };
   }
 
-  const isTrading = capability === 'trading';
-
-  // Resolve venueAccountRef (trading only):
-  // - generated wallet → use the generated address
-  // - manual Hyperliquid → walletAddress from secrets
-  // - manual Jupiter → derive Solana address from private key
-  // - other manual → null (venue-specific resolution downstream)
+  // Resolve venueAccountRef (manual trading only):
+  // - Hyperliquid → walletAddress from secrets
+  // - Jupiter → derive Solana address from private key
+  // - other → null (venue-specific resolution downstream)
   const resolvedVenueAccountRef: string | null = isTrading
-    ? (generated?.wallet.address
-        ?? (provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null)
+    ? ((provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null)
         ?? (provider === 'jupiter' && normalizedSecrets['privateKey']
           ? deriveSolanaAddress(normalizedSecrets['privateKey'])
           : null))
@@ -170,9 +197,7 @@ export async function createProviderLink(
       provider,
       label,
       connectionId,
-      normalizedSecrets,
-      resolvedVenueAccountRef,
-      wallet: generated?.wallet ?? null,
+      mode: { kind: 'manual', secrets: normalizedSecrets, venueAccountRef: resolvedVenueAccountRef },
       now,
     });
   }
@@ -189,7 +214,6 @@ export async function createProviderLink(
     error: { code: string; message: string; params?: Record<string, unknown> };
   } | {
     kind: 'ok';
-    wallet: WalletGenerationResult['wallet'] | null;
   };
   try {
     txResult = await db.transaction(async (tx) => {
@@ -233,7 +257,7 @@ export async function createProviderLink(
         updatedAt: now,
       });
 
-      return { kind: 'ok' as const, wallet: generated?.wallet ?? null };
+      return { kind: 'ok' as const };
     });
   } catch (err) {
     logger.error({ err, provider, credentialMode, userId }, 'createProviderLink: unexpected error');
@@ -256,9 +280,21 @@ export async function createProviderLink(
     provider,
     label,
     venueAccountId: null,
-    wallet: txResult.wallet,
+    wallet: null,
   };
 }
+
+/**
+ * How a trading provider link sources its credential/keypair:
+ * - `manual`   → the user supplied validated secrets; herobids resolves the
+ *                venueAccountRef locally (pre-boundary) and forwards both.
+ * - `generate` → the keypair is minted BEHIND the boundary; herobids forwards
+ *                only the network and reads the public wallet back from the
+ *                provision result.
+ */
+type TradingProvisionMode =
+  | { kind: 'manual'; secrets: Record<string, string>; venueAccountRef: string | null }
+  | { kind: 'generate'; network: string };
 
 interface CreateTradingProviderLinkInput {
   userId: string;
@@ -267,10 +303,22 @@ interface CreateTradingProviderLinkInput {
   provider: string;
   label: string;
   connectionId: string;
-  normalizedSecrets: Record<string, string>;
-  resolvedVenueAccountRef: string | null;
-  wallet: WalletGenerationResult['wallet'] | null;
+  mode: TradingProvisionMode;
   now: Date;
+}
+
+/**
+ * Defensively parse the public wallet from an unknown provision-success payload.
+ * Returns null unless both `address` and `network` are present as strings — the
+ * private key is never part of this payload (it stays behind the boundary).
+ */
+function parseProvisionedWallet(value: unknown): ProvisionedWallet | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { address, network } = value as { address?: unknown; network?: unknown };
+  if (typeof address === 'string' && typeof network === 'string') {
+    return { address, network };
+  }
+  return null;
 }
 
 /**
@@ -284,7 +332,7 @@ async function createTradingProviderLink(
   deps: SetupRouteDeps,
   input: CreateTradingProviderLinkInput,
 ): Promise<CreateProviderLinkResult> {
-  const { userId, planId, admin, provider, label, connectionId, normalizedSecrets, resolvedVenueAccountRef, wallet, now } = input;
+  const { userId, planId, admin, provider, label, connectionId, mode, now } = input;
   const client = deps.tradertonClient;
 
   // ── Phase 0 — pre-provision plan-limit check (venue accounts) ──────────────
@@ -308,17 +356,25 @@ async function createTradingProviderLink(
   // ── Phase 1 — provision over the boundary ──────────────────────────────────
   // The credential + venue account are created behind the boundary; the tool
   // returns metadata only (venueAccountId — never the credentialId or secrets).
+  // In `generate` mode the keypair is minted behind the boundary and the public
+  // wallet ({ address, network }) is returned so the user can fund it; herobids
+  // forwards only the network and never sees the private key. In `manual` mode
+  // herobids forwards the validated secrets (+ resolved venueAccountRef). The
+  // two payload shapes are mutually exclusive (generate XOR secrets).
   // The idempotencyKey is the pre-minted connectionId so a transport retry
   // reuses the same provisioning request (005 §Deadlines/Retries).
+  const provisionPayload = mode.kind === 'generate'
+    ? { venue: provider, label, generate: { network: mode.network } }
+    : {
+        venue: provider,
+        label,
+        secrets: mode.secrets,
+        ...(mode.venueAccountRef ? { venueAccountRef: mode.venueAccountRef } : {}),
+      };
   const provisionResult = client
     ? await client.invoke({
         toolName: 'provision_venue_account',
-        payload: {
-          venue: provider,
-          label,
-          secrets: normalizedSecrets,
-          ...(resolvedVenueAccountRef ? { venueAccountRef: resolvedVenueAccountRef } : {}),
-        },
+        payload: provisionPayload,
         subject: { ownerId: userId, actor: { type: 'user', id: userId } },
         deadlineMs: 30_000,
         idempotencyKey: connectionId,
@@ -340,13 +396,24 @@ async function createTradingProviderLink(
     return { kind: 'error', code: provisionResult.code, message: provisionResult.message, params: {} };
   }
 
-  const provisionPayload = provisionResult.payload as { venueAccountId?: unknown } | null;
-  const venueAccountId = typeof provisionPayload?.venueAccountId === 'string' ? provisionPayload.venueAccountId : null;
+  const successPayload = provisionResult.payload as { venueAccountId?: unknown; wallet?: unknown } | null;
+  const venueAccountId = typeof successPayload?.venueAccountId === 'string' ? successPayload.venueAccountId : null;
+  // In generate mode the boundary mints the keypair and returns the public
+  // wallet ({ address, network } | null). Parse it defensively from the unknown
+  // payload — the private key never crosses the boundary.
+  const wallet = parseProvisionedWallet(successPayload?.wallet);
   if (!venueAccountId) {
     // The boundary reported success but without the expected metadata — do not
     // strand it silently; roll it back is impossible without an id, so log + fault.
     logger.error({ provider, userId, payload: provisionResult.payload }, 'provision_venue_account succeeded without a venueAccountId');
     return { kind: 'fault', code: 'setup.provider_link_failed', message: 'Failed to set up provider connection. Please try again.', params: { provider } };
+  }
+  // Observability: in generate mode the boundary is contracted to return the
+  // public minted wallet so the user can fund it. A generate success with no
+  // wallet is a boundary-contract regression — the connection still succeeds
+  // (non-fatal), but log it so the silent drop of the funding address is visible.
+  if (mode.kind === 'generate' && !wallet) {
+    logger.error({ provider, userId, venueAccountId }, 'provision_venue_account generate mode succeeded without a wallet — user has no funding address');
   }
 
   // ── Phase 2 — local platform half (connection only) ────────────────────────
@@ -440,7 +507,7 @@ export async function setupRoutes(
   app: FastifyInstance,
   db: Database,
   plansConfig?: PlansConfig,
-  deps: SetupRouteDeps = { venues: {}, generateWallet },
+  deps: SetupRouteDeps = { venues: {} },
 ): Promise<void> {
   /**
    * POST /setup/provider-link

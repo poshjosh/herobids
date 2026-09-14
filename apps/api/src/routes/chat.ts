@@ -18,7 +18,6 @@ import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAu
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { createProviderLink } from './setup.js';
-import { generateWallet } from '@herobids/venues';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('herobids-chat');
@@ -1061,7 +1060,7 @@ export async function executeChatAction(
           .where(eq(users.id, userId))
           .limit(1);
 
-        const result = await createProviderLink(db, plansConfig, { venues, generateWallet, tradertonClient }, {
+        const result = await createProviderLink(db, plansConfig, { venues, tradertonClient }, {
           userId,
           userPlanId: userRow?.planId ?? 'free',
           isAdmin: userRow?.isAdmin ?? false,
