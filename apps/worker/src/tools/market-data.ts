@@ -16,6 +16,7 @@ import {
   executeMarketOverviewTool,
 } from '../intelligence-tools.js';
 import { convertZodToJsonSchema } from './registry.js';
+import { mapReadResultToToolResult } from './traderton-read.js';
 
 const logger = createLogger('tools:market-data');
 
@@ -136,6 +137,14 @@ const searchTokensTool: AgentTool<TradingToolContext> = {
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { query, network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit } = params as z.infer<typeof SearchTokensParamsSchema>;
 
+    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
+    if (ctx.tradertonBoundary) {
+      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+        toolName: 'search_tokens',
+        payload: { query, network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit },
+      }));
+    }
+
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
@@ -205,6 +214,16 @@ const discoverTokensTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(DiscoverTokensParamsSchema),
   category: 'read-market-data',
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
+    const { network, limit, minLiquidityUsd } = params as z.infer<typeof DiscoverTokensParamsSchema>;
+
+    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
+    if (ctx.tradertonBoundary) {
+      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+        toolName: 'discover_tokens',
+        payload: { network, limit, minLiquidityUsd },
+      }));
+    }
+
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
@@ -264,6 +283,18 @@ const checkRegimeTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(CheckRegimeParamsSchema),
   category: 'read-market-data',
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
+    const {
+      benchmarkSymbol, emaFast, emaSlow, emaTrend, adxMin, emaAlignment, marketStructure, priceAboveVwap, disableWhenChoppy,
+    } = params as z.infer<typeof CheckRegimeParamsSchema>;
+
+    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
+    if (ctx.tradertonBoundary) {
+      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+        toolName: 'check_regime',
+        payload: { benchmarkSymbol, emaFast, emaSlow, emaTrend, adxMin, emaAlignment, marketStructure, priceAboveVwap, disableWhenChoppy },
+      }));
+    }
+
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
@@ -324,6 +355,16 @@ const getFundingRatesTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(GetFundingRatesParamsSchema),
   category: 'read-market-data',
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
+    const { symbols, venue } = params as z.infer<typeof GetFundingRatesParamsSchema>;
+
+    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
+    if (ctx.tradertonBoundary) {
+      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+        toolName: 'get_funding_rates',
+        payload: { symbols, venue },
+      }));
+    }
+
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
@@ -361,6 +402,16 @@ const getMarketOverviewTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(GetMarketOverviewParamsSchema),
   category: 'read-market-data',
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
+    const { venue, symbols } = params as z.infer<typeof GetMarketOverviewParamsSchema>;
+
+    // L3: route the read over the Traderton boundary when present; in-process fetch below is the transitional fallback.
+    if (ctx.tradertonBoundary) {
+      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+        toolName: 'get_market_overview',
+        payload: { venue, symbols },
+      }));
+    }
+
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
