@@ -45,10 +45,6 @@ describe('i18n regressions', () => {
         banned: ['Manage your subscription and plan'],
       },
       {
-        file: new URL('../../features/credentials/CredentialsPage.tsx', import.meta.url),
-        banned: ['Reusable provider secrets for agents and capability bindings', 'Add provider credential'],
-      },
-      {
         file: new URL('../../features/agents/AgentsPage.tsx', import.meta.url),
         banned: ['Goal-driven agents with explicit skills and execution modes', 'No agents yet'],
       },

@@ -303,10 +303,9 @@ export function ConnectionsPage() {
               )}
             </div>
           </div>
-          {(conn.venueAccountRef !== null || conn.credentialLabel !== null) && (
+          {conn.venueAccountRef !== null && (
             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {conn.venueAccountRef !== null && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>
                     {intl.formatMessage({ id: 'connections.fundingAddress' })}
                   </span>
@@ -344,18 +343,7 @@ export function ConnectionsPage() {
                       ? intl.formatMessage({ id: 'connections.copied' })
                       : intl.formatMessage({ id: 'connections.copy' })}
                   </button>
-                </div>
-              )}
-              {conn.credentialLabel !== null && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                    {intl.formatMessage({ id: 'connections.credential' })}
-                  </span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-                    {conn.credentialLabel}
-                  </span>
-                </div>
-              )}
+              </div>
             </div>
           )}
         </Card>

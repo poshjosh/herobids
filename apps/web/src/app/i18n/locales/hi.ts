@@ -5,10 +5,8 @@ export const messages: Record<string, string> = {
   'nav.outcomes': 'परिणाम',
   'nav.agents': 'AI एजेंट',
   'nav.connections': 'कनेक्शन',
-  'nav.credentials': 'क्रेडेंशियल',
   'nav.billing': 'बिलिंग',
   'nav.exposure': 'एक्सपोज़र',
-  'nav.venueAccounts': 'वेन्यू अकाउंट',
   'nav.preview': 'पूर्वावलोकन',
 
   // Public pages — navigation
@@ -376,39 +374,8 @@ export const messages: Record<string, string> = {
   'connections.oauth.errorMessage': '{provider} कनेक्ट करने में विफल। {error}',
   'connections.reconnect': 'पुनः कनेक्ट करें',
   'connections.fundingAddress': 'फंडिंग पता',
-  'connections.credential': 'क्रेडेंशियल',
   'connections.copy': 'कॉपी',
   'connections.copied': 'कॉपी हो गया',
-
-  // Credentials
-  'credentials.title': 'क्रेडेंशियल',
-  'credentials.subtitle': 'पुन: प्रयोज्य प्रदाता सीक्रेट्स — उन्नत उपयोग के लिए। पूर्ण ट्रेडिंग सेटअप मिशन कंट्रोल से किया जाता है।',
-  'credentials.addButton': 'प्रदाता क्रेडेंशियल जोड़ें',
-  'credentials.empty.title': 'अभी तक कोई क्रेडेंशियल नहीं',
-  'credentials.empty.message': 'क्रेडेंशियल आपके प्रदाता सीक्रेट्स स्टोर करते हैं। पूर्ण ट्रेडिंग सेटअप (क्रेडेंशियल + कनेक्शन + बाइंडिंग) के लिए, मिशन कंट्रोल या AI एजेंट बनाएं फ़्लो का उपयोग करें।',
-  'credentials.providerLabel': 'प्रदाता: {provider}',
-  'credentials.idLabel': 'आईडी: {id}',
-  'credentials.addedDate': '{date} को जोड़ा गया',
-  'credentials.deleteConfirm': 'क्रेडेंशियल "{label}" हटाएँ?',
-  'credentials.deleteBlocked': 'क्रेडेंशियल हटा नहीं सकते। अभी भी संदर्भित: वेन्यू अकाउंट: {venueAccounts}; बॉट: {bots}; कनेक्शन: {connections}. पहले इन्हें हटाएँ।',
-  'credentials.deleteFailed': 'क्रेडेंशियल हटाने में विफल। कृपया पुनः प्रयास करें।',
-  'credentials.guidedLinkNote': 'गाइडेड ट्रेडिंग लिंक को Connections से हटाना सबसे अच्छा है।',
-  'credentials.modal.title': 'प्रदाता क्रेडेंशियल जोड़ें',
-  'credentials.modal.provider': 'प्रदाता',
-  'credentials.modal.providerPlaceholder': 'उदा. hyperliquid, gmail, n8n',
-  'credentials.modal.label': 'लेबल',
-  'credentials.modal.labelPlaceholder': 'उदा. Primary provider credential',
-  'credentials.modal.secrets': 'सीक्रेट्स',
-  'credentials.modal.secretNamePlaceholder': 'सीक्रेट नाम',
-  'credentials.modal.secretValuePlaceholder': 'सीक्रेट मान',
-  'credentials.modal.addSecret': 'सीक्रेट जोड़ें',
-  'credentials.modal.saving': 'सहेजा जा रहा है…',
-  'credentials.modal.save': 'प्रदाता क्रेडेंशियल सहेजें',
-
-  // Venue Accounts
-  'venueAccounts.deleteBlocked': 'वेन्यू अकाउंट हटा नहीं सकते — अभी भी बॉट द्वारा संदर्भित: {blockingBotIds}. पहले इन्हें हटाएँ।',
-  'venueAccounts.deleteFailed': 'वेन्यू अकाउंट हटाने में विफल। कृपया पुनः प्रयास करें।',
-  'venueAccounts.guidedLinkNote': 'गाइडेड ट्रेडिंग लिंक को Connections से हटाना सबसे अच्छा है।',
 
   // Agents
   'agents.title': 'AI एजेंट',
@@ -673,7 +640,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.bindDisabledTooltip': 'कनेक्शन सक्रिय नहीं है',
   'agents.capabilityPage.bindFailed': '{label} असाइन नहीं कर सका: {error}',
   'agents.capabilityPage.manageConnections': 'कनेक्शन प्रबंधित करें',
-  'agents.capabilityPage.manageCredentials': 'क्रेडेंशियल प्रबंधित करें',
   'agents.capabilityPage.setupOnAgents': 'AI एजेंट्स पर जाएं',
 
   // Outcomes extended
@@ -1191,6 +1157,4 @@ export const messages: Record<string, string> = {
   'guidedSetup.actions.confirmed': '✓ पुष्टि हो गई',
   'guidedSetup.actions.formFallback': '📋 फ़ॉर्म: {form}',
 
-  // Credentials
-  'credentials.loadingCatalog': 'प्रदाता कैटलॉग लोड हो रहा है...',
 };

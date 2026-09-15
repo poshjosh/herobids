@@ -5,10 +5,8 @@ export const messages: Record<string, string> = {
   'nav.outcomes': 'النتائج',
   'nav.agents': 'وكلاء الذكاء الاصطناعي',
   'nav.connections': 'الاتصالات',
-  'nav.credentials': 'بيانات الاعتماد',
   'nav.billing': 'الفواتير',
   'nav.exposure': 'التعرض',
-  'nav.venueAccounts': 'حسابات المنصة',
   'nav.preview': 'معاينة',
 
   // Public pages — navigation
@@ -376,39 +374,8 @@ export const messages: Record<string, string> = {
   'connections.oauth.errorMessage': 'فشل توصيل {provider}. {error}',
   'connections.reconnect': 'إعادة الاتصال',
   'connections.fundingAddress': 'عنوان التمويل',
-  'connections.credential': 'بيانات الاعتماد',
   'connections.copy': 'نسخ',
   'connections.copied': 'تم النسخ',
-
-  // Credentials
-  'credentials.title': 'بيانات الاعتماد',
-  'credentials.subtitle': 'أسرار المزوّدين القابلة لإعادة الاستخدام — للاستخدام المتقدم. الإعداد الكامل للتداول يتم من مركز التحكم.',
-  'credentials.addButton': 'إضافة بيانات اعتماد',
-  'credentials.empty.title': 'لا توجد بيانات اعتماد بعد',
-  'credentials.empty.message': 'تخزّن بيانات الاعتماد أسرار مزوّديك. للإعداد الكامل (بيانات اعتماد + اتصال + ربط)، استخدم مركز التحكم أو تدفق إنشاء وكيل ذكاء اصطناعي.',
-  'credentials.providerLabel': 'المزوّد: {provider}',
-  'credentials.idLabel': 'المعرّف: {id}',
-  'credentials.addedDate': 'أضيفت {date}',
-  'credentials.deleteConfirm': 'حذف بيانات الاعتماد "{label}"؟',
-  'credentials.deleteBlocked': 'لا يمكن حذف بيانات الاعتماد. لا تزال مستخدمة من قبل: حسابات المنصة: {venueAccounts}؛ الروبوتات: {bots}؛ الاتصالات: {connections}. قم بإزالتها أولاً.',
-  'credentials.deleteFailed': 'فشل حذف بيانات الاعتماد. يرجى المحاولة مرة أخرى.',
-  'credentials.guidedLinkNote': 'من الأفضل إزالة روابط التداول الموجهة من Connections.',
-  'credentials.modal.title': 'إضافة بيانات اعتماد',
-  'credentials.modal.provider': 'المزوّد',
-  'credentials.modal.providerPlaceholder': 'مثلاً hyperliquid أو gmail أو n8n',
-  'credentials.modal.label': 'الاسم',
-  'credentials.modal.labelPlaceholder': 'مثلاً بيانات اعتماد رئيسية',
-  'credentials.modal.secrets': 'الأسرار',
-  'credentials.modal.secretNamePlaceholder': 'اسم السر',
-  'credentials.modal.secretValuePlaceholder': 'قيمة السر',
-  'credentials.modal.addSecret': 'إضافة سر',
-  'credentials.modal.saving': 'جارٍ الحفظ…',
-  'credentials.modal.save': 'حفظ بيانات الاعتماد',
-
-  // Venue Accounts
-  'venueAccounts.deleteBlocked': 'لا يمكن حذف حساب المنصة — لا يزال مستخدمًا من قبل البوتات: {blockingBotIds}. قم بإزالتها أولاً.',
-  'venueAccounts.deleteFailed': 'فشل حذف حساب المنصة. يرجى المحاولة مرة أخرى.',
-  'venueAccounts.guidedLinkNote': 'من الأفضل إزالة روابط التداول الموجهة من Connections.',
 
   // Agents
   'agents.title': 'وكلاء الذكاء الاصطناعي',
@@ -673,7 +640,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.bindDisabledTooltip': 'الاتصال غير نشط',
   'agents.capabilityPage.bindFailed': 'تعذر تعيين {label}: {error}',
   'agents.capabilityPage.manageConnections': 'إدارة الاتصالات',
-  'agents.capabilityPage.manageCredentials': 'إدارة بيانات الاعتماد',
   'agents.capabilityPage.setupOnAgents': 'الذهاب إلى وكلاء الذكاء الاصطناعي',
 
   // Outcomes extended
@@ -1191,6 +1157,4 @@ export const messages: Record<string, string> = {
   'guidedSetup.actions.confirmed': '✓ تم التأكيد',
   'guidedSetup.actions.formFallback': '📋 نموذج: {form}',
 
-  // Credentials
-  'credentials.loadingCatalog': 'جارٍ تحميل كتالوج المزودين...',
 };

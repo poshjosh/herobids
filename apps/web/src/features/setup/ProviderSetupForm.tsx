@@ -4,7 +4,7 @@ import { useIntl } from 'react-intl';
 import type { FieldDefinition } from '@herobids/domain';
 import { setup as setupApi, providerCatalog as providerCatalogApi, connections as connectionsApi, type ProviderSetupResult } from '../../lib/api-client.js';
 import { Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { PROVIDER_TEMPLATES } from '../credentials/CredentialsPage.js';
+import { PROVIDER_TEMPLATES } from './provider-templates.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
 function providerCapabilityGroup(categories: string[]): 'trading' | 'email' | 'other' {

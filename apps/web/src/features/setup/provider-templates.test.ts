@@ -16,7 +16,7 @@
  *     values have already been entered (preserves user input)
  */
 import { describe, it, expect } from 'vitest';
-import { PROVIDER_TEMPLATES } from './CredentialsPage.js';
+import { PROVIDER_TEMPLATES } from '../setup/provider-templates.js';
 
 // Cross-surface catalog fixture: mirrors what apps/api returns from GET /providers/catalog.
 // Any mismatch here signals that PROVIDER_TEMPLATES needs updating when the registry changes.
@@ -128,7 +128,7 @@ describe('Cross-surface catalog/template alignment', () => {
   it('PROVIDER_TEMPLATES matches the credential fields from the API catalog fixture for every known provider', () => {
     // This test guards against drift between:
     //   - apps/api/src/providers/registry.ts (source of truth for required field keys)
-    //   - PROVIDER_TEMPLATES in CredentialsPage (drives pre-populated key hints)
+    //   - PROVIDER_TEMPLATES (drives pre-populated key hints)
     // When a field is added to the registry, PROVIDER_TEMPLATES and this fixture both need updating.
     for (const [providerId, expectedFields] of Object.entries(CATALOG_CREDENTIAL_FIELDS)) {
       expect(

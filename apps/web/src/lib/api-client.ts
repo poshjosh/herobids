@@ -623,61 +623,6 @@ export const dashboard = {
 };
 
 // ---------------------------------------------------------------------------
-// Credentials
-// ---------------------------------------------------------------------------
-
-export interface Credential {
-  id: string;
-  venue: string;
-  label: string;
-  userId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export const credentials = {
-  list: () => request<{ credentials: Credential[] }>('/credentials'),
-  create: (data: { provider: string; label: string; secrets: Record<string, string> }) =>
-    request<Credential>('/credentials', {
-      method: 'POST',
-      body: JSON.stringify({ venue: data.provider, label: data.label, secrets: data.secrets }),
-    }),
-  delete: (id: string) => request<void>(`/credentials/${id}`, { method: 'DELETE' }),
-};
-
-// ---------------------------------------------------------------------------
-// Venue accounts
-// ---------------------------------------------------------------------------
-
-export interface VenueProfile {
-  venue: string;
-  venueType: 'orderbook' | 'swap';
-  availableSymbols: string[];
-  supportedExecutionModes: ('paper' | 'shadow' | 'live')[];
-  authenticated: boolean;
-  probedAt: string;
-}
-
-export interface VenueAccount {
-  id: string;
-  venue: string;
-  label: string;
-  venueAccountRef: string | null;
-  credentialId: string | null;
-  userId: string;
-  venueProfile: VenueProfile | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export const venueAccounts = {
-  list: () => request<{ venueAccounts: VenueAccount[] }>('/venue-accounts'),
-  create: (data: { venue: string; label: string; venueAccountRef?: string; credentialId?: string }) =>
-    request<VenueAccount>('/venue-accounts', { method: 'POST', body: JSON.stringify(data) }),
-  delete: (id: string) => request<void>(`/venue-accounts/${id}`, { method: 'DELETE' }),
-};
-
-// ---------------------------------------------------------------------------
 // Bots (formerly Trading Instances)
 // ---------------------------------------------------------------------------
 
@@ -1408,10 +1353,6 @@ export interface Connection {
   updatedAt: string;
   assignedAgentCount: number;
   referencingBotCount: number;
-  /** Credential display label when a credential is linked. */
-  credentialLabel: string | null;
-  /** Credential provider slug when a credential is linked. */
-  credentialProvider: string | null;
   /** Venue account display label when a trading account is resolved. */
   venueAccountLabel: string | null;
   /** Venue slug for the resolved trading account. */

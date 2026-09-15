@@ -26,8 +26,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
     { path: '/bots',           label: intl.formatMessage({ id: 'nav.bots' }),           icon: '⊞' },
     { path: '/exposure',       label: intl.formatMessage({ id: 'nav.exposure' }),       icon: '◉' },
     { path: '/outcomes',       label: intl.formatMessage({ id: 'nav.outcomes' }),       icon: '◈' },
-    { path: '/credentials',    label: intl.formatMessage({ id: 'nav.credentials' }),    icon: '⊟' },
-    { path: '/venue-accounts', label: intl.formatMessage({ id: 'nav.venueAccounts' }),  icon: '⊞' },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [locale]);
 

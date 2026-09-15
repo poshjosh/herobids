@@ -281,6 +281,5 @@ function getCapabilityNextSteps(
 
   return [
     { label: intl.formatMessage({ id: 'agents.capabilityPage.manageConnections' }), path: '/connections', variant: 'secondary' },
-    { label: intl.formatMessage({ id: 'agents.capabilityPage.manageCredentials' }), path: '/credentials', variant: 'secondary' },
   ];
 }

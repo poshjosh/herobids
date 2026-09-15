@@ -5,14 +5,12 @@ export const messages: Record<string, string> = {
   'nav.outcomes': 'Outcomes',
   'nav.agents': 'AI Agents',
   'nav.connections': 'Connections',
-  'nav.credentials': 'Credentials',
   'nav.billing': 'Billing',
   'nav.settings': 'Settings',
   'nav.bots': 'Bots',
   'nav.tradingSetup': 'Trading setup',
   'nav.exposure': 'Exposure',
   'nav.preview': 'Preview',
-  'nav.venueAccounts': 'Venue Accounts',
   'nav.openNavigation': 'Open navigation',
   'nav.closeNavigation': 'Close navigation',
   'nav.signOut': 'Sign out',
@@ -376,39 +374,8 @@ export const messages: Record<string, string> = {
   'connections.oauth.errorMessage': 'Failed to connect {provider}. {error}',
   'connections.reconnect': 'Reconnect',
   'connections.fundingAddress': 'Funding address',
-  'connections.credential': 'Credential',
   'connections.copy': 'Copy',
   'connections.copied': 'Copied',
-
-  // Credentials
-  'credentials.title': 'Credentials',
-  'credentials.subtitle': 'Reusable provider secrets — for advanced use. Full trading setup is done from Mission Control.',
-  'credentials.addButton': 'Add provider credential',
-  'credentials.empty.title': 'No credentials yet',
-  'credentials.empty.message': 'Credentials store your provider secrets. For full trading setup (credential + connection), use Mission Control or the Create AI Agent flow.',
-  'credentials.providerLabel': 'Provider: {provider}',
-  'credentials.idLabel': 'ID: {id}',
-  'credentials.addedDate': 'Added {date}',
-  'credentials.deleteConfirm': 'Delete credential "{label}"?',
-  'credentials.deleteBlocked': 'Cannot delete credential. Still referenced by: venue accounts: {venueAccounts}; bots: {bots}; connections: {connections}. Remove these first.',
-  'credentials.deleteFailed': 'Failed to delete credential. Please try again.',
-  'credentials.guidedLinkNote': 'Guided trading links are best removed from Connections.',
-  'credentials.modal.title': 'Add provider credential',
-  'credentials.modal.provider': 'Provider',
-  'credentials.modal.providerPlaceholder': 'e.g. hyperliquid, gmail, n8n',
-  'credentials.modal.label': 'Label',
-  'credentials.modal.labelPlaceholder': 'e.g. Primary provider credential',
-  'credentials.modal.secrets': 'Secrets',
-  'credentials.modal.secretNamePlaceholder': 'Secret name',
-  'credentials.modal.secretValuePlaceholder': 'Secret value',
-  'credentials.modal.addSecret': 'Add secret',
-  'credentials.modal.saving': 'Saving…',
-  'credentials.modal.save': 'Save provider credential',
-
-  // Venue Accounts
-  'venueAccounts.deleteBlocked': 'Cannot delete venue account — still referenced by bots: {blockingBotIds}. Remove these first.',
-  'venueAccounts.deleteFailed': 'Failed to delete venue account. Please try again.',
-  'venueAccounts.guidedLinkNote': 'Guided trading links are best removed from Connections.',
 
   // Agents
   'agents.title': 'AI Agents',
@@ -796,7 +763,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.bindDisabledTooltip': 'Connection is not active',
   'agents.capabilityPage.bindFailed': 'Could not assign {label}: {error}',
   'agents.capabilityPage.manageConnections': 'Manage connections',
-  'agents.capabilityPage.manageCredentials': 'Manage credentials',
   'agents.capabilityPage.setupOnAgents': 'Go to AI Agents',
 
   // Outcomes extended
@@ -1197,6 +1163,4 @@ export const messages: Record<string, string> = {
   'guidedSetup.actions.confirmed': '✓ Confirmed',
   'guidedSetup.actions.formFallback': '📋 Form: {form}',
 
-  // Credentials
-  'credentials.loadingCatalog': 'Loading provider catalog...',
 };

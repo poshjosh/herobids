@@ -58,8 +58,6 @@ function makeConnection(overrides: Partial<Connection> = {}): Connection {
     updatedAt: '2026-01-01T00:00:00Z',
     assignedAgentCount: 0,
     referencingBotCount: 0,
-    credentialLabel: null,
-    credentialProvider: null,
     venueAccountLabel: null,
     venueAccountVenue: null,
     venueAccountRef: null,
@@ -330,28 +328,11 @@ describe('ConnectionsPage wallet details rendering', () => {
     expect(html).not.toContain('Funding address');
   });
 
-  it('shows credential label when credentialLabel exists', () => {
+  it('renders the funding address value and label for a venue-account-backed connection', () => {
     const html = renderPage([
-      makeConnection({ credentialLabel: 'My API Key' }),
-    ]);
-    expect(html).toContain('My API Key');
-    expect(html).toContain('Credential');
-  });
-
-  it('hides credential row when credentialLabel is null', () => {
-    const html = renderPage([
-      makeConnection({ credentialLabel: null }),
-    ]);
-    expect(html).not.toContain('>Credential<');
-  });
-
-  it('shows both funding address and credential when both exist', () => {
-    const html = renderPage([
-      makeConnection({ venueAccountRef: '0xdef456', credentialLabel: 'Trading Key' }),
+      makeConnection({ venueAccountRef: '0xdef456' }),
     ]);
     expect(html).toContain('0xdef456');
     expect(html).toContain('Funding address');
-    expect(html).toContain('Trading Key');
-    expect(html).toContain('Credential');
   });
 });
