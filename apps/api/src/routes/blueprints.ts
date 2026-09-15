@@ -12,7 +12,6 @@ import {
   blueprintForkRequests,
   blueprintUsageEvents,
   blueprintLikes,
-  bots,
   connections,
   venueAccounts,
   users,
@@ -46,7 +45,7 @@ import type {
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
 import { resolvePlanBlueprintEntitlements } from '../plan-guards.js';
 import { createAgentFromPayload } from '../services/agent-instantiation-service.js';
-import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
+import { computeInstantiateRequestHash, deriveInstantiateActorId } from '../services/blueprint-idempotency.js';
 import { resolveEffectiveRisk } from '../services/blueprint-risk-resolver.js';
 import { validateSkillPortability } from '../services/blueprint-skill-validator.js';
 import {
@@ -55,7 +54,7 @@ import {
   refreshForkCount,
 } from '../services/blueprint-scoring.js';
 import { recomputeBlueprintPerformanceScore } from '../services/blueprint-performance-scorer.js';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
 import { createTradertonReadBoundary, loadBoundaryObject } from './exports-traderton.js';
 
 /** Fallback read deadline when the operator boundary timeout is not supplied. */
@@ -362,10 +361,34 @@ export async function blueprintRoutes(
   agentRiskDefaults: AgentRiskDefaultsConfig,
   executionCapabilityResolver: BlueprintExecutionCapabilityResolver,
   plansConfig: PlansConfig,
-  tradertonReadClient?: TradertonClient,
+  tradertonClient?: TradertonClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   // Periodic score recomputation (matches skills.ts pattern)
+  // c4.9d-FG: the blueprint-instantiate BOT write over the Traderton boundary.
+  // Mirrors bots.ts `invokeBoundary` (the established write seam): builds the
+  // user subject, threads the boundary deadline, and passes `idempotencyKey` =
+  // the SAME trimmedKey herobids advisory-locks on so the boundary four-tuple
+  // dedups a retry onto the same bot row. The write client is `tradertonClient`
+  // (the same TradertonClient transport serves reads + writes). Returns the typed
+  // client result; NO silent fallback to a local insert.
+  const invokeInstantiateBot = async (
+    payload: Record<string, unknown>,
+    userId: string,
+    idempotencyKey: string,
+  ): Promise<TradertonClientResult> => {
+    if (!tradertonClient) {
+      return { kind: 'transport_error', requestId: '', retryable: true, message: 'trading boundary not configured' };
+    }
+    return tradertonClient.invoke({
+      toolName: 'instantiate_bot',
+      payload,
+      subject: { ownerId: userId, actor: { type: 'user', id: userId } },
+      deadlineMs: tradertonReadTimeoutMs ?? 30_000,
+      idempotencyKey,
+    });
+  };
+
   const scoreRefreshTimer = setInterval(() => {
     void (async () => {
       try {
@@ -395,7 +418,7 @@ export async function blueprintRoutes(
           .from(blueprints)
           .where(eq(blueprints.publicationStatus, 'published'));
         for (const row of rows) {
-          await recomputeBlueprintPerformanceScore(db, row.id, tradertonReadClient, tradertonReadTimeoutMs);
+          await recomputeBlueprintPerformanceScore(db, row.id, tradertonClient, tradertonReadTimeoutMs);
         }
       } catch (error: unknown) {
         app.log.error({ err: error }, '[blueprints] failed periodic performance score recomputation');
@@ -995,7 +1018,7 @@ export async function blueprintRoutes(
     // we cannot prove there are no active bot instances, so return a 503 rather
     // than delete a blueprint that may still have bots bound to it. This mirrors
     // the connection-delete hoist pattern.
-    if (!tradertonReadClient) {
+    if (!tradertonClient) {
       return reply.status(503).send({
         error: BlueprintErrorCodes.DEPENDENCY_UNAVAILABLE,
         message: 'Trading service is unavailable — the blueprint could not be deleted.',
@@ -1003,7 +1026,7 @@ export async function blueprintRoutes(
     }
     const botDepSubject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
     const botDepBoundary = createTradertonReadBoundary(
-      tradertonReadClient,
+      tradertonClient,
       botDepSubject,
       tradertonReadTimeoutMs ?? BLUEPRINT_READ_TIMEOUT_MS,
     );
@@ -2000,7 +2023,14 @@ export async function blueprintRoutes(
 
       // 5. Take advisory lock and check idempotency
       const lockKey = `instantiate:${request.userId}:${trimmedKey}`;
-      const actorId = crypto.randomUUID();
+      // actorId is DETERMINISTIC per (userId, key) — NOT a fresh random per
+      // request. The boundary's instantiate_bot fingerprint hashes the full
+      // payload (actorId included), so a stable actorId is what makes a
+      // crash-retry replay the stored {botId} and concurrent same-key duplicates
+      // collapse to a replay instead of a spurious conflict. See docs/003
+      // (atomicity-split entry) + docs/001: both sides agree on the
+      // caller-supplied actorId and a retry converges.
+      const actorId = deriveInstantiateActorId(request.userId, trimmedKey);
       const eventId = crypto.randomUUID();
       const instantiationReqId = crypto.randomUUID();
       const now = new Date();
@@ -2253,12 +2283,73 @@ export async function blueprintRoutes(
             },
             agentPayloadFinal.risk,
           );
+          // 13/14 for the AGENT branch stay LOCAL inside this tx (platform-only
+          // writes). See the BOT-branch handling AFTER the tx.
+          const responsePayload: Record<string, unknown> = {
+            actorId,
+            actorKind: bp.kind,
+            blueprintId: bp.id,
+            blueprintRevisionId: revision.id,
+            status: 'stopped',
+            createdAt: now.toISOString(),
+          };
+          await tx.insert(blueprintInstantiationRequests).values({
+            id: instantiationReqId,
+            userId: request.userId,
+            idempotencyKey: trimmedKey,
+            requestHash,
+            blueprintId: bp.id,
+            blueprintRevisionId: revision.id,
+            actorKind: bp.kind,
+            actorId,
+            responsePayload,
+          });
+          await tx.insert(blueprintUsageEvents).values({
+            id: eventId,
+            blueprintId: bp.id,
+            blueprintRevisionId: revision.id,
+            userId: request.userId,
+            subjectKind: bp.kind,
+            subjectId: actorId,
+            eventType: 'instance_created',
+            isSelfUsage: bp.authorId === request.userId,
+            occurredAt: now,
+            metadata: {
+              idempotencyKey: trimmedKey,
+              resolvedMode: capResult.resolvedMode,
+            },
+          });
+
+          return {
+            kind: 'created' as const,
+            actorId,
+            actorKind: bp.kind,
+            responsePayload,
+          };
         } else {
-          // Bot creation
+          // Bot creation — c4.9d-FG: the trading write MOVES over the Traderton
+          // boundary. herobids holds NO trading writes. The former local
+          // `tx.insert(bots)` is replaced by a boundary `instantiate_bot` call
+          // issued OUTSIDE this transaction (see below). Here we ONLY build the
+          // bot config + gather the boundary inputs, then hand them back to the
+          // handler.
+          //
+          // ATOMICITY SPLIT (docs/003, "instantiate atomicity-split"): the source
+          // wrapped the bot insert + the local idempotency/usage rows in ONE
+          // db.transaction. We MUST NOT hold this tx (which holds the pg advisory
+          // xact lock + a pinned connection) open across the ~30s REST round-trip
+          // (C-i RESOLVED). So this tx does only the local reads/validation and
+          // RELEASES; the boundary call runs outside; a second short local tx
+          // writes the idempotency + usage rows on boundary success. The advisory
+          // lock serializes concurrent same-key requests; the duplicate GUARANTEE
+          // is the local blueprint_instantiation_requests replay check PLUS the
+          // boundary four-tuple dedup (the caller-supplied actorId converges a
+          // retry on the same bot row). The inert stopped-orphan divergence on a
+          // boundary-success/local-fail crash is an accepted bounded divergence.
           const botPayloadFinal = finalPayload as BotBlueprintRevisionPayload;
           const binding = parsed.data.bindings as { kind: 'bot'; connectionId: string; venueAccountId: string };
 
-          // Build bot config from payload
+          // Build bot config from payload (copied verbatim from the source insert path).
           const botConfig: Record<string, unknown> = {
             strategy: botPayloadFinal.strategy,
             risk: botPayloadFinal.risk,
@@ -2274,65 +2365,14 @@ export async function blueprintRoutes(
             shadowPollIntervalMs: botPayloadFinal.shadowPollIntervalMs,
           };
 
-          await tx.insert(bots).values({
-            id: actorId,
-            userId: request.userId,
+          return {
+            kind: 'proceed_bot' as const,
+            botConfig,
             venueAccountId: binding.venueAccountId,
-            connectionId: binding.connectionId,
-            config: botConfig,
-            blueprintId: bp.id,
-            blueprintRevisionId: revision.id,
             configSnapshot: finalPayload,
-            status: 'stopped',
-            creatorType: 'user',
-            creatorId: request.userId,
-          } as typeof bots.$inferInsert);
-        }
-
-        // 13. Insert idempotency result
-        const responsePayload: Record<string, unknown> = {
-          actorId,
-          actorKind: bp.kind,
-          blueprintId: bp.id,
-          blueprintRevisionId: revision.id,
-          status: 'stopped',
-          createdAt: now.toISOString(),
-        };
-        await tx.insert(blueprintInstantiationRequests).values({
-          id: instantiationReqId,
-          userId: request.userId,
-          idempotencyKey: trimmedKey,
-          requestHash,
-          blueprintId: bp.id,
-          blueprintRevisionId: revision.id,
-          actorKind: bp.kind,
-          actorId,
-          responsePayload,
-        });
-
-        // 14. Emit usage event
-        await tx.insert(blueprintUsageEvents).values({
-          id: eventId,
-          blueprintId: bp.id,
-          blueprintRevisionId: revision.id,
-          userId: request.userId,
-          subjectKind: bp.kind,
-          subjectId: actorId,
-          eventType: 'instance_created',
-          isSelfUsage: bp.authorId === request.userId,
-          occurredAt: now,
-          metadata: {
-            idempotencyKey: trimmedKey,
             resolvedMode: capResult.resolvedMode,
-          },
-        });
-
-        return {
-          kind: 'created' as const,
-          actorId,
-          actorKind: bp.kind,
-          responsePayload,
-        };
+          };
+        }
       });
 
       // Handle transaction result
@@ -2353,6 +2393,100 @@ export async function blueprintRoutes(
           : result.code === BlueprintErrorCodes.MODE_CHANGED ? 409
           : 400;
         return reply.status(status).send({ error: result.code, message: result.message });
+      }
+
+      // BOT branch — c4.9d-FG boundary seam. The local tx above released the
+      // advisory lock after the replay/conflict + binding-validation reads. Now
+      // issue the trading write over the Traderton boundary OUTSIDE any open tx,
+      // then persist the local platform rows on success.
+      if (result.kind === 'proceed_bot') {
+        const boundaryResult = await invokeInstantiateBot(
+          {
+            actorId,
+            venueAccountId: result.venueAccountId,
+            config: result.botConfig,
+            blueprintId: bp.id,
+            blueprintRevisionId: revision.id,
+            configSnapshot: result.configSnapshot,
+          },
+          request.userId,
+          trimmedKey,
+        );
+
+        if (boundaryResult.kind === 'transport_error') {
+          return reply.status(503).send({
+            error: 'precondition.not_ready',
+            message: 'Trading service is unavailable — the bot was not instantiated.',
+          });
+        }
+        if (boundaryResult.kind === 'in_progress') {
+          return reply.status(503).send({
+            error: 'boundary.in_progress',
+            message: 'Bot instantiation did not complete in time. Please retry.',
+          });
+        }
+        if (boundaryResult.kind === 'failure') {
+          // Preserve the paper+swap identity: when the boundary rejects a
+          // paper+swap config it carries the dedicated code in details.errorCode.
+          const paperSwapCode = boundaryResult.details?.['errorCode'];
+          if (paperSwapCode === 'execution_capability.paper_swap_not_supported') {
+            return reply.status(400).send({
+              error: 'execution_capability.paper_swap_not_supported',
+              message: boundaryResult.message,
+            });
+          }
+          const status = boundaryResult.code === 'precondition.not_ready' ? 503
+            : boundaryResult.code === 'not_found.resource' ? 404
+            : boundaryResult.code === 'authorization.denied' ? 403
+            : boundaryResult.code === 'validation.invalid_payload' ? 400
+            : boundaryResult.code === 'rate_limit.exceeded' ? 429
+            : 502;
+          return reply.status(status).send({ error: boundaryResult.code, message: boundaryResult.message });
+        }
+
+        // Boundary SUCCESS. Use the boundary-returned botId (== actorId) for the
+        // stored idempotency responsePayload. Write the local platform rows in a
+        // short local tx and commit.
+        const successPayload = (boundaryResult.payload ?? {}) as Record<string, unknown>;
+        const persistedBotId = (successPayload['botId'] as string | undefined) ?? actorId;
+        const responsePayload: Record<string, unknown> = {
+          actorId: persistedBotId,
+          actorKind: bp.kind,
+          blueprintId: bp.id,
+          blueprintRevisionId: revision.id,
+          status: 'stopped',
+          createdAt: now.toISOString(),
+        };
+        await db.transaction(async (tx) => {
+          await tx.insert(blueprintInstantiationRequests).values({
+            id: instantiationReqId,
+            userId: request.userId,
+            idempotencyKey: trimmedKey,
+            requestHash,
+            blueprintId: bp.id,
+            blueprintRevisionId: revision.id,
+            actorKind: bp.kind,
+            actorId: persistedBotId,
+            responsePayload,
+          });
+          await tx.insert(blueprintUsageEvents).values({
+            id: eventId,
+            blueprintId: bp.id,
+            blueprintRevisionId: revision.id,
+            userId: request.userId,
+            subjectKind: bp.kind,
+            subjectId: persistedBotId,
+            eventType: 'instance_created',
+            isSelfUsage: bp.authorId === request.userId,
+            occurredAt: now,
+            metadata: {
+              idempotencyKey: trimmedKey,
+              resolvedMode: result.resolvedMode,
+            },
+          });
+        });
+
+        return reply.status(201).send(responsePayload);
       }
 
       return reply.status(201).send(result.responsePayload);

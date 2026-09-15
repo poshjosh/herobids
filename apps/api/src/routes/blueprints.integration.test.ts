@@ -255,13 +255,49 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
   let app: ReturnType<typeof Fastify>;
   let authCfg: AuthConfig;
 
+  // c4.9d-FG: the blueprint-instantiate BOT write now rides the Traderton
+  // boundary. A stubbed TradertonClient drives each outcome per-test: set
+  // `stubInvokeResult` before the request; `capturedInvokes` records every
+  // invoke so we can assert what herobids sent (toolName / idempotencyKey /
+  // payload). Reset in beforeEach to a success default that echoes the actorId.
+  let stubInvokeResult:
+    | ((input: { toolName: string; payload: unknown; idempotencyKey?: string }) => unknown)
+    | null = null;
+  let capturedInvokes: Array<{ toolName: string; payload: Record<string, unknown>; idempotencyKey?: string }> = [];
+
+  const stubTradertonClient = {
+    invoke: async (input: { toolName: string; payload: unknown; idempotencyKey?: string }) => {
+      capturedInvokes.push({
+        toolName: input.toolName,
+        payload: input.payload as Record<string, unknown>,
+        idempotencyKey: input.idempotencyKey,
+      });
+      if (stubInvokeResult) return stubInvokeResult(input);
+      // Default: boundary success echoing the caller-supplied actorId.
+      const actorId = (input.payload as Record<string, unknown>)['actorId'];
+      return {
+        kind: 'success' as const,
+        requestId: 'req-stub',
+        correlationId: 'corr-stub',
+        payload: { botId: actorId, status: 'stopped' },
+      };
+    },
+  };
+
   beforeAll(async () => {
     db = createDatabase(process.env['DATABASE_URL']!);
     authCfg = makeAuthConfig();
 
     app = Fastify({ logger: false });
     await authPlugin(app, { config: authCfg, db });
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityAdapter, testPlansConfig);
+    await blueprintRoutes(
+      app,
+      db,
+      agentRiskDefaults,
+      executionCapabilityAdapter,
+      testPlansConfig,
+      stubTradertonClient as unknown as Parameters<typeof blueprintRoutes>[5],
+    );
     await app.ready();
   }, 30_000);
 
@@ -301,6 +337,10 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+
+    // Reset the boundary stub to the success default for each test.
+    stubInvokeResult = null;
+    capturedInvokes = [];
   });
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -468,19 +508,25 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
 
   // ── Test 2: Bot created from blueprint has correct attribution ─────────
 
-  it('creates stopped bot with blueprint attribution', async () => {
+  // c4.9d-FG: the bot instantiate write now goes over the Traderton boundary.
+  // herobids no longer writes a local `bots` row — on boundary success it writes
+  // ONLY the local platform records (idempotency + usage). This asserts the
+  // boundary was called with the right payload + idempotencyKey, that the local
+  // platform rows were written, and that NO local bots row exists.
+  it('instantiates a bot over the boundary and writes local platform records on success', async () => {
     const payload = makeBotPayload();
     const { bpId, revId } = await seedBlueprint({}, payload);
     const token = await getAuthToken();
     const connId = await seedConnection();
     const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-attribution-${crypto.randomUUID()}`;
 
     const res = await app.inject({
       method: 'POST',
       url: `/blueprints/${bpId}/instantiate`,
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Idempotency-Key': `test-bot-attribution-${crypto.randomUUID()}`,
+        'Idempotency-Key': idemKey,
       },
       payload: {
         revisionId: revId,
@@ -493,20 +539,381 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
       },
     });
 
-    // Bot creation test
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
     expect(body.actorKind).toBe('bot');
+    expect(body.status).toBe('stopped');
+    expect(body.blueprintId).toBe(bpId);
+    expect(body.blueprintRevisionId).toBe(revId);
 
-    const [bot] = await db
+    // The boundary was called exactly once with instantiate_bot, the SAME
+    // idempotency key herobids locks on, the binding venue account, and lineage.
+    expect(capturedInvokes).toHaveLength(1);
+    const invoke = capturedInvokes[0]!;
+    expect(invoke.toolName).toBe('instantiate_bot');
+    expect(invoke.idempotencyKey).toBe(idemKey);
+    expect(invoke.payload['actorId']).toBe(body.actorId);
+    expect(invoke.payload['venueAccountId']).toBe(vaId);
+    expect(invoke.payload['blueprintId']).toBe(bpId);
+    expect(invoke.payload['blueprintRevisionId']).toBe(revId);
+    expect(invoke.payload['config']).toBeDefined();
+    expect(invoke.payload['configSnapshot']).toBeDefined();
+
+    // herobids holds NO trading write — the local bots table is untouched.
+    const botRows = await db.select().from(bots).where(sql`${bots.id} = ${body.actorId}`);
+    expect(botRows).toHaveLength(0);
+
+    // The local platform records ARE written on boundary success.
+    const [idemRow] = await db
       .select()
-      .from(bots)
-      .where(sql`${bots.id} = ${body.actorId}`);
-    expect(bot).toBeDefined();
-    expect(bot!.blueprintId).toBe(bpId);
-    expect(bot!.blueprintRevisionId).toBe(revId);
-    expect(bot!.status).toBe('stopped');
-    expect(bot!.configSnapshot).toBeDefined();
+      .from(blueprintInstantiationRequests)
+      .where(and(
+        eq(blueprintInstantiationRequests.userId, TEST_USER_ID),
+        eq(blueprintInstantiationRequests.idempotencyKey, idemKey),
+      ));
+    expect(idemRow).toBeDefined();
+    expect(idemRow!.actorId).toBe(body.actorId);
+    expect(idemRow!.actorKind).toBe('bot');
+
+    const usageRows = await db
+      .select()
+      .from(blueprintUsageEvents)
+      .where(eq(blueprintUsageEvents.subjectId, body.actorId));
+    expect(usageRows).toHaveLength(1);
+    expect(usageRows[0]!.eventType).toBe('instance_created');
+  });
+
+  // c4.9d-FG: boundary-outcome mapping (mirrors POST /bots). transport_error and
+  // in_progress → 503; failure codes → 400/403/404/502; paper+swap dedicated code
+  // → 400. On any non-success the local platform rows are NOT written.
+  it('maps boundary transport_error → 503 and writes no local records', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-transport-${crypto.randomUUID()}`;
+
+    stubInvokeResult = () => ({ kind: 'transport_error', requestId: '', retryable: true, message: 'down' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId }, requestedMode: 'paper' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('precondition.not_ready');
+
+    const idemRows = await db.select().from(blueprintInstantiationRequests)
+      .where(eq(blueprintInstantiationRequests.idempotencyKey, idemKey));
+    expect(idemRows).toHaveLength(0);
+    const usageRows = await db.select().from(blueprintUsageEvents)
+      .where(eq(blueprintUsageEvents.blueprintId, bpId));
+    expect(usageRows).toHaveLength(0);
+  });
+
+  it('maps boundary in_progress → 503 boundary.in_progress and writes no local records', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-inprog-${crypto.randomUUID()}`;
+
+    stubInvokeResult = () => ({ kind: 'in_progress' });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId }, requestedMode: 'paper' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('boundary.in_progress');
+    const idemRows = await db.select().from(blueprintInstantiationRequests)
+      .where(eq(blueprintInstantiationRequests.idempotencyKey, idemKey));
+    expect(idemRows).toHaveLength(0);
+  });
+
+  it('maps boundary failure codes → 404 / 403 / 400 / 502', async () => {
+    const cases: Array<[string, number]> = [
+      ['not_found.resource', 404],
+      ['authorization.denied', 403],
+      ['validation.invalid_payload', 400],
+      ['internal.non_retryable', 502],
+    ];
+    for (const [code, expectedStatus] of cases) {
+      const payload = makeBotPayload();
+      const { bpId, revId } = await seedBlueprint({}, payload);
+      const token = await getAuthToken();
+      const connId = await seedConnection();
+      const vaId = await seedVenueAccount();
+      const idemKey = `test-bot-fail-${code}-${crypto.randomUUID()}`;
+
+      stubInvokeResult = () => ({ kind: 'failure', code, message: `boundary said ${code}`, retryable: false });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/blueprints/${bpId}/instantiate`,
+        headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+        payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId }, requestedMode: 'paper' },
+      });
+
+      expect(res.statusCode).toBe(expectedStatus);
+      const idemRows = await db.select().from(blueprintInstantiationRequests)
+        .where(eq(blueprintInstantiationRequests.idempotencyKey, idemKey));
+      expect(idemRows).toHaveLength(0);
+    }
+  });
+
+  it('maps a paper+swap boundary failure to 400 with the dedicated code', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-paperswap-${crypto.randomUUID()}`;
+
+    stubInvokeResult = () => ({
+      kind: 'failure',
+      code: 'validation.invalid_payload',
+      message: 'Paper mode is not supported for swap venues',
+      retryable: false,
+      details: { errorCode: 'execution_capability.paper_swap_not_supported' },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId }, requestedMode: 'paper' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('execution_capability.paper_swap_not_supported');
+  });
+
+  // C5: a same-key BOT retry replays LOCALLY (200) from
+  // blueprint_instantiation_requests — pre-boundary — so the boundary is called
+  // only ONCE (the first request), never on the replay.
+  it('bot idempotent retry replays locally (200) and calls the boundary only once', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-replay-${crypto.randomUUID()}`;
+    const reqBody = {
+      revisionId: revId,
+      bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId },
+      requestedMode: 'paper',
+    };
+
+    const r1 = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: reqBody,
+    });
+    expect(r1.statusCode).toBe(201);
+    const id1 = r1.json().actorId;
+
+    const r2 = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: reqBody,
+    });
+    expect(r2.statusCode).toBe(200); // local idempotent replay
+    expect(r2.json().actorId).toBe(id1);
+
+    // The boundary was invoked only for the first request — the replay is local.
+    expect(capturedInvokes).toHaveLength(1);
+  });
+
+  // C5: a same-key BOT request with a DIFFERENT body → 409 conflict, LOCAL and
+  // pre-boundary (the boundary is called only for the first, valid request).
+  it('bot same-key different-body → 409 conflict, resolved locally pre-boundary', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-conflict-${crypto.randomUUID()}`;
+
+    const r1 = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId }, requestedMode: 'paper' },
+    });
+    expect(r1.statusCode).toBe(201);
+
+    const r2 = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId }, requestedMode: 'shadow' },
+    });
+    expect(r2.statusCode).toBe(409);
+    // Only the first request reached the boundary; the conflict is local.
+    expect(capturedInvokes).toHaveLength(1);
+  });
+
+  // c4.9d-FG HIGH: crash-retry convergence. Simulates "boundary succeeded, the
+  // local commit was lost" by deleting the local idempotency row after the first
+  // request, then retrying with the SAME key + SAME body. Because actorId is
+  // DETERMINISTIC per (userId, key), the second request that re-reaches the
+  // boundary (no local row to replay) sends the IDENTICAL actorId. The stable
+  // actorId is what makes the boundary fingerprint stable, so the boundary
+  // replays its stored {botId} rather than returning a spurious conflict —
+  // exactly the convergence docs/003 (atomicity-split) + docs/001 promise.
+  it('crash-retry with the same key re-sends the SAME actorId to the boundary (convergence)', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-crash-retry-${crypto.randomUUID()}`;
+    const reqBody = {
+      revisionId: revId,
+      bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId },
+      requestedMode: 'paper',
+    };
+
+    const r1 = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: reqBody,
+    });
+    expect(r1.statusCode).toBe(201);
+    const actorId1 = r1.json().actorId;
+
+    // Simulate the boundary-success / local-commit-lost crash: drop the local
+    // idempotency + usage rows so the retry cannot short-circuit on the local
+    // replay and must re-reach the boundary.
+    await db.delete(blueprintInstantiationRequests)
+      .where(eq(blueprintInstantiationRequests.idempotencyKey, idemKey));
+    await db.delete(blueprintUsageEvents).where(eq(blueprintUsageEvents.blueprintId, bpId));
+
+    const r2 = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: reqBody,
+    });
+    expect(r2.statusCode).toBe(201);
+    const actorId2 = r2.json().actorId;
+
+    // The convergence assertion: both requests reached the boundary, and BOTH
+    // sent the identical actorId. A fresh-per-request random actorId (the bug)
+    // would make these differ → the boundary would see a different fingerprint
+    // and conflict instead of replaying the orphaned bot.
+    expect(capturedInvokes).toHaveLength(2);
+    expect(capturedInvokes[0]!.payload['actorId']).toBe(capturedInvokes[1]!.payload['actorId']);
+    // And it matches the actorId surfaced to the client on both calls.
+    expect(actorId2).toBe(actorId1);
+    expect(capturedInvokes[0]!.payload['actorId']).toBe(actorId1);
+    // The idempotency key sent to the boundary is stable too (four-tuple dedup).
+    expect(capturedInvokes[0]!.idempotencyKey).toBe(idemKey);
+    expect(capturedInvokes[1]!.idempotencyKey).toBe(idemKey);
+  });
+
+  // c4.9d-FG HIGH: concurrent-duplicate property. Two same-key + same-body
+  // requests (here serialized by the advisory lock, but the property holds for
+  // the concurrent race) derive the SAME actorId → same boundary fingerprint →
+  // the boundary collapses the duplicate to a replay rather than a conflict.
+  it('two same-key same-body requests derive a stable actorId (concurrent-duplicate collapse)', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-concurrent-${crypto.randomUUID()}`;
+    const reqBody = {
+      revisionId: revId,
+      bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId },
+      requestedMode: 'paper',
+    };
+
+    const r1 = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: reqBody,
+    });
+    expect(r1.statusCode).toBe(201);
+    const firstActorId = r1.json().actorId;
+
+    // Second same-key request replays locally (200) with the SAME actorId — the
+    // deterministic derivation guarantees this even if the local row were absent.
+    const r2 = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: reqBody,
+    });
+    expect(r2.json().actorId).toBe(firstActorId);
+    // The one boundary invoke carried that stable actorId.
+    expect(capturedInvokes).toHaveLength(1);
+    expect(capturedInvokes[0]!.payload['actorId']).toBe(firstActorId);
+  });
+
+  // C5: binding validation stays LOCAL and pre-boundary — a venue account not
+  // owned by the caller is rejected 403 BEFORE the boundary is ever called.
+  it('rejects an unowned venue account locally (403) without calling the boundary', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    // A venue account owned by a DIFFERENT user.
+    const otherVaId = crypto.randomUUID();
+    await db.insert(users).values({
+      id: 'other-va-owner', username: 'other_va', displayName: 'Other', email: 'other-va@test.local',
+      planId: 'free', createdAt: new Date(), updatedAt: new Date(),
+    });
+    await db.insert(venueAccounts).values({
+      id: otherVaId, userId: 'other-va-owner', venue: 'hyperliquid', label: 'other',
+    } as typeof venueAccounts.$inferInsert);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': `test-unowned-va-${crypto.randomUUID()}` },
+      payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: otherVaId }, requestedMode: 'paper' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    // The boundary must NOT be called when local binding validation fails.
+    expect(capturedInvokes).toHaveLength(0);
+  });
+
+  // C5 regression: the AGENT branch is UNTOUCHED — it still writes platform
+  // tables locally and NEVER calls the boundary.
+  it('agent instantiate writes platform tables and never calls the boundary', async () => {
+    const payload = makeAgentPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': `test-agent-untouched-${crypto.randomUUID()}` },
+      payload: { revisionId: revId },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.actorKind).toBe('agent');
+    // The agent row is written LOCALLY.
+    const agentRows = await db.select().from(agents).where(sql`${agents.id} = ${body.actorId}`);
+    expect(agentRows).toHaveLength(1);
+    // The boundary is NEVER called for an agent instantiate.
+    expect(capturedInvokes).toHaveLength(0);
   });
 
   // ── Test 3: Paired-null enforcement ────────────────────────────────────
