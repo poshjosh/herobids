@@ -8,8 +8,6 @@ import type {
   StopRequestPayload,
   SendMessagePayload,
   ManageBotPayload,
-  BotQueryPayload,
-  ToolPositionRecord,
   AssessStrategyPresetRequestPayload,
   ChangeStrategyPresetRequestPayload,
   ManageAgentSkillsPayload,
@@ -23,8 +21,6 @@ import {
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
   AGENT_RUNTIME_ACTIVITY_TYPES,
-  deriveStrategyPreset,
-  extractStrategyFromConfig,
   checkModeEscalation,
   resolveEffectiveLlmSelection,
   renderEmail,
@@ -33,7 +29,7 @@ import {
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository, Database } from '@herobids/db';
 import { eq, inArray } from 'drizzle-orm';
-import { PgJournal, agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
+import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
@@ -305,13 +301,11 @@ export class AgentMessageBroker {
           );
           break;
 
-        case AGENT_MESSAGE_TYPES.BOT_QUERY:
-          await this.handleBotQuery(
-            effectiveAgentId,
-            envelope,
-            envelope.payload as unknown as BotQueryPayload,
-          );
-          break;
+        // c4.9i: the BOT_QUERY receive path is dead — nothing publishes
+        // `agent.bot.query` (agents read bots/analytics/positions over the
+        // Traderton boundary via the read tools). The handler + its local
+        // trading-table reads were removed. The protocol enum/schema binding
+        // remain as the shared contract definition.
 
         case AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED: {
           // The agent container sends this before exiting. Route through session
@@ -410,15 +404,6 @@ export class AgentMessageBroker {
         });
       }
     }
-  }
-
-  /**
-   * Derive the strategyPreset display label from a bot's stored config.
-   * Delegates to the shared deriveStrategyPreset utility in @herobids/domain.
-   */
-  private deriveStrategyPresetFromBotConfig(config: Record<string, unknown>): string | undefined {
-    const strategy = extractStrategyFromConfig(config);
-    return strategy ? (deriveStrategyPreset(strategy.type) ?? undefined) : undefined;
   }
 
   private async handleArtifactPublish(agentId: string, _envelope: MessageEnvelope, payload: ArtifactPublishPayload): Promise<void> {
@@ -761,169 +746,6 @@ export class AgentMessageBroker {
     throw new Error(`Unknown manage_bot action: ${(payload as { action: string }).action}`);
   }
 
-  private async handleBotQuery(agentId: string, _envelope: MessageEnvelope, payload: BotQueryPayload): Promise<void> {
-    const agent = await this.agentRepo.getAgent(agentId);
-    if (!agent) throw new Error('Agent not found');
-
-    const activeSession = await this.agentRepo.getActiveSession(agent.id);
-    if (!activeSession || activeSession.status !== 'running') {
-      throw new Error('No running session for agent');
-    }
-
-    if (!this.botRepo) throw new Error('BotRepository not wired — bot query unavailable');
-
-    if (payload.action === 'list_bots') {
-      const since = payload.days ? new Date(Date.now() - payload.days * 24 * 60 * 60 * 1000) : undefined;
-      const bots = await this.botRepo.getBotsByCreator('agent', agent.id, since);
-      await this.eventPublisher.emitToolResult(agent.id, {
-        tool: 'list_bots',
-        status: 'ok',
-        message: `Found ${bots.length} bot(s)`,
-        data: {
-          ok: true,
-          bots: bots.map((bot) => ({
-            id: bot.id,
-            status: bot.status,
-            strategyPreset: this.deriveStrategyPresetFromBotConfig(bot.config as Record<string, unknown>),
-            symbol: (bot.config as Record<string, unknown>)?.['symbol'] as string | undefined,
-          })),
-        },
-      });
-      return;
-    }
-
-    if (payload.action === 'get_bot_status') {
-      if (!payload.botId) {
-        await this.eventPublisher.emitToolResult(agent.id, {
-          tool: 'get_bot_status',
-          status: 'error',
-          message: 'botId is required for get_bot_status',
-        });
-        return;
-      }
-
-      const bot = await this.botRepo.getBotById(payload.botId);
-      if (!bot || bot.userId !== agent.userId) {
-        await this.eventPublisher.emitToolResult(agent.id, {
-          tool: 'get_bot_status',
-          status: 'error',
-          message: `Bot ${payload.botId} not found or not owned by this agent's user`,
-          botId: payload.botId,
-        });
-        return;
-      }
-
-      await this.eventPublisher.emitToolResult(agent.id, {
-        tool: 'get_bot_status',
-        status: 'ok',
-        message: `Bot ${bot.id} is ${bot.status}`,
-        botId: bot.id,
-        data: {
-          id: bot.id,
-          status: bot.status,
-          venueAccountId: bot.venueAccountId,
-          config: bot.config,
-          createdAt: bot.createdAt?.toISOString?.() ?? undefined,
-          updatedAt: bot.updatedAt?.toISOString?.() ?? undefined,
-        },
-      });
-      return;
-    }
-
-    if (payload.action === 'get_analytics') {
-      const days = payload.days ?? 7;
-      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      let analytics: {
-        botCount: number;
-        openPositions: number;
-        closedPositions: number;
-        winningPositions: number;
-        realizedPnlUsd: string;
-        totalFeesUsd: string;
-        recentFills: number;
-        avgHoldTimeHours: number | null;
-        byBot: Array<{ botId: string; status: string; recentFills: number; realizedPnlUsd: string }>;
-        agentDirect: { recentFills: number; realizedPnlUsd: string } | null;
-      };
-      try {
-        analytics = await this.botRepo.getAnalyticsByCreator('agent', agent.id, since, payload.botId);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error fetching analytics';
-        await this.eventPublisher.emitToolResult(agent.id, {
-          tool: 'get_analytics',
-          status: 'error',
-          message: msg,
-          botId: payload.botId,
-        });
-        return;
-      }
-      const winRate = analytics.closedPositions > 0
-        ? (analytics.winningPositions / analytics.closedPositions) * 100
-        : 0;
-      await this.eventPublisher.emitToolResult(agent.id, {
-        tool: 'get_analytics',
-        status: 'ok',
-        message: 'Analytics summary ready',
-        data: {
-          ok: true,
-          totalTrades: analytics.recentFills,
-          winRate: Math.round(winRate * 100) / 100,
-          realizedPnlUsd: analytics.realizedPnlUsd,
-          totalFeesUsd: analytics.totalFeesUsd,
-          openPositions: analytics.openPositions,
-          botCount: analytics.botCount,
-          avgHoldTimeHours: analytics.avgHoldTimeHours,
-          byBot: analytics.byBot,
-          agentDirect: analytics.agentDirect,
-          days,
-        },
-      });
-      return;
-    }
-
-    if (payload.action === 'list_positions') {
-      let positions: ToolPositionRecord[];
-      try {
-        positions = await this.botRepo.getOpenPositionsByCreator('agent', agent.id, payload.botId);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error fetching positions';
-        await this.eventPublisher.emitToolResult(agent.id, {
-          tool: 'list_positions',
-          status: 'error',
-          message: msg,
-          botId: payload.botId,
-        });
-        return;
-      }
-      await this.eventPublisher.emitToolResult(agent.id, {
-        tool: 'list_positions',
-        status: 'ok',
-        message: `Found ${positions.length} open position(s)`,
-        data: {
-          ok: true,
-          note: 'unrealizedPnl not available — mark prices are not cached in the agent process',
-          positions: positions.map((position) => ({
-            actorType: position.actorType,
-            actorId: position.actorId,
-            botId: position.actorType === 'bot' ? position.actorId : null,
-            symbol: position.symbol,
-            instrumentId: position.instrumentId ?? null,
-            venue: position.venue,
-            side: position.side,
-            size: position.size,
-            entryPrice: position.entryPrice,
-            stopLoss: position.stopLoss ?? null,
-            takeProfit: position.takeProfit ?? null,
-            openedAt: position.openedAt.toISOString(),
-          })),
-        },
-      });
-      return;
-    }
-
-    throw new Error(`Unknown bot query action: ${(payload as { action: string }).action}`);
-  }
-
   /**
    * Handle a brokered assess_strategy_preset request from an agent container.
    * Builds a minimal ToolContext and delegates to the tool's execute function.
@@ -1022,17 +844,16 @@ export class AgentMessageBroker {
    */
   private buildPresetToolContext(agentId: string, sessionId: string): ToolContext {
     const db = this.db;
-    const journal = db ? new PgJournal(db) : null;
 
     const agentConfigOps: ToolContext['agentConfigOps'] = {
       getCurrentConfig: () => this.agentRepo.getUnifiedConfig(agentId),
       persistConfig: async () => {},
-      appendJournal: (type, payload) => {
-        if (!journal) {
-          logger.warn({ agentId, type }, 'Journal append skipped — db not wired to broker');
-          return Promise.resolve();
-        }
-        return journal.append({ actorType: 'agent', actorId: agentId, type, payload });
+      // c4.9i Gap (traderton docs/001): journal_events is Traderton-owned. The
+      // preset-transition journal write was dropped — herobids no longer writes
+      // to journal_events. Kept as a no-op to satisfy the agentConfigOps
+      // contract consumed by change_strategy_preset.
+      appendJournal: async () => {
+        // intentionally no-op — see c4.9i Gap above
       },
       notifyActorConfigUpdate: async () => {},
       getLlmTickCount: () => 0,

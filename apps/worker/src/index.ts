@@ -489,8 +489,11 @@ const approvalVenueAccountResolver = async (agentId: string): Promise<string | n
     const chosen = trading.find((c) => c.connectionId === defaultConnectionId && c.readiness.effectiveReady)
       ?? trading.find((c) => c.readiness.effectiveReady);
     if (!chosen) return null;
-    const row = await botRepo.getResolvedVenueAccount(chosen.connectionId);
-    return row?.resolvedVenueAccountId ?? null;
+    // c4.9i: read the resolved venue account off the chosen connection binding
+    // (connections.resolvedVenueAccountId, threaded through the runtime
+    // descriptor) instead of a redundant botRepo trading-table read — same
+    // KEEP `connections` source, behaviour-preserving.
+    return chosen.resolvedVenueAccountId ?? null;
   } catch (err) {
     logger.warn({ agentId, err }, 'Failed to resolve approval-snapshot venue account from connection grant');
     return null;

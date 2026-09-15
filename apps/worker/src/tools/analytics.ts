@@ -19,40 +19,15 @@ const getAnalyticsTool: AgentTool<TradingToolContext> = {
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { days } = params as z.infer<typeof GetAnalyticsParamsSchema>;
 
-    // L3b: route through the Traderton boundary when configured; the boundary
-    // returns the same analytics `data` shape this tool used to build.
-    if (ctx.tradertonBoundary) {
-      const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_analytics', payload: { days } });
-      return mapReadResultToToolResult(result);
+    // c4.9i: the Traderton boundary is the sole source; the boundary returns the
+    // same analytics `data` shape this tool used to build. Fail-closed when the
+    // boundary is absent (the dead in-process botRepo read was removed).
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'trading boundary not configured', errorCode: 'precondition.not_ready', fault: false };
     }
 
-    if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available' };
-    }
-
-    const analyticsSince = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const analytics = await ctx.botRepo.getAnalyticsByCreator('agent', ctx.agentId, analyticsSince);
-
-    const winRate = analytics.closedPositions > 0
-      ? (analytics.winningPositions / analytics.closedPositions) * 100
-      : 0;
-
-    return {
-      success: true,
-      data: {
-        ok: true,
-        totalTrades: analytics.recentFills,
-        winRate: Math.round(winRate * 100) / 100,
-        realizedPnlUsd: analytics.realizedPnlUsd,
-        totalFeesUsd: analytics.totalFeesUsd,
-        openPositions: analytics.openPositions,
-        botCount: analytics.botCount,
-        avgHoldTimeHours: analytics.avgHoldTimeHours,
-        byBot: analytics.byBot,
-        agentDirect: analytics.agentDirect,
-        days,
-      },
-    };
+    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_analytics', payload: { days } });
+    return mapReadResultToToolResult(result);
   },
 };
 
@@ -67,39 +42,14 @@ const listPositionsTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(ListPositionsParamsSchema),
   category: 'read-database',
   async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
-    // L3b: route through the Traderton boundary when configured.
-    if (ctx.tradertonBoundary) {
-      const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_positions', payload: {} });
-      return mapReadResultToToolResult(result);
+    // c4.9i: the Traderton boundary is the sole source. Fail-closed when the
+    // boundary is absent (the dead in-process botRepo read was removed).
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'trading boundary not configured', errorCode: 'precondition.not_ready', fault: false };
     }
 
-    if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available' };
-    }
-
-    const openPositions = await ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId);
-
-    return {
-      success: true,
-      data: {
-        ok: true,
-        note: 'unrealizedPnl not available — mark prices are not cached in the agent process',
-        positions: openPositions.map((position) => ({
-          actorType: position.actorType,
-          actorId: position.actorId,
-          botId: position.actorType === 'bot' ? position.actorId : null,
-          symbol: position.symbol,
-          instrumentId: position.instrumentId ?? null,
-          venue: position.venue,
-          side: position.side,
-          size: position.size,
-          entryPrice: position.entryPrice,
-          stopLoss: position.stopLoss ?? null,
-          takeProfit: position.takeProfit ?? null,
-          openedAt: position.openedAt.toISOString(),
-        })),
-      },
-    };
+    const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_positions', payload: {} });
+    return mapReadResultToToolResult(result);
   },
 };
 

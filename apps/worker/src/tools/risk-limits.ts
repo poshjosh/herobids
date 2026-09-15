@@ -147,21 +147,14 @@ async function buildRuntime(ctx: TradingToolContext, contract: ResolvedAgentRisk
   let dailyLossLimitPct: number | null = null;
   let dailyLossBlocked = false;
 
-  if (ctx.botRepo) {
-    try {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const [positions, analytics] = await Promise.all([
-        ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId),
-        ctx.botRepo.getAnalyticsByCreator('agent', ctx.agentId, since),
-      ]);
-      openPositionsCurrent = positions.filter((p) => p.size !== '0').length;
-      dailyLossCurrent = analytics.realizedPnlUsd;
-    } catch {
-      // Non-critical: use defaults (openPositionsCurrent stays 0, dailyLossCurrent stays null)
-    }
-  } else {
-    dailyLossCurrent = '0';
-  }
+  // c4.9i: buildRuntime only runs on the in-process fallback path — get_risk_limits
+  // returns the boundary's composite payload (limits + runtime) directly when the
+  // Traderton boundary is present, so this snapshot is reached ONLY when the
+  // boundary is absent. The prior local botRepo reads for open-position count and
+  // daily realized P&L were removed (no trading-table reads); with no boundary to
+  // source them, the runtime snapshot degrades to defaults (openPositionsCurrent 0,
+  // dailyLossCurrent '0'), matching the prior no-repo fallback.
+  dailyLossCurrent = '0';
 
   const openPositionsBlocked = openPositionsCurrent >= openPositionsLimit;
 

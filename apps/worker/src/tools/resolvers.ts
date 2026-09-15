@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { mapReadResultToToolResult } from './traderton-read.js';
 
 // --- resolve_bot ---
 
@@ -18,21 +19,31 @@ const resolveBotTool: AgentTool<TradingToolContext> = {
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { name } = params as z.infer<typeof ResolveBotParamsSchema>;
 
-    if (!ctx.botRepo) {
+    // c4.9i: fetch the agent's bots over the Traderton boundary (`list_bots`),
+    // then do the same client-side substring match in-app. Fail-closed when the
+    // boundary is absent (mirrors the sibling read tools).
+    if (!ctx.tradertonBoundary) {
       return {
         success: false,
         fault: false,
-        error: 'Bot lookup not available in this context',
-        errorCode: 'resolve.bot_repo_unavailable',
+        error: 'trading boundary not configured',
+        errorCode: 'precondition.not_ready',
       };
     }
 
     try {
-      const allBots = await ctx.botRepo.getBotsByCreator('agent', ctx.agentId);
+      const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_bots', payload: {} });
+      if (result.kind !== 'success') {
+        // Surface the boundary failure through the shared read→tool mapping so
+        // code/retryable/fault stay consistent with the other read tools.
+        return mapReadResultToToolResult(result);
+      }
+
+      const bots = extractBoundaryBots(result.data);
       const searchTerm = name.toLowerCase();
 
-      const matches = allBots.filter((bot) => {
-        const symbol = typeof bot.config['symbol'] === 'string' ? bot.config['symbol'].toLowerCase() : '';
+      const matches = bots.filter((bot) => {
+        const symbol = typeof bot.symbol === 'string' ? bot.symbol.toLowerCase() : '';
         const botId = bot.id.toLowerCase();
         return symbol.includes(searchTerm) || botId.includes(searchTerm);
       });
@@ -57,7 +68,7 @@ const resolveBotTool: AgentTool<TradingToolContext> = {
             ok: true,
             resolved: true,
             botId: bot.id,
-            symbol: bot.config['symbol'] ?? null,
+            symbol: bot.symbol ?? null,
             status: bot.status,
           },
         };
@@ -72,7 +83,7 @@ const resolveBotTool: AgentTool<TradingToolContext> = {
           ambiguous: true,
           candidates: matches.map((b) => ({
             botId: b.id,
-            symbol: b.config['symbol'] ?? null,
+            symbol: b.symbol ?? null,
             status: b.status,
           })),
           hint: 'Multiple bots matched. Use the exact botId from the candidates list for your next call.',
@@ -89,6 +100,34 @@ const resolveBotTool: AgentTool<TradingToolContext> = {
     }
   },
 };
+
+/** A bot row as returned by the boundary `list_bots` read, reduced to the
+ * fields resolve_bot matches/renders. */
+interface BoundaryBotSummary {
+  id: string;
+  status: string;
+  symbol: string | null;
+}
+
+/** Narrow the `list_bots` boundary payload (`{ ok, bots: [...] }`) into the
+ * minimal bot shape resolve_bot consumes. Unknown/malformed rows are skipped. */
+function extractBoundaryBots(data: unknown): BoundaryBotSummary[] {
+  if (typeof data !== 'object' || data === null) return [];
+  const bots = (data as Record<string, unknown>)['bots'];
+  if (!Array.isArray(bots)) return [];
+  const result: BoundaryBotSummary[] = [];
+  for (const raw of bots) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row['id'] !== 'string') continue;
+    result.push({
+      id: row['id'],
+      status: typeof row['status'] === 'string' ? row['status'] : 'unknown',
+      symbol: typeof row['symbol'] === 'string' ? row['symbol'] : null,
+    });
+  }
+  return result;
+}
 
 // --- resolve_watch ---
 

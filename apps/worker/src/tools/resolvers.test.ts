@@ -21,16 +21,18 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     },
     publishToInbound: vi.fn(async () => undefined),
     ...overrides,
-  };
+  } as unknown as ToolContext;
 }
 
-function makeBot(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'bot-abc-123',
-    config: { symbol: 'SOL/USDC' },
-    status: 'running',
-    ...overrides,
-  };
+/** Stub the Traderton boundary so resolve_bot's `list_bots` read returns a
+ * fixed `{ ok, bots }` payload (c4.9i: resolve_bot sources bots over the
+ * boundary, then matches client-side). */
+function ctxWithBots(bots: Array<{ id: string; status: string; symbol: string | null }>): ToolContext {
+  return makeCtx({
+    tradertonBoundary: {
+      invoke: vi.fn(async () => ({ kind: 'success' as const, data: { ok: true, bots } })),
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -38,23 +40,17 @@ function makeBot(overrides: Record<string, unknown> = {}) {
 // ---------------------------------------------------------------------------
 
 describe('resolve_bot', () => {
-  it('returns error when botRepo is unavailable', async () => {
-    const ctx = makeCtx({ botRepo: undefined });
+  it('fails closed when the Traderton boundary is unavailable', async () => {
+    const ctx = makeCtx();
 
     const result = await resolveBot.execute({ name: 'SOL' }, ctx);
 
     expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('resolve.bot_repo_unavailable');
+    expect(result.errorCode).toBe('precondition.not_ready');
   });
 
   it('resolves a single bot by symbol', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getBotsByCreator: vi.fn(async () => [
-          makeBot({ id: 'bot-1', config: { symbol: 'SOL/USDC' } }),
-        ]),
-      } as unknown as ToolContext['botRepo'],
-    });
+    const ctx = ctxWithBots([{ id: 'bot-1', status: 'running', symbol: 'SOL/USDC' }]);
 
     const result = await resolveBot.execute({ name: 'SOL' }, ctx);
 
@@ -67,13 +63,7 @@ describe('resolve_bot', () => {
   });
 
   it('resolves a bot by partial ID match', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getBotsByCreator: vi.fn(async () => [
-          makeBot({ id: 'bot-xff-999', config: { symbol: 'ETH/USDC' } }),
-        ]),
-      } as unknown as ToolContext['botRepo'],
-    });
+    const ctx = ctxWithBots([{ id: 'bot-xff-999', status: 'running', symbol: 'ETH/USDC' }]);
 
     const result = await resolveBot.execute({ name: 'xff' }, ctx);
 
@@ -84,14 +74,10 @@ describe('resolve_bot', () => {
   });
 
   it('returns all candidates when multiple bots match', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getBotsByCreator: vi.fn(async () => [
-          makeBot({ id: 'bot-1', config: { symbol: 'SOL/USDC' } }),
-          makeBot({ id: 'bot-2', config: { symbol: 'SOL/ETH' } }),
-        ]),
-      } as unknown as ToolContext['botRepo'],
-    });
+    const ctx = ctxWithBots([
+      { id: 'bot-1', status: 'running', symbol: 'SOL/USDC' },
+      { id: 'bot-2', status: 'running', symbol: 'SOL/ETH' },
+    ]);
 
     const result = await resolveBot.execute({ name: 'SOL' }, ctx);
 
@@ -106,11 +92,7 @@ describe('resolve_bot', () => {
   });
 
   it('returns not-resolved hint when no bots match', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getBotsByCreator: vi.fn(async () => []),
-      } as unknown as ToolContext['botRepo'],
-    });
+    const ctx = ctxWithBots([]);
 
     const result = await resolveBot.execute({ name: 'NONEXISTENT' }, ctx);
 
@@ -120,20 +102,23 @@ describe('resolve_bot', () => {
     expect(data.hint).toContain('No bots found');
   });
 
-  it('returns error when getBotsByCreator throws', async () => {
+  it('maps a boundary failure through the shared read→tool mapping', async () => {
     const ctx = makeCtx({
-      botRepo: {
-        getBotsByCreator: vi.fn(async () => {
-          throw new Error('DB failure');
-        }),
-      } as unknown as ToolContext['botRepo'],
+      tradertonBoundary: {
+        invoke: vi.fn(async () => ({
+          kind: 'failure' as const,
+          code: 'upstream.transient',
+          message: 'slow',
+          retryable: true,
+        })),
+      },
     });
 
     const result = await resolveBot.execute({ name: 'SOL' }, ctx);
 
     expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('resolve.bot_failed');
-    expect(result.error).toContain('DB failure');
+    expect(result.errorCode).toBe('upstream.transient');
+    expect(result.retryable).toBe(true);
   });
 });
 

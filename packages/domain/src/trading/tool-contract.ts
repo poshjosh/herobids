@@ -202,17 +202,9 @@ export interface TradingToolContext {
   };
   /** Publish agent protocol message to inbound stream */
   publishToInbound: (type: string, payload: Record<string, unknown>) => Promise<void>;
-  /** Optional database repository for direct bot queries */
-  botRepo?: {
-    getBotsByCreator: (creatorType: string, creatorId: string, since?: Date) => Promise<ToolBotRecord[]>;
-    getBotById: (botId: string) => Promise<ToolBotRecord | null>;
-    markBotStopped: (botId: string) => Promise<void>;
-    markBotRunning: (botId: string) => Promise<void>;
-    restoreBotRuntimeState: (state: { botId: string; status: string; startedAt: Date | null; stoppedAt: Date | null }) => Promise<void>;
-    updateBotConfig: (botId: string, config: Record<string, unknown>) => Promise<void>;
-    getAnalyticsByCreator: (creatorType: string, creatorId: string, since: Date, botId?: string) => Promise<ToolAnalyticsResult>;
-    getOpenPositionsByCreator: (creatorType: string, creatorId: string, botId?: string) => Promise<ToolPositionRecord[]>;
-  };
+  // c4.9i: the optional `botRepo` context port (local bot-state reads/writes)
+  // was removed — read tools source over the Traderton boundary and no tool
+  // mutates bot lifecycle state in-process.
   /** Optional market data registry */
   marketDataRegistry?: {
     dexscreener: {

@@ -18,7 +18,6 @@ function makeContract(overrides?: Partial<ResolvedAgentRiskContract>): ResolvedA
 
 function makeCtx(opts: {
   riskContractOps?: ToolContext['riskContractOps'];
-  botRepo?: ToolContext['botRepo'];
   agentConfigOps?: ToolContext['agentConfigOps'];
   agentRepo?: ToolContext['agentRepo'];
   tradertonWriteBoundary?: ToolContext['tradertonWriteBoundary'];
@@ -31,12 +30,11 @@ function makeCtx(opts: {
     redis: { hset: vi.fn(), hget: vi.fn(), hgetall: vi.fn(), hdel: vi.fn(), publish: vi.fn(), blpop: vi.fn() },
     publishToInbound: vi.fn(),
     riskContractOps: opts.riskContractOps,
-    botRepo: opts.botRepo,
     agentConfigOps: opts.agentConfigOps,
     agentRepo: opts.agentRepo,
     tradertonWriteBoundary: opts.tradertonWriteBoundary,
     tradertonBoundary: opts.tradertonBoundary,
-  };
+  } as unknown as ToolContext;
 }
 
 describe('get_risk_limits tool', () => {
@@ -76,26 +74,20 @@ describe('get_risk_limits tool', () => {
     expect(drawdown.approaching).toBe(false);
   });
 
-  it('returns runtime with open positions from botRepo', async () => {
+  // c4.9i: the runtime open-position count + daily realized P&L are now composed
+  // Traderton-side and returned by the boundary's `get_risk_limits` payload (see
+  // the boundary-routing test below). buildRuntime — reached only on the
+  // in-process fallback when the boundary is absent — no longer reads any local
+  // trading table; it degrades those runtime fields to defaults.
+  it('in-process fallback runtime degrades open positions + daily loss to defaults (no local reads)', async () => {
     const contract = makeContract();
     const ctx = makeCtx({
       riskContractOps: {
         getContract: vi.fn().mockResolvedValue(contract),
         adjustOverrides: vi.fn(),
       },
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn().mockResolvedValue([
-          { actorType: 'agent', actorId: 'agent-1', symbol: 'BTC-USD', side: 'long', size: '0.1', entryPrice: '50000', openedAt: new Date() },
-          { actorType: 'agent', actorId: 'agent-1', symbol: 'ETH-USD', side: 'short', size: '2', entryPrice: '3000', openedAt: new Date() },
-          { actorType: 'agent', actorId: 'agent-1', symbol: 'SOL-USD', side: 'long', size: '0', entryPrice: '100', openedAt: new Date() },
-        ]),
-        getAnalyticsByCreator: vi.fn().mockResolvedValue({ realizedPnlUsd: '0', botCount: 0, openPositions: 0, closedPositions: 0, winningPositions: 0, totalFeesUsd: '0', recentFills: 0, avgHoldTimeHours: null, byBot: [] }),
-        getBotsByCreator: vi.fn(),
-        getBotById: vi.fn(),
-        markBotStopped: vi.fn(),
-        markBotRunning: vi.fn(),
-        restoreBotRuntimeState: vi.fn(),
-        updateBotConfig: vi.fn(),
+      agentRepo: {
+        getAgent: vi.fn().mockResolvedValue({ capital: '5000', risk: { dailyMaxLossPct: 10 } }),
       },
     });
 
@@ -104,148 +96,12 @@ describe('get_risk_limits tool', () => {
     expect(result.success).toBe(true);
     const runtime = (result.data as Record<string, unknown>).runtime as Record<string, unknown>;
     const openPositions = runtime.openPositions as Record<string, unknown>;
-    // 3 positions, but SOL has size '0' → counts as flat, so 2 non-flat
-    expect(openPositions.current).toBe(2);
-    expect(openPositions.limit).toBe(10);
+    expect(openPositions.current).toBe(0);
     expect(openPositions.blocked).toBe(false);
-  });
-
-  it('marks openPositions.blocked when current >= limit', async () => {
-    const contract = makeContract({ maxOpenPositions: { effectiveValue: 2, source: 'default', mutable: true, operatorCeiling: 10 } });
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(contract),
-        adjustOverrides: vi.fn(),
-      },
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn().mockResolvedValue([
-          { actorType: 'agent', actorId: 'agent-1', symbol: 'BTC-USD', side: 'long', size: '0.1', entryPrice: '50000', openedAt: new Date() },
-          { actorType: 'agent', actorId: 'agent-1', symbol: 'ETH-USD', side: 'short', size: '2', entryPrice: '3000', openedAt: new Date() },
-        ]),
-        getAnalyticsByCreator: vi.fn().mockResolvedValue({ realizedPnlUsd: '0', botCount: 0, openPositions: 0, closedPositions: 0, winningPositions: 0, totalFeesUsd: '0', recentFills: 0, avgHoldTimeHours: null, byBot: [] }),
-        getBotsByCreator: vi.fn(),
-        getBotById: vi.fn(),
-        markBotStopped: vi.fn(),
-        markBotRunning: vi.fn(),
-        restoreBotRuntimeState: vi.fn(),
-        updateBotConfig: vi.fn(),
-      },
-    });
-
-    const result = await getRiskLimitsTool.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const runtime = (result.data as Record<string, unknown>).runtime as Record<string, unknown>;
-    const openPositions = runtime.openPositions as Record<string, unknown>;
-    expect(openPositions.current).toBe(2);
-    expect(openPositions.limit).toBe(2);
-    expect(openPositions.blocked).toBe(true);
-  });
-
-  it('marks dailyLoss.blocked when loss exceeds limit', async () => {
-    const contract = makeContract();
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(contract),
-        adjustOverrides: vi.fn(),
-      },
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn().mockResolvedValue([]),
-        getAnalyticsByCreator: vi.fn().mockResolvedValue({ realizedPnlUsd: '-600', botCount: 1, openPositions: 0, closedPositions: 5, winningPositions: 3, totalFeesUsd: '10', recentFills: 10, avgHoldTimeHours: 2, byBot: [] }),
-        getBotsByCreator: vi.fn(),
-        getBotById: vi.fn(),
-        markBotStopped: vi.fn(),
-        markBotRunning: vi.fn(),
-        restoreBotRuntimeState: vi.fn(),
-        updateBotConfig: vi.fn(),
-      },
-      agentRepo: {
-        getAgent: vi.fn().mockResolvedValue({ capital: '5000', risk: { dailyMaxLossPct: 10 } }),
-      },
-    });
-
-    const result = await getRiskLimitsTool.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const runtime = (result.data as Record<string, unknown>).runtime as Record<string, unknown>;
     const dailyLoss = runtime.dailyLoss as Record<string, unknown>;
-    expect(dailyLoss.current).toBe('-600');
-    // capital 5000 × 10% = 500
-    expect(dailyLoss.limit).toBe('500');
-    expect(dailyLoss.limitPct).toBe(10);
-    // |-600| = 600 >= 500 → blocked
-    expect(dailyLoss.blocked).toBe(true);
-  });
-
-  it('dailyLoss.blocked is false when loss is within limit', async () => {
-    const contract = makeContract();
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(contract),
-        adjustOverrides: vi.fn(),
-      },
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn().mockResolvedValue([]),
-        getAnalyticsByCreator: vi.fn().mockResolvedValue({ realizedPnlUsd: '-200', botCount: 1, openPositions: 0, closedPositions: 5, winningPositions: 3, totalFeesUsd: '10', recentFills: 10, avgHoldTimeHours: 2, byBot: [] }),
-        getBotsByCreator: vi.fn(),
-        getBotById: vi.fn(),
-        markBotStopped: vi.fn(),
-        markBotRunning: vi.fn(),
-        restoreBotRuntimeState: vi.fn(),
-        updateBotConfig: vi.fn(),
-      },
-      agentRepo: {
-        getAgent: vi.fn().mockResolvedValue({ capital: '5000', risk: { dailyMaxLossPct: 10 } }),
-      },
-    });
-
-    const result = await getRiskLimitsTool.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const runtime = (result.data as Record<string, unknown>).runtime as Record<string, unknown>;
-    const dailyLoss = runtime.dailyLoss as Record<string, unknown>;
-    expect(dailyLoss.current).toBe('-200');
-    expect(dailyLoss.limit).toBe('500');
-    // |-200| = 200 < 500 → not blocked
+    // No boundary + no local reads → current degrades to '0', so never blocked.
+    expect(dailyLoss.current).toBe('0');
     expect(dailyLoss.blocked).toBe(false);
-  });
-
-  it('dailyLoss.blocked is false when agent is profitable (realizedPnlUsd positive)', async () => {
-    const contract = makeContract();
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(contract),
-        adjustOverrides: vi.fn(),
-      },
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn().mockResolvedValue([]),
-        getAnalyticsByCreator: vi.fn().mockResolvedValue({ realizedPnlUsd: '500', botCount: 1, openPositions: 0, closedPositions: 5, winningPositions: 3, totalFeesUsd: '10', recentFills: 10, avgHoldTimeHours: 2, byBot: [] }),
-        getBotsByCreator: vi.fn(),
-        getBotById: vi.fn(),
-        markBotStopped: vi.fn(),
-        markBotRunning: vi.fn(),
-        restoreBotRuntimeState: vi.fn(),
-        updateBotConfig: vi.fn(),
-      },
-      agentConfigOps: {
-        getCurrentConfig: vi.fn().mockResolvedValue({ risk: { dailyMaxLossPct: 2 } }),
-        persistConfig: vi.fn(),
-        appendJournal: vi.fn(),
-        notifyActorConfigUpdate: vi.fn(),
-        getLlmTickCount: vi.fn(),
-      },
-      agentRepo: {
-        getAgent: vi.fn().mockResolvedValue({ capital: '10000' }),
-      },
-    });
-
-    const result = await getRiskLimitsTool.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const runtime = (result.data as Record<string, unknown>).runtime as Record<string, unknown>;
-    const dailyLoss = runtime.dailyLoss as Record<string, unknown>;
-    expect(dailyLoss.blocked).toBe(false);
-    expect(dailyLoss.current).toBe('500');
   });
 
   it('returns error when riskContractOps is not available', async () => {

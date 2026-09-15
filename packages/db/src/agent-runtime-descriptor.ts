@@ -271,6 +271,10 @@ export async function resolveRuntimeCapabilityDescriptor(
         profile: row.profile,
         readiness: deriveReadiness(row, family),
         isDefault: row.connectionId === defaultConnectionId,
+        // c4.9i: thread the already-selected connections.resolvedVenueAccountId
+        // through so the approval venue-account resolver can read it off the
+        // chosen binding (no separate bot-repo trading-table read).
+        resolvedVenueAccountId: row.resolvedVenueAccountId,
       }));
       const defaultRow = familyRows.find((row) => row.connectionId === defaultConnectionId) ?? chooseLatest(familyRows);
       readinessByFamily[family] = deriveReadiness(defaultRow, family);

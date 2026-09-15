@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES, checkModeEscalation, deriveStrategyPreset, extractStrategyFromConfig } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, checkModeEscalation } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult } from './traderton-read.js';
 import { createLogger } from '../logger.js';
@@ -106,33 +106,15 @@ const listBotsTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { days } = params as z.infer<typeof ListBotsParamsSchema>;
 
-    // L3b: route through the Traderton boundary when configured. `days` is
-    // optional and forwarded as-is (undefined when not supplied).
-    if (ctx.tradertonBoundary) {
-      const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_bots', payload: { days } });
-      return mapReadResultToToolResult(result);
+    // c4.9i: the Traderton boundary is the sole source. `days` is optional and
+    // forwarded as-is (undefined when not supplied). Fail-closed when the
+    // boundary is absent (the dead in-process botRepo read was removed).
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'trading boundary not configured', errorCode: 'precondition.not_ready', fault: false };
     }
 
-    if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available', fault: false };
-    }
-
-    const since = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : undefined;
-    const botRows = await ctx.botRepo.getBotsByCreator('agent', ctx.agentId, since);
-
-    return {
-      success: true,
-      data: {
-        ok: true,
-        bots: botRows.map((b) => ({
-          id: b.id,
-          status: b.status,
-          strategyPreset: deriveStrategyPreset(extractStrategyFromConfig(b.config)?.type),
-          symbol: b.config['symbol'] ?? null,
-          createdAt: b.createdAt.toISOString(),
-        })),
-      },
-    };
+    const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_bots', payload: { days } });
+    return mapReadResultToToolResult(result);
   },
 };
 
@@ -151,35 +133,15 @@ const getBotStatusTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { botId } = params as z.infer<typeof GetBotStatusParamsSchema>;
 
-    // L3b: route through the Traderton boundary when configured. Ownership +
-    // not-found are enforced boundary-side and surface as typed failures.
-    if (ctx.tradertonBoundary) {
-      const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_bot_status', payload: { botId } });
-      return mapReadResultToToolResult(result);
+    // c4.9i: the Traderton boundary is the sole source. Ownership + not-found
+    // are enforced boundary-side and surface as typed failures. Fail-closed when
+    // the boundary is absent (the dead in-process botRepo read was removed).
+    if (!ctx.tradertonBoundary) {
+      return { success: false, error: 'trading boundary not configured', errorCode: 'precondition.not_ready', fault: false };
     }
 
-    if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available', fault: false };
-    }
-
-    const bot = await ctx.botRepo.getBotById(botId);
-    if (!bot || bot.creatorType !== 'agent' || bot.creatorId !== ctx.agentId) {
-      return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
-    }
-
-    return {
-      success: true,
-      data: {
-        ok: true,
-        id: bot.id,
-        status: bot.status,
-        strategyPreset: deriveStrategyPreset(extractStrategyFromConfig(bot.config)?.type),
-        symbol: bot.config['symbol'] ?? null,
-        config: bot.config,
-        startedAt: bot.startedAt?.toISOString() ?? null,
-        stoppedAt: bot.stoppedAt?.toISOString() ?? null,
-      },
-    };
+    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_bot_status', payload: { botId } });
+    return mapReadResultToToolResult(result);
   },
 };
 

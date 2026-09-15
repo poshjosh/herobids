@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, BoundaryConfigSchema } from '@herobids/domain';
-import { createDatabase, BotRepository, AgentRepository, PgJournal, skills, skillRevisions, agentSkills } from '@herobids/db';
+import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel } from '@herobids/domain';
@@ -890,7 +890,6 @@ const WAKE_SIGNAL_POLL_MS = agentRuntimePolicy.wake.pollMs;
 
 const DATABASE_URL = process.env['DATABASE_URL'];
 const db = DATABASE_URL ? createDatabase(DATABASE_URL) : null;
-const botRepo = db ? new BotRepository(db) : null;
 const agentRepo = db ? new AgentRepository(db) : null;
 if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
@@ -1101,6 +1100,64 @@ function extractTradingProviders(): Set<string> {
     (runtimeState.runtimeDescriptor.grantedConnectionsByFamily['trading'] ?? [])
       .map((binding) => binding.provider.toLowerCase()),
   );
+}
+
+/** Open position row as consumed by the in-runtime tick-gate + hard-limit-stop
+ * re-points. Mirrors the fields the removed `getOpenPositionsByCreator` read
+ * exposed to those two call-sites. */
+interface AgentOpenPosition {
+  symbol: string;
+  venue: string;
+  instrumentId: string | null;
+  side: string;
+  hasStopLoss: boolean;
+  hasTakeProfit: boolean;
+}
+
+/**
+ * c4.9i: fetch the agent's currently-open positions over the Traderton read
+ * boundary (`get_agent_positions`, the agent-scoped read the in-runtime paths
+ * already use). The boundary returns the full position rows; we keep only the
+ * open ones (`closedAt == null`) to match the removed
+ * `getOpenPositionsByCreator('agent', …)` semantics, and narrow to the fields
+ * the two call-sites consume. Throws on any non-success outcome so callers can
+ * preserve their existing catch/fallback behaviour.
+ */
+async function fetchAgentOpenPositions(): Promise<AgentOpenPosition[]> {
+  if (!tradertonReadBoundary) {
+    throw new Error('trading boundary not configured — cannot read agent positions');
+  }
+  const result = await tradertonReadBoundary.invoke({ toolName: 'get_agent_positions', payload: {} });
+  if (result.kind !== 'success') {
+    throw new Error(
+      result.kind === 'failure'
+        ? `get_agent_positions failed: ${result.code}`
+        : result.kind === 'transport_error'
+          ? 'get_agent_positions transport error'
+          : 'get_agent_positions in progress',
+    );
+  }
+  const data = result.data;
+  if (typeof data !== 'object' || data === null) return [];
+  const rows = (data as Record<string, unknown>)['positions'];
+  if (!Array.isArray(rows)) return [];
+  const open: AgentOpenPosition[] = [];
+  for (const raw of rows) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const row = raw as Record<string, unknown>;
+    // Open positions only — mirror isNull(positions.closedAt).
+    if (row['closedAt'] != null) continue;
+    if (typeof row['symbol'] !== 'string') continue;
+    open.push({
+      symbol: row['symbol'],
+      venue: typeof row['venue'] === 'string' ? row['venue'] : '',
+      instrumentId: typeof row['instrumentId'] === 'string' ? row['instrumentId'] : null,
+      side: typeof row['side'] === 'string' ? row['side'] : '',
+      hasStopLoss: row['stopLoss'] != null,
+      hasTakeProfit: row['takeProfit'] != null,
+    });
+  }
+  return open;
 }
 
 async function refreshVenueIntelligence(): Promise<void> {
@@ -1773,8 +1830,6 @@ function buildAgentConfigOps(): ToolContext['agentConfigOps'] {
     return undefined;
   }
 
-  const journal = new PgJournal(db);
-
   return {
     async getCurrentConfig() {
       return agentRepo!.getUnifiedConfig(AGENT_ID!);
@@ -1784,8 +1839,12 @@ function buildAgentConfigOps(): ToolContext['agentConfigOps'] {
       await agentRepo!.updateUnifiedConfig(AGENT_ID!, newConfig);
     },
 
-    async appendJournal(type, payload) {
-      await journal.append({ actorType: 'agent', actorId: AGENT_ID!, type, payload });
+    // c4.9i Gap (traderton docs/001): journal_events is Traderton-owned. The
+    // agent-activity journal write was dropped here — herobids no longer writes
+    // to journal_events. Kept as a no-op to satisfy the agentConfigOps contract
+    // consumed by change_strategy_preset.
+    async appendJournal(_type, _payload) {
+      // intentionally no-op — see c4.9i Gap above
     },
 
     async notifyActorConfigUpdate(newConfig) {
@@ -1858,36 +1917,10 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     return rejectToolCall(`unknown tool: ${call.tool}`);
   }
 
-  const toolBotRepo = botRepo
-    ? {
-        getBotsByCreator: botRepo.getBotsByCreator.bind(botRepo),
-        getBotById: botRepo.getBotById.bind(botRepo),
-        markBotStopped: botRepo.markBotStopped.bind(botRepo),
-        markBotRunning: botRepo.markBotRunning.bind(botRepo),
-        restoreBotRuntimeState: botRepo.restoreBotRuntimeState.bind(botRepo),
-        updateBotConfig: botRepo.updateBotConfig.bind(botRepo),
-        getAnalyticsByCreator: botRepo.getAnalyticsByCreator.bind(botRepo),
-        getOpenPositionsByCreator: async (creatorType: string, creatorId: string, botId?: string) => {
-          const openPositions = await botRepo.getOpenPositionsByCreator(creatorType, creatorId, botId);
-          return openPositions.map((position) => {
-            if (!position.actorId) {
-              throw new Error(`Invariant violation: open position ${position.id} is missing actorId`);
-            }
-            return {
-              actorType: position.actorType,
-              actorId: position.actorId,
-              venue: position.venue,
-              instrumentId: position.instrumentId,
-              symbol: position.symbol,
-              side: position.side,
-              size: position.size,
-              entryPrice: position.entryPrice,
-              openedAt: position.openedAt,
-            };
-          });
-        },
-      }
-    : undefined;
+  // c4.9i: the toolBotRepo facade (local bot-state reads/writes) was removed —
+  // all read tools now source over the Traderton boundary and the four write
+  // methods (markBotStopped/markBotRunning/restoreBotRuntimeState/updateBotConfig)
+  // had no other consumers (bot lifecycle state is boundary-owned).
 
   // Build external skill provider from forwarded config (if present)
   const externalSkillProvider = (() => {
@@ -1946,7 +1979,6 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       expire: redis.expire.bind(redis),
     },
     publishToInbound,
-    botRepo: toolBotRepo,
     recordMarketDataAttempt,
     recordMarketDataRejection,
     capabilityEngine,
@@ -2691,9 +2723,11 @@ async function runTick(): Promise<void> {
     let hasOpenPositions = Boolean(sessionMetrics.lastPositionSide && sessionMetrics.lastPositionSide !== 'flat');
     let openPositionSymbols: string[] = [];
     let openPositionInputs: PositionInput[] = [];
-    if (botRepo) {
+    if (tradertonReadBoundary) {
       try {
-        const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!);
+        // c4.9i: tick-gate open-position fingerprint sourced over the Traderton
+        // boundary (get_agent_positions, open-only) instead of a local read.
+        const openPositions = await fetchAgentOpenPositions();
         hasOpenPositions = openPositions.length > 0;
         openPositionSymbols = openPositions.map((p) => p.symbol);
         openPositionInputs = openPositions.map((p) => ({
@@ -2702,8 +2736,8 @@ async function runTick(): Promise<void> {
           symbol: p.symbol,
           side: p.side,
           nativeExitLevels: {
-            stopLoss: p.stopLoss != null,
-            takeProfit: p.takeProfit != null,
+            stopLoss: p.hasStopLoss,
+            takeProfit: p.hasTakeProfit,
           },
         }));
         setDependencyAvailability('database', true);
@@ -3094,9 +3128,11 @@ async function runTick(): Promise<void> {
           logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID, billingReason: hybridCanSpend.reason, availableMicrousd: hybridCanSpend.availableMicrousd }, 'Billing gate blocked — skipping hybrid tick');
           // Collect open-position context for the stop notification.
           let hybridHardLimitPositions: string[] = [];
-          if (botRepo) {
+          if (tradertonReadBoundary) {
             try {
-              const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!);
+              // c4.9i: hard-limit-stop notification open-position list sourced
+              // over the Traderton boundary (get_agent_positions, open-only).
+              const openPositions = await fetchAgentOpenPositions();
               hybridHardLimitPositions = openPositions.map((p) => p.symbol);
             } catch (err) {
               logger.warn({ err }, 'Failed to resolve open positions for hard-limit notification in hybrid path');

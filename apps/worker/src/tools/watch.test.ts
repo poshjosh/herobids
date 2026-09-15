@@ -14,7 +14,6 @@ function makeCtx(overrides: {
   redis?: Partial<ToolContext['redis']>;
   priceService?: ToolContext['priceService'] | null;
   instrumentRepo?: ToolContext['instrumentRepo'] | null;
-  botRepo?: ToolContext['botRepo'] | null;
   tradertonBoundary?: ToolContext['tradertonBoundary'];
   tradertonWriteBoundary?: ToolContext['tradertonWriteBoundary'];
 } = {}): ToolContext {
@@ -68,7 +67,6 @@ function makeCtx(overrides: {
     publishToInbound: vi.fn().mockResolvedValue(undefined),
     priceService: overrides.priceService === null ? undefined : overrides.priceService,
     instrumentRepo: overrides.instrumentRepo === null ? undefined : overrides.instrumentRepo,
-    botRepo: overrides.botRepo === null ? undefined : overrides.botRepo,
     tradertonBoundary: overrides.tradertonBoundary,
     tradertonWriteBoundary: overrides.tradertonWriteBoundary,
   } as unknown as ToolContext;
@@ -223,12 +221,10 @@ describe('watch_token — boundary routing', () => {
     const resolvePriceTarget = vi.fn();
     const getPrice = vi.fn();
     const search = vi.fn();
-    const getOpenPositionsByCreator = vi.fn();
     const ctx = makeCtx({
       tradertonWriteBoundary: { invokeAndAwait },
       priceService: { getPrice, resolvePriceTarget },
       instrumentRepo: { search },
-      botRepo: { getOpenPositionsByCreator } as unknown as ToolContext['botRepo'],
     });
 
     const coverage = {
@@ -265,7 +261,6 @@ describe('watch_token — boundary routing', () => {
     expect(resolvePriceTarget).not.toHaveBeenCalled();
     expect(getPrice).not.toHaveBeenCalled();
     expect(search).not.toHaveBeenCalled();
-    expect(getOpenPositionsByCreator).not.toHaveBeenCalled();
     expect(ctx.redis.hset).not.toHaveBeenCalled();
   });
 

@@ -25,197 +25,16 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     },
     publishToInbound: vi.fn(async () => undefined),
     ...overrides,
-  };
+  } as unknown as ToolContext;
 }
 
-function mockPosition(overrides: Record<string, unknown> = {}) {
-  return {
-    actorType: 'agent',
-    actorId: 'agent-1',
-    symbol: 'BTC/USD:USD',
-    side: 'long',
-    size: '0.5',
-    entryPrice: '50000',
-    openedAt: new Date('2026-01-01'),
-    ...overrides,
-  };
-}
+// c4.9i: get_account_summary sources solely over the Traderton boundary — it
+// returns the same `data` shape it used to build locally, so the tool passes
+// the boundary payload through unchanged. The former local-botRepo fallback
+// tests (capital/positions/warnings assembly) were removed with that dead path.
 
-describe('get_account_summary', () => {
-  // -------------------------------------------------------------------------
-  // DB unavailable
-  // -------------------------------------------------------------------------
-
-  it('returns error when botRepo is unavailable', async () => {
-    const ctx = makeCtx({ botRepo: undefined });
-
-    const result = await getAccountSummary.execute({}, ctx);
-
-    expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('account.db_unavailable');
-  });
-
-  // -------------------------------------------------------------------------
-  // Happy path — full data
-  // -------------------------------------------------------------------------
-
-  it('returns capital, positions, risk limits and config when all deps are available', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn(async () => [
-          mockPosition({ actorType: 'agent', symbol: 'BTC/USD:USD' }),
-          mockPosition({ actorType: 'bot', actorId: 'bot-1', symbol: 'ETH/USD:USD' }),
-        ]),
-      } as unknown as ToolContext['botRepo'],
-      riskContractOps: {
-        getContract: vi.fn(async () => ({
-          maxOpenPositions: { effectiveValue: 5, source: 'user' },
-          maxPositionSizePct: { effectiveValue: 25, source: 'default' },
-          stopLossCooldownMs: { effectiveValue: 300000, source: 'default' },
-        })),
-      } as unknown as ToolContext['riskContractOps'],
-      executionConfig: {
-        getExecutionConfig: vi.fn(async () => ({
-          mode: 'paper',
-          positionSizeMode: 'percent_equity',
-          fixedPositionSize: '100',
-        })),
-      } as unknown as ToolContext['executionConfig'],
-      agentRepo: {
-        getAgent: vi.fn(async () => ({ capital: '10000' })),
-      } as unknown as ToolContext['agentRepo'],
-    });
-
-    const result = await getAccountSummary.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const data = result.data as Record<string, unknown>;
-    expect(data.capital).toBe('10000');
-    expect(data.capitalAvailable).toBe(true);
-    expect(data.executionMode).toBe('paper');
-    expect(data.positionSizeMode).toBe('percent_equity');
-    expect(data.fixedPositionSize).toBe('100');
-    expect(data.openPositionCount).toBe(2);
-    expect(data.agentDirectPositions).toBe(1);
-    expect(data.botManagedPositions).toBe(1);
-    expect(data.riskLimits).toMatchObject({ maxOpenPositions: 5 });
-    expect((data.riskLimits as Record<string, unknown>).stopLossPct).toBeUndefined();
-    expect((data.riskLimits as Record<string, unknown>).stopLossPctSource).toBeUndefined();
-    expect(data.guidance).toEqual(expect.stringContaining('10000'));
-    expect(data.warnings).toBeUndefined();
-  });
-
-  // -------------------------------------------------------------------------
-  // Partially available deps
-  // -------------------------------------------------------------------------
-
-  it('returns warnings when sub-dependencies are unavailable or fail', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn(async () => []),
-      } as unknown as ToolContext['botRepo'],
-      riskContractOps: undefined,
-      executionConfig: undefined,
-      agentRepo: undefined,
-    });
-
-    const result = await getAccountSummary.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const data = result.data as Record<string, unknown>;
-    expect(data.capital).toBeNull();
-    expect(data.capitalAvailable).toBe(false);
-    expect(data.executionMode).toBe('paper'); // falls back to ctx.executionMode
-    expect(data.riskLimits).toBe('unavailable');
-    const warnings = data.warnings as string[] | undefined;
-    expect(warnings).toBeDefined();
-    expect(warnings).toContain('risk_contract_unavailable');
-    expect(warnings).toContain('agent_config_unavailable');
-    expect(warnings).toContain('agent_repo_unavailable');
-  });
-
-  // -------------------------------------------------------------------------
-  // Sub-dependency throws
-  // -------------------------------------------------------------------------
-
-  it('handles sub-dependency throwing gracefully', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn(async () => []),
-      } as unknown as ToolContext['botRepo'],
-      riskContractOps: {
-        getContract: vi.fn(async () => {
-          throw new Error('Redis down');
-        }),
-      } as unknown as ToolContext['riskContractOps'],
-      executionConfig: {
-        getExecutionConfig: vi.fn(async () => {
-          throw new Error('DB error');
-        }),
-      } as unknown as ToolContext['executionConfig'],
-      agentRepo: {
-        getAgent: vi.fn(async () => {
-          throw new Error('DB timeout');
-        }),
-      } as unknown as ToolContext['agentRepo'],
-    });
-
-    const result = await getAccountSummary.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const data = result.data as Record<string, unknown>;
-    expect(data.riskLimits).toBe('unavailable');
-    const warnings = data.warnings as string[] | undefined;
-    expect(warnings).toContain('risk_contract_unavailable');
-    expect(warnings).toContain('agent_config_unavailable');
-    expect(warnings).toContain('agent_repo_unavailable');
-  });
-
-  // -------------------------------------------------------------------------
-  // Top-level error
-  // -------------------------------------------------------------------------
-
-  it('returns error when getOpenPositionsByCreator throws', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn(async () => {
-          throw new Error('DB connection lost');
-        }),
-      } as unknown as ToolContext['botRepo'],
-    });
-
-    const result = await getAccountSummary.execute({}, ctx);
-
-    expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('account.summary_failed');
-    expect(result.error).toContain('DB connection lost');
-  });
-
-  // -------------------------------------------------------------------------
-  // No capital available
-  // -------------------------------------------------------------------------
-
-  it('provides safe guidance when capital is unavailable', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn(async () => []),
-      } as unknown as ToolContext['botRepo'],
-      agentRepo: {
-        getAgent: vi.fn(async () => null),
-      } as unknown as ToolContext['agentRepo'],
-    });
-
-    const result = await getAccountSummary.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const data = result.data as Record<string, unknown>;
-    expect(data.capital).toBeNull();
-    expect(data.guidance).toEqual(expect.stringContaining('Capital information unavailable'));
-  });
-});
-
-describe('get_account_summary — Traderton boundary (L3b)', () => {
-  it('routes over the boundary when present, forwarding an empty payload', async () => {
+describe('get_account_summary — Traderton boundary', () => {
+  it('routes over the boundary, forwarding an empty payload', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: '10000' } });
     const ctx = makeCtx({ tradertonBoundary: boundary });
 
@@ -224,19 +43,6 @@ describe('get_account_summary — Traderton boundary (L3b)', () => {
     expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ ok: true, capital: '10000' });
-  });
-
-  it('does NOT touch the DB when the boundary is present', async () => {
-    const { boundary } = stubBoundary({ kind: 'success', data: { ok: true } });
-    const getOpenPositionsByCreator = vi.fn(async () => []);
-    const ctx = makeCtx({
-      tradertonBoundary: boundary,
-      botRepo: { getOpenPositionsByCreator } as unknown as ToolContext['botRepo'],
-    });
-
-    await getAccountSummary.execute({}, ctx);
-
-    expect(getOpenPositionsByCreator).not.toHaveBeenCalled();
   });
 
   it('maps a content-level failure (not_found) to a non-fault failure preserving code/retryable', async () => {
@@ -285,17 +91,13 @@ describe('get_account_summary — Traderton boundary (L3b)', () => {
     expect(result.fault).toBe(true);
   });
 
-  it('falls back to the DB path when the boundary is absent', async () => {
-    const ctx = makeCtx({
-      botRepo: {
-        getOpenPositionsByCreator: vi.fn(async () => []),
-      } as unknown as ToolContext['botRepo'],
-    });
+  it('fails closed with a typed precondition when the boundary is absent', async () => {
+    const ctx = makeCtx();
 
     const result = await getAccountSummary.execute({}, ctx);
 
-    expect(result.success).toBe(true);
-    const data = result.data as Record<string, unknown>;
-    expect(data.agentId).toBe('agent-1');
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.fault).toBe(false);
   });
 });

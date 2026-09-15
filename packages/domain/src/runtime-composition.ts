@@ -10,6 +10,14 @@ export interface RuntimeFamilyBindingDescriptor {
   isDefault: boolean;
   providerRef?: string | null;
   profile?: Record<string, unknown> | null;
+  /**
+   * The venue account this connection resolves to (`connections.resolvedVenueAccountId`),
+   * a KEEP platform value. Threaded through the descriptor so the approval
+   * venue-account resolver can read it off the chosen binding instead of a
+   * separate trading-table read (c4.9i). Null when the connection has no
+   * resolved venue account.
+   */
+  resolvedVenueAccountId?: string | null;
 }
 
 export interface RuntimeBudgetPolicy {
