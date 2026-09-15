@@ -40,13 +40,6 @@ export const UpdateInstanceConfigSchema = z.object({
   config: z.record(z.unknown()),
 });
 
-export const CreateVenueAccountSchema = z.object({
-  venue: z.string().min(1),
-  label: z.string().min(1),
-  venueAccountRef: z.string().optional(),
-  credentialId: z.string().optional(),
-});
-
 export const CreatePortfolioSchema = z.object({
   name: z.string().min(1),
 });
@@ -84,7 +77,6 @@ export const DashboardActivityQuerySchema = z.object({
 
 export type CreateInstanceInput = z.infer<typeof CreateInstanceSchema>;
 export type UpdateInstanceConfigInput = z.infer<typeof UpdateInstanceConfigSchema>;
-export type CreateVenueAccountInput = z.infer<typeof CreateVenueAccountSchema>;
 export type CreatePortfolioInput = z.infer<typeof CreatePortfolioSchema>;
 export type JournalQueryInput = z.infer<typeof JournalQuerySchema>;
 export type ReconciliationEventQueryInput = z.infer<typeof ReconciliationEventQuerySchema>;
