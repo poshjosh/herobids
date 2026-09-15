@@ -58,8 +58,6 @@ function makeConnection(overrides: Partial<Connection> = {}): Connection {
     updatedAt: '2026-01-01T00:00:00Z',
     assignedAgentCount: 0,
     referencingBotCount: 0,
-    venueAccountLabel: null,
-    venueAccountVenue: null,
     venueAccountRef: null,
     ...overrides,
   };

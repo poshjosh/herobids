@@ -1353,10 +1353,6 @@ export interface Connection {
   updatedAt: string;
   assignedAgentCount: number;
   referencingBotCount: number;
-  /** Venue account display label when a trading account is resolved. */
-  venueAccountLabel: string | null;
-  /** Venue slug for the resolved trading account. */
-  venueAccountVenue: string | null;
   /** Public venue account reference (wallet address, subaccount ID, etc.) */
   venueAccountRef: string | null;
 }

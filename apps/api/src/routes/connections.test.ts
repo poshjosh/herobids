@@ -90,8 +90,6 @@ const CONNECTION_ROW = {
   updatedAt: new Date('2026-01-01'),
   assignedAgentCount: 0,
   referencingBotCount: 0,
-  venueAccountLabel: null,
-  venueAccountVenue: null,
   venueAccountRef: null,
 };
 
@@ -101,12 +99,11 @@ let insertedValues: Record<string, unknown>[] = [];
 let lastUpdateSet: Record<string, unknown> | undefined;
 let updateSets: Record<string, unknown>[] = [];
 
-function buildMockDb(credRows: Record<string, unknown>[] = []) {
+function buildMockDb() {
   lastInserted = undefined;
   insertedValues = [];
   lastUpdateSet = undefined;
   updateSets = [];
-  let selectCallCount = 0;
 
   return {
     insert: vi.fn().mockReturnValue({
@@ -119,9 +116,6 @@ function buildMockDb(credRows: Record<string, unknown>[] = []) {
     select: vi.fn().mockImplementation((_cols?) => ({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockImplementation(() => {
-          selectCallCount++;
-          // First call after insert is the re-fetch; credential check calls come first
-          if (selectCallCount === 1 && credRows.length > 0) return credRows;
           if (mockDbRows.length > 0) return mockDbRows;
           if (insertedValues.length > 0) {
             return [{
@@ -228,29 +222,10 @@ describe('POST /connections', () => {
     expect(txInsert).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when credentialId references a nonexistent credential', async () => {
-    const app = Fastify();
-    decorateWithAuth(app);
-    // empty credRows → credential not found
-    const db = buildMockDb([]);
-    await connectionRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/connections',
-      payload: { provider: 'hyperliquid', label: 'Test', credentialId: 'missing-cred' },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.json<{ error: string }>().error).toBe('credential.not_found');
-  });
-
   it('creates a connection with a valid credentialId', async () => {
-    // Credential provider must match the connection provider
-    const credRow = { id: 'cred-1', userId: TEST_USER_ID, provider: 'hyperliquid' };
     const app = Fastify();
     decorateWithAuth(app);
-    const db = buildMockDb([credRow]);
+    const db = buildMockDb();
     await connectionRoutes(app, db);
 
     const res = await app.inject({
@@ -264,10 +239,9 @@ describe('POST /connections', () => {
   });
 
   it('does not auto-create a trading binding for non-trading providers', async () => {
-    const credRow = { id: 'cred-1', userId: TEST_USER_ID, provider: 'telegram' };
     const app = Fastify();
     decorateWithAuth(app);
-    const db = buildMockDb([credRow]);
+    const db = buildMockDb();
     await connectionRoutes(app, db);
 
     const res = await app.inject({
@@ -301,47 +275,6 @@ describe('POST /connections', () => {
     },
   );
 
-  it('returns 400 when credential venue does not match connection provider', async () => {
-    const credRow = { id: 'cred-1', userId: TEST_USER_ID, provider: 'bybit' };
-    const app = Fastify();
-    decorateWithAuth(app);
-    const db = buildMockDb([credRow]);
-    await connectionRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/connections',
-      payload: { provider: 'hyperliquid', label: 'Mismatch', credentialId: 'cred-1' },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.json<{ error: string }>().error).toBe('credential.provider_mismatch');
-    // Must not persist a mismatched connection
-    expect(lastInserted).toBeUndefined();
-  });
-
-  it('returns 400 when credential is deleted between validation and insert (FK race)', async () => {
-    const credRow = { id: 'cred-1', userId: TEST_USER_ID, provider: 'hyperliquid' };
-    const app = Fastify();
-    decorateWithAuth(app);
-    const db = buildMockDb([credRow]);
-    // Override insert to simulate a FK violation (credential deleted after validation)
-    const fkError = new Error('insert or update on table "connections" violates foreign key constraint') as Error & { code: string };
-    fkError.code = '23503';
-    db.insert = vi.fn().mockReturnValue({
-      values: vi.fn().mockRejectedValue(fkError),
-    });
-    await connectionRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/connections',
-      payload: { provider: 'hyperliquid', label: 'Race Connection', credentialId: 'cred-1' },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.json<{ error: string }>().error).toBe('credential.not_found');
-  });
 });
 
 describe('GET /connections', () => {
@@ -364,7 +297,7 @@ describe('GET /connections', () => {
     expect(body.connections[0]?.referencingBotCount).toBe(0);
   });
 
-  it('returns null for venue-account fields when no venue account is linked', async () => {
+  it('returns null for venueAccountRef when no venue account is linked', async () => {
     mockDbRows = [CONNECTION_ROW]; // resolvedVenueAccountId is null
     const app = Fastify();
     decorateWithAuth(app);
@@ -373,16 +306,14 @@ describe('GET /connections', () => {
 
     const res = await app.inject({ method: 'GET', url: '/connections' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ connections: Array<{ venueAccountLabel: string | null }> }>();
-    expect(body.connections[0]?.venueAccountLabel ?? null).toBeNull();
+    const body = res.json<{ connections: Array<{ venueAccountRef: string | null }> }>();
+    expect(body.connections[0]?.venueAccountRef ?? null).toBeNull();
   });
 
-  it('returns venueAccountLabel, venueAccountVenue, and venueAccountRef when resolvedVenueAccountId is set', async () => {
+  it('returns venueAccountRef when resolvedVenueAccountId is set', async () => {
     mockDbRows = [{
       ...CONNECTION_ROW,
       resolvedVenueAccountId: 'va-1',
-      venueAccountLabel: 'Main Trading Account',
-      venueAccountVenue: 'hyperliquid',
       venueAccountRef: '0xabc123',
     }];
     const app = Fastify();
@@ -392,13 +323,11 @@ describe('GET /connections', () => {
 
     const res = await app.inject({ method: 'GET', url: '/connections' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ connections: Array<{ venueAccountLabel: string; venueAccountVenue: string; venueAccountRef: string }> }>();
-    expect(body.connections[0]?.venueAccountLabel).toBe('Main Trading Account');
-    expect(body.connections[0]?.venueAccountVenue).toBe('hyperliquid');
+    const body = res.json<{ connections: Array<{ venueAccountRef: string }> }>();
     expect(body.connections[0]?.venueAccountRef).toBe('0xabc123');
   });
 
-  it('returns null for venue account fields when resolvedVenueAccountId is null', async () => {
+  it('returns null for venueAccountRef when resolvedVenueAccountId is null', async () => {
     mockDbRows = [CONNECTION_ROW]; // resolvedVenueAccountId is null
     const app = Fastify();
     decorateWithAuth(app);
@@ -407,9 +336,7 @@ describe('GET /connections', () => {
 
     const res = await app.inject({ method: 'GET', url: '/connections' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ connections: Array<{ venueAccountLabel: string | null; venueAccountVenue: string | null; venueAccountRef: string | null }> }>();
-    expect(body.connections[0]?.venueAccountLabel).toBeNull();
-    expect(body.connections[0]?.venueAccountVenue).toBeNull();
+    const body = res.json<{ connections: Array<{ venueAccountRef: string | null }> }>();
     expect(body.connections[0]?.venueAccountRef).toBeNull();
   });
 
@@ -461,7 +388,7 @@ describe('GET /connections', () => {
       'id', 'userId', 'credentialId', 'provider', 'label', 'status', 'meta',
       'profile', 'resolvedVenueAccountId', 'createdAt', 'updatedAt',
       'assignedAgentCount', 'referencingBotCount',
-      'venueAccountLabel', 'venueAccountVenue', 'venueAccountRef',
+      'venueAccountRef',
     ]);
     const responseKeys = Object.keys(conn);
     for (const key of responseKeys) {

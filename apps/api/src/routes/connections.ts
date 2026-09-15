@@ -3,14 +3,13 @@ import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { eq, and, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agentConnections, bots, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, userCredentials, agents } from '@herobids/db';
+import { agentConnections, bots, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN, readSkillPresetId } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
 import {
-  credentialMatchesConnectionProvider,
   providerAllowsCredential,
   providerRequiresCredential,
   providerSupportsConnections,
@@ -40,16 +39,11 @@ function selectConnectionView() {
       FROM bots b
       WHERE b.connection_id = ${connections.id}
     )`.mapWith(Number),
-    venueAccountLabel: sql<string | null>`(
-      SELECT va.label::text
-      FROM venue_accounts va
-      WHERE va.id = ${connections.resolvedVenueAccountId}
-    )`,
-    venueAccountVenue: sql<string | null>`(
-      SELECT va.venue::text
-      FROM venue_accounts va
-      WHERE va.id = ${connections.resolvedVenueAccountId}
-    )`,
+    // venueAccountLabel/venueAccountVenue removed (c4.4): dead in the only
+    // consumer (web ConnectionsPage renders neither) + a local read of the
+    // trading-owned venue_accounts table (isolation). venueAccountRef survives
+    // for now — it IS rendered (funding address) and must be re-pointed over the
+    // Traderton boundary before the venue_accounts table drops at c4.9.
     venueAccountRef: sql<string | null>`(
       SELECT va.venue_account_ref::text
       FROM venue_accounts va
@@ -160,35 +154,13 @@ export async function connectionRoutes(
       );
     }
 
-    // If a credentialId is provided, verify it exists, belongs to this user,
-    // and its provider matches the connection provider — prevents a Bybit credential
-    // from being attached to a Hyperliquid connection, etc.
-    if (parsed.data.credentialId) {
-      const [cred] = await db
-        .select({ id: userCredentials.id, provider: userCredentials.provider })
-        .from(userCredentials)
-        .where(
-          and(
-            eq(userCredentials.id, parsed.data.credentialId),
-            eq(userCredentials.userId, request.userId),
-          ),
-        );
-      if (!cred) {
-        return reply.status(400).send(
-          errorPayload('credential.not_found', `Credential ${parsed.data.credentialId} does not exist`, {
-            credentialId: parsed.data.credentialId,
-          }),
-        );
-      }
-      if (!credentialMatchesConnectionProvider(parsed.data.provider, cred.provider)) {
-        return reply.status(400).send(
-          errorPayload('credential.provider_mismatch', `Credential is for provider "${cred.provider}", not provider "${parsed.data.provider}"`, {
-            credentialProvider: cred.provider,
-            provider: parsed.data.provider,
-          }),
-        );
-      }
-    }
+    // credentialId existence/provider-match validation removed (c4.4): it read
+    // the trading-owned `user_credentials` table (isolation) and was structurally
+    // dead post-Q4 — nothing writes `user_credentials` from herobids, and a real
+    // `connections.credentialId` names a `platform_credentials` row, so the lookup
+    // could only ever 400. The provider-requires/allows policy checks above stay
+    // (platform provider policy, not a trading-table read). credentialId has no FK
+    // (see schema), so no insert-time FK remap is needed.
 
     const id = crypto.randomUUID();
     const now = new Date();
@@ -203,44 +175,7 @@ export async function connectionRoutes(
           return { kind: 'limit' as const, error: planCheck.error };
         }
 
-        try {
-          await tx.insert(connections).values({
-            id,
-            userId: request.userId,
-            credentialId: parsed.data.credentialId ?? null,
-            provider: parsed.data.provider,
-            label: parsed.data.label,
-            status: 'active',
-            meta: null,
-            createdAt: now,
-            updatedAt: now,
-          });
-        } catch (err: unknown) {
-          if ((err as { code?: string }).code === '23503') {
-            return { kind: 'fk' as const };
-          }
-          throw err;
-        }
-
-        return { kind: 'ok' as const };
-      });
-
-      if (result.kind === 'limit') {
-        return reply.status(403).send(errorPayload(result.error.code, result.error.message, result.error.params));
-      }
-
-      if (result.kind === 'fk') {
-        return reply.status(400).send(
-          errorPayload(
-            'credential.not_found',
-            `Credential ${parsed.data.credentialId} was removed before the connection could be created`,
-            { credentialId: parsed.data.credentialId },
-          ),
-        );
-      }
-    } else {
-      try {
-        await db.insert(connections).values({
+        await tx.insert(connections).values({
           id,
           userId: request.userId,
           credentialId: parsed.data.credentialId ?? null,
@@ -251,20 +186,25 @@ export async function connectionRoutes(
           createdAt: now,
           updatedAt: now,
         });
-      } catch (err: unknown) {
-        // FK violation — credential deleted between validation and insert
-        const pgErr = err as { code?: string };
-        if (pgErr.code === '23503') {
-          return reply.status(400).send(
-            errorPayload(
-              'credential.not_found',
-              `Credential ${parsed.data.credentialId} was removed before the connection could be created`,
-              { credentialId: parsed.data.credentialId },
-            ),
-          );
-        }
-        throw err;
+
+        return { kind: 'ok' as const };
+      });
+
+      if (result.kind === 'limit') {
+        return reply.status(403).send(errorPayload(result.error.code, result.error.message, result.error.params));
       }
+    } else {
+      await db.insert(connections).values({
+        id,
+        userId: request.userId,
+        credentialId: parsed.data.credentialId ?? null,
+        provider: parsed.data.provider,
+        label: parsed.data.label,
+        status: 'active',
+        meta: null,
+        createdAt: now,
+        updatedAt: now,
+      });
     }
 
     const [conn] = await db
