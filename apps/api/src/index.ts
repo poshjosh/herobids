@@ -7,7 +7,6 @@ import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME, UsageB
 import type { EvaluationJobData, ManualReviewJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { venueAccountRoutes } from './routes/accounts.js';
-import { credentialRoutes } from './routes/credentials.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
 import { reconciliationRoutes } from './routes/reconciliation.js';
 import { authRoutes } from './routes/auth.js';
@@ -270,7 +269,6 @@ await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCa
 // venue_accounts to trading bindings and further reframe bots as internals.
 await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, tradertonBotClient);
 await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues, tradertonBotClient);
-await credentialRoutes(app, db, appConfig.plans);
 await journalRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await positionRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await reconciliationRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);

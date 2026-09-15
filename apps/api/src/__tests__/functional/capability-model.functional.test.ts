@@ -95,26 +95,6 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     return { connectionId: body.connection.id };
   }
 
-  async function createCredential() {
-    const res = await ctx.app.inject({
-      method: 'POST',
-      url: '/credentials',
-      headers: { Authorization: `Bearer ${token}` },
-      payload: {
-        venue: 'hyperliquid',
-        label: 'Primary Hyperliquid credential',
-        secrets: {
-          apiKey: 'test-api-key',
-          secret: 'test-secret',
-          walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        },
-      },
-    });
-
-    expect(res.statusCode).toBe(201);
-    return res.json<{ id: string; venue: string; label: string }>();
-  }
-
   it('covers family catalogs, connection creation, agent-connection lifecycle, readiness, and audit history', async () => {
     const familyCatalog = await ctx.app.inject({ method: 'GET', url: '/capabilities/trading', headers: { Authorization: `Bearer ${token}` } });
     expect(familyCatalog.statusCode).toBe(200);
@@ -122,13 +102,6 @@ describe.skipIf(SKIP)('Capability model functional', () => {
 
     const catalog = await ctx.app.inject({ method: 'GET', url: '/capabilities', headers: { Authorization: `Bearer ${token}` } });
     expect(catalog.statusCode).toBe(200);
-
-    const credential = await createCredential();
-    const credentialList = await ctx.app.inject({ method: 'GET', url: '/credentials', headers: { Authorization: `Bearer ${token}` } });
-    expect(credentialList.statusCode).toBe(200);
-    expect(credentialList.json<{ credentials: Array<{ id: string; provider: string }> }>().credentials).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: credential.id, provider: 'hyperliquid' })]),
-    );
 
     const connection = await createConnection();
     const connectionList = await ctx.app.inject({ method: 'GET', url: '/connections', headers: { Authorization: `Bearer ${token}` } });

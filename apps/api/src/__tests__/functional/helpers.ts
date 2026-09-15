@@ -12,7 +12,6 @@ import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
 import { botRoutes } from '../../routes/bots.js';
-import { credentialRoutes } from '../../routes/credentials.js';
 import { connectionRoutes } from '../../routes/connections.js';
 import { capabilityRoutes } from '../../routes/capabilities/index.js';
 import { eventsRoutes } from '../../routes/events.js';
@@ -468,8 +467,6 @@ export async function buildApp() {
       },
     };
   });
-
-  await credentialRoutes(app, db);
 
   await authRoutes(app, authConfig, db, redisClient, 'free', testPlansConfig as any);
   await agentRoutes(app, db, testPlansConfig as any);

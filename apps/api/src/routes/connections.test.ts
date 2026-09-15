@@ -90,8 +90,6 @@ const CONNECTION_ROW = {
   updatedAt: new Date('2026-01-01'),
   assignedAgentCount: 0,
   referencingBotCount: 0,
-  credentialLabel: null,
-  credentialProvider: null,
   venueAccountLabel: null,
   venueAccountVenue: null,
   venueAccountRef: null,
@@ -366,13 +364,8 @@ describe('GET /connections', () => {
     expect(body.connections[0]?.referencingBotCount).toBe(0);
   });
 
-  it('returns credentialLabel and credentialProvider when a credential is linked', async () => {
-    mockDbRows = [{
-      ...CONNECTION_ROW,
-      credentialId: 'cred-1',
-      credentialLabel: 'My API Key',
-      credentialProvider: 'hyperliquid',
-    }];
+  it('returns null for venue-account fields when no venue account is linked', async () => {
+    mockDbRows = [CONNECTION_ROW]; // resolvedVenueAccountId is null
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildMockDb();
@@ -380,23 +373,8 @@ describe('GET /connections', () => {
 
     const res = await app.inject({ method: 'GET', url: '/connections' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ connections: Array<{ credentialLabel: string; credentialProvider: string }> }>();
-    expect(body.connections[0]?.credentialLabel).toBe('My API Key');
-    expect(body.connections[0]?.credentialProvider).toBe('hyperliquid');
-  });
-
-  it('returns null for credential fields when no credential is linked', async () => {
-    mockDbRows = [CONNECTION_ROW]; // credentialId is null
-    const app = Fastify();
-    decorateWithAuth(app);
-    const db = buildMockDb();
-    await connectionRoutes(app, db);
-
-    const res = await app.inject({ method: 'GET', url: '/connections' });
-    expect(res.statusCode).toBe(200);
-    const body = res.json<{ connections: Array<{ credentialLabel: string | null; credentialProvider: string | null }> }>();
-    expect(body.connections[0]?.credentialLabel).toBeNull();
-    expect(body.connections[0]?.credentialProvider).toBeNull();
+    const body = res.json<{ connections: Array<{ venueAccountLabel: string | null }> }>();
+    expect(body.connections[0]?.venueAccountLabel ?? null).toBeNull();
   });
 
   it('returns venueAccountLabel, venueAccountVenue, and venueAccountRef when resolvedVenueAccountId is set', async () => {
@@ -483,7 +461,6 @@ describe('GET /connections', () => {
       'id', 'userId', 'credentialId', 'provider', 'label', 'status', 'meta',
       'profile', 'resolvedVenueAccountId', 'createdAt', 'updatedAt',
       'assignedAgentCount', 'referencingBotCount',
-      'credentialLabel', 'credentialProvider',
       'venueAccountLabel', 'venueAccountVenue', 'venueAccountRef',
     ]);
     const responseKeys = Object.keys(conn);

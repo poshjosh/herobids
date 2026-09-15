@@ -40,16 +40,6 @@ function selectConnectionView() {
       FROM bots b
       WHERE b.connection_id = ${connections.id}
     )`.mapWith(Number),
-    credentialLabel: sql<string | null>`(
-      SELECT uc.label::text
-      FROM user_credentials uc
-      WHERE uc.id = ${connections.credentialId}
-    )`,
-    credentialProvider: sql<string | null>`(
-      SELECT uc.provider::text
-      FROM user_credentials uc
-      WHERE uc.id = ${connections.credentialId}
-    )`,
     venueAccountLabel: sql<string | null>`(
       SELECT va.label::text
       FROM venue_accounts va

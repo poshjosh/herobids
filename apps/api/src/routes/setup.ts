@@ -7,7 +7,7 @@ import type { AppConfig, PlansConfig } from '@herobids/domain';
 import type { TradertonClient } from '@herobids/domain/traderton';
 import { deriveSolanaAddress } from '@herobids/venues';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
-import { canonicalizeVenueSecrets, validateVenueSecrets } from './credentials.js';
+import { canonicalizeVenueSecrets, validateVenueSecrets } from '../providers/venue-secrets.js';
 import { checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
 import { SetupProviderLinkSchema } from '../schemas.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';

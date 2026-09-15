@@ -51,18 +51,6 @@ export const CreatePortfolioSchema = z.object({
   name: z.string().min(1),
 });
 
-export const CreateCredentialSchema = z.object({
-  venue: z.string().min(1),
-  label: z.string().min(1),
-  /** The actual secrets to encrypt (API key, secret, passphrase, etc.) */
-  secrets: z.record(z.string()),
-});
-
-export const RotateCredentialSchema = z.object({
-  /** New secrets to replace the existing ones */
-  secrets: z.record(z.string()),
-});
-
 export const JournalQuerySchema = z.object({
   actorId: z.string().optional(),
   type: z.string().optional(),
