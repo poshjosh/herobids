@@ -1,4 +1,6 @@
 export { AlertDispatcher } from './alert-dispatcher.js';
+export type { TradeEventFeed } from './trade-event-feed.js';
+export { createBoundaryTradeEventFeed } from './boundary-trade-event-feed.js';
 export { evaluateAlertPolicy, classifySeverity } from './alert-policy.js';
 export type { AlertRouting, AlertSeverity, JournalEventRow } from './alert-policy.js';
 export { TelegramClient, forceReply } from './telegram-client.js';

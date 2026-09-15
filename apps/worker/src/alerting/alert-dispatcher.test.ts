@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AlertsConfig } from '@herobids/domain';
 import { AlertDispatcher } from './alert-dispatcher.js';
 import type { JournalEventRow } from './alert-policy.js';
+import type { TradeEventFeed } from './trade-event-feed.js';
 
 // --- helpers ---
 
@@ -58,12 +59,18 @@ function makeDeliveryRepo(overrides: Partial<import('@herobids/db').AlertDeliver
   } as unknown as import('@herobids/db').AlertDeliveryRepository;
 }
 
-function makeJournal(events: JournalEventRow[] = []) {
+// A stub TradeEventFeed — the port the dispatcher now depends on (c4.9j). Typed
+// directly (no `as unknown as PgJournal` cast) so the mocks satisfy the port.
+function makeFeed(events: JournalEventRow[] = []): TradeEventFeed & {
+  scanAfter: ReturnType<typeof vi.fn>;
+  getById: ReturnType<typeof vi.fn>;
+  getByIds: ReturnType<typeof vi.fn>;
+} {
   return {
     scanAfter: vi.fn().mockResolvedValue(events),
     getById: vi.fn().mockResolvedValue(null),
     getByIds: vi.fn().mockResolvedValue([]),
-  } as unknown as import('@herobids/db').PgJournal;
+  };
 }
 
 // --- Telegram client tests ---
@@ -205,25 +212,25 @@ describe('AlertDispatcher', () => {
   });
 
   it('does not start when disabled', async () => {
-    const journal = makeJournal();
+    const feed = makeFeed();
     const deliveryRepo = makeDeliveryRepo();
     const logger = makeLogger();
 
     const dispatcher = new AlertDispatcher(
       makeConfig({ enabled: false }),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
     );
     dispatcher.start();
 
     // No scan should have been called
-    expect(journal.scanAfter).not.toHaveBeenCalled();
+    expect(feed.scanAfter).not.toHaveBeenCalled();
   });
 
   it('dispatches a single event on tick', async () => {
     const event = makeEvent({ id: 'evt-1', type: 'execution.failure' });
-    const journal = makeJournal([event]);
+    const feed = makeFeed([event]);
     const deliveryRepo = makeDeliveryRepo({
       insert: vi.fn().mockResolvedValue('delivery-1'),
     });
@@ -231,7 +238,7 @@ describe('AlertDispatcher', () => {
 
     const dispatcher = new AlertDispatcher(
       makeConfig(),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
     );
@@ -247,7 +254,7 @@ describe('AlertDispatcher', () => {
 
   it('skips duplicate events when insert returns null', async () => {
     const event = makeEvent({ id: 'evt-1', type: 'execution.failure' });
-    const journal = makeJournal([event]);
+    const feed = makeFeed([event]);
     // null = duplicate
     const deliveryRepo = makeDeliveryRepo({
       insert: vi.fn().mockResolvedValue(null),
@@ -256,7 +263,7 @@ describe('AlertDispatcher', () => {
 
     const dispatcher = new AlertDispatcher(
       makeConfig(),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
     );
@@ -277,7 +284,7 @@ describe('AlertDispatcher', () => {
     }));
 
     const event = makeEvent({ id: 'evt-fail', type: 'execution.failure' });
-    const journal = makeJournal([event]);
+    const feed = makeFeed([event]);
     const deliveryRepo = makeDeliveryRepo({
       insert: vi.fn().mockResolvedValue('delivery-fail'),
     });
@@ -285,7 +292,7 @@ describe('AlertDispatcher', () => {
 
     const dispatcher = new AlertDispatcher(
       makeConfig(),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
     );
@@ -302,8 +309,8 @@ describe('AlertDispatcher', () => {
       makeEvent({ id: 'evt-b', type: 'execution.failure', createdAt: new Date('2026-01-01T00:00:01Z') }),
     ];
     // First tick returns events; second tick returns empty
-    const journal = makeJournal();
-    (journal.scanAfter as ReturnType<typeof vi.fn>)
+    const feed = makeFeed();
+    feed.scanAfter
       .mockResolvedValueOnce(events)
       .mockResolvedValueOnce([]);
 
@@ -312,7 +319,7 @@ describe('AlertDispatcher', () => {
 
     const dispatcher = new AlertDispatcher(
       makeConfig(),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
     );
@@ -320,7 +327,7 @@ describe('AlertDispatcher', () => {
     await (dispatcher as unknown as { tick(): Promise<void> }).tick();
     await (dispatcher as unknown as { tick(): Promise<void> }).tick();
 
-    const secondCall = (journal.scanAfter as ReturnType<typeof vi.fn>).mock.calls[1];
+    const secondCall = feed.scanAfter.mock.calls[1];
     expect(secondCall[0].cursor).toEqual({
       seenIds: ['evt-b'],
       createdAt: new Date('2026-01-01T00:00:01Z'),
@@ -343,8 +350,8 @@ describe('AlertDispatcher', () => {
     };
 
     const journalEvent = makeEvent({ id: 'evt-retry', type: 'execution.failure' });
-    const journal = makeJournal([]);
-    (journal.getById as ReturnType<typeof vi.fn>).mockResolvedValue(journalEvent);
+    const feed = makeFeed([]);
+    feed.getById.mockResolvedValue(journalEvent);
 
     const deliveryRepo = makeDeliveryRepo({
       getPending: vi.fn().mockResolvedValue([pending]),
@@ -353,14 +360,14 @@ describe('AlertDispatcher', () => {
 
     const dispatcher = new AlertDispatcher(
       makeConfig(),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
     );
 
     await (dispatcher as unknown as { tick(): Promise<void> }).tick();
 
-    expect(journal.getById).toHaveBeenCalledWith('evt-retry');
+    expect(feed.getById).toHaveBeenCalledWith('evt-retry');
     expect(deliveryRepo.markDelivered).toHaveBeenCalledWith('delivery-pending');
   });
 
@@ -370,14 +377,14 @@ describe('AlertDispatcher', () => {
       makeEvent({ id: 'evt-1', type: 'execution.failure', createdAt: new Date('2026-01-01T00:00:00Z') }),
       makeEvent({ id: 'evt-2', type: 'execution.failure', createdAt: new Date('2026-01-01T00:00:01Z') }),
     ];
-    const journal = makeJournal(events);
+    const feed = makeFeed(events);
     const insertSpy = vi.fn().mockResolvedValue('delivery-id');
     const deliveryRepo = makeDeliveryRepo({ insert: insertSpy });
     const logger = makeLogger();
 
     const dispatcher = new AlertDispatcher(
       makeConfig({ defaultCooldownMs: 300_000 }),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
     );
@@ -394,8 +401,8 @@ describe('AlertDispatcher', () => {
     const olderEvent = makeEvent({ id: 'evt-older', createdAt: new Date('2026-01-01T00:00:00Z') });
     const newerEvent = makeEvent({ id: 'evt-newer', createdAt: new Date('2026-01-01T00:00:30Z') });
 
-    const journal = makeJournal();
-    (journal.getByIds as ReturnType<typeof vi.fn>).mockResolvedValue([olderEvent, newerEvent]);
+    const feed = makeFeed();
+    feed.getByIds.mockResolvedValue([olderEvent, newerEvent]);
 
     const deliveryRepo = makeDeliveryRepo({
       getRecentDeliveredAfter: vi.fn().mockResolvedValue([
@@ -431,7 +438,7 @@ describe('AlertDispatcher', () => {
 
     const dispatcher = new AlertDispatcher(
       makeConfig(),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
     );
@@ -460,7 +467,7 @@ describe('AlertDispatcher Redis lease', () => {
 
   it('does not dispatch when another worker holds the Redis lease', async () => {
     const event = makeEvent();
-    const journal = makeJournal([event]);
+    const feed = makeFeed([event]);
     const deliveryRepo = makeDeliveryRepo();
     const logger = makeLogger();
 
@@ -472,7 +479,7 @@ describe('AlertDispatcher Redis lease', () => {
 
     const dispatcher = new AlertDispatcher(
       makeConfig(),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
       redisMock,
@@ -482,13 +489,13 @@ describe('AlertDispatcher Redis lease', () => {
     await (dispatcher as unknown as { tick(): Promise<void> }).tick();
 
     // Should not scan events since lease not acquired
-    expect(journal.scanAfter).not.toHaveBeenCalled();
+    expect(feed.scanAfter).not.toHaveBeenCalled();
     expect(deliveryRepo.insert).not.toHaveBeenCalled();
   });
 
   it('dispatches when this worker holds the Redis lease', async () => {
     const event = makeEvent({ id: 'evt-held', type: 'execution.failure' });
-    const journal = makeJournal([event]);
+    const feed = makeFeed([event]);
     const deliveryRepo = makeDeliveryRepo();
     const logger = makeLogger();
 
@@ -500,7 +507,7 @@ describe('AlertDispatcher Redis lease', () => {
 
     const dispatcher = new AlertDispatcher(
       makeConfig(),
-      journal as unknown as import('@herobids/db').PgJournal,
+      feed,
       deliveryRepo,
       logger,
       redisMock,
@@ -509,7 +516,7 @@ describe('AlertDispatcher Redis lease', () => {
 
     await (dispatcher as unknown as { tick(): Promise<void> }).tick();
 
-    expect(journal.scanAfter).toHaveBeenCalled();
+    expect(feed.scanAfter).toHaveBeenCalled();
     expect(deliveryRepo.insert).toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@ import {
   AssessmentReviewRunner,
 } from './market-intelligence/assessment-review-runner.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
-import { createDatabase, PgJournal, AlertDeliveryRepository, AgentRepository, BotRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
+import { createDatabase, AlertDeliveryRepository, AgentRepository, BotRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { AGENT_STREAM_MAXLEN, type ProvidersYaml, ok, err } from '@herobids/domain';
 
@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
-import { AlertDispatcher } from './alerting/index.js';
+import { AlertDispatcher, createBoundaryTradeEventFeed } from './alerting/index.js';
 import { TelegramClient, forceReply, PlatformAlertService, createEmailClient } from './alerting/index.js';
 import type { EmailClientConfig } from './alerting/index.js';
 import {
@@ -103,7 +103,6 @@ let browserPoolHealthPublisher: { stop(): void } | undefined;
 const workerId = `worker-${crypto.randomUUID().slice(0, 8)}`;
 
 const db = createDatabase(appConfig.database.url);
-const journal = new PgJournal(db);
 // L3d-5: the trading repositories (fills/positions/plans/orders/balance-snapshots/
 // reconciliation/decisions/backtesting/llm-artifact/instrument) were only consumed
 // by the deleted in-process trading actors + engine-backed intake. Removed with the
@@ -476,6 +475,40 @@ const systemReadBoundary = (() => {
   };
   logger.info({ baseUrl: b.baseUrl }, 'Traderton system read boundary enabled — market-intel scoring/regime route over REST');
   return createTradertonReadBoundary(client, subject, b.requestTimeoutMs);
+})();
+
+// c4.9j: a SYSTEM-subject read boundary for the AlertDispatcher's trade-event
+// feed (`scan_trade_events` / `get_events_by_ids` / `get_event_by_id`). Same
+// construction as `systemReadBoundary` above but with a DISTINCT system actor id
+// (`alert-dispatcher` vs `market-intel`). These cross-owner reads are fenced by
+// the consumer's operator-config `allowedActorTypes:['system']` grant (there is
+// no per-tool allow-list in the boundary config surface — c4.9j OQ-2). Wrapped
+// in the TradeEventFeed adapter the dispatcher depends on. Undefined when the
+// boundary is unconfigured (baseUrl/hmacSecret absent) — the dispatcher then
+// does not start (OQ-4), mirroring `systemReadBoundary`'s undefined-when-absent
+// posture and the dispatcher's own warn-and-return for a missing Telegram token.
+const alertDispatcherFeed = (() => {
+  const b = appConfig.boundary;
+  if (!b.baseUrl || !b.hmacSecret) {
+    logger.info(
+      { hasBaseUrl: !!b.baseUrl, hasSecret: !!b.hmacSecret },
+      'Traderton alert-dispatcher read boundary not configured — alert dispatcher will not start',
+    );
+    return undefined;
+  }
+  const client = createTradertonClient({
+    baseUrl: b.baseUrl,
+    consumerId: b.consumerId,
+    keyId: b.keyId,
+    hmacSecret: b.hmacSecret,
+    requestTimeoutMs: b.requestTimeoutMs,
+  });
+  const subject: TradertonSubject = {
+    ownerId: b.consumerId,
+    actor: { type: 'system', id: 'alert-dispatcher' },
+  };
+  logger.info({ baseUrl: b.baseUrl }, 'Traderton alert-dispatcher read boundary enabled — trade-event feed routes over REST');
+  return createBoundaryTradeEventFeed(createTradertonReadBoundary(client, subject, b.requestTimeoutMs));
 })();
 
 // L3c: resolve the approval-snapshot venue-account id from the connection grant
@@ -881,10 +914,20 @@ const manualReviewRuntime = new ManualReviewRuntime(
 );
 manualReviewRuntime.start();
 
-// Start alert dispatcher (polls journal → routes → delivers to Telegram)
-// Uses Redis lease for singleton coordination across multiple workers
-const alertDispatcher = new AlertDispatcher(appConfig.alerts, journal, alertDeliveryRepo, logger, redisClient, workerId);
-await alertDispatcher.start();
+// Start alert dispatcher (polls the Traderton trade-event feed → routes →
+// delivers to Telegram). Uses Redis lease for singleton coordination across
+// multiple workers. OQ-4: when the trade-event feed boundary is unconfigured
+// the dispatcher is not constructed/started — a symmetric config-guard early
+// return matching how the dispatcher already warns-and-returns for a missing
+// Telegram token and how `systemReadBoundary` is undefined-when-absent.
+const alertDispatcher = alertDispatcherFeed
+  ? new AlertDispatcher(appConfig.alerts, alertDispatcherFeed, alertDeliveryRepo, logger, redisClient, workerId)
+  : undefined;
+if (alertDispatcher) {
+  await alertDispatcher.start();
+} else {
+  logger.warn('Alert dispatcher not started — Traderton trade-event feed boundary is unconfigured');
+}
 
 // Start always-on market intelligence coordinator and monitor.
 // Uses Redis-based leader election so only one worker instance runs
@@ -1292,7 +1335,7 @@ process.on('SIGTERM', async () => {
   }
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
-  await alertDispatcher.stop();
+  await alertDispatcher?.stop();
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
@@ -1318,7 +1361,7 @@ process.on('SIGINT', async () => {
   }
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
-  await alertDispatcher.stop();
+  await alertDispatcher?.stop();
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();

@@ -1,8 +1,9 @@
 import type { Logger } from 'pino';
 import type Redis from 'ioredis';
 import type { AlertsConfig } from '@herobids/domain';
-import type { PgJournal, AlertDeliveryRepository } from '@herobids/db';
+import type { AlertDeliveryRepository } from '@herobids/db';
 import { evaluateAlertPolicy, type JournalEventRow } from './alert-policy.js';
+import type { TradeEventFeed } from './trade-event-feed.js';
 import { TelegramClient } from './telegram-client.js';
 
 const DISPATCH_LEASE_KEY = 'lease:alert-dispatcher';
@@ -27,7 +28,7 @@ export class AlertDispatcher {
 
   constructor(
     private readonly config: AlertsConfig,
-    private readonly journal: PgJournal,
+    private readonly feed: TradeEventFeed,
     private readonly deliveryRepo: AlertDeliveryRepository,
     private readonly logger: Logger,
     private readonly redis?: Redis,
@@ -123,7 +124,7 @@ export class AlertDispatcher {
       }
 
       // Scan for new events since last cursor
-      const events = await this.journal.scanAfter({
+      const events = await this.feed.scanAfter({
         cursor: this.cursor,
         typePrefixes: this.collectPrefixes(),
         limit: this.config.maxBatchSize,
@@ -265,7 +266,7 @@ export class AlertDispatcher {
         recent.map((r) => [r.journalEventId, r.deliveredAt!.getTime()]),
       );
       const eventIds = recent.map((r) => r.journalEventId);
-      const events = await this.journal.getByIds(eventIds);
+      const events = await this.feed.getByIds(eventIds);
       for (const event of events) {
         const key = this.cooldownKey(event);
         const deliveredAt = deliveredAtByEventId.get(event.id);
@@ -297,7 +298,7 @@ export class AlertDispatcher {
     });
 
     for (const delivery of pending) {
-      const event = await this.journal.getById(delivery.journalEventId);
+      const event = await this.feed.getById(delivery.journalEventId);
       if (!event) {
         await this.deliveryRepo.markAttemptFailed(delivery.id, 'Journal event not found', this.config.maxRetries);
         continue;
