@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { connectionRoutes as registerConnectionRoutesImpl } from './connections.js';
 import type { PlansConfig } from '@herobids/domain';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 
 const TEST_USER_ID = 'user-1';
 const TEST_RUNTIME_BUDGETS = {
@@ -12,8 +13,48 @@ const TEST_RUNTIME_BUDGETS = {
   maxContextBlockChars: 4000,
 };
 
-async function connectionRoutes(app: ReturnType<typeof Fastify>, db: unknown, redisClient?: unknown, plansConfig?: PlansConfig) {
-  await registerConnectionRoutesImpl(app, db as never, TEST_RUNTIME_BUDGETS, redisClient as never, plansConfig);
+async function connectionRoutes(
+  app: ReturnType<typeof Fastify>,
+  db: unknown,
+  redisClient?: unknown,
+  plansConfig?: PlansConfig,
+  tradertonClient?: TradertonClient,
+) {
+  await registerConnectionRoutesImpl(app, db as never, TEST_RUNTIME_BUDGETS, redisClient as never, plansConfig, tradertonClient);
+}
+
+/**
+ * Build a stub Traderton read-boundary client. `count_bots_by_venue_account`
+ * returns `byVenueAccount` (keyed by account id → bot ids); `get_venue_account`
+ * returns `venueAccountRef`. Both are wrapped in the client `success` shape the
+ * readBoundary helper expects. Unmapped account ids resolve to empty/null.
+ */
+function makeBoundaryClient(opts: {
+  botsByAccount?: Record<string, string[]>;
+  refByAccount?: Record<string, string | null>;
+} = {}): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  const botsByAccount = opts.botsByAccount ?? {};
+  const refByAccount = opts.refByAccount ?? {};
+  const invoke = vi.fn().mockImplementation((input: { toolName: string; payload: Record<string, unknown> }) => {
+    if (input.toolName === 'count_bots_by_venue_account') {
+      const ids = (input.payload['venueAccountIds'] as string[]) ?? [];
+      const byVenueAccount: Record<string, string[]> = {};
+      for (const id of ids) byVenueAccount[id] = botsByAccount[id] ?? [];
+      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { ok: true, byVenueAccount } } as TradertonClientResult);
+    }
+    if (input.toolName === 'get_venue_account') {
+      const id = input.payload['venueAccountId'] as string;
+      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { ok: true, venueAccountId: id, venueAccountRef: refByAccount[id] ?? null, venue: 'hyperliquid', label: 'label' } } as TradertonClientResult);
+    }
+    return Promise.resolve({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'unexpected tool' } as TradertonClientResult);
+  });
+  return { client: { invoke } as unknown as TradertonClient, invoke };
+}
+
+/** A boundary client whose invoke always transport-errors (boundary down). */
+function makeDownBoundaryClient(): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn().mockResolvedValue({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boundary down' } as TradertonClientResult);
+  return { client: { invoke } as unknown as TradertonClient, invoke };
 }
 
 function makePlansConfig(maxConnections = 5): PlansConfig {
@@ -310,21 +351,54 @@ describe('GET /connections', () => {
     expect(body.connections[0]?.venueAccountRef ?? null).toBeNull();
   });
 
-  it('returns venueAccountRef when resolvedVenueAccountId is set', async () => {
+  it('returns venueAccountRef from the boundary when resolvedVenueAccountId is set', async () => {
     mockDbRows = [{
       ...CONNECTION_ROW,
       resolvedVenueAccountId: 'va-1',
-      venueAccountRef: '0xabc123',
     }];
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildMockDb();
-    await connectionRoutes(app, db);
+    // c4.9f: venueAccountRef is sourced over the boundary get_venue_account, not
+    // a local venue_accounts read.
+    const { client } = makeBoundaryClient({ refByAccount: { 'va-1': '0xabc123' } });
+    await connectionRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({ method: 'GET', url: '/connections' });
     expect(res.statusCode).toBe(200);
     const body = res.json<{ connections: Array<{ venueAccountRef: string }> }>();
     expect(body.connections[0]?.venueAccountRef).toBe('0xabc123');
+  });
+
+  it('returns referencingBotCount from the boundary when the account has bots', async () => {
+    mockDbRows = [{ ...CONNECTION_ROW, resolvedVenueAccountId: 'va-1' }];
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    const { client } = makeBoundaryClient({ botsByAccount: { 'va-1': ['bot-1', 'bot-2'] } });
+    await connectionRoutes(app, db, undefined, undefined, client);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<{ referencingBotCount: number }> }>();
+    expect(body.connections[0]?.referencingBotCount).toBe(2);
+  });
+
+  it('degrades referencingBotCount to 0 and venueAccountRef to null when the boundary is down', async () => {
+    mockDbRows = [{ ...CONNECTION_ROW, resolvedVenueAccountId: 'va-1' }];
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    const { client } = makeDownBoundaryClient();
+    await connectionRoutes(app, db, undefined, undefined, client);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    // The list read stays available even when the boundary is down — the
+    // display fields degrade (the hard-delete still fails closed at the 409).
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<{ referencingBotCount: number; venueAccountRef: string | null }> }>();
+    expect(body.connections[0]?.referencingBotCount).toBe(0);
+    expect(body.connections[0]?.venueAccountRef).toBeNull();
   });
 
   it('returns null for venueAccountRef when resolvedVenueAccountId is null', async () => {
@@ -686,17 +760,18 @@ describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
     } as any;
   }
 
-  it('hard-deletes when no active agent grants or bots reference the connection', async () => {
+  it('hard-deletes when no active agent grants and the boundary reports no bots', async () => {
     const app = Fastify();
     decorateWithAuth(app);
 
     const db = buildHardDeleteDb([
-      [{ id: 'conn-1', status: 'active' }], // conn lookup
-      [],                                     // active grants → none
-      [],                                     // bots → none
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: 'va-1' }], // conn lookup
+      [],                                                                    // active grants → none
     ]);
+    // c4.9f: the bot guard is the boundary count_bots_by_venue_account.
+    const { client } = makeBoundaryClient({ botsByAccount: { 'va-1': [] } });
 
-    await connectionRoutes(app, db);
+    await connectionRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({
       method: 'DELETE',
@@ -705,16 +780,59 @@ describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
     expect(res.statusCode).toBe(204);
   });
 
+  it('skips the bot guard and hard-deletes a connection with a null resolvedVenueAccountId', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const db = buildHardDeleteDb([
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: null }], // non-trading connection
+      [],                                                                  // active grants → none
+    ]);
+    // A null-account connection has no trading bots — the boundary must NOT be called.
+    const { client, invoke } = makeBoundaryClient();
+
+    await connectionRoutes(app, db, undefined, undefined, client);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/connections/conn-1?permanent=true',
+    });
+    expect(res.statusCode).toBe(204);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 when the boundary is unavailable during the hard-delete bot guard', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const db = buildHardDeleteDb([
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: 'va-1' }],
+      [], // no active grants
+    ]);
+    const { client } = makeDownBoundaryClient();
+
+    await connectionRoutes(app, db, undefined, undefined, client);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/connections/conn-1?permanent=true',
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toBe('precondition.not_ready');
+  });
+
   it('returns 409 when active agent grants reference the connection', async () => {
     const app = Fastify();
     decorateWithAuth(app);
 
     const db = buildHardDeleteDb([
-      [{ id: 'conn-1', status: 'active' }],
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: 'va-1' }],
       [{ agentId: 'agent-1' }], // active grant exists
     ]);
+    // Grants are checked BEFORE the boundary — the bot guard is never reached.
+    const { client, invoke } = makeBoundaryClient();
 
-    await connectionRoutes(app, db);
+    await connectionRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({
       method: 'DELETE',
@@ -725,19 +843,21 @@ describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
     expect(
       res.json<{ params: { hint: string } }>().params.hint,
     ).toContain('Revoke the connection instead');
+    expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('returns 409 with blockingBotIds when bots reference the connection', async () => {
+  it('returns 409 with blockingBotIds when the boundary reports bots reference the account', async () => {
     const app = Fastify();
     decorateWithAuth(app);
 
     const db = buildHardDeleteDb([
-      [{ id: 'conn-1', status: 'active' }],
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: 'va-1' }],
       [], // no active agent grants
-      [{ id: 'bot-1' }, { id: 'bot-2' }], // two bots
     ]);
+    // c4.9f: blockingBotIds come from the boundary count_bots_by_venue_account.
+    const { client } = makeBoundaryClient({ botsByAccount: { 'va-1': ['bot-1', 'bot-2'] } });
 
-    await connectionRoutes(app, db);
+    await connectionRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({
       method: 'DELETE',
@@ -773,12 +893,12 @@ describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
     decorateWithAuth(app);
 
     const db = buildHardDeleteDb([
-      [{ id: 'conn-1', status: 'revoked' }], // conn lookup
-      [],                                      // active grants → none (already revoked)
-      [],                                      // bots → none
+      [{ id: 'conn-1', status: 'revoked', resolvedVenueAccountId: 'va-1' }], // conn lookup
+      [],                                                                     // active grants → none (already revoked)
     ]);
+    const { client } = makeBoundaryClient({ botsByAccount: { 'va-1': [] } }); // no bots
 
-    await connectionRoutes(app, db);
+    await connectionRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1?permanent=true' });
     expect(res.statusCode).toBe(204);
@@ -791,11 +911,12 @@ describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
     decorateWithAuth(app);
 
     const db = buildHardDeleteDb([
-      [{ id: 'conn-1', status: 'revoked' }], // conn lookup → revoked
-      [{ agentId: 'agent-1' }],               // active grants → concurrent grant exists!
+      [{ id: 'conn-1', status: 'revoked', resolvedVenueAccountId: 'va-1' }], // conn lookup → revoked
+      [{ agentId: 'agent-1' }],                                               // active grants → concurrent grant exists!
     ]);
+    const { client } = makeBoundaryClient();
 
-    await connectionRoutes(app, db);
+    await connectionRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1?permanent=true' });
     expect(res.statusCode).toBe(409);
@@ -810,9 +931,9 @@ describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
     decorateWithAuth(app);
 
     const selectSequence: unknown[][] = [
-      [{ id: 'conn-1', status: 'active' }],
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: 'va-1' }],
       [], // no active agent grants
-      [], // no bots
+      [], // FK-race re-check: no concurrent active grants → re-throw
     ];
     let callIdx = 0;
     const fkError = new Error(
@@ -843,7 +964,10 @@ describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
       transaction: vi.fn().mockRejectedValue(fkError),
     } as any;
 
-    await connectionRoutes(app, db);
+    // Boundary reports no bots so the delete proceeds to the transaction (which
+    // then FK-races on a concurrent grant).
+    const { client } = makeBoundaryClient({ botsByAccount: { 'va-1': [] } });
+    await connectionRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({
       method: 'DELETE',

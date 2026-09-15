@@ -3,7 +3,6 @@ import type { Database } from '@herobids/db';
 import {
   connections,
   agentConnections,
-  bots,
   agents,
 } from '@herobids/db';
 import type { TradertonClient } from '@herobids/domain/traderton';
@@ -33,9 +32,17 @@ export interface ProviderLinkResources {
   venueAccountId: string | null;
   /** Active agent_connections rows referencing this connection. */
   activeAgentConnectionIds: string[];
-  /** Bots whose connectionId references this connection. */
+  /**
+   * Bots whose connectionId references this connection. ALWAYS `[]` (c4.9f):
+   * the authoritative bot guard is the boundary `deprovision_venue_account`
+   * call in {@link deleteProviderLink} (Traderton owns the bots). Kept as a
+   * field for wire/type compat with the `blocked` result shape.
+   */
   connectionBotIds: string[];
-  /** Bots whose venueAccountId references the linked venue account. */
+  /**
+   * Bots whose venueAccountId references the linked venue account. ALWAYS `[]`
+   * (c4.9f) — see {@link connectionBotIds}.
+   */
   venueAccountBotIds: string[];
 }
 
@@ -95,29 +102,17 @@ export async function resolveProviderLinkDependents(
       ),
     );
 
-  // Resolve bots referencing this connection directly.
-  const connBots = await db
-    .select({ id: bots.id })
-    .from(bots)
-    .where(eq(bots.connectionId, connectionId));
-
-  // Resolve bots referencing the linked venue account (if any).
-  let venueAccountBotIds: string[] = [];
-  if (conn.resolvedVenueAccountId) {
-    const vaBots = await db
-      .select({ id: bots.id })
-      .from(bots)
-      .where(eq(bots.venueAccountId, conn.resolvedVenueAccountId));
-    venueAccountBotIds = vaBots.map((b) => b.id);
-  }
-
+  // Bots are NOT read locally (c4.9f): the authoritative bot guard is the
+  // boundary `deprovision_venue_account` call in deleteProviderLink, which
+  // fail-closes on `provision.in_use` (Traderton owns the bots). The bot-id
+  // fields survive as always-`[]` for wire/type compat with the blocked shape.
   return {
     connectionId: conn.id,
     credentialId: conn.credentialId,
     venueAccountId: conn.resolvedVenueAccountId,
     activeAgentConnectionIds: activeGrants.map((g) => g.id),
-    connectionBotIds: connBots.map((b) => b.id),
-    venueAccountBotIds,
+    connectionBotIds: [],
+    venueAccountBotIds: [],
   };
 }
 
@@ -130,8 +125,9 @@ export async function resolveProviderLinkDependents(
  * Eligibility: the connection must have `resolvedVenueAccountId !== null`.
  *
  * ORDERING DECISION (fail-closed, no partial state):
- *   1. Resolve dependents + block locally on herobids-owned dependents
- *      (active agent grants, bots on the connection, bots on the venue account).
+ *   1. Resolve dependents + block locally on the herobids-owned dependent
+ *      (active agent grants). Bots are NOT read locally (c4.9f) — the boundary
+ *      deprovision below is the authoritative bot guard.
  *   2. Boundary-deprovision the venue account. Traderton fail-closes on ITS
  *      dependents (any bot referencing the account) → `provision.in_use`, which
  *      we surface as `blocked` — the local connection is STILL INTACT, so a
@@ -160,23 +156,21 @@ export async function deleteProviderLink(
     return { kind: 'not_eligible', connectionId };
   }
 
-  // Collect blocker IDs (herobids-owned platform dependents).
+  // Collect the herobids-owned platform blocker (active agent grants). Bots are
+  // NOT pre-checked locally (c4.9f) — the boundary `deprovision_venue_account`
+  // (step 5) is the authoritative bot guard and returns `blocked` on
+  // `provision.in_use`.
   const blockingAgentIds = await resolveBlockingAgentLabels(db, connectionId);
-  const blockingConnectionBotIds = resources.connectionBotIds;
-  const blockingVenueAccountBotIds = resources.venueAccountBotIds;
 
-  // 2-4. Block if any platform dependent is in use.
-  if (
-    blockingAgentIds.length > 0 ||
-    blockingConnectionBotIds.length > 0 ||
-    blockingVenueAccountBotIds.length > 0
-  ) {
+  // 2-4. Block on the active agent grants (platform-owned dependent). The
+  // bot arrays are empty here — the boundary carries the bot guard.
+  if (blockingAgentIds.length > 0) {
     return {
       kind: 'blocked',
       connectionId,
       blockingAgentIds,
-      blockingConnectionBotIds,
-      blockingVenueAccountBotIds,
+      blockingConnectionBotIds: [],
+      blockingVenueAccountBotIds: [],
     };
   }
 

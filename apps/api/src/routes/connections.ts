@@ -3,9 +3,10 @@ import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { eq, and, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agentConnections, bots, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, agents } from '@herobids/db';
-import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
+import { agentConnections, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, agents } from '@herobids/db';
+import type { PlansConfig, RuntimeBudgetPolicy, TradertonReadResult } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN, readSkillPresetId } from '@herobids/domain';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
@@ -34,23 +35,21 @@ function selectConnectionView() {
       WHERE ac.connection_id = ${connections.id}
         AND ac.status = 'active'
     )`.mapWith(Number),
-    referencingBotCount: sql<number>`(
-      SELECT count(*)::int
-      FROM bots b
-      WHERE b.connection_id = ${connections.id}
-    )`.mapWith(Number),
-    // venueAccountLabel/venueAccountVenue removed (c4.4): dead in the only
-    // consumer (web ConnectionsPage renders neither) + a local read of the
-    // trading-owned venue_accounts table (isolation). venueAccountRef survives
-    // for now — it IS rendered (funding address) and must be re-pointed over the
-    // Traderton boundary before the venue_accounts table drops at c4.9.
-    venueAccountRef: sql<string | null>`(
-      SELECT va.venue_account_ref::text
-      FROM venue_accounts va
-      WHERE va.id = ${connections.resolvedVenueAccountId}
-    )`,
+    // referencingBotCount + venueAccountRef are NO LONGER read from the local
+    // `bots` / `venue_accounts` tables (c4.9f — those are trading-owned). They are
+    // populated per-row over the Traderton boundary read tools in the GET handlers
+    // (count_bots_by_venue_account / get_venue_account). The fields still exist on
+    // the response contract — the web ConnectionsPage gates the Delete button on
+    // referencingBotCount===0 and renders venueAccountRef as the funding address.
   };
 }
+
+/** A connection view row with the boundary-sourced display fields populated. */
+type ConnectionViewRow = Record<string, unknown> & {
+  resolvedVenueAccountId: string | null;
+  referencingBotCount?: number;
+  venueAccountRef?: string | null;
+};
 
 export async function connectionRoutes(
   app: FastifyInstance,
@@ -58,7 +57,100 @@ export async function connectionRoutes(
   budgets: RuntimeBudgetPolicy,
   redisClient?: Redis,
   plansConfig?: PlansConfig,
+  tradertonClient?: TradertonClient,
 ): Promise<void> {
+  // Owner-scoped boundary READ helper (c4.9f). Mirrors the invoke+unwrap shape in
+  // bots.ts: subject = {ownerId:userId, actor:{type:'user',id:userId}}; the
+  // dispatcher maps a tool's fault:false errorCode onto the closed wire code
+  // `validation.invalid_payload` and carries the original under
+  // `details.errorCode`, so unwrap it here to surface the tool errorCode as `code`.
+  const readBoundary = async (
+    toolName: 'count_bots_by_venue_account' | 'get_venue_account',
+    payload: Record<string, unknown>,
+    userId: string,
+  ): Promise<TradertonReadResult> => {
+    if (!tradertonClient) {
+      return { kind: 'transport_error', message: 'trading boundary not configured', retryable: true };
+    }
+    const result = await tradertonClient.invoke({
+      toolName,
+      payload,
+      subject: { ownerId: userId, actor: { type: 'user', id: userId } },
+      deadlineMs: 30_000,
+    });
+    switch (result.kind) {
+      case 'success':
+        return { kind: 'success', data: result.payload };
+      case 'failure': {
+        const toolCode = result.details?.['errorCode'];
+        const code = result.code === 'validation.invalid_payload' && typeof toolCode === 'string'
+          ? toolCode
+          : result.code;
+        return { kind: 'failure', code, message: result.message, retryable: result.retryable };
+      }
+      case 'in_progress':
+        return { kind: 'in_progress' };
+      case 'transport_error':
+        return { kind: 'transport_error', message: result.message, retryable: true };
+    }
+  };
+
+  // Batch-populate `referencingBotCount` + `venueAccountRef` over the boundary for
+  // a page of connection view rows (c4.9f). ONE count_bots_by_venue_account call
+  // covers every non-null resolvedVenueAccountId; get_venue_account is single-id,
+  // called once per non-null-account row (few connections per user).
+  //
+  // DISPLAY DEGRADES GRACEFULLY when the boundary is absent/unavailable: the list
+  // read must not hard-fail on a display count/ref. referencingBotCount degrades
+  // to 0 (the hard-delete still fails closed at the delete-time 409 boundary
+  // check) and venueAccountRef degrades to null. Rows with a null account are
+  // vacuously { referencingBotCount: 0, venueAccountRef: null }.
+  const enrichConnectionViews = async (
+    rows: ConnectionViewRow[],
+    userId: string,
+  ): Promise<ConnectionViewRow[]> => {
+    const accountIds = [
+      ...new Set(rows.map((r) => r.resolvedVenueAccountId).filter((id): id is string => id != null)),
+    ];
+
+    // Default the display fields (degraded / null-account values).
+    for (const row of rows) {
+      row.referencingBotCount = 0;
+      row.venueAccountRef = null;
+    }
+    if (accountIds.length === 0) {
+      return rows;
+    }
+
+    // Bot counts — ONE batched call.
+    const countResult = await readBoundary('count_bots_by_venue_account', { venueAccountIds: accountIds }, userId);
+    if (countResult.kind === 'success') {
+      const data = (countResult.data ?? {}) as { byVenueAccount?: Record<string, string[]> };
+      const byVenueAccount = data.byVenueAccount ?? {};
+      for (const row of rows) {
+        if (row.resolvedVenueAccountId != null) {
+          row.referencingBotCount = (byVenueAccount[row.resolvedVenueAccountId] ?? []).length;
+        }
+      }
+    }
+
+    // Funding address (venueAccountRef) — single-id per non-null-account row.
+    for (const accountId of accountIds) {
+      const refResult = await readBoundary('get_venue_account', { venueAccountId: accountId }, userId);
+      if (refResult.kind === 'success') {
+        const data = (refResult.data ?? {}) as { venueAccountRef?: string | null };
+        const ref = data.venueAccountRef ?? null;
+        for (const row of rows) {
+          if (row.resolvedVenueAccountId === accountId) {
+            row.venueAccountRef = ref;
+          }
+        }
+      }
+    }
+
+    return rows;
+  };
+
   async function publishRuntimeRefresh(agentId: string): Promise<void> {
     if (!redisClient) {
       return;
@@ -212,7 +304,11 @@ export async function connectionRoutes(
       .from(connections)
       .where(eq(connections.id, id));
 
-    return reply.status(201).send(conn);
+    // A newly created connection has resolvedVenueAccountId === null, so the
+    // display fields resolve vacuously (no boundary call); enrich for a uniform
+    // response shape.
+    const [enriched] = await enrichConnectionViews([conn as ConnectionViewRow], request.userId);
+    return reply.status(201).send(enriched);
   });
 
   // GET /connections — list all connections for the authenticated user
@@ -221,7 +317,10 @@ export async function connectionRoutes(
       .select(selectConnectionView())
       .from(connections)
       .where(eq(connections.userId, request.userId));
-    return reply.send({ connections: rows });
+    // Populate referencingBotCount + venueAccountRef over the boundary
+    // (batched). Display degrades gracefully when the boundary is down.
+    const enriched = await enrichConnectionViews(rows as ConnectionViewRow[], request.userId);
+    return reply.send({ connections: enriched });
   });
 
   // GET /connections/:id — get a single connection
@@ -234,7 +333,8 @@ export async function connectionRoutes(
     if (!conn) {
       return reply.status(404).send({ error: 'not_found' });
     }
-    return reply.send(conn);
+    const [enriched] = await enrichConnectionViews([conn as ConnectionViewRow], request.userId);
+    return reply.send(enriched);
   });
 
   // DELETE /connections/:id — revoke (soft-delete) a connection, or hard-delete when ?permanent=true
@@ -243,7 +343,7 @@ export async function connectionRoutes(
     const permanent = request.query.permanent === 'true';
 
     const [conn] = await db
-      .select({ id: connections.id, status: connections.status })
+      .select({ id: connections.id, status: connections.status, resolvedVenueAccountId: connections.resolvedVenueAccountId })
       .from(connections)
       .where(and(eq(connections.id, id), eq(connections.userId, request.userId)));
     if (!conn) {
@@ -266,22 +366,38 @@ export async function connectionRoutes(
         });
       }
 
-      // Block deletion if any bots reference this connection.
-      // bots.connectionId has ON DELETE RESTRICT — must check before attempting delete.
-      const blockingBots = await db
-        .select({ id: bots.id })
-        .from(bots)
-        .where(eq(bots.connectionId, id));
-
-      if (blockingBots.length > 0) {
-        return reply.status(409).send({
-          error: 'connection.in_use',
-          params: {
-            connectionId: id,
-            blockingBotIds: blockingBots.map((b) => b.id),
-            hint: 'Delete the bots referencing this connection first.',
-          },
-        });
+      // Block deletion if any trading bots reference the linked venue account
+      // (c4.9f). Traderton owns the bots — the authoritative "any bot referencing
+      // the account" predicate is exposed over count_bots_by_venue_account. A
+      // connection with a null resolvedVenueAccountId is non-trading → no bots can
+      // reference it, so the bot guard is vacuously skipped. The boundary is
+      // MANDATORY when there IS an account to check: absent/transport/in_progress
+      // → 503 precondition.not_ready (fail closed, never delete without the guard).
+      const resolvedVenueAccountId = conn.resolvedVenueAccountId;
+      if (resolvedVenueAccountId != null) {
+        const countResult = await readBoundary(
+          'count_bots_by_venue_account',
+          { venueAccountIds: [resolvedVenueAccountId] },
+          request.userId,
+        );
+        if (countResult.kind === 'transport_error' || countResult.kind === 'in_progress') {
+          return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the connection was not deleted.', {}));
+        }
+        if (countResult.kind === 'failure') {
+          return reply.status(502).send(errorPayload(countResult.code, countResult.message, {}));
+        }
+        const data = (countResult.data ?? {}) as { byVenueAccount?: Record<string, string[]> };
+        const blockingBotIds = data.byVenueAccount?.[resolvedVenueAccountId] ?? [];
+        if (blockingBotIds.length > 0) {
+          return reply.status(409).send({
+            error: 'connection.in_use',
+            params: {
+              connectionId: id,
+              blockingBotIds,
+              hint: 'Delete the bots referencing this connection first.',
+            },
+          });
+        }
       }
 
       try {
@@ -297,7 +413,11 @@ export async function connectionRoutes(
       } catch (err: unknown) {
         const pgErr = err as { code?: string };
         if (pgErr.code === '23503') {
-          // FK violation — a concurrent grant or bot was created between check and delete
+          // FK violation — a concurrent active agent grant was created between the
+          // check and the delete. agent_connections is the only local FK on
+          // connections now (bots are Traderton-owned; the local bots FK drops at
+          // c4.9f, and pre-drop the boundary count above is the authoritative bot
+          // guard). Re-check the grant and surface the 409; otherwise re-throw.
           const concurrentGrants = await db
             .select({ agentId: agentConnections.agentId })
             .from(agentConnections)
@@ -307,21 +427,6 @@ export async function connectionRoutes(
             return reply.status(409).send({
               error: 'connection.in_use',
               params: { connectionId: id, hint: 'Revoke the connection instead, or remove it from all agents first.' },
-            });
-          }
-
-          const concurrentBots = await db
-            .select({ id: bots.id })
-            .from(bots)
-            .where(eq(bots.connectionId, id));
-          if (concurrentBots.length > 0) {
-            return reply.status(409).send({
-              error: 'connection.in_use',
-              params: {
-                connectionId: id,
-                blockingBotIds: concurrentBots.map((b) => b.id),
-                hint: 'Delete the bots referencing this connection first.',
-              },
             });
           }
         }

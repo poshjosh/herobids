@@ -893,16 +893,13 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     });
     const app = Fastify();
     decorateWithAuth(app);
-    // Select results in order:
+    // Select results in order (c4.9f — NO local bots reads):
     // 0: connection lookup (resolveProviderLinkDependents)
-    // 1: agent_connections active
-    // 2: bots on connection
-    // 3: bots on venue account
-    // 4: agent_connections active (resolveBlockingAgentLabels)
+    // 1: agent_connections active (resolveProviderLinkDependents)
+    // 2: agent_connections active (resolveBlockingAgentLabels)
+    // The bot guard is the boundary deprovision (in_use → blocked; success → ok).
     await setupRoutes(app, buildMockDbWithDelete(
       [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
-      [],
-      [],
       [],
       [],
     ), undefined, baseDeps({ tradertonClient: client }));
@@ -940,8 +937,6 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
       [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
       [],
       [],
-      [],
-      [],
     ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
@@ -972,8 +967,6 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
       [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
       [],
       [],
-      [],
-      [],
     ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
@@ -993,9 +986,7 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDbWithDelete(
       [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
-      [{ id: 'ac-1', agentId: 'agent-1' }], // active grants
-      [],
-      [],
+      [{ id: 'ac-1', agentId: 'agent-1' }], // active grants (resolveProviderLinkDependents)
       [{ id: 'ac-1', agentId: 'agent-1' }], // resolveBlockingAgentLabels: grants
       [{ id: 'agent-1' }], // resolveBlockingAgentLabels: agents
     ), undefined, baseDeps({ tradertonClient: client }));
@@ -1014,16 +1005,27 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     expect(deletedFromTx.length).toBe(0);
   });
 
-  it('returns 409 when bots on the connection block deletion — no boundary call', async () => {
-    const { client, invoke } = makeTradertonClient();
+  it('blocks on a boundary bot reference and preserves the empty blocking-bot wire arrays', async () => {
+    // c4.9f: bots are Traderton-owned — no local bot pre-block. A bot referencing
+    // the venue account surfaces via the boundary deprovision `provision.in_use`,
+    // which maps to blocked. The blockingConnectionBotIds/blockingVenueAccountBotIds
+    // fields are preserved in the wire shape but are empty (the boundary does not
+    // return structured bot ids); the block still fires.
+    const { client, invoke } = makeTradertonClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'validation.invalid_payload',
+      message: 'in use by bot(s): bot-1',
+      retryable: false,
+      details: { errorCode: 'provision.in_use' },
+    });
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDbWithDelete(
       [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
-      [], // no active agent grants
-      [{ id: 'bot-1' }], // bot referencing connection
-      [],
-      [], // no active agent grants
+      [], // no active agent grants (resolveProviderLinkDependents)
+      [], // no active agent grants (resolveBlockingAgentLabels)
     ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
@@ -1034,8 +1036,12 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     expect(res.statusCode).toBe(409);
     const body = res.json<{ error: string; params: Record<string, unknown> }>();
     expect(body.error).toBe('provider_link.in_use');
-    expect(body.params.blockingConnectionBotIds).toEqual(['bot-1']);
-    expect(invoke).not.toHaveBeenCalled();
+    // Boundary WAS the bot guard (not skipped) — the block came from deprovision.
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(body.params.blockingConnectionBotIds).toEqual([]);
+    expect(body.params.blockingVenueAccountBotIds).toEqual([]);
+    // The local connection was NOT deleted (fail-closed).
+    expect(deletedFromTx.length).toBe(0);
   });
 
   it('returns 400 for connection with resolvedVenueAccountId = null (not eligible)', async () => {

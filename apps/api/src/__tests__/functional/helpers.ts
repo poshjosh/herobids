@@ -468,11 +468,11 @@ export async function buildApp() {
     };
   });
 
+  const stubTradertonClient = makeStubTradertonClient();
   await authRoutes(app, authConfig, db, redisClient, 'free', testPlansConfig as any);
   await agentRoutes(app, db, testPlansConfig as any);
-  await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any);
+  await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any, stubTradertonClient);
   await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient);
-  const stubTradertonClient = makeStubTradertonClient();
   await botRoutes(app, lifecycleQueue, db, redisClient, testPlansConfig as any, stubTradertonClient);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)

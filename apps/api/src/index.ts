@@ -255,7 +255,7 @@ await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, traderto
 await providerRoutes(app, appConfig.venues);
 
 // ── Platform primitives ───────────────────────────────────────────────────
-await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans);
+await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans, tradertonBotClient);
 
 // ── Gmail OAuth connection flow ────────────────────────────────────────────
 await connectionsOauthRoutes(app, db, appConfig, appConfig.plans);
