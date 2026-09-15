@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { BillingConfig, BillingProvider, PlansConfig, UsageBillingConfig, ProvidersYaml } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { BillingRepository, UsageBillingRepository, users, fills, bots, agents, agentRuntimeSessions, billingPeriods } from '@herobids/db';
-import { eq, and, desc, gte, lte, inArray, or, type SQL } from 'drizzle-orm';
+import { BillingRepository, UsageBillingRepository, users, agents, agentRuntimeSessions, billingPeriods } from '@herobids/db';
+import { eq, and } from 'drizzle-orm';
+import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import { createTradertonReadBoundary, loadAgentEvidence, toFillRow, type FillRow } from './exports-traderton.js';
 import { createProviderManager } from '../billing/provider-manager.js';
 import { EntitlementSync } from '../billing/entitlement-sync.js';
 import { CreemSignatureError, CreemApiError } from '../billing/creem-provider.js';
@@ -10,6 +12,9 @@ import { StripeSignatureError } from '../billing/stripe-client.js';
 import { UnknownWebhookEventTypeError, ProviderUnavailableError } from '../billing/provider-port.js';
 import { MockProvider } from '../billing/mock-provider.js';
 import { errorPayload } from '../error-payload.js';
+
+/** Fallback read deadline when the operator boundary timeout is not supplied. */
+const DEFAULT_READ_TIMEOUT_MS = 10_000;
 
 /**
  * Billing routes — multi-provider checkout, portal, cancel, upgrade, webhooks, and summary.
@@ -67,7 +72,11 @@ export async function billingRoutes(
   frontendOrigin: string,
   usageBillingConfig?: UsageBillingConfig,
   providersYaml?: ProvidersYaml,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ) {
+  const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
+
   const billingBase = `${frontendOrigin}/billing`;
   const successUrl = `${billingBase}?session=success`;
   const cancelUrl = `${billingBase}?session=cancelled`;
@@ -536,80 +545,77 @@ export async function billingRoutes(
     });
   });
 
-  // GET /trading/fills — paginated fill records (trading cost ledger; renamed from /billing/ledger)
+  // GET /trading/fills — paginated fill records (trading cost ledger; renamed
+  // from /billing/ledger). Fills are a Traderton trading table; this endpoint
+  // reads them over the owner-scoped Traderton boundary (no local `fills`/`bots`
+  // reads). The three modes map onto the boundary tools:
+  //   - botId    → get_owner_bot_fills (server-side owner ownership check; an
+  //                unowned/absent bot returns not_found.resource → the existing
+  //                404 `billing.ledger.bot_not_found` contract).
+  //   - agentId  → local `agents` ownership 404-guard (agents is a PLATFORM
+  //                table that stays), then get_owner_fills with `creatorAgentId`
+  //                so the tool restricts owner bots to those the agent created
+  //                and takes their bot-actor fills — the exact old agentId
+  //                semantics (fills stored under the agent's bot actors).
+  //   - owner    → resolve the owner's agent ids locally (platform `agents`
+  //                table) and pass them as `agentIds`; get_owner_fills resolves
+  //                the owner's bots server-side and unions bot-actor + agent-actor
+  //                fills. Empty owner set falls out of the tool's own short-circuit.
+  // Boundary absent/transport/in_progress → 503 precondition.not_ready (matches
+  // sibling routes). Cross-user isolation is enforced server-side by the owner
+  // scope + the local agents guard.
   app.get<{ Querystring: { limit?: string; offset?: string; botId?: string; agentId?: string; from?: string; to?: string } }>('/trading/fills', async (request, reply) => {
     const userId = request.userId;
-    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
-    const offset = parseInt(request.query.offset ?? '0', 10);
+    // Guard non-numeric query params (e.g. ?limit=abc) so NaN is never threaded
+    // into the boundary payload — mirrors the /billing/usage-events clamping.
+    const limitRaw = Number.parseInt(request.query.limit ?? '50', 10);
+    const offsetRaw = Number.parseInt(request.query.offset ?? '0', 10);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;
+    const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
+    const { from, to } = request.query;
 
-    if (request.query.botId) {
-      const [bot] = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.id, request.query.botId), eq(bots.userId, userId)));
-      if (!bot) return reply.status(404).send(errorPayload('billing.ledger.bot_not_found', 'Bot not found', { botId: request.query.botId }));
+    if (!tradertonReadClient) {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the fills read could not be produced.', {}));
     }
+    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
+    const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
 
+    // agentId mode keeps the local platform `agents` ownership 404-guard.
     if (request.query.agentId) {
       const [agent] = await db.select({ id: agents.id }).from(agents)
         .where(and(eq(agents.id, request.query.agentId), eq(agents.userId, userId)));
       if (!agent) return reply.status(404).send(errorPayload('billing.ledger.agent_not_found', 'Agent not found', { agentId: request.query.agentId }));
     }
 
-    const conditions: SQL[] = [];
-
+    // Resolve the boundary tool + payload per mode.
+    let toolName: 'get_owner_bot_fills' | 'get_owner_fills';
+    let payload: Record<string, unknown>;
     if (request.query.botId) {
-      conditions.push(and(eq(fills.actorType, 'bot'), eq(fills.actorId, request.query.botId))!);
+      toolName = 'get_owner_bot_fills';
+      payload = { botId: request.query.botId, limit, offset, from, to };
     } else if (request.query.agentId) {
-      // Fills are stored under bot actors — resolve bot IDs managed by this agent.
-      const agentBots = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, request.query.agentId)));
-      const agentBotIds = agentBots.map((b) => b.id);
-      if (agentBotIds.length === 0) {
-        return reply.send({ records: [], limit, offset });
-      }
-      conditions.push(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds))!);
+      toolName = 'get_owner_fills';
+      payload = { creatorAgentId: request.query.agentId, limit, offset, from, to };
     } else {
-      // No specific entity filter — scope to all fills owned by the authenticated user's
-      // bots and agents to prevent cross-user data exposure.
-      const [userBots, userAgents] = await Promise.all([
-        db.select({ id: bots.id }).from(bots).where(eq(bots.userId, userId)),
-        db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId)),
-      ]);
-      const botIds = userBots.map((b) => b.id);
+      // Owner-wide: resolve the owner's agents locally (platform table) so the
+      // tool can union their agent-actor fills with the owner's bot-actor fills.
+      const userAgents = await db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId));
       const agentIds = userAgents.map((a) => a.id);
-
-      if (botIds.length === 0 && agentIds.length === 0) {
-        return reply.send({ records: [], limit, offset });
-      }
-
-      const ownershipConditions: SQL[] = [];
-      if (botIds.length > 0) {
-        ownershipConditions.push(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds))!);
-      }
-      if (agentIds.length > 0) {
-        ownershipConditions.push(and(eq(fills.actorType, 'agent'), inArray(fills.actorId, agentIds))!);
-      }
-      const ownerWhere = ownershipConditions.length === 1
-        ? ownershipConditions[0]!
-        : or(...ownershipConditions)!;
-      conditions.push(ownerWhere);
+      toolName = 'get_owner_fills';
+      payload = { agentIds, limit, offset, from, to };
     }
 
-    if (request.query.from) {
-      conditions.push(gte(fills.filledAt, new Date(request.query.from)));
+    const loaded = await loadAgentEvidence<FillRow>(boundary, toolName, payload, 'fills', toFillRow);
+    if (!loaded.ok) {
+      // botId mode: the tool's not_found.resource (unowned/absent bot) preserves
+      // the existing 404 `billing.ledger.bot_not_found` contract.
+      if (loaded.error.code === 'not_found.resource') {
+        return reply.status(404).send(errorPayload('billing.ledger.bot_not_found', 'Bot not found', { botId: request.query.botId }));
+      }
+      return reply.status(loaded.error.status).send(errorPayload(loaded.error.code, loaded.error.message, {}));
     }
-    if (request.query.to) {
-      conditions.push(lte(fills.filledAt, new Date(request.query.to)));
-    }
 
-    const where = and(...conditions);
-
-    const records = await db.select().from(fills)
-      .where(where)
-      .orderBy(desc(fills.filledAt))
-      .limit(limit)
-      .offset(offset);
-
-    return reply.send({ records, limit, offset });
+    return reply.send({ records: loaded.rows, limit, offset });
   });
 
   // ---------------------------------------------------------------------------

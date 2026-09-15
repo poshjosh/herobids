@@ -7,11 +7,52 @@ import { PaymentProviderManager } from '../billing/provider-manager.js';
 import { ProviderUnavailableError } from '../billing/provider-port.js';
 import { EntitlementSync } from '../billing/entitlement-sync.js';
 import { billingRoutes } from './billing.js';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 
 describe('billing routes', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
+
+  // Stub Traderton read client: `get_owner_fills` / `get_owner_bot_fills` return
+  // { fills: rows }. Records each invocation so tests assert tool + payload +
+  // subject. The `/trading/fills` endpoint reads fills over this boundary.
+  function makeFillsReadClient(rows: unknown[]): {
+    client: TradertonClient;
+    invoke: ReturnType<typeof vi.fn>;
+  } {
+    const invoke = vi.fn().mockImplementation(() => {
+      const result: TradertonClientResult = {
+        kind: 'success',
+        requestId: 'r',
+        correlationId: 'c',
+        payload: { fills: rows },
+      };
+      return Promise.resolve(result);
+    });
+    return { client: { invoke } as unknown as TradertonClient, invoke };
+  }
+
+  // Stub read client that always resolves to not_found.resource — surfaced (as
+  // the real boundary dispatcher does) under the closed wire code
+  // validation.invalid_payload with the original code in details.errorCode.
+  // Drives the botId-mode 404 path.
+  function makeNotFoundFillsReadClient(): {
+    client: TradertonClient;
+    invoke: ReturnType<typeof vi.fn>;
+  } {
+    const result: TradertonClientResult = {
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'validation.invalid_payload',
+      message: 'Bot not found',
+      retryable: false,
+      details: { errorCode: 'not_found.resource' },
+    };
+    const invoke = vi.fn().mockResolvedValue(result);
+    return { client: { invoke } as unknown as TradertonClient, invoke };
+  }
 
   function makeChain(value: unknown[]) {
     const chain: Record<string, unknown> = {};
@@ -43,15 +84,32 @@ describe('billing routes', () => {
     };
   }
 
-  it('GET /trading/fills returns 200 with empty records', async () => {
+  // A boundary fill row as it arrives over JSON (date columns are ISO strings;
+  // toFillRow rehydrates filledAt/createdAt into Date objects).
+  const nowIso = new Date('2026-01-15T00:00:00.000Z').toISOString();
+  const sampleFillIso = {
+    id: 'fill-1',
+    orderId: 'order-1',
+    venueAccountId: 'va-1',
+    actorType: 'bot',
+    actorId: 'bot-1',
+    venueRefId: 'vr-1',
+    side: 'buy',
+    quantity: '1',
+    price: '100',
+    fee: '0.1',
+    feeCurrency: 'USDC',
+    filledAt: nowIso,
+    createdAt: nowIso,
+  };
+
+  async function mountBilling(
+    app: ReturnType<typeof Fastify>,
+    db: unknown,
+    client?: TradertonClient,
+  ) {
     const billingConfig = BillingConfigSchema.parse({});
     const plansConfig = PlansConfigSchema.parse({});
-
-    const db = {
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    };
-
-    const app = Fastify();
     app.decorateRequest('userId', '');
     app.addHook('onRequest', async (request) => {
       request.userId = 'user-1';
@@ -62,12 +120,125 @@ describe('billing routes', () => {
       plansConfig,
       db as unknown as import('@herobids/db').Database,
       'http://localhost:5173',
+      undefined,
+      undefined,
+      client,
     );
+  }
+
+  it('GET /trading/fills (owner-wide) returns 200 with empty records over the boundary', async () => {
+    // No agents locally → agentIds:[]; the tool returns { fills: [] }.
+    const db = { select: vi.fn().mockImplementation(() => makeChain([])) };
+    const { client, invoke } = makeFillsReadClient([]);
+
+    const app = Fastify();
+    await mountBilling(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: '/trading/fills' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().records).toEqual([]);
+
+    // Owner-wide mode invokes get_owner_fills with the requesting-user subject.
+    const arg = invoke.mock.calls[0]![0] as {
+      toolName: string;
+      payload: Record<string, unknown>;
+      subject: { ownerId: string; actor: { type: string; id: string } };
+    };
+    expect(arg.toolName).toBe('get_owner_fills');
+    expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'user', id: 'user-1' } });
+    // Owner's agent ids resolved locally and threaded as agentIds.
+    expect(arg.payload).toMatchObject({ agentIds: [], limit: 50, offset: 0 });
+  });
+
+  it('GET /trading/fills (owner-wide) returns the boundary fill rows as records', async () => {
+    const db = { select: vi.fn().mockImplementation(() => makeChain([{ id: 'agent-1' }])) };
+    const { client } = makeFillsReadClient([sampleFillIso]);
+
+    const app = Fastify();
+    await mountBilling(app, db, client);
 
     const res = await app.inject({ method: 'GET', url: '/trading/fills' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.records).toEqual([]);
+    expect(body.records).toHaveLength(1);
+    expect(body.records[0]).toMatchObject({ id: 'fill-1', actorId: 'bot-1' });
+    expect(body).toMatchObject({ limit: 50, offset: 0 });
+  });
+
+  it('GET /trading/fills 503 when the trading boundary is unconfigured', async () => {
+    const db = { select: vi.fn().mockImplementation(() => makeChain([])) };
+
+    const app = Fastify();
+    await mountBilling(app, db, undefined);
+
+    const res = await app.inject({ method: 'GET', url: '/trading/fills' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('precondition.not_ready');
+  });
+
+  it('GET /trading/fills?botId= invokes get_owner_bot_fills and passes pagination', async () => {
+    const db = { select: vi.fn().mockImplementation(() => makeChain([])) };
+    const { client, invoke } = makeFillsReadClient([sampleFillIso]);
+
+    const app = Fastify();
+    await mountBilling(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: '/trading/fills?botId=bot-1&limit=10&offset=5&from=2026-01-01T00:00:00.000Z&to=2026-02-01T00:00:00.000Z' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().records).toHaveLength(1);
+
+    const arg = invoke.mock.calls[0]![0] as { toolName: string; payload: Record<string, unknown> };
+    expect(arg.toolName).toBe('get_owner_bot_fills');
+    expect(arg.payload).toMatchObject({
+      botId: 'bot-1',
+      limit: 10,
+      offset: 5,
+      from: '2026-01-01T00:00:00.000Z',
+      to: '2026-02-01T00:00:00.000Z',
+    });
+  });
+
+  it('GET /trading/fills?botId= returns 404 bot_not_found for an unowned/absent bot', async () => {
+    const db = { select: vi.fn().mockImplementation(() => makeChain([])) };
+    const { client } = makeNotFoundFillsReadClient();
+
+    const app = Fastify();
+    await mountBilling(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: '/trading/fills?botId=nope' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('billing.ledger.bot_not_found');
+  });
+
+  it('GET /trading/fills?agentId= 404 agent_not_found via the local agents guard (no boundary call)', async () => {
+    // Local agents ownership lookup returns nothing → 404 before any boundary call.
+    const db = { select: vi.fn().mockImplementation(() => makeChain([])) };
+    const { client, invoke } = makeFillsReadClient([sampleFillIso]);
+
+    const app = Fastify();
+    await mountBilling(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: '/trading/fills?agentId=agent-x' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('billing.ledger.agent_not_found');
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('GET /trading/fills?agentId= (owned) invokes get_owner_fills with creatorAgentId', async () => {
+    // Local agents ownership lookup returns the agent → guard passes.
+    const db = { select: vi.fn().mockImplementation(() => makeChain([{ id: 'agent-1' }])) };
+    const { client, invoke } = makeFillsReadClient([sampleFillIso]);
+
+    const app = Fastify();
+    await mountBilling(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: '/trading/fills?agentId=agent-1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().records).toHaveLength(1);
+
+    const arg = invoke.mock.calls[0]![0] as { toolName: string; payload: Record<string, unknown> };
+    expect(arg.toolName).toBe('get_owner_fills');
+    expect(arg.payload).toMatchObject({ creatorAgentId: 'agent-1', limit: 50, offset: 0 });
   });
 
   it('usage routes return empty payloads when account is missing', async () => {
