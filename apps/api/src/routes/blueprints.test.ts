@@ -8,7 +8,26 @@ import type { AgentRiskDefaultsConfig, BlueprintExecutionCapabilityResolver, Pla
 import { createTableAwareDb } from '../__tests__/helpers/table-aware-db-mock.js';
 import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevision, buildRevisionSkill, buildLike, buildAgentPayload, buildBotPayload, BP_ID, REV_ID, USER_ID, OTHER_USER_ID } from '../__tests__/helpers/blueprint-fixtures.js';
 import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, blueprintForkRequests, skills, skillRevisions, bots, connections } from '@herobids/db';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
+
+/**
+ * A Traderton read boundary stub for the blueprint-delete bot dependency check.
+ * `count_bots_by_blueprint` answers from `byBlueprint`; unknown tools succeed
+ * with an empty payload.
+ */
+function makeCountBotsClient(byBlueprint: Record<string, string[]> = {}): TradertonClient {
+  const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
+    let result: TradertonClientResult;
+    if (input.toolName === 'count_bots_by_blueprint') {
+      result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { byBlueprint } };
+    } else {
+      result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} };
+    }
+    return Promise.resolve(result);
+  });
+  return { invoke } as unknown as TradertonClient;
+}
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
 // In test, cwd is the package dir (apps/api), so we must point to the repo root.
@@ -634,7 +653,8 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    // Bot dep-check is over the boundary now — no bots bound to this blueprint.
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(204);
@@ -664,21 +684,13 @@ describe('DELETE /blueprints/:id', () => {
     const dbMock = createTableAwareDb();
     // Two selects from blueprints: pre-tx + tx FOR UPDATE
     dbMock.setTableRows(blueprints, [[draftBp], [draftBp]]);
-    // 5 reference checks run in order: likes, usage events, fork requests,
-    // agents, bots. Only the 5th (bots) returns cnt=1 to prove the bots check
-    // is the one that fires — not an earlier check.
-    dbMock.setExecuteResults([
-      [{ cnt: 0 }], // likes
-      [{ cnt: 0 }], // usage events
-      [{ cnt: 0 }], // fork requests
-      [{ cnt: 0 }], // agents
-      [{ cnt: 1 }], // bots ← only this one fires
-    ]);
     const db = dbMock.build();
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    // The bot dependency check is HOISTED before the transaction now: the
+    // boundary reports an active bot bound to this blueprint → 409.
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient({ [BP_ID]: ['bot-1'] }));
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(409);
@@ -718,7 +730,8 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    // Bot dep-check passes (no bots) → flow reaches the tx TOCTOU guard.
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(409);
@@ -735,7 +748,8 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    // Bot dep-check passes (no bots) → flow reaches the tx TOCTOU guard.
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(404);
@@ -755,11 +769,28 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(204);
     expect(res.body).toBe('');
+  });
+
+  it('fails closed with 503 when the trading boundary is unavailable', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[draftBp]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    // No boundary client → cannot prove there are no bot instances → 503.
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('blueprint.dependency_unavailable');
   });
 
   it('returns 404 for nonexistent blueprint', async () => {

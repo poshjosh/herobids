@@ -507,6 +507,8 @@ export async function telegramWebhookHandler(
   llmCatalogDeps?: LlmCatalogDeps,
   agentRiskDefaults?: AgentRiskDefaultsConfig,
   operatorModelDefaults?: ModelDefaults,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const botToken = alertsConfig?.telegram?.botToken ?? '';
   const webhookSecret = alertsConfig?.telegram?.webhookSecret ?? '';
@@ -657,7 +659,7 @@ export async function telegramWebhookHandler(
           return;
         }
         if (slashCmd.command === 'log') {
-          const response = await handleLog(db, userId, slashCmd.args);
+          const response = await handleLog(db, userId, slashCmd.args, tradertonReadClient, tradertonReadTimeoutMs);
           await sendTelegramText(chatId, response);
           return;
         }

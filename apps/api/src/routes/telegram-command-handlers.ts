@@ -12,6 +12,8 @@
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import type { AuthConfig, PlansConfig, AgentRiskDefaultsConfig, ModelDefaults } from '@herobids/domain';
+import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import { createTradertonReadBoundary, loadAgentEvidence } from './exports-traderton.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { cloneAgentAsLive } from '../services/agent-go-live-service.js';
 import {
@@ -250,6 +252,8 @@ export async function handleLog(
   db: Database,
   userId: string,
   args: string[],
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
 ): Promise<string> {
   try {
     if (args.length === 0) {
@@ -266,8 +270,6 @@ export async function handleLog(
     }
     const agent = resolved.agent;
 
-    // Single UNION ALL query so the 10 most recent entries across all sources
-    // are returned regardless of which source dominates.
     type LogRow = {
       source: 'msg' | 'outbound' | 'failure';
       raw_type: string;
@@ -277,23 +279,57 @@ export async function handleLog(
       created_at: Date;
     };
 
-    const logRows = await db.execute(sql`
+    // Platform legs stay LOCAL (agent_messages + agent_outbound_messages).
+    // The decision-failures leg moved behind the Traderton boundary — it is
+    // fetched separately and merged in-app.
+    const platformRows = await db.execute(sql`
       SELECT 'msg' AS source, type AS raw_type, NULL::text AS subject, NULL::text AS body_text, NULL::text AS failure_msg, created_at
       FROM agent_messages WHERE agent_id = ${agent.id}
         AND type NOT IN ('agent.runtime.heartbeat', 'agent.heartbeat')
       UNION ALL
       SELECT 'outbound', authored_by, subject, body, NULL, created_at
       FROM agent_outbound_messages WHERE agent_id = ${agent.id}
-      UNION ALL
-      SELECT 'failure', failure_code, NULL, NULL, failure_message, failed_at
-      FROM decision_failures WHERE actor_type = 'agent' AND actor_id = ${agent.id}
       ORDER BY created_at DESC
       LIMIT 10
     `) as unknown as LogRow[];
 
+    const logRows: LogRow[] = [...platformRows];
+
+    // Decision-failures leg over the Traderton read boundary (agent-actor scoped).
+    // /log is a best-effort chat summary — if the boundary is absent or fails we
+    // DEGRADE to the platform legs only rather than surfacing an error (never
+    // 503 a telegram command).
+    if (tradertonReadClient) {
+      const subject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agent.id } };
+      const boundary = createTradertonReadBoundary(tradertonReadClient, subject, tradertonReadTimeoutMs ?? 10_000);
+      const failuresLoaded = await loadAgentEvidence<{ failureCode?: string; failureMessage?: string; failedAt?: string }>(
+        boundary,
+        'get_agent_decision_failures',
+        { limit: 10 },
+        'failures',
+        (r) => r as { failureCode?: string; failureMessage?: string; failedAt?: string },
+      );
+      if (failuresLoaded.ok) {
+        for (const f of failuresLoaded.rows) {
+          logRows.push({
+            source: 'failure',
+            raw_type: f.failureCode ?? '',
+            subject: null,
+            body_text: null,
+            failure_msg: f.failureMessage ?? null,
+            created_at: new Date(f.failedAt ?? 0),
+          });
+        }
+      }
+    }
+
     if (logRows.length === 0) {
       return `${agent.name} has no recent activity.`;
     }
+
+    // Re-sort the merged rows (platform + boundary failures) newest-first, take 10.
+    logRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    logRows.splice(10);
 
     // Map to display entries with human-readable labels (descending order from SQL)
     const entries = logRows.map((row) => {

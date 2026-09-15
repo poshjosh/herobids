@@ -55,7 +55,11 @@ import {
   refreshForkCount,
 } from '../services/blueprint-scoring.js';
 import { recomputeBlueprintPerformanceScore } from '../services/blueprint-performance-scorer.js';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import { createTradertonReadBoundary, loadBoundaryObject } from './exports-traderton.js';
+
+/** Fallback read deadline when the operator boundary timeout is not supplied. */
+const BLUEPRINT_READ_TIMEOUT_MS = 10_000;
 
 // --- Request schemas ---
 
@@ -985,6 +989,40 @@ export async function blueprintRoutes(
       });
     }
 
+    // Bot dependency check — HOISTED before the transaction (Traderton owns bots
+    // now, so the old in-tx `SELECT COUNT(*) FROM bots WHERE blueprint_id` is gone).
+    // The delete must FAIL CLOSED: an absent/transport-unavailable boundary means
+    // we cannot prove there are no active bot instances, so return a 503 rather
+    // than delete a blueprint that may still have bots bound to it. This mirrors
+    // the connection-delete hoist pattern.
+    if (!tradertonReadClient) {
+      return reply.status(503).send({
+        error: BlueprintErrorCodes.DEPENDENCY_UNAVAILABLE,
+        message: 'Trading service is unavailable — the blueprint could not be deleted.',
+      });
+    }
+    const botDepSubject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+    const botDepBoundary = createTradertonReadBoundary(
+      tradertonReadClient,
+      botDepSubject,
+      tradertonReadTimeoutMs ?? BLUEPRINT_READ_TIMEOUT_MS,
+    );
+    const botDepResult = await loadBoundaryObject(botDepBoundary, 'count_bots_by_blueprint', { blueprintIds: [bp.id] });
+    if (!botDepResult.ok) {
+      // Transport/in_progress → 503; any terminal boundary failure also fails closed.
+      return reply.status(503).send({
+        error: BlueprintErrorCodes.DEPENDENCY_UNAVAILABLE,
+        message: 'Trading service is unavailable — the blueprint could not be deleted.',
+      });
+    }
+    const byBlueprint = (botDepResult.data['byBlueprint'] as Record<string, string[]> | undefined) ?? {};
+    if ((byBlueprint[bp.id] ?? []).length > 0) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: 'Blueprint has active bot instances',
+      });
+    }
+
     const deleteResult = await db.transaction(async (tx) => {
       // Lock the blueprint row
       const [lockedBp] = await tx.select().from(blueprints)
@@ -1029,13 +1067,8 @@ export async function blueprintRoutes(
         return { kind: 'error' as const, code: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint has active agent instances' };
       }
 
-      // Check for bots referencing this blueprint
-      const [botCheck] = await tx.execute(sql`
-        SELECT COUNT(*)::int AS cnt FROM bots WHERE blueprint_id = ${bp.id}
-      `);
-      if (Number(botCheck?.cnt ?? 0) > 0) {
-        return { kind: 'error' as const, code: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint has active bot instances' };
-      }
+      // Bot dependency was checked over the Traderton boundary BEFORE this
+      // transaction (Traderton owns bots) — no local `bots` read here.
 
       // Break pointer cycle
       await tx.update(blueprints).set({

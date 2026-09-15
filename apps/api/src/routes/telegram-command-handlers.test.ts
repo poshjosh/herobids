@@ -20,8 +20,10 @@ vi.mock('../services/setup-link-token-service.js', () => ({
 import {
   formatActivityLabel,
   handleConnectSetup,
+  handleLog,
   truncateForTelegram,
 } from './telegram-command-handlers.js';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -182,5 +184,165 @@ describe('handleConnectSetup', () => {
     expect(response).toContain('Choose a connection for Momentum:');
     expect(response).toContain('Need a new connection instead? Open the web app to create one.');
     expect(createAndStoreSetupLinkTokenMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─── handleLog ───────────────────────────────────────────────────────────
+//
+// handleLog merges LOCAL platform rows (agent_messages + agent_outbound_messages
+// via db.execute) with the decision-failures leg fetched over the Traderton read
+// boundary, re-sorts newest-first, keeps the first 10 (splice), then renders the
+// 5 most-recent oldest-first. The boundary leg is best-effort: an absent client
+// or a boundary failure DEGRADES to platform-only output (never errors/503s).
+
+/**
+ * Build a minimal db for handleLog:
+ *  - `select().from().where().limit(3)` resolves resolveAgentByName → single agent (found)
+ *  - `execute(sql`...`)` resolves the platform LogRow[] (agent_messages + outbound)
+ */
+function makeLogDb(agent: Record<string, unknown>, platformRows: unknown[]) {
+  const execute = vi.fn().mockResolvedValue(platformRows);
+  const db = {
+    select: vi.fn(() => makeChain([agent])),
+    execute,
+  } as unknown as Database;
+  return { db, execute };
+}
+
+/**
+ * Smallest TradertonClient stub. `loadAgentEvidence` → `boundary.invoke` →
+ * `client.invoke({ toolName, payload, subject, deadlineMs })` and expects a
+ * TradertonClientResult. A `success` payload with a `failures` array feeds the
+ * merge; a `transport_error` exercises the DEGRADE leg.
+ */
+function makeFailuresClient(result: TradertonClientResult): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn().mockResolvedValue(result);
+  return { client: { invoke } as unknown as TradertonClient, invoke };
+}
+
+function successFailures(failures: unknown[]): TradertonClientResult {
+  return { kind: 'success', requestId: 'r', correlationId: 'c', payload: { failures } };
+}
+
+describe('handleLog', () => {
+  const AGENT = { id: 'agent-1', userId: 'user-1', name: 'Momentum', status: 'active' };
+
+  it('merges boundary failures with platform rows, re-sorts newest-first, and renders 5 oldest-first', async () => {
+    // Two platform message rows (older) + one boundary failure that is NEWER than
+    // both — proves merge + re-sort places the failure last (most recent) in the
+    // descending list, hence first in the reversed 5-most-recent render.
+    const platformRows = [
+      { source: 'msg', raw_type: 'agent.decision.go_long', subject: null, body_text: null, failure_msg: null, created_at: new Date('2026-01-01T10:00:00.000Z') },
+      { source: 'msg', raw_type: 'user.message', subject: null, body_text: null, failure_msg: null, created_at: new Date('2026-01-01T10:05:00.000Z') },
+    ];
+    const { db } = makeLogDb(AGENT, platformRows);
+    const { client, invoke } = makeFailuresClient(successFailures([
+      { failureCode: 'risk.exceeded', failureMessage: 'position cap breached', failedAt: '2026-01-01T10:10:00.000Z' },
+    ]));
+
+    const result = await handleLog(db, 'user-1', ['Momentum'], client);
+
+    // Boundary invoked with the agent-scoped tool + payload the handler passes.
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0]).toEqual(expect.objectContaining({
+      toolName: 'get_agent_decision_failures',
+      payload: { limit: 10 },
+      subject: { ownerId: 'user-1', actor: { type: 'agent', id: 'agent-1' } },
+    }));
+
+    // Descending merged order: failure(10:10) → user(10:05) → decision(10:00).
+    // slice(0,5).reverse() → oldest-first: decision, user, failure.
+    expect(result).toBe([
+      'Momentum — recent activity:',
+      '[10:00] DECISION',
+      '[10:05] USER',
+      '[10:10] ERR: risk.exceeded — position cap breached',
+    ].join('\n'));
+  });
+
+  it('truncates a failure message longer than 60 chars in the ERR line', async () => {
+    const longMsg = 'x'.repeat(80);
+    const { db } = makeLogDb(AGENT, []);
+    const { client } = makeFailuresClient(successFailures([
+      { failureCode: 'venue.timeout', failureMessage: longMsg, failedAt: '2026-01-01T12:00:00.000Z' },
+    ]));
+
+    const result = await handleLog(db, 'user-1', ['Momentum'], client);
+
+    // truncate(str, 60) → first 57 chars + '...'
+    const expectedMsg = 'x'.repeat(57) + '...';
+    expect(result).toBe([
+      'Momentum — recent activity:',
+      `[12:00] ERR: venue.timeout — ${expectedMsg}`,
+    ].join('\n'));
+  });
+
+  it('keeps only 10 rows after splice when the merged set exceeds 10, then shows 5', async () => {
+    // 8 platform rows (older) + 6 boundary failures (newer) = 14 merged.
+    // After sort desc + splice(10), the 6 newest failures + the 4 newest platform
+    // rows survive; the 4 oldest platform rows are dropped. The render shows the
+    // 5 most recent (all failures) oldest-first.
+    const platformRows = Array.from({ length: 8 }, (_, i) => ({
+      source: 'msg' as const,
+      raw_type: 'system.heartbeat',
+      subject: null,
+      body_text: null,
+      failure_msg: null,
+      // 09:00 .. 09:07
+      created_at: new Date(`2026-01-01T09:0${i}:00.000Z`),
+    }));
+    const failures = Array.from({ length: 6 }, (_, i) => ({
+      failureCode: `err.${i}`,
+      failureMessage: `msg ${i}`,
+      // 11:00 .. 11:05 (all newer than every platform row)
+      failedAt: `2026-01-01T11:0${i}:00.000Z`,
+    }));
+    const { db } = makeLogDb(AGENT, platformRows);
+    const { client } = makeFailuresClient(successFailures(failures));
+
+    const result = await handleLog(db, 'user-1', ['Momentum'], client);
+
+    // 5 most-recent = failures 11:05,11:04,11:03,11:02,11:01 → reversed oldest-first.
+    expect(result).toBe([
+      'Momentum — recent activity:',
+      '[11:01] ERR: err.1 — msg 1',
+      '[11:02] ERR: err.2 — msg 2',
+      '[11:03] ERR: err.3 — msg 3',
+      '[11:04] ERR: err.4 — msg 4',
+      '[11:05] ERR: err.5 — msg 5',
+    ].join('\n'));
+  });
+
+  it('degrades to platform-only output when no boundary client is supplied', async () => {
+    const platformRows = [
+      { source: 'msg', raw_type: 'agent.decision.go_flat', subject: null, body_text: null, failure_msg: null, created_at: new Date('2026-01-01T08:00:00.000Z') },
+      { source: 'outbound', raw_type: 'agent', subject: 'Rebalanced portfolio', body_text: null, failure_msg: null, created_at: new Date('2026-01-01T08:01:00.000Z') },
+    ];
+    const { db } = makeLogDb(AGENT, platformRows);
+
+    // No tradertonReadClient → the failure leg is simply omitted, no throw/503.
+    const result = await handleLog(db, 'user-1', ['Momentum']);
+
+    expect(result).toBe([
+      'Momentum — recent activity:',
+      '[08:00] DECISION',
+      '[08:01] AGENT: Rebalanced portfolio',
+    ].join('\n'));
+  });
+
+  it('degrades to platform-only output when the boundary read fails (no error/503)', async () => {
+    const platformRows = [
+      { source: 'msg', raw_type: 'agent.decision.go_long', subject: null, body_text: null, failure_msg: null, created_at: new Date('2026-01-01T08:00:00.000Z') },
+    ];
+    const { db } = makeLogDb(AGENT, platformRows);
+    // transport_error → loadAgentEvidence returns { ok: false } → failure leg skipped.
+    const { client } = makeFailuresClient({ kind: 'transport_error', requestId: 'r', message: 'boundary down', retryable: true });
+
+    const result = await handleLog(db, 'user-1', ['Momentum'], client);
+
+    expect(result).toBe([
+      'Momentum — recent activity:',
+      '[08:00] DECISION',
+    ].join('\n'));
   });
 });

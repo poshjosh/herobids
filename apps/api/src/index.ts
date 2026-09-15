@@ -238,6 +238,8 @@ await telegramWebhookHandler(
   { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps,
   appConfig.agentRiskDefaults,
   appConfig.agentRuntime.llm.modelDefaults,
+  tradertonBotClient,
+  appConfig.boundary.requestTimeoutMs,
 );
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)

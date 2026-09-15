@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, notInArray, desc, sql, or, asc, isNull, isNotNull, sum } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, desc, sql, asc, isNull } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
 import {
@@ -17,21 +17,22 @@ import {
   blueprints,
   blueprintRevisions,
   blueprintRevisionSkills,
-  bots,
   connections,
-  decisions,
-  decisionFailures,
-  executionPlans,
   users,
-  venueAccounts,
-  positions,
   resolveSkillAssignmentsForUser,
   resolveSkillIdsBySlugOrId,
   syncAgentSkillAssignments,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+import {
+  createTradertonReadBoundary,
+  loadAgentEvidence,
+  toPositionRow,
+  type TradertonReadBoundary,
+  type PositionRow as ReadPositionRow,
+} from './exports-traderton.js';
 import {
   AgentRiskDefaultsSchema,
   AgentRuntimePolicyOverridesSchema,
@@ -91,6 +92,46 @@ import {
   resolveSessionStopReasons,
 } from './agent-activity-mapper.js';
 import type { AgentActivityEntry } from './agent-activity-types.js';
+
+/** Fallback read deadline when the operator boundary timeout is not supplied. */
+const DEFAULT_READ_TIMEOUT_MS = 10_000;
+
+/** Returned when the trading read boundary is not configured — mirrors dashboard.ts. */
+const boundaryUnconfiguredError = {
+  status: 503,
+  code: 'precondition.not_ready',
+  message: 'Trading service is unavailable — the read could not be produced.',
+} as const;
+
+/**
+ * Row shape of `get_agent_decisions` over the Traderton read boundary. Each row
+ * carries the projected decision columns plus a derived `status` (folded from
+ * the agent's owned bots + execution-plan status). Nullable fields pass through
+ * as-is; timestamps arrive as ISO strings and are re-serialized verbatim.
+ */
+type AgentDecisionRow = {
+  id: string;
+  venueAccountId?: string | null;
+  instrumentId?: string | null;
+  intent?: string | null;
+  targetSize?: string | null;
+  limitPrice?: string | null;
+  contextHash?: string | null;
+  actorType?: string | null;
+  actorId?: string | null;
+  metadata?: unknown;
+  createdAt: string;
+  status?: string | null;
+};
+
+/** Row shape of `list_owner_bots` — the subset used by the agent-delete cascade. */
+type OwnerBotRow = {
+  id: string;
+  status: string;
+  creatorType?: string | null;
+  creatorId?: string | null;
+  venueAccountId?: string | null;
+};
 
 // --- Request Schemas ---
 const AgentNameSchema = z.string().min(1).max(100).refine((value) => {
@@ -359,6 +400,45 @@ export async function agentRoutes(
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const approvalRepo = new DecisionApprovalRepository(db);
+
+  // Fallback read deadline when the operator boundary timeout is not supplied.
+  const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
+
+  // Build a read boundary bound to a specific agent's actor subject. Agent-scoped
+  // trading reads (positions/decisions/failures) fold the agent's own bots, so a
+  // per-agent boundary replaces the old local bots-scoping + union joins.
+  const agentBoundary = (userId: string, agentId: string): TradertonReadBoundary => {
+    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
+    return createTradertonReadBoundary(tradertonReadClient!, subject, readDeadlineMs);
+  };
+
+  // Build a read boundary bound to the requesting user's actor subject — used by
+  // the owner-scoped read tools (`list_owner_bots`) during the delete cascade.
+  const userBoundary = (userId: string): TradertonReadBoundary => {
+    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
+    return createTradertonReadBoundary(tradertonReadClient!, subject, readDeadlineMs);
+  };
+
+  // Route a user-initiated bot side effect to the Traderton boundary, injecting
+  // ownerId + actor(type:'user') ONLY (mirrors bots.ts `invokeBoundary`). Used by
+  // the agent-delete cascade to stop/delete an agent's owned bots. NO silent
+  // fallback — an absent client surfaces a retryable transport_error so the
+  // caller fails closed.
+  const invokeBotWrite = async (
+    toolName: 'stop_bot' | 'delete_bot',
+    payload: Record<string, unknown>,
+    userId: string,
+  ): Promise<TradertonClientResult> => {
+    if (!tradertonReadClient) {
+      return { kind: 'transport_error', requestId: '', retryable: true, message: 'trading boundary not configured' };
+    }
+    return tradertonReadClient.invoke({
+      toolName,
+      payload,
+      subject: { ownerId: userId, actor: { type: 'user', id: userId } },
+      deadlineMs: readDeadlineMs,
+    });
+  };
 
   function resolveSkillPlanPolicy(planId: string, isAdmin: boolean) {
     if (!plansConfig) {
@@ -709,14 +789,16 @@ export async function agentRoutes(
   // Each capability family contributes its own outcome shape; the frontend
   // renders whichever families are present rather than assuming trading.
   //
-  // Trading outcomes: realized PnL, trade counts, win-rate inputs via a
-  // two-part union of agent-direct positions and bot-owned positions
-  // attributed via agent_connections → bots.
+  // Trading outcomes: realized PnL, trade counts, win-rate inputs. Per agent,
+  // `get_agent_positions` returns BOTH agent-native positions AND agent-owned-bot
+  // positions over the Traderton read boundary — folding the old two-part union
+  // (agent-direct + bot-owned via agent_connections) into one agent-scoped read.
   app.get('/agents/outcomes', async (request, reply) => {
+    const userId = request.userId;
     const agentRows = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(eq(agents.userId, request.userId));
+      .where(eq(agents.userId, userId));
 
     const agentIds = agentRows.map((a) => a.id);
 
@@ -724,95 +806,73 @@ export async function agentRoutes(
       return reply.send({ outcomes: [] });
     }
 
-    // Part 1: Agent-direct positions — grouped by actorId (the agent itself).
-    const directQuery = db
-      .select({
-        agentId: positions.actorId,
-        totalPnl: sum(positions.realizedPnl),
-        openPositionCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NULL)::int`,
-        winningClosedCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NOT NULL AND ${positions.realizedPnl} > '0')::int`,
-        closedPositionCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NOT NULL)::int`,
-      })
-      .from(positions)
-      .where(and(
-        eq(positions.actorType, 'agent'),
-        inArray(positions.actorId, agentIds),
-        isNotNull(positions.actorId),
-      ))
-      .groupBy(positions.actorId);
-
-    // Part 2: Bot-owned positions attributed via agent_connections → bots.
-    const botOwnedQuery = db
-      .select({
-        agentId: agentConnections.agentId,
-        totalPnl: sum(positions.realizedPnl),
-        openPositionCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NULL)::int`,
-        winningClosedCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NOT NULL AND ${positions.realizedPnl} > '0')::int`,
-        closedPositionCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NOT NULL)::int`,
-      })
-      .from(positions)
-      .innerJoin(bots, and(
-        eq(bots.id, positions.actorId),
-        eq(positions.actorType, 'bot'),
-      ))
-      .innerJoin(agentConnections, eq(agentConnections.connectionId, bots.connectionId))
-      .where(inArray(agentConnections.agentId, agentIds))
-      .groupBy(agentConnections.agentId);
-
-    const [directResults, botOwnedResults] = await Promise.all([directQuery, botOwnedQuery]);
-
-    // Merge both result sets by agentId.
-    const tradingByAgent = new Map<string, {
-      totalPnl: number;
-      openPositionCount: number;
-      winningClosedCount: number;
-      closedPositionCount: number;
-    }>();
-
-    for (const row of directResults) {
-      if (!row.agentId) continue;
-      tradingByAgent.set(row.agentId, {
-        totalPnl: Number(row.totalPnl ?? '0'),
-        openPositionCount: row.openPositionCount ?? 0,
-        winningClosedCount: row.winningClosedCount ?? 0,
-        closedPositionCount: row.closedPositionCount ?? 0,
-      });
+    // The read is core to this endpoint — without a boundary client there is
+    // nothing to assemble, so degrade to 503 rather than serve a hollow read.
+    if (!tradertonReadClient) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+      );
     }
 
-    for (const row of botOwnedResults) {
-      if (!row.agentId) continue;
-      const existing = tradingByAgent.get(row.agentId);
-      if (existing) {
-        existing.totalPnl += Number(row.totalPnl ?? '0');
-        existing.openPositionCount += row.openPositionCount ?? 0;
-        existing.winningClosedCount += row.winningClosedCount ?? 0;
-        existing.closedPositionCount += row.closedPositionCount ?? 0;
-      } else {
-        tradingByAgent.set(row.agentId, {
-          totalPnl: Number(row.totalPnl ?? '0'),
-          openPositionCount: row.openPositionCount ?? 0,
-          winningClosedCount: row.winningClosedCount ?? 0,
-          closedPositionCount: row.closedPositionCount ?? 0,
-        });
-      }
+    // Fan the per-agent position reads out in parallel rather than serially —
+    // the old endpoint was a single all-agents query, so there is no per-agent
+    // partial-failure concept: any read failure fails the whole response (503
+    // or its terminal boundary status), preserving that all-or-nothing shape.
+    const loaded = await Promise.all(
+      agentIds.map((agentId) =>
+        loadAgentEvidence<ReadPositionRow>(
+          agentBoundary(userId, agentId),
+          'get_agent_positions',
+          {},
+          'positions',
+          toPositionRow,
+        ).then((res) => ({ agentId, res })),
+      ),
+    );
+
+    const firstFailure = loaded.find((l) => !l.res.ok);
+    if (firstFailure && !firstFailure.res.ok) {
+      const { error } = firstFailure.res;
+      return reply.status(error.status).send(errorPayload(error.code, error.message));
     }
 
-    const outcomes = agentIds.map((agentId) => {
-      const trading = tradingByAgent.get(agentId);
-      const agentOutcomes: Record<string, unknown> = {};
-      if (trading) {
+    const outcomes: Array<{
+      agentId: string;
+      outcomes: { trading?: { totalRealizedPnl: string; openPositionCount: number; closedPositionCount: number; winningClosedCount: number } };
+    }> = [];
+
+    for (const { agentId, res } of loaded) {
+      // Guarded above: every entry is ok here.
+      const rows = res.ok ? res.rows : [];
+      const agentOutcomes: { trading?: { totalRealizedPnl: string; openPositionCount: number; closedPositionCount: number; winningClosedCount: number } } = {};
+
+      // Only agents with positions get a `trading` block — matching the prior
+      // behaviour where only agents with a tradingByAgent entry got it.
+      if (rows.length > 0) {
+        let openPositionCount = 0;
+        let closedPositionCount = 0;
+        let winningClosedCount = 0;
+        let totalRealizedPnl = 0;
+        for (const pos of rows) {
+          const realized = Number(pos.realizedPnl ?? '0');
+          totalRealizedPnl += realized;
+          if (pos.closedAt === null) {
+            openPositionCount += 1;
+          } else {
+            closedPositionCount += 1;
+            if (realized > 0) winningClosedCount += 1;
+          }
+        }
         agentOutcomes.trading = {
-          totalRealizedPnl: trading.totalPnl.toFixed(6),
-          openPositionCount: trading.openPositionCount,
-          closedPositionCount: trading.closedPositionCount,
-          winningClosedCount: trading.winningClosedCount,
+          totalRealizedPnl: totalRealizedPnl.toFixed(6),
+          openPositionCount,
+          closedPositionCount,
+          winningClosedCount,
         };
       }
-      return {
-        agentId,
-        outcomes: agentOutcomes as { trading?: { totalRealizedPnl: string; openPositionCount: number; closedPositionCount: number; winningClosedCount: number } },
-      };
-    });
+
+      outcomes.push({ agentId, outcomes: agentOutcomes });
+    }
 
     return reply.send({ outcomes });
   });
@@ -1703,6 +1763,53 @@ export async function agentRoutes(
       );
     }
 
+    // 0. Tear down the agent's owned bots over the Traderton boundary BEFORE any
+    //    platform-table deletes. Traderton owns bots now (the local `bots` table
+    //    is gone from this cascade), so the delete now REQUIRES the boundary — if
+    //    it is absent/transport-unavailable we FAIL CLOSED (503) and leave the
+    //    agent + its bots intact rather than orphaning bots behind a deleted
+    //    agent. An agent's bots are NOT guaranteed stopped at delete time (the
+    //    worker health-monitor stops them asynchronously), so stop each running
+    //    bot before deleting it.
+    if (!tradertonReadClient) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, 'Trading service is unavailable — the agent could not be deleted.'),
+      );
+    }
+    const listed = await loadAgentEvidence<OwnerBotRow>(
+      userBoundary(request.userId),
+      'list_owner_bots',
+      {},
+      'bots',
+      (r) => r as OwnerBotRow,
+    );
+    if (!listed.ok) {
+      return reply.status(listed.error.status).send(errorPayload(listed.error.code, listed.error.message));
+    }
+    const agentOwnedBots = listed.rows.filter(
+      (b) => b.creatorType === 'agent' && b.creatorId === id,
+    );
+    for (const bot of agentOwnedBots) {
+      if (bot.status === 'running') {
+        const stopResult = await invokeBotWrite('stop_bot', { botId: bot.id }, request.userId);
+        if (stopResult.kind !== 'success') {
+          // Cannot stop → cannot safely delete. Fail closed.
+          return reply.status(boundaryUnconfiguredError.status).send(
+            errorPayload(boundaryUnconfiguredError.code, 'Trading service is unavailable — the agent could not be deleted.'),
+          );
+        }
+      }
+      const deleteResult = await invokeBotWrite('delete_bot', { botId: bot.id }, request.userId);
+      if (deleteResult.kind !== 'success') {
+        // A transport/absent boundary — OR a `bot.running` 409 racing a just-issued
+        // stop — means the cascade cannot complete. This is a DELETE mutation, so
+        // ABORT the agent delete (fail closed) rather than orphan the bot.
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, 'Trading service is unavailable — the agent could not be deleted.'),
+        );
+      }
+    }
+
     // Agent deletion cleanup — execution order resolves all FK chains.
     // See docs/features/2026/06/20/003-agent-deletion-cleanup/001-plan.md.
     // 1-2. DELETE agent-scoped child rows (no FK to agent_runtime_sessions)
@@ -1731,15 +1838,13 @@ export async function agentRoutes(
       .update(billingUsageEvents)
       .set({ sessionId: null, agentId: null })
       .where(and(eq(billingUsageEvents.agentId, id), isNull(billingUsageEvents.sessionId)));
-    // 6. DELETE agent-created bots (must precede binding/venue_account cleanup)
-    await db.delete(bots).where(
-      and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)),
-    );
+    // 6. Agent-owned bots were torn down over the Traderton boundary at step 0
+    //    (fail-closed) — Traderton owns bots, so there is no local `bots` delete.
     // 7. Clean up orphaned connections: for each connection linked exclusively to this
-    //    agent (no other agent holds an agent_connection to it), revoke the connection
-    //    and null out the venue account's credentialId so the credential can be deleted.
+    //    agent (no other agent holds an agent_connection to it), revoke the connection.
     //    Connections are user-owned and persist after agent deletion; only the linkage
-    //    is cleaned up here.
+    //    is cleaned up here. Venue-account/credential teardown is boundary-owned (via
+    //    the separate provider-link path) — no local venue_accounts write happens here.
     const myConnRows = await db
       .select({ connectionId: agentConnections.connectionId })
       .from(agentConnections)
@@ -1754,20 +1859,11 @@ export async function agentRoutes(
         .from(agentConnections)
         .where(eq(agentConnections.connectionId, connectionId));
       if (allUsersOfConn.length === 1) {
-        const [conn] = await db
-          .select({ id: connections.id, resolvedVenueAccountId: connections.resolvedVenueAccountId })
-          .from(connections)
+        // The update is a no-op if the connection row is already gone, so no
+        // separate existence read is needed here.
+        await db.update(connections)
+          .set({ status: 'revoked' })
           .where(eq(connections.id, connectionId));
-        if (conn) {
-          if (conn.resolvedVenueAccountId) {
-            await db.update(venueAccounts)
-              .set({ credentialId: null })
-              .where(eq(venueAccounts.id, conn.resolvedVenueAccountId));
-          }
-          await db.update(connections)
-            .set({ status: 'revoked' })
-            .where(eq(connections.id, connectionId));
-        }
       }
     }
     // 8. DELETE agents (cascades: agent_skills, agent_connections, agent_connection_audit, market_assessment_requests)
@@ -1989,40 +2085,43 @@ export async function agentRoutes(
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
     if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-    const agentBots = await db.select({ id: bots.id }).from(bots)
-      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
-    const agentBotIds = agentBots.map((b) => b.id);
-
-    const decisionOwners = [
-      and(eq(decisions.actorType, 'agent'), eq(decisions.actorId, id)),
-    ];
-    if (agentBotIds.length > 0) {
-      decisionOwners.push(and(eq(decisions.actorType, 'bot'), inArray(decisions.actorId, agentBotIds)));
+    // The decisions read is core to this endpoint — without a boundary client
+    // there is nothing to return, so degrade to 503.
+    if (!tradertonReadClient) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+      );
     }
 
-    const agentDecisions = await db.select({
-      id: decisions.id,
-      venueAccountId: decisions.venueAccountId,
-      instrumentId: decisions.instrumentId,
-      intent: decisions.intent,
-      targetSize: decisions.targetSize,
-      limitPrice: decisions.limitPrice,
-      contextHash: decisions.contextHash,
-      actorType: decisions.actorType,
-      actorId: decisions.actorId,
-      metadata: decisions.metadata,
-      createdAt: decisions.createdAt,
-      // Derived from execution_plans — decisions are append-only with no status column
-      status: sql<string | null>`(
-        SELECT ep.status FROM ${executionPlans} ep
-        WHERE ep.decision_id = ${decisions.id}
-        ORDER BY ep.created_at DESC
-        LIMIT 1
-      )`.as('status'),
-    }).from(decisions)
-      .where(or(...decisionOwners))
-      .orderBy(desc(decisions.createdAt))
-      .limit(limit);
+    // `get_agent_decisions` folds the agent's own bots and derives per-row
+    // `status` over the boundary — replacing the old local bots-scoping +
+    // decisions read + execution_plans status subquery.
+    const boundary = agentBoundary(request.userId, id);
+    const loaded = await loadAgentEvidence<AgentDecisionRow>(
+      boundary,
+      'get_agent_decisions',
+      { limit },
+      'decisions',
+      (r) => r as AgentDecisionRow,
+    );
+    if (!loaded.ok) {
+      return reply.status(loaded.error.status).send(errorPayload(loaded.error.code, loaded.error.message));
+    }
+
+    const agentDecisions = loaded.rows.map((d) => ({
+      id: d.id,
+      venueAccountId: d.venueAccountId ?? null,
+      instrumentId: d.instrumentId ?? null,
+      intent: d.intent ?? null,
+      targetSize: d.targetSize ?? null,
+      limitPrice: d.limitPrice ?? null,
+      contextHash: d.contextHash ?? null,
+      actorType: d.actorType ?? null,
+      actorId: d.actorId ?? null,
+      metadata: d.metadata ?? null,
+      createdAt: d.createdAt,
+      status: d.status ?? null,
+    }));
 
     return reply.send(agentDecisions);
   });
@@ -2180,18 +2279,30 @@ export async function agentRoutes(
 
     const limit = Math.min(parseInt(request.query.limit || '50', 10) || 50, 200);
     const sinceFilter = request.query.since ? new Date(request.query.since) : undefined;
+    const since = sinceFilter && !isNaN(sinceFilter.getTime()) ? sinceFilter.toISOString() : undefined;
 
-    const conditions = [eq(decisionFailures.actorId, id)];
-    if (sinceFilter && !isNaN(sinceFilter.getTime())) {
-      conditions.push(sql`${decisionFailures.failedAt} >= ${sinceFilter}`);
+    // The failure read is core to this endpoint — without a boundary client
+    // there is nothing to return, so degrade to 503.
+    if (!tradertonReadClient) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+      );
     }
 
-    const rows = await db.select().from(decisionFailures)
-      .where(and(...conditions))
-      .orderBy(desc(decisionFailures.failedAt))
-      .limit(limit);
+    // `get_agent_decision_failures` is agent-actor scoped (actorType='agent').
+    const boundary = agentBoundary(request.userId, id);
+    const loaded = await loadAgentEvidence<Record<string, unknown>>(
+      boundary,
+      'get_agent_decision_failures',
+      { since, limit },
+      'failures',
+      (r) => r as Record<string, unknown>,
+    );
+    if (!loaded.ok) {
+      return reply.status(loaded.error.status).send(errorPayload(loaded.error.code, loaded.error.message));
+    }
 
-    return reply.send({ agentId: id, failures: rows });
+    return reply.send({ agentId: id, failures: loaded.rows });
   });
 
   // --- Approvals ---

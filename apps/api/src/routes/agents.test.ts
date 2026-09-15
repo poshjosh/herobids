@@ -18,6 +18,7 @@ import {
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
@@ -227,6 +228,45 @@ function buildDb(options: {
   return { db, insertedValues, updateSets, updateTableCalls, deletedTargets };
 }
 
+/**
+ * A Traderton read/write boundary stub for the re-pointed agent endpoints
+ * (outcomes/decisions/decision-failures) + the agent-delete bot cascade. Each
+ * tool answers from the supplied payloads; unknown tools succeed with an empty
+ * payload. Mirrors dashboard.test.ts `makeReadClient`.
+ */
+function makeTradertonStub(payloads: {
+  agentPositions?: unknown[];
+  decisions?: unknown[];
+  failures?: unknown[];
+  ownerBots?: unknown[];
+} = {}): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
+    let result: TradertonClientResult;
+    switch (input.toolName) {
+      case 'get_agent_positions':
+        result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { positions: payloads.agentPositions ?? [] } };
+        break;
+      case 'get_agent_decisions':
+        result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { decisions: payloads.decisions ?? [] } };
+        break;
+      case 'get_agent_decision_failures':
+        result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { failures: payloads.failures ?? [] } };
+        break;
+      case 'list_owner_bots':
+        result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { bots: payloads.ownerBots ?? [] } };
+        break;
+      case 'stop_bot':
+      case 'delete_bot':
+        result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} };
+        break;
+      default:
+        result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} };
+    }
+    return Promise.resolve(result);
+  });
+  return { client: { invoke } as unknown as TradertonClient, invoke };
+}
+
 function makePlansConfig(): PlansConfig {
   return {
     defaultPlanId: 'free',
@@ -424,27 +464,129 @@ describe('agent routes lifecycle', () => {
 
   it('returns agent-native decisions even when the agent has no bots', async () => {
     const { agentRoutes } = await import('./agents.js');
-    const decisionRow = {
+    // `get_agent_decisions` folds the agent's own bots + derives `status` over
+    // the boundary; the route maps each row to its projected shape.
+    const boundaryDecision = {
       id: 'dec-1',
-      actorType: 'agent',
-      actorId: 'agent-1',
+      venueAccountId: null,
       instrumentId: 'BTC',
       intent: 'go_long',
+      targetSize: '1',
+      limitPrice: null,
+      contextHash: null,
+      actorType: 'agent',
+      actorId: 'agent-1',
+      metadata: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      status: 'executed',
     };
     const { db } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'active', userId: TEST_USER_ID }],
       activeLinkRows: [],
-      txAgentRows: [decisionRow],
     });
+    const { client } = makeTradertonStub({ decisions: [boundaryDecision] });
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'GET', url: '/agents/agent-1/decisions?limit=10' });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual([decisionRow]);
+    expect(res.json()).toEqual([boundaryDecision]);
+  });
+
+  it('serializes boundary-provided ISO-string createdAt faithfully (post-migration parity)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    // Over the boundary `createdAt` arrives as an ISO STRING (not a Drizzle Date).
+    // The route maps rows verbatim, so the string must pass through byte-identical
+    // through JSON serialization — no Date coercion, no corruption, no drop.
+    const createdAt = '2026-03-14T09:26:53.589Z';
+    const boundaryRow = {
+      id: 'dec-iso-1',
+      venueAccountId: 'va-1',
+      instrumentId: 'ETH',
+      intent: 'go_short',
+      targetSize: '2.5',
+      limitPrice: '3100.75',
+      contextHash: 'ctx-abc',
+      actorType: 'agent',
+      actorId: 'agent-1',
+      metadata: { note: 'parity' },
+      createdAt,
+      status: 'pending',
+    };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'active', userId: TEST_USER_ID }],
+      activeLinkRows: [],
+    });
+    const { client } = makeTradertonStub({ decisions: [boundaryRow] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1/decisions?limit=10' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as Array<Record<string, unknown>>;
+    expect(body).toHaveLength(1);
+    const [row] = body;
+    // createdAt is carried through as the exact ISO string (no Date round-trip drift).
+    expect(row!['createdAt']).toBe(createdAt);
+    expect(typeof row!['createdAt']).toBe('string');
+    // Every mapped field carries through faithfully in the projected shape.
+    expect(row).toEqual({
+      id: 'dec-iso-1',
+      venueAccountId: 'va-1',
+      instrumentId: 'ETH',
+      intent: 'go_short',
+      targetSize: '2.5',
+      limitPrice: '3100.75',
+      contextHash: 'ctx-abc',
+      actorType: 'agent',
+      actorId: 'agent-1',
+      metadata: { note: 'parity' },
+      createdAt,
+      status: 'pending',
+    });
+    // The raw response payload re-parses cleanly (no serialization corruption).
+    expect(JSON.parse(res.payload)).toEqual(body);
+  });
+
+  it('preserves nullable decision fields as null over the boundary', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    // The route coalesces each optional field with `?? null`; a boundary row that
+    // omits them must serialize the mapped nulls (not undefined / dropped keys).
+    const createdAt = '2026-03-14T10:00:00.000Z';
+    const sparseRow = { id: 'dec-sparse', createdAt };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'active', userId: TEST_USER_ID }],
+      activeLinkRows: [],
+    });
+    const { client } = makeTradertonStub({ decisions: [sparseRow] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1/decisions?limit=10' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([{
+      id: 'dec-sparse',
+      venueAccountId: null,
+      instrumentId: null,
+      intent: null,
+      targetSize: null,
+      limitPrice: null,
+      contextHash: null,
+      actorType: null,
+      actorId: null,
+      metadata: null,
+      createdAt,
+      status: null,
+    }]);
   });
 
   it('returns starting and persists a starting session when /start is called', async () => {
@@ -518,10 +660,11 @@ describe('agent routes lifecycle', () => {
     const { db, deletedTargets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
     });
+    const { client } = makeTradertonStub();
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -540,10 +683,11 @@ describe('agent routes lifecycle', () => {
     const { db, updateTableCalls } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
     });
+    const { client } = makeTradertonStub();
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -564,19 +708,20 @@ describe('agent routes lifecycle', () => {
       connectionRows: [orphanedBinding],
       capabilityGrantRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'binding-1' }],
     });
+    const { client } = makeTradertonStub();
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(res.statusCode).toBe(204);
-    // Verify venueAccounts.credentialId was nulled for the orphaned venue account
+    // Venue-account/credential teardown is boundary-owned now — the cascade must
+    // NOT touch venue_accounts locally.
     const vaUpdate = updateTableCalls.find((c) => c.table === venueAccounts);
-    expect(vaUpdate).toBeDefined();
-    expect(vaUpdate!.values).toEqual({ credentialId: null });
-    // Verify connections was marked revoked
+    expect(vaUpdate).toBeUndefined();
+    // Verify connections was marked revoked (platform table — stays local).
     const connectionUpdate = updateTableCalls.find((c) => c.table === connections);
     expect(connectionUpdate).toBeDefined();
     expect(connectionUpdate!.values).toEqual({ status: 'revoked' });
@@ -589,10 +734,11 @@ describe('agent routes lifecycle', () => {
       connectionRows: [],
       capabilityGrantRows: [],
     });
+    const { client } = makeTradertonStub();
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -602,8 +748,8 @@ describe('agent routes lifecycle', () => {
     expect(vaUpdates).toHaveLength(0);
     const connectionUpdates = updateTableCalls.filter((c) => c.table === connections);
     expect(connectionUpdates).toHaveLength(0);
-    // But agent-created bots should still be deleted
-    expect(deletedTargets).toContain(bots);
+    // Bots are boundary-owned now — the cascade does NOT delete the local bots table.
+    expect(deletedTargets).not.toContain(bots);
   });
 
   it('preserves binding when another agent still has a grant on the same binding', async () => {
@@ -620,44 +766,95 @@ describe('agent routes lifecycle', () => {
         { id: 'grant-2', agentId: 'agent-2', connectionId: 'binding-shared' },
       ],
     });
+    const { client } = makeTradertonStub();
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(res.statusCode).toBe(204);
     // Binding is shared with another agent (2 grants in capabilityGrantRows),
-    // so it must NOT be revoked and its venue account credentialId must stay intact.
+    // so it must NOT be revoked. Venue accounts are never touched locally.
     const connectionUpdates = updateTableCalls.filter((c) => c.table === connections);
     expect(connectionUpdates).toHaveLength(0);
     const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
     expect(vaUpdates).toHaveLength(0);
   });
 
-  it('does not delete user-created or system bots', async () => {
+  it('deletes only the agent-owned bots over the boundary, not user-created or system bots', async () => {
     const { agentRoutes } = await import('./agents.js');
-    const { db, deletedTargets } = buildDb({
+    const { db } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      botRows: [
-        { id: 'bot-agent', creatorType: 'agent', creatorId: 'agent-1' },
-        { id: 'bot-user', creatorType: 'user', creatorId: TEST_USER_ID },
-        { id: 'bot-system', creatorType: 'system', creatorId: null },
+    });
+    // list_owner_bots returns all of the owner's bots (agent-native + others);
+    // the cascade filters in-app to creatorType==='agent' && creatorId===agent.
+    const { client, invoke } = makeTradertonStub({
+      ownerBots: [
+        { id: 'bot-agent', status: 'stopped', creatorType: 'agent', creatorId: 'agent-1' },
+        { id: 'bot-user', status: 'stopped', creatorType: 'user', creatorId: TEST_USER_ID },
+        { id: 'bot-system', status: 'stopped', creatorType: 'system', creatorId: null },
       ],
     });
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(res.statusCode).toBe(204);
-    // The bots table is deleted with WHERE creatorType='agent' AND creatorId=id,
-    // which targets only agent-created bots. The mock records that bots was deleted,
-    // but does not verify the WHERE clause — the implementation handles this correctly.
-    expect(deletedTargets).toContain(bots);
+    // Only the agent-owned bot is deleted over the boundary; the stopped bot is
+    // deleted directly (no stop_bot needed).
+    const deleteCalls = invoke.mock.calls.filter((c) => c[0].toolName === 'delete_bot');
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0][0].payload).toEqual({ botId: 'bot-agent' });
+    // No stop_bot — the agent-owned bot is already stopped.
+    const stopCalls = invoke.mock.calls.filter((c) => c[0].toolName === 'stop_bot');
+    expect(stopCalls).toHaveLength(0);
+  });
+
+  it('stops a running agent-owned bot before deleting it', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+    });
+    const { client, invoke } = makeTradertonStub({
+      ownerBots: [
+        { id: 'bot-running', status: 'running', creatorType: 'agent', creatorId: 'agent-1' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+    const calls = invoke.mock.calls.map((c) => c[0].toolName);
+    // stop_bot must precede delete_bot for a running bot.
+    expect(calls.indexOf('stop_bot')).toBeGreaterThan(-1);
+    expect(calls.indexOf('delete_bot')).toBeGreaterThan(calls.indexOf('stop_bot'));
+  });
+
+  it('fails closed with 503 when the trading boundary is unavailable during delete', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, deletedTargets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    // No boundary client → cannot prove the agent's bots are gone → fail closed.
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(503);
+    // The agent must NOT be deleted while its bots may still exist.
+    expect(deletedTargets).not.toContain(agents);
   });
 
   it('handles orphaned venue account with null resolvedVenueAccountId gracefully', async () => {
@@ -673,15 +870,16 @@ describe('agent routes lifecycle', () => {
         { id: 'grant-1', agentId: 'agent-1', connectionId: 'binding-null-va' },
       ],
     });
+    const { client } = makeTradertonStub();
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(res.statusCode).toBe(204);
-    // No venue account update should occur since resolvedVenueAccountId is null
+    // Venue accounts are never touched locally (boundary-owned).
     const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
     expect(vaUpdates).toHaveLength(0);
     // But binding should still be revoked
@@ -704,29 +902,32 @@ describe('agent routes lifecycle', () => {
         { id: 'grant-1', agentId: 'agent-1', connectionId: 'binding-1' },
       ],
     });
+    const { client, invoke } = makeTradertonStub({
+      ownerBots: [{ id: 'bot-agent', status: 'stopped', creatorType: 'agent', creatorId: 'agent-1' }],
+    });
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(res.statusCode).toBe(204);
 
-    // Step 5: agent-created bots deleted
-    expect(deletedTargets).toContain(bots);
+    // Step 0: the agent-owned bot torn down over the boundary
+    const deleteBotCalls = invoke.mock.calls.filter((c) => c[0].toolName === 'delete_bot');
+    expect(deleteBotCalls).toHaveLength(1);
 
-    // Step 7: credentialId nulled on the linked venue account
+    // Venue-account/credential teardown is boundary-owned — no local venue_accounts write.
     const vaUpdate = updateTableCalls.find((c) => c.table === venueAccounts);
-    expect(vaUpdate).toBeDefined();
-    expect(vaUpdate!.values).toEqual({ credentialId: null });
+    expect(vaUpdate).toBeUndefined();
 
-    // Step 8: connection revoked
+    // Connection revoked (platform table — stays local)
     const connectionUpdate = updateTableCalls.find((c) => c.table === connections);
     expect(connectionUpdate).toBeDefined();
     expect(connectionUpdate!.values).toEqual({ status: 'revoked' });
 
-    // Step 9: agent deleted
+    // Agent deleted last
     expect(deletedTargets).toContain(agents);
   });
 
@@ -747,10 +948,11 @@ describe('agent routes lifecycle', () => {
         { id: 'grant-2', agentId: 'agent-2', connectionId: 'binding-shared' },
       ],
     });
+    const { client: client1 } = makeTradertonStub();
 
     const app1 = Fastify();
     decorateWithAuth(app1);
-    await agentRoutes(app1, db1);
+    await agentRoutes(app1, db1, undefined, undefined, undefined, undefined, undefined, undefined, client1);
 
     const res1 = await app1.inject({ method: 'DELETE', url: '/agents/agent-1' });
     expect(res1.statusCode).toBe(204);
@@ -758,7 +960,7 @@ describe('agent routes lifecycle', () => {
     // Binding must NOT be revoked — agent-2 still uses it.
     const bindingUpdates1 = calls1.filter((c) => c.table === connections);
     expect(bindingUpdates1).toHaveLength(0);
-    // credentialId must NOT be nulled — agent-2's venue account still needs it.
+    // Venue accounts are never touched locally (boundary-owned).
     const vaUpdates1 = calls1.filter((c) => c.table === venueAccounts);
     expect(vaUpdates1).toHaveLength(0);
   });
@@ -778,10 +980,11 @@ describe('agent routes lifecycle', () => {
         { id: 'grant-2', agentId: 'agent-2', connectionId: 'binding-shared' },
       ],
     });
+    const { client: client2 } = makeTradertonStub();
 
     const app2 = Fastify();
     decorateWithAuth(app2);
-    await agentRoutes(app2, db2);
+    await agentRoutes(app2, db2, undefined, undefined, undefined, undefined, undefined, undefined, client2);
 
     const res2 = await app2.inject({ method: 'DELETE', url: '/agents/agent-2' });
     expect(res2.statusCode).toBe(204);
@@ -791,10 +994,9 @@ describe('agent routes lifecycle', () => {
     expect(bindingUpdate2).toBeDefined();
     expect(bindingUpdate2!.values).toEqual({ status: 'revoked' });
 
-    // credentialId must be nulled to unblock credential deletion.
+    // Venue accounts are never touched locally (boundary-owned).
     const vaUpdate2 = calls2.find((c) => c.table === venueAccounts);
-    expect(vaUpdate2).toBeDefined();
-    expect(vaUpdate2!.values).toEqual({ credentialId: null });
+    expect(vaUpdate2).toBeUndefined();
   });
 });
 
