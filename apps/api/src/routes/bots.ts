@@ -3,9 +3,9 @@ import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, connections, blueprints, blueprintRevisions, PgJournal, fills, journalEvents } from '@herobids/db';
+import { connections, blueprints, blueprintRevisions } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
@@ -56,13 +56,14 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   };
 
   // Bot READS route over the owner-scoped Traderton boundary tools
-  // (`list_owner_bots` / `get_owner_bot_status`). The read boundary is present
-  // exactly when the write `tradertonClient` is — they share the same transport
-  // + subject (ownerId + actor(user)); a read is a single synchronous invoke.
-  // When ABSENT, callers fall back to the local `bots` mirror (transitional —
-  // ledger ruling 5). This mirrors the worker read-adapter's client→read-result
-  // mapping (in_progress/transport_error become typed retryable failures).
-  const hasReadBoundary = tradertonClient !== undefined;
+  // (`list_owner_bots` / `get_owner_bot_status` / ...). The read boundary is
+  // present exactly when the write `tradertonClient` is — they share the same
+  // transport + subject (ownerId + actor(user)); a read is a single synchronous
+  // invoke. The boundary is MANDATORY: when it is absent or returns
+  // transport_error/in_progress, callers surface a typed 503 precondition.not_ready
+  // (no local `bots` mirror fallback). This mirrors the worker read-adapter's
+  // client→read-result mapping (in_progress/transport_error become typed
+  // retryable failures).
   const readBoundary = async (
     toolName:
       | 'list_owner_bots'
@@ -108,32 +109,28 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   };
 
   // Resolve a bot's existence + status + config + ownership for the lifecycle
-  // handlers (DELETE/stop/start). When the boundary is present it is the source
-  // of truth (owner-scoped: a bot not owned by this user resolves as
-  // not-found); otherwise fall back to the local `bots` mirror (ruling 5). The
-  // lifecycle ACTION still routes over the write boundary — this only resolves
-  // the pre-action existence/ownership/status gate.
+  // handlers (DELETE/stop/start). The boundary is the sole source of truth
+  // (owner-scoped: a bot not owned by this user resolves as not-found). When the
+  // boundary is absent or transiently unavailable this resolves to
+  // `{kind:'unavailable'}` (callers map that to a 503). The lifecycle ACTION
+  // still routes over the write boundary — this only resolves the pre-action
+  // existence/ownership/status gate.
   type ResolvedBot =
     | { kind: 'found'; status: string; config: Record<string, unknown> }
     | { kind: 'not_found' }
     | { kind: 'unavailable' };
   const resolveBotForLifecycle = async (id: string, userId: string): Promise<ResolvedBot> => {
-    if (hasReadBoundary) {
-      const result = await readBoundary('get_owner_bot_status', { botId: id }, userId);
-      if (result.kind === 'success') {
-        const data = (result.data ?? {}) as Record<string, unknown>;
-        const status = typeof data['status'] === 'string' ? data['status'] : 'stopped';
-        const config = (data['config'] as Record<string, unknown> | undefined) ?? {};
-        return { kind: 'found', status, config };
-      }
-      if (result.kind === 'failure') {
-        return result.code === 'not_found.resource' ? { kind: 'not_found' } : { kind: 'unavailable' };
-      }
-      return { kind: 'unavailable' };
+    const result = await readBoundary('get_owner_bot_status', { botId: id }, userId);
+    if (result.kind === 'success') {
+      const data = (result.data ?? {}) as Record<string, unknown>;
+      const status = typeof data['status'] === 'string' ? data['status'] : 'stopped';
+      const config = (data['config'] as Record<string, unknown> | undefined) ?? {};
+      return { kind: 'found', status, config };
     }
-    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, userId)));
-    if (!bot) return { kind: 'not_found' };
-    return { kind: 'found', status: bot.status, config: (bot.config as Record<string, unknown>) ?? {} };
+    if (result.kind === 'failure') {
+      return result.code === 'not_found.resource' ? { kind: 'not_found' } : { kind: 'unavailable' };
+    }
+    return { kind: 'unavailable' };
   };
 
   // Create bot
@@ -280,10 +277,24 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const [existing] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!existing) {
-      return reply.status(404).send({ error: 'not_found' });
+    // Resolve the bot's existence + current status/config + creator over the
+    // owner-scoped boundary read (ruling 1). Owner-scoped: a bot not owned by
+    // this user resolves as not_found → 404. The boundary is mandatory —
+    // absent/transport/in_progress → 503.
+    const existingResult = await readBoundary('get_owner_bot_status', { botId: id }, request.userId);
+    if (existingResult.kind === 'failure') {
+      if (existingResult.code === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(502).send(errorPayload(existingResult.code, existingResult.message, {}));
     }
+    if (existingResult.kind !== 'success') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the config change was not applied.', {}));
+    }
+    const existingData = (existingResult.data ?? {}) as Record<string, unknown>;
+    const existingConfig = (existingData['config'] as Record<string, unknown> | undefined) ?? {};
+    const existingCreatorType = existingData['creatorType'] as string | undefined;
+    const existingCreatorId = existingData['creatorId'] as string | undefined;
 
     // Pass-through canonical execution mode; non-canonical values (including `test`)
     // will be rejected by BotConfigSchema validation. Bots always require a venue.
@@ -299,11 +310,15 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
-    // Validate execution capability for the updated config against the bot's venue type
+    // Validate execution capability for the updated config against the bot's venue
+    // type. The bot's venue is carried in its persisted config (stamped from the
+    // connection at create via normalizeBotConfig); the boundary surfaces it as
+    // `config.venue`, so we derive the venue type from there — the boundary read
+    // does not return a connectionId, and config.venue is the same value the
+    // connection.provider lookup previously resolved.
     if (newExecutionMode) {
-      const [conn] = await db.select({ provider: connections.provider }).from(connections)
-        .where(eq(connections.id, existing.connectionId));
-      const botVenueType = conn ? venueTypeFromProvider(conn.provider) : undefined;
+      const existingVenue = existingConfig['venue'];
+      const botVenueType = typeof existingVenue === 'string' ? venueTypeFromProvider(existingVenue) : undefined;
       if (botVenueType) {
         const capCheck = validateExecutionCapability({
           actorType: 'bot',
@@ -329,23 +344,19 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
-    await db.update(bots)
-      .set({ config: parsed.data.config, updatedAt: new Date() })
-      .where(eq(bots.id, id));
-
     // Notify the agent when a user changes an agent-created bot's execution mode.
-    if (existing.creatorType === 'agent' && existing.creatorId && newExecutionMode) {
-      const previousMode = (existing.config as Record<string, unknown>)?.['execution'] as Record<string, unknown> | undefined;
+    if (existingCreatorType === 'agent' && existingCreatorId && newExecutionMode) {
+      const previousMode = existingConfig['execution'] as Record<string, unknown> | undefined;
       const prevMode = typeof previousMode?.['mode'] === 'string' ? previousMode['mode'] : null;
       if (prevMode !== newExecutionMode) {
-        const streamKey = `agent:inbound:${existing.creatorId}`;
+        const streamKey = `agent:inbound:${existingCreatorId}`;
         const envelope = {
           schemaVersion: 'v1',
           messageId: crypto.randomUUID(),
           correlationId: crypto.randomUUID(),
           initiatorType: 'system',
           initiatorId: 'api',
-          agentId: existing.creatorId,
+          agentId: existingCreatorId,
           type: INSTANCE_MESSAGE_TYPES.BOT_CONFIG_CHANGED,
           createdAt: new Date().toISOString(),
           payload: {
@@ -362,329 +373,184 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
-    // L3c: apply the config change over the boundary instead of enqueuing a
-    // trading-instance-lifecycle restart. Traderton owns the bot config + the
-    // restart; herobids injects ownerId + actor(user) only (D2). NO silent
-    // fallback to the lifecycle queue. (The local db.update(bots) above is a
-    // DELETE-side write tracked in 004-l3d-plan.md §D — L3d removes it.)
-    if (existing.status === 'running') {
-      const adjustResult = await invokeBoundary('adjust_bot_config', {
-        botId: id,
-        config: parsed.data.config,
-      }, request.userId);
-      if (adjustResult.kind === 'transport_error' || adjustResult.kind === 'in_progress') {
-        return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the config change was not applied to the running bot.', {}));
-      }
-      if (adjustResult.kind === 'failure') {
-        const status = adjustResult.code === 'validation.invalid_payload' ? 400
-          : adjustResult.code === 'authorization.denied' ? 403
-          : adjustResult.code === 'not_found.resource' ? 404
-          : 502;
-        return reply.status(status).send(errorPayload(adjustResult.code, adjustResult.message, {}));
-      }
+    // Apply the config change over the boundary — Traderton owns the bot config
+    // and persists it for ANY status (it enforces mode-escalation internally),
+    // so this runs unconditionally. herobids injects ownerId + actor(user) only
+    // (D2). The boundary is authoritative — there is NO local bots-table write.
+    const adjustResult = await invokeBoundary('adjust_bot_config', {
+      botId: id,
+      config: parsed.data.config,
+    }, request.userId);
+    if (adjustResult.kind === 'transport_error' || adjustResult.kind === 'in_progress') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the config change was not applied.', {}));
+    }
+    if (adjustResult.kind === 'failure') {
+      const status = adjustResult.code === 'validation.invalid_payload' ? 400
+        : adjustResult.code === 'authorization.denied' ? 403
+        : adjustResult.code === 'not_found.resource' ? 404
+        : 502;
+      return reply.status(status).send(errorPayload(adjustResult.code, adjustResult.message, {}));
     }
 
     return reply.send({ status: 'updated', botId: id });
   });
 
-  // List bots — re-pointed to the owner-scoped boundary read (ruling 1) with a
-  // local-table fallback when the boundary is absent (ruling 5). Traderton owns
-  // the bots; the boundary returns owner-scoped summaries.
+  // List bots — routed over the owner-scoped boundary read (ruling 1). Traderton
+  // owns the bots; the boundary returns owner-scoped summaries. The boundary is
+  // mandatory — absent/transport/in_progress → 503 precondition.not_ready.
   app.get('/bots', async (request, reply) => {
-    if (hasReadBoundary) {
-      const result = await readBoundary('list_owner_bots', {}, request.userId);
-      if (result.kind === 'success') {
-        const data = (result.data ?? {}) as Record<string, unknown>;
-        const list = Array.isArray(data['bots']) ? (data['bots'] as unknown[]) : [];
-        return reply.send({ bots: list });
-      }
-      if (result.kind === 'transport_error' || result.kind === 'in_progress') {
-        return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not list bots.', {}));
+    const result = await readBoundary('list_owner_bots', {}, request.userId);
+    if (result.kind === 'success') {
+      const data = (result.data ?? {}) as Record<string, unknown>;
+      const list = Array.isArray(data['bots']) ? (data['bots'] as unknown[]) : [];
+      return reply.send({ bots: list });
+    }
+    if (result.kind === 'transport_error' || result.kind === 'in_progress') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not list bots.', {}));
+    }
+    return reply.status(502).send(errorPayload(result.code, result.message, {}));
+  });
+
+  // Get single bot — routed over the owner-scoped boundary read (ruling 1). A
+  // boundary not-found (the bot does not exist or is not owned by this user)
+  // maps to 404. The boundary is mandatory — absent/transport/in_progress → 503.
+  app.get<{ Params: { id: string } }>('/bots/:id', async (request, reply) => {
+    const { id } = request.params;
+    const result = await readBoundary('get_owner_bot_status', { botId: id }, request.userId);
+    if (result.kind === 'success') {
+      return reply.send((result.data ?? {}) as Record<string, unknown>);
+    }
+    if (result.kind === 'failure') {
+      if (result.code === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found' });
       }
       return reply.status(502).send(errorPayload(result.code, result.message, {}));
     }
-    const botList = await db.select().from(bots).where(eq(bots.userId, request.userId));
-    return reply.send({ bots: botList.map((b) => b as Record<string, unknown>) });
-  });
-
-  // Get single bot — re-pointed to the owner-scoped boundary read (ruling 1)
-  // with a local-table fallback (ruling 5). A boundary not-found (the bot does
-  // not exist or is not owned by this user) maps to 404, matching the local
-  // ownership-scoped lookup.
-  app.get<{ Params: { id: string } }>('/bots/:id', async (request, reply) => {
-    const { id } = request.params;
-    if (hasReadBoundary) {
-      const result = await readBoundary('get_owner_bot_status', { botId: id }, request.userId);
-      if (result.kind === 'success') {
-        return reply.send((result.data ?? {}) as Record<string, unknown>);
-      }
-      if (result.kind === 'failure') {
-        if (result.code === 'not_found.resource') {
-          return reply.status(404).send({ error: 'not_found' });
-        }
-        return reply.status(502).send(errorPayload(result.code, result.message, {}));
-      }
-      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot.', {}));
-    }
-    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) {
-      return reply.status(404).send({ error: 'not_found' });
-    }
-    return reply.send(bot as Record<string, unknown>);
+    return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot.', {}));
   });
 
   // GET /bots/:id/costs — total fees from fills for this bot.
-  // Wave A2: re-pointed to the owner-scoped boundary read (`get_owner_bot_costs`)
-  // with a local-table fallback (ruling 5). Aggregation stays in Traderton — the
-  // boundary returns the identical `{ botId, feesByCurrency }` shape; herobids is
-  // a thin pass-through. not_found.resource → 404; transport/in_progress → 503;
-  // other failure → 502. The local aggregation is the ABSENT-boundary fallback
-  // (removed at D1 with the table, not now).
+  // Wave A2: routed over the owner-scoped boundary read (`get_owner_bot_costs`).
+  // Aggregation stays in Traderton — the boundary returns the identical
+  // `{ botId, feesByCurrency }` shape; herobids is a thin pass-through.
+  // not_found.resource → 404; other failure → 502; the boundary is mandatory —
+  // absent/transport/in_progress → 503.
   app.get<{ Params: { id: string } }>('/bots/:id/costs', async (request, reply) => {
     const { id } = request.params;
-    if (hasReadBoundary) {
-      const result = await readBoundary('get_owner_bot_costs', { botId: id }, request.userId);
-      if (result.kind === 'success') {
-        const data = (result.data ?? {}) as Record<string, unknown>;
-        return reply.send({ botId: id, feesByCurrency: data['feesByCurrency'] ?? {} });
-      }
-      if (result.kind === 'failure') {
-        if (result.code === 'not_found.resource') {
-          return reply.status(404).send({ error: 'not_found' });
-        }
-        return reply.status(502).send(errorPayload(result.code, result.message, {}));
-      }
-      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot costs.', {}));
+    const result = await readBoundary('get_owner_bot_costs', { botId: id }, request.userId);
+    if (result.kind === 'success') {
+      const data = (result.data ?? {}) as Record<string, unknown>;
+      return reply.send({ botId: id, feesByCurrency: data['feesByCurrency'] ?? {} });
     }
-    const [bot] = await db.select({ id: bots.id }).from(bots)
-      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) return reply.status(404).send({ error: 'not_found' });
-
-    // Group by feeCurrency to avoid summing across heterogeneous assets.
-    const feeRows = await db
-      .select({ feeCurrency: fills.feeCurrency, total: sum(fills.fee) })
-      .from(fills)
-      .where(and(eq(fills.actorType, 'bot'), eq(fills.actorId, id)))
-      .groupBy(fills.feeCurrency);
-
-    const feesByCurrency: Record<string, string> = {};
-    for (const row of feeRows) {
-      feesByCurrency[row.feeCurrency ?? 'unknown'] = row.total ?? '0';
+    if (result.kind === 'failure') {
+      if (result.code === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(502).send(errorPayload(result.code, result.message, {}));
     }
-
-    return reply.send({
-      botId: id,
-      feesByCurrency,
-    });
+    return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot costs.', {}));
   });
 
   // GET /bots/:id/sessions — lifecycle sessions derived by pairing instance.started / instance.stopped events.
-  // Wave A2: re-pointed to the owner-scoped boundary read (`get_owner_bot_sessions`)
-  // with a local-table fallback (ruling 5). The boundary applies the SAME
-  // limit/offset clamping and returns the identical
+  // Wave A2: routed over the owner-scoped boundary read (`get_owner_bot_sessions`).
+  // The boundary applies the SAME limit/offset clamping and returns the identical
   // `{ botId, sessions, limit, offset }` shape; herobids is a thin pass-through.
+  // The boundary is mandatory — absent/transport/in_progress → 503.
   app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string } }>('/bots/:id/sessions', async (request, reply) => {
     const { id } = request.params;
     const limit = Math.min(parseInt(request.query.limit ?? '20', 10), 100);
     const offset = parseInt(request.query.offset ?? '0', 10);
 
-    if (hasReadBoundary) {
-      const result = await readBoundary('get_owner_bot_sessions', { botId: id, limit, offset }, request.userId);
-      if (result.kind === 'success') {
-        const data = (result.data ?? {}) as Record<string, unknown>;
-        return reply.send({
-          botId: id,
-          sessions: data['sessions'] ?? [],
-          limit: data['limit'] ?? limit,
-          offset: data['offset'] ?? offset,
-        });
-      }
-      if (result.kind === 'failure') {
-        if (result.code === 'not_found.resource') {
-          return reply.status(404).send({ error: 'not_found' });
-        }
-        return reply.status(502).send(errorPayload(result.code, result.message, {}));
-      }
-      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot sessions.', {}));
-    }
-
-    const [bot] = await db.select({ id: bots.id }).from(bots)
-      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) return reply.status(404).send({ error: 'not_found' });
-
-    // Derive sessions by pairing instance.started / instance.stopped events.
-    // Fetch ascending so pairs can be built left-to-right, then reverse for newest-first output.
-    // (limit + offset) * 2 + 2 bounds the fetch to what's needed for a single page.
-    const maxEvents = (limit + offset) * 2 + 2;
-    const rawEvents = await db.select()
-      .from(journalEvents)
-      .where(and(
-        eq(journalEvents.actorId, id),
-        inArray(journalEvents.type, ['instance.started', 'instance.stopped']),
-      ))
-      .orderBy(asc(journalEvents.createdAt))
-      .limit(maxEvents);
-
-    type Session = {
-      startedAt: Date;
-      endedAt: Date | null;
-      durationMs: number | null;
-      startEventId: string;
-      endEventId: string | null;
-    };
-    const sessions: Session[] = [];
-    let pendingStart: (typeof journalEvents.$inferSelect) | null = null;
-    for (const event of rawEvents) {
-      if (event.type === 'instance.started') {
-        pendingStart = event;
-      } else if (event.type === 'instance.stopped' && pendingStart) {
-        const startedAt = pendingStart.createdAt;
-        const endedAt = event.createdAt;
-        sessions.push({
-          startedAt,
-          endedAt,
-          durationMs: endedAt.getTime() - startedAt.getTime(),
-          startEventId: pendingStart.id,
-          endEventId: event.id,
-        });
-        pendingStart = null;
-      }
-    }
-    // Include the currently-running session (started but not yet stopped).
-    if (pendingStart) {
-      sessions.push({
-        startedAt: pendingStart.createdAt,
-        endedAt: null,
-        durationMs: null,
-        startEventId: pendingStart.id,
-        endEventId: null,
+    const result = await readBoundary('get_owner_bot_sessions', { botId: id, limit, offset }, request.userId);
+    if (result.kind === 'success') {
+      const data = (result.data ?? {}) as Record<string, unknown>;
+      return reply.send({
+        botId: id,
+        sessions: data['sessions'] ?? [],
+        limit: data['limit'] ?? limit,
+        offset: data['offset'] ?? offset,
       });
     }
-    sessions.reverse(); // newest first
-    const page = sessions.slice(offset, offset + limit);
-
-    return reply.send({ botId: id, sessions: page, limit, offset });
+    if (result.kind === 'failure') {
+      if (result.code === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(502).send(errorPayload(result.code, result.message, {}));
+    }
+    return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot sessions.', {}));
   });
 
   // GET /bots/:id/events — recent journal events for this bot.
-  // Wave A2: re-pointed to the owner-scoped boundary read (`get_owner_bot_journal`,
-  // called with just `limit` — the /events call shape) with a local-table
-  // fallback (ruling 5). Response shape `{ botId, events }` is preserved.
+  // Wave A2: routed over the owner-scoped boundary read (`get_owner_bot_journal`,
+  // called with just `limit` — the /events call shape). Response shape
+  // `{ botId, events }` is preserved. The boundary is mandatory —
+  // absent/transport/in_progress → 503.
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/bots/:id/events', async (request, reply) => {
     const { id } = request.params;
     const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 500);
 
-    if (hasReadBoundary) {
-      const result = await readBoundary('get_owner_bot_journal', { botId: id, limit }, request.userId);
-      if (result.kind === 'success') {
-        const data = (result.data ?? {}) as Record<string, unknown>;
-        return reply.send({ botId: id, events: data['events'] ?? [] });
-      }
-      if (result.kind === 'failure') {
-        if (result.code === 'not_found.resource') {
-          return reply.status(404).send({ error: 'not_found' });
-        }
-        return reply.status(502).send(errorPayload(result.code, result.message, {}));
-      }
-      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot events.', {}));
+    const result = await readBoundary('get_owner_bot_journal', { botId: id, limit }, request.userId);
+    if (result.kind === 'success') {
+      const data = (result.data ?? {}) as Record<string, unknown>;
+      return reply.send({ botId: id, events: data['events'] ?? [] });
     }
-
-    const [bot] = await db.select({ id: bots.id }).from(bots)
-      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) return reply.status(404).send({ error: 'not_found' });
-
-    const journal = new PgJournal(db);
-    const events = await journal.query({ actorId: id, limit });
-
-    return reply.send({ botId: id, events });
+    if (result.kind === 'failure') {
+      if (result.code === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(502).send(errorPayload(result.code, result.message, {}));
+    }
+    return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch bot events.', {}));
   });
 
   // GET /bots/:id/journal — paginated journal events with optional type filter.
-  // Wave A2: re-pointed to the owner-scoped boundary read (`get_owner_bot_journal`,
-  // called with type + limit + offset) with a local-table fallback (ruling 5).
-  // Response shape `{ botId, events, limit, offset }` is preserved — the same
-  // journal tool serves BOTH /events and /journal.
+  // Wave A2: routed over the owner-scoped boundary read (`get_owner_bot_journal`,
+  // called with type + limit + offset). Response shape
+  // `{ botId, events, limit, offset }` is preserved — the same journal tool
+  // serves BOTH /events and /journal. The boundary is mandatory —
+  // absent/transport/in_progress → 503.
   app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string; type?: string } }>('/bots/:id/journal', async (request, reply) => {
     const { id } = request.params;
     const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
     const offset = parseInt(request.query.offset ?? '0', 10);
 
-    if (hasReadBoundary) {
-      const result = await readBoundary('get_owner_bot_journal', { botId: id, type: request.query.type, limit, offset }, request.userId);
-      if (result.kind === 'success') {
-        const data = (result.data ?? {}) as Record<string, unknown>;
-        return reply.send({ botId: id, events: data['events'] ?? [], limit, offset });
-      }
-      if (result.kind === 'failure') {
-        if (result.code === 'not_found.resource') {
-          return reply.status(404).send({ error: 'not_found' });
-        }
-        return reply.status(502).send(errorPayload(result.code, result.message, {}));
-      }
-      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot journal.', {}));
+    const result = await readBoundary('get_owner_bot_journal', { botId: id, type: request.query.type, limit, offset }, request.userId);
+    if (result.kind === 'success') {
+      const data = (result.data ?? {}) as Record<string, unknown>;
+      return reply.send({ botId: id, events: data['events'] ?? [], limit, offset });
     }
-
-    const [bot] = await db.select({ id: bots.id }).from(bots)
-      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) return reply.status(404).send({ error: 'not_found' });
-
-    const journal = new PgJournal(db);
-    const events = await journal.query({ actorId: id, type: request.query.type, limit, offset });
-
-    return reply.send({ botId: id, events, limit, offset });
+    if (result.kind === 'failure') {
+      if (result.code === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(502).send(errorPayload(result.code, result.message, {}));
+    }
+    return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot journal.', {}));
   });
 
   // GET /bots/:id/journal/summary — aggregate stats from fills for this bot.
-  // Wave A2: re-pointed to the owner-scoped boundary read
-  // (`get_owner_bot_journal_summary`) with a local-table fallback (ruling 5).
-  // Response shape `{ botId, tradeCount, feesByCurrency }` is preserved.
+  // Wave A2: routed over the owner-scoped boundary read
+  // (`get_owner_bot_journal_summary`). Response shape
+  // `{ botId, tradeCount, feesByCurrency }` is preserved. The boundary is
+  // mandatory — absent/transport/in_progress → 503.
   app.get<{ Params: { id: string } }>('/bots/:id/journal/summary', async (request, reply) => {
     const { id } = request.params;
-    if (hasReadBoundary) {
-      const result = await readBoundary('get_owner_bot_journal_summary', { botId: id }, request.userId);
-      if (result.kind === 'success') {
-        const data = (result.data ?? {}) as Record<string, unknown>;
-        return reply.send({
-          botId: id,
-          tradeCount: data['tradeCount'] ?? 0,
-          feesByCurrency: data['feesByCurrency'] ?? {},
-        });
-      }
-      if (result.kind === 'failure') {
-        if (result.code === 'not_found.resource') {
-          return reply.status(404).send({ error: 'not_found' });
-        }
-        return reply.status(502).send(errorPayload(result.code, result.message, {}));
-      }
-      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot journal summary.', {}));
+    const result = await readBoundary('get_owner_bot_journal_summary', { botId: id }, request.userId);
+    if (result.kind === 'success') {
+      const data = (result.data ?? {}) as Record<string, unknown>;
+      return reply.send({
+        botId: id,
+        tradeCount: data['tradeCount'] ?? 0,
+        feesByCurrency: data['feesByCurrency'] ?? {},
+      });
     }
-
-    const [bot] = await db.select({ id: bots.id }).from(bots)
-      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
-    if (!bot) return reply.status(404).send({ error: 'not_found' });
-
-    const [countResult] = await db
-      .select({ tradeCount: sql<number>`count(*)::int` })
-      .from(fills)
-      .where(and(eq(fills.actorType, 'bot'), eq(fills.actorId, id)));
-
-    // Group by feeCurrency — consistent with /costs; avoids summing across heterogeneous assets.
-    const feeRows = await db
-      .select({ feeCurrency: fills.feeCurrency, total: sum(fills.fee) })
-      .from(fills)
-      .where(and(eq(fills.actorType, 'bot'), eq(fills.actorId, id)))
-      .groupBy(fills.feeCurrency);
-
-    const feesByCurrency: Record<string, string> = {};
-    for (const row of feeRows) {
-      feesByCurrency[row.feeCurrency ?? 'unknown'] = row.total ?? '0';
+    if (result.kind === 'failure') {
+      if (result.code === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(502).send(errorPayload(result.code, result.message, {}));
     }
-
-    return reply.send({
-      botId: id,
-      tradeCount: countResult?.tradeCount ?? 0,
-      feesByCurrency,
-    });
+    return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot journal summary.', {}));
   });
 
   // ── Bot Lifecycle Endpoints ──────────────────────────────────────────
@@ -693,15 +559,12 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   app.delete<{ Params: { id: string } }>('/bots/:id', async (request, reply) => {
     const { id } = request.params;
 
-    // Existence + ownership + status gate over the boundary (ruling 1), local
-    // fallback (ruling 5). The boundary resolves existence/ownership so the
-    // ownership check is NOT weakened.
+    // Existence + ownership + status gate over the boundary (ruling 1). The
+    // boundary resolves existence/ownership so the ownership check is NOT
+    // weakened; when it is absent/unavailable this gate fails closed (503).
     //
-    // Wave A1: the `delete_bot` boundary tool is now AUTHORITATIVE. The delete
-    // routes over the boundary (fail-closed, 503 when absent — same posture as
-    // create/stop/start); the local `db.delete(bots)` below is the INTERIM
-    // mirror-sync removed at D1 with the table, and runs BOUNDARY-FIRST (only
-    // after the boundary delete succeeds — S5). It is NOT authoritative removal.
+    // The `delete_bot` boundary tool is AUTHORITATIVE. The delete routes over the
+    // boundary (fail-closed, 503 when absent — same posture as create/stop/start).
     const resolved = await resolveBotForLifecycle(id, request.userId);
     if (resolved.kind === 'unavailable') {
       return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not deleted.', {}));
@@ -744,11 +607,8 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(status).send(errorPayload(deleteResult.code, deleteResult.message, {}));
     }
 
-    // Boundary-first (S5): the authoritative delete succeeded — now remove the
-    // interim local mirror row, owner-scoped (defense-in-depth: the row can never
-    // belong to another user). If the boundary delete had failed, the local row
-    // is left intact and the mapped error is returned above.
-    await db.delete(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    // The authoritative delete over the boundary succeeded — Traderton owns the
+    // removal, so there is nothing left to do here.
     return reply.status(204).send();
   });
 
@@ -756,8 +616,9 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   app.post<{ Params: { id: string } }>('/bots/:id/stop', async (request, reply) => {
     const { id } = request.params;
 
-    // Existence + ownership + status gate over the boundary (ruling 1), local
-    // fallback (ruling 5). The stop ACTION still routes over the write boundary.
+    // Existence + ownership + status gate over the boundary (ruling 1). The stop
+    // ACTION still routes over the write boundary; the gate fails closed (503)
+    // when the boundary is absent/unavailable.
     const resolved = await resolveBotForLifecycle(id, request.userId);
     if (resolved.kind === 'unavailable') {
       return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not stopped.', {}));
@@ -792,8 +653,9 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   app.post<{ Params: { id: string } }>('/bots/:id/start', async (request, reply) => {
     const { id } = request.params;
 
-    // Existence + ownership + status gate over the boundary (ruling 1), local
-    // fallback (ruling 5). The start ACTION still routes over the write boundary.
+    // Existence + ownership + status gate over the boundary (ruling 1). The start
+    // ACTION still routes over the write boundary; the gate fails closed (503)
+    // when the boundary is absent/unavailable.
     const resolved = await resolveBotForLifecycle(id, request.userId);
     if (resolved.kind === 'unavailable') {
       return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the bot was not started.', {}));
@@ -847,18 +709,26 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(400).send({ error: 'validation_error', details: parsing.error.issues });
     }
 
-    // Find bot owned by user
-    const [bot] = await db.select().from(bots)
-      .where(and(eq(bots.id, request.params.id), eq(bots.userId, request.userId)))
-      .limit(1);
-    if (!bot) {
-      return reply.status(404).send({ error: 'not_found', message: 'Bot not found' });
+    // Resolve the bot's config over the owner-scoped boundary read (ruling 1).
+    // Owner-scoped: a bot not owned by this user resolves as not_found → 404.
+    // The boundary is mandatory — absent/transport/in_progress → 503.
+    const botResult = await readBoundary('get_owner_bot_status', { botId: request.params.id }, request.userId);
+    if (botResult.kind === 'failure') {
+      if (botResult.code === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found', message: 'Bot not found' });
+      }
+      return reply.status(502).send(errorPayload(botResult.code, botResult.message, {}));
     }
+    if (botResult.kind !== 'success') {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — could not fetch the bot.', {}));
+    }
+    const botData = (botResult.data ?? {}) as Record<string, unknown>;
+    const botConfig = (botData['config'] as Record<string, unknown> | undefined) ?? {};
 
     // Project bot to blueprint payload
     const payload = projectBotToBlueprintPayload({
-      name: ((bot.config as Record<string, unknown>)['name'] as string) ?? '',
-      config: bot.config as Record<string, unknown>,
+      name: (botConfig['name'] as string) ?? '',
+      config: botConfig,
     });
 
     // Override name/description/tags from request body if provided

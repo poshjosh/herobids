@@ -477,3 +477,249 @@ describe('bot routes', () => {
     expect(res.statusCode).toBe(503);
   });
 });
+
+/**
+ * Boundary-only reads + lifecycle/config writes (ruling 1 + Wave A1/A2).
+ *
+ * The `bots` table is no longer read/written by these routes: reads route over
+ * the owner-scoped boundary tools and the DELETE/PATCH writes are authoritative
+ * on the boundary. When the boundary is ABSENT the routes fail closed with a
+ * typed 503 precondition.not_ready (no local-table fallback). These tests stub
+ * the boundary client instead of the local db.
+ */
+describe('bot read + lifecycle routes route over the boundary (no local bots table)', () => {
+  const mockRedis = {
+    xadd: vi.fn().mockResolvedValue(undefined),
+  } as unknown as import('ioredis').Redis;
+
+  // A db mock that throws if any `.select().from()` is attempted — proves the
+  // routes never touch the local `bots` table on these paths.
+  function makeNoTableDb() {
+    return {
+      select: vi.fn(() => {
+        throw new Error('local table access is not allowed on boundary-routed paths');
+      }),
+      update: vi.fn(() => {
+        throw new Error('local bots update is not allowed');
+      }),
+      delete: vi.fn(() => {
+        throw new Error('local bots delete is not allowed');
+      }),
+    } as unknown as import('@herobids/db').Database;
+  }
+
+  // PATCH no longer reads connections.provider locally — the venue type is
+  // derived from the boundary-supplied config.venue — so the no-table db mock
+  // above suffices for PATCH too.
+
+  const mockQueue = {
+    add: vi.fn().mockResolvedValue(undefined),
+    getJobs: vi.fn().mockResolvedValue([]),
+  } as unknown as import('bullmq').Queue;
+
+  /**
+   * A boundary client whose invoke dispatches a scripted result per toolName,
+   * defaulting to a generic success. Records calls for assertions.
+   */
+  function makeToolClient(perTool: Partial<Record<string, TradertonClientResult>> = {}) {
+    const invoke = vi.fn(async (arg: { toolName: string }) => {
+      return perTool[arg.toolName] ?? { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} };
+    });
+    return { client: { invoke } as unknown as TradertonClient, invoke };
+  }
+
+  const statusPayload = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'success' as const,
+    requestId: 'r',
+    correlationId: 'c',
+    payload: {
+      ok: true,
+      id: 'bot-1',
+      status: 'stopped',
+      config: { venue: 'hyperliquid', symbol: 'BTC-PERP', execution: { mode: 'paper' } },
+      creatorType: 'user',
+      creatorId: TEST_USER_ID,
+      ...overrides,
+    },
+  });
+
+  async function buildApp(client?: TradertonClient, planId = 'free') {
+    const { botRoutes } = await import('./bots.js');
+    const app = Fastify();
+    decorateWithAuth(app, TEST_USER_ID, planId);
+    await botRoutes(app, mockQueue, makeNoTableDb(), mockRedis, makePlansConfig(), client);
+    return app;
+  }
+
+  // ── GET /bots ──────────────────────────────────────────────────────────
+  it('GET /bots lists via list_owner_bots and never reads the local table', async () => {
+    const { client, invoke } = makeToolClient({
+      list_owner_bots: { kind: 'success', requestId: 'r', correlationId: 'c', payload: { bots: [{ id: 'bot-1' }] } },
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({ method: 'GET', url: '/bots' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ bots: unknown[] }>().bots).toEqual([{ id: 'bot-1' }]);
+    expect(invoke.mock.calls[0]![0].toolName).toBe('list_owner_bots');
+  });
+
+  it('GET /bots returns 503 when the boundary is absent (no local fallback)', async () => {
+    const app = await buildApp(undefined);
+    const res = await app.inject({ method: 'GET', url: '/bots' });
+    expect(res.statusCode).toBe(503);
+  });
+
+  // ── GET /bots/:id ────────────────────────────────────────────────────────
+  it('GET /bots/:id maps boundary not_found to 404', async () => {
+    const { client } = makeToolClient({
+      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as TradertonClientResult,
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({ method: 'GET', url: '/bots/bot-1' });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('GET /bots/:id returns 503 when the boundary is absent', async () => {
+    const app = await buildApp(undefined);
+    const res = await app.inject({ method: 'GET', url: '/bots/bot-1' });
+    expect(res.statusCode).toBe(503);
+  });
+
+  // ── GET /bots/:id/costs|sessions|events|journal|journal/summary ────────────
+  it('GET read aggregations return 503 when the boundary is absent', async () => {
+    const app = await buildApp(undefined);
+    for (const url of [
+      '/bots/bot-1/costs',
+      '/bots/bot-1/sessions',
+      '/bots/bot-1/events',
+      '/bots/bot-1/journal',
+      '/bots/bot-1/journal/summary',
+    ]) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode).toBe(503);
+    }
+  });
+
+  it('GET /bots/:id/costs passes the boundary payload through', async () => {
+    const { client } = makeToolClient({
+      get_owner_bot_costs: { kind: 'success', requestId: 'r', correlationId: 'c', payload: { feesByCurrency: { USDC: '1.5' } } },
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({ method: 'GET', url: '/bots/bot-1/costs' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ feesByCurrency: Record<string, string> }>().feesByCurrency).toEqual({ USDC: '1.5' });
+  });
+
+  // ── PATCH /bots/:id/config ────────────────────────────────────────────────
+  it('PATCH /bots/:id/config reads status via get_owner_bot_status then always calls adjust_bot_config (even when stopped)', async () => {
+    const { client, invoke } = makeToolClient({
+      get_owner_bot_status: statusPayload({ status: 'stopped' }),
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/bots/bot-1/config',
+      payload: { config: { venue: 'hyperliquid', symbol: 'BTC-PERP', execution: { mode: 'paper' } } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ status: string }>().status).toBe('updated');
+    const tools = invoke.mock.calls.map((c) => c[0].toolName);
+    expect(tools).toContain('get_owner_bot_status');
+    // The write is unconditional now — adjust runs for a STOPPED bot too.
+    expect(tools).toContain('adjust_bot_config');
+  });
+
+  it('PATCH /bots/:id/config maps boundary not_found to 404', async () => {
+    const { client } = makeToolClient({
+      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as TradertonClientResult,
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/bots/bot-1/config',
+      payload: { config: { execution: { mode: 'paper' } } },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('PATCH /bots/:id/config returns 503 when the boundary is absent', async () => {
+    const app = await buildApp(undefined);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/bots/bot-1/config',
+      payload: { config: { execution: { mode: 'paper' } } },
+    });
+    expect(res.statusCode).toBe(503);
+  });
+
+  it('PATCH /bots/:id/config notifies the agent via xadd when an agent-created bot changes execution mode', async () => {
+    const xadd = vi.fn().mockResolvedValue(undefined);
+    const redis = { xadd } as unknown as import('ioredis').Redis;
+    const { client } = makeToolClient({
+      get_owner_bot_status: statusPayload({
+        status: 'running',
+        creatorType: 'agent',
+        creatorId: 'agent-9',
+        config: { venue: 'hyperliquid', symbol: 'BTC-PERP', execution: { mode: 'paper' } },
+      }),
+    });
+    const { botRoutes } = await import('./bots.js');
+    const app = Fastify();
+    decorateWithAuth(app, TEST_USER_ID, 'pro');
+    await botRoutes(app, mockQueue, makeNoTableDb(), redis, makePlansConfig(), client);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/bots/bot-1/config',
+      payload: { config: { venue: 'hyperliquid', symbol: 'BTC-PERP', execution: { mode: 'live' } } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(xadd).toHaveBeenCalledTimes(1);
+    const streamKey = xadd.mock.calls[0]![0];
+    expect(streamKey).toBe('agent:inbound:agent-9');
+  });
+
+  // ── DELETE /bots/:id ──────────────────────────────────────────────────────
+  it('DELETE /bots/:id routes over the boundary and performs no local delete', async () => {
+    const { client, invoke } = makeToolClient({
+      get_owner_bot_status: statusPayload({ status: 'stopped' }),
+      delete_bot: { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} },
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({ method: 'DELETE', url: '/bots/bot-1' });
+    expect(res.statusCode).toBe(204);
+    const tools = invoke.mock.calls.map((c) => c[0].toolName);
+    expect(tools).toContain('delete_bot');
+  });
+
+  it('DELETE /bots/:id returns 409 for a running bot', async () => {
+    const { client } = makeToolClient({
+      get_owner_bot_status: statusPayload({ status: 'running' }),
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({ method: 'DELETE', url: '/bots/bot-1' });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('DELETE /bots/:id returns 503 when the boundary is absent', async () => {
+    const app = await buildApp(undefined);
+    const res = await app.inject({ method: 'DELETE', url: '/bots/bot-1' });
+    expect(res.statusCode).toBe(503);
+  });
+
+  // ── POST /bots/:id/blueprints ─────────────────────────────────────────────
+  it('POST /bots/:id/blueprints reads the bot config via get_owner_bot_status and 404s on boundary not_found', async () => {
+    const { client } = makeToolClient({
+      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as TradertonClientResult,
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({ method: 'POST', url: '/bots/bot-1/blueprints', payload: {} });
+    expect(res.statusCode).toBe(404);
+    expect(res.json<{ message: string }>().message).toBe('Bot not found');
+  });
+
+  it('POST /bots/:id/blueprints returns 503 when the boundary is absent', async () => {
+    const app = await buildApp(undefined);
+    const res = await app.inject({ method: 'POST', url: '/bots/bot-1/blueprints', payload: {} });
+    expect(res.statusCode).toBe(503);
+  });
+});
