@@ -864,13 +864,21 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
   });
 
   // C5: binding validation stays LOCAL and pre-boundary — a venue account not
-  // owned by the caller is rejected 403 BEFORE the boundary is ever called.
-  it('rejects an unowned venue account locally (403) without calling the boundary', async () => {
+  // owned by the caller is now rejected by the BOUNDARY (instantiate_bot's
+  // owner-scoped venue-account guard), NOT by a local venue_accounts read.
+  // c4.9f-ready: the local venue-account existence/ownership check was removed
+  // (venue_accounts is a Traderton trading table dropping at c4.9f). The boundary
+  // returns not_found.resource for an absent OR unowned account (no cross-owner
+  // existence leak) → herobids maps it to 404. This collapses the old local
+  // 400-not-found / 403-not-yours split into a single 404 (Intentional-divergence,
+  // docs/003). The connection check stays local (connections is a KEEP platform table).
+  it('rejects an unowned venue account via the boundary (404 not_found.resource)', async () => {
     const payload = makeBotPayload();
     const { bpId, revId } = await seedBlueprint({}, payload);
     const token = await getAuthToken();
     const connId = await seedConnection();
-    // A venue account owned by a DIFFERENT user.
+    // A venue account owned by a DIFFERENT user. The local route no longer reads
+    // venue_accounts; the boundary's owner-scoped guard rejects it.
     const otherVaId = crypto.randomUUID();
     await db.insert(users).values({
       id: 'other-va-owner', username: 'other_va', displayName: 'Other', email: 'other-va@test.local',
@@ -880,6 +888,11 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
       id: otherVaId, userId: 'other-va-owner', venue: 'hyperliquid', label: 'other',
     } as typeof venueAccounts.$inferInsert);
 
+    // The boundary's owner-scoped guard returns not_found.resource for the unowned
+    // account (this is what instantiate_bot does when the venue account does not
+    // belong to the owner).
+    stubInvokeResult = () => ({ kind: 'failure', code: 'not_found.resource', message: 'Venue account not found', retryable: false });
+
     const res = await app.inject({
       method: 'POST',
       url: `/blueprints/${bpId}/instantiate`,
@@ -887,9 +900,11 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
       payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: otherVaId }, requestedMode: 'paper' },
     });
 
-    expect(res.statusCode).toBe(403);
-    // The boundary must NOT be called when local binding validation fails.
-    expect(capturedInvokes).toHaveLength(0);
+    // Boundary-owned ownership check → 404 (no local 403; no cross-owner leak).
+    expect(res.statusCode).toBe(404);
+    // The connection is still validated locally first; the boundary IS now called
+    // for the venue-account ownership decision.
+    expect(capturedInvokes).toHaveLength(1);
   });
 
   // C5 regression: the AGENT branch is UNTOUCHED — it still writes platform

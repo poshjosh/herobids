@@ -13,7 +13,6 @@ import {
   blueprintUsageEvents,
   blueprintLikes,
   connections,
-  venueAccounts,
   users,
 } from '@herobids/db';
 import {
@@ -2136,7 +2135,10 @@ export async function blueprintRoutes(
               }
             }
           } else if (parsed.data.bindings.kind === 'bot') {
-            const { connectionId, venueAccountId } = parsed.data.bindings as {
+            // Only the connection is validated locally (KEEP platform table). The
+            // venue-account ownership check is now boundary-owned in instantiate_bot
+            // (see the c4.9f-ready note below).
+            const { connectionId } = parsed.data.bindings as {
               kind: 'bot'; connectionId: string; venueAccountId: string;
             };
             const [conn] = await tx
@@ -2164,24 +2166,15 @@ export async function blueprintRoutes(
                 message: `Connection ${connectionId} does not belong to you`,
               };
             }
-            const [va] = await tx
-              .select({ id: venueAccounts.id, userId: venueAccounts.userId })
-              .from(venueAccounts)
-              .where(eq(venueAccounts.id, venueAccountId));
-            if (!va) {
-              return {
-                kind: 'error' as const,
-                code: BlueprintErrorCodes.VALIDATION,
-                message: `Venue account ${venueAccountId} not found`,
-              };
-            }
-            if (va.userId !== request.userId) {
-              return {
-                kind: 'error' as const,
-                code: BlueprintErrorCodes.FORBIDDEN,
-                message: `Venue account ${venueAccountId} does not belong to you`,
-              };
-            }
+            // c4.9f-ready: the venue-account existence/ownership check is NO LONGER
+            // read locally (`venue_accounts` is a Traderton trading table dropping at
+            // c4.9f). `instantiate_bot` performs the owner-scoped ownership guard over
+            // the boundary (select venue_accounts WHERE id AND ownerId → absent/unowned
+            // → not_found.resource → 404 here). This collapses the old
+            // 400-not-found / 403-not-yours split into a single 404 that does NOT leak
+            // whether an unowned account exists — an Intentional-divergence (003),
+            // same posture as the c4.2-recon ownership-in-the-boundary re-point. The
+            // `connections` check stays local (connections is a KEEP platform table).
           }
         }
 
