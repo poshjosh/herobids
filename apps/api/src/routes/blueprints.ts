@@ -2450,34 +2450,58 @@ export async function blueprintRoutes(
           status: 'stopped',
           createdAt: now.toISOString(),
         };
-        await db.transaction(async (tx) => {
-          await tx.insert(blueprintInstantiationRequests).values({
-            id: instantiationReqId,
-            userId: request.userId,
-            idempotencyKey: trimmedKey,
-            requestHash,
-            blueprintId: bp.id,
-            blueprintRevisionId: revision.id,
-            actorKind: bp.kind,
-            actorId: persistedBotId,
-            responsePayload,
-          });
-          await tx.insert(blueprintUsageEvents).values({
-            id: eventId,
-            blueprintId: bp.id,
-            blueprintRevisionId: revision.id,
-            userId: request.userId,
-            subjectKind: bp.kind,
-            subjectId: persistedBotId,
-            eventType: 'instance_created',
-            isSelfUsage: bp.authorId === request.userId,
-            occurredAt: now,
-            metadata: {
+        try {
+          await db.transaction(async (tx) => {
+            await tx.insert(blueprintInstantiationRequests).values({
+              id: instantiationReqId,
+              userId: request.userId,
               idempotencyKey: trimmedKey,
-              resolvedMode: result.resolvedMode,
-            },
+              requestHash,
+              blueprintId: bp.id,
+              blueprintRevisionId: revision.id,
+              actorKind: bp.kind,
+              actorId: persistedBotId,
+              responsePayload,
+            });
+            await tx.insert(blueprintUsageEvents).values({
+              id: eventId,
+              blueprintId: bp.id,
+              blueprintRevisionId: revision.id,
+              userId: request.userId,
+              subjectKind: bp.kind,
+              subjectId: persistedBotId,
+              eventType: 'instance_created',
+              isSelfUsage: bp.authorId === request.userId,
+              occurredAt: now,
+              metadata: {
+                idempotencyKey: trimmedKey,
+                resolvedMode: result.resolvedMode,
+              },
+            });
           });
-        });
+        } catch (err: unknown) {
+          // Concurrent same-key race: the advisory lock is released before the
+          // boundary call (we must not hold a pinned connection across the REST
+          // round-trip), so a genuinely-concurrent duplicate can clear the
+          // first-tx replay check and reach here too. The boundary is idempotent
+          // (deterministic actorId → same botId), so both requests created the
+          // SAME bot; the loser of the `uq_bpir_user_key` insert collapses to the
+          // idempotent REPLAY (200) rather than a spurious 500 — matching the
+          // pre-boundary replay semantics. See traderton/docs/003 (atomicity split).
+          if (err instanceof Error && 'code' in err && (err as { code?: string }).code === '23505') {
+            const [existing] = await db
+              .select({ responsePayload: blueprintInstantiationRequests.responsePayload })
+              .from(blueprintInstantiationRequests)
+              .where(and(
+                eq(blueprintInstantiationRequests.userId, request.userId),
+                eq(blueprintInstantiationRequests.idempotencyKey, trimmedKey),
+              ));
+            if (existing) {
+              return reply.status(200).send(existing.responsePayload);
+            }
+          }
+          throw err;
+        }
 
         return reply.status(201).send(responsePayload);
       }

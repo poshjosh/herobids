@@ -21,6 +21,7 @@ import {
 } from '@herobids/db';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { blueprintRoutes } from './blueprints.js';
+import { deriveInstantiateActorId } from '../services/blueprint-idempotency.js';
 import { BlueprintExecutionCapabilityAdapter } from '../services/blueprint-execution-capability-adapter.js';
 import { refreshLikeCount } from '../services/blueprint-scoring.js';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
@@ -861,6 +862,111 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
     // The one boundary invoke carried that stable actorId.
     expect(capturedInvokes).toHaveLength(1);
     expect(capturedInvokes[0]!.payload['actorId']).toBe(firstActorId);
+  });
+
+  // c4.9d-FG HIGH (23505→replay): the Shape-1 seam RELEASES the advisory lock
+  // before the boundary `instantiate_bot` call, so a genuinely-concurrent
+  // same-key pair can BOTH clear the first-tx replay check (no local row yet),
+  // BOTH succeed at the idempotent boundary (deterministic actorId → same
+  // botId), then BOTH race to INSERT the blueprint_instantiation_requests row.
+  // The `uq_bpir_user_key` (userId, idempotencyKey) unique index rejects the
+  // LOSER with a Postgres 23505. The fix wraps the second local tx in try/catch:
+  // on 23505 it RE-READS the winner's committed row and returns its stored
+  // responsePayload as a 200 REPLAY — matching the pre-boundary idempotent-replay
+  // semantics — instead of surfacing a spurious 500.
+  //
+  // We reproduce the race deterministically via the boundary stub: the first-tx
+  // replay check must MISS (no row at check time) but the second-tx insert must
+  // HIT the unique index. The stub's invoke runs AFTER the first-tx replay check
+  // has passed and BEFORE the second tx, so INSIDE the (async) stub we commit the
+  // "concurrent winner's" row (same userId + trimmedKey) with a recognizable
+  // stored responsePayload, then return boundary success. When the handler
+  // proceeds to its second tx, the insert collides → 23505 → the catch re-reads
+  // the winner row → returns 200 with THAT payload (proving the 23505→replay path
+  // fired, not the handler's own freshly-built payload).
+  it('concurrent 23505 loser replays the winner row (200, not 500)', async () => {
+    const payload = makeBotPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const connId = await seedConnection();
+    const vaId = await seedVenueAccount();
+    const idemKey = `test-bot-23505-replay-${crypto.randomUUID()}`;
+
+    // The handler derives actorId deterministically from (userId, key), so we
+    // know the botId the boundary will echo AND the actorId the winner row
+    // carries. The competing row's responsePayload gets a sentinel marker so the
+    // assertion can prove the handler replayed THIS row rather than building its
+    // own equivalent payload.
+    const derivedActorId = deriveInstantiateActorId(TEST_USER_ID, idemKey);
+    const winnerResponsePayload: Record<string, unknown> = {
+      actorId: derivedActorId,
+      actorKind: 'bot',
+      blueprintId: bpId,
+      blueprintRevisionId: revId,
+      status: 'stopped',
+      createdAt: '2020-01-01T00:00:00.000Z', // recognizable sentinel timestamp
+      raced: true, // sentinel: only the winner row carries this
+    };
+
+    // The stub fires DURING the handler — after the first-tx replay check passed
+    // (no row yet) and before the second local tx. Commit the concurrent winner's
+    // idempotency row here so the second-tx insert collides on uq_bpir_user_key.
+    stubInvokeResult = async () => {
+      await db.insert(blueprintInstantiationRequests).values({
+        id: crypto.randomUUID(),
+        userId: TEST_USER_ID,
+        idempotencyKey: idemKey,
+        // A DIFFERENT hash from the in-flight request — this row was NOT visible
+        // at first-tx-check time, so it never triggered the pre-boundary replay
+        // or the same-key/different-hash 409. It only exists to collide at the
+        // second-tx insert.
+        requestHash: 'winner-request-hash-sentinel',
+        blueprintId: bpId,
+        blueprintRevisionId: revId,
+        actorKind: 'bot',
+        actorId: derivedActorId,
+        responsePayload: winnerResponsePayload,
+      });
+      // Boundary success echoing the deterministic actorId as botId (idempotent
+      // boundary: both concurrent requests get the SAME botId).
+      return {
+        kind: 'success' as const,
+        requestId: 'req-stub',
+        correlationId: 'corr-stub',
+        payload: { botId: derivedActorId, status: 'stopped' },
+      };
+    };
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idemKey },
+      payload: { revisionId: revId, bindings: { kind: 'bot', connectionId: connId, venueAccountId: vaId }, requestedMode: 'paper' },
+    });
+
+    // The loser's insert hit 23505 → the catch re-read the winner row → 200 REPLAY
+    // (NOT 201, NOT 500), carrying the winner row's stored responsePayload verbatim.
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(winnerResponsePayload);
+    // The sentinel confirms this is the pre-committed winner row, not a payload
+    // the handler built for its own (losing) insert.
+    expect(res.json().raced).toBe(true);
+
+    // The boundary was called exactly once (this request) — the "winner" is
+    // simulated inline by the stub's mid-flight insert.
+    expect(capturedInvokes).toHaveLength(1);
+
+    // Exactly ONE idempotency row survives for (userId, key): the winner's. The
+    // loser's insert was rejected by the unique index, so there is no duplicate.
+    const rows = await db
+      .select()
+      .from(blueprintInstantiationRequests)
+      .where(and(
+        eq(blueprintInstantiationRequests.userId, TEST_USER_ID),
+        eq(blueprintInstantiationRequests.idempotencyKey, idemKey),
+      ));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.requestHash).toBe('winner-request-hash-sentinel');
   });
 
   // C5: binding validation stays LOCAL and pre-boundary — a venue account not
