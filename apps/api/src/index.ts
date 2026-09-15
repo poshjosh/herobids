@@ -270,7 +270,7 @@ await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, traderton
 await journalRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await positionRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await reconciliationRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
-await dashboardRoutes(app, db, appConfig.plans);
+await dashboardRoutes(app, db, appConfig.plans, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 
 // ── Core platform services ─────────────────────────────────────────────────
 // Billing routes — always registered; the summary endpoint is needed even when

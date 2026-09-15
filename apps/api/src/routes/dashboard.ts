@@ -1,19 +1,26 @@
 import type { FastifyInstance } from 'fastify';
-import { eq, and, or, isNull, isNotNull, inArray, notInArray, desc, sql, sum } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
   users,
-  bots,
-  positions,
-  journalEvents,
-  venueAccounts,
   agents,
-  agentConnections,
   agentMessages,
   agentRuntimeSessions,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
+import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
 import { DashboardActivityQuerySchema } from '../schemas.js';
+import { errorPayload } from '../error-payload.js';
+import {
+  createTradertonReadBoundary,
+  loadAgentEvidence,
+  loadBoundaryObject,
+  toJournalRow,
+  toPositionRow,
+  type TradertonReadBoundary,
+  type JournalRow as ReadJournalRow,
+  type PositionRow as ReadPositionRow,
+} from './exports-traderton.js';
 import {
   mapProtocolMessage,
   mapRuntimeSession,
@@ -22,6 +29,33 @@ import {
   resolveSessionStopReasons,
 } from './agent-activity-mapper.js';
 import type { AgentActivityEntry } from './agent-activity-types.js';
+
+/** Fallback read deadline when the operator boundary timeout is not supplied. */
+const DEFAULT_READ_TIMEOUT_MS = 10_000;
+
+/** Returned when the trading read boundary is not configured — mirrors analytics.ts. */
+const boundaryUnconfiguredError = {
+  status: 503,
+  code: 'precondition.not_ready',
+  message: 'Trading service is unavailable — the read could not be produced.',
+} as const;
+
+/** Row shape of `list_owner_bots` (venueAccountId/startedAt/stoppedAt are newly added). */
+type OwnerBotRow = {
+  id: string;
+  status: string;
+  strategyPreset?: string | null;
+  symbol?: string | null;
+  createdAt: string;
+  creatorType?: string | null;
+  creatorId?: string | null;
+  venueAccountId?: string | null;
+  startedAt?: string | null;
+  stoppedAt?: string | null;
+};
+
+/** Venue account display fields resolved via `get_venue_account`. */
+type VenueAccountView = { venueAccountRef: string; venue: string; label: string };
 
 // ---------------------------------------------------------------------------
 // Event categorisation helpers — maps canonical journal event types to a
@@ -126,19 +160,42 @@ function classifyEvent(type: string, _payload: Record<string, unknown>): { categ
 // Route handlers
 // ---------------------------------------------------------------------------
 
-export async function dashboardRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
+export async function dashboardRoutes(
+  app: FastifyInstance,
+  db: Database,
+  plansConfig?: PlansConfig,
+  tradertonReadClient?: TradertonClient,
+  tradertonReadTimeoutMs?: number,
+): Promise<void> {
+  const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
+
+  /** Build a read boundary bound to the requesting user's actor subject. */
+  const userBoundary = (userId: string): TradertonReadBoundary => {
+    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
+    return createTradertonReadBoundary(tradertonReadClient!, subject, readDeadlineMs);
+  };
+
   /**
    * GET /dashboard/overview
    * Returns a user-scoped composite read model for the Mission Control homepage.
-   * One query: instances with open-position counts and last-activity timestamps.
+   * Trading evidence (bots, positions, journal, agent PnL) is sourced over the
+   * Traderton read boundary; `users` + `agents` stay LOCAL (platform tables).
    */
   app.get('/dashboard/overview', async (request, reply) => {
     const userId = request.userId;
 
-    // Fetch user + instances + venue account labels + agent IDs in parallel
-    const [userRow, botRows, agentRows] = await Promise.all([
+    // The overview is trading-centric: with no boundary client there is nothing
+    // to assemble, so degrade to 503 rather than serve a hollow read.
+    if (!tradertonReadClient) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+      );
+    }
+    const boundary = userBoundary(userId);
+
+    // Platform reads stay LOCAL.
+    const [userRow, agentRows] = await Promise.all([
       db.select().from(users).where(eq(users.id, userId)).limit(1),
-      db.select().from(bots).where(eq(bots.userId, userId)),
       db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId)),
     ]);
 
@@ -147,94 +204,103 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    // Look up venue account labels for all bots at once
-    const venueAccountIds = [...new Set(botRows.map((b) => b.venueAccountId))];
-    const venueAccountRows = venueAccountIds.length > 0
-      ? await db.select({ id: venueAccounts.id, label: venueAccounts.label, venue: venueAccounts.venue })
-          .from(venueAccounts)
-          .where(inArray(venueAccounts.id, venueAccountIds))
-      : [];
-    const venueAccountMap = new Map(venueAccountRows.map((va) => [va.id, va]));
+    // Owner bots over the boundary (id/status/symbol/createdAt/startedAt/venueAccountId).
+    const listed = await loadAgentEvidence<OwnerBotRow>(boundary, 'list_owner_bots', {}, 'bots', (r) => r as OwnerBotRow);
+    if (!listed.ok) {
+      return reply.status(listed.error.status).send(errorPayload(listed.error.code, listed.error.message));
+    }
+    const botRows = listed.rows;
 
-    // Count open positions per bot (actorType='bot', actorId=botId)
-    const botIds = botRows.map((b) => b.id);
-    const openPositionRows = botIds.length > 0
-      ? await db.select({ actorId: positions.actorId, count: sql<number>`count(*)::int` })
-          .from(positions)
-          .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds as [string, ...string[]]), isNull(positions.closedAt)))
-          .groupBy(positions.actorId)
-      : [];
-    const openPositionMap = new Map(openPositionRows.map((r) => [r.actorId, r.count]));
+    // Resolve venue account display fields per distinct venueAccountId. A bot
+    // whose account is absent/unowned (not_found) degrades to empty labels —
+    // it must not fail the whole overview.
+    const venueAccountIds = [...new Set(botRows.map((b) => b.venueAccountId).filter((id): id is string => Boolean(id)))];
+    const venueAccountMap = new Map<string, VenueAccountView>();
+    for (const vaId of venueAccountIds) {
+      const vaResult = await loadBoundaryObject(boundary, 'get_venue_account', { venueAccountId: vaId });
+      if (vaResult.ok) {
+        venueAccountMap.set(vaId, {
+          venueAccountRef: (vaResult.data['venueAccountRef'] as string | undefined) ?? '',
+          venue: (vaResult.data['venue'] as string | undefined) ?? '',
+          label: (vaResult.data['label'] as string | undefined) ?? '',
+        });
+      } else if (vaResult.error.code !== 'not_found.resource') {
+        // Only a genuinely absent/unowned account (not_found) degrades to empty
+        // labels — a transport/boundary FAILURE must propagate (never mask an
+        // outage as blank display).
+        return reply.status(vaResult.error.status).send(errorPayload(vaResult.error.code, vaResult.error.message));
+      }
+      // not_found.resource: leave unset → row degrades to empty labels.
+    }
 
-    // Get last journal event timestamp per bot
-    const lastActivityRows = botIds.length > 0
-      ? await db.select({ actorId: journalEvents.actorId, lastAt: sql<string>`max(${journalEvents.createdAt})` })
-          .from(journalEvents)
-          .where(inArray(journalEvents.actorId, botIds as [string, ...string[]]))
-          .groupBy(journalEvents.actorId)
-      : [];
-    const lastActivityMap = new Map(lastActivityRows.map((r) => [r.actorId, r.lastAt]));
+    // Open-position count per bot: fetch owner positions, filter open, group by actorId.
+    const posLoaded = await loadAgentEvidence<ReadPositionRow>(boundary, 'get_owner_positions', {}, 'positions', toPositionRow);
+    if (!posLoaded.ok) {
+      return reply.status(posLoaded.error.status).send(errorPayload(posLoaded.error.code, posLoaded.error.message));
+    }
+    const openPositionMap = new Map<string, number>();
+    for (const pos of posLoaded.rows) {
+      if (pos.closedAt !== null || pos.actorId === null) continue;
+      openPositionMap.set(pos.actorId, (openPositionMap.get(pos.actorId) ?? 0) + 1);
+    }
+
+    // Last-activity per bot: fetch owner journal, take max(createdAt) per actorId.
+    const journalLoaded = await loadAgentEvidence<ReadJournalRow>(boundary, 'get_owner_journal', {}, 'events', toJournalRow);
+    if (!journalLoaded.ok) {
+      return reply.status(journalLoaded.error.status).send(errorPayload(journalLoaded.error.code, journalLoaded.error.message));
+    }
+    const lastActivityMap = new Map<string, string>();
+    for (const ev of journalLoaded.rows) {
+      if (ev.actorId === null) continue;
+      const iso = ev.createdAt.toISOString();
+      const existing = lastActivityMap.get(ev.actorId);
+      if (!existing || iso > existing) {
+        lastActivityMap.set(ev.actorId, iso);
+      }
+    }
 
     // Resolve plan limits
     const planId = request.userPlanId || user.planId || 'free';
     const planDef = plansConfig?.plans?.[planId] ?? (plansConfig ? plansConfig.plans[plansConfig.defaultPlanId] : undefined);
 
     const botsSummary = botRows.map((bot) => {
-      const va = venueAccountMap.get(bot.venueAccountId);
-      const config = bot.config as Record<string, unknown>;
-      const symbol = (config['symbol'] as string | undefined)
-        ?? (config['strategyParams'] as Record<string, unknown> | undefined)?.['symbol'] as string | undefined
-        ?? '';
+      const va = bot.venueAccountId ? venueAccountMap.get(bot.venueAccountId) : undefined;
       return {
         id: bot.id,
         status: bot.status,
-        venue: va?.venue ?? (config['venue'] as string | undefined) ?? '',
+        // Venue is sourced from the venue account; the old `config.venue` fallback
+        // is dropped since `config` is no longer read (list_owner_bots is lossless
+        // for `symbol` but carries no venue field).
+        venue: va?.venue ?? '',
         venueLabel: va?.label ?? '',
-        symbol,
+        symbol: bot.symbol ?? '',
         openPositionsCount: openPositionMap.get(bot.id) ?? 0,
         lastActivityAt: lastActivityMap.get(bot.id) ?? null,
-        startedAt: bot.startedAt?.toISOString() ?? null,
-        createdAt: bot.createdAt.toISOString(),
+        startedAt: bot.startedAt ?? null,
+        createdAt: bot.createdAt,
       };
     });
 
     const runningCount = botsSummary.filter((b) => b.status === 'running').length;
-    const totalOpenPositions = botsSummary.reduce((sum, b) => sum + b.openPositionsCount, 0);
+    const totalOpenPositions = botsSummary.reduce((acc, b) => acc + b.openPositionsCount, 0);
 
     // ── Aggregate realized PnL across all user agents ──────────────────────
-    // Two-part query: agent-direct positions + bot-owned positions attributed
-    // via agent_connections → bots.  No per-agent grouping — single SUM.
+    // Per agent, get_agent_positions returns BOTH agent-native positions AND
+    // agent-owned-bot positions — folding the old two-part query into one read
+    // per agent. Each agent's rows are that agent's, so no dedupe is needed.
     const agentIds = agentRows.map((a) => a.id);
 
     let combinedPnl = 0;
-    if (agentIds.length > 0) {
-      // Part 1: Agent-direct positions
-      const directPnlQuery = db
-        .select({ totalPnl: sum(positions.realizedPnl) })
-        .from(positions)
-        .where(and(
-          eq(positions.actorType, 'agent'),
-          inArray(positions.actorId, agentIds),
-          isNotNull(positions.actorId),
-        ));
-
-      // Part 2: Bot-owned positions attributed via agent_connections → bots
-      const botOwnedPnlQuery = db
-        .select({ totalPnl: sum(positions.realizedPnl) })
-        .from(positions)
-        .innerJoin(bots, and(
-          eq(bots.id, positions.actorId),
-          eq(positions.actorType, 'bot'),
-        ))
-        .innerJoin(agentConnections, eq(agentConnections.connectionId, bots.connectionId))
-        .where(inArray(agentConnections.agentId, agentIds));
-
-      const [directPnlRow, botOwnedPnlRow] = await Promise.all([
-        directPnlQuery.then((r) => r[0]),
-        botOwnedPnlQuery.then((r) => r[0]),
-      ]);
-
-      combinedPnl = Number(directPnlRow?.totalPnl ?? '0') + Number(botOwnedPnlRow?.totalPnl ?? '0');
+    for (const agentId of agentIds) {
+      const agentSubject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
+      const agentBoundary = createTradertonReadBoundary(tradertonReadClient, agentSubject, readDeadlineMs);
+      const agentPos = await loadAgentEvidence<ReadPositionRow>(agentBoundary, 'get_agent_positions', {}, 'positions', toPositionRow);
+      if (!agentPos.ok) {
+        return reply.status(agentPos.error.status).send(errorPayload(agentPos.error.code, agentPos.error.message));
+      }
+      for (const pos of agentPos.rows) {
+        combinedPnl += Number(pos.realizedPnl ?? '0');
+      }
     }
 
     return reply.send({
@@ -274,11 +340,21 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
     const userId = request.userId;
     const { limit, before, beforeId } = parsed.data;
 
-    // Resolve the user's bot IDs — ownership gate
-    const botRows = await db
-      .select({ id: bots.id, venueAccountId: bots.venueAccountId })
-      .from(bots)
-      .where(eq(bots.userId, userId));
+    // The activity feed is trading-centric: without a boundary client there is
+    // no journal source, so degrade to 503.
+    if (!tradertonReadClient) {
+      return reply.status(boundaryUnconfiguredError.status).send(
+        errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+      );
+    }
+    const boundary = userBoundary(userId);
+
+    // Resolve the user's bots over the boundary — ownership gate + venueAccountId.
+    const listed = await loadAgentEvidence<OwnerBotRow>(boundary, 'list_owner_bots', {}, 'bots', (r) => r as OwnerBotRow);
+    if (!listed.ok) {
+      return reply.status(listed.error.status).send(errorPayload(listed.error.code, listed.error.message));
+    }
+    const botRows = listed.rows;
 
     if (botRows.length === 0) {
       return reply.send({ events: [], hasMore: false });
@@ -286,42 +362,64 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
 
     const botIds = botRows.map((b) => b.id);
 
-    // Fetch venue account labels for display
-    const venueAccountIds = [...new Set(botRows.map((b) => b.venueAccountId))];
-    const vaRows = await db
-      .select({ id: venueAccounts.id, label: venueAccounts.label, venue: venueAccounts.venue })
-      .from(venueAccounts)
-      .where(inArray(venueAccounts.id, venueAccountIds));
-    const vaMap = new Map(vaRows.map((va) => [va.id, va]));
-    const botVaMap = new Map(botRows.map((b) => [b.id, vaMap.get(b.venueAccountId)]));
+    // Resolve venue account display fields per distinct venueAccountId.
+    const venueAccountIds = [...new Set(botRows.map((b) => b.venueAccountId).filter((id): id is string => Boolean(id)))];
+    const vaMap = new Map<string, VenueAccountView>();
+    for (const vaId of venueAccountIds) {
+      const vaResult = await loadBoundaryObject(boundary, 'get_venue_account', { venueAccountId: vaId });
+      if (vaResult.ok) {
+        vaMap.set(vaId, {
+          venueAccountRef: (vaResult.data['venueAccountRef'] as string | undefined) ?? '',
+          venue: (vaResult.data['venue'] as string | undefined) ?? '',
+          label: (vaResult.data['label'] as string | undefined) ?? '',
+        });
+      } else if (vaResult.error.code !== 'not_found.resource') {
+        // not_found → tolerate (blank label); a transport/boundary failure propagates.
+        return reply.status(vaResult.error.status).send(errorPayload(vaResult.error.code, vaResult.error.message));
+      }
+    }
+    const botVaMap = new Map(botRows.map((b) => [b.id, b.venueAccountId ? vaMap.get(b.venueAccountId) : undefined]));
 
-    // Fetch events by actorId — fetch one extra to determine hasMore
-    const fetchLimit = limit + 1;
-    const query = db
-      .select()
-      .from(journalEvents)
-      .where(
-        before
-          ? and(
-              inArray(journalEvents.actorId, botIds as [string, ...string[]]),
-              or(
-                sql`${journalEvents.createdAt} < ${before}::timestamptz`,
-                beforeId
-                  ? and(
-                      sql`${journalEvents.createdAt} = ${before}::timestamptz`,
-                      sql`${journalEvents.id} < ${beforeId}`,
-                    )
-                  : sql`false`,
-              ),
-            )
-          : inArray(journalEvents.actorId, botIds as [string, ...string[]]),
-      )
-      .orderBy(desc(journalEvents.createdAt), desc(journalEvents.id))
-      .limit(fetchLimit);
+    // get_owner_journal returns the newest-first window but does NOT support the
+    // (createdAt, id) keyset cursor, so we fetch a window and apply the
+    // before/beforeId predicate + hasMore slice IN-APP. When no cursor is set the
+    // newest `limit + 1` rows suffice; with a cursor we fetch a larger window so
+    // rows AFTER the cursor can still fill a page.
+    const fetchLimit = (before || beforeId) ? (limit + 1) * 4 : limit + 1;
+    const journalLoaded = await loadAgentEvidence<ReadJournalRow>(
+      boundary,
+      'get_owner_journal',
+      { botIds, limit: fetchLimit },
+      'events',
+      toJournalRow,
+    );
+    if (!journalLoaded.ok) {
+      return reply.status(journalLoaded.error.status).send(errorPayload(journalLoaded.error.code, journalLoaded.error.message));
+    }
 
-    const rawEvents = await query;
-    const hasMore = rawEvents.length > limit;
-    const events = rawEvents.slice(0, limit);
+    // Newest-first ordering (createdAt desc, id desc) — apply in-app to guard
+    // against any ordering variance across the boundary.
+    const sortedRows = [...journalLoaded.rows].sort((a, b) => {
+      const at = a.createdAt.getTime();
+      const bt = b.createdAt.getTime();
+      if (at !== bt) return bt - at;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    });
+
+    // Apply the keyset cursor predicate: keep rows strictly older than the
+    // (before, beforeId) cursor. Mirrors the old SQL keyset semantics.
+    const beforeMs = before ? new Date(before).getTime() : null;
+    const cursored = beforeMs === null
+      ? sortedRows
+      : sortedRows.filter((ev) => {
+          const t = ev.createdAt.getTime();
+          if (t < beforeMs) return true;
+          if (t > beforeMs) return false;
+          return beforeId ? ev.id < beforeId : false;
+        });
+
+    const hasMore = cursored.length > limit;
+    const events = cursored.slice(0, limit);
 
     const normalised = events.map((ev) => {
       const payload = ev.payload as Record<string, unknown>;
