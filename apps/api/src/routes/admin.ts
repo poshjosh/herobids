@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { eq, count, sql, gte, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { users, bots, agents, agentRuntimeSessions, billingWebhookEvents } from '@herobids/db';
+import { users, agents, agentRuntimeSessions, billingWebhookEvents } from '@herobids/db';
 import type { MarketDataConfig, ServerHealthSnapshot } from '@herobids/domain';
 import { SERVER_TYPES, serverHealthKeyPattern } from '@herobids/domain';
 import { checkPostgres, checkRedis, parseAppVersion, dockerSocketGetAgentContainers, getRunningContainerCount } from '../admin-utils.js';
@@ -83,7 +83,6 @@ export async function adminRoutes(
 
     const [
       userCount,
-      botCount,
       agentCount,
       runningSessionCount,
       failedWebhookCount,
@@ -91,7 +90,10 @@ export async function adminRoutes(
       newAgentCount,
     ] = await Promise.all([
       db.select({ n: count(users.id) }).from(users).then((r) => r[0]?.n ?? 0),
-      db.select({ n: count(bots.id) }).from(bots).then((r) => r[0]?.n ?? 0),
+      // c4.7: platform-wide bots count REMOVED — a cross-tenant trading read the
+      // owner-scoped Traderton boundary cannot express, and authoring a cross-tenant
+      // count tool is rejected (c4.2-analytics precedent). Display-only admin tile;
+      // recorded as an Intentional-divergence (001). See docs 004/001 "c4.7".
       db.select({ n: count(agents.id) }).from(agents).then((r) => r[0]?.n ?? 0),
       db
         .select({ n: count(agentRuntimeSessions.id) })
@@ -124,7 +126,6 @@ export async function adminRoutes(
       redis: redisStatus,
       counts: {
         users: userCount,
-        bots: botCount,
         agents: agentCount,
         runningSessions: runningSessionCount,
         runningContainers: runningContainerCount,
@@ -167,7 +168,7 @@ export async function adminRoutes(
     return reply.send({ servers });
   });
 
-  // GET /admin/users — all users with bot and agent counts
+  // GET /admin/users — all users with agent counts (c4.7: bot counts removed)
   app.get('/admin/users', { preHandler: adminPreHandler }, async (request, reply) => {
     const query = (request.query ?? {}) as Record<string, string>;
     const hasPagination = query['limit'] !== undefined || query['offset'] !== undefined;
@@ -184,7 +185,8 @@ export async function adminRoutes(
               planId: users.planId,
               isAdmin: users.isAdmin,
               createdAt: users.createdAt,
-              botCount: sql<number>`(SELECT COUNT(*) FROM bots WHERE bots.user_id = ${users.id})::int`,
+              // c4.7: per-user botCount REMOVED — cross-owner trading read the owner-scoped
+              // boundary cannot express (Intentional-divergence, 001). agentCount stays (platform table).
               agentCount: sql<number>`(SELECT COUNT(*) FROM agents WHERE agents.user_id = ${users.id})::int`,
             })
             .from(users)
@@ -199,7 +201,7 @@ export async function adminRoutes(
               planId: users.planId,
               isAdmin: users.isAdmin,
               createdAt: users.createdAt,
-              botCount: sql<number>`(SELECT COUNT(*) FROM bots WHERE bots.user_id = ${users.id})::int`,
+              // c4.7: per-user botCount REMOVED (see paginated branch above).
               agentCount: sql<number>`(SELECT COUNT(*) FROM agents WHERE agents.user_id = ${users.id})::int`,
             })
             .from(users)

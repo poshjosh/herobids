@@ -87,8 +87,9 @@ describe('GET /admin/stats', () => {
   });
 
   it('returns system stats for admin users', async () => {
-    // select for users count, bots count, agents count
-    const db = buildDb([[{ n: 5 }], [{ n: 10 }], [{ n: 2 }]]);
+    // c4.7: the platform-wide bots count is gone. Positional count queries are
+    // now users, agents, ... (no bots slot). agents=10 here.
+    const db = buildDb([[{ n: 5 }], [{ n: 10 }]]);
     const app = Fastify();
     decorateWithAuth(app, ADMIN_USER_ID, true);
     await adminRoutes(app, db, mockRedis);
@@ -98,7 +99,9 @@ describe('GET /admin/stats', () => {
     const body = res.json<Record<string, unknown>>();
     expect(body['postgres']).toBe('ok');
     expect(body['redis']).toBe('ok');
-    expect(body['counts']).toMatchObject({ users: 5, bots: 10, agents: 2 });
+    // No `bots` tile — c4.7 removed it (cross-tenant read the boundary can't express).
+    expect(body['counts']).toMatchObject({ users: 5, agents: 10 });
+    expect(body['counts']).not.toHaveProperty('bots');
     expect(body['version']).toBeDefined();
   });
 
