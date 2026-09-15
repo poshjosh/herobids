@@ -81,7 +81,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
     const agentRepo = makeAgentRepo({ getAgent: vi.fn().mockResolvedValue({ id: 'agent-1', userId: 'user-1', status: 'paused' }) });
     const eventPublisher = makeEventPublisher();
     const { boundary, invokeAndAwait } = makeBoundary({ kind: 'success', requestId: 'r', correlationId: 'c', payload: {} });
-    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, undefined, boundary);
+    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, boundary);
 
     await handler.handleDecisionSubmit(makeEnvelope(), makePayload());
 
@@ -94,7 +94,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
     const agentRepo = makeAgentRepo({ isActiveSession: vi.fn().mockResolvedValue(false) });
     const eventPublisher = makeEventPublisher();
     const { boundary, invokeAndAwait } = makeBoundary({ kind: 'success', requestId: 'r', correlationId: 'c', payload: {} });
-    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, undefined, boundary);
+    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, boundary);
 
     await handler.handleDecisionSubmit(makeEnvelope(), makePayload());
 
@@ -106,7 +106,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
     const agentRepo = makeAgentRepo();
     const eventPublisher = makeEventPublisher();
     const { boundary, invokeAndAwait } = makeBoundary({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { planId: 'plan-9' } });
-    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, undefined, boundary);
+    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, boundary);
 
     await handler.handleDecisionSubmit(makeEnvelope(), makePayload({ limitPrice: '100', confidence: 0.5 }));
 
@@ -125,7 +125,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
     const agentRepo = makeAgentRepo();
     const eventPublisher = makeEventPublisher();
     const { boundary } = makeBoundary({ kind: 'failure', requestId: 'r', correlationId: 'c', code: 'risk.exceeded', message: 'over limit', retryable: false });
-    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, undefined, boundary);
+    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, boundary);
 
     await handler.handleDecisionSubmit(makeEnvelope(), makePayload());
 
@@ -138,7 +138,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
     const agentRepo = makeAgentRepo();
     const eventPublisher = makeEventPublisher();
     const { boundary } = makeBoundary({ kind: 'failure', requestId: 'r', correlationId: 'c', code: 'validation.invalid_payload', message: 'bad', retryable: false });
-    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, undefined, boundary);
+    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, boundary);
 
     await handler.handleDecisionSubmit(makeEnvelope(), makePayload());
 
@@ -149,7 +149,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
     const agentRepo = makeAgentRepo();
     const eventPublisher = makeEventPublisher();
     const { boundary } = makeBoundary({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'unreachable' });
-    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, undefined, boundary);
+    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, boundary);
 
     await handler.handleDecisionSubmit(makeEnvelope(), makePayload());
 
@@ -160,7 +160,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
     const agentRepo = makeAgentRepo();
     const eventPublisher = makeEventPublisher();
     const { boundary } = makeBoundary({ kind: 'in_progress', requestId: 'r', correlationId: 'c' });
-    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, undefined, boundary);
+    const handler = new AgentDecisionHandler(agentRepo as any, eventPublisher as any, undefined, undefined, undefined, undefined, boundary);
 
     await handler.handleDecisionSubmit(makeEnvelope(), makePayload());
 
@@ -195,7 +195,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
       const approvalVenueAccountResolver = vi.fn().mockResolvedValue('va-1');
       const handler = new AgentDecisionHandler(
         agentRepo as any, eventPublisher as any,
-        undefined, undefined, approvalRepo as any, 60_000, undefined,
+        undefined, approvalRepo as any, 60_000, undefined,
         boundary, 30_000, approvalVenueAccountResolver,
       );
       return { handler, eventPublisher, approvalRepo, approvalVenueAccountResolver, invokeAndAwait };

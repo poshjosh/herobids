@@ -1,6 +1,5 @@
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
-import type { DecisionFailureRepository } from '@herobids/db';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
@@ -39,7 +38,6 @@ export class AgentDecisionHandler {
   constructor(
     private readonly agentRepo: AgentRepository,
     private readonly eventPublisher: InstanceEventPublisher,
-    private readonly decisionFailureRepo?: DecisionFailureRepository,
     thresholds?: { noContext?: number; swapInstrumentFormat?: number },
     private readonly approvalRepo?: DecisionApprovalRepository,
     private readonly agentApprovalsTtlMs?: number,
@@ -130,37 +128,6 @@ export class AgentDecisionHandler {
     } catch (err) {
       logger.warn({ chatId, err }, 'Telegram approval notification network error');
     }
-  }
-
-  private recordFailure(input: {
-    actorType: string;
-    actorId: string;
-    decisionId?: string;
-    instrumentId?: string;
-    venue?: string;
-    venueAccountId?: string;
-    failureCode: string;
-    failureMessage: string;
-    failureClass: 'rejection' | 'error';
-    retryable: boolean;
-    details?: Record<string, unknown> | null;
-  }): void {
-    if (!this.decisionFailureRepo) return;
-    this.decisionFailureRepo.insert({
-      actorType: input.actorType,
-      actorId: input.actorId,
-      decisionId: input.decisionId,
-      instrumentId: input.instrumentId,
-      venue: input.venue,
-      venueAccountId: input.venueAccountId,
-      failureCode: input.failureCode,
-      failureMessage: input.failureMessage,
-      failureClass: input.failureClass,
-      retryable: input.retryable,
-      details: input.details,
-    }).catch((err) => {
-      logger.error({ err, failureCode: input.failureCode }, 'Failed to persist decision failure');
-    });
   }
 
   /**
@@ -285,7 +252,6 @@ export class AgentDecisionHandler {
         message: msg,
         retryable: false,
       });
-      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'agent_paused', failureMessage: msg, failureClass: 'rejection', retryable: false });
       return;
     }
 
@@ -303,7 +269,6 @@ export class AgentDecisionHandler {
         message: msg,
         retryable: false,
       });
-      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'stale_session', failureMessage: msg, failureClass: 'rejection', retryable: false });
       return;
     }
 
@@ -325,7 +290,6 @@ export class AgentDecisionHandler {
           message: msg,
           retryable: false,
         });
-        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'dry_run_approval_mode', failureMessage: msg, failureClass: 'rejection', retryable: false });
         return;
       }
       // Resolve the venue-account id for the approval SNAPSHOT from the connection
@@ -344,7 +308,6 @@ export class AgentDecisionHandler {
           message: msg,
           retryable: true,
         });
-        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: code, failureMessage: msg, failureClass: 'rejection', retryable: true });
         return;
       }
 
@@ -358,7 +321,6 @@ export class AgentDecisionHandler {
           message: msg,
           retryable: false,
         });
-        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'approval_no_user', failureMessage: msg, failureClass: 'rejection', retryable: false });
         return;
       }
 
@@ -539,7 +501,6 @@ export class AgentDecisionHandler {
         message: msg,
         retryable: true,
       });
-      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'precondition.not_ready', failureMessage: msg, failureClass: 'error', retryable: true });
       return;
     }
 
@@ -554,7 +515,6 @@ export class AgentDecisionHandler {
         message: msg,
         retryable: false,
       });
-      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'authorization.denied', failureMessage: msg, failureClass: 'rejection', retryable: false });
       return;
     }
 
@@ -616,7 +576,6 @@ export class AgentDecisionHandler {
             retryable: cb.retryable,
           });
         }
-        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: code, failureMessage: cb.message, failureClass: 'rejection', retryable: cb.retryable });
         return;
       }
 
@@ -630,7 +589,6 @@ export class AgentDecisionHandler {
         message: errMsg,
         retryable: outcome.retryable,
       });
-      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: errCode, failureMessage: errMsg, failureClass: 'error', retryable: outcome.retryable });
       return;
     } catch (err) {
       // The boundary adapter never throws for transport/boundary errors (those
@@ -645,7 +603,6 @@ export class AgentDecisionHandler {
         message: errMsg,
         retryable: false,
       });
-      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'execution_error', failureMessage: errMsg, failureClass: 'error', retryable: false });
       return;
     }
 

@@ -1,6 +1,5 @@
 import type { DecisionSubmitPayload, ActorType } from '@herobids/domain';
 import type { DecisionApprovalRepository } from '@herobids/db';
-import type { DecisionFailureRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
 import { buildSubmitDecisionPayload, mapBoundaryResultToDecisionOutcome } from '../agents/decision-boundary-mapping.js';
@@ -12,7 +11,6 @@ const logger = createLogger('approval-service');
 export interface ApprovalServiceDeps {
   approvalRepo: DecisionApprovalRepository;
   eventPublisher: InstanceEventPublisher;
-  decisionFailureRepo?: DecisionFailureRepository;
   agentApprovalsTtlMs: number;
   // L3d-1: the Traderton side-effecting boundary. The human-approve → execute
   // path routes `submit_decision` over REST (invoke → poll) instead of the

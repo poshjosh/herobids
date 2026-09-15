@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ToolContext } from '@herobids/domain';
+import type { ToolContext, TradertonReadResult } from '@herobids/domain';
 import { instrumentTools } from './find-instrument.js';
 
 const findInstrument = instrumentTools.find((t) => t.name === 'find_instrument')!;
@@ -21,27 +21,23 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   };
 }
 
-function makeInstrument(overrides: Record<string, string> = {}) {
+/** A boundary success payload — the shape Traderton's find_instrument returns. */
+function boundaryInstrumentsPayload(instruments: Array<Record<string, unknown>>) {
   return {
-    id: 'uuid-btc-001',
-    symbol: 'BTC/USDC:USDC',
-    base: 'BTC',
-    quote: 'USDC',
-    type: 'perp',
-    venue: 'hyperliquid',
-    tickSize: '0.1',
-    lotSize: '0.001',
-    ...overrides,
+    ok: true,
+    query: 'BTC',
+    count: instruments.length,
+    instruments,
   };
 }
 
 describe('find_instrument', () => {
   // -------------------------------------------------------------------------
-  // Repo unavailable
+  // Boundary unavailable — fail closed (no local instruments read)
   // -------------------------------------------------------------------------
 
-  it('returns error when instrumentRepo is unavailable', async () => {
-    const ctx = makeCtx({ instrumentRepo: undefined });
+  it('returns error when the Traderton boundary is unavailable', async () => {
+    const ctx = makeCtx({ tradertonBoundary: undefined });
 
     const result = await findInstrument.execute({ query: 'BTC' }, ctx);
 
@@ -51,161 +47,113 @@ describe('find_instrument', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Happy path — single result
+  // Invokes the boundary find_instrument tool with mapped params
   // -------------------------------------------------------------------------
 
-  it('returns matching instruments when found', async () => {
-    const ctx = makeCtx({
-      instrumentRepo: {
-        search: vi.fn(async () => [makeInstrument()]),
+  it('invokes the boundary find_instrument tool with query/venue/limit', async () => {
+    const invoke = vi.fn(
+      async (): Promise<TradertonReadResult> => ({
+        kind: 'success',
+        data: boundaryInstrumentsPayload([]),
+      }),
+    );
+    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+
+    await findInstrument.execute({ query: 'SOL', venue: 'jupiter', limit: 3 }, ctx);
+
+    expect(invoke).toHaveBeenCalledWith({
+      toolName: 'find_instrument',
+      payload: { query: 'SOL', venue: 'jupiter', limit: 3 },
+    });
+  });
+
+  it('defaults limit to 5 when omitted', async () => {
+    const invoke = vi.fn(
+      async (): Promise<TradertonReadResult> => ({
+        kind: 'success',
+        data: boundaryInstrumentsPayload([]),
+      }),
+    );
+    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+
+    await findInstrument.execute({ query: 'BTC' }, ctx);
+
+    expect(invoke).toHaveBeenCalledWith({
+      toolName: 'find_instrument',
+      payload: { query: 'BTC', venue: undefined, limit: 5 },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Success — the boundary payload flows through unchanged
+  // -------------------------------------------------------------------------
+
+  it('passes the boundary success payload through unchanged', async () => {
+    const payload = boundaryInstrumentsPayload([
+      {
+        instrumentId: 'BTC',
+        id: 'uuid-btc-001',
+        symbol: 'BTC/USDC:USDC',
+        base: 'BTC',
+        quote: 'USDC',
+        type: 'perp',
+        venue: 'hyperliquid',
+        tickSize: '0.1',
+        lotSize: '0.001',
       },
+    ]);
+    const ctx = makeCtx({
+      tradertonBoundary: { invoke: vi.fn(async (): Promise<TradertonReadResult> => ({ kind: 'success', data: payload })) },
     });
 
     const result = await findInstrument.execute({ query: 'BTC' }, ctx);
 
     expect(result.success).toBe(true);
-    const data = result.data as Record<string, unknown>;
-    expect(data.ok).toBe(true);
-    expect(data.count).toBe(1);
-    const instruments = data.instruments as Array<Record<string, unknown>>;
-    expect(instruments[0]).toMatchObject({
-      instrumentId: 'BTC',        // perp → base ticker
-      id: 'uuid-btc-001',         // DB internal ID
-      symbol: 'BTC/USDC:USDC',
-      base: 'BTC',
-      quote: 'USDC',
-      type: 'perp',
-      venue: 'hyperliquid',
-    });
+    expect(result.data).toEqual(payload);
   });
 
   // -------------------------------------------------------------------------
-  // Happy path — venue filter
+  // Boundary typed failure — mapped to a non-fault tool failure
   // -------------------------------------------------------------------------
 
-  it('passes venue filter to the repository', async () => {
-    const search = vi.fn(async () => [makeInstrument({ venue: 'jupiter' })]);
-    const ctx = makeCtx({ instrumentRepo: { search } });
-
-    await findInstrument.execute({ query: 'SOL', venue: 'jupiter' }, ctx);
-
-    expect(search).toHaveBeenCalledWith({
-      query: 'SOL',
-      venue: 'jupiter',
-      limit: 5,
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // No results
-  // -------------------------------------------------------------------------
-
-  it('returns error when no instruments match', async () => {
+  it('maps a boundary not-found failure to a content-level tool failure', async () => {
     const ctx = makeCtx({
-      instrumentRepo: {
-        search: vi.fn(async () => []),
+      tradertonBoundary: {
+        invoke: vi.fn(
+          async (): Promise<TradertonReadResult> => ({
+            kind: 'failure',
+            code: 'not_found.resource',
+            message: 'No instruments found for query "DOESNOTEXIST".',
+            retryable: false,
+          }),
+        ),
       },
     });
 
     const result = await findInstrument.execute({ query: 'DOESNOTEXIST' }, ctx);
 
     expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('instrument.not_found');
-    expect(result.error).toContain('No instruments found');
+    expect(result.errorCode).toBe('not_found.resource');
+    expect(result.fault).toBe(false);
+    expect(result.retryable).toBe(false);
   });
 
   // -------------------------------------------------------------------------
-  // Repo throws
+  // Transport error — mapped to a retryable infrastructure fault
   // -------------------------------------------------------------------------
 
-  it('returns error when repository throws', async () => {
+  it('maps a boundary transport error to a retryable fault', async () => {
     const ctx = makeCtx({
-      instrumentRepo: {
-        search: vi.fn(async () => {
-          throw new Error('DB connection lost');
-        }),
+      tradertonBoundary: {
+        invoke: vi.fn(async (): Promise<TradertonReadResult> => ({ kind: 'transport_error', message: 'unreachable', retryable: true })),
       },
     });
 
     const result = await findInstrument.execute({ query: 'BTC' }, ctx);
 
     expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('instrument.lookup_failed');
-    expect(result.error).toContain('DB connection lost');
-  });
-
-  // -------------------------------------------------------------------------
-  // instrumentId mapping — perp → base ticker
-  // -------------------------------------------------------------------------
-
-  it('maps instrumentId to base ticker for perp instruments', async () => {
-    const ctx = makeCtx({
-      instrumentRepo: {
-        search: vi.fn(async () => [
-          makeInstrument({ id: 'uuid-zec', symbol: 'ZEC/USDC:USDC', base: 'ZEC', type: 'perp', venue: 'hyperliquid' }),
-        ]),
-      },
-    });
-
-    const result = await findInstrument.execute({ query: 'ZEC' }, ctx);
-
-    expect(result.success).toBe(true);
-    const instruments = (result.data as Record<string, unknown>).instruments as Array<Record<string, unknown>>;
-    expect(instruments[0]).toMatchObject({
-      instrumentId: 'ZEC',        // perp → base ticker
-      id: 'uuid-zec',             // DB internal ID preserved
-      symbol: 'ZEC/USDC:USDC',
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // instrumentId mapping — spot/swap → pair symbol
-  // -------------------------------------------------------------------------
-
-  it('maps instrumentId to pair symbol for spot (swap) instruments', async () => {
-    const ctx = makeCtx({
-      instrumentRepo: {
-        search: vi.fn(async () => [
-          makeInstrument({ id: 'uuid-sol', symbol: 'SOL/USDC', base: 'SOL', type: 'spot', venue: 'jupiter' }),
-        ]),
-      },
-    });
-
-    const result = await findInstrument.execute({ query: 'SOL', venue: 'jupiter' }, ctx);
-
-    expect(result.success).toBe(true);
-    const instruments = (result.data as Record<string, unknown>).instruments as Array<Record<string, unknown>>;
-    expect(instruments[0]).toMatchObject({
-      instrumentId: 'SOL/USDC',   // spot/swap → pair symbol
-      id: 'uuid-sol',             // DB internal ID preserved
-      symbol: 'SOL/USDC',
-      base: 'SOL',
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // instrumentId mapping — mixed perp + spot results
-  // -------------------------------------------------------------------------
-
-  it('maps instrumentId correctly for mixed perp and spot results', async () => {
-    const ctx = makeCtx({
-      instrumentRepo: {
-        search: vi.fn(async () => [
-          makeInstrument({ id: 'uuid-eth', symbol: 'ETH/USDC:USDC', base: 'ETH', type: 'perp', venue: 'hyperliquid' }),
-          makeInstrument({ id: 'uuid-weth', symbol: 'WETH/USDC', base: 'WETH', type: 'spot', venue: 'jupiter' }),
-        ]),
-      },
-    });
-
-    const result = await findInstrument.execute({ query: 'ETH' }, ctx);
-
-    expect(result.success).toBe(true);
-    const instruments = (result.data as Record<string, unknown>).instruments as Array<Record<string, unknown>>;
-    // perp → base ticker
-    expect(instruments[0]!.instrumentId).toBe('ETH');
-    expect(instruments[0]!.id).toBe('uuid-eth');
-    // spot → pair symbol
-    expect(instruments[1]!.instrumentId).toBe('WETH/USDC');
-    expect(instruments[1]!.id).toBe('uuid-weth');
+    expect(result.errorCode).toBe('boundary.transport_error');
+    expect(result.retryable).toBe(true);
+    expect(result.fault).toBe(true);
   });
 });

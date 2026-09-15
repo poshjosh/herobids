@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, BoundaryConfigSchema } from '@herobids/domain';
-import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
+import { createDatabase, BotRepository, AgentRepository, PgJournal, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel } from '@herobids/domain';
@@ -892,8 +892,6 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const db = DATABASE_URL ? createDatabase(DATABASE_URL) : null;
 const botRepo = db ? new BotRepository(db) : null;
 const agentRepo = db ? new AgentRepository(db) : null;
-const instrumentRepo = db ? new InstrumentRepository(db) : null;
-const llmArtifactRepo = db ? new LlmArtifactRepository(db) : null;
 if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
   for (const tool of DATABASE_DEPENDENT_TOOLS) {
@@ -1966,11 +1964,6 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
               fixedPositionSize: config.execution?.fixedPositionSize ?? null,
             };
           },
-        }
-      : undefined,
-    instrumentRepo: instrumentRepo
-      ? {
-          search: (opts) => instrumentRepo.search(opts),
         }
       : undefined,
     agentRepo: agentRepo
@@ -3252,28 +3245,6 @@ async function runTick(): Promise<void> {
               `Hybrid sizing: no pricingIdentity for go_long ${symbol} — cannot convert USD size to base units`,
             );
           },
-          onArtifact: llmArtifactRepo
-            ? async (artifact) => {
-                await llmArtifactRepo.insert({
-                  source: artifact.source,
-                  decisionId: null,
-                  decisionIds: artifact.decisionIds,
-                  contextHash: artifact.contextHash,
-                  context: artifact.context,
-                  promptPayload: artifact.promptPayload,
-                  promptVersion: artifact.promptVersion,
-                  rawResponse: artifact.rawResponse,
-                  parsedDecision: null,
-                  parseStatus: artifact.parseStatus,
-                  parseError: artifact.parseError,
-                  provider: artifact.provider,
-                  model: artifact.model,
-                  tokensUsed: artifact.tokensUsed,
-                  latencyMs: artifact.latencyMs,
-                  cached: artifact.cached,
-                });
-              }
-            : undefined,
           logger,
         });
 

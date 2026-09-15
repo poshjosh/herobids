@@ -7,7 +7,7 @@ import {
   AssessmentReviewRunner,
 } from './market-intelligence/assessment-review-runner.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
-import { createDatabase, PgJournal, AlertDeliveryRepository, AgentRepository, BotRepository, UsageBillingRepository, DecisionFailureRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
+import { createDatabase, PgJournal, AlertDeliveryRepository, AgentRepository, BotRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { AGENT_STREAM_MAXLEN, type ProvidersYaml, ok, err } from '@herobids/domain';
 
@@ -109,7 +109,6 @@ const journal = new PgJournal(db);
 // by the deleted in-process trading actors + engine-backed intake. Removed with the
 // actor slice. Their tables remain (deferred to a later slice per 004-l3d-plan §A).
 const alertDeliveryRepo = new AlertDeliveryRepository(db);
-const decisionFailureRepo = new DecisionFailureRepository(db);
 const decisionApprovalRepo = new DecisionApprovalRepository(db);
 
 // Document store shared by API and worker — must use the same root directory.
@@ -501,7 +500,6 @@ const approvalVenueAccountResolver = async (agentId: string): Promise<string | n
 const agentDecisionHandler = new AgentDecisionHandler(
   agentRepo,
   eventPublisher,
-  decisionFailureRepo,
   {
     noContext: appConfig.agentRiskDefaults.agentDecisionNoContextThreshold,
     swapInstrumentFormat: appConfig.agentRiskDefaults.agentDecisionSwapInstrumentFormatThreshold,
@@ -517,7 +515,6 @@ const agentDecisionHandler = new AgentDecisionHandler(
 const approvalService = new ApprovalService({
   approvalRepo: decisionApprovalRepo,
   eventPublisher,
-  decisionFailureRepo,
   agentApprovalsTtlMs: appConfig.agentApprovals.ttlMs,
   // L3d-1: the human-approve → execute path routes over the same Traderton
   // side-effecting boundary the decision handler uses. When unconfigured,

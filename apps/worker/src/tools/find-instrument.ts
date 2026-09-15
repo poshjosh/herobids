@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { mapReadResultToToolResult } from './traderton-read.js';
 
 // --- find_instrument ---
 
@@ -20,7 +21,14 @@ const findInstrumentTool: AgentTool<TradingToolContext> = {
   promptGuidance: 'Call find_instrument before submit_decision to resolve the correct instrumentId. The returned instrumentId is already venue-correct: use it directly in submit_decision. For perp venues the instrumentId is the base ticker (e.g. "ZEC"); for swap venues it is the pair symbol (e.g. "SOL/USDC"). Tokens must be native to the venue\'s chain. Search by base token symbol, pair, or full symbol. Use venue="jupiter" for Solana tokens or venue="hyperliquid" for perpetuals.',  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { query, venue, limit = 5 } = params as z.infer<typeof FindInstrumentParamsSchema>;
 
-    if (!ctx.instrumentRepo) {
+    // Route the read over the Traderton boundary — the local instruments table
+    // is owned by Traderton (legal-isolation). The boundary's find_instrument
+    // returns the identical success shape ({ ok, query, count, instruments })
+    // and its own typed not-found, so the payload flows through unchanged.
+    // When the boundary is absent the tool fails closed — there is NO in-process
+    // fallback (a local instruments read is forbidden), mirroring the other
+    // mandatory-boundary reads.
+    if (!ctx.tradertonBoundary) {
       return {
         success: false,
         fault: false,
@@ -29,54 +37,10 @@ const findInstrumentTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    try {
-      const results = await ctx.instrumentRepo.search({
-        query,
-        venue,
-        limit,
-      });
-
-      if (results.length === 0) {
-        return {
-          success: false,
-          fault: false,
-          error: `No instruments found for query "${query}". Try a different symbol, use search_tokens to discover tokens, or check the venue.`,
-          errorCode: 'instrument.not_found',
-          data: { query, venue, suggestion: 'Use search_tokens or discover_tokens to find available tokens.' },
-        };
-      }
-
-      return {
-        success: true,
-        data: {
-          ok: true,
-          query,
-          count: results.length,
-          instruments: results.map((r) => ({
-            // instrumentId holds the value that submit_decision expects:
-            //   perp venues → base ticker (e.g. "ZEC")
-            //   swap/spot venues → pair symbol (e.g. "SOL/USDC")
-            instrumentId: r.type === 'perp' ? r.base : r.symbol,
-            id: r.id,
-            symbol: r.symbol,
-            base: r.base,
-            quote: r.quote,
-            type: r.type,
-            venue: r.venue,
-            tickSize: r.tickSize,
-            lotSize: r.lotSize,
-          })),
-        },
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      return {
-        success: false,
-        fault: false,
-        error: `Instrument lookup failed: ${message}`,
-        errorCode: 'instrument.lookup_failed',
-      };
-    }
+    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+      toolName: 'find_instrument',
+      payload: { query, venue, limit },
+    }));
   },
 };
 
