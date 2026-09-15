@@ -700,6 +700,41 @@ describe('bot read + lifecycle routes route over the boundary (no local bots tab
     expect(res.statusCode).toBe(409);
   });
 
+  // c4.6 — 409-backstop (A1 sub-obligation). The pre-gate above fires when
+  // get_owner_bot_status reports 'running' BEFORE delete_bot is invoked. This
+  // test isolates the SECOND defense: a race where the pre-gate saw 'stopped'
+  // (so it passes and delete_bot IS called) but the authoritative delete_bot
+  // returns a failure carrying details.errorCode:'bot.running' — the bot started
+  // between the gate read and the delete. The handler reads that raw-client-result
+  // errorCode and maps it to 409 via errorPayload('bot.running', ...). Distinct
+  // code path from the pre-gate: reached via delete_bot's failure, not status.
+  it('DELETE /bots/:id maps a delete_bot bot.running failure to 409 (race backstop — pre-gate saw stopped)', async () => {
+    const { client, invoke } = makeToolClient({
+      // Pre-gate passes — the bot looks deletable.
+      get_owner_bot_status: statusPayload({ status: 'stopped' }),
+      // Authoritative delete diverges: the bot started in the race window. The
+      // raw client result carries a top-level `details.errorCode` (invokeBoundary
+      // returns the TradertonClientResult verbatim — NOT the unwrapped read shape).
+      delete_bot: {
+        kind: 'failure',
+        code: 'validation.invalid_payload',
+        message: 'Cannot delete a running bot. Stop it first.',
+        retryable: false,
+        requestId: 'r',
+        correlationId: 'c',
+        details: { errorCode: 'bot.running' },
+      },
+    });
+    const app = await buildApp(client);
+    const res = await app.inject({ method: 'DELETE', url: '/bots/bot-1' });
+    expect(res.statusCode).toBe(409);
+    // errorPayload('bot.running', ...) carries the code in the `error` field.
+    expect(res.json<{ error: string }>().error).toBe('bot.running');
+    // Proves the backstop path: delete_bot WAS invoked (got past the pre-gate).
+    const tools = invoke.mock.calls.map((c) => c[0].toolName);
+    expect(tools).toContain('delete_bot');
+  });
+
   it('DELETE /bots/:id returns 503 when the boundary is absent', async () => {
     const app = await buildApp(undefined);
     const res = await app.inject({ method: 'DELETE', url: '/bots/bot-1' });
