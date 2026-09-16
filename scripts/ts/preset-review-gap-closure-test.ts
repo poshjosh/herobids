@@ -245,10 +245,12 @@ async function runR2(token: string, connectionId: string): Promise<void> {
   record('R2', !schedulerStarted,
     schedulerStarted ? 'Scheduler STARTED for intelligence agent (BUG!)' : 'Scheduler correctly skipped for intelligence agent');
 
-  // Also check eligibility — will report canTrigger=false (multiple reasons expected without LLM)
-  const res = await apiRequest<{ canTrigger?: boolean; reasons?: string[] }>('GET', `/agents/${agentId}/platform-assessment/reviews/eligibility`, { token });
-  const reasons = Array.isArray(res.body?.reasons) ? res.body.reasons.join('|') : '';
-  log(`  Eligibility: canTrigger=${res.body?.canTrigger} reasons=[${reasons}]`);
+  // Also check eligibility — will report canTrigger=false (multiple reasons expected without LLM).
+  // The endpoint returns a SINGULAR `reason` string (canTrigger ? null : reasons.join('; ')),
+  // NOT a `reasons` array — see bug 2026-09-16/001.
+  const res = await apiRequest<{ canTrigger?: boolean; reason?: string | null }>('GET', `/agents/${agentId}/platform-assessment/reviews/eligibility`, { token });
+  const reasonText = typeof res.body?.reason === 'string' ? res.body.reason : '';
+  log(`  Eligibility: canTrigger=${res.body?.canTrigger} reason=[${reasonText}]`);
 
   // Force-stop crashed agent
   try { await stopAndDeleteAgent(token, agentId); } catch { dbExec(`UPDATE agents SET status = 'stopped' WHERE id = '${agentId}'`); await stopAndDeleteAgent(token, agentId); }
@@ -263,10 +265,11 @@ async function runR3(token: string, connectionId: string): Promise<void> {
   await startAgent(token, agentId);
   await waitForAgentActive(token, agentId);
 
-  const res = await apiRequest<{ canTrigger?: boolean; reasons?: string[] }>('GET', `/agents/${agentId}/platform-assessment/reviews/eligibility`, { token });
+  // Bug 2026-09-16/001: the endpoint returns a SINGULAR `reason` string, not a `reasons` array.
+  const res = await apiRequest<{ canTrigger?: boolean; reason?: string | null }>('GET', `/agents/${agentId}/platform-assessment/reviews/eligibility`, { token });
   const body = res.body;
   const canTriggerFalse = body?.canTrigger === false;
-  const reasonText = Array.isArray(body?.reasons) ? body.reasons.join('|') : '';
+  const reasonText = typeof body?.reason === 'string' ? body.reason : '';
   const hasCapabilityReason = reasonText.toLowerCase().includes('hybrid');
   record('R3', canTriggerFalse && hasCapabilityReason,
     `canTrigger=${body?.canTrigger} reasons=[${reasonText}]`);
