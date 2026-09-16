@@ -194,6 +194,41 @@ rule below keeps it in lockstep with the code.
   config that lives in YAML (`config/*.yaml`) or Postgres JSONB. Keep the layers distinct so
   the `.example` never becomes a stale mirror of another source of truth.
 
+### Why trading venue secrets (`HL_*`, `ONEINCH_PRIVATE_KEY`, `SOLANA_WALLET_PRIVATE_KEY`, …) still appear in herobids ops env
+
+After the trading extraction, the trading engine + venue adapters live in **traderton**,
+behind the REST boundary. So it is reasonable to ask why venue-account secrets like
+`HL_API_KEY` / `HL_SECRET` / `HL_WALLET_ADDRESS` still show up in herobids'
+`.env.ops.dev.example` / `.env.ops.remote.example`. Two distinct reasons — neither of which
+means herobids *stores* or *owns* trading secrets:
+
+1. **Test-runner / operator-onboarding INPUTS, not runtime config.** The `.env.ops.*` files
+   feed the operator **scripts** (`scripts/ts/*-test.ts`, `scripts/shell/**`), not the
+   herobids api/worker processes. Those scripts play the role of *a user onboarding a venue
+   account*: they read the venue secret from the operator's env and submit it to the
+   `POST /setup/provider-link` API, exactly as a real user would type it into the UI. The
+   secret is a **client input to the onboarding call**, not something the herobids runtime
+   reads from its own environment. (herobids api/worker read NO `HL_*` from env — verify:
+   `rg "HL_API_KEY|HL_SECRET|HL_WALLET" apps packages -g '!*.test.ts'` → no hits.)
+
+2. **herobids handles trading secrets only IN TRANSIT — the boundary owns encryption + storage.**
+   The trading provider-link path (`apps/api/src/routes/setup.ts`, manual mode) canonicalises
+   + validates the submitted secrets and then FORWARDS them to the traderton boundary's
+   `provision_venue_account`, which encrypts (`CREDENTIAL_ENCRYPTION_KEY`) and stores them
+   traderton-side. herobids does **not** encrypt or persist trading venue secrets locally.
+   (The local `encryptCredential` in `setup.ts` is the NON-trading branch — Gmail/OAuth/
+   telegram platform creds that are genuinely herobids-owned and never cross the trading
+   boundary.) The `generate` mode is stronger still: traderton mints the keypair behind the
+   boundary and returns only the public address — herobids never sees a private key.
+
+Posture summary: herobids is a **validating courier** for manual venue onboarding (secret
+passes through, boundary encrypts+stores); it is the **owner** only of non-trading platform
+credentials. The `HL_*`-style vars in `.env.ops.*` are operator inputs to that onboarding
+flow (and to the test scripts that exercise it), not herobids runtime secrets. If full
+legal-isolation later requires that manual venue secrets never transit herobids at all (user →
+boundary directly), that is a separate, deliberate architecture decision — record it in the
+decision log before changing this flow.
+
 ### Format
 
 ```dotenv
