@@ -330,6 +330,7 @@ llm:
     cacheTtlMs: 86400000        # Cache TTL in ms (24 h). Stale entries are kept as fallback, not deleted.
   tickIntervalMs: 900000         # Agent reasoning loop interval in ms (how often the agent calls the LLM)
   heartbeatIntervalMs: 5000     # Agent heartbeat cadence in ms
+  serverCostUsdPerHour: 0.02    # Self-hosted LLM server cost/hour, used in runtime billing estimates; override: LLM_SERVER_COST_USD_PER_HOUR
   tradingHours:
     allowedHoursUtc: []         # Empty = always active. Set explicit UTC hours to gate low-liquidity periods.
     weekendPause: false         # If true, pause new no-position ticks from Sat 00:00 UTC to Sun 12:00 UTC.
