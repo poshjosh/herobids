@@ -215,13 +215,29 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     if (!conn) {
       return reply.status(404).send({ error: 'not_found', message: 'Connection not found' });
     }
+    // herobids owns the connection→account mapping. A connection with no resolved
+    // venue account cannot back a bot — surface it as a clean precondition failure
+    // rather than forwarding a null account to the boundary.
+    if (!conn.resolvedVenueAccountId) {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'This connection has no resolved venue account — the bot was not created.', {}));
+    }
 
     // L3c: create the bot over the Traderton boundary — no bots-table write, no
-    // maxBots, no venue-stamp (#4/D2). connectionId is forwarded so Traderton can
-    // resolve the account grant. NO silent fallback to a local insert.
+    // maxBots, no venue-stamp (#4/D2). herobids resolves connection→venueAccountId
+    // on its side (decision 13: the connection indirection is platform-only) and
+    // forwards the concrete venueAccountId as a signed payload arg so the boundary
+    // resolves the account deterministically. NO silent fallback to a local insert.
     const result = await invokeBoundary('create_bot', {
-      connectionId,
+      venueAccountId: conn.resolvedVenueAccountId,
       config: resolvedConfig,
+      // autostart:false → create the bot STOPPED, mirroring the ORIGINAL herobids
+      // create-then-start semantics: this route returns 201 with the botId, and the
+      // user starts it later via the existing POST /bots/:id/start. The migrated
+      // default (create_and_start) auto-started here, which turned that explicit
+      // start into a no-op (200 already_running). The agent path (agent-message-
+      // broker) intentionally keeps the create_and_start default — it does NOT send
+      // this flag — because an agent delegates a bot in order to have it running.
+      autostart: false,
       ...(blueprintId ? { blueprintId } : {}),
       ...(configSnapshot ? { configSnapshot } : {}),
     }, request.userId);

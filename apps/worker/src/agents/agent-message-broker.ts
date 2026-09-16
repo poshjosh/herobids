@@ -669,10 +669,15 @@ export class AgentMessageBroker {
 
       // L3c: create the bot over the boundary — no bots-table write, no maxBots,
       // no venue-stamp (#4/D2). Traderton owns bots + the limit and resolves the
-      // venue account from the subject. `create_bot` is no-bot (no botId). The
-      // connectionId is forwarded so Traderton can resolve the account grant.
+      // venue account from the subject. `create_bot` is no-bot (no botId). herobids
+      // owns the connection→account mapping (decision 13: the connection indirection
+      // is platform-only), so it resolves the concrete venueAccountId off the chosen
+      // binding and forwards it as a signed payload arg for deterministic resolution.
+      if (!connection.resolvedVenueAccountId) {
+        throw new Error(`Trading connection ${connection.connectionId} has no resolved venue account`);
+      }
       await this.invokeBotLifecycle('create_bot', {
-        connectionId: connection.connectionId,
+        venueAccountId: connection.resolvedVenueAccountId,
         config: rawConfig,
       }, subject);
 

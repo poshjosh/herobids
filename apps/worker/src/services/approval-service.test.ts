@@ -113,13 +113,16 @@ describe('ApprovalService.executeApproval', () => {
 
     expect(res).toMatchObject({ kind: 'executed', status: 'accepted', planId: 'plan-1' });
 
-    // Subject: ownerId = userId, actor = { type, id } from the approval row. No venueAccountId.
+    // Subject stays ownerId + actor ONLY (D2) — the venue account is NOT in the
+    // subject. It rides in the PAYLOAD, sourced from the approval snapshot's
+    // stored venueAccountId (va-1), so the boundary resolves it deterministically.
     expect(invokeAndAwait).toHaveBeenCalledTimes(1);
     const call = invokeAndAwait.mock.calls[0]![0];
     expect(call.toolName).toBe('submit_decision');
     expect(call.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-1' } });
     expect(call.subject.venueAccountId).toBeUndefined();
-    // Payload built from the stored fields (optional values carried through).
+    // Payload built from the stored fields (optional values carried through) plus
+    // the snapshot venue account threaded in as a payload arg.
     expect(call.payload).toMatchObject({
       instrumentId: 'BTC-PERP',
       intent: 'go_long',
@@ -128,6 +131,7 @@ describe('ApprovalService.executeApproval', () => {
       limitPrice: '30000',
       confidence: 0.9,
       contextHash: 'ctx-1',
+      venueAccountId: 'va-1',
     });
 
     // pending → approved transition + recorded accepted outcome + emitted event.

@@ -1,0 +1,36 @@
+# traderton-xstack.override.yml — host-port remap for the TRADERTON compose
+# when running it alongside the herobids stack for cross-stack shell tests.
+#
+# Why: the traderton stack (traderton/docker-compose.yml) publishes postgres on
+# host :5432 and redis on host :6379 — the SAME host ports herobids uses. Run
+# side by side on one developer machine, they collide. This overlay ONLY remaps
+# the traderton stack's PUBLISHED host ports (postgres 5433:5432, redis
+# 6380:6379) so both stacks can be up at once. The boundary stays on 8080:8080.
+#
+# Kept herobids-side (not an edit to traderton's committed compose) so other
+# traderton work never fights this remap. It touches ONLY the host `ports:`
+# mapping — no internal/service-network config. The boundary reaches its own
+# postgres/redis over the traderton compose network by SERVICE NAME
+# (postgres:5432, redis:6379), which the host-publish remap does not affect.
+#
+# NOTE — the `!override` YAML tag is REQUIRED here. Compose MERGES (appends)
+# `ports:` sequences across -f files by default, so without `!override` the
+# base "5432:5432"/"6379:6379" mappings would REMAIN alongside the remapped
+# ones — re-introducing the very host-port collision this overlay exists to
+# fix. `!override` (Compose ≥ 2.24 / Docker Compose v2) REPLACES the base list
+# with only the remapped entry. Verified against the collision bug where both
+# 5432 AND 5433 (and 6379 AND 6380) got published.
+#
+# Applied when bringing the traderton stack up from herobids:
+#   docker compose -p traderton_xstack \
+#     -f ../traderton/docker-compose.yml \
+#     -f docker/traderton-xstack.override.yml up -d --build
+
+services:
+  postgres:
+    ports: !override
+      - "5433:5432"
+
+  redis:
+    ports: !override
+      - "6380:6379"

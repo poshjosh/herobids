@@ -108,10 +108,14 @@ export class ApprovalService {
       ...(approval.confidence != null ? { confidence: Number(approval.confidence) } : {}),
       ...(approval.contextHash != null ? { contextHash: approval.contextHash } : {}),
     };
-    const boundaryPayload = buildSubmitDecisionPayload(decisionPayload);
+    // Thread the snapshot venue account (resolved off the connection grant at
+    // approval-creation time and stored on the approval row) in as a payload arg
+    // so the boundary resolves deterministically — matching the direct path.
+    const boundaryPayload = buildSubmitDecisionPayload(decisionPayload, approval.venueAccountId);
 
     try {
-      // Inject ownerId + actor ONLY. Traderton resolves the venue account (D2).
+      // Subject stays ownerId + actor ONLY (D2). The venue account rides in the
+      // payload (threaded above from the approval snapshot), not the subject.
       const result = await this.deps.sideEffectBoundary.invokeAndAwait({
         toolName: 'submit_decision',
         payload: boundaryPayload,

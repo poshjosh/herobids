@@ -16,8 +16,12 @@ import type { TradertonClientResult } from '@herobids/domain/traderton';
 /**
  * The Traderton `submit_decision` payload — the same fields the copied tool's
  * Zod schema validates on the Traderton side. `dryRun`/`_expectsReply` are
- * herobids protocol flags that never reach the boundary; `venueAccountId`/venue
- * are NOT injected (Traderton resolves the account from the subject — D2).
+ * herobids protocol flags that never reach the boundary. `venueAccountId` is
+ * NOT part of the SUBJECT (D2 stays ownerId+actor); it rides as a per-operation
+ * payload arg — herobids owns the connection→account mapping and resolves the
+ * concrete account off the chosen connection grant, so the boundary honours it
+ * deterministically instead of falling back to per-owner default resolution.
+ * The whole subject+payload is HMAC-signed, so payload placement is integrity-safe.
  */
 export interface SubmitDecisionBoundaryPayload {
   instrumentId: string;
@@ -30,11 +34,17 @@ export interface SubmitDecisionBoundaryPayload {
   confidence?: number;
   safetyOverrideId?: string;
   contextHash?: string;
+  venueAccountId?: string;
 }
 
-/** Build the boundary `submit_decision` payload from the platform decision fields. */
+/**
+ * Build the boundary `submit_decision` payload from the platform decision fields.
+ * `venueAccountId`, when the caller resolved one off the connection grant, is
+ * threaded in as a payload arg (see the interface note — payload, not subject).
+ */
 export function buildSubmitDecisionPayload(
   payload: DecisionSubmitPayload,
+  venueAccountId?: string,
 ): SubmitDecisionBoundaryPayload {
   const out: SubmitDecisionBoundaryPayload = {
     instrumentId: payload.instrumentId,
@@ -48,6 +58,7 @@ export function buildSubmitDecisionPayload(
   if (payload.confidence !== undefined) out.confidence = payload.confidence;
   if (payload.safetyOverrideId !== undefined) out.safetyOverrideId = payload.safetyOverrideId;
   if (payload.contextHash !== undefined) out.contextHash = payload.contextHash;
+  if (venueAccountId !== undefined && venueAccountId !== '') out.venueAccountId = venueAccountId;
   return out;
 }
 

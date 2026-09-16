@@ -677,9 +677,11 @@ describe('AgentMessageBroker', () => {
       expect(arg.subject).not.toHaveProperty('venueAccountId');
       expect(arg.subject).not.toHaveProperty('venue');
       expect(arg.subject).not.toHaveProperty('venueType');
-      // Payload forwards the connectionId so Traderton can resolve the account grant.
-      expect(arg.payload.connectionId).toBe('binding-1');
-      expect(arg.payload).not.toHaveProperty('venueAccountId');
+      // Payload forwards the connection's resolved venue account (herobids owns
+      // the connection→account mapping); the connectionId is NOT sent — the
+      // boundary does not consume it.
+      expect(arg.payload.venueAccountId).toBe('va-001');
+      expect(arg.payload).not.toHaveProperty('connectionId');
       expect(arg.payload).not.toHaveProperty('botId');
       expect(arg.payload.config).not.toHaveProperty('venueAccountId');
 
@@ -742,11 +744,12 @@ describe('AgentMessageBroker', () => {
       expect(result.accepted).toBe(true);
       // Ownership gate runs against the requested connectionId.
       expect(botRepo.isConnectionOwnedBy).toHaveBeenCalledWith('binding-2', 'user-1');
-      // The requested connectionId is forwarded to the boundary — no venue account resolution.
+      // The requested connection's resolved venue account (va-002) is forwarded to
+      // the boundary; the connectionId itself is NOT sent.
       const arg = invokeAndAwait.mock.calls[0]![0];
       expect(arg.toolName).toBe('create_bot');
-      expect(arg.payload.connectionId).toBe('binding-2');
-      expect(arg.payload).not.toHaveProperty('venueAccountId');
+      expect(arg.payload.venueAccountId).toBe('va-002');
+      expect(arg.payload).not.toHaveProperty('connectionId');
       expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-123' } });
     });
 
@@ -792,7 +795,7 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(invokeAndAwait.mock.calls[0]![0].payload.connectionId).toBe('binding-2');
+      expect(invokeAndAwait.mock.calls[0]![0].payload.venueAccountId).toBe('va-002');
     });
 
     it('rejects when connectionId does not match any granted connection — boundary NOT called', async () => {
@@ -878,8 +881,9 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      // The agent's default trading connection (binding-2) is forwarded.
-      expect(invokeAndAwait.mock.calls[0]![0].payload.connectionId).toBe('binding-2');
+      // The agent's default trading connection (binding-2) resolves to va-002,
+      // which is forwarded as the payload venueAccountId.
+      expect(invokeAndAwait.mock.calls[0]![0].payload.venueAccountId).toBe('va-002');
     });
 
     it('falls back to default connection when no connectionId is provided', async () => {
@@ -926,7 +930,9 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(invokeAndAwait.mock.calls[0]![0].payload.connectionId).toBe('binding-1');
+      // The default connection (binding-1) resolves to va-002, forwarded as the
+      // payload venueAccountId.
+      expect(invokeAndAwait.mock.calls[0]![0].payload.venueAccountId).toBe('va-002');
     });
 
     it('rejects create_and_start when resolved connection is not owned by agent user — boundary NOT called', async () => {

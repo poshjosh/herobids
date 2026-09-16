@@ -509,6 +509,27 @@ async function main(): Promise<void> {
 
   section('Phase 5: Teardown');
 
+  // Deprovision the provider-link (connection + credential + venue account)
+  // this run created, so a completed run leaves NO leaked venue account —
+  // mirroring the run-to-run state of the original single-stack test. Best-effort:
+  // a failure here must not fail the run (the assertions already passed). Guarded
+  // on SKIP_TEARDOWN (leave state intact for inspection).
+  if (SKIP_TEARDOWN) {
+    warn('SKIP_TEARDOWN=1 — leaving provider-link + venue account in place');
+  } else {
+    log('Deprovisioning provider-link (connection + venue account)...');
+    try {
+      const linkDelete = await del<{ status?: string; error?: string }>(`/setup/provider-link/${connectionId}`, token);
+      if (linkDelete.status === 200) {
+        ok(`Provider-link deprovisioned (connection: ${connectionId})`);
+      } else {
+        warn(`Provider-link deprovision returned ${linkDelete.status} ${JSON.stringify(linkDelete.body)} — venue account may be leaked`);
+      }
+    } catch (err) {
+      warn(`Provider-link deprovision threw: ${err instanceof Error ? err.message : String(err)} — venue account may be leaked`);
+    }
+  }
+
   if (dockerStarted && DOCKER_COMPOSE_DOWN) {
     log('Stopping Docker Compose...');
     execSync('docker compose down', { cwd: REPO_ROOT, stdio: 'inherit' });

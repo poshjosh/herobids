@@ -504,7 +504,8 @@ export class AgentDecisionHandler {
       return;
     }
 
-    // Inject ownerId + actor ONLY (D2). Traderton resolves the venue account.
+    // Subject stays ownerId + actor ONLY (D2). The venue account rides as a
+    // payload arg (resolved below off the connection grant), not in the subject.
     const ownerId = agent?.userId ?? '';
     if (!ownerId) {
       const msg = 'Cannot submit decision — the agent has no owning user to authorize the trade.';
@@ -519,7 +520,13 @@ export class AgentDecisionHandler {
     }
 
     try {
-      const boundaryPayload = buildSubmitDecisionPayload(payload);
+      // Resolve the concrete venue account off the connection grant (a KEEP
+      // platform value) and thread it in as a payload arg so the boundary
+      // resolves deterministically instead of failing ambiguous when the owner
+      // has more than one account (D2 subject stays ownerId+actor). Null when no
+      // resolver is wired — the boundary then keeps its per-owner default path.
+      const venueAccountId = await this.resolveGrantVenueAccountId(effectiveAgentId) ?? undefined;
+      const boundaryPayload = buildSubmitDecisionPayload(payload, venueAccountId);
       const result = await this.sideEffectBoundary.invokeAndAwait({
         toolName: 'submit_decision',
         payload: boundaryPayload,

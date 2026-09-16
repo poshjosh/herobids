@@ -254,9 +254,10 @@ describe('bot routes', () => {
     const arg = invoke.mock.calls[0]![0];
     expect(arg.toolName).toBe('create_bot');
     expect(arg.subject).toEqual({ ownerId: TEST_USER_ID, actor: { type: 'user', id: TEST_USER_ID } });
-    expect(arg.payload.connectionId).toBe('binding-1');
-    // No local bots insert / no venueAccountId stamped into the payload.
-    expect(arg.payload).not.toHaveProperty('venueAccountId');
+    expect(arg.payload.venueAccountId).toBe('va-1');
+    // No local bots insert / no connectionId stamped into the payload (the
+    // boundary does not consume it — herobids forwards the resolved account).
+    expect(arg.payload).not.toHaveProperty('connectionId');
     expect(db.transaction).toBeUndefined();
   });
 
@@ -288,11 +289,12 @@ describe('bot routes', () => {
     expect(res.json().error).toBe('validation_error');
   });
 
-  it('forwards to the boundary even when the connection has no resolved venue account (Traderton resolves the account)', async () => {
-    // L3c: venue-account resolution MOVED behind the boundary — Traderton resolves
-    // the account from the subject. The route no longer rejects a connection with a
-    // null resolvedVenueAccountId; it forwards the connectionId and lets Traderton
-    // own account resolution.
+  it('returns a precondition failure when the connection has no resolved venue account — boundary NOT called', async () => {
+    // Venue-account resolution is now herobids-side: herobids owns the
+    // connection→account mapping (connections.resolvedVenueAccountId) and forwards
+    // the concrete venueAccountId to the boundary. A connection with a null
+    // resolved account cannot back a bot, so the route surfaces a clean
+    // precondition failure rather than forwarding a null account to the boundary.
     const { botRoutes } = await import('./bots.js');
 
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
@@ -314,16 +316,17 @@ describe('bot routes', () => {
       },
     });
 
-    expect(res.statusCode).toBe(201);
-    expect(invoke).toHaveBeenCalledTimes(1);
-    expect(invoke.mock.calls[0]![0].payload.connectionId).toBe('binding-1');
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toBe('precondition.not_ready');
+    expect(invoke).not.toHaveBeenCalled();
   });
 
-  // L3c: the route no longer writes a bots row nor stamps a venueAccountId — it
-  // forwards the connectionId to the boundary and Traderton resolves the account
-  // from the subject. This proves the connectionId is forwarded and NO venue
-  // account is injected client-side.
-  it('forwards the connectionId to the boundary and injects no venueAccountId', async () => {
+  // The route no longer writes a bots row. herobids owns the connection→account
+  // mapping, so it resolves the connection's resolvedVenueAccountId and forwards
+  // THAT as the boundary payload's venueAccountId — never the connectionId (which
+  // the boundary does not consume). This proves the resolved account is forwarded
+  // and NO connectionId is stamped into the payload.
+  it('forwards the resolved venueAccountId to the boundary and injects no connectionId', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
@@ -351,9 +354,9 @@ describe('bot routes', () => {
     expect(res.statusCode).toBe(201);
     const arg = invoke.mock.calls[0]![0];
     expect(arg.toolName).toBe('create_bot');
-    expect(arg.payload.connectionId).toBe('binding-42');
-    // No venueAccountId is stamped into the payload — Traderton owns resolution.
-    expect(arg.payload).not.toHaveProperty('venueAccountId');
+    expect(arg.payload.venueAccountId).toBe('va-42');
+    // No connectionId is stamped into the payload — the boundary does not consume it.
+    expect(arg.payload).not.toHaveProperty('connectionId');
     expect(arg.subject).toEqual({ ownerId: TEST_USER_ID, actor: { type: 'user', id: TEST_USER_ID } });
   });
 
@@ -417,10 +420,10 @@ describe('bot routes', () => {
     expect(issues.some((issue) => issue.path.includes('connectionId'))).toBe(true);
   });
 
-  // When a user has multiple connections, the route must forward the SPECIFIC
-  // connectionId the caller chose (connection-2), never cross-wire to another.
-  // Account resolution itself now happens behind the boundary from the subject.
-  it('forwards the specific connectionId chosen by the caller (no cross-wiring)', async () => {
+  // When a user has multiple connections, the route must resolve the SPECIFIC
+  // connection the caller chose (connection-2) and forward ITS resolved venue
+  // account (va-002), never cross-wire to another connection's account.
+  it('forwards the resolved venue account of the connection chosen by the caller (no cross-wiring)', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
@@ -447,9 +450,10 @@ describe('bot routes', () => {
 
     expect(res.statusCode).toBe(201);
     const arg = invoke.mock.calls[0]![0];
-    // Critical: the forwarded connectionId is connection-2 (the caller's choice).
-    expect(arg.payload.connectionId).toBe('connection-2');
-    expect(arg.payload).not.toHaveProperty('venueAccountId');
+    // Critical: the forwarded venueAccountId is va-002 (connection-2's resolved
+    // account, the caller's choice), never another connection's account.
+    expect(arg.payload.venueAccountId).toBe('va-002');
+    expect(arg.payload).not.toHaveProperty('connectionId');
   });
 
   it('returns 503 when no trading boundary is configured (no silent local fallback)', async () => {

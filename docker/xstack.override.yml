@@ -1,0 +1,42 @@
+# xstack.override.yml — TEST-ONLY overlay wiring herobids api/worker to a
+# locally-running traderton boundary (cross-stack shell testing).
+#
+# Applied OVER the base stack (never baked into docker-compose.yaml, which must
+# stay boundary-agnostic for non-test use):
+#   docker compose -f docker-compose.yaml -f docker/xstack.override.yml up -d --build api worker
+#
+# What it adds to BOTH api and worker:
+#   - extra_hosts: host.docker.internal:host-gateway — the two composes live on
+#     separate Docker networks, so the boundary (published by the traderton
+#     stack on the host at :8080) is NOT at localhost from inside these
+#     containers; it is reached at host.docker.internal:8080.
+#   - TRADERTON_BOUNDARY_* environment: the boundary URL + HMAC signing creds
+#     the herobids config loader maps (ENV_OVERRIDES → boundary.* config).
+#
+# The HMAC values below are the NON-SECRET local-dev values baked into
+# traderton/docker-compose.yml (BOUNDARY_CONSUMER_ID=dev-consumer,
+# BOUNDARY_KEY_ID=dev-key, BOUNDARY_SIGNING_SECRET=dev-signing-secret). They
+# MUST match traderton's compose so the signed requests verify. Override any of
+# them via the environment (e.g. against a shared/staging boundary).
+
+services:
+  # Only the boundary URL is set here — it is NETWORK TOPOLOGY (the two composes
+  # are separate Docker networks, so the boundary published on the host at :8080
+  # is reached from inside these containers at host.docker.internal:8080). This
+  # is the cross-stack equivalent of herobids keeping compose-network hosts
+  # inline. The HMAC signing creds (TRADERTON_BOUNDARY_CONSUMER_ID / KEY_ID /
+  # HMAC_SECRET) are NOT set here — they come from herobids' `.env` (the single
+  # source of truth, mirroring herobids' no-hardcoded-secrets convention) and
+  # MUST match traderton's boundary `.env` values (BOUNDARY_CONSUMER_ID /
+  # KEY_ID / SIGNING_SECRET).
+  api:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      TRADERTON_BOUNDARY_URL: ${TRADERTON_BOUNDARY_URL:-http://host.docker.internal:8080}
+
+  worker:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      TRADERTON_BOUNDARY_URL: ${TRADERTON_BOUNDARY_URL:-http://host.docker.internal:8080}
