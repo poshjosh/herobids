@@ -18,7 +18,11 @@
 #
 # Infrastructure lifecycle:
 #   - Postgres and Redis are started via Docker Compose if not already healthy.
-#   - The full stack (api, worker, web) is additionally started for --e2e.
+#   - The traderton boundary stack is brought up first for the tiers that start
+#     herobids api/worker (Step 5, Step 6) — herobids' trading tools fail
+#     closed without it (no opt-out; see scripts/shell/run/boundary.sh).
+#   - The full stack (api, worker, web) is additionally started for --e2e, with
+#     docker/xstack.override.yml so api/worker reach the boundary.
 #   - Services that this script started are torn down on exit (success or failure).
 #   - Services that were already running before the script are left untouched.
 #
@@ -37,6 +41,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# One definition of the traderton-boundary bring-up — shared with with-boundary.sh.
+source "${ROOT}/scripts/shell/run/boundary.sh"
 
 # ─── Colour helpers ──────────────────────────────────────────────────────────
 
@@ -99,6 +106,10 @@ cleanup() {
     docker compose -f "${ROOT}/docker-compose.yaml" \
       rm -f postgres redis 2>/dev/null || true
   fi
+
+  # traderton boundary stack (brought up for the tiers that start api/worker)
+  boundary_teardown_if_started
+
   if [[ $exit_code -eq 0 ]]; then
     ok "All done."
   else
@@ -255,8 +266,13 @@ API_STARTED=false
 WORKER_STARTED=false
 header "5 / API smoke tests"
 
+# The traderton boundary must be up BEFORE api/worker: without it the herobids
+# trading tools fail closed (TRADERTON_BOUNDARY_URL is injected via the
+# xstack.override.yml we pass to the up below). Unconditional — no flag.
+ensure_boundary_up
+
 log "Starting API + worker …"
-docker compose -f "${ROOT}/docker-compose.yaml" up -d --build api worker
+docker compose -f "${ROOT}/docker-compose.yaml" -f "${HEROBIDS_OVERLAY}" up -d --build api worker
 API_STARTED=true
 WORKER_STARTED=true
 wait_healthy api
@@ -274,8 +290,8 @@ run_tier "API smoke (external-skills)" \
   bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/external-skills-smoke-test.sh"
 
 log "Stopping API + worker …"
-docker compose -f "${ROOT}/docker-compose.yaml" stop api worker 2>/dev/null || true
-docker compose -f "${ROOT}/docker-compose.yaml" rm -f api worker 2>/dev/null || true
+docker compose -f "${ROOT}/docker-compose.yaml" -f "${HEROBIDS_OVERLAY}" stop api worker 2>/dev/null || true
+docker compose -f "${ROOT}/docker-compose.yaml" -f "${HEROBIDS_OVERLAY}" rm -f api worker 2>/dev/null || true
 API_STARTED=false
 WORKER_STARTED=false
 
@@ -439,6 +455,10 @@ fi
 if [[ "${RUN_E2E}" == "true" ]]; then
   header "6 / Full stack for E2E"
 
+  # Boundary again before api/worker: idempotent (reuses if already serving
+  # from Step 5, or re-raises it if it died mid-run). No flag — unconditional.
+  ensure_boundary_up
+
   # Inspect the stack state BEFORE we touch it, so cleanup can do the right
   # thing:
   #   - already running          → reuse, leave untouched on exit
@@ -458,8 +478,8 @@ if [[ "${RUN_E2E}" == "true" ]]; then
   if [[ "${STACK_WAS_RUNNING}" == "true" ]]; then
     log "Full stack (api, worker, web) already running — reusing it (will not tear down)."
   else
-    log "Building and starting full stack (api, worker, web)…"
-    docker compose -f "${ROOT}/docker-compose.yaml" up -d --build api worker web
+    log "Building and starting full stack (api, worker, web) with the boundary overlay…"
+    docker compose -f "${ROOT}/docker-compose.yaml" -f "${HEROBIDS_OVERLAY}" up -d --build api worker web
     STACK_STARTED=true
     # If any service container had to be created by us, we own the containers
     # and may fully `down`. If they all pre-existed (merely stopped), we only

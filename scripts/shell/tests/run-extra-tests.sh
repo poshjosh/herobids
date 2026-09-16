@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # run-extra-tests.sh — Run test scripts NOT covered by run-all-tests.sh
 #
-# This script runs the 11 test scripts that live in scripts/shell/tests/ but
-# are NOT invoked by run-all-tests.sh.  The 3 venue-validation scripts
-# (validate-1inch.sh, validate-jupiter.sh, validate-swap-venue.sh) are
-# excluded by design — they require operator-managed API keys and hit live
-# venue endpoints.
+# This script runs the 18 test scripts that live in scripts/shell/tests/ but
+# are NOT invoked by run-all-tests.sh.  The 1inch and Jupiter validators were
+# migrated to traderton (Slice 2) — venue validation now happens there.
+# validate-swap-venue.sh remains excluded by design (operator-run, deferred):
+# it is not part of CI and hits live venue endpoints (one variant needs an
+# operator-managed API key; see its header).
 #
 # ── CURRENT STATE (2026-09-05) — read this first ─────────────────────────────
 #
@@ -77,6 +78,7 @@
 #   4. Full stack (no keys)  — requires API + worker + DB, no venue credentials
 #   5. Full stack + venue    — requires full stack + Hyperliquid credentials
 #   6. External infra        — tests remote endpoints (staging/prod, Telegram)
+#   (tiers 3-5 also bring up the traderton boundary before api/worker)
 #
 # Usage:
 #   scripts/shell/tests/run-extra-tests.sh                 # tiers 1-4
@@ -95,7 +97,11 @@
 #
 # Stack lifecycle:
 #   - Postgres and Redis are started if not already healthy.
-#   - API + worker are started for tiers 3-5 if not already healthy.
+#   - API + worker are started for tiers 3-5 if not already healthy, with
+#     docker/xstack.override.yml so they reach the traderton boundary, which is
+#     brought up first whenever this script starts api/worker (tiers 3-5;
+#     herobids' trading tools fail closed without it; no opt-out — see
+#     scripts/shell/run/boundary.sh).
 #   - Services started by this script are torn down on exit.
 #   - Pre-existing services are left untouched.
 #
@@ -115,6 +121,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 COMPOSE_FILE="${ROOT}/docker-compose.yaml"
+
+# One definition of the traderton-boundary bring-up — shared with with-boundary.sh.
+source "${ROOT}/scripts/shell/run/boundary.sh"
 
 # ─── Colour helpers ──────────────────────────────────────────────────────────
 
@@ -216,14 +225,20 @@ cleanup() {
   echo ""
   if [[ "${STACK_STARTED}" == "true" ]]; then
     warn "Tearing down api + worker (started by this script)…"
-    docker compose -f "${COMPOSE_FILE}" stop api worker 2>/dev/null || true
-    docker compose -f "${COMPOSE_FILE}" rm -f api worker 2>/dev/null || true
+    docker compose -f "${COMPOSE_FILE}" -f "${HEROBIDS_OVERLAY}" stop api worker 2>/dev/null || true
+    docker compose -f "${COMPOSE_FILE}" -f "${HEROBIDS_OVERLAY}" rm -f api worker 2>/dev/null || true
   fi
   if [[ "${INFRA_STARTED}" == "true" ]]; then
     warn "Tearing down postgres + redis (started by this script)…"
     docker compose -f "${COMPOSE_FILE}" stop postgres redis 2>/dev/null || true
     docker compose -f "${COMPOSE_FILE}" rm -f postgres redis 2>/dev/null || true
   fi
+
+  # traderton boundary stack (brought up for tiers 3-5) — `down` if this script
+  # created its containers, `stop` if it only started pre-existing ones,
+  # no-op if it was already serving (or never touched).
+  boundary_teardown_if_started
+
   if [[ $exit_code -eq 0 ]]; then
     ok "All done."
   else
@@ -492,8 +507,14 @@ if ${NEEDS_FULL_STACK}; then
   fi
 
   if [[ "${API_WAS_HEALTHY}" == "false" || "${WORKER_WAS_RUNNING}" == "false" ]]; then
-    log "Starting api + worker…"
-    docker compose -f "${COMPOSE_FILE}" up -d --build api worker
+    # The traderton boundary must be up BEFORE api/worker: without it the
+    # herobids trading tools fail closed (TRADERTON_BOUNDARY_URL is injected
+    # via the xstack.override.yml we pass to the up below). Unconditional —
+    # no flag; reused as-is if already serving (never torn down then).
+    ensure_boundary_up
+
+    log "Starting api + worker (with the boundary overlay)…"
+    docker compose -f "${COMPOSE_FILE}" -f "${HEROBIDS_OVERLAY}" up -d --build api worker
     STACK_STARTED=true
   fi
 

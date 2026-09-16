@@ -6,6 +6,12 @@
 # herobids API. Trading in herobids is ALWAYS behind the boundary, so there is
 # no opt-in flag — the boundary is brought up unconditionally.
 #
+# The bring-up (compose up + /health/ready wait), the compose wrappers, and the
+# created-vs-started teardown live in the factored library
+# scripts/shell/run/boundary.sh — the same source of truth the test
+# entrypoints (scripts/shell/tests/run-*.sh) source, so there is ONE definition
+# of "stand up the boundary".
+#
 # It re-uses the two EXISTING composes (no third duplicate compose):
 #   - the traderton stack under project name `traderton_xstack`, with a
 #     herobids-side overlay that remaps its host ports (5433/6380) to dodge the
@@ -32,10 +38,10 @@
 #                   relative to the herobids repo root).
 #   Any TRADERTON_BOUNDARY_* var overrides the local-dev default in the overlay.
 #
-# Infrastructure lifecycle:
-#   - The traderton boundary stack is brought up under project `traderton_xstack`.
-#     If this script created it, it is torn down (`down`) on exit; if it was
-#     already running, it is left untouched.
+# Infrastructure lifecycle (implemented by the boundary.sh library + below):
+#   - The traderton boundary stack is brought up under project `traderton_xstack`
+#     via boundary.sh. If this script created it, it is torn down (`down`) on
+#     exit; if it was already serving, it is left untouched.
 #   - herobids postgres/redis/migrate + api/worker are brought up. Services this
 #     script started are stopped on exit; services already running are left
 #     untouched. Containers this script created (did not exist before) are
@@ -95,14 +101,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-TRADERTON_DIR="${TRADERTON_DIR:-$(cd "${ROOT}/.." && pwd)/traderton}"
 
-TRADERTON_PROJECT="traderton_xstack"
-TRADERTON_COMPOSE="${TRADERTON_DIR}/docker-compose.yml"
-TRADERTON_OVERLAY="${ROOT}/docker/traderton-xstack.override.yml"
-HEROBIDS_OVERLAY="${ROOT}/docker/xstack.override.yml"
+# One definition of the boundary bring-up — shared with the test entrypoints.
+source "${ROOT}/scripts/shell/run/boundary.sh"
 
-BOUNDARY_URL="http://localhost:8080"
+BOUNDARY_URL="${BOUNDARY_URL:-http://localhost:8080}"
 HEROBIDS_API_URL="http://localhost:3000"
 
 # ─── Colour helpers ──────────────────────────────────────────────────────────
@@ -137,23 +140,12 @@ for arg in "$@"; do
 done
 
 # ─── State tracking ──────────────────────────────────────────────────────────
+# Boundary-side state (TRADERTON_STARTED/TRADERTON_CREATED) comes from
+# boundary.sh; this script tracks the herobids side.
 
-TRADERTON_STARTED=false   # true if this script brought the traderton stack up
-TRADERTON_CREATED=false   # true if the traderton containers did NOT exist before
 INFRA_STARTED=false       # true if this script started herobids postgres+redis+deps
 STACK_STARTED=false       # true if this script started herobids api+worker
 STACK_CREATED=false       # true if herobids api/worker did NOT exist before
-
-# ─── Compose wrappers ────────────────────────────────────────────────────────
-
-herobids_compose() {
-  docker compose -f "${ROOT}/docker-compose.yaml" -f "${HEROBIDS_OVERLAY}" "$@"
-}
-
-traderton_compose() {
-  docker compose -p "${TRADERTON_PROJECT}" \
-    -f "${TRADERTON_COMPOSE}" -f "${TRADERTON_OVERLAY}" "$@"
-}
 
 # ─── Cleanup on exit ─────────────────────────────────────────────────────────
 
@@ -185,15 +177,7 @@ cleanup() {
   fi
 
   # traderton boundary stack
-  if [[ "${TRADERTON_STARTED}" == "true" ]]; then
-    if [[ "${TRADERTON_CREATED}" == "true" ]]; then
-      warn "Tearing down traderton boundary stack (created by this script)…"
-      traderton_compose down --timeout 20 2>/dev/null || true
-    else
-      warn "Stopping traderton boundary stack (started — not created — by this script)…"
-      traderton_compose stop 2>/dev/null || true
-    fi
-  fi
+  boundary_teardown_if_started
 
   if [[ $exit_code -eq 0 ]]; then
     ok "All done."
@@ -244,57 +228,13 @@ wait_healthy() {
   return 1
 }
 
-# ─── Helper: wait for an HTTP endpoint (curl -sf) ────────────────────────────
-# Budget mirrors traderton's own harness: ~45 × 2s.
-
-wait_http() {
-  local label="$1" url="$2" retries="${3:-45}"
-  log "Waiting for ${label} (${url})…"
-  while [[ $retries -gt 0 ]]; do
-    if curl -sf "$url" > /dev/null 2>&1; then
-      ok "${label} is ready."
-      return 0
-    fi
-    sleep 2
-    (( retries-- ))
-  done
-  err "${label} did not become ready at ${url}."
-  return 1
-}
-
-# ─── Preflight ───────────────────────────────────────────────────────────────
-
-header "Cross-stack boundary harness"
-
-if [[ ! -f "${TRADERTON_COMPOSE}" ]]; then
-  err "traderton compose not found at: ${TRADERTON_COMPOSE}"
-  err "Set TRADERTON_DIR to your traderton checkout (currently: ${TRADERTON_DIR})."
-  exit 1
-fi
-
 # ─── Step 1: bring up the traderton boundary stack ───────────────────────────
+# ensure_boundary_up (from boundary.sh) does the preflight, the reuse-or-up
+# decision with created-vs-started tracking, and the /health/ready wait.
 
 header "1 / traderton boundary stack (project: ${TRADERTON_PROJECT})"
 
-# Was the boundary already serving before we touched anything?
-if curl -sf "${BOUNDARY_URL}/health/ready" > /dev/null 2>&1; then
-  log "Boundary already ready at ${BOUNDARY_URL} — reusing it (will not tear down)."
-else
-  # Did any traderton_xstack container already exist? If not, we created them
-  # and may fully `down`; if some existed (stopped), we only `stop`.
-  TRADERTON_PREEXISTED=true
-  if [[ -z "$(traderton_compose ps -aq 2>/dev/null)" ]]; then
-    TRADERTON_PREEXISTED=false
-  fi
-  log "Building and starting the traderton boundary stack (host ports remapped: pg 5433, redis 6380)…"
-  traderton_compose up -d --build
-  TRADERTON_STARTED=true
-  if [[ "${TRADERTON_PREEXISTED}" == "false" ]]; then
-    TRADERTON_CREATED=true
-  fi
-fi
-
-wait_http "traderton boundary" "${BOUNDARY_URL}/health/ready" 45
+ensure_boundary_up
 
 # ─── Step 2: bring up herobids infra (postgres/redis/deps) + migrate ─────────
 
