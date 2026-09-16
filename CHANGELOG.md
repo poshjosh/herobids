@@ -6,7 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Trading fully extracted behind the Traderton REST boundary (legal isolation).** All trading logic, state, reads, and writes are now owned by Traderton; herobids reaches trading exclusively over the boundary. Agent/owner trading reads (positions, fills, bots, analytics, decisions, decision-failures, journal, instruments, venue bindings), the blueprint→bot instantiate write, bot lifecycle, and the AlertDispatcher's trade-event alerting all route through boundary tools. The agent reasoning runtime stays in herobids and calls Traderton for all trading.
+
 ### Removed
+
+- **Dropped the 16 core trading tables from the herobids database** (`bots`, `fills`, `positions`, `venue_accounts`, `user_credentials`, `journal_events`, `decisions`, `orders`, `execution_plans`, `decision_failures`, `llm_decision_artifacts`, `balance_snapshots`, `decision_contexts`, `instruments`, `token_safety_overrides`, `reconciliation_events`) via migration `0070_drop_trading_tables.sql`, plus their Drizzle schema + the now-orphaned trading repositories and `PgJournal`. `BotRepository` is retained only for its `connections`-scoped ownership check. Market-assessment tables (`market_assessment_*`) stay platform (agent preset-review runtime). No data migration (greenfield).
 
 - Removed the dead public market-data WebSocket stream pool from the worker (`public-stream-routing.ts` + its test; the `PublicStreamPool` construction and shutdown calls in `index.ts`). The pool was constructed but never subscribed/consumed — a leftover of the trading-market-data extraction. No observable behavior changes. (Part of the trading-isolation cutover: the `@herobids/venues` `PublicStreamPool` value import no longer runs in the agent process.)
 
