@@ -163,6 +163,7 @@ Before making changes:
 
 - Do not add dependencies without justification. Prefer standard library and existing deps.
 - Do not commit secrets, API keys, or credentials. Use env var overrides.
+- **Every `.env*` file has a committed `.example` twin (same variable keys, real secret values replaced with safe placeholders or left blank, one inline `#` comment per var explaining it).** Real `.env*` files are gitignored; the `.example` files are the committed, self-documenting source of truth for what an operator must set. When you ADD or CHANGE an environment variable, update the matching `.example` in the SAME change (and add a `!.env.<name>.example` un-ignore line to `.gitignore` for any new twin). If you introduce a new `.env` variant, create its `.example` immediately. See [Configuration management](./docs/best-practices/configuration.md#environment-files--example-twins).
 - Do not bypass TypeScript strict checks (`any`, `@ts-ignore`, `as unknown as X`).
 - Do not swallow errors. If you catch, either handle meaningfully or re-throw/log.
 - Do not introduce circular package dependencies.

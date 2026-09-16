@@ -148,6 +148,69 @@ Stored in Postgres, loaded by the trading instance at startup:
 
 ---
 
+## Environment files — `.example` twins
+
+Operator/deploy-time env inputs (secrets refs, infra URLs, provider keys) are supplied
+via `.env*` files. **Real `.env*` files are gitignored; every `.env*` file has a committed
+`.example` twin, and the `.example` is the source of truth.**
+
+```
+.env                     ← real values, gitignored (never committed)
+.env.example             ← committed, self-documenting twin of .env
+.env.ops.dev             ← real values, gitignored
+.env.ops.dev.example     ← committed twin
+```
+
+The `.gitignore` enforces the mechanism:
+
+```
+.env
+.env.*
+!.env.example
+!.env.ops.dev.example
+!.env.ops.remote.example
+```
+
+(ignore all real `.env*`, then explicitly un-ignore each `.example`).
+
+### Why
+
+A newcomer (human or agent) can look at the committed `.example` files and immediately
+know **which `.env` to create and exactly which keys it needs** — without reading the code
+or leaking a secret. The `.example` is documentation that cannot drift silently, because the
+rule below keeps it in lockstep with the code.
+
+### The rule (authoring/implementing agents MUST follow)
+
+- Every `.env*` file has a matching committed `.example` (same variable keys).
+- `.example` values are **safe placeholders or blank** — never real secrets.
+- Each variable gets a one-line `#` comment explaining what it is and whether it's required
+  (put the comment on its own line — Docker Compose does not strip inline `#`).
+- **When you ADD or CHANGE an env var, update the matching `.example` in the SAME change.**
+  The `.example` must stay in lockstep with what the code reads (`process.env.*`).
+- **When you introduce a NEW `.env` variant, create its `.example` immediately** and add a
+  `!.env.<name>.example` un-ignore line to `.gitignore`.
+- Scope: `.example` documents operator/deploy-time env inputs ONLY — not the instance/strategy
+  config that lives in YAML (`config/*.yaml`) or Postgres JSONB. Keep the layers distinct so
+  the `.example` never becomes a stale mirror of another source of truth.
+
+### Format
+
+```dotenv
+# .env.example
+# --- Database (required) ---
+# Postgres connection string.
+DATABASE_URL=postgres://user:pass@localhost:5432/dbname
+
+# --- Secrets (required) ---
+# Shared HMAC secret between herobids and the Traderton boundary; must match on both sides.
+TRADERTON_BOUNDARY_HMAC_SECRET=changeme-shared-secret
+
+# --- Optional integrations ---
+# Scrapfly key for scraping. Optional; absent → the dependent feature degrades, not crashes.
+SCRAPFLY_API_KEY=
+```
+
 ## See also
 
 - [Configuration Reference](../tech/configuration.md) — practical index of every config file, what it controls, and where to edit it
