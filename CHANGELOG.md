@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Venue-launch validators migrated to Traderton.** The operator-run Jupiter and 1inch launch validators (shell wrappers + TS scripts under `scripts/`) now live in traderton and exercise the `@traderton/venues` adapters in-process; the originals are removed from herobids. `validate-swap-venue.sh` remains (deferred to the traderton backlog as a non-parity venue-reachability probe). No app or package code referenced the validators; typechecks unaffected.
+
 - **Trading fully extracted behind the Traderton REST boundary (legal isolation).** All trading logic, state, reads, and writes are now owned by Traderton; herobids reaches trading exclusively over the boundary. Agent/owner trading reads (positions, fills, bots, analytics, decisions, decision-failures, journal, instruments, venue bindings), the blueprint→bot instantiate write, bot lifecycle, and the AlertDispatcher's trade-event alerting all route through boundary tools. The agent reasoning runtime stays in herobids and calls Traderton for all trading.
 
 ### Removed
