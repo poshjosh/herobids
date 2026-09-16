@@ -43,8 +43,47 @@
 #   - Pass --keep-up to skip all teardown.
 #
 # Requirements:
-#   - docker (with compose plugin)
-#   - a traderton checkout at $TRADERTON_DIR
+#   - docker (with compose plugin >= 2.24 — the port-remap overlay uses the
+#     `!override` YAML tag to REPLACE the traderton `ports:` list; without it,
+#     compose MERGES the lists and re-collides on host 5432/6379).
+#   - a traderton checkout at $TRADERTON_DIR (default ../traderton).
+#
+# Prerequisites — matching boundary credentials (both sides read from .env):
+#   The boundary REJECTS every call with `authentication.invalid_caller`
+#   ("signature mismatch") unless the HMAC identity matches on both sides, and
+#   provisioning fails without a valid encryption key. Set, in each repo's
+#   (gitignored) .env — see the committed .env.example twins for the keys:
+#     traderton/.env : BOUNDARY_CONSUMER_ID, BOUNDARY_KEY_ID,
+#                      BOUNDARY_SIGNING_SECRET, CREDENTIAL_ENCRYPTION_KEY
+#                      (64 hex chars = 32 bytes), + venue/market keys
+#                      (BIRDEYE_API_KEY, COINMARKETCAP_API_KEY, ONEINCH_API_KEY,
+#                      JUPITER_API_KEY).
+#     herobids/.env  : TRADERTON_BOUNDARY_CONSUMER_ID, TRADERTON_BOUNDARY_KEY_ID,
+#                      TRADERTON_BOUNDARY_HMAC_SECRET — MUST equal traderton's
+#                      BOUNDARY_CONSUMER_ID / KEY_ID / SIGNING_SECRET respectively.
+#   Both stacks load these via `env_file: .env`; the boundary URL is injected by
+#   docker/xstack.override.yml as host.docker.internal:8080 (the two composes are
+#   separate Docker networks, so it is NOT localhost from inside the containers).
+#
+# Troubleshooting:
+#   - `authentication.invalid_caller` / "signature mismatch": the HMAC triple
+#     differs between herobids/.env and traderton/.env — align consumer/key/secret.
+#   - provider-link 502 "Credential encryption unavailable ... 64 hex chars":
+#     traderton/.env CREDENTIAL_ENCRYPTION_KEY is missing/invalid — set 64 hex.
+#   - create_bot "no default venue account for owner (ambiguous)" or provider-link
+#     403 "Connection limit reached": LEAKED STATE from a prior FAILED run (a
+#     completed bot-trade-test deprovisions itself; failed runs can leak). Clear it
+#     to UNBLOCK a re-run (do NOT use this to mask a real failure):
+#       # traderton venue accounts (delete bots first — FK):
+#       docker compose -p traderton_xstack -f "$TRADERTON_DIR/docker-compose.yml" \
+#         -f docker/traderton-xstack.override.yml exec -T postgres \
+#         psql -U traderton -d traderton -c "delete from bots; delete from venue_accounts;"
+#       # herobids connections for the test user:
+#       docker compose -f docker-compose.yaml -f docker/xstack.override.yml exec -T postgres \
+#         psql -U herobids -d herobids -c \
+#         "delete from connections where user_id=(select id from users where email='herobids@gmail.com');"
+#   - boundary never reaches /health/ready: first `--build` is slow (builds the
+#     traderton migrate + boundary images); or host :8080 is taken.
 #
 # Exit codes:
 #   0  — readiness reached (and any test scripts passed)
