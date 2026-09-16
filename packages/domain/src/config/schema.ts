@@ -9,10 +9,6 @@ import {
   validateStrategyParams,
 } from './strategy-parameters.js';
 
-// Supported venues for live rollout
-export const SUPPORTED_LIVE_VENUES = ['hyperliquid', 'bybit', 'jupiter', '1inch'] as const;
-export type SupportedLiveVenue = typeof SUPPORTED_LIVE_VENUES[number];
-
 export const SWAP_VENUES = ['jupiter', '1inch'] as const;
 export const ORDERBOOK_VENUES = ['hyperliquid', 'bybit'] as const;
 export type SwapVenue = typeof SWAP_VENUES[number];
@@ -74,33 +70,6 @@ export const VenueConfigSchema = z.object({
   }).default({}),
 });
 
-export const ReconciliationConfigSchema = z.object({
-  intervalMs: z.number().min(5000).default(30_000),
-  driftAlertOnly: z.boolean().default(true),
-  /** Position size drift threshold (absolute). Diffs within this are 'acceptable'. Default: 0 (exact match required) */
-  positionDriftThreshold: z.string().default('0'),
-  /** Balance drift threshold (absolute). Diffs within this are 'acceptable'. Default: 0 */
-  balanceDriftThreshold: z.string().default('0'),
-  /** If true, attempt to auto-correct acceptable drift by syncing local state to venue. Default: false */
-  autoCorrect: z.boolean().default(false),
-  /** Swap venue: alert if balance differs from expected by more than this %. Default: 1.0 */
-  swapDriftThresholdPct: z.number().min(0).default(1.0),
-});
-
-export const PublicStreamConfigSchema = z.object({
-  reconnectBaseMs: z.number().min(100).default(1_000),
-  reconnectMaxMs: z.number().min(1000).default(30_000),
-  maxReconnectAttempts: z.number().min(1).default(20),
-  depthLevels: z.number().min(1).max(50).default(5),
-});
-
-export const MarkingConfigSchema = z.object({
-  stalenessThresholdMs: z.number().min(10_000).default(300_000),
-  oracleBaseUrl: z.string().url().optional(),
-  oracleTimeoutMs: z.number().min(1000).default(10_000),
-  oracleVsCurrency: z.string().min(1).default('usd'),
-});
-
 export const EvaluationThresholdsSchema = z.object({
   toolFailureRatePct: z.number().min(0).max(100).default(20),
   highDrawdownPct: z.number().min(0).max(100).default(20),
@@ -116,13 +85,6 @@ export const EvaluationConfigSchema = z.object({
   maxRuntimeMs: z.number().int().min(1_000).default(120_000),
   maxAttempts: z.number().int().min(1).max(10).default(3),
   thresholds: EvaluationThresholdsSchema.default({}),
-});
-
-export const MarketDataRecordingConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  captureTrades: z.boolean().default(true),
-  captureTopOfBook: z.boolean().default(true),
-  captureCandles: z.boolean().default(true),
 });
 
 // ── Per-agent wake preferences ──────────────────────────────────────────────
@@ -533,15 +495,6 @@ export const AgentApprovalsConfigSchema = z.object({
   /** Rate limit for approval resolution checks per minute. */
   resolveRateLimitPerMinute: z.number().int().min(1).default(20),
 }).default({});
-
-export const StreamConfigSchema = z.object({
-  private: z.object({
-    reconnectBaseMs: z.number().min(100).default(1_000),
-    reconnectMaxMs: z.number().min(1000).default(30_000),
-    maxReconnectAttempts: z.number().min(1).default(10),
-  }).default({}),
-  public: PublicStreamConfigSchema.default({}),
-});
 
 export const TelegramChannelConfigSchema = z.object({
   /** Telegram chat ID (numeric string or @channel) */
@@ -1344,32 +1297,6 @@ export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({
   }).default({}),
 });
 
-export const LiveRolloutConfigSchema = z.object({
-  /** Master switch — must be true for any instance to run in live mode */
-  enabled: z.boolean().default(false),
-  /** Venues permitted to execute live orders (others are rejected at startup) */
-  allowedVenues: z.array(z.enum(SUPPORTED_LIVE_VENUES)).default(['hyperliquid']),
-  /** Require DB-backed credentials (reject env-var fallback for live mode) */
-  requireDbCredentials: z.boolean().default(true),
-  /** Hard cap on single-order notional (USD) during rollout — instance maxOrderNotional is clamped to this */
-  maxInitialOrderNotionalUsd: z.string().default('50').refine(
-    (v) => { const n = Number(v); return v === v.trim() && Number.isFinite(n) && n > 0; },
-    { message: 'maxInitialOrderNotionalUsd must be a finite positive numeric string (no surrounding whitespace)' },
-  ),
-  /** Consecutive venue errors before circuit-breaker halts the actor */
-  maxConsecutiveVenueErrors: z.number().int().min(1).default(3),
-  /** Slippage alert threshold (bps) — log warning when fill deviates beyond this */
-  slippageAlertBps: z.number().min(0).default(50),
-  /** Timeout for stale live limit orders before cancellation is attempted */
-  limitOrderTimeoutMs: z.number().int().min(1000).default(120_000),
-  /** Timeout for live market orders that never reach terminal completion */
-  marketOrderTimeoutMs: z.number().int().min(1000).default(30_000),
-  /** Interval for live timeout scans in actor loops */
-  timeoutCheckIntervalMs: z.number().int().min(1000).default(10_000),
-  /** Fatal live crash policy: emergency flatten confirmed exposure or halt for manual intervention */
-  crashPolicy: z.enum(['auto_go_flat', 'alert_manual_intervention']).default('alert_manual_intervention'),
-});
-
 export const MarketIntelligenceFamilySchema = z.object({
   enabled: z.boolean().default(true),
 });
@@ -1691,31 +1618,16 @@ export const AppConfigSchema = z.object({
     shadowPollIntervalMs: z.number().int().min(100).default(2_000),
     shadowQuoteSlippageBps: z.number().min(0).default(50),
   }),
-  simulation: z.object({
-    takerFeePct: z.number().min(0).default(0.001),
-    makerFeePct: z.number().min(0).default(0.0005),
-    paperSlippageBps: z.number().min(0).default(5),
-  }).default({}),
-  risk: z.object({
-    globalMaxDrawdownPct: z.number().min(0).max(100).default(20),
-    maxOpenPositions: z.number().min(1).default(10),
-    maxPositionSizePct: z.number().min(0).max(100).default(25),
-  }),
   agentRiskDefaults: AgentRiskDefaultsSchema,
   agentApprovals: AgentApprovalsConfigSchema,
   agentCostEstimates: AgentCostEstimatesSchema,
-  reconciliation: ReconciliationConfigSchema.default({}),
-  streams: StreamConfigSchema.default({}),
-  marking: MarkingConfigSchema.default({}),
   evaluation: EvaluationConfigSchema.default({}),
-  marketDataRecording: MarketDataRecordingConfigSchema.default({}),
   marketData: MarketDataConfigSchema.optional(),
   marketIntelligence: MarketIntelligenceConfigSchema.default({}),
   platformAssessor: PlatformAssessorConfigSchema.default({}),
   worker: WorkerConfigSchema.default({}),
   agentRuntime: AgentRuntimeConfigSchema,
   llm: LlmRuntimeConfigSchema.default({}),
-  liveRollout: LiveRolloutConfigSchema.default({}),
   integrations: z.object({
     gmail: GmailIntegrationConfigSchema,
   }).default({}),
@@ -1912,11 +1824,8 @@ export type AgentResourceProfilesConfig = AgentRuntimeConfig['resourceProfiles']
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
 export type EvaluationConfig = z.infer<typeof EvaluationConfigSchema>;
 export type EvaluationThresholds = z.infer<typeof EvaluationThresholdsSchema>;
-export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type OpenRouterProviderControlsConfig = z.infer<typeof OpenRouterProviderControlsSchema>;
-export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
-export type SimulationConfig = AppConfig['simulation'];
 export type AgentRiskDefaultsConfig = AppConfig['agentRiskDefaults'];
 export type AgentCostEstimatesConfig = AppConfig['agentCostEstimates'];
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;

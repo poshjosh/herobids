@@ -27,24 +27,6 @@ sharedServices:
   postgresPassword: herobids
   postgresDatabase: herobids
 
-# Live rollout gating — fail-closed operator policy for live execution mode.
-# All checks must pass before an instance is allowed to trade live.
-liveRollout:
-  enabled: false                          # master switch — must be true for any live instance to start
-  allowedVenues:                          # venues permitted to execute live orders
-    - hyperliquid
-    - 1inch
-    - bybit
-    - jupiter
-  requireDbCredentials: true              # reject env-var credential fallback for live mode
-  maxInitialOrderNotionalUsd: "10000"     # hard cap on single-order notional (USD) during rollout
-  maxConsecutiveVenueErrors: 3            # circuit-breaker: halt after N consecutive venue errors
-  slippageAlertBps: 50                    # log warning when fill slippage exceeds this
-  limitOrderTimeoutMs: 120000             # cancel stale live limit orders after this timeout
-  marketOrderTimeoutMs: 30000             # mark unresolved live market orders as recovery-required after this timeout
-  timeoutCheckIntervalMs: 10000           # frequency of live timeout scans
-  crashPolicy: alert_manual_intervention  # auto_go_flat | alert_manual_intervention
-
 venues:
   hyperliquid:
     baseUrl: https://api.hyperliquid.xyz
@@ -90,16 +72,6 @@ execution:
   shadowPollIntervalMs: 2000   # swap-venue price polling interval when no live stream
   shadowQuoteSlippageBps: 50   # slippage assumed for shadow swap price estimation
 
-simulation:
-  takerFeePct: 0.001           # 10bps taker fee for paper/shadow fills
-  makerFeePct: 0.0005          # 5bps maker fee (currently unused — all fills simulated as taker)
-  paperSlippageBps: 5          # 5bps half-spread slippage for paper fills
-
-risk:
-  globalMaxDrawdownPct: 20
-  maxOpenPositions: 10
-  maxPositionSizePct: 25
-
 # Default risk limits for agents when the user has NOT explicitly configured them.
 # These are the initial values AND the operator ceiling — agents can adjust downward at runtime.
 # See docs/tech/glossary.md for precise definitions of each term.
@@ -141,31 +113,6 @@ agentCostEstimates:
   standard: 0.10
   premium: 0.15
 
-reconciliation:
-  intervalMs: 30000          # reconciliation loop interval
-  driftAlertOnly: false       # true = log+alert only (safe default); false = block trading on drift
-  positionDriftThreshold: "0"  # position size diff threshold (absolute). "0" = exact match required
-  balanceDriftThreshold: "0"   # balance diff threshold (absolute). "0" = exact match required
-  autoCorrect: false           # auto-correct local state for diffs within threshold
-  swapDriftThresholdPct: 1.0   # swap venue: alert if balance differs by more than this % from expected
-
-streams:
-  private:
-    reconnectBaseMs: 1000          # initial backoff for reconnection
-    reconnectMaxMs: 30000          # max backoff cap
-    maxReconnectAttempts: 10       # give up after N failures
-  public:
-    reconnectBaseMs: 1000          # initial backoff for public stream reconnection
-    reconnectMaxMs: 30000          # max backoff cap
-    maxReconnectAttempts: 20       # more attempts — public streams are shared
-    depthLevels: 5                 # orderbook depth levels to track
-
-marking:
-  stalenessThresholdMs: 300000     # 5 min — use oracle if last fill older than this
-  oracleBaseUrl: https://api.coingecko.com/api/v3
-  oracleTimeoutMs: 10000           # CoinGecko request timeout in ms
-  oracleVsCurrency: usd            # quote currency for oracle price lookups
-
 # Agent evaluation — automated run analysis
 evaluation:
   storageRoot: app-data/evaluation-output  # absolute path or relative to CWD
@@ -179,12 +126,6 @@ evaluation:
     veryShortHoldSec: 30         # avg hold time below which a low finding is raised
     rateLimitAnomalyCount: 5     # number of rate-limit journal events above which a medium finding is raised
     veryShortSessionSec: 60      # session duration below which an info finding is raised
-
-marketDataRecording:
-  enabled: false
-  captureTrades: true
-  captureTopOfBook: true
-  captureCandles: true
 
 marketData:
   dexscreener:

@@ -19,16 +19,6 @@ interface EnvOverride {
 const ENV_OVERRIDES: Record<string, EnvOverride> = {
   DATABASE_URL: { path: 'database.url', type: 'string' },
   REDIS_URL: { path: 'redis.url', type: 'string' },
-  // Reconciliation
-  RECONCILIATION_INTERVAL_MS: { path: 'reconciliation.intervalMs', type: 'number' },
-  RECONCILIATION_DRIFT_ALERT_ONLY: { path: 'reconciliation.driftAlertOnly', type: 'boolean' },
-  RECONCILIATION_POSITION_THRESHOLD: { path: 'reconciliation.positionDriftThreshold', type: 'string' },
-  RECONCILIATION_BALANCE_THRESHOLD: { path: 'reconciliation.balanceDriftThreshold', type: 'string' },
-  RECONCILIATION_AUTO_CORRECT: { path: 'reconciliation.autoCorrect', type: 'boolean' },
-  // Streams
-  STREAM_RECONNECT_BASE_MS: { path: 'streams.private.reconnectBaseMs', type: 'number' },
-  STREAM_RECONNECT_MAX_MS: { path: 'streams.private.reconnectMaxMs', type: 'number' },
-  STREAM_MAX_RECONNECT_ATTEMPTS: { path: 'streams.private.maxReconnectAttempts', type: 'number' },
   // Venues
   JUPITER_API_URL: { path: 'venues.jupiter.baseUrl', type: 'string' },
   HYPERLIQUID_BASE_URL: { path: 'venues.hyperliquid.baseUrl', type: 'string' },
@@ -44,12 +34,6 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   ONEINCH_ROUTER_ADDRESS: { path: 'venues.1inch.routerAddress', type: 'string' },
   JUPITER_API_KEY: { path: 'venues.jupiter.apiKey', type: 'string' },
   ONEINCH_API_KEY: { path: 'venues.1inch.apiKey', type: 'string' },
-  // Marking
-  MARKING_STALENESS_MS: { path: 'marking.stalenessThresholdMs', type: 'number' },
-  MARKING_ORACLE_BASE_URL: { path: 'marking.oracleBaseUrl', type: 'string' },
-  // Live rollout
-  LIVE_ROLLOUT_ENABLED: { path: 'liveRollout.enabled', type: 'boolean' },
-  LIVE_ROLLOUT_MAX_ORDER_NOTIONAL_USD: { path: 'liveRollout.maxInitialOrderNotionalUsd', type: 'string' },
   // Alerts
   ALERTS_ENABLED: { path: 'alerts.enabled', type: 'boolean' },
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },

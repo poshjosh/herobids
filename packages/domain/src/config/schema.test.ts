@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   UsageBillingConfigSchema,
   BotConfigSchema,
-  PublicStreamConfigSchema,
-  MarkingConfigSchema,
   AgentRuntimePolicySchema,
   StrategySchema,
   LlmParamsSchema,
@@ -167,60 +165,6 @@ describe('BotConfigSchema', () => {
     if (!result.success) {
       const paths = result.error.issues.map((i) => i.path);
       expect(paths).toContainEqual(['execution', 'mode']);
-    }
-  });
-});
-
-describe('PublicStreamConfigSchema', () => {
-  it('applies defaults for all fields', () => {
-    const result = PublicStreamConfigSchema.safeParse({});
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.reconnectBaseMs).toBe(1_000);
-      expect(result.data.reconnectMaxMs).toBe(30_000);
-      expect(result.data.maxReconnectAttempts).toBe(20);
-      expect(result.data.depthLevels).toBe(5);
-    }
-  });
-
-  it('rejects reconnectBaseMs below 100', () => {
-    const result = PublicStreamConfigSchema.safeParse({ reconnectBaseMs: 50 });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects depthLevels above 50', () => {
-    const result = PublicStreamConfigSchema.safeParse({ depthLevels: 51 });
-    expect(result.success).toBe(false);
-  });
-});
-
-describe('MarkingConfigSchema', () => {
-  it('applies defaults — stalenessThresholdMs = 300000', () => {
-    const result = MarkingConfigSchema.safeParse({});
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.stalenessThresholdMs).toBe(300_000);
-      expect(result.data.oracleBaseUrl).toBeUndefined();
-    }
-  });
-
-  it('rejects stalenessThresholdMs below 10000', () => {
-    const result = MarkingConfigSchema.safeParse({ stalenessThresholdMs: 5000 });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects invalid oracleBaseUrl', () => {
-    const result = MarkingConfigSchema.safeParse({ oracleBaseUrl: 'not-a-url' });
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts valid oracleBaseUrl', () => {
-    const result = MarkingConfigSchema.safeParse({
-      oracleBaseUrl: 'https://api.coingecko.com/v3',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.oracleBaseUrl).toBe('https://api.coingecko.com/v3');
     }
   });
 });

@@ -235,20 +235,20 @@ marketData:
 
   it('env overlay deep-merges without clobbering sibling keys', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-reconciliation:
-  intervalMs: 30000
-  driftAlertOnly: true
+llm:
+  maxTokens: 4096
+  timeoutMs: 180000
 `);
     writeFileSync(resolve(tmpDir, 'development.yaml'), `
-reconciliation:
-  intervalMs: 5000
+llm:
+  maxTokens: 2048
 `);
     process.env['NODE_ENV'] = 'development';
 
     const config = loadConfig(tmpDir);
 
-    expect(config.reconciliation.intervalMs).toBe(5000);
-    expect(config.reconciliation.driftAlertOnly).toBe(true);
+    expect(config.llm.maxTokens).toBe(2048);
+    expect(config.llm.timeoutMs).toBe(180000);
   });
 
   it('applies Zod defaults for missing sections', () => {
@@ -256,11 +256,8 @@ reconciliation:
 
     const config = loadConfig(tmpDir);
 
-    expect(config.reconciliation.intervalMs).toBe(30000);
-    expect(config.reconciliation.driftAlertOnly).toBe(true);
-    expect(config.streams.private.reconnectBaseMs).toBe(1000);
-    expect(config.streams.public.reconnectBaseMs).toBe(1000);
-    expect(config.marking.stalenessThresholdMs).toBe(300000);
+    expect(config.execution.orderTimeoutMs).toBe(30000);
+    expect(config.execution.maxRetries).toBe(3);
     expect(config.marketData).toBeUndefined();
   });
 
@@ -359,130 +356,24 @@ marketData:
     expect(config.database.url).toBe('postgres://localhost/test');
   });
 
-  it('rejects invalid stalenessThresholdMs below minimum', () => {
-    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-marking:
-  stalenessThresholdMs: 1000
-`);
-
-    expect(() => loadConfig(tmpDir)).toThrow();
-  });
-
   it('rejects invalid boolean env values instead of silently coercing to false', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-    process.env['RECONCILIATION_DRIFT_ALERT_ONLY'] = 'treu';
+    process.env['HYPERLIQUID_TESTNET'] = 'treu';
 
     expect(() => loadConfig(tmpDir)).toThrow('Invalid boolean env value');
   });
 
   it('accepts valid boolean env values true, false, 1, 0', () => {
-    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-    process.env['RECONCILIATION_DRIFT_ALERT_ONLY'] = 'false';
-    process.env['RECONCILIATION_AUTO_CORRECT'] = '1';
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+venues:
+  hyperliquid:
+    baseUrl: https://api.hyperliquid.xyz
+`);
+    process.env['HYPERLIQUID_TESTNET'] = '1';
 
     const config = loadConfig(tmpDir);
 
-    expect(config.reconciliation.driftAlertOnly).toBe(false);
-    expect(config.reconciliation.autoCorrect).toBe(true);
-  });
-
-  describe('liveRollout config', () => {
-    it('applies Zod defaults when liveRollout is omitted', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.liveRollout.enabled).toBe(false);
-      expect(config.liveRollout.allowedVenues).toEqual(['hyperliquid']);
-      expect(config.liveRollout.requireDbCredentials).toBe(true);
-      expect(config.liveRollout.maxInitialOrderNotionalUsd).toBe('50');
-      expect(config.liveRollout.maxConsecutiveVenueErrors).toBe(3);
-      expect(config.liveRollout.slippageAlertBps).toBe(50);
-      expect(config.liveRollout.limitOrderTimeoutMs).toBe(120000);
-      expect(config.liveRollout.marketOrderTimeoutMs).toBe(30000);
-      expect(config.liveRollout.timeoutCheckIntervalMs).toBe(10000);
-      expect(config.liveRollout.crashPolicy).toBe('alert_manual_intervention');
-    });
-
-    it('loads explicit liveRollout from YAML', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-liveRollout:
-  enabled: true
-  allowedVenues:
-    - hyperliquid
-  maxInitialOrderNotionalUsd: "100"
-`);
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.liveRollout.enabled).toBe(true);
-      expect(config.liveRollout.allowedVenues).toEqual(['hyperliquid']);
-      expect(config.liveRollout.maxInitialOrderNotionalUsd).toBe('100');
-    });
-
-    it('applies LIVE_ROLLOUT_ENABLED env override', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-      process.env['LIVE_ROLLOUT_ENABLED'] = 'true';
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.liveRollout.enabled).toBe(true);
-    });
-
-    it('applies LIVE_ROLLOUT_MAX_ORDER_NOTIONAL_USD env override', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-      process.env['LIVE_ROLLOUT_MAX_ORDER_NOTIONAL_USD'] = '25';
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.liveRollout.maxInitialOrderNotionalUsd).toBe('25');
-    });
-
-    it('rejects non-numeric maxInitialOrderNotionalUsd', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-liveRollout:
-  maxInitialOrderNotionalUsd: "fifty"
-`);
-
-      expect(() => loadConfig(tmpDir)).toThrow();
-    });
-
-    it('rejects zero maxInitialOrderNotionalUsd', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-liveRollout:
-  maxInitialOrderNotionalUsd: "0"
-`);
-
-      expect(() => loadConfig(tmpDir)).toThrow();
-    });
-
-    it('rejects Infinity maxInitialOrderNotionalUsd', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-liveRollout:
-  maxInitialOrderNotionalUsd: "Infinity"
-`);
-
-      expect(() => loadConfig(tmpDir)).toThrow();
-    });
-
-    it('rejects whitespace-padded maxInitialOrderNotionalUsd', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-liveRollout:
-  maxInitialOrderNotionalUsd: " 50 "
-`);
-
-      expect(() => loadConfig(tmpDir)).toThrow();
-    });
-
-    it('rejects unsupported venues in allowedVenues', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-liveRollout:
-  allowedVenues:
-    - kraken
-`);
-
-      expect(() => loadConfig(tmpDir)).toThrow();
-    });
+    expect(config.venues['hyperliquid']?.testnet).toBe(true);
   });
 
   describe('1inch token safety config', () => {
@@ -699,30 +590,6 @@ agentRuntime:
 
       expect(config.execution.shadowPollIntervalMs).toBe(3000);
       expect(config.execution.shadowQuoteSlippageBps).toBe(100);
-    });
-  });
-
-  describe('marking oracle config', () => {
-    it('applies Zod defaults for oracleTimeoutMs and oracleVsCurrency', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.marking.oracleTimeoutMs).toBe(10000);
-      expect(config.marking.oracleVsCurrency).toBe('usd');
-    });
-
-    it('loads explicit oracle config from YAML', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-marking:
-  oracleTimeoutMs: 5000
-  oracleVsCurrency: eur
-`);
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.marking.oracleTimeoutMs).toBe(5000);
-      expect(config.marking.oracleVsCurrency).toBe('eur');
     });
   });
 

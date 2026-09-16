@@ -3,9 +3,6 @@
 app:
   logLevel: info
 
-liveRollout:
-  enabled: true
-
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
   model: deepseek/deepseek-v4-pro       # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
