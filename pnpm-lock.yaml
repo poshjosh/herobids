@@ -38,9 +38,6 @@ importers:
       '@herobids/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@herobids/engine':
-        specifier: workspace:*
-        version: link:../../packages/engine
       '@herobids/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -193,9 +190,6 @@ importers:
       '@herobids/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
-      '@herobids/venues':
-        specifier: workspace:*
-        version: link:../../packages/venues
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
@@ -369,9 +363,6 @@ importers:
       '@herobids/domain':
         specifier: workspace:*
         version: link:../packages/domain
-      '@herobids/venues':
-        specifier: workspace:*
-        version: link:../packages/venues
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(postgres@3.4.9)

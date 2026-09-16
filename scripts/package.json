@@ -17,7 +17,6 @@
   "dependencies": {
     "@herobids/db": "workspace:*",
     "@herobids/domain": "workspace:*",
-    "@herobids/venues": "workspace:*",
     "drizzle-orm": "^0.44.0",
     "viem": "^2.28.0"
   },

@@ -17,7 +17,6 @@
     "@herobids/db": "workspace:*",
     "@herobids/documents": "workspace:*",
     "@herobids/domain": "workspace:*",
-    "@herobids/engine": "workspace:*",
     "@herobids/llm": "workspace:*",
     "@herobids/venues": "workspace:*",
     "archiver": "^8.0.0",
