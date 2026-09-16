@@ -6,9 +6,6 @@ import type { Database } from '@herobids/db';
 import {
   agents,
   agentSkills,
-  fills,
-  journalEvents,
-  positions,
   loadAgentRuntimeSessions,
 } from '@herobids/db';
 import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
@@ -84,7 +81,9 @@ const ReportQuerySchema = z.object({
 
 const TRADES_CSV_HEADERS = 'date,side,symbol,quantity,price,pnl,fee,sessionId';
 
-type FillRow = typeof fills.$inferSelect;
+// c4.9f: local trading-table schema dropped — the export formatters operate on
+// boundary-returned rows (see exports-traderton row types).
+type FillRow = ReadFillRow;
 
 async function listSkillIdsForAgent(db: Database, agentId: string): Promise<string[]> {
   const rows = await db.select({ skillId: agentSkills.skillId })
@@ -125,7 +124,7 @@ function fillsToJsonArray(rows: FillRow[]): Record<string, unknown>[] {
   }));
 }
 
-type JournalRow = typeof journalEvents.$inferSelect;
+type JournalRow = ReadJournalRow;
 
 function eventsToMarkdown(rows: JournalRow[]): string {
   const lines: string[] = ['# Journal Export', ''];
@@ -162,7 +161,7 @@ function sanitizeConfig(config: Record<string, unknown>): Record<string, unknown
   return sanitize(config) as Record<string, unknown>;
 }
 
-type PositionRow = typeof positions.$inferSelect;
+type PositionRow = ReadPositionRow;
 
 type ReportData = {
   tradeCount: number;

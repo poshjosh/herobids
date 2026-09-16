@@ -18,13 +18,7 @@ export async function closeDatabase(db: Database): Promise<void> {
 }
 
 export * from './schema/index.js';
-export { PgJournal } from './journal-pg.js';
-export { FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, DecisionRepository, BotRepository } from './repositories.js';
-export type { InsertFill, UpsertPosition, InsertExecutionPlan, UpsertOrder, InsertBalanceSnapshot, InsertDecision } from './repositories.js';
-export { ReconciliationEventRepository } from './reconciliation-repository.js';
-export type { InsertReconciliationEvent, ReconciliationEventQuery } from './reconciliation-repository.js';
-export { LlmArtifactRepository } from './llm-artifact-repository.js';
-export type { InsertLlmArtifact, LlmArtifactSource } from './llm-artifact-repository.js';
+export { BotRepository } from './repositories.js';
 export { AlertDeliveryRepository } from './alert-delivery-repository.js';
 export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repository.js';
 export { BillingRepository } from './billing-repository.js';
@@ -33,26 +27,14 @@ export { UsageBillingRepository } from './usage-billing-repository.js';
 export type { InsertUsageEvent, InsertLedgerEntry, RecordUsageBatchInput, UsageSummaryFilters, UsageEventFilters, SpendCaps, OpenTopUpCreditInput, AccountStatus, CanSpendNowResult, BillingAccountRow, RateCardSeedItem } from './usage-billing-repository.js';
 export { AgentRepository } from './agent-repository.js';
 export type { InsertAgent, UpdateAgent, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, LaunchableStartingSession, InsertAgentMessage, InsertAgentArtifact, InsertAgentOutboundMessage } from './agent-repository.js';
-export { InstrumentRepository } from './instrument-repository.js';
-export type { InstrumentSearchParams, InstrumentRow, UpsertInstrumentRow } from './instrument-repository.js';
 export { resolveRuntimeCapabilityDescriptor, buildRuntimeDescriptor, deriveReadiness, chooseLatest } from './agent-runtime-descriptor.js';
 export type { RuntimeCapabilityDescriptor, RuntimeAssignmentRow } from './agent-runtime-descriptor.js';
-export { TokenSafetyOverrideRepository } from './token-safety-override-repository.js';
-export type { IssueOverrideParams, TokenSafetyOverrideRow } from './token-safety-override-repository.js';
-export { DecisionFailureRepository } from './decision-failure-repository.js';
-export type { InsertDecisionFailure, DecisionFailureQuery } from './decision-failure-repository.js';
 export { DecisionApprovalRepository } from './decision-approval-repository.js';
 export type { InsertDecisionApproval, ResolutionInfo, DecisionApprovalRow } from './decision-approval-repository.js';
 export { AgentDocumentsRepository } from './agent-documents-repository.js';
 export type { InsertAgentDocument, UpdateAgentDocument, DocumentSource, ExtractionStatus, DocumentLifecycleState } from './agent-documents-repository.js';
-export {
-  loadAgentBotIds,
-  loadAgentFills,
-  loadAgentJournalEvents,
-  loadAgentRuntimeSessions,
-  loadAgentPositions,
-} from './agent-evidence-loaders.js';
-export type { LoaderTimeFilter, LoadPositionsOpts } from './agent-evidence-loaders.js';
+export { loadAgentRuntimeSessions } from './agent-evidence-loaders.js';
+export type { LoaderTimeFilter } from './agent-evidence-loaders.js';
 export {
   NoSessionForScopeError,
   resolveScope,

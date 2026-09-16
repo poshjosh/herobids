@@ -21,13 +21,69 @@
 //     array; any non-success outcome is surfaced to the caller as a typed error
 //     so the endpoint can return the right HTTP status (never silently empty).
 
-import type { fills, journalEvents, positions } from '@herobids/db';
 import type { TradertonReadResult } from '@herobids/domain';
 import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
 
-export type FillRow = typeof fills.$inferSelect;
-export type JournalRow = typeof journalEvents.$inferSelect;
-export type PositionRow = typeof positions.$inferSelect;
+// c4.9f: local trading-table schema dropped — these rows arrive from the
+// Traderton read boundary, whose schema is byte-identical to the dropped
+// herobids tables. These interfaces faithfully reproduce each column with the
+// type `$inferSelect` would have produced: drizzle `text` → string (nullable →
+// string | null), `numeric` → string, `timestamp` → Date, `jsonb` → its
+// `$type`. The toFillRow/toJournalRow/toPositionRow mappers rehydrate the date
+// columns (which arrive as ISO strings over JSON) back into Date objects.
+
+/** A fill record (mirrors the dropped `fills` table). */
+export interface FillRow {
+  id: string;
+  orderId: string;
+  venueAccountId: string;
+  actorType: string;
+  actorId: string | null;
+  venueRefId: string | null;
+  venue: string;
+  symbol: string;
+  side: string;
+  quantity: string;
+  price: string;
+  fee: string | null;
+  feeCurrency: string | null;
+  realizedPnlDelta: string | null;
+  filledAt: Date;
+  createdAt: Date;
+}
+
+/** A journal-event record (mirrors the dropped `journal_events` table). */
+export interface JournalRow {
+  id: string;
+  actorType: string | null;
+  actorId: string | null;
+  backtestRunId: string | null;
+  type: string;
+  payload: Record<string, unknown>;
+  createdAt: Date;
+}
+
+/** A position record (mirrors the dropped `positions` table). */
+export interface PositionRow {
+  id: string;
+  venueAccountId: string;
+  actorType: string;
+  actorId: string | null;
+  venue: string;
+  symbol: string;
+  instrumentId: string | null;
+  side: string;
+  size: string;
+  entryPrice: string;
+  realizedPnl: string;
+  markSource: string | null;
+  exitReason: string | null;
+  stopLoss: string | null;
+  takeProfit: string | null;
+  openedAt: Date;
+  closedAt: Date | null;
+  updatedAt: Date;
+}
 
 /** The narrow read boundary the agent-export endpoints consume. */
 export interface TradertonReadBoundary {

@@ -14,11 +14,67 @@
 // Only the fields the row types declare are mapped; unknown extras are copied
 // through so the JSON artifact stays faithful.
 
-import type { fills, journalEvents, positions } from '@herobids/db';
+// c4.9f: the local trading-table schema (fills/journalEvents/positions) was
+// dropped — these rows now arrive from the Traderton read boundary. Traderton's
+// schema is byte-identical to the dropped herobids tables, so these interfaces
+// faithfully reproduce each column with the type `$inferSelect` would have
+// produced: drizzle `text` → string (nullable → string | null), `numeric` →
+// string, `timestamp` → Date, `jsonb` → its `$type`. The mappers spread the
+// boundary record and rehydrate the date columns (which arrive as ISO strings)
+// back into Date objects.
 
-export type FillRow = typeof fills.$inferSelect;
-export type JournalRow = typeof journalEvents.$inferSelect;
-export type PositionRow = typeof positions.$inferSelect;
+/** A fill record (mirrors the dropped `fills` table). */
+export interface FillRow {
+  id: string;
+  orderId: string;
+  venueAccountId: string;
+  actorType: string;
+  actorId: string | null;
+  venueRefId: string | null;
+  venue: string;
+  symbol: string;
+  side: string;
+  quantity: string;
+  price: string;
+  fee: string | null;
+  feeCurrency: string | null;
+  realizedPnlDelta: string | null;
+  filledAt: Date;
+  createdAt: Date;
+}
+
+/** A journal-event record (mirrors the dropped `journal_events` table). */
+export interface JournalRow {
+  id: string;
+  actorType: string | null;
+  actorId: string | null;
+  backtestRunId: string | null;
+  type: string;
+  payload: Record<string, unknown>;
+  createdAt: Date;
+}
+
+/** A position record (mirrors the dropped `positions` table). */
+export interface PositionRow {
+  id: string;
+  venueAccountId: string;
+  actorType: string;
+  actorId: string | null;
+  venue: string;
+  symbol: string;
+  instrumentId: string | null;
+  side: string;
+  size: string;
+  entryPrice: string;
+  realizedPnl: string;
+  markSource: string | null;
+  exitReason: string | null;
+  stopLoss: string | null;
+  takeProfit: string | null;
+  openedAt: Date;
+  closedAt: Date | null;
+  updatedAt: Date;
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null) {
