@@ -6,7 +6,6 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
-import { bots, fills, positions, venueAccounts } from '@herobids/db';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let ctx: Awaited<ReturnType<typeof buildApp>>;
@@ -41,16 +40,6 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
     return res.json<{ id: string }>().id;
   }
 
-  async function getUserId(token: string): Promise<string> {
-    const res = await ctx.app.inject({
-      method: 'GET',
-      url: '/auth/me',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(res.statusCode).toBe(200);
-    return res.json<{ id: string }>().id;
-  }
-
   async function setupTradingLink(token: string): Promise<{ connectionId: string }> {
     const res = await ctx.app.inject({
       method: 'POST',
@@ -82,27 +71,31 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
     expect([200, 201]).toContain(res.statusCode);
   }
 
-  async function seedBotWithPositions(opts: {
-    userId: string;
-    connectionId: string;
+  /**
+   * Seed the stub boundary's agent-scoped evidence stores. Rows keep the exact
+   * field values the previous local-table inserts used, with dates as ISO
+   * strings and numerics as strings (the read path rehydrates dates via
+   * toFillRow/toPositionRow). Fill identity fields (actorType/actorId/
+   * venueAccountId/venue/symbol/filledAt) must match the position so the
+   * in-app exitPrice correlation logic pairs them.
+   */
+  function seedPositions(opts: {
+    agentId: string;
     botId: string;
     venueAccountId: string;
-  }) {
-    await ctx.db.insert(venueAccounts).values({
-      id: opts.venueAccountId,
-      userId: opts.userId,
-      venue: 'hyperliquid',
-      label: 'Test venue account',
-    });
-
-    await ctx.db.insert(bots).values({
-      id: opts.botId,
-      userId: opts.userId,
-      venueAccountId: opts.venueAccountId,
-      connectionId: opts.connectionId,
-      config: { strategy: { type: 'momentum' } },
-      status: 'stopped',
-    });
+    positions: Array<Record<string, unknown>>;
+    fills?: Array<Record<string, unknown>>;
+  }): void {
+    ctx.seedAgentPositions(
+      opts.agentId,
+      opts.positions.map((row) => ({ actorType: 'bot', actorId: opts.botId, ...row })),
+    );
+    if (opts.fills) {
+      ctx.seedAgentFills(
+        opts.agentId,
+        opts.fills.map((row) => ({ actorType: 'bot', actorId: opts.botId, ...row })),
+      );
+    }
   }
 
   it('returns 404 for an agent belonging to another user', async () => {
@@ -142,46 +135,50 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
 
   it('returns positions with derived exitPrice for closed positions', async () => {
     const token = await registerUser(ctx.app, ctx.db, 'closed@positions.test');
-    const userId = await getUserId(token);
     const agentId = await createAgent(token);
     const { connectionId } = await setupTradingLink(token);
     await bindAgent(token, agentId, connectionId);
 
     const botId = 'bot-01000000-0000-7000-8000-000000000001';
     const venueAccountId = 'va-01000000-0000-7000-8000-000000000001';
-    await seedBotWithPositions({ userId, connectionId, botId, venueAccountId });
 
-    const openedAt = new Date('2026-06-01T10:00:00Z');
-    const closedAt = new Date('2026-06-01T14:30:00Z');
+    const openedAt = '2026-06-01T10:00:00.000Z';
+    const closedAt = '2026-06-01T14:30:00.000Z';
 
-    await ctx.db.insert(positions).values({
-      id: 'pos-01000000-0000-7000-8000-000000000001',
+    seedPositions({
+      agentId,
+      botId,
       venueAccountId,
-      actorType: 'bot',
-      actorId: botId,
-      venue: 'hyperliquid',
-      symbol: 'SOL-PERP',
-      side: 'long',
-      size: '1.5',
-      entryPrice: '145.00',
-      realizedPnl: '10.95',
-      openedAt,
-      closedAt,
-      updatedAt: closedAt,
-    });
-
-    await ctx.db.insert(fills).values({
-      id: 'fill-01000000-0000-7000-8000-000000000001',
-      orderId: 'ord-01000000-0000-7000-8000-000000000001',
-      venueAccountId,
-      actorType: 'bot',
-      actorId: botId,
-      venue: 'hyperliquid',
-      symbol: 'SOL-PERP',
-      side: 'sell',
-      quantity: '1.5',
-      price: '152.30',
-      filledAt: new Date('2026-06-01T14:29:00Z'),
+      positions: [
+        {
+          id: 'pos-01000000-0000-7000-8000-000000000001',
+          venueAccountId,
+          venue: 'hyperliquid',
+          symbol: 'SOL-PERP',
+          side: 'long',
+          size: '1.5',
+          entryPrice: '145.00',
+          realizedPnl: '10.95',
+          openedAt,
+          closedAt,
+          updatedAt: closedAt,
+          createdAt: closedAt,
+        },
+      ],
+      fills: [
+        {
+          id: 'fill-01000000-0000-7000-8000-000000000001',
+          orderId: 'ord-01000000-0000-7000-8000-000000000001',
+          venueAccountId,
+          venue: 'hyperliquid',
+          symbol: 'SOL-PERP',
+          side: 'sell',
+          quantity: '1.5',
+          price: '152.30',
+          filledAt: '2026-06-01T14:29:00.000Z',
+          createdAt: '2026-06-01T14:29:00.000Z',
+        },
+      ],
     });
 
     const res = await ctx.app.inject({
@@ -203,35 +200,41 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
     expect(item['exitPrice']).toBe('152.30');
     expect(item['realizedPnl']).toBe('10.950000');
     expect(typeof item['holdMs']).toBe('number');
-    expect(item['holdMs']).toBe(closedAt.getTime() - openedAt.getTime());
+    expect(item['holdMs']).toBe(
+      new Date(closedAt).getTime() - new Date(openedAt).getTime(),
+    );
   });
 
   it('returns open positions without exitPrice or hold duration', async () => {
     const token = await registerUser(ctx.app, ctx.db, 'open@positions.test');
-    const userId = await getUserId(token);
     const agentId = await createAgent(token);
     const { connectionId } = await setupTradingLink(token);
     await bindAgent(token, agentId, connectionId);
 
     const botId = 'bot-03000000-0000-7000-8000-000000000001';
     const venueAccountId = 'va-03000000-0000-7000-8000-000000000001';
-    await seedBotWithPositions({ userId, connectionId, botId, venueAccountId });
 
-    const openedAt = new Date('2026-06-01T11:15:00Z');
+    const openedAt = '2026-06-01T11:15:00.000Z';
 
-    await ctx.db.insert(positions).values({
-      id: 'pos-03000000-0000-7000-8000-000000000001',
+    seedPositions({
+      agentId,
+      botId,
       venueAccountId,
-      actorType: 'bot',
-      actorId: botId,
-      venue: 'hyperliquid',
-      symbol: 'ETH-PERP',
-      side: 'short',
-      size: '2',
-      entryPrice: '3400.00',
-      realizedPnl: '0',
-      openedAt,
-      updatedAt: openedAt,
+      positions: [
+        {
+          id: 'pos-03000000-0000-7000-8000-000000000001',
+          venueAccountId,
+          venue: 'hyperliquid',
+          symbol: 'ETH-PERP',
+          side: 'short',
+          size: '2',
+          entryPrice: '3400.00',
+          realizedPnl: '0',
+          openedAt,
+          updatedAt: openedAt,
+          createdAt: openedAt,
+        },
+      ],
     });
 
     const res = await ctx.app.inject({
@@ -253,28 +256,27 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
 
   it('paginates correctly with limit and offset', async () => {
     const token = await registerUser(ctx.app, ctx.db, 'paginate@positions.test');
-    const userId = await getUserId(token);
     const agentId = await createAgent(token);
     const { connectionId } = await setupTradingLink(token);
     await bindAgent(token, agentId, connectionId);
 
     const botId = 'bot-02000000-0000-7000-8000-000000000001';
     const venueAccountId = 'va-02000000-0000-7000-8000-000000000001';
-    await seedBotWithPositions({ userId, connectionId, botId, venueAccountId });
 
-    // Insert 3 positions with different openedAt times
+    // 3 positions with different openedAt times (all still open — no fills needed)
     const positionData = [
-      { id: 'pos-02000000-0000-7000-8000-000000000001', openedAt: new Date('2026-06-01T08:00:00Z') },
-      { id: 'pos-02000000-0000-7000-8000-000000000002', openedAt: new Date('2026-06-01T09:00:00Z') },
-      { id: 'pos-02000000-0000-7000-8000-000000000003', openedAt: new Date('2026-06-01T10:00:00Z') },
+      { id: 'pos-02000000-0000-7000-8000-000000000001', openedAt: '2026-06-01T08:00:00.000Z' },
+      { id: 'pos-02000000-0000-7000-8000-000000000002', openedAt: '2026-06-01T09:00:00.000Z' },
+      { id: 'pos-02000000-0000-7000-8000-000000000003', openedAt: '2026-06-01T10:00:00.000Z' },
     ];
 
-    for (const pos of positionData) {
-      await ctx.db.insert(positions).values({
+    seedPositions({
+      agentId,
+      botId,
+      venueAccountId,
+      positions: positionData.map((pos) => ({
         id: pos.id,
         venueAccountId,
-        actorType: 'bot',
-        actorId: botId,
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         side: 'long',
@@ -283,8 +285,9 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
         realizedPnl: '0',
         openedAt: pos.openedAt,
         updatedAt: pos.openedAt,
-      });
-    }
+        createdAt: pos.openedAt,
+      })),
+    });
 
     // limit=2 should return the 2 most recent
     const page1 = await ctx.app.inject({

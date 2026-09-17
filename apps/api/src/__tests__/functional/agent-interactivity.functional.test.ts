@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { agents, bots, connections, fills, users, venueAccounts } from '@herobids/db';
+import { agents, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
 
@@ -284,24 +284,26 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
     it('agent-native fills appear in response', async () => {
       const agentId = await createAgent();
       const venueAccountId = 'va-agent-native';
-      const fillId = 'fill-agent-native';
 
-      await ctx.db.insert(fills).values({
-        id: fillId,
-        orderId: 'ord-agent-native',
-        venueAccountId,
-        actorType: 'agent',
-        actorId: agentId,
-        venueRefId: 'venue-ref-1',
-        venue: 'jupiter',
-        symbol: 'USDC/USD',
-        side: 'buy',
-        quantity: '1000',
-        price: '1.0',
-        fee: '0.3',
-        feeCurrency: 'USDC',
-        filledAt: new Date('2026-06-17T10:00:00Z'),
-      });
+      ctx.seedAgentFills(agentId, [
+        {
+          id: 'fill-agent-native',
+          orderId: 'ord-agent-native',
+          venueAccountId,
+          actorType: 'agent',
+          actorId: agentId,
+          venueRefId: 'venue-ref-1',
+          venue: 'jupiter',
+          symbol: 'USDC/USD',
+          side: 'buy',
+          quantity: '1000',
+          price: '1.0',
+          fee: '0.3',
+          feeCurrency: 'USDC',
+          filledAt: '2026-06-17T10:00:00.000Z',
+          createdAt: '2026-06-17T10:00:00.000Z',
+        },
+      ]);
 
       const res = await ctx.app.inject({
         method: 'GET',
@@ -323,74 +325,44 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
       const botId = 'bot-test-mixed';
       const venueAccountId = 'va-bot-mixed';
 
-      // Create a bot owned by the agent
-      const [owner] = await ctx.db.select({ userId: agents.userId }).from(agents).where(eq(agents.id, agentId));
-
-      // Insert the venue account first to satisfy the FK constraint
-      await ctx.db.insert(venueAccounts).values({
-        id: venueAccountId,
-        userId: owner!.userId,
-        venue: 'hyperliquid',
-        label: 'test-va-mixed',
-      });
-
-      // Insert connection and trading binding to satisfy FK constraints
-      const connectionId = 'conn-mixed';
-      await ctx.db.insert(connections).values({
-        id: connectionId,
-        userId: owner!.userId,
-        provider: 'hyperliquid',
-        label: 'test-conn-mixed',
-      });
-      await ctx.db.insert(connections).values({
-        id: 'tb-mixed',
-        userId: owner!.userId,
-        provider: 'hyperliquid',
-        label: 'test-tb-mixed',
-      });
-
-      await ctx.db.insert(bots).values({
-        id: botId,
-        userId: owner!.userId,
-        venueAccountId,
-        connectionId: 'tb-mixed',
-        config: { strategy: { type: 'momentum' } },
-        status: 'stopped',
-        creatorType: 'agent',
-        creatorId: agentId,
-      });
-
-      // Insert agent-native fill
-      await ctx.db.insert(fills).values({
-        id: 'fill-agent-mixed',
-        orderId: 'ord-agent-mixed',
-        venueAccountId,
-        actorType: 'agent',
-        actorId: agentId,
-        venueRefId: 'venue-ref-agent',
-        venue: 'jupiter',
-        symbol: 'USDC/USD',
-        side: 'buy',
-        quantity: '1000',
-        price: '1.0',
-        filledAt: new Date('2026-06-17T10:00:00Z'),
-      });
-
-      // Insert bot fill
-      await ctx.db.insert(fills).values({
-        id: 'fill-bot-mixed',
-        orderId: 'ord-bot-mixed',
-        venueAccountId,
-        actorType: 'bot',
-        actorId: botId,
-        venueRefId: 'venue-ref-bot',
-        venue: 'jupiter',
-        symbol: 'SOL/USD',
-        side: 'sell',
-        quantity: '10',
-        price: '150.0',
-        filledAt: new Date('2026-06-17T11:00:00Z'),
-      });
+      // The get_agent_fills boundary tool folds agent-owned bot fills
+      // (creatorType='agent' AND creatorId=agentId) with agent-native fills
+      // server-side, so BOTH rows are seeded into the single get_agent_fills
+      // result for this agent — no local bots row is (or can be) created.
+      ctx.seedAgentFills(agentId, [
+        // Agent-native fill
+        {
+          id: 'fill-agent-mixed',
+          orderId: 'ord-agent-mixed',
+          venueAccountId,
+          actorType: 'agent',
+          actorId: agentId,
+          venueRefId: 'venue-ref-agent',
+          venue: 'jupiter',
+          symbol: 'USDC/USD',
+          side: 'buy',
+          quantity: '1000',
+          price: '1.0',
+          filledAt: '2026-06-17T10:00:00.000Z',
+          createdAt: '2026-06-17T10:00:00.000Z',
+        },
+        // Bot fill (agent-owned bot, folded server-side by the boundary tool)
+        {
+          id: 'fill-bot-mixed',
+          orderId: 'ord-bot-mixed',
+          venueAccountId,
+          actorType: 'bot',
+          actorId: botId,
+          venueRefId: 'venue-ref-bot',
+          venue: 'jupiter',
+          symbol: 'SOL/USD',
+          side: 'sell',
+          quantity: '10',
+          price: '150.0',
+          filledAt: '2026-06-17T11:00:00.000Z',
+          createdAt: '2026-06-17T11:00:00.000Z',
+        },
+      ]);
 
       const res = await ctx.app.inject({
         method: 'GET',
@@ -413,26 +385,26 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
       const agentId = await createAgent();
       const venueAccountId = 'va-agent-only';
 
-      // Ensure no bots exist for this agent
-      const existingBots = await ctx.db.select({ id: bots.id }).from(bots)
-        .where(eq(bots.creatorId, agentId));
-      expect(existingBots).toHaveLength(0);
+      // No agent-owned bots exist — the stub boundary's get_agent_fills store for
+      // this agent holds only agent-native fills.
 
-      // Insert only an agent-native fill
-      await ctx.db.insert(fills).values({
-        id: 'fill-agent-only',
-        orderId: 'ord-agent-only',
-        venueAccountId,
-        actorType: 'agent',
-        actorId: agentId,
-        venueRefId: 'venue-ref-agent-only',
-        venue: 'hyperliquid',
-        symbol: 'BTC/USD',
-        side: 'buy',
-        quantity: '0.5',
-        price: '60000',
-        filledAt: new Date('2026-06-17T12:00:00Z'),
-      });
+      ctx.seedAgentFills(agentId, [
+        {
+          id: 'fill-agent-only',
+          orderId: 'ord-agent-only',
+          venueAccountId,
+          actorType: 'agent',
+          actorId: agentId,
+          venueRefId: 'venue-ref-agent-only',
+          venue: 'hyperliquid',
+          symbol: 'BTC/USD',
+          side: 'buy',
+          quantity: '0.5',
+          price: '60000',
+          filledAt: '2026-06-17T12:00:00.000Z',
+          createdAt: '2026-06-17T12:00:00.000Z',
+        },
+      ]);
 
       const res = await ctx.app.inject({
         method: 'GET',
