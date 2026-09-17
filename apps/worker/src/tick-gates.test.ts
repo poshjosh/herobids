@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RegimeResult } from '@herobids/market-data';
+import type { RegimeResult } from '@herobids/domain';
 import { calculateAtrPercent, computeDecisionContextHash, computeRiskPlaybookDigest, computeWakeSignalDigest, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
 import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
 import { computeMarketEventDigest } from './runtime-composition.js';

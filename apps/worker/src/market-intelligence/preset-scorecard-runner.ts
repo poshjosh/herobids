@@ -1,17 +1,8 @@
 // TODO(009): Wire PresetScorecardRunner into PlatformAssessor.generateScorecards()
 
-import type { PriceCandle } from '@herobids/market-data';
-import type {
-  MarketAssessmentIdentity,
-  PresetScorecardEntry,
-  PresetEntry,
-  TradertonReadResult,
-} from '@herobids/domain';
+import type { MarketAssessmentIdentity, PresetEntry, PresetScorecardEntry, PriceCandle, TradertonReadResult } from '@herobids/domain';
 import { computePresetBehaviorVersion, err, ok, type Result } from '@herobids/domain';
-import type {
-  IndicatorConfig,
-  ScanConfig,
-} from '@herobids/strategy';
+import type { IndicatorConfig, ScanConfig } from './preset-scan-contracts.js';
 
 // ── Deps ────────────────────────────────────────────────────────────────────
 

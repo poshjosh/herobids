@@ -1,5 +1,5 @@
 import { price, type AgentRiskDefaultsConfig, type AgentRiskOverrides, type AgentRiskCreatorInput, type AgentRiskCeilings, type ResolvedAgentRiskContract, resolveAgentRiskContract, type ResolvedAgentRiskProfile, resolveAgentRiskProfile, type RiskPosture } from '@herobids/domain';
-import type { RiskLimits } from '@herobids/engine';
+import type { RiskLimits } from './agent-risk-limits-contracts.js';
 
 export interface AgentRiskLimitSource {
   capital: string | null;

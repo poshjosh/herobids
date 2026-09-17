@@ -12,7 +12,7 @@
  */
 
 import { price, quantity, Decimal } from '@herobids/domain';
-import type { PriceService } from '@herobids/market-data';
+import type { PriceService } from './traderton/price-contracts.js';
 import type { HybridPricingIdentity } from './runtime-composition.js';
 
 // ─── Public types ────────────────────────────────────────────────────────────

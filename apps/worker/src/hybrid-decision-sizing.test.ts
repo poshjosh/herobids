@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveHybridTargetSize } from './hybrid-decision-sizing.js';
-import type { PriceService } from '@herobids/market-data';
+import type { PriceService } from './traderton/price-contracts.js';
 import type { HybridPricingIdentity } from './runtime-composition.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

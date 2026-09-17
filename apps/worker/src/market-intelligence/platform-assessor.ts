@@ -4,7 +4,7 @@ import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
 import { marketAssessmentRuns } from '@herobids/db';
 import type { Redis } from 'ioredis';
-import type { PriceCandle, RegimeResult } from '@herobids/market-data';
+import type { PriceCandle, RegimeResult } from '@herobids/domain';
 import type {
   MarketAssessmentIdentity,
   MarketAssessmentArtifact,

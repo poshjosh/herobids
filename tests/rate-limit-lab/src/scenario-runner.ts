@@ -1,7 +1,7 @@
 import {
   createSharedRateBudgetCoordinator,
   type SharedRateBudgetCoordinator,
-} from '../../../packages/market-data/src/rate-limiter.js';
+} from './rate-limiter.js';
 import { MockProvider } from './mock-provider.js';
 import { createDeterministicRandom } from './random.js';
 import type {

@@ -17,11 +17,8 @@ import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEME
 import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
-import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel } from '@herobids/domain';
+import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel, RegimeParams } from '@herobids/domain';
 import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
-import {
-  type RegimeParams,
-} from '@herobids/market-data';
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';

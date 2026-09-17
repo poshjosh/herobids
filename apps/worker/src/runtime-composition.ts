@@ -1,8 +1,7 @@
-import type { CapabilityReadiness, HybridPricingIdentity, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent } from '@herobids/domain';
+import type { CapabilityReadiness, HybridPricingIdentity, RegimeResult, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent } from '@herobids/domain';
 import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
-import type { RegimeResult } from '@herobids/market-data';
-import type { ScoredSignal } from '@herobids/strategy';
+import type { ScoredSignal } from './market-intelligence/preset-scan-contracts.js';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
 import type { PositionIndicatorUpdate, SymbolFetchOutcome } from './scan-types.js';

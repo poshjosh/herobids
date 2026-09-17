@@ -5,7 +5,7 @@ import type { Database } from '@herobids/db';
 import { platformCredentials, connections } from '@herobids/db';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
 import type { TradertonClient } from '@herobids/domain/traderton';
-import { deriveSolanaAddress } from '@herobids/venues';
+import { deriveSolanaAddress } from '../providers/solana-address.js';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { canonicalizeVenueSecrets, validateVenueSecrets } from '../providers/venue-secrets.js';
 import { checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';

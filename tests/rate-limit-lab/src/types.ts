@@ -1,5 +1,28 @@
-import type { ProviderRequestClass } from '../../../packages/market-data/src/types.js';
-import type { SharedBudgetConfig } from '../../../packages/market-data/src/rate-limiter.js';
+// Provider request classes — copied VERBATIM from the deleted local package
+// `packages/market-data/src/types.ts` lines 3–11 (Slice 4 Plan B; the lab's
+// rate-limit scenarios are keyed by the same classes the boundary-side limiter
+// uses).
+// SharedBudgetConfig comes from the lab-local verbatim copy of the deleted
+// package's `rate-limiter.ts` (see ./rate-limiter.ts).
+
+import type { SharedBudgetConfig } from './rate-limiter.js';
+
+export const PROVIDER_REQUEST_CLASSES = [
+  'execution-critical',
+  'price-support',
+  'regime',
+  'discovery',
+  'enrichment',
+] as const;
+
+export type ProviderRequestClass = typeof PROVIDER_REQUEST_CLASSES[number];
+
+// RequestGate — copied VERBATIM from the deleted local package
+// `packages/market-data/src/types.ts` lines 29–31 (consumed by the copied
+// rate-limiter module below).
+export interface RequestGate {
+  acquire(): Promise<void>;
+}
 
 export type ScenarioId = 'A' | 'B' | 'C' | 'D' | 'E';
 export type AgentRole = 'execution' | 'discovery' | 'mixed';

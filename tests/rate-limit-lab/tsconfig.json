@@ -5,8 +5,5 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts", "src/cli.ts"],
-  "references": [
-    { "path": "../../packages/market-data" }
-  ]
+  "exclude": ["src/**/*.test.ts", "src/cli.ts"]
 }

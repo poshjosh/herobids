@@ -1,9 +1,9 @@
-import type { ProviderRequestClass } from '../../../packages/market-data/src/types.js';
+import type { ProviderRequestClass } from './types.js';
 import type {
   RateBudgetClock,
   SharedBudgetAcquireRequest,
   SharedRateBudgetCoordinator,
-} from '../../../packages/market-data/src/rate-limiter.js';
+} from './rate-limiter.js';
 import type { DataCategory, MockProviderConfig, ProviderAttemptRecord } from './types.js';
 import type { DeterministicRandom } from './random.js';
 

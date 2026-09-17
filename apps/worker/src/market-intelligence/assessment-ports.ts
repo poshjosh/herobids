@@ -1,4 +1,4 @@
-import type { Result } from '@herobids/domain';
+import type { RegimeResult, Result } from '@herobids/domain';
 import type {
   MarketAssessmentIdentity,
   AssessmentData,
@@ -8,7 +8,6 @@ import type {
   AssessmentUnavailable,
   AssessmentMarketCohort,
 } from '@herobids/domain';
-import type { RegimeResult } from '@herobids/market-data';
 
 // ── CandleInterval ──────────────────────────────────────────────────────────
 //

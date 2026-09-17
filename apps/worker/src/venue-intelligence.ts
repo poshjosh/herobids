@@ -1,5 +1,4 @@
-import type { RegimeResult } from '@herobids/market-data';
-import type { EconomicEvent } from '@herobids/domain';
+import type { EconomicEvent, RegimeResult } from '@herobids/domain';
 import type { RuntimePositionSnapshot, RuntimeSessionMetrics } from './runtime-composition.js';
 
 // ── Traderton read-boundary payload parsers ────────────────────────────────

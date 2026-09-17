@@ -5,9 +5,7 @@ import type {
   VolatilityEvidence,
   TradertonReadResult,
 } from '@herobids/domain';
-import { err, ok, type Result, VolatilityEvidenceSchema } from '@herobids/domain';
-import type { RegimeResult } from '@herobids/market-data';
-import type { ScannerCandleTarget } from '@herobids/strategy';
+import { err, ok, type Result, RegimeResult, ScannerCandleTarget, VolatilityEvidenceSchema } from '@herobids/domain';
 import type {
   AssessmentEvidencePorts,
   AssessmentCandleSource,

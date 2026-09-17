@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
-import type { TradingSessionName } from '@herobids/domain';
-import type { PriceCandle, RegimeResult } from '@herobids/market-data';
+import type { PriceCandle, RegimeResult, TradingSessionName } from '@herobids/domain';
 import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
 
 /** Per-instrument summary used for stable context hashing across multi-instrument batches. */

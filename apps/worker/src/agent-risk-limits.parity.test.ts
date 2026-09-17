@@ -8,7 +8,7 @@ import {
 } from './agent-risk-limits.js';
 import type { AgentRiskLimitSource } from './agent-risk-limits.js';
 import type { AgentRiskDefaultsConfig, AgentRiskOverrides, RiskPosture } from '@herobids/domain';
-import type { RiskLimits } from '@herobids/engine';
+import type { RiskLimits } from './agent-risk-limits-contracts.js';
 
 // ---------------------------------------------------------------------------
 // Test helpers

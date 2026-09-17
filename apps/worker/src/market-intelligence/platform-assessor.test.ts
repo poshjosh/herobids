@@ -23,7 +23,7 @@ import type {
   LiquidityEvidence,
   BreadthEvidence,
 } from '@herobids/domain';
-import type { PriceCandle } from '@herobids/market-data';
+import type { PriceCandle } from '@herobids/domain';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -20,11 +20,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 RUN pnpm --filter @herobids/domain run build && \
     pnpm --filter @herobids/db run build && \
     pnpm --filter @herobids/documents run build && \
-    pnpm --filter @herobids/engine run build && \
-    pnpm --filter @herobids/llm run build && \
-    pnpm --filter @herobids/strategy run build && \
-    pnpm --filter @herobids/venues run build && \
-    pnpm --filter @herobids/backtesting run build
+    pnpm --filter @herobids/llm run build
 
 # ── build-api: compile api on top of shared ───────────────────────────────────
 FROM build-shared AS build-api

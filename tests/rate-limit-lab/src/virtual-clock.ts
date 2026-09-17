@@ -1,4 +1,4 @@
-import type { RateBudgetClock } from '../../../packages/market-data/src/rate-limiter.js';
+import type { RateBudgetClock } from './rate-limiter.js';
 
 interface Sleeper {
   id: number;

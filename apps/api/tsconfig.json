@@ -12,7 +12,6 @@
   "references": [
     { "path": "../../packages/domain" },
     { "path": "../../packages/db" },
-    { "path": "../../packages/documents" },
-    { "path": "../../packages/venues" }
+    { "path": "../../packages/documents" }
   ]
 }

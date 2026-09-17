@@ -5,16 +5,16 @@ import {
   type PresetScorecardRunnerDeps,
   type ScoreCandidateBoundary,
 } from './preset-scorecard-runner.js';
-import { scoreCandidate } from '@herobids/strategy';
-import type { PriceCandle } from '@herobids/market-data';
+import type { PriceCandle } from '@herobids/domain';
 import type { MarketAssessmentIdentity, PresetEntry, TradertonReadResult } from '@herobids/domain';
 
-// Mock scoreCandidate so tests can assert the swap arm no longer calls in-process
-// scoring — ALL scoring (orderbook/perp AND swap/dex) now routes over the boundary.
-vi.mock('@herobids/strategy', async () => {
-  const actual = await vi.importActual<typeof import('@herobids/strategy')>('@herobids/strategy');
-  return { ...actual, scoreCandidate: vi.fn() };
-});
+// NOTE (Slice 4 Plan B, intentional divergence): the former
+// `vi.mock('@herobids/strategy')` + `scoreCandidate` spy assertions are removed
+// — the local strategy package was deleted and in-process scoring no longer
+// exists in herobids. The isolation property this mock used to verify ("ALL
+// scoring routes over the boundary, none in-process") is now STRUCTURAL: there
+// is no in-process scoreCandidate to call. The boundary-backed payload-shape
+// and scorecard-mapping assertions below are unchanged and remain meaningful.
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -77,8 +77,6 @@ function makeRunner(deps?: Partial<PresetScorecardRunnerDeps>): PresetScorecardR
 describe('PresetScorecardRunner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default in-process mock: no signal (swap path only).
-    vi.mocked(scoreCandidate).mockReturnValue(null);
   });
 
   describe('generateScorecards (orderbook/perp — boundary path)', () => {
@@ -143,8 +141,6 @@ describe('PresetScorecardRunner', () => {
       expect(call.payload.providerSymbol).toBe('BTC');
       expect(call.payload.instrumentId).toBe('BTC');
       expect(call.payload.venueType).toBe('orderbook');
-      // in-process scoreCandidate is NOT used on the boundary path
-      expect(scoreCandidate).not.toHaveBeenCalled();
     });
 
     it('maps a boundary signal to scanHealth=healthy with topConfidence', async () => {
@@ -302,8 +298,6 @@ describe('PresetScorecardRunner', () => {
       expect(call.payload.venue).toBe('jupiter');
       // no pool address is passed — the boundary resolves it
       expect(call.payload.poolAddress).toBeUndefined();
-      // in-process scoreCandidate is NOT used on the boundary path
-      expect(scoreCandidate).not.toHaveBeenCalled();
     });
 
     it('routes dex identities over the boundary too (venueType=swap payload)', async () => {
@@ -324,7 +318,6 @@ describe('PresetScorecardRunner', () => {
       expect(call.payload.venueType).toBe('swap');
       expect(call.payload.network).toBe('ethereum');
       expect(call.payload.tokenAddress).toBe('0xdef');
-      expect(scoreCandidate).not.toHaveBeenCalled();
     });
 
     it('maps a boundary signal to scanHealth=healthy with topConfidence for swap', async () => {
@@ -349,7 +342,6 @@ describe('PresetScorecardRunner', () => {
       const entry = result.data[0]!;
       expect(entry.scanHealth).toBe('healthy');
       expect(entry.topConfidence).toBe(0.6);
-      expect(scoreCandidate).not.toHaveBeenCalled();
     });
 
     it('propagates a swap boundary failure as an error Result (no synthesized stale)', async () => {
@@ -392,7 +384,6 @@ describe('PresetScorecardRunner', () => {
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('expected err');
       expect(result.error.code).toBe('assessment.scorecard_boundary_unavailable');
-      expect(scoreCandidate).not.toHaveBeenCalled();
     });
 
     it('handles unknown instrumentKind gracefully', async () => {

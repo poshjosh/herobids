@@ -11,7 +11,7 @@ import type {
   BreadthEvidence,
 } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
-import type { PriceCandle } from '@herobids/market-data';
+import type { PriceCandle } from '@herobids/domain';
 
 // ── Helpers (mirrors platform-assessor.test.ts) ────────────────────────────
 
