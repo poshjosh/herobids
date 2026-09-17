@@ -133,6 +133,12 @@ function isPaperSwapConfig(config: Record<string, unknown>): boolean {
 
 export function makeStubTradertonClient(): TradertonClient {
   const bots = new Map<string, StubBot>();
+  // Agent-scoped evidence reads (get_agent_fills / get_agent_positions) are keyed
+  // by the AGENT id from the subject actor — routes build the subject as
+  // { ownerId, actor: { type: 'agent', id: agentId } } with an empty payload, so
+  // the agent id is the ONLY per-agent key available to the stub.
+  const agentFills = new Map<string, unknown[]>();
+  const agentPositions = new Map<string, unknown[]>();
   let seq = 0;
 
   const ok = (payload: unknown): TradertonClientResult => ({
@@ -301,12 +307,18 @@ export function makeStubTradertonClient(): TradertonClient {
         case 'get_owner_positions':
           return Promise.resolve(ok({ ok: true, positions: [] }));
         // Agent-scoped evidence reads for the /agents/:id/export/* endpoints.
-        case 'get_agent_fills':
-          return Promise.resolve(ok({ ok: true, fills: [] }));
+        case 'get_agent_fills': {
+          const actor = input.subject.actor;
+          const agentId = actor.type === 'agent' && typeof actor.id === 'string' ? actor.id : '';
+          return Promise.resolve(ok({ ok: true, fills: agentFills.get(agentId) ?? [] }));
+        }
         case 'get_agent_journal_events':
           return Promise.resolve(ok({ ok: true, events: [] }));
-        case 'get_agent_positions':
-          return Promise.resolve(ok({ ok: true, positions: [] }));
+        case 'get_agent_positions': {
+          const actor = input.subject.actor;
+          const agentId = actor.type === 'agent' && typeof actor.id === 'string' ? actor.id : '';
+          return Promise.resolve(ok({ ok: true, positions: agentPositions.get(agentId) ?? [] }));
+        }
         case 'start_bot': {
           const id = typeof p['botId'] === 'string' ? (p['botId'] as string) : '';
           const bot = bots.get(id);
@@ -346,7 +358,21 @@ export function makeStubTradertonClient(): TradertonClient {
           return Promise.resolve(ok({ ok: true }));
       }
     },
-  } as unknown as TradertonClient;
+    // Test-only seeding hooks (extra properties on the stub object — the
+    // TradertonClient type is NOT widened; the stub stays `as unknown as
+    // TradertonClient`). Rows are the same object shape the old dropped-table
+    // inserts used, with date fields as ISO strings (rehydrated to Date by
+    // toFillRow/toPositionRow on the read path).
+    seedAgentFills: (agentId: string, rows: unknown[]): void => {
+      agentFills.set(agentId, rows);
+    },
+    seedAgentPositions: (agentId: string, rows: unknown[]): void => {
+      agentPositions.set(agentId, rows);
+    },
+  } as unknown as TradertonClient & {
+    seedAgentFills: (agentId: string, rows: unknown[]) => void;
+    seedAgentPositions: (agentId: string, rows: unknown[]) => void;
+  };
 }
 
 /** Build a fully wired Fastify app for functional testing. */
@@ -470,14 +496,38 @@ export async function buildApp() {
 
   const stubTradertonClient = makeStubTradertonClient();
   await authRoutes(app, authConfig, db, redisClient, 'free', testPlansConfig as any);
-  await agentRoutes(app, db, testPlansConfig as any);
+  // Intervening optional args (llmCatalogDeps, agentCostEstimates, modelDefaults)
+  // are genuinely unused by the harness — routes null-guard them. The client
+  // MUST land in the tradertonReadClient slot (9th) per the agents.ts signature.
+  await agentRoutes(
+    app,
+    db,
+    testPlansConfig as any,
+    undefined,
+    undefined,
+    undefined,
+    redisClient,
+    undefined,
+    stubTradertonClient,
+    5000,
+  );
   await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any, stubTradertonClient);
-  await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient);
+  await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient, stubTradertonClient, 5000);
   await botRoutes(app, lifecycleQueue, db, redisClient, testPlansConfig as any, stubTradertonClient);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)
   await telegramWebhookHandler(app, db, redisClient);
-  await agentInteractivityRoutes(app, db, redisClient, undefined, undefined, testPlansConfig as any);
+  await agentInteractivityRoutes(
+    app,
+    db,
+    redisClient,
+    undefined,
+    undefined,
+    testPlansConfig as any,
+    undefined,
+    stubTradertonClient,
+    5000,
+  );
 
   await analyticsRoutes(app, db, stubTradertonClient, 10_000);
 
@@ -526,8 +576,25 @@ export async function buildApp() {
   // set for the app lifetime. NOT restored — it is process-local test material.
   process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_CREDENTIAL_ENCRYPTION_KEY;
 
-  return { app, db, redisClient, lifecycleQueue };
+  return {
+    app,
+    db,
+    redisClient,
+    lifecycleQueue,
+    // Test-only: seed the stub boundary's agent-scoped evidence stores.
+    seedAgentFills: (agentId: string, rows: unknown[]): void => (stubTradertonClient as StubTradertonClientWithSeed).seedAgentFills(agentId, rows),
+    seedAgentPositions: (agentId: string, rows: unknown[]): void => (stubTradertonClient as StubTradertonClientWithSeed).seedAgentPositions(agentId, rows),
+  };
 }
+
+/**
+ * The seed helpers attached to the stub client object (NOT part of the
+ * TradertonClient contract — kept out of that type by design).
+ */
+type StubTradertonClientWithSeed = TradertonClient & {
+  seedAgentFills: (agentId: string, rows: unknown[]) => void;
+  seedAgentPositions: (agentId: string, rows: unknown[]) => void;
+};
 
 /** Truncate all test tables in FK-safe order. */
 export async function truncateAll(db: ReturnType<typeof createDatabase>) {
