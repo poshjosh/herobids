@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Functional test harness: wired the stub boundary client + migrated seed-based trading tests.** `buildApp()` now passes the stub Traderton client into the `agentRoutes`, `capabilityRoutes`, and `agentInteractivityRoutes` registrations (matching production arg positions), and the stub's agent-scoped `get_agent_fills`/`get_agent_positions` reads are seedable via new `ctx.seedAgentFills`/`ctx.seedAgentPositions` helpers. The 10 previously-failing functional tests (positions, `/trades`, agent-delete) migrated from seeding dropped local tables (`fills`, `positions`, `bots`, `venue_accounts`) to seeding the boundary mock. Functional tier: 191 passed / 0 failed.
+
 ### Changed
 
 - **Shell test entrypoints always bring up the Traderton boundary.** `run-all-tests.sh` (Steps 5/6 + E2E) and `run-extra-tests.sh` (Tiers 3-5) now stand up the Traderton boundary stack unconditionally before starting herobids api/worker, wire api/worker to it via `docker/xstack.override.yml`, and tear down what they started (created-vs-started honoured). The bring-up was factored into a shared library `scripts/shell/run/boundary.sh` (single source of truth, also used by `with-boundary.sh`). Entry-point docs updated: the 1inch/Jupiter launch validators are now in Traderton (Slice 2); only the deferred `validate-swap-venue.sh` remains here. No test-script assertions changed; the `RUN_UNSTABLE_LLM_LATENCY_TESTS` gate is untouched. Verified: tiers 1,2,4 green without creds through the always-on boundary.
