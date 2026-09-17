@@ -96,8 +96,10 @@ beforeEach(async () => {
   const { Redis: RedisCtor } = await import('ioredis');
   const redisClient = new RedisCtor(redisConn);
 
+  // decision_failures was dropped from herobids by the trading-isolation cutover
+  // (decision state lives behind the REST boundary) — omitted from TRUNCATE.
   await db.execute(sql`
-    TRUNCATE agent_outbound_messages, agent_messages, decision_failures,
+    TRUNCATE agent_outbound_messages, agent_messages,
       agent_runtime_sessions, agent_skills, agent_connections,
       connections, agents, skills, users CASCADE
   `);

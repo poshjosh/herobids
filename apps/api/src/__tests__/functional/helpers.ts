@@ -531,15 +531,15 @@ export async function buildApp() {
 
 /** Truncate all test tables in FK-safe order. */
 export async function truncateAll(db: ReturnType<typeof createDatabase>) {
+  // NOTE: the trading tables (user_credentials, venue_accounts, bots, fills,
+  // positions, decisions) were dropped from herobids by the trading-isolation
+  // cutover — trading state now lives behind the REST boundary. They are
+  // deliberately absent from this list; adding them back would fail with
+  // "relation does not exist".
   await db.execute(sql`
     TRUNCATE
       connections,
-      user_credentials,
-      venue_accounts,
       agent_skills,
-      bots,
-      fills,
-      positions,
       agent_runtime_sessions,
       agent_messages,
       agent_artifacts,
@@ -548,7 +548,6 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
       skill_likes,
       skill_entitlements,
       skill_revisions,
-      decisions,
       agents,
       sessions,
       skills,
