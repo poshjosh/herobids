@@ -21,7 +21,7 @@ import type {
   PriceResult,
   PriceSource,
   ResolvePriceTargetResult,
-} from '@herobids/market-data';
+} from './price-contracts.js';
 import type { TradertonReadBoundary } from './read-adapter.js';
 
 const PRICE_SOURCES: readonly PriceSource[] = ['execution', 'oracle', 'cached'];

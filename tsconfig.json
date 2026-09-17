@@ -4,11 +4,7 @@
     { "path": "packages/domain" },
     { "path": "packages/db" },
     { "path": "packages/documents" },
-    { "path": "packages/engine" },
-    { "path": "packages/venues" },
     { "path": "packages/llm" },
-    { "path": "packages/strategy" },
-    { "path": "packages/market-data" },
     { "path": "apps/api" },
     { "path": "apps/worker" },
     { "path": "tests/rate-limit-lab" }
