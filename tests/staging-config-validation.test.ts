@@ -97,9 +97,15 @@ describe('staging/production environment invariants', () => {
   // ── 3. Live rollout safety ─────────────────────────────────────────────
 
   describe('live rollout safety', () => {
-    it('staging config has liveRollout disabled', () => {
+    it('staging config does not enable live rollout', () => {
+      // Post trading-isolation: the `liveRollout` operator-config block was a
+      // trading concern and has been removed from herobids config entirely
+      // (live-trading rollout is now owned behind the REST boundary). Absence
+      // is a stronger safety guarantee than `enabled: false`. The invariant we
+      // enforce is simply: staging must never have live rollout ENABLED.
       const lrBlock = findYamlBlock(stagingYaml, 'liveRollout');
-      expect(blockScalar(lrBlock, 'enabled')).toBe('false');
+      const enabled = blockScalar(lrBlock, 'enabled');
+      expect(enabled).not.toBe('true');
     });
   });
 
