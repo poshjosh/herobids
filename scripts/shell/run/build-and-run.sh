@@ -71,8 +71,13 @@ log "Step 3: Building agent Docker image..."
 docker build -f docker/Dockerfile.agent -t herobids-agent:latest . || error_exit "Failed to build agent Docker image"
 
 # 4. Start services with docker compose
+# EXTRA_COMPOSE_FILES (optional, space-separated `-f <file>` args) lets callers
+# layer additional overlays without editing this script — e.g. the cross-stack
+# runner adds docker/xstack.override.yml to wire api/worker to the traderton
+# boundary. Empty by default, so standalone `build-and-run` is unchanged.
+# shellcheck disable=SC2086
 log "Step 4: Building and starting services with docker compose..."
-docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d --build || error_exit "Failed to start services with docker compose"
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml ${EXTRA_COMPOSE_FILES:-} up -d --build || error_exit "Failed to start services with docker compose"
 
 # 4b. Pre-load Ollama models in the background so the first agent tick avoids a cold start.
 # This is a best-effort local-dev optimization and must never fail the stack startup.

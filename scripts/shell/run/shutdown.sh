@@ -2,7 +2,11 @@
 
 set -euo pipefail
 
-COMPOSE="docker compose -f docker-compose.yaml -f docker-compose.dev.yaml"
+# EXTRA_COMPOSE_FILES (optional): additional `-f <file>` overlays to include so
+# teardown matches the file set used at bring-up (e.g. docker/xstack.override.yml
+# for the cross-stack runner). Empty by default → standalone teardown unchanged.
+# shellcheck disable=SC2086
+COMPOSE="docker compose -f docker-compose.yaml -f docker-compose.dev.yaml ${EXTRA_COMPOSE_FILES:-}"
 
 # 1. Gracefully stop the worker first so it releases its DB/Redis connections
 #    and disconnects from the project network before we try to remove it.

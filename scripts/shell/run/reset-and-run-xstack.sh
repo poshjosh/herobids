@@ -67,6 +67,18 @@ TRADERTON_COMPOSE=(docker compose -p "$TRADERTON_PROJECT"
   -f "$TRADERTON_ROOT/docker-compose.yml"
   -f "$TRADERTON_OVERLAY")
 
+# herobids-side boundary wiring. The herobids api/worker run in containers; the
+# traderton boundary is published on the HOST at :8080, which is NOT reachable at
+# localhost:8080 from inside a container. This overlay injects
+# TRADERTON_BOUNDARY_URL=http://host.docker.internal:8080 + extra_hosts so the
+# containers reach it. Without it, every trading call fails closed
+# (precondition.not_ready) — provisioning 503s and NO agents get created.
+# Threaded into herobids' bring-up/teardown via EXTRA_COMPOSE_FILES, which
+# build-and-run.sh / reset-and-run.sh / shutdown.sh honor (empty by default, so
+# standalone herobids is unchanged).
+HEROBIDS_BOUNDARY_OVERLAY="$HEROBIDS_ROOT/docker/xstack.override.yml"
+export EXTRA_COMPOSE_FILES="-f $HEROBIDS_BOUNDARY_OVERLAY"
+
 BOUNDARY_URL="http://localhost:8080"
 
 log()        { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
@@ -89,6 +101,7 @@ done
 command -v docker >/dev/null 2>&1 || error_exit "docker not found"
 [[ -f "$TRADERTON_ROOT/docker-compose.yml" ]] || error_exit "traderton compose not found at $TRADERTON_ROOT/docker-compose.yml"
 [[ -f "$TRADERTON_OVERLAY" ]] || error_exit "traderton xstack overlay not found at $TRADERTON_OVERLAY"
+[[ -f "$HEROBIDS_BOUNDARY_OVERLAY" ]] || error_exit "herobids boundary overlay not found at $HEROBIDS_BOUNDARY_OVERLAY"
 
 # ---------------------------------------------------------------------------
 # --down: tear BOTH stacks down and exit
@@ -135,10 +148,33 @@ log "Boundary ready after ~${ELAPSED}s."
 
 # ---------------------------------------------------------------------------
 # Step 3 — herobids (web on WEB_PORT so 8080 stays free for the boundary).
-#          Delegates to the standard reset-and-run.sh (unchanged).
+#          Delegates to reset-and-run.sh, with EXTRA_COMPOSE_FILES (exported
+#          above) layering the boundary overlay so api/worker reach the boundary
+#          at host.docker.internal:8080. quick-setup.sh's provisioning + agent
+#          creation happen inside reset-and-run.sh and depend on that wiring.
 # ---------------------------------------------------------------------------
-log "Step 3: Bringing up herobids (web on :$WEB_PORT; reaches boundary at :8080)..."
+log "Step 3: Bringing up herobids (web on :$WEB_PORT; api/worker → boundary at host.docker.internal:8080)..."
 bash "$SCRIPT_DIR/reset-and-run.sh" "${PASSTHROUGH[@]}" || error_exit "reset-and-run.sh failed"
+
+# ---------------------------------------------------------------------------
+# Step 4 — Sanity assertion (fail loud). A broken boundary wiring makes
+#   provisioning 503 and silently produces an empty UI. Unless setup was
+#   skipped, assert the boundary-dependent provisioning actually succeeded:
+#   trading connections must exist. This turns a silent no-agents outcome into
+#   an explicit failure.
+# ---------------------------------------------------------------------------
+if [[ ! " ${PASSTHROUGH[*]} " =~ " --skip-setup " ]]; then
+  log "Step 4: Verifying boundary-dependent provisioning created trading connections..."
+  CONN_COUNT="$(docker exec herobids-postgres-1 psql -U herobids -d herobids -tAc \
+    "select count(*) from connections;" 2>/dev/null | tr -d '[:space:]' || echo "")"
+  if [[ -z "$CONN_COUNT" ]]; then
+    log "WARNING: could not query connections to verify provisioning (continuing)."
+  elif [[ "$CONN_COUNT" -eq 0 ]]; then
+    error_exit "Provisioning produced 0 trading connections — the herobids api likely could not reach the boundary (check TRADERTON_BOUNDARY_URL=host.docker.internal:8080 + HMAC creds). No agents will exist. Setup did NOT succeed."
+  else
+    log "Provisioning OK — ${CONN_COUNT} trading connection(s) present."
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # Done

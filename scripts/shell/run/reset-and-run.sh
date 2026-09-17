@@ -70,7 +70,11 @@ fi
 # ---------------------------------------------------------------------------
 
 log "Step 1: Tearing down services and pruning Docker..."
-docker compose -f "$REPO_ROOT/docker-compose.yaml" -f "$REPO_ROOT/docker-compose.dev.yaml" \
+# EXTRA_COMPOSE_FILES (optional): additional `-f <file>` overlays so the down
+# matches the bring-up file set (e.g. docker/xstack.override.yml from the
+# cross-stack runner). Empty by default → standalone reset unchanged.
+# shellcheck disable=SC2086
+docker compose -f "$REPO_ROOT/docker-compose.yaml" -f "$REPO_ROOT/docker-compose.dev.yaml" ${EXTRA_COMPOSE_FILES:-} \
   down -v --remove-orphans || error_exit "docker compose down failed"
 docker system prune -f || error_exit "docker system prune failed"
 
