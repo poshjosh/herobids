@@ -1,4 +1,4 @@
-import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
+import type { MessageEnvelope, DecisionSubmitPayload, RiskPosture, AgentRiskOverrides } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -526,7 +526,20 @@ export class AgentDecisionHandler {
       // has more than one account (D2 subject stays ownerId+actor). Null when no
       // resolver is wired — the boundary then keeps its per-owner default path.
       const venueAccountId = await this.resolveGrantVenueAccountId(effectiveAgentId) ?? undefined;
-      const boundaryPayload = buildSubmitDecisionPayload(payload, venueAccountId);
+      // Inject the platform-owned agent risk context (capital + creator risk
+      // posture + runtime overrides) from the agent row already loaded above —
+      // the traderton boundary cannot read the `agents` table, so the values
+      // ride the signed payload; the boundary's agent-direct actor ensure
+      // consumes them at construct/start time (equity/risk-gate math). Absent →
+      // traderton operator defaults.
+      const riskInjection = agent
+        ? {
+            capital: agent.capital,
+            riskPosture: (agent.risk as RiskPosture | null) ?? null,
+            riskOverrides: (agent.riskOverrides as AgentRiskOverrides | null) ?? null,
+          }
+        : undefined;
+      const boundaryPayload = buildSubmitDecisionPayload(payload, venueAccountId, riskInjection);
       const result = await this.sideEffectBoundary.invokeAndAwait({
         toolName: 'submit_decision',
         payload: boundaryPayload,

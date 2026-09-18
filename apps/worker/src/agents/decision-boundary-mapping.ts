@@ -10,7 +10,7 @@
 // `success | failure`; `pending_approval` is produced entirely pre-boundary by
 // herobids and never crosses the wire (D3).
 
-import type { DecisionSubmitPayload } from '@herobids/domain';
+import type { DecisionSubmitPayload, RiskPosture, AgentRiskOverrides } from '@herobids/domain';
 import type { TradertonClientResult } from '@herobids/domain/traderton';
 
 /**
@@ -35,16 +35,39 @@ export interface SubmitDecisionBoundaryPayload {
   safetyOverrideId?: string;
   contextHash?: string;
   venueAccountId?: string;
+  // ── Consumer-injected platform risk context (NOT LLM inputs) ──────────────
+  // The agent's capital + creator risk posture + runtime overrides live in the
+  // platform `agents` row. The traderton boundary process cannot read that row
+  // (locked: no `agents`-table dependency), so herobids injects the values it
+  // still holds POST-LLM (the LLM never sees or supplies them; the values cross
+  // inside the HMAC-signed payload). The boundary's agent-direct actor ensure
+  // consumes them at construct/start time: capital anchors the actor's
+  // EquityTracker (risk-gate daily-loss/drawdown math), riskPosture/riskOverrides
+  // feed buildAgentRiskLimits. Absent → traderton operator defaults.
+  capital?: string;
+  riskPosture?: RiskPosture;
+  riskOverrides?: AgentRiskOverrides;
+}
+
+/** The platform risk context the caller injects alongside the decision. */
+export interface AgentRiskInjection {
+  capital?: string | null;
+  riskPosture?: RiskPosture | null;
+  riskOverrides?: AgentRiskOverrides | null;
 }
 
 /**
  * Build the boundary `submit_decision` payload from the platform decision fields.
  * `venueAccountId`, when the caller resolved one off the connection grant, is
  * threaded in as a payload arg (see the interface note — payload, not subject).
+ * `riskInjection` (the agent row's capital/risk/riskOverrides) is likewise
+ * platform-injected — carried through only when present/non-null so a
+ * risk-context-less consumer keeps traderton's operator-default behaviour.
  */
 export function buildSubmitDecisionPayload(
   payload: DecisionSubmitPayload,
   venueAccountId?: string,
+  riskInjection?: AgentRiskInjection,
 ): SubmitDecisionBoundaryPayload {
   const out: SubmitDecisionBoundaryPayload = {
     instrumentId: payload.instrumentId,
@@ -59,6 +82,9 @@ export function buildSubmitDecisionPayload(
   if (payload.safetyOverrideId !== undefined) out.safetyOverrideId = payload.safetyOverrideId;
   if (payload.contextHash !== undefined) out.contextHash = payload.contextHash;
   if (venueAccountId !== undefined && venueAccountId !== '') out.venueAccountId = venueAccountId;
+  if (riskInjection?.capital != null && riskInjection.capital !== '') out.capital = riskInjection.capital;
+  if (riskInjection?.riskPosture != null) out.riskPosture = riskInjection.riskPosture;
+  if (riskInjection?.riskOverrides != null) out.riskOverrides = riskInjection.riskOverrides;
   return out;
 }
 
