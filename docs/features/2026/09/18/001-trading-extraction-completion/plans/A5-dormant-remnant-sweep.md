@@ -2,8 +2,17 @@
 
 - **Task:** A5 — delete the engine-era dormant modules and dead surface identified by the audit §6
 - **Repo:** herobids
-- **Status:** PLAN — no implementation authorized. Decision-gated: **No** (pure deletion of unimported code; every item re-verified import-free before each deletion).
+- **Status:** PLAN — **implementer-ready (2026-09-18).** Decision-gated: **No** (pure deletion of unimported code; every item re-verified import-free before each deletion).
 - **Defect class:** Unnecessary duplication by forgetting (audit tier 3).
+
+## For the implementer (no prior context needed)
+
+- **Repo:** herobids only.
+- **Do NOT commit; do NOT merge to any protected branch.** Leave changes in the working tree.
+- This is a **deletion sweep**: for every item, first `grep` for production importers (exclude tests). If a live importer exists that the row did not anticipate, STOP and flag — do not delete blind.
+- The four **CHECK-FIRST** items (7, 8, 13, 14) have a stated default decision below; follow the default unless your grep contradicts it, and record the outcome in the PR.
+- Verify per-package `tsc --noEmit` after each cluster (worker → domain/config → API), plus full lint + test suite. `grep` must prove zero repo-wide references to each deleted symbol.
+- Do NOT touch the items in "Explicitly NOT deleted here."
 
 ## Context
 
@@ -19,14 +28,14 @@ The audit (§6) registered dormant remnants whose live counterparts exist in tra
 | 4 | `apps/worker/src/swap-startup-validation.ts` (+ test) | live in traderton |
 | 5 | `apps/worker/src/candle-fetch-breaker.ts` (+ test) | live in traderton actor scan loop |
 | 6 | `apps/worker/src/candle-fetch-retry.ts` (+ test) | live in traderton |
-| 7 | `venue-instrument-cache.ts` | **CHECK FIRST** — one live consumer found (market-intelligence/assessment-identity-resolver, fail-closed there). If that consumer cannot switch to a boundary-backed validation (small change), KEEP the cache and drop only dead exports. Default: attempt consumer switch, else keep whole file and strike from this sweep |
-| 8 | `buildAgentRiskLimits`/`buildRiskLimitsFromContract` + `RiskLimits` type seam (`agent-risk-limits-contracts.ts`) | test-only exports; if A3 lands Option 1, `RiskLimits` may be needed by the parity tests only — delete the *builder* exports, keep whichever types the remaining parity tests require (see step 2) |
-| 9 | `riskContractOps.adjustOverrides` in `agent.ts` `buildRiskContractOps()` | dead at tool layer (adjust is boundary fail-closed); remove the in-process write path, keep the read path while the A3/A6 posture allows the fallback |
+| 7 | `venue-instrument-cache.ts` | **CHECK-FIRST — DEFAULT: attempt consumer switch, else KEEP.** One live consumer (market-intelligence/assessment-identity-resolver, fail-closed). Attempt to switch it to boundary-backed validation (small change); if that is not a small change, KEEP the whole file, drop only provably-dead exports, and strike the file from this sweep. Record which path you took in the PR |
+| 8 | `buildAgentRiskLimits`/`buildRiskLimitsFromContract` + `RiskLimits` type seam (`agent-risk-limits-contracts.ts`) | **DECIDED (A3 = Option X):** A3/A6 keep the in-process risk math alive as the payload-bound `RiskSource` implementation until B1/Track C. So **do NOT delete the builders in this sweep** — delete only exports proven dead by grep, and keep every type/builder the A3 seam or the remaining parity tests still import. Re-confirm with grep; if genuinely unimported, delete. Err toward KEEP here |
+| 9 | `riskContractOps.adjustOverrides` in `agent.ts` `buildRiskContractOps()` | **DECIDED:** adjust is boundary fail-closed (A3), so the in-process **write** path is dead at the tool layer — remove `adjustOverrides`'s in-process write. **KEEP the read path** (`getContract`/`getProfile`) — A3/A6 still use it as the payload-bound read fallback until B1 |
 | 10 | `ctx.executionConfig` assembly in `agent.ts` + broker | constructed, never read — verify again, then remove from `toolContext` and the type if nothing consumes |
 | 11 | Worker venue-URL env overrides (`HYPERLIQUID_*`, `BYBIT_*`, `ONEINCH_*`, `JUPITER_API_URL`, `SOLANA_RPC_URL`, `BASE_RPC_URL`) in `apps/worker/src/config.ts` + `.env.example` | no live consumer; **coordinate with `env-example-drift.test.ts`** (it enforces no-stale-entries — the deletion makes the guard happy, but update `IGNORED_ENV_VARS` lists if the vars remain for scripts) |
 | 12 | `execution:` config block in `config/default.yaml` minus `defaultSlippageBps` | only live consumer is the venue-defaults route's `defaultSlippageBps`; delete the rest + their schema fields if the domain schema allows (else leave schema, delete yaml keys) |
-| 13 | `GET /agents/:id/trades` route (agent-interactivity.ts) | **CHECK FIRST** — no web consumer (AgentTradesTable uses capabilities/trading positions); API-contract removal — decide during execution whether to keep as public API (if so, strike from sweep) |
-| 14 | Exports endpoints, `GET /trading/fills` (billing), bot-health routes | no web consumer; same public-API question as 13 — propose keeping exports (external consumers plausible) and deleting only `/trading/fills` + bot-health static fallback; mark each keep/delete explicitly |
+| 13 | `GET /agents/:id/trades` route (agent-interactivity.ts) | **CHECK-FIRST — DEFAULT: DELETE.** No web consumer (AgentTradesTable uses capabilities/trading positions). Grep herobids' own web + docs for callers; if none (expected), delete the route. If a caller exists, strike from sweep and flag |
+| 14 | Exports endpoints, `GET /trading/fills` (billing), bot-health routes | **CHECK-FIRST — DEFAULT: KEEP exports, DELETE `/trading/fills` + bot-health static fallback.** Exports may have plausible external consumers → keep. `/trading/fills` (billing) and the bot-health static fallback have no web consumer → delete. Record each keep/delete explicitly in the PR |
 | 15 | `BotRepository.isConnectionOwnedBy` vestige | rename the check into connections-related helper or inline it; delete the "Bot"Repository file |
 | 16 | `scout-gating.hasUncoveredTrackedPosition` deprecated export + its `venue-intelligence` import | superseded by position-coverage |
 | 17 | Stale doc refs: `complete-technical-scan.ts` mention in `docs/tech/agents/wake-signal-and-technical-scan.md`; preset-scorecard TODO | doc fixes |

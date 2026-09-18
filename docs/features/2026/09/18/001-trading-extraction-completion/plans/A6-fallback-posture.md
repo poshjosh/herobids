@@ -2,8 +2,24 @@
 
 - **Task:** A6 — decide, per fallback, whether to complete the boundary-first posture (delete the local path) or consciously keep it as an availability shim
 - **Repo:** herobids
-- **Status:** PLAN — no implementation authorized. **Decision required: YES (small, per item)** — options + recommendation per fallback below.
+- **Status:** PLAN — **all four items DECIDED (2026-09-18); implementer-ready.**
 - **Defect class:** Inconsistent posture (audit tier 3 / §8-Q5).
+
+## For the implementer (no prior context needed)
+
+- **Repo:** herobids only. Do NOT commit; do NOT merge to a protected branch. Leave changes in the working tree.
+- All four fallbacks are decided below — implement the **DECIDED** line for each, do not re-open the options.
+- **Sequencing:** this batch runs alongside A3 (A1,A2 → **A3,A6** → A4 → A5 → A8). Item 4 depends on A3 landing first — do A3's boundary risk reads, then delete item 4's fallback.
+- Verify: full herobids suite; boundary-first fail-closed messaging aligned with existing `mapReadResultToToolResult` codes.
+
+## Decisions at a glance
+
+| Item | Decision |
+|---|---|
+| 1. `list_watches` local-Redis fallback | **DELETE** (stale-data trap; fail closed) |
+| 2. `resolve_watch` / `resolve_task` legacy-hash resolution | **RE-POINT to boundary list** (like `resolve_bot`); first confirm `resolve_task` is non-trading — if it is platform task tooling, leave it out of scope |
+| 3. Exit-price reconstruction (`routes/capabilities/trading.ts`) | **KEEP as-is** (working, boundary-sourced; end-state is B4-decision-dependent — do not churn in Track A) |
+| 4. In-process `get_risk_limits` read fallback | **DELETE** (A3 now serves the reads; fail closed) — sequence AFTER A3 |
 
 ## Context
 

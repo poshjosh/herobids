@@ -2,8 +2,16 @@
 
 - **Task:** A4 — agent-direct actors always start at a `paper` escalation ceiling; owner-default venue resolution unwired
 - **Repo:** traderton (`packages/boundary/src/bin.ts`, `subject-resolver.ts`)
-- **Status:** PLAN — no implementation authorized. Decision-gated: **No** for the owner-mode wiring itself (defect); **B1-linked** for where the mode *value* should ultimately come from (see "B1 interaction").
+- **Status:** PLAN — **decisions recorded (2026-09-18); implementer-ready.** Decision-gated: **No** (defect fix; the B1-linked choice is resolved below).
 - **Defect class:** Latent gate defect + missing operator knob (tracked by traderton's L3-Rx plan; audit §7 follow-ups).
+
+## For the implementer (no prior context needed)
+
+- **Repo:** traderton only. `../herobids` is READ-ONLY source. Read `traderton/AGENTS.md` + `traderton/docs/CANONICAL-STATE.md` at session start.
+- **Do NOT commit; do NOT merge to `main`.** Leave changes in the working tree.
+- All choices are decided below — implement as stated, do not re-open options. If the code contradicts the plan, stop and flag it.
+- Verify per-package: `npx tsc --noEmit -p packages/boundary` (root lint has a build-cache blind spot). Full traderton suite green before done.
+- This plan is **B1-forward-compatible**: B1 (ADR 010) makes per-agent mode come from the traderton trading profile later; the static default you wire here becomes the fallback. Nothing you build is throwaway.
 
 ## Context (verified against HEAD)
 
@@ -14,12 +22,9 @@
 
 ## Approach
 
-1. **Owner mode:** wire `getDefaultOwnerMode` in `bin.ts` from traderton's own operator config. Traderton has no agents table (locked), so the port cannot read per-agent mode. Options:
-   - **(a) Static operator default** — return the venue-appropriate configured default from `config.execution`/live-rollout settings (e.g. traderton `config/default.yaml` already carries execution-mode-related blocks). Keeps the port honest ("operator-configured default owner mode for the no-bot path", per the type's doc).
-   - **(b) Per-request mode from the consumer** — extend the payload/channel to carry the agent's mode (like the risk spec). More correct per-agent, more plumbing; **overlaps B1** (mode is part of the trading profile question).
-   - **Recommendation:** (a) now — it un-gates the resolver and fixes the mislabeling; per-agent mode rides the B1 trading-profile decision rather than inventing a second channel now.
-2. **Venue default:** wire `getDefaultVenueAccountId` from traderton's `venue_accounts` — semantics: the owner's oldest account (deterministic; creation-order tiebreak) or an explicit `is_default` column if traderton's schema has one (check `venue-accounts.ts` schema during implementation; if no column, oldest-by-`created_at` with a code comment, and note a possible small schema addition as follow-up).
-3. Tests: resolver unit tests for both ports (already have the port seams fakeable — `subject-resolver.test.ts`); boundary-level test asserting an agent-subject `submit_decision` constructs the actor with the wired default mode.
+1. **Owner mode — DECIDED: option (a), static operator default.** Wire `getDefaultOwnerMode` in `bin.ts` to return the venue-appropriate configured default from traderton's own operator config (`config.execution` / live-rollout blocks in traderton `config/default.yaml`). Traderton has no agents table (locked), so the port cannot and must not read per-agent mode. Do NOT extend the payload to carry per-agent mode (that was option (b) — rejected: it overlaps B1 and would be throwaway once the trading profile owns mode). Keep the port honest to its docstring ("operator-configured default owner mode for the no-bot path").
+2. **Venue default — DECIDED: oldest account by `created_at`.** Wire `getDefaultVenueAccountId` from traderton's `venue_accounts`: return the owner's oldest account (deterministic; `created_at` ascending, id tiebreak). First check `venue-accounts.ts` for an explicit default column — the verified schema has NONE, so use oldest-by-`created_at` with a code comment. Note a possible future `is_default` column as a follow-up in the PR description; do not add it now.
+3. **Tests:** resolver unit tests for both ports (the port seams are fakeable — `subject-resolver.test.ts`); a boundary-level test asserting an agent-subject `submit_decision` constructs the actor with the wired default mode (not `paper`) for a shadow-configured setup.
 
 ## Verification
 

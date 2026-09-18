@@ -2,8 +2,16 @@
 
 - **Task:** A8 — the defined test procedure that certifies the current extraction state as stable, and the yardstick for every subsequent Track-C change
 - **Repo:** both (procedure runs the existing cross-stack harnesses)
-- **Status:** PLAN — no implementation authorized (the gate is *run*, and only when Track A items are implemented; running it today is also valid as a pre-A1 baseline).
+- **Status:** PLAN — **implementer-ready (2026-09-18).** The gate is *run* after Track A items (A1–A6) land; running it today is also a valid pre-A1 baseline.
 - **Decision-gated:** No.
+
+## For the implementer (no prior context needed)
+
+- **Repos:** both. This gate composes EXISTING harnesses — build no new test infrastructure; at most add small assertions/checklist entries where a blind spot is found.
+- Do NOT commit; do NOT merge to a protected branch.
+- **The gate certifies; it does not repair.** Any product-code failure files a bug report (or attaches to the owning A1–A6 plan) rather than being fixed ad-hoc mid-gate.
+- "Pinned" = **two consecutive clean gate runs** (fresh `down -v && up` between them). Record date, commits under test, both runs' evidence paths, and deviations.
+- Run unit tiers from a clean shell (`env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY …`) or leaked env breaks the unit tier. Migrations run via the compose `migrate` service, never `pnpm migrate`.
 
 ## Context
 
@@ -21,7 +29,7 @@ All of the following pass, on a clean-slate cross-stack run, twice consecutively
    - risk-gate rejections (if any trigger) carry real equity math (limit ≠ $0.00).
 4. **New A-track regression checks (added as the items land):**
    - A1/A2: after a simulated actor deregistration (in-container manual step during the gate), the next decision **recovers** (reconstructs) instead of failing `instance_not_running` forever; concurrent same-tick decisions produce exactly one actor rebuild.
-   - A3: `get_risk_limits` over the boundary returns real limits; `get_account_summary.capital` populated; adjust fails typed (per chosen option).
+   - A3 (Option X — decided): `get_risk_limits` over the boundary returns real limits; `get_account_summary.capital` populated; **`adjust_risk_limits` fails CLOSED with a typed precondition** (not a silent pass, not an in-process write) — assert BOTH the reads-work and the adjust-fails-closed halves so the fail-closed write cannot regress unnoticed before B1. Note: the read surface may be the 5-field contract only until the B1 profile store lands (`getProfile` optional) — expected, not a bug.
    - A4: constructed-actor log `mode:` reflects the wired default, not `paper`.
    - A5/A6: watch/resolver tools behave boundary-first; boundary-down fault-injection yields typed fail-closed errors (manual step).
 5. **Read-surface parity sweep:** every boundary tool herobids invokes (the audit §4.1 inventory — ~40 tools) is invoked at least once during the gate (extend the eval script's tool checklist if gaps) — catches Zod-strip and context-gap class bugs (bug-001's whole family) before users do.
