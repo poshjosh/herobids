@@ -206,19 +206,27 @@ describe('trading profile reconciliation', () => {
     expect(plan.clears).toEqual([]);
   });
 
-  it('copies the selected remote profile for a new account and fails closed without one', () => {
+  it('copies the selected remote profile for a new account and synthesizes a null profile for a first grant', () => {
     const priorConnections = [connection({ isDefault: true })];
     const proposedConnections = [...priorConnections, connection({ connectionId: 'connection-2', venueAccountId: 'venue-account-2' })];
 
     expect(proposeTradingProfiles({
+      actorId: 'agent-1',
       priorProfiles: profiles({ ...profile, capital: '250', executionDefaults: { mode: 'paper' } }),
       priorConnections,
       proposedConnections,
       changes: {},
     }).get('venue-account-2')).toEqual({ ...profile, venueAccountId: 'venue-account-2', capital: '250', executionDefaults: { mode: 'paper' } });
 
-    expect(() => proposeTradingProfiles({
+    expect(proposeTradingProfiles({
+      actorId: 'agent-1',
       priorProfiles: new Map(), priorConnections: [], proposedConnections: [connection({})], changes: {},
-    })).toThrow('without an existing remote trading profile template');
+    }).get('venue-account-1')).toEqual({
+      actorId: 'agent-1',
+      venueAccountId: 'venue-account-1',
+      capital: null,
+      riskPosture: null,
+      executionDefaults: null,
+    });
   });
 });

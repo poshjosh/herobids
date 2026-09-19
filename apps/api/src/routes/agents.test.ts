@@ -501,7 +501,7 @@ describe('agent routes C1 staged profile reconciliation', () => {
     expect(remoteWrite.mock.invocationCallOrder[0]).toBeLessThan(db.transaction.mock.invocationCallOrder[0]!);
   });
 
-  it('fails closed when a newly bound account has no remote profile template', async () => {
+  it('synthesizes a null profile on first grant when no remote profile template exists', async () => {
     vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
       { connectionId: 'connection-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
     ]);
@@ -520,7 +520,7 @@ describe('agent routes C1 staged profile reconciliation', () => {
 
     const response = await app.inject({ method: 'PATCH', url: '/agents/agent-1', payload: { connectionIds: ['connection-1', 'connection-2'] } });
 
-    expect(response.statusCode).toBe(500);
+    expect(response.statusCode).toBe(200);
     expect(stagedSaga.executeStaged).toHaveBeenCalledOnce();
   });
 });

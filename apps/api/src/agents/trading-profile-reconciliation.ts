@@ -107,6 +107,7 @@ export function overlayTradingProfile(
  * the selected (or first) remote profile and never synthesize a default profile.
  */
 export function proposeTradingProfiles(input: {
+  actorId: string;
   priorProfiles: ReadonlyMap<string, TypedTradingProfile>;
   priorConnections: TradingProfileConnection[];
   proposedConnections: TradingProfileConnection[];
@@ -119,10 +120,16 @@ export function proposeTradingProfiles(input: {
   for (const connection of input.proposedConnections) {
     if (!connection.active || connection.venueAccountId === null || proposed.has(connection.venueAccountId)) continue;
     const existing = input.priorProfiles.get(connection.venueAccountId);
-    if (!existing && !template) {
-      throw new Error('cannot grant a trading connection without an existing remote trading profile template');
-    }
-    const base = existing ?? { ...template!, venueAccountId: connection.venueAccountId };
+    const base = existing
+      ?? (template
+        ? { ...template, venueAccountId: connection.venueAccountId }
+        : {
+            actorId: input.actorId,
+            venueAccountId: connection.venueAccountId,
+            capital: null,
+            riskPosture: null,
+            executionDefaults: null,
+          });
     proposed.set(connection.venueAccountId, overlayTradingProfile(base, input.changes));
   }
   return proposed;

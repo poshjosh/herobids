@@ -1695,7 +1695,7 @@ export async function agentRoutes(
       if (parsed.data.connectionIds === undefined) {
         return {
           prior: { profiles: priorProfiles, connections: preparedPatchPriorConnections },
-          proposed: { profiles: proposeTradingProfiles({ priorProfiles, priorConnections: preparedPatchPriorConnections, proposedConnections: preparedPatchPriorConnections, changes }), connections: preparedPatchPriorConnections },
+          proposed: { profiles: proposeTradingProfiles({ actorId: id, priorProfiles, priorConnections: preparedPatchPriorConnections, proposedConnections: preparedPatchPriorConnections, changes }), connections: preparedPatchPriorConnections },
         };
       }
 
@@ -1723,7 +1723,7 @@ export async function agentRoutes(
           ];
       return {
         prior: { profiles: priorProfiles, connections: preparedPatchPriorConnections },
-        proposed: { profiles: proposeTradingProfiles({ priorProfiles, priorConnections: preparedPatchPriorConnections, proposedConnections, changes }), connections: proposedConnections },
+        proposed: { profiles: proposeTradingProfiles({ actorId: id, priorProfiles, priorConnections: preparedPatchPriorConnections, proposedConnections, changes }), connections: proposedConnections },
       };
     };
 

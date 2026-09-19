@@ -475,7 +475,7 @@ export async function connectionRoutes(
           const proposedConnections = priorConnections.filter((connection) => connection.connectionId !== id);
           return {
             prior: { profiles, connections: priorConnections },
-            proposed: { profiles: proposeTradingProfiles({ priorProfiles: profiles, priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+            proposed: { profiles: proposeTradingProfiles({ actorId: agent.agentId, priorProfiles: profiles, priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
           };
         },
         commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {

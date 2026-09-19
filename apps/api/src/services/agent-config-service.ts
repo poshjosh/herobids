@@ -175,7 +175,7 @@ export async function grantConnection(
         ];
         return {
           prior: { profiles, connections: prepared.priorConnections },
-          proposed: { profiles: proposeTradingProfiles({ priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
         };
       },
       commitLocal: async (tx, markLocalCommitted) => {
@@ -232,7 +232,7 @@ export async function revokeConnection(
         const proposedConnections = prepared.priorConnections.filter((connection) => connection.connectionId !== connectionId);
         return {
           prior: { profiles, connections: prepared.priorConnections },
-          proposed: { profiles: proposeTradingProfiles({ priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
         };
       },
       commitLocal: async (tx, markLocalCommitted) => {
