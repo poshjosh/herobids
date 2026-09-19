@@ -54,6 +54,12 @@ Residual risks / blockers:
 Next allowed item:
 ```
 
+## Outstanding Issues
+
+- **C2.3:** Publish Herobids `250dd60b37603105b2028b93972ec54fa5c06d33` and Traderton `7740e289ede3ad5d85e21e5e4f201c57d702fb61`, then run and record both remote slow workflows. The immutable pair cannot be fetched by GitHub Actions while these commits remain local-only.
+- **C3a:** Run AG-C01, AG-C03, and AG-C06 against a running authenticated stack with existing trading-capable and unavailable capability fixtures at desktop and mobile viewports.
+- **C4:** Provision `DATABASE_URL` and `REDIS_URL`, then run the six database-backed skill-reseed functional tests before marking the item verified.
+
 ## Batch Records
 
 ```text
