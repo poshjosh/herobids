@@ -1,0 +1,31 @@
+name: Slow Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  parity-drift:
+    name: parity-drift
+    runs-on: ubuntu-latest
+    env:
+      PARITY_DRIFT_CI: '1'
+      HEROBIDS_ROOT: ${{ github.workspace }}/herobids
+      TRADERTON_ROOT: ${{ github.workspace }}/traderton
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: herobids
+      - uses: actions/checkout@v4
+        with:
+          repository: poshjosh/traderton
+          ref: 963d1a5399256030f6bca6ef3db0308667dc8bed
+          path: traderton
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - working-directory: herobids
+        run: pnpm test:slow

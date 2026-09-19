@@ -10,6 +10,7 @@
     "test:integration": "vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork packages/db/src/journal-pg.integration.test.ts packages/db/src/alert-delivery-repository.integration.test.ts apps/api/src/plugins/auth.integration.test.ts apps/api/src/routes/auth-oauth.integration.test.ts",
     "test:venues": "vitest run --config vitest.integration.config.ts",
     "test:functional": "vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork apps/api/src/__tests__/functional apps/worker/src/__tests__/integration",
+    "test:slow": "node --test scripts/check-parity-drift.test.mjs && node scripts/check-parity-drift.mjs",
     "test:rate-limit-lab": "pnpm --filter @herobids/rate-limit-lab run test",
     "rate-limit-lab": "pnpm --filter @herobids/rate-limit-lab run lab",
     "lint": "tsc --noEmit",

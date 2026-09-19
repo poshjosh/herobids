@@ -20,6 +20,7 @@ scope and ordering.
 ## Status Legend
 
 - `planned` — reviewed plan, no implementation authorization
+- `pending` — authorized and queued for implementation
 - `in progress` — active bounded batch
 - `blocked` — record blocker and owning decision
 - `implemented` — code committed; broader verification remains
@@ -31,11 +32,11 @@ scope and ordering.
 |---|---|---|---|---|---|
 | C1a | verified | ADR 013; plan-review corrections incorporated; authorization recorded 2026-09-19; starting SHAs `herobids=f3e9f672e9fb4b217c50f282935636d4cff5ae1d`, `traderton=2f2dda4f9999ba34a4f2b7e7c9464f77d093387e` | `491c6952`, `c7fcdad8`, `5d4e5222` | 372 focused tests; API typecheck/build/lint; final independent reviews accepted | Snapshot, selected-binding, and reconciliation planner only |
 | C1 | planned | ADRs 010/013; C1a verified; both repo start SHAs | — | — | Full snapshot, selected-binding, signed-agent tools, durable saga, echo cut-over |
-| C2.3 | planned | ADR 011; exact mirror manifest and mandatory dual-checkout CI design | — | — | Assertion-only; no runtime authority |
+| C2.3 | in progress | ADR 011; exact mirror manifest and mandatory dual-checkout CI design | — | `pnpm test:slow` passed in herobids (3 focused checker tests + baseline comparison); `pnpm test:slow` passed in traderton | Authorized 2026-09-19. Starting SHAs: herobids=f3e9f672, traderton=963d1a5. Implemented v1 explicit manifest, assertion-only checker, local-skip/protected-fail behavior, and dual-checkout slow-tier workflows. Assertion-only; no runtime authority. |
 | C2.1/C2.2 | planned | C1 verified; C2.3 verified | — | — | Boundary defaults before local enforcement removal |
-| C3a | planned | ADR 014; C3 UAT rows updated before run | — | — | Visual-only phase; run affected UAT rows desktop + mobile |
+| C3a | pending | ADR 014; C3 UAT rows updated before run | — | — | Authorized 2026-09-19. Visual-only phase; run affected UAT rows desktop + mobile. |
 | C3b | planned | C1 verified; C3a verified; presentation API contract | — | — | Profile-backed response and updated UAT rows |
-| C4 | planned | ADR 012; A3 read path | — | — | Remove tool advertising from base prompt and registry |
+| C4 | pending | ADR 012; A3 read path | — | — | Authorized 2026-09-19. Remove tool advertising from base prompt and registry. |
 | C5 | planned | Every decided item verified | — | — | Five suites, two A8 runs, C3 UAT, final report |
 
 ## Per-Batch Record Template

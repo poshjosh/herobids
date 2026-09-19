@@ -34,6 +34,12 @@
   protected CI job must check out both named repository revisions and fails if a
   sibling or a manifest entry is missing; it may not skip. Wire that job into
   both repositories' slow test tier.
+- The protected pair is source `${{ github.sha }}` plus an explicitly pinned
+  sibling revision: Herobids `f3e9f672e9fb4b217c50f282935636d4cff5ae1d` and
+  Traderton `963d1a5399256030f6bca6ef3db0308667dc8bed`. Never use a moving
+  branch reference. When an intentional parity change needs a new comparison
+  pair, update both workflow pins together and record the new pair in the C2.3
+  execution ledger entry.
 - Purpose: converts today's *silent* divergence risk into CI-red without
   creating a second runtime authority. This is B2's recommendation (b)
   independent of ownership outcomes.
