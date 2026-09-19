@@ -35,10 +35,12 @@
   sibling or a manifest entry is missing; it may not skip. Wire that job into
   both repositories' slow test tier.
 - The protected workflow pairs are source `${{ github.sha }}` plus an explicitly
-  pinned sibling revision: Herobids checks Traderton
-  `485c31c16180d30cf77fe330bf84e4a1c26b06da`; Traderton commit
-  `485c31c16180d30cf77fe330bf84e4a1c26b06da` checks Herobids
-  `01bbb35046f6a391e7c59143ab42f9a0df450242`. Never use a moving branch
+  pinned sibling revision: the Herobids workflow checks Traderton
+  `485c31c16180d30cf77fe330bf84e4a1c26b06da`; the Traderton workflow checks
+  Herobids `250dd60b37603105b2028b93972ec54fa5c06d33`. Thus the committed
+  bidirectional comparison pair is Herobids
+  `250dd60b37603105b2028b93972ec54fa5c06d33` with Traderton
+  `485c31c16180d30cf77fe330bf84e4a1c26b06da`. Never use a moving branch
   reference. When an intentional parity change needs a new comparison pair,
   update both workflow pins together and record the new pair in the C2.3
   execution ledger entry.
