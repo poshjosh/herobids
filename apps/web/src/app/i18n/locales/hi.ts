@@ -400,6 +400,7 @@ export const messages: Record<string, string> = {
   'agents.summary.capabilityReadinessAria': '{capability} क्षमता तैयारी',
   'agents.summary.loadingSkills': 'कौशल लोड हो रहे हैं…',
   'agents.summary.capabilityUnavailable': 'क्षमता जानकारी उपलब्ध नहीं है',
+  'agents.capabilityPage.tradingUnavailable': 'चुना गया कनेक्शन तैयार होने तक ट्रेडिंग विवरण उपलब्ध नहीं हैं।',
   'agents.summary.checkingCapability': 'क्षमता तैयारी जाँची जा रही है…',
   'agents.summary.noCapabilitySetup': 'किसी क्षमता सेटअप की आवश्यकता नहीं',
   'agents.summary.openAgent': 'AI एजेंट खोलें',

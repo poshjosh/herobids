@@ -4,9 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, capabilities as capabilitiesApi, type CapabilityReadiness } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button, StatusBadge, KV } from '../../lib/ui.js';
-import { formatCapabilityFamily, formatCapabilityState, formatExecutionMode } from './agent-display.js';
+import { formatCapabilityFamily, formatCapabilityState } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
+import { TradingCapabilityPresentation } from './TradingCapabilityPresentation.js';
 
 export function AgentCapabilityPage() {
   const { agentId, family } = useParams<{ agentId: string; family: string }>();
@@ -102,17 +103,6 @@ export function AgentCapabilityPage() {
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>
         <StatusBadge status={agent.status} />
-        <span
-          style={{
-            padding: '3px 8px',
-            borderRadius: '20px',
-            background: 'var(--color-surface-2)',
-            fontSize: '0.75rem',
-            color: 'var(--color-text-secondary)',
-          }}
-        >
-          {intl.formatMessage({ id: 'agents.modeBadge' }, { mode: formatExecutionMode(agent.executionMode, intl) })}
-        </span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
@@ -233,6 +223,25 @@ export function AgentCapabilityPage() {
           </Card>
         )}
       </div>
+
+      {family === 'trading' && readiness.effectiveReady && (
+        <TradingCapabilityPresentation
+          agentId={agent.id}
+          agent={agent}
+          connectionLabel={(agentConnectionsQuery.data?.connections ?? []).find((connection) => connection.connectionId === readiness.connectionId)?.label ?? null}
+          connectionProvider={(agentConnectionsQuery.data?.connections ?? []).find((connection) => connection.connectionId === readiness.connectionId)?.provider ?? null}
+          isActive={['active', 'starting', 'paused', 'unhealthy'].includes(agent.status)}
+        />
+      )}
+
+      {family === 'trading' && !readiness.effectiveReady && (
+        <Card>
+          <EmptyState
+            title={intl.formatMessage({ id: 'agents.summary.capabilityUnavailable' })}
+            message={intl.formatMessage({ id: 'agents.capabilityPage.tradingUnavailable' })}
+          />
+        </Card>
+      )}
 
       {showAddConnection && (
         <ProviderSetupForm

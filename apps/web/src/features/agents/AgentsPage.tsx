@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS, ReasoningLevelSchema, type ReasoningLevel } from '@herobids/domain';
-import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type Skill } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, Button, MetricCard, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
@@ -12,7 +12,6 @@ import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolve
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
-import { formatPnl, pnlColor } from '../../lib/formatting.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -145,19 +144,6 @@ export function AgentsPage() {
     queryFn: () => agentsApi.list(),
   });
 
-  const outcomesQuery = useQuery({
-    queryKey: ['agents', 'outcomes'],
-    queryFn: () => agentsApi.outcomes(),
-  });
-
-  const outcomesByAgentId = useMemo(() => {
-    const map = new Map<string, AgentOutcomes['outcomes']>();
-    for (const entry of outcomesQuery.data?.outcomes ?? []) {
-      map.set(entry.agentId, entry.outcomes);
-    }
-    return map;
-  }, [outcomesQuery.data]);
-
   // ── Dashboard data (from Mission Control) ──────────────────────
   const handleEvent = useCallback((event: UserEvent) => {
     if (event.type === 'agent.status') {
@@ -165,11 +151,6 @@ export function AgentsPage() {
     }
   }, [qc]);
   useEventStream(handleEvent);
-
-  const overviewQuery = useQuery({
-    queryKey: ['dashboard', 'overview'],
-    queryFn: () => dashboard.overview(),
-  });
 
   const items = query.data ?? [];
 
@@ -224,19 +205,13 @@ export function AgentsPage() {
           {query.isSuccess && items.length > 0 && (
             <div className="metrics-summary-row">
               <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={activeCount} total={items.length} />
-              <MetricCard
-                className="metrics-summary-card"
-                label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
-                value={overviewQuery.isLoading ? '—' : formatPnl(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
-                color={overviewQuery.isLoading ? undefined : pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
-              />
             </div>
           )}
 
           {query.isSuccess && items.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {items.map((agent) => (
-                <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
+                <AgentSummaryCard key={agent.id} agent={agent} />
               ))}
             </div>
           )}

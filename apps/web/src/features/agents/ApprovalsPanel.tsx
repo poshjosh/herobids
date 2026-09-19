@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, type DecisionApproval } from '../../lib/api-client.js';
@@ -6,9 +6,10 @@ import { Card, Button, LoadingRows, ErrorState, SectionLabel } from '../../lib/u
 
 interface ApprovalsPanelProps {
   agentId: string;
+  renderProposalDetails: (approval: DecisionApproval) => ReactNode;
 }
 
-export function ApprovalsPanel({ agentId }: ApprovalsPanelProps) {
+export function ApprovalsPanel({ agentId, renderProposalDetails }: ApprovalsPanelProps) {
   const intl = useIntl();
   const qc = useQueryClient();
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
@@ -51,11 +52,6 @@ export function ApprovalsPanel({ agentId }: ApprovalsPanelProps) {
       return next;
     });
   }, []);
-
-  const formatPrice = (value: string | null | undefined): string => {
-    if (!value) return intl.formatMessage({ id: 'agents.approvals.market' });
-    return value;
-  };
 
   const formatExpiry = (expiresAt: string): string => {
     return intl.formatDate(expiresAt, {
@@ -131,7 +127,7 @@ export function ApprovalsPanel({ agentId }: ApprovalsPanelProps) {
                 clearActionError(approval.id);
                 rejectMutation.mutate(approval.id);
               }}
-              formatPrice={formatPrice}
+              proposalDetails={renderProposalDetails(approval)}
               formatExpiry={formatExpiry}
               intl={intl}
             />
@@ -152,7 +148,7 @@ interface ApprovalCardProps {
   error: string | undefined;
   onApprove: () => void;
   onReject: () => void;
-  formatPrice: (value: string | null | undefined) => string;
+  proposalDetails: ReactNode;
   formatExpiry: (expiresAt: string) => string;
   intl: ReturnType<typeof useIntl>;
 }
@@ -167,29 +163,10 @@ function ApprovalCard({
   error,
   onApprove,
   onReject,
-  formatPrice,
+  proposalDetails,
   formatExpiry,
   intl,
 }: ApprovalCardProps) {
-  const rowStyle: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: '8px',
-    fontSize: '0.8125rem',
-    lineHeight: '1.5',
-  };
-
-  const labelStyle: React.CSSProperties = {
-    color: 'var(--color-text-muted)',
-    flexShrink: 0,
-  };
-
-  const valueStyle: React.CSSProperties = {
-    color: 'var(--color-text-primary)',
-    fontWeight: '500',
-    textAlign: 'right',
-  };
-
   return (
     <div
       style={{
@@ -229,72 +206,7 @@ function ApprovalCard({
         </span>
       </div>
 
-      {/* Proposal details */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-        <div style={rowStyle}>
-          <span style={labelStyle}>{intl.formatMessage({ id: 'agents.approvals.instrument' })}</span>
-          <span style={valueStyle}>{approval.instrumentId}</span>
-        </div>
-        <div style={rowStyle}>
-          <span style={labelStyle}>{intl.formatMessage({ id: 'agents.approvals.intent' })}</span>
-          <span style={{ ...valueStyle, textTransform: 'capitalize' }}>{approval.intent.replace(/_/g, ' ')}</span>
-        </div>
-        <div style={rowStyle}>
-          <span style={labelStyle}>{intl.formatMessage({ id: 'agents.approvals.targetSize' })}</span>
-          <span style={valueStyle}>{approval.targetSize}</span>
-        </div>
-        <div style={rowStyle}>
-          <span style={labelStyle}>
-            {approval.limitPrice
-              ? intl.formatMessage({ id: 'agents.approvals.limitPrice' })
-              : intl.formatMessage({ id: 'agents.approvals.orderType' })}
-          </span>
-          <span style={valueStyle}>{formatPrice(approval.limitPrice)}</span>
-        </div>
-        {approval.stopLoss && (
-          <div style={rowStyle}>
-            <span style={labelStyle}>{intl.formatMessage({ id: 'agents.approvals.stopLoss' })}</span>
-            <span style={valueStyle}>{approval.stopLoss}</span>
-          </div>
-        )}
-        {approval.takeProfit && (
-          <div style={rowStyle}>
-            <span style={labelStyle}>{intl.formatMessage({ id: 'agents.approvals.takeProfit' })}</span>
-            <span style={valueStyle}>{approval.takeProfit}</span>
-          </div>
-        )}
-        {approval.confidence && (
-          <div style={rowStyle}>
-            <span style={labelStyle}>{intl.formatMessage({ id: 'agents.approvals.confidence' })}</span>
-            <span style={valueStyle}>
-              {(() => {
-                const conf = Number(approval.confidence);
-                return !isNaN(conf) ? conf.toFixed(2) : approval.confidence;
-              })()}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Rationale summary */}
-      <div
-        style={{
-          padding: '10px 12px',
-          borderRadius: '6px',
-          background: 'var(--color-surface-2)',
-          fontSize: '0.75rem',
-          color: 'var(--color-text-secondary)',
-          lineHeight: '1.5',
-          marginBottom: '12px',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-        }}
-      >
-        <div style={{ fontSize: '0.625rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
-          {intl.formatMessage({ id: 'agents.approvals.rationale' })}
-        </div>
-        {approval.rationaleSummary || intl.formatMessage({ id: 'agents.approvals.noRationale' })}
-      </div>
+      {proposalDetails}
 
       {/* Telegram hint */}
       <div

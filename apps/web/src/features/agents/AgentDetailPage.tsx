@@ -2,16 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ApiError, agents as agentsApi, skills as skillsApi, providerCatalog, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
+import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, formatAuthorizationMode, formatSkillPresetId, formatObjectivePreview, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
-import { AgentTradesTable } from './AgentTradesTable.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
-import { ApprovalsPanel } from './ApprovalsPanel.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
 import { buildDeliveryDescriptors, getMessageClassBadgeVariant } from './agent-message-display.js';
@@ -103,57 +101,6 @@ export function AgentDetailPage() {
     enabled: !!id && hasTradingCapability,
   });
   const tradingCapability = capabilityQuery.data;
-
-  // ── Funding reminder banner ───────────────────────────────────────
-  const [fundingBannerDismissed, setFundingBannerDismissed] = useState(() => {
-    return localStorage.getItem(`funding-banner-dismissed-${id}`) === '1';
-  });
-
-  const providerCatalogQuery = useQuery({
-    queryKey: ['providerCatalog'],
-    queryFn: () => providerCatalog.get(),
-    staleTime: 5 * 60_000,
-  });
-
-  // Resolve venue from the agent's trading connection provider, or use the
-  // connectionId to query the connections list.
-  const tradingConnectionId = tradingCapability?.connectionId;
-
-  const connectionsQuery = useQuery({
-    queryKey: ['agents', id, 'connections'],
-    queryFn: () => agentsApi.getConnections(id!),
-    enabled: !!id && !!tradingConnectionId,
-  });
-
-  const resolvedVenue = (() => {
-    if (!tradingConnectionId || !connectionsQuery.data) return null;
-    const conn = connectionsQuery.data.connections.find(c => c.connectionId === tradingConnectionId);
-    return conn?.provider ?? null;
-  })();
-
-  const venueHasWalletGeneration = resolvedVenue
-    ? providerCatalogQuery.data?.providers.some(p => p.id === resolvedVenue && p.walletGeneration?.available === true)
-    : false;
-
-  const showFundingBanner = hasTradingCapability
-    && tradingConnectionId != null
-    && venueHasWalletGeneration === true
-    && !fundingBannerDismissed;
-
-  const fundingDocUrl = (() => {
-    const BASE = '/docs/trading-venues/funding-wallets';
-    if (!resolvedVenue) return BASE;
-    if (resolvedVenue === 'hyperliquid') return `${BASE}#hyperliquid`;
-    if (resolvedVenue === 'jupiter') return `${BASE}#jupiter`;
-    if (resolvedVenue === '1inch') return `${BASE}#1inch`;
-    return BASE;
-  })();
-
-  const dismissFundingBanner = () => {
-    localStorage.setItem(`funding-banner-dismissed-${id}`, '1');
-    setFundingBannerDismissed(true);
-  };
-  // ── End funding reminder banner ────────────────────────────────────
 
   const startMutation = useMutation({
     mutationFn: () => agentsApi.start(id!),
@@ -263,13 +210,6 @@ export function AgentDetailPage() {
     refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
 
-  const decisionsQuery = useQuery({
-    queryKey: ['agents', id, 'decisions'],
-    queryFn: () => agentsApi.decisions(id!, 20),
-    enabled: !!id,
-    refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
-  });
-
   if (query.isLoading) return <PageShell><LoadingRows count={5} /></PageShell>;
   if (query.isError) return <PageShell><ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} /></PageShell>;
 
@@ -278,7 +218,6 @@ export function AgentDetailPage() {
   const objective = extractAgentObjective(agent.prompt);
   const operatorContextItems: string[] = [
     selectedSkills.length > 0 ? `Skills: ${formatSkillSelection(selectedSkills, intl)}` : null,
-    hasTradingCapability && agent.executionMode ? `Execution mode: ${formatExecutionMode(agent.executionMode, intl)}` : null,
   ].filter((item): item is string => item !== null);
   const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error ?? deleteMutation.error;
   const canStop = ['active', 'starting', 'paused', 'unhealthy', 'crashed'].includes(agent.status);
@@ -287,8 +226,6 @@ export function AgentDetailPage() {
     : (agent.activeSession?.status === 'unhealthy' && agent.status !== 'stopped')
       ? intl.formatMessage({ id: 'agents.detail.runtimeAlert.unhealthy' })
       : null;
-  const presetLabel = formatSkillPresetId(agent.skillPresetId, intl);
-
   return (
     <PageShell>
       <PageHeader
@@ -350,50 +287,14 @@ export function AgentDetailPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {runtimeAlert && <ErrorBanner message={runtimeAlert} />}
         {lifecycleError && <ErrorBanner message={localizeApiError(intl, lifecycleError, 'common.errorTitle')} />}
-        {showFundingBanner && (
-          <div style={{
-            padding: '12px 16px',
-            background: 'var(--color-brand-subtle)',
-            border: '1px solid var(--color-brand-dim)',
-            borderRadius: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            fontSize: '0.8125rem',
-            color: 'var(--color-text-primary)',
-          }}>
-            <span>
-              {intl.formatMessage({ id: 'agents.detail.fundingBanner.text' })}{' '}
-              <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-brand)' }}>
-                {intl.formatMessage({ id: 'agents.detail.fundingBanner.learnMore' })}
-              </a>
-            </span>
-            <Button variant="ghost" size="sm" onClick={dismissFundingBanner}>Dismiss</Button>
-          </div>
-        )}
 
         <Card>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.status} />} />
-            {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />}
-            {hasTradingCapability && (
-              <KV label={intl.formatMessage({ id: 'agents.authorizationMode.label' })} value={formatAuthorizationMode(agent.authorizationMode, intl)} />
-            )}
-            {presetLabel && (
-              <KV label={intl.formatMessage({ id: 'agents.detail.skillPreset' })} value={presetLabel} />
-            )}
-            {agent.strategyPresetName && (
-              <KV label="Strategy" value={agent.strategyPresetName} />
-            )}
             <KV label={intl.formatMessage({ id: 'common.created' })} value={<RelativeTime timestamp={agent.createdAt} />} />
             <KV label={intl.formatMessage({ id: 'common.updated' })} value={<RelativeTime timestamp={agent.updatedAt} />} />
           </div>
         </Card>
-
-        {hasTradingCapability && (
-          <ApprovalsPanel agentId={id!} />
-        )}
 
         <Card>
           <details>
@@ -452,63 +353,6 @@ export function AgentDetailPage() {
             </div>
           </details>
         </Card>
-
-        <Card>
-          <details>
-            <summary
-              style={{
-                fontSize: '0.6875rem',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--color-text-muted)',
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-            >
-              {intl.formatMessage({ id: 'agents.detail.recentDecisions' })}
-            </summary>
-            <div style={{ marginTop: '12px' }}>
-          {decisionsQuery.isLoading && <LoadingRows count={3} />}
-          {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.detail.noDecisions' })}</p>
-          )}
-          {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.8125rem' }}>
-              {(decisionsQuery.data as Array<{ id: string; intent: string; createdAt: string }>).map((d) => (
-                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
-                  <span>{d.intent}</span>
-                  <RelativeTime timestamp={d.createdAt} />
-                </div>
-              ))}
-            </div>
-          )}
-            </div>
-          </details>
-        </Card>
-
-        {hasTradingCapability && (
-          <Card>
-            <details open>
-              <summary
-                style={{
-                  fontSize: '0.6875rem',
-                  fontWeight: '600',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--color-text-muted)',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-              >
-                {intl.formatMessage({ id: 'agents.detail.tradesHistory' })}
-              </summary>
-              <div style={{ marginTop: '12px' }}>
-                <AgentTradesTable agentId={id!} executionMode={agent.executionMode ?? null} isActive={shouldPollRuntimePanels} />
-              </div>
-            </details>
-          </Card>
-        )}
 
         {agent.activeSession && (
           <Card>

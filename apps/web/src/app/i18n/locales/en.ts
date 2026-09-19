@@ -400,6 +400,7 @@ export const messages: Record<string, string> = {
   'agents.summary.capabilityReadinessAria': '{capability} capability readiness',
   'agents.summary.loadingSkills': 'Loading skills…',
   'agents.summary.capabilityUnavailable': 'Capability information unavailable',
+  'agents.capabilityPage.tradingUnavailable': 'Trading details are unavailable until the selected connection is ready.',
   'agents.summary.checkingCapability': 'Checking capability readiness…',
   'agents.summary.noCapabilitySetup': 'No capability setup required',
   'agents.summary.openAgent': 'Open AI agent',

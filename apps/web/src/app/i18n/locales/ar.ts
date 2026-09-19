@@ -400,6 +400,7 @@ export const messages: Record<string, string> = {
   'agents.summary.capabilityReadinessAria': 'جاهزية قدرة {capability}',
   'agents.summary.loadingSkills': 'جارٍ تحميل المهارات…',
   'agents.summary.capabilityUnavailable': 'معلومات القدرة غير متاحة',
+  'agents.capabilityPage.tradingUnavailable': 'تفاصيل التداول غير متاحة حتى يصبح الاتصال المحدد جاهزًا.',
   'agents.summary.checkingCapability': 'جارٍ التحقق من جاهزية القدرة…',
   'agents.summary.noCapabilitySetup': 'لا حاجة لإعداد قدرة',
   'agents.summary.openAgent': 'فتح وكيل الذكاء الاصطناعي',

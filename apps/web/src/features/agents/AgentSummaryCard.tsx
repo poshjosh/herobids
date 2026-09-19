@@ -1,10 +1,9 @@
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, skills as skillsApi, type Agent, type AgentOutcomes, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
-import { formatPnl, pnlColor } from '../../lib/formatting.js';
-import { extractAgentObjective, formatExecutionMode, formatAuthorizationMode, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, resolveSelectedSkills } from './agent-display.js';
 
 // ── Shared icon button style ───────────────────────────────────────────────
 
@@ -26,11 +25,10 @@ const ICON_BUTTON_STYLE: React.CSSProperties = {
 
 interface AgentSummaryCardProps {
   agent: Agent;
-  outcomes?: AgentOutcomes['outcomes'];
   onOpen?: () => void;
 }
 
-export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardProps) {
+export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
   const navigate = useNavigate();
   const intl = useIntl();
   const qc = useQueryClient();
@@ -40,14 +38,13 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
     queryFn: () => skillsApi.list({ scope: 'selectable' }),
   });
   const selectedSkills = resolveSelectedSkills(agent.skillIds, skillsQuery.data?.skills ?? []);
-  const hasTradingCapability = hasCapabilityFamily(selectedSkills, 'trading');
   const readinessQuery = useQuery({
-    queryKey: ['agents', agent.id, 'capability-readiness', 'trading'],
-    queryFn: async () => agentsApi.capabilityReadiness(agent.id, 'trading') as Promise<CapabilityReadiness>,
-    enabled: hasTradingCapability,
+    queryKey: ['agents', agent.id, 'capability-readiness'],
+    queryFn: async () => agentsApi.capabilityReadiness(agent.id) as Promise<{ agentId: string; capabilities: CapabilityReadiness[] }>,
+    enabled: selectedSkills.length > 0,
   });
 
-  const primaryCapability = readinessQuery.data;
+  const capabilities = readinessQuery.data?.capabilities ?? [];
   const openAgent = onOpen ?? (() => navigate(`/agents/${agent.id}`));
 
   // ── Lifecycle mutations (same as agent detail page) ────────────────────
@@ -176,32 +173,6 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
             <span style={{ fontWeight: '600', fontSize: '0.9375rem', color: 'var(--color-text-primary)' }}>{agent.name}</span>
             <StatusBadge status={agent.status} />
-            {hasTradingCapability && (
-              <span
-                style={{
-                  padding: '3px 8px',
-                  borderRadius: '20px',
-                  background: 'var(--color-surface-2)',
-                  fontSize: '0.75rem',
-                  color: 'var(--color-text-secondary)',
-                }}
-              >
-                {intl.formatMessage({ id: 'agents.modeBadge' }, { mode: formatExecutionMode(agent.executionMode, intl) })}
-              </span>
-            )}
-            {hasTradingCapability && agent.authorizationMode === 'approval_required' && (
-              <span
-                style={{
-                  padding: '3px 8px',
-                  borderRadius: '20px',
-                  background: 'var(--color-warning-subtle)',
-                  fontSize: '0.75rem',
-                  color: 'var(--color-warning)',
-                }}
-              >
-                {formatAuthorizationMode(agent.authorizationMode, intl)}
-              </span>
-            )}
           </div>
           <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
             {formatObjectivePreview(objective, 40)}
@@ -219,44 +190,28 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
         {!skillsQuery.isLoading && !skillsQuery.isError && readinessQuery.isLoading && (
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.checkingCapability' })}</span>
         )}
-        {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && !hasTradingCapability && (
+        {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && capabilities.length === 0 && (
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</span>
         )}
-        {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && primaryCapability && (
+        {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && capabilities.map((capability) => (
           <span
+            key={capability.family}
             style={{
               padding: '3px 8px',
               borderRadius: '20px',
-              background: primaryCapability.effectiveReady ? 'var(--color-success-subtle)' : 'var(--color-warning-subtle)',
-              color: primaryCapability.effectiveReady ? 'var(--color-success)' : 'var(--color-warning)',
+              background: capability.effectiveReady ? 'var(--color-success-subtle)' : 'var(--color-warning-subtle)',
+              color: capability.effectiveReady ? 'var(--color-success)' : 'var(--color-warning)',
               fontSize: '0.75rem',
             }}
           >
-            {formatCapabilityFamily(primaryCapability.family, intl)}: {formatCapabilityState(primaryCapability.state, intl)}
+            {formatCapabilityFamily(capability.family, intl)}: {formatCapabilityState(capability.state, intl)}
           </span>
-        )}
+        ))}
       </div>
-
-      {outcomes?.trading && hasTradingCapability && (
-        <div style={{ display: 'flex', gap: '16px', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
-          <span>
-            {intl.formatMessage({ id: 'agents.summary.pnl' })}:{' '}
-            <span style={{ color: pnlColor(outcomes.trading.totalRealizedPnl), fontWeight: '500' }}>
-              {formatPnl(outcomes.trading.totalRealizedPnl)}
-            </span>
-          </span>
-          <span>{intl.formatMessage({ id: 'agents.summary.tradeCount' }, { count: outcomes.trading.closedPositionCount })}</span>
-          {outcomes.trading.closedPositionCount > 0 && (
-            <span>{intl.formatMessage({ id: 'agents.summary.winRate' }, { rate: Math.round((outcomes.trading.winningClosedCount / outcomes.trading.closedPositionCount) * 100) })}</span>
-          )}
-        </div>
-      )}
 
       <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
         <KV label={intl.formatMessage({ id: 'common.created' })} value={<RelativeTime timestamp={agent.createdAt} />} />
         <KV label={intl.formatMessage({ id: 'common.updated' })} value={<RelativeTime timestamp={agent.updatedAt} />} />
-        {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />}
-        {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.authorizationMode.label' })} value={formatAuthorizationMode(agent.authorizationMode, intl)} />}
       </div>
 
     </Card>
