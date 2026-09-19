@@ -2,7 +2,7 @@
 
 - **Task:** C1 — the traderton-side half of the B1=(ii) outcome: profile store + config boundary tool + actor-ensure consumption + risk-read source swap
 - **Repo:** traderton (with a herobids companion list in C1b)
-- **Status:** **IN PROGRESS (authorized 2026-09-19)** — B1 is ratified as ADR 010. C1a is verified and the execution ledger records both repository SHAs; the Traderton half and the Herobids companion are coordinated in the stated order.
+- **Status:** **IMPLEMENTED (2026-09-19); DATABASE AND CROSS-STACK VERIFICATION PENDING** — B1 is ratified as ADR 010. C1a is verified and the execution ledger records both repository SHAs; the Traderton half and the Herobids companion are coordinated in the stated order.
 - **Prereq:** ADR 010; A3 implemented (source-agnostic assembly — this plan swaps its source); C1a completed or first in the same coordinated run; independent review complete.
 
 ## Design sketch (one page, per the B1 open-question offer)
