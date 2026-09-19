@@ -1,9 +1,10 @@
 name: Slow Tests
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, consume-traderton]
 
 jobs:
   parity-drift:
