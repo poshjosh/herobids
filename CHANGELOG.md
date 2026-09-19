@@ -16,6 +16,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Trading-profile reconciliation consolidated (C1a).** Agent create, update, interactivity, chat, instantiation, go-live, delete, and connection grant/revoke workflows now share pure profile-snapshot, selected-binding, and compensation planning. Selection mirrors the runtime default-ready then first-ready rule; no Traderton profile writer or store is enabled until C1.
+
 - **Fallback posture completed boundary-first (A6).** Deleted the `list_watches` local-Redis fallback (boundary-only, fail-closed; tick gate degrades to empty digest during boundary outages); re-pointed `resolve_watch` from the legacy Redis hash to the boundary watch list (resolve_bot pattern); deleted the in-process `get_risk_limits` fallback (fail-closed now that the boundary serves the reads). `resolve_task` stays platform-local (non-trading) and exit-price reconstruction is unchanged (B4-decision-dependent).
 
 ### Fixed
