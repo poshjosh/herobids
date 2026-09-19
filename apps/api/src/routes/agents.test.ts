@@ -21,6 +21,22 @@ import { RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
 import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 
+vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
+  loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
+  reconcileTradingProfile: vi.fn().mockResolvedValue({
+    upserts: [],
+    clears: [],
+    selectedBinding: { previous: null, next: null },
+    inverseActions: [],
+  }),
+}));
+
+import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
+import { planTradingProfileReconciliation } from '../agents/trading-profile-reconciliation.js';
+
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
 // In test, cwd is the package dir (apps/api), so we must point to the repo root.
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -675,6 +691,34 @@ describe('agent routes lifecycle', () => {
     const agentIndex = deletedTargets.indexOf(agents);
     expect(agentIndex).toBeGreaterThan(-1);
     expect(deletedTargets[deletedTargets.length - 1]).toBe(agents);
+  });
+
+  it('reconciles a deleted agent from its active binding to no binding with a restorable inverse', async () => {
+    vi.clearAllMocks();
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'connection-1', venueAccountId: 'venue-1', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-1' },
+    ]);
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, capital: null, risk: null, executionDefaults: null }],
+    });
+    const { client } = makeTradertonStub();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+
+    const response = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(response.statusCode).toBe(204);
+    const plan = planTradingProfileReconciliation(vi.mocked(reconcileTradingProfile).mock.calls[0]![0]);
+    expect(plan.selectedBinding).toEqual({
+      previous: { connectionId: 'connection-1', venueAccountId: 'venue-1' },
+      next: null,
+    });
+    expect(plan.inverseActions).toEqual([
+      { kind: 'select_binding', binding: { connectionId: 'connection-1', venueAccountId: 'venue-1' } },
+      expect.objectContaining({ kind: 'upsert', snapshot: expect.objectContaining({ venueAccountId: 'venue-1' }) }),
+    ]);
   });
 
   it('nulls billing_usage_events FK columns before deleting the agent', async () => {
@@ -3384,6 +3428,7 @@ describe('openPositionEscalationToJudgePolicy', () => {
 describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
   });
 
   // --- POST /agents ---
@@ -3394,7 +3439,8 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
       agentRows: [],
       activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, name: 'test-agent', prompt: 'test', modelPolicy: null, executionMode: 'paper', toolPolicy: null, skillIds: [] }],
       connectionRows: [
-        { id: 'conn-1', userId: TEST_USER_ID, status: 'active' },
+        { id: 'conn-a', userId: TEST_USER_ID, status: 'active' },
+        { id: 'conn-b', userId: TEST_USER_ID, status: 'active' },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
@@ -3409,16 +3455,28 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
       payload: {
         name: 'test-agent',
         prompt: 'test',
-        connectionIds: ['conn-1'],
+        connectionIds: ['conn-a', 'conn-b'],
       },
     });
 
     expect(res.statusCode).toBe(201);
     // Verify agent_connections row was inserted
-    const acInsert = insertedValues.find((v) => v['connectionId'] === 'conn-1');
-    expect(acInsert).toBeDefined();
-    expect(acInsert!['status']).toBe('active');
-    expect(acInsert!['grantedBy']).toBe(TEST_USER_ID);
+    const acInserts = insertedValues.filter((v) => v['connectionId'] !== undefined);
+    expect(acInserts).toHaveLength(2);
+    expect(acInserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ connectionId: 'conn-a', status: 'active', grantedBy: TEST_USER_ID }),
+      expect.objectContaining({ connectionId: 'conn-b', status: 'active', grantedBy: TEST_USER_ID }),
+    ]));
+    const input = vi.mocked(reconcileTradingProfile).mock.calls[0]![0];
+    const plan = planTradingProfileReconciliation(input);
+    const expected = input.proposed.connections
+      .slice()
+      .sort((left, right) => right.assignmentId.localeCompare(left.assignmentId))[0]!;
+    expect(plan.selectedBinding.next).toEqual({
+      connectionId: expected.connectionId,
+      venueAccountId: expected.venueAccountId,
+    });
+    expect(acInserts.map((row) => row['id']).sort()).toEqual(input.proposed.connections.map((connection) => connection.assignmentId).sort());
   });
 
   it('returns 400 when a connectionId does not exist', async () => {
@@ -3646,6 +3704,41 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
     // No agent_connections revoked
     const acRevokes = updateSets.filter((s) => s['status'] === 'revoked');
     expect(acRevokes).toHaveLength(0);
+  });
+
+  it('preserves runtime grant ordering when PATCH receives the same ready connections in reverse request order', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-newest', venueAccountId: 'venue-newest', active: true, ready: true, grantedAt: new Date('2026-01-02'), assignmentId: 'grant-z' },
+      { connectionId: 'conn-older', venueAccountId: 'venue-older', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-a' },
+    ]);
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      agentConnectionRows: [
+        { id: 'grant-z', agentId: 'agent-1', connectionId: 'conn-newest', status: 'active' },
+        { id: 'grant-a', agentId: 'agent-1', connectionId: 'conn-older', status: 'active' },
+      ],
+      connectionRows: [
+        { id: 'conn-newest', userId: TEST_USER_ID, status: 'active' },
+        { id: 'conn-older', userId: TEST_USER_ID, status: 'active' },
+      ],
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { connectionIds: ['conn-older', 'conn-newest'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const plan = planTradingProfileReconciliation(vi.mocked(reconcileTradingProfile).mock.calls[0]![0]);
+    expect(plan.selectedBinding).toEqual({
+      previous: { connectionId: 'conn-newest', venueAccountId: 'venue-newest' },
+      next: { connectionId: 'conn-newest', venueAccountId: 'venue-newest' },
+    });
   });
 });
 

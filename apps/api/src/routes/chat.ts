@@ -14,6 +14,7 @@ import type { TradertonClient } from '@herobids/domain/traderton';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
+import { reconcileTradingProfile } from '../agents/trading-profile-reconciliation-adapter.js';
 import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode, optionalPositiveDecimalStringSchema } from './agent-config-helpers.js';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
@@ -1371,6 +1372,14 @@ export async function executeChatAction(
           });
         }
         await db.transaction(async (tx) => {
+          const proposedConnections: Array<{
+            connectionId: string;
+            venueAccountId: string | null;
+            active: boolean;
+            ready: boolean;
+            grantedAt: Date;
+            assignmentId: string;
+          }> = [];
           // Validate connection ownership and type compatibility.
           if (connectionIds.length > 0) {
             const connRows = await tx
@@ -1405,6 +1414,47 @@ export async function executeChatAction(
                 throw new Error(`Connection ${row.id} is a trading venue — non-trading agents should use a service connection (e.g. Gmail).`);
               }
             }
+
+            proposedConnections.push(...selectedRows.map((connection) => ({
+              connectionId: connection.id,
+              venueAccountId: connection.resolvedVenueAccountId,
+              active: true,
+              ready: connection.status === 'active',
+              grantedAt: timestamp,
+              assignmentId: uuid(),
+            })));
+
+            await reconcileTradingProfile({
+              prior: {
+                config: { actorId: agentId, capital: null, riskPosture: null, executionDefaults: null },
+                connections: [],
+              },
+              proposed: {
+                config: {
+                  actorId: agentId,
+                  capital: parsed.data.capital ?? null,
+                  riskPosture: createFields.risk,
+                  executionDefaults: createFields.executionDefaults,
+                },
+                connections: proposedConnections,
+              },
+            });
+          } else {
+            await reconcileTradingProfile({
+              prior: {
+                config: { actorId: agentId, capital: null, riskPosture: null, executionDefaults: null },
+                connections: [],
+              },
+              proposed: {
+                config: {
+                  actorId: agentId,
+                  capital: parsed.data.capital ?? null,
+                  riskPosture: createFields.risk,
+                  executionDefaults: createFields.executionDefaults,
+                },
+                connections: [],
+              },
+            });
           }
 
           await tx.insert(agents).values({
@@ -1432,11 +1482,11 @@ export async function executeChatAction(
           } as never);
 
           // Create agent_connections rows
-          for (const cid of connectionIds) {
+          for (const connection of proposedConnections) {
             await tx.insert(agentConnections).values({
-              id: uuid(),
+              id: connection.assignmentId,
               agentId,
-              connectionId: cid,
+              connectionId: connection.connectionId,
               status: 'active',
               grantedBy: userId,
               grantedAt: timestamp,

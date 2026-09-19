@@ -54,6 +54,10 @@ import {
 } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
+import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
 import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.js';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
@@ -698,12 +702,21 @@ export async function agentRoutes(
           updatedAt: now,
         } as never);
 
+        let proposedConnections: Array<{
+          connectionId: string;
+          venueAccountId: string | null;
+          active: boolean;
+          ready: boolean;
+          grantedAt: Date;
+          assignmentId: string;
+        }> = [];
         if (connectionIds.length > 0) {
           // Validate connectionIds inside the transaction for a consistent view
           const connRows = await tx.select({
             id: connections.id,
             userId: connections.userId,
             status: connections.status,
+            resolvedVenueAccountId: connections.resolvedVenueAccountId,
           }).from(connections).where(inArray(connections.id, connectionIds));
 
           const connById = new Map(connRows.map((r) => [r.id, r]));
@@ -741,14 +754,45 @@ export async function agentRoutes(
             }
           }
 
-          for (const cid of connectionIds) {
+          const now = new Date();
+          proposedConnections = connectionIds.map((connectionId) => {
+            const connection = connById.get(connectionId)!;
+            return {
+              connectionId,
+              venueAccountId: connection.resolvedVenueAccountId,
+              active: true,
+              ready: connection.status === 'active',
+              grantedAt: now,
+              assignmentId: crypto.randomUUID(),
+            };
+          });
+        }
+
+        await reconcileTradingProfile({
+          prior: {
+            config: { actorId: agentId, capital: null, riskPosture: null, executionDefaults: null },
+            connections: [],
+          },
+          proposed: {
+            config: {
+              actorId: agentId,
+              capital: parsed.data.capital ?? null,
+              riskPosture: riskJsonb,
+              executionDefaults: executionDefaultsJsonb,
+            },
+            connections: proposedConnections,
+          },
+        });
+
+        if (connectionIds.length > 0) {
+          for (const connection of proposedConnections) {
             await tx.insert(agentConnections).values({
-              id: crypto.randomUUID(),
+              id: connection.assignmentId,
               agentId,
-              connectionId: cid,
+              connectionId: connection.connectionId,
               status: 'active',
               grantedBy: request.userId,
-              grantedAt: now,
+              grantedAt: connection.grantedAt,
               createdAt: now,
               updatedAt: now,
             });
@@ -1587,6 +1631,58 @@ export async function agentRoutes(
       executionDefaultsUpdateJsonb = parsed.data.executionDefaults ?? null;
     }
 
+    const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
+    let proposedProfileConnections = priorProfileConnections;
+    if (parsed.data.connectionIds !== undefined) {
+      const proposedConnectionRows = parsed.data.connectionIds.length === 0
+        ? []
+        : await db.select({
+          id: connections.id,
+          status: connections.status,
+          venueAccountId: connections.resolvedVenueAccountId,
+        }).from(connections).where(inArray(connections.id, parsed.data.connectionIds));
+      const requestedConnectionIds = new Set(parsed.data.connectionIds);
+      const addedAt = new Date();
+      proposedProfileConnections = priorProfileConnections
+        .filter((connection) => requestedConnectionIds.has(connection.connectionId));
+      for (const connectionId of parsed.data.connectionIds) {
+        if (proposedProfileConnections.some((connection) => connection.connectionId === connectionId)) {
+          continue;
+        }
+        const connection = proposedConnectionRows.find((row) => row.id === connectionId);
+        proposedProfileConnections.push({
+          connectionId,
+          venueAccountId: connection?.venueAccountId ?? null,
+          active: connection?.status === 'active',
+          ready: connection?.status === 'active',
+          grantedAt: addedAt,
+          assignmentId: crypto.randomUUID(),
+        });
+      }
+    }
+    await reconcileTradingProfile({
+      prior: {
+        config: {
+          actorId: id,
+          capital: agent.capital ?? null,
+          riskPosture: agent.risk ?? null,
+          executionDefaults: agent.executionDefaults ?? null,
+        },
+        connections: priorProfileConnections,
+      },
+      proposed: {
+        config: {
+          actorId: id,
+          capital: agentUpdates.capital === undefined ? agent.capital ?? null : agentUpdates.capital,
+          riskPosture: riskUpdateJsonb === undefined ? agent.risk ?? null : riskUpdateJsonb as never,
+          executionDefaults: executionDefaultsUpdateJsonb === undefined
+            ? agent.executionDefaults ?? null
+            : executionDefaultsUpdateJsonb as never,
+        },
+        connections: proposedProfileConnections,
+      },
+    });
+
     const txResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
       | { kind: 'conn_error'; status: number; body: Record<string, unknown> }
@@ -1678,14 +1774,15 @@ export async function agentRoutes(
 
           // Insert rows for newly added connections
           for (const cid of toAdd) {
-            const acId = crypto.randomUUID();
+            const proposedConnection = proposedProfileConnections.find((connection) => connection.connectionId === cid)!;
+            const acId = proposedConnection.assignmentId;
             await tx.insert(agentConnections).values({
               id: acId,
               agentId: id,
               connectionId: cid,
               status: 'active',
               grantedBy: request.userId,
-              grantedAt: now,
+              grantedAt: proposedConnection.grantedAt,
               createdAt: now,
               updatedAt: now,
             });
@@ -1809,6 +1906,28 @@ export async function agentRoutes(
         );
       }
     }
+
+    const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
+    await reconcileTradingProfile({
+      prior: {
+        config: {
+          actorId: id,
+          capital: agent.capital ?? null,
+          riskPosture: agent.risk ?? null,
+          executionDefaults: agent.executionDefaults ?? null,
+        },
+        connections: priorProfileConnections,
+      },
+      proposed: {
+        config: {
+          actorId: id,
+          capital: agent.capital ?? null,
+          riskPosture: agent.risk ?? null,
+          executionDefaults: agent.executionDefaults ?? null,
+        },
+        connections: [],
+      },
+    });
 
     // Agent deletion cleanup — execution order resolves all FK chains.
     // See docs/features/2026/06/20/003-agent-deletion-cleanup/001-plan.md.

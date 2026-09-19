@@ -16,6 +16,14 @@ import {
   type SkillRef,
 } from './agent-instantiation-service.js';
 
+vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
+  reconcileTradingProfile: vi.fn().mockResolvedValue({
+    upserts: [], clears: [], selectedBinding: { previous: null, next: null }, inverseActions: [],
+  }),
+}));
+
+import { reconcileTradingProfile } from '../agents/trading-profile-reconciliation-adapter.js';
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Track inserted rows during test execution. */
@@ -84,6 +92,30 @@ function makePayload(overrides: Partial<AgentBlueprintRevisionPayload> = {}): Ag
 }
 
 // ── Tests: buildUnifiedConfigFromPayload ─────────────────────────────────────
+
+describe('createAgentFromPayload reconciliation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reconciles the instantiated agent profile through the shared seam', async () => {
+    const tracker = makeInsertTracker();
+    await createAgentFromPayload(
+      buildMockTx(tracker),
+      makePayload({ capital: '1250', executionDefaults: { mode: 'paper', slippageBps: 50 } }),
+      [],
+      { userId: 'user-1', agentId: 'agent-blueprint' },
+    );
+
+    expect(reconcileTradingProfile).toHaveBeenCalledWith({
+      prior: expect.objectContaining({ connections: [] }),
+      proposed: expect.objectContaining({
+        config: expect.objectContaining({ actorId: 'agent-blueprint', capital: '1250' }),
+        connections: [],
+      }),
+    });
+  });
+});
 
 describe('buildUnifiedConfigFromPayload', () => {
   it('builds unifiedConfig with technical, intelligence, capabilityMode, hybridMode', () => {

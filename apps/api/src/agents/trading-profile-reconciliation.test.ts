@@ -1,0 +1,135 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildTradingProfileSnapshots,
+  planTradingProfileReconciliation,
+  selectExecutionBinding,
+  type TradingProfileAgentConfig,
+  type TradingProfileConnection,
+} from './trading-profile-reconciliation.js';
+
+const config: TradingProfileAgentConfig = {
+  actorId: 'agent-1',
+  capital: null,
+  riskPosture: null,
+  executionDefaults: null,
+};
+
+function connection(overrides: Partial<TradingProfileConnection>): TradingProfileConnection {
+  return {
+    connectionId: 'connection-1',
+    venueAccountId: 'venue-account-1',
+    active: true,
+    ready: true,
+    grantedAt: new Date('2026-01-01T00:00:00.000Z'),
+    assignmentId: 'assignment-1',
+    ...overrides,
+  };
+}
+
+describe('trading profile reconciliation', () => {
+  it('builds full snapshots without changing nullable configuration semantics', () => {
+    expect(buildTradingProfileSnapshots(config, [connection({})])).toEqual([{
+      actorId: 'agent-1',
+      venueAccountId: 'venue-account-1',
+      capital: null,
+      riskPosture: null,
+      executionDefaults: null,
+    }]);
+  });
+
+  it('selects the newest ready binding, breaking equal grants by descending assignment ID', () => {
+    const bindings = [
+      connection({ connectionId: 'older', venueAccountId: 'account-older' }),
+      connection({
+        connectionId: 'newer',
+        venueAccountId: 'account-newer',
+        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
+      }),
+      connection({
+        connectionId: 'tie-winner',
+        venueAccountId: 'account-tie-winner',
+        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
+        assignmentId: 'assignment-z',
+      }),
+    ];
+
+    expect(selectExecutionBinding(bindings)).toEqual({ connectionId: 'tie-winner', venueAccountId: 'account-tie-winner' });
+  });
+
+  it('plans binding removal, exact clears, and inverse restoration', () => {
+    const prior = [connection({})];
+    const plan = planTradingProfileReconciliation({
+      prior: { config, connections: prior },
+      proposed: { config, connections: [] },
+    });
+
+    expect(plan.upserts).toEqual([]);
+    expect(plan.clears).toEqual(['venue-account-1']);
+    expect(plan.selectedBinding).toEqual({
+      previous: { connectionId: 'connection-1', venueAccountId: 'venue-account-1' },
+      next: null,
+    });
+    expect(plan.inverseActions).toEqual([
+      { kind: 'select_binding', binding: { connectionId: 'connection-1', venueAccountId: 'venue-account-1' } },
+      {
+        kind: 'upsert',
+        snapshot: {
+          actorId: 'agent-1', venueAccountId: 'venue-account-1', capital: null, riskPosture: null, executionDefaults: null,
+        },
+      },
+    ]);
+  });
+
+  it('reverses the complete mixed forward sequence for compensation', () => {
+    const prior = [
+      connection({ connectionId: 'connection-a', venueAccountId: 'venue-account-a' }),
+      connection({ connectionId: 'connection-c', venueAccountId: 'venue-account-c', ready: false }),
+    ];
+    const proposed = [
+      connection({ connectionId: 'connection-a', venueAccountId: 'venue-account-a' }),
+      connection({
+        connectionId: 'connection-b',
+        venueAccountId: 'venue-account-b',
+        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
+      }),
+    ];
+
+    const plan = planTradingProfileReconciliation({
+      prior: { config, connections: prior },
+      proposed: { config: { ...config, capital: '100' }, connections: proposed },
+    });
+
+    expect(plan.upserts.map((snapshot) => snapshot.venueAccountId)).toEqual(['venue-account-a', 'venue-account-b']);
+    expect(plan.clears).toEqual(['venue-account-c']);
+    expect(plan.selectedBinding).toEqual({
+      previous: { connectionId: 'connection-a', venueAccountId: 'venue-account-a' },
+      next: { connectionId: 'connection-b', venueAccountId: 'venue-account-b' },
+    });
+    expect(plan.inverseActions).toEqual([
+      { kind: 'select_binding', binding: { connectionId: 'connection-a', venueAccountId: 'venue-account-a' } },
+      {
+        kind: 'upsert',
+        snapshot: {
+          actorId: 'agent-1', venueAccountId: 'venue-account-c', capital: null, riskPosture: null, executionDefaults: null,
+        },
+      },
+      { kind: 'clear', venueAccountId: 'venue-account-b' },
+      {
+        kind: 'upsert',
+        snapshot: {
+          actorId: 'agent-1', venueAccountId: 'venue-account-a', capital: null, riskPosture: null, executionDefaults: null,
+        },
+      },
+    ]);
+  });
+
+  it('plans deletion as clears with inverse snapshots', () => {
+    const plan = planTradingProfileReconciliation({
+      prior: { config, connections: [connection({}), connection({ connectionId: 'connection-2', venueAccountId: 'venue-account-2' })] },
+      proposed: { config, connections: [] },
+    });
+
+    expect(plan.clears).toEqual(['venue-account-1', 'venue-account-2']);
+    expect(plan.inverseActions.filter((action) => action.kind === 'upsert')).toHaveLength(2);
+  });
+});

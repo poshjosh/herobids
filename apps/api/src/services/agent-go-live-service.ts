@@ -25,6 +25,10 @@ import {
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
+import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -266,6 +270,28 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
         })),
       );
     }
+
+    const copiedConnections = await loadActiveTradingProfileConnections(tx as unknown as Database, newAgentId);
+    await reconcileTradingProfile({
+      prior: {
+        config: {
+          actorId: newAgentId,
+          capital: null,
+          riskPosture: null,
+          executionDefaults: null,
+        },
+        connections: [],
+      },
+      proposed: {
+        config: {
+          actorId: newAgentId,
+          capital: livePayload.capital != null ? String(livePayload.capital) : null,
+          riskPosture: livePayload.risk ?? null,
+          executionDefaults: livePayload.executionDefaults ?? null,
+        },
+        connections: copiedConnections,
+      },
+    });
 
     return result;
   });

@@ -7,6 +7,14 @@ import type { ProvidersYaml } from '@herobids/domain';
 import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt, buildTradingPrompt, buildConnectionChoiceActions, buildBaseHeader, buildBasePrompt, buildPersonalAssistantPrompt, buildCustomPrompt } from './chat.js';
 import type { LlmToolCall } from '@herobids/llm';
 
+vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
+  reconcileTradingProfile: vi.fn().mockResolvedValue({
+    upserts: [], clears: [], selectedBinding: { previous: null, next: null }, inverseActions: [],
+  }),
+}));
+
+import { reconcileTradingProfile } from '../agents/trading-profile-reconciliation-adapter.js';
+
 // Mock createProviderLink to avoid needing CREDENTIAL_ENCRYPTION_KEY in tests
 vi.mock('./setup.js', () => ({
   createProviderLink: vi.fn(),
@@ -1853,6 +1861,7 @@ describe('resolveCreateAgentConnection', () => {
 
 describe('executeChatAction — assignedConnectionId', () => {
   it('includes assignedConnectionId in the create_agent result when a connection is bound', async () => {
+    vi.mocked(reconcileTradingProfile).mockClear();
     // We need a mock that allows create_agent to succeed far enough to build
     // the result object. Use a spy / manual approach: call executeChatAction
     // but mock the DB deeply enough for the handler to reach the result
@@ -1911,6 +1920,12 @@ describe('executeChatAction — assignedConnectionId', () => {
     const parsed = JSON.parse(result) as Record<string, unknown>;
     expect(parsed.success).toBe(true);
     expect(parsed.assignedConnectionId).toBe('conn-1');
+    expect(reconcileTradingProfile).toHaveBeenCalledWith(expect.objectContaining({
+      prior: expect.objectContaining({ connections: [] }),
+      proposed: expect.objectContaining({
+        connections: [expect.objectContaining({ connectionId: 'conn-1' })],
+      }),
+    }));
   });
 });
 

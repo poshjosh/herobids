@@ -49,6 +49,11 @@ vi.mock('./agent-instantiation-service.js', () => ({
   createAgentFromPayload: vi.fn(),
 }));
 
+vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
+  loadActiveTradingProfileConnections: vi.fn(),
+  reconcileTradingProfile: vi.fn(),
+}));
+
 vi.mock('@herobids/domain', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
@@ -65,6 +70,11 @@ import { checkLiveEnabled, checkAgentLimit, resolvePlanLimitEntitlements, resolv
 import { extractModelSelection, mergeModelPolicy, validateAgentModelPolicy, validateAgentRiskBounds } from '../routes/agent-config-helpers.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
+import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
+import { planTradingProfileReconciliation } from '../agents/trading-profile-reconciliation.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -299,6 +309,13 @@ function setupHappyPath(sourceAgent = makeSourceAgent(), connections = makeActiv
 describe('cloneAgentAsLive', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+    vi.mocked(reconcileTradingProfile).mockResolvedValue({
+      upserts: [],
+      clears: [],
+      selectedBinding: { previous: null, next: null },
+      inverseActions: [],
+    });
   });
 
   // ── Success paths ────────────────────────────────────────────────────────
@@ -460,6 +477,45 @@ describe('cloneAgentAsLive', () => {
     expect(connInserts[0]!.connectionId).toBe('connection-0');
     expect(connInserts[0]!.status).toBe('active');
     expect(connInserts[0]!.grantedBy).toBe('user-1');
+  });
+
+  it('reconciles copied resolved connections into live snapshots and a selected binding', async () => {
+    const copiedConnections = [
+      {
+        connectionId: 'connection-fallback',
+        venueAccountId: 'venue-account-fallback',
+        active: true,
+        ready: true,
+        grantedAt: new Date('2026-01-01T00:00:00.000Z'),
+        assignmentId: 'assignment-a',
+      },
+      {
+        connectionId: 'connection-default',
+        venueAccountId: 'venue-account-default',
+        active: true,
+        ready: true,
+        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
+        assignmentId: 'assignment-b',
+      },
+    ];
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue(copiedConnections);
+    const { db } = setupHappyPath();
+
+    const result = await cloneAgentAsLive(makeParams(db));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    expect(loadActiveTradingProfileConnections).toHaveBeenCalledWith(expect.anything(), result.agentId);
+    const reconciliationInput = vi.mocked(reconcileTradingProfile).mock.calls[0]![0];
+    const plan = planTradingProfileReconciliation(reconciliationInput);
+    expect(plan.upserts).toEqual([
+      expect.objectContaining({ actorId: result.agentId, venueAccountId: 'venue-account-fallback', executionDefaults: { mode: 'live', slippageBps: 50 } }),
+      expect.objectContaining({ actorId: result.agentId, venueAccountId: 'venue-account-default', executionDefaults: { mode: 'live', slippageBps: 50 } }),
+    ]);
+    expect(plan.selectedBinding).toEqual({
+      previous: null,
+      next: { connectionId: 'connection-default', venueAccountId: 'venue-account-default' },
+    });
   });
 
   it('preserves intelligence, execution, allowedPresets, presetTransition from source unifiedConfig', async () => {

@@ -4,6 +4,22 @@ import { connectionRoutes as registerConnectionRoutesImpl } from './connections.
 import type { PlansConfig } from '@herobids/domain';
 import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 
+vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
+  loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
+  reconcileTradingProfile: vi.fn().mockResolvedValue({
+    upserts: [],
+    clears: [],
+    selectedBinding: { previous: null, next: null },
+    inverseActions: [],
+  }),
+}));
+
+import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
+import { planTradingProfileReconciliation } from '../agents/trading-profile-reconciliation.js';
+
 const TEST_USER_ID = 'user-1';
 const TEST_RUNTIME_BUDGETS = {
   maxHistoryMessages: 20,
@@ -156,6 +172,12 @@ function buildMockDb() {
     }),
     select: vi.fn().mockImplementation((_cols?) => ({
       from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation(() => {
+            if (mockDbRows.length > 0) return mockDbRows;
+            return [];
+          }),
+        }),
         where: vi.fn().mockImplementation(() => {
           if (mockDbRows.length > 0) return mockDbRows;
           if (insertedValues.length > 0) {
@@ -322,6 +344,7 @@ describe('GET /connections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDbRows = [CONNECTION_ROW];
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
   });
 
   it('returns 200 with list of connections', async () => {
@@ -563,6 +586,16 @@ describe('DELETE /connections/:id', () => {
     let selectCount = 0;
     db.select = vi.fn().mockImplementation(() => ({
       from: vi.fn().mockImplementation(() => ({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation(() => {
+            selectCount++;
+            return Promise.resolve([
+              { agentId: 'agent-1', capital: null, riskPosture: null, executionDefaults: null },
+              { agentId: 'agent-2', capital: null, riskPosture: null, executionDefaults: null },
+              { agentId: 'agent-3', capital: null, riskPosture: null, executionDefaults: null },
+            ]);
+          }),
+        }),
         where: vi.fn().mockImplementation(() => {
           selectCount++;
           if (selectCount === 1) {
@@ -570,11 +603,7 @@ describe('DELETE /connections/:id', () => {
             return Promise.resolve([{ id: CONNECTION_ROW.id, status: CONNECTION_ROW.status }]);
           }
           // affectedAgents query — 3 agents
-          return Promise.resolve([
-            { agentId: 'agent-1' },
-            { agentId: 'agent-2' },
-            { agentId: 'agent-3' },
-          ]);
+          return Promise.resolve([]);
         }),
       })),
     }));
@@ -594,6 +623,58 @@ describe('DELETE /connections/:id', () => {
     expect(updateSets[0]!['status']).toBe('revoked');
     expect(updateSets[0]!['revokedAt']).toBeDefined();
     expect(updateSets[1]!['status']).toBe('revoked');
+    expect(reconcileTradingProfile).toHaveBeenCalledTimes(3);
+  });
+
+  it('reconciles every shared grant from its prior binding to the remaining ready binding before revocation', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    let selectCount = 0;
+    db.select = vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            { agentId: 'agent-1', capital: null, riskPosture: null, executionDefaults: null },
+            { agentId: 'agent-2', capital: null, riskPosture: null, executionDefaults: null },
+          ]),
+        }),
+        where: vi.fn().mockImplementation(() => {
+          selectCount++;
+          return Promise.resolve(selectCount === 1 ? [CONNECTION_ROW] : []);
+        }),
+      }),
+    }));
+    vi.mocked(loadActiveTradingProfileConnections)
+      .mockResolvedValueOnce([
+        { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, grantedAt: new Date('2026-01-02'), assignmentId: 'grant-b' },
+        { connectionId: 'conn-fallback', venueAccountId: 'venue-fallback', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-a' },
+      ])
+      .mockResolvedValueOnce([
+        { connectionId: 'conn-1', venueAccountId: 'venue-2', active: true, ready: true, grantedAt: new Date('2026-01-02'), assignmentId: 'grant-d' },
+        { connectionId: 'conn-fallback', venueAccountId: 'venue-fallback', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-c' },
+      ]);
+    await connectionRoutes(app, db);
+
+    const response = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
+
+    expect(response.statusCode).toBe(204);
+    expect(reconcileTradingProfile).toHaveBeenCalledTimes(2);
+    for (const [input] of vi.mocked(reconcileTradingProfile).mock.calls) {
+      expect(input.prior.connections).toHaveLength(2);
+      expect(input.proposed.connections).toEqual([
+        expect.objectContaining({ connectionId: 'conn-fallback' }),
+      ]);
+      const plan = planTradingProfileReconciliation(input);
+      expect(plan.selectedBinding).toEqual({
+        previous: expect.objectContaining({ connectionId: 'conn-1' }),
+        next: expect.objectContaining({ connectionId: 'conn-fallback' }),
+      });
+      expect(plan.inverseActions[0]).toEqual({
+        kind: 'select_binding',
+        binding: expect.objectContaining({ connectionId: 'conn-1' }),
+      });
+    }
   });
 
   it('revokes a connection with zero agent grants and still returns 204', async () => {
@@ -607,6 +688,9 @@ describe('DELETE /connections/:id', () => {
     let selectCount = 0;
     db.select = vi.fn().mockImplementation(() => ({
       from: vi.fn().mockImplementation(() => ({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
         where: vi.fn().mockImplementation(() => {
           selectCount++;
           if (selectCount === 1) {

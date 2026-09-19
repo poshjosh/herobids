@@ -3,6 +3,10 @@ import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentConnections, agentConnectionAudit, connections, agents } from '@herobids/db';
 import { ok, err, type Result } from '@herobids/domain';
+import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
 
 /**
  * Agent config service — single-operation connection lifecycle management.
@@ -46,7 +50,14 @@ export async function grantConnection(
     const result = await db.transaction(async (tx) => {
       // Verify agent exists
       const [agent] = await tx
-        .select({ id: agents.id, userId: agents.userId, status: agents.status })
+        .select({
+          id: agents.id,
+          userId: agents.userId,
+          status: agents.status,
+          capital: agents.capital,
+          riskPosture: agents.risk,
+          executionDefaults: agents.executionDefaults,
+        })
         .from(agents)
         .where(eq(agents.id, agentId));
 
@@ -66,7 +77,12 @@ export async function grantConnection(
 
       // Verify connection ownership and activeness
       const [conn] = await tx
-        .select({ id: connections.id, userId: connections.userId, status: connections.status })
+        .select({
+          id: connections.id,
+          userId: connections.userId,
+          status: connections.status,
+          venueAccountId: connections.resolvedVenueAccountId,
+        })
         .from(connections)
         .where(eq(connections.id, connectionId));
 
@@ -98,8 +114,26 @@ export async function grantConnection(
         return { kind: 'already_granted' as const }; // Idempotent
       }
 
+      const priorConnections = await loadActiveTradingProfileConnections(tx as unknown as Database, agentId);
       const now = new Date();
       const acId = crypto.randomUUID();
+      await reconcileTradingProfile({
+        prior: {
+          config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
+          connections: priorConnections,
+        },
+        proposed: {
+          config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
+          connections: [...priorConnections, {
+            connectionId: conn.id,
+            venueAccountId: conn.venueAccountId,
+            active: true,
+            ready: conn.status === 'active',
+            grantedAt: now,
+            assignmentId: acId,
+          }],
+        },
+      });
 
       await tx.insert(agentConnections).values({
         id: acId,
@@ -176,7 +210,14 @@ export async function revokeConnection(
     const result = await db.transaction(async (tx) => {
       // Verify agent exists
       const [agent] = await tx
-        .select({ id: agents.id, userId: agents.userId, status: agents.status })
+        .select({
+          id: agents.id,
+          userId: agents.userId,
+          status: agents.status,
+          capital: agents.capital,
+          riskPosture: agents.risk,
+          executionDefaults: agents.executionDefaults,
+        })
         .from(agents)
         .where(eq(agents.id, agentId));
 
@@ -223,6 +264,18 @@ export async function revokeConnection(
       if (!activeRow) {
         return { kind: 'already_revoked' as const }; // Idempotent
       }
+
+      const priorConnections = await loadActiveTradingProfileConnections(tx as unknown as Database, agentId);
+      await reconcileTradingProfile({
+        prior: {
+          config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
+          connections: priorConnections,
+        },
+        proposed: {
+          config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
+          connections: priorConnections.filter((connection) => connection.connectionId !== connectionId),
+        },
+      });
 
       const now = new Date();
 

@@ -6,6 +6,22 @@ import type { AlertsConfig } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { Redis } from 'ioredis';
 
+vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
+  loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
+  reconcileTradingProfile: vi.fn().mockResolvedValue({
+    upserts: [],
+    clears: [],
+    selectedBinding: { previous: null, next: null },
+    inverseActions: [],
+  }),
+}));
+
+import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
+import { planTradingProfileReconciliation } from '../agents/trading-profile-reconciliation.js';
+
 const TEST_USER_ID = 'user-1';
 const AGENT_ID = 'agent-1';
 
@@ -102,11 +118,49 @@ function buildAlertsConfig(telegramOverrides: Partial<AlertsConfig['telegram']> 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+  vi.mocked(reconcileTradingProfile).mockResolvedValue({
+    upserts: [],
+    clears: [],
+    selectedBinding: { previous: null, next: null },
+    inverseActions: [],
+  });
 });
 
 // ─── PUT /agents/:id ──────────────────────────────────────────────────────
 
 describe('PUT /agents/:id', () => {
+  it('reconciles active bindings when execution defaults are null', async () => {
+    const connectedAgent = { ...stubAgent, executionDefaults: null, risk: null, capital: null };
+    const db = buildAgentDb(connectedAgent);
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([{
+      connectionId: 'connection-1',
+      venueAccountId: 'venue-account-1',
+      active: true,
+      ready: true,
+      grantedAt: new Date('2026-01-01T00:00:00.000Z'),
+      assignmentId: 'assignment-1',
+    }]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(app, db, buildMockRedis());
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/agents/${AGENT_ID}`,
+      payload: { name: 'Updated', prompt: 'New prompt' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(loadActiveTradingProfileConnections).toHaveBeenCalledWith(db, AGENT_ID);
+    const reconciliationInput = vi.mocked(reconcileTradingProfile).mock.calls[0]![0];
+    const plan = planTradingProfileReconciliation(reconciliationInput);
+    expect(plan.selectedBinding).toEqual({
+      previous: { connectionId: 'connection-1', venueAccountId: 'venue-account-1' },
+      next: { connectionId: 'connection-1', venueAccountId: 'venue-account-1' },
+    });
+  });
+
   it('returns 200 when agent is stopped and body is complete', async () => {
     let selectCount = 0;
     const db = {

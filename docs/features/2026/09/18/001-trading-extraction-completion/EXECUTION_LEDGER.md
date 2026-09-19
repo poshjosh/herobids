@@ -29,7 +29,7 @@ scope and ordering.
 
 | Item | Status | Prerequisites / required evidence | Implementation commits | Verification evidence | Blockers / notes |
 |---|---|---|---|---|---|
-| C1a | planned | ADR 013; plan-review corrections incorporated | — | — | Snapshot, selected-binding, and reconciliation planner only |
+| C1a | in progress | ADR 013; plan-review corrections incorporated; authorization recorded 2026-09-19; starting SHAs `herobids=f3e9f672e9fb4b217c50f282935636d4cff5ae1d`, `traderton=2f2dda4f9999ba34a4f2b7e7c9464f77d093387e` | — | — | Snapshot, selected-binding, and reconciliation planner only |
 | C1 | planned | ADRs 010/013; C1a verified; both repo start SHAs | — | — | Full snapshot, selected-binding, signed-agent tools, durable saga, echo cut-over |
 | C2.3 | planned | ADR 011; exact mirror manifest and mandatory dual-checkout CI design | — | — | Assertion-only; no runtime authority |
 | C2.1/C2.2 | planned | C1 verified; C2.3 verified | — | — | Boundary defaults before local enforcement removal |
@@ -51,4 +51,19 @@ Broader validation:
 UAT rows (when UI changes):
 Residual risks / blockers:
 Next allowed item:
+```
+
+## Batch Records
+
+```text
+Date: 2026-09-19
+Item / batch: C1a — trading-profile write-path consolidation
+Starting SHAs: herobids=f3e9f672e9fb4b217c50f282935636d4cff5ae1d, traderton=2f2dda4f9999ba34a4f2b7e7c9464f77d093387e
+Scope completed: In progress; implementation delegated.
+Commits: —
+Focused validation: —
+Broader validation: —
+UAT rows (when UI changes): Not applicable.
+Residual risks / blockers: None at authorization; no C1 boundary calls or persistent profile store may be introduced.
+Next allowed item: C1a implementation and review only.
 ```

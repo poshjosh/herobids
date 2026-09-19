@@ -15,6 +15,10 @@ import type { AgentRiskDefaultsConfig, AgentApprovalsConfig, AlertsConfig, AuthC
 import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
+import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
 import {
   parseSlashCommand,
@@ -266,6 +270,34 @@ export async function agentInteractivityRoutes(
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
+
+    const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
+    const proposedRiskPosture = rawMaxDrawdownPct !== undefined
+      ? { ...riskPosture, maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null }
+      : agent.risk ?? null;
+    const proposedExecutionDefaults = executionMode.value !== null
+      ? { ...((agent.executionDefaults as Record<string, unknown> | null) ?? {}), mode: executionMode.value }
+      : agent.executionDefaults ?? null;
+    await reconcileTradingProfile({
+      prior: {
+        config: {
+          actorId: id,
+          capital: agent.capital ?? null,
+          riskPosture: agent.risk ?? null,
+          executionDefaults: agent.executionDefaults ?? null,
+        },
+        connections: priorProfileConnections,
+      },
+      proposed: {
+        config: {
+          actorId: id,
+          capital: agentUpdates.capital === undefined ? agent.capital ?? null : agentUpdates.capital,
+          riskPosture: proposedRiskPosture as never,
+          executionDefaults: proposedExecutionDefaults as never,
+        },
+        connections: priorProfileConnections,
+      },
+    });
 
     await db.update(agents).set({
       ...agentUpdates,

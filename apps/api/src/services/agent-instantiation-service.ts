@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { Database } from '@herobids/db';
 import { agents, agentSkills } from '@herobids/db';
 import type { AgentBlueprintRevisionPayload, RiskPosture } from '@herobids/domain';
+import { reconcileTradingProfile } from '../agents/trading-profile-reconciliation-adapter.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +107,22 @@ export async function createAgentFromPayload(
   const unifiedConfig = buildUnifiedConfigFromPayload(payload, riskOverride);
 
   const riskJsonb = (riskOverride ?? payload.risk ?? null) as RiskPosture | null;
+
+  await reconcileTradingProfile({
+    prior: {
+      config: { actorId: agentId, capital: null, riskPosture: null, executionDefaults: null },
+      connections: [],
+    },
+    proposed: {
+      config: {
+        actorId: agentId,
+        capital: payload.capital != null ? String(payload.capital) : null,
+        riskPosture: riskJsonb,
+        executionDefaults: payload.executionDefaults ?? null,
+      },
+      connections: [],
+    },
+  });
 
   await tx.insert(agents).values({
     id: agentId,

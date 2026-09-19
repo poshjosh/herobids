@@ -11,6 +11,10 @@ import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
 import {
+  loadActiveTradingProfileConnections,
+  reconcileTradingProfile,
+} from '../agents/trading-profile-reconciliation-adapter.js';
+import {
   providerAllowsCredential,
   providerRequiresCredential,
   providerSupportsConnections,
@@ -443,11 +447,41 @@ export async function connectionRoutes(
 
     // Capture affected agents before we flip agent_connections to revoked.
     const affectedAgents = await db
-      .select({ agentId: agentConnections.agentId })
+      .select({
+        agentId: agentConnections.agentId,
+        capital: agents.capital,
+        riskPosture: agents.risk,
+        executionDefaults: agents.executionDefaults,
+      })
       .from(agentConnections)
+      .innerJoin(agents, eq(agentConnections.agentId, agents.id))
       .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')));
 
     const now = new Date();
+
+    for (const agent of affectedAgents) {
+      const priorConnections = await loadActiveTradingProfileConnections(db, agent.agentId);
+      await reconcileTradingProfile({
+        prior: {
+          config: {
+            actorId: agent.agentId,
+            capital: agent.capital,
+            riskPosture: agent.riskPosture,
+            executionDefaults: agent.executionDefaults,
+          },
+          connections: priorConnections,
+        },
+        proposed: {
+          config: {
+            actorId: agent.agentId,
+            capital: agent.capital,
+            riskPosture: agent.riskPosture,
+            executionDefaults: agent.executionDefaults,
+          },
+          connections: priorConnections.filter((connection) => connection.connectionId !== id),
+        },
+      });
+    }
 
     // Mark all agent grants for this connection as revoked so that a
     // subsequent hard-delete is not blocked by still-active grants.
