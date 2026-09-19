@@ -124,13 +124,12 @@ export async function grantConnection(
         },
         proposed: {
           config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
-          connections: [...priorConnections, {
+          connections: [...priorConnections.map((connection) => ({ ...connection, isDefault: false })), {
             connectionId: conn.id,
             venueAccountId: conn.venueAccountId,
             active: true,
             ready: conn.status === 'active',
-            grantedAt: now,
-            assignmentId: acId,
+            isDefault: true,
           }],
         },
       });

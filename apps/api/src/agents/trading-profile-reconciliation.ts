@@ -17,8 +17,7 @@ export interface TradingProfileConnection {
   venueAccountId: string | null;
   active: boolean;
   ready: boolean;
-  grantedAt: Date;
-  assignmentId: string;
+  isDefault: boolean;
 }
 
 export interface TradingProfileConfiguration {
@@ -90,17 +89,14 @@ export function buildTradingProfileSnapshots(
   return [...snapshotsByVenueAccountId.values()];
 }
 
-/** Selects one ready direct-execution binding using the runtime grant ordering. */
+/** Selects one ready direct-execution binding using the runtime descriptor rule. */
 export function selectExecutionBinding(connections: TradingProfileConnection[]): ExecutionBinding | null {
   const readyConnections = connections.filter(
     (connection): connection is TradingProfileConnection & { venueAccountId: string } => (
       connection.active && connection.ready && connection.venueAccountId !== null
     ),
   );
-  const selected = readyConnections.slice().sort((left, right) => {
-    const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
-    return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
-  })[0];
+  const selected = readyConnections.find((connection) => connection.isDefault) ?? readyConnections[0];
   return selected
     ? { connectionId: selected.connectionId, venueAccountId: selected.venueAccountId }
     : null;

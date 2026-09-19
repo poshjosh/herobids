@@ -486,16 +486,14 @@ describe('cloneAgentAsLive', () => {
         venueAccountId: 'venue-account-fallback',
         active: true,
         ready: true,
-        grantedAt: new Date('2026-01-01T00:00:00.000Z'),
-        assignmentId: 'assignment-a',
+        isDefault: false,
       },
       {
         connectionId: 'connection-default',
         venueAccountId: 'venue-account-default',
         active: true,
         ready: true,
-        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
-        assignmentId: 'assignment-b',
+        isDefault: true,
       },
     ];
     vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue(copiedConnections);

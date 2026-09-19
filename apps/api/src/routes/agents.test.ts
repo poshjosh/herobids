@@ -3469,14 +3469,12 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
     ]));
     const input = vi.mocked(reconcileTradingProfile).mock.calls[0]![0];
     const plan = planTradingProfileReconciliation(input);
-    const expected = input.proposed.connections
-      .slice()
-      .sort((left, right) => right.assignmentId.localeCompare(left.assignmentId))[0]!;
+    const expected = input.proposed.connections.find((connection) => connection.isDefault)!;
     expect(plan.selectedBinding.next).toEqual({
       connectionId: expected.connectionId,
       venueAccountId: expected.venueAccountId,
     });
-    expect(acInserts.map((row) => row['id']).sort()).toEqual(input.proposed.connections.map((connection) => connection.assignmentId).sort());
+    expect(acInserts.map((row) => row['connectionId']).sort()).toEqual(input.proposed.connections.map((connection) => connection.connectionId).sort());
   });
 
   it('returns 400 when a connectionId does not exist', async () => {

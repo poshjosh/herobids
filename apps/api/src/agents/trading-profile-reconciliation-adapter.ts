@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentConnections, connections } from '@herobids/db';
 import type {
@@ -21,7 +21,7 @@ export interface TradingProfileReconciliationInput {
 
 export type TradingProfilePlanWriter = (plan: TradingProfileReconciliationPlan) => void | Promise<void>;
 
-/** Loads active agent bindings in the same newest-grant-first order used for runtime selection. */
+/** Loads active agent bindings in the same order and with the same default as runtime selection. */
 export async function loadActiveTradingProfileConnections(
   db: Pick<Database, 'select'>,
   agentId: string,
@@ -34,16 +34,25 @@ export async function loadActiveTradingProfileConnections(
     connectionStatus: connections.status,
   }).from(agentConnections)
     .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
-    .where(and(eq(agentConnections.agentId, agentId), eq(agentConnections.status, 'active')))
-    .orderBy(desc(agentConnections.grantedAt), desc(agentConnections.id));
+    .where(and(eq(agentConnections.agentId, agentId), eq(agentConnections.status, 'active')));
+
+  const defaultAssignment = rows
+    .filter((row) => row.connectionStatus === 'active')
+    .sort((left, right) => {
+      const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
+      return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
+    })[0]
+    ?? rows.slice().sort((left, right) => {
+      const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
+      return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
+    })[0];
 
   return rows.map((row) => ({
     connectionId: row.connectionId,
     venueAccountId: row.venueAccountId,
     active: true,
     ready: row.connectionStatus === 'active',
-    grantedAt: row.grantedAt,
-    assignmentId: row.assignmentId,
+    isDefault: row.connectionId === defaultAssignment?.connectionId,
   }));
 }
 

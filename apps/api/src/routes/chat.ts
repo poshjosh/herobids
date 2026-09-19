@@ -1377,6 +1377,7 @@ export async function executeChatAction(
             venueAccountId: string | null;
             active: boolean;
             ready: boolean;
+            isDefault: boolean;
             grantedAt: Date;
             assignmentId: string;
           }> = [];
@@ -1420,9 +1421,16 @@ export async function executeChatAction(
               venueAccountId: connection.resolvedVenueAccountId,
               active: true,
               ready: connection.status === 'active',
+              isDefault: false,
               grantedAt: timestamp,
               assignmentId: uuid(),
             })));
+            const defaultAssignmentId = proposedConnections
+              .filter((connection) => connection.ready)
+              .sort((left, right) => right.assignmentId.localeCompare(left.assignmentId))[0]?.assignmentId;
+            for (const connection of proposedConnections) {
+              connection.isDefault = connection.assignmentId === defaultAssignmentId;
+            }
 
             await reconcileTradingProfile({
               prior: {
@@ -1436,7 +1444,13 @@ export async function executeChatAction(
                   riskPosture: createFields.risk,
                   executionDefaults: createFields.executionDefaults,
                 },
-                connections: proposedConnections,
+                connections: proposedConnections.map(({ connectionId, venueAccountId, active, ready, isDefault }) => ({
+                  connectionId,
+                  venueAccountId,
+                  active,
+                  ready,
+                  isDefault,
+                })),
               },
             });
           } else {

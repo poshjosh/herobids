@@ -39,9 +39,9 @@ describe('agent connection configuration reconciliation', () => {
     vi.clearAllMocks();
   });
 
-  it('plans an imperative grant using the exact newly inserted assignment as the newest binding', async () => {
+  it('plans an imperative grant as the runtime default binding', async () => {
     vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
-      { connectionId: 'connection-old', venueAccountId: 'venue-old', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-old' },
+      { connectionId: 'connection-old', venueAccountId: 'venue-old', active: true, ready: true, isDefault: true },
     ]);
     const db = buildDb([
       [agent],
@@ -55,8 +55,8 @@ describe('agent connection configuration reconciliation', () => {
     const input = vi.mocked(reconcileTradingProfile).mock.calls[0]![0];
     const plannedGrant = input.proposed.connections.find((connection) => connection.connectionId === 'connection-new')!;
     const insertedGrant = vi.mocked(db.insert).mock.results[0]!.value.values.mock.calls[0]![0] as Record<string, unknown>;
-    expect(insertedGrant.id).toBe(plannedGrant.assignmentId);
-    expect(insertedGrant.grantedAt).toBe(plannedGrant.grantedAt);
+    expect(insertedGrant.connectionId).toBe(plannedGrant.connectionId);
+    expect(plannedGrant.isDefault).toBe(true);
     expect(planTradingProfileReconciliation(input).selectedBinding.next).toEqual({
       connectionId: 'connection-new', venueAccountId: 'venue-new',
     });

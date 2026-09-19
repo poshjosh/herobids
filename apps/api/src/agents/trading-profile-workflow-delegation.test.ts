@@ -9,7 +9,7 @@ const apiSourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const profileSnapshotProperties = ['actorId', 'venueAccountId', 'capital', 'riskPosture', 'executionDefaults'];
 
 const activeBindingMutators = [
-  { path: 'routes/agents.ts', reconciliationCalls: 3 },
+  { path: 'routes/agents.ts', reconciliationCalls: 4 },
   { path: 'routes/chat.ts', reconciliationCalls: 2 },
   { path: 'routes/connections.ts', reconciliationCalls: 1 },
   { path: 'services/agent-config-service.ts', reconciliationCalls: 2 },
@@ -35,8 +35,7 @@ function connection(overrides: Partial<TradingProfileConnection>): TradingProfil
     venueAccountId: 'venue-account-1',
     active: true,
     ready: true,
-    grantedAt: new Date('2026-01-01T00:00:00.000Z'),
-    assignmentId: 'assignment-1',
+    isDefault: false,
     ...overrides,
   };
 }
@@ -83,7 +82,7 @@ function hasSelectedBindingComputation(contents: string): boolean {
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)
       && ts.isPropertyAccessExpression(node.expression)
-      && node.expression.name.text === 'sort') {
+      && node.expression.name.text === 'find') {
       let enclosingFunction: ts.Node | undefined = node;
       while (enclosingFunction && !ts.isFunctionLike(enclosingFunction)) {
         enclosingFunction = enclosingFunction.parent;
@@ -91,8 +90,7 @@ function hasSelectedBindingComputation(contents: string): boolean {
       const functionText = enclosingFunction?.getText(sourceFile) ?? '';
       if (/\.active\s*&&\s*\w+\.ready/.test(functionText)
         && /\.venueAccountId\s*!==\s*null/.test(functionText)
-        && /\.grantedAt/.test(functionText)
-        && /\.assignmentId/.test(functionText)
+        && /\.isDefault/.test(functionText)
         && /connectionId:/.test(functionText)
         && /venueAccountId:/.test(functionText)) {
         found = true;
@@ -102,6 +100,19 @@ function hasSelectedBindingComputation(contents: string): boolean {
   };
   visit(sourceFile);
   return found;
+}
+
+function countReconciliationCalls(contents: string): number {
+  const sourceFile = ts.createSourceFile('source.ts', contents, ts.ScriptTarget.Latest, true);
+  let count = 0;
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'reconcileTradingProfile') {
+      count++;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return count;
 }
 
 describe('trading profile workflow delegation', () => {
@@ -145,7 +156,7 @@ describe('trading profile workflow delegation', () => {
     for (const { path, reconciliationCalls } of activeBindingMutators) {
       const contents = productionSources.find((sourceFile) => sourceFile.path === path)?.contents;
       expect(contents, path).toBeDefined();
-      expect(contents!.match(/reconcileTradingProfile\(/g), path).toHaveLength(reconciliationCalls);
+      expect(countReconciliationCalls(contents!), path).toBe(reconciliationCalls);
     }
     for (const { path, status } of revokedOnlyMutators) {
       const contents = productionSources.find((sourceFile) => sourceFile.path === path)?.contents;

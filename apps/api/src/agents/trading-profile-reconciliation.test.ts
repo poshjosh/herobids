@@ -6,6 +6,7 @@ import {
   type TradingProfileAgentConfig,
   type TradingProfileConnection,
 } from './trading-profile-reconciliation.js';
+import { loadActiveTradingProfileConnections } from './trading-profile-reconciliation-adapter.js';
 
 const config: TradingProfileAgentConfig = {
   actorId: 'agent-1',
@@ -20,8 +21,7 @@ function connection(overrides: Partial<TradingProfileConnection>): TradingProfil
     venueAccountId: 'venue-account-1',
     active: true,
     ready: true,
-    grantedAt: new Date('2026-01-01T00:00:00.000Z'),
-    assignmentId: 'assignment-1',
+    isDefault: false,
     ...overrides,
   };
 }
@@ -37,23 +37,71 @@ describe('trading profile reconciliation', () => {
     }]);
   });
 
-  it('selects the newest ready binding, breaking equal grants by descending assignment ID', () => {
+  it('selects the ready default binding even when it follows another ready connection', () => {
     const bindings = [
-      connection({ connectionId: 'older', venueAccountId: 'account-older' }),
+      connection({ connectionId: 'first-ready', venueAccountId: 'account-first' }),
       connection({
-        connectionId: 'newer',
-        venueAccountId: 'account-newer',
-        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
-      }),
-      connection({
-        connectionId: 'tie-winner',
-        venueAccountId: 'account-tie-winner',
-        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
-        assignmentId: 'assignment-z',
+        connectionId: 'default-ready',
+        venueAccountId: 'account-default',
+        isDefault: true,
       }),
     ];
 
-    expect(selectExecutionBinding(bindings)).toEqual({ connectionId: 'tie-winner', venueAccountId: 'account-tie-winner' });
+    expect(selectExecutionBinding(bindings)).toEqual({ connectionId: 'default-ready', venueAccountId: 'account-default' });
+  });
+
+  it('selects the first ready binding when the default is not ready', () => {
+    const bindings = [
+      connection({ connectionId: 'first-ready', venueAccountId: 'account-first' }),
+      connection({
+        connectionId: 'default-not-ready',
+        venueAccountId: 'account-default',
+        ready: false,
+        isDefault: true,
+      }),
+      connection({ connectionId: 'later-ready', venueAccountId: 'account-later' }),
+    ];
+
+    expect(selectExecutionBinding(bindings)).toEqual({ connectionId: 'first-ready', venueAccountId: 'account-first' });
+  });
+
+  it('matches runtime default and first-ready fallback from adapter-loaded bindings', async () => {
+    const rows = [
+      {
+        assignmentId: 'assignment-first',
+        grantedAt: new Date('2026-01-01T00:00:00.000Z'),
+        connectionId: 'first-ready',
+        venueAccountId: 'account-first',
+        connectionStatus: 'active',
+      },
+      {
+        assignmentId: 'assignment-default',
+        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
+        connectionId: 'default-not-ready',
+        venueAccountId: null,
+        connectionStatus: 'active',
+      },
+      {
+        assignmentId: 'assignment-later',
+        grantedAt: new Date('2026-01-01T00:00:00.000Z'),
+        connectionId: 'later-ready',
+        venueAccountId: 'account-later',
+        connectionStatus: 'active',
+      },
+    ];
+    const query = {
+      from: () => ({
+        innerJoin: () => ({
+          where: () => Promise.resolve(rows),
+        }),
+      }),
+    };
+    const db = { select: () => query };
+
+    const connections = await loadActiveTradingProfileConnections(db as never, 'agent-1');
+
+    expect(connections.find((connection) => connection.isDefault)?.connectionId).toBe('default-not-ready');
+    expect(selectExecutionBinding(connections)).toEqual({ connectionId: 'first-ready', venueAccountId: 'account-first' });
   });
 
   it('plans binding removal, exact clears, and inverse restoration', () => {
@@ -90,7 +138,7 @@ describe('trading profile reconciliation', () => {
       connection({
         connectionId: 'connection-b',
         venueAccountId: 'venue-account-b',
-        grantedAt: new Date('2026-01-02T00:00:00.000Z'),
+        isDefault: true,
       }),
     ];
 

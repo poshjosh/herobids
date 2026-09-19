@@ -707,6 +707,7 @@ export async function agentRoutes(
           venueAccountId: string | null;
           active: boolean;
           ready: boolean;
+          isDefault: boolean;
           grantedAt: Date;
           assignmentId: string;
         }> = [];
@@ -762,10 +763,17 @@ export async function agentRoutes(
               venueAccountId: connection.resolvedVenueAccountId,
               active: true,
               ready: connection.status === 'active',
+              isDefault: false,
               grantedAt: now,
               assignmentId: crypto.randomUUID(),
             };
           });
+          const defaultAssignmentId = proposedConnections
+            .filter((connection) => connection.ready)
+            .sort((left, right) => right.assignmentId.localeCompare(left.assignmentId))[0]?.assignmentId;
+          for (const connection of proposedConnections) {
+            connection.isDefault = connection.assignmentId === defaultAssignmentId;
+          }
         }
 
         await reconcileTradingProfile({
@@ -780,7 +788,13 @@ export async function agentRoutes(
               riskPosture: riskJsonb,
               executionDefaults: executionDefaultsJsonb,
             },
-            connections: proposedConnections,
+            connections: proposedConnections.map(({ connectionId, venueAccountId, active, ready, isDefault }) => ({
+              connectionId,
+              venueAccountId,
+              active,
+              ready,
+              isDefault,
+            })),
           },
         });
 
@@ -1708,17 +1722,33 @@ export async function agentRoutes(
           const addedAt = new Date();
           const proposedProfileConnections = priorProfileConnections
             .filter((connection) => requestedConnectionIds.has(connection.connectionId));
+          const addedProfileConnections: Array<{
+            connectionId: string;
+            venueAccountId: string | null;
+            assignmentId: string;
+            grantedAt: Date;
+          }> = [];
           for (const connectionId of toAdd) {
             const connection = connById.get(connectionId)!;
-            proposedProfileConnections.push({
+            addedProfileConnections.push({
               connectionId,
               venueAccountId: connection.venueAccountId ?? null,
-              active: true,
-              ready: true,
               grantedAt: addedAt,
               assignmentId: crypto.randomUUID(),
             });
           }
+          const defaultAddedAssignmentId = addedProfileConnections
+            .sort((left, right) => right.assignmentId.localeCompare(left.assignmentId))[0]?.assignmentId;
+          const proposedPlannerConnections = [
+            ...proposedProfileConnections.map((connection) => ({ ...connection, isDefault: defaultAddedAssignmentId === undefined && connection.isDefault })),
+            ...addedProfileConnections.map((connection) => ({
+              connectionId: connection.connectionId,
+              venueAccountId: connection.venueAccountId,
+              active: true,
+              ready: true,
+              isDefault: connection.assignmentId === defaultAddedAssignmentId,
+            })),
+          ];
           await reconcileTradingProfile({
             prior: {
               config: {
@@ -1738,7 +1768,7 @@ export async function agentRoutes(
                   ? agent.executionDefaults ?? null
                   : executionDefaultsUpdateJsonb as never,
               },
-              connections: proposedProfileConnections,
+              connections: proposedPlannerConnections,
             },
           });
 
@@ -1746,7 +1776,7 @@ export async function agentRoutes(
 
           // Insert rows for newly added connections
           for (const cid of toAdd) {
-            const proposedConnection = proposedProfileConnections.find((connection) => connection.connectionId === cid)!;
+            const proposedConnection = addedProfileConnections.find((connection) => connection.connectionId === cid)!;
             const acId = proposedConnection.assignmentId;
             await tx.insert(agentConnections).values({
               id: acId,
