@@ -36,7 +36,7 @@ scope and ordering.
 | C2.1/C2.2 | planned | C1 verified; C2.3 verified | — | — | Boundary defaults before local enforcement removal |
 | C3a | implemented | ADR 014; C3 UAT rows updated before run | herobids=`a506d95ae428af902e9913bf0b9343ed0be53c0c` | 2026-09-19: focused generic capability tests passed (3/3); `pnpm --filter @herobids/web run typecheck`, `pnpm lint`, and `git diff --check` passed. AG-C05 passed. Dedicated visual-UAT attempt found no running web/API listener on ports 5173, 8080, or 3000. | Desktop/mobile AG-C01, AG-C03, and AG-C06 require a running stack and existing authenticated trading-capable/unavailable fixtures. Mark verified only after those UAT rows pass. |
 | C3b | planned | C1 verified; C3a verified; presentation API contract | — | — | Profile-backed response and updated UAT rows |
-| C4 | pending | ADR 012; A3 read path | — | — | Authorized 2026-09-19. Remove tool advertising from base prompt and registry. |
+| C4 | verified | ADR 012; A3 read path | pending C4 commit | 2026-09-19: focused domain/descriptor/prompt/boundary tests passed (230/230); creation/edit/assignment/fork tests passed (288/288); `pnpm lint` and `git diff --check` passed. The database-backed skill-reseed functional suite loaded but skipped all 6 tests because its database prerequisites are unavailable locally. | Complete after the pending C4 commit. |
 | C5 | planned | Every decided item verified | — | — | Five suites, two A8 runs, C3 UAT, final report |
 
 ## Per-Batch Record Template

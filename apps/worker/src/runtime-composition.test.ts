@@ -29,7 +29,13 @@ import {
   RUNTIME_CONTEXT_PROVIDERS,
 } from './runtime-composition.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
-import { EMPTY_JOB_DEFAULT_TEXT } from '@herobids/domain';
+import {
+  BASE_SKILL,
+  EMAIL_SKILL,
+  EMPTY_JOB_DEFAULT_TEXT,
+  TASK_MANAGEMENT_SKILL,
+  WEB_ACCESS_SKILL,
+} from '@herobids/domain';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -195,6 +201,70 @@ describe('runtime composition helpers', () => {
     expect(prompt).not.toContain('Daily loss limit:');
     expect(prompt).not.toContain('Max drawdown:');
     expect(prompt).not.toContain('Max concurrent bots:');
+  });
+
+  it('does not render trading-account tools or instructions for a personal-assistant fixture', () => {
+    const state = createRuntimeCompositionState({
+      ...baseDescriptor,
+      skillPresetId: 'personal-assistant',
+      resolvedSkills: [BASE_SKILL, TASK_MANAGEMENT_SKILL, WEB_ACCESS_SKILL, EMAIL_SKILL],
+      grantedConnectionsByFamily: {},
+      defaultConnectionByFamily: {},
+      readinessByFamily: {},
+      budgets: {
+        ...baseDescriptor.budgets,
+        maxVisibleToolSchemas: 100,
+      },
+    }, {
+      workspaceRoot: '/tmp/herobids-agent-workspaces/personal-assistant-1',
+    });
+    const prompt = buildSystemPrompt(state, createPromptTimingContext({
+      currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+      nominalTickIntervalMs: 900_000,
+      expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+    }));
+    const visibleTools = getVisibleToolNames(state);
+
+    expect(visibleTools).not.toContain('get_risk_limits');
+    expect(visibleTools).not.toContain('get_account_summary');
+    expect(prompt).not.toContain('get_risk_limits');
+    expect(prompt).not.toContain('get_account_summary');
+  });
+
+  it('renders trading-account tools and instructions from an explicitly trading-scoped custom skill', () => {
+    const state = createRuntimeCompositionState({
+      ...baseDescriptor,
+      resolvedSkills: [
+        BASE_SKILL,
+        {
+          id: 'custom-trading-reader',
+          name: 'Custom Trading Reader',
+          description: 'Reads trading account state.',
+          instructions: 'Use get_risk_limits and get_account_summary before reporting account state.',
+          requiredTools: ['get_risk_limits', 'get_account_summary'],
+          capabilityFamilies: ['trading'],
+          bindingRequirements: { trading: { minBindings: 1, requireReady: true } },
+          contextRequirements: [],
+          requiredContextBlocks: ['corePlatformContext', 'tradingContext'],
+          promptRendererHints: ['readiness-summary', 'trading'],
+          requiredGuardrails: [],
+          suggestedTickIntervalMs: 900_000,
+          visibility: 'private',
+        },
+      ],
+      budgets: { ...baseDescriptor.budgets, maxVisibleToolSchemas: 100 },
+    }, {
+      workspaceRoot: '/tmp/herobids-agent-workspaces/custom-trading-reader-1',
+    });
+    const prompt = buildSystemPrompt(state, createPromptTimingContext({
+      currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+      nominalTickIntervalMs: 900_000,
+      expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+    }));
+
+    expect(getVisibleToolNames(state)).toEqual(expect.arrayContaining(['get_risk_limits', 'get_account_summary']));
+    expect(prompt).toContain('get_risk_limits');
+    expect(prompt).toContain('get_account_summary');
   });
 
   it('renders workspace guidance when execute_code is available', () => {

@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Database } from './index.js';
 import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
-import { PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL } from '@herobids/domain';
+import {
+  EMAIL_SKILL,
+  FILE_MANAGEMENT_SKILL,
+  PROGRAMMING_SKILL,
+  TASK_MANAGEMENT_SKILL,
+  TRADING_SKILL,
+  WEB_ACCESS_SKILL,
+} from '@herobids/domain';
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -125,6 +132,93 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
     const skillIds = descriptor.resolvedSkills.map((skill) => skill.id);
     expect(skillIds).toContain('programming');
     expect(skillIds).toContain('file-management');
+  });
+
+  it('keeps trading-account tools out of a personal-assistant descriptor', async () => {
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1
+          ? [
+              createSkillRow({ skillId: TASK_MANAGEMENT_SKILL.id }),
+              createSkillRow({ skillId: WEB_ACCESS_SKILL.id }),
+              createSkillRow({ skillId: EMAIL_SKILL.id }),
+            ]
+          : []);
+      }),
+    } as unknown as Database;
+
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'personal-assistant-1');
+    const resolvedTools = descriptor.resolvedSkills.flatMap((skill) => skill.requiredTools);
+    const instructions = descriptor.resolvedSkills.map((skill) => skill.instructions).join('\n');
+
+    expect(descriptor.resolvedSkills.map((skill) => skill.id)).toEqual([
+      'base',
+      'task-management',
+      'web-access',
+      'email',
+    ]);
+    expect(resolvedTools).not.toContain('get_risk_limits');
+    expect(resolvedTools).not.toContain('get_account_summary');
+    expect(instructions).not.toContain('get_risk_limits');
+    expect(instructions).not.toContain('get_account_summary');
+  });
+
+  it('retains trading-account tools when resolving the trading skill', async () => {
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1 ? [createSkillRow({ skillId: TRADING_SKILL.id })] : []);
+      }),
+    } as unknown as Database;
+
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'trading-agent-1');
+    const tradingSkill = descriptor.resolvedSkills.find((skill) => skill.id === 'trading')!;
+
+    expect(tradingSkill.requiredTools).toContain('get_risk_limits');
+    expect(tradingSkill.requiredTools).toContain('get_account_summary');
+    expect(tradingSkill.instructions).toContain('get_risk_limits');
+    expect(tradingSkill.instructions).toContain('get_account_summary');
+  });
+
+  it('resolves both trading-account tools for an assigned trading-scoped custom skill', async () => {
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1 ? [createSkillRow({
+          skillId: 'custom-trading-reader',
+          requiredTools: ['get_risk_limits', 'get_account_summary'],
+          capabilityFamilies: ['trading'],
+          instructions: 'Read the trading account before making recommendations.',
+        })] : []);
+      }),
+    } as unknown as Database;
+
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-with-custom-skill');
+    const customSkill = descriptor.resolvedSkills.find((skill) => skill.id === 'custom-trading-reader')!;
+
+    expect(customSkill.requiredTools).toEqual(['get_risk_limits', 'get_account_summary']);
+    expect(customSkill.capabilityFamilies).toEqual(['trading']);
+  });
+
+  it('fails closed for an assigned custom skill with unscoped trading-account tools', async () => {
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1 ? [createSkillRow({
+          skillId: 'legacy-custom-reader',
+          requiredTools: ['get_risk_limits', 'get_account_summary'],
+        })] : []);
+      }),
+    } as unknown as Database;
+
+    await expect(resolveRuntimeCapabilityDescriptor(db, 'agent-with-legacy-custom-skill'))
+      .rejects
+      .toThrow('Skill legacy-custom-reader requires trading capability for: get_risk_limits, get_account_summary');
   });
 
   it('fails loudly for unknown required tools in stored skill rows', async () => {

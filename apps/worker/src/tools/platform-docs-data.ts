@@ -2379,7 +2379,7 @@ Use find_instrument to resolve an instrumentId by symbol, name, or pair before c
     content: `
 Risk Monitoring skill (id: risk-monitoring) — watches positions and alerts on drawdowns.
 
-Required tools: send_message, publish_artifact, list_positions, get_analytics, get_price, watch_token, list_watches, remove_watch, resolve_watch, check_watches, get_risk_limits, adjust_risk_limits.
+Required tools: send_message, publish_artifact, list_positions, get_analytics, get_price, watch_token, list_watches, remove_watch, resolve_watch, check_watches, get_risk_limits, get_account_summary, adjust_risk_limits.
 
 Capability families: trading.
 
@@ -2393,6 +2393,7 @@ Instructions:
 - Use send_message to alert the user.
 - Use publish_artifact to publish structured monitoring outputs.
 - Use get_risk_limits to inspect effective risk limits.
+- Use get_account_summary to inspect usable capital, equity, open positions, and P&L when assessing portfolio-level risk.
 - Use adjust_risk_limits to adjust mutable risk limits within operator ceilings.
 `,
     headings: ['Required tools', 'Instructions'],

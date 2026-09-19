@@ -62,6 +62,8 @@ const PublishSkillSchema = z.object({
   revisionId: z.string().min(1).optional(),
 });
 
+const TRADING_ACCOUNT_TOOLS = ['get_risk_limits', 'get_account_summary'] as const;
+
 function buildUnknownToolValidationError(requiredTools: string[]) {
   const unknownTools = findUnknownSkillTools(requiredTools);
   if (unknownTools.length === 0) {
@@ -77,6 +79,26 @@ function buildUnknownToolValidationError(requiredTools: string[]) {
       params: {
         issueCode: 'skills.unknown_required_tools',
         unknownTools,
+      },
+    }],
+  };
+}
+
+function buildTradingCapabilityValidationError(requiredTools: string[], capabilityFamilies: string[]) {
+  const scopedTools = TRADING_ACCOUNT_TOOLS.filter((tool) => requiredTools.includes(tool));
+  if (scopedTools.length === 0 || capabilityFamilies.includes('trading')) {
+    return null;
+  }
+
+  return {
+    error: 'validation_error',
+    details: [{
+      code: 'custom',
+      path: ['capabilityFamilies'],
+      message: `requiredTools ${scopedTools.join(', ')} require the trading capability family`,
+      params: {
+        issueCode: 'skills.trading_account_tools_require_trading_capability',
+        requiredTools: scopedTools,
       },
     }],
   };
@@ -820,6 +842,13 @@ export async function skillsRoutes(
     if (unknownToolError) {
       return reply.status(400).send(unknownToolError);
     }
+    const tradingCapabilityError = buildTradingCapabilityValidationError(
+      parsed.data.requiredTools,
+      parsed.data.capabilityFamilies,
+    );
+    if (tradingCapabilityError) {
+      return reply.status(400).send(tradingCapabilityError);
+    }
 
     const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
     if (parsed.data.priceCents > 0 && !planPolicy.canPriceSkills) {
@@ -1003,6 +1032,14 @@ export async function skillsRoutes(
       : null;
     if (!currentRevision) {
       return reply.status(409).send({ error: 'invalid_state', message: 'Skill has no current revision' });
+    }
+
+    const tradingCapabilityError = buildTradingCapabilityValidationError(
+      parsed.data.requiredTools ?? currentRevision.requiredTools,
+      parsed.data.capabilityFamilies ?? currentRevision.capabilityFamilies,
+    );
+    if (tradingCapabilityError) {
+      return reply.status(400).send(tradingCapabilityError);
     }
 
     const contentChanged = hasContentChange(currentRevision, parsed.data);
@@ -1271,6 +1308,13 @@ export async function skillsRoutes(
     const unknownToolError = buildUnknownToolValidationError(sourceRevision.requiredTools);
     if (unknownToolError) {
       return reply.status(400).send(unknownToolError);
+    }
+    const tradingCapabilityError = buildTradingCapabilityValidationError(
+      sourceRevision.requiredTools,
+      sourceRevision.capabilityFamilies,
+    );
+    if (tradingCapabilityError) {
+      return reply.status(400).send(tradingCapabilityError);
     }
 
     const publication = resolveCreationPublicationStatus(

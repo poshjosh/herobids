@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ToolContext, TradertonReadResult } from '@herobids/domain';
+import { TRADING_SKILL, type ToolContext, type TradertonReadResult } from '@herobids/domain';
 import { accountTools } from './account.js';
 
 const getAccountSummary = accountTools.find((t) => t.name === 'get_account_summary')!;
@@ -40,6 +40,7 @@ describe('get_account_summary — Traderton boundary', () => {
 
     const result = await getAccountSummary.execute({}, ctx);
 
+    expect(TRADING_SKILL.requiredTools).toContain('get_account_summary');
     expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ ok: true, capital: '10000' });

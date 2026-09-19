@@ -79,13 +79,21 @@ describe('BASE_SKILL', () => {
     // Ensure adding skill tools did not remove pre-existing core tools
     const corePreviousTools = [
       'send_message', 'publish_artifact', 'set_memory', 'get_memory',
-      'list_memory_keys', 'delete_memory', 'get_risk_limits',
-      'get_account_summary', 'get_schema',
+      'list_memory_keys', 'delete_memory', 'get_schema',
     ];
     for (const tool of corePreviousTools) {
       expect(BASE_SKILL.requiredTools).toContain(tool);
     }
   });
+
+  it.each(['get_risk_limits', 'get_account_summary'])(
+    'does not advertise trading-account tool %s',
+    (toolName) => {
+      expect(BASE_SKILL.requiredTools).not.toContain(toolName);
+      expect(BASE_SKILL.instructions).not.toContain(toolName);
+      expect(BASE_SKILL.description).not.toContain(toolName);
+    },
+  );
 });
 
 describe('EMAIL_SKILL', () => {
@@ -110,6 +118,24 @@ describe('TRADING_SKILL', () => {
   it('requires change_strategy_preset tool', () => {
     expect(TRADING_SKILL.requiredTools).toContain('change_strategy_preset');
   });
+
+  it.each(['get_risk_limits', 'get_account_summary'])(
+    'retains trading-account tool %s',
+    (toolName) => {
+      expect(TRADING_SKILL.requiredTools).toContain(toolName);
+      expect(TRADING_SKILL.instructions).toContain(toolName);
+    },
+  );
+});
+
+describe('RISK_MONITORING_SKILL', () => {
+  it.each(['get_risk_limits', 'get_account_summary'])(
+    'includes trading-account tool %s for portfolio risk assessment',
+    (toolName) => {
+      expect(RISK_MONITORING_SKILL.requiredTools).toContain(toolName);
+      expect(RISK_MONITORING_SKILL.instructions).toContain(toolName);
+    },
+  );
 });
 
 describe('SYSTEM_SKILLS', () => {

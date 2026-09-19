@@ -160,6 +160,7 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
       'remove_watch',
       'check_watches',
       'get_risk_limits',
+      'get_account_summary',
       'adjust_risk_limits',
       'resolve_watch',
     ]);

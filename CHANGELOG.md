@@ -12,6 +12,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Capability-scoped account tools (C4).** `get_risk_limits` and `get_account_summary` are no longer advertised by the base skill; they are restricted to trading and risk-monitoring skills. Custom skills must explicitly declare the trading capability to use either tool, and malformed legacy revisions fail closed.
+
 - **Generic capability presentation (C3a).** Agent list, summary, and detail surfaces now show lifecycle and capability readiness only. Trading attributes, feeds, funding guidance, and approval context render inside the trading capability view through reusable capability attribute/feed components; unavailable connections show no adapter-backed trading data.
 
 - **Boundary risk/account reads restored (A3, Option X).** Traderton now constructs `riskContractOps` in the boundary context factory behind a single `RiskSource` seam (payload-sourced for now; one-adapter swap when the B1 profile store lands), restoring `get_risk_limits` and `get_account_summary` over the boundary. The herobids platform attaches the risk spec to these read calls post-LLM from the `agents` row (reusing the `buildSubmitDecisionPayload` stamping); the spec fields are hidden from LLM-facing tool schemas. `adjust_risk_limits` fails closed with a typed `precondition.not_ready` until B1 gives the write a durable home.

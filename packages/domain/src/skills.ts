@@ -67,7 +67,7 @@ export const BASE_SKILL: SkillDefinition = {
   id: 'base',
   slug: 'system/base',
   name: 'Base',
-  description: 'Core tools: memory, messaging, cost tracking, schema fetching, and account summary. Auto-injected into every agent.',
+  description: 'Core tools: memory, messaging, cost tracking, and schema fetching. Auto-injected into every agent.',
   instructions: `You have access to core tools.
 
 Use memory to remember information. For example, if you need find information from the past or set a reminder for the future, you can:
@@ -85,10 +85,8 @@ You can use skills to gain additional capabilities/expertise. For example, if yo
 You can also:
 - Use \`publish_artifact\` to publish structured outputs.
 - Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" to indicate urgency; "routine" is the default. Use contextRef to link the message to a specific context. Use \`send_email\` for email delivery.
-- Use \`get_risk_limits\` to inspect your effective risk limits, including which are mutable and which are locked by the creator.
-- Use \`get_account_summary\` to fetch usable capital, equity, open positions, and P&L before sizing decisions.
 - Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.`,
-  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_risk_limits', 'get_account_summary', 'get_schema', 'list_skills', 'add_skills', 'remove_skills', 'search_skills'],
+  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'add_skills', 'remove_skills', 'search_skills'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -200,8 +198,9 @@ export const RISK_MONITORING_SKILL: SkillDefinition = {
 - Use \`send_message\` to alert the user.
 - Use \`publish_artifact\` to publish structured monitoring outputs.
 - Use \`get_risk_limits\` to inspect effective risk limits and sources.
+- Use \`get_account_summary\` to inspect usable capital, equity, open positions, and P&L when assessing portfolio-level risk.
 - Use \`adjust_risk_limits\` to adjust mutable risk limits within operator ceilings.`,
-  requiredTools: ['send_message', 'publish_artifact', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'resolve_watch', 'check_watches', 'get_risk_limits', 'adjust_risk_limits'],
+  requiredTools: ['send_message', 'publish_artifact', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'resolve_watch', 'check_watches', 'get_risk_limits', 'get_account_summary', 'adjust_risk_limits'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {

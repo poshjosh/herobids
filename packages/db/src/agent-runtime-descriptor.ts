@@ -19,6 +19,8 @@ const SYSTEM_SKILLS_BY_ID: Record<string, SkillDefinition> = Object.fromEntries(
   [BASE_SKILL, ...SYSTEM_SKILLS].map((skill) => [skill.id, skill]),
 );
 
+const TRADING_ACCOUNT_TOOLS = ['get_risk_limits', 'get_account_summary'] as const;
+
 function assertKnownRequiredTools(skillId: string, requiredTools: string[]): string[] {
   const unknownTools = findUnknownSkillTools(requiredTools);
   if (unknownTools.length > 0) {
@@ -150,6 +152,12 @@ function inferSkillFromRevisionRow(row: {
     ? row.capabilityFamilies
     : inferredTradingCapability ? ['trading'] : [];
   const hasTrading = capabilityFamilies.includes('trading');
+  const unscopedTradingAccountTools = TRADING_ACCOUNT_TOOLS.filter((tool) => requiredTools.includes(tool));
+  if (unscopedTradingAccountTools.length > 0 && !hasTrading) {
+    throw new Error(
+      `Skill ${row.skillId} requires trading capability for: ${unscopedTradingAccountTools.join(', ')}`,
+    );
+  }
   const requiredContextBlocks = ['corePlatformContext', ...(hasTrading ? ['tradingContext'] : [])];
 
   return {

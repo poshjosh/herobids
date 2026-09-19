@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ToolContext, ResolvedAgentRiskContract } from '@herobids/domain';
+import { TRADING_SKILL, type ToolContext, type ResolvedAgentRiskContract } from '@herobids/domain';
 import { riskLimitsTools } from './risk-limits.js';
 
 const getRiskLimitsTool = riskLimitsTools.find((t) => t.name === 'get_risk_limits')!;
@@ -71,6 +71,7 @@ describe('get_risk_limits tool', () => {
 
     const result = await getRiskLimitsTool.execute({}, ctx);
 
+    expect(TRADING_SKILL.requiredTools).toContain('get_risk_limits');
     expect(invoke).toHaveBeenCalledWith({ toolName: 'get_risk_limits', payload: {} });
     expect(getContract).not.toHaveBeenCalled(); // boundary sourced, not in-process
     expect(result.success).toBe(true);

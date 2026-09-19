@@ -100,6 +100,236 @@ beforeEach(() => {
 });
 
 describe('skillsRoutes (normalized contract)', () => {
+  it.each(['get_risk_limits', 'get_account_summary'])(
+    'rejects creating a custom skill with %s unless it is trading-capability-scoped',
+    async (toolName) => {
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/skills',
+        payload: {
+          name: 'Unscoped Account Reader',
+          description: 'Reads account state',
+          instructions: 'Read account state.',
+          requiredTools: [toolName],
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({
+        error: 'validation_error',
+        details: [expect.objectContaining({
+          path: ['capabilityFamilies'],
+          params: expect.objectContaining({
+            issueCode: 'skills.trading_account_tools_require_trading_capability',
+            requiredTools: [toolName],
+          }),
+        })],
+      });
+    },
+  );
+
+  it('allows a custom skill to use both account tools when explicitly trading-capability-scoped', async () => {
+    const createdRow = {
+      id: 'trading-reader',
+      authorId: TEST_USER_ID,
+      publicationStatus: 'published',
+      priceCents: 0,
+      likeCount: 0,
+      forkCount: 0,
+      popularityScore: 0,
+      trendingScore: 0,
+      currentRevisionId: 'trading-reader-rev-1',
+      name: 'Trading Reader',
+      description: 'Reads trading account state',
+      instructions: 'Read trading account state.',
+      requiredTools: ['get_risk_limits', 'get_account_summary'],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: ['trading'],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    let selectCalls = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCalls += 1;
+        if (selectCalls === 1) return makeChain([{ username: 'testuser' }]);
+        if (selectCalls === 2) return makeChain([createdRow]);
+        return makeChain([]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills',
+      payload: {
+        name: 'Trading Reader',
+        description: 'Reads trading account state',
+        instructions: 'Read trading account state.',
+        requiredTools: ['get_risk_limits', 'get_account_summary'],
+        capabilityFamilies: ['trading'],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(expect.objectContaining({
+      requiredTools: ['get_risk_limits', 'get_account_summary'],
+      capabilityFamilies: ['trading'],
+    }));
+  });
+
+  it.each(['get_risk_limits', 'get_account_summary'])(
+    'rejects editing a custom skill to add %s without trading capability',
+    async (toolName) => {
+      const skill = { id: 'skill-1', authorId: TEST_USER_ID, currentRevisionId: 'revision-1', priceCents: 0 };
+      const revision = {
+        id: 'revision-1',
+        requiredTools: [],
+        capabilityFamilies: [],
+      };
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          return makeChain(selectCalls === 1 ? [skill] : [revision]);
+        }),
+      } as unknown as Database;
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig());
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/skills/skill-1',
+        payload: { requiredTools: [toolName] },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({
+        error: 'validation_error',
+        details: [expect.objectContaining({
+          params: expect.objectContaining({
+            issueCode: 'skills.trading_account_tools_require_trading_capability',
+            requiredTools: [toolName],
+          }),
+        })],
+      });
+    },
+  );
+
+  it.each(['get_risk_limits', 'get_account_summary'])(
+    'rejects forking a legacy source skill with %s outside the trading capability',
+    async (toolName) => {
+      const source = {
+        id: 'source-skill',
+        authorId: null,
+        currentRevisionId: 'source-revision',
+      };
+      const sourceRevision = {
+        id: 'source-revision',
+        skillId: source.id,
+        requiredTools: [toolName],
+        capabilityFamilies: [],
+      };
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1 || selectCalls === 2 || selectCalls === 6) return makeChain([selectCalls === 1 ? source : sourceRevision]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig());
+
+      const res = await app.inject({ method: 'POST', url: `/skills/${source.id}/fork` });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({
+        error: 'validation_error',
+        details: [expect.objectContaining({
+          path: ['capabilityFamilies'],
+          params: expect.objectContaining({
+            issueCode: 'skills.trading_account_tools_require_trading_capability',
+            requiredTools: [toolName],
+          }),
+        })],
+      });
+      expect(insertedValues).toEqual([]);
+    },
+  );
+
+  it('allows forking a trading-scoped source skill with account tools', async () => {
+    const source = {
+      id: 'source-skill',
+      authorId: null,
+      currentRevisionId: 'source-revision',
+    };
+    const sourceRevision = {
+      id: 'source-revision',
+      skillId: source.id,
+      version: 1,
+      name: 'Trading Reader',
+      description: 'Reads trading account state',
+      instructions: 'Read trading account state.',
+      promptHint: null,
+      promptTemplate: null,
+      requiredTools: ['get_risk_limits', 'get_account_summary'],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: ['trading'],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+    };
+    const forked = {
+      ...source,
+      id: 'forked-skill',
+      authorId: TEST_USER_ID,
+      currentRevisionId: 'forked-revision',
+    };
+    const forkedRevision = { ...sourceRevision, id: 'forked-revision', skillId: forked.id };
+    let selectCalls = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCalls += 1;
+        const rowsByCall: Record<number, unknown[]> = {
+          1: [source],
+          2: [sourceRevision],
+          6: [sourceRevision],
+          7: [{ username: 'testuser' }],
+          8: [forked],
+          9: [forkedRevision],
+        };
+        return makeChain(rowsByCall[selectCalls] ?? []);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({ method: 'POST', url: `/skills/${source.id}/fork` });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(expect.objectContaining({
+      requiredTools: ['get_risk_limits', 'get_account_summary'],
+      capabilityFamilies: ['trading'],
+    }));
+  });
+
   it('auto-publishes non-draft skills for the free plan on create', async () => {
     const createdRow = {
       id: 'skill-created',
