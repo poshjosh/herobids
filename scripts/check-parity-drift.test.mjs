@@ -52,6 +52,7 @@ test('rejects altered required authority classifications', () => {
     for (const [id, authority] of [
       ['agent-risk-defaults', 'mirror-only'],
       ['strategy-preset-economy', 'traderton'],
+      ['domain-agent-risk-contract', 'mirror-only'],
     ]) {
       const paths = fixture();
       const manifest = JSON.parse(readFileSync(paths.manifestPath, 'utf8'));

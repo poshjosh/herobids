@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: poshjosh/traderton
-          ref: 963d1a5399256030f6bca6ef3db0308667dc8bed
+          ref: 485c31c16180d30cf77fe330bf84e4a1c26b06da
           path: traderton
       - uses: actions/setup-node@v4
         with:
