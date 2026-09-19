@@ -22,7 +22,7 @@ function makeCtx(opts: {
   agentRepo?: ToolContext['agentRepo'];
   tradertonWriteBoundary?: ToolContext['tradertonWriteBoundary'];
   tradertonBoundary?: ToolContext['tradertonBoundary'];
-  agentRiskSpecResolver?: ToolContext['agentRiskSpecResolver'];
+  selectedVenueAccountResolver?: ToolContext['selectedVenueAccountResolver'];
 } = {}): ToolContext {
   return {
     agentId: 'agent-1',
@@ -35,7 +35,7 @@ function makeCtx(opts: {
     agentRepo: opts.agentRepo,
     tradertonWriteBoundary: opts.tradertonWriteBoundary,
     tradertonBoundary: opts.tradertonBoundary,
-    agentRiskSpecResolver: opts.agentRiskSpecResolver,
+    selectedVenueAccountResolver: opts.selectedVenueAccountResolver,
   } as unknown as ToolContext;
 }
 
@@ -78,10 +78,7 @@ describe('get_risk_limits tool', () => {
     expect(result.data).toEqual(boundaryData);
   });
 
-  // A3: the PLATFORM attaches the risk spec (post-LLM, from the `agents` row via
-  // agentRiskSpecResolver) so traderton serves the contract from its single
-  // RiskSource seam. Absent spec → traderton's typed precondition surfaces.
-  it('attaches the platform risk spec to the read payload when the resolver resolves', async () => {
+  it('attaches the platform-resolved selected account to the read payload', async () => {
     const invoke = vi.fn().mockResolvedValue({
       kind: 'failure',
       code: 'precondition.not_ready',
@@ -90,22 +87,14 @@ describe('get_risk_limits tool', () => {
     });
     const ctx = makeCtx({
       tradertonBoundary: { invoke },
-      agentRiskSpecResolver: vi.fn(async () => ({
-        capital: '1000',
-        riskPosture: { maxOpenPositions: 3 },
-        riskOverrides: { maxDrawdownPct: 5 },
-      })),
+      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
     const result = await getRiskLimitsTool.execute({}, ctx);
 
     expect(invoke).toHaveBeenCalledWith({
       toolName: 'get_risk_limits',
-      payload: {
-        capital: '1000',
-        riskPosture: { maxOpenPositions: 3 },
-        riskOverrides: { maxDrawdownPct: 5 },
-      },
+      payload: { venueAccountId: 'venue-account-1' },
     });
     // The typed precondition maps through without counting as a fault.
     expect(result.success).toBe(false);
@@ -121,7 +110,7 @@ describe('get_risk_limits tool', () => {
 
     const throwingCtx = makeCtx({
       tradertonBoundary: { invoke },
-      agentRiskSpecResolver: vi.fn(async () => { throw new Error('db down'); }),
+      selectedVenueAccountResolver: vi.fn(async () => { throw new Error('db down'); }),
     });
     await getRiskLimitsTool.execute({}, throwingCtx);
     expect(invoke).toHaveBeenLastCalledWith({ toolName: 'get_risk_limits', payload: {} });
@@ -139,16 +128,20 @@ describe('get_risk_limits tool', () => {
       correlationId: 'corr-1',
       payload: successPayload,
     });
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({
+      tradertonWriteBoundary: { invokeAndAwait },
+      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
+    });
 
     const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 7 }, ctx);
 
     expect(result.success).toBe(true);
-    // The tool forwards ONLY the explicitly-provided overrides as the payload.
+    // The LLM schema contains overrides only; the selected venue account is
+    // platform-resolved and added to the private boundary payload.
     expect(invokeAndAwait).toHaveBeenCalledTimes(1);
     const call = invokeAndAwait.mock.calls[0]![0] as { toolName: string; payload: unknown; deadlineMs: number };
     expect(call.toolName).toBe('adjust_risk_limits');
-    expect(call.payload).toEqual({ maxOpenPositions: 7 });
+    expect(call.payload).toEqual({ maxOpenPositions: 7, venueAccountId: 'venue-account-1' });
     expect(call.deadlineMs).toBeGreaterThan(0);
     // Boundary success shape passes through unchanged (parity).
     const data = result.data as Record<string, unknown>;
@@ -163,13 +156,16 @@ describe('get_risk_limits tool', () => {
       correlationId: 'corr-1',
       payload: { ok: true, note: 'Risk limits updated.' },
     });
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({
+      tradertonWriteBoundary: { invokeAndAwait },
+      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
+    });
 
     const result = await adjustRiskLimitsTool.execute({ stopLossCooldownMs: null }, ctx);
 
     expect(result.success).toBe(true);
     const call = invokeAndAwait.mock.calls[0]![0] as { payload: unknown };
-    expect(call.payload).toEqual({ stopLossCooldownMs: null });
+    expect(call.payload).toEqual({ stopLossCooldownMs: null, venueAccountId: 'venue-account-1' });
   });
 
   it('maps a boundary failure to a typed non-fault failure preserving code', async () => {
@@ -181,7 +177,10 @@ describe('get_risk_limits tool', () => {
       message: "Field 'maxOpenPositions' is creator-configured",
       retryable: false,
     });
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({
+      tradertonWriteBoundary: { invokeAndAwait },
+      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
+    });
 
     const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 3 }, ctx);
 
@@ -193,7 +192,10 @@ describe('get_risk_limits tool', () => {
 
   it('maps a boundary in_progress to a precondition.not_ready failure', async () => {
     const invokeAndAwait = vi.fn().mockResolvedValue({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({
+      tradertonWriteBoundary: { invokeAndAwait },
+      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
+    });
 
     const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 3 }, ctx);
 
@@ -204,7 +206,10 @@ describe('get_risk_limits tool', () => {
 
   it('maps a boundary transport_error to a retryable fault', async () => {
     const invokeAndAwait = vi.fn().mockResolvedValue({ kind: 'transport_error', requestId: 'req-1', retryable: true, message: 'down' });
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({
+      tradertonWriteBoundary: { invokeAndAwait },
+      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
+    });
 
     const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 3 }, ctx);
 

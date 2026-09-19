@@ -38,6 +38,9 @@ export interface TradertonSideEffectBoundary {
     toolName: string;
     payload: unknown;
     subject: TradertonSubject;
+    requestId?: string;
+    idempotencyKey?: string;
+    correlationId?: string;
   }): Promise<TradertonClientResult>;
   invokeAndAwait(input: {
     toolName: string;
@@ -45,6 +48,9 @@ export interface TradertonSideEffectBoundary {
     subject: TradertonSubject;
     /** Total budget for invoke + poll, in ms. Derives the boundary `deadlineAt`. */
     deadlineMs: number;
+    requestId?: string;
+    idempotencyKey?: string;
+    correlationId?: string;
   }): Promise<TradertonClientResult>;
 }
 
@@ -62,6 +68,9 @@ export function createTradertonSideEffectBoundary(
         toolName: input.toolName,
         payload: input.payload,
         subject: input.subject,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        correlationId: input.correlationId,
       });
     },
 
@@ -72,6 +81,9 @@ export function createTradertonSideEffectBoundary(
         payload: input.payload,
         subject: input.subject,
         deadlineAt,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        correlationId: input.correlationId,
       });
 
       // The boundary reached a terminal outcome (or a transport failure) already.

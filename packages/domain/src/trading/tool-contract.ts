@@ -11,8 +11,6 @@
 // platform `ToolContext` via the platform `AgentTool` alias in ../tools.ts.
 
 import type { z } from 'zod';
-import type { AgentRiskOverrides } from '../agent-risk-contract.js';
-import type { RiskPosture } from '../config/schema.js';
 
 /**
  * Tool category system — uses composite categories for fine-grained capability control.
@@ -289,11 +287,7 @@ export interface TradingToolContext {
    * is absent. Absent resolver → the read payload carries no risk spec and
    * traderton degrades (typed precondition on get_risk_limits).
    */
-  agentRiskSpecResolver?: () => Promise<{
-    capital?: string | null;
-    riskPosture?: RiskPosture | null;
-    riskOverrides?: AgentRiskOverrides | null;
-  } | null>;
+  selectedVenueAccountResolver?: () => Promise<string | null>;
   /**
    * Raw Drizzle database instance for direct table access.
    * Used by tools that need to query tables without a dedicated repository

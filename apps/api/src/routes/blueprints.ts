@@ -13,6 +13,7 @@ import {
   blueprintUsageEvents,
   blueprintLikes,
   connections,
+  agentConnections,
   users,
 } from '@herobids/db';
 import {
@@ -44,6 +45,7 @@ import type {
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
 import { resolvePlanBlueprintEntitlements } from '../plan-guards.js';
 import { createAgentFromPayload } from '../services/agent-instantiation-service.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { computeInstantiateRequestHash, deriveInstantiateActorId } from '../services/blueprint-idempotency.js';
 import { resolveEffectiveRisk } from '../services/blueprint-risk-resolver.js';
 import { validateSkillPortability } from '../services/blueprint-skill-validator.js';
@@ -362,6 +364,7 @@ export async function blueprintRoutes(
   plansConfig: PlansConfig,
   tradertonClient?: TradertonClient,
   tradertonReadTimeoutMs?: number,
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
   // Periodic score recomputation (matches skills.ts pattern)
   // c4.9d-FG: the blueprint-instantiate BOT write over the Traderton boundary.
@@ -2247,6 +2250,13 @@ export async function blueprintRoutes(
 
         // 12. Create STOPPED agent or bot with blueprint attribution
         if (bp.kind === 'agent') {
+          if (!profileReconciliationSaga) {
+            return {
+              kind: 'error' as const,
+              code: 'precondition.not_ready',
+              message: 'Trading service is unavailable — the agent was not instantiated.',
+            };
+          }
           const agentPayloadFinal = finalPayload as AgentBlueprintRevisionPayload;
 
           // Same-user pre-fill: copy telegramChatId when installer is the blueprint author
@@ -2261,55 +2271,90 @@ export async function blueprintRoutes(
           }
 
           const skillRefs = await getRevisionSkillRefs(tx as unknown as Database, revision.id);
-
-          await createAgentFromPayload(
-            tx as unknown as Database,
-            agentPayloadFinal,
-            skillRefs,
-            {
-              userId: request.userId,
-              agentId: actorId,
-              blueprintId: bp.id,
-              blueprintRevisionId: revision.id,
-              telegramChatId,
-              fallbackName: bp.name,
+          const connectionIds = parsed.data.bindings?.kind === 'agent'
+            ? [...new Set(parsed.data.bindings.connectionIds)]
+            : [];
+          const responsePayload = await profileReconciliationSaga.executeStaged({
+            ownerId: request.userId,
+            actorId,
+            localMutationId: trimmedKey,
+            preparePlannerInput: async () => {
+              const grantedConnections = connectionIds.length === 0
+                ? []
+                : await tx.select({
+                  id: connections.id,
+                  resolvedVenueAccountId: connections.resolvedVenueAccountId,
+                }).from(connections).where(inArray(connections.id, connectionIds));
+              const proposedConnections = grantedConnections.map((connection, index) => ({
+                    connectionId: connection.id,
+                    venueAccountId: connection.resolvedVenueAccountId,
+                    active: true,
+                    ready: true,
+                    isDefault: index === 0,
+                  }));
+              const profiles = new Map(proposedConnections
+                .filter((connection): connection is typeof connection & { venueAccountId: string } => connection.venueAccountId !== null)
+                .map((connection) => [connection.venueAccountId, {
+                  actorId,
+                  venueAccountId: connection.venueAccountId,
+                  capital: agentPayloadFinal.capital != null ? String(agentPayloadFinal.capital) : null,
+                  riskPosture: agentPayloadFinal.risk ?? null,
+                  executionDefaults: agentPayloadFinal.executionDefaults ?? null,
+                }] as const));
+              return {
+                prior: { profiles: new Map(), connections: [] },
+                proposed: { profiles, connections: proposedConnections },
+              };
             },
-            agentPayloadFinal.risk,
-          );
-          // 13/14 for the AGENT branch stay LOCAL inside this tx (platform-only
-          // writes). See the BOT-branch handling AFTER the tx.
-          const responsePayload: Record<string, unknown> = {
-            actorId,
-            actorKind: bp.kind,
-            blueprintId: bp.id,
-            blueprintRevisionId: revision.id,
-            status: 'stopped',
-            createdAt: now.toISOString(),
-          };
-          await tx.insert(blueprintInstantiationRequests).values({
-            id: instantiationReqId,
-            userId: request.userId,
-            idempotencyKey: trimmedKey,
-            requestHash,
-            blueprintId: bp.id,
-            blueprintRevisionId: revision.id,
-            actorKind: bp.kind,
-            actorId,
-            responsePayload,
-          });
-          await tx.insert(blueprintUsageEvents).values({
-            id: eventId,
-            blueprintId: bp.id,
-            blueprintRevisionId: revision.id,
-            userId: request.userId,
-            subjectKind: bp.kind,
-            subjectId: actorId,
-            eventType: 'instance_created',
-            isSelfUsage: bp.authorId === request.userId,
-            occurredAt: now,
-            metadata: {
-              idempotencyKey: trimmedKey,
-              resolvedMode: capResult.resolvedMode,
+            commitLocal: async (localTx, markLocalCommitted) => {
+              await createAgentFromPayload(
+                localTx as unknown as Database,
+                agentPayloadFinal,
+                skillRefs,
+                {
+                  userId: request.userId,
+                  agentId: actorId,
+                  blueprintId: bp.id,
+                  blueprintRevisionId: revision.id,
+                  telegramChatId,
+                  fallbackName: bp.name,
+                },
+                agentPayloadFinal.risk,
+              );
+              if (connectionIds.length > 0) {
+                await localTx.insert(agentConnections).values(connectionIds.map((connectionId) => ({
+                  id: crypto.randomUUID(),
+                  agentId: actorId,
+                  connectionId,
+                  status: 'active',
+                  grantedBy: request.userId,
+                  grantedAt: now,
+                  createdAt: now,
+                  updatedAt: now,
+                })));
+              }
+              const localResponsePayload: Record<string, unknown> = {
+                actorId,
+                actorKind: bp.kind,
+                blueprintId: bp.id,
+                blueprintRevisionId: revision.id,
+                status: 'stopped',
+                createdAt: now.toISOString(),
+              };
+              await localTx.insert(blueprintInstantiationRequests).values({
+                id: instantiationReqId, userId: request.userId, idempotencyKey: trimmedKey,
+                requestHash, blueprintId: bp.id, blueprintRevisionId: revision.id,
+                actorKind: bp.kind, actorId, responsePayload: localResponsePayload,
+              });
+              await localTx.insert(blueprintUsageEvents).values({
+                id: eventId, blueprintId: bp.id, blueprintRevisionId: revision.id,
+                userId: request.userId, subjectKind: bp.kind, subjectId: actorId,
+                eventType: 'instance_created', isSelfUsage: bp.authorId === request.userId,
+                occurredAt: now,
+                metadata: { idempotencyKey: trimmedKey, resolvedMode: capResult.resolvedMode },
+              });
+              await markLocalCommitted();
+              return localResponsePayload;
             },
           });
 

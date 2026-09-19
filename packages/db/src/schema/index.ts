@@ -55,3 +55,5 @@ export { agentAssessmentReviewChecks } from './agent-assessment-review-checks.js
 export { agentAssessmentReviewRuns } from './agent-assessment-review-runs.js';
 export { chatThreads } from './chat-threads.js';
 export { chatMessages } from './chat-messages.js';
+export { tradingProfileReconciliationOutbox } from './trading-profile-reconciliation-outbox.js';
+export type { TradingProfileOutboxAction, TradingProfileOutboxState } from './trading-profile-reconciliation-outbox.js';

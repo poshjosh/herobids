@@ -20,6 +20,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **C1 migration staging.** C1 ships additive reconciliation-outbox migration `0071` only. Retired `agents` columns remain physically inert after the application cut-over and are not a source of truth; their destructive removal is deferred to a separately staged cleanup after old application instances are gone.
+
 - **Trading-profile reconciliation consolidated (C1a).** Agent create, update, interactivity, chat, instantiation, go-live, delete, and connection grant/revoke workflows now share pure profile-snapshot, selected-binding, and compensation planning. Selection mirrors the runtime default-ready then first-ready rule; no Traderton profile writer or store is enabled until C1.
 
 - **Fallback posture completed boundary-first (A6).** Deleted the `list_watches` local-Redis fallback (boundary-only, fail-closed; tick gate degrades to empty digest during boundary outages); re-pointed `resolve_watch` from the legacy Redis hash to the boundary watch list (resolve_bot pattern); deleted the in-process `get_risk_limits` fallback (fail-closed now that the boundary serves the reads). `resolve_task` stays platform-local (non-trading) and exit-price reconstruction is unchanged (B4-decision-dependent).

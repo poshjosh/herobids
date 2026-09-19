@@ -9,7 +9,7 @@ import {
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { AGENT_STREAM_MAXLEN, type ProvidersYaml, ok, err, type RiskPosture, type AgentRiskOverrides } from '@herobids/domain';
+import { AGENT_STREAM_MAXLEN, type ProvidersYaml, ok, err } from '@herobids/domain';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import crypto from 'node:crypto';
@@ -558,19 +558,6 @@ const approvalService = new ApprovalService({
   // executeApproval returns a typed precondition — never the in-process engine.
   sideEffectBoundary,
   boundaryDeadlineMs: 30_000,
-  // Inject the agent's CURRENT platform risk context (capital/risk/riskOverrides)
-  // into the approved submit_decision payload — environment state at execution
-  // time, not a snapshot (an approval may be granted hours after creation).
-  agentRiskResolver: async (agentId) => {
-    const agent = await agentRepo.getAgent(agentId);
-    if (!agent) return null;
-    return {
-      capital: agent.capital,
-      riskPosture: (agent.risk as RiskPosture | null) ?? null,
-      riskOverrides: (agent.riskOverrides as AgentRiskOverrides | null) ?? null,
-      executionMode: agent.executionDefaults?.mode ?? undefined,
-    };
-  },
 });
 
 // L3d-5: the in-process actor-backed context-snapshot resolver was removed with
@@ -694,14 +681,13 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   // ~2 s instead of up to 10 s after the API sets the session to 'starting'.
   healthCheckIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
   budgets: appConfig.agentRuntime.defaultBudgets,
-  agentRiskDefaults: appConfig.agentRiskDefaults as unknown as Record<string, unknown>,
   streamSubscribe: async (agentId: string) => agentStreamSubscribeFn?.(agentId),
   onAgentStatusChange: (agentId, userId, status) => {
     userEventPublisher.publishAgentStatus(userId, agentId, status as 'starting' | 'active' | 'stopped' | 'crashed').catch((err) => {
       logger.error({ err, agentId }, 'Failed to publish agent status event');
     });
   },
-  onSessionActive: (agentId, _executionMode, _sessionId) => {
+  onSessionActive: (agentId, _sessionId) => {
     // L3d-5: trading agents no longer spin up an in-process AgentTradingActor —
     // execution routes over the Traderton boundary via agentDecisionHandler. A
     // session is simply activated here (the same shape a non-trading agent has

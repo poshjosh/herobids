@@ -17,8 +17,9 @@ import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import {
   loadActiveTradingProfileConnections,
-  reconcileTradingProfile,
 } from '../agents/trading-profile-reconciliation-adapter.js';
+import { selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
 import {
   parseSlashCommand,
@@ -51,6 +52,7 @@ import {
   nullablePositiveDecimalStringSchema,
   nullablePositiveIntegerSchema,
   resolveExecutionModeForSkills,
+  validateDailyLossRequiresCapital,
   validateAgentModelPolicy,
   validateAgentRiskBounds,
   validateConnectionRequirement,
@@ -120,6 +122,7 @@ export async function agentInteractivityRoutes(
   llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
   agentRiskDefaults?: AgentRiskDefaultsConfig,
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
@@ -173,6 +176,16 @@ export async function agentInteractivityRoutes(
       });
     }
 
+    if (!profileReconciliationSaga) {
+      return reply.status(503).send({ error: 'precondition.not_ready', message: 'Trading service is unavailable — the agent was not updated.' });
+    }
+    const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
+    const profiles = await profileReconciliationSaga.readCurrentProfiles(request.userId, id, priorProfileConnections);
+    const selectedBinding = selectExecutionBinding(priorProfileConnections);
+    const selectedProfile = selectedBinding
+      ? profiles.get(selectedBinding.venueAccountId)
+      : undefined;
+
     // Validate risk bounds against operator ceilings (resolved config, not schema defaults)
     const riskDefaults = agentRiskDefaults ?? AgentRiskDefaultsSchema.parse({});
     const riskIssues = validateAgentRiskBounds(parsed.data, riskDefaults);
@@ -180,9 +193,16 @@ export async function agentInteractivityRoutes(
       return reply.status(400).send({ error: 'validation_error', details: riskIssues });
     }
 
-    // Validate dailyLossLimit and maxDrawdownPct require capital (effective after this update).
-    // Use the post-merge effective values: new if explicitly provided, else existing.
-    const riskPosture = (agent.risk as Record<string, unknown> | null) ?? {};
+    const capitalIssues = validateDailyLossRequiresCapital({
+      dailyMaxLossPct: selectedProfile?.riskPosture?.dailyMaxLossPct,
+      maxDrawdownPct: parsed.data.maxDrawdownPct !== undefined
+        ? parsed.data.maxDrawdownPct
+        : selectedProfile?.riskPosture?.maxDrawdownPct,
+      capital: parsed.data.capital !== undefined ? parsed.data.capital : selectedProfile?.capital,
+    });
+    if (capitalIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: capitalIssues });
+    }
 
     const existingSkillIds = await listSkillIdsForAgent(id);
     const mergedSkillIds = parsed.data.skillIds ?? existingSkillIds;
@@ -230,7 +250,7 @@ export async function agentInteractivityRoutes(
       skillIds: mergedSkillIds,
       submittedExecutionMode: parsed.data.executionMode,
       executionModeProvided: parsed.data.executionMode !== undefined,
-      currentExecutionMode: (agent.executionDefaults as Record<string,unknown> | null)?.['mode'] as string | null | undefined,
+      currentExecutionMode: selectedProfile?.executionDefaults?.mode,
       hasConnections: hasAgentConnections,
     });
     if (executionMode.issue) {
@@ -271,50 +291,41 @@ export async function agentInteractivityRoutes(
     } = parsed.data;
     void _skillIds;
 
-    const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
-    const proposedRiskPosture = rawMaxDrawdownPct !== undefined
-      ? { ...riskPosture, maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null }
-      : agent.risk ?? null;
-    const proposedExecutionDefaults = executionMode.value !== null
-      ? { ...((agent.executionDefaults as Record<string, unknown> | null) ?? {}), mode: executionMode.value }
-      : agent.executionDefaults ?? null;
-    await reconcileTradingProfile({
-      prior: {
-        config: {
-          actorId: id,
-          capital: agent.capital ?? null,
-          riskPosture: agent.risk ?? null,
-          executionDefaults: agent.executionDefaults ?? null,
-        },
-        connections: priorProfileConnections,
-      },
-      proposed: {
-        config: {
-          actorId: id,
-          capital: agentUpdates.capital === undefined ? agent.capital ?? null : agentUpdates.capital,
-          riskPosture: proposedRiskPosture as never,
-          executionDefaults: proposedExecutionDefaults as never,
-        },
-        connections: priorProfileConnections,
-      },
-    });
-
-    await db.update(agents).set({
+    const updateValues = {
       ...agentUpdates,
       ...(rawMaxDrawdownPct !== undefined
-        ? { risk: { ...riskPosture, maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null } }
+        ? { risk: { ...(selectedProfile?.riskPosture ?? {}), maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null } }
         : {}),
-      executionDefaults: executionMode.value !== null
-        ? {
-            ...((agent.executionDefaults as Record<string,unknown> | null) ?? {}),
-            mode: executionMode.value,
-          }
-        : (agent.executionDefaults ?? null),
       ...(parsed.data.runtimePolicyOverrides !== undefined ? { runtimePolicyOverrides: parsed.data.runtimePolicyOverrides } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),
-    }).where(eq(agents.id, id));
+    };
+    await profileReconciliationSaga.executeStaged({
+      ownerId: request.userId,
+      actorId: id,
+      localMutationId: crypto.randomUUID(),
+      preparePlannerInput: async () => {
+        const proposedProfiles = new Map([...profiles].map(([venueAccountId, profile]) => [venueAccountId, {
+          ...profile,
+          ...(agentUpdates.capital !== undefined ? { capital: agentUpdates.capital } : {}),
+          ...(rawMaxDrawdownPct !== undefined ? {
+            riskPosture: { ...(profile.riskPosture ?? {}), maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null },
+          } : {}),
+          ...(executionMode.value !== null ? {
+            executionDefaults: { ...(profile.executionDefaults ?? {}), mode: executionMode.value },
+          } : {}),
+        }]));
+        return {
+          prior: { profiles, connections: priorProfileConnections },
+          proposed: { profiles: proposedProfiles, connections: priorProfileConnections },
+        };
+      },
+      commitLocal: async (tx, markLocalCommitted) => {
+        await tx.update(agents).set(updateValues).where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+        await markLocalCommitted();
+      },
+    });
 
     if (assignmentResolution) {
       await syncAgentSkillAssignments(db, id, request.userId, assignmentResolution.assignments ?? []);
@@ -503,6 +514,7 @@ export async function telegramWebhookHandler(
   operatorModelDefaults?: ModelDefaults,
   tradertonReadClient?: TradertonClient,
   tradertonReadTimeoutMs?: number,
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
   const botToken = alertsConfig?.telegram?.botToken ?? '';
   const webhookSecret = alertsConfig?.telegram?.webhookSecret ?? '';
@@ -546,6 +558,7 @@ export async function telegramWebhookHandler(
   }
 
   const agentRepo = new AgentRepository(db);
+  const commandProfileReconciliationSaga = profileReconciliationSaga;
 
   /**
    * Resolve a pending approval via Telegram slash command.
@@ -595,7 +608,6 @@ export async function telegramWebhookHandler(
       await sendTelegramText(chatId, 'Approval submitted but execution dispatch failed. The approval remains pending and can be retried.');
       return;
     }
-
     await sendTelegramText(chatId, 'Approval submitted for execution.');
   }
 
@@ -714,6 +726,7 @@ export async function telegramWebhookHandler(
             llmCatalogDeps,
             agentRiskDefaults,
             operatorModelDefaults,
+            profileReconciliationSaga: commandProfileReconciliationSaga,
           });
           await sendTelegramText(chatId, response);
           return;
@@ -726,12 +739,12 @@ export async function telegramWebhookHandler(
           return;
         }
         if (slashCmd.command === 'connect' && slashCmd.args.length >= 2) {
-          const response = await handleConnect(db, userId, slashCmd.args);
+          const response = await handleConnect(db, userId, slashCmd.args, commandProfileReconciliationSaga);
           await sendTelegramText(chatId, response);
           return;
         }
         if (slashCmd.command === 'disconnect') {
-          const response = await handleDisconnect(db, userId, slashCmd.args);
+          const response = await handleDisconnect(db, userId, slashCmd.args, commandProfileReconciliationSaga);
           await sendTelegramText(chatId, response);
           return;
         }

@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import type { Database } from '@herobids/db';
 import { agents, agentSkills } from '@herobids/db';
 import type { AgentBlueprintRevisionPayload, RiskPosture } from '@herobids/domain';
-import { reconcileTradingProfile } from '../agents/trading-profile-reconciliation-adapter.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +93,7 @@ export function buildUnifiedConfigFromPayload(
  * @param riskOverride  Optional risk JSONB override (e.g. after operator ceiling resolution)
  */
 export async function createAgentFromPayload(
-  tx: Database,
+  tx: Pick<Database, 'insert'>,
   payload: AgentBlueprintRevisionPayload,
   skillRefs: SkillRef[],
   context: AgentFromPayloadContext,
@@ -106,24 +105,6 @@ export async function createAgentFromPayload(
 
   const unifiedConfig = buildUnifiedConfigFromPayload(payload, riskOverride);
 
-  const riskJsonb = (riskOverride ?? payload.risk ?? null) as RiskPosture | null;
-
-  await reconcileTradingProfile({
-    prior: {
-      config: { actorId: agentId, capital: null, riskPosture: null, executionDefaults: null },
-      connections: [],
-    },
-    proposed: {
-      config: {
-        actorId: agentId,
-        capital: payload.capital != null ? String(payload.capital) : null,
-        riskPosture: riskJsonb,
-        executionDefaults: payload.executionDefaults ?? null,
-      },
-      connections: [],
-    },
-  });
-
   await tx.insert(agents).values({
     id: agentId,
     userId: context.userId,
@@ -131,10 +112,7 @@ export async function createAgentFromPayload(
     prompt: payload.prompt ?? '',
     style: payload.style,
     status: 'stopped',
-    risk: riskJsonb,
     strategy: payload.strategy ?? null,
-    executionDefaults: payload.executionDefaults ?? null,
-    capital: payload.capital ?? null,
     maxBots: payload.maxBots ?? null,
     tickIntervalMs: payload.tickIntervalMs ?? null,
     toolPolicy: payload.toolPolicy ?? null,

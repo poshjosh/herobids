@@ -31,7 +31,7 @@ scope and ordering.
 | Item | Status | Prerequisites / required evidence | Implementation commits | Verification evidence | Blockers / notes |
 |---|---|---|---|---|---|
 | C1a | verified | ADR 013; plan-review corrections incorporated; authorization recorded 2026-09-19; starting SHAs `herobids=f3e9f672e9fb4b217c50f282935636d4cff5ae1d`, `traderton=2f2dda4f9999ba34a4f2b7e7c9464f77d093387e` | `491c6952`, `c7fcdad8`, `5d4e5222` | 372 focused tests; API typecheck/build/lint; final independent reviews accepted | Snapshot, selected-binding, and reconciliation planner only |
-| C1 | planned | ADRs 010/013; C1a verified; both repo start SHAs | — | — | Full snapshot, selected-binding, signed-agent tools, durable saga, echo cut-over |
+| C1 | in progress | ADRs 010/013; C1a verified; authorization recorded 2026-09-19; starting SHAs `herobids=81f5c0d9bde93bf613c2409eacfef55af3df2881`, `traderton=f4d8be1c0aaa5f476c9fae22dd79836755057384`; recovery contract authorized 2026-09-19 | — | Partial package typechecks only; implementation is not safe to run | Traderton retains the validated forward operation manifest and preimage; Herobids remains metadata-only. C1 ships additive outbox migration `0071` only; retired `agents` columns stay physically inert and their destructive removal is a separately staged cleanup after old application instances are gone. |
 | C2.3 | blocked | ADR 011; exact mirror manifest and mandatory dual-checkout CI design | herobids=`250dd60b37603105b2028b93972ec54fa5c06d33`; traderton=`485c31c16180d30cf77fe330bf84e4a1c26b06da` | Local validation only (no remote workflow run claimed): 2026-09-19 Node 22 container checks passed 4/4 checker tests and the protected-mode manifest comparison in both directions: committed Herobids `250dd60b37603105b2028b93972ec54fa5c06d33` against committed Traderton `485c31c16180d30cf77fe330bf84e4a1c26b06da`, and committed Traderton `485c31c16180d30cf77fe330bf84e4a1c26b06da` against committed Herobids `250dd60b37603105b2028b93972ec54fa5c06d33`. | Blocked pending publication of both commits: GitHub Actions cannot fetch local-only SHAs. After publication, run both remote slow workflows and record the results. Protected pairs: Herobids source `${{ github.sha }}` with Traderton `485c31c16180d30cf77fe330bf84e4a1c26b06da`; Traderton source `${{ github.sha }}` with Herobids `250dd60b37603105b2028b93972ec54fa5c06d33`. Assertion-only; no runtime authority. |
 | C2.1/C2.2 | planned | C1 verified; C2.3 verified | — | — | Boundary defaults before local enforcement removal |
 | C3a | implemented | ADR 014; C3 UAT rows updated before run | herobids=`a506d95ae428af902e9913bf0b9343ed0be53c0c` | 2026-09-19: focused generic capability tests passed (3/3); `pnpm --filter @herobids/web run typecheck`, `pnpm lint`, and `git diff --check` passed. AG-C05 passed. Dedicated visual-UAT attempt found no running web/API listener on ports 5173, 8080, or 3000. | Desktop/mobile AG-C01, AG-C03, and AG-C06 require a running stack and existing authenticated trading-capable/unavailable fixtures. Mark verified only after those UAT rows pass. |
@@ -63,6 +63,17 @@ Next allowed item:
 ## Batch Records
 
 ```text
+Date: 2026-09-19
+Item / batch: C1 — Traderton-owned trading profile slice
+Starting SHAs: herobids=81f5c0d9bde93bf613c2409eacfef55af3df2881, traderton=f4d8be1c0aaa5f476c9fae22dd79836755057384
+Scope completed: In progress; implementation delegated.
+Commits: —
+Focused validation: —
+Broader validation: —
+UAT rows (when UI changes): Not applicable.
+Residual risks / blockers: Recovery contract resolved 2026-09-19: Traderton retains the validated forward operation manifest plus preimage keyed by operationId; Herobids persists only operation metadata and state. The currently added Herobids outbox/saga is not wired to production and must not be enabled until its atomic recovery protocol and all C1 paths are complete. C1 deploys additive migration `0071` only; the retired `agents` columns remain physically inert, not a source of truth, until a separately staged destructive cleanup after old application instances are gone.
+Next allowed item: Complete C1 implementation and review only.
+
 Date: 2026-09-19
 Item / batch: C1a — trading-profile write-path consolidation
 Starting SHAs: herobids=f3e9f672e9fb4b217c50f282935636d4cff5ae1d, traderton=2f2dda4f9999ba34a4f2b7e7c9464f77d093387e

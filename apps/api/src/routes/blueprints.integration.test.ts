@@ -1,5 +1,5 @@
 import {
-  describe, it, expect, beforeAll, beforeEach, afterAll,
+  describe, it, expect, vi, beforeAll, beforeEach, afterAll,
 } from 'vitest';
 import Fastify from 'fastify';
 import { sql, eq, and } from 'drizzle-orm';
@@ -18,6 +18,7 @@ import {
   agentSkills,
   connections,
   venueAccounts,
+  type DatabaseTransaction,
 } from '@herobids/db';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { blueprintRoutes } from './blueprints.js';
@@ -28,6 +29,7 @@ import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AuthConfig, AgentRiskDefaultsConfig, PlansConfig } from '@herobids/domain';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -265,6 +267,22 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
     | ((input: { toolName: string; payload: unknown; idempotencyKey?: string }) => unknown)
     | null = null;
   let capturedInvokes: Array<{ toolName: string; payload: Record<string, unknown>; idempotencyKey?: string }> = [];
+  let profileReconciliationEvents: string[] = [];
+
+  const stagedProfileReconciliationSaga = {
+    executeStaged: vi.fn(async <T>(input: {
+      preparePlannerInput: () => Promise<unknown> | unknown;
+      commitLocal: (tx: DatabaseTransaction, markLocalCommitted: () => Promise<void>) => Promise<T>;
+    }): Promise<T> => {
+      profileReconciliationEvents.push('stage_agent_trading_profile_change');
+      await input.preparePlannerInput();
+      const response = await db.transaction(async (tx) => input.commitLocal(tx, async () => {
+        profileReconciliationEvents.push('markLocalCommitted');
+      }));
+      profileReconciliationEvents.push('finalize_agent_trading_profile_change');
+      return response;
+    }),
+  };
 
   const stubTradertonClient = {
     invoke: async (input: { toolName: string; payload: unknown; idempotencyKey?: string }) => {
@@ -298,6 +316,8 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
       executionCapabilityAdapter,
       testPlansConfig,
       stubTradertonClient as unknown as Parameters<typeof blueprintRoutes>[5],
+      undefined,
+      stagedProfileReconciliationSaga as unknown as TradingProfileReconciliationSaga,
     );
     await app.ready();
   }, 30_000);
@@ -342,6 +362,8 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
     // Reset the boundary stub to the success default for each test.
     stubInvokeResult = null;
     capturedInvokes = [];
+    profileReconciliationEvents = [];
+    stagedProfileReconciliationSaga.executeStaged.mockClear();
   });
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -505,6 +527,13 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
     expect(agent!.blueprintId).toBe(bpId);
     expect(agent!.blueprintRevisionId).toBe(revId);
     expect(agent!.status).toBe('stopped');
+    expect(stagedProfileReconciliationSaga.executeStaged).toHaveBeenCalled();
+    expect(stagedProfileReconciliationSaga.executeStaged).toHaveBeenCalledOnce();
+    expect(profileReconciliationEvents).toEqual([
+      'stage_agent_trading_profile_change',
+      'markLocalCommitted',
+      'finalize_agent_trading_profile_change',
+    ]);
   });
 
   // ── Test 2: Bot created from blueprint has correct attribution ─────────

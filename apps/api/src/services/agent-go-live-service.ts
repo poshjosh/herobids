@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
-import type { Database } from '@herobids/db';
+import type { Database, DatabaseTransaction } from '@herobids/db';
 import {
   agents,
   agentConnections,
   agentSkills,
+  connections,
   users,
   resolveSkillAssignmentsForUser,
 } from '@herobids/db';
@@ -25,10 +26,8 @@ import {
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
-import {
-  loadActiveTradingProfileConnections,
-  reconcileTradingProfile,
-} from '../agents/trading-profile-reconciliation-adapter.js';
+import { selectExecutionBinding, type TradingProfileConnection } from '../agents/trading-profile-reconciliation.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +42,7 @@ export interface GoLiveParams {
   llmCatalogDeps?: LlmCatalogDeps;
   agentRiskDefaults?: AgentRiskDefaultsConfig;
   operatorModelDefaults?: ModelDefaults;
+  profileReconciliationSaga?: TradingProfileReconciliationSaga;
 }
 
 export type GoLiveResult =
@@ -63,6 +63,7 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     llmCatalogDeps,
     agentRiskDefaults,
     operatorModelDefaults,
+    profileReconciliationSaga,
   } = params;
 
   // 1. Load source agent + verify ownership
@@ -72,16 +73,17 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
   if (!sourceAgent) {
     return { ok: false, status: 404, error: 'not_found', message: 'Agent not found' };
   }
-
-  // 2. Validate source mode is paper/shadow (400 if live)
-  const sourceMode = (sourceAgent.executionDefaults as Record<string, unknown> | null)?.mode;
-  if (sourceMode === 'live') {
-    return { ok: false, status: 400, error: 'validation_error', message: 'Agent is already in live mode' };
+  if (!profileReconciliationSaga) {
+    return { ok: false, status: 503, error: 'precondition.not_ready', message: 'Trading service is unavailable — the agent was not promoted.' };
   }
 
-  // 3. Load source agent's active connections and skill assignments
-  const activeConnections = await db.select()
-    .from(agentConnections)
+  // 2. Load source agent's active connections and skill assignments
+  const activeConnections = await db.select({
+    connectionId: agentConnections.connectionId,
+    venueAccountId: connections.resolvedVenueAccountId,
+    status: connections.status,
+  }).from(agentConnections)
+    .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
     .where(and(eq(agentConnections.agentId, sourceAgentId), eq(agentConnections.status, 'active')));
 
   const sourceSkillRows = await db.select({ skillId: agentSkills.skillId })
@@ -90,6 +92,20 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     .orderBy(asc(agentSkills.orderIndex), asc(agentSkills.skillId));
 
   const sourceSkillIds = sourceSkillRows.map((r) => r.skillId);
+
+  const profileConnections: TradingProfileConnection[] = activeConnections.map((connection, index) => ({
+    connectionId: connection.connectionId,
+    venueAccountId: connection.venueAccountId,
+    active: true,
+    ready: connection.status === 'active',
+    isDefault: index === activeConnections.length - 1,
+  }));
+  const sourceProfiles = await profileReconciliationSaga.readCurrentProfiles(userId, sourceAgentId, profileConnections);
+  const sourceBinding = selectExecutionBinding(profileConnections);
+  const sourceProfile = sourceBinding ? sourceProfiles.get(sourceBinding.venueAccountId) : undefined;
+  if (sourceProfile?.executionDefaults?.mode === 'live') {
+    return { ok: false, status: 400, error: 'validation_error', message: 'Agent is already in live mode' };
+  }
 
   // 4. Validate at least one active connection (required for live)
   if (activeConnections.length === 0) {
@@ -116,7 +132,12 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
   }
 
   // 6. Project source agent into blueprint payload
-  const projected = projectAgentToBlueprintPayload(sourceAgent);
+  const projected = projectAgentToBlueprintPayload({
+    ...sourceAgent,
+    capital: sourceProfile?.capital ?? null,
+    risk: sourceProfile?.riskPosture ?? null,
+    executionDefaults: sourceProfile?.executionDefaults ?? null,
+  });
 
   // 7. Apply Go Live transformations
   const liveName = nameOverride ?? `${sourceAgent.name} (Live)`;
@@ -214,9 +235,21 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
   const newAgentId = crypto.randomUUID();
   const now = new Date();
 
-  await db.transaction(async (tx) => {
+  const commitLocal = async (tx: DatabaseTransaction, markLocalCommitted: () => Promise<void>) => {
+    const [currentSource] = await tx.select({ userId: agents.userId, status: agents.status })
+        .from(agents).where(eq(agents.id, sourceAgentId));
+    if (!currentSource || currentSource.userId !== userId || currentSource.status === 'live') {
+      throw new Error('source agent changed before go-live could be committed');
+    }
+    const currentConnections = await tx.select({ connectionId: agentConnections.connectionId })
+        .from(agentConnections)
+        .where(and(eq(agentConnections.agentId, sourceAgentId), eq(agentConnections.status, 'active')));
+    if (currentConnections.length !== activeConnections.length
+      || currentConnections.some((connection) => !activeConnections.some((prepared) => prepared.connectionId === connection.connectionId))) {
+      throw new Error('source agent connections changed before go-live could be committed');
+    }
     const result = await createAgentFromPayload(
-      tx as unknown as Database,
+      tx,
       livePayload,
       assignmentResolution.assignments ?? [],
       {
@@ -251,7 +284,7 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
       const currentUc = result.unifiedConfig ?? {};
       updateSet.unifiedConfig = { ...currentUc, ...overlayFields };
     }
-    await (tx as unknown as Database).update(agents)
+    await tx.update(agents)
       .set(updateSet)
       .where(eq(agents.id, newAgentId));
 
@@ -271,29 +304,30 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
       );
     }
 
-    const copiedConnections = await loadActiveTradingProfileConnections(tx as unknown as Database, newAgentId);
-    await reconcileTradingProfile({
-      prior: {
-        config: {
-          actorId: newAgentId,
-          capital: null,
-          riskPosture: null,
-          executionDefaults: null,
-        },
-        connections: [],
-      },
-      proposed: {
-        config: {
-          actorId: newAgentId,
-          capital: livePayload.capital != null ? String(livePayload.capital) : null,
-          riskPosture: livePayload.risk ?? null,
-          executionDefaults: livePayload.executionDefaults ?? null,
-        },
-        connections: copiedConnections,
-      },
-    });
-
+    await markLocalCommitted();
     return result;
+  };
+
+  await profileReconciliationSaga.executeStaged({
+      ownerId: userId,
+      actorId: newAgentId,
+      localMutationId: crypto.randomUUID(),
+      preparePlannerInput: () => {
+        const profiles = new Map(profileConnections
+          .filter((connection): connection is TradingProfileConnection & { venueAccountId: string } => connection.venueAccountId !== null)
+          .map((connection) => [connection.venueAccountId, {
+            actorId: newAgentId,
+            venueAccountId: connection.venueAccountId,
+            capital: livePayload.capital != null ? String(livePayload.capital) : null,
+            riskPosture: livePayload.risk ?? null,
+            executionDefaults: livePayload.executionDefaults ?? null,
+          }] as const));
+        return {
+          prior: { profiles: new Map(), connections: [] },
+          proposed: { profiles, connections: profileConnections },
+        };
+      },
+      commitLocal,
   });
 
   return { ok: true, agentId: newAgentId };

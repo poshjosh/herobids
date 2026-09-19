@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME, UsageBillingRepository } from '@herobids/db';
+import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME, TradingProfileReconciliationOutboxRepository, UsageBillingRepository } from '@herobids/db';
 import type { EvaluationJobData, ManualReviewJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
@@ -46,6 +46,7 @@ import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig } from './config.js';
 import { ExternalSkillProviderHttp } from '@herobids/domain';
 import { createTradertonClient } from '@herobids/domain/traderton';
+import { TradingProfileReconciliationSaga } from './agents/trading-profile-reconciliation-saga.js';
 import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -203,6 +204,40 @@ const tradertonBotClient = (appConfig.boundary.baseUrl && appConfig.boundary.hma
     })
   : undefined;
 
+const profileReconciliationSaga = new TradingProfileReconciliationSaga(
+  new TradingProfileReconciliationOutboxRepository(db),
+  {
+    invoke: (input) => tradertonBotClient
+      ? tradertonBotClient.invoke({
+        toolName: input.toolName,
+        payload: input.payload,
+        subject: input.subject,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        correlationId: input.correlationId,
+        deadlineMs: appConfig.boundary.requestTimeoutMs,
+      })
+      : Promise.resolve({
+        kind: 'transport_error' as const,
+        requestId: input.requestId,
+        message: 'trading boundary not configured',
+        retryable: true,
+      }),
+  },
+);
+const recoverProfileReconciliations = async (): Promise<void> => {
+  const result = await profileReconciliationSaga.recover(50);
+  if (result.failed > 0) app.log.warn(result, 'trading profile reconciliation recovery left operations pending');
+};
+void recoverProfileReconciliations().catch((error: unknown) => {
+  app.log.warn({ error }, 'trading profile reconciliation startup recovery failed');
+});
+setInterval(() => {
+  void recoverProfileReconciliations().catch((error: unknown) => {
+    app.log.warn({ error }, 'trading profile reconciliation periodic recovery failed');
+  });
+}, 60_000).unref();
+
 const evaluationQueue = new Queue<EvaluationJobData>(EVALUATION_QUEUE_NAME, {
   connection: redisConnection,
 });
@@ -240,6 +275,7 @@ await telegramWebhookHandler(
   appConfig.agentRuntime.llm.modelDefaults,
   tradertonBotClient,
   appConfig.boundary.requestTimeoutMs,
+  profileReconciliationSaga,
 );
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
@@ -257,13 +293,13 @@ await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, traderto
 await providerRoutes(app, appConfig.venues);
 
 // ── Platform primitives ───────────────────────────────────────────────────
-await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans, tradertonBotClient);
+await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans, tradertonBotClient, profileReconciliationSaga);
 
 // ── Gmail OAuth connection flow ────────────────────────────────────────────
 await connectionsOauthRoutes(app, db, appConfig, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradertonBotClient, appConfig.boundary.requestTimeoutMs, profileReconciliationSaga);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
@@ -279,8 +315,8 @@ await dashboardRoutes(app, db, appConfig.plans, tradertonBotClient, appConfig.bo
 // billing is disabled so the web UI can render the "not enabled" state.
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
-await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults);
+await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradertonBotClient, appConfig.boundary.requestTimeoutMs, profileReconciliationSaga);
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults, profileReconciliationSaga);
 await analyticsRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);
@@ -289,7 +325,7 @@ const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
   appConfig.plans,
   appConfig.usageBilling?.defaultRateCardName ?? 'default',
 );
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues, tradertonBotClient);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues, tradertonBotClient, profileReconciliationSaga);
 await skillsRoutes(app, db, appConfig.plans, (() => {
   const ext = appConfig.externalSkills;
   if (!ext.enabled) return null;

@@ -41,7 +41,7 @@ function clamp(value: number, min: number, max: number): number {
  * Edge cases:
  * - No closed positions → performanceScore = 0 (sorts to bottom)
  * - Fewer than 2 closed positions → winRateScore = 0.5 (neutral)
- * - No capital set (agents.capital IS NULL) → pnlScore = 0.5, riskAdjustedScore = 0.5 (neutral)
+ * - No profile capital → pnlScore = 0.5, riskAdjustedScore = 0.5 (neutral)
  *
  * Best-effort posture (DELIBERATE divergence from the request endpoints, which
  * 503 when the boundary is unconfigured): this is a fire-and-forget background
@@ -148,7 +148,7 @@ export async function recomputeBlueprintPerformanceScore(
   }
 
   // --- pnlScore (and riskAdjustedScore, which depends on it) ---
-  const capital = agent.capital ? Number(agent.capital) : null;
+  const capital: number | null = null;
   let pnlScore = 0.5; // neutral when no capital set
   let riskAdjustedScore = 0.5; // neutral when no capital set
 

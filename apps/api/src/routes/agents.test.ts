@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -23,19 +23,17 @@ import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 
 vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
   loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
-  reconcileTradingProfile: vi.fn().mockResolvedValue({
-    upserts: [],
-    clears: [],
-    selectedBinding: { previous: null, next: null },
-    inverseActions: [],
-  }),
 }));
 
 import {
   loadActiveTradingProfileConnections,
-  reconcileTradingProfile,
 } from '../agents/trading-profile-reconciliation-adapter.js';
-import { planTradingProfileReconciliation } from '../agents/trading-profile-reconciliation.js';
+import {
+  planTradingProfileReconciliation,
+  type TradingProfileConnection,
+  type TypedTradingProfile,
+} from '../agents/trading-profile-reconciliation.js';
+import type { TradingProfilePlannerInput, TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
 // In test, cwd is the package dir (apps/api), so we must point to the repo root.
@@ -73,6 +71,10 @@ const mockLlmCatalogDeps: LlmCatalogDeps = {
 
 const TEST_USER_ID = 'user-1';
 
+afterEach(() => {
+  vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+});
+
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
   app.decorateRequest('userId', '');
   app.decorateRequest('userPlanId', '');
@@ -84,6 +86,7 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 
 function buildDb(options: {
   agentRows?: Array<Record<string, unknown>>;
+  commitAgentRows?: Array<Record<string, unknown>>;
   activeLinkRows?: Array<Record<string, unknown>>;
   txAgentRows?: Array<Record<string, unknown>>;
   skillRows?: Array<Record<string, unknown>>;
@@ -131,6 +134,7 @@ function buildDb(options: {
 
   const agentRows = options.agentRows ?? [];
   const postMutationAgentRows = options.activeLinkRows ?? agentRows;
+  const commitAgentRows = options.commitAgentRows ?? (agentRows.length === 0 ? postMutationAgentRows : agentRows);
   const decisionRows = options.txAgentRows ?? [];
   const skillRows = options.skillRows ?? builtinSkillRows;
   const skillEntitlementRows = options.skillEntitlementRows ?? [];
@@ -156,7 +160,9 @@ function buildDb(options: {
   const rowsForTable = (table: unknown): Array<Record<string, unknown>> => {
     if (table === agents) {
       agentsSelectCount += 1;
-      return agentsSelectCount === 1 ? agentRows : postMutationAgentRows;
+      if (agentsSelectCount === 1) return agentRows;
+      if (agentsSelectCount === 2) return commitAgentRows;
+      return postMutationAgentRows;
     }
     if (table === bots) {
       return botRows;
@@ -244,6 +250,90 @@ function buildDb(options: {
   return { db, insertedValues, updateSets, updateTableCalls, deletedTargets };
 }
 
+type StagedProfileMutation = {
+  ownerId: string;
+  actorId: string;
+  localMutationId: string;
+  preparePlannerInput: () => Promise<TradingProfilePlannerInput> | TradingProfilePlannerInput;
+  commitLocal: (tx: any, markLocalCommitted: () => Promise<void>) => Promise<unknown>;
+};
+
+function makeStagedProfileSaga(
+  db: { transaction: (callback: (tx: any) => Promise<unknown>) => Promise<unknown> },
+  options: {
+    writeRemote?: (input: TradingProfilePlannerInput) => Promise<void> | void;
+    compensate?: (input: TradingProfilePlannerInput, error: unknown) => Promise<void> | void;
+    remoteProfiles?: ReadonlyMap<string, TypedTradingProfile>;
+  } = {},
+) {
+  const inputs: StagedProfileMutation[] = [];
+  const plannerInputs: TradingProfilePlannerInput[] = [];
+  const readCurrentProfiles = vi.fn(async (
+    _ownerId: string,
+    actorId: string,
+    profileConnections: TradingProfileConnection[],
+  ): Promise<Map<string, TypedTradingProfile>> => {
+    if (options.remoteProfiles) return new Map(options.remoteProfiles);
+
+    return new Map(profileConnections.flatMap((connection) => (
+      connection.venueAccountId === null
+        ? []
+        : [[connection.venueAccountId, {
+          actorId,
+          venueAccountId: connection.venueAccountId,
+          capital: '1000',
+          riskPosture: null,
+          executionDefaults: { mode: 'paper' },
+        } satisfies TypedTradingProfile] as const]
+    )));
+  });
+  const executeStaged = vi.fn(async (input: StagedProfileMutation) => {
+    inputs.push(input);
+    const plannerInput = await input.preparePlannerInput();
+    plannerInputs.push(plannerInput);
+    const plan = planTradingProfileReconciliation(plannerInput);
+    if (plan.upserts.length > 0 || plan.clears.length > 0) {
+      await options.writeRemote?.(plannerInput);
+    }
+    try {
+      return await db.transaction(async (tx) => input.commitLocal(tx, async () => undefined));
+    } catch (error) {
+      await options.compensate?.(plannerInput, error);
+      throw error;
+    }
+  });
+  return {
+    saga: { executeStaged, readCurrentProfiles } as unknown as TradingProfileReconciliationSaga,
+    executeStaged,
+    readCurrentProfiles,
+    inputs,
+    plannerInputs,
+  };
+}
+
+vi.mock('./agents.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./agents.js')>();
+  return {
+    ...actual,
+    agentRoutes: async (...args: Parameters<typeof actual.agentRoutes>) => {
+      const stagedSaga = args[10] ?? makeStagedProfileSaga(args[1]).saga;
+      return actual.agentRoutes(
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+        args[9],
+        stagedSaga,
+      );
+    },
+  };
+});
+
 /**
  * A Traderton read/write boundary stub for the re-pointed agent endpoints
  * (outcomes/decisions/decision-failures) + the agent-delete bot cascade. Each
@@ -316,6 +406,124 @@ function makePlansConfig(): PlansConfig {
     },
   };
 }
+
+describe('agent routes C1 staged profile reconciliation', () => {
+  it('invokes the staged saga when creating an agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, name: 'agent', prompt: 'test', modelPolicy: null, toolPolicy: null, skillIds: [] }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+    const stagedSaga = makeStagedProfileSaga(db);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const response = await app.inject({ method: 'POST', url: '/agents', payload: { name: 'agent', prompt: 'test' } });
+
+    expect(response.statusCode).toBe(201);
+    expect(stagedSaga.executeStaged).toHaveBeenCalledTimes(1);
+    expect(stagedSaga.inputs[0]).toEqual(expect.objectContaining({ ownerId: TEST_USER_ID, actorId: expect.any(String) }));
+  });
+
+  it('invokes the staged saga when patching an agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+    });
+    const stagedSaga = makeStagedProfileSaga(db);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const response = await app.inject({ method: 'PATCH', url: '/agents/agent-1', payload: { name: 'renamed-agent' } });
+
+    expect(response.statusCode).toBe(200);
+    expect(stagedSaga.executeStaged).toHaveBeenCalledTimes(1);
+    expect(stagedSaga.inputs[0]).toEqual(expect.objectContaining({ ownerId: TEST_USER_ID, actorId: 'agent-1' }));
+  });
+
+  it('invokes the staged saga when deleting an agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, capital: null, risk: null, executionDefaults: null }],
+    });
+    const { client } = makeTradertonStub();
+    const stagedSaga = makeStagedProfileSaga(db);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client, undefined, stagedSaga.saga);
+
+    const response = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(response.statusCode).toBe(204);
+    expect(stagedSaga.executeStaged).toHaveBeenCalledTimes(1);
+    expect(stagedSaga.inputs[0]).toEqual(expect.objectContaining({ ownerId: TEST_USER_ID, actorId: 'agent-1' }));
+  });
+
+  it('compensates when the create local mutation fails', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, name: 'agent', prompt: 'test', modelPolicy: null, toolPolicy: null, skillIds: [] }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+    db.insert.mockImplementation(() => { throw new Error('local insert failed'); });
+    const compensate = vi.fn();
+    const stagedSaga = makeStagedProfileSaga(db, { compensate });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const response = await app.inject({ method: 'POST', url: '/agents', payload: { name: 'agent', prompt: 'test' } });
+
+    expect(response.statusCode).toBe(500);
+    expect(compensate).toHaveBeenCalledTimes(1);
+    expect(compensate.mock.calls[0]![1]).toEqual(expect.objectContaining({ message: 'local insert failed' }));
+  });
+
+  it('runs the remote profile writer before the local transaction starts', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, name: 'agent', prompt: 'test', modelPolicy: null, toolPolicy: null, skillIds: [] }],
+      connectionRows: [{ id: 'connection-1', userId: TEST_USER_ID, status: 'active', resolvedVenueAccountId: 'venue-1' }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+    const remoteWrite = vi.fn();
+    const stagedSaga = makeStagedProfileSaga(db, { writeRemote: remoteWrite });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const response = await app.inject({ method: 'POST', url: '/agents', payload: { name: 'agent', prompt: 'test', connectionIds: ['connection-1'] } });
+
+    expect(response.statusCode).toBe(201);
+    expect(remoteWrite).toHaveBeenCalledTimes(1);
+    expect(remoteWrite.mock.invocationCallOrder[0]).toBeLessThan(db.transaction.mock.invocationCallOrder[0]!);
+  });
+
+  it('fails closed when a newly bound account has no remote profile template', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'connection-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
+    ]);
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      connectionRows: [
+        { id: 'connection-1', userId: TEST_USER_ID, status: 'active', resolvedVenueAccountId: 'venue-1' },
+        { id: 'connection-2', userId: TEST_USER_ID, status: 'active', resolvedVenueAccountId: 'venue-2' },
+      ],
+    });
+    const stagedSaga = makeStagedProfileSaga(db, { remoteProfiles: new Map() });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const response = await app.inject({ method: 'PATCH', url: '/agents/agent-1', payload: { connectionIds: ['connection-1', 'connection-2'] } });
+
+    expect(response.statusCode).toBe(500);
+    expect(stagedSaga.executeStaged).toHaveBeenCalledOnce();
+  });
+});
 
 describe('agent route plan enforcement', () => {
   beforeEach(() => {
@@ -703,14 +911,16 @@ describe('agent routes lifecycle', () => {
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, capital: null, risk: null, executionDefaults: null }],
     });
     const { client } = makeTradertonStub();
+    const stagedSaga = makeStagedProfileSaga(db);
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client, undefined, stagedSaga.saga);
 
     const response = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(response.statusCode).toBe(204);
-    const plan = planTradingProfileReconciliation(vi.mocked(reconcileTradingProfile).mock.calls[0]![0]);
+    expect(stagedSaga.executeStaged).toHaveBeenCalledTimes(1);
+    const plan = planTradingProfileReconciliation(stagedSaga.plannerInputs[0]!);
     expect(plan.selectedBinding).toEqual({
       previous: { connectionId: 'connection-1', venueAccountId: 'venue-1' },
       next: null,
@@ -1290,6 +1500,9 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   });
 
   it('resolves test mode to shadow on PATCH when the agent has active connections', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
+    ]);
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
@@ -1297,10 +1510,11 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
       agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
     });
+    const stagedSaga = makeStagedProfileSaga(db);
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -1311,22 +1525,23 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    const agentUpdate = updateSets.find((s: Record<string, unknown>) => 'executionDefaults' in s);
-    expect(agentUpdate).toBeDefined();
-    expect((agentUpdate as Record<string, unknown>)['executionDefaults']).toEqual({ mode: 'shadow' });
+    expect(updateSets.some((update) => 'executionDefaults' in update)).toBe(false);
+    expect(stagedSaga.plannerInputs[0]!.proposed.profiles.get('venue-1')?.executionDefaults).toEqual({ mode: 'shadow' });
   });
 
   it('resolves test mode to paper on PATCH when the agent has no connections', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
       activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
       agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
     });
+    const stagedSaga = makeStagedProfileSaga(db);
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -1337,9 +1552,9 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    const agentUpdate = updateSets.find((s: Record<string, unknown>) => 'executionDefaults' in s);
-    expect(agentUpdate).toBeDefined();
-    expect((agentUpdate as Record<string, unknown>)['executionDefaults']).toEqual({ mode: 'paper' });
+    expect(updateSets.some((update) => 'executionDefaults' in update)).toBe(false);
+    expect(stagedSaga.readCurrentProfiles).toHaveBeenCalledWith(TEST_USER_ID, 'agent-1', []);
+    expect(planTradingProfileReconciliation(stagedSaga.plannerInputs[0]!)).toMatchObject({ upserts: [], clears: [] });
   });
 
   it('rejects explicit execution mode for non-trading agents on create', async () => {
@@ -1943,7 +2158,7 @@ describe('agent routes strategy preset resolution', () => {
 
     expect(res.statusCode).toBe(201);
     const insertedAgent = insertedValues.find((v) => v['name'] === 'preset override');
-    expect((insertedAgent!['risk'] as Record<string, unknown>)?.stopLossPct).toBe(7);
+    expect(insertedAgent).not.toHaveProperty('risk');
   });
 
   it('clears preset-managed config (metadata + execution) on PATCH strategyPreset: null while keeping technical', async () => {
@@ -2003,7 +2218,7 @@ describe('agent routes strategy preset resolution', () => {
         modelPolicy: null,
       }],
       connectionRows: [
-        { id: 'conn-hl', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
+        { id: 'conn-hl', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid', resolvedVenueAccountId: null, venueAccountId: null },
       ],
     });
 
@@ -2494,16 +2709,9 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(insertedValues).toContainEqual(expect.objectContaining({
-      tickIntervalMs: 600_000,
-      capital: '5000',
-      risk: expect.objectContaining({
-        maxOpenPositions: 4,
-        maxPositionSizePct: 40,
-        stopLossPct: 2.5,
-        stopLossCooldownMs: 120000,
-      }),
-    }));
+    expect(insertedValues).toContainEqual(expect.objectContaining({ tickIntervalMs: 600_000 }));
+    expect(insertedValues[0]).not.toHaveProperty('capital');
+    expect(insertedValues[0]).not.toHaveProperty('risk');
     expect(res.json()).toEqual(expect.objectContaining({
       dailyLlmTokenBudget: null,
       capital: '5000',
@@ -2594,7 +2802,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       skillIds: [], modelPolicy: null, tickIntervalMs: 1_200_000, capital: null,
     };
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: null, risk: null, executionDefaults: null }],
       activeLinkRows: [updatedAgent],
     });
 
@@ -2613,19 +2821,23 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
   });
 
   it('normalizes capital on PATCH', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
+    ]);
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
       tickIntervalMs: null, capital: '750',
     };
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: null, risk: null, executionDefaults: null }],
       activeLinkRows: [updatedAgent],
     });
+    const stagedSaga = makeStagedProfileSaga(db);
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -2634,7 +2846,8 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSets).toContainEqual(expect.objectContaining({ capital: '750' }));
+  expect(updateSets.some((update) => 'capital' in update)).toBe(false);
+  expect(stagedSaga.plannerInputs[0]!.proposed.profiles.get('venue-1')?.capital).toBe('750');
     expect(res.json()).toEqual(expect.objectContaining({ capital: '750', dailyLlmTokenBudget: null }));
   });
 
@@ -2645,7 +2858,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       telegramChatId: '123456',
     };
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: '750', risk: null, executionDefaults: null }],
       activeLinkRows: [updatedAgent],
     });
 
@@ -2671,7 +2884,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       telegramChatId: null,
     };
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: '750', risk: { maxOpenPositions: 3, maxPositionSizePct: 55, stopLossPct: 4, stopLossCooldownMs: 180000 }, executionDefaults: null }],
       activeLinkRows: [updatedAgent],
     });
 
@@ -2749,6 +2962,9 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
   });
 
   it('persists explicit risk limit overrides on PATCH', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
+    ]);
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
@@ -2759,10 +2975,11 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
       activeLinkRows: [updatedAgent],
     });
+    const stagedSaga = makeStagedProfileSaga(db);
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -2771,13 +2988,12 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSets).toContainEqual(expect.objectContaining({
-      risk: expect.objectContaining({
-        maxOpenPositions: 3,
-        maxPositionSizePct: 55,
-        stopLossPct: 4,
-        stopLossCooldownMs: 180000,
-      }),
+    expect(updateSets.some((update) => 'risk' in update)).toBe(false);
+    expect(stagedSaga.plannerInputs[0]!.proposed.profiles.get('venue-1')?.riskPosture).toEqual(expect.objectContaining({
+      maxOpenPositions: 3,
+      maxPositionSizePct: 55,
+      stopLossPct: 4,
+      stopLossCooldownMs: 180000,
     }));
     expect(res.json()).toEqual(expect.objectContaining({
       risk: expect.objectContaining({
@@ -2796,7 +3012,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       skillIds: [], modelPolicy: null, tickIntervalMs: null, capital: null,
     };
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, tickIntervalMs: 900_000 }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, tickIntervalMs: 900_000, capital: null, risk: null, executionDefaults: null }],
       activeLinkRows: [updatedAgent],
     });
 
@@ -3444,10 +3660,11 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
+    const stagedSaga = makeStagedProfileSaga(db);
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig());
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'POST',
@@ -3467,7 +3684,8 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
       expect.objectContaining({ connectionId: 'conn-a', status: 'active', grantedBy: TEST_USER_ID }),
       expect.objectContaining({ connectionId: 'conn-b', status: 'active', grantedBy: TEST_USER_ID }),
     ]));
-    const input = vi.mocked(reconcileTradingProfile).mock.calls[0]![0];
+    expect(stagedSaga.executeStaged).toHaveBeenCalledTimes(1);
+    const input = stagedSaga.plannerInputs[0]!;
     const plan = planTradingProfileReconciliation(input);
     const expected = input.proposed.connections.find((connection) => connection.isDefault)!;
     expect(plan.selectedBinding.next).toEqual({
@@ -3626,7 +3844,7 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
       agentConnectionRows: [],
       connectionRows: [
-        { id: 'conn-new', userId: TEST_USER_ID, status: 'active' },
+        { id: 'conn-new', userId: TEST_USER_ID, status: 'active', resolvedVenueAccountId: null, venueAccountId: null },
       ],
     });
 
@@ -3650,17 +3868,19 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
     ['missing', 'conn-missing', []],
     ['inactive', 'conn-inactive', [{ id: 'conn-inactive', userId: TEST_USER_ID, status: 'revoked' }]],
     ['unowned', 'conn-foreign', [{ id: 'conn-foreign', userId: 'other-user', status: 'active' }]],
-  ])('does not reconcile PATCH when a requested connection is %s', async (_reason, connectionId, connectionRows) => {
+  ])('does not invoke the remote profile writer when a requested connection is %s', async (_reason, connectionId, connectionRows) => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
       agentConnectionRows: [],
       connectionRows,
     });
+    const remoteWrite = vi.fn();
+    const stagedSaga = makeStagedProfileSaga(db, { writeRemote: remoteWrite });
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig());
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -3669,7 +3889,8 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
     });
 
     expect(res.statusCode).toBe(400);
-    expect(vi.mocked(reconcileTradingProfile)).not.toHaveBeenCalled();
+    expect(stagedSaga.executeStaged).toHaveBeenCalledTimes(1);
+    expect(remoteWrite).not.toHaveBeenCalled();
   });
 
   it('revokes agent_connections rows on PATCH when connectionIds are removed', async () => {
@@ -3707,7 +3928,7 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
         { id: 'ac-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' },
       ],
       connectionRows: [
-        { id: 'conn-1', userId: TEST_USER_ID, status: 'active' },
+        { id: 'conn-1', userId: TEST_USER_ID, status: 'active', resolvedVenueAccountId: null, venueAccountId: null },
       ],
     });
 
@@ -3747,9 +3968,10 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
         { id: 'conn-older', userId: TEST_USER_ID, status: 'active' },
       ],
     });
+    const stagedSaga = makeStagedProfileSaga(db);
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig());
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const response = await app.inject({
       method: 'PATCH',
@@ -3758,7 +3980,8 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
     });
 
     expect(response.statusCode).toBe(200);
-    const plan = planTradingProfileReconciliation(vi.mocked(reconcileTradingProfile).mock.calls[0]![0]);
+    expect(stagedSaga.executeStaged).toHaveBeenCalledTimes(1);
+    const plan = planTradingProfileReconciliation(stagedSaga.plannerInputs[0]!);
     expect(plan.selectedBinding).toEqual({
       previous: { connectionId: 'conn-newest', venueAccountId: 'venue-newest' },
       next: { connectionId: 'conn-newest', venueAccountId: 'venue-newest' },

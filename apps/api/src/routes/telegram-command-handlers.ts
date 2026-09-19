@@ -40,6 +40,7 @@ import {
   resumeAgent,
   stopAgent,
 } from '../services/agent-lifecycle-service.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -57,16 +58,6 @@ function truncate(str: string, maxLen: number): string {
 function fmtNullable(value: string | null | undefined, suffix = ''): string {
   if (value == null || value === '') return '-';
   return `${value}${suffix}`;
-}
-
-function fmtPct(value: string | null | undefined): string {
-  if (value == null) return '-';
-  return `${value}%`;
-}
-
-function fmtUsd(value: string | null | undefined): string {
-  if (value == null) return '-';
-  return `$${value}`;
 }
 
 function extractStrategyPreset(unifiedConfig: unknown): string | null {
@@ -217,9 +208,9 @@ export async function handleInfo(
     const strategyPreset = extractStrategyPreset(agent.unifiedConfig);
 
     // Only show capital for trading agents (executionMode set to any value)
-    const agentExecMode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
+    const agentExecMode: string | undefined = undefined;
     const capitalDisplay = agentExecMode
-      ? fmtUsd(agent.capital)
+      ? 'n/a'
       : 'n/a';
 
     const lines: string[] = [
@@ -227,10 +218,10 @@ export async function handleInfo(
       `Status: ${agent.status}`,
       `Execution mode: ${agentExecMode ?? 'n/a'}`,
       `Capital: ${capitalDisplay}`,
-      `Daily loss limit: ${(agent.risk as Record<string, unknown> | null)?.['dailyMaxLossPct'] != null ? `${(agent.risk as Record<string, unknown>)?.['dailyMaxLossPct']}%` : 'n/a'}`,
-      `Max drawdown: ${fmtPct((agent.risk as Record<string, unknown> | null)?.['maxDrawdownPct'] != null ? String((agent.risk as Record<string, unknown>)?.['maxDrawdownPct']) : null)}`,
-      `Max position size: ${fmtPct((agent.risk as Record<string, unknown> | null)?.['maxPositionSizePct'] != null ? String((agent.risk as Record<string, unknown>)?.['maxPositionSizePct']) : null)}`,
-      `Stop loss: ${fmtPct((agent.risk as Record<string, unknown> | null)?.['stopLossPct'] != null ? String((agent.risk as Record<string, unknown>)?.['stopLossPct']) : null)}`,
+      'Daily loss limit: n/a',
+      'Max drawdown: n/a',
+      'Max position size: n/a',
+      'Stop loss: n/a',
       `Style: ${fmtNullable(agent.style)}`,
       `Strategy preset: ${fmtNullable(strategyPreset)}`,
       `Skills: ${skillRows.length > 0 ? skillRows.map((s) => s.name).join(', ') : '-'}`,
@@ -899,7 +890,7 @@ export async function handleMode(
     }
 
     // Read-only: show current execution mode
-    const mode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
+    const mode: string | undefined = undefined;
     if (mode === 'shadow') {
       return `${agent.name} execution mode: shadow (venue-backed simulation)`;
     }
@@ -922,6 +913,7 @@ export async function handleConnect(
   db: Database,
   userId: string,
   args: string[],
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<string> {
   try {
     if (args.length < 2) {
@@ -964,7 +956,8 @@ export async function handleConnect(
       return lines.join('\n');
     }
 
-    const result = await grantConnection(db, agent.id, connResolved.connection.id, userId);
+    if (!profileReconciliationSaga) return 'Failed to grant connection. Please try again later.';
+    const result = await grantConnection(db, agent.id, connResolved.connection.id, userId, profileReconciliationSaga);
 
     if (result.ok) {
       return `Connection granted to ${agent.name}.`;
@@ -999,6 +992,7 @@ export async function handleDisconnect(
   db: Database,
   userId: string,
   args: string[],
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<string> {
   try {
     if (args.length < 2) {
@@ -1041,7 +1035,8 @@ export async function handleDisconnect(
       return lines.join('\n');
     }
 
-    const result = await revokeConnection(db, agent.id, connResolved.connection.id, userId);
+    if (!profileReconciliationSaga) return 'Failed to revoke connection. Please try again later.';
+    const result = await revokeConnection(db, agent.id, connResolved.connection.id, userId, profileReconciliationSaga);
 
     if (result.ok) {
       return `Connection revoked from ${agent.name}.`;
@@ -1079,6 +1074,7 @@ export interface HandleGoLiveOpts {
   llmCatalogDeps?: LlmCatalogDeps;
   agentRiskDefaults?: AgentRiskDefaultsConfig;
   operatorModelDefaults?: ModelDefaults;
+  profileReconciliationSaga?: TradingProfileReconciliationSaga;
 }
 
 export async function handleGoLive(opts: HandleGoLiveOpts): Promise<string> {
@@ -1092,6 +1088,7 @@ export async function handleGoLive(opts: HandleGoLiveOpts): Promise<string> {
     llmCatalogDeps,
     agentRiskDefaults,
     operatorModelDefaults,
+    profileReconciliationSaga,
   } = opts;
 
   try {
@@ -1121,6 +1118,7 @@ export async function handleGoLive(opts: HandleGoLiveOpts): Promise<string> {
       llmCatalogDeps,
       agentRiskDefaults,
       operatorModelDefaults,
+      profileReconciliationSaga,
     });
 
     if (!result.ok) {

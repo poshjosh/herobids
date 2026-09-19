@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Database } from '@herobids/db';
 import type { AgentBlueprintRevisionPayload } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
+import type { TradingProfileConnection, TypedTradingProfile } from '../agents/trading-profile-reconciliation.js';
 
 // ── Module mocks ─────────────────────────────────────────────────────────────
 // Must be declared before importing the module under test.
@@ -49,11 +50,6 @@ vi.mock('./agent-instantiation-service.js', () => ({
   createAgentFromPayload: vi.fn(),
 }));
 
-vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
-  loadActiveTradingProfileConnections: vi.fn(),
-  reconcileTradingProfile: vi.fn(),
-}));
-
 vi.mock('@herobids/domain', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
@@ -70,11 +66,6 @@ import { checkLiveEnabled, checkAgentLimit, resolvePlanLimitEntitlements, resolv
 import { extractModelSelection, mergeModelPolicy, validateAgentModelPolicy, validateAgentRiskBounds } from '../routes/agent-config-helpers.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
-import {
-  loadActiveTradingProfileConnections,
-  reconcileTradingProfile,
-} from '../agents/trading-profile-reconciliation-adapter.js';
-import { planTradingProfileReconciliation } from '../agents/trading-profile-reconciliation.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -158,6 +149,7 @@ function makeActiveConnections(count = 1) {
     id: `conn-${i}`,
     agentId: 'agent-src',
     connectionId: `connection-${i}`,
+    venueAccountId: `venue-${i}`,
     status: 'active',
     grantedBy: 'user-1',
     grantedAt: new Date(),
@@ -249,6 +241,21 @@ function makeParams(db: Database, overrides: Partial<GoLiveParams> = {}): GoLive
     plansConfig: { plans: {} } as GoLiveParams['plansConfig'],
     userPlanId: 'free',
     isAdmin: false,
+    profileReconciliationSaga: {
+      readCurrentProfiles: async (_ownerId: string, actorId: string, connections: TradingProfileConnection[]) => new Map(
+        connections.flatMap((connection) => connection.venueAccountId === null ? [] : [[connection.venueAccountId, {
+          actorId,
+          venueAccountId: connection.venueAccountId,
+          capital: null,
+          riskPosture: null,
+          executionDefaults: { mode: 'paper' },
+        } satisfies TypedTradingProfile] as const]),
+      ),
+      executeStaged: async (input) => {
+        await input.preparePlannerInput();
+        return input.commitLocal(db as never, async () => undefined);
+      },
+    } as GoLiveParams['profileReconciliationSaga'],
     ...overrides,
   };
 }
@@ -258,11 +265,13 @@ function setupHappyPath(sourceAgent = makeSourceAgent(), connections = makeActiv
   const skillRows = [{ skillId: 'skill-a' }, { skillId: 'skill-b' }];
   const tracker = makeInsertTracker();
 
-  // selectResults: 1. source agent, 2. active connections, 3. source skills
+  // selectResults: source reads, then staged-commit revalidation reads.
   const selectResults: unknown[][] = [
     [sourceAgent],
     connections,
     skillRows,
+    [sourceAgent],
+    connections,
   ];
 
   const db = buildMockDb(selectResults, tracker);
@@ -309,13 +318,6 @@ function setupHappyPath(sourceAgent = makeSourceAgent(), connections = makeActiv
 describe('cloneAgentAsLive', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
-    vi.mocked(reconcileTradingProfile).mockResolvedValue({
-      upserts: [],
-      clears: [],
-      selectedBinding: { previous: null, next: null },
-      inverseActions: [],
-    });
   });
 
   // ── Success paths ────────────────────────────────────────────────────────
@@ -349,10 +351,27 @@ describe('cloneAgentAsLive', () => {
 
   it('rejects when source agent is already live (400)', async () => {
     const tracker = makeInsertTracker();
-    const sourceAgent = makeSourceAgent({ executionDefaults: { mode: 'live' } });
-    const db = buildMockDb([[sourceAgent]], tracker);
+    const sourceAgent = makeSourceAgent();
+    const db = buildMockDb([
+      [sourceAgent],
+      [{ connectionId: 'connection-0', venueAccountId: 'venue-0', status: 'active' }],
+      [],
+    ], tracker);
 
-    const result = await cloneAgentAsLive(makeParams(db));
+    const result = await cloneAgentAsLive(makeParams(db, {
+      profileReconciliationSaga: {
+        readCurrentProfiles: async (_ownerId, actorId, connections) => new Map(connections.flatMap((connection) => (
+          connection.venueAccountId === null ? [] : [[connection.venueAccountId, {
+            actorId,
+            venueAccountId: connection.venueAccountId,
+            capital: null,
+            riskPosture: null,
+            executionDefaults: { mode: 'live' },
+          } satisfies TypedTradingProfile] as const]
+        ))),
+        executeStaged: vi.fn(),
+      } as never,
+    }));
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected error');
@@ -479,41 +498,12 @@ describe('cloneAgentAsLive', () => {
     expect(connInserts[0]!.grantedBy).toBe('user-1');
   });
 
-  it('reconciles copied resolved connections into live snapshots and a selected binding', async () => {
-    const copiedConnections = [
-      {
-        connectionId: 'connection-fallback',
-        venueAccountId: 'venue-account-fallback',
-        active: true,
-        ready: true,
-        isDefault: false,
-      },
-      {
-        connectionId: 'connection-default',
-        venueAccountId: 'venue-account-default',
-        active: true,
-        ready: true,
-        isDefault: true,
-      },
-    ];
-    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue(copiedConnections);
+  it('keeps copied resolved connections out of the local profile boundary', async () => {
     const { db } = setupHappyPath();
 
     const result = await cloneAgentAsLive(makeParams(db));
 
     expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('expected ok');
-    expect(loadActiveTradingProfileConnections).toHaveBeenCalledWith(expect.anything(), result.agentId);
-    const reconciliationInput = vi.mocked(reconcileTradingProfile).mock.calls[0]![0];
-    const plan = planTradingProfileReconciliation(reconciliationInput);
-    expect(plan.upserts).toEqual([
-      expect.objectContaining({ actorId: result.agentId, venueAccountId: 'venue-account-fallback', executionDefaults: { mode: 'live', slippageBps: 50 } }),
-      expect.objectContaining({ actorId: result.agentId, venueAccountId: 'venue-account-default', executionDefaults: { mode: 'live', slippageBps: 50 } }),
-    ]);
-    expect(plan.selectedBinding).toEqual({
-      previous: null,
-      next: { connectionId: 'connection-default', venueAccountId: 'venue-account-default' },
-    });
   });
 
   it('preserves intelligence, execution, allowedPresets, presetTransition from source unifiedConfig', async () => {

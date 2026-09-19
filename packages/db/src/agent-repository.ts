@@ -12,7 +12,7 @@ import {
   users,
 } from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
-import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type AgentRiskOverrides, type UnifiedAgentConfig, type ProvidersYaml, TechnicalConfigSchema, IntelligenceConfigSchema } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type UnifiedAgentConfig, type ProvidersYaml, TechnicalConfigSchema, IntelligenceConfigSchema } from '@herobids/domain';
 
 // --- Helpers ---
 
@@ -271,25 +271,6 @@ export class AgentRepository {
 
   async deleteAgent(id: string): Promise<void> {
     await this.db.delete(agents).where(eq(agents.id, id));
-  }
-
-  // --- Agent Risk Overrides ---
-
-  async getRiskOverrides(agentId: string): Promise<AgentRiskOverrides> {
-    const rows = await this.db.select({ riskOverrides: agents.riskOverrides })
-      .from(agents)
-      .where(eq(agents.id, agentId))
-      .limit(1);
-    return rows[0]?.riskOverrides ?? {};
-  }
-
-  async setRiskOverrides(agentId: string, overrides: AgentRiskOverrides): Promise<void> {
-    // Store null when empty to keep the column clean
-    const value = Object.keys(overrides).length === 0 ? null : overrides;
-    await this.db.update(agents).set({
-      riskOverrides: value,
-      updatedAt: new Date(),
-    }).where(eq(agents.id, agentId));
   }
 
   // --- Unified Agent Config ---

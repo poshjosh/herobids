@@ -1861,7 +1861,6 @@ describe('resolveCreateAgentConnection', () => {
 
 describe('executeChatAction — assignedConnectionId', () => {
   it('includes assignedConnectionId in the create_agent result when a connection is bound', async () => {
-    vi.mocked(reconcileTradingProfile).mockClear();
     // We need a mock that allows create_agent to succeed far enough to build
     // the result object. Use a spy / manual approach: call executeChatAction
     // but mock the DB deeply enough for the handler to reach the result
@@ -1897,7 +1896,8 @@ describe('executeChatAction — assignedConnectionId', () => {
     const db = buildSelectMock([
       [{ planId: 'free', isAdmin: false, aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
       [], // resolveRuntimePolicyOverrides user lookup — no aiModelConfig → returns null
-      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: null }], // non-trading connection for custom preset
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: null }], // staged profile plan
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: null }], // transactional local commit validation
       [], [], [], [], [], [], [], // extra slots for remaining queries
     ]);
 
@@ -1905,6 +1905,15 @@ describe('executeChatAction — assignedConnectionId', () => {
       getAccountByUserId: vi.fn().mockResolvedValue(null), // fresh user, no billing account
       canSpendNow: vi.fn(),
     } as unknown as UsageBillingRepository;
+    const profileSaga = {
+      executeStaged: vi.fn(async (input: {
+        preparePlannerInput: () => Promise<unknown>;
+        commitLocal: (tx: typeof db, markLocalCommitted: () => Promise<void>) => Promise<unknown>;
+      }) => {
+        await input.preparePlannerInput();
+        return input.commitLocal(db, async () => undefined);
+      }),
+    };
 
     const result = await executeChatAction(
       makeToolCall('create_agent', {
@@ -1915,16 +1924,19 @@ describe('executeChatAction — assignedConnectionId', () => {
       TEST_USER_ID,
       EMPTY_PROVIDERS_YAML,
       mockUsageBillingRepo,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      profileSaga as never,
     );
 
     const parsed = JSON.parse(result) as Record<string, unknown>;
     expect(parsed.success).toBe(true);
     expect(parsed.assignedConnectionId).toBe('conn-1');
-    expect(reconcileTradingProfile).toHaveBeenCalledWith(expect.objectContaining({
-      prior: expect.objectContaining({ connections: [] }),
-      proposed: expect.objectContaining({
-        connections: [expect.objectContaining({ connectionId: 'conn-1' })],
-      }),
+    expect(profileSaga.executeStaged).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: expect.any(String),
     }));
   });
 });

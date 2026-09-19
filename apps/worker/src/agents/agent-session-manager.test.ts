@@ -126,6 +126,11 @@ describe('AgentSessionManager', () => {
         grantedConnectionsByFamily: expect.any(Object),
       }),
     }));
+    const launchedConfig = (runtimeLauncher.launch as ReturnType<typeof vi.fn>).mock.calls[0]![0].agentConfig as Record<string, unknown>;
+    expect(launchedConfig).not.toHaveProperty('capital');
+    expect(launchedConfig).not.toHaveProperty('risk');
+    expect(launchedConfig).not.toHaveProperty('executionMode');
+    expect(launchedConfig).not.toHaveProperty('maxSlippageBps');
     expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'sess-2',
       agentId: 'agent-2',
@@ -609,7 +614,7 @@ describe('AgentSessionManager', () => {
   // --- New lifecycle callbacks: onSessionActive and onSessionStopped ---
 
   describe('onSessionActive callback', () => {
-    it('fires onSessionActive with agentId and executionMode when session transitions to running', async () => {
+    it('fires onSessionActive with agentId and sessionId when session transitions to running', async () => {
       const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
       const onSessionActive = vi.fn();
       const manager = new AgentSessionManager(
@@ -652,10 +657,10 @@ describe('AgentSessionManager', () => {
         { sessionId: 'sess-active-1', status: 'ready' },
       );
 
-      expect(onSessionActive).toHaveBeenCalledWith('agent-active-1', 'shadow', 'sess-active-1');
+      expect(onSessionActive).toHaveBeenCalledWith('agent-active-1', 'sess-active-1');
     });
 
-    it('fires onSessionActive with null executionMode when agent has no execution mode set', async () => {
+    it('does not read execution mode when session transitions to running', async () => {
       const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
       const onSessionActive = vi.fn();
       const manager = new AgentSessionManager(
@@ -698,7 +703,7 @@ describe('AgentSessionManager', () => {
         { sessionId: 'sess-active-2', status: 'ready' },
       );
 
-      expect(onSessionActive).toHaveBeenCalledWith('agent-active-2', null, 'sess-active-2');
+      expect(onSessionActive).toHaveBeenCalledWith('agent-active-2', 'sess-active-2');
     });
 
     it('fires onSessionStarted only for first-boot sessions, not recovery heartbeats', async () => {
@@ -861,7 +866,7 @@ describe('AgentSessionManager', () => {
         { sessionId: 'sess-recovery', status: 'ready' },
       );
 
-      expect(onSessionActive).toHaveBeenCalledWith('agent-recovery', 'live', 'sess-recovery');
+      expect(onSessionActive).toHaveBeenCalledWith('agent-recovery', 'sess-recovery');
     });
 
     it('fires onSessionActive even when registerSurvivedSessions pre-registered the runtime handle', async () => {
@@ -911,7 +916,7 @@ describe('AgentSessionManager', () => {
         { sessionId: 'sess-survived', status: 'ready' },
       );
 
-      expect(onSessionActive).toHaveBeenCalledWith('agent-survived', 'paper', 'sess-survived');
+      expect(onSessionActive).toHaveBeenCalledWith('agent-survived', 'sess-survived');
     });
 
     it('does NOT fire onSessionActive a second time after actor is already activated', async () => {
@@ -1130,7 +1135,7 @@ describe('AgentSessionManager', () => {
         { sessionId: 'sess-failed-actor', status: 'ready' },
       );
 
-      expect(onSessionActive).toHaveBeenCalledWith('agent-failed-actor', 'shadow', 'sess-failed-actor');
+      expect(onSessionActive).toHaveBeenCalledWith('agent-failed-actor', 'sess-failed-actor');
       expect(runtimeLauncher.stop).toHaveBeenCalledWith('sess-failed-actor');
       expect(agentRepo.updateSession).toHaveBeenCalledWith('sess-failed-actor', expect.objectContaining({ status: 'crashed' }));
       expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-failed-actor', { status: 'crashed' });
@@ -1194,7 +1199,7 @@ describe('AgentSessionManager', () => {
         { sessionId: 'sess-stop-won', status: 'ready' },
       );
 
-      expect(onSessionActive).toHaveBeenCalledWith('agent-stop-won', 'shadow', 'sess-stop-won');
+      expect(onSessionActive).toHaveBeenCalledWith('agent-stop-won', 'sess-stop-won');
       expect(runtimeLauncher.stop).not.toHaveBeenCalledWith('sess-stop-won');
       expect(agentRepo.updateSession).not.toHaveBeenCalledWith('sess-stop-won', expect.objectContaining({ status: 'crashed' }));
       expect(agentRepo.updateAgent).not.toHaveBeenCalledWith('agent-stop-won', { status: 'crashed' });

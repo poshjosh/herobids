@@ -7,6 +7,8 @@
  * 3. Agent runtime overrides persist separately and survive restart.
  */
 
+import { z } from 'zod';
+
 /** Source of a resolved agent risk field value. */
 export type AgentRiskFieldSource = 'user' | 'default' | 'agent_override' | 'derived' | 'disabled';
 
@@ -43,13 +45,14 @@ export interface ResolvedAgentRiskContract {
 }
 
 /** Persisted runtime overrides — only fields the agent has actively changed. */
-export interface AgentRiskOverrides {
-  maxOpenPositions?: number;
-  maxPositionSizePct?: number;
-  stopLossPct?: number;
-  stopLossCooldownMs?: number;
-  maxDrawdownPct?: number;
-}
+export const AgentRiskOverridesSchema = z.object({
+  maxOpenPositions: z.number().min(1).optional(),
+  maxPositionSizePct: z.number().min(0).max(100).optional(),
+  stopLossPct: z.number().min(0).max(100).optional(),
+  stopLossCooldownMs: z.number().min(0).optional(),
+  maxDrawdownPct: z.number().min(0).max(100).optional(),
+}).strict();
+export type AgentRiskOverrides = z.infer<typeof AgentRiskOverridesSchema>;
 
 /** Input shape for resolving the contract (raw creator-configured nullable values). */
 export interface AgentRiskCreatorInput {

@@ -878,10 +878,10 @@ export async function exportRoutes(
         prompt: agent.prompt,
         status: agent.status,
         skillIds,
-        executionMode: (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] ?? null,
-        dailyMaxLossPct: (agent.risk as Record<string, unknown> | null)?.['dailyMaxLossPct'] ?? null,
+        executionMode: null,
+        dailyMaxLossPct: null,
         maxBots: agent.maxBots,
-        slippageBps: (agent.executionDefaults as Record<string, unknown> | null)?.['slippageBps'] ?? null,
+        slippageBps: null,
         createdAt: agent.createdAt instanceof Date ? agent.createdAt.toISOString() : agent.createdAt,
       } as Record<string, unknown>);
 
@@ -943,10 +943,10 @@ export async function exportRoutes(
         prompt: agent.prompt,
         status: agent.status,
         skillIds,
-        executionMode: (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] ?? null,
-        dailyMaxLossPct: (agent.risk as Record<string, unknown> | null)?.['dailyMaxLossPct'] ?? null,
+        executionMode: null,
+        dailyMaxLossPct: null,
         maxBots: agent.maxBots,
-        slippageBps: (agent.executionDefaults as Record<string, unknown> | null)?.['slippageBps'] ?? null,
+        slippageBps: null,
         createdAt: agent.createdAt instanceof Date ? agent.createdAt.toISOString() : agent.createdAt,
       } as Record<string, unknown>);
 

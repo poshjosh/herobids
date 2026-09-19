@@ -8,17 +8,14 @@ import { buildRiskSpecPayloadFields } from '../agents/decision-boundary-mapping.
 const ADJUST_RISK_LIMITS_DEADLINE_MS = 30_000;
 
 /**
- * A3: attach the PLATFORM risk spec to a boundary read payload — post-LLM, from
- * the `agents` row via the context's `agentRiskSpecResolver` (the same injection
- * `submit_decision` carries). Never an LLM input. Resolver absent/null → empty
- * payload (traderton degrades typed on get_risk_limits).
+ * Attach the platform-resolved selected account to a boundary read payload.
+ * Profile enforcement data remains Traderton-owned and never enters an LLM tool
+ * schema or Herobids payload echo.
  */
 export async function riskSpecReadPayload(ctx: TradingToolContext): Promise<Record<string, unknown>> {
-  if (!ctx.agentRiskSpecResolver) return {};
+  if (!ctx.selectedVenueAccountResolver) return {};
   try {
-    const riskInjection = await ctx.agentRiskSpecResolver();
-    if (!riskInjection) return {};
-    return buildRiskSpecPayloadFields(riskInjection);
+    return buildRiskSpecPayloadFields((await ctx.selectedVenueAccountResolver()) ?? undefined);
   } catch {
     // Platform-side spec resolution failed — degrade to an un-annotated read
     // (traderton returns its typed precondition) rather than throwing past the
@@ -52,10 +49,8 @@ const getRiskLimitsTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    // A3: the PLATFORM attaches the risk spec to this read call (post-LLM,
-    // from the `agents` row) so traderton serves the contract from its single
-    // RiskSource seam. Absent spec → traderton's typed precondition surfaces
-    // through mapReadResultToToolResult.
+    // The platform resolves the selected account. Traderton loads profile-owned
+    // enforcement data from its durable profile store.
     const payload = await riskSpecReadPayload(ctx);
     const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_risk_limits', payload });
     return mapReadResultToToolResult(result);
@@ -109,9 +104,33 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
       };
     }
 
+    if (!ctx.selectedVenueAccountResolver) {
+      return {
+        success: false,
+        error: 'selected trading account is unavailable',
+        errorCode: 'precondition.not_ready',
+        fault: false,
+      };
+    }
+
+    let venueAccountId: string | null;
+    try {
+      venueAccountId = await ctx.selectedVenueAccountResolver();
+    } catch {
+      venueAccountId = null;
+    }
+    if (!venueAccountId) {
+      return {
+        success: false,
+        error: 'selected trading account is unavailable',
+        errorCode: 'precondition.not_ready',
+        fault: false,
+      };
+    }
+
     const result = await ctx.tradertonWriteBoundary.invokeAndAwait({
       toolName: 'adjust_risk_limits',
-      payload: overrides,
+      payload: { ...overrides, venueAccountId },
       deadlineMs: ADJUST_RISK_LIMITS_DEADLINE_MS,
     });
 

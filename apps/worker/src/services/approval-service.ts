@@ -1,4 +1,4 @@
-import type { DecisionSubmitPayload, ActorType, RiskPosture, AgentRiskOverrides } from '@herobids/domain';
+import type { DecisionSubmitPayload, ActorType } from '@herobids/domain';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
@@ -20,19 +20,6 @@ export interface ApprovalServiceDeps {
   // Total budget (ms) for the boundary invoke + poll. Matches the decision
   // handler's 30s deadline so the synchronous feel is preserved.
   boundaryDeadlineMs?: number;
-  // Resolves the agent's CURRENT platform risk context (capital + creator risk
-  // posture + runtime overrides) off the `agents` row, for injection into the
-  // submit_decision payload. Current values, NOT a snapshot: capital is
-  // environment state, not decision semantics — the risk gate protects the
-  // account as it exists at EXECUTION time (an approval may be granted hours
-  // after creation). Null resolver → fields omitted → traderton operator
-  // defaults (graceful, consistent with a risk-context-less consumer).
-  agentRiskResolver?: (agentId: string) => Promise<{
-    capital?: string | null;
-    riskPosture?: RiskPosture | null;
-    riskOverrides?: AgentRiskOverrides | null;
-    executionMode?: 'paper' | 'shadow' | 'live' | null;
-  } | null>;
 }
 
 export class ApprovalService {
@@ -124,22 +111,7 @@ export class ApprovalService {
     // Thread the snapshot venue account (resolved off the connection grant at
     // approval-creation time and stored on the approval row) in as a payload arg
     // so the boundary resolves deterministically — matching the direct path.
-    // The agent risk context is injected with CURRENT values via the resolver
-    // (see the dep note — environment state, not decision semantics).
-    let riskInjection: {
-      capital?: string | null;
-      riskPosture?: RiskPosture | null;
-      riskOverrides?: AgentRiskOverrides | null;
-      executionMode?: 'paper' | 'shadow' | 'live' | null;
-    } | undefined;
-    if (this.deps.agentRiskResolver) {
-      try {
-        riskInjection = (await this.deps.agentRiskResolver(approval.agentId)) ?? undefined;
-      } catch (err) {
-        logger.warn({ approvalId, err }, 'Failed to resolve agent risk context for approval execution — submitting without it (operator defaults apply)');
-      }
-    }
-    const boundaryPayload = buildSubmitDecisionPayload(decisionPayload, approval.venueAccountId, riskInjection);
+    const boundaryPayload = buildSubmitDecisionPayload(decisionPayload, approval.venueAccountId);
 
     try {
       // Subject stays ownerId + actor ONLY (D2). The venue account rides in the

@@ -1,12 +1,16 @@
 import crypto from 'node:crypto';
 import { eq, and } from 'drizzle-orm';
-import type { Database } from '@herobids/db';
+import type { Database, DatabaseTransaction } from '@herobids/db';
 import { agentConnections, agentConnectionAudit, connections, agents } from '@herobids/db';
 import { ok, err, type Result } from '@herobids/domain';
 import {
   loadActiveTradingProfileConnections,
-  reconcileTradingProfile,
 } from '../agents/trading-profile-reconciliation-adapter.js';
+import type {
+  TradingProfileConnection,
+} from '../agents/trading-profile-reconciliation.js';
+import { proposeTradingProfiles } from '../agents/trading-profile-reconciliation.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 /**
  * Agent config service — single-operation connection lifecycle management.
@@ -33,6 +37,111 @@ export type AgentConfigError =
   | { code: 'agent.not_stopped'; message: string; currentStatus: string }
   | { code: 'config.internal_error'; message: string };
 
+type PreparedConnectionChange = {
+  kind: 'ready';
+  actorId: string;
+  connection: { id: string; userId: string; status: string; venueAccountId: string | null };
+  priorConnections: TradingProfileConnection[];
+  existing: boolean;
+  activeGrant: { id: string } | undefined;
+} | {
+  kind: 'agent_not_found' | 'agent_not_owned' | 'connection_not_found' | 'connection_not_owned';
+} | {
+  kind: 'agent_not_stopped';
+  currentStatus: string;
+} | {
+  kind: 'connection_not_active';
+  connStatus: string;
+};
+
+async function prepareConnectionChange(
+  db: Database,
+  agentId: string,
+  connectionId: string,
+  userId: string,
+  operation: 'grant' | 'revoke',
+): Promise<PreparedConnectionChange> {
+  const [agent] = await db.select({
+    id: agents.id,
+    userId: agents.userId,
+    status: agents.status,
+  }).from(agents).where(eq(agents.id, agentId));
+  if (!agent) return { kind: 'agent_not_found' };
+  if (agent.userId !== userId) return { kind: 'agent_not_owned' };
+  if (agent.status !== 'stopped') return { kind: 'agent_not_stopped', currentStatus: agent.status };
+
+  const [connection] = await db.select({
+    id: connections.id,
+    userId: connections.userId,
+    status: connections.status,
+    venueAccountId: connections.resolvedVenueAccountId,
+  }).from(connections).where(eq(connections.id, connectionId));
+  if (!connection) return { kind: 'connection_not_found' };
+  if (connection.userId !== userId) return { kind: 'connection_not_owned' };
+  if (operation === 'grant' && connection.status !== 'active') {
+    return { kind: 'connection_not_active', connStatus: connection.status };
+  }
+
+  const [activeGrant] = await db.select({ id: agentConnections.id }).from(agentConnections).where(and(
+    eq(agentConnections.agentId, agentId),
+    eq(agentConnections.connectionId, connectionId),
+    eq(agentConnections.status, 'active'),
+  ));
+  return {
+    kind: 'ready',
+    actorId: agent.id,
+    connection,
+    priorConnections: await loadActiveTradingProfileConnections(db, agentId),
+    existing: activeGrant !== undefined,
+    activeGrant,
+  };
+}
+
+async function revalidateConnectionChange(
+  tx: DatabaseTransaction,
+  prepared: Extract<PreparedConnectionChange, { kind: 'ready' }>,
+  operation: 'grant' | 'revoke',
+): Promise<void> {
+  const [agent] = await tx.select({ userId: agents.userId, status: agents.status }).from(agents)
+    .where(eq(agents.id, prepared.actorId));
+  if (!agent || agent.userId !== prepared.connection.userId || agent.status !== 'stopped') {
+    throw new Error('agent changed before connection mutation could be committed');
+  }
+  const [connection] = await tx.select({ userId: connections.userId, status: connections.status }).from(connections)
+    .where(eq(connections.id, prepared.connection.id));
+  if (!connection || connection.userId !== prepared.connection.userId || (operation === 'grant' && connection.status !== 'active')) {
+    throw new Error('connection changed before mutation could be committed');
+  }
+  const [activeGrant] = await tx.select({ id: agentConnections.id }).from(agentConnections).where(and(
+    eq(agentConnections.agentId, prepared.actorId),
+    eq(agentConnections.connectionId, prepared.connection.id),
+    eq(agentConnections.status, 'active'),
+  ));
+  if ((operation === 'grant' && activeGrant) || (operation === 'revoke' && activeGrant?.id !== prepared.activeGrant?.id)) {
+    throw new Error('agent connection changed before mutation could be committed');
+  }
+  const currentConnections = await loadActiveTradingProfileConnections(tx, prepared.actorId);
+  if (JSON.stringify(currentConnections) !== JSON.stringify(prepared.priorConnections)) {
+    throw new Error('agent connections changed before mutation could be committed');
+  }
+}
+
+function grantError(prepared: Exclude<PreparedConnectionChange, { kind: 'ready' }>, connectionId: string): Result<{ granted: boolean }, AgentConfigError> {
+  switch (prepared.kind) {
+    case 'agent_not_found': return err({ code: 'agent.not_found', message: 'Agent not found' });
+    case 'agent_not_owned': return err({ code: 'agent.not_owned', message: 'You do not own this agent' });
+    case 'agent_not_stopped': return err({ code: 'agent.not_stopped', message: 'Agent must be stopped before modifying connections', currentStatus: prepared.currentStatus });
+    case 'connection_not_found': return err({ code: 'connection.not_found', message: `Connection ${connectionId} does not exist` });
+    case 'connection_not_owned': return err({ code: 'connection.not_owned', message: `Connection ${connectionId} does not belong to you` });
+    case 'connection_not_active': return err({ code: 'connection.not_active', message: `Connection ${connectionId} is not active (status: ${prepared.connStatus})` });
+  }
+}
+
+function revokeError(prepared: Exclude<PreparedConnectionChange, { kind: 'ready' }>, connectionId: string): Result<{ revoked: boolean }, AgentConfigError> {
+  if (prepared.kind === 'connection_not_active') return err({ code: 'config.internal_error', message: 'Unexpected inactive connection preflight' });
+  return grantError(prepared, connectionId) as Result<{ revoked: boolean }, AgentConfigError>;
+}
+
 // ── Grant connection ──────────────────────────────────────────────────────
 
 /**
@@ -45,145 +154,46 @@ export async function grantConnection(
   agentId: string,
   connectionId: string,
   userId: string,
+  profileReconciliationSaga: TradingProfileReconciliationSaga,
 ): Promise<Result<{ granted: boolean }, AgentConfigError>> {
   try {
-    const result = await db.transaction(async (tx) => {
-      // Verify agent exists
-      const [agent] = await tx
-        .select({
-          id: agents.id,
-          userId: agents.userId,
-          status: agents.status,
-          capital: agents.capital,
-          riskPosture: agents.risk,
-          executionDefaults: agents.executionDefaults,
-        })
-        .from(agents)
-        .where(eq(agents.id, agentId));
+    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant');
+    if (prepared.kind !== 'ready') return grantError(prepared, connectionId);
+    if (prepared.existing) return ok({ granted: true });
 
-      if (!agent) {
-        return { kind: 'agent_not_found' as const };
-      }
-
-      // Verify agent ownership
-      if (agent.userId !== userId) {
-        return { kind: 'agent_not_owned' as const };
-      }
-
-      // Agent must be stopped before modifying connections
-      if (agent.status !== 'stopped') {
-        return { kind: 'agent_not_stopped' as const, currentStatus: agent.status };
-      }
-
-      // Verify connection ownership and activeness
-      const [conn] = await tx
-        .select({
-          id: connections.id,
-          userId: connections.userId,
-          status: connections.status,
-          venueAccountId: connections.resolvedVenueAccountId,
-        })
-        .from(connections)
-        .where(eq(connections.id, connectionId));
-
-      if (!conn) {
-        return { kind: 'connection_not_found' as const };
-      }
-
-      if (conn.userId !== userId) {
-        return { kind: 'connection_not_owned' as const };
-      }
-
-      if (conn.status !== 'active') {
-        return { kind: 'connection_not_active' as const, connStatus: conn.status };
-      }
-
-      // Check if already granted and active
-      const [existing] = await tx
-        .select({ id: agentConnections.id })
-        .from(agentConnections)
-        .where(
-          and(
-            eq(agentConnections.agentId, agentId),
-            eq(agentConnections.connectionId, connectionId),
-            eq(agentConnections.status, 'active'),
-          ),
-        );
-
-      if (existing) {
-        return { kind: 'already_granted' as const }; // Idempotent
-      }
-
-      const priorConnections = await loadActiveTradingProfileConnections(tx as unknown as Database, agentId);
-      const now = new Date();
-      const acId = crypto.randomUUID();
-      await reconcileTradingProfile({
-        prior: {
-          config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
-          connections: priorConnections,
-        },
-        proposed: {
-          config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
-          connections: [...priorConnections.map((connection) => ({ ...connection, isDefault: false })), {
-            connectionId: conn.id,
-            venueAccountId: conn.venueAccountId,
-            active: true,
-            ready: conn.status === 'active',
-            isDefault: true,
-          }],
-        },
-      });
-
-      await tx.insert(agentConnections).values({
-        id: acId,
-        agentId,
-        connectionId,
-        status: 'active',
-        grantedBy: userId,
-        grantedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      await tx.insert(agentConnectionAudit).values({
-        id: crypto.randomUUID(),
-        agentConnectionId: acId,
-        action: 'granted',
-        actorType: 'user',
-        actorId: userId,
-        createdAt: now,
-      });
-
-      return { kind: 'granted' as const };
+    const assignmentId = crypto.randomUUID();
+    const grantedAt = new Date();
+    await profileReconciliationSaga.executeStaged({
+      ownerId: userId,
+      actorId: agentId,
+      localMutationId: crypto.randomUUID(),
+      preparePlannerInput: async () => {
+        const profiles = await profileReconciliationSaga.readCurrentProfiles(userId, agentId, prepared.priorConnections);
+        const proposedConnections = [
+            ...prepared.priorConnections.map((connection) => ({ ...connection, isDefault: false })),
+            { connectionId, venueAccountId: prepared.connection.venueAccountId, active: true, ready: true, isDefault: true },
+        ];
+        return {
+          prior: { profiles, connections: prepared.priorConnections },
+          proposed: { profiles: proposeTradingProfiles({ priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+        };
+      },
+      commitLocal: async (tx, markLocalCommitted) => {
+        await revalidateConnectionChange(tx, prepared, 'grant');
+        await tx.insert(agentConnections).values({
+          id: assignmentId, agentId, connectionId, status: 'active', grantedBy: userId,
+          grantedAt, createdAt: grantedAt, updatedAt: grantedAt,
+        });
+        await tx.insert(agentConnectionAudit).values({
+          id: crypto.randomUUID(), agentConnectionId: assignmentId, action: 'granted',
+          actorType: 'user', actorId: userId, createdAt: grantedAt,
+        });
+        await markLocalCommitted();
+        return { kind: 'granted' as const };
+      },
     });
 
-    if (result.kind === 'agent_not_found') {
-      return err({ code: 'agent.not_found', message: 'Agent not found' });
-    }
-    if (result.kind === 'agent_not_owned') {
-      return err({ code: 'agent.not_owned', message: 'You do not own this agent' });
-    }
-    if (result.kind === 'agent_not_stopped') {
-      return err({
-        code: 'agent.not_stopped',
-        message: 'Agent must be stopped before modifying connections',
-        currentStatus: result.currentStatus,
-      });
-    }
-    if (result.kind === 'connection_not_found') {
-      return err({ code: 'connection.not_found', message: `Connection ${connectionId} does not exist` });
-    }
-    if (result.kind === 'connection_not_owned') {
-      return err({ code: 'connection.not_owned', message: `Connection ${connectionId} does not belong to you` });
-    }
-    if (result.kind === 'connection_not_active') {
-      return err({
-        code: 'connection.not_active',
-        message: `Connection ${connectionId} is not active (status: ${result.connStatus})`,
-      });
-    }
-
-    return ok({ granted: result.kind === 'granted' || result.kind === 'already_granted' });
+    return ok({ granted: true });
   } catch (cause) {
     return err({
       code: 'config.internal_error',
@@ -204,122 +214,41 @@ export async function revokeConnection(
   agentId: string,
   connectionId: string,
   userId: string,
+  profileReconciliationSaga: TradingProfileReconciliationSaga,
 ): Promise<Result<{ revoked: boolean }, AgentConfigError>> {
   try {
-    const result = await db.transaction(async (tx) => {
-      // Verify agent exists
-      const [agent] = await tx
-        .select({
-          id: agents.id,
-          userId: agents.userId,
-          status: agents.status,
-          capital: agents.capital,
-          riskPosture: agents.risk,
-          executionDefaults: agents.executionDefaults,
-        })
-        .from(agents)
-        .where(eq(agents.id, agentId));
+    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'revoke');
+    if (prepared.kind !== 'ready') return revokeError(prepared, connectionId);
+    const activeGrant = prepared.activeGrant;
+    if (!activeGrant) return ok({ revoked: true });
 
-      if (!agent) {
-        return { kind: 'agent_not_found' as const };
-      }
-
-      // Verify agent ownership
-      if (agent.userId !== userId) {
-        return { kind: 'agent_not_owned' as const };
-      }
-
-      // Agent must be stopped before modifying connections
-      if (agent.status !== 'stopped') {
-        return { kind: 'agent_not_stopped' as const, currentStatus: agent.status };
-      }
-
-      // Verify connection ownership
-      const [conn] = await tx
-        .select({ id: connections.id, userId: connections.userId })
-        .from(connections)
-        .where(eq(connections.id, connectionId));
-
-      if (!conn) {
-        return { kind: 'connection_not_found' as const };
-      }
-
-      if (conn.userId !== userId) {
-        return { kind: 'connection_not_owned' as const };
-      }
-
-      // Find the active agent_connections row
-      const [activeRow] = await tx
-        .select({ id: agentConnections.id })
-        .from(agentConnections)
-        .where(
-          and(
-            eq(agentConnections.agentId, agentId),
-            eq(agentConnections.connectionId, connectionId),
-            eq(agentConnections.status, 'active'),
-          ),
-        );
-
-      if (!activeRow) {
-        return { kind: 'already_revoked' as const }; // Idempotent
-      }
-
-      const priorConnections = await loadActiveTradingProfileConnections(tx as unknown as Database, agentId);
-      await reconcileTradingProfile({
-        prior: {
-          config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
-          connections: priorConnections,
-        },
-        proposed: {
-          config: { actorId: agent.id, capital: agent.capital, riskPosture: agent.riskPosture, executionDefaults: agent.executionDefaults },
-          connections: priorConnections.filter((connection) => connection.connectionId !== connectionId),
-        },
-      });
-
-      const now = new Date();
-
-      await tx
-        .update(agentConnections)
-        .set({
-          status: 'revoked',
-          revokedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(agentConnections.id, activeRow.id));
-
-      await tx.insert(agentConnectionAudit).values({
-        id: crypto.randomUUID(),
-        agentConnectionId: activeRow.id,
-        action: 'revoked',
-        actorType: 'user',
-        actorId: userId,
-        createdAt: now,
-      });
-
-      return { kind: 'revoked' as const };
+    const revokedAt = new Date();
+    await profileReconciliationSaga.executeStaged({
+      ownerId: userId,
+      actorId: agentId,
+      localMutationId: crypto.randomUUID(),
+      preparePlannerInput: async () => {
+        const profiles = await profileReconciliationSaga.readCurrentProfiles(userId, agentId, prepared.priorConnections);
+        const proposedConnections = prepared.priorConnections.filter((connection) => connection.connectionId !== connectionId);
+        return {
+          prior: { profiles, connections: prepared.priorConnections },
+          proposed: { profiles: proposeTradingProfiles({ priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+        };
+      },
+      commitLocal: async (tx, markLocalCommitted) => {
+        await revalidateConnectionChange(tx, prepared, 'revoke');
+        await tx.update(agentConnections).set({ status: 'revoked', revokedAt, updatedAt: revokedAt })
+          .where(eq(agentConnections.id, activeGrant.id));
+        await tx.insert(agentConnectionAudit).values({
+          id: crypto.randomUUID(), agentConnectionId: activeGrant.id, action: 'revoked',
+          actorType: 'user', actorId: userId, createdAt: revokedAt,
+        });
+        await markLocalCommitted();
+        return { kind: 'revoked' as const };
+      },
     });
 
-    if (result.kind === 'agent_not_found') {
-      return err({ code: 'agent.not_found', message: 'Agent not found' });
-    }
-    if (result.kind === 'agent_not_owned') {
-      return err({ code: 'agent.not_owned', message: 'You do not own this agent' });
-    }
-    if (result.kind === 'agent_not_stopped') {
-      return err({
-        code: 'agent.not_stopped',
-        message: 'Agent must be stopped before modifying connections',
-        currentStatus: result.currentStatus,
-      });
-    }
-    if (result.kind === 'connection_not_found') {
-      return err({ code: 'connection.not_found', message: `Connection ${connectionId} does not exist` });
-    }
-    if (result.kind === 'connection_not_owned') {
-      return err({ code: 'connection.not_owned', message: `Connection ${connectionId} does not belong to you` });
-    }
-
-    return ok({ revoked: result.kind === 'revoked' || result.kind === 'already_revoked' });
+    return ok({ revoked: true });
   } catch (cause) {
     return err({
       code: 'config.internal_error',

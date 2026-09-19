@@ -13,8 +13,8 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, BoundaryConfigSchema } from '@herobids/domain';
-import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, BoundaryConfigSchema } from '@herobids/domain';
+import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills, agentConnections, connections } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel, RegimeParams } from '@herobids/domain';
@@ -40,7 +40,6 @@ import {
   recordSessionCost,
   setCapabilityDegradation,
   setToolCapabilityDegradation,
-  updatePortfolioSummary,
   recordVenueSignals,
   recordActiveWatchSummary,
   recordPositionCoverage,
@@ -78,7 +77,6 @@ import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js'
 import type { TradertonSubject } from '@herobids/domain/traderton';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
-import { extractCeilings, extractCreatorInput, resolveProfile } from './agent-risk-limits.js';
 import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults, type OperatorModelDefaults } from './llm-selection.js';
@@ -497,7 +495,7 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
     // This fallback runs only when no runtimeDescriptor was supplied, so the
     // preset is genuinely unavailable — the optional field's neutral default applies.
     goal: agentGoal,
-    executionMode: agentConfig.executionMode ?? 'paper',
+    executionMode: 'paper',
     authorizationMode: agentConfig.authorizationMode ?? 'direct',
     resolvedSkills,
     grantedConnectionsByFamily: {},
@@ -506,11 +504,10 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
     toolPolicy: initialToolPolicy,
     guardrails: {
       dailyTokenBudget: 'unlimited tokens',
-      dailyLossLimit: agentConfig.dailyLossLimit ?? null,
       maxBots: agentConfig.maxBots ?? null,
-      maxOpenPositions: toGuardrailNumber(agentConfig.maxOpenPositions),
-      maxPositionSizePct: toGuardrailNumber(agentConfig.maxPositionSizePct),
-      capital: agentConfig.capital ?? null,
+      maxOpenPositions: null,
+      maxPositionSizePct: null,
+      capital: null,
     },
     budgets: { ...agentRuntimePolicy.defaultBudgets },
   };
@@ -556,13 +553,6 @@ const workspacePaths = getWorkspacePaths(AGENT_ID!);
 const runtimeState: RuntimeCompositionState = createRuntimeCompositionState(runtimeDescriptor, {
   workspaceRoot: workspacePaths.root,
 });
-const configuredCapitalUsd = agentConfig.capital != null ? Number(agentConfig.capital) : null;
-if (configuredCapitalUsd !== null && Number.isFinite(configuredCapitalUsd)) {
-  updatePortfolioSummary(runtimeState, {
-    availableCapitalUsd: configuredCapitalUsd,
-    freshness: { state: 'fresh', provider: 'agent-config' },
-  });
-}
 runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour = Number.isFinite(SERVER_COST_USD_PER_HOUR)
   ? SERVER_COST_USD_PER_HOUR
   : runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour;
@@ -1690,44 +1680,6 @@ function stopWakeSignalPolling(): void {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Risk Contract Operations — provides agent tools access to risk limits
-// ---------------------------------------------------------------------------
-
-function buildRiskContractOps(): ToolContext['riskContractOps'] {
-  if (!agentRepo || !agentConfig.agentRiskDefaults) {
-    return undefined;
-  }
-
-  const defaults = agentConfig.agentRiskDefaults as AgentRiskDefaultsConfig;
-  const ceilings = extractCeilings(defaults);
-
-  return {
-    async getContract(): Promise<ResolvedAgentRiskContract> {
-      const overrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
-      const creatorInput = extractCreatorInput({
-        capital: agentConfig.capital ?? null,
-        riskPosture: agentConfig.risk ?? null,
-      });
-      return resolveAgentRiskContract(creatorInput, ceilings, overrides, {
-        hasCapital: agentConfig.capital != null,
-      });
-    },
-
-    async getProfile() {
-      const overrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
-      return resolveProfile(
-        {
-          capital: agentConfig.capital ?? null,
-          riskPosture: agentConfig.risk ?? null,
-        },
-        defaults,
-        overrides,
-      );
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Agent Config Operations — provides tools with access to unified config
 // ---------------------------------------------------------------------------
 
@@ -1866,7 +1818,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     agentId: AGENT_ID!,
     sessionId: SESSION_ID!,
     phase,
-    executionMode: (agentConfig.executionMode ?? 'paper') as 'paper' | 'shadow' | 'live',
+    executionMode: 'paper',
     authorizationMode: (agentConfig.authorizationMode ?? 'direct') as 'direct' | 'approval_required',
     permissionLevel: agentPermissionLevel,
     tradertonBoundary: tradertonReadBoundary,
@@ -1889,42 +1841,30 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     recordMarketDataRejection,
     capabilityEngine,
     sessionMetrics,
-    riskContractOps: buildRiskContractOps(),
     agentConfigOps,
-    agentRepo: agentRepo
-      ? {
-          getAgent: async (agentId: string) => {
-            const row = await agentRepo.getAgent(agentId);
-            if (!row) return null;
-            const riskPosture = (row.risk as Record<string, unknown> | null) ?? null;
-            return {
-              capital: row.capital,
-              risk: riskPosture as Record<string, unknown> | null,
-            };
-          },
-        }
-      : undefined,
     // A3: resolves the agent's CURRENT platform risk context off the `agents`
     // row for the PLATFORM to attach to the boundary read calls
     // (get_risk_limits / get_account_summary) — fresh-read (current values, not
     // a snapshot), post-LLM; the LLM never sees or supplies these.
-    agentRiskSpecResolver: agentRepo
+    selectedVenueAccountResolver: db
       ? async () => {
-          const row = await agentRepo.getAgent(AGENT_ID!);
-          if (!row) return null;
-          return {
-            capital: row.capital,
-            riskPosture: (row.risk as RiskPosture | null) ?? null,
-            riskOverrides: (row.riskOverrides as AgentRiskOverrides | null) ?? null,
-            executionMode: row.executionDefaults?.mode ?? undefined,
-          };
+          const rows = await db.select({
+            assignmentId: agentConnections.id,
+            grantedAt: agentConnections.grantedAt,
+            venueAccountId: connections.resolvedVenueAccountId,
+            connectionStatus: connections.status,
+          }).from(agentConnections)
+            .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
+            .where(and(eq(agentConnections.agentId, AGENT_ID!), eq(agentConnections.status, 'active')));
+          const selected = rows
+            .filter((row) => row.connectionStatus === 'active' && row.venueAccountId !== null)
+            .sort((left, right) => {
+              const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
+              return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
+            })[0];
+          return selected?.venueAccountId ?? null;
         }
       : undefined,
-    operatorDefaults: {
-      // agentRiskDefaults is guaranteed by Zod schema validation at worker startup.
-      // Every field has a .default() — these are never undefined at runtime.
-      maxDrawdownPct: agentConfig.agentRiskDefaults!.maxDrawdownPct,
-    },
     db: db ?? undefined,
     externalSkillProvider,
     skillOps: db && agentRepo ? {
@@ -3073,9 +3013,7 @@ async function runTick(): Promise<void> {
         });
       }
 
-      const maxPositions = agentConfig.maxOpenPositions
-        ?? agentConfig.agentRiskDefaults?.maxOpenPositions
-        ?? 5;
+      const maxPositions = runtimeDescriptor.guardrails.maxOpenPositions ?? 5;
 
       // Persist the hybrid prompt to Redis so it's visible in the frontend
       // Prompt surfaces alongside judge/scout prompts.

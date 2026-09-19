@@ -16,12 +16,10 @@ import type {
   PlansConfig,
 } from '@herobids/domain';
 import {
-  Decimal,
   MessageEnvelopeSchema,
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
   AGENT_RUNTIME_ACTIVITY_TYPES,
-  checkModeEscalation,
   resolveEffectiveLlmSelection,
   renderEmail,
   ManageAgentSkillsPayloadSchema,
@@ -607,8 +605,7 @@ export class AgentMessageBroker {
         throw new Error(`Trading connection ${connection.connectionId} not found or not owned by this agent's user`);
       }
 
-      // Apply the agent's capital limit (platform policy — kept). No venue-stamp.
-      const rawConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
+      const rawConfig = { ...payload.config };
 
       // Stamp agent-resolved LLM provider/model into strategy.params for llm/hybrid bots.
       // Agent-created bots must inherit the creator's LLM selection so they don't silently
@@ -650,17 +647,7 @@ export class AgentMessageBroker {
         }
       }
 
-      // Safety gate: agent execution mode must not be exceeded by bot execution
-      // mode (platform policy — kept). Read the mode from the raw config; the full
-      // BotConfigSchema validation + swap-symbol + venue validation are TRADING
-      // concerns that MOVE behind the boundary (Traderton's copied create_bot tool
-      // owns them). See 004-l3d-plan.md §C.
-      const agentMode = agent.executionDefaults?.mode ?? 'paper';
       const botMode = ((rawConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined) ?? 'paper';
-      const modeCheck = checkModeEscalation(botMode, agentMode, 'create');
-      if (!modeCheck.allowed) {
-        throw new Error(modeCheck.error);
-      }
 
       // Safety gate: plan-level live execution eligibility (platform policy — kept).
       if (botMode === 'live' && this.botLiveCheck) {
@@ -679,7 +666,6 @@ export class AgentMessageBroker {
       await this.invokeBotLifecycle('create_bot', {
         venueAccountId: connection.resolvedVenueAccountId,
         config: rawConfig,
-        executionMode: agent.executionDefaults?.mode ?? undefined,
       }, subject);
 
       logger.info({ agentId: agent.id }, 'Agent created bot via manage_bot (boundary)');
@@ -725,26 +711,11 @@ export class AgentMessageBroker {
       if (!payload.botId) throw new Error('botId is required for adjust_config');
       if (!payload.config) throw new Error('config is required for adjust_config');
 
-      // L3c: the base config + merge + BotConfigSchema validation + LLM-param
-      // preservation + restart now live behind the boundary (Traderton owns the
-      // bot config). herobids forwards the partial update + applies the platform
-      // gates it still owns: the agent capital limit and the mode-escalation
-      // ceiling (an agent must not raise a bot's mode beyond its own).
-      const partialConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
-
-      const requestedMode = (partialConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
-      if (requestedMode) {
-        const agentModeForAdjust = agent.executionDefaults?.mode ?? 'paper';
-        const modeCheck = checkModeEscalation(requestedMode, agentModeForAdjust, 'adjust');
-        if (!modeCheck.allowed) {
-          throw new Error(modeCheck.error);
-        }
-      }
+      const partialConfig = { ...payload.config };
 
       await this.invokeBotLifecycle('adjust_bot_config', {
         botId: payload.botId,
         config: partialConfig,
-        executionMode: agent.executionDefaults?.mode ?? undefined,
       }, subject);
 
       return;
@@ -1458,61 +1429,6 @@ export class AgentMessageBroker {
       footerNote: 'This is an automated notification from your agent platform.',
     };
   }
-}
-
-function applyAgentCapitalLimit(config: Record<string, unknown>, capital: string | number | null | undefined): Record<string, unknown> {
-  const capitalLimit = parsePositiveDecimal(capital);
-
-  // Normalize the bot `risk` object regardless of capital presence: strip the
-  // strategy-level exit-target keys the LLM may have misplaced into `risk`.
-  // Traderton's strict `BotRiskSchema` classifies `takeProfitPct` /
-  // `trailingStopPct` as `strategy.params` exit targets (not risk guards) and
-  // rejects unknown keys — carrying them across the boundary makes `create_bot`
-  // / `adjust_config` fail `internal.non_retryable` (bug-001 Zod-strip family).
-  const riskConfig = isPlainObject(config['risk'])
-    ? Object.fromEntries(
-        Object.entries(config['risk']).filter(([k]) => k !== 'takeProfitPct' && k !== 'trailingStopPct'),
-      )
-    : {};
-
-  if (!capitalLimit) {
-    if (Object.keys(riskConfig).length === 0) {
-      return config;
-    }
-    return { ...config, risk: riskConfig };
-  }
-
-  const configuredMaxOrderNotional = parsePositiveDecimal(riskConfig['maxOrderNotional']);
-  riskConfig['maxOrderNotional'] = configuredMaxOrderNotional && configuredMaxOrderNotional.lte(capitalLimit)
-    ? configuredMaxOrderNotional.toNumber()
-    : capitalLimit.toNumber();
-
-  return {
-    ...config,
-    risk: riskConfig,
-  };
-}
-
-function parsePositiveDecimal(value: unknown): Decimal | null {
-  if (typeof value !== 'string' && typeof value !== 'number') {
-    return null;
-  }
-
-  const rawValue = String(value).trim();
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    const decimalValue = new Decimal(rawValue);
-    return decimalValue.isFinite() && decimalValue.gt(0) ? decimalValue : null;
-  } catch {
-    return null;
-  }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function formatAgentMessage(agentName: string, subject: string | undefined, body: string): string {

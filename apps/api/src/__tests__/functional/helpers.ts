@@ -375,6 +375,34 @@ export function makeStubTradertonClient(): TradertonClient {
   };
 }
 
+function makeFunctionalProfileSaga(db: Parameters<typeof agentInteractivityRoutes>[1]) {
+  const profiles = new Map<string, {
+    actorId: string;
+    venueAccountId: string;
+    capital: string | null;
+    riskPosture: Record<string, unknown> | null;
+    executionDefaults: { mode: 'paper' | 'shadow' | 'live' } | null;
+  }>();
+
+  return {
+    readCurrentProfiles: async (
+      _ownerId: string,
+      _actorId: string,
+      connections: Array<{ venueAccountId: string | null }>,
+    ) => new Map(connections.flatMap((connection) => {
+      const profile = connection.venueAccountId ? profiles.get(connection.venueAccountId) : undefined;
+      return profile ? [[connection.venueAccountId!, profile] as const] : [];
+    })),
+    executeStaged: async <T>(input: {
+      preparePlannerInput: () => Promise<unknown> | unknown;
+      commitLocal: (tx: typeof db, markLocalCommitted: () => Promise<void>) => Promise<T>;
+    }): Promise<T> => {
+      await input.preparePlannerInput();
+      return input.commitLocal(db, async () => undefined);
+    },
+  };
+}
+
 /** Build a fully wired Fastify app for functional testing. */
 export async function buildApp() {
   // Clear LLM API key env vars to prevent them from leaking into the test
@@ -525,6 +553,7 @@ export async function buildApp() {
     undefined,
     testPlansConfig as any,
     undefined,
+    makeFunctionalProfileSaga(db) as never,
   );
 
   await analyticsRoutes(app, db, stubTradertonClient, 10_000);

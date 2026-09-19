@@ -16,14 +16,6 @@ import {
   type SkillRef,
 } from './agent-instantiation-service.js';
 
-vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
-  reconcileTradingProfile: vi.fn().mockResolvedValue({
-    upserts: [], clears: [], selectedBinding: { previous: null, next: null }, inverseActions: [],
-  }),
-}));
-
-import { reconcileTradingProfile } from '../agents/trading-profile-reconciliation-adapter.js';
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Track inserted rows during test execution. */
@@ -93,12 +85,12 @@ function makePayload(overrides: Partial<AgentBlueprintRevisionPayload> = {}): Ag
 
 // ── Tests: buildUnifiedConfigFromPayload ─────────────────────────────────────
 
-describe('createAgentFromPayload reconciliation', () => {
+describe('createAgentFromPayload profile boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('reconciles the instantiated agent profile through the shared seam', async () => {
+  it('keeps agent creation as a local transaction step for the staged caller', async () => {
     const tracker = makeInsertTracker();
     await createAgentFromPayload(
       buildMockTx(tracker),
@@ -107,13 +99,7 @@ describe('createAgentFromPayload reconciliation', () => {
       { userId: 'user-1', agentId: 'agent-blueprint' },
     );
 
-    expect(reconcileTradingProfile).toHaveBeenCalledWith({
-      prior: expect.objectContaining({ connections: [] }),
-      proposed: expect.objectContaining({
-        config: expect.objectContaining({ actorId: 'agent-blueprint', capital: '1250' }),
-        connections: [],
-      }),
-    });
+    expect(tracker.agentRows).toHaveLength(1);
   });
 });
 
@@ -297,9 +283,9 @@ describe('createAgentFromPayload', () => {
     expect(agent.name).toBe('Momentum Agent');
     expect(agent.prompt).toBe('Trade momentum');
     expect(agent.style).toBe('aggressive');
-    expect(agent.risk).toEqual({ maxOpenPositions: 5 });
-    expect(agent.executionDefaults).toEqual({ mode: 'paper', slippageBps: 50 });
-    expect(agent.capital).toBe(1000);
+    expect(agent).not.toHaveProperty('risk');
+    expect(agent).not.toHaveProperty('executionDefaults');
+    expect(agent).not.toHaveProperty('capital');
     expect(agent.maxBots).toBe(3);
     expect(agent.tickIntervalMs).toBe(30_000);
     expect(agent.openPositionEscalationToJudgePolicy).toBe('always');
@@ -444,7 +430,7 @@ describe('createAgentFromPayload', () => {
     expect(tracker.agentRows[0]!.status).toBe('stopped');
   });
 
-  it('uses riskOverride for agent risk column when provided', async () => {
+  it('does not persist riskOverride locally when provided', async () => {
     const tracker = makeInsertTracker();
     const tx = buildMockTx(tracker);
 
@@ -454,8 +440,7 @@ describe('createAgentFromPayload', () => {
 
     await createAgentFromPayload(tx, payload, [], { userId: 'user-1' }, riskOverride);
 
-    // The agent.risk column should use riskOverride, not payload.risk
-    expect(tracker.agentRows[0]!.risk).toEqual(riskOverride);
+    expect(tracker.agentRows[0]).not.toHaveProperty('risk');
   });
 
   it('sets telegramChatId from context when provided', async () => {

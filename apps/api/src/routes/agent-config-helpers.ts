@@ -641,19 +641,13 @@ export function validateAgentRiskBounds(
 /**
  * Resolve the agent's risk contract for API responses.
  * Shows per-field source, mutability, and effective values.
- * Reads from the typed risk JSONB first, falling back to column values for backward compat.
+ * Reads a typed remote trading profile, which is the sole enforcement source after migration 0072.
  */
 export function resolveAgentRiskContractForResponse(
-  agent: {
+  profile: {
     capital?: string | number | null;
-    maxOpenPositions?: number | null;
-    maxPositionSizePct?: string | number | null;
-    stopLossPct?: string | number | null;
-    stopLossCooldownMs?: number | null;
-    maxDrawdownPct?: string | number | null;
     riskOverrides?: AgentRiskOverrides | null;
-    /** Typed RiskPosture JSONB — canonical source. Takes precedence over column values when present. */
-    risk?: RiskPosture | null;
+    riskPosture?: RiskPosture | null;
   },
   agentRiskDefaults: AgentRiskDefaultsConfig,
 ): ResolvedAgentRiskContract {
@@ -665,17 +659,17 @@ export function resolveAgentRiskContractForResponse(
     maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,
   };
 
-  const rp = agent.risk ?? null;
+  const rp = profile.riskPosture ?? null;
 
   const creatorInput: AgentRiskCreatorInput = {
-    maxOpenPositions: rp?.maxOpenPositions ?? agent.maxOpenPositions ?? null,
-    maxPositionSizePct: rp?.maxPositionSizePct ?? (agent.maxPositionSizePct != null ? Number(agent.maxPositionSizePct) : null),
-    stopLossPct: rp?.stopLossPct ?? (agent.stopLossPct != null ? Number(agent.stopLossPct) : null),
-    stopLossCooldownMs: rp?.stopLossCooldownMs ?? agent.stopLossCooldownMs ?? null,
-    maxDrawdownPct: rp?.maxDrawdownPct ?? (agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null),
+    maxOpenPositions: rp?.maxOpenPositions ?? null,
+    maxPositionSizePct: rp?.maxPositionSizePct ?? null,
+    stopLossPct: rp?.stopLossPct ?? null,
+    stopLossCooldownMs: rp?.stopLossCooldownMs ?? null,
+    maxDrawdownPct: rp?.maxDrawdownPct ?? null,
   };
 
-  return resolveAgentRiskContract(creatorInput, ceilings, agent.riskOverrides ?? {}, {
-    hasCapital: agent.capital != null,
+  return resolveAgentRiskContract(creatorInput, ceilings, profile.riskOverrides ?? {}, {
+    hasCapital: profile.capital != null,
   });
 }

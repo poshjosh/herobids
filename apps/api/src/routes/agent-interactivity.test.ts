@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
-import { agentInteractivityRoutes, telegramWebhookHandler } from './agent-interactivity.js';
+import { agentInteractivityRoutes as registerAgentInteractivityRoutes, telegramWebhookHandler } from './agent-interactivity.js';
 import type { Database } from '@herobids/db';
 import type { AlertsConfig } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
@@ -8,22 +8,44 @@ import type { Redis } from 'ioredis';
 
 vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
   loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
-  reconcileTradingProfile: vi.fn().mockResolvedValue({
-    upserts: [],
-    clears: [],
-    selectedBinding: { previous: null, next: null },
-    inverseActions: [],
-  }),
 }));
 
 import {
   loadActiveTradingProfileConnections,
-  reconcileTradingProfile,
 } from '../agents/trading-profile-reconciliation-adapter.js';
-import { planTradingProfileReconciliation } from '../agents/trading-profile-reconciliation.js';
 
 const TEST_USER_ID = 'user-1';
 const AGENT_ID = 'agent-1';
+let currentProfiles = new Map<string, {
+  actorId: string;
+  venueAccountId: string;
+  capital: string | null;
+  riskPosture: Record<string, unknown> | null;
+  executionDefaults: { mode: 'paper' | 'shadow' | 'live' } | null;
+}>();
+const readCurrentProfiles = vi.fn(async () => currentProfiles);
+const stagedPlannerInputs: unknown[] = [];
+
+function buildProfileSaga(db: Database) {
+  return {
+    readCurrentProfiles,
+    executeStaged: vi.fn(async (input: {
+      preparePlannerInput: () => Promise<unknown> | unknown;
+      commitLocal: (tx: Database, markLocalCommitted: () => Promise<void>) => Promise<unknown>;
+    }) => {
+      stagedPlannerInputs.push(await input.preparePlannerInput());
+      return input.commitLocal(db, async () => undefined);
+    }),
+  };
+}
+
+function agentInteractivityRoutes(
+  ...args: Parameters<typeof registerAgentInteractivityRoutes>
+): ReturnType<typeof registerAgentInteractivityRoutes> {
+  return registerAgentInteractivityRoutes(
+    args[0], args[1], args[2], args[3], args[4], args[5], args[6], buildProfileSaga(args[1]) as never,
+  );
+}
 
 /** Flush all pending promise micro-tasks — needed after webhook inject calls
  *  because the handler now fires delivery work asynchronously. */
@@ -118,19 +140,15 @@ function buildAlertsConfig(telegramOverrides: Partial<AlertsConfig['telegram']> 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  currentProfiles = new Map();
+  stagedPlannerInputs.length = 0;
   vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
-  vi.mocked(reconcileTradingProfile).mockResolvedValue({
-    upserts: [],
-    clears: [],
-    selectedBinding: { previous: null, next: null },
-    inverseActions: [],
-  });
 });
 
 // ─── PUT /agents/:id ──────────────────────────────────────────────────────
 
 describe('PUT /agents/:id', () => {
-  it('reconciles active bindings when execution defaults are null', async () => {
+  it('loads active bindings before staging an execution-default update', async () => {
     const connectedAgent = { ...stubAgent, executionDefaults: null, risk: null, capital: null };
     const db = buildAgentDb(connectedAgent);
     vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([{
@@ -153,12 +171,59 @@ describe('PUT /agents/:id', () => {
 
     expect(response.statusCode).toBe(200);
     expect(loadActiveTradingProfileConnections).toHaveBeenCalledWith(db, AGENT_ID);
-    const reconciliationInput = vi.mocked(reconcileTradingProfile).mock.calls[0]![0];
-    const plan = planTradingProfileReconciliation(reconciliationInput);
-    expect(plan.selectedBinding).toEqual({
-      previous: { connectionId: 'connection-1', venueAccountId: 'venue-account-1' },
-      next: { connectionId: 'connection-1', venueAccountId: 'venue-account-1' },
+  });
+
+  it('preserves an unchanged selected live mode and stages the remote profile map', async () => {
+    const profile = {
+      actorId: AGENT_ID,
+      venueAccountId: 'venue-account-1',
+      capital: '1000',
+      riskPosture: { maxDrawdownPct: 10 },
+      executionDefaults: { mode: 'live' as const },
+    };
+    currentProfiles = new Map([[profile.venueAccountId, profile]]);
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([{
+      connectionId: 'connection-1', venueAccountId: profile.venueAccountId, active: true, ready: true,
+    }]);
+    const db = buildAgentDb({ ...stubAgent, skillIds: ['trading'] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(app, db, buildMockRedis());
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/agents/${AGENT_ID}`,
+      payload: { name: 'Updated', prompt: 'New prompt' },
     });
+
+    expect(response.statusCode).toBe(200);
+    expect(readCurrentProfiles).toHaveBeenCalledWith(TEST_USER_ID, AGENT_ID, expect.any(Array));
+    expect(stagedPlannerInputs[0]).toMatchObject({ prior: { profiles: currentProfiles } });
+  });
+
+  it('uses selected remote capital and risk posture when validating a risk overlay', async () => {
+    currentProfiles = new Map([['venue-account-1', {
+      actorId: AGENT_ID,
+      venueAccountId: 'venue-account-1',
+      capital: '1000',
+      riskPosture: { dailyMaxLossPct: 5, maxDrawdownPct: 10 },
+      executionDefaults: { mode: 'paper' },
+    }]]);
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([{
+      connectionId: 'connection-1', venueAccountId: 'venue-account-1', active: true, ready: true,
+    }]);
+    const db = buildAgentDb({ ...stubAgent, skillIds: ['trading'] });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(app, db, buildMockRedis());
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/agents/${AGENT_ID}`,
+      payload: { name: 'Updated', prompt: 'New prompt', maxDrawdownPct: 12 },
+    });
+
+    expect(response.statusCode).toBe(200);
   });
 
   it('returns 200 when agent is stopped and body is complete', async () => {
@@ -345,6 +410,16 @@ describe('PUT /agents/:id', () => {
   });
 
   it('preserves execution defaults when trading skills are removed on PUT', async () => {
+    currentProfiles = new Map([['venue-account-1', {
+      actorId: AGENT_ID,
+      venueAccountId: 'venue-account-1',
+      capital: null,
+      riskPosture: null,
+      executionDefaults: { mode: 'paper' },
+    }]]);
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([{
+      connectionId: 'connection-1', venueAccountId: 'venue-account-1', active: true, ready: true,
+    }]);
     const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
     const insertOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
@@ -413,10 +488,21 @@ describe('PUT /agents/:id', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionDefaults: { mode: 'paper' } }));
+    const staged = stagedPlannerInputs[0] as { proposed: { profiles: Map<string, { executionDefaults: { mode: string } | null }> } };
+    expect(staged.proposed.profiles.get('venue-account-1')?.executionDefaults).toEqual({ mode: 'paper' });
   });
 
   it('preserves execution defaults when no executionMode is sent and trading skills remain unchanged', async () => {
+    currentProfiles = new Map([['venue-account-1', {
+      actorId: AGENT_ID,
+      venueAccountId: 'venue-account-1',
+      capital: null,
+      riskPosture: null,
+      executionDefaults: { mode: 'paper' },
+    }]]);
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([{
+      connectionId: 'connection-1', venueAccountId: 'venue-account-1', active: true, ready: true,
+    }]);
     const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
     const insertOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
@@ -487,7 +573,8 @@ describe('PUT /agents/:id', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionDefaults: { mode: 'paper' } }));
+    const staged = stagedPlannerInputs[0] as { proposed: { profiles: Map<string, { executionDefaults: { mode: string } | null }> } };
+    expect(staged.proposed.profiles.get('venue-account-1')?.executionDefaults).toEqual({ mode: 'paper' });
   });
 
   it('returns 409 when agent is running', async () => {

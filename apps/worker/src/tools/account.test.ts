@@ -46,18 +46,11 @@ describe('get_account_summary — Traderton boundary', () => {
     expect(result.data).toEqual({ ok: true, capital: '10000' });
   });
 
-  // A3: the PLATFORM attaches the risk spec (post-LLM, from the `agents` row via
-  // agentRiskSpecResolver) so traderton serves capital + the contract from its
-  // RiskSource seam.
-  it('attaches the platform risk spec to the read payload when the resolver resolves', async () => {
+  it('attaches only the platform-selected venue account to the read payload', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: '1000' } });
     const ctx = makeCtx({
       tradertonBoundary: boundary,
-      agentRiskSpecResolver: vi.fn(async () => ({
-        capital: '1000',
-        riskPosture: { maxOpenPositions: 3 },
-        riskOverrides: { maxDrawdownPct: 5 },
-      })),
+      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
     const result = await getAccountSummary.execute({}, ctx);
@@ -65,19 +58,15 @@ describe('get_account_summary — Traderton boundary', () => {
     expect(result.success).toBe(true);
     expect(invoke).toHaveBeenCalledWith({
       toolName: 'get_account_summary',
-      payload: {
-        capital: '1000',
-        riskPosture: { maxOpenPositions: 3 },
-        riskOverrides: { maxDrawdownPct: 5 },
-      },
+      payload: { venueAccountId: 'venue-account-1' },
     });
   });
 
-  it('attaches nothing beyond present fields (null capital / null posture are omitted)', async () => {
+  it('attaches nothing when no venue account is selected', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: null } });
     const ctx = makeCtx({
       tradertonBoundary: boundary,
-      agentRiskSpecResolver: vi.fn(async () => ({ capital: null, riskPosture: null, riskOverrides: null })),
+      selectedVenueAccountResolver: vi.fn(async () => null),
     });
 
     await getAccountSummary.execute({}, ctx);

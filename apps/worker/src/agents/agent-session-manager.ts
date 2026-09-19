@@ -9,7 +9,7 @@ import type {
   ProvidersYaml,
   OperatorModelDefaults,
 } from '@herobids/domain';
-import { readSkillPresetId, resolveAgentRuntimePolicy, toGuardrailNumber } from '@herobids/domain';
+import { readSkillPresetId, resolveAgentRuntimePolicy } from '@herobids/domain';
 import { buildRuntimeDescriptor } from '@herobids/db';
 import type { AgentRepository, UsageBillingRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -38,8 +38,6 @@ export interface AgentSessionManagerConfig {
   containerReconcileIntervalMs?: number;
   /** Resolved runtime budget policy from operator config. */
   budgets: RuntimeBudgetPolicy;
-  /** Operator-configured agent risk defaults — forwarded to agent containers for contract resolution. */
-  agentRiskDefaults?: Record<string, unknown>;
   /**
    * Called after a session's container is successfully launched.
    * Used to subscribe the agent's inbound Redis stream so that heartbeats
@@ -60,7 +58,7 @@ export interface AgentSessionManagerConfig {
     * Return `false` when the runtime is healthy but no trading actor/fallback was
     * established yet, so activation should be retried on a later heartbeat.
    */
-  onSessionActive?: (agentId: string, executionMode: string | null, sessionId: string) => boolean | void | Promise<boolean | void>;
+  onSessionActive?: (agentId: string, sessionId: string) => boolean | void | Promise<boolean | void>;
   /**
    * Called once for brand-new sessions after they become active.
    * Used to send an initial user-facing anchor message without duplicating it on recovery.
@@ -188,10 +186,10 @@ export class AgentSessionManager {
           uniqueAgentIds.map((id) => this.agentRepo.getAgent(id).catch(() => null)),
         );
         const agentMap = new Map<string, (typeof agentRecords)[number]>();
-        for (let i = 0; i < uniqueAgentIds.length; i++) {
-          const id = uniqueAgentIds[i]!;
-          const record = agentRecords[i];
-          if (record) agentMap.set(id, record);
+        for (let index = 0; index < uniqueAgentIds.length; index++) {
+          const agentId = uniqueAgentIds[index]!;
+          const record = agentRecords[index];
+          if (record) agentMap.set(agentId, record);
         }
         for (const [agentId, count] of agentCounts) {
           await this.redis.set(`agent:sessions:count:${agentId}`, String(count));
@@ -332,20 +330,13 @@ export class AgentSessionManager {
         const planUsageForEnforcement = this.config.plansConfig?.plans[resolvedPlanIdForEnforcement]?.usage;
 
         const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
-        const riskPosture = (agent.risk as Record<string, unknown> | null) ?? {};
-        const executionDefaults = (agent.executionDefaults as Record<string, unknown> | null) ?? {};
         const runtimeDescriptor = buildRuntimeDescriptor({
           agentId: agent.id,
           name: agent.name,
           skillPresetId: readSkillPresetId(agent.unifiedConfig),
           goal: agent.prompt,
-          executionMode: executionDefaults['mode'] as string | undefined,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
           maxBots: agent.maxBots,
-          maxOpenPositions: toGuardrailNumber(riskPosture['maxOpenPositions']),
-          maxPositionSizePct: toGuardrailNumber(riskPosture['maxPositionSizePct']),
-          stopLossPct: toGuardrailNumber(riskPosture['stopLossPct']),
-          capital: agent.capital ?? null,
           budgets: this.config.budgets,
           capabilityDescriptor,
         });
@@ -522,20 +513,8 @@ export class AgentSessionManager {
             }
             : {}),
           prompt: agent.prompt,
-          ...((executionDefaults['mode'] as string) != null && { executionMode: executionDefaults['mode'] as string }),
           ...(agent.maxBots != null && { maxBots: agent.maxBots }),
-          ...((executionDefaults['slippageBps'] as number | undefined) != null && { maxSlippageBps: executionDefaults['slippageBps'] }),
           ...(agent.tickIntervalMs != null && { tickIntervalMs: agent.tickIntervalMs }),
-          ...(agent.capital != null && { capital: agent.capital }),
-          // Risk contract fields — forwarded so the agent container can resolve the contract.
-          // Read exclusively from canonical risk JSONB (no legacy column fallbacks).
-          maxOpenPositions: riskPosture['maxOpenPositions'] ?? null,
-          maxPositionSizePct: riskPosture['maxPositionSizePct'] ?? null,
-          stopLossPct: riskPosture['stopLossPct'] ?? null,
-          stopLossCooldownMs: riskPosture['stopLossCooldownMs'] ?? null,
-          // Canonical risk posture JSONB — sole risk source in the agent runtime
-          risk: agent.risk ?? null,
-          agentRiskDefaults: this.config.agentRiskDefaults,
           runtimeDescriptor,
           // 004: Explicit capability / hybrid mode from UnifiedAgentConfig
           capabilityMode: agent.unifiedConfig?.capabilityMode ?? 'intelligence',
@@ -815,8 +794,7 @@ export class AgentSessionManager {
       if (this.config.onSessionActive) {
         const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
         try {
-          const execMode = (agent?.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined ?? null;
-          activationEstablished = await this.config.onSessionActive(session.agentId, execMode, session.id) !== false;
+            activationEstablished = await this.config.onSessionActive(session.agentId, session.id) !== false;
         } catch (err) {
           await this.handleActivationFailure(session.id, session.agentId, agent?.userId, err);
           return;

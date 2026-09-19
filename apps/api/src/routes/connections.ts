@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
-import { eq, and, sql } from 'drizzle-orm';
-import type { Database } from '@herobids/db';
+import { eq, and, inArray, sql } from 'drizzle-orm';
+import type { Database, DatabaseTransaction } from '@herobids/db';
 import { agentConnections, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy, TradertonReadResult } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN, readSkillPresetId } from '@herobids/domain';
@@ -12,8 +12,10 @@ import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
 import {
   loadActiveTradingProfileConnections,
-  reconcileTradingProfile,
 } from '../agents/trading-profile-reconciliation-adapter.js';
+import { proposeTradingProfiles } from '../agents/trading-profile-reconciliation.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
+import type { TradingProfileStagedOperation } from '../agents/trading-profile-reconciliation-saga.js';
 import {
   providerAllowsCredential,
   providerRequiresCredential,
@@ -62,6 +64,7 @@ export async function connectionRoutes(
   redisClient?: Redis,
   plansConfig?: PlansConfig,
   tradertonClient?: TradertonClient,
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
   // Owner-scoped boundary READ helper (c4.9f). Mirrors the invoke+unwrap shape in
   // bots.ts: subject = {ownerId:userId, actor:{type:'user',id:userId}}; the
@@ -166,8 +169,6 @@ export async function connectionRoutes(
         name: agents.name,
         prompt: agents.prompt,
         toolPolicy: agents.toolPolicy,
-        risk: agents.risk,
-        executionDefaults: agents.executionDefaults,
         maxBots: agents.maxBots,
         unifiedConfig: agents.unifiedConfig,
       })
@@ -178,19 +179,16 @@ export async function connectionRoutes(
       return;
     }
 
-    const risk = (agentRow.risk ?? {}) as Record<string, unknown>;
-    const executionDefaults = (agentRow.executionDefaults ?? {}) as Record<string, unknown>;
-
     const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId);
     const runtimeDescriptor = buildRuntimeDescriptor({
       agentId,
       name: agentRow.name,
       skillPresetId: readSkillPresetId(agentRow.unifiedConfig),
       goal: agentRow.prompt,
-      executionMode: executionDefaults['mode'] as string | undefined,
+      executionMode: undefined,
       toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},
-      dailyMaxLossPct: risk['dailyMaxLossPct'] != null ? String(risk['dailyMaxLossPct']) : null,
-      maxDrawdownPct: risk['maxDrawdownPct'] != null ? Number(risk['maxDrawdownPct']) : null,
+      dailyMaxLossPct: null,
+      maxDrawdownPct: null,
       maxBots: agentRow.maxBots,
       budgets,
       capabilityDescriptor,
@@ -449,51 +447,101 @@ export async function connectionRoutes(
     const affectedAgents = await db
       .select({
         agentId: agentConnections.agentId,
-        capital: agents.capital,
-        riskPosture: agents.risk,
-        executionDefaults: agents.executionDefaults,
       })
       .from(agentConnections)
       .innerJoin(agents, eq(agentConnections.agentId, agents.id))
       .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')));
 
-    const now = new Date();
-
-    for (const agent of affectedAgents) {
-      const priorConnections = await loadActiveTradingProfileConnections(db, agent.agentId);
-      await reconcileTradingProfile({
-        prior: {
-          config: {
-            actorId: agent.agentId,
-            capital: agent.capital,
-            riskPosture: agent.riskPosture,
-            executionDefaults: agent.executionDefaults,
-          },
-          connections: priorConnections,
-        },
-        proposed: {
-          config: {
-            actorId: agent.agentId,
-            capital: agent.capital,
-            riskPosture: agent.riskPosture,
-            executionDefaults: agent.executionDefaults,
-          },
-          connections: priorConnections.filter((connection) => connection.connectionId !== id),
-        },
-      });
+    if (affectedAgents.length > 0 && !profileReconciliationSaga) {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Trading service is unavailable — the connection was not revoked.', {}));
     }
 
-    // Mark all agent grants for this connection as revoked so that a
-    // subsequent hard-delete is not blocked by still-active grants.
-    await db
-      .update(agentConnections)
-      .set({ status: 'revoked', revokedAt: now, updatedAt: now })
-      .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')));
+    const now = new Date();
+    const stagedOperations: TradingProfileStagedOperation[] = [];
+    const completedAgentIds: string[] = [];
+    let finalizationStarted = false;
+    try {
+    for (const [index, agent] of affectedAgents.entries()) {
+      let preparedPriorConnections: Awaited<ReturnType<typeof loadActiveTradingProfileConnections>> | undefined;
+      let stagedOperation: TradingProfileStagedOperation | undefined;
+      await profileReconciliationSaga!.executeStaged({
+        ownerId: request.userId,
+        actorId: agent.agentId,
+        localMutationId: crypto.randomUUID(),
+        preparePlannerInput: async () => {
+          const priorConnections = await loadActiveTradingProfileConnections(db, agent.agentId);
+          preparedPriorConnections = priorConnections;
+          const profiles = await profileReconciliationSaga!.readCurrentProfiles(request.userId, agent.agentId, priorConnections);
+          const proposedConnections = priorConnections.filter((connection) => connection.connectionId !== id);
+          return {
+            prior: { profiles, connections: priorConnections },
+            proposed: { profiles: proposeTradingProfiles({ priorProfiles: profiles, priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+          };
+        },
+        commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {
+          const [currentConnection] = await tx.select({ status: connections.status, userId: connections.userId })
+            .from(connections).where(eq(connections.id, id));
+          if (!currentConnection || currentConnection.userId !== request.userId || currentConnection.status !== 'active') {
+            throw new Error('connection changed before revoke could be committed');
+          }
+          const [activeGrant] = await tx.select({ id: agentConnections.id }).from(agentConnections).where(and(
+            eq(agentConnections.agentId, agent.agentId),
+            eq(agentConnections.connectionId, id),
+            eq(agentConnections.status, 'active'),
+          ));
+          if (!activeGrant) throw new Error('agent connection changed before revoke could be committed');
+          const currentProfileConnections = await loadActiveTradingProfileConnections(tx, agent.agentId);
+          if (JSON.stringify(currentProfileConnections) !== JSON.stringify(preparedPriorConnections)) {
+            throw new Error('agent connections changed before revoke could be committed');
+          }
 
-    await db
-      .update(connections)
-      .set({ status: 'revoked', updatedAt: now })
-      .where(eq(connections.id, id));
+          await tx.update(agentConnections).set({ status: 'revoked', revokedAt: now, updatedAt: now })
+            .where(eq(agentConnections.id, activeGrant.id));
+          if (index === affectedAgents.length - 1) {
+            await tx.update(connections).set({ status: 'revoked', updatedAt: now }).where(eq(connections.id, id));
+          }
+          await markLocalCommitted();
+        },
+        onOperationStaged: (operation) => {
+          stagedOperation = operation;
+        },
+        deferFinalization: true,
+      });
+      if (stagedOperation) stagedOperations.push(stagedOperation);
+      completedAgentIds.push(agent.agentId);
+    }
+    finalizationStarted = true;
+    for (const operation of stagedOperations) {
+      await profileReconciliationSaga!.finalize(operation);
+    }
+    } catch (error) {
+      if (finalizationStarted) {
+        // Finalization only removes remote rollback preimages. The local and remote revokes
+        // are already committed, so recovery must finish finalization rather than compensate.
+        throw error;
+      }
+      const compensationResults = await Promise.allSettled(
+        stagedOperations.reverse().map((operation) => profileReconciliationSaga!.compensate(operation)),
+      );
+      if (compensationResults.some((result) => result.status === 'rejected')) {
+        throw new Error('connection revoke fanout failed and profile compensation did not complete');
+      }
+      if (completedAgentIds.length > 0) {
+        await db.transaction(async (tx) => {
+          await tx.update(agentConnections).set({ status: 'active', revokedAt: null, updatedAt: new Date() })
+            .where(and(inArray(agentConnections.agentId, completedAgentIds), eq(agentConnections.connectionId, id)));
+        });
+      }
+      throw error;
+    }
+
+    if (affectedAgents.length === 0) {
+      await db.transaction(async (tx) => {
+        await tx.update(agentConnections).set({ status: 'revoked', revokedAt: now, updatedAt: now })
+          .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')));
+        await tx.update(connections).set({ status: 'revoked', updatedAt: now }).where(eq(connections.id, id));
+      });
+    }
 
     if (redisClient) {
       for (const row of affectedAgents) {

@@ -6,19 +6,13 @@ import type { TradertonClient, TradertonClientResult } from '@herobids/domain/tr
 
 vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
   loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
-  reconcileTradingProfile: vi.fn().mockResolvedValue({
-    upserts: [],
-    clears: [],
-    selectedBinding: { previous: null, next: null },
-    inverseActions: [],
-  }),
 }));
 
 import {
   loadActiveTradingProfileConnections,
-  reconcileTradingProfile,
 } from '../agents/trading-profile-reconciliation-adapter.js';
-import { planTradingProfileReconciliation } from '../agents/trading-profile-reconciliation.js';
+import { planTradingProfileReconciliation, type TradingProfileConnection, type TypedTradingProfile } from '../agents/trading-profile-reconciliation.js';
+import type { TradingProfilePlannerInput } from '../agents/trading-profile-reconciliation-saga.js';
 
 const TEST_USER_ID = 'user-1';
 const TEST_RUNTIME_BUDGETS = {
@@ -35,8 +29,33 @@ async function connectionRoutes(
   redisClient?: unknown,
   plansConfig?: PlansConfig,
   tradertonClient?: TradertonClient,
+  profileReconciliationSaga = buildStagedSaga(db),
 ) {
-  await registerConnectionRoutesImpl(app, db as never, TEST_RUNTIME_BUDGETS, redisClient as never, plansConfig, tradertonClient);
+  await registerConnectionRoutesImpl(app, db as never, TEST_RUNTIME_BUDGETS, redisClient as never, plansConfig, tradertonClient, profileReconciliationSaga as never);
+}
+
+function buildStagedSaga(db: unknown, onPrepared?: (input: TradingProfilePlannerInput) => void) {
+  return {
+    readCurrentProfiles: vi.fn(async (_ownerId: string, actorId: string, connections: TradingProfileConnection[]) => new Map(
+      connections.flatMap((connection) => connection.venueAccountId === null ? [] : [[connection.venueAccountId, {
+        actorId,
+        venueAccountId: connection.venueAccountId,
+        capital: '1000',
+        riskPosture: null,
+        executionDefaults: { mode: 'paper' },
+      } satisfies TypedTradingProfile] as const]),
+    )),
+    executeStaged: vi.fn(async (input: {
+      preparePlannerInput: () => Promise<TradingProfilePlannerInput>;
+      commitLocal: (tx: unknown, markLocalCommitted: () => Promise<void>) => Promise<unknown>;
+    }) => {
+      const plannerInput = await input.preparePlannerInput();
+      onPrepared?.(plannerInput);
+      return input.commitLocal(db, vi.fn().mockResolvedValue(undefined));
+    }),
+    finalize: vi.fn().mockResolvedValue(undefined),
+    compensate: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 /**
@@ -128,6 +147,7 @@ vi.mock('drizzle-orm', () => {
   });
   return {
     eq: vi.fn((_col, val) => ({ _eq: val })),
+    inArray: vi.fn((_col, values) => ({ _in: values })),
     and: vi.fn((...args) => ({ _and: args })),
     sql: sqlMock,
   };
@@ -162,7 +182,7 @@ function buildMockDb() {
   lastUpdateSet = undefined;
   updateSets = [];
 
-  return {
+  const db = {
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockImplementation((v) => {
         lastInserted = v;
@@ -200,6 +220,8 @@ function buildMockDb() {
       }),
     }),
   } as any;
+  db.transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(db));
+  return db;
 }
 
 describe('POST /connections', () => {
@@ -602,8 +624,7 @@ describe('DELETE /connections/:id', () => {
             // conn lookup
             return Promise.resolve([{ id: CONNECTION_ROW.id, status: CONNECTION_ROW.status }]);
           }
-          // affectedAgents query — 3 agents
-          return Promise.resolve([]);
+          return Promise.resolve([{ id: `grant-${selectCount}`, userId: TEST_USER_ID, status: 'active' }]);
         }),
       })),
     }));
@@ -618,12 +639,12 @@ describe('DELETE /connections/:id', () => {
 
     const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
     expect(res.statusCode).toBe(204);
-    // Two updates: first revokes ALL agent_connections rows, then revokes the connection.
-    expect(updateSets).toHaveLength(2);
+    // One local grant update per agent, then the connection update in the final commit.
+    expect(updateSets).toHaveLength(4);
     expect(updateSets[0]!['status']).toBe('revoked');
     expect(updateSets[0]!['revokedAt']).toBeDefined();
     expect(updateSets[1]!['status']).toBe('revoked');
-    expect(reconcileTradingProfile).toHaveBeenCalledTimes(3);
+    expect(loadActiveTradingProfileConnections).toHaveBeenCalledTimes(6);
   });
 
   it('reconciles every shared grant from its prior binding to the remaining ready binding before revocation', async () => {
@@ -641,7 +662,7 @@ describe('DELETE /connections/:id', () => {
         }),
         where: vi.fn().mockImplementation(() => {
           selectCount++;
-          return Promise.resolve(selectCount === 1 ? [CONNECTION_ROW] : []);
+          return Promise.resolve(selectCount === 1 ? [CONNECTION_ROW] : [{ id: `grant-${selectCount}`, userId: TEST_USER_ID, status: 'active' }]);
         }),
       }),
     }));
@@ -651,16 +672,25 @@ describe('DELETE /connections/:id', () => {
         { connectionId: 'conn-fallback', venueAccountId: 'venue-fallback', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-a' },
       ])
       .mockResolvedValueOnce([
+        { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, grantedAt: new Date('2026-01-02'), assignmentId: 'grant-b' },
+        { connectionId: 'conn-fallback', venueAccountId: 'venue-fallback', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-a' },
+      ])
+      .mockResolvedValueOnce([
+        { connectionId: 'conn-1', venueAccountId: 'venue-2', active: true, ready: true, grantedAt: new Date('2026-01-02'), assignmentId: 'grant-d' },
+        { connectionId: 'conn-fallback', venueAccountId: 'venue-fallback', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-c' },
+      ])
+      .mockResolvedValueOnce([
         { connectionId: 'conn-1', venueAccountId: 'venue-2', active: true, ready: true, grantedAt: new Date('2026-01-02'), assignmentId: 'grant-d' },
         { connectionId: 'conn-fallback', venueAccountId: 'venue-fallback', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-c' },
       ]);
-    await connectionRoutes(app, db);
+    const stagedInputs: TradingProfilePlannerInput[] = [];
+    await connectionRoutes(app, db, undefined, undefined, undefined, buildStagedSaga(db, (input) => stagedInputs.push(input)));
 
     const response = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
 
     expect(response.statusCode).toBe(204);
-    expect(reconcileTradingProfile).toHaveBeenCalledTimes(2);
-    for (const [input] of vi.mocked(reconcileTradingProfile).mock.calls) {
+    expect(stagedInputs).toHaveLength(2);
+    for (const input of stagedInputs) {
       expect(input.prior.connections).toHaveLength(2);
       expect(input.proposed.connections).toEqual([
         expect.objectContaining({ connectionId: 'conn-fallback' }),
@@ -675,6 +705,141 @@ describe('DELETE /connections/:id', () => {
         binding: expect.objectContaining({ connectionId: 'conn-1' }),
       });
     }
+  });
+
+  it('restores both grants and both remote profiles when the second shared-agent revoke fails', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    const localGrants = new Map([['agent-1', 'active'], ['agent-2', 'active']]);
+    const remoteProfiles = new Map([['agent-1', 'conn-1'], ['agent-2', 'conn-1']]);
+    const affectedAgents = [
+      { agentId: 'agent-1', capital: null, riskPosture: null, executionDefaults: null },
+      { agentId: 'agent-2', capital: null, riskPosture: null, executionDefaults: null },
+    ];
+    db.select = vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(affectedAgents) }),
+        where: vi.fn().mockResolvedValue([{ id: 'conn-1', userId: TEST_USER_ID, status: 'active' }]),
+      }),
+    }));
+    let localUpdateCount = 0;
+    db.update = vi.fn().mockReturnValue({
+      set: vi.fn().mockImplementation((values: Record<string, unknown>) => ({
+        where: vi.fn().mockImplementation(async () => {
+          if (values['status'] === 'revoked') localGrants.set('agent-1', 'revoked');
+          if (values['status'] === 'active') localGrants.set('agent-1', 'active');
+          localUpdateCount += 1;
+        }),
+      })),
+    });
+    let invocation = 0;
+    const saga = {
+      readCurrentProfiles: vi.fn(async (_ownerId: string, actorId: string, connections: TradingProfileConnection[]) => new Map(
+        connections.flatMap((connection) => connection.venueAccountId === null ? [] : [[connection.venueAccountId, {
+          actorId,
+          venueAccountId: connection.venueAccountId,
+          capital: '1000',
+          riskPosture: null,
+          executionDefaults: { mode: 'paper' },
+        } satisfies TypedTradingProfile] as const]),
+      )),
+      executeStaged: vi.fn(async (input: { actorId: string; preparePlannerInput: () => Promise<TradingProfilePlannerInput>; commitLocal: (tx: unknown, markLocalCommitted: () => Promise<void>) => Promise<unknown>; onOperationStaged: (operation: { operationId: string; ownerId: string; actorId: string }) => void }) => {
+        invocation += 1;
+        await input.preparePlannerInput();
+        input.onOperationStaged({ operationId: `operation-${invocation}`, ownerId: TEST_USER_ID, actorId: input.actorId });
+        remoteProfiles.set(input.actorId, 'fallback');
+        if (invocation === 2) {
+          remoteProfiles.set(input.actorId, 'conn-1');
+          throw new Error('second remote revoke failed');
+        }
+        return input.commitLocal(db, vi.fn().mockResolvedValue(undefined));
+      }),
+      compensate: vi.fn(async (operation: { actorId: string }) => {
+        remoteProfiles.set(operation.actorId, 'conn-1');
+      }),
+      finalize: vi.fn(),
+    };
+    await connectionRoutes(app, db, undefined, undefined, undefined, saga);
+
+    const response = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
+
+    expect(response.statusCode).toBe(500);
+    expect(saga.finalize).not.toHaveBeenCalled();
+    expect(saga.compensate).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'agent-1' }));
+    expect(localUpdateCount).toBe(2);
+    expect([...localGrants.values()]).toEqual(['active', 'active']);
+    expect([...remoteProfiles.values()]).toEqual(['conn-1', 'conn-1']);
+  });
+
+  it('keeps every grant revoked and lets recovery finish when the second shared-agent finalization fails', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    const localGrants = new Map([['agent-1', 'active'], ['agent-2', 'active']]);
+    const remoteProfiles = new Map([['agent-1', 'conn-1'], ['agent-2', 'conn-1']]);
+    const outboxStates = new Map<string, 'completed' | 'finalizing'>();
+    const affectedAgents = [
+      { agentId: 'agent-1', capital: null, riskPosture: null, executionDefaults: null },
+      { agentId: 'agent-2', capital: null, riskPosture: null, executionDefaults: null },
+    ];
+    db.select = vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(affectedAgents) }),
+        where: vi.fn().mockResolvedValue([{ id: 'conn-1', userId: TEST_USER_ID, status: 'active' }]),
+      }),
+    }));
+    db.update = vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    });
+    let invocation = 0;
+    const saga = {
+      readCurrentProfiles: vi.fn(async (_ownerId: string, actorId: string, connections: TradingProfileConnection[]) => new Map(
+        connections.flatMap((connection) => connection.venueAccountId === null ? [] : [[connection.venueAccountId, {
+          actorId,
+          venueAccountId: connection.venueAccountId,
+          capital: '1000',
+          riskPosture: null,
+          executionDefaults: { mode: 'paper' },
+        } satisfies TypedTradingProfile] as const]),
+      )),
+      executeStaged: vi.fn(async (input: { actorId: string; preparePlannerInput: () => Promise<TradingProfilePlannerInput>; commitLocal: (tx: unknown, markLocalCommitted: () => Promise<void>) => Promise<unknown>; onOperationStaged: (operation: { operationId: string; ownerId: string; actorId: string }) => void }) => {
+        invocation += 1;
+        await input.preparePlannerInput();
+        input.onOperationStaged({ operationId: `operation-${invocation}`, ownerId: TEST_USER_ID, actorId: input.actorId });
+        remoteProfiles.set(input.actorId, 'cleared');
+        localGrants.set(input.actorId, 'revoked');
+        return input.commitLocal(db, vi.fn().mockResolvedValue(undefined));
+      }),
+      finalize: vi.fn(async (operation: { operationId: string }) => {
+        if (operation.operationId === 'operation-1') {
+          outboxStates.set(operation.operationId, 'completed');
+          return;
+        }
+        outboxStates.set(operation.operationId, 'finalizing');
+        throw new Error('second finalization failed');
+      }),
+      compensate: vi.fn(),
+      recover: vi.fn(async () => {
+        outboxStates.set('operation-2', 'completed');
+      }),
+    };
+    await connectionRoutes(app, db, undefined, undefined, undefined, saga);
+
+    const response = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
+
+    expect(response.statusCode).toBe(500);
+    expect(saga.compensate).not.toHaveBeenCalled();
+    expect([...localGrants.values()]).toEqual(['revoked', 'revoked']);
+    expect([...remoteProfiles.values()]).toEqual(['cleared', 'cleared']);
+    expect([...outboxStates.entries()]).toEqual([
+      ['operation-1', 'completed'],
+      ['operation-2', 'finalizing'],
+    ]);
+
+    await saga.recover();
+
+    expect([...outboxStates.values()]).toEqual(['completed', 'completed']);
   });
 
   it('revokes a connection with zero agent grants and still returns 204', async () => {
@@ -751,6 +916,8 @@ describe('DELETE /connections/:id', () => {
     const selectSequence: unknown[][] = [
       [{ id: CONNECTION_ROW.id, status: CONNECTION_ROW.status }],
       [{ agentId: 'agent-1' }],
+      [{ id: 'conn-1', userId: TEST_USER_ID, status: 'active' }],
+      [{ id: 'grant-1' }],
       [{
         id: 'agent-1',
         name: 'agent-1',
@@ -782,7 +949,7 @@ describe('DELETE /connections/:id', () => {
       }),
     };
 
-    await connectionRoutes(app, db, redisClient as any);
+    await connectionRoutes(app, db, redisClient as any, undefined, undefined, buildStagedSaga(db));
 
     const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
 

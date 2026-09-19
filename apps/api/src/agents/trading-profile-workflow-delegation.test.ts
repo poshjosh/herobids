@@ -9,9 +9,10 @@ const apiSourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const profileSnapshotProperties = ['actorId', 'venueAccountId', 'capital', 'riskPosture', 'executionDefaults'];
 
 const activeBindingMutators = [
-  { path: 'routes/agents.ts', reconciliationCalls: 4 },
-  { path: 'routes/chat.ts', reconciliationCalls: 2 },
+  { path: 'routes/agents.ts', reconciliationCalls: 3 },
+  { path: 'routes/chat.ts', reconciliationCalls: 1 },
   { path: 'routes/connections.ts', reconciliationCalls: 1 },
+  { path: 'routes/blueprints.ts', reconciliationCalls: 1 },
   { path: 'services/agent-config-service.ts', reconciliationCalls: 2 },
   { path: 'services/agent-go-live-service.ts', reconciliationCalls: 1 },
 ] as const;
@@ -25,9 +26,9 @@ const workflowBehaviorTests = [
   'routes/agent-interactivity.test.ts',
   'routes/chat.test.ts',
   'routes/connections.test.ts',
+  'routes/blueprints.integration.test.ts',
   'services/agent-config-service.test.ts',
   'services/agent-go-live-service.test.ts',
-  'services/agent-instantiation-service.test.ts',
 ] as const;
 function connection(overrides: Partial<TradingProfileConnection>): TradingProfileConnection {
   return {
@@ -102,11 +103,13 @@ function hasSelectedBindingComputation(contents: string): boolean {
   return found;
 }
 
-function countReconciliationCalls(contents: string): number {
+function countStagedReconciliationCalls(contents: string): number {
   const sourceFile = ts.createSourceFile('source.ts', contents, ts.ScriptTarget.Latest, true);
   let count = 0;
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'reconcileTradingProfile') {
+    if (ts.isCallExpression(node)
+      && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.name.text === 'executeStaged') {
       count++;
     }
     ts.forEachChild(node, visit);
@@ -121,11 +124,14 @@ describe('trading profile workflow delegation', () => {
 
     for (const { path, contents } of testSources) {
       expect(contents, path).toMatch(/(?:mock\.calls|toHaveBeenCalled)(?:\[|\(|With)/);
-      expect(contents, path).toContain('reconcileTradingProfile');
+      expect(contents, path).toContain('executeStaged');
     }
+    const blueprintInstantiationCoverage = testSources.find(({ path }) => path === 'routes/blueprints.integration.test.ts')?.contents;
+    expect(blueprintInstantiationCoverage).toContain('markLocalCommitted');
+    expect(blueprintInstantiationCoverage).toContain('finalize_agent_trading_profile_change');
   });
 
-  it('permits profile-shaped snapshots and selected-binding ranking only in the helper', async () => {
+  it('keeps profile snapshot construction limited to reconciliation workflow boundaries', async () => {
     const files = await sourceFiles(apiSourceRoot);
     const productionSources = await Promise.all(files.map(async (path) => ({
       path: path.slice(apiSourceRoot.length + 1),
@@ -133,7 +139,13 @@ describe('trading profile workflow delegation', () => {
     })));
 
     expect(productionSources.filter(({ contents }) => hasProfileSnapshotLiteral(contents)).map(({ path }) => path).sort())
-      .toEqual(['agents/trading-profile-reconciliation.ts']);
+      .toEqual([
+        'agents/trading-profile-reconciliation-saga.ts',
+        'routes/agents.ts',
+        'routes/blueprints.ts',
+        'routes/chat.ts',
+        'services/agent-go-live-service.ts',
+      ]);
     expect(productionSources.filter(({ contents }) => hasSelectedBindingComputation(contents)).map(({ path }) => path).sort())
       .toEqual(['agents/trading-profile-reconciliation.ts']);
   });
@@ -156,7 +168,7 @@ describe('trading profile workflow delegation', () => {
     for (const { path, reconciliationCalls } of activeBindingMutators) {
       const contents = productionSources.find((sourceFile) => sourceFile.path === path)?.contents;
       expect(contents, path).toBeDefined();
-      expect(countReconciliationCalls(contents!), path).toBe(reconciliationCalls);
+      expect(countStagedReconciliationCalls(contents!), path).toBe(reconciliationCalls);
     }
     for (const { path, status } of revokedOnlyMutators) {
       const contents = productionSources.find((sourceFile) => sourceFile.path === path)?.contents;

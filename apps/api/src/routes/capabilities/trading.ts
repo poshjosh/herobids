@@ -772,7 +772,7 @@ export async function tradingCapabilityRoutes(
 
       if (action === 'start') {
         // Validate execution capability before starting
-        const agentExecMode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
+        const agentExecMode: string | undefined = undefined;
         if (agentExecMode) {
           const assignmentRows = await selectAgentTradingAssignmentRows(db, agentId);
           const effectiveAssignment = findEffectiveAssignment(assignmentRows);

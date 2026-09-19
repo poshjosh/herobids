@@ -14,7 +14,7 @@ import type { TradertonClient } from '@herobids/domain/traderton';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
-import { reconcileTradingProfile } from '../agents/trading-profile-reconciliation-adapter.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode, optionalPositiveDecimalStringSchema } from './agent-config-helpers.js';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
@@ -940,6 +940,7 @@ export async function executeChatAction(
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
   tradertonClient: TradertonClient | undefined = undefined,
+  profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
 ): Promise<string> {
   switch (toolCall.name) {
     case 'list_compatible_connections': {
@@ -1371,7 +1372,65 @@ export async function executeChatAction(
             details: assignmentResolution.error.details,
           });
         }
-        await db.transaction(async (tx) => {
+        if (!profileReconciliationSaga) {
+          return JSON.stringify({
+            error: 'precondition.not_ready',
+            message: 'Trading service is unavailable — the agent was not created.',
+          });
+        }
+        await profileReconciliationSaga.executeStaged({
+          ownerId: userId,
+          actorId: agentId,
+          localMutationId: crypto.randomUUID(),
+          preparePlannerInput: async () => {
+            const connRows = connectionIds.length === 0
+              ? []
+              : await db
+                .select({
+                  id: connections.id,
+                  status: connections.status,
+                  resolvedVenueAccountId: connections.resolvedVenueAccountId,
+                })
+                .from(connections)
+                .where(and(eq(connections.userId, userId), eq(connections.status, 'active')));
+            const validConnIds = new Set(connRows.map((row) => row.id));
+            for (const connectionId of connectionIds) {
+              if (!validConnIds.has(connectionId)) {
+                throw new Error(`Connection ${connectionId} is not valid or does not belong to you`);
+              }
+            }
+            const selectedRows = connRows.filter((row) => connectionIds.includes(row.id));
+            for (const row of selectedRows) {
+              const isTradingConnection = row.resolvedVenueAccountId !== null;
+              if (isTradingPreset && !isTradingConnection) {
+                throw new Error(`Connection ${row.id} is not a trading venue — trading agents require an exchange or DEX connection.`);
+              }
+              if (!isTradingPreset && isTradingConnection) {
+                throw new Error(`Connection ${row.id} is a trading venue — non-trading agents should use a service connection (e.g. Gmail).`);
+              }
+            }
+            const proposedConnections = selectedRows.map((connection) => ({
+                  connectionId: connection.id,
+                  venueAccountId: connection.resolvedVenueAccountId,
+                  active: true,
+                  ready: connection.status === 'active',
+                  isDefault: false,
+                }));
+            const profiles = new Map(proposedConnections
+              .filter((connection): connection is typeof connection & { venueAccountId: string } => connection.venueAccountId !== null)
+              .map((connection) => [connection.venueAccountId, {
+                actorId: agentId,
+                venueAccountId: connection.venueAccountId,
+                capital: parsed.data.capital ?? null,
+                riskPosture: createFields.risk,
+                executionDefaults: createFields.executionDefaults,
+              }] as const));
+            return {
+              prior: { profiles: new Map(), connections: [] },
+              proposed: { profiles, connections: proposedConnections },
+            };
+          },
+          commitLocal: async (tx, markLocalCommitted) => {
           const proposedConnections: Array<{
             connectionId: string;
             venueAccountId: string | null;
@@ -1432,43 +1491,6 @@ export async function executeChatAction(
               connection.isDefault = connection.assignmentId === defaultAssignmentId;
             }
 
-            await reconcileTradingProfile({
-              prior: {
-                config: { actorId: agentId, capital: null, riskPosture: null, executionDefaults: null },
-                connections: [],
-              },
-              proposed: {
-                config: {
-                  actorId: agentId,
-                  capital: parsed.data.capital ?? null,
-                  riskPosture: createFields.risk,
-                  executionDefaults: createFields.executionDefaults,
-                },
-                connections: proposedConnections.map(({ connectionId, venueAccountId, active, ready, isDefault }) => ({
-                  connectionId,
-                  venueAccountId,
-                  active,
-                  ready,
-                  isDefault,
-                })),
-              },
-            });
-          } else {
-            await reconcileTradingProfile({
-              prior: {
-                config: { actorId: agentId, capital: null, riskPosture: null, executionDefaults: null },
-                connections: [],
-              },
-              proposed: {
-                config: {
-                  actorId: agentId,
-                  capital: parsed.data.capital ?? null,
-                  riskPosture: createFields.risk,
-                  executionDefaults: createFields.executionDefaults,
-                },
-                connections: [],
-              },
-            });
           }
 
           await tx.insert(agents).values({
@@ -1479,14 +1501,11 @@ export async function executeChatAction(
             status: 'stopped',
             style: style as 'careful' | 'balanced' | 'bold' | null,
             permissionLevel: 'standard',
-            capital: parsed.data.capital ?? null,
             strategy: createFields.strategy as Record<string, unknown> | null,
-            executionDefaults: createFields.executionDefaults as { mode: string; slippageBps: number } | null,
             toolPolicy: createFields.toolPolicy,
             modelPolicy: effectiveModelPolicy,
             unifiedConfig: createFields.unifiedConfig as never,
             maxBots: createFields.maxBots,
-            risk: createFields.risk,
             runtimePolicyOverrides: createFields.runtimePolicyOverrides,
             notificationPolicy: createFields.notificationPolicy,
             wakePreferences: null,
@@ -1508,6 +1527,8 @@ export async function executeChatAction(
               updatedAt: timestamp,
             } as never);
           }
+          await markLocalCommitted();
+          },
         });
 
         // ── Sync skill assignments (after transaction, matching form route) ──
@@ -1604,6 +1625,7 @@ export async function invokeOnboardingLlm(
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
   tradertonClient: TradertonClient | undefined = undefined,
+  profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
 ): Promise<LlmInvocationResult> {
   // Generate a per-invocation random tag name (4 hex chars = 65536 possibilities)
   const nonce = crypto.randomBytes(2).toString('hex');
@@ -1790,7 +1812,7 @@ export async function invokeOnboardingLlm(
       // ── Dispatch tool call with error guard ──
       let toolResult: string;
       try {
-        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues, tradertonClient);
+        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues, tradertonClient, profileReconciliationSaga);
       } catch (err) {
         toolResult = JSON.stringify({
           error: 'tool_execution_failed',
@@ -2022,6 +2044,7 @@ export async function chatRoutes(
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
   tradertonClient: TradertonClient | undefined = undefined,
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
   /**
    * POST /chat/threads
@@ -2248,6 +2271,7 @@ export async function chatRoutes(
         agentRiskDefaults,
         venues,
         tradertonClient,
+        profileReconciliationSaga,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)
@@ -2452,6 +2476,7 @@ export async function chatRoutes(
         agentRiskDefaults,
         venues,
         tradertonClient,
+        profileReconciliationSaga,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)

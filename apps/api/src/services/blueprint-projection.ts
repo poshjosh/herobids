@@ -21,15 +21,16 @@ export function projectAgentToBlueprintPayload(agent: {
   toolPolicy: unknown;
   modelPolicy: unknown;
   strategy: unknown;
-  risk: unknown;
-  executionDefaults: unknown;
+  risk?: unknown;
+  executionDefaults?: unknown;
   unifiedConfig: unknown;
   wakePreferences: unknown;
   openPositionEscalationToJudgePolicy: string;
-  capital: string | null;
+  capital?: string | null;
   maxBots: number | null;
   tickIntervalMs: number | null;
 }): AgentBlueprintRevisionPayload {
+  const { capital, risk, executionDefaults } = agent;
   const uc = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
 
   return {
@@ -40,8 +41,8 @@ export function projectAgentToBlueprintPayload(agent: {
     prompt: agent.prompt,
     style: (agent.style as AgentBlueprintRevisionPayload['style']) ?? null,
     strategy: (agent.strategy as AgentBlueprintRevisionPayload['strategy']) ?? null,
-    risk: (agent.risk as AgentBlueprintRevisionPayload['risk']) ?? null,
-    executionDefaults: (agent.executionDefaults as AgentBlueprintRevisionPayload['executionDefaults']) ?? null,
+    risk: (risk as AgentBlueprintRevisionPayload['risk']) ?? null,
+    executionDefaults: (executionDefaults as AgentBlueprintRevisionPayload['executionDefaults']) ?? null,
     technical: (uc.technical as AgentBlueprintRevisionPayload['technical']) ?? undefined,
     intelligence: (uc.intelligence as AgentBlueprintRevisionPayload['intelligence']) ?? undefined,
     capabilityMode: (uc.capabilityMode as AgentBlueprintRevisionPayload['capabilityMode']) ?? 'intelligence',
@@ -56,7 +57,7 @@ export function projectAgentToBlueprintPayload(agent: {
     authorizationMode: (uc.authorizationMode as AgentBlueprintRevisionPayload['authorizationMode']) ?? null,
     wakePreferences: (agent.wakePreferences as AgentBlueprintRevisionPayload['wakePreferences']) ?? undefined,
     openPositionEscalationToJudgePolicy: (agent.openPositionEscalationToJudgePolicy as AgentBlueprintRevisionPayload['openPositionEscalationToJudgePolicy']) ?? 'uncovered_or_triggered',
-    capital: agent.capital !== null ? Number(agent.capital) : null,
+    capital: capital != null ? Number(capital) : null,
     maxBots: agent.maxBots,
     tickIntervalMs: agent.tickIntervalMs,
   };

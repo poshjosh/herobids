@@ -5,12 +5,19 @@ import {
   type RiskPosture,
 } from '@herobids/domain';
 
-export interface TradingProfileAgentConfig {
+export interface TypedTradingProfile {
   actorId: string;
+  venueAccountId: string;
   capital: string | null;
   riskPosture: RiskPosture | null;
   executionDefaults: ExecutionDefaults | null;
 }
+
+export type TradingProfileChanges = {
+  capital?: string | null;
+  riskPosture?: RiskPosture | null;
+  executionDefaults?: ExecutionDefaults | null;
+};
 
 export interface TradingProfileConnection {
   connectionId: string;
@@ -65,28 +72,60 @@ function sameBinding(left: ExecutionBinding | null, right: ExecutionBinding | nu
 
 /** Builds complete, boundary-ready snapshots for every active resolved trading account. */
 export function buildTradingProfileSnapshots(
-  config: TradingProfileAgentConfig,
+  profiles: ReadonlyMap<string, TypedTradingProfile>,
   connections: TradingProfileConnection[],
 ): TradingProfileConfiguration[] {
-  const riskPosture = config.riskPosture === null ? null : RiskPostureSchema.parse(config.riskPosture);
-  const executionDefaults = config.executionDefaults === null
-    ? null
-    : ExecutionDefaultsSchema.parse(config.executionDefaults);
-
   const snapshotsByVenueAccountId = new Map<string, TradingProfileConfiguration>();
   for (const connection of connections
     .filter((connection): connection is TradingProfileConnection & { venueAccountId: string } => (
       connection.active && connection.venueAccountId !== null
     ))) {
-    snapshotsByVenueAccountId.set(connection.venueAccountId, {
-      actorId: config.actorId,
-      venueAccountId: connection.venueAccountId,
-      capital: config.capital,
-      riskPosture,
-      executionDefaults,
-    });
+    const profile = profiles.get(connection.venueAccountId);
+    if (profile) snapshotsByVenueAccountId.set(connection.venueAccountId, profile);
   }
   return [...snapshotsByVenueAccountId.values()];
+}
+
+export function overlayTradingProfile(
+  profile: TypedTradingProfile,
+  changes: TradingProfileChanges,
+): TypedTradingProfile {
+  return {
+    ...profile,
+    ...(changes.capital !== undefined ? { capital: changes.capital } : {}),
+    ...(changes.riskPosture !== undefined
+      ? { riskPosture: changes.riskPosture === null ? null : RiskPostureSchema.parse(changes.riskPosture) }
+      : {}),
+    ...(changes.executionDefaults !== undefined
+      ? { executionDefaults: changes.executionDefaults === null ? null : ExecutionDefaultsSchema.parse(changes.executionDefaults) }
+      : {}),
+  };
+}
+
+/**
+ * Carries remote profiles forward for proposed local bindings. New bindings copy
+ * the selected (or first) remote profile and never synthesize a default profile.
+ */
+export function proposeTradingProfiles(input: {
+  priorProfiles: ReadonlyMap<string, TypedTradingProfile>;
+  priorConnections: TradingProfileConnection[];
+  proposedConnections: TradingProfileConnection[];
+  changes: TradingProfileChanges;
+}): Map<string, TypedTradingProfile> {
+  const templateAccountId = selectExecutionBinding(input.priorConnections)?.venueAccountId;
+  const template = (templateAccountId ? input.priorProfiles.get(templateAccountId) : undefined)
+    ?? input.priorProfiles.values().next().value as TypedTradingProfile | undefined;
+  const proposed = new Map<string, TypedTradingProfile>();
+  for (const connection of input.proposedConnections) {
+    if (!connection.active || connection.venueAccountId === null || proposed.has(connection.venueAccountId)) continue;
+    const existing = input.priorProfiles.get(connection.venueAccountId);
+    if (!existing && !template) {
+      throw new Error('cannot grant a trading connection without an existing remote trading profile template');
+    }
+    const base = existing ?? { ...template!, venueAccountId: connection.venueAccountId };
+    proposed.set(connection.venueAccountId, overlayTradingProfile(base, input.changes));
+  }
+  return proposed;
 }
 
 /** Selects one ready direct-execution binding using the runtime descriptor rule. */
@@ -104,11 +143,11 @@ export function selectExecutionBinding(connections: TradingProfileConnection[]):
 
 /** Plans replacement snapshots, removals, binding transition, and compensating inverse actions. */
 export function planTradingProfileReconciliation(params: {
-  prior: { config: TradingProfileAgentConfig; connections: TradingProfileConnection[] };
-  proposed: { config: TradingProfileAgentConfig; connections: TradingProfileConnection[] };
+  prior: { profiles: ReadonlyMap<string, TypedTradingProfile>; connections: TradingProfileConnection[] };
+  proposed: { profiles: ReadonlyMap<string, TypedTradingProfile>; connections: TradingProfileConnection[] };
 }): TradingProfileReconciliationPlan {
-  const priorSnapshots = buildTradingProfileSnapshots(params.prior.config, params.prior.connections);
-  const proposedSnapshots = buildTradingProfileSnapshots(params.proposed.config, params.proposed.connections);
+  const priorSnapshots = buildTradingProfileSnapshots(params.prior.profiles, params.prior.connections);
+  const proposedSnapshots = buildTradingProfileSnapshots(params.proposed.profiles, params.proposed.connections);
   const priorByVenueAccountId = new Map(priorSnapshots.map((snapshot) => [snapshot.venueAccountId, snapshot]));
   const proposedByVenueAccountId = new Map(proposedSnapshots.map((snapshot) => [snapshot.venueAccountId, snapshot]));
   const upserts = proposedSnapshots.filter((snapshot) => {

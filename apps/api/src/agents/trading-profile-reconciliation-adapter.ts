@@ -2,24 +2,28 @@ import { and, eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentConnections, connections } from '@herobids/db';
 import type {
-  TradingProfileAgentConfig,
   TradingProfileConnection,
   TradingProfileReconciliationPlan,
+  TypedTradingProfile,
 } from './trading-profile-reconciliation.js';
 import { planTradingProfileReconciliation } from './trading-profile-reconciliation.js';
 
 export interface TradingProfileReconciliationInput {
   prior: {
-    config: TradingProfileAgentConfig;
+    profiles: ReadonlyMap<string, TypedTradingProfile>;
     connections: TradingProfileConnection[];
   };
   proposed: {
-    config: TradingProfileAgentConfig;
+    profiles: ReadonlyMap<string, TypedTradingProfile>;
     connections: TradingProfileConnection[];
   };
 }
 
 export type TradingProfilePlanWriter = (plan: TradingProfileReconciliationPlan) => void | Promise<void>;
+
+function grantTime(value: Date | null | undefined): number {
+  return value instanceof Date ? value.getTime() : 0;
+}
 
 /** Loads active agent bindings in the same order and with the same default as runtime selection. */
 export async function loadActiveTradingProfileConnections(
@@ -39,11 +43,11 @@ export async function loadActiveTradingProfileConnections(
   const defaultAssignment = rows
     .filter((row) => row.connectionStatus === 'active')
     .sort((left, right) => {
-      const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
+      const grantDelta = grantTime(right.grantedAt) - grantTime(left.grantedAt);
       return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
     })[0]
     ?? rows.slice().sort((left, right) => {
-      const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
+      const grantDelta = grantTime(right.grantedAt) - grantTime(left.grantedAt);
       return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
     })[0];
 

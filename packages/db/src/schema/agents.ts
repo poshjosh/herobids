@@ -1,5 +1,5 @@
-import { pgTable, text, varchar, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
-import type { AgentRiskOverrides, UnifiedAgentConfig, AgentRuntimePolicyOverrides, WakePreferences, RiskPosture, StrategyIdentity, ExecutionDefaults } from '@herobids/domain';
+import { pgTable, text, varchar, timestamp, jsonb, integer, index } from 'drizzle-orm/pg-core';
+import type { UnifiedAgentConfig, AgentRuntimePolicyOverrides, WakePreferences, StrategyIdentity } from '@herobids/domain';
 import { users } from './users.js';
 
 /**
@@ -47,16 +47,8 @@ export const agents = pgTable('agents', {
   maxBots: integer('max_bots'),                              // max concurrent bots (agent-level override)
   /** User-configured base cadence in milliseconds. Runtime may still widen this when idle or after failures. */
   tickIntervalMs: integer('tick_interval_ms'),
-  /** Deployable allocation cap in USD — the amount the agent may trade with, not the full wallet balance. */
-  capital: numeric('capital', { precision: 20, scale: 8 }),
-  /** Agent runtime risk overrides — only fields the agent has actively adjusted (separate from creator config). */
-  riskOverrides: jsonb('risk_overrides').$type<AgentRiskOverrides | null>(),
-  /** Creator-configured risk posture — nullable JSONB shaped as RiskPosture. Null means "use operator default" per field. */
-  risk: jsonb('risk').$type<RiskPosture | null>(),
   /** Optional strategy identity — absent for non-trading agents (capabilityMode: intelligence). */
   strategy: jsonb('strategy').$type<StrategyIdentity | null>(),
-  /** Execution defaults — mode + slippageBps, shared vocabulary with bot ExecutionConfigSchema. */
-  executionDefaults: jsonb('execution_defaults').$type<ExecutionDefaults | null>(),
   /** Unified agent config — technical + intelligence + execution + risk overrides set by the agent at runtime. */
   unifiedConfig: jsonb('unified_config').$type<UnifiedAgentConfig | null>(),
   /** Per-agent wake source subscription preferences. If absent/empty, agent receives all sources. */

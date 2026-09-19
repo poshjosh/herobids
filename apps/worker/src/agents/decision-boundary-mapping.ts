@@ -10,7 +10,7 @@
 // `success | failure`; `pending_approval` is produced entirely pre-boundary by
 // herobids and never crosses the wire (D3).
 
-import type { DecisionSubmitPayload, RiskPosture, AgentRiskOverrides } from '@herobids/domain';
+import type { DecisionSubmitPayload } from '@herobids/domain';
 import type { TradertonClientResult } from '@herobids/domain/traderton';
 
 /**
@@ -35,30 +35,6 @@ export interface SubmitDecisionBoundaryPayload {
   safetyOverrideId?: string;
   contextHash?: string;
   venueAccountId?: string;
-  // ── Consumer-injected platform risk context (NOT LLM inputs) ──────────────
-  // The agent's capital + creator risk posture + runtime overrides live in the
-  // platform `agents` row. The traderton boundary process cannot read that row
-  // (locked: no `agents`-table dependency), so herobids injects the values it
-  // still holds POST-LLM (the LLM never sees or supplies them; the values cross
-  // inside the HMAC-signed payload). The boundary's agent-direct actor ensure
-  // consumes them at construct/start time: capital anchors the actor's
-  // EquityTracker (risk-gate daily-loss/drawdown math), riskPosture/riskOverrides
-  // feed buildAgentRiskLimits. Absent → traderton operator defaults.
-  capital?: string;
-  riskPosture?: RiskPosture;
-  riskOverrides?: AgentRiskOverrides;
-  // Option A: the agent's REAL execution mode, platform-owned (from the `agents`
-  // row). Never an LLM input — carried so the boundary uses it as the per-agent
-  // escalation ceiling + actor construction mode instead of a static default.
-  executionMode?: 'paper' | 'shadow' | 'live';
-}
-
-/** The platform risk context the caller injects alongside the decision. */
-export interface AgentRiskInjection {
-  capital?: string | null;
-  riskPosture?: RiskPosture | null;
-  riskOverrides?: AgentRiskOverrides | null;
-  executionMode?: 'paper' | 'shadow' | 'live' | null;
 }
 
 /**
@@ -72,7 +48,6 @@ export interface AgentRiskInjection {
 export function buildSubmitDecisionPayload(
   payload: DecisionSubmitPayload,
   venueAccountId?: string,
-  riskInjection?: AgentRiskInjection,
 ): SubmitDecisionBoundaryPayload {
   const out: SubmitDecisionBoundaryPayload = {
     instrumentId: payload.instrumentId,
@@ -87,10 +62,6 @@ export function buildSubmitDecisionPayload(
   if (payload.safetyOverrideId !== undefined) out.safetyOverrideId = payload.safetyOverrideId;
   if (payload.contextHash !== undefined) out.contextHash = payload.contextHash;
   if (venueAccountId !== undefined && venueAccountId !== '') out.venueAccountId = venueAccountId;
-  if (riskInjection?.capital != null && riskInjection.capital !== '') out.capital = riskInjection.capital;
-  if (riskInjection?.riskPosture != null) out.riskPosture = riskInjection.riskPosture;
-  if (riskInjection?.riskOverrides != null) out.riskOverrides = riskInjection.riskOverrides;
-  if (riskInjection?.executionMode != null) out.executionMode = riskInjection.executionMode;
   return out;
 }
 
@@ -102,7 +73,7 @@ export function buildSubmitDecisionPayload(
  * already carries; traderton declares them in those tools' schemas (Zod strips
  * undeclared fields) and binds them via its single RiskSource seam.
  */
-export type RiskSpecPayloadFields = Pick<SubmitDecisionBoundaryPayload, 'capital' | 'riskPosture' | 'riskOverrides' | 'executionMode'>;
+export type RiskSpecPayloadFields = { venueAccountId?: string };
 
 /**
  * Build the risk-spec payload fields from the platform risk context
@@ -111,13 +82,8 @@ export type RiskSpecPayloadFields = Pick<SubmitDecisionBoundaryPayload, 'capital
  * operator-default behaviour. Reuses the exact field stamping of
  * {@link buildSubmitDecisionPayload} so both tools' payloads agree.
  */
-export function buildRiskSpecPayloadFields(riskInjection?: AgentRiskInjection): RiskSpecPayloadFields {
-  const out: RiskSpecPayloadFields = {};
-  if (riskInjection?.capital != null && riskInjection.capital !== '') out.capital = riskInjection.capital;
-  if (riskInjection?.riskPosture != null) out.riskPosture = riskInjection.riskPosture;
-  if (riskInjection?.riskOverrides != null) out.riskOverrides = riskInjection.riskOverrides;
-  if (riskInjection?.executionMode != null) out.executionMode = riskInjection.executionMode;
-  return out;
+export function buildRiskSpecPayloadFields(venueAccountId?: string): RiskSpecPayloadFields {
+  return venueAccountId ? { venueAccountId } : {};
 }
 
 /** The mapped sync-reply status the tool understands. */
