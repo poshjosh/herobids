@@ -2,7 +2,7 @@
 
 - **Task:** C1a — implement ADR 013's single normalization and snapshot-builder choke point before C1 adds profile write-through.
 - **Repo:** herobids
-- **Status:** **IN PROGRESS (authorized 2026-09-19)** — this is C1's required Herobids preparation; it does not authorize C1 implementation.
+- **Status:** **COMPLETE (2026-09-19)** — this is C1's required Herobids preparation; it does not authorize C1 implementation.
 - **Prereq:** ADR 013; independent review complete.
 
 ## Goal
