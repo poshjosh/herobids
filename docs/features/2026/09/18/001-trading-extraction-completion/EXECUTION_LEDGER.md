@@ -78,10 +78,10 @@ Date: 2026-09-19
 Item / batch: C3a — visual de-specialization
 Starting SHAs: herobids=01bbb350, traderton=485c31c
 Scope completed: Added generic capability attribute/feed renderers; removed trading presentation from agent list, summary, and detail-header surfaces; moved existing trading data through a capability-scoped transitional adapter; kept approval actions platform-owned while rendering proposal details through the trading capability adapter.
-Commits: None (intentionally uncommitted)
-Focused validation: `pnpm exec vitest run apps/web/src/features/agents/CapabilityPresentation.test.tsx --config vitest.config.ts` passed (2/2).
+Commits: herobids `a506d95ae428af902e9913bf0b9343ed0be53c0c` — `feat(web): render agent capabilities generically`; `9a781ce9` — `docs: record C3a validation evidence`.
+Focused validation: focused generic capability tests passed (3/3).
 Broader validation: `pnpm --filter @herobids/web run typecheck` passed; `pnpm lint` passed; static formatter sweep passed. Local Vite served `/` and `/agents` with HTTP 200, then was stopped.
-UAT rows (when UI changes): AG-C01, AG-C03, and AG-C06 updated before run and recorded blocked because no authenticated fixture/browser automation was available; AG-C05 passed via the second-capability focused UI fixture. All entries use date 2026-09-19 and commit placeholder `uncommitted C3a`.
+UAT rows (when UI changes): AG-C01, AG-C03, and AG-C06 updated before run and recorded blocked because no authenticated fixture/browser automation was available; AG-C05 passed via the second-capability focused UI fixture. Entries are dated 2026-09-19 and reference implementation commit `a506d95a`.
 Residual risks / blockers: Visual desktop/mobile and unavailable-connection UAT need an authenticated trading-capable fixture plus browser automation. C3a continues to use existing transitional sources until C3b supplies the profile-backed presentation API.
-Next allowed item: Commit and rerun the blocked visual UATs, then mark C3a implemented/verified as appropriate; C3b remains gated on C1.
+Next allowed item: Rerun the blocked visual UATs, then mark C3a verified as appropriate; C3b remains gated on C1.
 ```
