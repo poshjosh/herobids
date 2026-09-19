@@ -1,10 +1,31 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, TradingToolContext, ResolvedAgentRiskContract, ResolvedAgentRiskProfile, AgentRiskProfileField } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult, mapWriteResultToToolResult } from './traderton-read.js';
+import { buildRiskSpecPayloadFields } from '../agents/decision-boundary-mapping.js';
 
 /** Deadline for the adjust_risk_limits boundary write (invoke + poll), in ms. */
 const ADJUST_RISK_LIMITS_DEADLINE_MS = 30_000;
+
+/**
+ * A3: attach the PLATFORM risk spec to a boundary read payload — post-LLM, from
+ * the `agents` row via the context's `agentRiskSpecResolver` (the same injection
+ * `submit_decision` carries). Never an LLM input. Resolver absent/null → empty
+ * payload (traderton degrades typed on get_risk_limits).
+ */
+export async function riskSpecReadPayload(ctx: TradingToolContext): Promise<Record<string, unknown>> {
+  if (!ctx.agentRiskSpecResolver) return {};
+  try {
+    const riskInjection = await ctx.agentRiskSpecResolver();
+    if (!riskInjection) return {};
+    return buildRiskSpecPayloadFields(riskInjection);
+  } catch {
+    // Platform-side spec resolution failed — degrade to an un-annotated read
+    // (traderton returns its typed precondition) rather than throwing past the
+    // tool boundary.
+    return {};
+  }
+}
 
 // --- get_risk_limits ---
 
@@ -17,59 +38,27 @@ const getRiskLimitsTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(GetRiskLimitsParamsSchema),
   category: 'read-database',
   async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
-    // L3: route the read through the Traderton boundary when configured. The
-    // Traderton `get_risk_limits` tool returns the identical composite shape
-    // (limits 5+4 + runtime), so parity holds by construction. Read-fallback
-    // posture: when the boundary is absent, fall back to the in-process
-    // riskContractOps read (transitional, unlike the fail-closed adjust write).
-    if (ctx.tradertonBoundary) {
-      const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_risk_limits', payload: {} });
-      return mapReadResultToToolResult(result);
+    // A6: boundary-first, FAIL CLOSED when the read boundary is absent —
+    // consistent with the adjust write's fail-closed posture. A3 landed the
+    // boundary-side RiskSource seam, so the previous in-process riskContractOps
+    // fallback is a split-brain trap (consumer would read its own numbers while
+    // traderton enforces from the same payload) and is deleted.
+    if (!ctx.tradertonBoundary) {
+      return {
+        success: false,
+        error: 'trading boundary not configured',
+        errorCode: 'precondition.not_ready',
+        fault: false,
+      };
     }
 
-    if (!ctx.riskContractOps) {
-      return { success: false, error: 'risk contract not available in this context' };
-    }
-
-    const contract = await ctx.riskContractOps.getContract();
-    const runtime = await buildRuntime(ctx, contract);
-
-    // Resolve the full 9-field profile for read-only fields (graceful degradation if unavailable)
-    let profile: ResolvedAgentRiskProfile | undefined;
-    if (ctx.riskContractOps.getProfile) {
-      try {
-        profile = await ctx.riskContractOps.getProfile();
-      } catch { /* Non-critical — proceed with 5-field contract only */ }
-    }
-
-    return {
-      success: true,
-      data: {
-        ok: true,
-        limits: {
-          // 5 mutable fields from the contract
-          maxOpenPositions: formatField(contract.maxOpenPositions),
-          maxPositionSizePct: formatField(contract.maxPositionSizePct),
-          stopLossPct: formatField(contract.stopLossPct),
-          stopLossCooldownMs: formatField(contract.stopLossCooldownMs),
-          maxDrawdownPct: formatField(contract.maxDrawdownPct),
-          // 4 read-only fields from the profile (informational only)
-          dailyMaxLossPct: profile
-            ? formatProfileField(profile.dailyMaxLossPct)
-            : { value: null, source: 'unavailable', mutable: false, ceiling: null },
-          maxNewPositionsPerDay: profile
-            ? formatProfileField(profile.maxNewPositionsPerDay)
-            : { value: null, source: 'unavailable', mutable: false, ceiling: null },
-          avoidParabolicMovePct: profile
-            ? formatProfileField(profile.avoidParabolicMovePct)
-            : { value: null, source: 'unavailable', mutable: false, ceiling: null },
-          maxOrderNotional: profile
-            ? formatProfileField(profile.maxOrderNotional)
-            : { value: null, source: 'unavailable', mutable: false, ceiling: null },
-        },
-        runtime,
-      },
-    };
+    // A3: the PLATFORM attaches the risk spec to this read call (post-LLM,
+    // from the `agents` row) so traderton serves the contract from its single
+    // RiskSource seam. Absent spec → traderton's typed precondition surfaces
+    // through mapReadResultToToolResult.
+    const payload = await riskSpecReadPayload(ctx);
+    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_risk_limits', payload });
+    return mapReadResultToToolResult(result);
   },
 };
 
@@ -107,9 +96,10 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
     // L3d: route the risk-limit WRITE through the Traderton side-effecting
     // boundary. Traderton owns the risk contract; herobids no longer mutates it
     // in-process. FAIL-CLOSED — when the write boundary is absent we return a
-    // typed precondition rather than falling back to ctx.riskContractOps (the
-    // read path `get_risk_limits` still uses riskContractOps). The boundary
-    // returns the same success shape this tool built in-process, so parity holds.
+    // typed precondition rather than falling back to ctx.riskContractOps. A6:
+    // the read path `get_risk_limits` shares this fail-closed posture. The
+    // boundary returns the same success shape this tool used to build
+    // in-process, so parity holds.
     if (!ctx.tradertonWriteBoundary) {
       return {
         success: false,
@@ -128,139 +118,6 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
     return mapWriteResultToToolResult(result);
   },
 };
-
-/**
- * Build the runtime risk snapshot for an agent.
- *
- * Conventions:
- * - dailyMaxLossPct === 0 means "no daily loss limit configured" — treated as unlimited.
- * - drawdown is engine-only state populated during decision execution; not available here.
- */
-async function buildRuntime(ctx: TradingToolContext, contract: ResolvedAgentRiskContract) {
-  // --- openPositions ---
-  let openPositionsCurrent = 0;
-  const openPositionsLimit = contract.maxOpenPositions.effectiveValue;
-
-  // --- dailyLoss ---
-  let dailyLossCurrent: string | null = null;
-  let dailyLossLimit: string | null = null;
-  let dailyLossLimitPct: number | null = null;
-  let dailyLossBlocked = false;
-
-  // c4.9i: buildRuntime only runs on the in-process fallback path — get_risk_limits
-  // returns the boundary's composite payload (limits + runtime) directly when the
-  // Traderton boundary is present, so this snapshot is reached ONLY when the
-  // boundary is absent. The prior local botRepo reads for open-position count and
-  // daily realized P&L were removed (no trading-table reads); with no boundary to
-  // source them, the runtime snapshot degrades to defaults (openPositionsCurrent 0,
-  // dailyLossCurrent '0'), matching the prior no-repo fallback.
-  dailyLossCurrent = '0';
-
-  const openPositionsBlocked = openPositionsCurrent >= openPositionsLimit;
-
-  // Derive the daily loss limit from the canonical agents.risk.dailyMaxLossPct column.
-  // No legacy fallback to dailyLossLimit — that column is deprecated.
-  let dailyLossLimitFromUser = false;
-  if (ctx.agentRepo) {
-    try {
-      const agent = await ctx.agentRepo.getAgent(ctx.agentId);
-      const risk = (agent?.risk ?? {}) as Record<string, unknown> | null;
-      if (risk?.['dailyMaxLossPct'] != null) {
-        dailyLossLimitPct = Number(risk['dailyMaxLossPct']);
-        dailyLossLimitFromUser = true;
-      }
-      if (dailyLossLimitPct != null && dailyLossLimitPct > 0 && agent?.capital) {
-        const capital = Number(agent.capital);
-        if (!Number.isNaN(capital) && capital > 0) {
-          dailyLossLimit = String(capital * dailyLossLimitPct / 100);
-        }
-      }
-    } catch {
-      // Non-critical
-    }
-  }
-
-  // Blocked when today's realized loss (negative P&L) exceeds the limit.
-  // dailyMaxLossPct === 0 means "no daily loss limit configured" — treat as unlimited.
-  if (dailyLossCurrent != null && dailyLossLimit != null) {
-    const currentNum = Number(dailyLossCurrent);
-    const limitNum = Number(dailyLossLimit);
-    if (!Number.isNaN(currentNum) && !Number.isNaN(limitNum) && limitNum > 0) {
-      dailyLossBlocked = currentNum < 0 && Math.abs(currentNum) >= limitNum;
-    }
-  }
-
-  // Resolve maxDrawdownPct from the risk contract (same provenance as other adjustable limits).
-  // The contract handles creator→default→override resolution with mutability metadata.
-  const drawdownPctField = contract.maxDrawdownPct;
-
-  return {
-    dailyLoss: {
-      current: dailyLossCurrent,
-      limit: dailyLossLimit,
-      limitPct: dailyLossLimitPct,
-      blocked: dailyLossBlocked,
-      source: dailyLossLimitFromUser ? 'user_configured' : 'operator_default',
-      oldestFillAgesOutAt: null,
-      remainingMs: null,
-    },
-    drawdown: {
-      // Current drawdown is engine-only state — populated from Redis cache
-      // (equity:{actorId}) written by the worker after each decision.
-      current: await resolveDrawdownCurrent(ctx),
-      limit: drawdownPctField.effectiveValue > 0 ? String(drawdownPctField.effectiveValue) : null,
-      limitPct: drawdownPctField.effectiveValue,
-      source: drawdownPctField.source === 'user' ? 'user_configured' :
-              drawdownPctField.source === 'agent_override' ? 'agent_override' : 'operator_default',
-      mutable: drawdownPctField.mutable,
-      ceiling: drawdownPctField.operatorCeiling,
-      approaching: false,
-    },
-    openPositions: {
-      current: openPositionsCurrent,
-      limit: openPositionsLimit,
-      blocked: openPositionsBlocked,
-    },
-  };
-}
-
-function formatField(field: { effectiveValue: number; source: string; mutable: boolean; operatorCeiling: number; enforced?: boolean }) {
-  return {
-    value: field.effectiveValue,
-    source: field.source,
-    mutable: field.mutable,
-    ceiling: field.operatorCeiling,
-    ...(field.enforced === false ? { enforced: false } : {}),
-  };
-}
-
-/**
- * Format a read-only risk profile field for display in get_risk_limits.
- * Differs from formatField in that effectiveValue and operatorCeiling can be null.
- */
-function formatProfileField(field: AgentRiskProfileField) {
-  return {
-    value: field.effectiveValue,
-    source: field.source,
-    mutable: field.mutable,
-    ceiling: field.operatorCeiling,
-    ...(field.enforced === false ? { enforced: false } : {}),
-  };
-}
-
-/**
- * Read the current drawdown from the Redis equity cache.
- * The worker writes equity:{actorId} after each decision (see decision-intake.ts).
- */
-async function resolveDrawdownCurrent(ctx: TradingToolContext): Promise<string | null> {
-  try {
-    const snapshot = await ctx.redis.hgetall(`equity:${ctx.agentId}`);
-    if (snapshot && snapshot['currentDrawdown'] != null) {
-      return snapshot['currentDrawdown'];
-    }
-  } catch { /* Redis unavailable — return null */ }
-  return null;
-}
 
 export const riskLimitsTools: AgentTool<TradingToolContext>[] = [
   getRiskLimitsTool,

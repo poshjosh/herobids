@@ -256,8 +256,6 @@ llm:
 
     const config = loadConfig(tmpDir);
 
-    expect(config.execution.orderTimeoutMs).toBe(30000);
-    expect(config.execution.maxRetries).toBe(3);
     expect(config.marketData).toBeUndefined();
   });
 
@@ -358,22 +356,18 @@ marketData:
 
   it('rejects invalid boolean env values instead of silently coercing to false', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-    process.env['HYPERLIQUID_TESTNET'] = 'treu';
+    process.env['ALERTS_ENABLED'] = 'treu';
 
     expect(() => loadConfig(tmpDir)).toThrow('Invalid boolean env value');
   });
 
   it('accepts valid boolean env values true, false, 1, 0', () => {
-    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-venues:
-  hyperliquid:
-    baseUrl: https://api.hyperliquid.xyz
-`);
-    process.env['HYPERLIQUID_TESTNET'] = '1';
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+    process.env['ALERTS_ENABLED'] = '1';
 
     const config = loadConfig(tmpDir);
 
-    expect(config.venues['hyperliquid']?.testnet).toBe(true);
+    expect(config.alerts.enabled).toBe(true);
   });
 
   describe('1inch token safety config', () => {
@@ -553,16 +547,15 @@ venues:
   });
 
   describe('execution shadow config', () => {
-    it('applies Zod defaults for shadowPollIntervalMs and shadowQuoteSlippageBps', () => {
+    it('applies Zod defaults for defaultSlippageBps when omitted', () => {
       writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
 
       const config = loadConfig(tmpDir);
 
-      expect(config.execution.shadowPollIntervalMs).toBe(2000);
-      expect(config.execution.shadowQuoteSlippageBps).toBe(50);
+      expect(config.execution.defaultSlippageBps).toBe(50);
     });
 
-    it('loads explicit shadow execution config from YAML', () => {
+    it('loads explicit defaultSlippageBps from YAML', () => {
       writeFileSync(resolve(tmpDir, 'default.yaml'), `
 app:
   port: 3000
@@ -571,9 +564,7 @@ database:
 redis:
   url: redis://localhost:6379
 execution:
-  defaultSlippageBps: 50
-  shadowPollIntervalMs: 3000
-  shadowQuoteSlippageBps: 100
+  defaultSlippageBps: 70
 risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
@@ -588,8 +579,7 @@ agentRuntime:
 
       const config = loadConfig(tmpDir);
 
-      expect(config.execution.shadowPollIntervalMs).toBe(3000);
-      expect(config.execution.shadowQuoteSlippageBps).toBe(100);
+      expect(config.execution.defaultSlippageBps).toBe(70);
     });
   });
 

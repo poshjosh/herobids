@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult } from './traderton-read.js';
+import { riskSpecReadPayload } from './risk-limits.js';
 
 // --- get_account_summary ---
 
@@ -27,7 +28,13 @@ const getAccountSummaryTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_account_summary', payload: {} });
+    // A3: attach the PLATFORM risk spec (post-LLM, from the `agents` row via
+    // agentRiskSpecResolver) so traderton's get_account_summary serves capital +
+    // the risk contract from its single RiskSource seam. Absent spec → traderton
+    // keeps its graceful `*_unavailable` warnings degrade.
+    const payload = await riskSpecReadPayload(ctx);
+
+    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_account_summary', payload });
     return mapReadResultToToolResult(result);
   },
 };

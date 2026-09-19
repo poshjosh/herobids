@@ -127,40 +127,54 @@ describe('resolve_bot', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolve_watch', () => {
-  it('returns empty when no watches exist', async () => {
-    const ctx = makeCtx({
-      redis: {
-        ...makeCtx().redis,
-        hgetall: vi.fn(async () => null),
-      },
-    });
+  // A6: resolve_watch re-points to the boundary's CURRENT watch list
+  // (`list_watches` → in-app substring match, like resolve_bot). The legacy
+  // local Redis hash read is deleted; fail closed when the boundary is absent.
+
+  it('fails closed when the Traderton boundary is unavailable', async () => {
+    const ctx = makeCtx();
 
     const result = await resolveWatch.execute({ note: 'BTC breakout' }, ctx);
 
-    expect(result.success).toBe(true);
-    const data = result.data as Record<string, unknown>;
-    expect(data.watches).toEqual([]);
-    expect(data.hint).toContain('No watches found');
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.fault).toBe(false);
+    // The legacy local Redis hash is never consulted.
+    expect(ctx.redis.hgetall).not.toHaveBeenCalled();
   });
 
-  it('finds a watch by note text', async () => {
-    const ctx = makeCtx({
-      redis: {
-        ...makeCtx().redis,
-        hgetall: vi.fn(async () => ({
-          'watch-1': JSON.stringify({
+  it('resolves a single watch by note substring over the boundary list', async () => {
+    const invoke = vi.fn(async () => ({
+      kind: 'success' as const,
+      data: {
+        ok: true,
+        watches: [
+          {
+            watchId: 'watch-1',
             symbol: 'BTC/USD',
-            note: 'BTC breakout above 70k',
+            chain: 'solana',
             condition: 'above',
-            thresholdPrice: '70000',
+            thresholdPrice: 70000,
+            note: 'BTC breakout above 70k',
             createdAt: '2026-01-01T00:00:00Z',
-          }),
-        })),
+          },
+          {
+            watchId: 'watch-2',
+            symbol: 'ETH/USD',
+            chain: 'ethereum',
+            condition: 'below',
+            thresholdPrice: 2000,
+            note: 'ETH dip watch',
+            createdAt: '2026-01-02T00:00:00Z',
+          },
+        ],
       },
-    });
+    }));
+    const ctx = makeCtx({ tradertonBoundary: { invoke } });
 
     const result = await resolveWatch.execute({ note: 'breakout' }, ctx);
 
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'list_watches', payload: {} });
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
     expect(data.count).toBe(1);
@@ -169,12 +183,12 @@ describe('resolve_watch', () => {
     expect(watches[0].note).toBe('BTC breakout above 70k');
   });
 
-  it('finds a watch by symbol', async () => {
+  it('resolves a watch by symbol substring', async () => {
     const ctx = makeCtx({
-      redis: {
-        ...makeCtx().redis,
-        hgetall: vi.fn(async () => ({
-          'watch-1': JSON.stringify({ symbol: 'ETH/USD', note: 'ETH dip' }),
+      tradertonBoundary: {
+        invoke: vi.fn(async () => ({
+          kind: 'success' as const,
+          data: { ok: true, watches: [{ watchId: 'watch-1', symbol: 'ETH/USD', note: 'ETH dip' }] },
         })),
       },
     });
@@ -188,12 +202,12 @@ describe('resolve_watch', () => {
     expect(watches[0].symbol).toBe('ETH/USD');
   });
 
-  it('returns empty when no watches match search', async () => {
+  it('returns empty with a hint when no boundary watches match', async () => {
     const ctx = makeCtx({
-      redis: {
-        ...makeCtx().redis,
-        hgetall: vi.fn(async () => ({
-          'watch-1': JSON.stringify({ symbol: 'BTC/USD', note: 'BTC pump' }),
+      tradertonBoundary: {
+        invoke: vi.fn(async () => ({
+          kind: 'success' as const,
+          data: { ok: true, watches: [{ watchId: 'watch-1', symbol: 'BTC/USD', note: 'BTC pump' }] },
         })),
       },
     });
@@ -203,13 +217,32 @@ describe('resolve_watch', () => {
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
     expect(data.watches).toEqual([]);
+    expect((data.hint as string)).toContain('No watches matched');
   });
 
-  it('returns error on Redis failure', async () => {
+  it('maps a boundary failure through the shared read→tool mapping', async () => {
     const ctx = makeCtx({
-      redis: {
-        ...makeCtx().redis,
-        hgetall: vi.fn(async () => {
+      tradertonBoundary: {
+        invoke: vi.fn(async () => ({
+          kind: 'failure' as const,
+          code: 'upstream.transient',
+          message: 'slow',
+          retryable: true,
+        })),
+      },
+    });
+
+    const result = await resolveWatch.execute({ note: 'BTC' }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('upstream.transient');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('returns resolve.watch_failed when the boundary throws', async () => {
+    const ctx = makeCtx({
+      tradertonBoundary: {
+        invoke: vi.fn(async () => {
           throw new Error('Redis timeout');
         }),
       },

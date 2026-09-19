@@ -11,6 +11,8 @@
 // platform `ToolContext` via the platform `AgentTool` alias in ../tools.ts.
 
 import type { z } from 'zod';
+import type { AgentRiskOverrides } from '../agent-risk-contract.js';
+import type { RiskPosture } from '../config/schema.js';
 
 /**
  * Tool category system — uses composite categories for fine-grained capability control.
@@ -250,10 +252,10 @@ export interface TradingToolContext {
       error?: { code: string; message: string };
     }>;
   };
-  /** Agent risk contract operations for reading and adjusting runtime risk limits. */
+  /** Agent risk contract operations for reading runtime risk limits. */
   riskContractOps?: {
+    /** Read the resolved risk contract (payload-bound read fallback until B1). */
     getContract(): Promise<import('../agent-risk-contract.js').ResolvedAgentRiskContract>;
-    adjustOverrides(overrides: Record<string, number | null>): Promise<{ ok: boolean; error?: string; contract?: import('../agent-risk-contract.js').ResolvedAgentRiskContract }>;
     /** Resolve the full 9-field risk profile (read-only view including immutable fields). */
     getProfile?(): Promise<import('../agent-risk-contract.js').ResolvedAgentRiskProfile>;
   };
@@ -274,18 +276,24 @@ export interface TradingToolContext {
   agentRepo?: {
     getAgent(agentId: string): Promise<{ capital: string | null; risk: Record<string, unknown> | null } | null>;
   };
-  /** Trading-owned execution-config lookup for account summaries (mode + position sizing). */
-  executionConfig?: {
-    getExecutionConfig(): Promise<{
-      mode: string | null;
-      positionSizeMode: string | null;
-      fixedPositionSize: string | null;
-    } | null>;
-  };
   /** Operator-configured risk defaults for the running agent (from agentRiskDefaults config). */
   operatorDefaults?: {
     maxDrawdownPct: number;
   };
+  /**
+   * A3 — resolves the agent's CURRENT platform risk context (capital + creator
+   * risk posture + runtime overrides) off the `agents` row, for the PLATFORM to
+   * attach to the boundary read calls (`get_risk_limits` /
+   * `get_account_summary`). Post-LLM, fresh-read (current values, not a
+   * snapshot) — the LLM never sees or supplies these. Null when the agent row
+   * is absent. Absent resolver → the read payload carries no risk spec and
+   * traderton degrades (typed precondition on get_risk_limits).
+   */
+  agentRiskSpecResolver?: () => Promise<{
+    capital?: string | null;
+    riskPosture?: RiskPosture | null;
+    riskOverrides?: AgentRiskOverrides | null;
+  } | null>;
   /**
    * Raw Drizzle database instance for direct table access.
    * Used by tools that need to query tables without a dedicated repository

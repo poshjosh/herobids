@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasUncoveredTrackedPosition, resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
+import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 
 describe('resolvePreScoutDecision', () => {
   it('forces escalation on the first tick before the scout runs', () => {
@@ -355,22 +355,6 @@ describe('resolvePreScoutDecision', () => {
         source: 'forced_first_tick',
       });
     });
-  });
-});
-
-describe('hasUncoveredTrackedPosition', () => {
-  it('treats normalized watch symbols as covering real open-position formats', () => {
-    expect(hasUncoveredTrackedPosition({
-      openPositionSymbols: ['BTC/USD:USD', 'ETH/USDT:USDT', 'SOL-PERP'],
-      watchSymbols: ['btc-perp', 'ethusdt', 'sol/usdt'],
-    })).toBe(false);
-  });
-
-  it('still reports uncovered exposure when no normalized watch matches a position symbol', () => {
-    expect(hasUncoveredTrackedPosition({
-      openPositionSymbols: ['BTCUSDT', 'WIF/USDT:USDT'],
-      watchSymbols: ['btc-perp'],
-    })).toBe(true);
   });
 });
 

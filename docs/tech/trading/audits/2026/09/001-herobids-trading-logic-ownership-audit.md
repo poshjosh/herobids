@@ -32,14 +32,14 @@ Legend for **Class**: `seam` = intentional consumer-side integration · `dupe` =
 | `traderton/price-contracts.ts` | Type-only PriceService contracts (copied) | dupe (types) | – | – | runtime authority in traderton |
 | `tools/trading.ts` | `submit_decision` tool: validate → `DECISION_SUBMIT` → BLPOP reply | seam | **yes** (tool) | via broker→handler | **yes** (parity schema incl. venueAccountId/capital/risk fields) |
 | `tools/account.ts` | `get_account_summary` | seam | **yes** | yes | yes |
-| `tools/risk-limits.ts` | `get_risk_limits` + `adjust_risk_limits` | seam+**fallback** | **yes** | read: boundary-else-in-process; write: fail-closed | yes |
+| `tools/risk-limits.ts` | `get_risk_limits` + `adjust_risk_limits` | seam | **yes** | read+write: both fail-closed over the boundary (A6 removed the in-process read fallback) | yes |
 | `tools/bots.ts` | bot lifecycle + reads (broker `MANAGE_BOT` / boundary reads) | seam | **yes** | yes | yes (+ traderton-only owner reads) |
 | `tools/market-data.ts` | `search_tokens`/`discover_tokens`/`check_regime`/`get_funding_rates`/`get_market_overview` | seam | **yes** | yes | yes |
 | `tools/price.ts` | `get_price` + chain/symbol validation helpers | seam | **yes** | yes | yes |
 | `tools/find-instrument.ts` | `find_instrument` (instruments table = traderton-owned) | seam | **yes** | yes | yes |
-| `tools/watch.ts` | `watch_token`/`list_watches`/`remove_watch`/`check_watches` | seam+**fallback** | **yes** | writes fail-closed; `list_watches` has local-Redis fallback | yes |
+| `tools/watch.ts` | `watch_token`/`list_watches`/`remove_watch`/`check_watches` | seam | **yes** | all four fail-closed over the boundary (A6 removed the `list_watches` local-Redis fallback) | yes |
 | `tools/analytics.ts` | `get_analytics`, `list_positions` | seam | **yes** | yes | yes |
-| `tools/resolvers.ts` | `resolve_bot` (boundary), `resolve_watch`/`resolve_task` (**local Redis only**) | seam+legacy | **yes** | partial | yes (its own stores) |
+| `tools/resolvers.ts` | `resolve_bot` + `resolve_watch` (both boundary reads → in-app substring match), `resolve_task` (platform task store, non-trading) | seam | **yes** | yes (A6 re-pointed `resolve_watch` off the legacy local Redis hash) | resolve_task only (its own platform store) |
 | `tools/assess-strategy-preset.ts` | preset assessment request (platform assessor) | platform | **yes** | evidence via SYSTEM boundary | none (DELETE-side) |
 | `tools/change-strategy-preset.ts` | apply preset transition (platform DB) | platform | **yes** | – | none (DELETE-side) |
 | `tools/platform-docs-data.ts` | static docs incl. large trading sections | platform | **yes** | – | none |
@@ -308,21 +308,21 @@ graph TD
 
 ## 6. Dormant / remnant register (deletion candidates independent of ownership)
 
-| Item | Evidence |
-|---|---|
-| `validate-trade-instrument.ts`, `swap-instrument-id.ts`, `resolve-swap-assets.ts`, `swap-startup-validation.ts`, `candle-fetch-breaker.ts`, `candle-fetch-retry.ts` | no production importer (tests only); live counterparts in traderton actor |
-| `venue-instrument-cache.ts` | only consumer = assessment identity resolver (fail-closed there) |
-| `buildAgentRiskLimits`/`buildRiskLimitsFromContract` in `agent-risk-limits.ts` | test-only (engine math lives traderton-side) |
-| `riskContractOps.adjustOverrides` (in-process risk write via `setRiskOverrides`) | dead at tool layer (adjust is boundary fail-closed) |
-| `ctx.executionConfig` affordance | constructed, never read by a tool |
-| `tools/resolvers.ts` `resolve_watch`/`resolve_task` | local-Redis legacy stores (watch state is traderton-owned) |
-| `execution:` config block | only `defaultSlippageBps` live |
-| Worker venue URL env vars (`HYPERLIQUID_*`, `BYBIT_*`, …) + `SOLANA_RPC_URL`/`BASE_RPC_URL` | no live consumer (adapters removed) |
-| `blueprints.integration.test.ts` | TRUNCATEs dropped tables (known orphan) |
-| `routes/exports-traderton.ts` row mirrors | hand-maintained schema of traderton-owned tables |
-| `GET /agents/:id/trades`, exports endpoints, `GET /trading/fills`, bot health routes | no web consumer |
-| `BotRepository` | reduced to `isConnectionOwnedBy` |
-| deprecated `scout-gating.hasUncoveredTrackedPosition`, stale docs refs (`complete-technical-scan.ts`), preset-scorecard TODO | superseded/stale |
+| Item | Evidence | Outcome (A5) |
+|---|---|---|
+| `validate-trade-instrument.ts`, `swap-instrument-id.ts`, `resolve-swap-assets.ts`, `swap-startup-validation.ts`, `candle-fetch-breaker.ts`, `candle-fetch-retry.ts` | no production importer (tests only); live counterparts in traderton actor | **deleted** |
+| `venue-instrument-cache.ts` | only consumer = assessment identity resolver (fail-closed there) | **kept** — consumer `AssessmentIdentityResolverImpl` itself dormant (no production constructor); out of A5 scope, flagged |
+| `buildAgentRiskLimits`/`buildRiskLimitsFromContract` in `agent-risk-limits.ts` | test-only (engine math lives traderton-side) | **kept** — `RiskLimits` seam still imported (A3 payload-bound RiskSource until B1) |
+| `riskContractOps.adjustOverrides` (in-process risk write via `setRiskOverrides`) | dead at tool layer (adjust is boundary fail-closed) | **deleted** (write path); read path (`getContract`/`getProfile`) kept |
+| `ctx.executionConfig` affordance | constructed, never read by a tool | **deleted** |
+| `tools/resolvers.ts` `resolve_watch`/`resolve_task` | local-Redis legacy stores (watch state is traderton-owned) | (deferred — A6 decides) |
+| `execution:` config block | only `defaultSlippageBps` live | **deleted** except `defaultSlippageBps` |
+| Worker venue URL env vars (`HYPERLIQUID_*`, `BYBIT_*`, …) + `SOLANA_RPC_URL`/`BASE_RPC_URL` | no live consumer (adapters removed) | **deleted** |
+| `blueprints.integration.test.ts` | TRUNCATEs dropped tables (known orphan) | (deferred — Plan 005 §9) |
+| `routes/exports-traderton.ts` row mirrors | hand-maintained schema of traderton-owned tables | (deferred — serving exports) |
+| `GET /agents/:id/trades`, exports endpoints, `GET /trading/fills`, bot health routes | no web consumer | `trades` **deleted**; exports **kept**; `/trading/fills` **deleted**; bot-health **kept** |
+| `BotRepository` | reduced to `isConnectionOwnedBy` | **renamed** → `ConnectionOwnershipRepository` |
+| deprecated `scout-gating.hasUncoveredTrackedPosition`, stale docs refs (`complete-technical-scan.ts`), preset-scorecard TODO | superseded/stale | **deleted** / docs fixed |
 
 ---
 

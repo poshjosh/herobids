@@ -525,8 +525,6 @@ export async function buildApp() {
     undefined,
     testPlansConfig as any,
     undefined,
-    stubTradertonClient,
-    5000,
   );
 
   await analyticsRoutes(app, db, stubTradertonClient, 10_000);

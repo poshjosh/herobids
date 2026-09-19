@@ -537,6 +537,7 @@ export class AgentDecisionHandler {
             capital: agent.capital,
             riskPosture: (agent.risk as RiskPosture | null) ?? null,
             riskOverrides: (agent.riskOverrides as AgentRiskOverrides | null) ?? null,
+            executionMode: agent.executionDefaults?.mode ?? undefined,
           }
         : undefined;
       const boundaryPayload = buildSubmitDecisionPayload(payload, venueAccountId, riskInjection);

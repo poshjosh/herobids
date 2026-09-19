@@ -18,7 +18,7 @@ export async function closeDatabase(db: Database): Promise<void> {
 }
 
 export * from './schema/index.js';
-export { BotRepository } from './repositories.js';
+export { ConnectionOwnershipRepository } from './repositories.js';
 export { AlertDeliveryRepository } from './alert-delivery-repository.js';
 export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repository.js';
 export { BillingRepository } from './billing-repository.js';

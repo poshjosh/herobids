@@ -20,18 +20,6 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   DATABASE_URL: { path: 'database.url', type: 'string' },
   REDIS_URL: { path: 'redis.url', type: 'string' },
   // Venues
-  JUPITER_API_URL: { path: 'venues.jupiter.baseUrl', type: 'string' },
-  HYPERLIQUID_BASE_URL: { path: 'venues.hyperliquid.baseUrl', type: 'string' },
-  HYPERLIQUID_WS_URL: { path: 'venues.hyperliquid.wsUrl', type: 'string' },
-  HYPERLIQUID_TESTNET: { path: 'venues.hyperliquid.testnet', type: 'boolean' },
-  BYBIT_BASE_URL: { path: 'venues.bybit.baseUrl', type: 'string' },
-  BYBIT_WS_URL: { path: 'venues.bybit.wsUrl', type: 'string' },
-  BYBIT_WS_PUBLIC_URL: { path: 'venues.bybit.wsPublicUrl', type: 'string' },
-  BYBIT_TESTNET: { path: 'venues.bybit.testnet', type: 'boolean' },
-  ONEINCH_BASE_URL: { path: 'venues.1inch.baseUrl', type: 'string' },
-  ONEINCH_RPC_URL: { path: 'venues.1inch.rpcUrl', type: 'string' },
-  ONEINCH_CHAIN_ID: { path: 'venues.1inch.chainId', type: 'number' },
-  ONEINCH_ROUTER_ADDRESS: { path: 'venues.1inch.routerAddress', type: 'string' },
   JUPITER_API_KEY: { path: 'venues.jupiter.apiKey', type: 'string' },
   ONEINCH_API_KEY: { path: 'venues.1inch.apiKey', type: 'string' },
   // Alerts

@@ -1613,10 +1613,6 @@ export const AppConfigSchema = z.object({
   venues: z.record(VenueConfigSchema).default({}),
   execution: z.object({
     defaultSlippageBps: z.number().min(0).default(50),
-    orderTimeoutMs: z.number().min(1000).default(30_000),
-    maxRetries: z.number().min(0).default(3),
-    shadowPollIntervalMs: z.number().int().min(100).default(2_000),
-    shadowQuoteSlippageBps: z.number().min(0).default(50),
   }),
   agentRiskDefaults: AgentRiskDefaultsSchema,
   agentApprovals: AgentApprovalsConfigSchema,

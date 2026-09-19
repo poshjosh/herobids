@@ -64,8 +64,6 @@ venues:
 
 execution:
   defaultSlippageBps: 50
-  orderTimeoutMs: 30000
-  maxRetries: 3
 
 risk:
   globalMaxDrawdownPct: 20

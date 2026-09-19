@@ -3,13 +3,14 @@ import type { Database } from './index.js';
 import { connections } from './schema/index.js';
 
 /**
- * Repository for bot-related ownership checks.
+ * Connection-scoped ownership verification.
  *
- * Reduced to the single method still called by the platform: connection
- * ownership verification against the KEEP `connections` table. All bot
- * lifecycle / analytics methods were removed with the trading tables.
+ * The former `BotRepository` was reduced to this single method after the bot
+ * lifecycle / analytics methods were removed with the trading tables. It no
+ * longer references bots at all — it only verifies that a `connections` row
+ * exists and belongs to the given user (a platform-side authz gate).
  */
-export class BotRepository {
+export class ConnectionOwnershipRepository {
   constructor(private readonly db: Database) {}
 
   /**

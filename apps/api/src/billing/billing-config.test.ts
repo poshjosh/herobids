@@ -69,7 +69,7 @@ describe('AppConfigSchema billing cross-validation', () => {
     app: { port: 3000, logLevel: 'info' },
     database: { url: 'postgres://localhost:5432/test' },
     redis: { url: 'redis://localhost:6379' },
-    execution: { defaultSlippageBps: 50, orderTimeoutMs: 30000, maxRetries: 3 },
+    execution: { defaultSlippageBps: 50 },
     risk: { globalMaxDrawdownPct: 20, maxOpenPositions: 10, maxPositionSizePct: 25 },
     agentRuntime: {
       defaultBudgets: {

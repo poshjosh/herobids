@@ -22,6 +22,7 @@ function makeCtx(opts: {
   agentRepo?: ToolContext['agentRepo'];
   tradertonWriteBoundary?: ToolContext['tradertonWriteBoundary'];
   tradertonBoundary?: ToolContext['tradertonBoundary'];
+  agentRiskSpecResolver?: ToolContext['agentRiskSpecResolver'];
 } = {}): ToolContext {
   return {
     agentId: 'agent-1',
@@ -34,81 +35,29 @@ function makeCtx(opts: {
     agentRepo: opts.agentRepo,
     tradertonWriteBoundary: opts.tradertonWriteBoundary,
     tradertonBoundary: opts.tradertonBoundary,
+    agentRiskSpecResolver: opts.agentRiskSpecResolver,
   } as unknown as ToolContext;
 }
 
 describe('get_risk_limits tool', () => {
-  it('returns structured contract with source and mutability', async () => {
-    const contract = makeContract();
+  // A6: the read is boundary-first and FAILS CLOSED when the read boundary is
+  // absent — the in-process riskContractOps read fallback is deleted (A3's
+  // RiskSource seam serves the reads; keeping an in-process copy would be a
+  // split-brain trap). Same typed posture as the adjust write.
+  it('HARD-FAILS with precondition.not_ready when the read boundary is absent (no in-process fallback)', async () => {
+    const getContract = vi.fn();
     const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(contract),
-        adjustOverrides: vi.fn(),
-      },
+      riskContractOps: { getContract },
     });
 
     const result = await getRiskLimitsTool.execute({}, ctx);
 
-    expect(result.success).toBe(true);
-    const data = result.data as Record<string, unknown>;
-    const limits = data.limits as Record<string, unknown>;
-    expect(limits.maxOpenPositions).toEqual({ value: 10, source: 'default', mutable: true, ceiling: 10 });
-    expect(limits.stopLossCooldownMs).toEqual({ value: 60000, source: 'agent_override', mutable: true, ceiling: 300000 });
-    // Runtime is present with defaults when botRepo absent
-    const runtime = data.runtime as Record<string, unknown>;
-    expect(runtime).toBeDefined();
-    const openPositions = runtime.openPositions as Record<string, unknown>;
-    expect(openPositions.current).toBe(0);
-    expect(openPositions.limit).toBe(10);
-    expect(openPositions.blocked).toBe(false);
-    const dailyLoss = runtime.dailyLoss as Record<string, unknown>;
-    expect(dailyLoss.current).toBe('0');
-    expect(dailyLoss.limit).toBeNull();
-    expect(dailyLoss.blocked).toBe(false);
-    expect(dailyLoss.oldestFillAgesOutAt).toBeNull();
-    expect(dailyLoss.remainingMs).toBeNull();
-    const drawdown = runtime.drawdown as Record<string, unknown>;
-    expect(drawdown.current).toBeNull();
-    // drawdown.limit defaults to the operator default (1B) when no user/agent config is present
-    expect(drawdown.limit).toBe('1000000000');
-    expect(drawdown.approaching).toBe(false);
-  });
-
-  // c4.9i: the runtime open-position count + daily realized P&L are now composed
-  // Traderton-side and returned by the boundary's `get_risk_limits` payload (see
-  // the boundary-routing test below). buildRuntime — reached only on the
-  // in-process fallback when the boundary is absent — no longer reads any local
-  // trading table; it degrades those runtime fields to defaults.
-  it('in-process fallback runtime degrades open positions + daily loss to defaults (no local reads)', async () => {
-    const contract = makeContract();
-    const ctx = makeCtx({
-      riskContractOps: {
-        getContract: vi.fn().mockResolvedValue(contract),
-        adjustOverrides: vi.fn(),
-      },
-      agentRepo: {
-        getAgent: vi.fn().mockResolvedValue({ capital: '5000', risk: { dailyMaxLossPct: 10 } }),
-      },
-    });
-
-    const result = await getRiskLimitsTool.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const runtime = (result.data as Record<string, unknown>).runtime as Record<string, unknown>;
-    const openPositions = runtime.openPositions as Record<string, unknown>;
-    expect(openPositions.current).toBe(0);
-    expect(openPositions.blocked).toBe(false);
-    const dailyLoss = runtime.dailyLoss as Record<string, unknown>;
-    // No boundary + no local reads → current degrades to '0', so never blocked.
-    expect(dailyLoss.current).toBe('0');
-    expect(dailyLoss.blocked).toBe(false);
-  });
-
-  it('returns error when riskContractOps is not available', async () => {
-    const ctx = makeCtx();
-    const result = await getRiskLimitsTool.execute({}, ctx);
     expect(result.success).toBe(false);
-    expect(result.error).toContain('not available');
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.error).toContain('boundary not configured');
+    expect(result.fault).toBe(false);
+    // The in-process riskContractOps read is NEVER consulted (fail-closed).
+    expect(getContract).not.toHaveBeenCalled();
   });
 
   it('routes the read through the boundary when configured (does NOT touch riskContractOps)', async () => {
@@ -117,7 +66,7 @@ describe('get_risk_limits tool', () => {
     const getContract = vi.fn();
     const ctx = makeCtx({
       tradertonBoundary: { invoke },
-      riskContractOps: { getContract, adjustOverrides: vi.fn() },
+      riskContractOps: { getContract },
     });
 
     const result = await getRiskLimitsTool.execute({}, ctx);
@@ -128,19 +77,55 @@ describe('get_risk_limits tool', () => {
     expect(result.data).toEqual(boundaryData);
   });
 
-  it('falls back to the in-process read when the boundary is absent (read-fallback posture)', async () => {
-    const contract = makeContract();
-    const ctx = makeCtx({
-      riskContractOps: { getContract: vi.fn().mockResolvedValue(contract), adjustOverrides: vi.fn() },
+  // A3: the PLATFORM attaches the risk spec (post-LLM, from the `agents` row via
+  // agentRiskSpecResolver) so traderton serves the contract from its single
+  // RiskSource seam. Absent spec → traderton's typed precondition surfaces.
+  it('attaches the platform risk spec to the read payload when the resolver resolves', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      kind: 'failure',
+      code: 'precondition.not_ready',
+      message: 'risk context unavailable',
+      retryable: true,
     });
-    const result = await getRiskLimitsTool.execute({}, ctx);
-    expect(result.success).toBe(true);
-    const limits = (result.data as Record<string, unknown>).limits as Record<string, unknown>;
-    expect(limits.maxOpenPositions).toEqual({ value: 10, source: 'default', mutable: true, ceiling: 10 });
-  });
-});
+    const ctx = makeCtx({
+      tradertonBoundary: { invoke },
+      agentRiskSpecResolver: vi.fn(async () => ({
+        capital: '1000',
+        riskPosture: { maxOpenPositions: 3 },
+        riskOverrides: { maxDrawdownPct: 5 },
+      })),
+    });
 
-describe('adjust_risk_limits tool', () => {
+    const result = await getRiskLimitsTool.execute({}, ctx);
+
+    expect(invoke).toHaveBeenCalledWith({
+      toolName: 'get_risk_limits',
+      payload: {
+        capital: '1000',
+        riskPosture: { maxOpenPositions: 3 },
+        riskOverrides: { maxDrawdownPct: 5 },
+      },
+    });
+    // The typed precondition maps through without counting as a fault.
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.fault).toBe(false);
+  });
+
+  it('degrades to an empty payload when the spec resolver is absent or throws', async () => {
+    const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: { ok: true } });
+    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+    await getRiskLimitsTool.execute({}, ctx);
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_risk_limits', payload: {} });
+
+    const throwingCtx = makeCtx({
+      tradertonBoundary: { invoke },
+      agentRiskSpecResolver: vi.fn(async () => { throw new Error('db down'); }),
+    });
+    await getRiskLimitsTool.execute({}, throwingCtx);
+    expect(invoke).toHaveBeenLastCalledWith({ toolName: 'get_risk_limits', payload: {} });
+  });
+
   it('routes the write through the boundary and returns the boundary success payload', async () => {
     const successPayload = {
       ok: true,
@@ -240,12 +225,11 @@ describe('adjust_risk_limits tool', () => {
   });
 
   it('HARD-FAILS with precondition.not_ready when the write boundary is absent (no in-process fallback)', async () => {
-    const adjustOverrides = vi.fn();
     const ctx = makeCtx({
-      // riskContractOps present (read path uses it) but NO write boundary.
+      // riskContractOps (read fallback) present but NO write boundary — the
+      // write has nothing to fall back to (adjust is boundary fail-closed).
       riskContractOps: {
         getContract: vi.fn(),
-        adjustOverrides,
       },
     });
 
@@ -255,7 +239,5 @@ describe('adjust_risk_limits tool', () => {
     expect(result.errorCode).toBe('precondition.not_ready');
     expect(result.error).toContain('boundary not configured');
     expect(result.fault).toBe(false);
-    // The in-process riskContractOps.adjustOverrides is NEVER called (fail-closed).
-    expect(adjustOverrides).not.toHaveBeenCalled();
   });
 });

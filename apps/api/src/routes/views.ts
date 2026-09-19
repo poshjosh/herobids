@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
+import { agents } from '@herobids/db';
 import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
 import { JournalQuerySchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
@@ -23,19 +25,23 @@ const boundaryUnconfiguredError = {
 
 export async function journalRoutes(
   app: FastifyInstance,
-  _db: Database,
+  db: Database,
   tradertonReadClient?: TradertonClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
 
-  // Query journal events for a specific bot. Sourced over the Traderton read
-  // boundary (c4.2): `get_owner_bot_journal` owner-scopes by the subject owner,
-  // so the required `actorId` (a bot id — the sole live consumer is the instance
-  // detail page passing the bot/instance id) is verified as OWNED server-side.
-  // An unowned/absent bot returns not_found.resource → 404. This makes the
-  // endpoint's "ownership-scoped filter to prevent cross-user leaks" contract
-  // TRUE (the old local query only required actorId to be present, not owned).
+  // Query journal events for a specific bot or agent. Sourced over the Traderton
+  // read boundary (c4.2):
+  //   - bot   → `get_owner_bot_journal` owner-scopes by the subject owner, so the
+  //             `actorId` (a bot id) is verified as OWNED server-side.
+  //   - agent → `get_agent_journal_events` resolves the agent actor + its owned
+  //             bots server-side (agent-native journal always has actorType
+  //             'agent'; a bot-scoped read would return nothing for them).
+  // The agent vs bot disambiguation uses the platform `agents` table (still
+  // local): if `actorId` is an OWNED agent, take the agent branch; else the bot
+  // branch. An unowned/absent bot returns not_found.resource → 404, preserving
+  // the endpoint's "ownership-scoped filter to prevent cross-user leaks" contract.
   app.get('/journal', async (request, reply) => {
     const parsed = JournalQuerySchema.safeParse(request.query);
     if (!parsed.success) {
@@ -52,18 +58,48 @@ export async function journalRoutes(
         errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
       );
     }
-    const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
-    const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
-    const loaded = await loadAgentEvidence<ReadJournalRow>(
-      boundary,
-      'get_owner_bot_journal',
-      // Drop an empty `type` — herobids' schema allows type:'' (ignored by the
-      // old local query) but the tool's schema is `.min(1)`, so `?type=` would
-      // otherwise 502. `|| undefined` reproduces the old "ignore empty type".
-      { botId: parsed.data.actorId, type: parsed.data.type || undefined, limit: parsed.data.limit, offset: parsed.data.offset },
-      'events',
-      toJournalRow,
-    );
+
+    // Disambiguate agent vs bot: `actorId` that resolves to an OWNED agent takes
+    // the agent-scoped branch (the agent may or may not own bots; its own
+    // journal events are actorType='agent' and only served by the agent tool).
+    const [ownedAgent] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.id, parsed.data.actorId))
+      .limit(1);
+
+    let loaded: Awaited<ReturnType<typeof loadAgentEvidence<ReadJournalRow>>>;
+    if (ownedAgent) {
+      const agentSubject: TradertonSubject = { ownerId: request.userId, actor: { type: 'agent', id: parsed.data.actorId } };
+      const boundary = createTradertonReadBoundary(tradertonReadClient, agentSubject, readDeadlineMs);
+      // get_agent_journal_events returns ALL agent events (native + owned bots)
+      // with only from/to time filters — `type` is not server-filterable here,
+      // so apply it in-app (matching the old local soft-filter semantics).
+      loaded = await loadAgentEvidence<ReadJournalRow>(
+        boundary,
+        'get_agent_journal_events',
+        {},
+        'events',
+        toJournalRow,
+      );
+      if (loaded.ok && parsed.data.type) {
+        loaded = { ok: true, rows: loaded.rows.filter((r) => r.type === parsed.data.type) };
+      }
+    } else {
+      const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+      const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
+      loaded = await loadAgentEvidence<ReadJournalRow>(
+        boundary,
+        'get_owner_bot_journal',
+        // Drop an empty `type` — herobids' schema allows type:'' (ignored by the
+        // old local query) but the tool's schema is `.min(1)`, so `?type=` would
+        // otherwise 502. `|| undefined` reproduces the old "ignore empty type".
+        { botId: parsed.data.actorId, type: parsed.data.type || undefined, limit: parsed.data.limit, offset: parsed.data.offset },
+        'events',
+        toJournalRow,
+      );
+    }
+
     if (!loaded.ok) {
       if (loaded.error.code === 'not_found.resource') {
         return reply.status(404).send({ error: 'not_found' });

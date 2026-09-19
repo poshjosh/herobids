@@ -5,9 +5,7 @@ import { z } from 'zod';
 import { eq, and, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
-import { createTradertonReadBoundary, loadAgentEvidence, toFillRow, type FillRow as ReadFillRow } from './exports-traderton.js';
-import { errorPayload } from '../error-payload.js';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import { DecisionApprovalRepository } from '@herobids/db';
 import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
@@ -110,9 +108,6 @@ const UpdateAgentSchema = z.object({
 
 // --- Route module ---
 
-/** Fallback read deadline when the operator boundary timeout is not supplied. */
-const DEFAULT_READ_TIMEOUT_MS = 10_000;
-
 export async function agentInteractivityRoutes(
   app: FastifyInstance,
   db: Database,
@@ -121,10 +116,7 @@ export async function agentInteractivityRoutes(
   llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
   agentRiskDefaults?: AgentRiskDefaultsConfig,
-  tradertonReadClient?: TradertonClient,
-  tradertonReadTimeoutMs?: number,
 ): Promise<void> {
-  const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
       return { canViewOwnPrompts: true };
@@ -411,36 +403,6 @@ export async function agentInteractivityRoutes(
       judgeUserContext,
       hybridSystem,
     });
-  });
-
-  // GET /agents/:id/trades — fills (trades) attributed to this agent.
-  // Includes both agent-native fills (actorType='agent') and fills from bots
-  // created by the agent (actorType='bot'). Sourced over the Traderton read
-  // boundary (c4.1): the `get_agent_fills` tool folds agent-owned bot fills
-  // (creatorType='agent' AND creatorId=agentId) with agent-native fills
-  // server-side, so no local `bots`/`fills` read remains. When the boundary is
-  // unconfigured, returns a typed precondition (no silent local fallback).
-  app.get<{ Params: { id: string } }>('/agents/:id/trades', async (request, reply) => {
-    const { id } = request.params;
-
-    const [agent] = await db.select({ id: agents.id }).from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-    if (!tradertonReadClient) {
-      return reply.status(503).send(errorPayload(
-        'precondition.not_ready',
-        'Trading service is unavailable — trades could not be read.',
-      ));
-    }
-    const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'agent', id } };
-    const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
-    const loaded = await loadAgentEvidence<ReadFillRow>(boundary, 'get_agent_fills', {}, 'fills', toFillRow);
-    if (!loaded.ok) {
-      return reply.status(loaded.error.status).send(errorPayload(loaded.error.code, loaded.error.message));
-    }
-
-    return reply.send({ agentId: id, trades: loaded.rows });
   });
 
   // GET /agents/telegram-bot — platform Telegram bot username (501 if not configured)

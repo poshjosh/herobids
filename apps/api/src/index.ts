@@ -277,10 +277,10 @@ await dashboardRoutes(app, db, appConfig.plans, tradertonBotClient, appConfig.bo
 // ── Core platform services ─────────────────────────────────────────────────
 // Billing routes — always registered; the summary endpoint is needed even when
 // billing is disabled so the web UI can render the "not enabled" state.
-await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults);
 await analyticsRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);

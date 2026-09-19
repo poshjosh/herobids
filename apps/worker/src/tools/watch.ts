@@ -3,9 +3,10 @@
  *
  * Watch state lives Traderton-side. The WRITE tools (watch_token, remove_watch,
  * check_watches) route over the Traderton side-effecting boundary and FAIL
- * CLOSED when it is absent — herobids no longer owns watch state in-process.
- * The list_watches READ keeps a transitional local Redis fallback for when the
- * read boundary is absent.
+ * CLOSED when it is absent. The list_watches READ is boundary-first too and
+ * FAILS CLOSED when the read boundary is absent — no local fallback (A6: the
+ * legacy local Redis hash no longer receives writes, so it could only ever
+ * serve stale pre-migration data).
  */
 
 import { z } from 'zod';
@@ -14,7 +15,6 @@ import { WatchPurposeEnum } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult, mapWriteResultToToolResult } from './traderton-read.js';
 import { EXPLICIT_SUPPORTED_CHAINS } from './price.js';
-import { type WatchEntry, parseWatch } from '../watch-types.js';
 
 /** Deadline for single-record watch boundary writes (invoke + poll), in ms. */
 const WATCH_WRITE_DEADLINE_MS = 30_000;
@@ -22,12 +22,9 @@ const WATCH_WRITE_DEADLINE_MS = 30_000;
 // watch identity), so it needs more headroom than the single-record writes.
 const CHECK_WATCHES_DEADLINE_MS = 60_000;
 
-function watchesKey(agentId: string): string {
-  return `agent:watches:${agentId}`;
-}
-
-/** Returned by the write tools when the Traderton write boundary is absent. */
-const WRITE_BOUNDARY_NOT_READY: ToolResult = {
+/** Returned by the tools when the Traderton boundary is absent. A6: the read
+ * and write paths share the same typed fail-closed posture. */
+const BOUNDARY_NOT_READY: ToolResult = {
   success: false,
   error: 'trading boundary not configured',
   errorCode: 'precondition.not_ready',
@@ -93,7 +90,7 @@ const watchTokenTool: AgentTool<TradingToolContext> = {
     // FAIL CLOSED when the write boundary is absent. Coverage is forwarded
     // VERBATIM — do NOT pre-strip coverage.positionKey (the boundary owns it).
     if (!ctx.tradertonWriteBoundary) {
-      return WRITE_BOUNDARY_NOT_READY;
+      return BOUNDARY_NOT_READY;
     }
 
     const result = await ctx.tradertonWriteBoundary.invokeAndAwait({
@@ -119,23 +116,17 @@ const listWatchesTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(ListWatchesParamsSchema),
   category: 'read-memory',
   async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
-    // L3: route the read over the Traderton boundary when present; the local
-    // Redis read below is a transitional fallback for when the boundary is absent.
-    if (ctx.tradertonBoundary) {
-      return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({ toolName: 'list_watches', payload: {} }));
+    // A6: the READ is boundary-first and FAILS CLOSED when the read boundary
+    // is absent — the legacy local Redis hash no longer receives writes and
+    // could only serve stale pre-migration data. Typed failure codes align
+    // with the shared read→tool mapping (precondition.not_ready, non-fault).
+    if (!ctx.tradertonBoundary) {
+      return BOUNDARY_NOT_READY;
     }
 
-    const raw = await ctx.redis.hgetall(watchesKey(ctx.agentId));
-    if (!raw) {
-      return { success: true, data: { ok: true, watches: [] } };
-    }
-
-    const watches = Object.values(raw)
-      .map(parseWatch)
-      .filter((w): w is WatchEntry => w !== null)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-
-    return { success: true, data: { ok: true, watches } };
+    return mapReadResultToToolResult(
+      await ctx.tradertonBoundary.invoke({ toolName: 'list_watches', payload: {} }),
+    );
   },
 };
 
@@ -158,7 +149,7 @@ const removeWatchTool: AgentTool<TradingToolContext> = {
 
     // Watch state lives Traderton-side — FAIL CLOSED when the boundary is absent.
     if (!ctx.tradertonWriteBoundary) {
-      return WRITE_BOUNDARY_NOT_READY;
+      return BOUNDARY_NOT_READY;
     }
 
     const result = await ctx.tradertonWriteBoundary.invokeAndAwait({
@@ -197,7 +188,7 @@ const checkWatchesTool: AgentTool<TradingToolContext> = {
 
     // Watch state lives Traderton-side — FAIL CLOSED when the boundary is absent.
     if (!ctx.tradertonWriteBoundary) {
-      return WRITE_BOUNDARY_NOT_READY;
+      return BOUNDARY_NOT_READY;
     }
 
     const result = await ctx.tradertonWriteBoundary.invokeAndAwait({

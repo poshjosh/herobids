@@ -6,6 +6,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Dormant/remnant deletion sweep (A5).** Deleted the six import-free engine-era worker modules (`validate-trade-instrument`, `swap-instrument-id`, `resolve-swap-assets`, `swap-startup-validation`, `candle-fetch-breaker`, `candle-fetch-retry`) + their tests; removed the dead in-process `riskContractOps.adjustOverrides` write path (read path kept), the never-read `ctx.executionConfig` affordance, the 12 worker venue-URL env overrides (`HYPERLIQUID_*`, `BYBIT_*`, `ONEINCH_*`, `JUPITER_API_URL`) + `SOLANA_RPC_URL`/`BASE_RPC_URL`, the dead `execution:` config keys (kept `defaultSlippageBps`), the `GET /agents/:id/trades` and `GET /trading/fills` routes, and the deprecated `scout-gating.hasUncoveredTrackedPosition`; renamed `BotRepository` → `ConnectionOwnershipRepository` (its sole survivor is the `connections` ownership check). Kept: `venue-instrument-cache.ts` (its only consumer is itself dormant), the risk-limit builders/`RiskLimits` seam (A3 payload-bound read until B1), exports + bot-health routes.
+
+### Added
+
+- **Boundary risk/account reads restored (A3, Option X).** Traderton now constructs `riskContractOps` in the boundary context factory behind a single `RiskSource` seam (payload-sourced for now; one-adapter swap when the B1 profile store lands), restoring `get_risk_limits` and `get_account_summary` over the boundary. The herobids platform attaches the risk spec to these read calls post-LLM from the `agents` row (reusing the `buildSubmitDecisionPayload` stamping); the spec fields are hidden from LLM-facing tool schemas. `adjust_risk_limits` fails closed with a typed `precondition.not_ready` until B1 gives the write a durable home.
+
+### Changed
+
+- **Fallback posture completed boundary-first (A6).** Deleted the `list_watches` local-Redis fallback (boundary-only, fail-closed; tick gate degrades to empty digest during boundary outages); re-pointed `resolve_watch` from the legacy Redis hash to the boundary watch list (resolve_bot pattern); deleted the in-process `get_risk_limits` fallback (fail-closed now that the boundary serves the reads). `resolve_task` stays platform-local (non-trading) and exit-price reconstruction is unchanged (B4-decision-dependent).
+
 ### Fixed
 
 - **Functional test harness: wired the stub boundary client + migrated seed-based trading tests.** `buildApp()` now passes the stub Traderton client into the `agentRoutes`, `capabilityRoutes`, and `agentInteractivityRoutes` registrations (matching production arg positions), and the stub's agent-scoped `get_agent_fills`/`get_agent_positions` reads are seedable via new `ctx.seedAgentFills`/`ctx.seedAgentPositions` helpers. The 10 previously-failing functional tests (positions, `/trades`, agent-delete) migrated from seeding dropped local tables (`fills`, `positions`, `bots`, `venue_accounts`) to seeding the boundary mock. Functional tier: 191 passed / 0 failed.

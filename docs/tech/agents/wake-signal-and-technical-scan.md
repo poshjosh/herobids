@@ -43,7 +43,7 @@ Because the wake group and the runtime group race for the same `agent.wake` mess
 ## 3. The technical-scan lifecycle
 
 1. The worker's technical scanner runs every `scanIntervalMs` (default 60s) and produces a `TechnicalScanState`.
-2. `completeTechnicalScan()` publishes an `agent.technical.scan_completed` message to the same `agent:outbound:<agentId>` stream (`apps/worker/src/complete-technical-scan.ts`, `apps/worker/src/agents/instance-event-publisher.ts`).
+2. The scan producer now lives Traderton-side (the in-process `complete-technical-scan.ts` scanner was removed with the L3d-5 actor slice). Traderton emits an `agent.technical.scan_completed` message, which herobids consumes over the boundary into the same `agent:outbound:<agentId>` stream (`apps/worker/src/scan-types.ts` defines the DTO; `apps/worker/src/agents/instance-event-publisher.ts` still carries the publisher seam).
 3. The `agent-runtime` group consumes it via `readOutboundMessages()`, and `applyRuntimeMessage()` calls `recordTechnicalScan()` to update `runtimeState.metrics.lastTechnicalScan` (`apps/worker/src/runtime-composition.ts`).
 4. The hybrid evaluator reads `lastTechnicalScan` and checks freshness via `isTechnicalScanFresh()` (`apps/worker/src/hybrid-agent-evaluator.ts`), which rejects any scan older than `2 × scanIntervalMs` (120s) with a `stale_scan` error.
 
@@ -92,8 +92,7 @@ After the fix, the tick sees the wake context no matter which group consumed the
 | `apps/worker/src/runtime-composition.ts` | `applyRuntimeMessage` | Runtime-group path: sets `currentMarketWake` from validated wake |
 | `apps/worker/src/tick-gate-state.ts` | `buildTickGateState` | Computes `hasWakeSignal` (includes `hasBufferedWake`) |
 | `apps/worker/src/hybrid-agent-evaluator.ts` | `isTechnicalScanFresh` | Rejects stale scans (`2 × scanIntervalMs`) |
-| `apps/worker/src/complete-technical-scan.ts` | `completeTechnicalScan` | Publishes `agent.technical.scan_completed` |
-| `apps/worker/src/agents/instance-event-publisher.ts` | `publish` | Writes messages to `agent:outbound:<id>` |
+| `apps/worker/src/agents/instance-event-publisher.ts` | `emitTechnicalScanCompleted` | Publishes `agent.technical.scan_completed` (producer is Traderton-side; herobids consumes) |
 
 ---
 

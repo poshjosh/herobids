@@ -47,6 +47,10 @@ export interface SubmitDecisionBoundaryPayload {
   capital?: string;
   riskPosture?: RiskPosture;
   riskOverrides?: AgentRiskOverrides;
+  // Option A: the agent's REAL execution mode, platform-owned (from the `agents`
+  // row). Never an LLM input — carried so the boundary uses it as the per-agent
+  // escalation ceiling + actor construction mode instead of a static default.
+  executionMode?: 'paper' | 'shadow' | 'live';
 }
 
 /** The platform risk context the caller injects alongside the decision. */
@@ -54,6 +58,7 @@ export interface AgentRiskInjection {
   capital?: string | null;
   riskPosture?: RiskPosture | null;
   riskOverrides?: AgentRiskOverrides | null;
+  executionMode?: 'paper' | 'shadow' | 'live' | null;
 }
 
 /**
@@ -85,6 +90,33 @@ export function buildSubmitDecisionPayload(
   if (riskInjection?.capital != null && riskInjection.capital !== '') out.capital = riskInjection.capital;
   if (riskInjection?.riskPosture != null) out.riskPosture = riskInjection.riskPosture;
   if (riskInjection?.riskOverrides != null) out.riskOverrides = riskInjection.riskOverrides;
+  if (riskInjection?.executionMode != null) out.executionMode = riskInjection.executionMode;
+  return out;
+}
+
+// ── A3: risk-spec attachment for the boundary READ calls ──────────────────────
+
+/**
+ * The risk-spec fields the PLATFORM attaches to the boundary read calls
+ * (`get_risk_limits` / `get_account_summary`). Same fields `submit_decision`
+ * already carries; traderton declares them in those tools' schemas (Zod strips
+ * undeclared fields) and binds them via its single RiskSource seam.
+ */
+export type RiskSpecPayloadFields = Pick<SubmitDecisionBoundaryPayload, 'capital' | 'riskPosture' | 'riskOverrides' | 'executionMode'>;
+
+/**
+ * Build the risk-spec payload fields from the platform risk context
+ * (the `agents` row's capital/risk/riskOverrides). Carried through only when
+ * present/non-null so a risk-context-less consumer keeps traderton's
+ * operator-default behaviour. Reuses the exact field stamping of
+ * {@link buildSubmitDecisionPayload} so both tools' payloads agree.
+ */
+export function buildRiskSpecPayloadFields(riskInjection?: AgentRiskInjection): RiskSpecPayloadFields {
+  const out: RiskSpecPayloadFields = {};
+  if (riskInjection?.capital != null && riskInjection.capital !== '') out.capital = riskInjection.capital;
+  if (riskInjection?.riskPosture != null) out.riskPosture = riskInjection.riskPosture;
+  if (riskInjection?.riskOverrides != null) out.riskOverrides = riskInjection.riskOverrides;
+  if (riskInjection?.executionMode != null) out.executionMode = riskInjection.executionMode;
   return out;
 }
 

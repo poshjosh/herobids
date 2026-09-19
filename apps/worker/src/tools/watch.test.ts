@@ -135,39 +135,22 @@ describe('watch write tools — fail closed without a write boundary', () => {
   });
 });
 
-// ── list_watches read fallback (in-process) ───────────────────────────────
-// The READ path keeps a transitional local Redis fallback for when the read
-// boundary is absent — it is NOT fail-closed.
+// ── list_watches read — fail closed (A6) ─────────────────────────────
+// The READ path is boundary-first and FAILS CLOSED when the read boundary is
+// absent — the legacy local Redis hash no longer receives writes (stale-data
+// trap). No local fallback.
 
-describe('list_watches — local read fallback', () => {
-  it('returns empty list when no watches exist', async () => {
+describe('list_watches — fail closed without a read boundary (A6)', () => {
+  it('fails closed with precondition.not_ready and does NOT read local redis', async () => {
     const ctx = makeCtx();
-    const result = await listWatchesTool.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    expect((result.data as { watches: unknown[] }).watches).toHaveLength(0);
-  });
-
-  it('returns all seeded watches sorted by createdAt', async () => {
-    const ctx = makeCtx();
-    await seedWatch(ctx, {
-      watchId: '00000000-0000-4000-8000-000000000001',
-      symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above',
-      createdAt: '2024-01-01T00:00:00.000Z',
-    });
-    await seedWatch(ctx, {
-      watchId: '00000000-0000-4000-8000-000000000002',
-      symbol: 'BTC', chain: 'hyperliquid', thresholdPrice: 90_000, condition: 'below',
-      createdAt: '2024-01-02T00:00:00.000Z',
-    });
 
     const result = await listWatchesTool.execute({}, ctx);
 
-    expect(result.success).toBe(true);
-    const data = result.data as { watches: Array<{ symbol: string }> };
-    expect(data.watches).toHaveLength(2);
-    // Sorted by createdAt ascending — SOL (earlier) first.
-    expect(data.watches.map((w) => w.symbol)).toEqual(['SOL', 'BTC']);
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.fault).toBe(false);
+    // No local fallback read — the legacy hash is never consulted.
+    expect(ctx.redis.hgetall).not.toHaveBeenCalled();
   });
 });
 

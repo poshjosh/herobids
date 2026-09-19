@@ -27,7 +27,7 @@ import {
   ManageAgentSkillsPayloadSchema,
   resolvePlanSkillEntitlements,
 } from '@herobids/domain';
-import type { AgentRepository, BotRepository, Database } from '@herobids/db';
+import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
 import { eq, inArray } from 'drizzle-orm';
 import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
@@ -81,7 +81,7 @@ export class AgentMessageBroker {
     private readonly sessionManager: AgentSessionManager,
     private readonly eventPublisher: InstanceEventPublisher,
     private readonly telegram?: TelegramClient,
-    private readonly botRepo?: BotRepository,
+    private readonly botRepo?: ConnectionOwnershipRepository,
     private readonly botLiveCheck?: BotLiveCheckCallback,
     private readonly emailClient?: EmailClient,
     readonly onAgentConfigUpdate?: (agentId: string, config: Record<string, unknown> | null) => void,
@@ -565,7 +565,7 @@ export class AgentMessageBroker {
 
     if (payload.action === 'create_and_start') {
       if (!payload.config) throw new Error('config is required for create_and_start');
-      if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
+      if (!this.botRepo) throw new Error('Connection ownership repository not wired — manage_bot unavailable');
 
       // Resolve the connection using the same runtime descriptor the agent sees in its prompt.
       // Primary path: connectionId (the agent sees this in its readiness summary).
@@ -679,6 +679,7 @@ export class AgentMessageBroker {
       await this.invokeBotLifecycle('create_bot', {
         venueAccountId: connection.resolvedVenueAccountId,
         config: rawConfig,
+        executionMode: agent.executionDefaults?.mode ?? undefined,
       }, subject);
 
       logger.info({ agentId: agent.id }, 'Agent created bot via manage_bot (boundary)');
@@ -743,6 +744,7 @@ export class AgentMessageBroker {
       await this.invokeBotLifecycle('adjust_bot_config', {
         botId: payload.botId,
         config: partialConfig,
+        executionMode: agent.executionDefaults?.mode ?? undefined,
       }, subject);
 
       return;
@@ -884,17 +886,6 @@ export class AgentMessageBroker {
       },
       publishToInbound: async () => {},
       agentConfigOps,
-      executionConfig: {
-        async getExecutionConfig() {
-          const config = await agentConfigOps.getCurrentConfig();
-          if (!config) return null;
-          return {
-            mode: config.execution?.mode ?? null,
-            positionSizeMode: config.execution?.positionSizeMode ?? null,
-            fixedPositionSize: config.execution?.fixedPositionSize ?? null,
-          };
-        },
-      },
       db: db as unknown,
       permissionLevel: 'standard',
     };
@@ -1471,13 +1462,27 @@ export class AgentMessageBroker {
 
 function applyAgentCapitalLimit(config: Record<string, unknown>, capital: string | number | null | undefined): Record<string, unknown> {
   const capitalLimit = parsePositiveDecimal(capital);
+
+  // Normalize the bot `risk` object regardless of capital presence: strip the
+  // strategy-level exit-target keys the LLM may have misplaced into `risk`.
+  // Traderton's strict `BotRiskSchema` classifies `takeProfitPct` /
+  // `trailingStopPct` as `strategy.params` exit targets (not risk guards) and
+  // rejects unknown keys — carrying them across the boundary makes `create_bot`
+  // / `adjust_config` fail `internal.non_retryable` (bug-001 Zod-strip family).
+  const riskConfig = isPlainObject(config['risk'])
+    ? Object.fromEntries(
+        Object.entries(config['risk']).filter(([k]) => k !== 'takeProfitPct' && k !== 'trailingStopPct'),
+      )
+    : {};
+
   if (!capitalLimit) {
-    return config;
+    if (Object.keys(riskConfig).length === 0) {
+      return config;
+    }
+    return { ...config, risk: riskConfig };
   }
 
-  const riskConfig = isPlainObject(config['risk']) ? { ...config['risk'] } : {};
   const configuredMaxOrderNotional = parsePositiveDecimal(riskConfig['maxOrderNotional']);
-
   riskConfig['maxOrderNotional'] = configuredMaxOrderNotional && configuredMaxOrderNotional.lte(capitalLimit)
     ? configuredMaxOrderNotional.toNumber()
     : capitalLimit.toNumber();

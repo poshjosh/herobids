@@ -7,7 +7,7 @@ import {
   AssessmentReviewRunner,
 } from './market-intelligence/assessment-review-runner.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
-import { createDatabase, AlertDeliveryRepository, AgentRepository, BotRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
+import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { AGENT_STREAM_MAXLEN, type ProvidersYaml, ok, err, type RiskPosture, type AgentRiskOverrides } from '@herobids/domain';
 
@@ -155,9 +155,10 @@ if (runtimeBackend === 'nomad' && !appConfig.nomad?.addr) {
   process.exit(1);
 }
 
-// Bot repository — vestige read surface (Traderton owns bot lifecycle; the
-// in-process cascade-stop path was removed in L3d-5).
-const botRepo = new BotRepository(db);
+// Connection ownership repository — the sole surviving vestige read surface
+// (Traderton owns bot lifecycle; the in-process cascade-stop path was removed
+// in L3d-5).
+const botRepo = new ConnectionOwnershipRepository(db);
 
 // Build the agentRuntimeConfigJson once — shared between the Docker manager
 // config and any future runtime adapter config.
@@ -567,6 +568,7 @@ const approvalService = new ApprovalService({
       capital: agent.capital,
       riskPosture: (agent.risk as RiskPosture | null) ?? null,
       riskOverrides: (agent.riskOverrides as AgentRiskOverrides | null) ?? null,
+      executionMode: agent.executionDefaults?.mode ?? undefined,
     };
   },
 });

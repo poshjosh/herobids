@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, BoundaryConfigSchema } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, BoundaryConfigSchema } from '@herobids/domain';
 import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -53,7 +53,6 @@ import {
   type RuntimeFreshness,
 } from './runtime-composition.js';
 import {
-  parseRuntimeActiveWatch,
   parseBoundaryWatchList,
   deriveActiveWatchSummaryFrom,
 } from './agent-watch-view.js';
@@ -759,25 +758,12 @@ function parseVolatilityBoundaryPayload(data: unknown): number | null {
   return null;
 }
 
-function isRuntimeActiveWatchSummary(value: unknown): value is RuntimeActiveWatchSummary {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const summary = value as Partial<RuntimeActiveWatchSummary>;
-  return typeof summary.totalCount === 'number'
-    && typeof summary.uniqueCount === 'number'
-    && typeof summary.overflowCount === 'number'
-    && Array.isArray(summary.lines)
-    && summary.lines.every((line) => typeof line === 'string');
-}
-
 /**
  * Single per-tick load of the agent's active watch view.
  *
- * Performs at most ONE `list_watches` boundary fetch (or the local Redis
- * fallback) and derives BOTH the raw watch list and the tick-gate summary from
- * that single source, so the two tick readers no longer double-fetch.
+ * Performs at most ONE `list_watches` boundary fetch and derives BOTH the raw
+ * watch list and the tick-gate summary from that single source, so the two
+ * tick readers no longer double-fetch.
  *
  * - `raw` is always populated (empty on error/absent).
  * - `summary` is the empty-stable summary on success, or `null` when summary
@@ -797,59 +783,33 @@ async function loadActiveWatches(
 }
 
 async function loadRawActiveWatches(agentId: string): Promise<RuntimeActiveWatch[]> {
-  // B3: watch state now lives Traderton-side. When the read boundary is present,
-  // source the agent's watch view over `list_watches` so the tick gate never
-  // reads a stale local set (split-brain). The boundary returns the identical
-  // WatchEntry shape, so we re-serialize + reuse the same parse/convert helpers.
-  // Any non-success outcome (or absent boundary) falls back to the local read.
-  if (tradertonReadBoundary) {
-    try {
-      const result = await tradertonReadBoundary.invoke({ toolName: 'list_watches', payload: {} });
-      if (result.kind === 'success') {
-        return parseBoundaryWatchList(result.data);
-      }
-      logger.warn({ agentId, kind: result.kind }, 'list_watches over boundary did not succeed — falling back to local read');
-    } catch (err) {
-      logger.warn({ err, agentId }, 'list_watches over boundary threw — falling back to local read');
-    }
-  }
-
-  try {
-    const rawWatches = await redis.hgetall(`agent:watches:${agentId}`);
-    return Object.values(rawWatches ?? {})
-      .map(parseRuntimeActiveWatch)
-      .filter((watch): watch is RuntimeActiveWatch => watch !== null);
-  } catch (err) {
-    logger.warn({ err, agentId }, 'Failed to load raw active watches for scout gating');
+  // A6: watch state lives Traderton-side and the local Redis fallback is gone
+  // — the legacy `agent:watches:{agentId}` hash no longer receives writes, so
+  // it could only ever serve stale pre-migration data (stale-data trap).
+  // Boundary-only: a non-success result (or absent boundary) yields an EMPTY
+  // watch list, which the tick gate treats as digest-absent/stable (degrades
+  // the tick, never breaks it). Same contract as the no-watch steady state.
+  if (!tradertonReadBoundary) {
     return [];
   }
+  try {
+    const result = await tradertonReadBoundary.invoke({ toolName: 'list_watches', payload: {} });
+    if (result.kind === 'success') {
+      return parseBoundaryWatchList(result.data);
+    }
+    logger.warn({ agentId, kind: result.kind }, 'list_watches over boundary did not succeed — watches unavailable');
+  } catch (err) {
+    logger.warn({ err, agentId }, 'list_watches over boundary threw — watches unavailable');
+  }
+  return [];
 }
 
 async function loadActiveWatchSummary(agentId: string): Promise<RuntimeActiveWatchSummary | null> {
   try {
-    // B3: when the read boundary is present, derive the summary from the
-    // boundary-sourced raw watches (loadRawActiveWatches already routes over
-    // `list_watches`). The local summary-cache read below would go stale against
-    // the now-remote watch set, so it is only the no-boundary fallback.
-    if (tradertonReadBoundary) {
-      const watches = await loadRawActiveWatches(agentId);
-      return deriveActiveWatchSummaryFrom(watches);
-    }
-
-    const summaryKey = `agent:watches:summary:${agentId}`;
-    const cachedSummary = await redis.hget(summaryKey, 'summary');
-    if (cachedSummary) {
-      try {
-        const parsed = JSON.parse(cachedSummary) as unknown;
-        if (isRuntimeActiveWatchSummary(parsed)) {
-          return parsed;
-        }
-        logger.warn({ agentId }, 'Cached active watch summary was malformed — rebuilding from source watches');
-      } catch (err) {
-        logger.warn({ err, agentId }, 'Failed to parse cached active watch summary — rebuilding from source watches');
-      }
-    }
-
+    // A6: boundary-only (no local fallback) — derive the summary from the
+    // boundary-sourced raw watches. The legacy summary-cache read
+    // (`agent:watches:summary:{agentId}`) would go stale against the now
+    // remote-owned watch set and is removed along with the local watch hash.
     const watches = await loadRawActiveWatches(agentId);
     return deriveActiveWatchSummaryFrom(watches);
   } catch (err) {
@@ -1753,57 +1713,6 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
       });
     },
 
-    async adjustOverrides(proposedChanges: Record<string, number | null>): Promise<{ ok: boolean; error?: string; contract?: ResolvedAgentRiskContract }> {
-      const currentOverrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
-      const creatorInput = extractCreatorInput({
-        capital: agentConfig.capital ?? null,
-        riskPosture: agentConfig.risk ?? null,
-      });
-      const currentContract = resolveAgentRiskContract(creatorInput, ceilings, currentOverrides, {
-        hasCapital: agentConfig.capital != null,
-      });
-
-      // Validate all proposed changes
-      const errors: string[] = [];
-      for (const [field, value] of Object.entries(proposedChanges)) {
-        if (!(field in currentContract)) {
-          errors.push(`Unknown risk field: '${field}'`);
-          continue;
-        }
-        const validationError = validateRiskOverride(
-          field as keyof ResolvedAgentRiskContract,
-          currentContract,
-          value,
-        );
-        if (validationError) {
-          errors.push(validationError);
-        }
-      }
-
-      if (errors.length > 0) {
-        return { ok: false, error: errors.join('; ') };
-      }
-
-      // Apply changes to overrides
-      const newOverrides: AgentRiskOverrides = { ...currentOverrides };
-      for (const [field, value] of Object.entries(proposedChanges)) {
-        if (value == null) {
-          // Reset to default by removing override
-          delete (newOverrides as Record<string, unknown>)[field];
-        } else {
-          (newOverrides as Record<string, number>)[field] = value;
-        }
-      }
-
-      await agentRepo!.setRiskOverrides(AGENT_ID!, newOverrides);
-
-      // Return updated contract
-      const updatedContract = resolveAgentRiskContract(creatorInput, ceilings, newOverrides, {
-        hasCapital: agentConfig.capital != null,
-      });
-      return { ok: true, contract: updatedContract };
-    },
-
     async getProfile() {
       const overrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
       return resolveProfile(
@@ -1982,19 +1891,6 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     sessionMetrics,
     riskContractOps: buildRiskContractOps(),
     agentConfigOps,
-    executionConfig: agentConfigOps
-      ? {
-          async getExecutionConfig() {
-            const config = await agentConfigOps.getCurrentConfig();
-            if (!config) return null;
-            return {
-              mode: config.execution?.mode ?? null,
-              positionSizeMode: config.execution?.positionSizeMode ?? null,
-              fixedPositionSize: config.execution?.fixedPositionSize ?? null,
-            };
-          },
-        }
-      : undefined,
     agentRepo: agentRepo
       ? {
           getAgent: async (agentId: string) => {
@@ -2006,6 +1902,22 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
               risk: riskPosture as Record<string, unknown> | null,
             };
           },
+        }
+      : undefined,
+    // A3: resolves the agent's CURRENT platform risk context off the `agents`
+    // row for the PLATFORM to attach to the boundary read calls
+    // (get_risk_limits / get_account_summary) — fresh-read (current values, not
+    // a snapshot), post-LLM; the LLM never sees or supplies these.
+    agentRiskSpecResolver: agentRepo
+      ? async () => {
+          const row = await agentRepo.getAgent(AGENT_ID!);
+          if (!row) return null;
+          return {
+            capital: row.capital,
+            riskPosture: (row.risk as RiskPosture | null) ?? null,
+            riskOverrides: (row.riskOverrides as AgentRiskOverrides | null) ?? null,
+            executionMode: row.executionDefaults?.mode ?? undefined,
+          };
         }
       : undefined,
     operatorDefaults: {
@@ -2746,8 +2658,9 @@ async function runTick(): Promise<void> {
 
     // Load active watch summary before the tick gate decision so watch state
     // changes (new watch, triggered, completed) are part of the gate fingerprint.
-    // Uses the cached Redis summary (agent:watches:summary:{agentId}) which is
-    // cheap to load. Stored in a local to avoid a second load later.
+    // Boundary-sourced (A6: no local fallback) — one `list_watches` fetch feeds
+    // both the gate summary and the watch-notify dedup. Stored in a local to
+    // avoid a second load later.
     let activeWatchSummaryForGate: RuntimeActiveWatchSummary | null = null;
     let watchSummaryDigest: string | undefined;
     // Single per-tick watch load: one `list_watches` boundary fetch feeds BOTH

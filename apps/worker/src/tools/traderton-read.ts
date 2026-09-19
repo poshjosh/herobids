@@ -13,10 +13,16 @@ import type { TradertonClientResult } from '@herobids/domain/traderton';
  * understood; the answer is "invalid" or "absent"). These do NOT count against
  * the tool's circuit breaker, so `fault:false`. Every other failure code is an
  * infrastructure/internal fault (`fault:true`).
+ *
+ * A3: `precondition.not_ready` joins the set — the boundary now surfaces typed
+ * tool-level preconditions on READS too (get_risk_limits without an attached
+ * risk spec; adjust_risk_limits' fail-closed). These are "not yet" outcomes, not
+ * infrastructure faults, and must not trip the tool circuit breaker.
  */
 const CONTENT_LEVEL_FAILURE_CODES = new Set<string>([
   'validation.invalid_payload',
   'not_found.resource',
+  'precondition.not_ready',
 ]);
 
 /**

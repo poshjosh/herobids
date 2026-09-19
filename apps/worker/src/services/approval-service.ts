@@ -31,6 +31,7 @@ export interface ApprovalServiceDeps {
     capital?: string | null;
     riskPosture?: RiskPosture | null;
     riskOverrides?: AgentRiskOverrides | null;
+    executionMode?: 'paper' | 'shadow' | 'live' | null;
   } | null>;
 }
 
@@ -129,6 +130,7 @@ export class ApprovalService {
       capital?: string | null;
       riskPosture?: RiskPosture | null;
       riskOverrides?: AgentRiskOverrides | null;
+      executionMode?: 'paper' | 'shadow' | 'live' | null;
     } | undefined;
     if (this.deps.agentRiskResolver) {
       try {

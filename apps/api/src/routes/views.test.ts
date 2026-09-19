@@ -77,6 +77,19 @@ function makeNotFoundReadClient(): { client: TradertonClient; invoke: ReturnType
 
 const noDb = {} as unknown as Database;
 
+/**
+ * A minimal DB stub whose `agents` lookup resolves to no owned agent (so the
+ * `/journal` route takes the bot branch). Pass `agentId` to simulate an OWNED
+ * agent and exercise the agent-scoped branch instead.
+ */
+function makeJournalDb(agentId: string | null = null): Database {
+  const limit = vi.fn().mockResolvedValue(agentId ? [{ id: agentId }] : []);
+  const where = vi.fn().mockReturnValue({ limit });
+  const from = vi.fn().mockReturnValue({ where });
+  const select = vi.fn().mockReturnValue({ from });
+  return { select } as unknown as Database;
+}
+
 beforeEach(() => vi.clearAllMocks());
 
 describe('positionRoutes — /bots/:botId/positions[/open]', () => {
@@ -141,7 +154,7 @@ describe('journalRoutes — /journal', () => {
     const { client, invoke } = makeReadClient({ get_owner_bot_journal: [journalIso()] });
     const app = Fastify();
     decorateWithAuth(app);
-    await journalRoutes(app, noDb, client, 10_000);
+    await journalRoutes(app, makeJournalDb(null), client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: `/journal?actorId=${TEST_BOT_ID}&limit=30` });
     expect(res.statusCode).toBe(200);
@@ -157,7 +170,7 @@ describe('journalRoutes — /journal', () => {
     const { client, invoke } = makeReadClient({ get_owner_bot_journal: [] });
     const app = Fastify();
     decorateWithAuth(app);
-    await journalRoutes(app, noDb, client, 10_000);
+    await journalRoutes(app, makeJournalDb(null), client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: '/journal' });
     expect(res.statusCode).toBe(400);
@@ -168,7 +181,7 @@ describe('journalRoutes — /journal', () => {
     const { client } = makeNotFoundReadClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await journalRoutes(app, noDb, client, 10_000);
+    await journalRoutes(app, makeJournalDb(null), client, 10_000);
 
     const res = await app.inject({ method: 'GET', url: `/journal?actorId=${TEST_BOT_ID}` });
     expect(res.statusCode).toBe(404);
@@ -177,9 +190,36 @@ describe('journalRoutes — /journal', () => {
   it('returns 503 when the read boundary is unconfigured', async () => {
     const app = Fastify();
     decorateWithAuth(app);
-    await journalRoutes(app, noDb);
+    await journalRoutes(app, makeJournalDb(null));
 
     const res = await app.inject({ method: 'GET', url: `/journal?actorId=${TEST_BOT_ID}` });
     expect(res.statusCode).toBe(503);
+  });
+
+  it('routes an OWNED agent actorId through get_agent_journal_events (agent subject)', async () => {
+    const agentId = 'agent-1';
+    const record = journalIso({ actorType: 'agent', actorId: agentId });
+    const { client, invoke } = makeReadClient({});
+    // Stub get_agent_journal_events via the invoke mock directly (agent tool
+    // returns `{ events: [...] }`).
+    invoke.mockImplementation((input: { toolName: string }) => {
+      const result: TradertonClientResult = {
+        kind: 'success', requestId: 'r', correlationId: 'c',
+        payload: input.toolName === 'get_agent_journal_events' ? { events: [record] } : { events: [] },
+      };
+      return Promise.resolve(result);
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await journalRoutes(app, makeJournalDb(agentId), client, 10_000);
+
+    const res = await app.inject({ method: 'GET', url: `/journal?actorId=${agentId}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ events: Array<{ id: string }> }>().events.map((e) => e.id)).toEqual(['ev-1']);
+
+    const arg = invoke.mock.calls[0]![0] as { toolName: string; subject: unknown };
+    expect(arg.toolName).toBe('get_agent_journal_events');
+    expect(arg.subject).toEqual({ ownerId: TEST_USER_ID, actor: { type: 'agent', id: agentId } });
   });
 });

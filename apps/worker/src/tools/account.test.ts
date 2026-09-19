@@ -34,7 +34,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 // tests (capital/positions/warnings assembly) were removed with that dead path.
 
 describe('get_account_summary — Traderton boundary', () => {
-  it('routes over the boundary, forwarding an empty payload', async () => {
+  it('routes over the boundary, forwarding an empty payload (no spec resolver)', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: '10000' } });
     const ctx = makeCtx({ tradertonBoundary: boundary });
 
@@ -43,6 +43,56 @@ describe('get_account_summary — Traderton boundary', () => {
     expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ ok: true, capital: '10000' });
+  });
+
+  // A3: the PLATFORM attaches the risk spec (post-LLM, from the `agents` row via
+  // agentRiskSpecResolver) so traderton serves capital + the contract from its
+  // RiskSource seam.
+  it('attaches the platform risk spec to the read payload when the resolver resolves', async () => {
+    const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: '1000' } });
+    const ctx = makeCtx({
+      tradertonBoundary: boundary,
+      agentRiskSpecResolver: vi.fn(async () => ({
+        capital: '1000',
+        riskPosture: { maxOpenPositions: 3 },
+        riskOverrides: { maxDrawdownPct: 5 },
+      })),
+    });
+
+    const result = await getAccountSummary.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    expect(invoke).toHaveBeenCalledWith({
+      toolName: 'get_account_summary',
+      payload: {
+        capital: '1000',
+        riskPosture: { maxOpenPositions: 3 },
+        riskOverrides: { maxDrawdownPct: 5 },
+      },
+    });
+  });
+
+  it('attaches nothing beyond present fields (null capital / null posture are omitted)', async () => {
+    const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: null } });
+    const ctx = makeCtx({
+      tradertonBoundary: boundary,
+      agentRiskSpecResolver: vi.fn(async () => ({ capital: null, riskPosture: null, riskOverrides: null })),
+    });
+
+    await getAccountSummary.execute({}, ctx);
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
+  });
+
+  it('degrades to an empty payload when the spec resolver throws', async () => {
+    const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true } });
+    const ctx = makeCtx({
+      tradertonBoundary: boundary,
+      agentRiskSpecResolver: vi.fn(async () => { throw new Error('db down'); }),
+    });
+
+    const result = await getAccountSummary.execute({}, ctx);
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
+    expect(result.success).toBe(true);
   });
 
   it('maps a content-level failure (not_found) to a non-fault failure preserving code/retryable', async () => {

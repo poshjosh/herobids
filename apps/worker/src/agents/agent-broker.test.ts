@@ -1063,6 +1063,55 @@ describe('AgentMessageBroker', () => {
       expect(arg.payload.config).not.toHaveProperty('venueAccountId');
     });
 
+    it('strips strategy-level exit-target keys (takeProfitPct/trailingStopPct) from risk before forwarding', async () => {
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123',
+        userId: 'user-1',
+        status: 'active',
+        maxBots: 5,
+        capital: '1000',
+        toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+      });
+
+      const botRepo = {
+        isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
+      };
+      const { boundary, invokeAndAwait } = makeBoundary();
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          connectionId: 'binding-1',
+          config: {
+            venue: 'hyperliquid',
+            symbol: 'BTC-USD',
+            strategy: { type: 'momentum', decisionMode: 'mechanical' },
+            venueType: 'orderbook',
+            risk: { maxDrawdownPct: 10, takeProfitPct: 25, trailingStopPct: 5 },
+          },
+        },
+      }));
+
+      expect(result.accepted).toBe(true);
+      // takeProfitPct/trailingStopPct are strategy.params exit targets, not bot
+      // risk guards — Traderton's strict BotRiskSchema rejects them. They must
+      // be stripped so create_bot does not fail internal.non_retryable.
+      const arg = invokeAndAwait.mock.calls[0]![0];
+      expect(arg.toolName).toBe('create_bot');
+      expect(arg.payload.config.risk).toEqual(expect.objectContaining({ maxDrawdownPct: 10 }));
+      expect(arg.payload.config.risk).not.toHaveProperty('takeProfitPct');
+      expect(arg.payload.config.risk).not.toHaveProperty('trailingStopPct');
+    });
+
     it('routes stop to the boundary stop_bot with botId + subject only', async () => {
       const botRepo = {
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),

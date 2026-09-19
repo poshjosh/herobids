@@ -1,26 +1,4 @@
 import type { ScoutDecision } from './scout-dispatch.js';
-import { normalizeTrackedSymbol } from './venue-intelligence.js';
-
-/**
- * @deprecated Use {@link evaluatePositionCoverage} from `position-coverage.ts`
- * instead — it provides structured watch metadata matching (purpose,
- * instrument identity, coverage links) rather than coarse symbol matching.
- */
-export function hasUncoveredTrackedPosition(params: {
-  openPositionSymbols: readonly string[];
-  watchSymbols: readonly string[];
-}): boolean {
-  const coveredSymbols = new Set(
-    params.watchSymbols
-      .map((symbol) => normalizeTrackedSymbol(symbol))
-      .filter((symbol): symbol is string => symbol !== null),
-  );
-
-  return params.openPositionSymbols.some((symbol) => {
-    const normalized = normalizeTrackedSymbol(symbol);
-    return normalized !== null && !coveredSymbols.has(normalized);
-  });
-}
 
 export type ForcedPreScoutBillingOutcome =
   | { action: 'skip_tick'; reason: 'billing.limit_exceeded' }

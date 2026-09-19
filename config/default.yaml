@@ -67,10 +67,6 @@ venues:
 
 execution:
   defaultSlippageBps: 50
-  orderTimeoutMs: 30000
-  maxRetries: 3
-  shadowPollIntervalMs: 2000   # swap-venue price polling interval when no live stream
-  shadowQuoteSlippageBps: 50   # slippage assumed for shadow swap price estimation
 
 # Default risk limits for agents when the user has NOT explicitly configured them.
 # These are the initial values AND the operator ceiling — agents can adjust downward at runtime.

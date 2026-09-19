@@ -146,30 +146,35 @@ const resolveWatchTool: AgentTool<TradingToolContext> = {
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { note, symbol } = params as z.infer<typeof ResolveWatchParamsSchema>;
 
+    // A6: watch state lives Traderton-side — resolve against the boundary's
+    // CURRENT watch list (`list_watches`), then substring-match in-app, exactly
+    // like resolve_bot does against `list_bots`. The legacy local Redis hash no
+    // longer receives writes (it could only serve stale pre-migration data),
+    // so fail closed when the boundary is absent.
+    if (!ctx.tradertonBoundary) {
+      return {
+        success: false,
+        fault: false,
+        error: 'trading boundary not configured',
+        errorCode: 'precondition.not_ready',
+      };
+    }
+
     try {
-      const raw = await ctx.redis.hgetall(`agent:watches:${ctx.agentId}`);
-      if (!raw) {
-        return {
-          success: true,
-          data: { ok: true, watches: [], hint: 'No watches found. Use watch_token to create one.' },
-        };
+      const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_watches', payload: {} });
+      if (result.kind !== 'success') {
+        // Surface the boundary failure through the shared read→tool mapping so
+        // code/retryable/fault stay consistent with the other read tools.
+        return mapReadResultToToolResult(result);
       }
 
-      const watches = Object.entries(raw).map(([watchId, rawVal]) => {
-        try {
-          const parsed = JSON.parse(rawVal);
-          return { watchId, ...parsed };
-        } catch {
-          return { watchId, raw: rawVal };
-        }
-      });
-
+      const watches = extractBoundaryWatches(result.data);
       const noteLower = note?.toLowerCase();
       const symbolLower = symbol?.toLowerCase();
 
       const matches = watches.filter((w) => {
-        const matchesNote = noteLower ? (typeof w.note === 'string' && w.note.toLowerCase().includes(noteLower)) : true;
-        const matchesSymbol = symbolLower ? (typeof w.symbol === 'string' && w.symbol.toLowerCase().includes(symbolLower)) : true;
+        const matchesNote = noteLower ? (w.note !== null && w.note.toLowerCase().includes(noteLower)) : true;
+        const matchesSymbol = symbolLower ? (w.symbol !== null && w.symbol.toLowerCase().includes(symbolLower)) : true;
         return matchesNote && matchesSymbol;
       });
 
@@ -211,6 +216,46 @@ const resolveWatchTool: AgentTool<TradingToolContext> = {
     }
   },
 };
+
+/** A watch row as returned by the boundary `list_watches` read, reduced to the
+ * fields resolve_watch matches/renders. Unknown/malformed rows are skipped. */
+function extractBoundaryWatches(data: unknown): Array<{
+  watchId: string;
+  symbol: string | null;
+  chain: string | null;
+  condition: string | null;
+  thresholdPrice: unknown;
+  note: string | null;
+  createdAt: string | null;
+}> {
+  if (typeof data !== 'object' || data === null) return [];
+  const watches = (data as Record<string, unknown>)['watches'];
+  if (!Array.isArray(watches)) return [];
+  const result: Array<{
+    watchId: string;
+    symbol: string | null;
+    chain: string | null;
+    condition: string | null;
+    thresholdPrice: unknown;
+    note: string | null;
+    createdAt: string | null;
+  }> = [];
+  for (const raw of watches) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row['watchId'] !== 'string') continue;
+    result.push({
+      watchId: row['watchId'],
+      symbol: typeof row['symbol'] === 'string' ? row['symbol'] : null,
+      chain: typeof row['chain'] === 'string' ? row['chain'] : null,
+      condition: typeof row['condition'] === 'string' ? row['condition'] : null,
+      thresholdPrice: row['thresholdPrice'],
+      note: typeof row['note'] === 'string' ? row['note'] : null,
+      createdAt: typeof row['createdAt'] === 'string' ? row['createdAt'] : null,
+    });
+  }
+  return result;
+}
 
 // --- resolve_task ---
 

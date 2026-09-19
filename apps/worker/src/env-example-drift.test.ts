@@ -63,15 +63,6 @@ const IGNORED_ENV_VARS = new Set<string>([
   'DOCKER_SOCKET_PATH', // Docker socket path for admin utils, infra-provided
   'BROWSER_POOL_URL', // browser-pool endpoint injected by the runtime, not `.env`
   'SANDBOX_ALLOWED_HOSTS', // per-agent sandbox allowlist injected by the runtime
-  // ── Documented-but-not-a-live-literal RPC endpoint overrides ──
-  // These remain in `.env.example` as operator-facing venue RPC docs, but the
-  // inline `process.env[...]` reads were removed when RPC config moved to
-  // `venues.*.rpcUrl` (docs/features/2026/06/09/004-configuration-cleanup).
-  // SOLANA_RPC_URL is no longer read anywhere; BASE_RPC_URL is read only by the
-  // 1inch integration test as a manual RPC override. Neither is a live literal,
-  // so exempt them from the no-stale-entries check.
-  'SOLANA_RPC_URL',
-  'BASE_RPC_URL',
 ]);
 
 function walkTsFiles(dir: string): string[] {
@@ -180,14 +171,9 @@ describe('config/default.yaml has a value for every ENV_OVERRIDES target (self-d
   // too, and inventing a value would encode a behaviour choice. They are set only
   // per deployment via the env override. Verified against
   // packages/domain/src/config/schema.ts:
-  //   - venues.<venue>.testnet         → z.boolean().optional()            (schema.ts:57)
-  //   - venues.1inch.routerAddress      → z.string().regex(...).optional()  (schema.ts:64)
   //   - alerts.telegram.webhookUrl      → z.string().url().optional()       (schema.ts:525)
   //   - alerts.email.ses.configurationSetName → z.string().optional()       (schema.ts:551)
   const OPTIONAL_NO_DEFAULT_PATHS = new Set<string>([
-    'venues.hyperliquid.testnet',
-    'venues.bybit.testnet',
-    'venues.1inch.routerAddress',
     'alerts.telegram.webhookUrl',
     'alerts.email.ses.configurationSetName',
   ]);
