@@ -1631,82 +1631,15 @@ export async function agentRoutes(
       executionDefaultsUpdateJsonb = parsed.data.executionDefaults ?? null;
     }
 
-    const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
-    let proposedProfileConnections = priorProfileConnections;
-    if (parsed.data.connectionIds !== undefined) {
-      const proposedConnectionRows = parsed.data.connectionIds.length === 0
-        ? []
-        : await db.select({
-          id: connections.id,
-          status: connections.status,
-          venueAccountId: connections.resolvedVenueAccountId,
-        }).from(connections).where(inArray(connections.id, parsed.data.connectionIds));
-      const requestedConnectionIds = new Set(parsed.data.connectionIds);
-      const addedAt = new Date();
-      proposedProfileConnections = priorProfileConnections
-        .filter((connection) => requestedConnectionIds.has(connection.connectionId));
-      for (const connectionId of parsed.data.connectionIds) {
-        if (proposedProfileConnections.some((connection) => connection.connectionId === connectionId)) {
-          continue;
-        }
-        const connection = proposedConnectionRows.find((row) => row.id === connectionId);
-        proposedProfileConnections.push({
-          connectionId,
-          venueAccountId: connection?.venueAccountId ?? null,
-          active: connection?.status === 'active',
-          ready: connection?.status === 'active',
-          grantedAt: addedAt,
-          assignmentId: crypto.randomUUID(),
-        });
-      }
-    }
-    await reconcileTradingProfile({
-      prior: {
-        config: {
-          actorId: id,
-          capital: agent.capital ?? null,
-          riskPosture: agent.risk ?? null,
-          executionDefaults: agent.executionDefaults ?? null,
-        },
-        connections: priorProfileConnections,
-      },
-      proposed: {
-        config: {
-          actorId: id,
-          capital: agentUpdates.capital === undefined ? agent.capital ?? null : agentUpdates.capital,
-          riskPosture: riskUpdateJsonb === undefined ? agent.risk ?? null : riskUpdateJsonb as never,
-          executionDefaults: executionDefaultsUpdateJsonb === undefined
-            ? agent.executionDefaults ?? null
-            : executionDefaultsUpdateJsonb as never,
-        },
-        connections: proposedProfileConnections,
-      },
-    });
-
     const txResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
       | { kind: 'conn_error'; status: number; body: Record<string, unknown> }
     > => {
-        await tx.update(agents).set({
-          ...agentUpdates,
-          ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
-          ...(rawPermissionLevel !== undefined ? { permissionLevel: rawPermissionLevel ?? 'standard' } : {}),
-          ...resolvedMaxBotsPatch,
-          ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
-          ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
-          // TODO: replace as never with proper Drizzle-typed values (RiskPosture, StrategyIdentity, ExecutionDefaults)
-          ...(riskUpdateJsonb !== undefined ? { risk: riskUpdateJsonb as never } : {}),
-          ...(strategyUpdateJsonb !== undefined ? { strategy: strategyUpdateJsonb as never } : {}),
-          ...(executionDefaultsUpdateJsonb !== undefined ? { executionDefaults: executionDefaultsUpdateJsonb as never } : {}),
-          toolPolicy: effectiveToolPolicy,
-          modelPolicy: effectiveModelPolicy,
-          updatedAt: new Date(),
-        } as never).where(eq(agents.id, id));
-
         // Declarative sync of agent_connections when connectionIds is explicitly provided.
         // This is a batch diff (add/revoke) performed inside the PATCH transaction —
         // intentionally separate from agent-config-service's grantConnection/revokeConnection
         // which are single-operation functions used by Telegram slash commands.
+        const priorProfileConnections = await loadActiveTradingProfileConnections(tx, id);
         if (parsed.data.connectionIds !== undefined) {
           const patchConnectionIds = parsed.data.connectionIds;
 
@@ -1726,49 +1659,88 @@ export async function agentRoutes(
           const toAdd = patchConnectionIds.filter((cid) => !existingConnectionIds.has(cid));
           const toRevoke = existingRows.filter((r) => !newConnectionIds.has(r.connectionId));
 
-          // Validate all new connectionIds inside the transaction
-          if (toAdd.length > 0) {
-            const connRows = await tx.select({
+          // Validate all requested connectionIds inside the transaction.
+          const connRows = patchConnectionIds.length === 0
+            ? []
+            : await tx.select({
               id: connections.id,
               userId: connections.userId,
               status: connections.status,
-            }).from(connections).where(inArray(connections.id, toAdd));
+              venueAccountId: connections.resolvedVenueAccountId,
+            }).from(connections).where(inArray(connections.id, patchConnectionIds));
 
-            const connById = new Map(connRows.map((r) => [r.id, r]));
-            for (const cid of toAdd) {
-              const conn = connById.get(cid);
-              if (!conn) {
-                return {
-                  kind: 'conn_error' as const,
-                  status: 400,
-                  body: {
-                    error: 'validation_error',
-                    details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not exist` }],
-                  },
-                };
-              }
-              if (conn.userId !== request.userId) {
-                return {
-                  kind: 'conn_error' as const,
-                  status: 400,
-                  body: {
-                    error: 'validation_error',
-                    details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not belong to you` }],
-                  },
-                };
-              }
-              if (conn.status !== 'active') {
-                return {
-                  kind: 'conn_error' as const,
-                  status: 400,
-                  body: {
-                    error: 'validation_error',
-                    details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} is not active (status: ${conn.status})` }],
-                  },
-                };
-              }
+          const connById = new Map(connRows.map((r) => [r.id, r]));
+          for (const cid of patchConnectionIds) {
+            const conn = connById.get(cid);
+            if (!conn) {
+              return {
+                kind: 'conn_error' as const,
+                status: 400,
+                body: {
+                  error: 'validation_error',
+                  details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not exist` }],
+                },
+              };
+            }
+            if (conn.userId !== request.userId) {
+              return {
+                kind: 'conn_error' as const,
+                status: 400,
+                body: {
+                  error: 'validation_error',
+                  details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not belong to you` }],
+                },
+              };
+            }
+            if (conn.status !== 'active') {
+              return {
+                kind: 'conn_error' as const,
+                status: 400,
+                body: {
+                  error: 'validation_error',
+                  details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} is not active (status: ${conn.status})` }],
+                },
+              };
             }
           }
+
+          const requestedConnectionIds = new Set(patchConnectionIds);
+          const addedAt = new Date();
+          const proposedProfileConnections = priorProfileConnections
+            .filter((connection) => requestedConnectionIds.has(connection.connectionId));
+          for (const connectionId of toAdd) {
+            const connection = connById.get(connectionId)!;
+            proposedProfileConnections.push({
+              connectionId,
+              venueAccountId: connection.venueAccountId ?? null,
+              active: true,
+              ready: true,
+              grantedAt: addedAt,
+              assignmentId: crypto.randomUUID(),
+            });
+          }
+          await reconcileTradingProfile({
+            prior: {
+              config: {
+                actorId: id,
+                capital: agent.capital ?? null,
+                riskPosture: agent.risk ?? null,
+                executionDefaults: agent.executionDefaults ?? null,
+              },
+              connections: priorProfileConnections,
+            },
+            proposed: {
+              config: {
+                actorId: id,
+                capital: agentUpdates.capital === undefined ? agent.capital ?? null : agentUpdates.capital,
+                riskPosture: riskUpdateJsonb === undefined ? agent.risk ?? null : riskUpdateJsonb as never,
+                executionDefaults: executionDefaultsUpdateJsonb === undefined
+                  ? agent.executionDefaults ?? null
+                  : executionDefaultsUpdateJsonb as never,
+              },
+              connections: proposedProfileConnections,
+            },
+          });
 
           const now = new Date();
 
@@ -1812,7 +1784,45 @@ export async function agentRoutes(
               createdAt: now,
             });
           }
+        } else {
+          await reconcileTradingProfile({
+            prior: {
+              config: {
+                actorId: id,
+                capital: agent.capital ?? null,
+                riskPosture: agent.risk ?? null,
+                executionDefaults: agent.executionDefaults ?? null,
+              },
+              connections: priorProfileConnections,
+            },
+            proposed: {
+              config: {
+                actorId: id,
+                capital: agentUpdates.capital === undefined ? agent.capital ?? null : agentUpdates.capital,
+                riskPosture: riskUpdateJsonb === undefined ? agent.risk ?? null : riskUpdateJsonb as never,
+                executionDefaults: executionDefaultsUpdateJsonb === undefined
+                  ? agent.executionDefaults ?? null
+                  : executionDefaultsUpdateJsonb as never,
+              },
+              connections: priorProfileConnections,
+            },
+          });
         }
+        await tx.update(agents).set({
+          ...agentUpdates,
+          ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
+          ...(rawPermissionLevel !== undefined ? { permissionLevel: rawPermissionLevel ?? 'standard' } : {}),
+          ...resolvedMaxBotsPatch,
+          ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
+          ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
+          // TODO: replace as never with proper Drizzle-typed values (RiskPosture, StrategyIdentity, ExecutionDefaults)
+          ...(riskUpdateJsonb !== undefined ? { risk: riskUpdateJsonb as never } : {}),
+          ...(strategyUpdateJsonb !== undefined ? { strategy: strategyUpdateJsonb as never } : {}),
+          ...(executionDefaultsUpdateJsonb !== undefined ? { executionDefaults: executionDefaultsUpdateJsonb as never } : {}),
+          toolPolicy: effectiveToolPolicy,
+          modelPolicy: effectiveModelPolicy,
+          updatedAt: new Date(),
+        } as never).where(eq(agents.id, id));
         return { kind: 'ok' as const };
       });
 

@@ -3648,6 +3648,32 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
     expect(acInsert!['status']).toBe('active');
   });
 
+  it.each([
+    ['missing', 'conn-missing', []],
+    ['inactive', 'conn-inactive', [{ id: 'conn-inactive', userId: TEST_USER_ID, status: 'revoked' }]],
+    ['unowned', 'conn-foreign', [{ id: 'conn-foreign', userId: 'other-user', status: 'active' }]],
+  ])('does not reconcile PATCH when a requested connection is %s', async (_reason, connectionId, connectionRows) => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      agentConnectionRows: [],
+      connectionRows,
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { connectionIds: [connectionId] },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(vi.mocked(reconcileTradingProfile)).not.toHaveBeenCalled();
+  });
+
   it('revokes agent_connections rows on PATCH when connectionIds are removed', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({

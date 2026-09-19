@@ -23,7 +23,7 @@ export type TradingProfilePlanWriter = (plan: TradingProfileReconciliationPlan) 
 
 /** Loads active agent bindings in the same newest-grant-first order used for runtime selection. */
 export async function loadActiveTradingProfileConnections(
-  db: Database,
+  db: Pick<Database, 'select'>,
   agentId: string,
 ): Promise<TradingProfileConnection[]> {
   const rows = await db.select({
