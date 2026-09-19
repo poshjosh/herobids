@@ -1,7 +1,7 @@
 # Decision Brief B5: Consistency sweep — low-stakes corrections, batchable
 
 - **Question:** A set of small consistency defects surfaced by the audit that don't change architecture — fix them as one batched task, or let each ride a parent decision?
-- **Status:** OPEN — pre-loaded for chat. Mostly independent; two items are B1/B3-linked as noted.
+- **Status:** ◐ **PARTIALLY RATIFIED (2026-09-19)** — item 2 is accepted as a C1 prerequisite and recorded as [ADR 013](../../../../tech/architecture/adrs/2026/09/013-consolidate-trading-profile-write-paths.md). The proposed A9 batch remains open.
 - **Evidence:** audit §7 (S5, S7, S8, S9, S12, S14), §4.1, §4.2.
 
 ## The batch (each item: defect → proposed correction)
@@ -21,9 +21,8 @@
 
 Batch items 1, 3, 4, 5 (+ 8 as leave) into a single small Track-A-eligible sweep task ("A9: consistency sweep") once B3's item-7 lands separately; item 2 rides B1's Track C (it's a precondition for clean write-through); item 6 stays in A5.
 
-## Open questions for the chat session
+## Decision (2026-09-19)
 
-1. Approve the batched A9 sweep (items 1/3/4/5)?
-2. Item 2: accept consolidation as a C1 precondition, or promote to Track A (it's mechanical and decision-free)?
-3. Item 4: confirm "% of equity" as the canonical daily-loss framing?
-4. Item 8: agree "leave as-is"?
+**Item 2 is ratified as ADR 013.** Consolidate the create/update paths into one shared trading-profile validation and write-through helper before C1. Preserve the existing route surface where needed; the requirement is one normalization/write-through choke point, not one public endpoint.
+
+Items 1, 3, 4, 5, and 8 remain open as the proposed A9 batch. Item 6 remains in A5; item 7 is resolved by B3.

@@ -1,9 +1,9 @@
-# Plan C2 (CONTINGENT on B1=(ii) + B2): Config & catalog single-sourcing
+# Plan C2: Config & catalog single-sourcing
 
 - **Task:** C2 — the B2 follow-through enabled by B1=(ii): make traderton the single authority for operator risk defaults; add drift-parity scripts for the copies that legitimately remain.
 - **Repo:** both (mostly herobids consumption changes + scripts)
-- **Status:** **CONTINGENT PLAN** — activates only if B1=(ii) and B2's "parity scripts + follow-B1" recommendation are accepted. If B1=(i), only the parity-script half (C2.3) activates, as a standalone Track-A item.
-- **Prereq:** B1 ADR, B2 decision; C1 (profile store) for the authority swap.
+- **Status:** **REVIEW-CORRECTED; PENDING IMPLEMENTATION AUTHORIZATION** — ADRs 010 and 011 ratify the authority split. C2.3 may start after authorization; C2.1 and C2.2 follow verified C1.
+- **Prereq:** ADRs 010 and 011; C1 (profile store) for the authority swap; independent review complete.
 
 ## Parts
 
@@ -19,12 +19,24 @@
 
 ### C2.3 — Parity-drift scripts (activate regardless of B1)
 
-- A small script per repo (or one shared under `scripts/`) that compares, across repos, the **verbatim-duplicated** files/blocks and fails loudly on drift:
-  - `agentRiskDefaults` YAML block (herobids vs traderton `config/default.yaml`)
-  - `config/strategy-presets/*.yaml` (3 files)
-  - mirrored type/parse layers: `watch-types.ts`, `scan-types.ts`, `tick-gates.ts` session-hours table, `trading/*` domain modules
-- Wire into each repo's test gate as a slow-tier check (needs both repos checked out side-by-side — the xstack harness already assumes sibling layout; skip gracefully when the sibling is absent).
-- Purpose: converts today's *silent* divergence risk into CI-red. This is B2's recommendation (b) independent of ownership outcomes.
+- Add one versioned mirror manifest that enumerates every exact source path or
+  YAML region, its normalization rule, and its authority classification. Globs
+  and a catch-all `trading/*` entry are forbidden. The initial manifest covers
+  the `agentRiskDefaults` block, all three strategy presets, `watch-types.ts`,
+  `scan-types.ts`, the `tick-gates.ts` session-hours table, and each identified
+  mirrored trading domain module.
+- Add an assertion-only checker and thin wrappers in both repositories. It
+  compares the manifest entries byte-for-byte after their declared normalization;
+  it never imports, copies, generates, or supplies runtime configuration.
+  `agentRiskDefaults` names traderton as its canonical authority; strategy
+  preset entries remain `mirror-only` until B4 decides their product authority.
+- Local runs may report `SKIPPED` when the sibling checkout is absent. The
+  protected CI job must check out both named repository revisions and fails if a
+  sibling or a manifest entry is missing; it may not skip. Wire that job into
+  both repositories' slow test tier.
+- Purpose: converts today's *silent* divergence risk into CI-red without
+  creating a second runtime authority. This is B2's recommendation (b)
+  independent of ownership outcomes.
 
 ## Steps
 
@@ -34,13 +46,16 @@
 
 ## Verification
 
-- C2.3: deliberately drift one field in a scratch branch → script fails; restore.
+- C2.3: deliberately drift one manifest field in a scratch branch → local and
+  protected-CI mode both fail; restore. Confirm that a missing sibling skips
+  locally but fails in CI mode, and that no checker output is consumed at runtime.
 - C2.1: web auto-fill still populates (boundary-sourced); create-agent with out-of-ceiling risk value gets the boundary's typed error (not a local pre-check).
 - Full suites + A8 gate (echo-off leg).
 
 ## Risks
 
-- Parity script sibling-repo assumption in CI environments that check out one repo alone — must skip-not-fail there.
+- The local sibling-repo assumption is intentional; protected CI must instead
+  provision both repositories and fail closed when it cannot.
 - Endpoint re-point adds a boundary dependency to a read previously local — acceptable (trading UI already boundary-gated), but note for the availability matrix.
 
 ## References

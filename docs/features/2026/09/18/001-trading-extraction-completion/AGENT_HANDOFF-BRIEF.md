@@ -2,12 +2,14 @@
 
 *Purpose: bring an LLM agent with NO prior context up to speed on this workspace, the completed work, and the planned-but-unimplemented epic. Everything below is verifiable from the repo files cited. Read top to bottom, then read §3's documents in order.*
 
+> **Status update (2026-09-19):** Track A and A8 are user-confirmed complete. B1, B2, B3, B5 item 2, and B6 are ratified as ADRs 010–014. Independent-review corrections are incorporated into C1a and C1–C5; do not implement until authorized and each plan's prerequisites are evidenced in `EXECUTION_LEDGER.md`. C1 profiles use `(ownerId, actorId, venueAccountId)` while direct execution preserves one selected binding per running agent. C5 reruns the full final test suite, A8, and the C3 UAT rows. B4 and the remaining B5/A9 batch are open. This update supersedes older "B1 open," "A1 first," and contingent-C-plan status below.
+
 ## 1. Workspace facts
 
 - Workspace root `hero-trade` contains **two sibling git repos** (the root itself is NOT a git repo — never assume version control above them):
   - **`herobids`** — the consumer platform: generic AI agents with an LLM tick loop (`apps/worker`), REST API (`apps/api`), React web (`apps/web`). Branch `consume-traderton`. pnpm monorepo (`@herobids/domain`, `@herobids/db`, apps).
   - **`traderton`** — the trading authority: engine, risk gate, venue adapters, actors, and the REST boundary. Branch `l3-integration`. pnpm monorepo (`@traderton/*`).
-- **Never merge to main; commits are human-gated.** The user commits work themselves — **you do not commit unless explicitly instructed.** Leave changes in the working tree.
+- **Focused commits are allowed.** Commit completed logical slices and update the changelog when warranted. Do not commit secrets. **Do not merge herobids into `main` yet**; traderton remains subject to its own branch/merge rules.
 - Architecture in one line: herobids' agent runtime calls trading via the **traderton REST boundary** (HMAC-signed `POST /internal/v1/tools:invoke`, per-tool Zod payload validation, idempotency store for writes); traderton owns execution, positions, fills, risk enforcement. Strategic goal: **herobids agents are generic agents consuming external trading capabilities** — trading semantics should not live in herobids long-term.
 
 ## 2. What has happened (do not redo)
@@ -24,8 +26,8 @@
 
 All under `001-trading-extraction-completion`:
 
-1. **`000-roadmap.md`** — three tracks, task index, discussion order. **Governing sequencing (user-agreed): finish Track A (stabilize) → certify via A8 → optional UI de-specialization (trading becomes one capability among many) → only then Track B.**
-2. **`plans/A1-ensure-cache-crash-recovery.md`** — FIRST implementation tasks (A1+A2), two known defects in the shipped `buildAgentDirectActorEnsure` (traderton `bin.ts`):
+1. **`000-roadmap.md`** — current status, task index, review gate, and implementation order. It is the authoritative sequencing document.
+2. **Historical Track A plans (completed; do not redo).** `plans/A1-ensure-cache-crash-recovery.md` records A1+A2, two defects in the shipped `buildAgentDirectActorEnsure` (traderton `bin.ts`):
    - **A1**: cache-hit fast path awaits the cached promise but never re-checks `runtime.actorRegistry.get(actorId)?.isRunning` → one actor crash (its `onCrashed` hook deregisters it) makes every later `submit_decision` fail `instance_not_running` **until process restart**.
    - **A2**: on a spec change, `ensureCache.delete` → async stop/reconstruct leaves a window where a concurrent invocation (LLM submits 2–3 decisions per tick) starts a second rebuild against a half-torn-down actor. Fix = single-flight cache-entry ordering.
 3. **`plans/A3-boundary-risk-account-context.md`** — lost feature: traderton's `get_risk_limits`/`adjust_risk_limits` unconditionally require `ctx.riskContractOps`, but `bin.ts`'s context factory supplies none → both ALWAYS fail over the boundary (`"risk contract not available in this context"`); `get_account_summary.capital` reports null. Pre-loaded recommendation: **Option 1-1b** — assemble `riskContractOps`/`agentRepo`/`executionConfig` boundary-side from the already-crossing risk values (**source-agnostic seam** so the future profile store can replace the source); `adjust_risk_limits` fails typed until a durable store exists. Small decision pending user confirmation.
@@ -33,14 +35,14 @@ All under `001-trading-extraction-completion`:
 5. **`plans/A5-dormant-remnant-sweep.md`** — 17-item deletion table (dormant engine-era modules with live traderton counterparts, dead env/config, vestigial routes/repos). Four "check-first" items must be re-verified import-free before deletion.
 6. **`plans/A6-fallback-posture.md`** — four transitional fallbacks (local-Redis `list_watches`, `resolve_watch`/`resolve_task` legacy stores, in-app exit-price reconstruction, in-process `get_risk_limits` read). Per-item options + recommendations; item 4 depends on A3's outcome.
 7. **`plans/A8-stabilization-certification-gate.md`** — the definition of "current state pinned": two consecutive clean cross-stack runs (statics → xstack bring-up → live trade path → A-track regression checks → full boundary-tool invocation sweep → agent eval loop). The gate certifies; it does not repair — product-code findings file bug reports.
-8. **`plans/C1-trading-profile-slice.md`** + **`plans/C2-config-single-sourcing.md`** — **CONTINGENT plans, drafted against the recommended B1 outcome (ii). Do NOT implement until parent decisions are recorded.**
-9. **`decisions/B1-stored-trading-state.md` … `B5-consistency-sweep.md`** — five decision briefs, each with options + recommendation. **PARKED until the user opens Track B.** B1 status: the user *agreed in chat (2026-09-18) with recommendation (ii)* — traderton-owned trading profile keyed `(ownerId, actorId, venueAccountId)` as the END-STATE — but this is **not yet recorded as a formal ADR** and its sub-questions (granularity / UI framing / migration shape) are recommended-not-ratified. Treat B1 as directionally settled, formally open, and gated behind Track A anyway.
+8. **`plans/C1a-profile-write-path-consolidation.md` + `plans/C1-trading-profile-slice.md` … `plans/C5-final-certification-gate.md`** — prepared execution plans. Read the independent review brief and `EXECUTION_LEDGER.md` before any implementation.
+9. **`decisions/B1-stored-trading-state.md` … `B6-capability-agnostic-frontend.md`** — B1/B2/B3/B5.2/B6 are ratified; B4 and the remaining B5/A9 batch are open. ADRs 010–014 are the final decision records.
 
 ## 4. Governing constraints (from the user, standing)
 
-1. **Stability first**: Track A → A8 certification → (optional UI de-specialization) → Track B. Do not open B-decisions early; the briefs are pre-loaded but parked.
-2. **Plans ≠ implementation authorization.** Every task is fully drafted; implementation starts only when the user says so, in roadmap order (A1 first). Decision-gated items (A3's option, A6's per-item calls) additionally need the user's one-line confirmation before their implementation.
-3. **No commits** unless explicitly instructed; the user gates and performs commits.
+1. **Review first**: Track A/A8 is complete and the independent-review corrections are incorporated. Do not implement C1a/C1–C5 before authorization and plan prerequisites are evidenced in the execution ledger.
+2. **Plans ≠ implementation authorization.** Every task is fully drafted; implementation starts only when the user says so, in roadmap order (C1a first, then C1; C3a/C4 only when their ledger prerequisites permit). Track-A decision gates are historical and require no new implementation decision.
+3. **Commits are allowed.** Keep them focused, update the changelog when warranted, and do not merge herobids into `main` yet.
 4. Root `hero-trade/docs/` is unversioned — the epic lives in `herobids/docs/features/…` by decision; traderton-side work is tracked there by pointer but **authored in traderton** (its copy-never-author rules: never make traderton depend on herobids code).
 5. Ownership line to preserve in all work: **traderton owns what traderton enforces** (execution, risk math, venue state); herobids owns the agent brain, UX, approvals lifecycle, capability/connection model.
 
@@ -56,7 +58,7 @@ All under `001-trading-extraction-completion`:
 
 ## 6. Where things stand right now
 
-- Both repos: clean working trees at herobids `c7294d98` / traderton `6cb07d6`, plus the **untracked** audit/epic/bug-report documents (including this brief, once saved). A local cross-stack (herobids + traderton_xstack) may or may not be running — `docker ps` to check; `reset-and-run-xstack.sh --down` tears it down.
-- **Immediate next steps when the user authorizes work**: A1+A2 (crash recovery + race) → A3 (after its option is confirmed) → A4 → A5 → A6 → A8 certification. Then report; Track B opens only on the user's initiative.
+- Repository branches and worktree state are deliberately not recorded here; run `git status` and `git log` in both repos before making a claim.
+- **Immediate next steps:** implementation is not yet authorized. When authorized, create the first C1a ledger entry, record both repository SHAs, and follow the ledger/roadmap order. C3a and C4 may be independent only when their ledger prerequisites are met; C5 is the final gate. B4 and the remaining B5/A9 batch remain decision work.
 
 *If any statement here conflicts with the roadmap or the user's in-chat instructions, those win — this file summarizes, they govern.*

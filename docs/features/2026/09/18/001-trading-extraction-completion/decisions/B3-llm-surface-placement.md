@@ -1,7 +1,7 @@
 # Decision Brief B3: LLM-surface placement — which trading-adjacent intelligence stays in the platform brain?
 
 - **Question:** Three platform-side LLM components carry trading semantics: (1) **base-skill trading tools** (`get_risk_limits` + `get_account_summary` in every agent's requiredTools — including non-trading agents), (2) the **hybrid evaluator** (single-shot LLM trade decisions + USD→base sizing policy), (3) **preset assessment** (market-intelligence assessor, billable). Do they stay as the platform "brain consuming trading capability", or are any of them trading logic that belongs behind the boundary?
-- **Status:** OPEN — pre-loaded for chat. Independent of B1 (can be decided in any order); B4 depends on it.
+- **Status:** ✅ **RATIFIED (2026-09-19) as [ADR 012](../../../../tech/architecture/adrs/2026/09/012-capability-scoped-llm-surface.md)** — the confirmed legal/compliance interpretation permits platform-side, non-enforcing agent reasoning. B4 is unblocked.
 - **Evidence:** audit §5.2 (esp. item 4), §7-S1; skills.ts (`BASE_SKILL.requiredTools`), hybrid-agent-evaluator/prompt/sizing, market-intelligence/*.
 
 ## The framing that resolves it
@@ -33,8 +33,10 @@ Billable per-symbol assessment (candle/ATR/liquidity evidence over the SYSTEM re
 - (2a) means hybrid path stays in Track A's regression scope (A8) as-is.
 - (3) means B4 discusses only the *data tables and wake/blueprint edges*, not the assessor itself.
 
-## Open questions for the chat session
+## Decision (2026-09-19)
 
-1. Base-skill tools: accept (a) removal-to-skills? Or prefer (c) visibility gating?
-2. Hybrid evaluator: accept "keep + document" (a)? Any appetite for moving sizing policy at all?
-3. Assessment: confirm "stays" so B4 can be scoped to data-model edges only.
+**The recommendations are ratified as ADR 012.** The confirmed legal/compliance interpretation permits herobids to host generic agent reasoning that consumes a trading capability, but not execution, enforcement, or risk-gate authority.
+
+1. Remove `get_risk_limits` and `get_account_summary` from the base skill; assign them only through trading-appropriate skills.
+2. Keep the hybrid evaluator and its sizing preference in herobids. Its output remains non-binding; traderton validates, clamps, or rejects it.
+3. Keep preset assessment in herobids as platform product intelligence. B4 decides the remaining data-model and blueprint boundaries.

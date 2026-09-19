@@ -1,7 +1,7 @@
 # Decision Brief B4: Assessment/wake/blueprint edges — platform data carrying trading identity
 
 - **Question:** Several **platform-owned** subsystems persist trading-identity data in herobids' DB: the assessment tables (`market_assessment_runs/requests`, `agent_scan_candidates`, `agent_scan_metrics`, `agent_preset_transitions`, `agent_preset_bindings`, `review_advice`, `agent_assessment_review_*`), wake preferences/context flowing through `agent_messages` + `chat_threads.setupContext`, and the **blueprint marketplace** (`blueprints.venueType/strategyType` + full bot-config revision payloads). Keep them platform-side, or re-home any behind the boundary?
-- **Status:** OPEN — pre-loaded for chat. Prereq: B3 (assessment-stays assumption). Partially B1-linked (blueprint payloads carry capital/risk presets).
+- **Status:** OPEN — pre-loaded for chat. **B3 is ratified (ADR 012), so its prerequisite is satisfied.** Partially B1-linked (blueprint payloads carry capital/risk presets).
 - **Evidence:** audit §3.2 (platform-assessment rows, blueprints rows, chat setupContext), §7-S15; herobids `packages/db/src/schema/*`.
 
 ## Component analysis

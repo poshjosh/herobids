@@ -1,7 +1,7 @@
 # Decision Brief B2: Duplicated authority — single-source vs continued parity duplication
 
 - **Question:** `agentRiskDefaults` (17 operator fields incl. maxBots), the strategy-preset catalogs (3 YAML files), the risk-contract math (`agent-risk-limits.ts` ↔ traderton), and the watch/scan/gate type layers exist **verbatim in both repos**. Single-source them, or keep the parity-duplication architecture?
-- **Status:** OPEN — pre-loaded for chat. Partially gated on B1 (risk math + `agentRiskDefaults` follow the B1 outcome; preset catalogs and type layers are independent).
+- **Status:** ✅ **RATIFIED (2026-09-19) as [ADR 011](../../../../tech/architecture/adrs/2026/09/011-split-trading-authority-by-responsibility.md)** — Option (ii), split single-sourcing. Traderton owns enforcement defaults and risk math; wire-contract mirrors remain pinned by drift checks. Preset-catalog authority remains for B4 to settle.
 - **Evidence:** audit §3.1, §3.3, §5.3; both repos' parity tests (`agent-risk-limits.parity.test.ts` exists on both sides).
 
 ## Why the duplication exists (and its virtue)
@@ -33,8 +33,10 @@ This is **deliberate parity architecture**, not accident: the extraction copied 
 
 (ii), executed incrementally: (a) if B1=(ii) → `agentRiskDefaults` + risk math resolve naturally; (b) regardless of B1 → add **file-level parity scripts** for the remaining verbatim copies (`agentRiskDefaults` YAML block, preset catalogs, mirrored type files) that fail CI on drift — converts silent divergence into a loud error for near-zero cost; (c) preset catalog fate deferred to B3/B4.
 
-## Open questions for the chat session
+## Decision (2026-09-19)
 
-1. B1-linked items: accept "resolve with B1" or decide independently now?
-2. Parity scripts (b): agree to add? (Small Track-A-eligible work, no decision dependency.)
-3. Preset catalogs: keep pending-B3, or decide now?
+**Option (ii) ratified as ADR 011.**
+
+1. `agentRiskDefaults` and risk-contract math follow B1: traderton is the authority; herobids consumes typed boundary reads and does not enforce local copies.
+2. File-level parity-drift scripts are required for deliberate mirrors, including wire DTOs and the strategy-preset catalogs while they remain duplicated.
+3. Preset-catalog authority remains contingent on B4. B3's assessment decision is now recorded; B4 decides whether the platform keeps the catalog as product data or a later consumer requires a boundary representation.

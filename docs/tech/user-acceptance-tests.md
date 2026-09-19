@@ -159,6 +159,20 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-25 | Create agent — connection selector shows connections | Open Create Agent with trading skill; have active connections | Dropdown lists active connections by label and provider | — | |
 | AG-26 | Create agent — inline setup creates connection directly | Click "Set up trading now"; complete form | Connection created (no intermediate binding); connection appears in selector | — | |
 
+### 6.0a Capability-Agnostic Presentation (C3)
+
+Run these after C3 updates them for the implemented UI and records the commit
+under test. They are blocked until C3 is implemented.
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| AG-C01 | Generic agent surfaces omit trading presentation | Open `/agents` and an agent detail for a trading-capable fixture with execution mode, strategy, and P&L data | Generic list, summary, and detail-header surfaces show lifecycle and generic capability readiness only; they show no execution mode, authorization mode, strategy, P&L, trade count, or trading-specific color treatment | 🔒 | C3a |
+| AG-C02 | Capability presentation selects a bound connection | Bind two ready trading connections to one agent; mark one as the default; open its trading capability page | The page identifies and renders the default-ready connection through generic attributes and feeds; changing the selected/default binding refreshes the displayed connection without leaking the other connection's data | 🔒 | C3b; requires profile-backed presentation |
+| AG-C03 | Unavailable capability presentation is explicit | Open a trading capability page with no ready bound connection, then simulate an unavailable capability read | A generic unavailable/error state is shown; no stale, guessed, or raw trading values appear | 🔒 | C3a/C3b |
+| AG-C04 | Backend semantic emphasis controls presentation | Use fixtures that return positive, negative, warning, and neutral attribute/feed emphasis | The same generic components apply their theme treatment from backend emphasis only; the frontend does not calculate P&L sign or receive CSS/color values | 🔒 | C3b |
+| AG-C05 | Second capability uses the same renderer | Open a fixture non-trading capability with attributes and a feed | It renders through the same capability components with no trading-specific branch, label, formatter, or layout | 🔒 | C3a |
+| AG-C06 | Capability presentation is usable on mobile | Repeat AG-C01 through AG-C03 at a mobile viewport | Attributes, feeds, status, and connection selection remain readable, non-overlapping, and operable | 🔒 | C3a/C3b |
+
 ### 6.1 Edit Agent Form
 
 | ID | Test Case | Steps | Expected | Status | Notes |

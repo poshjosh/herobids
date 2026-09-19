@@ -8,7 +8,7 @@
 ## For the implementer (no prior context needed)
 
 - **Repo:** herobids only.
-- **Do NOT commit; do NOT merge to any protected branch.** Leave changes in the working tree.
+- Focused commits are allowed. Update the changelog when warranted; do not merge herobids into `main` yet.
 - This is a **deletion sweep**: for every item, first `grep` for production importers (exclude tests). If a live importer exists that the row did not anticipate, STOP and flag — do not delete blind.
 - The four **CHECK-FIRST** items (7, 8, 13, 14) have a stated default decision below; follow the default unless your grep contradicts it, and record the outcome in the PR.
 - Verify per-package `tsc --noEmit` after each cluster (worker → domain/config → API), plus full lint + test suite. `grep` must prove zero repo-wide references to each deleted symbol.

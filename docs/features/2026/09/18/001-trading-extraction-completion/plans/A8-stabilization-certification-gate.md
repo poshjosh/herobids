@@ -8,7 +8,7 @@
 ## For the implementer (no prior context needed)
 
 - **Repos:** both. This gate composes EXISTING harnesses — build no new test infrastructure; at most add small assertions/checklist entries where a blind spot is found.
-- Do NOT commit; do NOT merge to a protected branch.
+- Focused commits are allowed for completed work and any harness-only blind-spot assertion. Do not merge herobids into `main` yet.
 - **The gate certifies; it does not repair.** Any product-code failure files a bug report (or attaches to the owning A1–A6 plan) rather than being fixed ad-hoc mid-gate.
 - "Pinned" = **two consecutive clean gate runs** (fresh `down -v && up` between them). Record date, commits under test, both runs' evidence paths, and deviations.
 - Run unit tiers from a clean shell (`env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY …`) or leaked env breaks the unit tier. Migrations run via the compose `migrate` service, never `pnpm migrate`.

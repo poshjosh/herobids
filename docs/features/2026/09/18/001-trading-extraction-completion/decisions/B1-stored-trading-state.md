@@ -31,16 +31,16 @@
 
 ## Recommendation: (ii) — traderton-owned trading profile — with four specifics
 
-1. **Profile key: `(ownerId, actorId, venueAccountId)` — but enforcement anchors only on the verifiable subset.** Evidence from the live stack: tintel and thyper shared one hyperliquid venue account; a global per-agent capital double-counts across agents on the same account. Equity/risk math is already scoped per (actor, venueAccount) — the allocation model should match the enforcement model. UI keeps a single capital field initially (applied to all bound accounts); per-account editing later.
+1. **Profile key: `(ownerId, actorId, venueAccountId)` with one selected execution binding.** Fills, positions, mark sources, and risk rehydration support actor-and-venue-account scope, so the triple preserves independent agent risk state when agents share one venue account. The direct actor registry is intentionally one actor per agent: an agent may retain multiple bound profiles, but executes through the existing default-ready, then first-ready binding. Switching that binding stops the old actor before starting the new one. UI keeps a single capital field initially (applied to all bound accounts); per-account editing later.
 
    **Verifiability caveat (added 2026-09-18):** `actorId` (and `actorType`) are **consumer-asserted** — traderton verifies the HMAC signature (the call genuinely came from herobids) but cannot verify the *claim* that a given caller is a specific actor. `venueAccountId`, by contrast, maps to a venue account traderton provisioned and holds credentials for — a fact traderton **owns and can verify**. Therefore:
-   - **Enforcement** (capital, daily-loss, drawdown, equity math) anchors on the verifiable **`(ownerId, venueAccountId)`**.
-   - **`actorId` is an allocation/attribution label**, not an enforcement identity — it buckets/splits a verified account's state, it does not grant or gate anything.
-   - This keeps B1's integrity argument ("a system can't credibly govern risk it doesn't own") intact: the risk-bearing key is fully owned by traderton; the consumer-supplied part only sub-divides it.
+   - Enforcement uses the complete triple. `ownerId` and `venueAccountId` are verifiable boundary constraints; `actorId` selects the actor-scoped risk state already used by execution persistence.
+   - **`actorId` is not an authorization grant.** The signed subject selects its actor state only inside the already verified owner and venue account context.
+   - This keeps B1's integrity argument intact: traderton owns and verifies the risk-bearing account context, while actor partitioning matches its own actor-scoped execution records.
 
    **Standing note — traderton must not enforce on `actorType`.** `actorType` is a consumer label traderton cannot verify, so per "traderton owns what traderton enforces" it must not drive enforcement decisions. Recording it for attribution/journaling is fine; **gating** on it is not. Flagged separately because existing code branches on it — e.g. `packages/domain/src/trading/execution-capability.ts` differentiates `agent` vs `bot`. That branch should be reviewed against this rule (does the differing capability check depend on an unverifiable claim?). Tracked as a B2/consistency follow-up, not a B1 blocker.
 2. **Lifecycle: eager, at bind time.** Agent create/update with trading setup, or connection bind, write-throughs a `set_agent_trading_profile` boundary call (owner-scoped config tool, `ownerScopedNoVenue`, provision/deprovision precedent). The phase-3 payload echo becomes a **transient fallback**, then is deleted. No new availability coupling: trading-agent creation already requires the boundary (provisioning verification).
-3. **UI framing: DEFERRED (2026-09-18).** No copy or label changes as part of B1. The user's position: the reword buys nothing — "Capital (USD)" is clearer product copy, and it does not change how the surface reads to a regulator either way. UI framing is deferred and will be tackled wholesale later (a broader UI redesign around agentic / guided / assisted chat may be on the table). **Only the storage/flow change is in scope for B1** — see the note below.
+3. **UI framing: separated from B1 (2026-09-19).** B1 itself still changes no copy or labels. The capability-agnostic UI architecture is now decided separately in ADR 014 and planned as C3; B1 remains only the storage/flow decision.
 
    **Separable from wording:** the storage change is *not* a text change. If B1=(ii), the field's destination changes — the typed value flows through the boundary to a traderton-owned profile instead of writing the `agents` row (new boundary tool + write-through, landing in Track C). That write-path change is the live part of B1; labels/help text are untouched and out of scope.
 4. **A3 built source-agnostic either way:** the boundary-side `riskContractOps` assembly is identical code whether its source is the payload (now) or the profile store (post-B1). Track A gets working reads now; Track C swaps the source. No thrown-away interim work.
@@ -60,13 +60,13 @@ Costs that remain (design/correctness, not compat):
 - **Two-repo coordination** (traderton profile store + boundary tool + ensure consumption; herobids write-through) — traderton work authored in traderton (copy-never-author).
 - **Three parallel create/update codepaths** (agents.ts PATCH, agent-interactivity PUT, chat create_agent — audit S7) all stamp trading fields; consolidate first (B5 item 2) — now purely for cleanliness, not to protect a migration.
 - **Zod-strip trap** — every field the boundary reads must be declared in the tool schema.
-- **Verifiability caveat** — enforcement keys on `(ownerId, venueAccountId)`; `actorType` enforcement review (see recommendation #1).
+- **Verifiability caveat** — `ownerId` and `venueAccountId` are verified; `actorId` partitions existing actor-scoped state but never grants authority. `actorType` enforcement review remains (see recommendation #1).
 - **A3 source-agnostic seam** — preserve so A3's risk reads swap payload→profile cleanly.
 
 ## Open questions for the chat session
 
 1. The core call: (i) holding pattern vs (ii) end-state?
-2. Profile granularity: per-grant (recommended) vs per-agent-global? — with the verifiability caveat: **enforcement anchors on `(ownerId, venueAccountId)`** (traderton-owned/verifiable); `actorId` is an allocation label only. Confirm this split.
+2. Profile granularity: **decided as per `(ownerId, actorId, venueAccountId)`.** This matches the existing actor cache and durable risk/position/fill scope while retaining owner/venue verification.
 3. UI framing: **DEFERRED** — no copy/label changes as part of B1; handled later as part of a wider UI direction. Only the storage/flow change (below) is in B1 scope.
 4. Migration shape: **DECIDED (2026-09-18) — eager-at-bind.** The trading profile is written via the boundary at agent create/update-with-trading-setup or connection bind, before any decision. Rationale: risk enforcement always reads a real owned profile (no "not set up yet" gap); reuses the boundary call trading-agent creation already makes for provisioning (no new dependency); retires the phase-3 payload echo as bootstrap rather than dragging it along. Lazy seed-on-first-decision rejected (keeps the echo alive longer, leaves a profile-absent window).
 5. (Optional de-risk:) want a one-page traderton schema + boundary-tool contract design drafted before committing to (ii)? — **DONE (2026-09-18):** `B1-trading-profile-contract-draft.md` (store schema, `set_agent_trading_profile` tool contract, `RiskSource` read seam, write-through/echo-deletion plan).
@@ -75,8 +75,8 @@ Costs that remain (design/correctness, not compat):
 
 **Option (ii) ratified as ADR 010.** All five sub-questions resolved:
 1. Core call — **(ii)** traderton-owned trading profile, configured via the boundary.
-2. Granularity — profile keyed `(ownerId, actorId, venueAccountId)`; **enforcement anchors on the verifiable `(ownerId, venueAccountId)`**; `actorId`/`actorType` are consumer-asserted labels (allocation/attribution only, never enforcement). `maxBots` excluded — stays a herobids plan/resource concern.
-3. UI framing — **deferred** (no copy changes; wider UI direction later).
+2. Granularity — profile and enforcement key `(ownerId, actorId, venueAccountId)`. Owner and venue account are verified; actorId partitions existing actor-scoped state and never grants authority. `maxBots` excluded — stays a herobids plan/resource concern.
+3. UI framing — **separated from B1** (ADR 014 / C3; C1 itself changes no copy).
 4. Migration — **eager-at-bind**.
 5. Schema/contract draft — **done** (`B1-trading-profile-contract-draft.md`).
 

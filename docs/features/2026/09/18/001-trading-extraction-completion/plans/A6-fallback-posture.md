@@ -7,7 +7,7 @@
 
 ## For the implementer (no prior context needed)
 
-- **Repo:** herobids only. Do NOT commit; do NOT merge to a protected branch. Leave changes in the working tree.
+- **Repo:** herobids only. Focused commits are allowed; update the changelog when warranted. Do not merge herobids into `main` yet.
 - All four fallbacks are decided below — implement the **DECIDED** line for each, do not re-open the options.
 - **Sequencing:** this batch runs alongside A3 (A1,A2 → **A3,A6** → A4 → A5 → A8). Item 4 depends on A3 landing first — do A3's boundary risk reads, then delete item 4's fallback.
 - Verify: full herobids suite; boundary-first fail-closed messaging aligned with existing `mapReadResultToToolResult` codes.

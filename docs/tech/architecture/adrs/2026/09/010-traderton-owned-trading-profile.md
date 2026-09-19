@@ -49,17 +49,17 @@ The decision is fixed on these points:
    via a signed, owner-scoped boundary tool; traderton reads it at actor
    construction. The per-decision payload echo is retired.
 
-2. **Enforcement key = the verifiable `(ownerId, venueAccountId)`.** The profile
-   is addressed by `(ownerId, actorId, venueAccountId)`, but **enforcement
-   anchors only on `(ownerId, venueAccountId)`** — the part traderton provisions
-   and can verify. `actorId` (and `actorType`) are **consumer-asserted labels**:
-   traderton verifies the HMAC signature (the call genuinely came from herobids)
-   but cannot verify the actor claim. `actorId` therefore serves as an
-   allocation/attribution sub-key only; it never grants or gates enforcement.
-   Corollary: **traderton must not enforce on `actorType`** — recording it for
-   attribution is fine, gating on it is not (existing `execution-capability.ts`
-   takes `actorType` but branches only on mode/venue, which is consistent with
-   this rule; any future branch on `actorType` violates it).
+2. **Profile key = `(ownerId, actorId, venueAccountId)`; one selected execution
+  binding.** Fills, positions, mark source, and risk rehydration are scoped by
+  actor and venue account, so the profile uses the same triple and agents sharing
+  an account retain independent durable risk state. An agent may have multiple
+  bound trading connections and profiles, but its direct-trading runtime has one
+  selected execution binding at a time: the existing default-ready connection,
+  then first-ready fallback. Switching it serially stops the old actor before
+  starting the new one. `ownerId` and `venueAccountId` remain boundary-verified;
+  `actorId` partitions state for the signed agent subject and never grants
+  authorization by itself. **Traderton must not enforce on `actorType`**:
+  recording it for attribution is fine, but using it as a gate is not.
 
 3. **`maxBots` is excluded from the profile.** It stays a herobids
    plan/entitlement concern. `maxBots` caps **bot population / standing herobids
@@ -70,18 +70,19 @@ The decision is fixed on these points:
    `maxBots` replacement — population, velocity, and capital are distinct
    resources, none subsuming the others.
 
-4. **Lifecycle: eager-at-bind.** The profile is written via the boundary at agent
-   create / update-with-trading-setup / connection bind — before any decision —
-   so enforcement always reads a real owned profile with no "not set up yet" gap.
-   Trading-agent creation already requires a boundary call for provisioning, so
-   this adds no new dependency. Lazy seed-on-first-decision is rejected (it keeps
-   the echo alive longer and leaves a profile-absent window).
+4. **Lifecycle: eager-at-bind and durable compensation.** The profile is written
+  via the boundary at agent create / update-with-trading-setup / connection bind
+  — before any decision — so enforcement always reads a real owned profile with
+  no "not set up yet" gap. A full replacement change stores its preimage in
+  Traderton, then Herobids finalizes after its local transaction or rolls back
+  through a metadata-only outbox. Trading-agent creation already requires a
+  boundary call for provisioning, so this adds no new dependency. Lazy
+  seed-on-first-decision is rejected (it keeps the echo alive longer and leaves
+  a profile-absent window).
 
-5. **UI framing is deferred.** No copy/label changes are part of this decision;
-   the input fields keep their current wording. Only the storage/flow change
-   (the typed value flows through the boundary to the profile instead of writing
-   the `agents` row) is in scope. UI framing is handled later as part of a wider
-   UI direction.
+5. **UI framing is separate.** No copy/label changes are part of this decision.
+  ADR 014 and C3 now govern the capability-agnostic presentation architecture;
+  this ADR remains limited to the storage/flow change.
 
 ## Consequences
 
@@ -113,11 +114,11 @@ The decision is fixed on these points:
   path — `agent-session-manager.ts` forwarding risk fields into the agent
   container — must be reconciled in the same slice so it is not left dangling.
 
-- **Enforcement re-keying touches durable reads.** Fills/positions are persisted
-  and queried by `(actorType, actorId)`, and daily-loss rehydration is
-  venue-account-scoped. Re-keying enforcement onto `(ownerId, venueAccountId)`
-  must reconcile with these existing read paths; this is design work, not a
-  free rename.
+- **Execution selection follows existing runtime behavior.** Profiles and
+  durable reads use the triple, while the direct actor registry remains keyed by
+  agent id. C1 preserves that one-actor model by resolving exactly one selected
+  binding, and proves both that two agents sharing an account are isolated and
+  that an agent binding switch stops the old actor before the new one runs.
 
 - **Parity tests retire.** herobids' in-process risk math and its parity tests go
   away with the fallback — expected, no migration ceremony (clean-slate).

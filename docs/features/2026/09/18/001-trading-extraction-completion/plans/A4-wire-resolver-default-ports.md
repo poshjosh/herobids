@@ -8,7 +8,7 @@
 ## For the implementer (no prior context needed)
 
 - **Repo:** traderton only. `../herobids` is READ-ONLY source. Read `traderton/AGENTS.md` + `traderton/docs/CANONICAL-STATE.md` at session start.
-- **Do NOT commit; do NOT merge to `main`.** Leave changes in the working tree.
+- Focused commits are allowed. Do not merge traderton into `main` without the approval required by its branch rules.
 - All choices are decided below — implement as stated, do not re-open options. If the code contradicts the plan, stop and flag it.
 - Verify per-package: `npx tsc --noEmit -p packages/boundary` (root lint has a build-cache blind spot). Full traderton suite green before done.
 - This plan is **B1-forward-compatible**: B1 (ADR 010) makes per-agent mode come from the traderton trading profile later; the static default you wire here becomes the fallback. Nothing you build is throwaway.
