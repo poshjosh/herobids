@@ -35,5 +35,14 @@ export interface EconomicCalendarProvider {
     currencies?: string[];
     minImpact?: 'high' | 'medium' | 'low';
     maxEvents?: number;
+    /**
+     * When true, never fetch from source — only serve cached data or empty
+     * events. Aligns the port with the copied concrete
+     * (`CompositeEconomicCalendarProvider`), which already implements this: the
+     * per-tick boundary read passes `{ cacheOnly: true }` so it never blocks on
+     * a network call. The background acquisition loop omits it (full fetch,
+     * warms the cache).
+     */
+    cacheOnly?: boolean;
   }): Promise<Result<EconomicCalendarResult, EconomicCalendarError>>;
 }
