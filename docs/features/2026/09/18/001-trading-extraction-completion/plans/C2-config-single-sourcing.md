@@ -7,17 +7,17 @@
 
 ## Parts
 
-### C2.1 — Operator risk defaults authority (B1=(ii) only)
+### C2.1 — Operator risk defaults authority (B1=(ii) only) — [PENDING]
 
 - traderton: expose `get_operator_defaults` as a boundary read (owner-scoped, read-only) returning the `agentRiskDefaults` block (17 fields) — the same values its gate/clamp math uses.
 - herobids: `GET /agents/risk-defaults` (web auto-fill source) re-points to the boundary read with a cache (TTL hours; defaults rarely change). API create/update validation drops its local `agentRiskDefaults` enforcement in favour of the boundary's typed errors from `set_agent_trading_profile` (C1) — one authority, errors at the point of enforcement.
 - herobids: `config/default.yaml` `agentRiskDefaults:` block marked display-fallback with a comment pointing at the boundary source; removed from enforcement paths.
 
-### C2.2 — Risk-contract math retirement (B1=(ii) only)
+### C2.2 — Risk-contract math retirement (B1=(ii) only) — [PENDING]
 
 - With A6-4 (fallback deletion) executed via C1's echo retirement, herobids' `agent-risk-limits.ts` + `agent-risk-limits-contracts.ts` lose their last runtime consumer → delete both + their parity tests (traderton keeps the live copies). This lands as the tail of C1's herobids list; C2 records it rather than re-plans it.
 
-### C2.3 — Parity-drift scripts (activate regardless of B1)
+### C2.3 — Parity-drift scripts (activate regardless of B1) — [PENDING]
 
 - Add one versioned mirror manifest that enumerates every exact source path or
   YAML region, its normalization rule, and its authority classification. Globs
@@ -71,3 +71,9 @@
 ## References
 
 - `decisions/B2-duplicated-authority.md`; `plans/C1-trading-profile-slice.md`; audit §3.3, §5.3
+
+## Outstanding Issues
+
+- **[C2.3 — item 1]** Latent (untriggered) runtime-semantic change: `AgentRiskOverridesSchema` is now an exported zod validator in traderton (previously a pure type). It is only consumed via `z.infer` type, so no behavior change; if any path later calls `.parse()`, `.min(1)`/`.strict()` bounds become live. No action; acknowledged.
+- **[C2.1 — item 2]** Single-violation ceiling error loses a structured field path: `set_agent_trading_profile` returns only the first exceeded field inside a human-readable `error` string with field-agnostic `errorCode: 'validation.risk_ceiling'`. herobids item 3 will map the typed error; multi-field highlighting may require parsing the string. Resolve mapping surface in item 3.
+- **[C2.1 — item 2]** `set_agent_trading_profile` fail-closed on missing operator defaults is unconditional (even for capital-only updates with `riskPosture: null`). Plan-compliant but load-bearing; documented in-code.

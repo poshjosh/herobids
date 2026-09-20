@@ -7,6 +7,7 @@ import type { TradertonClientResult } from '@herobids/domain/traderton';
 import {
   TradingProfileReconciliationSaga,
   TradingProfileResponseValidationError,
+  TradingProfileCeilingViolationError,
   type TradingProfileSagaBoundary,
 } from './trading-profile-reconciliation-saga.js';
 import type { TradingProfileReconciliationPlan } from './trading-profile-reconciliation.js';
@@ -545,5 +546,41 @@ describe('TradingProfileReconciliationSaga', () => {
     const toolNames = vi.mocked(boundary.invoke).mock.calls.map(([call]) => call.toolName);
     expect(toolNames).toContain('rollback_agent_trading_profile_change');
     expect(toolNames).not.toContain('finalize_agent_trading_profile_change');
+  });
+
+  it('surfaces a boundary ceiling violation as a typed TradingProfileCeilingViolationError', async () => {
+    const actions = [action('set-a', 'set', 'venue-a')];
+    const outbox = {
+      createOrLoad: vi.fn().mockResolvedValue(row('pending_remote', actions)),
+      update: vi.fn().mockResolvedValue(undefined),
+      markLocalCommitted: vi.fn(),
+      claimLive: vi.fn().mockResolvedValue('live-claim'),
+      releaseClaim: vi.fn().mockResolvedValue(undefined),
+      claimRecoverable: vi.fn(),
+      inTransaction: vi.fn(async (callback) => callback('transaction-handle')),
+    };
+    const boundary: TradingProfileSagaBoundary = {
+      invoke: vi.fn(async ({ toolName }) => toolName === 'set_agent_trading_profile'
+        ? {
+          kind: 'failure',
+          requestId: 'request-1',
+          correlationId: 'correlation-1',
+          code: 'validation.invalid_payload',
+          message: 'maxOpenPositions cannot exceed the operator ceiling of 50',
+          retryable: false,
+          details: { errorCode: 'validation.risk_ceiling' },
+        } as TradertonClientResult
+        : success()),
+    };
+    const saga = new TradingProfileReconciliationSaga(outbox as never, boundary);
+    const commitLocal = vi.fn();
+
+    await expect(saga.execute({
+      ownerId: 'owner-1',
+      actorId: 'agent-1',
+      localMutationId: 'mutation-1',
+      plan: { ...plan, clears: [] },
+      commitLocal,
+    })).rejects.toBeInstanceOf(TradingProfileCeilingViolationError);
   });
 });

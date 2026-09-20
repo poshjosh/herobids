@@ -33,6 +33,7 @@ import {
   type TradertonReadBoundary,
   type PositionRow as ReadPositionRow,
 } from './exports-traderton.js';
+import { loadOperatorRiskDefaults } from '../traderton-operator-defaults.js';
 import {
   AgentRiskDefaultsSchema,
   AgentRuntimePolicyOverridesSchema,
@@ -58,7 +59,7 @@ import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
 import { proposeTradingProfiles, selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
-import { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
+import { TradingProfileReconciliationSaga, TradingProfileCeilingViolationError } from '../agents/trading-profile-reconciliation-saga.js';
 import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.js';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
@@ -85,7 +86,6 @@ import {
   validateAgentModelPolicy,
   validateDailyLossRequiresCapital,
   validateMaxHoldDurationInvariant,
-  validateAgentRiskBounds,
 } from './agent-config-helpers.js';
 import {
   mapProtocolMessage,
@@ -470,16 +470,36 @@ export async function agentRoutes(
     return resolvePlanSkillEntitlements(plansConfig, planId, isAdmin);
   }
 
-  app.get('/agents/risk-defaults', async (_request, reply) => {
+  app.get('/agents/risk-defaults', async (request, reply) => {
+    // Display-only auto-fill. Enforcement is the traderton boundary's
+    // `set_agent_trading_profile` (ADR 011 / C2.1); the local `agentRiskDefaults`
+    // block is kept ONLY as a fallback when the boundary read is unavailable.
+    const costPerTickEstimates = agentCostEstimates ?? { minimal: 0.12, standard: 0.21, premium: 0.31 };
+
+    // Source the 7 web-facing risk fields from the boundary when configured.
+    let risk = agentRiskDefaults;
+    if (tradertonReadClient) {
+      const read = await loadOperatorRiskDefaults(
+        createTradertonReadBoundary(tradertonReadClient, { ownerId: request.userId, actor: { type: 'user', id: request.userId } }, readDeadlineMs),
+      );
+      if (read.ok) risk = read.data;
+      else {
+        // Display-fallback: serve local defaults rather than failing. The
+        // endpoint is auto-fill, not enforcement — a boundary hiccup must not
+        // break agent creation UX.
+        request.log.warn({ error: read.error }, 'risk-defaults: falling back to local defaults');
+      }
+    }
+
     return reply.send({
-      dailyLossLimitDefaultRatio: agentRiskDefaults.dailyLossLimitDefaultRatio,
-      maxOpenPositions: agentRiskDefaults.maxOpenPositions,
-      maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
-      stopLossPct: agentRiskDefaults.stopLossPct,
-      stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
-      dailyMaxLossPct: agentRiskDefaults.dailyMaxLossPct,
-      maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,
-      costPerTickEstimates: agentCostEstimates ?? { minimal: 0.12, standard: 0.21, premium: 0.31 },
+      dailyLossLimitDefaultRatio: risk.dailyLossLimitDefaultRatio,
+      maxOpenPositions: risk.maxOpenPositions,
+      maxPositionSizePct: risk.maxPositionSizePct,
+      stopLossPct: risk.stopLossPct,
+      stopLossCooldownMs: risk.stopLossCooldownMs,
+      dailyMaxLossPct: risk.dailyMaxLossPct,
+      maxDrawdownPct: risk.maxDrawdownPct,
+      costPerTickEstimates,
       runtimePolicyCeilings: RUNTIME_POLICY_CEILINGS,
     });
   });
@@ -491,14 +511,6 @@ export async function agentRoutes(
     const parsed = CreateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
-    }
-
-    // Validate canonical risk field against operator ceilings
-    if (parsed.data.risk) {
-      const canonicalRiskIssues = validateAgentRiskBounds(parsed.data.risk, agentRiskDefaults);
-      if (canonicalRiskIssues.length > 0) {
-        return reply.status(400).send({ error: 'validation_error', details: canonicalRiskIssues });
-      }
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -838,6 +850,7 @@ export async function agentRoutes(
       });
     } catch (error) {
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
+      if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       throw error;
     }
 
@@ -1021,14 +1034,6 @@ export async function agentRoutes(
     const parsed = UpdateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
-    }
-
-    // Validate canonical risk field against operator ceilings
-    if (parsed.data.risk) {
-      const canonicalRiskIssues = validateAgentRiskBounds(parsed.data.risk, agentRiskDefaults);
-      if (canonicalRiskIssues.length > 0) {
-        return reply.status(400).send({ error: 'validation_error', details: canonicalRiskIssues });
-      }
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -1867,6 +1872,7 @@ export async function agentRoutes(
     });
     } catch (error) {
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
+      if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       throw error;
     }
 

@@ -39,7 +39,6 @@ vi.mock('../routes/agent-config-helpers.js', () => ({
   extractModelSelection: vi.fn().mockReturnValue({ provider: 'openai', lightModel: null }),
   mergeModelPolicy: vi.fn().mockReturnValue({}),
   validateAgentModelPolicy: vi.fn().mockResolvedValue([]),
-  validateAgentRiskBounds: vi.fn().mockReturnValue([]),
 }));
 
 vi.mock('./blueprint-projection.js', () => ({
@@ -63,9 +62,10 @@ vi.mock('@herobids/domain', async (importOriginal) => {
 import { cloneAgentAsLive, type GoLiveParams } from './agent-go-live-service.js';
 import { resolveSkillAssignmentsForUser } from '@herobids/db';
 import { checkLiveEnabled, checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
-import { extractModelSelection, mergeModelPolicy, validateAgentModelPolicy, validateAgentRiskBounds } from '../routes/agent-config-helpers.js';
+import { extractModelSelection, mergeModelPolicy, validateAgentModelPolicy } from '../routes/agent-config-helpers.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
+import { TradingProfileCeilingViolationError } from '../agents/trading-profile-reconciliation-saga.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -289,7 +289,6 @@ function setupHappyPath(sourceAgent = makeSourceAgent(), connections = makeActiv
   vi.mocked(mergeModelPolicy).mockReturnValue({});
   vi.mocked(validateAgentModelPolicy).mockResolvedValue([]);
   vi.mocked(extractModelSelection).mockReturnValue({ provider: 'openai', lightModel: null });
-  vi.mocked(validateAgentRiskBounds).mockReturnValue([]);
 
   // Skill resolution succeeds
   vi.mocked(resolveSkillAssignmentsForUser).mockResolvedValue({
@@ -603,7 +602,6 @@ describe('cloneAgentAsLive', () => {
     vi.mocked(mergeModelPolicy).mockReturnValue({});
     vi.mocked(validateAgentModelPolicy).mockResolvedValue([]);
     vi.mocked(extractModelSelection).mockReturnValue({ provider: 'openai', lightModel: null });
-    vi.mocked(validateAgentRiskBounds).mockReturnValue([]);
 
     vi.mocked(resolveSkillAssignmentsForUser).mockResolvedValue({
       error: { code: 'validation_error', message: 'Skill not found' },
@@ -686,7 +684,7 @@ describe('cloneAgentAsLive', () => {
 
   // ── Risk bounds validation ───────────────────────────────────────────────
 
-  it('rejects when risk exceeds operator ceilings (400)', async () => {
+  it('rejects when the boundary enforces a risk ceiling (400)', async () => {
     const tracker = makeInsertTracker();
     const sourceAgent = makeSourceAgent({ risk: { maxOpenPositions: 100 } });
     const connections = makeActiveConnections();
@@ -698,18 +696,21 @@ describe('cloneAgentAsLive', () => {
     vi.mocked(projectAgentToBlueprintPayload).mockReturnValue(
       makeProjectedPayload({ risk: { maxOpenPositions: 100 } }),
     );
-    vi.mocked(validateAgentRiskBounds).mockReturnValue([
-      { message: 'maxOpenPositions exceeds operator ceiling' },
-    ]);
 
     const result = await cloneAgentAsLive(makeParams(db, {
-      agentRiskDefaults: { maxOpenPositions: 50 } as GoLiveParams['agentRiskDefaults'],
+      profileReconciliationSaga: {
+        readCurrentProfiles: async () => new Map(),
+        executeStaged: async () => {
+          throw new TradingProfileCeilingViolationError('maxOpenPositions cannot exceed the operator ceiling of 50');
+        },
+      } as unknown as GoLiveParams['profileReconciliationSaga'],
     }));
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected error');
     expect(result.status).toBe(400);
-    expect(result.message).toContain('maxOpenPositions exceeds operator ceiling');
+    expect(result.error).toBe('validation_error');
+    expect(result.message).toContain('maxOpenPositions cannot exceed the operator ceiling');
   });
 
   // ── Model policy validation ──────────────────────────────────────────────
@@ -725,7 +726,6 @@ describe('cloneAgentAsLive', () => {
     vi.mocked(checkAgentLimit).mockResolvedValue(ok(undefined));
     vi.mocked(projectAgentToBlueprintPayload).mockReturnValue(makeProjectedPayload());
     vi.mocked(mergeModelPolicy).mockReturnValue({});
-    vi.mocked(validateAgentRiskBounds).mockReturnValue([]);
     vi.mocked(validateAgentModelPolicy).mockResolvedValue([
       { message: 'Model not available in your region' },
     ]);
@@ -753,7 +753,6 @@ describe('cloneAgentAsLive', () => {
     vi.mocked(projectAgentToBlueprintPayload).mockReturnValue(makeProjectedPayload());
     vi.mocked(mergeModelPolicy).mockReturnValue({});
     vi.mocked(validateAgentModelPolicy).mockResolvedValue([]);
-    vi.mocked(validateAgentRiskBounds).mockReturnValue([]);
     // Provider is null — triggers fallback path
     vi.mocked(extractModelSelection).mockReturnValue({ provider: null, lightModel: null });
 

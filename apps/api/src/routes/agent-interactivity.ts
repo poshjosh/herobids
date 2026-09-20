@@ -12,7 +12,7 @@ import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
 import type { AgentRiskDefaultsConfig, AgentApprovalsConfig, AlertsConfig, AuthConfig, ModelDefaults, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
-import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import {
@@ -20,6 +20,7 @@ import {
 } from '../agents/trading-profile-reconciliation-adapter.js';
 import { selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
+import { TradingProfileCeilingViolationError } from '../agents/trading-profile-reconciliation-saga.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
 import {
   parseSlashCommand,
@@ -54,7 +55,6 @@ import {
   resolveExecutionModeForSkills,
   validateDailyLossRequiresCapital,
   validateAgentModelPolicy,
-  validateAgentRiskBounds,
   validateConnectionRequirement,
 } from './agent-config-helpers.js';
 
@@ -124,6 +124,10 @@ export async function agentInteractivityRoutes(
   agentRiskDefaults?: AgentRiskDefaultsConfig,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
+  // C2.1: local ceiling enforcement dropped; `agentRiskDefaults` retained for
+  // call-site signature compatibility only (still referenced by callers).
+  // TODO(C2.2): remove after call-site cleanup — retained only for positional signature compatibility.
+  void agentRiskDefaults;
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
       return { canViewOwnPrompts: true };
@@ -185,13 +189,6 @@ export async function agentInteractivityRoutes(
     const selectedProfile = selectedBinding
       ? profiles.get(selectedBinding.venueAccountId)
       : undefined;
-
-    // Validate risk bounds against operator ceilings (resolved config, not schema defaults)
-    const riskDefaults = agentRiskDefaults ?? AgentRiskDefaultsSchema.parse({});
-    const riskIssues = validateAgentRiskBounds(parsed.data, riskDefaults);
-    if (riskIssues.length > 0) {
-      return reply.status(400).send({ error: 'validation_error', details: riskIssues });
-    }
 
     const capitalIssues = validateDailyLossRequiresCapital({
       dailyMaxLossPct: selectedProfile?.riskPosture?.dailyMaxLossPct,
@@ -301,31 +298,38 @@ export async function agentInteractivityRoutes(
       modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),
     };
-    await profileReconciliationSaga.executeStaged({
-      ownerId: request.userId,
-      actorId: id,
-      localMutationId: crypto.randomUUID(),
-      preparePlannerInput: async () => {
-        const proposedProfiles = new Map([...profiles].map(([venueAccountId, profile]) => [venueAccountId, {
-          ...profile,
-          ...(agentUpdates.capital !== undefined ? { capital: agentUpdates.capital } : {}),
-          ...(rawMaxDrawdownPct !== undefined ? {
-            riskPosture: { ...(profile.riskPosture ?? {}), maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null },
-          } : {}),
-          ...(executionMode.value !== null ? {
-            executionDefaults: { ...(profile.executionDefaults ?? {}), mode: executionMode.value },
-          } : {}),
-        }]));
-        return {
-          prior: { profiles, connections: priorProfileConnections },
-          proposed: { profiles: proposedProfiles, connections: priorProfileConnections },
-        };
-      },
-      commitLocal: async (tx, markLocalCommitted) => {
-        await tx.update(agents).set(updateValues).where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-        await markLocalCommitted();
-      },
-    });
+    try {
+      await profileReconciliationSaga.executeStaged({
+        ownerId: request.userId,
+        actorId: id,
+        localMutationId: crypto.randomUUID(),
+        preparePlannerInput: async () => {
+          const proposedProfiles = new Map([...profiles].map(([venueAccountId, profile]) => [venueAccountId, {
+            ...profile,
+            ...(agentUpdates.capital !== undefined ? { capital: agentUpdates.capital } : {}),
+            ...(rawMaxDrawdownPct !== undefined ? {
+              riskPosture: { ...(profile.riskPosture ?? {}), maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null },
+            } : {}),
+            ...(executionMode.value !== null ? {
+              executionDefaults: { ...(profile.executionDefaults ?? {}), mode: executionMode.value },
+            } : {}),
+          }]));
+          return {
+            prior: { profiles, connections: priorProfileConnections },
+            proposed: { profiles: proposedProfiles, connections: priorProfileConnections },
+          };
+        },
+        commitLocal: async (tx, markLocalCommitted) => {
+          await tx.update(agents).set(updateValues).where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+          await markLocalCommitted();
+        },
+      });
+    } catch (error) {
+      if (error instanceof TradingProfileCeilingViolationError) {
+        return reply.status(400).send({ error: 'validation_error', message: error.message });
+      }
+      throw error;
+    }
 
     if (assignmentResolution) {
       await syncAgentSkillAssignments(db, id, request.userId, assignmentResolution.assignments ?? []);

@@ -21,13 +21,13 @@ import {
   extractModelSelection,
   mergeModelPolicy,
   validateAgentModelPolicy,
-  validateAgentRiskBounds,
 } from '../routes/agent-config-helpers.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
 import { selectExecutionBinding, type TradingProfileConnection } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
+import { TradingProfileCeilingViolationError } from '../agents/trading-profile-reconciliation-saga.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +65,12 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     operatorModelDefaults,
     profileReconciliationSaga,
   } = params;
+
+  // C2.1: local `validateAgentRiskBounds` ceiling enforcement is dropped —
+  // traderton's `set_agent_trading_profile` is the sole authority. The
+  // `agentRiskDefaults` param is retained for call-site compatibility only.
+  // TODO(C2.2): remove after call-site cleanup — retained only for positional signature compatibility.
+  void agentRiskDefaults;
 
   // 1. Load source agent + verify ownership
   const [sourceAgent] = await db.select().from(agents)
@@ -157,15 +163,7 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     executionDefaults: liveExecutionDefaults,
   };
 
-  // 8. Validate canonical risk against operator ceilings
-  if (livePayload.risk && agentRiskDefaults) {
-    const riskIssues = validateAgentRiskBounds(livePayload.risk, agentRiskDefaults);
-    if (riskIssues.length > 0) {
-      return { ok: false, status: 400, error: 'validation_error', message: riskIssues.map((i) => i.message).join('; ') };
-    }
-  }
-
-  // 9. Validate model policy and provider/model availability
+  // 8. Validate model policy and provider/model availability
   const effectiveModelPolicy = mergeModelPolicy(livePayload.modelPolicy ?? null, {});
   const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogDeps);
   if (modelIssues.length > 0) {
@@ -308,7 +306,8 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     return result;
   };
 
-  await profileReconciliationSaga.executeStaged({
+  try {
+    await profileReconciliationSaga.executeStaged({
       ownerId: userId,
       actorId: newAgentId,
       localMutationId: crypto.randomUUID(),
@@ -328,7 +327,13 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
         };
       },
       commitLocal,
-  });
+    });
+  } catch (error) {
+    if (error instanceof TradingProfileCeilingViolationError) {
+      return { ok: false, status: 400, error: 'validation_error', message: error.message };
+    }
+    throw error;
+  }
 
   return { ok: true, agentId: newAgentId };
 }

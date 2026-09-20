@@ -2770,9 +2770,20 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(res.json().error).toBe('validation_error');
   });
 
-  it('rejects risk limits above operator defaults on create', async () => {
+  it('no longer rejects risk limits above operator defaults locally (boundary enforces)', async () => {
     const { agentRoutes } = await import('./agents.js');
-    const { db } = buildDb();
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      risk: { maxOpenPositions: 999 },
+    };
+    const { db } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
 
     const app = Fastify();
     decorateWithAuth(app);
@@ -2788,11 +2799,11 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       },
     });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({
-      error: 'validation_error',
-      details: [expect.objectContaining({ path: ['maxOpenPositions'] })],
-    });
+    // Local ceiling enforcement is dropped (C2.1): traderton's
+    // set_agent_trading_profile is the sole authority. With no trading
+    // connections the profile plan is empty, so creation proceeds (the
+    // over-ceiling risk value is no longer rejected locally).
+    expect(res.statusCode).toBe(201);
   });
 
   it('persists tickIntervalMs on PATCH', async () => {

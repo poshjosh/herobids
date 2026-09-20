@@ -68,6 +68,11 @@ venues:
 execution:
   defaultSlippageBps: 50
 
+# DISPLAY-FALLBACK ONLY — traderton is the sole enforcement authority for
+# operator risk defaults (ADR 011 / C2.1); these values are kept as a local
+# auto-fill fallback and are NOT used for enforcement. The boundary
+# `get_operator_defaults` read is the source of truth; `set_agent_trading_profile`
+# enforces ceilings.
 # Default risk limits for agents when the user has NOT explicitly configured them.
 # These are the initial values AND the operator ceiling — agents can adjust downward at runtime.
 # See docs/tech/glossary.md for precise definitions of each term.

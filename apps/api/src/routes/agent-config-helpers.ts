@@ -580,65 +580,6 @@ export function validateDailyLossRequiresCapital(input: {
 }
 
 /**
- * Validate agent risk bounds against operator ceilings.
- * maxDrawdownPct is a numeric percentage (0–100).
- */
-export function validateAgentRiskBounds(
-  input: {
-    maxOpenPositions?: number | null;
-    maxPositionSizePct?: number | null;
-    stopLossPct?: number | null;
-    stopLossCooldownMs?: number | null;
-    maxDrawdownPct?: number | null;
-  },
-  defaults: AgentRiskDefaultsConfig,
-): Array<{ code: 'custom'; path: string[]; message: string }> {
-  const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
-
-  if (input.maxOpenPositions != null && input.maxOpenPositions > defaults.maxOpenPositions) {
-    issues.push({
-      code: 'custom',
-      path: ['maxOpenPositions'],
-      message: `maxOpenPositions cannot exceed the platform limit of ${defaults.maxOpenPositions}`,
-    });
-  }
-
-  if (input.maxPositionSizePct != null && input.maxPositionSizePct > defaults.maxPositionSizePct) {
-    issues.push({
-      code: 'custom',
-      path: ['maxPositionSizePct'],
-      message: `maxPositionSizePct cannot exceed the platform limit of ${defaults.maxPositionSizePct}%`,
-    });
-  }
-
-  if (input.stopLossPct != null && input.stopLossPct > defaults.stopLossPct) {
-    issues.push({
-      code: 'custom',
-      path: ['stopLossPct'],
-      message: `stopLossPct cannot exceed the platform limit of ${defaults.stopLossPct}%`,
-    });
-  }
-
-  if (input.stopLossCooldownMs != null && input.stopLossCooldownMs > defaults.stopLossCooldownMs) {
-    issues.push({
-      code: 'custom',
-      path: ['stopLossCooldownMs'],
-      message: `stopLossCooldownMs cannot exceed the platform limit of ${defaults.stopLossCooldownMs}ms`,
-    });
-  }
-
-  if (input.maxDrawdownPct != null && input.maxDrawdownPct > defaults.maxDrawdownPct) {
-    issues.push({
-      code: 'custom',
-      path: ['maxDrawdownPct'],
-      message: `maxDrawdownPct cannot exceed the platform limit of ${defaults.maxDrawdownPct}%`,
-    });
-  }
-
-  return issues;
-}
-
-/**
  * Resolve the agent's risk contract for API responses.
  * Shows per-field source, mutability, and effective values.
  * Reads a typed remote trading profile, which is the sole enforcement source after migration 0072.

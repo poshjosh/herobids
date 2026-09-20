@@ -80,6 +80,21 @@ export class TradingProfileResponseValidationError extends Error {
   }
 }
 
+/**
+ * The boundary rejected a creator `riskPosture` because a field exceeded the
+ * operator ceiling (traderton `set_agent_trading_profile` →
+ * `validation.risk_ceiling`). Surfaced distinct from the generic forward
+ * failure so routes can map it to a 400 `validation_error` rather than a 500.
+ */
+export class TradingProfileCeilingViolationError extends Error {
+  readonly code = 'validation.risk_ceiling';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'TradingProfileCeilingViolationError';
+  }
+}
+
 export class TradingProfileReconciliationSaga {
   constructor(
     private readonly outbox: TradingProfileReconciliationOutboxRepository,
@@ -317,6 +332,14 @@ export class TradingProfileReconciliationSaga {
         action.state = 'failed';
         action.error = resultMessage(result);
         await this.outbox.update(row.id, 'pending_remote', actions, action.error);
+        // The boundary surfaces a creator ceiling exceedance as a fault:false
+        // `validation.risk_ceiling` errorCode (mapped over the wire to
+        // `validation.invalid_payload` with `details.errorCode` preserved —
+        // see exports-traderton.js mapClientResultToReadResult). Surface it as
+        // a typed client-facing error before the generic forward failure.
+        if (result.kind === 'failure' && result.details?.['errorCode'] === 'validation.risk_ceiling') {
+          throw new TradingProfileCeilingViolationError(result.message);
+        }
         throw new Error(action.error);
       }
       const message = forwardResponseError(result, row.operationId, action.kind);

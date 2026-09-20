@@ -265,7 +265,7 @@ export async function loadBoundaryObject(
 }
 
 /** Map any non-success read outcome to the HTTP-shaped {@link ReadBoundaryError}. */
-function mapNonSuccessToError(
+export function mapNonSuccessToError(
   result: Exclude<TradertonReadResult, { kind: 'success' }>,
 ): ReadBoundaryError {
   switch (result.kind) {
