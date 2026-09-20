@@ -375,14 +375,16 @@ export function makeStubTradertonClient(): TradertonClient {
   };
 }
 
+type FunctionalProfile = {
+  actorId: string;
+  venueAccountId: string;
+  capital: string | null;
+  riskPosture: Record<string, unknown> | null;
+  executionDefaults: { mode: 'paper' | 'shadow' | 'live' } | null;
+};
+
 function makeFunctionalProfileSaga(db: Parameters<typeof agentInteractivityRoutes>[1]) {
-  const profiles = new Map<string, {
-    actorId: string;
-    venueAccountId: string;
-    capital: string | null;
-    riskPosture: Record<string, unknown> | null;
-    executionDefaults: { mode: 'paper' | 'shadow' | 'live' } | null;
-  }>();
+  const profiles = new Map<string, FunctionalProfile>();
 
   return {
     readCurrentProfiles: async (
@@ -397,9 +399,16 @@ function makeFunctionalProfileSaga(db: Parameters<typeof agentInteractivityRoute
       preparePlannerInput: () => Promise<unknown> | unknown;
       commitLocal: (tx: typeof db, markLocalCommitted: () => Promise<void>) => Promise<T>;
     }): Promise<T> => {
-      await input.preparePlannerInput();
+      const plannerInput = (await input.preparePlannerInput()) as {
+        proposed?: { profiles?: ReadonlyMap<string, FunctionalProfile> };
+      };
+      for (const [venueAccountId, profile] of plannerInput?.proposed?.profiles ?? []) {
+        profiles.set(venueAccountId, profile);
+      }
       return input.commitLocal(db, async () => undefined);
     },
+    finalize: async (_operation: { operationId: string; ownerId: string; actorId: string }): Promise<void> => undefined,
+    compensate: async (_operation: { operationId: string; ownerId: string; actorId: string }): Promise<void> => undefined,
   };
 }
 
@@ -527,6 +536,7 @@ export async function buildApp() {
   // Intervening optional args (llmCatalogDeps, agentCostEstimates, modelDefaults)
   // are genuinely unused by the harness — routes null-guard them. The client
   // MUST land in the tradertonReadClient slot (9th) per the agents.ts signature.
+  const profileSaga = makeFunctionalProfileSaga(db);
   await agentRoutes(
     app,
     db,
@@ -538,8 +548,9 @@ export async function buildApp() {
     undefined,
     stubTradertonClient,
     5000,
+    profileSaga as never,
   );
-  await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any, stubTradertonClient);
+  await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any, stubTradertonClient, profileSaga as never);
   await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient, stubTradertonClient, 5000);
   await botRoutes(app, lifecycleQueue, db, redisClient, testPlansConfig as any, stubTradertonClient);
 
@@ -553,7 +564,7 @@ export async function buildApp() {
     undefined,
     testPlansConfig as any,
     undefined,
-    makeFunctionalProfileSaga(db) as never,
+    profileSaga as never,
   );
 
   await analyticsRoutes(app, db, stubTradertonClient, 10_000);
