@@ -47,8 +47,8 @@ Legend for **Class**: `seam` = intentional consumer-side integration · `dupe` =
 | `agents/agent-decision-handler.ts` | session/approval gates; boundary submit; **risk payload injection** | seam | indirect | fail-closed | traderton owns intake/execution |
 | `agents/decision-boundary-mapping.ts` | payload builder incl. `AgentRiskInjection` | seam | – | – | schema parity in traderton tool |
 | `services/approval-service.ts` | approve→execute over boundary (current risk via resolver) | platform (approval UX deliberately consumer-owned; traderton deleted its copy) | – | fail-closed | none (deliberate) |
-| `agent-risk-limits.ts` | risk contract/profile resolution + engine-shaped builder | **dupe** | indirect (fallback read) | – | **yes** (parity-tested) |
-| `agent-risk-limits-contracts.ts` | `RiskLimits` type copy from traderton engine | dupe (types) | – | – | authoritative copy in `@traderton/engine` |
+| `agent-risk-limits.ts` | risk contract/profile resolution + engine-shaped builder | **dupe** | indirect (fallback read) | – | **yes** (parity-tested) — RETIRED herobids-side under C2.2 (2026-09-20); traderton sole authority |
+| `agent-risk-limits-contracts.ts` | `RiskLimits` type copy from traderton engine | dupe (types) | – | – | authoritative copy in `@traderton/engine` — RETIRED herobids-side under C2.2 (2026-09-20) |
 | `hybrid-decision-sizing.ts` | USD→base sizing via PriceService | platform policy | indirect | price via boundary | none |
 | `hybrid-agent-evaluator.ts` | single-shot LLM trade decisions on scanner wakes | platform (LLM) | **yes** | decision→broker→boundary | none |
 | `validate-trade-instrument.ts` | venue-aware instrument validation | **dormant** | – | – | **yes** (live in traderton actor) |
@@ -312,7 +312,7 @@ graph TD
 |---|---|---|
 | `validate-trade-instrument.ts`, `swap-instrument-id.ts`, `resolve-swap-assets.ts`, `swap-startup-validation.ts`, `candle-fetch-breaker.ts`, `candle-fetch-retry.ts` | no production importer (tests only); live counterparts in traderton actor | **deleted** |
 | `venue-instrument-cache.ts` | only consumer = assessment identity resolver (fail-closed there) | **kept** — consumer `AssessmentIdentityResolverImpl` itself dormant (no production constructor); out of A5 scope, flagged |
-| `buildAgentRiskLimits`/`buildRiskLimitsFromContract` in `agent-risk-limits.ts` | test-only (engine math lives traderton-side) | **kept** — `RiskLimits` seam still imported (A3 payload-bound RiskSource until B1) |
+| `buildAgentRiskLimits`/`buildRiskLimitsFromContract` in `agent-risk-limits.ts` | test-only (engine math lives traderton-side) | **kept** — `RiskLimits` seam still imported (A3 payload-bound RiskSource until B1); DELETED herobids-side in C2.2 (2026-09-20) |
 | `riskContractOps.adjustOverrides` (in-process risk write via `setRiskOverrides`) | dead at tool layer (adjust is boundary fail-closed) | **deleted** (write path); read path (`getContract`/`getProfile`) kept |
 | `ctx.executionConfig` affordance | constructed, never read by a tool | **deleted** |
 | `tools/resolvers.ts` `resolve_watch`/`resolve_task` | local-Redis legacy stores (watch state is traderton-owned) | (deferred — A6 decides) |

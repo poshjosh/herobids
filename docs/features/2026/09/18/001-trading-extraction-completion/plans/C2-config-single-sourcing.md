@@ -7,17 +7,17 @@
 
 ## Parts
 
-### C2.1 — Operator risk defaults authority (B1=(ii) only) — [PENDING]
+### C2.1 — Operator risk defaults authority (B1=(ii) only) — [DONE]
 
 - traderton: expose `get_operator_defaults` as a boundary read (owner-scoped, read-only) returning the `agentRiskDefaults` block (17 fields) — the same values its gate/clamp math uses.
 - herobids: `GET /agents/risk-defaults` (web auto-fill source) re-points to the boundary read with a cache (TTL hours; defaults rarely change). API create/update validation drops its local `agentRiskDefaults` enforcement in favour of the boundary's typed errors from `set_agent_trading_profile` (C1) — one authority, errors at the point of enforcement.
 - herobids: `config/default.yaml` `agentRiskDefaults:` block marked display-fallback with a comment pointing at the boundary source; removed from enforcement paths.
 
-### C2.2 — Risk-contract math retirement (B1=(ii) only) — [PENDING]
+### C2.2 — Risk-contract math retirement (B1=(ii) only) — [DONE]
 
 - With A6-4 (fallback deletion) executed via C1's echo retirement, herobids' `agent-risk-limits.ts` + `agent-risk-limits-contracts.ts` lose their last runtime consumer → delete both + their parity tests (traderton keeps the live copies). This lands as the tail of C1's herobids list; C2 records it rather than re-plans it.
 
-### C2.3 — Parity-drift scripts (activate regardless of B1) — [PENDING]
+### C2.3 — Parity-drift scripts (activate regardless of B1) — [DONE]
 
 - Add one versioned mirror manifest that enumerates every exact source path or
   YAML region, its normalization rule, and its authority classification. Globs
