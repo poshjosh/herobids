@@ -8,7 +8,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
-- **Dormant/remnant deletion sweep (A5).** Deleted the six import-free engine-era worker modules (`validate-trade-instrument`, `swap-instrument-id`, `resolve-swap-assets`, `swap-startup-validation`, `candle-fetch-breaker`, `candle-fetch-retry`) + their tests; removed the dead in-process `riskContractOps.adjustOverrides` write path (read path kept), the never-read `ctx.executionConfig` affordance, the 12 worker venue-URL env overrides (`HYPERLIQUID_*`, `BYBIT_*`, `ONEINCH_*`, `JUPITER_API_URL`) + `SOLANA_RPC_URL`/`BASE_RPC_URL`, the dead `execution:` config keys (kept `defaultSlippageBps`), the `GET /agents/:id/trades` and `GET /trading/fills` routes, and the deprecated `scout-gating.hasUncoveredTrackedPosition`; renamed `BotRepository` → `ConnectionOwnershipRepository` (its sole survivor is the `connections` ownership check). Kept: `venue-instrument-cache.ts` (its only consumer is itself dormant), the risk-limit builders/`RiskLimits` seam (A3 payload-bound read until B1), exports + bot-health routes.
+- **Dormant/remnant deletion sweep (A5).** Deleted the six import-free engine-era worker modules (`validate-trade-instrument`, `swap-instrument-id`, `resolve-swap-assets`, `swap-startup-validation`, `candle-fetch-breaker`, `candle-fetch-retry`) + their tests; removed the dead in-process `riskContractOps.adjustOverrides` write path (read path kept), the never-read `ctx.executionConfig` affordance, the 12 worker venue-URL env overrides (`HYPERLIQUID_*`, `BYBIT_*`, `ONEINCH_*`, `JUPITER_API_URL`) + `SOLANA_RPC_URL`/`BASE_RPC_URL`, the dead `execution:` config keys (kept `defaultSlippageBps`), the `GET /agents/:id/trades` and `GET /trading/fills` routes, and the deprecated `scout-gating.hasUncoveredTrackedPosition`; renamed `BotRepository` → `ConnectionOwnershipRepository` (its sole survivor is the `connections` ownership check). Kept: `venue-instrument-cache.ts` (its only consumer is itself dormant), exports + bot-health routes.
+
+- **Risk-contract math retired herobids-side (C2.2).** Deleted `agent-risk-limits.ts`, `agent-risk-limits-contracts.ts`, and their parity/unit tests after C1 removed the last runtime consumer; Traderton keeps the live copies as the sole risk-math authority.
+
+### Changed
+
+- **Operator risk defaults single-sourced to Traderton (C2.1).** `GET /agents/risk-defaults` (web auto-fill) now reads a cached Traderton boundary read (`get_operator_defaults`) with the local `agentRiskDefaults` config kept only as a display fallback. API create/update/interactivity/go-live no longer enforce risk ceilings locally — out-of-ceiling risk posture is rejected by `set_agent_trading_profile` and surfaced as a typed 400.
+
+### Added
+
+- **Parity-drift gate for deliberate mirrors (C2.3).** Added an assertion-only versioned mirror manifest + checker (both repos) comparing `agentRiskDefaults`, strategy presets, watch/scan/gate type layers, and mirrored domain modules byte-for-byte after declared normalization; wired into both repos' protected slow-test CI with immutable pinned sibling SHAs. Traderton is the canonical authority for `agentRiskDefaults` and risk-contract math.
 
 ### Added
 
