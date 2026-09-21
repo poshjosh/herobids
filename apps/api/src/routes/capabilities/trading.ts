@@ -20,6 +20,7 @@ import { errorPayload } from '../../error-payload.js';
 import {
   createTradertonReadBoundary,
   loadAgentEvidence,
+  loadBoundaryObject,
   toFillRow,
   toJournalRow,
   toPositionRow,
@@ -28,6 +29,13 @@ import {
   type PositionRow as ReadPositionRow,
   type ReadBoundaryError,
 } from '../exports-traderton.js';
+import type {
+  CapabilityAttribute,
+  CapabilityFeed,
+  CapabilityFeedItem,
+  CapabilityPresentation,
+  CapabilityPresentationEmphasis,
+} from './presentation.js';
 const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume'] as const;
 type TradingAction = typeof SUPPORTED_ACTIONS[number];
 
@@ -147,6 +155,75 @@ async function selectTradingConnectionResourceRows(db: Database, userId: string)
     .select()
     .from(connections)
     .where(eq(connections.userId, userId));
+}
+
+const MAX_PRESENTATION_LIMIT = 100;
+const DEFAULT_PRESENTATION_LIMIT = 20;
+
+const PresentationQuerySchema = z.object({
+  connectionId: z.string().min(1).optional(),
+  cursor: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(MAX_PRESENTATION_LIMIT).default(DEFAULT_PRESENTATION_LIMIT),
+});
+
+/** A `get_agent_decisions` row (subset the presentation needs; `createdAt` rehydrated to Date). */
+interface DecisionRow {
+  id: string;
+  intent: string;
+  createdAt: Date;
+  instrumentId?: string | null;
+}
+
+/** Rehydrate a decision record's `createdAt` (arrives as an ISO string over JSON). */
+function toDecisionRow(record: unknown): DecisionRow {
+  const r = record as Record<string, unknown>;
+  const createdAtRaw = r['createdAt'];
+  const createdAt = createdAtRaw instanceof Date
+    ? createdAtRaw
+    : new Date(typeof createdAtRaw === 'string' ? createdAtRaw : Date.now());
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new Error(`Invalid date for field "createdAt": ${String(createdAtRaw)}`);
+  }
+  const intent = typeof r['intent'] === 'string' ? r['intent'] : '';
+  const instrumentId = typeof r['instrumentId'] === 'string' ? r['instrumentId'] : null;
+  return {
+    id: typeof r['id'] === 'string' ? r['id'] : '',
+    intent,
+    createdAt,
+    instrumentId: instrumentId ?? undefined,
+  };
+}
+
+/** Narrow the `get_account_summary` success payload to the fields the presentation needs. */
+interface AccountSummary {
+  capital: string | null;
+  capitalAvailable: boolean;
+  executionMode: string | null;
+  openPositionCount: number;
+  positionSizeMode: string | null;
+  warnings?: string[];
+}
+
+function accountSummaryOf(record: Record<string, unknown>): AccountSummary {
+  const capital = typeof record['capital'] === 'string' ? (record['capital'] as string) : null;
+  return {
+    capital,
+    capitalAvailable: record['capitalAvailable'] === true,
+    executionMode: typeof record['executionMode'] === 'string' ? (record['executionMode'] as string) : null,
+    openPositionCount: typeof record['openPositionCount'] === 'number' ? (record['openPositionCount'] as number) : 0,
+    positionSizeMode: typeof record['positionSizeMode'] === 'string' ? (record['positionSizeMode'] as string) : null,
+    warnings: Array.isArray(record['warnings']) && (record['warnings'] as unknown[]).every((w) => typeof w === 'string')
+      ? (record['warnings'] as string[])
+      : undefined,
+  };
+}
+
+/** Server-derived emphasis from a signed P&L value — the web must NOT compute signs. */
+function pnlEmphasis(value: string | null | undefined): CapabilityPresentationEmphasis {
+  if (value === null || value === undefined) return 'neutral';
+  const n = parseFloat(value);
+  if (Number.isNaN(n) || n === 0) return 'neutral';
+  return n > 0 ? 'positive' : 'negative';
 }
 
 /** Fallback read deadline when the operator boundary timeout is not supplied. */
@@ -335,6 +412,198 @@ export async function tradingCapabilityRoutes(
       const connectionRevokedRows = rows.filter((r) => r.connectionStatus === 'revoked');
       const latest = chooseLatestAssignment(connectionRevokedRows);
       return reply.send(deriveReadiness(latest, 'trading'));
+    },
+  );
+
+  app.get<{
+    Params: { agentId: string; family: string };
+    Querystring: { connectionId?: string; cursor?: string; limit?: string };
+  }>(
+    '/agents/:agentId/capabilities/:family/presentation',
+    async (request, reply) => {
+      const { agentId, family } = request.params;
+      const queryResult = PresentationQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        return reply.status(400).send({ error: 'validation_error', details: queryResult.error.issues });
+      }
+      // `limit` is currently applied to the decisions feed only (passed through to
+      // `get_agent_decisions`); `cursor` / `nextCursor` pagination is deferred — the
+      // `cursor` query param is accepted but not consumed yet.
+      const { connectionId, limit } = queryResult.data;
+
+      // 1. Ownership.
+      const [agent] = await db
+        .select({ id: agents.id, unifiedConfig: agents.unifiedConfig })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
+      if (!agent) {
+        return reply.status(404).send({ error: 'agent.not_found' });
+      }
+
+      // Herobids-owned display value (non-enforcing) from the agent's unifiedConfig.
+      const uc = agent.unifiedConfig as Record<string, unknown> | null;
+      const authMode = uc?.['authorizationMode'];
+      const authorizationMode = typeof authMode === 'string' && authMode.length > 0 ? authMode : 'direct';
+
+      // 2. Family gate — only trading is implemented.
+      if (family !== 'trading') {
+        return reply.status(404).send({ error: 'capability.not_found' });
+      }
+
+      // 4. Resolve the connection (same rules as /connections + /readiness).
+      const rows = await selectAgentTradingAssignmentRows(db, agentId);
+
+      let assignment: TradingAssignmentRow | undefined;
+      if (connectionId) {
+        // Explicit connection must be an ACTIVE binding for this agent+family.
+        const active = rows.find((r) => r.connectionId === connectionId && r.grantStatus === 'active' && r.connectionStatus === 'active');
+        const ready = active && active.resolvedVenueAccountId !== null ? active : undefined;
+        assignment = ready;
+      } else {
+        // Default-ready then first-ready (newest grant wins, matching chooseLatestAssignment).
+        // No ready connection → no usable binding, so the endpoint emits connection: null.
+        const readyRows = rows.filter((r) =>
+          r.grantStatus === 'active' && r.connectionStatus === 'active' && r.resolvedVenueAccountId !== null && r.resolvedVenueAccountId !== '');
+        assignment = readyRows.length > 0 ? chooseLatestAssignment(readyRows) : undefined;
+      }
+
+      const ready = assignment && assignment.grantStatus === 'active' && assignment.connectionStatus === 'active' && assignment.resolvedVenueAccountId !== null && assignment.resolvedVenueAccountId !== '';
+
+      if (!ready || !assignment) {
+        return reply.send({
+          family: 'trading',
+          connection: null,
+          attributes: [],
+          feeds: [],
+        } satisfies CapabilityPresentation);
+      }
+
+      const resolvedVenueAccountId = assignment.resolvedVenueAccountId as string;
+
+      // 5. Source data over the traderton boundary.
+      const boundary = agentReadBoundary(request.userId, agentId);
+      if (!boundary) {
+        return reply.status(boundaryUnconfiguredError.status).send(
+          errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
+        );
+      }
+
+      const summaryLoaded = await loadBoundaryObject(boundary, 'get_account_summary', {
+        venueAccountId: resolvedVenueAccountId,
+      });
+      if (!summaryLoaded.ok) {
+        return reply.status(summaryLoaded.error.status).send(
+          errorPayload(summaryLoaded.error.code, summaryLoaded.error.message),
+        );
+      }
+      const summary = accountSummaryOf(summaryLoaded.data);
+
+      const positionsLoaded = await loadAgentEvidence<ReadPositionRow>(
+        boundary,
+        'get_agent_positions',
+        {},
+        'positions',
+        toPositionRow,
+      );
+      if (!positionsLoaded.ok) {
+        return reply.status(positionsLoaded.error.status).send(
+          errorPayload(positionsLoaded.error.code, positionsLoaded.error.message),
+        );
+      }
+
+      const decisionsLoaded = await loadAgentEvidence<DecisionRow>(
+        boundary,
+        'get_agent_decisions',
+        { limit },
+        'decisions',
+        toDecisionRow,
+      );
+      if (!decisionsLoaded.ok) {
+        return reply.status(decisionsLoaded.error.status).send(
+          errorPayload(decisionsLoaded.error.code, decisionsLoaded.error.message),
+        );
+      }
+
+      const fillsLoaded = await loadAgentEvidence<ReadFillRow>(
+        boundary,
+        'get_agent_fills',
+        {},
+        'fills',
+        toFillRow,
+      );
+      if (!fillsLoaded.ok) {
+        return reply.status(fillsLoaded.error.status).send(
+          errorPayload(fillsLoaded.error.code, fillsLoaded.error.message),
+        );
+      }
+
+      // 6. Map to attributes.
+      const attributes: CapabilityAttribute[] = [
+        { key: 'connection', label: 'Connection', value: assignment.label, emphasis: 'neutral' },
+        { key: 'execution-mode', label: 'Execution mode', value: summary.executionMode ?? 'Not set', emphasis: 'neutral' },
+        { key: 'authorization-mode', label: 'Authorization', value: authorizationMode, emphasis: 'neutral' },
+        {
+          key: 'capital',
+          label: 'Capital',
+          value: summary.capital ?? 'Not set',
+          emphasis: summary.capitalAvailable ? 'neutral' : 'warning',
+        },
+        { key: 'open-positions', label: 'Open positions', value: String(summary.openPositionCount), emphasis: 'neutral' },
+        { key: 'position-size-mode', label: 'Position size mode', value: summary.positionSizeMode ?? 'Not set', emphasis: 'neutral' },
+      ];
+      if (summary.warnings && summary.warnings.length > 0) {
+        attributes.push({ key: 'warnings', label: 'Warnings', value: summary.warnings.join(', '), emphasis: 'warning' });
+      }
+
+      // 7. Map to feeds (server-side emphasis only).
+      // Scope feed rows to the selected connection's venue account (cross-connection data bleed).
+      const positionsFeed: CapabilityFeed = {
+        key: 'positions',
+        label: 'Positions',
+        items: positionsLoaded.rows
+          .filter((p) => p.venueAccountId === resolvedVenueAccountId)
+          .map((p): CapabilityFeedItem => ({
+            id: p.id,
+            title: p.symbol,
+            detail: `${p.venue} · ${p.size}`,
+            occurredAt: (p.closedAt ?? p.openedAt).toISOString(),
+            emphasis: pnlEmphasis(p.realizedPnl),
+          })),
+      };
+
+      // Decisions rows do NOT carry a `venueAccountId` column, so they cannot be
+      // venue-scoped client-side; they are already agent-scoped by the boundary tool.
+      const decisionsFeed: CapabilityFeed = {
+        key: 'decisions',
+        label: 'Decisions',
+        items: decisionsLoaded.rows.map((d): CapabilityFeedItem => ({
+          id: d.id,
+          title: d.intent.replace(/_/g, ' '),
+          detail: d.instrumentId ?? undefined,
+          occurredAt: d.createdAt.toISOString(),
+        })),
+      };
+
+      const fillsFeed: CapabilityFeed = {
+        key: 'fills',
+        label: 'Fills',
+        items: fillsLoaded.rows
+          .filter((f) => f.venueAccountId === resolvedVenueAccountId)
+          .map((f): CapabilityFeedItem => ({
+            id: f.id,
+            title: `${f.side} ${f.symbol}`,
+            detail: `${f.quantity} @ ${f.price}`,
+            occurredAt: f.filledAt.toISOString(),
+            emphasis: pnlEmphasis(f.realizedPnlDelta),
+          })),
+      };
+
+      return reply.send({
+        family: 'trading',
+        connection: { id: assignment.connectionId, label: assignment.label, state: 'ready' as const },
+        attributes,
+        feeds: [positionsFeed, decisionsFeed, fillsFeed],
+      } satisfies CapabilityPresentation);
     },
   );
 
