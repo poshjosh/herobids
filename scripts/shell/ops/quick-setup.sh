@@ -419,11 +419,12 @@ build_skill_payload_from_file() {
   local skill_file="$1"
   local seed_label="${2:-quick-setup}"
 
-  local name description tags_json tools_json instructions promptTemplate
+  local name description tags_json tools_json capability_families_json instructions promptTemplate
   name="$(parse_frontmatter_field "$skill_file" "name")"
   description="$(parse_frontmatter_block_scalar "$skill_file" "description")"
   tags_json="$(parse_frontmatter_list "$skill_file" "tags")"
   tools_json="$(parse_frontmatter_list "$skill_file" "requiredTools")"
+  capability_families_json="$(parse_frontmatter_list "$skill_file" "capabilityFamilies")"
   instructions="$(parse_skill_body "$skill_file")"
 
   if [[ -z "$name" ]]; then
@@ -442,6 +443,7 @@ build_skill_payload_from_file() {
     --arg promptTemplate "$promptTemplate" \
     --argjson tags "$tags_json" \
     --argjson requiredTools "$tools_json" \
+    --argjson capabilityFamilies "$capability_families_json" \
     --arg changeSummary "Seeded by ${seed_label}" \
     '{
       name: $name,
@@ -449,6 +451,7 @@ build_skill_payload_from_file() {
       instructions: $instructions,
       promptTemplate: (if $promptTemplate == "" then null else $promptTemplate end),
       requiredTools: $requiredTools,
+      capabilityFamilies: $capabilityFamilies,
       publicationStatus: "draft",
       tags: $tags,
       changeSummary: $changeSummary

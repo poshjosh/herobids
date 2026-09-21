@@ -5,6 +5,8 @@ description: >-
 tags:
   - ai4trade.ai
   - trading-signals
+capabilityFamilies:
+  - trading
 requiredTools:
   - list_files
   - write_file

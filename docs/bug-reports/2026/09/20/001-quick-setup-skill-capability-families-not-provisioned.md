@@ -1,8 +1,9 @@
 # Bug Report: `quick-setup.sh` cannot provision the AI4Trade skill — frontmatter `capabilityFamilies` is never parsed or forwarded
 
-- **Status:** OPEN
+- **Status:** FIXED (2026-09-21)
 - **Severity:** Medium (blocks the local cross-stack setup path; the skill is a seeded demo skill, not a system skill, so production is unaffected)
 - **Date:** 2026-09-20
+- **Fixed by:** `quick-setup.sh` now parses and forwards `capabilityFamilies`; `docs/agents/skills/ai4trade-trading-signals.md` declares `capabilityFamilies: [trading]`.
 - **Discovered by:** C1 live cross-stack certification (`scripts/shell/run/reset-and-run-xstack.sh`) — `quick-setup.sh` aborted at skill provisioning, so no agents were created.
 - **Environment:** development, local docker compose cross-stack (herobids api `localhost:3000`; traderton boundary `localhost:8080`).
 
