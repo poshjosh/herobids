@@ -227,8 +227,6 @@ export function AgentCapabilityPage() {
       {family === 'trading' && readiness.effectiveReady && (
         <TradingCapabilityPresentation
           agentId={agent.id}
-          agent={agent}
-          connectionLabel={(agentConnectionsQuery.data?.connections ?? []).find((connection) => connection.connectionId === readiness.connectionId)?.label ?? null}
           connectionProvider={(agentConnectionsQuery.data?.connections ?? []).find((connection) => connection.connectionId === readiness.connectionId)?.provider ?? null}
           isActive={['active', 'starting', 'paused', 'unhealthy'].includes(agent.status)}
         />

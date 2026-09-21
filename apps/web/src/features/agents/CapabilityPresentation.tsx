@@ -1,27 +1,20 @@
 import { RelativeTime } from '../../lib/ui.js';
+import type {
+  CapabilityAttribute,
+  CapabilityFeed,
+  CapabilityFeedItem,
+  CapabilityPresentationEmphasis,
+} from '../../lib/api-client.js';
 
-export type CapabilityPresentationEmphasis = 'neutral' | 'positive' | 'negative' | 'warning';
-
-export interface CapabilityAttribute {
-  key: string;
-  label: string;
-  value: string;
-  emphasis?: CapabilityPresentationEmphasis;
-}
-
-export interface CapabilityFeedItem {
-  id: string;
-  title: string;
-  detail?: string;
-  occurredAt: string;
-  emphasis?: CapabilityPresentationEmphasis;
-}
-
-export interface CapabilityFeed {
-  key: string;
-  label: string;
-  items: CapabilityFeedItem[];
-}
+// Re-export the wire types from api-client so this generic component is NOT a
+// second source of truth for the presentation contract. Importers that pull
+// `CapabilityAttribute`/`CapabilityFeed`/etc. from here keep working unchanged.
+export type {
+  CapabilityAttribute,
+  CapabilityFeed,
+  CapabilityFeedItem,
+  CapabilityPresentationEmphasis,
+};
 
 const EMPHASIS_TOKENS: Record<CapabilityPresentationEmphasis, { background: string; color: string }> = {
   neutral: { background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' },

@@ -1285,6 +1285,10 @@ export const agents = {
     const query = qs.toString() ? `?${qs.toString()}` : '';
     return request<{ agentId: string; family: 'trading'; items: AgentPosition[]; limit: number; offset: number }>(`/agents/${id}/capabilities/trading/positions${query}`);
   },
+  presentation: (id: string, family: string, params?: { connectionId?: string; cursor?: string; limit?: number }) => {
+    const query = buildQuery({ connectionId: params?.connectionId, cursor: params?.cursor, limit: params?.limit });
+    return request<CapabilityPresentation>(`/agents/${id}/capabilities/${family}/presentation${query}`);
+  },
   evaluations: {
     eligibility: (agentId: string) =>
       request<{ canEvaluate: boolean; reason?: string }>(`/agents/${agentId}/evaluations/eligibility`),
@@ -1455,6 +1459,43 @@ export interface CapabilityReadiness {
   connectionId?: string;
   reasons: string[];
   detail?: Record<string, unknown>;
+}
+
+export type CapabilityPresentationEmphasis = 'neutral' | 'positive' | 'negative' | 'warning';
+
+export interface CapabilityAttribute {
+  key: string;
+  label: string;
+  value: string;
+  emphasis?: CapabilityPresentationEmphasis;
+}
+
+export interface CapabilityFeedItem {
+  id: string;
+  title: string;
+  detail?: string;
+  occurredAt: string;
+  emphasis?: CapabilityPresentationEmphasis;
+}
+
+export interface CapabilityFeed {
+  key: string;
+  label: string;
+  items: CapabilityFeedItem[];
+  nextCursor?: string;
+}
+
+export interface CapabilityConnection {
+  id: string;
+  label: string;
+  state: 'ready' | 'unavailable';
+}
+
+export interface CapabilityPresentation {
+  family: string;
+  connection: CapabilityConnection | null;
+  attributes: CapabilityAttribute[];
+  feeds: CapabilityFeed[];
 }
 
 // ---------------------------------------------------------------------------
