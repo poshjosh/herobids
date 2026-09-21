@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, type Agent } from '../../lib/api-client.js';
+import { getRuntimeFamiliesForProvider } from '@herobids/domain';
 import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 import { extractAgentObjective, formatCapabilityFamily, formatObjectivePreview, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 
@@ -38,7 +39,16 @@ export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
     queryFn: () => skillsApi.list({ scope: 'selectable' }),
   });
   const selectedSkills = resolveSelectedSkills(agent.skillIds, skillsQuery.data?.skills ?? []);
-  const capabilityFamilies = resolveCapabilityFamilies(selectedSkills);
+  const skillFamilies = resolveCapabilityFamilies(selectedSkills);
+  const connectionsQuery = useQuery({
+    queryKey: ['agents', agent.id, 'connections'],
+    queryFn: () => agentsApi.getConnections(agent.id),
+  });
+  const connectionFamilies = resolveCapabilityFamilies(
+    (connectionsQuery.data?.connections ?? []).map((connection) => ({
+      capabilityFamilies: getRuntimeFamiliesForProvider(connection.provider),
+    })),
+  );
   const openAgent = onOpen ?? (() => navigate(`/agents/${agent.id}`));
 
   // ── Lifecycle mutations (same as agent detail page) ────────────────────
@@ -174,21 +184,35 @@ export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        {skillsQuery.isLoading && (
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.loadingSkills' })}</span>
-        )}
-        {skillsQuery.isError && (
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.capabilityUnavailable' })}</span>
-        )}
-        {!skillsQuery.isLoading && !skillsQuery.isError && (
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-            {intl.formatMessage({ id: 'agents.summary.capabilities' })}:{' '}
-            {capabilityFamilies.length > 0
-              ? capabilityFamilies.map((family) => formatCapabilityFamily(family, intl)).join(', ')
-              : intl.formatMessage({ id: 'agents.summary.capabilities.none' })}
-          </span>
-        )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          {skillsQuery.isLoading
+            ? intl.formatMessage({ id: 'agents.summary.loadingSkills' })
+            : skillsQuery.isError
+              ? intl.formatMessage({ id: 'agents.summary.capabilityUnavailable' })
+              : (
+                <>
+                  {intl.formatMessage({ id: 'agents.summary.skills' })}:{' '}
+                  {skillFamilies.length > 0
+                    ? skillFamilies.map((family) => formatCapabilityFamily(family, intl)).join(', ')
+                    : intl.formatMessage({ id: 'agents.summary.none' })}
+                </>
+              )}
+        </div>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          {connectionsQuery.isLoading
+            ? intl.formatMessage({ id: 'agents.summary.loadingConnections' })
+            : connectionsQuery.isError
+              ? intl.formatMessage({ id: 'agents.summary.capabilityUnavailable' })
+              : (
+                <>
+                  {intl.formatMessage({ id: 'agents.summary.connections' })}:{' '}
+                  {connectionFamilies.length > 0
+                    ? connectionFamilies.map((family) => formatCapabilityFamily(family, intl)).join(', ')
+                    : intl.formatMessage({ id: 'agents.summary.none' })}
+                </>
+              )}
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
