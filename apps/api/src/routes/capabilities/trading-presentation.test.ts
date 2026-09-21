@@ -91,6 +91,11 @@ const ACTIVE_ASSIGNMENT = {
 
 const NOW_ISO = new Date('2026-02-02T10:00:00.000Z').toISOString();
 
+/** Produce an active trading assignment row, overriding any subset of fields. */
+function assignmentRow(overrides: Record<string, unknown> = {}) {
+  return { ...ACTIVE_ASSIGNMENT, ...overrides };
+}
+
 function buildDb(selectSequence: unknown[][] = []) {
   let callIdx = 0;
 
@@ -221,6 +226,50 @@ describe('trading capability presentation', () => {
     const body = res.json();
     expect(body.connection).toBeNull();
     expect(body.feeds).toEqual([]);
+  });
+
+  it('resolves default/newer-ready connection when two ready connections are bound', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    // Connection A is OLDER (first in the rows array) and connection B is NEWER.
+    // Correct resolution sorts by grantedAt (newest wins); a naive "first ready"
+    // implementation would incorrectly pick A. Array order is intentionally
+    // [older, newer] to prove selection is timestamp-driven, not order-driven.
+    const connectionA = assignmentRow({
+      id: 'ac-a',
+      connectionId: 'conn-a',
+      label: 'HL connection A',
+      grantedAt: new Date('2026-02-01T00:00:00.000Z'),
+      resolvedVenueAccountId: 'va-a',
+      providerRef: 'acct-a',
+    });
+    const connectionB = assignmentRow({
+      id: 'ac-b',
+      connectionId: 'conn-b',
+      label: 'HL connection B',
+      grantedAt: new Date('2026-02-15T00:00:00.000Z'),
+      resolvedVenueAccountId: 'va-1',
+      providerRef: 'acct-1',
+    });
+    const db = buildDb([[AGENT_ROW], [connectionA, connectionB]]);
+    const { client } = makeDefaultClient();
+    await tradingCapabilityRoutes(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/presentation` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    // The surfaced connection is B (newer ready), not A (older).
+    expect(body.connection).toEqual({ id: 'conn-b', label: 'HL connection B', state: 'ready' });
+    expect(body.connection.id).not.toBe('conn-a');
+
+    // The `connection` attribute also reflects B and does NOT leak A's identity.
+    const attrs = body.attributes as Array<{ key: string; value: string; emphasis?: string }>;
+    const byKey = Object.fromEntries(attrs.map((a) => [a.key, a]));
+    expect(byKey['connection'].value).toBe('HL connection B');
+    expect(byKey['connection'].value).not.toBe('HL connection A');
+    expect(JSON.stringify(body)).not.toContain('HL connection A');
+    expect(JSON.stringify(body)).not.toContain('conn-a');
   });
 
   it('maps ready connection to attributes + feeds with server-side emphasis', async () => {
