@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Profile-backed capability presentation (C3b).** New `GET /agents/:id/capabilities/:family/presentation` endpoint returns a typed, connection-scoped `CapabilityPresentation` (`connection`, `attributes`, `feeds`) sourced from the Traderton boundary (`get_account_summary`, positions, decisions, fills) with emphasis computed server-side (P&L sign → positive/negative; `capitalAvailable:false` → warning). No usable binding returns an explicit `connection: null` with empty attributes/feeds, never guessed data. The web capability panel now renders solely via the generic `CapabilityAttributes`/`CapabilityFeeds` components, with all trading-semantic logic (P&L sign, win-rate, strategy, exec/authz formatting) removed from the generic surface. Dead `AgentTradesTable` and orphaned `formatAuthorizationMode` deleted; `formatPnl`/`pnlColor` retained for the standalone Exposure telemetry dashboard only (see ADR 014).
+
 ### Removed
 
 - **Dormant/remnant deletion sweep (A5).** Deleted the six import-free engine-era worker modules (`validate-trade-instrument`, `swap-instrument-id`, `resolve-swap-assets`, `swap-startup-validation`, `candle-fetch-breaker`, `candle-fetch-retry`) + their tests; removed the dead in-process `riskContractOps.adjustOverrides` write path (read path kept), the never-read `ctx.executionConfig` affordance, the 12 worker venue-URL env overrides (`HYPERLIQUID_*`, `BYBIT_*`, `ONEINCH_*`, `JUPITER_API_URL`) + `SOLANA_RPC_URL`/`BASE_RPC_URL`, the dead `execution:` config keys (kept `defaultSlippageBps`), the `GET /agents/:id/trades` and `GET /trading/fills` routes, and the deprecated `scout-gating.hasUncoveredTrackedPosition`; renamed `BotRepository` → `ConnectionOwnershipRepository` (its sole survivor is the `connections` ownership check). Kept: `venue-instrument-cache.ts` (its only consumer is itself dormant), exports + bot-health routes.
