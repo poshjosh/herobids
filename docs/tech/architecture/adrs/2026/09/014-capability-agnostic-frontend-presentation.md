@@ -31,7 +31,11 @@ That prevents the platform from presenting trading as one capability among many.
 - The UI can host additional capability families without specialized overview
   cards or number formatters.
 - `formatPnl`, `pnlColor`, and direct trading-specific rendering are retired in
-  C3b, not hidden behind a new generic component.
+  C3b, not hidden behind a new generic component. Exception: the standalone
+  Exposure telemetry dashboard (`ExposurePage` at `/exposure`, fed by the
+  `/dashboard/overview` API) retains local P&L sign→color derivation; it is a
+  platform risk surface, not a capability presentation surface, and will
+  migrate once that contract emits semantic emphasis.
 - C1 remains responsible for the trading-profile source of truth; this ADR does
   not change storage ownership.
 

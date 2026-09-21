@@ -183,7 +183,10 @@ function makeDefaultClient() {
       takeProfit: null,
     },
   ];
-  const decisions = [{ id: 'dec-1', intent: 'go_long', instrumentId: 'BTC-USD', createdAt: NOW_ISO, status: 'approved' }];
+  const decisions = [
+    { id: 'dec-1', intent: 'go_long', instrumentId: 'BTC-USD', createdAt: NOW_ISO, status: 'approved', venueAccountId: 'va-1' },
+    { id: 'dec-a', intent: 'go_short', instrumentId: 'ETH-USD', createdAt: NOW_ISO, status: 'approved', venueAccountId: 'va-a' },
+  ];
   const fills = [{ id: 'fill-1', orderId: 'o-1', venueAccountId: 'va-1', actorType: 'agent', actorId: TEST_AGENT_ID, venue: 'hyperliquid', symbol: 'BTC-PERP', side: 'buy', quantity: '0.1', price: '50000', fee: '1', feeCurrency: 'USDC', realizedPnlDelta: '2.500000', filledAt: NOW_ISO, createdAt: NOW_ISO }];
 
   return makeReadClient({
@@ -270,6 +273,15 @@ describe('trading capability presentation', () => {
     expect(byKey['connection'].value).not.toBe('HL connection A');
     expect(JSON.stringify(body)).not.toContain('HL connection A');
     expect(JSON.stringify(body)).not.toContain('conn-a');
+
+    // Decisions feed is venue-scoped: the `va-1` decision is kept, the `va-a`
+    // decision (other connection's venue) is filtered out.
+    const feeds = body.feeds as Array<{ key: string; items: Array<{ id: string }> }>;
+    const decisionsFeed = feeds.find((f) => f.key === 'decisions')!;
+    const decisionIds = decisionsFeed.items.map((i) => i.id);
+    expect(decisionIds).toContain('dec-1');
+    expect(decisionIds).not.toContain('dec-a');
+    expect(JSON.stringify(body)).not.toContain('dec-a');
   });
 
   it('maps ready connection to attributes + feeds with server-side emphasis', async () => {

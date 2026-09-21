@@ -172,6 +172,7 @@ interface DecisionRow {
   intent: string;
   createdAt: Date;
   instrumentId?: string | null;
+  venueAccountId?: string | null;
 }
 
 /** Rehydrate a decision record's `createdAt` (arrives as an ISO string over JSON). */
@@ -186,11 +187,13 @@ function toDecisionRow(record: unknown): DecisionRow {
   }
   const intent = typeof r['intent'] === 'string' ? r['intent'] : '';
   const instrumentId = typeof r['instrumentId'] === 'string' ? r['instrumentId'] : null;
+  const venueAccountId = typeof r['venueAccountId'] === 'string' ? r['venueAccountId'] : null;
   return {
     id: typeof r['id'] === 'string' ? r['id'] : '',
     intent,
     createdAt,
     instrumentId: instrumentId ?? undefined,
+    venueAccountId: venueAccountId ?? undefined,
   };
 }
 
@@ -571,17 +574,21 @@ export async function tradingCapabilityRoutes(
           })),
       };
 
-      // Decisions rows do NOT carry a `venueAccountId` column, so they cannot be
-      // venue-scoped client-side; they are already agent-scoped by the boundary tool.
+      // Decisions carry a non-null `venueAccountId` at the source; the null
+      // branch here guards against missing/non-string `venueAccountId` in the
+      // untracked boundary payload. Keep only rows matching the selected
+      // connection's venue account to prevent cross-connection data bleed.
       const decisionsFeed: CapabilityFeed = {
         key: 'decisions',
         label: 'Decisions',
-        items: decisionsLoaded.rows.map((d): CapabilityFeedItem => ({
-          id: d.id,
-          title: d.intent.replace(/_/g, ' '),
-          detail: d.instrumentId ?? undefined,
-          occurredAt: d.createdAt.toISOString(),
-        })),
+        items: decisionsLoaded.rows
+          .filter((d) => !d.venueAccountId || d.venueAccountId === resolvedVenueAccountId)
+          .map((d): CapabilityFeedItem => ({
+            id: d.id,
+            title: d.intent.replace(/_/g, ' '),
+            detail: d.instrumentId ?? undefined,
+            occurredAt: d.createdAt.toISOString(),
+          })),
       };
 
       const fillsFeed: CapabilityFeed = {
