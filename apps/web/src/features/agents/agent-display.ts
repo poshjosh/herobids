@@ -111,6 +111,21 @@ export function hasCapabilityFamily(skills: Array<{ capabilityFamilies: string[]
   return skills.some((skill) => skill.capabilityFamilies.includes(family));
 }
 
+/**
+ * Derive the distinct, alphabetically-sorted capability families carried by the
+ * given skills (deduplicated). Used for the generic "Capabilities: a, b" summary
+ * line, which lists families rather than a hardcoded trading readiness state.
+ */
+export function resolveCapabilityFamilies(skills: Array<{ capabilityFamilies: string[] }>): string[] {
+  const families = new Set<string>();
+  for (const skill of skills) {
+    for (const family of skill.capabilityFamilies) {
+      families.add(family);
+    }
+  }
+  return [...families].sort();
+}
+
 export function resolveSelectedSkills(skillIds: string[], skills: Skill[]): Skill[] {
   const skillsById = new Map(skills.map((skill) => [skill.id, skill] as const));
 

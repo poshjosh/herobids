@@ -403,6 +403,8 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.tradingUnavailable': 'Trading details are unavailable until the selected connection is ready.',
   'agents.summary.checkingCapability': 'Checking capability readiness…',
   'agents.summary.noCapabilitySetup': 'No capability setup required',
+  'agents.summary.capabilities': 'Capabilities',
+  'agents.summary.capabilities.none': 'none',
   'agents.summary.openAgent': 'Open AI agent',
   'agents.summary.openCapability': 'Open {capability} capability',
   'agents.summary.configureCapability': 'Configure {capability} capability',

@@ -403,6 +403,8 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.tradingUnavailable': 'चुना गया कनेक्शन तैयार होने तक ट्रेडिंग विवरण उपलब्ध नहीं हैं।',
   'agents.summary.checkingCapability': 'क्षमता तैयारी जाँची जा रही है…',
   'agents.summary.noCapabilitySetup': 'किसी क्षमता सेटअप की आवश्यकता नहीं',
+  'agents.summary.capabilities': 'क्षमताएँ',
+  'agents.summary.capabilities.none': 'कोई नहीं',
   'agents.summary.openAgent': 'AI एजेंट खोलें',
   'agents.summary.openCapability': '{capability} क्षमता खोलें',
   'agents.summary.configureCapability': '{capability} क्षमता कॉन्फ़िगर करें',

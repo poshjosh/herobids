@@ -1,9 +1,9 @@
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, skills as skillsApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type Agent } from '../../lib/api-client.js';
 import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
-import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatObjectivePreview, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 
 // ── Shared icon button style ───────────────────────────────────────────────
 
@@ -38,13 +38,7 @@ export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
     queryFn: () => skillsApi.list({ scope: 'selectable' }),
   });
   const selectedSkills = resolveSelectedSkills(agent.skillIds, skillsQuery.data?.skills ?? []);
-  const readinessQuery = useQuery({
-    queryKey: ['agents', agent.id, 'capability-readiness'],
-    queryFn: async () => agentsApi.capabilityReadiness(agent.id) as Promise<{ agentId: string; capabilities: CapabilityReadiness[] }>,
-    enabled: selectedSkills.length > 0,
-  });
-
-  const capabilities = readinessQuery.data?.capabilities ?? [];
+  const capabilityFamilies = resolveCapabilityFamilies(selectedSkills);
   const openAgent = onOpen ?? (() => navigate(`/agents/${agent.id}`));
 
   // ── Lifecycle mutations (same as agent detail page) ────────────────────
@@ -187,26 +181,14 @@ export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
         {skillsQuery.isError && (
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.capabilityUnavailable' })}</span>
         )}
-        {!skillsQuery.isLoading && !skillsQuery.isError && readinessQuery.isLoading && (
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.checkingCapability' })}</span>
-        )}
-        {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && capabilities.length === 0 && (
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</span>
-        )}
-        {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && capabilities.map((capability) => (
-          <span
-            key={capability.family}
-            style={{
-              padding: '3px 8px',
-              borderRadius: '20px',
-              background: capability.effectiveReady ? 'var(--color-success-subtle)' : 'var(--color-warning-subtle)',
-              color: capability.effectiveReady ? 'var(--color-success)' : 'var(--color-warning)',
-              fontSize: '0.75rem',
-            }}
-          >
-            {formatCapabilityFamily(capability.family, intl)}: {formatCapabilityState(capability.state, intl)}
+        {!skillsQuery.isLoading && !skillsQuery.isError && (
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+            {intl.formatMessage({ id: 'agents.summary.capabilities' })}:{' '}
+            {capabilityFamilies.length > 0
+              ? capabilityFamilies.map((family) => formatCapabilityFamily(family, intl)).join(', ')
+              : intl.formatMessage({ id: 'agents.summary.capabilities.none' })}
           </span>
-        ))}
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
