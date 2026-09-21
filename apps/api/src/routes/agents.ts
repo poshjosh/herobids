@@ -702,6 +702,26 @@ export async function agentRoutes(
     // Build executionDefaults JSONB (ExecutionDefaults shape).
     const executionDefaultsJsonb: import('@herobids/domain').ExecutionDefaults | null = createFields.executionDefaults;
 
+    // Resolution B (bug 2026/09/21/001): an unbound trading agent has no venue
+    // account, so the C1 profile (keyed by venueAccountId) does not exist yet and
+    // its mode/capital would be ephemeral. Stamp the resolved mode + capital into
+    // unifiedConfig so they survive the create-before-bind window and seed the
+    // profile when the first connection is bound. For bound agents the profile
+    // remains authoritative; this is only the unbound fallback snapshot.
+    const isTradingCapable = hasSkillCapabilityFamily(parsed.data.skillIds ?? [], 'trading') || capabilityMode === 'hybrid';
+    if (isTradingCapable && (executionDefaultsJsonb?.mode != null || parsed.data.capital != null)) {
+      const uc = (createFields.unifiedConfig ?? {}) as Record<string, unknown>;
+      if (executionDefaultsJsonb?.mode != null) {
+        const exec = (uc['execution'] as Record<string, unknown> | undefined) ?? {};
+        exec['mode'] = executionDefaultsJsonb.mode;
+        uc['execution'] = exec;
+      }
+      if (parsed.data.capital != null) {
+        uc['capital'] = parsed.data.capital;
+      }
+      createFields.unifiedConfig = Object.keys(uc).length > 0 ? uc : null;
+    }
+
     const prepareCreateProfilePlan = async () => {
       const connRows = connectionIds.length === 0
         ? []
@@ -1167,7 +1187,12 @@ export async function agentRoutes(
     }
 
     const submittedMode = parsed.data.executionDefaults?.mode as 'paper' | 'shadow' | 'live' | undefined;
-    const currentMode = currentProfile?.executionDefaults?.mode;
+    // Resolution B: an unbound trading agent's mode/capital live in the
+    // unifiedConfig snapshot (no venue → no profile). Fall back to it so the
+    // paper→shadow upgrade fires on first bind and capital is preserved.
+    const ucSnapshot = agent.unifiedConfig as Record<string, unknown> | null;
+    const unboundMode = (ucSnapshot?.['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
+    const currentMode = currentProfile?.executionDefaults?.mode ?? unboundMode;
     const executionMode = resolveExecutionModeForSkills({
       skillIds: mergedSkillIds,
       submittedExecutionMode: submittedMode !== undefined ? submittedMode : null,
@@ -1692,10 +1717,22 @@ export async function agentRoutes(
 
     const preparePatchProfilePlan = async () => {
       const priorProfiles = preparedPatchPriorProfiles;
+      // Resolution B: seed a newly-created (first-bind) profile from the unbound
+      // unifiedConfig snapshot so mode (paper→shadow via resolveExecutionModeForSkills)
+      // and capital survive the create-before-bind window. Explicit request fields
+      // always win; the snapshot only fills what the caller omitted.
+      const unboundCapital = ucSnapshot?.['capital'] as string | null | undefined;
+      const resolvedExecutionDefaults = executionMode.value !== null
+        ? { ...(executionDefaultsUpdateJsonb ?? (currentProfile?.executionDefaults ?? {}) as Record<string, unknown>), mode: executionMode.value }
+        : executionDefaultsUpdateJsonb;
       const changes = {
-        ...(parsed.data.capital !== undefined ? { capital: parsed.data.capital } : {}),
+        ...(parsed.data.capital !== undefined
+          ? { capital: parsed.data.capital }
+          : unboundCapital !== undefined
+            ? { capital: unboundCapital }
+            : {}),
         ...(riskUpdateJsonb !== undefined ? { riskPosture: riskUpdateJsonb as import('@herobids/domain').RiskPosture | null } : {}),
-        ...(executionDefaultsUpdateJsonb !== undefined ? { executionDefaults: executionDefaultsUpdateJsonb as import('@herobids/domain').ExecutionDefaults | null } : {}),
+        ...(resolvedExecutionDefaults !== undefined ? { executionDefaults: resolvedExecutionDefaults as import('@herobids/domain').ExecutionDefaults | null } : {}),
       };
       if (parsed.data.connectionIds === undefined) {
         return {

@@ -46,7 +46,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       },
     });
     expect(res.statusCode).toBe(201);
-    return res.json<{ id: string; executionMode: string; name: string; status: string }>();
+    return res.json<{ id: string; name: string; status: string }>();
   }
 
   /** Create a Hyperliquid connection and return its ID. */
@@ -110,7 +110,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
     it('rejects mode change via PATCH, rejects via PUT, clones via go-live, and preserves source', async () => {
       // 1. Create agent in paper mode
       const agent = await createPaperAgent();
-      expect(agent.executionMode).toBe('paper');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
 
       // 2. Attempt to change mode to live via PATCH → 400
       const patchRes = await ctx.app.inject({
@@ -151,12 +151,11 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       const liveAgent = goLiveRes.json<Record<string, unknown>>();
 
       // 6. Verify source agent still in shadow mode (auto-upgraded from paper on connection grant) and unchanged by go-live
-      const sourceAfter = await getAgent(agent.id);
-      expect((sourceAfter.executionDefaults as Record<string, unknown>)?.mode).toBe('shadow');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('shadow');
       // Agent was auto-upgraded paper→shadow when connection was granted, which is expected
 
       // 7. Verify new agent in live mode, stopped, same config
-      expect(liveAgent.executionMode).toBe('live');
+      expect((await ctx.getProfile(liveAgent.id as string))?.executionDefaults?.mode).toBe('live');
       expect(liveAgent.status).toBe('stopped');
       expect(liveAgent.id).not.toBe(agent.id);
       expect(liveAgent.name).toBe(`${agent.name} (Live)`);
@@ -197,7 +196,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       const liveAgent = goLiveRes.json<Record<string, unknown>>();
 
       // Verify the cloned agent has live mode and stopped status
-      expect(liveAgent.executionMode).toBe('live');
+      expect((await ctx.getProfile(liveAgent.id as string))?.executionDefaults?.mode).toBe('live');
       expect(liveAgent.status).toBe('stopped');
 
       // Verify source-originated fields are present on the live clone
@@ -216,7 +215,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
     it('auto-transitions paper→shadow on connection grant and back on revoke', async () => {
       // 1. Create agent in paper mode with no connections
       const agent = await createPaperAgent('Auto Transition Agent');
-      expect(agent.executionMode).toBe('paper');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
 
       // 2. Grant a connection → verify resolves to shadow
       const connectionId = await createConnection('hl-auto-transition');
@@ -228,8 +227,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       });
       expect(grantRes.statusCode).toBe(200);
 
-      const afterGrant = await getAgent(agent.id);
-      expect(afterGrant.executionMode).toBe('shadow');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('shadow');
 
       // 3. Revoke connection (empty connectionIds) → verify resolves back to paper
       const revokeRes = await ctx.app.inject({
@@ -240,8 +238,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       });
       expect(revokeRes.statusCode).toBe(200);
 
-      const afterRevoke = await getAgent(agent.id);
-      expect(afterRevoke.executionMode).toBe('paper');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
     });
 
     it('allows explicit paper→shadow and shadow→paper transitions via PATCH', async () => {
@@ -251,8 +248,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       await grantConnection(agent.id, connectionId);
 
       // Agent auto-upgraded to shadow on connection grant
-      const afterGrant = await getAgent(agent.id);
-      expect(afterGrant.executionMode).toBe('shadow');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('shadow');
 
       // Explicit shadow→paper via PATCH (test↔test is allowed)
       const toPaperRes = await ctx.app.inject({
@@ -263,8 +259,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       });
       expect(toPaperRes.statusCode).toBe(200);
 
-      const afterPaper = await getAgent(agent.id);
-      expect(afterPaper.executionMode).toBe('paper');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
 
       // Explicit paper→shadow via PATCH (test↔test is allowed)
       const toShadowRes = await ctx.app.inject({
@@ -275,8 +270,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       });
       expect(toShadowRes.statusCode).toBe(200);
 
-      const afterShadow = await getAgent(agent.id);
-      expect(afterShadow.executionMode).toBe('shadow');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('shadow');
     });
   });
 
@@ -365,7 +359,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       expect(goLiveRes.statusCode).toBe(201);
       const liveAgent = goLiveRes.json<Record<string, unknown>>();
 
-      expect(liveAgent.executionMode).toBe('live');
+      expect((await ctx.getProfile(liveAgent.id as string))?.executionDefaults?.mode).toBe('live');
       expect(liveAgent.status).toBe('stopped');
       expect(liveAgent.name).toBe('Field Check Agent (Live)');
     });
@@ -421,7 +415,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
         },
       });
       expect(createRes.statusCode).toBe(201);
-      const agent = createRes.json<{ id: string; capital: string | null; style: string | null }>();
+      const agent = createRes.json<{ id: string; style: string | null }>();
       const agentId = agent.id;
 
       const connectionId = await createConnection('hl-risk-config');
@@ -435,9 +429,12 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       });
       expect(goLiveRes.statusCode).toBe(201);
       const liveAgent = goLiveRes.json<Record<string, unknown>>();
+      const liveAgentId = liveAgent.id as string;
 
-      expect(liveAgent.executionMode).toBe('live');
-      expect(liveAgent.capital).toBe(agent.capital);
+      expect((await ctx.getProfile(liveAgentId))?.executionDefaults?.mode).toBe('live');
+      // Capital is normalized through the blueprint Decimal path (trailing zeros
+      // dropped), so assert the numeric value rather than the exact string.
+      expect(Number((await ctx.getProfile(liveAgentId))?.capital)).toBe(1000);
       expect(liveAgent.style).toBe('careful');
     });
   });

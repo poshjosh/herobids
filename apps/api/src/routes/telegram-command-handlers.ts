@@ -41,8 +41,32 @@ import {
   stopAgent,
 } from '../services/agent-lifecycle-service.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
+import { loadActiveTradingProfileConnections } from '../agents/trading-profile-reconciliation-adapter.js';
+import { selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+/** Read the selected trading profile's execution mode + capital for an agent. */
+async function readSelectedProfile(
+  db: Database,
+  userId: string,
+  agentId: string,
+  saga?: TradingProfileReconciliationSaga,
+): Promise<{ mode?: string; capital?: string | null }> {
+  if (!saga) return {};
+  const conns = await loadActiveTradingProfileConnections(db, agentId);
+  const binding = selectExecutionBinding(conns);
+  if (binding) {
+    const profiles = await saga.readCurrentProfiles(userId, agentId, conns);
+    const profile = profiles.get(binding.venueAccountId);
+    if (profile) return { mode: profile.executionDefaults?.mode, capital: profile.capital ?? null };
+  }
+  // Resolution B: unbound trading agent — fall back to the unifiedConfig snapshot.
+  const [row] = await db.select({ unifiedConfig: agents.unifiedConfig }).from(agents).where(eq(agents.id, agentId));
+  const uc = row?.unifiedConfig as Record<string, unknown> | null;
+  const exec = (uc?.['execution'] as Record<string, unknown> | undefined) ?? null;
+  return { mode: exec?.['mode'] as string | undefined, capital: (uc?.['capital'] as string | null | undefined) ?? null };
+}
 
 function formatTime(date: Date): string {
   const hours = String(date.getUTCHours()).padStart(2, '0');
@@ -164,6 +188,7 @@ export async function handleInfo(
   db: Database,
   userId: string,
   args: string[],
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<string> {
   try {
     if (args.length === 0) {
@@ -207,11 +232,10 @@ export async function handleInfo(
 
     const strategyPreset = extractStrategyPreset(agent.unifiedConfig);
 
-    // Only show capital for trading agents (executionMode set to any value)
-    const agentExecMode: string | undefined = undefined;
-    const capitalDisplay = agentExecMode
-      ? 'n/a'
-      : 'n/a';
+    // Read the selected trading profile (mode + capital) when a saga is wired.
+    const profile = await readSelectedProfile(db, userId, agent.id, profileReconciliationSaga);
+    const agentExecMode = profile.mode;
+    const capitalDisplay = profile.capital != null ? `$${profile.capital}` : 'n/a';
 
     const lines: string[] = [
       `${agent.name}:`,
@@ -866,6 +890,7 @@ export async function handleMode(
   db: Database,
   userId: string,
   args: string[],
+  profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<string> {
   try {
     if (args.length === 0) {
@@ -889,8 +914,8 @@ export async function handleMode(
       return 'Execution mode cannot be changed after creation. Use /golive <agent> to create a live copy of this agent\'s configuration.';
     }
 
-    // Read-only: show current execution mode
-    const mode: string | undefined = undefined;
+    // Read-only: show current execution mode from the selected trading profile
+    const mode = (await readSelectedProfile(db, userId, agent.id, profileReconciliationSaga)).mode;
     if (mode === 'shadow') {
       return `${agent.name} execution mode: shadow (venue-backed simulation)`;
     }

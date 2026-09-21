@@ -56,7 +56,7 @@ Next allowed item:
 
 ## Outstanding Issues
 
-- **C1 functional suite (2026-09-20):** 12 functional tests remain red and are intentionally deferred. 10 (`go-live`, `agents.functional`, `/info`, `/mode`) assert `executionMode`/`capital`/`risk` derived from the dropped `agents` columns — these are C3b's profile-backed presentation switch, not C1 defects. 2 (`/connect`, `/disconnect`) run in the telegram harness which constructs its own app without a profile saga and will be re-wired by a later plan. None block C1's code correctness; they block only full-functional green.
+- **C1 functional suite (RESOLVED 2026-09-21):** the 12 deferred functional tests are now green (`pnpm test:functional` — 187 passed, 0 failed). Resolution: (1) removed the dead `executionMode`/`capital`/`risk`/`executionDefaults` from the agent response (write-side schemas unchanged) and repointed tests to the trading-profile layer; (2) wired the functional profile saga into the telegram harness (fixing `/connect`/`/disconnect`); (3) fixed the create-before-bind mode/capital storage gap (Resolution B — see `docs/bug-reports/2026/09/21/001-unbound-trading-agent-mode-capital-has-no-durable-home.md`) by stamping unbound mode/capital into `unifiedConfig` and migrating it into the profile on first bind. The full functional tier is green.
 
 
 ## Batch Records

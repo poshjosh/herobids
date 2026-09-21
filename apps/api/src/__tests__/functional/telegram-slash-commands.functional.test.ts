@@ -24,7 +24,7 @@ import { createDatabase, users, agents, connections, agentConnections, skills, a
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import { telegramWebhookHandler } from '../../routes/agent-interactivity.js';
-import { SKIP, DB_URL, REDIS_URL, parseRedisUrl, makeAuthConfig } from '../functional/helpers.js';
+import { SKIP, DB_URL, REDIS_URL, parseRedisUrl, makeAuthConfig, makeFunctionalProfileSaga } from '../functional/helpers.js';
 
 // ── Telegram API mock (Approach 3) ────────────────────────────────────────
 
@@ -114,7 +114,14 @@ beforeEach(async () => {
     safety: { maxBalanceDriftPct: 20, maxPnlDriftPct: 50, staleHeartbeatMs: 300_000, maxSilenceMs: 900_000 },
   };
 
-  await telegramWebhookHandler(app, db, redisClient, alertsConfig, authConfig);
+  // Wire the functional trading-profile saga so /connect, /disconnect, /info,
+  // and /mode exercise the real profile-backed grant/revoke + read paths.
+  const profileSaga = makeFunctionalProfileSaga(db);
+  await telegramWebhookHandler(
+    app, db, redisClient, alertsConfig, authConfig,
+    undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, profileSaga,
+  );
   await app.ready();
   ctx = { app, db, redisClient };
 });
@@ -137,9 +144,11 @@ async function seedUser(chatId: string, extra: Partial<typeof users.$inferInsert
 async function seedAgent(userId: string, extra: Partial<typeof agents.$inferInsert> = {}) {
   const [a] = await ctx.db.insert(agents).values({
     id: crypto.randomUUID(), userId, name: 'TestAgent', prompt: 'Test goal',
-    status: 'stopped', capital: '5000',
-    executionDefaults: { mode: 'paper' },
-    risk: { dailyMaxLossPct: 25, maxDrawdownPct: 15, maxPositionSizePct: 10, stopLossPct: 5 },
+    status: 'stopped',
+    // Resolution B: capital + execution mode live in unifiedConfig for an
+    // unbound trading agent (the retired agents.capital/execution_defaults
+    // columns are inert post-C1).
+    unifiedConfig: { capabilityMode: 'hybrid', execution: { mode: 'paper' }, capital: '5000' },
     style: 'balanced', ...extra,
   }).returning();
   return a!;

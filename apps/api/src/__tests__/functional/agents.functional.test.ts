@@ -77,9 +77,10 @@ describe.skipIf(SKIP)('Agents functional', () => {
 
       // Non-trading agents don't require executionDefaults.
       expect(res.statusCode).toBe(201);
-      const body = res.json<{ executionDefaults: { mode: string } | null }>();
-      // executionDefaults is null for non-trading agents (not required).
-      expect(body.executionDefaults).toBeNull();
+      const body = res.json<Record<string, unknown>>();
+      // executionDefaults is no longer echoed on the agent response (C1 moved
+      // it into the traderton profile); a non-trading agent simply omits it.
+      expect(body.executionDefaults).toBeUndefined();
     });
 
     it('returns 401 without auth', async () => {
@@ -518,8 +519,8 @@ describe.skipIf(SKIP)('Agents functional', () => {
         },
       });
       expect(createRes.statusCode).toBe(201);
-      const agent = createRes.json<{ id: string; executionMode: string }>();
-      expect(agent.executionMode).toBe('paper');
+      const agent = createRes.json<{ id: string }>();
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
 
       const agentId = agent.id;
 
@@ -558,8 +559,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
         headers: authHeader(),
       });
       expect(getRes.statusCode).toBe(200);
-      const updated = getRes.json<{ executionMode: string }>();
-      expect(updated.executionMode).toBe('shadow');
+      expect((await ctx.getProfile(agentId))?.executionDefaults?.mode).toBe('shadow');
     });
 
     it('transitions from paper to live via go-live without mode leak', async () => {
@@ -576,8 +576,8 @@ describe.skipIf(SKIP)('Agents functional', () => {
         },
       });
       expect(createRes.statusCode).toBe(201);
-      const agent = createRes.json<{ id: string; executionMode: string }>();
-      expect(agent.executionMode).toBe('paper');
+      const agent = createRes.json<{ id: string }>();
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
       const agentId = agent.id;
 
       // 2. Create a Hyperliquid connection
@@ -618,8 +618,8 @@ describe.skipIf(SKIP)('Agents functional', () => {
         headers: authHeader(),
       });
       expect(goLiveRes.statusCode).toBe(201);
-      const liveAgent = goLiveRes.json<{ id: string; executionMode: string }>();
-      expect(liveAgent.executionMode).toBe('live');
+      const liveAgent = goLiveRes.json<{ id: string }>();
+      expect((await ctx.getProfile(liveAgent.id))?.executionDefaults?.mode).toBe('live');
       const liveAgentId = liveAgent.id;
       expect(liveAgentId).not.toBe(agentId);
 
@@ -630,7 +630,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
         headers: authHeader(),
       });
       expect(sourceRes.statusCode).toBe(200);
-      expect(['paper', 'shadow']).toContain(sourceRes.json<{ executionMode: string }>().executionMode);
+      expect(['paper', 'shadow']).toContain((await ctx.getProfile(agentId))?.executionDefaults?.mode);
 
       // 6. Verify the new live agent is stored correctly
       const getRes = await ctx.app.inject({
@@ -639,8 +639,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
         headers: authHeader(),
       });
       expect(getRes.statusCode).toBe(200);
-      const stored = getRes.json<{ executionMode: string }>();
-      expect(stored.executionMode).toBe('live');
+      expect((await ctx.getProfile(liveAgentId))?.executionDefaults?.mode).toBe('live');
 
       // 7. Start the live agent — live mode with a connection must be allowed
       const startRes = await ctx.app.inject({

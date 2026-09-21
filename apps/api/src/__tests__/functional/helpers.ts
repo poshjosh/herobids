@@ -6,8 +6,8 @@
  */
 
 import Fastify from 'fastify';
-import { sql } from 'drizzle-orm';
-import { createDatabase } from '@herobids/db';
+import { sql, eq } from 'drizzle-orm';
+import { createDatabase, agents } from '@herobids/db';
 import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
@@ -27,6 +27,8 @@ import type { TradertonClient, TradertonClientResult, InvokeToolInput, Traderton
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { LlmRuntimeConfigSchema } from '@herobids/domain';
 import { syncSystemSkills } from '../../sync-system-skills.js';
+import { loadActiveTradingProfileConnections } from '../../agents/trading-profile-reconciliation-adapter.js';
+import { selectExecutionBinding } from '../../agents/trading-profile-reconciliation.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -375,7 +377,7 @@ export function makeStubTradertonClient(): TradertonClient {
   };
 }
 
-type FunctionalProfile = {
+export type FunctionalProfile = {
   actorId: string;
   venueAccountId: string;
   capital: string | null;
@@ -383,17 +385,23 @@ type FunctionalProfile = {
   executionDefaults: { mode: 'paper' | 'shadow' | 'live' } | null;
 };
 
-function makeFunctionalProfileSaga(db: Parameters<typeof agentInteractivityRoutes>[1]) {
+export function makeFunctionalProfileSaga(db: Parameters<typeof agentInteractivityRoutes>[1]) {
+  // Key by (actorId, venueAccountId) to mirror the real profile triple
+  // (ownerId, actorId, venueAccountId) — venueAccountId alone would collapse
+  // a go-live clone (new actorId, same venue) onto its source's profile.
   const profiles = new Map<string, FunctionalProfile>();
+
+  const keyOf = (actorId: string, venueAccountId: string): string => `${actorId}\u0000${venueAccountId}`;
 
   return {
     readCurrentProfiles: async (
       _ownerId: string,
-      _actorId: string,
+      actorId: string,
       connections: Array<{ venueAccountId: string | null }>,
     ) => new Map(connections.flatMap((connection) => {
-      const profile = connection.venueAccountId ? profiles.get(connection.venueAccountId) : undefined;
-      return profile ? [[connection.venueAccountId!, profile] as const] : [];
+      if (!connection.venueAccountId) return [];
+      const profile = profiles.get(keyOf(actorId, connection.venueAccountId));
+      return profile ? [[connection.venueAccountId, profile] as const] : [];
     })),
     executeStaged: async <T>(input: {
       preparePlannerInput: () => Promise<unknown> | unknown;
@@ -403,7 +411,7 @@ function makeFunctionalProfileSaga(db: Parameters<typeof agentInteractivityRoute
         proposed?: { profiles?: ReadonlyMap<string, FunctionalProfile> };
       };
       for (const [venueAccountId, profile] of plannerInput?.proposed?.profiles ?? []) {
-        profiles.set(venueAccountId, profile);
+        profiles.set(keyOf(profile.actorId, venueAccountId), profile);
       }
       return input.commitLocal(db, async () => undefined);
     },
@@ -619,6 +627,32 @@ export async function buildApp() {
     db,
     redisClient,
     lifecycleQueue,
+    profileSaga,
+    // Test-only: read the resolved trading profile for an agent (via the C1
+    // storage layer) — the agent RESPONSE no longer carries execution mode/capital.
+    // Resolution B: an unbound trading agent has no venue/profile yet; its
+    // mode/capital live in the unifiedConfig snapshot. Fall back to that so
+    // create-before-bind assertions read the same durable values the PATCH path uses.
+    getProfile: async (agentId: string): Promise<FunctionalProfile | null> => {
+      const conns = await loadActiveTradingProfileConnections(db, agentId);
+      const binding = selectExecutionBinding(conns);
+      const profileMap = await profileSaga.readCurrentProfiles('', agentId, conns);
+      const profile = binding ? profileMap.get(binding.venueAccountId) ?? null : null;
+      if (profile) return profile;
+      const [row] = await db.select({ unifiedConfig: agents.unifiedConfig }).from(agents).where(eq(agents.id, agentId));
+      const uc = row?.unifiedConfig as Record<string, unknown> | null;
+      const exec = (uc?.['execution'] as Record<string, unknown> | undefined) ?? null;
+      const mode = exec?.['mode'] as 'paper' | 'shadow' | 'live' | undefined;
+      const capital = uc?.['capital'] as string | null | undefined;
+      if (mode == null && capital == null) return null;
+      return {
+        actorId: agentId,
+        venueAccountId: '',
+        capital: capital ?? null,
+        riskPosture: null,
+        executionDefaults: mode != null ? { mode } : null,
+      };
+    },
     // Test-only: seed the stub boundary's agent-scoped evidence stores.
     seedAgentFills: (agentId: string, rows: unknown[]): void => (stubTradertonClient as StubTradertonClientWithSeed).seedAgentFills(agentId, rows),
     seedAgentPositions: (agentId: string, rows: unknown[]): void => (stubTradertonClient as StubTradertonClientWithSeed).seedAgentPositions(agentId, rows),

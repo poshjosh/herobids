@@ -243,11 +243,15 @@ export async function agentInteractivityRoutes(
       .limit(1);
     const hasAgentConnections = !!existingActiveConn;
 
+    // Resolution B: fall back to the unifiedConfig snapshot for an unbound trading
+    // agent (no venue → no profile) so the test↔live immutability guard fires.
+    const ucSnapshot = agent.unifiedConfig as Record<string, unknown> | null;
+    const unboundMode = (ucSnapshot?.['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
     const executionMode = resolveExecutionModeForSkills({
       skillIds: mergedSkillIds,
       submittedExecutionMode: parsed.data.executionMode,
       executionModeProvided: parsed.data.executionMode !== undefined,
-      currentExecutionMode: selectedProfile?.executionDefaults?.mode,
+      currentExecutionMode: selectedProfile?.executionDefaults?.mode ?? unboundMode,
       hasConnections: hasAgentConnections,
     });
     if (executionMode.issue) {
@@ -664,7 +668,7 @@ export async function telegramWebhookHandler(
           return;
         }
         if (slashCmd.command === 'info') {
-          const response = await handleInfo(db, userId, slashCmd.args);
+          const response = await handleInfo(db, userId, slashCmd.args, commandProfileReconciliationSaga);
           await sendTelegramText(chatId, response);
           return;
         }
@@ -715,7 +719,7 @@ export async function telegramWebhookHandler(
 
         // Config commands (Slice 5)
         if (slashCmd.command === 'mode') {
-          const response = await handleMode(db, userId, slashCmd.args);
+          const response = await handleMode(db, userId, slashCmd.args, commandProfileReconciliationSaga);
           await sendTelegramText(chatId, response);
           return;
         }
