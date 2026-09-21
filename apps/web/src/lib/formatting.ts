@@ -30,6 +30,7 @@ export function formatCurrencyFromCents(
   });
 }
 
+// Retained for the platform Exposure (trading telemetry) surface only; capability surfaces use server-computed presentation emphasis (C3b).
 export function formatPnl(pnl: string | number | null | undefined): string {
   if (pnl == null) return '—';
   const d = new Decimal(pnl);

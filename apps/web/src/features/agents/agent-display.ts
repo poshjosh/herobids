@@ -194,13 +194,6 @@ export function formatExecutionMode(executionMode: string | null | undefined, in
   return formatMessageOrFallback(intl, `agents.executionMode.${executionMode}`, fallback);
 }
 
-export function formatAuthorizationMode(mode: string | null | undefined, intl?: IntlShape): string {
-  if (mode === 'approval_required') {
-    return formatMessageOrFallback(intl, 'agents.authorizationMode.display.approvalRequired', 'Approval required');
-  }
-  return formatMessageOrFallback(intl, 'agents.authorizationMode.display.direct', 'Direct');
-}
-
 export function formatCapabilityFamily(family: string, intl?: IntlShape): string {
   const fallback = CAPABILITY_FAMILY_LABELS[family] ?? family.replace(/[-_]/g, ' ');
   return formatMessageOrFallback(intl, `agents.capabilityFamily.${family}`, fallback);
