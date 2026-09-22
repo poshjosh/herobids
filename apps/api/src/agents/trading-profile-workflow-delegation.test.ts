@@ -49,6 +49,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = await Promise.all(entries.map(async (entry) => {
     const path = join(directory, entry.name);
+    if (entry.isDirectory() && entry.name === '__tests__') return [];
     if (entry.isDirectory()) return sourceFiles(path);
     return entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [path] : [];
   }));
@@ -141,6 +142,7 @@ describe('trading profile workflow delegation', () => {
     expect(productionSources.filter(({ contents }) => hasProfileSnapshotLiteral(contents)).map(({ path }) => path).sort())
       .toEqual([
         'agents/trading-profile-reconciliation-saga.ts',
+        'agents/trading-profile-reconciliation.ts',
         'routes/agents.ts',
         'routes/blueprints.ts',
         'routes/chat.ts',

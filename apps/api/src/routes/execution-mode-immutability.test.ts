@@ -100,27 +100,28 @@ describe('handleMode', () => {
 
   // ── Read-only display ──
 
-  it('shows paper execution mode for a paper agent', async () => {
+  it('shows "not applicable" when no reconciliation saga supplies a mode (paper agent)', async () => {
     const db = makeDb([makeAgent({ executionDefaults: { mode: 'paper' } })]);
     const result = await handleMode(db, 'user-1', ['Momentum']);
     expect(result).toContain('Momentum');
-    expect(result).toContain('paper');
-    expect(result).toContain('simulated');
+    // Execution mode is no longer an agent property (ADR 010/014); it is
+    // surfaced only through the capability/connection profile. With no saga
+    // wired here, the mode is unavailable → "not applicable".
+    expect(result).toContain('not applicable');
   });
 
-  it('shows shadow execution mode for a shadow agent', async () => {
+  it('shows "not applicable" when no reconciliation saga supplies a mode (shadow agent)', async () => {
     const db = makeDb([makeAgent({ executionDefaults: { mode: 'shadow' } })]);
     const result = await handleMode(db, 'user-1', ['Momentum']);
     expect(result).toContain('Momentum');
-    expect(result).toContain('shadow');
-    expect(result).toContain('venue-backed simulation');
+    expect(result).toContain('not applicable');
   });
 
-  it('shows live execution mode for a live agent', async () => {
+  it('shows "not applicable" when no reconciliation saga supplies a mode (live agent)', async () => {
     const db = makeDb([makeAgent({ executionDefaults: { mode: 'live' } })]);
     const result = await handleMode(db, 'user-1', ['Momentum']);
     expect(result).toContain('Momentum');
-    expect(result).toContain('live');
+    expect(result).toContain('not applicable');
   });
 
   it('shows "not applicable" when executionDefaults has no mode', async () => {

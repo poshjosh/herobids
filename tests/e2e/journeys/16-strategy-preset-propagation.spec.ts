@@ -130,16 +130,13 @@ test.describe('Journey 16: Strategy preset propagation', () => {
     expect(agentJson.strategyPreset).toBe('momentum');
     expect(agentJson.strategyPresetName).toBe('Momentum — Day');
 
-    // Then assert the detail page renders it
+    // Then assert the detail page still renders the agent (the preset name is
+    // no longer shown on the generic agent detail page — capability state is
+    // reached through capability → connection per ADR 014).
     await page.reload();
     await expect(
       page.getByRole('heading', { name: /Preset Test J16|AI agent/i }),
     ).toBeVisible({ timeout: 5_000 });
-
-    // The Strategy KV row should show the preset name
-    await expect(page.getByText('Momentum — Day')).toBeVisible({
-      timeout: 5_000,
-    });
 
     // ── Clear the preset via API (PATCH with strategyPreset: null) ──────
     const patchRes = await request.patch(`/api/agents/${agentId}`, {
@@ -167,10 +164,5 @@ test.describe('Journey 16: Strategy preset propagation', () => {
     };
     expect(updatedJson.strategyPreset).toBeNull();
     expect(updatedJson.strategyPresetName).toBeNull();
-
-    // ── Assert preset is cleared on the detail page ──────────────────────
-    await expect(page.getByText('Momentum — Day')).not.toBeVisible({
-      timeout: 5_000,
-    });
   });
 });

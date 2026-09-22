@@ -1013,7 +1013,7 @@ describe('AgentMessageBroker', () => {
       expect((eventPublisher as any).emitInstanceStatus).not.toHaveBeenCalled();
     });
 
-    it('clamps create_and_start risk.maxOrderNotional to the agent capital limit before forwarding', async () => {
+    it('forwards create_and_start risk.maxOrderNotional unchanged (no local capital clamp)', async () => {
       agentRepo.getAgent.mockResolvedValue({
         id: 'agent-123',
         userId: 'user-1',
@@ -1052,18 +1052,18 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      // The platform capital clamp (maxOrderNotional 2500 → 1000) is applied to the
-      // config forwarded to the boundary. BotConfigSchema no longer runs here, so
-      // maxDrawdownPct passes through untouched.
+      // Capital is no longer an agent property (ADR 010) and herobids does not
+      // enforce local risk copies (ADR 011), so the config is forwarded verbatim;
+      // Traderton owns the capital clamp and risk enforcement.
       const arg = invokeAndAwait.mock.calls[0]![0];
       expect(arg.toolName).toBe('create_bot');
       expect(arg.payload.config).toEqual(expect.objectContaining({
-        risk: expect.objectContaining({ maxOrderNotional: 1000, maxDrawdownPct: 10 }),
+        risk: expect.objectContaining({ maxOrderNotional: 2500, maxDrawdownPct: 10 }),
       }));
       expect(arg.payload.config).not.toHaveProperty('venueAccountId');
     });
 
-    it('strips strategy-level exit-target keys (takeProfitPct/trailingStopPct) from risk before forwarding', async () => {
+    it('forwards strategy-level exit-target keys (takeProfitPct/trailingStopPct) unchanged', async () => {
       agentRepo.getAgent.mockResolvedValue({
         id: 'agent-123',
         userId: 'user-1',
@@ -1102,14 +1102,11 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      // takeProfitPct/trailingStopPct are strategy.params exit targets, not bot
-      // risk guards — Traderton's strict BotRiskSchema rejects them. They must
-      // be stripped so create_bot does not fail internal.non_retryable.
+      // No local risk normalization. Traderton's create_bot owns risk-schema
+      // validation; herobids forwards the config as-is (ADR 011).
       const arg = invokeAndAwait.mock.calls[0]![0];
       expect(arg.toolName).toBe('create_bot');
-      expect(arg.payload.config.risk).toEqual(expect.objectContaining({ maxDrawdownPct: 10 }));
-      expect(arg.payload.config.risk).not.toHaveProperty('takeProfitPct');
-      expect(arg.payload.config.risk).not.toHaveProperty('trailingStopPct');
+      expect(arg.payload.config.risk).toEqual(expect.objectContaining({ maxDrawdownPct: 10, takeProfitPct: 25, trailingStopPct: 5 }));
     });
 
     it('routes stop to the boundary stop_bot with botId + subject only', async () => {
@@ -1232,7 +1229,7 @@ describe('AgentMessageBroker', () => {
       expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-123' } });
     });
 
-    it('clamps adjusted risk.maxOrderNotional to agent capital before forwarding', async () => {
+    it('forwards adjusted risk.maxOrderNotional unchanged (no local capital clamp)', async () => {
       agentRepo.getAgent.mockResolvedValue({
         id: 'agent-123',
         userId: 'user-1',
@@ -1265,12 +1262,12 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      // The capital clamp (1500 → 750) is applied to the partial config before it
-      // reaches the boundary. No base-config read/merge happens here.
+      // No local capital clamp (ADR 011). The partial config is forwarded
+      // verbatim; Traderton owns the clamp and risk enforcement.
       const arg = invokeAndAwait.mock.calls[0]![0];
       expect(arg.toolName).toBe('adjust_bot_config');
       expect(arg.payload.config).toEqual(expect.objectContaining({
-        risk: expect.objectContaining({ maxOrderNotional: 750 }),
+        risk: expect.objectContaining({ maxOrderNotional: 1500 }),
       }));
     });
 
@@ -1432,7 +1429,7 @@ describe('AgentMessageBroker', () => {
         execBoundary = makeBoundary();
       });
 
-      it('rejects paper agent creating a live-mode bot', async () => {
+      it('forwards paper agent creating a live-mode bot to the boundary', async () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
@@ -1446,13 +1443,14 @@ describe('AgentMessageBroker', () => {
         );
 
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
-        expect(result.accepted).toBe(false);
-        expect(result.error).toMatch(/cannot create a bot with execution mode "live".*permitted execution modes: paper/i);
-        // Mode escalation is a platform gate that rejects BEFORE the boundary.
-        expect(execBoundary.invokeAndAwait).not.toHaveBeenCalled();
+        // Mode escalation is no longer gated locally (ADR 011). Traderton owns
+        // the mode ceiling, so the broker forwards the request verbatim.
+        expect(result.accepted).toBe(true);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait.mock.calls[0]![0].toolName).toBe('create_bot');
       });
 
-      it('rejects shadow agent creating a live-mode bot', async () => {
+      it('forwards shadow agent creating a live-mode bot to the boundary', async () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
@@ -1466,9 +1464,9 @@ describe('AgentMessageBroker', () => {
         );
 
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
-        expect(result.accepted).toBe(false);
-        expect(result.error).toMatch(/cannot create a bot with execution mode "live".*permitted execution modes: paper, shadow/i);
-        expect(execBoundary.invokeAndAwait).not.toHaveBeenCalled();
+        expect(result.accepted).toBe(true);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait.mock.calls[0]![0].toolName).toBe('create_bot');
       });
 
       it('allows paper agent to create a paper-mode bot', async () => {
@@ -1554,7 +1552,7 @@ describe('AgentMessageBroker', () => {
         expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
       });
 
-      it('rejects paper agent creating a shadow-mode bot', async () => {
+      it('forwards paper agent creating a shadow-mode bot to the boundary', async () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
@@ -1568,9 +1566,9 @@ describe('AgentMessageBroker', () => {
         );
 
         const result = await brokerWithBot.processInbound(makeShadowBotEnvelope());
-        expect(result.accepted).toBe(false);
-        expect(result.error).toMatch(/cannot create a bot with execution mode "shadow".*permitted execution modes: paper/i);
-        expect(execBoundary.invokeAndAwait).not.toHaveBeenCalled();
+        expect(result.accepted).toBe(true);
+        expect(execBoundary.invokeAndAwait).toHaveBeenCalledTimes(1);
+        expect(execBoundary.invokeAndAwait.mock.calls[0]![0].toolName).toBe('create_bot');
       });
 
       it('allows shadow agent to create a shadow-mode bot', async () => {
@@ -1659,7 +1657,7 @@ describe('AgentMessageBroker', () => {
           },
         });
 
-        it('rejects shadow agent escalating a bot to live mode via adjust_config', async () => {
+        it('forwards shadow agent escalating a bot to live mode via adjust_config', async () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
@@ -1674,13 +1672,13 @@ describe('AgentMessageBroker', () => {
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustLiveEnvelope());
-          expect(result.accepted).toBe(false);
-          expect(result.error).toMatch(/cannot adjust a bot to execution mode "live".*permitted execution modes: paper, shadow/i);
-          // Mode gate rejects before the boundary adjust_bot_config.
-          expect(invokeAndAwait).not.toHaveBeenCalled();
+          // No local mode-escalation gate (ADR 011). Traderton owns the ceiling.
+          expect(result.accepted).toBe(true);
+          expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+          expect(invokeAndAwait.mock.calls[0]![0].toolName).toBe('adjust_bot_config');
         });
 
-        it('rejects paper agent escalating a bot to live mode via adjust_config', async () => {
+        it('forwards paper agent escalating a bot to live mode via adjust_config', async () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
@@ -1695,9 +1693,9 @@ describe('AgentMessageBroker', () => {
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustLiveEnvelope());
-          expect(result.accepted).toBe(false);
-          expect(result.error).toMatch(/cannot adjust a bot to execution mode "live".*permitted execution modes: paper/i);
-          expect(invokeAndAwait).not.toHaveBeenCalled();
+          expect(result.accepted).toBe(true);
+          expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+          expect(invokeAndAwait.mock.calls[0]![0].toolName).toBe('adjust_bot_config');
         });
 
         it('allows live agent to escalate a bot to live mode via adjust_config', async () => {
@@ -1720,7 +1718,7 @@ describe('AgentMessageBroker', () => {
           expect(invokeAndAwait.mock.calls[0]![0].toolName).toBe('adjust_bot_config');
         });
 
-        it('rejects paper agent escalating a bot to shadow mode via adjust_config', async () => {
+        it('forwards paper agent escalating a bot to shadow mode via adjust_config', async () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
@@ -1735,9 +1733,9 @@ describe('AgentMessageBroker', () => {
           );
 
           const result = await brokerWithBot.processInbound(makeAdjustShadowEnvelope());
-          expect(result.accepted).toBe(false);
-          expect(result.error).toMatch(/cannot adjust a bot to execution mode "shadow".*permitted execution modes: paper/i);
-          expect(invokeAndAwait).not.toHaveBeenCalled();
+          expect(result.accepted).toBe(true);
+          expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+          expect(invokeAndAwait.mock.calls[0]![0].toolName).toBe('adjust_bot_config');
         });
 
         it('allows shadow agent to adjust a bot to shadow mode', async () => {

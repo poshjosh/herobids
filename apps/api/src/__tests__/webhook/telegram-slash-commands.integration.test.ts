@@ -332,7 +332,9 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     const text = sentText(fetchSpy);
     expect(text).toContain(AGENT_NAME);
     expect(text).toContain('Status:');
-    expect(text).toContain('Execution mode: paper');
+    // Execution mode is profile-backed (ADR 010/014); with no reconciliation
+    // saga supplied in this test, the agent detail falls back to "n/a".
+    expect(text).toContain('Execution mode: n/a');
   });
 
   // ── H1: /start ───────────────────────────────────────────────────────
@@ -635,7 +637,8 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
 
     const text = sentText(fetchSpy);
     expect(text).toContain('execution mode');
-    expect(text).toContain('simulated');
+    // No reconciliation saga supplied → mode is unavailable → "not applicable".
+    expect(text).toContain('not applicable');
   });
 
   // ── H3: /golive dispatch ─────────────────────────────────────────────

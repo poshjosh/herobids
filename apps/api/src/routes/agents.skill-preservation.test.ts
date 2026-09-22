@@ -56,13 +56,17 @@ describe('agent routes skill preservation', () => {
           return makeChain([{ ...updatedAgent, name: 'old name' }]);
         }
         if (selectCount === 2) {
-          return makeChain([{ skillId: 'paid-skill' }]);
+          // Prepared reconciliation lookup — no active connections.
+          return makeChain([]);
         }
         if (selectCount === 3) {
+          return makeChain([{ skillId: 'paid-skill' }]);
+        }
+        if (selectCount === 4) {
           // hasAgentConnections lookup (agent_connections) — no active connections.
           return makeChain([]);
         }
-        if (selectCount === 4) {
+        if (selectCount === 5) {
           return makeChain([{
             id: 'paid-skill',
             authorId: 'other-user',
@@ -71,20 +75,28 @@ describe('agent routes skill preservation', () => {
             currentRevisionId: 'paid-skill:v2',
           }]);
         }
-        if (selectCount === 5) {
-          return makeChain([]);
-        }
         if (selectCount === 6) {
           return makeChain([]);
         }
         if (selectCount === 7) {
-          return makeChain([{ skillId: 'paid-skill', skillRevisionId: 'paid-skill:v2' }]);
+          return makeChain([]);
         }
         if (selectCount === 8) {
           // User aiModelConfig query (adaptive reasoning stamping)
           return makeChain([{ aiModelConfig: null }]);
         }
         if (selectCount === 9) {
+          // Transactional agent re-read before committing the staged change.
+          return makeChain([updatedAgent]);
+        }
+        if (selectCount === 10) {
+          // Transactional re-read verifies that active connections are unchanged.
+          return makeChain([]);
+        }
+        if (selectCount === 11) {
+          return makeChain([{ skillId: 'paid-skill', skillRevisionId: 'paid-skill:v2' }]);
+        }
+        if (selectCount === 12) {
           return makeChain([updatedAgent]);
         }
         return makeChain([{ skillId: 'paid-skill' }]);
@@ -109,7 +121,7 @@ describe('agent routes skill preservation', () => {
       payload: { name: 'renamed agent' },
     });
 
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toEqual(expect.objectContaining({
       name: 'renamed agent',
       skillIds: ['paid-skill'],

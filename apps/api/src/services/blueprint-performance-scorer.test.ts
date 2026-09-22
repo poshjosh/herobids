@@ -205,11 +205,12 @@ describe('recomputeBlueprintPerformanceScore', () => {
 
     expect(updateSet).toHaveBeenCalledTimes(1);
     const written = updateSet.mock.calls[0]![0] as { performanceScore: number };
-    // All-winning + +10% pnl → pnlScore 1.0, winRateScore 1.0, drawdown 0.5,
-    // riskAdjustedScore ≈ 0.33 (agent createdAt far in the past → large hours
-    // floors the risk term). weighted ≈ 0.767 → round(7.67) = 8. The open
-    // loss (-999) is excluded — a score of 8 confirms it never entered the mix.
-    expect(written.performanceScore).toBe(8);
+    // Capital is no longer read from the agent row (ADR 010: capital is profile
+    // state). With neutral capital → pnlScore/residual also neutral: winRate 100%
+    // → winRateScore 1.0, drawdown 0.5, pnl 0.5, riskAdjusted 0.5 →
+    // weighted = 0.5*.4 + 1.0*.2 + 0.5*.2 + 0.5*.2 = 0.6 → round(6) = 6.
+    // The open loss (-999) is excluded — it never enters the mix.
+    expect(written.performanceScore).toBe(6);
   });
 
   it('returns early without writing when the blueprint does not exist', async () => {
