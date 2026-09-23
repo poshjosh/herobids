@@ -9,8 +9,8 @@ Status legend: OPEN = not yet fixed · FIXED = fixed · CLOSED = verified/closed
 | # | Title | Severity | Status | Link |
 |---|-------|----------|--------|------|
 | 001 | `check_watches` boundary poll storm + `removeTriggered` schema coercion | Medium | FIXED | [001-check-watches-boundary-poll-storm-coercion.md](./001-check-watches-boundary-poll-storm-coercion.md) |
-| 002 | `decision_contexts.actor_id` written NULL (actor identity dropped) | Low | OPEN | [002-decision-contexts-actor-id-null.md](./002-decision-contexts-actor-id-null.md) |
-| 003 | Market-data discovery provider rejections (geckoterminal 429 / coinmarketcap 403) | Low | OPEN | [003-market-data-discovery-rate-limit-noise.md](./003-market-data-discovery-rate-limit-noise.md) |
+| 002 | `decision_contexts.actor_id` written NULL (actor identity dropped) | Low | CLOSED (not migration-caused) | [002-decision-contexts-actor-id-null.md](./002-decision-contexts-actor-id-null.md) |
+| 003 | Market-data discovery provider rejections (geckoterminal 429 / coinmarketcap 403) | Low | CLOSED (not migration-caused) | [003-market-data-discovery-rate-limit-noise.md](./003-market-data-discovery-rate-limit-noise.md) |
 
 **Issue 001 deliberately groups two `check_watches` findings** — the poll storm
 (B3 monitor calling the boundary per-agent every 5s) and the `removeTriggered`

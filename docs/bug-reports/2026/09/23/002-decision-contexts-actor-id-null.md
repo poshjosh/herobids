@@ -1,6 +1,6 @@
 # Bug Report 002 — `decision_contexts.actor_id` written NULL (actor identity dropped)
 
-- **Status:** OPEN
+- **Status:** CLOSED — NOT migration-caused (pre-existing gap; not fixed)
 - **Severity:** Low
 - **Date:** 2026-09-23
 - **Environment:** development; local docker compose cross-stack
@@ -21,34 +21,32 @@ It **omits** `actorType` and `actorId`, so the repository's defaults
 (`actorType ?? 'system'`, `actorId ?? null`) apply → `actor_type = 'system'`,
 `actor_id = NULL`.
 
-The engine already passes the correct values up the stack:
-`decision-intake.ts` calls `persistDecisionContext({ actorType: deps.actorType, actorId: deps.actorId, … })`,
-and `deps.actorType`/`deps.actorId` are populated for agent-direct decisions
-(the same values that correctly land in `decisions`). The actor identity is
-simply not forwarded in the worker's `persistDecisionContext` adapter, nor
-declared on the `InsertDecisionContext`/`PersistDecisionContextParams` type used
-there. (The bot path at `trading-actor.ts:2283` has the same omission.)
+## Migration causation assessment — **NOT caused by the migration**
 
-## Fix (proposed)
+Git-archeology tracing the agent-direct write lineage shows the omission
+**pre-dates the herobids→traderton extraction**:
 
-Forward `actorType`/`actorId` through
-`persistDecisionContext` → `backtestingRepo.insertDecisionContext(...)` in
-`packages/worker/src/agent-trading-actor.ts` (and the bot actor
-`trading-actor.ts`), declaring the fields on `InsertDecisionContext` so the
-repository writes them instead of defaulting.
+- Pre-migration herobids (`8c199782`, phase-5d) `apps/worker/src/trading-actor.ts`
+  `persistDecisionContext` called `insertDecisionContext({ decisionId, tradingInstanceId,
+  contextHash, context })` — **no actor fields**.
+- The pre-migration engine `decision-intake.ts` in the same commit also **did not**
+  pass `actorType`/`actorId` to `persistDecisionContext`.
+- `BacktestingRepository.insertDecisionContext` has always defaulted
+  `actorType ?? 'system'` / `actorId ?? null` — identical in pre-migration
+  herobids and post-extraction traderton (`git show 4494303`).
 
-## Files Changed
+So the actor identity was already being dropped in herobids before the boundary
+existed; traderton inherited the same lossy writer unchanged. The migration did
+not introduce or worsen it.
 
-- `traderton/packages/worker/src/agent-trading-actor.ts` — pass `actorType`/`actorId`
-- `traderton/packages/worker/src/trading-actor.ts` — same (bot path)
-- `traderton/packages/db/src/backtesting-repository.ts` — accept + write `actorType`/`actorId`
+## Outcome
 
-## Verification
-
-- Insert a decision context for an agent-direct decision; `actor_id` = agent id, `actor_type = 'agent'`.
-- `pnpm lint` / actor tests green.
+Stopped per instruction ("if not caused by migration — stop"). No fix applied.
+This is tracked for a potential future data-fidelity improvement outside the
+migration-regression sweep.
 
 ## Related
 
-- `traderton/packages/engine/src/decision-intake.ts:161` (correct values already computed)
+- Pre-migration evidence: `git show 8c199782` (`apps/worker/src/trading-actor.ts`, `packages/engine/src/decision-intake.ts`)
+- `traderton/packages/engine/src/decision-intake.ts:161` (now passes actor fields — but the worker adapter still drops them)
 - traderton `packages/db/src/schema/decision-contexts.ts` (`actorId text('actor_id')`)
