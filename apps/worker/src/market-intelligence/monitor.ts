@@ -51,6 +51,11 @@ const DEFAULT_WAKE_COALESCING_WINDOW_MS = 3_000;
 const MAX_COALESCED_EVENT_IDS = 5;
 const DISCOVERY_COOLDOWN_MS = 600_000; // 10 minutes
 const REGIME_COOLDOWN_MS = 300_000; // 5 minutes
+// B3-monitor: watchless agents are re-checked at most this often instead of
+// every evaluation loop — otherwise each active agent costs a `check_watches`
+// boundary round-trip every 5s just to learn it has no watches (the poll storm).
+// Agents WITH watches are never back-offed (thresholds must be checked promptly).
+const WATCHLESS_RECHECK_MS = 60_000; // 1 minute
 
 export interface WakePolicyEntry {
   /** Cooldown in ms for this wake source. */
@@ -116,8 +121,14 @@ export interface MonitorDeps {
   /** Evaluate an agent's watches over the Traderton boundary (check_watches).
    *  Returns the edge-up triggered watches + edge-down reset watchIds. Undefined
    *  when the boundary is unconfigured — evaluateWatches then no-ops (watch wakes
-   *  require the boundary; in-process eval was removed in B3). */
-  evaluateAgentWatches?: (agentId: string) => Promise<{ triggered: TriggeredWatch[]; reset: string[] }>;
+   *  require the boundary; in-process eval was removed in B3).
+   *
+   *  B3-monitor: the result may also carry `totalWatches` — the count of watches
+   *  the boundary found for the agent. `undefined` means "unknown" (older boundary
+   *  / test fake) and the monitor always evaluates. `0` lets the monitor back off
+   *  watchless agents, avoiding a boundary round-trip every loop for agents that
+   *  have nothing to check. */
+  evaluateAgentWatches?: (agentId: string) => Promise<{ triggered: TriggeredWatch[]; reset: string[]; totalWatches?: number }>;
 }
 
 interface PendingWake {
@@ -266,13 +277,31 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     for (const agentId of agentIds) {
       if (stopped) return;
 
-      let result: { triggered: TriggeredWatch[]; reset: string[] };
+      // B3-monitor: back off watchless agents so an agent with no watches doesn't
+      // cost a `check_watches` boundary round-trip every evaluation loop. The
+      // backoff marker is Redis-backed (same lease-surviving pattern as the
+      // rate-limit/dedupe keys) so a leader-election handoff can't reset it.
+      if (await isWatchlessBackedOff(agentId)) continue;
+
+      let result: { triggered: TriggeredWatch[]; reset: string[]; totalWatches?: number };
       try {
         result = await evaluateAgentWatches(agentId);
       } catch (err) {
         // Fail open per agent: a boundary error for one agent must not block others.
         logger.warn({ err, agentId }, 'evaluateAgentWatches failed for agent — skipping this cycle');
         continue;
+      }
+
+      // Update the backoff marker from the boundary's watch count. `undefined`
+      // means the (older) boundary didn't report a count — treat as unknown and
+      // do NOT back off (avoids starving watchful agents), just clear any stale
+      // marker so subsequent cycles re-evaluate normally.
+      if (result.totalWatches === 0) {
+        await markWatchless(agentId);
+      } else if (result.totalWatches === undefined) {
+        await clearWatchless(agentId);
+      } else {
+        await clearWatchless(agentId);
       }
 
       // RESET: clear the platform wake-dedupe key for each edge-down watch so a
@@ -967,6 +996,27 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     pipeline.incr(key);
     pipeline.expire(key, 60);
     await pipeline.exec();
+  }
+
+  // --- B3-monitor watchless backoff (Redis-backed, lease-surviving) ---
+
+  function watchlessKey(agentId: string): string {
+    return `market-monitor:watchless:${agentId}`;
+  }
+
+  /** Mark an agent as watchless for WATCHLESS_RECHECK_MS. */
+  async function markWatchless(agentId: string): Promise<void> {
+    await redis.set(watchlessKey(agentId), '1', 'PX', WATCHLESS_RECHECK_MS);
+  }
+
+  /** Clear the watchless marker (agent reported watches or an unknown count). */
+  async function clearWatchless(agentId: string): Promise<void> {
+    await redis.del(watchlessKey(agentId));
+  }
+
+  /** True when the agent was recently watchless and should skip the boundary call. */
+  async function isWatchlessBackedOff(agentId: string): Promise<boolean> {
+    return (await redis.exists(watchlessKey(agentId))) === 1;
   }
 
   return { start, stop, evaluate, flushWakes: flushPendingWakes, getMetrics: () => ({ ...metrics }) };

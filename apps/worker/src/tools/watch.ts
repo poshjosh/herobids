@@ -167,8 +167,15 @@ const removeWatchTool: AgentTool<TradingToolContext> = {
 // ---------------------------------------------------------------------------
 
 const CheckWatchesParamsSchema = z.object({
+  // coerce: LLMs may emit booleans as strings ("true"/"false").
   removeTriggered: z
-    .boolean()
+    .preprocess((v) => {
+      if (typeof v === 'string') {
+        if (v === 'true') return true;
+        if (v === 'false') return false;
+      }
+      return v;
+    }, z.boolean())
     .optional()
     .default(false)
     .describe('When true, automatically remove watches that have triggered. Default: false.'),

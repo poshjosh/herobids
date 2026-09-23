@@ -240,10 +240,10 @@ function makeTriggeredWatch(overrides: Partial<TriggeredWatchLike> = {}): Trigge
  * {triggered, reset} result returned for that agent; unmapped agents return
  * empty. The returned mock records calls for assertions.
  */
-function makeWatchPort(byAgent: Record<string, { triggered?: TriggeredWatchLike[]; reset?: string[] }>) {
+function makeWatchPort(byAgent: Record<string, { triggered?: TriggeredWatchLike[]; reset?: string[]; totalWatches?: number }>) {
   return vi.fn(async (agentId: string) => {
     const entry = byAgent[agentId] ?? {};
-    return { triggered: entry.triggered ?? [], reset: entry.reset ?? [] };
+    return { triggered: entry.triggered ?? [], reset: entry.reset ?? [], totalWatches: entry.totalWatches };
   });
 }
 
@@ -478,6 +478,51 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.instrumentVenue).toBe('hyperliquid');
     expect(payload.instrumentId).toBe('ETH-USD');
     expect(payload.positionKey).toBeUndefined();
+  });
+
+  it('backs off watchless agents (totalWatches: 0) so the boundary is not re-invoked every cycle', async () => {
+    activateAgent('watchless');
+    const port = makeWatchPort({
+      'watchless': { totalWatches: 0 },
+    });
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
+    await monitor.evaluate();
+    expect(port).toHaveBeenCalledTimes(1);
+    expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
+
+    // Second cycle within the backoff window: the boundary port is NOT called.
+    await monitor.evaluate();
+    expect(port).toHaveBeenCalledTimes(1);
+
+    // The watchless marker is persisted in Redis (lease-surviving).
+    expect(redis._store.has('market-monitor:watchless:watchless')).toBe(true);
+  });
+
+  it('does not back off an agent with watches (totalWatches > 0)', async () => {
+    activateAgent('watchful');
+    const port = makeWatchPort({
+      'watchful': { totalWatches: 2, triggered: [] },
+    });
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
+    await monitor.evaluate();
+    await monitor.evaluate();
+    expect(port).toHaveBeenCalledTimes(2);
+    expect(redis._store.has('market-monitor:watchless:watchful')).toBe(false);
+  });
+
+  it('does not back off when the boundary omits totalWatches (unknown count)', async () => {
+    activateAgent('unknown');
+    const port = makeWatchPort({
+      'unknown': { totalWatches: undefined },
+    });
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher, evaluateAgentWatches: port });
+    await monitor.evaluate();
+    await monitor.evaluate();
+    expect(port).toHaveBeenCalledTimes(2);
+    expect(redis._store.has('market-monitor:watchless:unknown')).toBe(false);
   });
 });
 

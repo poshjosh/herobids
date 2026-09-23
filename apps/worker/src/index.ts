@@ -943,7 +943,7 @@ const miConfig = appConfig.marketIntelligence;
 // boundary is unconfigured the port is undefined and the monitor no-ops watch
 // wakes (in-process eval was removed in B3 — no local fallback).
 const evaluateAgentWatches = sideEffectBoundary
-  ? async (agentId: string): Promise<{ triggered: TriggeredWatch[]; reset: string[] }> => {
+  ? async (agentId: string): Promise<{ triggered: TriggeredWatch[]; reset: string[]; totalWatches?: number }> => {
       // Resolve the agent's owner (fail-open → empty on miss). check_watches is
       // owner-scoped, so a per-agent subject is required (the SYSTEM read
       // boundary is insufficient).
@@ -965,11 +965,13 @@ const evaluateAgentWatches = sideEffectBoundary
         return { triggered: [], reset: [] };
       }
       // The boundary returns WatchEntry & { currentPrice, priceSource, stale }
-      // objects that structurally match TriggeredWatch.
-      const data = result.payload as { triggered?: TriggeredWatch[]; reset?: string[] };
+      // objects that structurally match TriggeredWatch, plus a watch count used
+      // by the monitor's watchless backoff.
+      const data = result.payload as { triggered?: TriggeredWatch[]; reset?: string[]; totalWatches?: number };
       return {
         triggered: Array.isArray(data.triggered) ? data.triggered : [],
         reset: Array.isArray(data.reset) ? data.reset : [],
+        totalWatches: typeof data.totalWatches === 'number' ? data.totalWatches : undefined,
       };
     }
   : undefined;
