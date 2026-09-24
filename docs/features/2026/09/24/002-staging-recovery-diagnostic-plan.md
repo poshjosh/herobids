@@ -72,20 +72,27 @@ fix.
 1. Confirm Terraform and the S3 backend credentials are available locally:
    `TF_BACKEND_BUCKET`, `TF_BACKEND_REGION`, `AWS_ACCESS_KEY_ID`,
    `AWS_SECRET_ACCESS_KEY`, and (optionally) `TF_BACKEND_DYNAMODB_TABLE`.
+   Confirm the ignored `infra/hetzner/staging.tfvars` exists and supplies the
+   required Hetzner/provider and deployment inputs. Do not print its values.
 2. Isolate state so this inspection can never read or write another
    environment. Use a throwaway data dir and initialize the backend pointed
    **explicitly at the staging key** — the backend key is set at `init` time,
    NOT by `terraform workspace select`:
 
    ```bash
+   cd infra/hetzner
    export TF_DATA_DIR="$(mktemp -d)"
+   trap 'rm -rf "$TF_DATA_DIR"' EXIT
    terraform init -input=false \
      -backend-config="bucket=${TF_BACKEND_BUCKET}" \
      -backend-config="key=herobids/staging/terraform.tfstate" \
      -backend-config="region=${TF_BACKEND_REGION}"
-   terraform workspace select staging || terraform workspace new staging
-   export TF_WORKSPACE=staging
+   terraform workspace select staging
    ```
+
+   If the `staging` workspace does not exist, stop and report it. Do **not**
+   run `terraform workspace new`: creating a workspace writes backend state
+   and is not authorized by this read-only plan.
 
 3. Assert you are looking at the right environment before trusting any
    resource: `terraform output -raw environment` MUST print `staging`, and
@@ -95,9 +102,18 @@ fix.
    can report the wrong environment.)
 4. Enumerate resources with `terraform state list`. Note that `state list`
    reads **recorded** state only; it cannot see provider-side drift or a server
-   destroyed outside Terraform. A read-only `terraform plan -refresh-only`
-   (or the equivalent Hetzner cloud API read) is required to detect drift or
-   absence.
+   destroyed outside Terraform. Detect drift or absence with this
+   provider-side read, which does not save a plan or persist refreshed state:
+
+   ```bash
+   terraform plan -refresh-only -input=false -lock=false \
+     -var-file=staging.tfvars
+   ```
+
+   The staging var file is mandatory: without it, required inputs are missing
+   and `var.environment` defaults to `production`. An equivalent read-only
+   Hetzner Cloud API query is acceptable when Terraform provider access is not
+   available.
 5. Note any missing resources, drift, or a state that implies the server was
    destroyed.
 

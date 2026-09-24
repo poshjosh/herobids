@@ -13,11 +13,11 @@ decisions live in Traderton** and are the source of truth **until cutover**:
 - **`traderton/docs/CANONICAL-STATE.md` (sibling repo)** — the
   single source of truth for state/decisions/invariants (see its §3.1 for the L3 decisions, §5/§5.1 for the
   read-only exception + the repo-of-record transition).
-- **`traderton/docs/005-consumer-boundary-contract.md` (sibling repo)**
+- **`traderton/docs/features/initial/5-consumer-boundary-contract.md` (sibling repo)**
   — the REST/HMAC contract herobids calls (endpoints, envelope, canonical string, failure codes,
   idempotency, health).
 - The full investigation + proposal (the seam map this spec is built on) is
-  `traderton/docs/features/L3-01-herobids-consumption-proposal.md`.
+  `traderton/docs/features/initial/features/L3-01-herobids-consumption-proposal.md`.
 
 **Repo-of-record note:** herobids becomes the *working root* at cutover (a working-location change only —
 Traderton is NOT absorbed; it stays a separately-deployed boundary/library service). Until then, the
@@ -143,7 +143,7 @@ authors no risk/planner/executor logic.
   **entirely pre-boundary**: if a decision needs approval, herobids produces `pending_approval` itself and
   does NOT call the boundary; on human approve it calls `submit_decision` as a plain execute.
   `pending_approval` never crosses the wire. *(Polling shortcoming + push/webhook alternative: backlog B10
-  in `traderton/docs/010-improvement-backlog.md`, sibling repo.)*
+  in `traderton/docs/features/initial/0-improvement-backlog.md`, sibling repo.)*
 - **D4 — sub-phasing (§7). P1 (venue-account provisioning, §8) is its own slice before L3e.**
 - **D5 — docs:** this working spec + the per-slice prompts live here (herobids); the canonical/invariant
   docs stay in Traderton until cutover; repo-of-record migrates at cutover (CANONICAL-STATE §5.1).
@@ -162,8 +162,11 @@ authors no risk/planner/executor logic.
   `provision_venue_account` boundary tool (copied from the trading half of herobids' provisioning endpoint;
   carries `user_credentials` → credential-custody design). Traderton-side + new 005 surface.
 - **L3d — delete the trading packages + worker execution loop + trading DB (incl. the `bots` table)** once
-  nothing imports them; run the differential + herobids' suite.
-- **L3e — differential + staging soak → the merge gate.** Human-owned.
+  nothing imports them; run herobids' suite. The differential remains an L3e obligation.
+- **L3e — differential + staging soak → the merge gate.** The differential was not completed by the
+  A8/C5 certification and is carried into the 2026-09-24 program roadmap Step 16. Use the read-only
+  pre-removal Herobids oracle `1f6978d740d45e466cf4149617b8afc1c721e751`; the Step 16 plan must define
+  the identical-input corpus, normalization, load profile, and operator-gated staging execution.
 
 ## 8. Subtleties + cross-boundary items (resolved 2026-09-08; authority: `traderton/docs/CANONICAL-STATE.md` §3.2)
 

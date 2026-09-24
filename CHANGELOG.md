@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.4.0 - 2026-09-24
+
 ### Added
 
 - **Profile-backed capability presentation (C3b).** New `GET /agents/:id/capabilities/:family/presentation` endpoint returns a typed, connection-scoped `CapabilityPresentation` (`connection`, `attributes`, `feeds`) sourced from the Traderton boundary (`get_account_summary`, positions, decisions, fills) with emphasis computed server-side (P&L sign → positive/negative; `capitalAvailable:false` → warning). No usable binding returns an explicit `connection: null` with empty attributes/feeds, never guessed data. The web capability panel now renders solely via the generic `CapabilityAttributes`/`CapabilityFeeds` components, with all trading-semantic logic (P&L sign, win-rate, strategy, exec/authz formatting) removed from the generic surface. Dead `AgentTradesTable` and orphaned `formatAuthorizationMode` deleted; `formatPnl`/`pnlColor` retained for the standalone Exposure telemetry dashboard only (see ADR 014).

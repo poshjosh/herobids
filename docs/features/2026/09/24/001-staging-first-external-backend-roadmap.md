@@ -56,9 +56,10 @@ the final legal or payment-provider boundary.
 - Operational readiness evidence covers health, latency, restart, idempotency,
   and rollback, measured against traderton `005-consumer-boundary-contract.md`
   §Required Verification and `007-operational-readiness.md` as the baseline.
-- Equivalence/shadow validation and full-scale load testing are full-cutover
-  obligations and are explicitly deferred to Step 16 (final staging proof),
-  not required for this interim operational milestone.
+- Equivalence/shadow validation and representative load testing are blocking
+   full-cutover obligations explicitly deferred to Step 16 (final staging
+   proof). Phase 1, A8/C5, and soak evidence support those checks but do not
+   satisfy or waive them.
 - No infrastructure mutation occurs without explicit operator approval.
 
 ## Phase 2: Traderton Product Surface
@@ -117,10 +118,29 @@ the final legal or payment-provider boundary.
     in Herobids while trading payload semantics move to Traderton. Apply the
     discovery disposition to the remaining modules.
 
-16. **Final staging proof.** Register Traderton only through the generic
-    External Backend path. Validate descriptor trust/expiry/rotation, health
-    based visibility, generic skill resolution, restart/idempotency, and the
-    absence of first-party Herobids trading ownership.
+16. **Final staging proof.** Before execution, write a dedicated verification
+      plan that pins the pre-removal Herobids oracle SHA
+      `1f6978d740d45e466cf4149617b8afc1c721e751`, defines an identical-input
+      corpus and comparison normalization, and defines expected peak load or an
+      agreed multiplier. Obtain explicit operator approval before any staging
+      mutation, restart, traffic exercise, or rollback rehearsal. Then register
+      Traderton only through the generic External Backend path and prove:
+      - a side-by-side differential between the read-only pinned Herobids oracle
+         and REST-to-Traderton for representative `submit_decision`, bot-lifecycle,
+         and read-tool flows;
+      - the 007 equivalence criteria: at least 99% payload equivalence per tool
+         category, no novel Traderton failure category, latency within budget,
+         and zero idempotency violations;
+      - representative load for `submit_decision` and a frequent read tool, with
+         the metrics and pass criteria from 007;
+      - restart, health-visibility, idempotent-retry, and deployment/routing
+         rollback behavior; and
+      - descriptor trust/expiry/rotation, generic skill resolution, and the
+         absence of first-party Herobids trading ownership.
+
+      Copied parity tests, boundary end-to-end suites, A8/C5 runs, and soak
+      evidence are supporting evidence only; they do not replace the differential
+      report or load report.
 
 ## Dependencies And Guardrails
 

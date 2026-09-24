@@ -75,7 +75,7 @@ scaffolding (e.g. a local `docker compose up` for testing) remains autonomous.
 Also read, when relevant:
 - `herobids/AGENTS.md` and `traderton/AGENTS.md` (repo rules).
 - `traderton/docs/CANONICAL-STATE.md` (authoritative truth for traderton).
-- `traderton/docs/008-decision-process.md` (the Contemplator routing rule).
+- `traderton/docs/features/initial/8-decision-process.md` (the Contemplator routing rule).
 
 **Precedence and staleness.** `traderton/docs/CANONICAL-STATE.md` is the
 authority for Traderton-internal state, decisions, and invariants, but it

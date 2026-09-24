@@ -5,7 +5,7 @@
 **shared HMAC signer**, unit-tested against a **stubbed boundary**. **NO rewire, NO deletion** — this
 slice only ADDS the client; nothing calls it in production yet (that is L3b/L3c).
 **Reads:** the L3 spec `000-l3-consumption-spec.md` (this dir); the contract
-`traderton/docs/005-consumer-boundary-contract.md` (sibling repo);
+`traderton/docs/features/initial/5-consumer-boundary-contract.md` (sibling repo);
 the byte-parity reference `traderton/packages/boundary/src/dev/sign.ts` (the committed dev
 signer) + `traderton/packages/boundary/src/auth.ts` (the verifier — the canonical string it
 checks).

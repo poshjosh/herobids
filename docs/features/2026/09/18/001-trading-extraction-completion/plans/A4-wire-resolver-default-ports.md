@@ -39,5 +39,5 @@
 
 - `traderton/packages/boundary/src/subject-resolver.ts:146-158` (`resolveNoBotMode`), `:266-307` (default-venue branch)
 - `traderton/packages/boundary/src/bin.ts` (resolverPorts block)
-- `traderton/docs/features/L3-Rx-subject-resolver-venue-signal-plan.md` (the existing tracking doc)
+- `traderton/docs/features/initial/features/L3-Rx-subject-resolver-venue-signal-plan.md` (the existing tracking doc)
 - Audit §7 follow-up #2; bug-reports/2026/09/17 #001 companion report (ownerMode caveat).

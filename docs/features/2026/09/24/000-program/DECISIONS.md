@@ -16,6 +16,7 @@
 | D7 | `venue-capability.ts` → Traderton; `trading-protocol.ts` → split; `traderton/` → generalize/delete | Settled (direction) | ADR 015 §Initial Module Disposition |
 | D8 | Traderton frontend later; execution boundary stays private; `staging.traderton.com` public site for docs/status only | Settled | roadmap |
 | D9 | Superseded `RemoteBoundary` plan is non-governing history | Settled | ADR 015 + plan header |
+| D10 | Step 16 retains the mandatory REST differential and representative load test. Use read-only Herobids oracle `1f6978d740d45e466cf4149617b8afc1c721e751` (the parent of trading-package removal); prior A8/C5/soak evidence supports but does not replace these reports. | Settled | roadmap Step 16 + traderton 004/007/024 |
 
 ## Contemplator handoff protocol
 

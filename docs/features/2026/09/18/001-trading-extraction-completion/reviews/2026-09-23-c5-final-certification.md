@@ -19,7 +19,7 @@ The operator reports two successful sequential passes of each command:
 ```sh
 traderton/scripts/shell/tests/run-all-tests.sh --e2e
 traderton/scripts/shell/tests/run-extra-tests.sh --all
-traderton/scripts/run-integration.sh
+traderton/scripts/shell/tests/run-integration.sh
 herobids/scripts/shell/tests/run-all-tests.sh --e2e
 herobids/scripts/shell/tests/run-extra-tests.sh --all
 ```

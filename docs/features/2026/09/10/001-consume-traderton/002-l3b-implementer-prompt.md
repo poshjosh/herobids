@@ -8,7 +8,7 @@ client + subject to the tool context and REPOINTS five read tools.
 **Reads:** the L3 spec `000-l3-consumption-spec.md` (this dir) §2/§3/§7; the L3a client at
 `apps/worker/src/traderton/{client,sign,contract}.ts`; the Traderton dispatcher
 `traderton/packages/boundary/src/dispatcher.ts` (how a tool's `ToolResult` maps to
-`TradertonToolResultV1`); the 005 contract `traderton/docs/005-consumer-boundary-contract.md`.
+`TradertonToolResultV1`); the 005 contract `traderton/docs/features/initial/5-consumer-boundary-contract.md`.
 
 ---
 

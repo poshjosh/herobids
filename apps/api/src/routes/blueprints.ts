@@ -2532,7 +2532,7 @@ export async function blueprintRoutes(
           // (deterministic actorId → same botId), so both requests created the
           // SAME bot; the loser of the `uq_bpir_user_key` insert collapses to the
           // idempotent REPLAY (200) rather than a spurious 500 — matching the
-          // pre-boundary replay semantics. See traderton/docs/003 (atomicity split).
+          // pre-boundary replay semantics. See traderton/docs/features/initial/3 (atomicity split).
           if (err instanceof Error && 'code' in err && (err as { code?: string }).code === '23505') {
             const [existing] = await db
               .select({ responsePayload: blueprintInstantiationRequests.responsePayload })
