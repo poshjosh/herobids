@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Rules and guidelines for AI agents working on this codebase.
+Rules and guidelines for AI agents working on this herobids codebase.
 
 ## Project Overview
 
@@ -8,7 +8,14 @@ OpenAIdom is an AI agent platform — describe what you want, and an agent gets 
 
 Tech stack: TypeScript (strict), Node.js ≥22, ESM modules, pnpm monorepo, PostgreSQL + Drizzle ORM, Redis, Zod validation, vitest.
 
-## Build & Run
+## Development
+
+### Quick help scripts
+
+- `scripts/shell/tests/run-all-tests.sh --e2e`
+- `scripts/shell/tests/run-extra-tests.sh --all`
+
+### Useful commands
 
 ```bash
 pnpm install              # install all workspace deps
