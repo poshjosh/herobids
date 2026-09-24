@@ -6,13 +6,14 @@
 ## Current state (read first)
 
 **Current phase:** Phase 1 — Restore And Prove Staging
-**Current step:** 1 — Recover Herobids staging (diagnosis only; no mutation performed yet)
-**Blocked on:** S3 backend credentials/access for Terraform state inspection
-(`TF_BACKEND_BUCKET`, `TF_BACKEND_REGION`, `AWS_*`) and SSH access for later
-passes. Read-only Pass 1 (Terraform state inspection) is authorized and may be
-done now — it obtains the server IP from state; only mutation requires
-operator approval. Optional last-known-change context speeds diagnosis but is
-not required to begin.
+**Current step:** 1 — Recover Herobids staging (read-only diagnosis complete; baseline not restored)
+**Blocked on:** Explicit operator decision on whether to re-provision staging.
+The staging backend/workspace were inspected, but state serial 76 has no
+resources or outputs; the refresh-only plan failed during configuration
+evaluation, and the Hetzner API returned no server named `herobids-staging`.
+DNS still resolves staging addresses, but their ownership is unconfirmed.
+HTTPS and SSH probes did not connect successfully. Do not provision, change
+DNS, or otherwise remediate until the operator explicitly approves a path.
 
 ## Step status
 
@@ -20,7 +21,7 @@ Legend: ✅ done · 🔄 in progress · ⏸ paused · ⬜ not started · 🚫 bl
 
 | # | Step | Status | Notes / handoff |
 | --- | --- | --- | --- |
-| 1 | Recover Herobids staging | 🔄 | Plan in `../002-staging-recovery-diagnostic-plan.md`; read-only Pass 1 authorized to run now; mutation gated on approval |
+| 1 | Recover Herobids staging | 🚫 | Read-only diagnosis complete; baseline remains unrestored. See `../002-staging-recovery-diagnostic-plan.md`; remediation is blocked pending explicit operator decision on re-provisioning |
 | 2 | Create Traderton staging infrastructure | ⬜ | |
 | 3 | Deploy Traderton boundary | ⬜ | |
 | 4 | Integrate Herobids with Traderton | ⬜ | |
@@ -46,4 +47,4 @@ Legend: ✅ done · 🔄 in progress · ⏸ paused · ⬜ not started · 🚫 bl
 
 ## Steps completed with evidence
 
-- *None yet.* Step 1 is the first active step; document its diagnosis outcome here when done.
+- *None yet.* Step 1's read-only diagnosis is recorded in `../002-staging-recovery-diagnostic-plan.md`; the staging baseline is not restored, so the step remains blocked.

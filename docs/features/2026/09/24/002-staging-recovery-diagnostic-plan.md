@@ -1,6 +1,6 @@
 # Staging Recovery Diagnostic Plan
 
-**Status:** plan — read-only investigation only. No infrastructure mutation is authorized by this document.
+**Status:** diagnosis complete — staging baseline not restored; remediation awaits explicit operator decision. No infrastructure mutation is authorized by this document.
 **Date:** 2026-09-24
 **Parent:** [Staging-First External Backend Roadmap](./001-staging-first-external-backend-roadmap.md) Phase 1, step 1
 **Environment:** Herobids staging (`herobids-staging`, `staging.openaidom.com`)
@@ -159,10 +159,10 @@ record no longer points at server IP") before any remediation.
 
 | Pass | Observation | Probable root cause | Next action | Requires approval |
 | --- | --- | --- | --- | --- |
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| 4 | | | | |
+| 1 | Staging S3 backend initialized with key `herobids/staging/terraform.tfstate`; workspace `staging` exists. Pulled state serial 76 has zero resources and no outputs. The refresh-only plan failed during configuration evaluation (`redis_url` empty precondition; invalid indexes for `hcloud_server_network.control_plane[0]` and `hcloud_network.private[0]`), so it yielded no usable drift or server output. Hetzner API query returned no server named `herobids-staging`. | The staging server is probably absent, but the empty state and failed plan do not establish whether it was destroyed outside Terraform or otherwise lost. | Await operator decision on re-provisioning; do not create resources or alter state. | Yes — explicit operator decision is required before re-provisioning or any other remediation. |
+| 2 | Google DNS A/AAAA queries resolve `staging.openaidom.com` to `78.46.192.37` and `2a01:4f8:c17:a7c6::1`. The local resolver timed out for staging while `example.com` resolved; direct `@8.8.8.8` succeeded and `@1.1.1.1` timed out. HTTPS probes requested `https://staging.openaidom.com/health` and `/api/health` with `curl --resolve` mapping the hostname to `78.46.192.37`, preserving the domain Host/SNI; both reset without establishing a TLS session or receiving an HTTP response (HTTP 000). | DNS advertises addresses but there is no evidence to establish whether they are orphaned or associated with a current server. The domain health/TLS checks received no usable HTTPS response via the tested IPv4 address. | Include DNS ownership/address verification in any operator-approved recovery; do not change DNS based on this evidence alone. | Yes — explicit approval is required before DNS/TLS changes or other remediation. |
+| 3 | Noninteractive SSH to `78.46.192.37` timed out. | No SSH-reachable host was observed at the DNS A address; host and container state remain unknown. | Await operator decision on restoring staging; repeat host inspection only if an authorized recovery establishes a reachable server. | Yes — approval is required before remediation; no SSH session or host changes occurred. |
+| 4 | Not run: no matching Hetzner server was returned and SSH to the DNS A address timed out. | Compose, migration, and internal API health state cannot be determined without a reachable host. | Defer until the operator decides whether to re-provision or otherwise restore a reachable staging host. | Yes — explicit operator decision is required before provisioning or other remediation. |
 
 ## Decision Points (operator approval required)
 
