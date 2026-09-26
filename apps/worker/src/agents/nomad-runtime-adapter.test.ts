@@ -43,20 +43,20 @@ const baseAdapter: NomadRuntimeAdapterConfig = {
 };
 
 describe('buildNomadJobSpec', () => {
-  it('serializes docker labels as a list of "key=value" strings (not a map)', () => {
+  it('serializes docker labels as a list of string→string maps', () => {
     const spec = buildNomadJobSpec(baseLaunch, baseAdapter);
     const config = spec.Job.TaskGroups[0]!.Tasks[0]!.Config;
 
+    // Nomad docker driver (v1.9) wants labels as []map[string]string.
     expect(Array.isArray(config.labels)).toBe(true);
-    // Every label is a single "k=v" string; none is an object.
-    for (const label of config.labels) {
-      expect(typeof label).toBe('string');
-      expect(label).toMatch(/=.+/);
-    }
-    // Includes both caller labels and the managed-by label.
-    expect(config.labels).toContain('herobids.role=agent');
-    expect(config.labels).toContain('herobids.agentId=agent-1');
-    expect(config.labels).toContain('herobids.managed-by=nomad');
+    expect(config.labels.length).toBe(1);
+    const labelMap = config.labels[0]!;
+    expect(typeof labelMap).toBe('object');
+    expect(labelMap).toEqual({
+      'herobids.role': 'agent',
+      'herobids.agentId': 'agent-1',
+      'herobids.managed-by': 'nomad',
+    });
   });
 
   it('keeps env as a plain string→string map', () => {

@@ -35,9 +35,14 @@ placement).
 
 ## Fix
 
-Serialize `labels` as `["k=v", ...]` (`Object.entries(...).map`) and change the
-`NomadJobSpec.Config.labels` type to `string[]`. `env` stays a string→string map
-(correct for the JSON API). Added a regression test asserting the array shape.
+Serialize `labels` as a list of maps (`[{ ...labels, 'herobids.managed-by': 'nomad' }]`)
+and change `NomadJobSpec.Config.labels` type to `Array<Record<string,string>>`.
+`env` stays a string→string map (correct for the JSON API). Added a regression
+test asserting the list-of-maps shape.
+
+> Note: the first iteration used `[]string` (`"k=v"`) which Nomad rejected with
+> `element 0: map of string required`; Nomad v1.9 docker driver wants
+> `[]map[string]string`.
 
 ### Files
 

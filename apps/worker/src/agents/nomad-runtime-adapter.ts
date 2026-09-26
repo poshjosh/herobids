@@ -162,7 +162,7 @@ export interface NomadJobSpec {
         Config: {
           image: string;
           env: Record<string, string>;
-          labels: string[];
+          labels: Array<Record<string, string>>;
           network_mode?: string;
           pids_limit?: number;
         };
@@ -207,14 +207,15 @@ export function buildNomadJobSpec(
   const cpuShares = resources.cpuShares ?? adapterConfig.defaultResources.cpuShares;
   const maxProcesses = resources.maxProcesses ?? adapterConfig.defaultResources.maxProcesses;
 
-  // Build Nomad-flavoured labels. Nomad's docker driver expects `labels` as a
-  // list of "key=value" strings (NOT a map) — a map is rejected at task
-  // validation ("Inappropriate value for attribute labels: list of map of
-  // string required"). Job-level metadata stays in `Meta` (map) above/below.
-  const dockerLabels: string[] = Object.entries({
+  // Build Nomad-flavoured labels. Nomad's docker driver (v1.9) expects `labels`
+  // as a list of maps (`[]map[string]string`) — the JSON form of HCL
+  // `labels { key = "value" }` blocks — NOT a flat map and NOT "k=v" strings.
+  // A single map carrying all label pairs is the idiomatic payload. Job-level
+  // metadata stays in `Meta` (flat map) below.
+  const dockerLabels: Array<Record<string, string>> = [{
     ...config.labels,
     'herobids.managed-by': 'nomad',
-  }).map(([k, v]) => `${k}=${v}`);
+  }];
 
   const jobMeta: Record<string, string> = {
     'herobids.role': 'agent',

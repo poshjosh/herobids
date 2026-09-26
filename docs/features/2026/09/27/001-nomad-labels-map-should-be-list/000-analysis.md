@@ -37,14 +37,15 @@ Config: {
 
 Nomad's Docker driver expects, via the JSON job API:
 
-- `Config.labels`: a **list of strings** `["key=value", ...]`, NOT a map.
-- `Config.env`: a map `{ "KEY": "value" }` (this part is actually correct as JSON).
+- `Config.labels`: a **list of maps** (`[]map[string]string`) — the JSON form of
+  HCL `labels { key = "value" }` blocks. NOT a flat map, and NOT a list of
+  `"k=v"` strings (the first attempt — that produced
+  `element 0: map of string required`).
+- `Config.env`: a map `{ "KEY": "value" }` (correct as JSON).
 
-Because `labels` is a JS object, the submitted job spec serialises it as a JSON
-object. Nomad's HCL parser then reads `labels` as a malformed block, and the
-`env` key inside it is reported as "Invalid label". The whole `Config` block
-fails validation → the allocation never reaches the Docker driver → no container,
-no heartbeat → the health monitor times the session out.
+Because `labels` was first a JS object, then a `string[]`, the submitted job spec
+failed validation. The whole `Config` block fails HCL parse, with the nested
+`env` key reported as an unrelated "Invalid label".
 
 This is a **latent code bug** in the Nomad adapter. It was never exercised
 because every prior layer (private NIC down → `__PRIVATE_IP__` → stale ACL →
@@ -53,10 +54,9 @@ ever got placed and validated on a client node.
 
 ## The fix
 
-Convert `labels` from a map to a list of `"k=v"` strings in `buildNomadJobSpec`,
-matching Nomad's Docker driver contract (see `infra/nomad/browser-pool.nomad.hcl`
-as the reference, which uses `labels`/`env` in HCL form). `env` already maps
-correctly to a JSON object, so it needs no change.
+Convert `labels` to a list of maps: `[{ ...config.labels, 'herobids.managed-by': 'nomad' }]`,
+matching Nomad's Docker driver contract (`[]map[string]string`). `env` already
+maps correctly to a JSON object, so it needs no change.
 
 ## Files
 
