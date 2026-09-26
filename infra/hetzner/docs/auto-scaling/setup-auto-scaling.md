@@ -9,7 +9,7 @@ For pitfalls and bugs encountered during initial setup, see [lessons-learnt.md](
 ## Prerequisites
 
 - Staging control-plane server is provisioned and healthy (run `docs/runbooks/smoke-test-staging.md` first).
-- `staging.tfvars` is populated (copy from `remote.tfvars.example` if not).
+- `staging.tfvars` is populated (copy from `environment.tfvars.example` if not).
 - You are on the `staging` Terraform workspace: `terraform workspace select staging`.
 - Your local `.env.staging` at `infra/hetzner/.env.staging` includes the Nomad worker config (see Step 4).
 - S3 backend is configured: you have an S3 bucket, AWS credentials, and optionally a DynamoDB table for locking. See `infra/hetzner/README.md` — "Terraform Remote Backend (S3)".

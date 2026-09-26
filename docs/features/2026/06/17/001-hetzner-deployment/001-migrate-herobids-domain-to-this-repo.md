@@ -120,7 +120,7 @@ Terraform resources for the Hetzner server:
 |----------|---------|---------|
 | `hcloud_token` | (required) | Hetzner API token |
 | `server_name` | `herobids` | Server hostname |
-| `server_type` | `cx22` | Instance type |
+| `server_type` | `cx23` | Instance type |
 | `location` | `fsn1` | Datacenter |
 | `image` | `ubuntu-24.04` | OS image |
 | `ssh_public_key_path` | (required) | Path to SSH public key |

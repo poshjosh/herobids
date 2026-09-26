@@ -66,7 +66,7 @@ The rollout will likely require changes in these repo surfaces:
 | Reverse proxy | `Caddyfile.staging`, `Caddyfile.prod` |
 | Deploy overlays | `docker-compose.staging.yaml`, `docker-compose.prod.yaml` |
 | Environment files | `infra/hetzner/.env.staging`, `infra/hetzner/.env.prod` |
-| Docs and legal/public contact info | `apps/web/src/features/public-pages/content/**`, `infra/hetzner/README.md`, `infra/hetzner/docs/setup-domain.md` |
+| Docs and legal/public contact info | `apps/web/src/features/public-pages/content/**`, `infra/hetzner/README.md`, `infra/hetzner/docs/setup.md` |
 
 These changes should be prepared and reviewed before the production cutover window.
 

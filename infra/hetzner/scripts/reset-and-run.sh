@@ -86,7 +86,7 @@ if [[ -z "$ENV_FILE" ]]; then
   if [[ ! -f "$ENV_FILE" ]]; then
     die "No --env-file specified and default ${ENV_FILE} not found.
   Create one:
-    cp ${REPO_ROOT}/.env.ops.remote.example ${ENV_FILE}
+    cp ${REPO_ROOT}/.env.ops.environment.example ${ENV_FILE}
     # edit and fill in values"
   fi
 fi

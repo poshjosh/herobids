@@ -59,6 +59,11 @@ output "private_network_ip_range" {
   value       = var.enable_nomad ? hcloud_network.private[0].ip_range : null
 }
 
+output "private_subnet_ip_range" {
+  description = "CIDR range of the environment's private subnet"
+  value       = var.enable_nomad ? hcloud_network_subnet.private[0].ip_range : null
+}
+
 # ── Agent Node Pool ───────────────────────────────────────
 
 output "agent_node_count" {

@@ -251,14 +251,14 @@ resource "hcloud_server" "agent" {
   firewall_ids = var.enable_nomad ? [hcloud_firewall.agent[0].id] : []
 
   user_data = templatefile("${path.module}/cloud-init-nomad-client.yaml", {
-    server_name       = "${var.server_name}-agent-${count.index + 1}"
-    environment       = var.environment
-    nomad_server_addr = hcloud_server_network.control_plane[0].ip
-    node_pool         = var.server_name
-    node_index        = count.index
-    nomad_version     = var.nomad_version
-    private_subnet    = var.subnet_ip_range
-    redis_url         = var.redis_url
+    server_name              = "${var.server_name}-agent-${count.index + 1}"
+    environment              = var.environment
+    nomad_server_addr        = hcloud_server_network.control_plane[0].ip
+    node_pool                = var.server_name
+    node_index               = count.index
+    nomad_version            = var.nomad_version
+    private_subnet           = var.subnet_ip_range
+    control_plane_private_ip = hcloud_server_network.control_plane[0].ip
   })
 
   labels = {
@@ -272,11 +272,6 @@ resource "hcloud_server" "agent" {
   # Only prevent_destroy in production if explicitly protecting capacity.
   lifecycle {
     prevent_destroy = false
-
-    precondition {
-      condition     = length(var.redis_url) > 0
-      error_message = "redis_url must be set when agent nodes are provisioned. Agent nodes need it for health reporting to Redis."
-    }
   }
 }
 

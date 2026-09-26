@@ -4,7 +4,7 @@
 #
 # Copy this file to staging.tfvars/production.tfvars and fill in your values:
 #
-#   cp remote.tfvars.example staging.tfvars
+#   cp environment.tfvars.example staging.tfvars
 #
 # Then provision with:
 #   ./scripts/provision.sh --env staging --var-file staging.tfvars

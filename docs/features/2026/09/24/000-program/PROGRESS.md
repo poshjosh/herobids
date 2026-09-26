@@ -1,7 +1,7 @@
 # Program Progress Tracker — External Backend / Staging
 
 **Status:** live. **Read this immediately after ENTRYPOINT.md.**
-**Updated:** 2026-09-24
+**Updated:** 2026-09-25
 
 ## Current state (read first)
 
@@ -14,6 +14,10 @@ evaluation, and the Hetzner API returned no server named `herobids-staging`.
 DNS still resolves staging addresses, but their ownership is unconfirmed.
 HTTPS and SSH probes did not connect successfully. Do not provision, change
 DNS, or otherwise remediate until the operator explicitly approves a path.
+Before an approved Herobids apply, review the prepared Traderton infrastructure
+plan and code against the shared-network handoff in
+[the Step 2 plan](../003-traderton-staging-infrastructure-plan.md). This does
+not authorize provisioning or change the step order.
 
 ## Step status
 
@@ -22,7 +26,7 @@ Legend: ✅ done · 🔄 in progress · ⏸ paused · ⬜ not started · 🚫 bl
 | # | Step | Status | Notes / handoff |
 | --- | --- | --- | --- |
 | 1 | Recover Herobids staging | 🚫 | Read-only diagnosis complete; baseline remains unrestored. See `../002-staging-recovery-diagnostic-plan.md`; remediation is blocked pending explicit operator decision on re-provisioning |
-| 2 | Create Traderton staging infrastructure | ⬜ | |
+| 2 | Create Traderton staging infrastructure | 🔄 | Public/independent model adopted (2026-09-25): no Herobids network handoff; Traderton owns its VM + public HMAC boundary. Items 1-3,5 code-prepared and reviewed; item 4 apply blocked on explicit approval; production plan [004](../004-traderton-production-infrastructure-plan.md) |
 | 3 | Deploy Traderton boundary | ⬜ | |
 | 4 | Integrate Herobids with Traderton | ⬜ | |
 | 5 | Operational readiness and rollback | ⬜ | |

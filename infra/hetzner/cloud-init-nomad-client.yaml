@@ -9,7 +9,7 @@
 #   ${node_index}         — Zero-based index within the node pool
 #   ${nomad_version}      — Nomad version to install
 #   ${private_subnet}     — Private network subnet CIDR for UFW rules
-#   ${redis_url}          — Redis connection URL for health reporting
+#   ${control_plane_private_ip} — Control-plane private IP for Redis health reporting
 
 package_update: true
 package_upgrade: true
@@ -291,7 +291,7 @@ write_files:
       StandardOutput=journal
       StandardError=journal
       SyslogIdentifier=agent-node-health
-      Environment=REDIS_URL=${redis_url}
+      Environment=REDIS_URL=redis://${control_plane_private_ip}:6379
       Environment=AGENT_NODE_HEALTH_ENABLED=true
       NoNewPrivileges=true
       PrivateTmp=true

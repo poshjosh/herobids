@@ -70,7 +70,7 @@ ENV_FILE="$REPO_ROOT/.env.ops.${HEROBIDS_ENV}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Error: Env file not found: $ENV_FILE" >&2
-  echo "Create it with: cp ${REPO_ROOT}/.env.ops.remote.example ${ENV_FILE}" >&2
+  echo "Create it with: cp ${REPO_ROOT}/.env.ops.environment.example ${ENV_FILE}" >&2
   exit 1
 fi
 

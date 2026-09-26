@@ -18,6 +18,13 @@ the final legal or payment-provider boundary.
 
 ## Phase 1: Restore And Prove Staging
 
+**Preparation before either apply:** write and review the Step 2 Traderton
+infrastructure plan and its deployment code, including the attach-only network
+lookup, private boundary binding, and the Herobids-to-Traderton configuration
+handoff. This does not change the apply order: restore Herobids staging and its
+network first, then attach the independently provisioned Traderton staging VM.
+Approval for one apply does not authorize the other.
+
 1. **Recover Herobids staging.** Diagnose Terraform state, server lifecycle,
    DNS, TLS, SSH, Docker Compose, migrations, and container health. Restore
    the known Herobids baseline before adding Traderton.
@@ -32,6 +39,10 @@ the final legal or payment-provider boundary.
    `enable_nomad` and may be absent), designate a single owning Terraform state
    (so the consuming state cannot destroy it), and define attach-only
    consumption, firewall source rules, and destroy-lifecycle before any apply.
+   Check actual region/zone, subnet, non-overlapping CIDRs, network ID and
+   private IPs from the plan and eventual outputs; never infer them from
+   commented-out tfvars. Record how the boundary port is restricted to the
+   private path, including host, cloud firewall, and container publish rules.
 
 3. **Deploy the Traderton boundary.** Freeze and record the exact herobids +
    traderton release SHAs (D2) and deploy those immutable refs onto the new VM,
@@ -40,8 +51,10 @@ the final legal or payment-provider boundary.
    of the boundary.
 
 4. **Integrate Herobids with Traderton.** Configure the current Herobids
-   boundary URL and HMAC credentials. Validate account provisioning, read
-   tools, `submit_decision`, bot lifecycle, and failure mapping end to end.
+   boundary URL and HMAC credentials for both API and worker, using a private
+   reachable endpoint (not public `traderton.com` DNS by assumption). Validate
+   calls from the deployed containers, account provisioning, read tools,
+   `submit_decision`, bot lifecycle, and failure mapping end to end.
 
 5. **Operational readiness and rollback.** Measure latency, simulate boundary
    restart, verify health-gating and idempotent retry, record both deployed
@@ -144,6 +157,10 @@ the final legal or payment-provider boundary.
 
 ## Dependencies And Guardrails
 
+- Production gets its own Herobids-to-Traderton private path and Traderton
+   production deployment; it must not depend on the staging network or VM.
+   Confirm production CIDR and network ownership separately before a production
+   plan or apply; staging proof alone does not authorize production rollout.
 - Phases 1 and 2 can overlap where work does not mutate shared infrastructure.
 - **Step 9 (discovery) begins only after Phase 1 operational proof.** Phase 3
   implementation steps 10–16 begin only after Step 9 satisfies all six ADR 015

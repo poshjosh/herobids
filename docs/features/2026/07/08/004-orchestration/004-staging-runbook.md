@@ -98,7 +98,7 @@ If not already done, provision from scratch:
 cd infra/hetzner
 
 # Copy and edit the staging tfvars
-cp staging.tfvars.example staging.tfvars
+cp environment.tfvars.example staging.tfvars
 # Edit: fill in hcloud_token, ssh_public_key_path, deploy_ssh_private_key,
 #       git_repo_url, agent_node_count (set to 1 or more), SMTP vars if desired.
 

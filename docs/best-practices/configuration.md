@@ -166,7 +166,7 @@ The `.gitignore` enforces the mechanism:
 .env.*
 !.env.example
 !.env.ops.dev.example
-!.env.ops.remote.example
+!.env.ops.environment.example
 ```
 
 (ignore all real `.env*`, then explicitly un-ignore each `.example`).
@@ -197,7 +197,7 @@ rule below keeps it in lockstep with the code.
 After the trading extraction, the trading engine + venue adapters live in **traderton**,
 behind the REST boundary. So it is reasonable to ask why venue-account secrets like
 `HL_API_KEY` / `HL_SECRET` / `HL_WALLET_ADDRESS` still show up in herobids'
-`.env.ops.dev.example` / `.env.ops.remote.example`. Two distinct reasons — neither of which
+`.env.ops.dev.example` / `.env.ops.environment.example`. Two distinct reasons — neither of which
 means herobids *stores* or *owns* trading secrets:
 
 1. **Test-runner / operator-onboarding INPUTS, not runtime config.** The `.env.ops.*` files

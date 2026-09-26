@@ -203,8 +203,8 @@ infra/hetzner/
 ├── cloud-init.yaml                 # Control-plane first-boot provisioning (Docker, Nomad server, UFW, git clone)
 ├── cloud-init-nomad-client.yaml    # Agent node first-boot provisioning (Docker, Nomad client, UFW)
 ├── terraform.tfvars.example        # Template for terraform variables (single-file setup)
-├── staging.tfvars.example          # Staging-specific tfvars template
-├── remote.tfvars.example       # Production-specific tfvars template
+├── environment.tfvars.example          # Staging-specific tfvars template
+├── environment.tfvars.example       # Production-specific tfvars template
 ├── .env.backend.example            # Template for S3 backend + Nomad ACL credentials
 ├── deploy.sh                       # Full deploy orchestrator (env → push → seed → verify)
 ├── README.md                       # This file
@@ -346,7 +346,7 @@ Set `enable_nomad = false` in your `terraform.tfvars` to disable all Nomad resou
 ```bash
 # Staging with Nomad + 1 agent node
 cd infra/hetzner
-cp staging.tfvars.example staging.tfvars
+cp environment.tfvars.example staging.tfvars
 # Edit staging.tfvars: set agent_node_count = 1, fill in secrets
 ./scripts/provision.sh --env staging --var-file staging.tfvars
 
@@ -1040,7 +1040,7 @@ cp terraform.tfvars.example terraform.tfvars
 #   app_domain  = "staging.openaidom.com"
 
 # Option B: Use per-environment tfvars (recommended)
-cp staging.tfvars.example staging.tfvars
+cp environment.tfvars.example staging.tfvars
 # edit staging.tfvars — fill in secrets, agent_node_count = 1 for Nomad
 
 # 2. Provision the staging server
@@ -1077,7 +1077,7 @@ Use per-environment tfvars files directly. No symlinks needed.
 cd infra/hetzner
 
 # Provision staging
-cp staging.tfvars.example staging.tfvars
+cp environment.tfvars.example staging.tfvars
 # edit staging.tfvars with staging values
 ./scripts/provision.sh --env staging --var-file staging.tfvars
 

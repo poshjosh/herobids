@@ -6,7 +6,7 @@
 # the per-environment templates which include environment-specific
 # defaults and comments:
 #
-#   Staging:     cp staging.tfvars.example staging.tfvars
+#   Staging:     cp environment.tfvars.example staging.tfvars
 #   Production:  cp production.tfvars.example production.tfvars
 #
 # Then provision with:

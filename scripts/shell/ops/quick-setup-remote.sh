@@ -36,11 +36,11 @@
 #   scripts/shell/ops/quick-setup-remote.sh --help
 #
 # Setup:
-#   cp .env.ops.remote.example .env.ops.prod
+#   cp .env.ops.environment.example .env.ops.prod
 #   # fill in the variables, then:
 #   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod
 #
-# Required env vars — see .env.ops.remote.example for the full list:
+# Required env vars — see .env.ops.environment.example for the full list:
 #   API_BASE_URL, AUTH_EMAIL, AUTH_PASSWORD, SETUP_DISPLAY_NAME,
 #   TELEGRAM_CHAT_ID, venue secrets (HL_*, BYBIT_*, ONEINCH_*)
 
@@ -260,7 +260,7 @@ elif [[ -z "$ENV_FILE" ]]; then
   if [[ ! -f "$ENV_FILE" ]]; then
     die "No --env-file specified and default ${ENV_FILE} not found.
   Create one:
-    cp ${REPO_ROOT}/.env.ops.remote.example ${ENV_FILE}
+    cp ${REPO_ROOT}/.env.ops.environment.example ${ENV_FILE}
     # edit and fill in values"
   fi
 elif [[ ! -f "$ENV_FILE" ]]; then
