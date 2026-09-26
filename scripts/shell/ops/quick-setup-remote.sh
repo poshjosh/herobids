@@ -522,7 +522,7 @@ build_skill_payload_from_file() {
   local skill_file="$1"
   local seed_label="${2:-prod-setup}"
 
-  local name description tags_json tools_json instructions promptTemplate
+  local name description tags_json tools_json capability_families_json instructions promptTemplate
   name="$(parse_frontmatter_field "$skill_file" "name")"
   description="$(parse_frontmatter_block_scalar "$skill_file" "description")"
   tags_json="$(parse_frontmatter_list "$skill_file" "tags")"
