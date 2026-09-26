@@ -41,11 +41,12 @@ Nomad's Docker driver expects, via the JSON job API:
   HCL `labels { key = "value" }` blocks. NOT a flat map, and NOT a list of
   `"k=v"` strings (the first attempt — that produced
   `element 0: map of string required`).
-- `Config.env`: a map `{ "KEY": "value" }` (correct as JSON).
+- `env`: a **task-level `Env`** map (sibling of `Config`), NOT inside the docker
+  driver `config` block. Placing `env` inside `config` produced
+  `Invalid label: No argument or block type is named "env"`.
 
-Because `labels` was first a JS object, then a `string[]`, the submitted job spec
-failed validation. The whole `Config` block fails HCL parse, with the nested
-`env` key reported as an unrelated "Invalid label".
+Both defects were latent: `labels` was first a JS object, then `string[]`; and
+`env` was nested inside `Config`. Each failed client-side validation.
 
 This is a **latent code bug** in the Nomad adapter. It was never exercised
 because every prior layer (private NIC down → `__PRIVATE_IP__` → stale ACL →
@@ -54,20 +55,20 @@ ever got placed and validated on a client node.
 
 ## The fix
 
-Convert `labels` to a list of maps: `[{ ...config.labels, 'herobids.managed-by': 'nomad' }]`,
-matching Nomad's Docker driver contract (`[]map[string]string`). `env` already
-maps correctly to a JSON object, so it needs no change.
+1. `labels` → a list of maps: `[{ ...config.labels, 'herobids.managed-by': 'nomad' }]`.
+2. `env` → move out of `Config` to the task-level `Env` field.
 
 ## Files
 
-- `apps/worker/src/agents/nomad-runtime-adapter.ts` — `NomadJobSpec.Config.labels`
-  type + `buildNomadJobSpec` label serialisation.
+- `apps/worker/src/agents/nomad-runtime-adapter.ts` — `NomadJobSpec` Task `Env`
+  + `Config.labels` type + `buildNomadJobSpec` serialisation.
+- `apps/worker/src/agents/nomad-runtime-adapter.test.ts` — NEW (3 tests).
 
 ## Notes
 
-- No test currently covers the Nomad job spec shape (`nomad-runtime-adapter.ts`
-  has no `.test.ts`). A focused unit test asserting `labels` is `string[]` of
-  `k=v` form should be added to prevent regression.
+- No test previously covered the Nomad job spec shape (`nomad-runtime-adapter.ts`
+  had no `.test.ts`). Added coverage asserting `labels` is `[]map[string]string`
+  and `env` is task-level `Env`, not in `Config`.
 
 ## Related
 

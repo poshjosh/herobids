@@ -59,11 +59,13 @@ describe('buildNomadJobSpec', () => {
     });
   });
 
-  it('keeps env as a plain string→string map', () => {
+  it('keeps env at the TASK level (Env), not inside the docker Config', () => {
     const spec = buildNomadJobSpec(baseLaunch, baseAdapter);
-    const config = spec.Job.TaskGroups[0]!.Tasks[0]!.Config;
+    const task = spec.Job.TaskGroups[0]!.Tasks[0]!;
 
-    expect(config.env).toEqual({ FOO: 'bar', BAZ: 'qux' });
+    expect(task.Env).toEqual({ FOO: 'bar', BAZ: 'qux' });
+    // The docker driver config block must NOT contain an `env` key.
+    expect(task.Config).not.toHaveProperty('env');
   });
 
   it('uses the registry-qualified image and the agent namespace', () => {

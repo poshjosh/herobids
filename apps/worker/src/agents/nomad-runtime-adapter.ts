@@ -159,9 +159,12 @@ export interface NomadJobSpec {
       Tasks: Array<{
         Name: string;
         Driver: 'docker';
+        // Env is a TASK-level attribute (sibling to Config), NOT part of the
+        // docker driver's config block. Nomad rejects `env` inside `config`
+        // ("No argument or block type is named env").
+        Env?: Record<string, string>;
         Config: {
           image: string;
-          env: Record<string, string>;
           labels: Array<Record<string, string>>;
           network_mode?: string;
           pids_limit?: number;
@@ -238,9 +241,9 @@ export function buildNomadJobSpec(
             {
               Name: 'agent',
               Driver: 'docker',
+              Env: config.env,
               Config: {
                 image: config.image,
-                env: config.env,
                 labels: dockerLabels,
                 // network_mode only included when set
                 ...(adapterConfig.dockerNetwork ? { network_mode: adapterConfig.dockerNetwork } : {}),

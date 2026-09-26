@@ -35,14 +35,19 @@ placement).
 
 ## Fix
 
-Serialize `labels` as a list of maps (`[{ ...labels, 'herobids.managed-by': 'nomad' }]`)
-and change `NomadJobSpec.Config.labels` type to `Array<Record<string,string>>`.
-`env` stays a string→string map (correct for the JSON API). Added a regression
-test asserting the list-of-maps shape.
+Two corrections to `buildNomadJobSpec` in `nomad-runtime-adapter.ts`:
 
-> Note: the first iteration used `[]string` (`"k=v"`) which Nomad rejected with
-> `element 0: map of string required`; Nomad v1.9 docker driver wants
-> `[]map[string]string`.
+1. `labels` → list of maps `[{ ...labels, 'herobids.managed-by': 'nomad' }]`
+   (Nomad v1.9 docker driver wants `[]map[string]string`, NOT a flat map and NOT
+   `[]string` `"k=v"`).
+2. `env` → moved out of `Config` to a task-level `Env` field (Nomad rejects `env`
+   inside the docker `config` block).
+
+Added a regression test asserting both shapes.
+
+> Note: the first `labels` iteration used `[]string` (`"k=v"`) and was rejected
+> with `element 0: map of string required`; the second leftover error was `env`
+> inside `Config` → moved to task-level `Env`.
 
 ### Files
 
