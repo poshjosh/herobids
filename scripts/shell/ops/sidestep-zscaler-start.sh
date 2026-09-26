@@ -49,6 +49,7 @@ default_identity_for_target() {
     *167.233.213.107) printf '%s' "$HOME/.ssh/herobids_deploy_key_prod" ;;
     *128.140.55.192)  printf '%s' "$HOME/.ssh/herobids_deploy_key" ;;
     *78.46.192.37)    printf '%s' "$HOME/.ssh/herobids_deploy_key" ;;
+    *138.199.172.202) printf '%s' "$HOME/.ssh/herobids_deploy_key" ;;
     *) printf '' ;;
   esac
 }

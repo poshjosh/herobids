@@ -13,8 +13,8 @@
 # Two primary execution modes:
 #
 #   Local (pointing at a remote API):
-#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod
-#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod --mode guided
+#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.production
+#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.production --mode guided
 #
 #   Remote (pipe over SSH, run against local docker compose API):
 #     ssh root@<server-ip> 'bash -s' < scripts/shell/ops/quick-setup-remote.sh \
@@ -26,13 +26,13 @@
 #     ENV
 #
 #   Post-deploy (run as a deploy.sh step):
-#     scripts/shell/ops/quick-setup-remote.sh --ssh <server-ip> --env-file .env.ops.prod
+#     scripts/shell/ops/quick-setup-remote.sh --ssh <server-ip> --env-file .env.ops.production
 #
 # Usage:
-#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod
-#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod --mode guided
-#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod --yes
-#   scripts/shell/ops/quick-setup-remote.sh --ssh 1.2.3.4 --env-file .env.ops.prod
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.production
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.production --mode guided
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.production --yes
+#   scripts/shell/ops/quick-setup-remote.sh --ssh 1.2.3.4 --env-file .env.ops.production
 #   scripts/shell/ops/quick-setup-remote.sh --help
 #
 # Setup:
@@ -527,6 +527,7 @@ build_skill_payload_from_file() {
   description="$(parse_frontmatter_block_scalar "$skill_file" "description")"
   tags_json="$(parse_frontmatter_list "$skill_file" "tags")"
   tools_json="$(parse_frontmatter_list "$skill_file" "requiredTools")"
+  capability_families_json="$(parse_frontmatter_list "$skill_file" "capabilityFamilies")"
   instructions="$(parse_skill_body "$skill_file")"
 
   if [[ -z "$name" ]]; then
@@ -544,6 +545,7 @@ build_skill_payload_from_file() {
     --arg promptTemplate "$promptTemplate" \
     --argjson tags "$tags_json" \
     --argjson requiredTools "$tools_json" \
+    --argjson capabilityFamilies "$capability_families_json" \
     --arg changeSummary "Seeded by ${seed_label}" \
     '{
       name: $name,
@@ -551,6 +553,7 @@ build_skill_payload_from_file() {
       instructions: $instructions,
       promptTemplate: (if $promptTemplate == "" then null else $promptTemplate end),
       requiredTools: $requiredTools,
+      capabilityFamilies: $capabilityFamilies,
       publicationStatus: "draft",
       tags: $tags,
       changeSummary: $changeSummary

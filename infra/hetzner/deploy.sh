@@ -12,8 +12,8 @@
 #   infra/hetzner/deploy.sh [--env <staging|production>] [--env-file <path>] [--backend-env-file <path>] [<server-ip>]
 #   infra/hetzner/deploy.sh                                                                # auto-detect IP, prompt for .env
 #   infra/hetzner/deploy.sh --env staging --env-file .env.staging --backend-env-file .env.backend
-#   infra/hetzner/deploy.sh --env-file infra/hetzner/.env.prod 1.2.3.4                     # explicit IP + .env
-#   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=secret ./deploy.sh --env-file infra/hetzner/.env.prod
+#   infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.production 1.2.3.4 # explicit IP + .env
+#   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=secret ./deploy.sh --env-file infra/hetzner/.env.production
 #
 # Environment:
 #   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
@@ -27,9 +27,8 @@ set -euo pipefail
 
 # ─── Resolve directories ─────────────────────────────────────────────────────
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
-TF_DIR="${SCRIPT_DIR}"
+TF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="${TF_DIR}/scripts"
 source "${SCRIPTS_DIR}/_ssh_opts.sh"
 
 # ─── Parse environment flag first ────────────────────────────────────────────
@@ -41,7 +40,7 @@ shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 ENV_FILE=""
 SERVER_IP=""
-BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${SCRIPT_DIR}/../.env.backend}"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${TF_DIR}/.env.backend}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

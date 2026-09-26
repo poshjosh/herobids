@@ -5,15 +5,21 @@ For the initial one-time setup, see: infra/hetzner/docs/setup.md
 
 ## Steps
 
+### Provision the server (If need)
+
+```sh
+./scripts/provision.sh --env staging --var-file staging.tfvars
+```
+
 ### Upload staging env file
 
 ```sh
-./scripts/setup-env.sh --env staging --file .env.staging
+./scripts/setup-env.sh --env staging <server_ipv4> --file .env.staging
 ```
 
 ### Deploy to staging
 ```sh
-./deploy.sh --env staging --env-file .env.staging
+./deploy.sh --env staging <server_ipv4> --env-file .env.staging
 ```
 
 ### Seed staging admin (if needed)

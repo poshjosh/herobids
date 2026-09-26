@@ -6,14 +6,14 @@
 # (API keys, JWT secret, etc.) and must never be world-readable.
 #
 # Naming convention for env files:
-#   .env.staging  → staging environment secrets
-#   .env.prod     → production environment secrets
+#   .env.staging     → staging environment secrets
+#   .env.production  → production environment secrets
 #
 # Usage:
 #   infra/hetzner/scripts/setup-env.sh [--env <staging|production>] [<server-ip>] --file <path>
 #   infra/hetzner/scripts/setup-env.sh --env staging --file infra/hetzner/.env.staging
-#   infra/hetzner/scripts/setup-env.sh 1.2.3.4 --file infra/hetzner/.env.prod           # explicit IP
-#   infra/hetzner/scripts/setup-env.sh                                                  # interactive prompt
+#   infra/hetzner/scripts/setup-env.sh --env staging 1.2.3.4 --file infra/hetzner/.env.production  # explicit IP
+#   infra/hetzner/scripts/setup-env.sh    # interactive prompt
 #
 # Environment:
 #   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
