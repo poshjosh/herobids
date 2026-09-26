@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- docs/bug-reports/2026/09/26/001-worker-cannot-reach-nomad-ufw-docker-bridge.md
+- docs/bug-reports/2026/09/26/002-agent-image-not-distributed-to-nomad-client-node.md
+
 ### Changed
 
 - Recorded the read-only staging recovery diagnosis; restoration is blocked pending an operator decision on re-provisioning.

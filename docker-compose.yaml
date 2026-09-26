@@ -208,6 +208,17 @@ services:
         max-size: "10m"
         max-file: "3"
 
+networks:
+  default:
+    # Pin the bridge subnet so firewall (UFW) rules targeting the Docker bridge
+    # remain deterministic across re-provisions. Docker would otherwise auto-pick
+    # a /16 (e.g. 172.18 / 172.19 / …) and any allow rule keyed on that range
+    # would silently stop matching. Keep this in sync with the UFW rules in
+    # infra/hetzner/cloud-init.yaml (ports 4646/4647/4648 from 172.18.0.0/16).
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+
 volumes:
   pgdata:
   evaldata:

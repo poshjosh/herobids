@@ -558,9 +558,14 @@ This feature is complete when all of the following are true:
 - `buildNomadJobSpec` uses `adapterConfig.dockerNetwork` instead of `config.network` from the port contract.
 - **Fix:** Wire the port's network field or document why adapter-level config is used.
 
-### [Phase 4] agentImage in NomadRuntimeAdapterConfig is dead config (LOW)
+### [Phase 4] agentImage in NomadRuntimeAdapterConfig is dead config (LOW) — RESOLVED 2026-09-26
 - Adapter stores `agentImage` but `buildNomadJobSpec` reads `config.image` from `RuntimeLaunchConfig`. Marked `@deprecated`.
 - **Fix:** Either remove the field or use it as fallback when `config.image` is empty.
+- **Resolution:** the launcher now accepts `AgentRuntimeLauncherConfig.agentImage`
+  and falls back to it (`config.image ?? this.agentImage ?? 'herobids-agent:latest'`),
+  wired from `NOMAD_AGENT_IMAGE ?? nomad.agentImage` in `index.ts`. The default is
+  now registry-qualified `ghcr.io/poshjosh/herobids-agent:latest` (see
+  `docs/features/2026/09/26/001-ghcr-agent-image-distribution/`).
 
 ### [Phase 7] list_eligible_agent_nodes doesn't exclude control-plane client node (MEDIUM)
 - `scale-common.sh:list_eligible_agent_nodes()` filters Nomad nodes by eligibility but doesn't exclude the Nomad server's own client node (the server runs a client on the control-plane host per `cloud-init.yaml`). If that node ever appears idle, the scale-in routine could theoretically drain the control-plane host.

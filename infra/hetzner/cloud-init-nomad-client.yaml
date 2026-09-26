@@ -326,6 +326,19 @@ runcmd:
   - systemctl enable docker
   - systemctl start docker
 
+  # ── GHCR login (pull the private herobids-agent image) ──
+  # Nomad's docker driver pulls `ghcr.io/poshjosh/herobids-agent:latest` when
+  # placing agent jobs. Without credentials the client node cannot pull the
+  # private package and agent tasks fail with "image pull" errors. The token is
+  # a read:packages-only credential injected via Terraform (sensitive).
+  - |
+    if [ -n "${ghcr_username}" ] && [ -n "${ghcr_token}" ]; then
+      printf '%s' "${ghcr_token}" | docker login ghcr.io -u "${ghcr_username}" --password-stdin \
+        || logger -t cloud-init "WARNING: ghcr.io login failed — agent image pulls will fail"
+    else
+      logger -t cloud-init "INFO: ghcr_username/ghcr_token not set — skipping ghcr.io login"
+    fi
+
   # ── Install Nomad ────────────────────────────────────────
   - wget -O- https://apt.releases.hashicorp.com/gpg 2>/dev/null | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
   - . /etc/os-release && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $VERSION_CODENAME main" > /etc/apt/sources.list.d/hashicorp.list

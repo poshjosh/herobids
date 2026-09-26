@@ -157,7 +157,7 @@ echo ""
 
 # ─── Step 1: Initial deploy ──────────────────────────────────────────────────
 
-echo "── Step 1/6: Initial deploy ──"
+echo "── Step 1/7: Initial deploy ──"
 echo "Deploying app + autoscale credentials to ${SERVER_IP}..."
 echo ""
 
@@ -171,7 +171,7 @@ echo ""
 
 # ─── Step 2: Wait for Nomad server ───────────────────────────────────────────
 
-echo "── Step 2/6: Wait for Nomad server ──"
+echo "── Step 2/7: Wait for Nomad server ──"
 echo "Waiting for Nomad API to be healthy..."
 
 NOMAD_HEALTHY=false
@@ -195,7 +195,7 @@ echo ""
 
 # ─── Step 3: Bootstrap Nomad ACLs ────────────────────────────────────────────
 
-echo "── Step 3/6: Bootstrap Nomad ACLs ──"
+echo "── Step 3/7: Bootstrap Nomad ACLs ──"
 
 if [[ -n "${NOMAD_ACL_TOKEN:-}" ]]; then
   echo "NOMAD_ACL_TOKEN is already set in ${BACKEND_ENV_FILE} — skipping bootstrap."
@@ -233,7 +233,7 @@ else
 
   # ─── Step 4: Save token to files ─────────────────────────────────────────
 
-  echo "── Step 4/6: Save token to config files ──"
+  echo "── Step 4/7: Save token to config files ──"
 
   # Append to .env.backend
   if grep -q '^NOMAD_ACL_TOKEN=' "${BACKEND_ENV_FILE}"; then
@@ -270,9 +270,26 @@ else
   echo ""
 fi
 
+# ─── Step 4b/7: Ensure the agent namespace exists ─────────────────────────────
+
+# The worker submits agent jobs into the 'herobids-agents' Nomad namespace
+# (config/default.yaml → nomad.namespace). Nothing in the provisioning path
+# creates it, so on a freshly provisioned cluster the namespace is absent and
+# every agent launch fails with a 500 "job ... in nonexistent namespace".
+# `nomad namespace apply` is idempotent, so this is safe to run on every setup.
+NOMAD_AGENT_NAMESPACE="${NOMAD_AGENT_NAMESPACE:-herobids-agents}"
+echo "── Step 4b/7: Ensure agent namespace ──"
+if ssh ${SSH_OPTS} "root@${SERVER_IP}" "NOMAD_TOKEN=${ACL_TOKEN} nomad namespace apply -description 'Agent runtime isolation' ${NOMAD_AGENT_NAMESPACE}" >/dev/null; then
+  echo "Nomad namespace '${NOMAD_AGENT_NAMESPACE}' ensured."
+else
+  echo "ERROR: Failed to create Nomad namespace '${NOMAD_AGENT_NAMESPACE}'." >&2
+  exit 1
+fi
+echo ""
+
 # ─── Step 5: Redeploy with token ─────────────────────────────────────────────
 
-echo "── Step 5/6: Redeploy with ACL token ──"
+echo "── Step 5/7: Redeploy with ACL token ──"
 echo "Redeploying to push the token to the server..."
 echo ""
 
@@ -286,7 +303,7 @@ echo ""
 
 # ─── Step 6: Verify ──────────────────────────────────────────────────────────
 
-echo "── Step 6/6: Verify ──"
+echo "── Step 7/7: Verify ──"
 
 ACL_TOKEN="${NOMAD_ACL_TOKEN:-${ACL_TOKEN:-}}"
 

@@ -477,6 +477,14 @@ runcmd:
       ufw allow from ${private_subnet} to any port 4646 proto tcp
       ufw allow from ${private_subnet} to any port 4647 proto tcp
       ufw allow from ${private_subnet} to any port 4648 proto tcp
+      # Docker bridge subnet — the worker/API containers live on the local Docker
+      # bridge and reach Nomad over it (they are NOT on the Hetzner private net).
+      # UFW defaults to deny routed traffic, so without this their Nomad calls are
+      # dropped. Subnet is pinned in docker-compose.yaml (networks.default.ipam);
+      # keep these rules in sync with that value.
+      ufw allow from 172.18.0.0/16 to any port 4646 proto tcp
+      ufw allow from 172.18.0.0/16 to any port 4647 proto tcp
+      ufw allow from 172.18.0.0/16 to any port 4648 proto tcp
 
       # Enable and start Nomad
       # Resolve the private network IP (from the Hetzner private network, not Docker's bridge)

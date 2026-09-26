@@ -259,6 +259,8 @@ resource "hcloud_server" "agent" {
     nomad_version            = var.nomad_version
     private_subnet           = var.subnet_ip_range
     control_plane_private_ip = hcloud_server_network.control_plane[0].ip
+    ghcr_username            = var.ghcr_username
+    ghcr_token               = var.ghcr_token
   })
 
   labels = {

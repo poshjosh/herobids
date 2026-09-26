@@ -1536,7 +1536,7 @@ export const NomadConfigSchema = z.object({
   /** Nomad namespace for agent jobs (isolates agent workloads from other Nomad jobs). */
   namespace: z.string().default('herobids-agents'),
   /** Agent Docker image used in the Nomad task config. Override: NOMAD_AGENT_IMAGE */
-  agentImage: z.string().default('herobids-agent:latest'),
+  agentImage: z.string().default('ghcr.io/poshjosh/herobids-agent:latest'),
   /** Docker network for agent tasks. Leave empty for Nomad's default bridge network. */
   dockerNetwork: z.string().nullable().optional(),
   /**

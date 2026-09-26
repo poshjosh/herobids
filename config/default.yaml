@@ -373,7 +373,7 @@ nomad:
   datacenters:
     - dc1
   namespace: herobids-agents             # namespace for agent job isolation
-  agentImage: herobids-agent:latest      # Docker image for agent tasks; override: NOMAD_AGENT_IMAGE
+  agentImage: ghcr.io/poshjosh/herobids-agent:latest  # Docker image for agent tasks; override: NOMAD_AGENT_IMAGE
   dockerNetwork:                         # Docker network for agent tasks (empty = Nomad default bridge)
   terminationPollIntervalMs: 30000       # how often to poll Nomad for agent allocation crashes (ms)
   requestTimeoutMs: 10000                # Nomad HTTP API request timeout (ms)

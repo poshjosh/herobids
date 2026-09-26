@@ -102,6 +102,13 @@ export interface AgentRuntimeLauncherConfig {
    */
   defaultTier?: string;
   /**
+   * Default agent runtime image used when the caller does not pass an
+   * explicit `image` at launch time. Wired from operator config
+   * (`nomad.agentImage` / `NOMAD_AGENT_IMAGE` — registry-qualified for Nomad).
+   * Falls back to the local `herobids-agent:latest` when absent.
+   */
+  agentImage?: string;
+  /**
    * Runtime mode — 'docker' uses DockerAgentManager (production),
    * 'stub' keeps the in-memory fake (local dev without Docker).
    * Reads AGENT_RUNTIME_MODE env var. Default: 'stub'.
@@ -180,6 +187,7 @@ export class AgentRuntimeLauncher {
   private readonly defaultResources: RuntimeResourceProfile;
   private readonly resourceProfiles: Record<string, RuntimeResourceProfile>;
   private readonly defaultTier?: string;
+  private readonly agentImage?: string;
   private readonly documentsRepo?: AgentDocumentsRepository;
   private readonly documentStore?: DocumentStore;
   private readonly documentMaterializer?: RuntimeDocumentMaterializer;
@@ -192,6 +200,7 @@ export class AgentRuntimeLauncher {
     this.envConfig = config?.envConfig;
     this.resourceProfiles = config?.resourceProfiles ?? {};
     this.defaultTier = config?.defaultTier;
+    this.agentImage = config?.agentImage;
     this.defaultResources = config?.defaultResources ?? {
       memoryLimitMb: 0,
       cpuShares: 0,
@@ -363,7 +372,7 @@ export class AgentRuntimeLauncher {
     const portResult = await this.port.launch({
       agentId: config.agentId,
       sessionId: config.sessionId,
-      image: config.image ?? 'herobids-agent:latest',
+      image: config.image ?? this.agentImage ?? 'herobids-agent:latest',
       env,
       labels,
       resources,

@@ -108,8 +108,12 @@ app_domain = "staging.openaidom.com"  # or "openaidom.com"
 # alert_smtp_user                    = ""    # SMTP auth username (sensitive)
 # alert_smtp_pass                    = ""    # SMTP auth password (sensitive)
 
+# ── GHCR agent image pull credentials ─────────────────────
+# ghcr_username                       = ""    # GitHub owner used to `docker login ghcr.io` on agent nodes
+# ghcr_token                          = ""    # GitHub token with read:packages scope (sensitive — never commit)
+
 # ─────────────────────────────────────────────────────────────
-# Sensitive variables (hcloud_token, deploy_ssh_private_key)
+# Sensitive variables (hcloud_token, deploy_ssh_private_key, ghcr_token)
 # are marked sensitive in Terraform and will not appear in
 # plan/apply output. Store staging.tfvars/production.tfvars securely.
 # ─────────────────────────────────────────────────────────────

@@ -433,3 +433,18 @@ variable "alert_smtp_pass" {
   sensitive   = true
   default     = ""
 }
+
+# ── GHCR agent image pull credentials ──────────────────────
+
+variable "ghcr_username" {
+  type        = string
+  description = "GitHub username/owner used to `docker login ghcr.io` on agent nodes so they can pull the private herobids-agent image."
+  default     = ""
+}
+
+variable "ghcr_token" {
+  type        = string
+  description = "GitHub token with read:packages scope for the herobids-agent GHCR package. Injected into agent nodes for image pulls. Never commit."
+  sensitive   = true
+  default     = ""
+}
