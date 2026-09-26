@@ -9,7 +9,7 @@
 #   infra/hetzner/scripts/smoke-test.sh [--env <staging|production>] [<server-ip>]
 #   infra/hetzner/scripts/smoke-test.sh --env staging
 #   infra/hetzner/scripts/smoke-test.sh --env production
-#   infra/hetzner/scripts/smoke-test.sh 1.2.3.4          # explicit IP, defaults to production
+#   infra/hetzner/scripts/smoke-test.sh --env staging 1.2.3.4  # explicit IP, defaults to production
 #
 # Environment:
 #   HEROBIDS_ENV   Deployment environment: staging | production (default: production).

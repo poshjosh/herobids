@@ -102,3 +102,9 @@ the registry-qualified name is silently ignored.
   (documented follow-up, mirrors traderton's `wait-for-build.sh`).
 - The `ghcr_token` variable is `sensitive`; it must never be committed to tfvars
   (tfvars are gitignored) and should be a `read:packages`-only PAT or deploy-use token.
+- **Deploy race (observed 2026-09-27):** the `networks.default.ipam` pin added in
+  bug report 001 makes `docker compose up` recreate `herobids_default` on every
+  deploy (the `ipam` block is a network-inspect change), racing container
+  recreate → `Error response from daemon: removal of container ... already in
+  progress`. Benign (subnet == the prior value). Re-run `deploy.sh` to complete;
+  optional hardening: `docker compose down` before `up` in `push.sh`.

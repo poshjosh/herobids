@@ -97,6 +97,36 @@ write_files:
         }
       }
 
+  - path: /etc/systemd/system/nomad-private-ip.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Resolve Hetzner private IP and patch Nomad advertise before start
+      # Runs on EVERY boot (not just first boot) so a NIC that only comes up
+      # after a reboot still gets its private IP substituted into nomad.hcl.
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      Environment=PRIVATE_SUBNET="${private_subnet}"
+      ExecStart=/bin/sh -c 'set -eu; \
+        SUBNET_PREFIX="$(echo "$PRIVATE_SUBNET" | cut -d. -f1-2)"; \
+        PRIVATE_IP="$(ip -4 addr show | grep -oP "$SUBNET_PREFIX\.\d+\.\d+" | head -1 || true)"; \
+        if [ -n "$PRIVATE_IP" ] && grep -q "__PRIVATE_IP__" /etc/nomad.d/nomad.hcl 2>/dev/null; then \
+          sed -i "s/__PRIVATE_IP__/$PRIVATE_IP/g" /etc/nomad.d/nomad.hcl; \
+          echo "Patched nomad.hcl advertise to $PRIVATE_IP"; \
+        elif [ -z "$PRIVATE_IP" ]; then \
+          echo "WARNING: private IP not yet available (subnet $PRIVATE_SUBNET); will retry next boot"; \
+          exit 1; \
+        else \
+          echo "nomad.hcl already patched (no __PRIVATE_IP__ placeholder)"; \
+        fi'
+
+      [Install]
+      WantedBy=multi-user.target
+
   - path: /etc/systemd/system/nomad.service
     permissions: '0644'
     content: |
@@ -104,7 +134,8 @@ write_files:
       Description=Nomad
       Documentation=https://developer.hashicorp.com/nomad/docs
       Wants=network-online.target
-      After=network-online.target
+      After=network-online.target nomad-private-ip.service
+      Requires=nomad-private-ip.service
 
       [Service]
       ExecStart=/usr/bin/nomad agent -config=/etc/nomad.d/nomad.hcl
@@ -487,20 +518,17 @@ runcmd:
       ufw allow from 172.18.0.0/16 to any port 4648 proto tcp
 
       # Enable and start Nomad
-      # Resolve the private network IP (from the Hetzner private network, not Docker's bridge)
-      # and patch the Nomad config before starting. GetPrivateIP in Nomad's Go templates
-      # picks Docker's docker0 (172.17.x.x) over the Hetzner private interface.
-      # ${private_subnet} is the Terraform-configured subnet CIDR (e.g. "10.0.0.0/24" for
-      # staging, "10.1.0.0/24" for production). We extract the first two octets to build a
-      # regex that matches the correct private network range.
-      SUBNET_PREFIX=$(echo "${private_subnet}" | cut -d'.' -f1-2)
-      PRIVATE_IP=$(ip -4 addr show | grep -oP "$SUBNET_PREFIX\.\d+\.\d+" | head -1)
-      if [ -n "$PRIVATE_IP" ]; then
-        sed -i "s/__PRIVATE_IP__/$PRIVATE_IP/g" /etc/nomad.d/nomad.hcl
-      else
-        logger -t cloud-init "WARNING: Could not resolve private network IP (subnet: ${private_subnet}) — Nomad advertise will use placeholder"
-      fi
+      # The private-network IP substitution is handled by the per-boot
+      # nomad-private-ip.service (ExecStartPre dependency), NOT by this one-shot
+      # runcmd step — cloud-init runcmd runs only on first boot, and the NIC is
+      # not always up by then. The unit re-resolves on every boot, so a reboot
+      # (or late-attached NIC) self-heals without manual sed.
+      systemctl enable nomad-private-ip.service
       systemctl enable nomad
+      # Re-run substitution now (best effort) so first boot usually works, then
+      # start Nomad; if the NIC is still down, nomad-private-ip will ExitStart
+      # fail and nomad.service's Requires will hold it until it's ready.
+      systemctl start nomad-private-ip.service || true
       systemctl start nomad
 
       # Enable autoscale timer (service runs after repo is cloned and scripts exist)

@@ -143,7 +143,7 @@ function toJobId(runtimeId: string): string {
   return runtimeId.startsWith(AGENT_JOB_PREFIX) ? runtimeId : agentJobId(runtimeId);
 }
 
-interface NomadJobSpec {
+export interface NomadJobSpec {
   Job: {
     ID: string;
     Name: string;
@@ -162,7 +162,7 @@ interface NomadJobSpec {
         Config: {
           image: string;
           env: Record<string, string>;
-          labels: Record<string, string>;
+          labels: string[];
           network_mode?: string;
           pids_limit?: number;
         };
@@ -189,7 +189,7 @@ interface NomadJobSpec {
   };
 }
 
-function buildNomadJobSpec(
+export function buildNomadJobSpec(
   config: RuntimeLaunchConfig,
   adapterConfig: NomadRuntimeAdapterConfig,
 ): NomadJobSpec {
@@ -207,11 +207,14 @@ function buildNomadJobSpec(
   const cpuShares = resources.cpuShares ?? adapterConfig.defaultResources.cpuShares;
   const maxProcesses = resources.maxProcesses ?? adapterConfig.defaultResources.maxProcesses;
 
-  // Build Nomad-flavoured labels (Nomad uses 'meta' for job-level, Docker labels for task-level)
-  const dockerLabels: Record<string, string> = {
+  // Build Nomad-flavoured labels. Nomad's docker driver expects `labels` as a
+  // list of "key=value" strings (NOT a map) — a map is rejected at task
+  // validation ("Inappropriate value for attribute labels: list of map of
+  // string required"). Job-level metadata stays in `Meta` (map) above/below.
+  const dockerLabels: string[] = Object.entries({
     ...config.labels,
     'herobids.managed-by': 'nomad',
-  };
+  }).map(([k, v]) => `${k}=${v}`);
 
   const jobMeta: Record<string, string> = {
     'herobids.role': 'agent',
