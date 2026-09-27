@@ -26,6 +26,19 @@
 
 set -euo pipefail
 
+# ─── Logging helpers (defined FIRST — referenced by early arg/input guards) ──
+
+log_info()    { echo "[INFO]  $*"; }
+log_ok()      { echo "[OK]    $*"; }
+log_warn()    { echo "[WARN]  $*" >&2; }
+log_error()   { echo "[ERROR] $*" >&2; }
+log_section() { echo; echo "=== $* ==="; }
+
+die() {
+  log_error "$*"
+  exit 1
+}
+
 # ─── Resolve directories ─────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -66,17 +79,11 @@ TINTEL_AGENT_NAME="tintel"
 TINTEL_AGENT_PROMPT="Grow this portfolio aggressively"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
+# (logging helpers + die() are defined at the top of the file — see above)
 
-log_info()    { echo "[INFO]  $*"; }
-log_ok()      { echo "[OK]    $*"; }
-log_warn()    { echo "[WARN]  $*" >&2; }
-log_error()   { echo "[ERROR] $*" >&2; }
-log_section() { echo; echo "=== $* ==="; }
-
-die() {
-  log_error "$*"
-  exit 1
-}
+# ═══════════════════════════════════════════════════════════════════════════════
+# Step 1 — Authenticate
+# ═══════════════════════════════════════════════════════════════════════════════
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
