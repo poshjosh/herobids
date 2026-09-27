@@ -206,9 +206,12 @@ api_call() {
   local path="$2"
   local body="${3:-}"
 
-  local tmp_file
   tmp_file="$(mktemp)"
-  # Ensure temp file is removed on exit even if the script aborts
+  # Ensure temp file is removed on exit even if the script aborts.
+  # NOTE: tmp_file is deliberately NOT `local` — the EXIT trap below uses
+  # single quotes (deferred expansion), so an out-of-scope `local` would be
+  # unset when the trap fires (a `set -u` "unbound variable" crash that masks
+  # the real error). A file-scoped variable stays in scope for the trap.
   trap 'rm -f "$tmp_file"' EXIT
 
   local curl_args=(

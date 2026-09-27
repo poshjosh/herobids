@@ -27,7 +27,7 @@ ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 \
 
 - infra/hetzner/scripts/setup-env.sh --env staging --file infra/hetzner/.env.staging
 - infra/hetzner/scripts/push.sh --env staging 
-- infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.staging
+- infra/hetzner/deploy.sh --env staging 138.199.172.202 --env-file infra/hetzner/.env.staging
 - infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy --include-live
 - infra/hetzner/scripts/reset-and-run.sh --env staging 138.199.172.202 --env-file .env.ops.staging
 - HEROBIDS_ENV=staging  scripts/shell/ops/download-eval-reports.sh
