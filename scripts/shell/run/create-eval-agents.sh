@@ -66,7 +66,7 @@ DEFAULT_DEV_HEAVY_MODEL="qwen3.6:35b-a3b-q4_K_M"
 # (consistent with infra/hetzner/scripts/create-agents.sh and config/staging.yaml).
 DEFAULT_NONDEV_PROVIDER="openrouter"
 DEFAULT_NONDEV_LIGHT_MODEL="deepseek/deepseek-v4.1-flash"
-DEFAULT_NONDEV_HEAVY_MODEL="deepseek/deepseek-v4-pro-0813
+DEFAULT_NONDEV_HEAVY_MODEL="deepseek/deepseek-v4-pro-0813"
 DEFAULT_SCOUT_REASONING="medium"
 DEFAULT_JUDGE_REASONING="high"
 

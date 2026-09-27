@@ -307,7 +307,7 @@ scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/security-audit-prompt.md" "roo
 AGENT_ENV_VARS=(
   "AGENT_PROVIDER=${AGENT_PROVIDER:-openrouter}"
   "AGENT_LIGHT_MODEL=${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4.1-flash}"
-  "AGENT_HEAVY_MODEL=${AGENT_HEAVY_MODEL:-deepseek/deepseek-v4-pro-0813"
+  "AGENT_HEAVY_MODEL=${AGENT_HEAVY_MODEL:-deepseek/deepseek-v4-pro-0813}"
   "AGENT_TICK_INTERVAL_MS=${AGENT_TICK_INTERVAL_MS:-86400000}"
   "SECURITY_AUDIT_PROMPT_FILE=/tmp/security-audit-prompt.md"
 )

@@ -21,7 +21,7 @@
 #   HEROBIDS_ENV          Deployment environment: staging | production (default: production).
 #   AGENT_PROVIDER        LLM provider (default: openrouter)
 #   AGENT_LIGHT_MODEL     Fast/cheap model (default: deepseek/deepseek-v4.1-flash via OpenRouter)
-#   AGENT_HEAVY_MODEL     Capable model for conviction (default: deepseek/deepseek-v4-pro-0813via OpenRouter)
+#   AGENT_HEAVY_MODEL     Capable model for conviction (default: deepseek/deepseek-v4-pro-0813 via OpenRouter)
 #   AGENT_TICK_INTERVAL_MS  Agent reasoning loop interval in ms (default: 86400000 = 24h)
 
 set -euo pipefail
@@ -39,7 +39,7 @@ HEROBIDS_ENV="${HEROBIDS_ENV:-production}"
 
 AGENT_PROVIDER="${AGENT_PROVIDER:-openrouter}"
 AGENT_LIGHT_MODEL="${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4.1-flash}"
-AGENT_HEAVY_MODEL="${AGENT_HEAVY_MODEL:-deepseek/deepseek-v4-pro-0813"
+AGENT_HEAVY_MODEL="${AGENT_HEAVY_MODEL:-deepseek/deepseek-v4-pro-0813}"
 AGENT_TICK_INTERVAL_MS="${AGENT_TICK_INTERVAL_MS:-86400000}"
 
 # Security audit prompt loaded from docs (path overridable via env for remote execution)

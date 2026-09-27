@@ -41,6 +41,7 @@ shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 ENV_FILE=""
 SERVER_IP=""
 BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${TF_DIR}/.env.backend}"
+SKIP_CI_WAIT=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,15 +61,20 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --skip-ci-wait)
+      SKIP_CI_WAIT=true
+      shift
+      ;;
     --help|-h)
-      echo "Usage: $0 [--env <staging|production>] [--env-file <path>] [--backend-env-file <path>] [<server-ip>]" >&2
+      echo "Usage: $0 [--env <staging|production>] [--env-file <path>] [--backend-env-file <path>] [--skip-ci-wait] [<server-ip>]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --env <name>              Target environment: staging or production (default: production)." >&2
       echo "  --env-file <path>         Path to local .env file (forwarded to setup-env.sh)." >&2
       echo "  --backend-env-file <path> Path to env file with S3 backend and Nomad ACL credentials." >&2
       echo "                            Sourced before uploading autoscale.env to the server." >&2
-      echo "                            Falls back to shell environment variables if omitted." >&2
+      echo "  --skip-ci-wait            Do not wait for the GitHub build-and-push workflow" >&2
+      echo "                            (for re-deploys of an already-built commit)." >&2
       echo "  <server-ip>               Server IP address (auto-detected from terraform if omitted)." >&2
       echo "" >&2
       echo "Environment variables:" >&2
@@ -163,6 +169,22 @@ echo ""
 # ─── Step 3: Push (git pull → build → compose up) ────────────────────────────
 
 echo "── Step 3/5: Push (git pull → build → compose up) ──"
+
+# Wait for the GitHub "Build and Push Agent Image" workflow to finish, so the
+# freshly-pushed commit's agent image is available on GHCR for the Nomad client
+# nodes to pull. Without this, agent nodes may pull a stale/missing image while
+# the worker (which builds the image locally) is already running the new code.
+if [[ "${SKIP_CI_WAIT}" == "true" ]]; then
+  echo "--skip-ci-wait set — not waiting for the GitHub build-and-push workflow."
+else
+  echo "==> Waiting for GitHub build-and-push of origin/main (agent image)..."
+  if ! bash "${SCRIPTS_DIR}/wait-for-build.sh" >/dev/null; then
+    echo "" >&2
+    echo "ERROR: GitHub build-and-push did not succeed. Aborting deploy." >&2
+    echo "  Re-run with --skip-ci-wait only if the image is already published." >&2
+    exit 1
+  fi
+fi
 
 if ! "${SCRIPTS_DIR}/push.sh" --env "${HEROBIDS_ENV}" --yes "${SERVER_IP}"; then
   echo "" >&2
