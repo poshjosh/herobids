@@ -4,14 +4,14 @@
 # UNCOMMENT IF YOU WANT TO USE THIS INSTEAD OF OLLAMA
 # llm:
 #   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
-#   model: deepseek/deepseek-v4-pro       # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
+#   model: deepseek/deepseek-v4-pro-0813       # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
 #   baseUrl: https://openrouter.ai/api/v1 # DeepSeek API base URL (OpenAI-compatible)
 # agentRuntime:
 #   llm:
 #     modelDefaults:
 #       provider: openrouter                    # suggested provider in forms
-#       lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
-#       heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
+#       lightModel: deepseek/deepseek-v4.1-flash  # suggested economy (scout) model
+#       heavyModel: deepseek/deepseek-v4-pro-0813    # suggested premium (judge) model
 
 platformAssessor:
   enabled: true
