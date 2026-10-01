@@ -691,13 +691,16 @@ function generateAgentName(preset: string): string {
  */
 export function synthesizePrompt(goal: string | undefined, preset: string, capital: string | undefined): string {
   if (goal && goal.trim().length > 0) return goal.trim();
-  // Configurable default — initial v1 default: "Grow this portfolio"
   if (preset === 'personal-assistant') return 'Assist with daily tasks and information retrieval';
   if (preset === 'custom') return 'Assist with the user\'s custom goals and tasks';
+  // Trading-gated: `capital` is only populated for trading presets, so the
+  // allocation clause stays trading-specific and never renders for other families.
   if (capital && capital.trim().length > 0) {
     return `Grow this portfolio with ${capital} USDC allocation`;
   }
-  return 'Grow this portfolio';
+  // Ungated final fallback — capability-neutral default for any non-trading preset
+  // (or a trading preset without capital configured).
+  return 'Assist with the user\'s goals and tasks';
 }
 
 /**

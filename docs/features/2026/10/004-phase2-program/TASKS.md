@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 Do not pause between tasks.
 
-**Current cursor:** `T2.2` (in progress). ← Update this line to the task you are
+**Current cursor:** `T3.1` (next). ← Update this line to the task you are
 on after every task, so a context reset resumes unambiguously.
 
 ### Status scheme (use the emoji, NOT the checkbox)
@@ -88,7 +88,7 @@ Genuine gates:
     as follow-on tasks here; ESCALATE-LEGAL items appended to `ESCALATIONS.md`.
   - Note: distinguish *trading product coupling* (in scope) from the generic
     External Backend boundary (Phase 3, out of scope here).
-- 🔄 **T2.2 Execute backend REMOVE-SAFE / GENERIC remediations** surfaced by
+- ✅ **T2.2 Execute backend REMOVE-SAFE / GENERIC remediations** surfaced by
   T2.1 that do not touch the deployed boundary contract or need legal input.
   - Agent: PlanCreator → Implementer → Tester → Reworker.
   - Exit: changes done + verified; contract-affecting ones deferred with a note.
@@ -212,6 +212,34 @@ Genuine gates:
 - MOVE items feed Block 3 (doc move): `buildTradingPrompt` venue/strategy
   reference copy; web `trading-venues` docs; `reference/crypto-ecosystem` docs.
 
+### Block 2 — T2.2 safe-standalone backend remediations (done 2026-10-01)
+- Agents: Implementer (slice) → CodeReviewer (clean, LOW only). Resume agent
+  re-verified before commit.
+- Implemented the fully-safe-standalone GENERIC follow-ons from `../005-…`:
+  1. `GET /capabilities` (`capabilities/index.ts`) now derives its `families`
+     list from the deduped, sorted `capabilityFamilies` across `SYSTEM_SKILLS`
+     (was a hardcoded single `trading` entry). Read-only, additive. Dropped the
+     trading-specific `description` field (was "Algorithmic trading across
+     multiple venues") rather than invent per-family copy.
+  3. Capability-neutral 503 copy: `agents.ts:108`, `blueprints.ts:1026/1040`,
+     and the matching `trading.ts` `boundaryUnconfiguredError` message now say
+     "The capability service is unavailable …" instead of "Trading service …".
+  4. `synthesizePrompt` (`chat.ts`) ungated final fallback is now the
+     capability-neutral "Assist with the user's goals and tasks"; the trading
+     allocation clause stays gated behind `capital` (only populated for trading
+     presets). Test relabelled to assert the neutral default.
+- **Item 2 (un-gate presentation 404):** already a no-op — grep for
+  `family !== 'trading'` in `trading.ts` returns 0 hits; the
+  `/agents/:agentId/capabilities/:family/presentation` route is already
+  generic-by-`:family` with no trading-only 404 gate (nothing to remove).
+- **Item 8 (blueprint `momentum` default, `blueprints.ts:448`): deferred** — it
+  changes a default *payload* (behaviorally risky vs. a pure relabel) and sits
+  outside the reviewed-clean slice; recorded under Outstanding Issues for a
+  family-scoped-defaults follow-up rather than widening this slice.
+- Verification: `pnpm lint` green; `@herobids/api` build green; chat tests 94/94
+  green; capability-model functional tests 5/5 green (local compose pg+redis).
+- Commit: local, no push (see git log).
+
 ---
 
 ## Outstanding Issues (non-blocking; from code review)
@@ -230,3 +258,22 @@ Grouped by task.
   block renders neither cards, empty-state, nor a loading row. Not reachable with
   the corrected backend (P2-10 now emits an entry per declared family). Optional
   hardening only.
+
+### T2.2 (safe-standalone backend remediations)
+- **LOW — dropped catalog `description`.** The genericized `GET /capabilities`
+  no longer returns a per-family `description` (the old hardcoded trading entry
+  had one). No current consumer depends on it; add a `families`-level
+  description once skills carry capability-family display metadata.
+  (`apps/api/src/routes/capabilities/index.ts`)
+- **LOW/deferred — blueprint `momentum` default** (audit item 8,
+  `apps/api/src/routes/blueprints.ts:448`). `GET /blueprints/defaults` still
+  returns the trading `momentum` preset as the generic default. The audit rated
+  it "mostly safe standalone" but it changes a default *payload*; deferred to a
+  family-scoped-defaults follow-up (coordinate with the Phase-3-adjacent
+  blueprint facet-schema work) rather than the reviewed-clean relabel slice.
+- **LOW/out-of-scope — residual trading-worded 503s.** Audit scope relabelled
+  the four GENERIC 503 messages (`agents.ts`, `blueprints.ts` ×2, `trading.ts`).
+  Other "Trading service is unavailable"-style strings elsewhere (e.g.
+  `bots.ts`, `dashboard.ts`) were surfaced as out-of-scope for T2.2 (not on the
+  audit's safe-standalone list); sweep them in a later generic-copy pass or when
+  those routes are family-shaped.

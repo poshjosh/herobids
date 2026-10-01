@@ -1023,7 +1023,7 @@ export async function blueprintRoutes(
     if (!tradertonClient) {
       return reply.status(503).send({
         error: BlueprintErrorCodes.DEPENDENCY_UNAVAILABLE,
-        message: 'Trading service is unavailable — the blueprint could not be deleted.',
+        message: 'The capability service is unavailable — the blueprint could not be deleted.',
       });
     }
     const botDepSubject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
@@ -1037,7 +1037,7 @@ export async function blueprintRoutes(
       // Transport/in_progress → 503; any terminal boundary failure also fails closed.
       return reply.status(503).send({
         error: BlueprintErrorCodes.DEPENDENCY_UNAVAILABLE,
-        message: 'Trading service is unavailable — the blueprint could not be deleted.',
+        message: 'The capability service is unavailable — the blueprint could not be deleted.',
       });
     }
     const byBlueprint = (botDepResult.data['byBlueprint'] as Record<string, string[]> | undefined) ?? {};

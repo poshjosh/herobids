@@ -105,7 +105,7 @@ const DEFAULT_READ_TIMEOUT_MS = 10_000;
 const boundaryUnconfiguredError = {
   status: 503,
   code: 'precondition.not_ready',
-  message: 'Trading service is unavailable — the read could not be produced.',
+  message: 'The capability service is unavailable — the read could not be produced.',
 } as const;
 
 /**

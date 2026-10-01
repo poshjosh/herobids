@@ -5,7 +5,7 @@ import type { Database } from '@herobids/db';
 import { agents, connections, agentConnections, agentSkills, skillRevisions, deriveReadiness, chooseLatest } from '@herobids/db';
 import type { RuntimeAssignmentRow } from '@herobids/db';
 import type { CapabilityReadiness, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
-import { getRuntimeFamiliesForProvider } from '@herobids/domain';
+import { getRuntimeFamiliesForProvider, SYSTEM_SKILLS } from '@herobids/domain';
 import type { TradertonClient } from '@herobids/domain/traderton';
 import { tradingCapabilityRoutes } from './trading.js';
 
@@ -18,16 +18,20 @@ export async function capabilityRoutes(
   tradertonReadClient?: TradertonClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
+  // Deduped, sorted set of every capability family declared by the system's
+  // skills. Derived once at registration time — the catalog is static for the
+  // lifetime of the process (SYSTEM_SKILLS is a compile-time constant).
+  const catalogFamilies = Array.from(
+    new Set(SYSTEM_SKILLS.flatMap((skill) => skill.capabilityFamilies).filter((family) => family.length > 0)),
+  ).sort();
+
   app.get('/capabilities', async (_request, reply) => {
     return reply.send({
-      families: [
-        {
-          family: 'trading',
-          description: 'Algorithmic trading across multiple venues',
-          status: 'available',
-          supportedActions: ['start', 'stop', 'pause', 'resume'],
-        },
-      ],
+      families: catalogFamilies.map((family) => ({
+        family,
+        status: 'available',
+        supportedActions: ['start', 'stop', 'pause', 'resume'],
+      })),
     });
   });
 

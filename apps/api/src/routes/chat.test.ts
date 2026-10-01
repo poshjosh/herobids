@@ -451,10 +451,10 @@ describe('invokeOnboardingLlm — resume events', () => {
 // ── synthesizePrompt: no undefined when capital absent ──────────────────────
 
 describe('synthesizePrompt — capital handling', () => {
-  it('produces no undefined when capital is absent for trading', () => {
+  it('falls back to a capability-neutral default when capital is absent', () => {
     const prompt = synthesizePrompt(undefined, 'trading', undefined);
     expect(prompt).not.toContain('undefined');
-    expect(prompt).toBe('Grow this portfolio');
+    expect(prompt).toBe('Assist with the user\'s goals and tasks');
   });
 
   it('includes the allocation clause when capital is present', () => {

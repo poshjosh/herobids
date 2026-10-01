@@ -258,7 +258,7 @@ export async function tradingCapabilityRoutes(
   const boundaryUnconfiguredError: ReadBoundaryError = {
     status: 503,
     code: 'precondition.not_ready',
-    message: 'Trading service is unavailable — the request could not be produced.',
+    message: 'The capability service is unavailable — the request could not be produced.',
   };
 
   app.get('/capabilities/trading', async (_request, reply) => {
