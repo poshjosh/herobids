@@ -549,7 +549,6 @@ export const messages: Record<string, string> = {
   'agents.detail.runtimeAlert.crashed': 'تعطل وكيل الذكاء الاصطناعي. توقّف التشغيل بشكل غير متوقع. راجع النشاط الأخير وجاهزية القدرات أدناه.',
   'agents.detail.runtimeAlert.unhealthy': 'تشغيل وكيل الذكاء الاصطناعي غير سليم. نبضات القلب مفقودة والعامل يتعافى.',
   'agents.detail.fundingBanner.text': 'قد تحتاج محفظة التداول الخاصة بك إلى تمويل قبل بدء التداول الفعلي.',
-  'agents.detail.fundingBanner.learnMore': 'تعرّف على كيفية التمويل →',
   'agents.detail.editConfig': 'تعديل',
   'agents.detail.starting': 'جارٍ البدء…',
   'agents.detail.start': 'بدء',

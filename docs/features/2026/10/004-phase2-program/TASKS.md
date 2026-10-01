@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 Do not pause between tasks.
 
-**Current cursor:** `T3.1` (next). ← Update this line to the task you are
+**Current cursor:** `T4.1` (next). ← Update this line to the task you are
 on after every task, so a context reset resumes unambiguously.
 
 ### Status scheme (use the emoji, NOT the checkbox)
@@ -117,17 +117,42 @@ Genuine gates:
 > conventions (and `docs/CANONICAL-STATE.md` if present). Author to traderton's
 > conventions; same no-push rule.
 
-- ⬜ **T3.1 Inventory herobids trading docs.** Find trading reference/venue/
+- ✅ **T3.1 Inventory herobids trading docs.** Find trading reference/venue/
   wallet-funding docs under `docs/` and any public-page content
   (`apps/web/src/features/public-pages/`). Classify generic vs trading-domain.
   - Exit: a list of files to MOVE vs KEEP (generic/referential).
-- ⬜ **T3.2 Move trading-domain docs to Traderton.** Relocate the MOVE set into
+  - **Result (Contemplator ruling, P2-14/P2-15):**
+    - **MOVE (8 web docs):** `apps/web/src/features/public-pages/content/en/docs/`
+      → `trading-venues/{index,hyperliquid,bybit,jupiter,1inch,funding-wallets}.md`
+      + `reference/{crypto-ecosystem,crypto-ecosystem-aspects}.md`.
+    - **KEEP (generic/referential/internal):** `reference/glossary.md` (SPLIT in
+      place — generic terms stay, trading terms move); `docs/agents/skills/
+      ai4trade-trading-signals.md` (generic skills-mechanism artifact);
+      `docs/tech/trading/*`, `docs/tech/glossary.md`,
+      `docs/tech/trading/domain-taxonomy.md` (internal engineering, Phase-3-owned).
+    - **Wiring:** `contentRegistry.ts` is the single source (routes/sitemap/footer
+      derive from it); fix `sitemap-urls.test.ts`; drop 3 glossary See-also links;
+      handle 2 app-code funding-wallet link constants (P2-15, no outbound trading
+      link).
+- ✅ **T3.2 Move trading-domain docs to Traderton.** Relocate the MOVE set into
   the traderton repo (`~/dev_ai/traderton`) as its canonical docs; leave
   herobids with only generic/referential content and update internal links.
   - Decision note: moving files across repos is code/content, not infra — allowed.
     Committing in the traderton repo follows the same no-push rule.
   - Exit: herobids trading reference docs removed/relocated; no dangling links
     (link-check or grep); traderton holds the canonical copies.
+  - **Done:** 8 web docs now canonical in `traderton/docs/reference/`
+    (`crypto-ecosystem{,-aspects}.md`, `trading-glossary.md`, `README.md`,
+    `trading-venues/{index,hyperliquid,bybit,jupiter,1inch,funding-wallets}.md`),
+    links repointed + "OpenAIdom"→"Traderton". herobids: 8 docs deleted, registry
+    group + crypto entries removed, glossary split (7 generic terms kept),
+    2 dangling in-app funding links removed (no outbound trading link — P2-15),
+    orphaned i18n key removed (en/ar/hi), sitemap test updated, **and the worker
+    docs-search index regenerated** (CodeReview CRITICAL C1 — see P2-14 correction).
+  - Agents: Contemplator (T3.1 ruling) → inline Implementer → CodeReviewer
+    (CRITICAL C1 + HIGH H1 found, both fixed; re-verified clean).
+  - Verified: `pnpm lint`, web+worker builds, 681 web tests, 17 platform-docs
+    tests, sitemap+public-pages tests — all green.
 
 ## Block 4 — Step 7: minimal Traderton frontend
 
@@ -277,3 +302,14 @@ Grouped by task.
   `bots.ts`, `dashboard.ts`) were surfaced as out-of-scope for T2.2 (not on the
   audit's safe-standalone list); sweep them in a later generic-copy pass or when
   those routes are family-shaped.
+
+### T3.2 (move trading docs to Traderton)
+- **LOW — "Tick" term duplicated.** The glossary split kept "Tick" (a generic
+  agent-cycle term) in the herobids glossary AND it also appears in the Traderton
+  `trading-glossary.md`. Harmless duplication; the Traderton copy can drop "Tick"
+  in a later cleanup if a shared/generic glossary link is established.
+- **Note — worker docs-index is generated.** `apps/worker/src/tools/platform-docs-data.ts`
+  is auto-generated from the web public-pages markdown by
+  `scripts/ts/build-docs-index.ts`. Any future add/rename/delete of a public-pages
+  doc must re-run that generator (and check `platform-docs.test.ts` assertions),
+  or the agent-facing `search_app_docs`/`read_app_docs` tools go stale.

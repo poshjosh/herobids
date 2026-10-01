@@ -81,8 +81,6 @@ describe('search_app_docs', () => {
     expect(results.length).toBeGreaterThan(0);
 
     const ids = results.map((r) => r.id as string);
-      // docs/trading-venues/index has "venues" in the title — should rank high
-      expect(ids).toContain('docs/trading-venues/index');
     // mapping/venue-chain has "venue" in its ID — reachable via stemming
     expect(ids).toContain('mapping/venue-chain');
   });

@@ -14,6 +14,22 @@ the operator decides, and mirror the decision into `DECISIONS.md`.
 | E2 | Billable "strategy assessment" entitlement — the billing rate card defines a paid meter `assessment.request` (priceMicrousd 200000), surfaced to users as "strategy assessment". A billed, trading-specific product line item. | `config/default.yaml:987`; surfaced in web `features/billing/BillingDetails.tsx` | (a) keep the paid trading-assessment meter on the herobids bill; (b) move the entitlement/billing to Traderton; (c) relabel to a capability-neutral meter name while keeping the charge. | Keep the mechanism (metered usage billing is generic) but treat the trading-specific naming/entitlement as a product/billing decision — do not unilaterally rename/remove a live billing line item. | Billing copy and entitlements are payment-provider- and revenue-affecting; changing or removing a live meter has contractual/billing implications. | _(open)_ |
 | E3 | SEO/marketing copy positions herobids as a crypto-trading product — meta description, OpenGraph, Twitter card, and JSON-LD state herobids does "…from crypto trading to personal assistance," making crypto trading a headline offering in indexed/share-preview metadata. (Web surface; paired with E1.) | `apps/web/index.html:7,11,20,41` | (a) keep the crypto-trading positioning; (b) make public positioning capability-neutral and drop the explicit crypto-trading claim; (c) keep but attribute trading to Traderton. | Make the public SEO/OG copy capability-neutral and let trading be a discoverable capability rather than a headline product claim. | Public marketing/SEO positioning around a financial activity is a brand, product, and potentially regulatory (financial-promotions) decision. | _(open)_ |
 
+## Notes attached to the batch (not new rows)
+
+- **N1 (attaches to E1/E3) — outbound herobids→Traderton trading-product link.**
+  T3.2 moved the venue/wallet reference docs to Traderton. Two kept herobids
+  trading-UI renderers previously linked into those (now-removed) herobids pages:
+  `apps/web/src/features/chat/GuidedSetupActionRenderer.tsx:13` and
+  `apps/web/src/features/agents/TradingCapabilityPresentation.tsx:63`
+  (`/docs/trading-venues/funding-wallets`). To avoid a dangling link **without**
+  making a product-identity call, T3.2 removed the inline doc hyperlink and kept
+  the funding guidance self-contained/capability-neutral (P2-15). **Open question
+  for the operator (same family as E1/E3):** may herobids link out to the Traderton
+  trading site (e.g. `staging.traderton.com/docs/trading-venues/...`), and if so at
+  what URL? If yes, restore these as outbound links to the canonical Traderton docs
+  once published (T4.2). Engineering-neutral recommendation: keep herobids free of
+  outbound trading-product links until the E1/E3 positioning decision is made.
+
 ## How to use
 
 - Classify with the ENTRYPOINT §5.1 rubric. Only the **ESCALATE-LEGAL** class

@@ -59,13 +59,6 @@ export function TradingCapabilityPresentation({ agentId, connectionProvider, isA
     ? providerCatalogQuery.data?.providers.some((provider) => provider.id === connectionProvider && provider.walletGeneration?.available === true)
     : false;
   const showFundingBanner = venueHasWalletGeneration === true && !fundingBannerDismissed;
-  const fundingDocUrl = (() => {
-    const base = '/docs/trading-venues/funding-wallets';
-    if (connectionProvider === 'hyperliquid') return `${base}#hyperliquid`;
-    if (connectionProvider === 'jupiter') return `${base}#jupiter`;
-    if (connectionProvider === '1inch') return `${base}#1inch`;
-    return base;
-  })();
 
   const dismissFundingBanner = () => {
     localStorage.setItem(`funding-banner-dismissed-${agentId}`, '1');
@@ -100,10 +93,7 @@ export function TradingCapabilityPresentation({ agentId, connectionProvider, isA
           color: 'var(--color-text-primary)',
         }}>
           <span>
-            {intl.formatMessage({ id: 'agents.detail.fundingBanner.text' })}{' '}
-            <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-brand)' }}>
-              {intl.formatMessage({ id: 'agents.detail.fundingBanner.learnMore' })}
-            </a>
+            {intl.formatMessage({ id: 'agents.detail.fundingBanner.text' })}
           </span>
           <Button variant="ghost" size="sm" onClick={dismissFundingBanner}>Dismiss</Button>
         </div>

@@ -43,10 +43,9 @@ describe("collectPublicUrls", () => {
     expect(locs).toContain(`${BASE}/docs/agents`);
     expect(locs).toContain(`${BASE}/docs/messaging`);
     expect(locs).toContain(`${BASE}/docs/reference`);
-    expect(locs).toContain(`${BASE}/docs/trading-venues`);
     // Leaf pages still present
     expect(locs).toContain(`${BASE}/docs/agents/agent-style`);
-    expect(locs).toContain(`${BASE}/docs/trading-venues/hyperliquid`);
+    expect(locs).toContain(`${BASE}/docs/messaging/telegram/reply-threading`);
   });
 
   it("includes all docs leaf pages", () => {
@@ -56,14 +55,7 @@ describe("collectPublicUrls", () => {
     expect(locs).toContain(`${BASE}/docs/agents/billing-limits`);
     expect(locs).toContain(`${BASE}/docs/messaging/telegram/reply-threading`);
     expect(locs).toContain(`${BASE}/docs/messaging/telegram/slash-commands`);
-    expect(locs).toContain(`${BASE}/docs/reference/crypto-ecosystem`);
-    expect(locs).toContain(`${BASE}/docs/reference/crypto-ecosystem-aspects`);
     expect(locs).toContain(`${BASE}/docs/reference/glossary`);
-    expect(locs).toContain(`${BASE}/docs/trading-venues/hyperliquid`);
-    expect(locs).toContain(`${BASE}/docs/trading-venues/bybit`);
-    expect(locs).toContain(`${BASE}/docs/trading-venues/jupiter`);
-    expect(locs).toContain(`${BASE}/docs/trading-venues/1inch`);
-    expect(locs).toContain(`${BASE}/docs/trading-venues/funding-wallets`);
   });
 
   it("includes all legal pages", () => {
