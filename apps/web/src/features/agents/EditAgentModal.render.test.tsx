@@ -137,14 +137,14 @@ describe('EditAgentModal rendering', () => {
     });
     expect(html).toContain(messages['agents.controls.costPreset']);
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
-    // Capital controls are now inside the (collapsed) Trading Setup advanced tab.
-    expect(html).toContain(messages['agents.advanced.tradingSetup']);
+    // Capital controls are now inside the (collapsed) generic Capabilities advanced tab.
+    expect(html).toContain(messages['agents.advanced.capabilities']);
     expect(html).toContain('Expected cadence: every 4h');
     expect(html).toContain('Estimated daily LLM spend: ~$0.50');
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });
 
-  it('exposes the trading setup tab when capability readiness is already cached', () => {
+  it('exposes the capabilities tab when trading values are present', () => {
     const html = renderModal({
       capabilityReadiness: {
         family: 'trading',
@@ -157,12 +157,12 @@ describe('EditAgentModal rendering', () => {
       },
     });
 
-    // Trading guardrails now live in the (non-default) "Trading Setup" advanced tab.
+    // Trading guardrails now live in the (non-default) generic "Capabilities" tab.
     // The static render only emits the active tab's panel, so we assert the tab is present.
-    expect(html).toContain(messages['agents.advanced.tradingSetup']);
+    expect(html).toContain(messages['agents.advanced.capabilities']);
   });
 
-  it('omits the trading setup tab until capability readiness is loaded when no trading values are set', () => {
+  it('omits the capabilities tab when no trading skills or values are set', () => {
     const html = renderModal({
       capital: '',
       dailyMaxLossPct: '',
@@ -173,8 +173,9 @@ describe('EditAgentModal rendering', () => {
       stopLossCooldownMs: null,
     });
 
-    // "Trading" tab label may also appear in the agent-type selector; verify via the
-    // capital field label and help text instead, which are unique to the trading tab.
+    // With no trading skills and no stored trading values, the generic
+    // Capabilities tab (and the capital field it contains) must not render.
+    expect(html).not.toContain(messages['agents.advanced.capabilities']);
     expect(html).not.toContain(messages['agents.controls.capital']);
     expect(html).not.toContain(messages['agents.controls.capital.help']);
   });
@@ -193,13 +194,14 @@ describe('EditAgentModal rendering', () => {
       technical: TECHNICAL_CONFIG,
     });
 
-    // The Strategy tab is only visible for trading agents. A technical-only
-    // agent with no trading skills does not get the Strategy tab.
-    // The objective field is always visible (pulled out of AgentFormBody) —
-    // it drives capability mode derivation, even when empty.
-    expect(html).not.toContain(messages['agents.advanced.strategy']);
+    // Strategy config is only rendered inside the Capabilities tab for genuine
+    // trading-family agents. A technical-only agent with no trading skills does
+    // not surface the trading strategy section, so the filter-trades control is
+    // absent. The objective field is always visible (it drives capability mode).
+    // The skills picker is now always available — the agent is known by its skills.
+    expect(html).not.toContain(messages['agents.technical.filterTrades.label']);
     expect(html).toContain(messages['agents.edit.objective']);
-    expect(html).not.toContain(messages['agents.create.skills']);
+    expect(html).toContain(messages['agents.create.skills']);
   });
 
   it('hides execution mode controls in technical-only mode even if the stored agent previously had a trading mode', () => {

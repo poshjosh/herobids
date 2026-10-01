@@ -1,22 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { SKILL_PRESET_MAP } from '@herobids/domain';
-import { formatObjectivePreview, resolveCapabilityFamilies, resolveSkillPresetSkillIds } from './agent-display.js';
+import { formatObjectivePreview, resolveCapabilityFamilies, resolveSuggestedSkillIds } from './agent-display.js';
 
-describe('skill preset resolution', () => {
-  it('personal-assistant preset resolves to task-management, web-access, and email', () => {
-    expect(resolveSkillPresetSkillIds('personal-assistant')).toEqual(['task-management', 'web-access', 'email']);
+describe('suggested skills resolution', () => {
+  it('personal-assistant suggestion resolves to task-management, web-access, and email', () => {
+    expect(resolveSuggestedSkillIds('personal-assistant')).toEqual(['task-management', 'web-access', 'email']);
   });
 
-  it('trading preset resolves to bot-management and trading', () => {
-    expect(resolveSkillPresetSkillIds('trading')).toEqual(['trading', 'bot-management']);
+  it('trading suggestion resolves to trading and bot-management', () => {
+    expect(resolveSuggestedSkillIds('trading')).toEqual(['trading', 'bot-management']);
   });
 
-  it('custom preset clears all skillIds', () => {
-    expect(resolveSkillPresetSkillIds('custom', ['programming', 'web-access'])).toEqual([]);
-  });
-
-  it('custom preset with no skills returns empty array', () => {
-    expect(resolveSkillPresetSkillIds('custom')).toEqual([]);
+  it('custom suggestion returns an empty array (user picks skills manually)', () => {
+    expect(resolveSuggestedSkillIds('custom')).toEqual([]);
   });
 
   it('domain SKILL_PRESET_MAP uses personal-assistant as the assistant preset key', () => {

@@ -273,6 +273,70 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     });
   });
 
+  it('emits an unconfigured email readiness for an email-only agent', async () => {
+    const emailAgentId = await ctx.app.inject({
+      method: 'POST',
+      url: '/agents',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Email Agent',
+        prompt: 'Send me a daily summary email.',
+        skillIds: ['email'],
+      },
+    }).then((res) => {
+      expect(res.statusCode).toBe(201);
+      return res.json<{ id: string }>().id;
+    });
+
+    const aggregate = await ctx.app.inject({
+      method: 'GET',
+      url: `/agents/${emailAgentId}/capabilities/readiness`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(aggregate.statusCode).toBe(200);
+    const body = aggregate.json<{ capabilities: Array<{ family: string; state: string; effectiveReady: boolean; agentEligibility: string }> }>();
+    const emailCapability = body.capabilities.find((capability) => capability.family === 'email');
+    expect(emailCapability).toMatchObject({
+      family: 'email',
+      state: 'unconfigured',
+      effectiveReady: false,
+      agentEligibility: 'ineligible',
+    });
+    // The trading family must NOT be forced in for a non-trading agent — this
+    // locks in the removal of the hardcoded `knownFamilies = ['trading']` seed.
+    expect(body.capabilities.find((capability) => capability.family === 'trading')).toBeUndefined();
+  });
+
+  it('emits readiness for every family the agent\'s skills declare (email + trading)', async () => {
+    const multiAgentId = await ctx.app.inject({
+      method: 'POST',
+      url: '/agents',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Trading + Email Agent',
+        prompt: 'Trade and email me updates.',
+        skillIds: ['trading', 'email'],
+        executionDefaults: { mode: 'paper' },
+      },
+    }).then((res) => {
+      expect(res.statusCode).toBe(201);
+      return res.json<{ id: string }>().id;
+    });
+
+    const aggregate = await ctx.app.inject({
+      method: 'GET',
+      url: `/agents/${multiAgentId}/capabilities/readiness`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(aggregate.statusCode).toBe(200);
+    const body = aggregate.json<{ capabilities: Array<{ family: string; state: string }> }>();
+    const families = body.capabilities.map((capability) => capability.family).sort();
+    expect(families).toEqual(expect.arrayContaining(['email', 'trading']));
+    // No connections granted → both families are unconfigured.
+    expect(body.capabilities.find((capability) => capability.family === 'email')?.state).toBe('unconfigured');
+    expect(body.capabilities.find((capability) => capability.family === 'trading')?.state).toBe('unconfigured');
+  });
+
   it('rejects granting agent access to a revoked connection', async () => {
     const { connectionId } = await setupTradingLink();
 

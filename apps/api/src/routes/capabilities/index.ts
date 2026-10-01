@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { agents, connections, agentConnections, deriveReadiness, chooseLatest } from '@herobids/db';
+import { agents, connections, agentConnections, agentSkills, skillRevisions, deriveReadiness, chooseLatest } from '@herobids/db';
 import type { RuntimeAssignmentRow } from '@herobids/db';
 import type { CapabilityReadiness, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { getRuntimeFamiliesForProvider } from '@herobids/domain';
@@ -18,8 +18,6 @@ export async function capabilityRoutes(
   tradertonReadClient?: TradertonClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
-  const knownFamilies = ['trading'] as const;
-
   app.get('/capabilities', async (_request, reply) => {
     return reply.send({
       families: [
@@ -66,16 +64,25 @@ export async function capabilityRoutes(
           capabilities: getRuntimeFamiliesForProvider(row.provider),
         }));
 
-      // Collect all families from provider capabilities across all rows
+      // Families the agent's resolved skills declare (via assigned skill revisions).
+      const skillFamilyRows = await db
+        .select({ capabilityFamilies: skillRevisions.capabilityFamilies })
+        .from(agentSkills)
+        .innerJoin(skillRevisions, eq(agentSkills.skillRevisionId, skillRevisions.id))
+        .where(eq(agentSkills.agentId, agentId));
+
+      // Emit one readiness entry per family the agent actually has:
+      // families declared by the agent's skills UNION families derived from connection providers.
       const allFamilies = new Set<string>();
+      for (const skillRow of skillFamilyRows) {
+        for (const family of skillRow.capabilityFamilies ?? []) {
+          allFamilies.add(family);
+        }
+      }
       for (const row of rows) {
         for (const cap of row.capabilities ?? []) {
           allFamilies.add(cap);
         }
-      }
-      // Ensure known families are always present
-      for (const family of knownFamilies) {
-        allFamilies.add(family);
       }
 
       const capabilities: CapabilityReadiness[] = [];

@@ -39,15 +39,15 @@ const AGENT_STRATEGY_PRESET_KEYS = [
  * Maps validated field names to the Advanced Settings tab index that contains them.
  * Update this whenever a field moves between tabs or a new validated field is added.
  *   0 = AI
- *   1 = Trading Setup
- *   2 = Strategy
+ *   1 = Capabilities (per-family config, e.g. trading setup + strategy for the
+ *       trading family)
  */
 export const ADVANCED_FIELD_TAB: Record<string, number> = {
   // AI
   tickIntervalMins: 0,
   dailySpendBudgetUsd: 0,
   permissionLevel: 0,
-  // Trading Setup
+  // Capabilities (trading family: setup + strategy)
   authorizationMode: 1,
   executionMode: 1,
   venue: 1,
@@ -58,7 +58,6 @@ export const ADVANCED_FIELD_TAB: Record<string, number> = {
   stopLossPct: 1,
   stopLossCooldownSecs: 1,
   openPositionEscalationToJudgePolicy: 1,
-  // Strategy
 };
 
 /**
@@ -403,15 +402,15 @@ export function AgentFormBody(props: AgentFormBodyProps) {
             </div>
           </div>
         }
-        tradingSetup={
-          props.requiresTradingSetup ? (
+        capabilities={
+          (props.requiresTradingSetup || props.showTradingControls) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
+              {/* Trading-family setup (execution mode, venue, guardrails). */}
               {props.tradingSetupSlot}
-            </div>
-          ) : props.tradingSetupSlot
-        }
-        strategy={
-          props.requiresTradingSetup ? (
+
+              {/* Trading-family strategy configuration — only for genuine
+                   trading-family agents (derived from skills). */}
+            {props.requiresTradingSetup && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
               {/* Filter Trades — 3-way selector replacing pre-filter toggle + hybrid mode */}
               <div>
@@ -613,6 +612,8 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                   </>
                 )}
               </div>
+            </div>
+            )}
             </div>
           ) : null
         }

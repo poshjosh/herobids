@@ -36,7 +36,7 @@ This file records Phase-2-specific decisions and is the append target for new on
 
 ## New decisions (append as you go)
 
-- *(empty — append `P2-N | <decision> | <date> | <evidence/Contemplator ruling>`)*
+- **P2-10 | The agent capability-readiness endpoint `GET /agents/:id/capabilities/readiness` must emit one readiness entry per capability family the agent's skills declare (data-driven), not a hardcoded `knownFamilies = ['trading']`. This GENERIC fix is in scope for T1.1 (not deferred to the backend audit). | 2026-10-01 | Contemplator ruling.** The route is herobids-internal web↔api, NOT the deployed herobids↔Traderton boundary (that contract is exactly `/internal/v1/tools:invoke` + `/internal/v1/invocations/` per `packages/domain/src/traderton/contract.ts`; `TradertonClient` is outbound-only; grep `readiness` under `**/traderton/**` = 0 hits). So P2-7 (boundary lockstep) does NOT apply, and the change is additive to the response schema anyway. Classified GENERIC per §5.1 (removing a trading-hardcoded literal) → act now. Completes P2-3 end-to-end (frontend already derives families from skills; backend was silently dropping non-trading families). `deriveReadiness` already handles connectionless/non-trading families generically.
 
 ## Open questions requiring operator / legal input
 

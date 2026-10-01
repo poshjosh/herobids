@@ -4,7 +4,7 @@ import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS, ReasoningLevelSchema } from '@herobids/domain';
 import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolvePromptTemplate, resolveGoalPlaceholderKey } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -39,33 +39,6 @@ interface EditAgentModalProps {
   onClose: () => void;
   initialData: Agent;
   isAdmin?: boolean;
-}
-
-/** Fixed skill sets matching SKILL_PRESET_SKILL_IDS in agent-display.ts. */
-const TRADING_SKILL_IDS = ['trading', 'bot-management'];
-const DIRECT_TRADING_SKILL_IDS = ['trading'];
-const ASSISTANT_SKILL_IDS = ['task-management', 'web-access'];
-
-function resolvePresetFromSkillIds(skillIds: string[], skillPresetId?: string | null): SkillPresetId {
-  // Prefer the persisted skillPresetId when available (handles direct-trading and
-  // trading-assistant which share the same ['trading'] skill array).
-  if (skillPresetId) {
-    const validPresets: SkillPresetId[] = ['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom'];
-    if (validPresets.includes(skillPresetId as SkillPresetId)) {
-      return skillPresetId as SkillPresetId;
-    }
-  }
-
-  if (skillIds.length === 0) return 'custom';
-
-  const sorted = [...skillIds].sort();
-  const setsEqual = (a: string[], b: string[]) =>
-    a.length === b.length && a.every((id, i) => id === b[i]);
-
-  if (setsEqual(sorted, [...TRADING_SKILL_IDS].sort())) return 'trading';
-  if (setsEqual(sorted, [...DIRECT_TRADING_SKILL_IDS].sort())) return 'direct-trading';
-  if (setsEqual(sorted, [...ASSISTANT_SKILL_IDS].sort())) return 'personal-assistant';
-  return 'custom';
 }
 
 export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditAgentModalProps) {
@@ -104,9 +77,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const [runtimePolicyOverrides, setRuntimePolicyOverrides] = useState<RuntimePolicyOverrides | null>(
     (initialData.runtimePolicyOverrides as RuntimePolicyOverrides | null) ?? null,
   );
-  const [skillPreset, setSkillPreset] = useState<SkillPresetId>(() =>
-    resolvePresetFromSkillIds(initialData.skillIds ?? [], initialData.skillPresetId),
-  );
   const executionModeTouchedRef = useRef(false);
   const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -139,7 +109,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     if (restored) {
       setForm(restored.form);
       setStyle(restored.style);
-      setSkillPreset(restored.skillPreset);
       setModelOverrideEnabled(restored.modelOverrideEnabled);
       setModelForm(restored.modelForm);
       setRuntimePolicyOverrides(restored.runtimePolicyOverrides);
@@ -344,20 +313,18 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     return parsed.kind === 'valid' ? parsed.tickIntervalMs : null;
   }
   const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'hybrid';
-  const requiresTradingSetup = skillPreset === 'trading' || skillPreset === 'direct-trading' || skillPreset === 'trading-assistant' || hasCapabilityFamily(selectedSkills, 'trading');
-  // Short-circuit to false when a non-trading preset (Custom or
-  // Personal Assistant) is selected — no trading skills are inferred
-  // and we don't want the fallback to currentHasTradingCapability keeping
-  // the trading tab visible while the skills query is still loading.
-  const hasTradingCapability = (skillPreset === 'trading' || skillPreset === 'direct-trading' || skillPreset === 'trading-assistant' || hasCapabilityFamily(selectedSkills, 'trading')) && showIntelligence && (skillsQuery.isSuccess
+  // Trading-family presence is derived entirely from the agent's selected skills.
+  const requiresTradingSetup = hasCapabilityFamily(selectedSkills, 'trading');
+  // Until the skills query resolves we fall back to the agent's persisted trading
+  // readiness so we don't flicker the trading config away on open.
+  const hasTradingCapability = showIntelligence && (skillsQuery.isSuccess
     ? hasCapabilityFamily(selectedSkills, 'trading')
     : currentHasTradingCapability);
   // Field-value fallback: show trading controls whenever stored values are present,
-  // including agents that have trading values but no explicit trading skills (custom
-  // preset derived from empty skillIds). When the user explicitly picks a non-trading
-  // preset (Custom or Personal Assistant), the preset change handler clears all
-  // values synchronously, so this naturally becomes false without needing a
-  // skillPreset gate.
+  // including agents that have trading values but no explicit trading skills.
+  // Trading-family presence is derived from skills; deselecting all trading skills
+  // clears the trading-session overrides, and trading controls fall away once no
+  // trading values remain.
   const showTradingControls = requiresTradingSetup || hasTradingCapability
     || Boolean(form.capital.trim() || form.dailyMaxLossPct.trim() || form.maxDrawdownPct.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
   const validationConstraints: ValidationConstraints = {
@@ -370,18 +337,14 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   useEffect(() => {
     setForm((state) => {
       const resolvedSkills = selectableSkills.filter((s) => state.skillIds.includes(s.id));
-      const syntheticTradingSkill =
-        skillPreset === 'trading' || skillPreset === 'direct-trading' || skillPreset === 'trading-assistant' ? [{ capabilityFamilies: ['trading'] }] : [];
-      const effectiveSkills =
-        resolvedSkills.length > 0 ? resolvedSkills : syntheticTradingSkill;
-      const hasTradingSkill = hasCapabilityFamily(effectiveSkills, 'trading');
+      const hasTradingSkill = hasCapabilityFamily(resolvedSkills, 'trading');
       const derived: CapabilityMode = state.technicalPreFilterEnabled && hasTradingSkill ? 'hybrid' : 'intelligence';
       if (derived !== state.capabilityMode) {
         return { ...state, capabilityMode: derived };
       }
       return state;
     });
-  }, [form.skillIds, form.technicalPreFilterEnabled, selectableSkills, skillPreset]);
+  }, [form.skillIds, form.technicalPreFilterEnabled, selectableSkills]);
 
   // Pre-fill goal from promptTemplate when skills change and goal is empty
   useEffect(() => {
@@ -494,7 +457,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         subscribedSources: form.subscribedSources,
         platformAssessmentEnabled: form.platformAssessmentEnabled,
         platformAssessmentReviewIntervalHours: form.platformAssessmentReviewIntervalHours,
-        skillPresetId: skillPreset !== 'custom' ? skillPreset : undefined,
         authorizationMode: form.authorizationMode,
         permissionLevel: form.permissionLevel,
       }));
@@ -563,37 +525,22 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose} closeOnBackdropClick={false} maxWidth="752px">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <form id="edit-agent-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Skill Preset — same label as create agent form */}
+          {/* Skills — the agent is known by its skills. Trading-family config
+               below appears only when a trading skill is selected. Clearing all
+               trading skills also clears any trading-session hour overrides so
+               the hour grid (0-23) becomes editable again. */}
           <div style={{ marginBottom: '20px' }}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
-            <select
-              value={skillPreset}
-              onChange={(e) => {
-                const preset = e.target.value as SkillPresetId;
-                setSkillPreset(preset);
-                setForm((prev) => ({
-                  ...prev,
-                  skillIds: resolveSkillPresetSkillIds(preset, prev.skillIds),
-                  // authorizationMode defaults to direct for all presets
-                  authorizationMode: 'direct' as const,
-                  // Clear trading values when switching to a non-trading preset
-                  // so stale values don't keep trading UI visible via the
-                  // field-value fallback in showTradingControls.
-                  ...(preset !== 'trading' ? {
-                    executionMode: '' as const,
-                    capital: '',
-                    dailyMaxLossPct: '',
-                    maxDrawdownPct: '',
-                    maxSlippageBps: '',
-                    maxOpenPositions: '',
-                    maxPositionSizePct: '',
-                    stopLossPct: '',
-                    stopLossCooldownSecs: '',
-                  } : {}),
-                }));
-                // Clear trading session overrides when switching away from trading
-                // so the hour grid (0-23) becomes editable again.
-                if (preset !== 'trading') {
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
+            <SkillPicker
+              initialSkills={selectableSkills}
+              selectedSkillIds={form.skillIds}
+              onChange={(skillIds) => {
+                const stillTrading = hasCapabilityFamily(
+                  selectableSkills.filter((s) => skillIds.includes(s.id)),
+                  'trading',
+                );
+                setForm((prev) => ({ ...prev, skillIds }));
+                if (!stillTrading) {
                   setRuntimePolicyOverrides((current) => {
                     if (!current?.tradingSessions) return current;
                     const { tradingSessions: _, ...rest } = current;
@@ -601,31 +548,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   });
                 }
               }}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-            >
-              <option value="trading">{intl.formatMessage({ id: 'agents.create.skillPreset.trading' })}</option>
-              <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
-              <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
-            </select>
-            {skillPreset !== 'custom' && selectedSkills.length > 0 && (
-              <div style={{ marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                {selectedSkills.map((s) => s.name).join(', ')}
-              </div>
-            )}
+              loading={skillsQuery.isLoading}
+              errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
+            />
           </div>
-
-          {/* Custom skill picker — shown inline when custom preset is selected */}
-          {skillPreset === 'custom' && (
-            <div style={{ marginBottom: '20px' }}>
-              <SkillPicker
-                initialSkills={selectableSkills}
-                selectedSkillIds={form.skillIds}
-                onChange={(skillIds) => setForm((prev) => ({ ...prev, skillIds }))}
-                loading={skillsQuery.isLoading}
-                errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
-              />
-            </div>
-          )}
 
           {/* Prompt + files + style — unified block */}
           <div style={{ marginBottom: '8px' }}>
@@ -637,7 +563,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               setForm((prev) => ({ ...prev, goal }));
             }}
             onGoalBlur={() => validateFieldOnBlur('goal')}
-            goalPlaceholder={intl.formatMessage({ id: resolveGoalPlaceholderKey(skillPreset) })}
+            goalPlaceholder={intl.formatMessage({ id: resolveGoalPlaceholderKey(form.skillIds, selectableSkills) })}
             goalLabel={intl.formatMessage({ id: 'agents.edit.objective' })}
             goalError={formErrors.goal}
             pendingFiles={form.pendingFiles}
@@ -1146,7 +1072,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               agentId,
               form: serializableForm,
               style,
-              skillPreset,
               modelOverrideEnabled,
               modelForm,
               runtimePolicyOverrides,

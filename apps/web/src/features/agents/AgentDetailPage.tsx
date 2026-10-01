@@ -6,7 +6,7 @@ import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundM
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, formatSkillSelection, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
@@ -41,7 +41,7 @@ export function AgentDetailPage() {
     if (event.type === 'agent.status' && event.agentId === id) {
       void qc.invalidateQueries({ queryKey: ['agents', id] });
       void qc.invalidateQueries({ queryKey: ['agents'] });
-      void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness', 'trading'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'prompt'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'activity-feed'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'messages'] });
@@ -93,14 +93,22 @@ export function AgentDetailPage() {
 
   const selectedSkills = resolveSelectedSkills(agent?.skillIds ?? [], skillsQuery.data?.skills ?? []);
 
-  const hasTradingCapability = hasCapabilityFamily(selectedSkills, 'trading');
+  // Capability families are derived from the agent's actual skills — not a
+  // hardcoded trading check. One readiness card is rendered per family.
+  const capabilityFamilies = resolveCapabilityFamilies(selectedSkills);
+  const hasAnyCapability = capabilityFamilies.length > 0;
 
   const capabilityQuery = useQuery({
-    queryKey: ['agents', id, 'capability-readiness', 'trading'],
-    queryFn: async () => agentsApi.capabilityReadiness(id!, 'trading') as Promise<CapabilityReadiness>,
-    enabled: !!id && hasTradingCapability,
+    queryKey: ['agents', id, 'capability-readiness'],
+    queryFn: () => agentsApi.capabilityReadiness(id!),
+    enabled: !!id && hasAnyCapability,
   });
-  const tradingCapability = capabilityQuery.data;
+  // Only surface readiness for families the agent actually carries, in the same
+  // sorted order as the derived family list, so the UI never shows a stale family.
+  const readinessByFamily = new Map((capabilityQuery.data?.capabilities ?? []).map((cap) => [cap.family, cap] as const));
+  const familyCapabilities = capabilityFamilies
+    .map((family) => readinessByFamily.get(family))
+    .filter((cap): cap is CapabilityReadiness => cap !== undefined);
 
   const startMutation = useMutation({
     mutationFn: () => agentsApi.start(id!),
@@ -449,44 +457,49 @@ export function AgentDetailPage() {
             {skillsQuery.isError && <ErrorState message={localizeApiError(intl, skillsQuery.error, 'common.errorTitle')} />}
             {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
             {capabilityQuery.isError && <ErrorState message={localizeApiError(intl, capabilityQuery.error, 'common.errorTitle')} />}
-            {!skillsQuery.isLoading && !skillsQuery.isError && !hasTradingCapability && (
+            {!skillsQuery.isLoading && !skillsQuery.isError && !hasAnyCapability && (
               <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</div>
             )}
-            {!skillsQuery.isLoading && !skillsQuery.isError && hasTradingCapability && tradingCapability && (
-              <section
-                aria-label={intl.formatMessage({ id: 'agents.summary.capabilityReadinessAria' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
-                style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
-                  <div>
-                    <div style={{ fontSize: '0.875rem', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family, intl)}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state, intl)}</div>
-                    {tradingCapability.state === 'unconfigured' && (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
-                        {intl.formatMessage({ id: 'agents.capabilityState.unconfigured.tradingNote' })}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => navigate(`/agents/${agent.id}/capabilities/${tradingCapability.family}`)}
+            {!skillsQuery.isLoading && !skillsQuery.isError && hasAnyCapability && familyCapabilities.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {familyCapabilities.map((capability) => (
+                  <section
+                    key={capability.family}
+                    aria-label={intl.formatMessage({ id: 'agents.summary.capabilityReadinessAria' }, { capability: formatCapabilityFamily(capability.family, intl) })}
+                    style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}
                   >
-                    {tradingCapability.effectiveReady
-                      ? intl.formatMessage({ id: 'agents.summary.openCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })
-                      : intl.formatMessage({ id: 'agents.summary.configureCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
-                  </Button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-                  <div>{intl.formatMessage({ id: 'agents.detail.connectionReadiness' })}: {formatCapabilityState(tradingCapability.connectionReadiness, intl)}</div>
-                  <div>{intl.formatMessage({ id: 'agents.detail.agentEligibility' })}: {intl.formatMessage({ id: `agents.eligibility.${tradingCapability.agentEligibility}` })}</div>
-                  <div>{intl.formatMessage({ id: 'agents.detail.effectiveReady' })}: {tradingCapability.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })}</div>
-                  <div>{intl.formatMessage({ id: 'common.connection' })}: {tradingCapability.connectionId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })}</div>
-                  {tradingCapability.reasons.length > 0 && (
-                    <div>{intl.formatMessage({ id: 'agents.detail.reasons' })}: {tradingCapability.reasons.join('; ')}</div>
-                  )}
-                </div>
-              </section>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '0.875rem', fontWeight: '600' }}>{formatCapabilityFamily(capability.family, intl)}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{formatCapabilityState(capability.state, intl)}</div>
+                        {capability.state === 'unconfigured' && capability.family === 'trading' && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
+                            {intl.formatMessage({ id: 'agents.capabilityState.unconfigured.tradingNote' })}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => navigate(`/agents/${agent.id}/capabilities/${capability.family}`)}
+                      >
+                        {capability.effectiveReady
+                          ? intl.formatMessage({ id: 'agents.summary.openCapability' }, { capability: formatCapabilityFamily(capability.family, intl) })
+                          : intl.formatMessage({ id: 'agents.summary.configureCapability' }, { capability: formatCapabilityFamily(capability.family, intl) })}
+                      </Button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                      <div>{intl.formatMessage({ id: 'agents.detail.connectionReadiness' })}: {formatCapabilityState(capability.connectionReadiness, intl)}</div>
+                      <div>{intl.formatMessage({ id: 'agents.detail.agentEligibility' })}: {intl.formatMessage({ id: `agents.eligibility.${capability.agentEligibility}` })}</div>
+                      <div>{intl.formatMessage({ id: 'agents.detail.effectiveReady' })}: {capability.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })}</div>
+                      <div>{intl.formatMessage({ id: 'common.connection' })}: {capability.connectionId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })}</div>
+                      {capability.reasons.length > 0 && (
+                        <div>{intl.formatMessage({ id: 'agents.detail.reasons' })}: {capability.reasons.join('; ')}</div>
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
             )}
               </div>
             </details>

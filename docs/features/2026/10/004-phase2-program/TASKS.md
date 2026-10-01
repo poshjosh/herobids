@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 Do not pause between tasks.
 
-**Current cursor:** `T1.1` (in progress). ← Update this line to the task you are
+**Current cursor:** `T2.1` (not started). ← Update this line to the task you are
 on after every task, so a context reset resumes unambiguously.
 
 ### Status scheme (use the emoji, NOT the checkbox)
@@ -51,13 +51,13 @@ Genuine gates:
   3–4; see ENTRYPOINT §3.6).
   - Exit: you can restate the objective, the two hard stops, and the
     classification rubric without re-reading.
-- ✅ **T0.2 Confirm `ESCALATIONS.md` is present** (it is pre-seeded in this
+- ✅ **T0.2 Confirm `ESCALATIONS.md` is present** (pre-seeded, confirmed). (it is pre-seeded in this
   folder with the §5.3 columns). If somehow missing, recreate it from the
   ENTRYPOINT §5.3 template. This is where every ESCALATE-LEGAL item goes.
 
 ## Block 1 — Step 8 remediation: frontend (already audited)
 
-- ⬜ **T1.1 Implement the genericize-agent-capability-UI slice.** Execute
+- ✅ **T1.1 Implement the genericize-agent-capability-UI slice.** Execute
   `../002-genericize-agent-capability-ui/001-plan.md` Stages 1–5 (generic
   capability list, Capabilities tab, remove type selector, API-client family
   generalization with the lockstep caveat, i18n relabels).
@@ -158,3 +158,46 @@ Genuine gates:
   `staging.herobids.com` / `staging.traderton.com`). Per T0.1 this is a Phase 1
   concern — noted; proceeding with doc/code work that does not require staging.
 - `ESCALATIONS.md` present and pre-seeded (§5.3 columns). Confirmed.
+
+### Block 1 — T1.1 frontend genericization (done 2026-10-01)
+- Agents: Implementer (frontend Stages 1–5), CodeReviewer (clean, LOW only),
+  VisualTester (surfaced a backend gap), Contemplator (ruling P2-10),
+  Implementer (backend readiness fix), CodeReviewer (backend, clean).
+- Frontend: AgentDetailPage now derives capability families from skills and
+  renders one readiness card per family; Advanced Settings has a generic
+  **Capabilities** tab replacing Trading/Strategy; the agent "type"/preset
+  selector is gone (replaced by a non-identity "Suggested skills" helper);
+  `SkillPresetId` retired → `SuggestedSkillSetId`; i18n relabels across en/ar/hi.
+- API-client: kept thin trading aliases (`tradingConnections`/`tradingPositions`)
+  — deployed boundary contract untouched (P2-7). `skillPresetId` API field left
+  accepted-but-ignored; its removal is a backend-audit (T2.x) follow-up.
+- **Backend fix (P2-10, ruled in-scope):** `GET /agents/:id/capabilities/readiness`
+  now emits one entry per family the agent's skills declare ∪ provider families,
+  instead of a hardcoded `knownFamilies = ['trading']`. Kept the route's own
+  per-family loop (preserves revoked-vs-unconfigured semantics; did NOT swap to
+  `resolveRuntimeCapabilityDescriptor` which filters to active grants). This
+  completes audit issue #1 end-to-end (email-only agent now shows an email card).
+- Verification: `pnpm lint` green; web build + 681 web tests green; api+db builds
+  green; capability functional tests 5/5 green (against local compose pg+redis).
+- UAT recorded in `docs/tech/user-acceptance-tests.md` §6.0b (GC-01…GC-08);
+  GC-02/GC-03 (originally ❌ for the backend gap) are fixed by P2-10.
+- Commit: see git log (local, no push).
+
+---
+
+## Outstanding Issues (non-blocking; from code review)
+
+Low-severity observations recorded during review (no CRITICAL/HIGH remain).
+Grouped by task.
+
+### T1.1 (genericize agent capability UI)
+- **LOW — orphaned i18n key.** `agents.create.goalPlaceholder.personalAssistant`
+  is now unreferenced after `resolveGoalPlaceholderKey` collapsed to
+  trading/custom. Present in all three locales (parity-safe). Remove in a future
+  i18n cleanup. (`apps/web/src/app/i18n/locales/{en,ar,hi}.ts`)
+- **LOW — degenerate readiness edge.** In `AgentDetailPage.tsx`, if
+  `hasAnyCapability` is true but the readiness response contains no entry
+  matching a derived family (data mismatch / partial response), the capabilities
+  block renders neither cards, empty-state, nor a loading row. Not reachable with
+  the corrected backend (P2-10 now emits an entry per declared family). Optional
+  hardening only.

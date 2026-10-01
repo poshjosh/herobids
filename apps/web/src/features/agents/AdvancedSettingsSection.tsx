@@ -3,8 +3,13 @@ import { useIntl } from 'react-intl';
 
 export interface AdvancedSettingsSectionProps {
   aiConfig: ReactNode;
-  tradingSetup: ReactNode;
-  strategy: ReactNode;
+  /**
+   * Generic per-capability configuration (e.g. trading setup + strategy for the
+   * trading family). Rendered under a single "Capabilities" tab. Pass null/false
+   * when the agent carries no family that needs configuration — the tab is then
+   * hidden entirely.
+   */
+  capabilities: ReactNode;
   /** Called when the section is expanded or collapsed. */
   onToggle?: (open: boolean) => void;
   /**
@@ -13,7 +18,7 @@ export interface AdvancedSettingsSectionProps {
    * section was already open or errors pre-existed from a prior onBlur.
    */
   expandSeq?: number;
-  /** Tab index to switch to when expandSeq fires (0=AI, 1=Trading). */
+  /** Tab index to switch to when expandSeq fires (0=AI, 1=Capabilities). */
   errorTabIdx?: number;
   /** Form validation errors keyed by field name. Used to highlight error tabs. */
   formErrors?: Record<string, string>;
@@ -62,14 +67,12 @@ const panelStyle: React.CSSProperties = {
 
 const sectionLabels = [
   'agents.advanced.aiConfig',
-  'agents.advanced.tradingSetup',
-  'agents.advanced.strategy',
+  'agents.advanced.capabilities',
 ] as const;
 
 export function AdvancedSettingsSection({
   aiConfig,
-  tradingSetup,
-  strategy,
+  capabilities,
   onToggle,
   expandSeq,
   errorTabIdx,
@@ -77,7 +80,7 @@ export function AdvancedSettingsSection({
   fieldTabMap,
 }: AdvancedSettingsSectionProps) {
   const intl = useIntl();
-  const slots = [aiConfig, tradingSetup, strategy];
+  const slots = [aiConfig, capabilities];
 
   const visibleTabs = slots
     .map((slot, idx) => ({ slot, idx }))

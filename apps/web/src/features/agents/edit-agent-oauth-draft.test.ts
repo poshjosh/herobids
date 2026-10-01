@@ -70,7 +70,6 @@ function makeDraft(overrides: Partial<{
   agentId: string;
   form: Partial<AgentFormState>;
   style: 'balanced' | 'bold' | 'careful';
-  skillPreset: 'trading' | 'personal-assistant' | 'custom';
   modelOverrideEnabled: boolean;
   modelForm: { provider: string; lightModel: string; heavyModel: string };
 }> = {}) {
@@ -80,7 +79,6 @@ function makeDraft(overrides: Partial<{
     agentId: overrides.agentId ?? 'agent-123',
     form: serializableForm,
     style: (overrides.style ?? 'balanced') as 'balanced' | 'bold' | 'careful',
-    skillPreset: (overrides.skillPreset ?? 'trading') as 'trading' | 'personal-assistant' | 'custom',
     modelOverrideEnabled: overrides.modelOverrideEnabled ?? false,
     modelForm: overrides.modelForm ?? { provider: '', lightModel: '', heavyModel: '' },
     runtimePolicyOverrides: null,
@@ -253,14 +251,6 @@ describe('applyOAuthReturnToForm', () => {
 
     const result = applyOAuthReturnToForm(current, draft, null, 'agent-123');
     expect(result!.style).toBe('bold');
-  });
-
-  it('restores skillPreset from draft', () => {
-    const current = makeFormState();
-    const draft = makeDraft({ skillPreset: 'personal-assistant' });
-
-    const result = applyOAuthReturnToForm(current, draft, null, 'agent-123');
-    expect(result!.skillPreset).toBe('personal-assistant');
   });
 
   it('restores modelOverrideEnabled and modelForm from draft', () => {

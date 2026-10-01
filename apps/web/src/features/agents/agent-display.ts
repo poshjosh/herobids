@@ -11,30 +11,18 @@ export const CAPABILITY_FAMILY_LABELS: Record<string, string> = {
   trading: 'Trading',
 };
 
-export type SkillPresetId = 'trading' | 'direct-trading' | 'trading-assistant' | 'personal-assistant' | 'custom';
+/**
+ * Identifiers for the create-flow "suggested skills" convenience. These are NOT
+ * an agent type or identity — they only pre-select a starter set of skills in
+ * the form. An agent's identity is derived entirely from its skills (and their
+ * capability families); nothing here is persisted or shown as a "type".
+ */
+export type SuggestedSkillSetId = 'trading' | 'personal-assistant' | 'custom';
 
-const SKILL_PRESET_SKILL_IDS: Record<Exclude<SkillPresetId, 'custom'>, string[]> = {
+const SUGGESTED_SKILL_SETS: Record<Exclude<SuggestedSkillSetId, 'custom'>, string[]> = {
   trading: ['trading', 'bot-management'],
-  'direct-trading': ['trading'],
-  'trading-assistant': ['trading'],
   'personal-assistant': ['task-management', 'web-access', 'email'],
 };
-
-const SKILL_PRESET_DISPLAY_KEYS: Record<Exclude<SkillPresetId, 'custom'>, string> = {
-  trading: 'agents.skillPresetId.trading',
-  'direct-trading': 'agents.skillPresetId.directTrading',
-  'trading-assistant': 'agents.skillPresetId.tradingAssistant',
-  'personal-assistant': 'agents.skillPresetId.personalAssistant',
-};
-
-/** Format a skillPresetId value into a human-readable label. */
-export function formatSkillPresetId(presetId: string | null | undefined, intl?: IntlShape): string | null {
-  if (!presetId) return null;
-  const key = SKILL_PRESET_DISPLAY_KEYS[presetId as Exclude<SkillPresetId, 'custom'>];
-  if (key) return formatMessageOrFallback(intl, key, presetId);
-  if (presetId === 'custom') return formatMessageOrFallback(intl, 'agents.create.skillPreset.custom', 'Custom');
-  return presetId;
-}
 
 function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallback: string): string {
   if (!intl) {
@@ -85,12 +73,17 @@ export function listSelectableSkills(skills: Skill[]): Skill[] {
     });
 }
 
-export function resolveSkillPresetSkillIds(preset: SkillPresetId, _currentSkillIds: string[] = []): string[] {
-  if (preset === 'custom') {
+/**
+ * Resolve the starter skill IDs for a "suggested skills" selection. 'custom'
+ * clears the selection so the user picks skills manually. This is a form-only
+ * convenience — the result is a plain list of skill IDs, never a stored type.
+ */
+export function resolveSuggestedSkillIds(suggestion: SuggestedSkillSetId): string[] {
+  if (suggestion === 'custom') {
     return [];
   }
 
-  return [...SKILL_PRESET_SKILL_IDS[preset]];
+  return [...SUGGESTED_SKILL_SETS[suggestion]];
 }
 
 export function formatSkillSelection(skills: Array<{ name: string }>, intl?: IntlShape): string {
@@ -172,17 +165,18 @@ export function resolveGoalPlaceholder(skillIds: string[], skills: Skill[]): str
   return null;
 }
 
-const GOAL_PLACEHOLDER_BY_PRESET: Record<SkillPresetId, string> = {
-  trading: 'agents.create.goalPlaceholder.trading',
-  'direct-trading': 'agents.create.goalPlaceholder.trading',
-  'trading-assistant': 'agents.create.goalPlaceholder.trading',
-  'personal-assistant': 'agents.create.goalPlaceholder.personalAssistant',
-  custom: 'agents.create.goalPlaceholder.custom',
-};
-
-/** Return the i18n key for the goal placeholder matching the given preset. */
-export function resolveGoalPlaceholderKey(preset: SkillPresetId): string {
-  return GOAL_PLACEHOLDER_BY_PRESET[preset];
+/**
+ * Return the i18n key for the goal-field placeholder, derived from the agent's
+ * selected skills rather than any "type". Trading-family agents get the trading
+ * placeholder; everything else falls back to the generic custom placeholder.
+ * (A skill's own `promptHint` still takes precedence via `resolveGoalPlaceholder`.)
+ */
+export function resolveGoalPlaceholderKey(skillIds: string[], skills: Skill[]): string {
+  const selected = resolveSelectedSkills(skillIds, skills);
+  if (hasCapabilityFamily(selected, 'trading')) {
+    return 'agents.create.goalPlaceholder.trading';
+  }
+  return 'agents.create.goalPlaceholder.custom';
 }
 
 export function formatExecutionMode(executionMode: string | null | undefined, intl?: IntlShape): string {

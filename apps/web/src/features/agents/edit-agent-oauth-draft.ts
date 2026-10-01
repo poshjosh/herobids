@@ -1,6 +1,5 @@
 import type { AgentFormState } from './agent-form-state.js';
 import type { AgentStyleValue, RuntimePolicyOverrides } from './style-mapping.js';
-import type { SkillPresetId } from './agent-display.js';
 
 // ---------------------------------------------------------------------------
 // OAuth draft storage for the edit-agent flow
@@ -19,7 +18,6 @@ export interface EditAgentOAuthDraft {
   /** Full form state, excluding non-serializable pendingFiles. */
   form: Omit<AgentFormState, 'pendingFiles'>;
   style: AgentStyleValue;
-  skillPreset: SkillPresetId;
   modelOverrideEnabled: boolean;
   modelForm: { provider: string; lightModel: string; heavyModel: string };
   runtimePolicyOverrides: RuntimePolicyOverrides | null;
@@ -66,7 +64,6 @@ export function clearEditAgentOAuthDraft(): void {
 export interface OAuthReturnRestoreResult {
   form: AgentFormState;
   style: AgentStyleValue;
-  skillPreset: SkillPresetId;
   modelOverrideEnabled: boolean;
   modelForm: { provider: string; lightModel: string; heavyModel: string };
   runtimePolicyOverrides: RuntimePolicyOverrides | null;
@@ -100,7 +97,6 @@ export function applyOAuthReturnToForm(
       pendingFiles: currentForm.pendingFiles, // preserve any in-memory pending files (typically [])
     },
     style: draft.style,
-    skillPreset: draft.skillPreset,
     modelOverrideEnabled: draft.modelOverrideEnabled,
     modelForm: draft.modelForm,
     runtimePolicyOverrides: draft.runtimePolicyOverrides,

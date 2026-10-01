@@ -8,7 +8,7 @@ import { PageShell, PageHeader, LoadingRows, ErrorState, Button, MetricCard, Fie
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
 import type { BlueprintSummary } from '../../lib/api-client.js';
-import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolveSuggestedSkillIds, resolvePromptTemplate, resolveGoalPlaceholderKey, type SuggestedSkillSetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -54,9 +54,10 @@ interface IntentState {
   /** true = technical pre-filter scanner runs before LLM decides (ON by default for trading agents) */
   technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
-  skillPreset: SkillPresetId;
+  /** Create-flow convenience that pre-selects a starter skill set. Never persisted or shown as a type. */
+  suggestedSkills: SuggestedSkillSetId;
   skillIds: string[];
-  /** Authorization mode: 'direct' | 'approval_required'. Default depends on preset. */
+  /** Authorization mode: 'direct' | 'approval_required'. */
   authorizationMode: 'direct' | 'approval_required';
   executionMode: 'test' | 'live';
   provider: string;
@@ -282,8 +283,8 @@ export function CreateAgentFlow({
     hybridMode: undefined,
     technicalPreFilterEnabled: false,
     technicalConfig: defaultTechnicalConfigFormState(),
-    skillPreset: 'trading',
-    skillIds: resolveSkillPresetSkillIds('trading'),
+    suggestedSkills: 'custom',
+    skillIds: [],
     authorizationMode: 'direct',
     executionMode: 'test',
     provider: '',
@@ -479,11 +480,7 @@ export function CreateAgentFlow({
   useEffect(() => {
     setIntent((state) => {
       const resolvedSkills = skills.filter((s) => state.skillIds.includes(s.id));
-      const syntheticTradingSkill = (state.skillPreset === 'trading' || state.skillPreset === 'direct-trading' || state.skillPreset === 'trading-assistant')
-        ? [{ capabilityFamilies: ['trading'] }]
-        : [];
-      const effectiveSkills = resolvedSkills.length > 0 ? resolvedSkills : syntheticTradingSkill;
-      const hasTradingSkill = hasCapabilityFamily(effectiveSkills, 'trading');
+      const hasTradingSkill = hasCapabilityFamily(resolvedSkills, 'trading');
       const derived: CapabilityMode = state.technicalPreFilterEnabled && hasTradingSkill ? 'hybrid' : 'intelligence';
       if (derived !== state.capabilityMode) {
         return { ...state, capabilityMode: derived };
@@ -535,7 +532,7 @@ export function CreateAgentFlow({
     savedModelSettings,
   );
   const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'hybrid';
-  const requiresTradingSetup = intent.skillPreset === 'trading' || intent.skillPreset === 'direct-trading' || intent.skillPreset === 'trading-assistant' || hasCapabilityFamily(selectedSkills, 'trading');
+  const requiresTradingSetup = hasCapabilityFamily(selectedSkills, 'trading');
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
   );
@@ -663,7 +660,6 @@ export function CreateAgentFlow({
         subscribedSources: intent.subscribedSources,
         platformAssessmentEnabled: intent.platformAssessmentEnabled,
         platformAssessmentReviewIntervalHours: intent.platformAssessmentReviewIntervalHours,
-        skillPresetId: intent.skillPreset !== 'custom' ? intent.skillPreset : undefined,
         authorizationMode: intent.authorizationMode,
         permissionLevel: intent.permissionLevel,
       }));
@@ -790,24 +786,32 @@ export function CreateAgentFlow({
         </div>
         <div className="create-flow-card-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-          {/* 1. Skill Preset — first, sets context for everything else */}
+          {/* 1. Suggested skills — a creation convenience that only pre-selects a
+               starter skill set. This is NOT an agent type: nothing here is
+               persisted or shown as identity; the agent is known by its skills. */}
           <div style={{ marginBottom: '20px' }}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.suggestedSkills' })}</FieldLabel>
             <select
-              value={intent.skillPreset}
+              value={intent.suggestedSkills}
               onChange={(e) => {
-                const skillPreset = e.target.value as SkillPresetId;
+                const suggestedSkills = e.target.value as SuggestedSkillSetId;
+                const nextSkillIds = resolveSuggestedSkillIds(suggestedSkills);
+                const nextHasTrading = hasCapabilityFamily(
+                  skills.filter((s) => nextSkillIds.includes(s.id)),
+                  'trading',
+                );
                 setIntent((state) => {
-                  const next = {
+                  const next: IntentState = {
                     ...state,
-                    skillPreset,
-                    skillIds: resolveSkillPresetSkillIds(skillPreset, state.skillIds),
-                    // authorizationMode defaults to direct for all presets
+                    suggestedSkills,
+                    // 'custom' leaves the current manual selection intact; a named
+                    // suggestion replaces it with the starter set.
+                    skillIds: suggestedSkills === 'custom' ? state.skillIds : nextSkillIds,
                     authorizationMode: 'direct' as const,
                   };
-                  // Clear trading sessions when switching away from trading
-                  // so the hour grid (0-23) becomes editable again.
-                  if (skillPreset !== 'trading' && next.runtimePolicyOverrides?.tradingSessions) {
+                  // Clear trading sessions when the resulting selection is no longer
+                  // trading so the hour grid (0-23) becomes editable again.
+                  if (!nextHasTrading && next.runtimePolicyOverrides?.tradingSessions) {
                     const { tradingSessions: _, ...rest } = next.runtimePolicyOverrides;
                     next.runtimePolicyOverrides = Object.keys(rest).length > 0 ? rest : null;
                   }
@@ -816,11 +820,11 @@ export function CreateAgentFlow({
               }}
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
-              <option value="trading">{intl.formatMessage({ id: 'agents.create.skillPreset.trading' })}</option>
-              <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
-              <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
+              <option value="custom">{intl.formatMessage({ id: 'agents.create.suggestedSkills.custom' })}</option>
+              <option value="trading">{intl.formatMessage({ id: 'agents.create.suggestedSkills.trading' })}</option>
+              <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.suggestedSkills.personalAssistant' })}</option>
             </select>
-            {intent.skillPreset !== 'custom' && selectedSkills.length > 0 && (
+            {selectedSkills.length > 0 && (
               <div style={{ marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
                 {selectedSkills.map((s) => s.name).join(', ')}
               </div>
@@ -846,7 +850,7 @@ export function CreateAgentFlow({
               }}
             >
               <span style={{ transform: skillsExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', display: 'inline-block' }}>▸</span>
-              {intent.skillPreset === 'custom'
+              {intent.skillIds.length === 0
                 ? intl.formatMessage({ id: 'agents.create.skills.addLabel', defaultMessage: 'Add skills' })
                 : intl.formatMessage({ id: 'agents.create.skills.editLabel', defaultMessage: 'Edit skills' })}
               <span className="optional-hint">
@@ -858,7 +862,7 @@ export function CreateAgentFlow({
                 <SkillPicker
                   initialSkills={skills}
                   selectedSkillIds={intent.skillIds}
-                  onChange={(skillIds) => setIntent((state) => ({ ...state, skillIds }))}
+                  onChange={(skillIds) => setIntent((state) => ({ ...state, skillIds, suggestedSkills: 'custom' }))}
                   loading={skillsLoading}
                   errorMessage={skillsError}
                 />
@@ -876,7 +880,7 @@ export function CreateAgentFlow({
               setIntent((state) => ({ ...state, goal }));
             }}
             onGoalBlur={() => validateFieldOnBlur('goal')}
-            goalPlaceholder={intl.formatMessage({ id: resolveGoalPlaceholderKey(intent.skillPreset) })}
+            goalPlaceholder={intl.formatMessage({ id: resolveGoalPlaceholderKey(intent.skillIds, skills) })}
             goalLabel={<>{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth' : 'agents.create.goal' })}{' '}<span className="goal-subtitle">{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth.subtitle' : 'agents.create.goal.subtitle' })}</span></>}
             goalError={formErrors.goal}
             pendingFiles={intent.pendingFiles}

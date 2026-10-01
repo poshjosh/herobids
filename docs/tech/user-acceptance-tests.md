@@ -173,6 +173,32 @@ under test. They are blocked until C3 is implemented.
 | AG-C05 | Second capability uses the same renderer | Render a fixture non-trading capability with attributes and a feed | It renders through the same generic capability attribute/feed components with no trading-specific branch, label, formatter, or layout. | ✅ | 2026-09-19; commit: `a506d95ae428af902e9913bf0b9343ed0be53c0c`; evidence: focused static UI test renders a non-trading inbox/messages fixture through the generic components and asserts no `trading` label. |
 | AG-C06 | Capability presentation is usable on mobile | Repeat AG-C01 and AG-C03 at a mobile viewport | Generic attributes, feeds, status, and connection selection remain readable, non-overlapping, and operable. | ✅ | 2026-09-21; commit: `4bce03a5`; verified at a mobile viewport against a running cross-stack. Generic attributes/feeds/status and connection selection remain readable and operable.
 
+### 6.0b Phase 2 T1.1 — Genericized Agent Capability UI
+
+Visual UAT of the frontend genericization change. Run against a live cross-stack
+(local Postgres + Redis + API + Vite web). Date: 2026-10-01. All agents created
+through the UI create flow by an authenticated test user.
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| GC-01 | Email-only — Advanced Settings has generic Capabilities tab, hidden for email | Create flow; select only the Email skill; expand Advanced Settings | Only an "AI" tab is shown; no "Capabilities" tab (and no "Trading"/"Strategy" tabs). The Capabilities tab is hidden because the email family needs no config. | ✅ | 2026-10-01: Advanced Settings tablist showed a single "AI" tab; no "Capabilities"/"Trading"/"Strategy" tab. Matches `AdvancedSettingsSection` hiding the capabilities slot when `null`. |
+| GC-02 | Email-only — detail shows ONE email readiness card (not empty state) | Open the email-only agent detail; expand Capabilities | One readiness card for the email family; NOT the "No capability setup required" empty state. | ❌ | 2026-10-01: Capabilities section rendered EMPTY — no email card and no empty state. Root cause: backend `GET /agents/:id/capabilities/readiness` hardcodes `knownFamilies = ['trading']` (apps/api/src/routes/capabilities/index.ts) and never emits an `email` family. Frontend derives `['email']` from skills then intersects with the readiness response (`familyCapabilities`), which is empty → nothing renders. |
+| GC-03 | Trading+email — detail shows TWO cards (email + Trading) | Create agent with Trading + Email skills; open detail; expand Capabilities | Two capability cards: email and Trading. | ❌ | 2026-10-01: Only ONE card ("Trading capability readiness") rendered; email card missing. Same root cause as GC-02 — readiness endpoint returned only `{family:"trading"}`. |
+| GC-04 | Trading+email — Advanced Settings Capabilities tab present (trading setup + strategy) | Create agent with Trading + Email skills; expand Advanced Settings | "Capabilities" tab present alongside "AI"; contains trading setup + strategy config. | ✅ | 2026-10-01: Tablist showed "AI" + "Capabilities"; the Capabilities tab contained execution mode, venue, trade authorization, guardrails, premium-handover cadence, trade filtering, and wake notices. |
+| GC-05 | Trading-only — one Trading card on detail | Create agent with Trading skill; open detail; expand Capabilities | One Trading capability card (unchanged behavior). | ✅ | 2026-10-01: One "Trading capability readiness" card shown (Unconfigured, with trading note + Configure button). |
+| GC-06 | Trading-only — Capabilities tab has trading setup + strategy | Create agent with Trading skill; expand Advanced Settings → Capabilities | Capabilities tab contains trading setup + strategy. | ✅ | 2026-10-01: Confirmed, identical content to GC-04. |
+| GC-07 | Create flow has NO type selector; "Suggested skills" dropdown only pre-selects skills | Open create form; inspect top of form and review summary | No agent "type"/identity selector. A "Suggested skills" dropdown exists ("Choose skills manually" / "Trading starter" / "Personal assistant starter") that only pre-selects skills. | ✅ | 2026-10-01: Selecting "Trading starter" pre-selected "Bot Management, Trading" skills (editable via "Edit skills") and surfaced the trading Capital field. Review summary showed only Name/Style/Capability mode — no type row. |
+| GC-08 | No-skills agent shows "No capability setup required" | Create an agent with no skills; open detail; expand Capabilities | Capabilities section shows the "No capability setup required" empty state. | ✅ | 2026-10-01: Empty state "No capability setup required" shown as expected. |
+
+**Summary:** Scenarios 3, 4, 5 PASS. Scenario 1's create/edit Advanced Settings
+behavior PASSES; Scenarios 1 & 2 detail-page card expectations FAIL. The frontend
+genericization is correct (families derived from skills; one card per family;
+generic Capabilities tab), but the non-trading (`email`) family capability card
+never renders because the backend readiness endpoint only reports the `trading`
+family. This is a backend gap surfaced by the genericized UI, not a frontend
+regression. Note: lint + unit tests + typecheck were reported passing prior to
+this visual UAT.
+
 ### 6.1 Edit Agent Form
 
 | ID | Test Case | Steps | Expected | Status | Notes |
