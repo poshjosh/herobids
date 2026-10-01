@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 Do not pause between tasks.
 
-**Current cursor:** `T2.1` (not started). ← Update this line to the task you are
+**Current cursor:** `T2.2` (in progress). ← Update this line to the task you are
 on after every task, so a context reset resumes unambiguously.
 
 ### Status scheme (use the emoji, NOT the checkbox)
@@ -72,7 +72,7 @@ Genuine gates:
 
 ## Block 2 — Step 8 audit: backend (mirror the frontend audit)
 
-- ⬜ **T2.1 Backend trading-coupling audit.** Inventory trading-specific
+- ✅ **T2.1 Backend trading-coupling audit.** Inventory trading-specific
   surfaces in `apps/api`, `apps/worker`, `packages/*` that are *product/identity*
   coupling (NOT the legitimate Traderton boundary client): API routes
   (`/capabilities/trading/*`, `skillPresetId` enum), system-skill seeds
@@ -88,10 +88,27 @@ Genuine gates:
     as follow-on tasks here; ESCALATE-LEGAL items appended to `ESCALATIONS.md`.
   - Note: distinguish *trading product coupling* (in scope) from the generic
     External Backend boundary (Phase 3, out of scope here).
-- ⬜ **T2.2 Execute backend REMOVE-SAFE / GENERIC remediations** surfaced by
+- 🔄 **T2.2 Execute backend REMOVE-SAFE / GENERIC remediations** surfaced by
   T2.1 that do not touch the deployed boundary contract or need legal input.
   - Agent: PlanCreator → Implementer → Tester → Reworker.
   - Exit: changes done + verified; contract-affecting ones deferred with a note.
+  - **Safe-standalone GENERIC items to do now (from `../005-…` §Follow-on 1–4,8):**
+    1. Genericize `GET /capabilities` (`apps/api/src/routes/capabilities/index.ts:23`)
+       — derive family list from registered skills' `capabilityFamilies`.
+    2. Un-gate the per-family presentation route
+       (`apps/api/src/routes/capabilities/trading.ts:410`, `if family!=='trading'→404`).
+    3. Relabel trading-specific generic error copy (`agents.ts:108`,
+       `blueprints.ts:1026,1040` — "Trading service is unavailable").
+    4. Capability-neutral default goal (`chat.ts:692` `synthesizePrompt` default).
+    8. Capability-generic blueprint defaults (`blueprints.ts:448` — no `momentum`
+       default for a generic blueprint).
+  - **Deferred (contract/lockstep — P2-7/P2-12), NOT in this slice:**
+    - (6) Generalize `/capabilities/trading/*` → `/capabilities/:family/*`
+      (lockstep with web api-client).
+    - (7) Demote `skillPresetId`/`strategyPreset`/`SKILL_PRESET_MAP` (web still
+      sends `strategyPreset`; needs lockstep or ignore-window).
+    - (5) Reshape Guided Setup into a family-driven flow (coordinate with E1).
+    - Blueprint facet-schema genericization (larger; Phase-3-adjacent).
 
 ## Block 3 — Step 6: move trading documentation
 
@@ -181,7 +198,19 @@ Genuine gates:
   green; capability functional tests 5/5 green (against local compose pg+redis).
 - UAT recorded in `docs/tech/user-acceptance-tests.md` §6.0b (GC-01…GC-08);
   GC-02/GC-03 (originally ❌ for the backend gap) are fixed by P2-10.
-- Commit: see git log (local, no push).
+- Commit: see git log (local, no push). SHA 44c67098.
+
+### Block 2 — T2.1 backend audit (done 2026-10-01)
+- Agent: Contemplator (scoped research) authored `../005-backend-trading-coupling-audit.md`.
+- Classification: 13 GENERIC, 3 MOVE, 0 REMOVE-SAFE, 3 ESCALATE-LEGAL (E1/E2/E3
+  appended to ESCALATIONS.md). KEEP = trading skills, worker/engine mechanics,
+  Traderton boundary. Boundary + `domain/{traderton,trading}` internals are
+  Phase-3-owned.
+- Correction recorded (P2-12): web still SENDS `strategyPreset` (and the
+  `skillPresetId` field plumbing remains) in `agent-payloads.ts:265,273` → those
+  backend removals are lockstep, not standalone.
+- MOVE items feed Block 3 (doc move): `buildTradingPrompt` venue/strategy
+  reference copy; web `trading-venues` docs; `reference/crypto-ecosystem` docs.
 
 ---
 
