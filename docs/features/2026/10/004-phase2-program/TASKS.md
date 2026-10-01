@@ -3,8 +3,8 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 Do not pause between tasks.
 
-**Current cursor:** `T4.1` (next). ← Update this line to the task you are
-on after every task, so a context reset resumes unambiguously.
+**Current cursor:** `T4.2` (next — infra HARD STOP). ← Update this line to the
+task you are on after every task, so a context reset resumes unambiguously.
 
 ### Status scheme (use the emoji, NOT the checkbox)
 
@@ -158,7 +158,7 @@ Genuine gates:
 
 > **Prerequisite (ENTRYPOINT §3.6):** same traderton-repo checks as Block 3.
 
-- ⬜ **T4.1 Author the minimal site content** for `staging.traderton.com`:
+- ✅ **T4.1 Author the minimal site content** for `staging.traderton.com`:
   docs, venue guides, service status, product identity. No trading dashboard, no
   execution-boundary exposure. Build it in the traderton repo per its
   conventions (mirror herobids public-pages patterns where sensible).
@@ -166,6 +166,21 @@ Genuine gates:
   - Exit: site builds and serves locally; content present; no route reaches the
     execution boundary (assert the apex/execution block, mirroring the staging
     Caddy guard).
+  - **Done (traderton repo, plan `docs/features/2026/10/01/001-minimal-public-site/001-plan.md`):**
+    static site under `site/` (`index.html` identity, `docs/index.html` hub
+    linking the canonical `docs/reference/*`, `status.html`, `assets/style.css`,
+    `Caddyfile.local`, `README.md`). Plain static HTML/CSS — no deps, not a pnpm
+    package, no new env vars. LOCAL serving via `infra/hetzner/compose.site-local.yaml`
+    (a `site` caddy container + a `caddy` running `Caddyfile.site-local`, an HTTP
+    mirror of the staging public-site vhost guard). Isolation test
+    `infra/hetzner/tests/site-isolation.sh` asserts (offline) the real
+    `Caddyfile.staging` guard + local-mirror lockstep + no boundary proxy in the
+    public vhost, and (live) 200 on `/ /docs/ /status.html`, 404 on `/health*`
+    `/internal*`.
+  - Verified: offline+live isolation test green; VisualTester pass (3 pages, a11y
+    OK, no dashboard/exec surface); `pnpm lint` + `pnpm build` green; local stack
+    torn down. **Did NOT touch staging `compose.yaml`/`deploy.sh`/`deploy-on-host.sh`
+    (that is the T4.2 hard-stop boundary).**
 - ⬜ **T4.2 Publishing (DNS/TLS/deploy) — HARD STOP.** Prepare the publish steps
   (DNS, TLS, deploy) and document them; do NOT execute. Request operator
   approval. Status 🚫 until approved.
@@ -313,3 +328,18 @@ Grouped by task.
   `scripts/ts/build-docs-index.ts`. Any future add/rename/delete of a public-pages
   doc must re-run that generator (and check `platform-docs.test.ts` assertions),
   or the agent-facing `search_app_docs`/`read_app_docs` tools go stale.
+
+### T4.1 (minimal Traderton site — traderton repo)
+- **LOW — docs links serve raw `.md`.** The `site/docs/` hub links to the
+  canonical `docs/reference/*.md` which Caddy serves as text/markdown (browsers
+  download rather than render). Accepted per plan D3(a) (defer inline Markdown
+  rendering — a build step + dep that is architecturally significant). Revisit if
+  the public site needs rendered venue bodies inline.
+- **LOW — favicon 404.** Pages request `/favicon.ico` (404) — cosmetic only; add a
+  favicon or an inline `data:` icon link in a later polish pass.
+- **LOW — local HTTP-mirror drift risk.** `Caddyfile.site-local` reproduces the
+  staging public-vhost guard over HTTP for local testing; the isolation test keeps
+  the two in lockstep by shared-literal presence (not structural equality). Fine
+  for the 3-line guard; tighten if the guard grows.
+- **LOW — `caddy depends_on: [site]`** waits on start, not readiness; Caddy retries
+  the upstream so there is no functional issue.
