@@ -26,6 +26,14 @@
 #     -f ../traderton/docker-compose.yml \
 #     -f docker/traderton-xstack.override.yml up -d --build
 
+# NOTE — pinned network subnet. herobids pins its own `herobids_default`
+# bridge to 172.18.0.0/16 (docker-compose.yaml → networks.default.ipam; that
+# CIDR is load-bearing — the Hetzner UFW rules in infra/hetzner/cloud-init.yaml
+# allow the Nomad ports from 172.18.0.0/16). This xstack brings the traderton
+# stack up FIRST, and Docker's auto-picked /16 for traderton_xstack_default
+# lands on 172.18.0.0/16 too, so the later `herobids_default` create fails with
+# "Pool overlaps with other one on this address space". Pin the traderton
+# network to a disjoint /16 so the two stacks never fight for the same pool.
 services:
   postgres:
     ports: !override
@@ -34,3 +42,9 @@ services:
   redis:
     ports: !override
       - "6380:6379"
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
