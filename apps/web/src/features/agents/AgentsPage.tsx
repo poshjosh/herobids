@@ -163,7 +163,12 @@ export function AgentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.isSuccess, items.length]);
 
-  const activeCount = items.filter((agent) => agent.status === 'active' || agent.status === 'starting').length;
+  const statusCounts = {
+    active: items.filter((agent) => agent.status === 'active' || agent.status === 'starting').length,
+    paused: items.filter((agent) => agent.status === 'paused').length,
+    unhealthy: items.filter((agent) => agent.status === 'crashed' || agent.status === 'unhealthy').length,
+    stopped: items.filter((agent) => agent.status === 'stopped').length,
+  };
 
   return (
     <PageShell>
@@ -204,7 +209,10 @@ export function AgentsPage() {
           {/* ── Summary metrics ─────────────────────────────────────── */}
           {query.isSuccess && items.length > 0 && (
             <div className="metrics-summary-row">
-              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={activeCount} total={items.length} />
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={statusCounts.active} total={items.length} />
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={statusCounts.paused} />
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={statusCounts.unhealthy} />
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={statusCounts.stopped} />
             </div>
           )}
 

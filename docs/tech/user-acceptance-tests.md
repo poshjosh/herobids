@@ -56,7 +56,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Agents, Skills, Connections, Activity, Billing, Settings. No "Advanced" section. | ✅ | 2026-08-10: Advanced section removed; Bots moved to Preview (admin-only) |
+| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Agents, Skills, Connections, Billing, Settings. No "Advanced" section. Preview section (admin-only) contains Bots, Exposure, Outcomes, Activity. | ✅ | 2026-08-10: Advanced section removed; Bots moved to Preview (admin-only). 2026-10-01: Activity moved from Primary into Preview (admin-only) |
 | N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | 2026-07-07: Active link shows green background + green text (verified on AI Agents page screenshot) |
 | N-03 | Root redirect (authenticated) | Navigate to `/` as authenticated user | Redirected to `/agents` | — | 2026-08-06: Updated — redirect target changed from `/mission-control` to `/agents` |
 | N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | 2026-07-07: Shows "Page not found" with "← Back to Mission Control" button; no crash |
@@ -68,10 +68,10 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| MC-01 | Summary metrics render | Open Mission Control | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped | ✅ | 2026-07-07: Shows Active 0/1, Paused 0, Unhealthy 0, Stopped 1 (after creating one agent) |
+| MC-01 | Summary metrics render | Open Mission Control (`/agents`) | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped at the top of the "My Agents" tab | ✅ | 2026-07-07: Shows Active 0/1, Paused 0, Unhealthy 0, Stopped 1 (after creating one agent). 2026-10-01: All four cards now rendered on the agents page (previously only Active); matches the metrics moved off the admin-only Activity page |
 | MC-02 | Header CTA renders | Open Mission Control | No "Create agent" button in the page header — the create flow is a persistent panel below the tabs | ✅ | 2026-08-05: Header CTA removed; create flow panel is always present below the tabs |
 | MC-03 | Agent overview cards | Open Mission Control with agents | One card per agent under "Your agents"; shows status, execution mode, objective, and capability readiness; clicking the card navigates to the agent detail page | ✅ | 2026-07-07: Card shows agent name, "stopped" badge, "Paper mode" pill, goal text, capability readiness; card is clickable. 2026-09-21: capability readiness is now two generic lines listing the distinct capability families present — "Skills: trading, email" (from the agent's skills) and "Connections: email, trading" (from bound connections' providers), or "none" when empty — instead of a hardcoded "Trading: Ready/Unconfigured" badge |
-| MC-04 | Recent activity feed | Open Mission Control | Activity feed moved to the sidebar ("Activity" nav item below Connections) and the `/activity` page; no right-panel feed on the agents page | ✅ | 2026-08-05: Right activity panel removed from agents page; activity lives on `/activity` via the sidebar |
+| MC-04 | Recent activity feed | Open Mission Control | Activity feed lives on the `/activity` page (admin-only, under the Preview sidebar group); no right-panel feed on the agents page | ✅ | 2026-08-05: Right activity panel removed from agents page; activity lives on `/activity` via the sidebar. 2026-10-01: Activity nav moved into the admin-only Preview group |
 | MC-05 | Empty state — no agents | Open Mission Control with fresh account | No "No agents yet" empty state; guided chat is the default entry point for new users; metrics show zeros | ✅ | 2026-08-05: Empty state removed — new users land on the guided chat instead; metrics show 0 on fresh account |
 | MC-06 | "Create agent" button navigates | Click the create-flow title | Expands the create flow panel (guided chat by default); `?create=1` forces it open | ✅ | 2026-08-05: Clicking the "Create AI agent" title expands the flow; `?create=1` forces expansion |
 | MC-07 | Clicking an agent card navigates | Click anywhere on an agent card | Navigates to `/agents/:id` | ✅ | 2026-07-07: Card click navigated to /agents/172b77b6-... |
@@ -288,11 +288,11 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| AF-01 | Activity feed renders | Navigate to `/activity` | Page loads with event list or empty state | ✅ | "Activity" heading with subtitle "What your AI agents have been doing"; All/Agents/Bots filter tabs shown; agent summary metrics (Active/Paused/Unhealthy/Stopped/Total P&L) shown at top |
+| AF-01 | Activity feed renders | Navigate to `/activity` (admin-only; reachable from the Preview sidebar group) | Page loads with event list or empty state | ✅ | "Activity" heading with subtitle "What your AI agents have been doing"; All/Agents/Bots filter tabs shown; agent summary metrics (Active/Paused/Unhealthy/Stopped/Total P&L) shown at top. 2026-10-01: Activity moved under the admin-only Preview section; the Active/Paused/Unhealthy/Stopped status metrics now also appear on the agents page |
 | AF-02 | Pagination / infinite scroll | Scroll to bottom of activity list | Next page of events loads (or "Load more") | — | "Load older events" button appears; clicking it loads next page (fixed bug 017: Date object passed to SQL query caused 500) |
 | AF-03 | Empty state | Fresh account with no activity | Empty state shown | ✅ | "No activity yet" with explanatory copy; agent summary metrics still shown above |
 | AF-04 | Timestamps | Inspect event timestamps | Dates formatted readably; no epoch numbers | ✅ | All timestamps show relative format ("13 sec. ago", "1 min. ago"); no raw epoch or ISO strings |
-| AF-05 | Sidebar nav | Open sidebar | "Activity" nav item appears below "Connections" under Manage | ✅ | 2026-08-05: "◈ Activity" nav item added below Connections |
+| AF-05 | Sidebar nav | Open sidebar as an admin | "Activity" nav item appears inside the admin-only "Preview" group (below Bots, Exposure, Outcomes); it is NOT in the primary nav and is hidden for non-admins | ✅ | 2026-08-05: "◈ Activity" nav item added below Connections. 2026-10-01: Activity moved into the admin-only Preview group |
 
 ---
 

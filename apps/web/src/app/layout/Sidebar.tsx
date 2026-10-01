@@ -16,7 +16,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
     { path: '/agents', label: intl.formatMessage({ id: 'nav.agents' }), icon: '⊡' },
     { path: '/skills', label: intl.formatMessage({ id: 'nav.skills' }), icon: '✦' },
     { path: '/connections', label: intl.formatMessage({ id: 'nav.connections' }), icon: '⊟' },
-    { path: '/activity', label: intl.formatMessage({ id: 'nav.activity' }), icon: '◈' },
     { path: '/billing', label: intl.formatMessage({ id: 'nav.billing' }), icon: '⊘' },
     { path: '/settings', label: intl.formatMessage({ id: 'nav.settings' }), icon: '⊙' },
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -26,6 +25,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
     { path: '/bots',           label: intl.formatMessage({ id: 'nav.bots' }),           icon: '⊞' },
     { path: '/exposure',       label: intl.formatMessage({ id: 'nav.exposure' }),       icon: '◉' },
     { path: '/outcomes',       label: intl.formatMessage({ id: 'nav.outcomes' }),       icon: '◈' },
+    { path: '/activity',       label: intl.formatMessage({ id: 'nav.activity' }),       icon: '◈' },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [locale]);
 
