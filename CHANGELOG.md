@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Phase 2 — product/legal boundary (Steps 6–8).** herobids now presents as a generic agent host. Genericized the agent capability UI (families derived from skills; generic Capabilities tab; no agent "type" selector); `GET /capabilities` derives families from `SYSTEM_SKILLS`; capability-neutral 503 copy and default guided-setup goal. Moved the trading venue/wallet/crypto reference docs to the Traderton repo and split the glossary to keep only generic platform terms (web registry/sitemap, two in-app links, an orphaned i18n key, and the agent docs-search index updated accordingly). The legal/payment product-boundary questions (onboarding trading preset, billable "strategy assessment" meter, SEO/OG positioning) are batched for one operator decision; the minimal Traderton site and its publish are tracked in the traderton repo. See `docs/features/2026/10/006-phase2-completion-note.md`.
+
 ### Fixed
 
 - docs/bug-reports/2026/09/26/001-worker-cannot-reach-nomad-ufw-docker-bridge.md

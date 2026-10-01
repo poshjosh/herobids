@@ -8,6 +8,29 @@ Step 8 wrap-up (TASKS T5.2). Never pause mid-flight to ask one of these.
 Append a row per surface. Do not remove rows; mark them `Resolved:` inline once
 the operator decides, and mirror the decision into `DECISIONS.md`.
 
+## Decision batch — READY FOR OPERATOR (finalized T5.2, 2026-10-01)
+
+This is the **complete** set of legal / payment-provider / product-identity
+questions Phase 2 surfaced. Engineering has executed every GENERIC/MOVE/
+REMOVE-SAFE change (see `RECONCILIATION.md`); these are the only items that
+cannot be decided in engineering. All three are the same underlying question —
+**may herobids present/advertise/bill crypto-trading as a first-party product,
+or must trading be Traderton-attributed/owned?** — seen on three surfaces:
+
+- **E1** — onboarding greeting "AI crypto trader" preset button (product offer).
+- **E2** — billable "strategy assessment" meter on the herobids bill (entitlement/billing).
+- **E3** — SEO/OG metadata positioning herobids as a crypto-trading product (public positioning).
+- **N1** (note, same family) — whether herobids may link OUT to the Traderton
+  trading site once published.
+
+**Recommended as a single coherent decision:** make herobids capability-neutral
+across all four (retire the trading preset button, treat the assessment meter's
+trading naming/entitlement as a Traderton/billing decision, make SEO/OG
+capability-neutral, and keep herobids free of outbound trading-product links
+until decided). Each row has its own engineering-neutral recommendation and the
+specific reason it needs legal/payment input. **This batch is the one Phase 2
+deliverable that waits on the operator** (ENTRYPOINT §5.3; TASKS T5.2).
+
 | # | Surface (what it is) | Location (file:line) | Options | Engineering-neutral recommendation | Why it needs legal/payment input | Resolution |
 |---|---|---|---|---|---|---|
 | E1 | Guided Setup advertises a first-party "AI crypto trader" preset — the onboarding greeting offers a headline quick-reply button presenting crypto trading as a first-party product during agent creation. | `apps/api/src/routes/chat.ts:108` (button `value: 'preset:trading'`) | (a) keep the trading preset button as-is; (b) relabel/retire it so onboarding is capability-neutral and trading is discovered via skills; (c) keep but route through Traderton attribution. | Retire the dedicated trading greeting button in favor of a capability-neutral "what should your agent do?" entry, with trading reachable through skill discovery. Low engineering cost either way. | Whether herobids may advertise/offer a crypto-trading agent as a headline product is a product-identity and potentially financial-promotions judgment, not engineering. | _(open)_ |

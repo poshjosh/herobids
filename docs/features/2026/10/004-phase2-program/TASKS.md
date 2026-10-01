@@ -3,8 +3,10 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 Do not pause between tasks.
 
-**Current cursor:** `T4.2` (next — infra HARD STOP). ← Update this line to the
-task you are on after every task, so a context reset resumes unambiguously.
+**Current cursor:** `DONE`. Phase 2 complete — all tasks ✅ except **T4.2 🚫**
+(infra publish hard stop; prep documented) and the **E1/E2/E3 ⤴** legal batch
+(awaiting one operator decision). See `../006-phase2-completion-note.md`. ←
+Update this line to the task you are on after every task.
 
 ### Status scheme (use the emoji, NOT the checkbox)
 
@@ -181,24 +183,49 @@ Genuine gates:
     OK, no dashboard/exec surface); `pnpm lint` + `pnpm build` green; local stack
     torn down. **Did NOT touch staging `compose.yaml`/`deploy.sh`/`deploy-on-host.sh`
     (that is the T4.2 hard-stop boundary).**
-- ⬜ **T4.2 Publishing (DNS/TLS/deploy) — HARD STOP.** Prepare the publish steps
+- 🚫 **T4.2 Publishing (DNS/TLS/deploy) — HARD STOP.** Prepare the publish steps
   (DNS, TLS, deploy) and document them; do NOT execute. Request operator
   approval. Status 🚫 until approved.
+  - **Prepared (NOT executed):** publish runbook at
+    `traderton/docs/features/2026/10/01/001-minimal-public-site/002-publish-prep.md`
+    — delivers `site` to the VM (recommend a CI-built `traderton-site` image),
+    adds the `site` service to the staging `compose.yaml`, wires it into
+    `deploy-on-host.sh` pull/up lists, creates `staging.traderton.com` DNS →
+    VM IP, and verifies Caddy TLS issuance. The `Caddyfile.staging` guard
+    (`/internal*` + `/health*` → 404; public vhost never proxies the boundary)
+    is already in place and regression-tested.
+  - **Blocked on:** operator approval (infra mutation — ENTRYPOINT §5.2(1)).
+    Approval checklist is in §4 of the publish-prep doc. Continuing with
+    Block 5 (not gated by T4.2).
 
 ## Block 5 — Step 8 wrap-up
 
-- ⬜ **T5.1 Reconcile the audits.** Confirm every surface from the frontend
+- ✅ **T5.1 Reconcile the audits.** Confirm every surface from the frontend
   (`../003-…`) and backend (T2.1) audits is either done (GENERIC/MOVE/
   REMOVE-SAFE) or in `ESCALATIONS.md`. No surface left unclassified.
-- ⬜ **T5.2 Finalize `ESCALATIONS.md`** as the single operator decision batch
+  - **Done:** `RECONCILIATION.md` maps every surface from both audits to exactly
+    one disposition (✅ done / 🕓 deferred-with-note / ⤴ escalated / 🧱 KEEP),
+    plus the two surfaces discovered during execution (worker docs-index P2-14;
+    readiness endpoint P2-10). No surface unclassified. Deferred = P2-7/P2-12
+    lockstep + Phase-3-owned feature/schema moves; escalated = E1/E2/E3 (+N1).
+- ✅ **T5.2 Finalize `ESCALATIONS.md`** as the single operator decision batch
   (the legal/payment-provider product-boundary questions). This is the one
   deliverable that waits on the operator.
-- ⬜ **T5.3 Phase 2 closeout.** Update this file (all tasks ✅/⤴/🚫), update
+  - **Done:** added a "READY FOR OPERATOR" decision-batch summary at the top —
+    E1/E2/E3 (+ note N1) are the complete, finalized set (confirmed by
+    `RECONCILIATION.md`: they are the only ⤴ items). All three framed as one
+    coherent product-identity question with a consolidated recommendation.
+- ✅ **T5.3 Phase 2 closeout.** Update this file (all tasks ✅/⤴/🚫), update
   DECISIONS.md, and update the staging program tracker
   `../../09/24/000-program/PROGRESS.md` Steps 6–8 to reflect reality. Write a
   short Phase 2 completion note under `docs/features/2026/10/`.
   - Exit: Phase 2 Definition of Done (ENTRYPOINT §8) met, modulo the batched
     legal escalations and any infra hard stops awaiting operator approval.
+  - **Done:** staging `PROGRESS.md` Steps 6–8 updated (6 ✅, 7 ✅ built+local /
+    🚫 publish, 8 ✅ modulo legal batch); completion note at
+    `../006-phase2-completion-note.md`. All Phase 2 tasks are ✅ except T4.2 (🚫
+    infra hard stop) and the E1/E2/E3 legal batch (⤴, awaiting operator). DoD
+    (ENTRYPOINT §8) met modulo those two operator-gated items.
 
 ---
 
@@ -251,6 +278,19 @@ Genuine gates:
   backend removals are lockstep, not standalone.
 - MOVE items feed Block 3 (doc move): `buildTradingPrompt` venue/strategy
   reference copy; web `trading-venues` docs; `reference/crypto-ecosystem` docs.
+
+### Blocks 3–5 — doc move, Traderton site, closeout (done 2026-10-01)
+- **Block 3 (T3.1/T3.2):** Contemplator ruled the MOVE/KEEP split (P2-14/P2-15);
+  8 web docs moved to `traderton/docs/reference/*`, glossary split, herobids
+  wiring removed, worker docs-index regenerated (CodeReview CRITICAL C1 fixed).
+  Committed in both repos.
+- **Block 4 (T4.1):** PlanCreator → inline Implementer → CodeReviewer (clean) →
+  VisualTester (pass). Static site in `traderton/site/`, local-only serving +
+  isolation test. Committed in traderton. **T4.2 = infra HARD STOP** — publish
+  prep documented (`traderton/.../002-publish-prep.md`), marked 🚫.
+- **Block 5:** T5.1 `RECONCILIATION.md` (every surface classified); T5.2
+  finalized `ESCALATIONS.md` operator batch; T5.3 updated staging `PROGRESS.md`
+  Steps 6–8 + wrote `../006-phase2-completion-note.md`.
 
 ### Block 2 — T2.2 safe-standalone backend remediations (done 2026-10-01)
 - Agents: Implementer (slice) → CodeReviewer (clean, LOW only). Resume agent

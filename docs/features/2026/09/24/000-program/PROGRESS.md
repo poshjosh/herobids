@@ -5,10 +5,10 @@
 
 ## Current state (read first)
 
-**Current phase:** Phase 1 — Restore And Prove Staging → substantially complete
-**Current step:** Phase 1 proven on staging (Steps 1–4 done, Step 5 behavioral
-checks done); next is **Phase 3 Step 9 (Discovery)**, which is now unblocked, OR
-Phase 2 — awaiting operator greenlight.
+**Current phase:** Phase 1 complete; **Phase 2 (Steps 6–8) substantially
+complete** (2026-10-01) — all engineering done, modulo one batched legal
+decision (Phase-2 `ESCALATIONS.md`) and the T4.2 publish infra hard stop.
+**Current step:** next is **Phase 3 Step 9 (Discovery)**, unblocked.
 
 **Verified live on 2026-10-01 (supersedes the 2026-09-25 "blocked" state below):**
 staging was re-provisioned after the 09/24 diagnosis. The earlier "state serial
@@ -27,7 +27,13 @@ staging was re-provisioned after the 09/24 diagnosis. The earlier "state serial
 - Deployed refs pinned (D2): herobids `a5f403cf`; traderton `41d9c2c1`
   (`ghcr.io/poshjosh/traderton@sha256:b7b93427…`).
 
-**Not started:** Phase 2 (Steps 6–8) and Phase 3 (Steps 9–16). The concrete
+**Phase 2 (Steps 6–8): substantially complete 2026-10-01.** See the Phase 2
+program `docs/features/2026/10/004-phase2-program/` (TASKS/DECISIONS/
+ESCALATIONS/RECONCILIATION) and the completion note
+`docs/features/2026/10/006-phase2-completion-note.md`. Remaining: operator
+resolves the batched legal questions (E1/E2/E3) and approves T4.2 publish.
+
+**Not started:** Phase 3 (Steps 9–16). The concrete
 `packages/domain/src/traderton/` module is still in place; no generic
 `external-backend` code module exists yet.
 
@@ -42,9 +48,9 @@ Legend: ✅ done · 🔄 in progress · ⏸ paused · ⬜ not started · 🚫 bl
 | 3 | Deploy Traderton boundary | ✅ | Boundary healthy (HTTP 200) over HTTPS via Caddy; image SHA-pinned `sha-41d9c2c1…`. |
 | 4 | Integrate Herobids with Traderton | ✅ (config + path verified) | `.env.staging` boundary URL + HMAC; signed read probe reaches auth+routing. Full write-path differential is Step 16. |
 | 5 | Operational readiness and rollback | ✅ (behavioral) / N/A (metrics, rollback) | Behavioral checks passed live (fail-closed/recovery/idempotency/HMAC). Metrics N/A (no instrumentation). Rollback N/A pre-launch (teardown+rebuild accepted). See the readiness runbook. |
-| 6 | Move trading documentation | ⬜ | Phase 2 |
-| 7 | Build minimal Traderton frontend | ⬜ | Phase 2 |
-| 8 | Audit legal/product boundary | ⬜ | Phase 2 |
+| 6 | Move trading documentation | ✅ | Phase 2 T3.1/T3.2: venue/wallet/crypto reference docs now canonical in the traderton repo (`docs/reference/*`); herobids glossary split (generic terms only); worker docs-index regenerated. |
+| 7 | Build minimal Traderton frontend | ✅ (built+local) / 🚫 (publish) | Phase 2 T4.1: minimal static site (`traderton/site/`) — identity + docs/venue guides + status; serves locally; execution-boundary isolation tested. T4.2 publish (DNS/TLS/deploy) is an infra HARD STOP — prepared, awaiting operator approval. |
+| 8 | Audit legal/product boundary | ✅ (modulo legal batch) | Phase 2: frontend audit (003) + backend audit (005); all GENERIC/MOVE/REMOVE-SAFE executed (T1.1/T2.2/T3.2); reconciled (T5.1); the legal/payment product-boundary questions batched in Phase-2 `ESCALATIONS.md` (E1/E2/E3) for one operator decision. |
 | 9 | External Backend Genericization Discovery | ⬜ | Phase 3; starts after Phase 1 operational proof; produces all six ADR 015 exit criteria |
 | 10 | External Backend contract and trust plan | ⬜ | Phase 3 |
 | 11 | Generic client migration | ⬜ | Phase 3 |
