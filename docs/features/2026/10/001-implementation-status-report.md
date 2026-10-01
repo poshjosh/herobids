@@ -20,7 +20,7 @@ or infra was modified.
 | 09/26 | GHCR agent image distribution | **Implemented** | commit `7228c279` + follow-ups |
 | 09/27 | Nomad `labels` map → list of maps (+ `env` to task level) | **Implemented, tested** | commits `b10bd089`, `647691f2` |
 | 09/23 | External-skill remote-boundary migration | **Not implemented (by design — superseded draft)** | superseded by ADR 015 |
-| 09/24 | Staging-first External Backend program | **Planning only; execution blocked / mostly in the separate traderton repo** | program tracker |
+| 09/24 | Staging-first External Backend program | **Phase 1 Steps 1–2 done (live on staging); Step 3–4 effectively in place; Phase 2–3 not started** | live TF state + endpoints + `.env.staging` |
 
 ---
 
@@ -126,37 +126,85 @@ model, generic contracts, or client migration has been built.
 
 ---
 
-## 4. 09/24 — Staging-first External Backend program — PLANNING ONLY
+## 4. 09/24 — Staging-first External Backend program — PHASE 1 STEPS 1–2 DONE (live on staging); PHASE 2–3 NOT STARTED
 
-This folder is the program's governing docs (ENTRYPOINT / PROGRESS / DECISIONS)
-plus a roadmap and two infra plans. It is sequencing and planning; little of it
-is executed code in **this** repo, and what remains is explicitly gated on
-operator approval.
+> **Correction (2026-10-01).** An earlier draft of this report marked Steps 1–2
+> as "blocked / planning only," taken from the program's `000-program/PROGRESS.md`
+> tracker (last updated 2026-09-25). **That tracker is stale.** Direct inspection
+> of the live Terraform state and the deployed endpoints shows staging was
+> re-provisioned after the 09/24 diagnosis and both herobids and Traderton are
+> deployed and integrated. The verdict below is based on live evidence, not the
+> tracker.
 
-Per the program's own `000-program/PROGRESS.md`:
+### Live evidence gathered (2026-10-01)
 
-| Step | Area | Documented status | Verified in herobids code |
+**Herobids staging is up and provisioned.**
+- `GET https://staging.openaidom.com/api/health` → **HTTP 200**.
+- DNS: `staging.openaidom.com` → `138.199.172.202`.
+- Live Terraform state (`herobids/staging/terraform.tfstate`, workspace `staging`)
+  — read read-only via the S3 backend — reports:
+  - `environment = staging`, `server_ipv4 = 138.199.172.202` (matches DNS + the
+    runbook), `nomad_enabled = true`.
+  - `private_network_id = 12685156`, `private_network_ip_range = 10.0.0.0/16`
+    (the staging CIDR the plan specified, disjoint from production's `10.1.0.0/16`).
+  - `agent_node_count = 1`, `agent_node_private_ips = ["10.0.0.3"]`.
+  - 9 resources in state: control-plane server, 1 agent node, private network +
+    subnet, control-plane + agent server-network attachments, default + agent
+    firewalls, SSH key.
+- This directly overturns the 09/24 `002-…` diagnostic Pass 1 finding ("state
+  serial 76 has zero resources"). The server was clearly re-provisioned since.
+
+**Traderton staging is deployed as an independent, public service.**
+- DNS resolves `api.staging.traderton.com` and `staging.traderton.com` →
+  `2.28.19.89` — a host **distinct** from herobids' `138.199.172.202`, i.e. the
+  separate VM the plan requires. (A direct `curl` from this workstation timed out
+  on name resolution; `2.28.19.89` is a Zscaler-range address and the staging docs
+  explicitly warn local Zscaler blocks `openaidom.com`/traderton probes — so the
+  timeout is a local-vantage artifact, not evidence the service is down. The
+  operator confirms both stacks are live on staging.)
+
+**Herobids is wired to consume the Traderton boundary (Step 4 integration config).**
+- `infra/hetzner/.env.staging` sets `TRADERTON_BOUNDARY_URL=https://api.staging.traderton.com`
+  plus `TRADERTON_BOUNDARY_HMAC_SECRET`, `TRADERTON_BOUNDARY_CONSUMER_ID=herobids`,
+  `TRADERTON_BOUNDARY_KEY_ID=herobids-k1`.
+- The two repos meet only at a URL + HMAC — the adopted "public/independent" model.
+  Confirmed there is **no** `terraform_remote_state` / shared-network handoff to
+  Traderton in herobids' `*.tf` (consistent with the superseding note on
+  `003-…`).
+
+**Operator runbook exists and is executable.**
+- `infra/hetzner/docs/staging-reprovision-runbook.md` (2026-09-27) is a complete
+  ordered teardown→provision→setup sequence referencing the real control-plane IP
+  and agent private IP `10.0.0.3`, and treats the Traderton boundary as an up
+  precondition. The supporting scripts all exist in `infra/hetzner/scripts/`
+  (`provision.sh`, `deploy.sh`, `setup-nomad.sh`, `reset-and-run.sh`,
+  `smoke-test.sh`, scale-in/out, placement-failure safety net, etc.).
+
+### Step-by-step status (corrected)
+
+| Step | Area | Status | Evidence |
 |---|---|---|---|
-| 1 | Recover Herobids staging | 🚫 Blocked (read-only diagnosis done; baseline not restored; awaiting operator decision) | Diagnostic plan `002-…` is read-only; no remediation landed. Matches. |
-| 2 | Create Traderton staging infra | 🔄 Code-prepared, apply blocked on approval | Lives in the **separate traderton repo** — there is no `infra/traderton/` in herobids, as the plan's "public/independent model" intends. Cannot verify here; consistent with the doc. |
-| 3–5 | Deploy boundary / integrate / readiness | ⬜ Not started | No evidence in code. Matches. |
-| 6–8 | Phase 2 (docs, frontend, legal audit) | ⬜ Not started | No evidence. Matches. |
-| 9–16 | Phase 3 (generic External Backend) | ⬜ Not started | Confirmed by §3 above (concrete `traderton/` still in place). Matches. |
+| 1 | Recover Herobids staging | **Done — live** | `/api/health` 200; 9-resource TF state at `138.199.172.202`; reprovision runbook. |
+| 2 | Create Traderton staging infra (independent, public) | **Done — live** | `api.staging.traderton.com` → separate host `2.28.19.89`; herobids has no shared-network handoff. (Traderton's own Terraform lives in the traderton repo, not here.) |
+| 3 | Deploy Traderton boundary | **Done (inferred)** | Boundary hostname is live DNS and is a required precondition in the runbook; operator confirms deployed. Pinned release-SHA record not verifiable from this repo. |
+| 4 | Integrate Herobids ↔ Traderton | **Config in place** | `.env.staging` boundary URL + HMAC creds set. End-to-end call validation (read tools, `submit_decision`, bot lifecycle, failure mapping) not independently verified here. |
+| 5 | Operational readiness & rollback | **Partial** | Runbook + smoke-test + autoscale/scale-in + placement-failure scripts exist. The roadmap's latency/restart/idempotency/soak evidence is not recorded in this repo. |
+| 6–8 | Phase 2 (docs move, Traderton frontend, legal/product audit) | **Not started** | No evidence. |
+| 9–16 | Phase 3 (generic External Backend refactor) | **Not started** | Confirmed by §3 — concrete `packages/domain/src/traderton/` still in place; no generic `external-backend`/`remote-boundary` code module. |
 
-`003-traderton-staging-infrastructure-plan.md` marks its items 1–3 and 5 as
-"DONE (code preparation; live verification pending approval)" and item 4 as
-"BLOCKED (requires explicit operator approval)". That prepared code is Traderton-repo
-infrastructure (Terraform/cloud-init), not herobids application code, so it is not
-present in this repository and could not be verified from here.
+`004-traderton-production-infrastructure-plan.md` remains entirely **PENDING**
+(all five items, "no infrastructure change authorized"); production is a separate
+network/VM/state and nothing production-side has landed. `production.tfvars` and
+production state were not inspected for this report.
 
-`004-traderton-production-infrastructure-plan.md` is entirely **PENDING** (all five
-ordered items), status "proposed; no infrastructure change authorized" — nothing to
-verify in code, and nothing landed.
+### Why the earlier draft was wrong
 
-**What from this program actually landed in herobids code:** only staging-adjacent
-plumbing that overlaps the GHCR work — the GHCR agent-image wiring (§1) and
-`infra/hetzner/docs/staging-reprovision-runbook.md`. The core program steps
-(staging restore, Traderton deploy, integration, Phase 2/3) have not been executed.
+The first draft treated `000-program/PROGRESS.md` as authoritative. It is a
+hand-maintained tracker that was last written on 2026-09-25, *before* the staging
+re-provision. The program's own ENTRYPOINT warns that its summaries "can lag the
+live git state" and to verify against actual state — which this correction does.
+Lesson: for "is it deployed" questions, verify against live state/endpoints, not
+the planning tracker.
 
 ---
 
@@ -167,15 +215,32 @@ plumbing that overlaps the GHCR work — the GHCR agent-image wiring (§1) and
   tests. Together they close the last two layers (image distribution + job-spec
   validity) of the staging Nomad incident chain described across the 09/26 and
   09/27 analyses.
-- The two larger items (09/23, 09/24) are **planning/architecture artifacts**. 09/23
-  is a superseded draft (correctly not built); 09/24's program is blocked at Phase 1
-  Step 1 pending an operator decision, with the generic External Backend refactor
-  (Phase 3) not started and the concrete `traderton/` module still in place.
+- The 09/24 program's **Phase 1 is substantially done and running on staging**:
+  herobids staging is live (`/api/health` 200, 9-resource Terraform state at
+  `138.199.172.202`), Traderton is deployed as an independent public service
+  (`api.staging.traderton.com` on a separate host), and herobids is wired to the
+  boundary via `.env.staging` (URL + HMAC). Steps 1–2 are done; Step 3–4
+  integration config is in place; Step 5 operational-readiness evidence is only
+  partially recorded in this repo. This corrects the earlier draft, which wrongly
+  trusted the stale `000-program/PROGRESS.md` tracker.
+- The remaining 09/24 work — **Phase 2** (move trading docs, Traderton frontend,
+  legal/product audit) and **Phase 3** (the generic External Backend refactor) —
+  is **not started**, which §3 confirms: the concrete `packages/domain/src/traderton/`
+  module is still in place and no generic `external-backend`/`remote-boundary`
+  code module exists.
+- 09/23 is a **superseded draft** (correctly not built); its direction lives on in
+  ADR 015 and is scheduled as Phase 3.
 
 ## Recommended follow-ups (not actioned here)
 
 1. **Rotate the GHCR token** currently in plaintext `infra/hetzner/staging.tfvars`
-   and move it to a secret store; keep tfvars free of live secret values.
-2. **Unblock 09/24 Step 1** — the program needs an explicit operator decision on
-   re-provisioning Herobids staging before any further steps can proceed.
-3. When Phase 3 begins, treat ADR 015 (not the 09/23 draft) as authoritative.
+   (and the `TRADERTON_BOUNDARY_HMAC_SECRET` in `.env.staging`) and move them to a
+   secret store; keep tfvars/env files free of live secret values. Both are
+   gitignored, but live secrets sit in plaintext on disk.
+2. **Refresh `000-program/PROGRESS.md`** to reflect the live staging reality
+   (Steps 1–2 done, 3–4 in place) so the tracker stops contradicting deployed
+   state.
+3. **Record the Step 5 operational-readiness evidence** (latency, restart,
+   idempotency, soak, rollback rehearsal) called for by the roadmap, and the
+   pinned herobids+Traderton release SHAs (D2), so Phase 1 can be formally closed.
+4. When Phase 3 begins, treat ADR 015 (not the 09/23 draft) as authoritative.
