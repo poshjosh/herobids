@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 Do not pause between tasks.
 
-**Current cursor:** `T0.1` (not started). ← Update this line to the task you are
+**Current cursor:** `T1.1` (in progress). ← Update this line to the task you are
 on after every task, so a context reset resumes unambiguously.
 
 ### Status scheme (use the emoji, NOT the checkbox)
@@ -42,7 +42,7 @@ Genuine gates:
 
 ## Block 0 — Orientation (do once)
 
-- ⬜ **T0.1 Load context.** Read ENTRYPOINT, this file, DECISIONS, ESCALATIONS.
+- ✅ **T0.1 Load context.** Read ENTRYPOINT, this file, DECISIONS, ESCALATIONS.
   Read the roadmap Phase 2 steps, ADR 015, the frontend audit (`../003-…`), and
   the 002 analysis/plan. Confirm staging is live (read-only: herobids
   `/api/health`, Traderton `/health/ready`) — if not, that is a Phase 1 concern,
@@ -51,7 +51,7 @@ Genuine gates:
   3–4; see ENTRYPOINT §3.6).
   - Exit: you can restate the objective, the two hard stops, and the
     classification rubric without re-reading.
-- ⬜ **T0.2 Confirm `ESCALATIONS.md` is present** (it is pre-seeded in this
+- ✅ **T0.2 Confirm `ESCALATIONS.md` is present** (it is pre-seeded in this
   folder with the §5.3 columns). If somehow missing, recreate it from the
   ENTRYPOINT §5.3 template. This is where every ESCALATE-LEGAL item goes.
 
@@ -147,5 +147,14 @@ Genuine gates:
 
 ## Running notes / handoff (append as you work)
 
-- *(empty — the implementing agent fills this with per-task evidence, commit
-  SHAs, which sub-agent ran each task, and any Contemplator rulings.)*
+### Block 0 — Orientation (done 2026-10-01)
+- Read ENTRYPOINT, TASKS, DECISIONS, ESCALATIONS, roadmap Phase 2 (Steps 6–8),
+  frontend audit `../003-…`, and the 002 analysis + plan. Objective, two hard
+  stops, and the §5.1 rubric are internalized.
+- Repo state: both `herobids` and `traderton` on `main` with clean working
+  trees. Phase 2 program docs already committed in herobids HEAD `e382c624`.
+- Baseline `pnpm lint` (tsc --noEmit) green before any change.
+- Staging health NOT reachable from this environment (DNS does not resolve for
+  `staging.herobids.com` / `staging.traderton.com`). Per T0.1 this is a Phase 1
+  concern — noted; proceeding with doc/code work that does not require staging.
+- `ESCALATIONS.md` present and pre-seeded (§5.3 columns). Confirmed.
