@@ -6,6 +6,10 @@ that remains in the codebase.
 **Status:** inventory only — **producing this table is the task; APPLYING it
 (relabeling the remaining copy) is a LATER task** (operator decision P2-19, E3
 resolved "keep as-is for now").
+**Companion:** the broader dead-i18n-key cleanup is tracked in
+[`008-orphan-i18n-key-sweep.md`](./008-orphan-i18n-key-sweep.md). Its **Pass A**
+(2026-10-02) removed 103 unused keys; rows below whose key was deleted in that
+pass have been dropped from this table.
 **Scope:** user-facing text in the herobids web frontend only
 (`apps/web/src/app/i18n/locales/{en,ar,hi}.ts`, inline JSX in
 `apps/web/src/**/*.tsx` excluding tests and `features/public-pages/**`, and
@@ -95,8 +99,9 @@ untouched.
   `features/blueprints/BlueprintInstantiateFlow.tsx`.
 - Venue display names (Hyperliquid/Bybit/Jupiter/1inch) are NOT hardcoded UI
   copy — they come from the backend provider catalog — except example text like
-  `setup.form.namePlaceholder` ("e.g. My Hyperliquid account") and
-  `missionControl.setup.message` ("…like Hyperliquid or Gmail").
+  `setup.form.namePlaceholder` ("e.g. My Hyperliquid account"). (The former
+  `missionControl.setup.message` "…like Hyperliquid or Gmail" was an unused key,
+  removed in the 008 Pass-A sweep.)
 
 ---
 
@@ -106,21 +111,14 @@ deleted Preview pages no longer exist and are not listed.)
 
 | Location (i18n key) | Current text (verbatim) | Proposed capability-neutral replacement | Notes |
 |---|---|---|---|
-| missionControl.metric.totalPnl | Total Realized P&L | Total outcome | Ambiguous — verify (dashboard metric) |
-| missionControl.setup.message | Connect your AI agents to external platforms like Hyperliquid or Gmail. | Connect your AI agents to external platforms. | Hardcoded venue name in example |
 | agents.executionMode.label | Execution mode | — | Operational mechanic; trading-adjacent |
 | agents.executionMode.live | Live | — | Deferred Phase-3 — N/A |
 | agents.capabilityFamily.trading | Trading | — | Deferred Phase-3 — N/A |
 | agents.capabilityState.unconfigured.tradingNote | Paper trading works without this. Connect an external platform to enable live trading. | Connect an external platform to enable this capability. | Capability readiness note |
 | agents.capabilityPage.tradingUnavailable | Trading details are unavailable until the selected connection is ready. | Capability details are unavailable until the selected connection is ready. | Capability page |
-| agents.summary.pnl | P&L | — | Deferred Phase-3 — N/A (renders on /agents/:id) |
-| agents.summary.tradeCount | {count, plural, one {# trade} other {# trades}} | — | Deferred Phase-3 — N/A (renders on /agents/:id) |
-| agents.summary.winRate | Win: {rate, number}% | — | Deferred Phase-3 — N/A (renders on /agents/:id) |
-| agents.create.goalPlaceholder | e.g. Grow this portfolio aggressively | e.g. What should your agent do? | Onboarding placeholder — trading framing |
 | agents.create.goalPlaceholder.trading | e.g. Grow this portfolio | — | Deferred Phase-3 — N/A |
 | agents.create.suggestedSkills.trading | Trading starter | — | Deferred Phase-3 — N/A |
 | agents.create.executionMode.live | Live — real order placement | — | Deferred Phase-3 — N/A |
-| agents.create.whereToTrade | Connect agent to external platform | — | Label keyed "whereToTrade"; neutral text |
 | agents.create.setupTradingNow | Set up trading now | Set up now | CTA |
 | agents.create.tradingControls.title | Trading guardrails | Guardrails | Section title |
 | agents.create.connections.trading | Trading | — | Deferred Phase-3 — N/A |
@@ -128,7 +126,6 @@ deleted Preview pages no longer exist and are not listed.)
 | agents.authorizationMode.label | Trade Authorization | Authorization | Label |
 | agents.authorizationMode.directHelp | Trades execute immediately with no human review. Best when you trust the agent to act autonomously. | Actions execute immediately with no human review… | Help text |
 | agents.authorizationMode.approvalRequiredHelp | Each trade proposal is sent to you for approval before any market action. Approve or reject from the web app or Telegram. | Each action proposal is sent to you for approval before execution… | Help text |
-| agents.create.technicalPreFilter.help | Reduce cost by filtering trade options before AI agent sees them. | — | Deferred Phase-3 — N/A |
 | agents.controls.dailyMaxLossPct (+ .help) | Daily loss limit (%) / Hard cap on rolling 24h realized loss… | — | Deferred Phase-3 — N/A |
 | agents.controls.maxDrawdownPct (+ .help) | Max drawdown (%) / Hard cap on peak-to-current equity drawdown… | — | Deferred Phase-3 — N/A |
 | agents.controls.maxSlippage | Max slippage (bps) | — | Deferred Phase-3 — N/A |
@@ -142,23 +139,13 @@ deleted Preview pages no longer exist and are not listed.)
 | agents.approvals.rejected | Trade proposal rejected. | Proposal rejected. | Toast |
 | agents.approvals.executionAccepted | Trade executed successfully. | Action executed successfully. | Toast |
 | agents.approvals.executionRejected | Trade rejected by risk checks. | Action rejected by risk checks. | Toast |
-| agents.approvals.instrument | Instrument | — | Deferred Phase-3 — N/A |
-| agents.approvals.targetSize | Target Size | — | Deferred Phase-3 — N/A |
-| agents.approvals.limitPrice | Limit Price | — | Deferred Phase-3 — N/A |
-| agents.approvals.orderType | Order type | — | Deferred Phase-3 — N/A |
-| agents.approvals.market | Market | — | Deferred Phase-3 — N/A |
-| agents.approvals.stopLoss | Stop Loss | — | Deferred Phase-3 — N/A |
-| agents.approvals.takeProfit | Take Profit | — | Deferred Phase-3 — N/A |
 | agents.approvals.telegramHint | Or from Telegram: /yes {code} or /no {code} | — | Ambiguous — verify |
 | agents.detail.fundingBanner.text | Your trading wallet may need funding before live trading. | — | Deferred Phase-3 — N/A (renders on /agents/:id) |
-| agents.detail.tradesHistory | Trade History | — | Deferred Phase-3 — N/A (renders on /agents/:id) |
-| agents.strategyReview.* (runReview, running, notAvailable, completeWithAdvice, adviceColumn.*, assessing, results.*) | Run Strategy Review / Strategy Assessment Results / Active Preset / Agent switched to {preset} … | — | Deferred Phase-3 — N/A (~15 keys; AgentEvaluations.tsx) |
-| agents.trades.col.* + status/empty (token, venue, entry, exit, size, pnl, hold, mode, statusOpen, statusClosed, empty) | Token / Venue / Entry / Exit / Size / PnL / Hold / Mode / Open / Closed / No trade history yet. | — | Deferred Phase-3 — N/A (~11 keys; renders on /agents/:id) |
+
+| agents.strategyReview.* (runReview, running, notAvailable, completeWithAdvice, assessing, results.*) | Run Strategy Review / Strategy Assessment Results / Active Preset / Agent switched to {preset} … | — | Deferred Phase-3 — N/A (AgentEvaluations.tsx). Note: `adviceColumn.rank` was removed in the 008 Pass-A sweep. |
 | agents.capability.hybrid.description | Indicators pre-filter trade options, LLM makes final call. | — | Deferred Phase-3 — N/A |
-| agents.technical.* (title, preset.*, filterTrades, platformAssessment.*, filters.*, scan.signalBias.*, indicators.*, params.*) | Technical Configuration / Strategy preset / Momentum Breakout / Mean Reversion / Filter Trades / Periodic Strategy Assessment / Venue / RSI / MACD / CHOCH / Overbought / Oversold / Breakout threshold … | — | Deferred Phase-3 — N/A (~45 trading-specific keys) |
+| agents.technical.* (title, filterTrades, platformAssessment.*, filters.*, scan.signalBias.*, indicators.*, params.*) | Technical Configuration / Filter Trades / Periodic Strategy Assessment / Venue / RSI / MACD / CHOCH / Overbought / Oversold / Breakout threshold … | — | Deferred Phase-3 — N/A (~45 trading-specific keys). Note: the unused `preset.*` labels/descriptions and `filters.venueType*` were removed in the 008 Pass-A sweep. |
 | agents.runtimePolicy.tradingSessionsLabel (+ Help + session.*) | Trading Sessions / Shortcuts for common market windows (Eastern Time)… | — | Deferred Phase-3 — N/A |
-| agents.edit.dailyMaxLossPct / maxSlippage / maxBots | Daily loss limit (%) / Max slippage (bps) / Max bots | — | Deferred Phase-3 — N/A |
-| agents.edit.intelligenceIgnoredWarning | Switching to Technical-only: the agent's LLM configuration … ignored at runtime … | — | Ambiguous — verify (capability mechanic) |
 | plan.live_disabled | Live trading is not enabled on your current plan. | — | Deferred Phase-3 — N/A |
 | credential.validation_error.invalid_wallet_address | Enter a valid wallet address for {venue}. | — | Deferred Phase-3 — N/A |
 | credential.validation_error.invalid_private_key | Enter a valid private key for {venue}. | — | Deferred Phase-3 — N/A |
