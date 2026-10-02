@@ -100,12 +100,16 @@ const BUTTON_VALUE_RE = /^(connection:[a-zA-Z0-9-]+|action:(create_connection|re
 
 const GREETING_CONTENT = "Hi! I can help you create an AI agent. What kind of agent are you looking for?";
 
+// Capability-neutral onboarding: the greeting does NOT advertise a first-party
+// trading product. Agent identity is derived from skills (DECISIONS P2-2), so
+// trading is discovered via skill discovery (list_available_skills) rather than
+// offered as a headline "type". The preset-detection plumbing still accepts a
+// `preset:*` token if a user types one, but onboarding no longer presents one.
 const GREETING_ACTIONS: ChatAction[] = [
   {
     id: 'greeting-presets',
     type: 'quick_replies',
     options: [
-      { label: 'AI crypto trader', value: 'preset:trading' },
       { label: 'AI personal assistant', value: 'preset:personal-assistant' },
       { label: 'Custom AI', value: 'preset:custom' },
     ],

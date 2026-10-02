@@ -42,15 +42,23 @@ audit + remediate every herobids trading product surface (8).
   from both audits is done, deferred-with-note, escalated, or KEEP — none
   unclassified.
 
-## What waits on the operator
+## The legal/product-boundary batch — RESOLVED by the operator (2026-10-01)
 
-1. **The legal/product-boundary batch** (`ESCALATIONS.md`, finalized T5.2):
-   E1 (onboarding "AI crypto trader" preset), E2 (billable "strategy assessment"
-   meter), E3 (SEO/OG crypto-trading positioning), + note N1 (herobids→Traderton
-   outbound link). All one question: may herobids present/bill/advertise trading
-   as first-party, or must it be Traderton-attributed? Engineering recommends
-   capability-neutral across all four.
-2. **T4.2 publish** (infra hard stop): approve DNS/TLS/VM-deploy + wiring `site`
+The `ESCALATIONS.md` batch is resolved (see DECISIONS P2-17/18/19):
+- **E1 → retired** the onboarding "AI crypto trader" greeting button; onboarding
+  is capability-neutral and trading is discovered via skills. (This turned out to
+  be governed by the already-settled "no agent type; identity from skills" decision
+  P2-2 — not a new legal call.)
+- **E2 → leave as-is.** Billing *for* trading (an external action) is acceptable;
+  the `assessment.request` meter stays. Optional future: categorize
+  externally-caused bills.
+- **E3 → keep positioning as-is for now;** produced the frontend trading-text
+  inventory (`007-frontend-trading-text-inventory.md`). Applying it is a later task.
+- **N1** (herobids→Traderton outbound link) stays deferred with E3.
+
+## What still waits on the operator
+
+1. **T4.2 publish** (infra hard stop): approve DNS/TLS/VM-deploy + wiring `site`
    into the staging compose/deploy flow (checklist in the publish-prep doc).
 
 ## Deliberately deferred (not gaps)

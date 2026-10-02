@@ -155,9 +155,10 @@ Every surface in both audits maps to exactly one disposition above:
   Phase-3-owned feature/schema moves (Bucket A/E features, blueprint facets,
   `GET /blueprints/defaults`). Each is noted; none is a Phase-2 safe-standalone
   that was skipped.
-- **⤴ escalated:** E1 (greeting preset), E2 (billing meter), E3 (SEO/OG) — the
-  only legal/product-boundary calls — plus note N1 (herobids→Traderton outbound
-  link).
+- **⤴ escalated → RESOLVED (2026-10-01):** E1 (greeting preset) → retired
+  (now ✅; it was governed by P2-2); E2 (billing meter) → leave as-is; E3 (SEO/OG)
+  → keep as-is + produced the frontend text inventory (`../007-…`). Note N1
+  stays deferred with E3. See DECISIONS P2-17/18/19.
 - **🧱 KEEP:** trading skills, runtime/engine mechanics, capability plumbing, and
   the deployed Traderton boundary (Phase-3-owned).
 
