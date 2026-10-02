@@ -105,7 +105,9 @@ Approval for one apply does not authorize the other.
    (5) the MCP comparison (deferred vs revised, with evidence); (6) the
    legal/product questions engineering cannot settle.
 
-10. **External Backend contract and trust plan.** Draft the implementation
+10. **External Backend contract and trust plan.** ✅ **DONE 2026-10-02** —
+    [006-step10-external-backend-contract-and-trust-plan.md](./006-step10-external-backend-contract-and-trust-plan.md).
+    Draft the implementation
     plan from Step 9's discovery: `ExternalBackendDefinition`,
     `ExternalBackendClient`, descriptor signing and pinning, source-skill
     matching, key rotation/revocation, availability, and generic

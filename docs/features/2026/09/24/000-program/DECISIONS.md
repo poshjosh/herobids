@@ -17,6 +17,8 @@
 | D8 | Traderton frontend later; execution boundary stays private; `staging.traderton.com` public site for docs/status only | Settled | roadmap |
 | D9 | Superseded `RemoteBoundary` plan is non-governing history | Settled | ADR 015 + plan header |
 | D10 | Step 16 retains the mandatory REST differential and representative load test. Use read-only Herobids oracle `1f6978d740d45e466cf4149617b8afc1c721e751` (the parent of trading-package removal); prior A8/C5/soak evidence supports but does not replace these reports. | Settled | roadmap Step 16 + traderton 004/007/024 |
+| D11 | Traderton skills.sh source: repo `github.com/traderton/skills` (local `/Users/chinomso.ikwuagwu/dev_ai/traderton-skills/`). Three skill refs: `traderton/skills/crypto-trading`, `traderton/skills/crypto-bot-management`, `traderton/skills/crypto-risk-monitoring` — mapping to the herobids seeds TRADING_SKILL / BOT_MANAGEMENT_SKILL / RISK_MONITORING_SKILL respectively. These are the `approvedSourceSkillRefs`. (Resolves the DECISIONS open item "canonical Traderton skills.sh publisher ref".) | Settled (operator, 2026-10-02) | this file |
+| D12 | Phase-3 scope NARROWED (operator, 2026-10-02): execute Steps 10, 11, 12, 13 now (ExternalBackend machinery + Traderton skill publication). DEFER Steps 14 (remove herobids first-party trading), 15 (trading-domain module move/split), and 16 (final staging proof — also infra-gated). Steps 11/12 route trading through the generic path but do NOT remove/relocate trading from herobids yet. | Settled (operator) | this file |
 
 ## Contemplator handoff protocol
 
@@ -55,5 +57,10 @@ in-context). Provide it this context first, then the neutral brief below.
 - S3 backend credentials / access for Terraform state inspection (Pass 1 needs
   `TF_BACKEND_BUCKET`, `TF_BACKEND_REGION`, `AWS_*`; the server IP itself is
   obtained from state, not a prerequisite).
-- Canonical Traderton skills.sh publisher/repository ref (needed at Phase 3 step 13).
-- Which Herobids trading UI/API/billing/SEO surfaces may remain generic vs must be removed (needs legal/payment-provider input — Phase 2 step 8).
+- ~~Canonical Traderton skills.sh publisher/repository ref~~ — RESOLVED (D11).
+- Which Herobids trading UI/API/billing/SEO surfaces may remain generic vs must
+  be removed (needs legal/payment-provider input — Phase 2 step 8 / Phase 3 Steps
+  14–15, now DEFERRED per D12).
+- Push gate: `github.com/traderton/skills` (and the `traderton` repo generally)
+  are shared remotes. Author/commit locally only; do NOT push without operator
+  approval (same discipline as the main-branch rule).
