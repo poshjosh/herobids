@@ -3,9 +3,11 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 Do not pause between tasks.
 
-**Current cursor:** `DONE`. Phase 2 complete — all tasks ✅ except **T4.2 🚫**
-(infra publish hard stop; prep documented) and the **E1/E2/E3 ⤴** legal batch
-(awaiting one operator decision). See `../006-phase2-completion-note.md`. ←
+**Current cursor:** `DONE`. Phase 2 complete — all tasks ✅ (including **T4.2**,
+executed under operator infra greenlight: `staging.traderton.com` live over
+HTTPS). The **E1/E2/E3** legal batch has been resolved by the operator (E1=retire
+greeting button, E2=keep billing as-is, E3=keep + text inventory produced). See
+`../006-phase2-completion-note.md`. ←
 Update this line to the task you are on after every task.
 
 ### Status scheme (use the emoji, NOT the checkbox)
@@ -19,7 +21,8 @@ Each task is prefixed with ONE status emoji. Edit the emoji as you progress; the
 
 Worked example row:
 `- ✅ **T0.1 Load context.** …`  → done.
-`- 🚫 **T4.2 Publishing …**` → blocked on operator (infra hard stop); move on.
+`- 🚫 **<task> …**` → blocked on operator (e.g. an infra hard stop); move on.
+  (T4.2 was 🚫 until the operator greenlit it; it is now ✅ — see below.)
 
 Per task: **Goal · Inputs · Agent/skill · Exit criteria · Decision/escalation
 note.** Every task ends with: `pnpm lint` + build/tests green, local commit,
@@ -183,20 +186,31 @@ Genuine gates:
     OK, no dashboard/exec surface); `pnpm lint` + `pnpm build` green; local stack
     torn down. **Did NOT touch staging `compose.yaml`/`deploy.sh`/`deploy-on-host.sh`
     (that is the T4.2 hard-stop boundary).**
-- 🚫 **T4.2 Publishing (DNS/TLS/deploy) — HARD STOP.** Prepare the publish steps
-  (DNS, TLS, deploy) and document them; do NOT execute. Request operator
-  approval. Status 🚫 until approved.
-  - **Prepared (NOT executed):** publish runbook at
-    `traderton/docs/features/2026/10/01/001-minimal-public-site/002-publish-prep.md`
-    — delivers `site` to the VM (recommend a CI-built `traderton-site` image),
-    adds the `site` service to the staging `compose.yaml`, wires it into
-    `deploy-on-host.sh` pull/up lists, creates `staging.traderton.com` DNS →
-    VM IP, and verifies Caddy TLS issuance. The `Caddyfile.staging` guard
-    (`/internal*` + `/health*` → 404; public vhost never proxies the boundary)
-    is already in place and regression-tested.
-  - **Blocked on:** operator approval (infra mutation — ENTRYPOINT §5.2(1)).
-    Approval checklist is in §4 of the publish-prep doc. Continuing with
-    Block 5 (not gated by T4.2).
+- ✅ **T4.2 Publishing (DNS/TLS/deploy) — DONE (operator-greenlit infra).** The
+  operator granted the infra greenlight and authorized the normally-separate
+  `main`-push for this; `staging.traderton.com` is now live over HTTPS.
+  - **Chosen path (option b, CI site image):** per the publish-prep runbook
+    (`traderton/.../002-publish-prep.md`), delivered via a CI-built
+    `ghcr.io/poshjosh/traderton-site:sha-<commit>` image (mirrors the boundary
+    image model). `Dockerfile.site` bakes `site/` + `docs/reference/` into
+    `caddy:2-alpine`; `build-push.yml` builds+pushes it; staging `compose.yaml`
+    gained a hardened `site` service (no host port, `expose 80`,
+    `cap_drop:[ALL] + cap_add:[NET_BIND_SERVICE]`, mem/cpu/pids caps, wget
+    healthcheck); `deploy-on-host.sh` derives `SITE_IMAGE` and pulls+ups it;
+    `caddy depends_on` boundary + site healthy. Guard tests extended
+    (`offline-guards.sh`, `site-isolation.sh`).
+  - **DNS/TLS:** operator added A records `staging` + `api` → `2.28.19.89`;
+    Caddy auto-issued TLS on first HTTPS hit.
+  - **Deploy:** pushed `main` (CI built both images), ran `deploy.sh --env
+    staging`; VM release-sha = `84c3721`, `staging-site-1` healthy.
+  - **Fix during deploy:** first attempt crash-looped —
+    `exec /usr/bin/caddy: operation not permitted`, because
+    `cap_drop:[ALL] + no-new-privileges` stripped Caddy's `NET_BIND_SERVICE`
+    file-cap needed to bind `:80`. Fixed to `cap_drop:[ALL] +
+    cap_add:[NET_BIND_SERVICE]` (no `no-new-privileges`); redeployed clean.
+  - **Verified live:** `https://staging.traderton.com/` → 200 (TLS OK, correct
+    title), `/docs/` + `/status.html` → 200, `/health` + `/internal` → 404
+    (edge isolation holds), `api.staging.traderton.com/health/ready` → 200.
 
 ## Block 5 — Step 8 wrap-up
 
@@ -221,11 +235,11 @@ Genuine gates:
   short Phase 2 completion note under `docs/features/2026/10/`.
   - Exit: Phase 2 Definition of Done (ENTRYPOINT §8) met, modulo the batched
     legal escalations and any infra hard stops awaiting operator approval.
-  - **Done:** staging `PROGRESS.md` Steps 6–8 updated (6 ✅, 7 ✅ built+local /
-    🚫 publish, 8 ✅ modulo legal batch); completion note at
-    `../006-phase2-completion-note.md`. All Phase 2 tasks are ✅ except T4.2 (🚫
-    infra hard stop) and the E1/E2/E3 legal batch (⤴, awaiting operator). DoD
-    (ENTRYPOINT §8) met modulo those two operator-gated items.
+  - **Done:** staging `PROGRESS.md` Steps 6–8 updated (6 ✅, 7 ✅ built+local,
+    8 ✅); completion note at `../006-phase2-completion-note.md`. **Update:**
+    T4.2 is now ✅ (operator greenlit the infra hard stop; `staging.traderton.com`
+    published + verified live), and the E1/E2/E3 legal batch has been resolved by
+    the operator. All Phase 2 tasks are ✅; DoD (ENTRYPOINT §8) fully met.
 
 ---
 
@@ -286,8 +300,12 @@ Genuine gates:
   Committed in both repos.
 - **Block 4 (T4.1):** PlanCreator → inline Implementer → CodeReviewer (clean) →
   VisualTester (pass). Static site in `traderton/site/`, local-only serving +
-  isolation test. Committed in traderton. **T4.2 = infra HARD STOP** — publish
-  prep documented (`traderton/.../002-publish-prep.md`), marked 🚫.
+  isolation test. Committed in traderton. **T4.2 (publish) = DONE 2026-10-02**
+  under operator infra greenlight (+ authorized `main` push): CI
+  `traderton-site` image + hardened staging `site` service + deploy wiring;
+  `staging.traderton.com` live over HTTPS (TLS auto-issued), `/health` +
+  `/internal` → 404 isolation verified. Deploy hit + fixed a Caddy cap crash-loop
+  (`cap_drop:[ALL]` needs `cap_add:[NET_BIND_SERVICE]` to bind `:80`).
 - **Block 5:** T5.1 `RECONCILIATION.md` (every surface classified); T5.2
   finalized `ESCALATIONS.md` operator batch; T5.3 updated staging `PROGRESS.md`
   Steps 6–8 + wrote `../006-phase2-completion-note.md`.

@@ -1,13 +1,14 @@
 # Program Progress Tracker — External Backend / Staging
 
 **Status:** live. **Read this immediately after ENTRYPOINT.md.**
-**Updated:** 2026-10-01
+**Updated:** 2026-10-02
 
 ## Current state (read first)
 
-**Current phase:** Phase 1 complete; **Phase 2 (Steps 6–8) substantially
-complete** (2026-10-01) — all engineering done, modulo one batched legal
-decision (Phase-2 `ESCALATIONS.md`) and the T4.2 publish infra hard stop.
+**Current phase:** Phase 1 complete; **Phase 2 (Steps 6–8) COMPLETE**
+(2026-10-02) — all engineering done; the batched legal decisions (E1/E2/E3)
+resolved by the operator; and T4.2 publish executed under operator infra
+greenlight (`staging.traderton.com` live over HTTPS).
 **Current step:** next is **Phase 3 Step 9 (Discovery)**, unblocked.
 
 **Verified live on 2026-10-01 (supersedes the 2026-09-25 "blocked" state below):**
@@ -27,11 +28,12 @@ staging was re-provisioned after the 09/24 diagnosis. The earlier "state serial
 - Deployed refs pinned (D2): herobids `a5f403cf`; traderton `41d9c2c1`
   (`ghcr.io/poshjosh/traderton@sha256:b7b93427…`).
 
-**Phase 2 (Steps 6–8): substantially complete 2026-10-01.** See the Phase 2
-program `docs/features/2026/10/004-phase2-program/` (TASKS/DECISIONS/
-ESCALATIONS/RECONCILIATION) and the completion note
-`docs/features/2026/10/006-phase2-completion-note.md`. Remaining: operator
-resolves the batched legal questions (E1/E2/E3) and approves T4.2 publish.
+**Phase 2 (Steps 6–8): COMPLETE 2026-10-02.** See the Phase 2 program
+`docs/features/2026/10/004-phase2-program/` (TASKS/DECISIONS/ESCALATIONS/
+RECONCILIATION) and the completion note
+`docs/features/2026/10/006-phase2-completion-note.md`. The batched legal
+questions (E1/E2/E3) have been resolved by the operator and T4.2 publish has
+been executed (`staging.traderton.com` live). No Phase 2 items remain.
 
 **Not started:** Phase 3 (Steps 9–16). The concrete
 `packages/domain/src/traderton/` module is still in place; no generic
@@ -49,7 +51,7 @@ Legend: ✅ done · 🔄 in progress · ⏸ paused · ⬜ not started · 🚫 bl
 | 4 | Integrate Herobids with Traderton | ✅ (config + path verified) | `.env.staging` boundary URL + HMAC; signed read probe reaches auth+routing. Full write-path differential is Step 16. |
 | 5 | Operational readiness and rollback | ✅ (behavioral) / N/A (metrics, rollback) | Behavioral checks passed live (fail-closed/recovery/idempotency/HMAC). Metrics N/A (no instrumentation). Rollback N/A pre-launch (teardown+rebuild accepted). See the readiness runbook. |
 | 6 | Move trading documentation | ✅ | Phase 2 T3.1/T3.2: venue/wallet/crypto reference docs now canonical in the traderton repo (`docs/reference/*`); herobids glossary split (generic terms only); worker docs-index regenerated. |
-| 7 | Build minimal Traderton frontend | ✅ (built+local) / 🚫 (publish) | Phase 2 T4.1: minimal static site (`traderton/site/`) — identity + docs/venue guides + status; serves locally; execution-boundary isolation tested. T4.2 publish (DNS/TLS/deploy) is an infra HARD STOP — prepared, awaiting operator approval. |
+| 7 | Build minimal Traderton frontend | ✅ | Phase 2 T4.1: minimal static site (`traderton/site/`) — identity + docs/venue guides + status; execution-boundary isolation tested. T4.2 publish (DNS/TLS/deploy) DONE 2026-10-02 under operator infra greenlight: CI `traderton-site` image + hardened staging `site` service + deploy wiring; `https://staging.traderton.com/` live (200, TLS auto-issued), `/health` + `/internal` → 404 isolation verified, `api.staging.traderton.com/health/ready` → 200. |
 | 8 | Audit legal/product boundary | ✅ (modulo legal batch) | Phase 2: frontend audit (003) + backend audit (005); all GENERIC/MOVE/REMOVE-SAFE executed (T1.1/T2.2/T3.2); reconciled (T5.1); the legal/payment product-boundary questions batched in Phase-2 `ESCALATIONS.md` (E1/E2/E3) for one operator decision. |
 | 9 | External Backend Genericization Discovery | ⬜ | Phase 3; starts after Phase 1 operational proof; produces all six ADR 015 exit criteria |
 | 10 | External Backend contract and trust plan | ⬜ | Phase 3 |
