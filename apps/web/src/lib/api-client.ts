@@ -332,39 +332,6 @@ export const ai = {
 };
 
 // ---------------------------------------------------------------------------
-// Dashboard composite read models
-// ---------------------------------------------------------------------------
-
-export interface DashboardOverview {
-  user: { id: string; displayName: string; email: string; avatarUrl: string | null; planId: string };
-  plan: {
-    entitlements: PlanEntitlements;
-  } | null;
-  bots: BotSummary[];
-  summary: { totalBots: number; runningBots: number; totalOpenPositions: number; outcomes: { trading?: { totalRealizedPnl: string } } };
-}
-
-export interface ActivityEvent {
-  id: string;
-  botId: string | null;
-  /** Human-readable venue/account label, e.g. "hyperliquid / main-account" */
-  instanceLabel: string | null;
-  type: string;
-  category: 'decision' | 'execution' | 'risk' | 'system';
-  severity: 'info' | 'warn' | 'critical';
-  /** Translation key for client-side localization, e.g. "activity.order.filled" */
-  messageKey: string;
-  timestamp: string;
-  /** Raw event payload — used as interpolation params for messageKey */
-  detail: Record<string, unknown>;
-}
-
-export interface ActivityFeedResponse {
-  events: ActivityEvent[];
-  hasMore: boolean;
-}
-
-// ---------------------------------------------------------------------------
 // Agent Activity (canonical observability contract)
 // ---------------------------------------------------------------------------
 
@@ -599,26 +566,6 @@ export const agentTools = {
     return request<{ ok: true; tools: AgentToolInfo[]; categories: AgentToolCategory[] }>(
       `/api/v1/agent-tools${query ? `?${query}` : ''}`,
     );
-  },
-};
-
-export const dashboard = {
-  overview: () => request<DashboardOverview>('/dashboard/overview'),
-  activity: (params?: { limit?: number; before?: string; beforeId?: string }) => {
-    const qs = new URLSearchParams();
-    if (params?.limit) qs.set('limit', String(params.limit));
-    if (params?.before) qs.set('before', params.before);
-    if (params?.beforeId) qs.set('beforeId', params.beforeId);
-    const query = qs.toString() ? `?${qs.toString()}` : '';
-    return request<ActivityFeedResponse>(`/dashboard/activity${query}`);
-  },
-  agentActivity: (params?: { limit?: number; before?: string; beforeId?: string }) => {
-    const qs = new URLSearchParams();
-    if (params?.limit) qs.set('limit', String(params.limit));
-    if (params?.before) qs.set('before', params.before);
-    if (params?.beforeId) qs.set('beforeId', params.beforeId);
-    const query = qs.toString() ? `?${qs.toString()}` : '';
-    return request<AgentActivityFeedResponse>(`/dashboard/agent-activity${query}`);
   },
 };
 

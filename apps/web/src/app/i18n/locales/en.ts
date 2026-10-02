@@ -1,16 +1,10 @@
 export const messages: Record<string, string> = {
   // Navigation
   'nav.skills': 'Skills',
-  'nav.activity': 'Activity',
-  'nav.outcomes': 'Outcomes',
   'nav.agents': 'AI Agents',
   'nav.connections': 'Connections',
   'nav.billing': 'Billing',
   'nav.settings': 'Settings',
-  'nav.bots': 'Bots',
-  'nav.tradingSetup': 'Trading setup',
-  'nav.exposure': 'Exposure',
-  'nav.preview': 'Preview',
   'nav.openNavigation': 'Open navigation',
   'nav.closeNavigation': 'Close navigation',
   'nav.signOut': 'Sign out',
@@ -166,32 +160,6 @@ export const messages: Record<string, string> = {
   'auth.logout.malformed_token': 'Malformed token.',
   'auth.logout.missing_session_id': 'Token missing session ID.',
 
-  // Activity feed page
-  'activity.title': 'Activity',
-  'activity.subtitle': 'What your AI agents have been doing',
-  'activity.noActivity.title': 'No activity yet',
-  'activity.noActivity.message':
-    'Events will appear here as your AI agents make decisions, place orders, and manage positions.',
-  'activity.loadOlderEvents': 'Load older events',
-
-  // Activity event message keys (used by ActivityItem)
-  'activity.decision.accepted': 'Decision accepted: {intent} {instrumentId}',
-  'activity.decision.rejected': 'Decision rejected: {reason}',
-  'activity.risk.breach': 'Risk limit breached: {reason}',
-  'activity.risk.guardrail_triggered': 'Guardrail triggered: {reason}',
-  'activity.order.submitted': 'Order placed: {side} {symbol}',
-  'activity.order.filled': 'Order filled: {side} {quantity} {symbol} @ {price}',
-  'activity.order.fill_confirmed_from_stream': 'Fill confirmed: {side} {quantity} {symbol}',
-  'activity.order.cancelled': 'Order cancelled',
-  'activity.order.rejected': 'Order rejected by venue: {reason}',
-  'activity.instance.started': 'AI agent started',
-  'activity.instance.stopped': 'AI agent stopped',
-  'activity.instance.crashed': 'AI agent crashed: {reason}',
-  'activity.instance.live_armed': 'Live trading armed',
-  'activity.instance.live_blocked': 'Live trading blocked: {reason}',
-  'activity.reconciliation.drift_detected': 'Position drift detected — reconciling',
-  'activity.live.slippage_alert': 'High slippage detected: {slippageBps} bps',
-
   // Mission Control
   'missionControl.title': 'Mission Control',
   'missionControl.subtitle':
@@ -215,26 +183,6 @@ export const messages: Record<string, string> = {
   'missionControl.setup.cta': 'Connect AI agent',
   'missionControl.setup.successDismiss': 'Done',
   'missionControl.setup.successMessage': '{label} ({provider}) is ready for your AI agents.',
-
-  // Exposure
-  'exposure.title': 'Exposure',
-  'exposure.subtitle': 'Current positions and risk concentration',
-  'exposure.totalRealizedPnl': 'Total Realized P&L',
-  'exposure.openPositions': 'Open Positions',
-  'exposure.emptyTitle': 'No open positions',
-  'exposure.emptyMessage': 'Positions will appear here once your AI agents start trading.',
-
-  // Outcomes
-  'outcomes.title': 'Outcome Board',
-  'outcomes.subtitle': 'How each AI agent is progressing',
-  'outcomes.noAgents.title': 'No AI agents yet',
-  'outcomes.noAgents.message':
-    'Create an AI agent to start tracking published outputs, user-facing summaries, and recent progress.',
-  'outcomes.metric.total': 'Total AI agents',
-  'outcomes.metric.active': 'Active now',
-  'outcomes.metric.attention': 'Need attention',
-  'outcomes.metric.updatedToday': 'Updated today',
-  'outcomes.recentOutcomes': 'Recent published outcomes',
 
   // Settings
   'settings.title': 'Settings',
@@ -755,18 +703,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.manageConnections': 'Manage connections',
   'agents.capabilityPage.setupOnAgents': 'Go to AI Agents',
 
-  // Outcomes extended
-  'outcomes.latestArtifact': 'Latest artifact',
-  'outcomes.noArtifact': 'No published artifact yet.',
-  'outcomes.latestUserSummary': 'Latest user summary',
-  'outcomes.noSummary': 'No AI agent-authored summary yet.',
-
-  // Timeline
-  'timeline.toggle.showDetail': 'Show detail',
-  'timeline.toggle.hideDetail': 'Hide detail',
-  'timeline.severity.warn': 'Warning',
-  'timeline.severity.critical': 'Critical',
-
   // API error localization
   'plan.limit_exceeded': 'Your current plan limit for {resource} is {limit}.',
   'plan.live_disabled': 'Live trading is not enabled on your current plan.',
@@ -1029,84 +965,6 @@ export const messages: Record<string, string> = {
 
   // Locale picker
   'localePicker.label': 'Change language',
-
-  // Bots
-  'bots.title': 'Bots',
-  'bots.subtitle': 'Trading bots created by you or your AI agents',
-  'bots.createBot': 'Create Bot',
-  'bots.empty.title': 'No bots yet',
-  'bots.empty.message': 'Create one or let an AI agent create bots on your behalf.',
-  'bots.creatorAgent': 'AI agent: {id}',
-  'bots.creatorUser': 'you',
-  'bots.kv.strategy': 'Strategy',
-  'bots.kv.mode': 'Mode',
-  'bots.kv.created': 'Created',
-  'bots.kv.started': 'Started',
-  'bots.modal.title': 'Create Bot',
-  'bots.modal.platformLink': 'Platform link',
-  'bots.modal.platformLinkPlaceholder': '— Select platform link —',
-  'bots.modal.symbolPerp': 'Symbol (e.g. BTC-PERP)',
-  'bots.modal.symbolSwap': 'Instrument (e.g. WETH/USDC)',
-  'bots.modal.strategyStyle': 'Strategy style',
-  'bots.modal.executionMode': 'Execution mode',
-  'bots.modal.cancel': 'Cancel',
-  'bots.modal.creating': 'Creating…',
-  'bots.modal.errorNoConnection': 'Select a platform link before creating a bot',
-  'bots.modal.errorPresetNotFound': 'Selected strategy preset not found',
-  'bots.modal.style.economy.label': 'Economy',
-  'bots.modal.style.economy.description': 'Fewer indicators, lower confidence thresholds',
-  'bots.modal.style.standard.label': 'Standard',
-  'bots.modal.style.standard.description': 'Balanced indicators and risk',
-  'bots.modal.style.premium.label': 'Premium',
-  'bots.modal.style.premium.description': 'Full indicator suite, strict confirmation',
-  'bots.modal.executionMode.test.label': 'Test',
-  'bots.modal.executionMode.test.description': 'Simulated trading — no real money',
-  'bots.modal.executionMode.live.label': 'Live',
-  'bots.modal.executionMode.live.description': 'Real order placement',
-  'bots.modal.symbolSwapPlaceholder': 'WETH/USDC',
-  'bots.modal.symbolPerpPlaceholder': 'BTC-PERP',
-
-  // Instances (legacy trading records)
-  'instances.title': 'Bots',
-  'instances.subtitle': 'Advanced trading records kept for compatibility and history',
-  'instances.empty.title': 'No bots yet',
-  'instances.empty.message': 'This view is read-only. Create and manage agents from the Agents area.',
-  'instances.fallbackBot': 'Bot',
-  'instances.kv.created': 'Created',
-  'instances.kv.started': 'Started',
-
-  // Instance Detail
-  'instanceDetail.notFound.title': 'Bot not found',
-  'instanceDetail.notFound.message': "This bot does not exist or you don't have access.",
-  'instanceDetail.backToBots': '← Back to bots',
-  'instanceDetail.back': '← Back',
-  'instanceDetail.fallbackTitle': 'Bot',
-  'instanceDetail.modeSuffix': 'mode',
-  'instanceDetail.crashedMessage': 'This instance crashed during startup. Check the latest journal events and verify the linked venue account and credential before retrying.',
-  'instanceDetail.section.timeline': 'Timeline',
-  'instanceDetail.section.configuration': 'Configuration',
-  'instanceDetail.section.openPositions': 'Open positions',
-  'instanceDetail.timeline.empty.title': 'No events yet',
-  'instanceDetail.timeline.empty.message': 'Events will appear here once the agent starts trading.',
-  'instanceDetail.config.strategy': 'Strategy',
-  'instanceDetail.config.symbol': 'Symbol',
-  'instanceDetail.config.executionMode': 'Execution mode',
-  'instanceDetail.positions.empty': 'No open positions',
-  'instanceDetail.action.start': 'Start',
-  'instanceDetail.action.starting': 'Starting…',
-  'instanceDetail.action.stop': 'Stop',
-  'instanceDetail.action.stopping': 'Stopping…',
-  'instanceDetail.action.delete': 'Delete',
-  'instanceDetail.action.deleting': 'Deleting…',
-  'instanceDetail.modal.cancel': 'Cancel',
-  'instanceDetail.modal.stop.title': 'Stop bot?',
-  'instanceDetail.modal.stop.body': 'The bot will stop scanning but any open positions will remain in your portfolio. You can restart it later.',
-  'instanceDetail.modal.stop.positionWarning': 'You have {count, plural, one {# open position} other {# open positions}}.',
-  'instanceDetail.modal.stop.confirm': 'Stop bot',
-  'instanceDetail.modal.delete.title': 'Delete bot?',
-  'instanceDetail.modal.delete.body': 'This action is irreversible. The bot will be permanently deleted. Its trade records and event history will be preserved in the database but will no longer be linked to a bot.',
-  'instanceDetail.modal.delete.positionWarning': 'You have {count, plural, one {# open position} other {# open positions}}. These positions will remain in the exchange but will no longer be tracked by this bot.',
-  'instanceDetail.modal.delete.confirm': 'Delete permanently',
 
   // Try page (email verification flow)
   'try.message1': "Hi! I can help you create an AI agent. Let's get you set up first.",

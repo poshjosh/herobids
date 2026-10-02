@@ -5,12 +5,7 @@ import { LoginPage } from '../features/auth/LoginPage.js';
 import { AuthCallbackPage } from '../features/auth/AuthCallbackPage.js';
 import { SetupProviderLinkPage } from '../features/setup/SetupProviderLinkPage.js';
 import { LandingPagePlaceholder } from '../features/landing/LandingPagePlaceholder.js';
-import { ActivityFeedPage } from '../features/activity/ActivityFeedPage.js';
-import { OutcomeBoardPage } from '../features/outcomes/OutcomeBoardPage.js';
-import { ExposurePage } from '../features/exposure/ExposurePage.js';
-import { BotsPage } from '../features/bots/BotsPage.js';
 import { createPublicRoutes } from '../features/public-pages/createPublicRoutes.js';
-import { InstanceDetailPage } from '../features/instances/detail/InstanceDetailPage.js';
 import { ConnectionsPage } from '../features/connections/ConnectionsPage.js';
 import { BillingPage } from '../features/billing/BillingPage.js';
 import { AgentsPage } from '../features/agents/AgentsPage.js';
@@ -55,12 +50,7 @@ export const router = createBrowserRouter([
       { path: '/agents/:id', element: <AgentDetailPage /> },
       { path: '/agents/:agentId/capabilities/:family', element: <AgentCapabilityPage /> },
       { path: '/skills', element: <SkillsPage /> },
-      { path: '/activity', element: <ActivityFeedPage /> },
-      { path: '/outcomes', element: <OutcomeBoardPage /> },
-      { path: '/bots', element: <BotsPage /> },
-      { path: '/bots/:id', element: <InstanceDetailPage /> },
       { path: '/connections', element: <ConnectionsPage /> },
-      { path: '/exposure', element: <ExposurePage /> },
       { path: '/billing', element: <BillingPage /> },
       { path: '/settings', element: <SettingsPage /> },
       { path: '/admin', element: <AdminPage /> },

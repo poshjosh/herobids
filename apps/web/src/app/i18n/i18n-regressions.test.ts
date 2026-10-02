@@ -57,18 +57,6 @@ describe('i18n regressions', () => {
         banned: ['Edit config', 'Edit agent', 'Delete this agent? This cannot be undone.'],
       },
       {
-        file: new URL('../../features/bots/BotsPage.tsx', import.meta.url),
-        banned: ['Trading bots created by you or your AI agents', 'No bots yet', 'Create Bot'],
-      },
-      {
-        file: new URL('../../features/instances/detail/InstanceDetailPage.tsx', import.meta.url),
-        banned: ['Bot not found', 'Stop bot?', 'Delete bot?'],
-      },
-      {
-        file: new URL('../../features/trading-instances/InstancesPage.tsx', import.meta.url),
-        banned: ['Advanced trading records', 'No bots yet'],
-      },
-      {
         file: new URL('../../features/chat/GuidedSetupPanel.tsx', import.meta.url),
         banned: ['Checking account', 'Starting chat', 'Processing your connection'],
       },

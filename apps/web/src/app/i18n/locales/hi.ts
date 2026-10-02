@@ -1,13 +1,9 @@
 export const messages: Record<string, string> = {
   // Navigation
   'nav.skills': 'कौशल',
-  'nav.activity': 'गतिविधि',
-  'nav.outcomes': 'परिणाम',
   'nav.agents': 'AI एजेंट',
   'nav.connections': 'कनेक्शन',
   'nav.billing': 'बिलिंग',
-  'nav.exposure': 'एक्सपोज़र',
-  'nav.preview': 'पूर्वावलोकन',
 
   // Public pages — navigation
   'public.nav.help': 'सहायता',
@@ -28,8 +24,6 @@ export const messages: Record<string, string> = {
   'public.notAvailableInLanguage': 'यह पृष्ठ आपकी भाषा में उपलब्ध नहीं है।',
   'public.viewInEnglish': 'अंग्रेज़ी में देखें',
   'nav.settings': 'सेटिंग्स',
-  'nav.bots': 'बॉट्स',
-  'nav.tradingSetup': 'ट्रेडिंग सेटअप',
   'nav.openNavigation': 'नेविगेशन खोलें',
   'nav.closeNavigation': 'नेविगेशन बंद करें',
   'nav.signOut': 'साइन आउट',
@@ -166,32 +160,6 @@ export const messages: Record<string, string> = {
   'skills.metrics.loading': 'मेट्रिक्स लोड हो रहे हैं...',
   'skills.metrics.loadError': 'मेट्रिक्स लोड नहीं हो सके: {message}',
 
-  // Activity feed page
-  'activity.title': 'गतिविधि',
-  'activity.subtitle': 'आपके AI एजेंट क्या कर रहे हैं',
-  'activity.noActivity.title': 'अभी तक कोई गतिविधि नहीं',
-  'activity.noActivity.message':
-    'आपके AI एजेंट निर्णय लेने, ऑर्डर देने और पोजीशन प्रबंधित करने पर इवेंट यहाँ दिखाई देंगे।',
-  'activity.loadOlderEvents': 'पुराने इवेंट लोड करें',
-
-  // Activity event message keys
-  'activity.decision.accepted': 'निर्णय स्वीकृत: {intent} {instrumentId}',
-  'activity.decision.rejected': 'निर्णय अस्वीकृत: {reason}',
-  'activity.risk.breach': 'जोखिम सीमा उल्लंघन: {reason}',
-  'activity.risk.guardrail_triggered': 'गार्डरेल सक्रिय: {reason}',
-  'activity.order.submitted': 'ऑर्डर दिया गया: {side} {symbol}',
-  'activity.order.filled': 'ऑर्डर भरा गया: {side} {quantity} {symbol} @ {price}',
-  'activity.order.fill_confirmed_from_stream': 'भरने की पुष्टि: {side} {quantity} {symbol}',
-  'activity.order.cancelled': 'ऑर्डर रद्द किया गया',
-  'activity.order.rejected': 'ऑर्डर वेन्यू द्वारा अस्वीकार: {reason}',
-  'activity.instance.started': 'AI एजेंट शुरू हुआ',
-  'activity.instance.stopped': 'AI एजेंट बंद हुआ',
-  'activity.instance.crashed': 'AI एजेंट क्रैश हुआ: {reason}',
-  'activity.instance.live_armed': 'लाइव ट्रेडिंग सक्रिय',
-  'activity.instance.live_blocked': 'लाइव ट्रेडिंग अवरुद्ध: {reason}',
-  'activity.reconciliation.drift_detected': 'पोजीशन ड्रिफ्ट पाई गई — पुनर्मिलान हो रहा है',
-  'activity.live.slippage_alert': 'उच्च स्लिपेज पाया गया: {slippageBps} bps',
-
   // Mission Control
   'missionControl.title': 'मिशन कंट्रोल',
   'missionControl.subtitle':
@@ -215,26 +183,6 @@ export const messages: Record<string, string> = {
   'missionControl.setup.cta': 'AI एजेंट कनेक्ट करें',
   'missionControl.setup.successDismiss': 'हो गया',
   'missionControl.setup.successMessage': '{label} ({provider}) आपके AI एजेंटों के लिए तैयार है।',
-
-  // Exposure
-  'exposure.title': 'एक्सपोज़र',
-  'exposure.subtitle': 'वर्तमान पोजीशन और जोखिम केंद्रण',
-  'exposure.totalRealizedPnl': 'कुल वास्तविक P&L',
-  'exposure.openPositions': 'खुली पोजीशन',
-  'exposure.emptyTitle': 'कोई खुली पोजीशन नहीं',
-  'exposure.emptyMessage': 'आपके AI एजेंट ट्रेडिंग शुरू करने पर पोजीशन यहां दिखाई देंगी।',
-
-  // Outcomes
-  'outcomes.title': 'परिणाम बोर्ड',
-  'outcomes.subtitle': 'प्रत्येक AI एजेंट कैसे आगे बढ़ रहा है',
-  'outcomes.noAgents.title': 'अभी तक कोई AI एजेंट नहीं',
-  'outcomes.noAgents.message':
-    'प्रकाशित आउटपुट, सारांश और हाल की प्रगति ट्रैक करने के लिए एक AI एजेंट बनाएं।',
-  'outcomes.metric.total': 'कुल AI एजेंट',
-  'outcomes.metric.active': 'अभी सक्रिय',
-  'outcomes.metric.attention': 'ध्यान चाहिए',
-  'outcomes.metric.updatedToday': 'आज अपडेट',
-  'outcomes.recentOutcomes': 'हाल के प्रकाशित परिणाम',
 
   // Settings
   'settings.title': 'सेटिंग्स',
@@ -641,18 +589,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.manageConnections': 'कनेक्शन प्रबंधित करें',
   'agents.capabilityPage.setupOnAgents': 'AI एजेंट्स पर जाएं',
 
-  // Outcomes extended
-  'outcomes.latestArtifact': 'नवीनतम आर्टिफैक्ट',
-  'outcomes.noArtifact': 'अभी तक कोई प्रकाशित आर्टिफैक्ट नहीं।',
-  'outcomes.latestUserSummary': 'नवीनतम उपयोगकर्ता सारांश',
-  'outcomes.noSummary': 'अभी तक कोई AI एजेंट-लिखित सारांश नहीं।',
-
-  // Timeline
-  'timeline.toggle.showDetail': 'विवरण दिखाएं',
-  'timeline.toggle.hideDetail': 'विवरण छिपाएं',
-  'timeline.severity.warn': 'चेतावनी',
-  'timeline.severity.critical': 'गंभीर',
-
   // API error localization
   'plan.limit_exceeded': 'आपकी वर्तमान योजना की {resource} सीमा {limit} है।',
   'plan.live_disabled': 'आपकी वर्तमान योजना में लाइव ट्रेडिंग सक्षम नहीं है।',
@@ -940,7 +876,6 @@ export const messages: Record<string, string> = {
   'agents.strategyReview.adviceColumn.rank': 'Rank',
   'agents.strategyReview.adviceColumn.reasons': 'Reasons',
 
-
   'agents.authorizationMode.label': 'Trade Authorization',
   'agents.authorizationMode.direct': 'Auto',
   'agents.authorizationMode.approvalRequired': 'Require approval',
@@ -1024,83 +959,7 @@ export const messages: Record<string, string> = {
   // Locale picker
   'localePicker.label': 'भाषा बदलें',
 
-  // Bots
-  'bots.title': 'बॉट्स',
-  'bots.subtitle': 'आपके या आपके AI एजेंट द्वारा बनाए गए ट्रेडिंग बॉट्स',
-  'bots.createBot': 'बॉट बनाएं',
-  'bots.empty.title': 'अभी तक कोई बॉट नहीं',
-  'bots.empty.message': 'एक बनाएं या AI एजेंट को आपकी ओर से बॉट बनाने दें।',
-  'bots.creatorAgent': 'AI एजेंट: {id}',
-  'bots.creatorUser': 'आप',
-  'bots.kv.strategy': 'रणनीति',
-  'bots.kv.mode': 'मोड',
-  'bots.kv.created': 'बनाया गया',
-  'bots.kv.started': 'शुरू किया',
-  'bots.modal.title': 'बॉट बनाएं',
-  'bots.modal.platformLink': 'प्लेटफ़ॉर्म लिंक',
-  'bots.modal.platformLinkPlaceholder': '— प्लेटफ़ॉर्म लिंक चुनें —',
-  'bots.modal.symbolPerp': 'सिंबल (उदा. BTC-PERP)',
-  'bots.modal.symbolSwap': 'इंस्ट्रूमेंट (उदा. WETH/USDC)',
-  'bots.modal.strategyStyle': 'रणनीति शैली',
-  'bots.modal.executionMode': 'निष्पादन मोड',
-  'bots.modal.cancel': 'रद्द करें',
-  'bots.modal.creating': 'बना रहे हैं…',
-  'bots.modal.errorNoConnection': 'बॉट बनाने से पहले एक प्लेटफ़ॉर्म लिंक चुनें',
-  'bots.modal.errorPresetNotFound': 'चुना गया रणनीति प्रीसेट नहीं मिला',
-  'bots.modal.style.economy.label': 'इकोनॉमी',
-  'bots.modal.style.economy.description': 'कम संकेतक, कम आत्मविश्वास सीमाएं',
-  'bots.modal.style.standard.label': 'स्टैंडर्ड',
-  'bots.modal.style.standard.description': 'संतुलित संकेतक और जोखिम',
-  'bots.modal.style.premium.label': 'प्रीमियम',
-  'bots.modal.style.premium.description': 'पूर्ण संकेतक सेट, सख्त पुष्टि',
-  'bots.modal.executionMode.test.label': 'टेस्ट',
-  'bots.modal.executionMode.test.description': 'नकली ट्रेडिंग — असली पैसे नहीं',
-  'bots.modal.executionMode.live.label': 'लाइव',
-  'bots.modal.executionMode.live.description': 'वास्तविक ऑर्डर प्लेसमेंट',
-  'bots.modal.symbolSwapPlaceholder': 'WETH/USDC',
-  'bots.modal.symbolPerpPlaceholder': 'BTC-PERP',
-
-  // Instances (legacy trading records)
-  'instances.title': 'बॉट्स',
-  'instances.subtitle': 'अनुकूलता और इतिहास के लिए रखे गए उन्नत ट्रेडिंग रिकॉर्ड',
-  'instances.empty.title': 'अभी तक कोई बॉट नहीं',
-  'instances.empty.message': 'यह दृश्य केवल पढ़ने के लिए है। एजेंट क्षेत्र से एजेंट बनाएं और प्रबंधित करें।',
-  'instances.fallbackBot': 'बॉट',
-  'instances.kv.created': 'बनाया गया',
-  'instances.kv.started': 'शुरू किया',
-
   // Instance Detail
-  'instanceDetail.notFound.title': 'बॉट नहीं मिला',
-  'instanceDetail.notFound.message': 'यह बॉट मौजूद नहीं है या आपके पास पहुँच नहीं है।',
-  'instanceDetail.backToBots': '← बॉट्स पर वापस जाएं',
-  'instanceDetail.back': '← वापस',
-  'instanceDetail.fallbackTitle': 'बॉट',
-  'instanceDetail.modeSuffix': 'मोड',
-  'instanceDetail.crashedMessage': 'यह इंस्टेंस स्टार्टअप के दौरान क्रैश हो गया। नवीनतम जर्नल इवेंट जांचें और पुनः प्रयास करने से पहले लिंक किए गए वेन्यू अकाउंट और क्रेडेंशियल सत्यापित करें।',
-  'instanceDetail.section.timeline': 'टाइमलाइन',
-  'instanceDetail.section.configuration': 'कॉन्फ़िगरेशन',
-  'instanceDetail.section.openPositions': 'खुली पोजीशन',
-  'instanceDetail.timeline.empty.title': 'अभी तक कोई इवेंट नहीं',
-  'instanceDetail.timeline.empty.message': 'एजेंट के ट्रेडिंग शुरू करने पर इवेंट यहां दिखाई देंगे।',
-  'instanceDetail.config.strategy': 'रणनीति',
-  'instanceDetail.config.symbol': 'सिंबल',
-  'instanceDetail.config.executionMode': 'निष्पादन मोड',
-  'instanceDetail.positions.empty': 'कोई खुली पोजीशन नहीं',
-  'instanceDetail.action.start': 'शुरू करें',
-  'instanceDetail.action.starting': 'शुरू हो रहा है…',
-  'instanceDetail.action.stop': 'रोकें',
-  'instanceDetail.action.stopping': 'रुक रहा है…',
-  'instanceDetail.action.delete': 'हटाएं',
-  'instanceDetail.action.deleting': 'हटाया जा रहा है…',
-  'instanceDetail.modal.cancel': 'रद्द करें',
-  'instanceDetail.modal.stop.title': 'बॉट रोकें?',
-  'instanceDetail.modal.stop.body': 'बॉट स्कैनिंग बंद कर देगा लेकिन कोई भी खुली पोजीशन आपके पोर्टफोलियो में बनी रहेगी। आप इसे बाद में पुनः शुरू कर सकते हैं।',
-  'instanceDetail.modal.stop.positionWarning': 'आपके पास {count, plural, one {# खुली पोजीशन} other {# खुली पोजीशन}} हैं।',
-  'instanceDetail.modal.stop.confirm': 'बॉट रोकें',
-  'instanceDetail.modal.delete.title': 'बॉट हटाएं?',
-  'instanceDetail.modal.delete.body': 'यह कार्रवाई अपरिवर्तनीय है। बॉट स्थायी रूप से हटा दिया जाएगा। इसके ट्रेड रिकॉर्ड और इवेंट इतिहास डेटाबेस में संरक्षित रहेंगे लेकिन किसी बॉट से लिंक नहीं रहेंगे।',
-  'instanceDetail.modal.delete.positionWarning': 'आपके पास {count, plural, one {# खुली पोजीशन} other {# खुली पोजीशन}} हैं। ये पोजीशन एक्सचेंज में बनी रहेंगी लेकिन इस बॉट द्वारा ट्रैक नहीं की जाएंगी।',
-  'instanceDetail.modal.delete.confirm': 'स्थायी रूप से हटाएं',
 
   // Try page (email verification flow)
   'try.message1': 'नमस्ते! मैं आपको एक AI एजेंट बनाने में मदद कर सकता हूं। पहले आपको सेटअप करते हैं।',

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router';
 import { useIntl } from 'react-intl';
 import { useSession } from '../providers/SessionProvider.js';
@@ -21,24 +21,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [locale]);
 
-  const PREVIEW_ITEMS = useMemo(() => [
-    { path: '/bots',           label: intl.formatMessage({ id: 'nav.bots' }),           icon: '⊞' },
-    { path: '/exposure',       label: intl.formatMessage({ id: 'nav.exposure' }),       icon: '◉' },
-    { path: '/outcomes',       label: intl.formatMessage({ id: 'nav.outcomes' }),       icon: '◈' },
-    { path: '/activity',       label: intl.formatMessage({ id: 'nav.activity' }),       icon: '◈' },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [locale]);
-
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
-
-  const isPreviewActive = useMemo(
-    () => PREVIEW_ITEMS.some((item) => isActive(item.path)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [location.pathname, PREVIEW_ITEMS],
-  );
-
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const effectivePreviewOpen = previewOpen || isPreviewActive;
 
   return (
     <nav
@@ -91,26 +74,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
             <NavGroup>
               <NavItem path="/admin" label="Dashboard" icon="⊟" active={isActive('/admin')} onNavigate={onClose} />
             </NavGroup>
-          </>
-        )}
-
-        {user?.isAdmin && (
-          <>
-            <SectionLabel
-              collapsible
-              open={effectivePreviewOpen}
-              onToggle={() => setPreviewOpen((prev) => !prev)}
-              controlsId="sidebar-preview-group"
-            >
-              {intl.formatMessage({ id: 'nav.preview' })}
-            </SectionLabel>
-            {effectivePreviewOpen && (
-              <NavGroup id="sidebar-preview-group">
-                {PREVIEW_ITEMS.map((item) => (
-                  <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
-                ))}
-              </NavGroup>
-            )}
           </>
         )}
       </div>
@@ -212,48 +175,7 @@ function NavGroup({ children, id }: { children: React.ReactNode; id?: string }) 
   return <div id={id} style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '4px' }}>{children}</div>;
 }
 
-function SectionLabel({
-  children,
-  collapsible,
-  open,
-  onToggle,
-  controlsId,
-}: {
-  children: React.ReactNode;
-  collapsible?: boolean;
-  open?: boolean;
-  onToggle?: () => void;
-  controlsId?: string;
-}) {
-  if (collapsible) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open ?? false}
-        aria-controls={controlsId}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          width: '100%',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          fontSize: '0.625rem',
-          fontWeight: '600',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          color: 'var(--color-text-muted)',
-          padding: '12px 8px 4px',
-          textAlign: 'left',
-        }}
-      >
-        <span style={{ fontSize: '0.625rem', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</span>
-        {children}
-      </button>
-    );
-  }
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{

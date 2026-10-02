@@ -1,13 +1,9 @@
 export const messages: Record<string, string> = {
   // Navigation
   'nav.skills': 'المهارات',
-  'nav.activity': 'النشاط',
-  'nav.outcomes': 'النتائج',
   'nav.agents': 'وكلاء الذكاء الاصطناعي',
   'nav.connections': 'الاتصالات',
   'nav.billing': 'الفواتير',
-  'nav.exposure': 'التعرض',
-  'nav.preview': 'معاينة',
 
   // Public pages — navigation
   'public.nav.help': 'مساعدة',
@@ -28,8 +24,6 @@ export const messages: Record<string, string> = {
   'public.notAvailableInLanguage': 'هذه الصفحة غير متوفرة بلغتك.',
   'public.viewInEnglish': 'عرض باللغة الإنجليزية',
   'nav.settings': 'الإعدادات',
-  'nav.bots': 'البوتات',
-  'nav.tradingSetup': 'إعداد التداول',
   'nav.openNavigation': 'فتح التنقل',
   'nav.closeNavigation': 'إغلاق التنقل',
   'nav.signOut': 'تسجيل الخروج',
@@ -166,32 +160,6 @@ export const messages: Record<string, string> = {
   'skills.metrics.loading': 'جارٍ تحميل المقاييس...',
   'skills.metrics.loadError': 'تعذر تحميل المقاييس: {message}',
 
-  // Activity feed page
-  'activity.title': 'النشاط',
-  'activity.subtitle': 'ما يقوم به وكلاء الذكاء الاصطناعي لديك',
-  'activity.noActivity.title': 'لا نشاط حتى الآن',
-  'activity.noActivity.message':
-    'ستظهر الأحداث هنا عندما يتخذ وكلاء الذكاء الاصطناعي لديك قرارات ويضعون أوامر ويديرون المراكز.',
-  'activity.loadOlderEvents': 'تحميل الأحداث الأقدم',
-
-  // Activity event message keys
-  'activity.decision.accepted': 'القرار مقبول: {intent} {instrumentId}',
-  'activity.decision.rejected': 'القرار مرفوض: {reason}',
-  'activity.risk.breach': 'تم اختراق حد المخاطر: {reason}',
-  'activity.risk.guardrail_triggered': 'تم تفعيل الحواجز: {reason}',
-  'activity.order.submitted': 'تم تقديم الأمر: {side} {symbol}',
-  'activity.order.filled': 'تم تنفيذ الأمر: {side} {quantity} {symbol} @ {price}',
-  'activity.order.fill_confirmed_from_stream': 'تم تأكيد التنفيذ: {side} {quantity} {symbol}',
-  'activity.order.cancelled': 'تم إلغاء الأمر',
-  'activity.order.rejected': 'رُفض الأمر من قِبل المنصة: {reason}',
-  'activity.instance.started': 'بدأ وكيل الذكاء الاصطناعي',
-  'activity.instance.stopped': 'توقف وكيل الذكاء الاصطناعي',
-  'activity.instance.crashed': 'تعطّل وكيل الذكاء الاصطناعي: {reason}',
-  'activity.instance.live_armed': 'تم تفعيل التداول الحي',
-  'activity.instance.live_blocked': 'تم حظر التداول الحي: {reason}',
-  'activity.reconciliation.drift_detected': 'تم رصد انحراف في المركز — جارٍ المطابقة',
-  'activity.live.slippage_alert': 'تم رصد انزلاق سعري عالٍ: {slippageBps} نقطة أساس',
-
   // Mission Control
   'missionControl.title': 'مركز التحكم',
   'missionControl.subtitle':
@@ -215,26 +183,6 @@ export const messages: Record<string, string> = {
   'missionControl.setup.cta': 'توصيل وكيل الذكاء الاصطناعي',
   'missionControl.setup.successDismiss': 'تم',
   'missionControl.setup.successMessage': 'أصبح {label} ({provider}) جاهزاً لوكلاء الذكاء الاصطناعي لديك.',
-
-  // Exposure
-  'exposure.title': 'التعرض',
-  'exposure.subtitle': 'المراكز الحالية وتركيز المخاطر',
-  'exposure.totalRealizedPnl': 'إجمالي الربح والخسارة المحقق',
-  'exposure.openPositions': 'المراكز المفتوحة',
-  'exposure.emptyTitle': 'لا توجد مراكز مفتوحة',
-  'exposure.emptyMessage': 'ستظهر المراكز هنا بمجرد أن يبدأ وكلاء الذكاء الاصطناعي التداول.',
-
-  // Outcomes
-  'outcomes.title': 'لوحة النتائج',
-  'outcomes.subtitle': 'كيف يتقدم كل وكيل ذكاء اصطناعي',
-  'outcomes.noAgents.title': 'لا يوجد وكلاء ذكاء اصطناعي بعد',
-  'outcomes.noAgents.message':
-    'أنشئ وكيل ذكاء اصطناعي لتبدأ في تتبع المخرجات المنشورة والملخصات والتقدم الأخير.',
-  'outcomes.metric.total': 'إجمالي وكلاء الذكاء الاصطناعي',
-  'outcomes.metric.active': 'نشط الآن',
-  'outcomes.metric.attention': 'يحتاج إلى انتباه',
-  'outcomes.metric.updatedToday': 'محدّث اليوم',
-  'outcomes.recentOutcomes': 'النتائج الأخيرة المنشورة',
 
   // Settings
   'settings.title': 'الإعدادات',
@@ -641,18 +589,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.manageConnections': 'إدارة الاتصالات',
   'agents.capabilityPage.setupOnAgents': 'الذهاب إلى وكلاء الذكاء الاصطناعي',
 
-  // Outcomes extended
-  'outcomes.latestArtifact': 'أحدث مخرج',
-  'outcomes.noArtifact': 'لا يوجد مخرج منشور بعد.',
-  'outcomes.latestUserSummary': 'أحدث ملخص للمستخدم',
-  'outcomes.noSummary': 'لا يوجد ملخص مكتوب بواسطة وكيل ذكاء اصطناعي بعد.',
-
-  // Timeline
-  'timeline.toggle.showDetail': 'إظهار التفاصيل',
-  'timeline.toggle.hideDetail': 'إخفاء التفاصيل',
-  'timeline.severity.warn': 'تحذير',
-  'timeline.severity.critical': 'حرج',
-
   // API error localization
   'plan.limit_exceeded': 'تم الوصول إلى حد خطتك الحالية لـ {resource} وهو {limit}.',
   'plan.live_disabled': 'التداول الحي غير مفعّل في خطتك الحالية.',
@@ -940,7 +876,6 @@ export const messages: Record<string, string> = {
   'agents.strategyReview.adviceColumn.rank': 'Rank',
   'agents.strategyReview.adviceColumn.reasons': 'Reasons',
 
-
   'agents.authorizationMode.label': 'Trade Authorization',
   'agents.authorizationMode.direct': 'Auto',
   'agents.authorizationMode.approvalRequired': 'Require approval',
@@ -1024,83 +959,7 @@ export const messages: Record<string, string> = {
   // Locale picker
   'localePicker.label': 'تغيير اللغة',
 
-  // Bots
-  'bots.title': 'البوتات',
-  'bots.subtitle': 'بوتات تداول أنشأتها أنت أو وكلاء الذكاء الاصطناعي',
-  'bots.createBot': 'إنشاء بوت',
-  'bots.empty.title': 'لا توجد بوتات بعد',
-  'bots.empty.message': 'أنشئ واحدًا أو دع وكيل الذكاء الاصطناعي ينشئ بوتات نيابة عنك.',
-  'bots.creatorAgent': 'وكيل AI: {id}',
-  'bots.creatorUser': 'أنت',
-  'bots.kv.strategy': 'الاستراتيجية',
-  'bots.kv.mode': 'الوضع',
-  'bots.kv.created': 'تاريخ الإنشاء',
-  'bots.kv.started': 'تاريخ البدء',
-  'bots.modal.title': 'إنشاء بوت',
-  'bots.modal.platformLink': 'رابط المنصة',
-  'bots.modal.platformLinkPlaceholder': '— اختر رابط المنصة —',
-  'bots.modal.symbolPerp': 'الرمز (مثال: BTC-PERP)',
-  'bots.modal.symbolSwap': 'الأداة (مثال: WETH/USDC)',
-  'bots.modal.strategyStyle': 'نمط الاستراتيجية',
-  'bots.modal.executionMode': 'وضع التنفيذ',
-  'bots.modal.cancel': 'إلغاء',
-  'bots.modal.creating': 'جارٍ الإنشاء…',
-  'bots.modal.errorNoConnection': 'اختر رابط منصة قبل إنشاء البوت',
-  'bots.modal.errorPresetNotFound': 'إعداد الاستراتيجية المختار غير موجود',
-  'bots.modal.style.economy.label': 'اقتصادي',
-  'bots.modal.style.economy.description': 'مؤشرات أقل، عتبات ثقة أدنى',
-  'bots.modal.style.standard.label': 'قياسي',
-  'bots.modal.style.standard.description': 'مؤشرات ومخاطر متوازنة',
-  'bots.modal.style.premium.label': 'متميز',
-  'bots.modal.style.premium.description': 'مجموعة مؤشرات كاملة، تأكيد صارم',
-  'bots.modal.executionMode.test.label': 'تجريبي',
-  'bots.modal.executionMode.test.description': 'تداول محاكى — بدون أموال حقيقية',
-  'bots.modal.executionMode.live.label': 'مباشر',
-  'bots.modal.executionMode.live.description': 'تنفيذ أوامر حقيقية',
-  'bots.modal.symbolSwapPlaceholder': 'WETH/USDC',
-  'bots.modal.symbolPerpPlaceholder': 'BTC-PERP',
-
-  // Instances (legacy trading records)
-  'instances.title': 'البوتات',
-  'instances.subtitle': 'سجلات تداول متقدمة محفوظة للتوافق والتاريخ',
-  'instances.empty.title': 'لا توجد بوتات بعد',
-  'instances.empty.message': 'هذا العرض للقراءة فقط. أنشئ وأدر الوكلاء من منطقة الوكلاء.',
-  'instances.fallbackBot': 'بوت',
-  'instances.kv.created': 'تاريخ الإنشاء',
-  'instances.kv.started': 'تاريخ البدء',
-
   // Instance Detail
-  'instanceDetail.notFound.title': 'البوت غير موجود',
-  'instanceDetail.notFound.message': 'هذا البوت غير موجود أو ليس لديك صلاحية الوصول.',
-  'instanceDetail.backToBots': '← العودة إلى البوتات',
-  'instanceDetail.back': '← رجوع',
-  'instanceDetail.fallbackTitle': 'بوت',
-  'instanceDetail.modeSuffix': 'وضع',
-  'instanceDetail.crashedMessage': 'تعطل هذا البوت أثناء بدء التشغيل. تحقق من أحدث أحداث السجل وتأكد من حساب المنصة وبيانات الاعتماد المرتبطة قبل إعادة المحاولة.',
-  'instanceDetail.section.timeline': 'الجدول الزمني',
-  'instanceDetail.section.configuration': 'الإعدادات',
-  'instanceDetail.section.openPositions': 'المراكز المفتوحة',
-  'instanceDetail.timeline.empty.title': 'لا توجد أحداث بعد',
-  'instanceDetail.timeline.empty.message': 'ستظهر الأحداث هنا بمجرد بدء الوكيل في التداول.',
-  'instanceDetail.config.strategy': 'الاستراتيجية',
-  'instanceDetail.config.symbol': 'الرمز',
-  'instanceDetail.config.executionMode': 'وضع التنفيذ',
-  'instanceDetail.positions.empty': 'لا توجد مراكز مفتوحة',
-  'instanceDetail.action.start': 'تشغيل',
-  'instanceDetail.action.starting': 'جارٍ التشغيل…',
-  'instanceDetail.action.stop': 'إيقاف',
-  'instanceDetail.action.stopping': 'جارٍ الإيقاف…',
-  'instanceDetail.action.delete': 'حذف',
-  'instanceDetail.action.deleting': 'جارٍ الحذف…',
-  'instanceDetail.modal.cancel': 'إلغاء',
-  'instanceDetail.modal.stop.title': 'إيقاف البوت؟',
-  'instanceDetail.modal.stop.body': 'سيتوقف البوت عن المسح ولكن أي مراكز مفتوحة ستبقى في محفظتك. يمكنك إعادة تشغيله لاحقاً.',
-  'instanceDetail.modal.stop.positionWarning': 'لديك {count, plural, one {مركز مفتوح واحد} other {# مراكز مفتوحة}}.',
-  'instanceDetail.modal.stop.confirm': 'إيقاف البوت',
-  'instanceDetail.modal.delete.title': 'حذف البوت؟',
-  'instanceDetail.modal.delete.body': 'هذا الإجراء لا يمكن التراجع عنه. سيتم حذف البوت نهائياً. سيتم الاحتفاظ بسجلات التداول وسجل الأحداث في قاعدة البيانات لكنها لن تكون مرتبطة ببوت.',
-  'instanceDetail.modal.delete.positionWarning': 'لديك {count, plural, one {مركز مفتوح واحد} other {# مراكز مفتوحة}}. ستبقى هذه المراكز في المنصة لكن لن يتتبعها هذا البوت بعد الآن.',
-  'instanceDetail.modal.delete.confirm': 'حذف نهائي',
 
   // Try page (email verification flow)
   'try.message1': 'مرحباً! يمكنني مساعدتك في إنشاء وكيل ذكاء اصطناعي. دعنا نجهزك أولاً.',
