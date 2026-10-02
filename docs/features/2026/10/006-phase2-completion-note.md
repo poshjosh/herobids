@@ -65,9 +65,13 @@ The `ESCALATIONS.md` batch is resolved (see DECISIONS P2-17/18/19):
 
 Lockstep contract items (route generalization, `skillPresetId`/`strategyPreset`/
 `SKILL_PRESET_MAP` demotion, guided-setup reshape — P2-7/P2-12) and the
-Phase-3-owned trading-feature/schema moves (bots/instances/exposure UIs,
-blueprint facet schema, `GET /blueprints/defaults` default). Each is recorded in
-`RECONCILIATION.md`.
+Phase-3-owned trading-feature/schema moves (blueprint facet schema,
+`GET /blueprints/defaults` default). Each is recorded in `RECONCILIATION.md`.
+
+**Update 2026-10-02:** the admin-only Preview UIs that were listed here as
+deferred (bots/instances/exposure/outcomes/activity pages) were subsequently
+**deleted** rather than deferred, once the operator greenlit it. See
+`RECONCILIATION.md` Buckets A/E and `008-orphan-i18n-key-sweep.md`.
 
 ## Verification
 

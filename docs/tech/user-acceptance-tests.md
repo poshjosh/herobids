@@ -21,30 +21,30 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
 | A-01 | Landing page renders for unauthenticated users | Navigate to `/` without a token | Landing page shown with brand logo, tagline ("Low cost AI agents…"), "Sign in" CTA linking to `/login`, and "Try it" CTA linking to `/try`; background image visible | — | 2026-08-06: Updated — `/` now renders a landing page (not a redirect to `/login`) |
-| A-02 | Google OAuth login | Click "Continue with Google"; complete Google auth flow | Redirected to `/auth/callback`, then to `/mission-control`; user authenticated; nav shown | — | Requires real Google creds |
+| A-02 | Google OAuth login | Click "Continue with Google"; complete Google auth flow | Redirected to `/auth/callback`, then to `/agents`; user authenticated; nav shown | — | Requires real Google creds |
 | A-02b | Email-first login page layout | Open login page | Email field shown; `Send login link` button on the left; `Sign in with password` link on the right; Google button below divider | ✅ | 2026-07-11: Updated — login/register toggle removed; email-link is primary CTA; password is inline expansion |
 | A-02c | Send login link — valid email | Enter a valid email; click `Send login link` | Generic success screen shown: "Check your email" with mail icon and message; `Send another link` button visible | ✅ | 2026-08-05: "Check your email" + "A login link has been sent…" + `Send another link` button shown |
 | A-02d | Login link sent — resend | After link sent, click `Send another link` | Resends the login link; success screen stays; no regression | ✅ | 2026-08-05: Rate-limited message "Please wait before requesting another login link." shown (expected rate limiting) |
 | A-02e | Sign in with password expand | On login page, click `Sign in with password` link | Password field appears below email field; the link is replaced by a `Sign in` button; `Send login link` button remains visible and usable | ✅ | 2026-08-05: Password field appears; link replaced by `Sign in` button; `Send login link` remains |
 | A-02f | Password visibility toggle | Expand password field; click the show/hide icon | Password text toggles between visible and hidden; aria-label updates accordingly | ✅ | 2026-08-05: Toggles between "Show password" / "Hide password" |
-| A-02g | Password sign-in — valid credentials | Expand password; enter email + password for an account with local identity; click `Sign in` | Authenticated and redirected to `/mission-control` | — | |
+| A-02g | Password sign-in — valid credentials | Expand password; enter email + password for an account with local identity; click `Sign in` | Authenticated and redirected to `/agents` | — | |
 | A-02h | Password sign-in — wrong password | Expand password; enter correct email but wrong password; click `Sign in` | Error message shown; does not reveal whether email exists | — | 2026-07-11: "Invalid email or password." returned |
 | A-02i | Password sign-in — unknown email | Expand password; enter unregistered email with any password; click `Sign in` | Same error wording as wrong password (no enumeration) | — | |
 | A-02j | Password sign-in — passwordless account | Expand password; enter email of a Google-only or login-link-only account; click `Sign in` | Dedicated error shown: "This account uses email-link or Google sign-in. Use those methods to sign in." | — | 2026-07-11: New error code `auth.login.password_not_available` returned |
 | A-02k | Enter key — collapsed state | Focus the email field with password collapsed; press Enter | Sends a login link (not a password sign-in attempt) | — | 2026-07-11: Enter in collapsed state triggers `sendLoginLink` |
 | A-02l | Enter key — expanded state | Expand password; focus the password field; press Enter | Triggers password sign-in (not login-link send) | — | 2026-07-11: Enter in password field triggers `auth.login` |
-| A-02m | Login-link callback — valid token | From email client, click a valid login link (GET `/auth/login-link/callback?token=...`) | Redirected to `/auth/callback?code=...`, then to `/mission-control`; user authenticated | — | Existing exchange-code callback reused |
+| A-02m | Login-link callback — valid token | From email client, click a valid login link (GET `/auth/login-link/callback?token=...`) | Redirected to `/auth/callback?code=...`, then to `/agents`; user authenticated | — | Existing exchange-code callback reused |
 | A-02n | Login-link callback — invalid/expired token | Navigate to `/auth/login-link/callback?token=bad-token` | Error: "Invalid or expired login link." | — | |
 | A-02o | Login-link callback — missing token | Navigate to `/auth/login-link/callback` (no `?token=`) | Error: "Missing login token." | — | |
-| A-02p | First-time user creation via login link | Click a login link for an email not yet in the system | User created automatically with display name derived from email local-part; signed in and redirected to `/mission-control` | — | No separate registration step |
+| A-02p | First-time user creation via login link | Click a login link for an email not yet in the system | User created automatically with display name derived from email local-part; signed in and redirected to `/agents` | — | No separate registration step |
 | A-02q | Send login link — invalid email | Enter "notanemail"; click `Send login link` | Client-side validation prevents submission or API returns 400 | ✅ | 2026-08-05: "Enter a valid email address" error shown |
 | A-02r | Submit disabled while pending | Click `Send login link` or `Sign in` while an API call is in-flight | Button shows loading text and is non-interactive until response | — | |
-| A-02s | Google OAuth still works | Click "Continue with Google"; complete Google auth flow | Redirected to `/auth/callback`, then to `/mission-control`; user authenticated | — | Google OAuth preserved unchanged |
+| A-02s | Google OAuth still works | Click "Continue with Google"; complete Google auth flow | Redirected to `/auth/callback`, then to `/agents`; user authenticated | — | Google OAuth preserved unchanged |
 | A-03 | Auth callback with invalid/expired code | Navigate to `/auth/callback?code=invalid-code` | Error state shown; user can return to login | ✅ | 2026-07-07: "Invalid or expired exchange code." shown with "Back to sign-in" link |
 | A-04 | Auth callback with missing code param | Navigate to `/auth/callback` (no `?code=`) | "Missing exchange code in callback URL." shown with "Back to sign-in" link | ✅ | 2026-07-07: Exact text confirmed |
 | A-05 | One-time code use | Copy the `/auth/callback?code=…` URL; use it a second time | Second use shows error (code already consumed) | — | |
 | A-06 | Explicit logout | Click "Sign out" in the nav footer | Token cleared; redirected to `/login`; back button does not show authenticated state | ✅ | 2026-07-07: Sign out → /login; token cleared; subsequent protected nav redirects to /login |
-| A-07 | Post-logout cache cleared | Log out; log back in as same user; navigate to Mission Control | Fresh data loaded from the API | — | |
+| A-07 | Post-logout cache cleared | Log out; log back in as same user; navigate to the agents page | Fresh data loaded from the API | — | |
 | A-08 | Session expiry — server 401 | Invalidate JWT in Redis; attempt any navigation | Redirected to `/login`; no stale data | — | |
 | A-09 | Re-login same tab clears cache | Let session expire; log in again in same tab | Fresh data loaded; no cross-session leak | — | |
 | A-10 | Direct navigation to protected route unauthenticated | Paste `/agents` in URL bar without token | Redirected to `/login` | ✅ | 2026-07-07: /agents while logged out → /login |
@@ -56,30 +56,33 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Agents, Skills, Connections, Billing, Settings. No "Advanced" section. Preview section (admin-only) contains Bots, Exposure, Outcomes, Activity. | ✅ | 2026-08-10: Advanced section removed; Bots moved to Preview (admin-only). 2026-10-01: Activity moved from Primary into Preview (admin-only) |
+| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Agents, Skills, Connections, Billing, Settings. No "Advanced" section. Admin users additionally see an "Admin" section (Dashboard). No "Preview" section. | ✅ | 2026-08-10: Advanced section removed. 2026-10-02: Preview section (Bots/Exposure/Outcomes/Activity) removed entirely along with those pages |
 | N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | 2026-07-07: Active link shows green background + green text (verified on AI Agents page screenshot) |
 | N-03 | Root redirect (authenticated) | Navigate to `/` as authenticated user | Redirected to `/agents` | — | 2026-08-06: Updated — redirect target changed from `/mission-control` to `/agents` |
-| N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | 2026-07-07: Shows "Page not found" with "← Back to Mission Control" button; no crash |
-| N-05 | Page titles / headings | Visit each page | Each page has a visible `PageHeader` with title and subtitle | ✅ | 2026-07-07: Verified Mission Control, AI Agents, Connections, Billing, Settings, Credentials, Trading setup, Outcomes, 404 — all have h1 + subtitle |
+| N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | 2026-07-07: Shows "Page not found" with "← Back to AI Agents" button; no crash |
+| N-05 | Page titles / headings | Visit each page | Each page has a visible `PageHeader` with title and subtitle | ✅ | 2026-07-07: Verified the agents page, AI Agents, Connections, Billing, Settings, Credentials, Trading setup, 404 — all have h1 + subtitle (Outcomes page retired 2026-10-02) |
 
 ---
 
-## 3. Mission Control
+## 3. Agents overview (agents page)
+
+> Note: the "Mission Control" label was retired in 2026-10; these tests run
+> against the agents page (`/agents`). Test IDs keep the `MC-` prefix for history.
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| MC-01 | Summary metrics render | Open Mission Control (`/agents`) | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped at the top of the "My Agents" tab | ✅ | 2026-07-07: Shows Active 0/1, Paused 0, Unhealthy 0, Stopped 1 (after creating one agent). 2026-10-01: All four cards now rendered on the agents page (previously only Active); matches the metrics moved off the admin-only Activity page |
-| MC-02 | Header CTA renders | Open Mission Control | No "Create agent" button in the page header — the create flow is a persistent panel below the tabs | ✅ | 2026-08-05: Header CTA removed; create flow panel is always present below the tabs |
-| MC-03 | Agent overview cards | Open Mission Control with agents | One card per agent under "Your agents"; shows status, execution mode, objective, and capability readiness; clicking the card navigates to the agent detail page | ✅ | 2026-07-07: Card shows agent name, "stopped" badge, "Paper mode" pill, goal text, capability readiness; card is clickable. 2026-09-21: capability readiness is now two generic lines listing the distinct capability families present — "Skills: trading, email" (from the agent's skills) and "Connections: email, trading" (from bound connections' providers), or "none" when empty — instead of a hardcoded "Trading: Ready/Unconfigured" badge |
-| MC-04 | Recent activity feed | Open Mission Control | Activity feed lives on the `/activity` page (admin-only, under the Preview sidebar group); no right-panel feed on the agents page | ✅ | 2026-08-05: Right activity panel removed from agents page; activity lives on `/activity` via the sidebar. 2026-10-01: Activity nav moved into the admin-only Preview group |
-| MC-05 | Empty state — no agents | Open Mission Control with fresh account | No "No agents yet" empty state; guided chat is the default entry point for new users; metrics show zeros | ✅ | 2026-08-05: Empty state removed — new users land on the guided chat instead; metrics show 0 on fresh account |
+| MC-01 | Summary metrics render | Open the agents page (`/agents`) | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped at the top of the "My Agents" tab | ✅ | 2026-07-07: Shows Active 0/1, Paused 0, Unhealthy 0, Stopped 1 (after creating one agent). 2026-10-01: All four cards now rendered on the agents page (previously only Active); matches the metrics moved off the admin-only Activity page |
+| MC-02 | Header CTA renders | Open the agents page | No "Create agent" button in the page header — the create flow is a persistent panel below the tabs | ✅ | 2026-08-05: Header CTA removed; create flow panel is always present below the tabs |
+| MC-03 | Agent overview cards | Open the agents page with agents | One card per agent under "Your agents"; shows status, execution mode, objective, and capability readiness; clicking the card navigates to the agent detail page | ✅ | 2026-07-07: Card shows agent name, "stopped" badge, "Paper mode" pill, goal text, capability readiness; card is clickable. 2026-09-21: capability readiness is now two generic lines listing the distinct capability families present — "Skills: trading, email" (from the agent's skills) and "Connections: email, trading" (from bound connections' providers), or "none" when empty — instead of a hardcoded "Trading: Ready/Unconfigured" badge |
+| MC-04 | No activity feed on the agents page | Open the agents page | No right-panel activity feed on the agents page | ✅ | 2026-08-05: Right activity panel removed from agents page. 2026-10-02: the standalone `/activity` page was deleted with the Preview section — there is no longer a dedicated activity feed |
+| MC-05 | Empty state — no agents | Open the agents page with a fresh account | No "No agents yet" empty state; guided chat is the default entry point for new users; metrics show zeros | ✅ | 2026-08-05: Empty state removed — new users land on the guided chat instead; metrics show 0 on fresh account |
 | MC-06 | "Create agent" button navigates | Click the create-flow title | Expands the create flow panel (guided chat by default); `?create=1` forces it open | ✅ | 2026-08-05: Clicking the "Create AI agent" title expands the flow; `?create=1` forces expansion |
 | MC-07 | Clicking an agent card navigates | Click anywhere on an agent card | Navigates to `/agents/:id` | ✅ | 2026-07-07: Card click navigated to /agents/172b77b6-... |
 | MC-08 | Capability CTA opens agent capability page | Open agent detail, expand Capabilities section, click capability button | Navigates to `/agents/:id/capabilities/trading` | — | Capability CTA moved from summary card to agent detail page |
 | MC-09 | Data staleness | Leave page for >30 s; return | Data refetches and reflects current agent state | — | |
 | MC-10 | Loading state | Open page on slow connection (throttle in DevTools) | Loading skeleton shown while fetching | — | |
 | MC-11 | API error state | Kill API; open page | Error state shown with retry; no crash | — | |
-| MC-12 | Quick trading setup card renders | Open Mission Control | "Quick trading setup" card visible in the agents column with "Add trading provider" button | ✅ | 2026-07-07: Card now titled "Connect AI agent to external platform" with "Connect AI agent" button (renamed again from previous "Quick AI agent connect") |
+| MC-12 | Quick trading setup card renders | Open the agents page | "Quick trading setup" card visible in the agents column with "Add trading provider" button | ✅ | 2026-07-07: Card now titled "Connect AI agent to external platform" with "Connect AI agent" button (renamed again from previous "Quick AI agent connect") |
 | MC-13 | Quick trading setup — opens form | Click "Add trading provider" | Modal opens with provider, label, and secrets fields | ✅ | 2026-07-07: "Connect AI agent" button opens dialog titled "Connect agent to external platform" with provider selector (Hyperliquid/Bybit/1inch/Jupiter), label, and secrets fields |
 | MC-14 | Quick trading setup — submit | Fill in provider (e.g. hyperliquid), label, and valid secrets; click "Set up trading provider" | Modal closes; success banner shows "{label} ({provider}) has been set up." | — | |
 | MC-15 | Quick trading setup — success dismiss | Click "Done" on the success banner | Banner disappears; setup card returns to default state | — | |
@@ -88,38 +91,19 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 ---
 
-## 4. Bots (Advanced)
+## 4. Bots (Advanced) — ❌ RETIRED 2026-10-02
 
-Route: `/bots` — lists advanced trading bots created by a user or by an agent.
-
-| ID | Test Case | Steps | Expected | Status | Notes |
-|----|-----------|-------|----------|--------|-------|
-| I-01 | Bots list renders | Navigate to `/bots` | Page titled "Bots"; subtitle "Trading bots created by you or your agents"; list shows status badges | ✅ | Title "Bots"; subtitle "Trading bots created by you or your AI agents" |
-| I-02 | Empty state | Open with no bots | "No bots yet" empty state; "Create Bot" CTA | ✅ | Covered by E2E journey 17 |
-| I-03 | Create bot — happy path | Click "Create Bot"; fill required fields; submit | Bot appears in list | — | Requires at least one active connection; manual UAT until test credentials are provisioned |
-| I-04 | Create bot — validation error | Submit form with missing required fields | Field-level or banner error shown; form not dismissed | ✅ | Create Bot button disabled when connection is empty; covered by E2E journey 17 |
-| I-05 | Create bot — API error | Submit with valid data while API returns 4xx | Human-readable error message shown | — | |
-| I-06 | Navigate to detail | Click a bot card | Navigates to `/bots/:id` | — | |
+The `/bots` page was deleted when the admin-only Preview section was removed.
+Tests `I-01`–`I-06` no longer apply. See
+[`../features/2026/10/008-orphan-i18n-key-sweep.md`](../features/2026/10/008-orphan-i18n-key-sweep.md)
+and the Preview-page deletion in the Phase 2 program.
 
 ---
 
-## 5. Bot Detail
+## 5. Bot Detail — ❌ RETIRED 2026-10-02
 
-Route: `/bots/:id`
-
-| ID | Test Case | Steps | Expected | Status | Notes |
-|----|-----------|-------|----------|--------|-------|
-| D-01 | Detail page renders | Navigate to `/bots/:id` for a valid bot | Page loads with symbol/strategy title, status badge, execution mode pill, two-column layout (timeline + sidebar) | — | |
-| D-02 | Unknown bot ID | Navigate to `/bots/nonexistent-id` | "Bot not found" empty state with back navigation; does not crash | ✅ | "Bot not found" with "← Back to bots" button |
-| D-03 | Open positions sidebar card | Open detail for agent with open positions | "Open positions" card shows symbol, size (4 dp), entry price (2 dp), realized P&L (sign-colored) | — | |
-| D-04 | Decimal precision — size | Inspect a position size value | Displayed to exactly 4 decimal places (e.g. `1.2500`) | — | |
-| D-05 | Decimal precision — entry price | Inspect a position entry price | Displayed to exactly 2 decimal places | — | |
-| D-06 | P&L color coding | Inspect positive and negative realized P&L values | Positive → green; negative → red | — | |
-| D-07 | No open positions | Open detail for agent with no positions | "No open positions" text in the sidebar card | — | |
-| D-08 | Timeline section | Open bot detail | Left column shows "Timeline" section with journal events | — | Shows "No events yet" empty state |
-| D-09 | Configuration sidebar card | Open bot detail | "Configuration" card shows Strategy, Symbol, and Execution mode | — | |
-| D-10 | Crashed state banner | Open detail for crashed bot | Error banner explains startup crash and asks the operator to verify the linked venue account and credential before retrying | — | "This instance crashed during startup. Check the latest journal events and verify the linked venue account and credential before retrying." |
-| D-11 | Back button | Click "← Back" in header | Navigates back to `/bots` list | — | |
+The `/bots/:id` instance-detail page was deleted alongside the Preview section.
+Tests `D-01`–`D-11` no longer apply.
 
 ---
 
@@ -153,7 +137,7 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-19 | Create agent — no bindings shows setup button | Open Create Agent with a trading skill; ensure no connections exist | "No active connections yet" text + "Set up trading now" secondary button shown instead of connection selector | ✅ | "No active connections yet. Set up trading now..." + "Set up trading now" button shown |
 | AG-20 | Create agent — inline setup opens form | Click "Set up trading now" | Modal replaces with ProviderSetupForm; main create flow is suspended | ✅ | "Add trading connection" form appeared when clicked |
 | AG-21 | Create agent — inline setup success auto-selects | Complete setup form with valid credentials | ProviderSetupForm closes; connection selector appears with new connection pre-selected | — | |
-| AG-22 | Capability page — trading next steps | Open any agent's trading capability page | "Go to Mission Control" primary button shown in Next steps; no longer shows /connections or /credentials links for trading | ✅ | "Go to Mission Control" button in Next steps; no /connections or /credentials links |
+| AG-22 | Capability page — trading next steps | Open any agent's trading capability page | "Go to AI Agents" primary button shown in Next steps; no longer shows /connections or /credentials links for trading | ✅ | "Go to AI Agents" button in Next steps; no /connections or /credentials links |
 | AG-23 | Prompt surfaces render when allowed | Open an agent detail page on a plan that allows prompt visibility and has a recent runtime snapshot | "Prompt surfaces" section shows tabs for Judge System, Scout System, User Context, and Judge User Context; switching tabs changes the prompt pane | ✅ | All four tabs visible when agent active; switching tabs changes prompt text |
 | AG-24 | Prompt visibility is plan-gated | Open an agent detail page on a plan that disallows viewing own prompts | "Prompt visibility is not available on your current plan." is shown and the prompt query is not loaded | — | |
 | AG-25 | Create agent — connection selector shows connections | Open Create Agent with trading skill; have active connections | Dropdown lists active connections by label and provider | — | |
@@ -284,41 +268,25 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 
 ---
 
-## 8. Outcomes
+## 8. Outcomes — ❌ RETIRED 2026-10-02
 
-| ID | Test Case | Steps | Expected | Status | Notes |
-|----|-----------|-------|----------|--------|-------|
-| O-01 | Outcome board renders | Navigate to `/outcomes` | Page titled "Outcome Board" loads | ✅ | "Outcome Board" with subtitle "How each AI agent is progressing" |
-| O-02 | Total realized P&L aggregation | View an agent with multiple closed positions | Total P&L is the correct arithmetic sum | — | |
-| O-03 | Total P&L sign coloring | Inspect positive vs negative total P&L | Green for profit, red for loss | — | |
-| O-04 | Total P&L 2 decimal places | Inspect total P&L display | Always shows exactly 2 decimal places | — | |
-| O-05 | No positions | View agent with no open positions | Positions section hidden or empty state shown | — | |
-| O-06 | Empty state — no agents or positions | Open with fresh account | Page renders without crashing; no "No AI agents yet" empty state (guided chat is the default entry point) | ✅ | 2026-08-05: Empty state removed — page renders cleanly with guided chat as the default |
+The `/outcomes` page was deleted when the admin-only Preview section was removed.
+Tests `O-01`–`O-06` no longer apply.
 
 ---
 
-## 9. Exposure
+## 9. Exposure — ❌ RETIRED 2026-10-02
 
-| ID | Test Case | Steps | Expected | Status | Notes |
-|----|-----------|-------|----------|--------|-------|
-| E-01 | Exposure page renders | Navigate to `/exposure` | Page loads; cross-instance open positions shown | ✅ | "Exposure" page with subtitle "Current positions and risk concentration" |
-| E-02 | Includes stopped/crashed agents | Have a stopped agent with open positions | Their positions still appear | — | |
-| E-03 | Position size decimal precision | Inspect size column | 4 decimal places | — | |
-| E-04 | Entry price decimal precision | Inspect entry price column | 2 decimal places | — | |
-| E-05 | Realized P&L sign coloring | Inspect positive and negative P&L | Green / red respectively | — | |
-| E-06 | No open positions | All agents have no open positions | Empty state or "No open positions" shown | ✅ | "No open positions" with explanatory copy shown |
+The `/exposure` page was deleted when the admin-only Preview section was removed.
+Tests `E-01`–`E-06` no longer apply.
 
 ---
 
-## 10. Activity Feed
+## 10. Activity Feed — ❌ RETIRED 2026-10-02
 
-| ID | Test Case | Steps | Expected | Status | Notes |
-|----|-----------|-------|----------|--------|-------|
-| AF-01 | Activity feed renders | Navigate to `/activity` (admin-only; reachable from the Preview sidebar group) | Page loads with event list or empty state | ✅ | "Activity" heading with subtitle "What your AI agents have been doing"; All/Agents/Bots filter tabs shown; agent summary metrics (Active/Paused/Unhealthy/Stopped/Total P&L) shown at top. 2026-10-01: Activity moved under the admin-only Preview section; the Active/Paused/Unhealthy/Stopped status metrics now also appear on the agents page |
-| AF-02 | Pagination / infinite scroll | Scroll to bottom of activity list | Next page of events loads (or "Load more") | — | "Load older events" button appears; clicking it loads next page (fixed bug 017: Date object passed to SQL query caused 500) |
-| AF-03 | Empty state | Fresh account with no activity | Empty state shown | ✅ | "No activity yet" with explanatory copy; agent summary metrics still shown above |
-| AF-04 | Timestamps | Inspect event timestamps | Dates formatted readably; no epoch numbers | ✅ | All timestamps show relative format ("13 sec. ago", "1 min. ago"); no raw epoch or ISO strings |
-| AF-05 | Sidebar nav | Open sidebar as an admin | "Activity" nav item appears inside the admin-only "Preview" group (below Bots, Exposure, Outcomes); it is NOT in the primary nav and is hidden for non-admins | ✅ | 2026-08-05: "◈ Activity" nav item added below Connections. 2026-10-01: Activity moved into the admin-only Preview group |
+The `/activity` page was deleted when the admin-only Preview section was removed.
+Tests `AF-01`–`AF-05` no longer apply. The agent-state metrics it once showed
+(Active/Paused/Unhealthy/Stopped) now live on the agents page — see MC-01.
 
 ---
 
@@ -401,8 +369,8 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 | SC-01 | Logout clears cache | Log in as User A; log out; log in as User B | User B sees their own data, not User A's | — | |
 | SC-02 | Server 401 clears cache | Invalidate JWT in Redis; navigate to any page | Redirected to login; cache cleared | — | |
 | SC-03 | Re-login same tab clears cache | Let session expire; log in again | Fresh data loaded; no cross-session leakage | — | |
-| SC-04 | Mutations invalidate related queries | Start/stop an agent | Instances list and Mission Control both reflect updated state | ✅ | Starting/stopping agent updated status via 5s polling; MC page reflected stopped state |
-| SC-05 | 30 s stale time | Stay on Mission Control for 31 s without navigating away; refocus window | Data automatically refetches | — | |
+| SC-04 | Mutations invalidate related queries | Start/stop an agent | The agents list reflects updated state | ✅ | Starting/stopping agent updated status via 5s polling; agents page reflected stopped state |
+| SC-05 | 30 s stale time | Stay on the agents page for 31 s without navigating away; refocus window | Data automatically refetches | — | |
 
 ---
 

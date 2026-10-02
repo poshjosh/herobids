@@ -32,7 +32,7 @@ Dispositions:
 | `agent-payloads.ts`, `agent-form-state.ts` | ✅ `capabilityMode` kept; trading gated on family. 🕓 **but** both still SEND `skillPresetId`/`strategyPreset` (P2-12) — backend removal is lockstep. |
 | `RuntimePolicySection.tsx`, `StyleSelector.tsx`, `style-mapping.ts` | ✅ trading-session presets render only for the trading family (T1.1). |
 | `AgentCapabilityPage.tsx` | ✅ renders by `:family` (T1.1). |
-| `OutcomeBoardPage.tsx` | 🧱 already family-gated (`showExecutionMode`). KEEP/verified. |
+| `OutcomeBoardPage.tsx` | ✅ **DELETED 2026-10-02** (admin-only `/outcomes` Preview page removed). Was family-gated; now gone. |
 
 ### Bucket C — API client (GENERICIZE partial) → ✅ / 🕓
 | Surface | Disposition |
@@ -41,28 +41,31 @@ Dispositions:
 | `tradingConnections(id)` + `/capabilities/trading/{connections,positions}` | 🕓 kept as thin trading aliases — deployed boundary contract (P2-7). Lockstep removal = backend follow-on 6 (see backend §B below). |
 
 ### Bucket D — i18n (RELABEL) → ✅ done (T1.1)
-Trading keys relabelled/retired across en/ar/hi in T1.1. 🕓 one orphaned key
-(`goalPlaceholder.personalAssistant`) noted in Outstanding Issues (parity-safe).
+Trading keys relabelled/retired across en/ar/hi in T1.1. The orphaned key
+`goalPlaceholder.personalAssistant` was later **removed** in the 008 orphan-key
+sweep (Pass A, 2026-10-02) along with 102 other unused keys — see
+[`../007-frontend-trading-text-inventory.md`](../007-frontend-trading-text-inventory.md)
+and [`../008-orphan-i18n-key-sweep.md`](../008-orphan-i18n-key-sweep.md).
 
-### Bucket A — whole trading features (MOVE/GATE) → 🕓 deferred (Phase-3 / larger)
-`BotsPage`, `BotCustomConfigSection`, `InstanceDetailPage`,
-`trading-instances/InstancesPage`, `ExposurePage`, `PortfoliosPage`,
-`TradingCapabilityPresentation` (the renderer; its dangling funding link was
-fixed in T3.2), `useTradingVenues`/`venue-mapping`, `technical-config-helpers`/
-`technical-types`/`TechnicalConfigSection`, `StrategyPresetSelector`.
-→ 🕓 **deferred.** These are whole trading FEATURES, not product-identity
-labels. Per 003 §"Size & sequencing" and **P2-4**, they are NOT part of the
-genericize-UI slice; they overlap the "move trading to Traderton" question and
-belong to the Phase-3 module work (the trading product surface moving behind the
-boundary). Recorded here so none is lost; none is a safe standalone GENERIC/
-REMOVE in Phase 2.
+### Bucket A — whole trading features (MOVE/GATE) → ✅ some DELETED 2026-10-02; rest 🕓 Phase-3
+**Update 2026-10-02:** the admin-only Preview pages were **deleted** (not deferred)
+once the operator greenlit it — `BotsPage`, `BotCustomConfigSection`,
+`InstanceDetailPage`, `trading-instances/InstancesPage`, `ExposurePage`,
+`OutcomeBoardPage`, `ActivityFeedPage`, and the orphaned `TimelineEvent` are
+gone. Still 🕓 **deferred (Phase 3):** `TradingCapabilityPresentation` (renderer),
+`useTradingVenues`/`venue-mapping`, `technical-config-helpers`/`technical-types`/
+`TechnicalConfigSection`, `StrategyPresetSelector` — these remain in use by the
+surviving `/agents` surfaces. (`PortfoliosPage` was not found in the tree.)
+These are whole trading FEATURES, not product-identity labels; the remainder
+overlaps the "move trading to Traderton" question and belongs to Phase-3 module
+work. Recorded so none is lost.
 
-### Bucket E — navigation & routes (MOVE/GATE) → 🕓 / 🧱
-- `Sidebar.tsx` `PREVIEW_ITEMS` already hides `/bots`,`/exposure`,`/outcomes`,
-  `/activity` behind a preview toggle; `NAV_ITEMS` is generic. 🧱 KEEP (already
-  de-emphasized); full removal rides with Bucket A (Phase 3). 🕓
-- `router.tsx` trading routes `/bots`,`/bots/:id`,`/exposure`. 🕓 deferred with
-  Bucket A. `/agents/:agentId/capabilities/:family` is 🧱 generic.
+### Bucket E — navigation & routes (MOVE/GATE) → ✅ DELETED 2026-10-02
+- `Sidebar.tsx`: the `PREVIEW_ITEMS` section was **removed entirely** (not just
+  hidden); `NAV_ITEMS` remains generic.
+- `router.tsx`: the trading routes `/bots`, `/bots/:id`, `/outcomes`,
+  `/exposure`, `/activity` were **removed**. `/agents/:agentId/capabilities/:family`
+  is 🧱 generic and stays.
 
 ### Bucket F — peripheral → mixed
 | Surface | Disposition |

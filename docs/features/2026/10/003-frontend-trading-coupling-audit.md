@@ -1,6 +1,15 @@
 # Frontend Trading-Coupling Audit (apps/web/src)
 
 **Date:** 2026-10-01
+> **Historical snapshot.** This audit records the frontend as it was on
+> 2026-10-01. Several surfaces it lists (the admin-only Preview pages —
+> `BotsPage`, `InstanceDetailPage`, `trading-instances/InstancesPage`,
+> `ExposurePage`, `OutcomeBoardPage`, `ActivityFeedPage` — and the `PREVIEW_ITEMS`
+> nav + their routes) were **deleted on 2026-10-02**. The findings below are kept
+> as the point-in-time record; for current state see `RECONCILIATION.md`
+> (Buckets A/E) and `008-orphan-i18n-key-sweep.md`. This note is the only edit;
+> the audit body is unchanged.
+
 **Scope:** `apps/web/src` only (the web frontend). Audit of every surface that
 assumes trading is the agent's domain, in service of the program goal "herobids
 is a generic agent host; trading-specific UI/docs must not be first-party."
