@@ -66,22 +66,17 @@ test.describe('Journey 16: Strategy preset propagation', () => {
       }
     }
 
-    // ── Fill Capital in Trading Setup tab ─────────────────────────────────
-    const tradingTab = page.getByRole('tab', { name: 'Trading Setup' });
-    if ((await tradingTab.count()) > 0) {
-      await tradingTab.first().click();
+    // ── Open the generic Capabilities tab ─────────────────────────────────
+    // Trading setup + strategy now live together under a single "Capabilities"
+    // tab (the former Trading Setup / Strategy tabs were genericized away).
+    const capabilitiesTab = page.getByRole('tab', { name: 'Capabilities' });
+    if ((await capabilitiesTab.count()) > 0) {
+      await capabilitiesTab.first().click();
       await page.waitForTimeout(300);
     }
 
     // Find the Capital input by its data-field wrapper (FieldLabel is a <div>, not <label>)
     await page.locator('[data-field="capital"] input').fill('1000');
-
-    // ── Switch to Strategy tab, set Filter Trades, select preset ──────────
-    const strategyTab = page.getByRole('tab', { name: 'Strategy' });
-    if ((await strategyTab.count()) > 0) {
-      await strategyTab.first().click();
-      await page.waitForTimeout(300);
-    }
 
     // ── Set Filter Trades to Mixed (3-way button selector: Off / Mixed / Filter) ──
     const mixedButton = page.getByRole('button', { name: /mixed/i });
