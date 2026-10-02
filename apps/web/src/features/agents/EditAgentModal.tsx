@@ -525,34 +525,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose} closeOnBackdropClick={false} maxWidth="752px">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <form id="edit-agent-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Skills — the agent is known by its skills. Trading-family config
-               below appears only when a trading skill is selected. Clearing all
-               trading skills also clears any trading-session hour overrides so
-               the hour grid (0-23) becomes editable again. */}
-          <div style={{ marginBottom: '20px' }}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
-            <SkillPicker
-              initialSkills={selectableSkills}
-              selectedSkillIds={form.skillIds}
-              onChange={(skillIds) => {
-                const stillTrading = hasCapabilityFamily(
-                  selectableSkills.filter((s) => skillIds.includes(s.id)),
-                  'trading',
-                );
-                setForm((prev) => ({ ...prev, skillIds }));
-                if (!stillTrading) {
-                  setRuntimePolicyOverrides((current) => {
-                    if (!current?.tradingSessions) return current;
-                    const { tradingSessions: _, ...rest } = current;
-                    return Object.keys(rest).length > 0 ? rest : null;
-                  });
-                }
-              }}
-              loading={skillsQuery.isLoading}
-              errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
-            />
-          </div>
-
           {/* Prompt + files + style — unified block */}
           <div style={{ marginBottom: '8px' }}>
           <PromptInputBlock
@@ -632,6 +604,34 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             )}
           </div>
 
+          </div>
+
+          {/* Skills — the agent is known by its skills. Trading-family config
+               below appears only when a trading skill is selected. Clearing all
+               trading skills also clears any trading-session hour overrides so
+               the hour grid (0-23) becomes editable again. */}
+          <div style={{ marginBottom: '20px' }}>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
+            <SkillPicker
+              initialSkills={selectableSkills}
+              selectedSkillIds={form.skillIds}
+              onChange={(skillIds) => {
+                const stillTrading = hasCapabilityFamily(
+                  selectableSkills.filter((s) => skillIds.includes(s.id)),
+                  'trading',
+                );
+                setForm((prev) => ({ ...prev, skillIds }));
+                if (!stillTrading) {
+                  setRuntimePolicyOverrides((current) => {
+                    if (!current?.tradingSessions) return current;
+                    const { tradingSessions: _, ...rest } = current;
+                    return Object.keys(rest).length > 0 ? rest : null;
+                  });
+                }
+              }}
+              loading={skillsQuery.isLoading}
+              errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
+            />
           </div>
 
           <AgentFormBody

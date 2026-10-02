@@ -151,8 +151,8 @@ Delegates the form to `CreateAgentFlow`; delegates guided chat to
 ## Work breakdown
 
 > **Implementation status tracker** (coordinator-maintained):
-> - Part B (create form prompt-first + remove Suggested-skills): **PENDING**
-> - Part C (edit form prompt-first): **PENDING**
+> - Part B (create form prompt-first + remove Suggested-skills): **DONE** (commit 2f0a7d11)
+> - Part C (edit form prompt-first): **DONE**
 > - Part A (guided chat preset classifier): **PENDING**
 > - Part D (docs & tests): **PENDING**
 
@@ -401,3 +401,6 @@ critical/high issues outstanding.
 - **LOW** — `SkillPicker.onChange` simplified to `({ ...state, skillIds })` (dropped the now-dead `suggestedSkills: 'custom'` sync). Correct; noted for awareness only.
 - **LOW** — The removed dropdown `onChange` used to force `authorizationMode: 'direct'` on starter-set selection. No replacement needed: `IntentState` still initializes `authorizationMode: 'direct'`. No behavior lost.
 - **LOW** — Part B3's "record i18n removals in `008-orphan-i18n-key-sweep.md` ledger" and B1's optional "default SkillPicker expanded" are deferred to Part D (ledger) / left as-is (expand default is optional).
+
+### [Part C] Edit form prompt-first
+- **LOW** — Pure JSX block move (`PromptInputBlock` now precedes `SkillPicker`); removed/added line sets are byte-identical. `SkillPicker.onChange` trading-session-clearing logic intact. No action needed.
