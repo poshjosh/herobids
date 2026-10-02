@@ -11,19 +11,6 @@ export const CAPABILITY_FAMILY_LABELS: Record<string, string> = {
   trading: 'Trading',
 };
 
-/**
- * Identifiers for the create-flow "suggested skills" convenience. These are NOT
- * an agent type or identity — they only pre-select a starter set of skills in
- * the form. An agent's identity is derived entirely from its skills (and their
- * capability families); nothing here is persisted or shown as a "type".
- */
-export type SuggestedSkillSetId = 'trading' | 'personal-assistant' | 'custom';
-
-const SUGGESTED_SKILL_SETS: Record<Exclude<SuggestedSkillSetId, 'custom'>, string[]> = {
-  trading: ['trading', 'bot-management'],
-  'personal-assistant': ['task-management', 'web-access', 'email'],
-};
-
 function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallback: string): string {
   if (!intl) {
     return fallback;
@@ -71,19 +58,6 @@ export function listSelectableSkills(skills: Skill[]): Skill[] {
 
       return left.id.localeCompare(right.id);
     });
-}
-
-/**
- * Resolve the starter skill IDs for a "suggested skills" selection. 'custom'
- * clears the selection so the user picks skills manually. This is a form-only
- * convenience — the result is a plain list of skill IDs, never a stored type.
- */
-export function resolveSuggestedSkillIds(suggestion: SuggestedSkillSetId): string[] {
-  if (suggestion === 'custom') {
-    return [];
-  }
-
-  return [...SUGGESTED_SKILL_SETS[suggestion]];
 }
 
 export function formatSkillSelection(skills: Array<{ name: string }>, intl?: IntlShape): string {

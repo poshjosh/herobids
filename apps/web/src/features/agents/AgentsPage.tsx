@@ -8,7 +8,7 @@ import { PageShell, PageHeader, LoadingRows, ErrorState, Button, MetricCard, Fie
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
 import type { BlueprintSummary } from '../../lib/api-client.js';
-import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolveSuggestedSkillIds, resolvePromptTemplate, resolveGoalPlaceholderKey, type SuggestedSkillSetId } from './agent-display.js';
+import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolvePromptTemplate, resolveGoalPlaceholderKey } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -54,8 +54,6 @@ interface IntentState {
   /** true = technical pre-filter scanner runs before LLM decides (ON by default for trading agents) */
   technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
-  /** Create-flow convenience that pre-selects a starter skill set. Never persisted or shown as a type. */
-  suggestedSkills: SuggestedSkillSetId;
   skillIds: string[];
   /** Authorization mode: 'direct' | 'approval_required'. */
   authorizationMode: 'direct' | 'approval_required';
@@ -283,7 +281,6 @@ export function CreateAgentFlow({
     hybridMode: undefined,
     technicalPreFilterEnabled: false,
     technicalConfig: defaultTechnicalConfigFormState(),
-    suggestedSkills: 'custom',
     skillIds: [],
     authorizationMode: 'direct',
     executionMode: 'test',
@@ -786,91 +783,7 @@ export function CreateAgentFlow({
         </div>
         <div className="create-flow-card-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-          {/* 1. Suggested skills — a creation convenience that only pre-selects a
-               starter skill set. This is NOT an agent type: nothing here is
-               persisted or shown as identity; the agent is known by its skills. */}
-          <div style={{ marginBottom: '20px' }}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.suggestedSkills' })}</FieldLabel>
-            <select
-              value={intent.suggestedSkills}
-              onChange={(e) => {
-                const suggestedSkills = e.target.value as SuggestedSkillSetId;
-                const nextSkillIds = resolveSuggestedSkillIds(suggestedSkills);
-                const nextHasTrading = hasCapabilityFamily(
-                  skills.filter((s) => nextSkillIds.includes(s.id)),
-                  'trading',
-                );
-                setIntent((state) => {
-                  const next: IntentState = {
-                    ...state,
-                    suggestedSkills,
-                    // 'custom' leaves the current manual selection intact; a named
-                    // suggestion replaces it with the starter set.
-                    skillIds: suggestedSkills === 'custom' ? state.skillIds : nextSkillIds,
-                    authorizationMode: 'direct' as const,
-                  };
-                  // Clear trading sessions when the resulting selection is no longer
-                  // trading so the hour grid (0-23) becomes editable again.
-                  if (!nextHasTrading && next.runtimePolicyOverrides?.tradingSessions) {
-                    const { tradingSessions: _, ...rest } = next.runtimePolicyOverrides;
-                    next.runtimePolicyOverrides = Object.keys(rest).length > 0 ? rest : null;
-                  }
-                  return next;
-                });
-              }}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-            >
-              <option value="custom">{intl.formatMessage({ id: 'agents.create.suggestedSkills.custom' })}</option>
-              <option value="trading">{intl.formatMessage({ id: 'agents.create.suggestedSkills.trading' })}</option>
-              <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.suggestedSkills.personalAssistant' })}</option>
-            </select>
-            {selectedSkills.length > 0 && (
-              <div style={{ marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                {selectedSkills.map((s) => s.name).join(', ')}
-              </div>
-            )}
-          </div>
-
-          {/* Skills section — always collapsed, expandable */}
-          <div style={{ marginBottom: '20px' }}>
-            <button
-              type="button"
-              onClick={() => setSkillsExpanded((prev) => !prev)}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-                fontWeight: '600',
-                color: 'var(--color-text)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              <span style={{ transform: skillsExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', display: 'inline-block' }}>▸</span>
-              {intent.skillIds.length === 0
-                ? intl.formatMessage({ id: 'agents.create.skills.addLabel', defaultMessage: 'Add skills' })
-                : intl.formatMessage({ id: 'agents.create.skills.editLabel', defaultMessage: 'Edit skills' })}
-              <span className="optional-hint">
-                {intl.formatMessage({ id: 'common.optional', defaultMessage: '(Optional)' })}
-              </span>
-            </button>
-            {skillsExpanded && (
-              <div style={{ marginTop: '12px' }}>
-                <SkillPicker
-                  initialSkills={skills}
-                  selectedSkillIds={intent.skillIds}
-                  onChange={(skillIds) => setIntent((state) => ({ ...state, skillIds, suggestedSkills: 'custom' }))}
-                  loading={skillsLoading}
-                  errorMessage={skillsError}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* 2. Prompt + files + style — unified block */}
+          {/* 1. Prompt + files + style — the objective comes first (intent-first). */}
           <div style={{ marginBottom: '8px' }}>
           <PromptInputBlock
             dataField="goal"
@@ -930,6 +843,45 @@ export function CreateAgentFlow({
             ), resolveTickIntervalMsFromMinutesInput(intent.tickIntervalMins))}
           </div>
 
+          </div>
+
+          {/* 2. Skills section — always collapsed, expandable */}
+          <div style={{ marginBottom: '20px' }}>
+            <button
+              type="button"
+              onClick={() => setSkillsExpanded((prev) => !prev)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: '600',
+                color: 'var(--color-text)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span style={{ transform: skillsExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', display: 'inline-block' }}>▸</span>
+              {intent.skillIds.length === 0
+                ? intl.formatMessage({ id: 'agents.create.skills.addLabel', defaultMessage: 'Add skills' })
+                : intl.formatMessage({ id: 'agents.create.skills.editLabel', defaultMessage: 'Edit skills' })}
+              <span className="optional-hint">
+                {intl.formatMessage({ id: 'common.optional', defaultMessage: '(Optional)' })}
+              </span>
+            </button>
+            {skillsExpanded && (
+              <div style={{ marginTop: '12px' }}>
+                <SkillPicker
+                  initialSkills={skills}
+                  selectedSkillIds={intent.skillIds}
+                  onChange={(skillIds) => setIntent((state) => ({ ...state, skillIds }))}
+                  loading={skillsLoading}
+                  errorMessage={skillsError}
+                />
+              </div>
+            )}
           </div>
 
           {/* 3. Agent Form Body */}

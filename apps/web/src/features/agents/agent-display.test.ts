@@ -1,20 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SKILL_PRESET_MAP } from '@herobids/domain';
-import { formatObjectivePreview, resolveCapabilityFamilies, resolveSuggestedSkillIds } from './agent-display.js';
+import { formatObjectivePreview, resolveCapabilityFamilies } from './agent-display.js';
 
 describe('suggested skills resolution', () => {
-  it('personal-assistant suggestion resolves to task-management, web-access, and email', () => {
-    expect(resolveSuggestedSkillIds('personal-assistant')).toEqual(['task-management', 'web-access', 'email']);
-  });
-
-  it('trading suggestion resolves to trading and bot-management', () => {
-    expect(resolveSuggestedSkillIds('trading')).toEqual(['trading', 'bot-management']);
-  });
-
-  it('custom suggestion returns an empty array (user picks skills manually)', () => {
-    expect(resolveSuggestedSkillIds('custom')).toEqual([]);
-  });
-
   it('domain SKILL_PRESET_MAP uses personal-assistant as the assistant preset key', () => {
     expect('personal-assistant' in SKILL_PRESET_MAP).toBe(true);
     expect('reminder' in SKILL_PRESET_MAP).toBe(false);
