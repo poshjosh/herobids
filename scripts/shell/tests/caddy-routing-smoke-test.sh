@@ -42,10 +42,13 @@ check() {
   shift
   if "$@"; then
     ok "✓ ${label}"
-    (( PASSED++ ))
+    # NOTE: use arithmetic assignment, not `(( PASSED++ ))`. Under `set -e`,
+    # `(( PASSED++ ))` returns exit 1 when PASSED is 0 (the pre-increment value
+    # is falsy), which aborts the whole script after the first passing check.
+    PASSED=$(( PASSED + 1 ))
   else
     err "✗ ${label}"
-    (( FAILED++ ))
+    FAILED=$(( FAILED + 1 ))
     # Do NOT return non-zero — the script runs with set -e and the exit code
     # is determined by $FAILED at the end, not by individual check failures.
   fi
