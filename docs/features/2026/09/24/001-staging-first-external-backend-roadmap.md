@@ -113,16 +113,29 @@ Approval for one apply does not authorize the other.
     matching, key rotation/revocation, availability, and generic
     invocation/status/health behavior.
 
-11. **Generic client migration.** Replace Traderton-specific consumer client,
-    configuration, contracts, and context ports with generic External Backend
-    infrastructure.
+11. **Generic client migration + transport seam.** Replace Traderton-specific
+    consumer client, configuration, contracts, and context ports with generic
+    External Backend infrastructure, behind an internal transport seam
+    (orchestration above; transports below). **Both `RestTransport` and
+    `McpTransport` are implemented** (ADR 016, D14); REST remains the default and
+    the only transport exercised in staging/production until Step 16's
+    differential is satisfied (D19). Two preparatory task groups run FIRST:
+    shared signing-vector fixtures captured against pre-rename code, and the
+    write-path idempotency fix (D18). See Step 10 plan §2.4, §2.5, §7.
 
 12. **External skill deep integration.** Preserve ordinary skills.sh skills as
     instruction-only. An installed skill receives backend tools only when it
-    matches an enabled External Backend Definition and verified descriptor.
+    matches an enabled External Backend Definition and verified descriptor. The
+    verified descriptor is the **sole** authority for tool schemas; a backend's
+    `tools/list` is cross-checked or ignored, never a schema source (D16/DT4),
+    which is what keeps this step transport-independent.
 
 13. **Traderton skill publication.** Publish Traderton-owned `SKILL.md`,
-    descriptors, tool descriptions/schemas, and trading documentation.
+    descriptors, tool descriptions/schemas, and trading documentation. Completes
+    with a **dev-signed** descriptor and verification against a **local fixture
+    skill source** — the live skills CLI resolves from the remote and cannot see
+    local work, and a push is gated (D20). Real-key registration and the pushes
+    are a single post-phase operator step.
 
 14. **Remove Herobids first-party trading ownership.** Delete system seeds,
     presets, instructions, static tool ownership, and fallback resolution for
@@ -159,6 +172,15 @@ Approval for one apply does not authorize the other.
       evidence are supporting evidence only; they do not replace the differential
       report or load report.
 
+      **Conditional third leg (added 2026-10-02; ADR 016 §Consequences).** If an
+      MCP transport is reachable when this step is planned, the differential
+      becomes three-legged — pinned oracle / REST-to-Traderton /
+      MCP-to-Traderton — and **D10 is amended in this step's own verification
+      plan**, not earlier. D10 is deliberately left intact until then: expanding
+      the differential means more staging traffic against operator-managed
+      infrastructure, so the ratification belongs behind this step's existing
+      approval gate.
+
 ## Dependencies And Guardrails
 
 - Production gets its own Herobids-to-Traderton private path and Traderton
@@ -170,6 +192,15 @@ Approval for one apply does not authorize the other.
   implementation steps 10–16 begin only after Step 9 satisfies all six ADR 015
   Discovery Exit Criteria. (Step 9 is the discovery itself; it is not gated on
   already-completed discovery.)
-- MCP remains a future packaging option and is not a Phase 3 prerequisite.
+- ~~MCP remains a future packaging option and is not a Phase 3 prerequisite.~~
+  **REVISED 2026-10-02 ([ADR 016](../../../../tech/architecture/adrs/2026/10/016-mcp-as-external-backend-transport.md),
+  D13/D14):** MCP is the target invocation transport for platform-managed
+  External Backends, and `McpTransport` plus a Traderton MCP server surface are
+  **in** Phase-3 scope. This satisfies ADR 015 Discovery Exit Criterion 5's
+  "revised decision supported by evidence" branch. The authenticated private
+  invocation, health, idempotency, descriptor-trust and authorization
+  requirements ADR 015 §8 named are retained — they sit above the transport seam.
+  REST stays the default and the only transport exercised in staging/production
+  until Step 16's differential is satisfied (D19).
 - The superseded RemoteBoundary draft is historical only and must not drive
   implementation.

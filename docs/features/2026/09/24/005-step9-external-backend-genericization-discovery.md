@@ -3,7 +3,7 @@
 **Status:** complete (discovery; read-only — no code changed).
 **Date:** 2026-10-02.
 **Program:** [ENTRYPOINT](./000-program/ENTRYPOINT.md) · [PROGRESS](./000-program/PROGRESS.md) · [roadmap](./001-staging-first-external-backend-roadmap.md) · [DECISIONS](./000-program/DECISIONS.md)
-**Governing ADR:** [ADR 015](../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md)
+**Governing ADR:** [ADR 015](../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md)
 
 ## Purpose & scope
 

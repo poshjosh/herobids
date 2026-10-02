@@ -1,10 +1,39 @@
 # MCP Registration And Transport Layer
 
-**Status:** draft
+**Status:** draft — **partially reconciled by [ADR 016](../../../tech/architecture/adrs/2026/10/016-mcp-as-external-backend-transport.md) (2026-10-02)**
 **Created:** 2026-08-31
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)
 **Prerequisite:** [First Repo-Local External Trading Backend](./005-trading-capability-extraction.md)
 **Normative inputs:** [Native Capabilities And External Backends](./013-native-capabilities-and-external-backends.md), [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [ADR 008](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md)
+
+> ## Reconciliation note (2026-10-02 — read before using this document)
+>
+> ADR 016 makes MCP the **invocation transport for platform-managed External
+> Backends**, built in Phase 3 of the staging-first External Backend program.
+> This document points MCP **outward** (agent- and third-party-facing, layered
+> *over* the boundary contract); ADR 016 points it **inward** (MCP *is* one of
+> the boundary's transports). Both are intended to hold, at different layers, but
+> three statements here are now qualified:
+>
+> | This document says | Status after ADR 016 |
+> |---|---|
+> | **Non-Goal 5** — "Do not require MCP as a prerequisite for external backend integration. Direct API remains the first mechanism." | **Still true historically, no longer governing for Phase 3.** REST *was* the first mechanism and remains the default and the only transport exercised in staging/production (D19). But MCP is now a Phase-3 deliverable for the first platform-managed backend (D14), not a later option. |
+> | **Scope exclusion 2** — "changes to the external-backend boundary contract" are out of scope | **Superseded for platform-managed backends.** ADR 016 §Decision 5 defines an MCP mapping *of* the boundary contract. The REST path's bytes stay frozen (Step 10 §5). |
+> | **Fixed Decision 4** — MCP tool names are namespaced; platform tools take precedence | **Scoped to third-party servers.** A platform-managed backend's tool names come from a verified descriptor and are the agent-facing names already, so they stay unprefixed with collision detection at registration (ADR 016 §Decision 6). |
+> | **Open Question 5** — "Can an MCP server wrap a platform-managed external backend?" (Direction: Yes) | **RESOLVED, and stronger than "wrap":** MCP is a first-class transport of the contract, not only a packaging layer over it. |
+>
+> **Everything else in this document continues to apply**, including Fixed
+> Decisions 1, 2, 3, 5 and 6 (MCP is a mechanism not a capability; MCP-surfaced
+> tools are subject to the same visibility and skill gating; operator
+> authorization is required; credentials reuse existing infrastructure; no MCP
+> server processes inside agent containers), and the whole third-party-server
+> scope, which ADR 016 does not address.
+>
+> **One addition from ADR 016 that this document must honour when it is
+> implemented:** the verified descriptor is the sole authority for tool schemas,
+> so a `tools/list` response is cross-checked or ignored — never a schema source
+> (D16). For third-party servers with no descriptor, that implies a different
+> trust posture, which this document should specify before implementation.
 
 ## Purpose
 

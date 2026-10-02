@@ -25,10 +25,15 @@ decide whether a payment provider accepts it.
 
 ## 2. Next milestone objective (narrow, expires when done)
 
-Restore Herobids staging, then deploy Traderton as an independently reachable
-staging backend. **Do not begin the generic External Backend refactor until
-staging operational proof is complete.** The current step is recorded at the
-top of [PROGRESS.md](./PROGRESS.md).
+**Current (2026-10-02):** Phase 3 — execute roadmap Steps 11–13 so herobids
+reaches External Backend tools only through a generic, trust-gated path with a
+pluggable transport, with BOTH `RestTransport` and `McpTransport` implemented
+(D14) and REST remaining the default (D19). Driven by the Phase-3 program
+package: `docs/features/2026/10/010-phase3-program/`. Steps 14–16 stay deferred
+(D12). The current step is recorded at the top of [PROGRESS.md](./PROGRESS.md).
+
+*Superseded milestone (Phase 1, complete 2026-10-01): restore Herobids staging,
+then deploy Traderton as an independently reachable staging backend.*
 
 ## 3. Roadmap
 
@@ -74,10 +79,16 @@ scaffolding (e.g. a local `docker compose up` for testing) remains autonomous.
 
 Also read, when relevant:
 - `herobids/AGENTS.md` and `traderton/AGENTS.md` (repo rules).
-- `traderton/docs/CANONICAL-STATE.md` (authoritative truth for traderton).
-- `traderton/docs/features/initial/8-decision-process.md` (the Contemplator routing rule).
+- `traderton/docs/features/initial/CANONICAL-STATE.md` (authoritative truth for traderton).
+- `traderton/docs/features/initial/008-decision-process.md` (the Contemplator routing rule).
 
-**Precedence and staleness.** `traderton/docs/CANONICAL-STATE.md` is the
+> **Path correction (2026-10-02).** Earlier revisions of this section cited
+> `traderton/docs/CANONICAL-STATE.md` and
+> `traderton/docs/features/initial/8-decision-process.md`. Neither exists. An
+> agent following those literally concludes "not present" and skips required
+> reading. The paths above are correct and verified.
+
+**Precedence and staleness.** `traderton/docs/features/initial/CANONICAL-STATE.md` is the
 authority for Traderton-internal state, decisions, and invariants, but it
 documents the research/extraction phase and can lag the live git state (it may
 still describe the boundary/L3 work as branch-only). Where it and this program
@@ -120,13 +131,36 @@ read ENTRYPOINT → read PROGRESS → prepare (investigate ⇄ plan) → [decisi
 
 ## 6. Decision trigger test (when to spin off Contemplator)
 
-Route a choice to Contemplator when it could:
+Routing requires **both** conditions. A choice goes to Contemplator only when it
+is architecturally significant **and** genuinely contested.
+
+**Condition 1 — significance.** The choice could:
 - **degrade the ownership boundary** (leave/return trading behaviour in Herobids, or add a Traderton-named branch to generic code);
 - **change externally-visible behaviour** (a contract, tool, route, or copy change);
 - **mutate infrastructure** (any apply/destroy/reset/DNS/TLS — even if "low-risk", the approval gate still applies);
 - **contradict a recorded decision or an invariant.**
 
-Low-stakes mechanical choices (a variable name, an internal helper, a doc reword) are decided normally. When in doubt, route it.
+**Condition 2 — contested.** You cannot state the decisive reason in one
+sentence. If you CAN name the deciding argument plainly and it survives a check
+against §4, **decide it, record it, and move on** — significance alone is not a
+reason to route.
+
+**Detail is not complexity.** A decision with many downstream mechanics but one
+clear deciding reason is yours to make; write the mechanics down as part of the
+decision record. A brief that takes longer to write than the decision takes to
+make is a signal you have already decided.
+
+Low-stakes mechanical choices (a variable name, an internal helper, a doc reword)
+are decided normally and need no record.
+
+> Worked example (2026-10-02). "Envelope tunnel or native MCP tools?" looked
+> routable: cross-repo, changes an auth binding, architecturally significant. But
+> the deciding reason is one sentence — *an envelope tunnel is not usable by any
+> third-party MCP client, so it forfeits the only reason to choose MCP* — so it
+> was decided inline and recorded as D15. By contrast "does `McpTransport` belong
+> in Phase-3 scope?" was genuinely contested (it turned on whether a one-sided
+> seam is an unvalidated abstraction, which neither side could settle by
+> assertion) and was correctly routed.
 
 ## 7. Document map
 

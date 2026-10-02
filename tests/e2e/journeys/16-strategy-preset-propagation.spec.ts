@@ -38,18 +38,37 @@ test.describe('Journey 16: Strategy preset propagation', () => {
       await switchToGuidedBtn.waitFor({ state: 'visible', timeout: 10_000 });
     }
 
-    // Fill name and goal
-    await page.locator('input[type="text"]').first().fill('Preset Test J16');
+    // Fill goal (first) and name. Skill-first create flow (feature 009): the
+    // objective/prompt comes first and there is no "preset"/"type" <select>.
     await page
       .locator('textarea')
       .first()
       .fill('Trade momentum signals on 15m candles.');
+    await page.locator('input[type="text"]').first().fill('Preset Test J16');
 
-    // ── Select Trading skill preset ───────────────────────────────────────
-    const skillPreset = page.locator(
-      'select:has(option[value="personal-assistant"])',
-    );
-    await skillPreset.selectOption('trading');
+    // ── Select the Trading skill via the SkillPicker ──────────────────────
+    // Trading capability (and the strategy/preset controls) is now derived from
+    // the agent's skills, not a preset selector. Resolve the trading skill id
+    // and check it in the collapsible SkillPicker.
+    {
+      const token = await getAuthToken(page);
+      const resp = await page.request.get('/api/skills?scope=selectable', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(resp.ok(), `GET /skills returned ${resp.status()}`).toBe(true);
+      const body = (await resp.json()) as { skills: Array<{ id: string; slug?: string; name: string }> };
+      const tradingSkill = body.skills.find((s) => s.slug === 'system/trading');
+      expect(tradingSkill, 'system/trading skill must be selectable').toBeTruthy();
+
+      await page.getByRole('button', { name: /add skills|edit skills/i }).click();
+      // Each SkillPicker row renders name + slug + description, so the checkbox's
+      // accessible name is a concatenation (matching by the bare name "Trading"
+      // is ambiguous with "Bot Management"). Locate the row by its unique slug.
+      const tradingRow = page.locator('label').filter({ hasText: 'system/trading' });
+      await tradingRow.getByRole('checkbox').check();
+      // Let capabilityMode/requiresTradingSetup derive from the selected skill.
+      await page.waitForTimeout(400);
+    }
 
     // ── Expand Advanced Settings ──────────────────────────────────────────
     const advancedDetails = page

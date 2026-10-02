@@ -120,86 +120,79 @@ export async function createAgent(
     await switchToGuided.waitFor({ state: 'visible', timeout: 10_000 });
   }
 
-  // Fill name (required) — derive a short name from the goal
-  const nameField = page.locator('input[type="text"]').first();
-  await nameField.fill(goal.slice(0, 40));
-
+  // Skill-first create flow (feature 009): the objective/prompt comes first,
+  // there is NO "preset"/"type" <select>, and skills are selected via the
+  // collapsible SkillPicker ("Add skills"). Fill the goal (textarea) and name
+  // (first text input, inside AgentFormBody) while the skills section is still
+  // collapsed so the name locator is unambiguous.
   const goalField = page.locator('textarea').first();
   await goalField.fill(goal);
 
-  // The preset combobox is the select that has a "personal-assistant" option value
-  // (unique to the skill preset select — other selects use different option values).
-  const presetSelect = page.locator('select:has(option[value="personal-assistant"])');
+  const nameField = page.locator('input[type="text"]').first();
+  await nameField.fill(goal.slice(0, 40));
 
-  const needsCustomPreset = (options.skillIds ?? []).length > 0 || options.preset === 'general';
+  // Resolve which skills to select. The former `preset` option maps to concrete
+  // skills now that identity is derived from skills, not a type:
+  //   trading            → the trading starter skills
+  //   personal-assistant → the personal-assistant starter skills
+  //   custom / general   → no skills (base agent)
+  // Explicit `skillIds` always win.
+  const PRESET_SKILL_SLUGS: Record<string, string[]> = {
+    trading: ['system/trading', 'system/bot-management'],
+    'personal-assistant': ['system/task-management', 'system/web-access'],
+  };
 
-  if (needsCustomPreset) {
-    // Switch to Custom so individual skill checkboxes are rendered
-    await presetSelect.selectOption('custom');
-  } else if (options.preset) {
-    const presetValueMap: Record<string, string> = {
-      trading: 'trading',
-      'personal-assistant': 'personal-assistant',
-      custom: 'custom',
-      general: 'custom', // 'general' → Custom with no skills
-    };
-    const presetValue = presetValueMap[options.preset];
-    if (presetValue) {
-      await presetSelect.selectOption(presetValue);
-    }
-  }
-
-  // The SkillPicker is rendered inline (not inside Advanced Settings tabs)
-  // when the custom preset is selected, so checkboxes are directly accessible.
-
-  if (needsCustomPreset && (options.skillIds ?? []).length === 0) {
-    // Uncheck any skills that were pre-selected by the previous preset (e.g. trading).
-    const allCheckboxes = page.getByRole('checkbox');
-    const count = await allCheckboxes.count();
-    for (let i = 0; i < count; i++) {
-      const cb = allCheckboxes.nth(i);
-      if (await cb.isChecked()) {
-        await cb.uncheck();
-      }
-    }
-  }
-
-  // Wait for React effects (capabilityMode derivation) to commit after
-  // preset/skill changes. Without this, the form may submit with an empty
-  // prompt because capabilityMode hasn't been updated from 'technical'
-  // to 'intelligence' yet, causing the API to reject the payload.
-  await page.waitForTimeout(300);
-
-  if ((options.skillIds ?? []).length > 0) {
-    // Uncheck any pre-selected skills first so only the requested ones remain.
-    const allCheckboxes = page.getByRole('checkbox');
-    const count = await allCheckboxes.count();
-    for (let i = 0; i < count; i++) {
-      const cb = allCheckboxes.nth(i);
-      if (await cb.isChecked()) {
-        await cb.uncheck();
-      }
-    }
-
+  let skillIdsToSelect = options.skillIds ?? [];
+  if (skillIdsToSelect.length === 0 && options.preset && PRESET_SKILL_SLUGS[options.preset]) {
+    // Resolve slugs → ids via the skills API.
     const token = await getAuthToken(page);
-    const response = await page.request.get('/api/skills', {
+    const resp = await page.request.get('/api/skills?scope=selectable', {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (!resp.ok()) {
+      throw new Error(`Failed to load skills: ${resp.status()} ${await resp.text()}`);
+    }
+    const body = await resp.json() as { skills: Array<{ id: string; slug?: string; name: string }> };
+    skillIdsToSelect = PRESET_SKILL_SLUGS[options.preset]!
+      .map((slug) => body.skills.find((s) => s.slug === slug)?.id)
+      .filter((id): id is string => Boolean(id));
+  }
 
+  if (skillIdsToSelect.length > 0) {
+    // Expand the "Add skills" section so the SkillPicker checkboxes render.
+    const addSkillsToggle = page.getByRole('button', { name: /add skills|edit skills/i });
+    await addSkillsToggle.waitFor({ state: 'visible', timeout: 10_000 });
+    await addSkillsToggle.click();
+
+    const token = await getAuthToken(page);
+    const response = await page.request.get('/api/skills?scope=selectable', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!response.ok()) {
       throw new Error(`Failed to load skills: ${response.status()} ${await response.text()}`);
     }
+    const body = await response.json() as { skills: Array<{ id: string; slug?: string; name: string }> };
 
-    const body = await response.json() as { skills: Array<{ id: string; name: string }> };
-    for (const skillId of options.skillIds) {
+    for (const skillId of skillIdsToSelect) {
       const skill = body.skills.find((item) => item.id === skillId);
       if (!skill) {
         throw new Error(`Could not find skill ${skillId} in the skills API response`);
       }
-
-      await page.getByRole('checkbox', { name: skill.name }).check();
+      // Each SkillPicker row renders name + slug + description, so a checkbox's
+      // accessible name is a concatenation and matching by bare name is
+      // ambiguous (e.g. "Trading" also matches "Bot Management"). Locate the row
+      // by its unique slug when available, else fall back to an exact name match.
+      if (skill.slug) {
+        await page.locator('label').filter({ hasText: skill.slug }).getByRole('checkbox').check();
+      } else {
+        await page.getByRole('checkbox', { name: skill.name, exact: true }).check();
+      }
     }
   }
+
+  // Wait for React effects (capabilityMode derivation) to commit after skill
+  // changes before submitting.
+  await page.waitForTimeout(300);
 
   await page.getByRole('button', { name: /review/i }).click();
 
