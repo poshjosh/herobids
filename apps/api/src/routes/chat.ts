@@ -98,23 +98,7 @@ const MAX_MESSAGE_HISTORY = 20;
 /** Matches structured button-reply values sent by the frontend for connection-choice quick_replies. */
 const BUTTON_VALUE_RE = /^(connection:[a-zA-Z0-9-]+|action:(create_connection|request_connection_form))$/;
 
-const GREETING_CONTENT = "Hi! I can help you create an AI agent. What kind of agent are you looking for?";
-
-// Capability-neutral onboarding: the greeting does NOT advertise a first-party
-// trading product. Agent identity is derived from skills (DECISIONS P2-2), so
-// trading is discovered via skill discovery (list_available_skills) rather than
-// offered as a headline "type". The preset-detection plumbing still accepts a
-// `preset:*` token if a user types one, but onboarding no longer presents one.
-const GREETING_ACTIONS: ChatAction[] = [
-  {
-    id: 'greeting-presets',
-    type: 'quick_replies',
-    options: [
-      { label: 'AI personal assistant', value: 'preset:personal-assistant' },
-      { label: 'Custom AI', value: 'preset:custom' },
-    ],
-  },
-];
+const GREETING_CONTENT = "Hi! I can help you create an AI agent. What would you like your agent to do?";
 
 // ── System Prompts ───────────────────────────────────────────────────────────
 
@@ -136,7 +120,7 @@ You are NOT a general-purpose chat assistant. Do not answer questions unrelated 
 something outside agent creation, gently redirect: "I'm focused on helping you create an
 agent right now. Would you like to continue, or switch to the [form](/agents/new)?"
 
-You have access to skill discovery (list_available_skills — use only for Custom AI or when the user asks about specific skills) to understand the available options.
+You have access to skill discovery (list_available_skills) to understand which capabilities (skills) exist so you can equip the agent based on the user's described intent.
 
 You run inside a restricted API-local onboarding runtime. You may use the onboarding actions when needed, but do not assume worker runtime tools like send_message, memory, or trading execution tools exist.
 
@@ -250,10 +234,11 @@ export function buildBasePrompt(userMsgTag: string): string {
 ## Greeting
 When starting, say something like:
 
-"Hi! I can help you create an AI agent. What kind of agent are you looking for?"
+"Hi! I can help you create an AI agent. What would you like your agent to do?"
 
-Then present the available presets (trading, personal assistant, custom) as choices.
-Do NOT say "ask anything" — you have a specific job.` + buildBaseReference();
+Understand what the user wants their agent to do, then resolve relevant skills from that intent using list_available_skills.
+Do NOT say "ask anything" — you have a specific job.
+Do NOT ask the user to choose or list skills; resolve them silently and list them only in the confirmation summary.` + buildBaseReference();
 }
 
 export function buildTradingPrompt(userMsgTag: string): string {
@@ -401,6 +386,8 @@ You are setting up a CUSTOM agent. The user has already chosen this preset — d
    available skills, then suggest relevant ones based on their goal.
 3. If the user doesn't express a need for specific skills, default to no skills
    (base only) — the agent can still reason and use built-in tools.
+   Do NOT ask the user to choose or list skills; resolve them silently and list
+   them only in the confirmation summary.
 4. Do not ask for capital unless the selected skills include trading.
 5. Apply the happy-path defaults for name, goal, and style.
 6. Once minimum required information is collected, present the fine-tune checkpoint. When the user is ready, show the confirmation summary and call create_agent.
@@ -719,29 +706,48 @@ function mapExecutionMode(requestedMode: string | undefined, hasConnections: boo
 }
 
 /**
- * Detect a preset selection from a user message (e.g. a quick-reply choice like
- * `preset:personal-assistant`). Returns undefined when no preset is determinable.
+ * Classify the user's first message into a prompt preset so the onboarding LLM
+ * loads the right system prompt. Replaces the old quick-reply preset buttons:
+ * instead of asking the user to pick a type, we infer it from what they say
+ * their agent should do.
  *
- * Only a genuine quick-reply selection persists a preset: the message must be
- * short and contain exactly one known preset token. Free text that merely
- * mentions a preset token in passing (e.g. "I don't want the preset:custom
- * option") must not persist a preset.
+ * Returns `'trading'` / `'personal-assistant'` / `'custom'`. Any unexpected,
+ * empty, or `0` classifier output — and any provider throw/timeout — maps to
+ * `'custom'`. Classification must never block the conversation or agent
+ * creation, so the caller treats a thrown error the same as `'custom'`.
+ *
+ * Billing note: this is one short call (tiny `maxTokens`, temperature 0) run at
+ * most once per thread (only when the preset is still unset), so its token cost
+ * is negligible and intentionally not folded into the chat usage recorder.
  */
-const KNOWN_PRESETS: string[] = ['trading', 'personal-assistant', 'custom'];
+export async function classifyPreset(
+  llmConfig: LlmConfig,
+  firstUserMessage: string,
+): Promise<'trading' | 'personal-assistant' | 'custom'> {
+  const prompt = `Classify what the user wants their AI agent to do into ONE category. Categories: \`trading\` (buys/sells/trades crypto, tokens, markets, a portfolio), \`personal-assistant\` (email, scheduling, reminders, research, general help). Reply with EXACTLY one of: \`trading\`, \`personal-assistant\`, or \`0\` if neither clearly fits. Output only that token, nothing else. User: "${firstUserMessage}"`;
 
-// A quick-reply selection is a short message naming exactly one known preset.
-// Longer free text that mentions a preset token in passing is not a selection.
-const MAX_PRESET_SELECTION_LENGTH = 30;
+  const result = await callLlmProvider(
+    {
+      provider: llmConfig.provider,
+      model: llmConfig.model,
+      maxTokens: 5,
+      timeoutMs: llmConfig.timeoutMs,
+      baseUrl: llmConfig.baseUrl,
+      openRouterProviderControls: llmConfig.openRouterProviderControls,
+    },
+    {
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 5,
+      temperature: 0,
+    },
+  );
 
-function detectPresetFromContent(content: string): string | undefined {
-  const trimmed = content.trim();
-  if (trimmed.length > MAX_PRESET_SELECTION_LENGTH) return undefined;
-  const matches = trimmed.match(/preset:([a-z-]+)/g) ?? [];
-  const known = matches
-    .map((token) => token.slice('preset:'.length))
-    .filter((preset) => KNOWN_PRESETS.includes(preset));
-  if (known.length !== 1) return undefined;
-  return known[0];
+  if (!result.ok) return 'custom';
+
+  const token = result.data.content.trim().toLowerCase();
+  if (token === 'trading') return 'trading';
+  if (token === 'personal-assistant') return 'personal-assistant';
+  return 'custom';
 }
 
 // ── Thread Operations ────────────────────────────────────────────────────────
@@ -771,7 +777,7 @@ async function createThread(
     threadId,
     role: 'assistant',
     content: GREETING_CONTENT,
-    actions: GREETING_ACTIONS,
+    actions: null,
     createdAt: timestamp,
   } as never);
 
@@ -779,7 +785,7 @@ async function createThread(
     id: greetingId,
     role: 'assistant',
     content: GREETING_CONTENT,
-    actions: GREETING_ACTIONS,
+    actions: null,
     createdAt: timestamp.toISOString(),
   };
 
@@ -2252,14 +2258,23 @@ export async function chatRoutes(
           .where(eq(chatThreads.id, request.params.id));
       }
 
-      // Detect preset from the user's message so prompt routing works on the
-      // first turn after the user taps a preset button. Also handles mid-thread
-      // preset switching.
-      const detectedPreset = detectPresetFromContent(content);
-      if (detectedPreset) {
+      // Classify the user's intent into a prompt preset so prompt routing works
+      // on the first turn. The preset is sticky throwaway chat metadata — classify
+      // once per thread (only when unset), then leave it alone. On any failure we
+      // default to 'custom'; classification must never block the conversation.
+      // Skip structured button-reply values (e.g. `connection:<id>`): they are
+      // not natural-language intent, and the connection-choice branch above may
+      // deliberately clear the preset so the main LLM re-derives it.
+      if (!effectiveMetadata?.summary?.preset && !BUTTON_VALUE_RE.test(trimmedContent)) {
+        let classifiedPreset: 'trading' | 'personal-assistant' | 'custom' = 'custom';
+        try {
+          classifiedPreset = await classifyPreset(llmConfig, content);
+        } catch (err) {
+          request.log.warn({ err, threadId: request.params.id }, 'Preset classification failed; defaulting to custom');
+        }
         effectiveMetadata = {
           ...(effectiveMetadata ?? {}),
-          summary: { ...(effectiveMetadata?.summary ?? {}), preset: detectedPreset },
+          summary: { ...(effectiveMetadata?.summary ?? {}), preset: classifiedPreset },
         };
       }
 
@@ -2320,11 +2335,11 @@ export async function chatRoutes(
           completedAt: new Date().toISOString(),
         } : {}),
         summary: {
+          // effectiveMetadata.summary already carries the classified preset
+          // (set above before the LLM call), so it persists across resumed turns
+          // (e.g. after Gmail OAuth) without re-deriving it.
           ...(effectiveMetadata?.summary ?? {}),
           ...(llmResponse.summaryFacts ?? {}),
-          // Persist the preset when determinable so resumed turns (e.g. after
-          // Gmail OAuth) retain the active setup type without re-deriving it.
-          ...(detectedPreset ? { preset: detectedPreset } : {}),
           step: llmResponse.createdAgent ? 'completed' : (effectiveMetadata?.summary?.step ?? 'conversation'),
         },
       };

@@ -4,7 +4,7 @@ import type { Database, UsageBillingRepository } from '@herobids/db';
 import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
 import type { Redis } from 'ioredis';
 import type { ProvidersYaml } from '@herobids/domain';
-import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt, buildTradingPrompt, buildConnectionChoiceActions, buildBaseHeader, buildBasePrompt, buildPersonalAssistantPrompt, buildCustomPrompt } from './chat.js';
+import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt, buildTradingPrompt, buildConnectionChoiceActions, buildBaseHeader, buildBasePrompt, buildPersonalAssistantPrompt, buildCustomPrompt, classifyPreset } from './chat.js';
 import type { LlmToolCall } from '@herobids/llm';
 
 vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
@@ -836,7 +836,114 @@ describe('POST /chat/threads/:id/actions/:actionId', () => {
 
 // ── POST /chat/threads/:id/messages — preset persistence ────────────────────
 
-describe('POST /chat/threads/:id/messages — preset persistence', () => {
+describe('POST /chat/threads — greeting', () => {
+  function buildCreateThreadDb() {
+    const state = { insertedMessages: [] as Record<string, unknown>[] };
+    const threadRow = {
+      id: 'thread-new',
+      userId: TEST_USER_ID,
+      title: 'Guided Setup',
+      metadata: { summary: { step: 'greeting' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const db = {
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+          // Thread insert uses .returning(); greeting-message insert resolves directly.
+          state.insertedMessages.push(v);
+          return {
+            returning: vi.fn().mockResolvedValue([threadRow]),
+            then: (resolve: (x: unknown) => unknown) => Promise.resolve(undefined).then(resolve),
+          };
+        }),
+      }),
+    };
+    return { db: db as unknown as Database, state };
+  }
+
+  it('returns the neutral intent-first greeting with no quick-reply actions', async () => {
+    const { db } = buildCreateThreadDb();
+    const app = Fastify({ logger: false });
+    decorateWithAuth(app);
+    await chatRoutes(app, db, LLM_CONFIG, EMPTY_PROVIDERS_YAML, {} as Redis);
+    await app.ready();
+
+    const res = await app.inject({ method: 'POST', url: '/chat/threads' });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.message.content).toBe('Hi! I can help you create an AI agent. What would you like your agent to do?');
+    // Greeting must carry no preset quick-reply buttons.
+    expect(body.message.actions).toBeNull();
+    expect(JSON.stringify(body.message)).not.toContain('quick_replies');
+    expect(JSON.stringify(body.message)).not.toContain('preset:');
+  });
+});
+
+describe('classifyPreset', () => {
+  function mockClassifierToken(token: string) {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: token,
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 2,
+        latencyMs: 5,
+        cached: false,
+      },
+    } as never);
+  }
+
+  it('classifies a trading intent as trading', async () => {
+    mockClassifierToken('trading');
+    const preset = await classifyPreset(LLM_CONFIG as never, 'help me trade crypto');
+    expect(preset).toBe('trading');
+  });
+
+  it('classifies a personal-assistant intent as personal-assistant', async () => {
+    mockClassifierToken('personal-assistant');
+    const preset = await classifyPreset(LLM_CONFIG as never, 'manage my email');
+    expect(preset).toBe('personal-assistant');
+  });
+
+  it('maps a vague/neither intent (token "0") to custom', async () => {
+    mockClassifierToken('0');
+    const preset = await classifyPreset(LLM_CONFIG as never, 'hmm, not sure yet');
+    expect(preset).toBe('custom');
+  });
+
+  it('maps empty classifier output to custom', async () => {
+    mockClassifierToken('');
+    const preset = await classifyPreset(LLM_CONFIG as never, '');
+    expect(preset).toBe('custom');
+  });
+
+  it('maps unexpected classifier output to custom', async () => {
+    mockClassifierToken('something-else');
+    const preset = await classifyPreset(LLM_CONFIG as never, 'do a thing');
+    expect(preset).toBe('custom');
+  });
+
+  it('defaults to custom when the provider returns an error result', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'provider.timeout', message: 'timeout', retryable: true },
+    } as never);
+    const preset = await classifyPreset(LLM_CONFIG as never, 'help me trade crypto');
+    expect(preset).toBe('custom');
+  });
+
+  it('normalizes casing and surrounding whitespace in the classifier token', async () => {
+    mockClassifierToken('  Trading  ');
+    const preset = await classifyPreset(LLM_CONFIG as never, 'buy and sell tokens');
+    expect(preset).toBe('trading');
+  });
+});
+
+describe('POST /chat/threads/:id/messages — preset classification', () => {
   async function buildAppWithThread(overrides: Partial<Record<string, unknown>> = {}) {
     const { db, state } = buildMockDb(overrides);
     const app = Fastify({ logger: false });
@@ -846,11 +953,26 @@ describe('POST /chat/threads/:id/messages — preset persistence', () => {
     return { app, db, state };
   }
 
+  function mockClassifierToken(token: string) {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: token,
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 2,
+        latencyMs: 5,
+        cached: false,
+      },
+    } as never);
+  }
+
   function mockPlainResponse() {
     callMock.mockResolvedValueOnce({
       ok: true,
       data: {
-        content: 'Got it — let\'s set up your personal assistant.',
+        content: 'Got it — let\'s set up your agent.',
         toolCalls: [],
         model: 'gpt-4o',
         provider: 'openai',
@@ -872,18 +994,19 @@ describe('POST /chat/threads/:id/messages — preset persistence', () => {
     }];
   }
 
-  it('persists summary.preset when the user selects a known quick-reply preset', async () => {
+  it('persists the classified preset when none is set yet', async () => {
     const { app, state } = await buildAppWithThread({
       threadRows: threadRow({ summary: { step: 'conversation' } }),
       messageRows: [],
     });
 
+    mockClassifierToken('personal-assistant');
     mockPlainResponse();
 
     const res = await app.inject({
       method: 'POST',
       url: '/chat/threads/thread-1/messages',
-      payload: { content: 'preset:personal-assistant' },
+      payload: { content: 'help me manage my inbox' },
     });
 
     expect(res.statusCode).toBe(200);
@@ -893,25 +1016,51 @@ describe('POST /chat/threads/:id/messages — preset persistence', () => {
     expect(metadata.summary?.preset).toBe('personal-assistant');
   });
 
-  it('does not persist a preset when free text merely mentions a preset token', async () => {
+  it('does not re-classify when a preset is already set (sticky)', async () => {
     const { app, state } = await buildAppWithThread({
-      threadRows: threadRow({ summary: { step: 'conversation' } }),
+      threadRows: threadRow({ summary: { step: 'conversation', preset: 'trading' } }),
       messageRows: [],
     });
 
+    // Only the main LLM response is mocked — no classifier call should happen.
     mockPlainResponse();
 
     const res = await app.inject({
       method: 'POST',
       url: '/chat/threads/thread-1/messages',
-      payload: { content: 'I don\'t want the preset:custom option' },
+      payload: { content: 'now switch me to managing email' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Exactly one callLlmProvider call (the main LLM) — classifier was skipped.
+    expect(callMock).toHaveBeenCalledTimes(1);
+
+    const updateSet = state.updateSets[0] as Record<string, unknown>;
+    const metadata = updateSet['metadata'] as { summary?: { preset?: string } };
+    expect(metadata.summary?.preset).toBe('trading');
+  });
+
+  it('defaults to custom and still responds when classification throws', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({ summary: { step: 'conversation' } }),
+      messageRows: [],
+    });
+
+    // First call (classifier) rejects; second call (main LLM) succeeds.
+    callMock.mockRejectedValueOnce(new Error('provider exploded'));
+    mockPlainResponse();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'do something clever' },
     });
 
     expect(res.statusCode).toBe(200);
 
     const updateSet = state.updateSets[0] as Record<string, unknown>;
     const metadata = updateSet['metadata'] as { summary?: { preset?: string } };
-    expect(metadata.summary?.preset).toBeUndefined();
+    expect(metadata.summary?.preset).toBe('custom');
   });
 });
 
@@ -1066,7 +1215,8 @@ describe('Chat LLM Usage Metering', () => {
     const { app, record } = await buildAppWithRecorder({
       threadRows: [{
         id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
-        metadata: { summary: { step: 'conversation' } },
+        // preset already set so the sticky classifier is skipped (one LLM call).
+        metadata: { summary: { step: 'conversation', preset: 'custom' } },
         createdAt: new Date(), updatedAt: new Date(),
       }],
       messageRows: [],
@@ -1141,7 +1291,8 @@ describe('Chat LLM Usage Metering', () => {
     const { app, record } = await buildAppWithRecorder({
       threadRows: [{
         id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
-        metadata: { summary: { step: 'conversation' } },
+        // preset already set so the sticky classifier is skipped (one LLM call).
+        metadata: { summary: { step: 'conversation', preset: 'custom' } },
         createdAt: new Date(), updatedAt: new Date(),
       }],
       messageRows: [],
@@ -1175,7 +1326,8 @@ describe('Chat LLM Usage Metering', () => {
     const { app, record } = await buildAppWithRecorder({
       threadRows: [{
         id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
-        metadata: { summary: { step: 'conversation' } },
+        // preset already set so the sticky classifier is skipped (one LLM call).
+        metadata: { summary: { step: 'conversation', preset: 'custom' } },
         createdAt: new Date(), updatedAt: new Date(),
       }],
       messageRows: [],
@@ -1222,7 +1374,8 @@ describe('Chat LLM Usage Metering', () => {
     const { app, record } = await buildAppWithRecorder({
       threadRows: [{
         id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
-        metadata: { summary: { step: 'conversation' } },
+        // preset already set so the sticky classifier is skipped (one LLM call).
+        metadata: { summary: { step: 'conversation', preset: 'custom' } },
         createdAt: new Date(), updatedAt: new Date(),
       }],
       messageRows: [],
@@ -1249,7 +1402,8 @@ describe('Chat LLM Usage Metering', () => {
     const { app, record } = await buildAppWithRecorder({
       threadRows: [{
         id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
-        metadata: { summary: { step: 'conversation' } },
+        // preset already set so the sticky classifier is skipped (one LLM call).
+        metadata: { summary: { step: 'conversation', preset: 'custom' } },
         createdAt: new Date(), updatedAt: new Date(),
       }],
       messageRows: [],
@@ -2404,7 +2558,8 @@ describe('POST /chat/threads/:id/messages — button replies', () => {
 
   it('does NOT trigger button-reply handling for normal free-text messages', async () => {
     const { app, state } = await buildAppWithThread({
-      threadRows: threadRow({ summary: { step: 'conversation' } }),
+      // preset already set so the sticky classifier is skipped (one LLM call).
+      threadRows: threadRow({ summary: { step: 'conversation', preset: 'custom' } }),
       messageRows: [],
     });
 
@@ -2594,6 +2749,16 @@ describe('prompt injection defenses — buildBaseHeader Security section', () =>
     const prompt = buildBasePrompt('user_msg_ff00');
     expect(prompt).toContain('## Security');
     expect(prompt).toContain('<user_msg_ff00>');
+  });
+
+  it('greeting no longer re-asks "what kind of agent" or lists presets on the venue-change fall-through path', () => {
+    // On the venue-change fall-through path, invokeOnboardingLlm resumes with
+    // buildBasePrompt (preset cleared to undefined). Its greeting must use the
+    // neutral intent-first framing, not the removed preset-choice question.
+    const prompt = buildBasePrompt('user_msg_ff01');
+    expect(prompt).not.toContain('present the available presets');
+    expect(prompt).not.toContain('What kind of agent');
+    expect(prompt).toContain('What would you like your agent to do?');
   });
 
   it('includes the Security section in buildTradingPrompt', () => {

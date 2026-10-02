@@ -153,7 +153,7 @@ Delegates the form to `CreateAgentFlow`; delegates guided chat to
 > **Implementation status tracker** (coordinator-maintained):
 > - Part B (create form prompt-first + remove Suggested-skills): **DONE** (commit 2f0a7d11)
 > - Part C (edit form prompt-first): **DONE**
-> - Part A (guided chat preset classifier): **PENDING**
+> - Part A (guided chat preset classifier): **DONE**
 > - Part D (docs & tests): **PENDING**
 
 ### Part A — Guided chat (backend): remove the "what kind of agent" question; auto-select the preset
@@ -404,3 +404,9 @@ critical/high issues outstanding.
 
 ### [Part C] Edit form prompt-first
 - **LOW** — Pure JSX block move (`PromptInputBlock` now precedes `SkillPicker`); removed/added line sets are byte-identical. `SkillPicker.onChange` trading-session-clearing logic intact. No action needed.
+
+### [Part A] Guided chat preset classifier
+- **MEDIUM (RESOLVED)** — `buildBasePrompt`'s greeting re-asked the removed "what kind of agent" question / "present the available presets" on the venue-change fall-through path. Fixed: neutral intent-first greeting + skill-resolution framing; unit test added asserting the stale phrases are gone.
+- **LOW** — `classifyPreset` interpolates the untrusted first user message into the classifier prompt. Impact bounded (output constrained to one token, mapped to an enum, defaults to `custom`), so at worst a mis-route to `custom`. No fix required; note the input is untrusted if this prompt is reused elsewhere.
+- **LOW** — `classifyPreset` passes `maxTokens` in both provider config and request (mirrors other call-sites). Harmless.
+- **LOW** — Classifier always runs for the first natural-language message (sticky, once-per-thread) by design (D0).
