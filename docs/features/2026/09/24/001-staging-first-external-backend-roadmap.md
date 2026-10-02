@@ -93,7 +93,9 @@ Approval for one apply does not authorize the other.
 
 ## Phase 3: Generic External Backend And Skill Model
 
-9. **External Backend Genericization Discovery.** Satisfy all six ADR 015
+9. **External Backend Genericization Discovery.** ✅ **DONE 2026-10-02** —
+   [005-step9-external-backend-genericization-discovery.md](./005-step9-external-backend-genericization-discovery.md).
+   Satisfy all six ADR 015
    Discovery Exit Criteria: (1) symbol-level disposition for every export in
    `packages/domain/src/traderton/` and `packages/domain/src/trading/`; (2) an
    importer inventory (genericize / move / delete / defer); (3) the concrete
