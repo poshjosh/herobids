@@ -62,6 +62,15 @@ the page-chrome keys were dead), `public.notAvailableInLanguage`/`viewInEnglish`
 `agents.summary.*` keys are a different set). Verified: `pnpm lint`, web build,
 and the full web vitest suite green after removal.
 
+### Pass 009 — 2026-10-02 — DELETED 4 keys (via change 009, Part B3)
+Change [`009-skill-first-agent-creation`](./009-skill-first-agent-creation/001-plan.md)
+removed the create form's "Suggested skills" dropdown (a disguised type selector)
+and its dead code. The following keys were deleted from all three locales
+(`en`/`ar`/`hi`) in the same change: `agents.create.suggestedSkills`,
+`agents.create.suggestedSkills.custom`, `agents.create.suggestedSkills.trading`,
+`agents.create.suggestedSkills.personalAssistant`. See the "Removed by change
+009" table below.
+
 ### Pass B — PENDING (classification only; NO deletion)
 Sections B1 and B2 below are the Pass-B review surface. B1 is confirmed-live
 (matches emitted error codes). B2 needs per-key confirmation: for each, check
@@ -313,3 +322,18 @@ code · **KEEP (B2)** error-shaped, Pass-B review · **KEEP (C)** dynamic.
 | `status.starting` | starting |
 | `status.stopped` | stopped |
 | `status.unhealthy` | unhealthy |
+
+### Removed by change 009 (Part B3) — Suggested-skills dropdown (4)
+
+Deleted from all three locales (`en`/`ar`/`hi`) by
+[`009-skill-first-agent-creation`](./009-skill-first-agent-creation/001-plan.md)
+when the create form's "Suggested skills" dropdown and its dead code
+(`SuggestedSkillSetId`, `SUGGESTED_SKILL_SETS`, `resolveSuggestedSkillIds`,
+`IntentState.suggestedSkills`) were removed.
+
+| Key | English value | Status |
+|---|---|---|
+| `agents.create.suggestedSkills` | Suggested skills | DELETED (009) |
+| `agents.create.suggestedSkills.custom` | Choose skills manually | DELETED (009) |
+| `agents.create.suggestedSkills.trading` | Trading starter | DELETED (009) |
+| `agents.create.suggestedSkills.personalAssistant` | Personal assistant starter | DELETED (009) |

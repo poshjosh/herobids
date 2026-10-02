@@ -45,9 +45,8 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
       throw new Error('bot-management skill not found in API response');
     }
 
-    // Select the trading-capable skill — must switch to Custom preset first
-    await page.locator('select:has(option[value="personal-assistant"])').selectOption('custom');
-
+    // The "Suggested skills" dropdown was removed (change 009); skills are
+    // selected directly via the SkillPicker — no preset switch needed.
     // Skills are behind the "▸ Add skills (Optional)" expandable section.
     // Click it to reveal skill checkboxes.
     const addSkillsBtn = page.getByRole('button', { name: /Add skills/i });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SKILL_PRESET_MAP } from '@herobids/domain';
 import { formatObjectivePreview, resolveCapabilityFamilies } from './agent-display.js';
 
-describe('suggested skills resolution', () => {
+describe('skill preset map and objective preview', () => {
   it('domain SKILL_PRESET_MAP uses personal-assistant as the assistant preset key', () => {
     expect('personal-assistant' in SKILL_PRESET_MAP).toBe(true);
     expect('reminder' in SKILL_PRESET_MAP).toBe(false);

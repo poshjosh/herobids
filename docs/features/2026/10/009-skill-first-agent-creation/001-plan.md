@@ -154,7 +154,7 @@ Delegates the form to `CreateAgentFlow`; delegates guided chat to
 > - Part B (create form prompt-first + remove Suggested-skills): **DONE** (commit 2f0a7d11)
 > - Part C (edit form prompt-first): **DONE**
 > - Part A (guided chat preset classifier): **DONE**
-> - Part D (docs & tests): **PENDING**
+> - Part D (docs & tests): **DONE**
 
 ### Part A — Guided chat (backend): remove the "what kind of agent" question; auto-select the preset
 
@@ -410,3 +410,7 @@ critical/high issues outstanding.
 - **LOW** — `classifyPreset` interpolates the untrusted first user message into the classifier prompt. Impact bounded (output constrained to one token, mapped to an enum, defaults to `custom`), so at worst a mis-route to `custom`. No fix required; note the input is untrusted if this prompt is reused elsewhere.
 - **LOW** — `classifyPreset` passes `maxTokens` in both provider config and request (mirrors other call-sites). Harmless.
 - **LOW** — Classifier always runs for the first natural-language message (sticky, once-per-thread) by design (D0).
+
+### [Part D] Docs & tests
+- **LOW** — `agent-display.test.ts` describe renamed to "skill preset map and objective preview" (accurate; drops stale "suggested skills resolution" title). Cosmetic.
+- **LOW** — journey-18 uses text-based negative assertion `getByText(/Suggested skills/i).toHaveCount(0)` (mirrors file's existing style; robust). No action.

@@ -40,10 +40,11 @@ test.describe('Journey 18: Create AI Agent flow', () => {
     await expect(page).toHaveURL(/\/agents\/new/, { timeout: 5_000 });
 
     // The create page defaults to the plain form. Identity is derived from
-    // skills (no agent "type" selector), so the form opens on the generic
-    // "Suggested skills" helper rather than a type picker.
+    // skills (no agent "type" selector) and there is no "Suggested skills"
+    // dropdown — the objective/prompt input is the first field in the form.
     await expect(page.locator('.create-flow-card')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/Suggested skills/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Objective \/ prompt/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Suggested skills/i)).toHaveCount(0);
   });
 
   test('header switch toggles between guided chat and the plain form', async ({ page }) => {
@@ -59,7 +60,8 @@ test.describe('Journey 18: Create AI Agent flow', () => {
     // Switch to the plain form.
     await page.getByRole('button', { name: /^Use the form$/i }).click();
     await expect(page.locator('.create-flow-card')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/Suggested skills/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Objective \/ prompt/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Suggested skills/i)).toHaveCount(0);
 
     // Switch back to guided chat.
     await page.getByRole('button', { name: /^Use guided chat$/i }).click();
