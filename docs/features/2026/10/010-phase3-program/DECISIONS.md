@@ -136,3 +136,32 @@ home in `../../09/24/000-program/PROGRESS.md` and the Step-16 obligation list.
 | CF-11 | Open legal/product dispositions: the `exports-traderton` route, `trading-profile-reconciliation-saga`, `traderton-operator-defaults` (Step 9 Crit 6 Q1). Untouched; they keep working | Deferred with Steps 14–15 | Steps 14–15 |
 | CF-13 | **1→N external-backend forwarding** (P3-50): `EXTERNAL_BACKEND_CONFIG_JSON` forwards one backend's resolved `{definition, hmacSecret}` + descriptor; a genuine second backend's tool *invocation* over HMAC needs N-backend forwarding. Visibility is already generic (zero code change). | The single remaining item on the I12 code-change list | Step 16 |
 | CF-12 | Pre-existing failures captured at baseline (T0.2), including the worker launch-latency bug behind `RUN_UNSTABLE_LLM_LATENCY_TESTS` | Pre-existing | Separate |
+| CF-14 | Real-remote external-skill resolution via the live `npx skills` CLI against the pushed `traderton/skills` repo (Step 13 task 17). Verified locally against the T0.5 fixture source instead (T4.3); the real CLI cannot see unpushed work (D20) | D20 push gate | Post-push operator step |
+
+### Definition of Done — G0–G9 record (T5.2; closeout 2026-10-03)
+
+**"Done" means LOCALLY VERIFIED. It does NOT mean cutover-ready** (ENTRYPOINT §8).
+
+| Gate | Result | Evidence |
+|---|---|---|
+| **G0** Baseline captured before any edit | ✅ | TASKS Baseline table; `phase3-logs/g0-*.log`; all five suites exit 0 at `8d30dd46`/`84c37210`/`00963fc2` |
+| **G1** Static gates: `pnpm lint` 0 + `pnpm build` ok both repos; no new `any`/`@ts-ignore`/`as unknown as` | ✅ | herobids build+lint 0; traderton build+lint 0 (G2 run); I7: 0 new escape hatches in production (38 branch-diff hits all rename-touched pre-existing `as unknown as` in TEST files, incl. `__tests__/functional/helpers.ts`) |
+| **G2** The five mandated suites at DEFAULT gates all exit 0 | ✅ | **tt** `run-all-tests.sh --e2e` (unit/integration/boundary-e2e 7/7), `run-extra-tests.sh --all` (3/3), `run-integration.sh` (18/1-skip) — `phase3-logs/g2-tt-*.log`. **hb** `run-all-tests.sh --e2e` 9/9 tiers incl. **Cross-stack transport parity (rest+mcp)** + Playwright 16/16 — `g2-hb-hb-all.log`; `run-extra-tests.sh --all` exit 0, 14 PASS / 3 SKIP (the `RUN_UNSTABLE_LLM_LATENCY_TESTS` trio = CF-12), Tier 6 staging+Telegram green — `g2-hb-extra-full.log`. `RUN_UNSTABLE_LLM_LATENCY_TESTS` never set |
+| **G3** Local-boundary assertion before every suite | ✅ | `run-five.sh` asserts `env \| grep TRADERTON_` empty, no `TRADERTON_BOUNDARY_URL` in `.env`, `BOUNDARY_BASE_URL` unset — before each G2 suite; re-asserted at every invariant run |
+| **G4** Step exit criteria (Step 10 §7) | ✅ | RECONCILIATION.md §1 — every §7 task ✅ (shared vectors green both repos, matching digests; `sign.test.ts` unmodified after the rename; the Step-12 stub DELETED, I10 grep 0) |
+| **G5** Transport-risk characterisation on BOTH transports | ✅ | `write-idempotency.contract.test.ts` + `transport-parity.contract.test.ts` ×['rest','mcp']: same key→one effect, changed payload→`validation.invalid_payload`, response-lost→reconcilable, outage/recovery→typed fail-closed no crash/hang, code+retryable verbatim; xstack parity against the real MCP route (4 MCP legs) |
+| **G6** The seam does not leak | ✅ | I2/I3/I3b: no transport type above the seam, not exported, absent from the public d.ts; requestId+idempotencyKey first-class on both transports (I5) |
+| **G7** Contract tests parameterised over `['rest','mcp']` pass on both | ✅ | `transport-parity.contract.test.ts` + the T0.6 characterisation suite on both; the hb `--e2e` Cross-stack tier ran both |
+| **G8** Genericity (`INVARIANTS.md` all green) | ✅ | I1 visibility-path 0 (the `deriveReadiness` family hit is a recorded readiness stay, Step 14/15); I6 descriptor sole authority; I12 written answer below |
+| **G9** Carried-forward obligations recorded (BLOCKING) | ✅ | CF-3..CF-14 above, each with an evidence path + a home in the program `PROGRESS.md` and the Step-16 obligation list (roadmap §Step 16). The verbatim G9 sentence is in the completion note (`021-phase3-completion-note.md`) |
+
+**I12 written answer (G8):** *Could a second, unrelated backend be registered
+with ZERO platform code change?* **For tool visibility — yes:** add an
+`externalBackends[]` entry (its `baseUrl`, `caller`, `hmacSecretRef`,
+`trustedDescriptorSigningKeys`, `approvedSourceSkillRefs`, pinning) + publish a
+signed descriptor; the generic matcher/resolver iterate the registry and name no
+backend (proven by the `example-echo` genericity test). **The one remaining
+code-change** is for *tool invocation over HMAC*: `EXTERNAL_BACKEND_CONFIG_JSON`
+forwards a single backend's resolved `{definition, hmacSecret}` + descriptor, so a
+genuine second backend's writes need the 1→N forwarding (CF-13, Step 16). The
+remaining-code-change list is therefore exactly one item, recorded.

@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T5.1** (closeout — full DoD G0–G9 + `RECONCILIATION.md`) — Block 4 ✅ (T4.1–T4.3; publication chain verified end to end on both transports). ←
+**Current cursor:** **COMPLETE** — Phase 3 Steps 11–13 locally verified (DoD G0–G9 all ✅; see `RECONCILIATION.md` + `../021-phase3-completion-note.md`). Steps 14–16 remain (D12); branches unpushed, await the operator's push/merge (CF-8).
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -233,11 +233,11 @@ never pushed), and an update to this file (status + cursor + running notes),
 
 ## Block 5 — Closeout
 
-- ⬜ **T5.1 Run the full Definition of Done** (ENTRYPOINT §8, G0–G9). Write a
+- ✅ **T5.1 Run the full Definition of Done** (ENTRYPOINT §8, G0–G9). Write a
   `RECONCILIATION.md` in this folder mapping every Step-10 §7 task and every
   Step-9 discovery disposition to exactly one outcome: ✅ done / 🕓
   deferred-with-note / ⤴ escalated / 🧱 out-of-scope. **No item unclassified.**
-- ⬜ **T5.2 Record carried-forward obligations (G9, BLOCKING).** Into this
+- ✅ **T5.2 Record carried-forward obligations (G9, BLOCKING).** Into this
   folder's `DECISIONS.md`, the program `PROGRESS.md`, and the Step-16 obligation
   list, each with its evidence path. Minimum set: the REST differential against
   the pinned oracle (D10); representative load; no metrics system exists (so
@@ -246,7 +246,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   path; the push gate; the real signing key; the open legal/product dispositions;
   and the **conditional third differential leg** if an MCP transport is reachable
   when Step 16 is planned.
-- ⬜ **T5.3 Finalise `ESCALATIONS.md`** as the single operator batch, and update
+- ✅ **T5.3 Finalise `ESCALATIONS.md`** as the single operator batch, and update
   the program `PROGRESS.md` Steps 11–13. Write a short completion note under
   `docs/features/2026/10/`.
   - Exit: Definition of Done met; the G9 verbatim sentence present in the
@@ -791,6 +791,23 @@ composes the REAL unit:
   were always clear.) build + lint green; I7 0.
 - No production code changed (T4.3 surfaced no gap). Heavy `--e2e`/`--all` suites
   owed at closeout G2.
+
+
+**T5.1–T5.3 — closeout (DoD G0–G9).** herobids docs commit below. All nine gates
+✅ (DECISIONS §5 G0–G9 record): G0 baseline; G1 build+lint 0 both repos, I7 0 new
+production escape hatches; **G2 all five mandated suites exit 0 at default gates**
+(tt `--e2e`/`--all`/integration; hb `--e2e` 9/9 tiers incl. the Cross-stack
+transport-parity rest+mcp tier + Playwright 16/16; hb `--all` 14 PASS/3 SKIP =
+CF-12 trio, Tier-6 staging+Telegram green — logs `phase3-logs/g2-*`); G3 asserted
+before each suite; G4 every Step-10 §7 task ✅ (`RECONCILIATION.md`); G5 transport
+risk on both transports; G6 seam no-leak; G7 contract suites ×['rest','mcp']; G8
+genericity (I1 visibility 0 + the I12 written answer); **G9 carried obligations
+CF-3..CF-14 recorded** in DECISIONS §5 + program PROGRESS + the Step-16 list.
+Wrote `RECONCILIATION.md` (every §7 task + Step-9 disposition classified, none
+unclassified) and the completion note `../021-phase3-completion-note.md` with the
+**verbatim G9 sentence**. ESCALATIONS finalised: **E1** only (Tier-6 staging
+contact policy); N1–N5 pre-seeded, none blocking. CHANGELOG updated. The three
+branches are unpushed and await the operator's push/merge decision (CF-8).
 
 ---
 
