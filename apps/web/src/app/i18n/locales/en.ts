@@ -621,7 +621,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.connectionMeta': 'Provider: {provider} · Connection: {connectionStatus} · Grant: {grantStatus}',
   'agents.capabilityPage.reference': 'Reference: {reference}',
   'agents.capabilityPage.unbind': 'Revoke',
-  'agents.capabilityPage.bind': 'Assign to agent',
+  'agents.capabilityPage.bind': 'Assign',
   'agents.capabilityPage.bindFailed': 'Could not assign {label}: {error}',
   'agents.capabilityPage.manageConnections': 'Manage connections',
 

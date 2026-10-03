@@ -533,7 +533,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.connectionMeta': 'प्रदाता: {provider} · कनेक्शन: {connectionStatus} · अनुदान: {grantStatus}',
   'agents.capabilityPage.reference': 'संदर्भ: {reference}',
   'agents.capabilityPage.unbind': 'रद्द करें',
-  'agents.capabilityPage.bind': 'एजेंट को असाइन करें',
+  'agents.capabilityPage.bind': 'असाइन करें',
   'agents.capabilityPage.bindFailed': '{label} असाइन नहीं कर सका: {error}',
   'agents.capabilityPage.manageConnections': 'कनेक्शन प्रबंधित करें',
 

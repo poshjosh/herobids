@@ -533,7 +533,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.connectionMeta': 'المزوّد: {provider} · الاتصال: {connectionStatus} · المنحة: {grantStatus}',
   'agents.capabilityPage.reference': 'المرجع: {reference}',
   'agents.capabilityPage.unbind': 'إلغاء',
-  'agents.capabilityPage.bind': 'تعيين للوكيل',
+  'agents.capabilityPage.bind': 'تعيين',
   'agents.capabilityPage.bindFailed': 'تعذر تعيين {label}: {error}',
   'agents.capabilityPage.manageConnections': 'إدارة الاتصالات',
 
