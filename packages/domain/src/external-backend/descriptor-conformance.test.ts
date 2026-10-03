@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { createHash, createPublicKey, verify } from 'node:crypto';
+import { createHash, createPublicKey } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
+import {
+  canonicalizeJcs,
+  resolveDescriptorTools,
+  toolsListAgrees,
+  verifyDescriptorSignature,
+} from './descriptor.js';
 
 /**
  * Descriptor conformance fixtures (Phase 3 SEAM.md §3.2; rules: Step 10 §3
@@ -136,7 +142,6 @@ const ManifestSchema = z
 type Descriptor = z.infer<typeof DescriptorSchema>;
 type DescriptorWrapper = z.infer<typeof DescriptorWrapperSchema>;
 type ToolsList = z.infer<typeof ToolsListSchema>;
-type BackendDefinition = z.infer<typeof BackendDefinitionSchema>;
 type Variant = z.infer<typeof VariantSchema>;
 
 function readFixture(name: string): Buffer {
@@ -166,28 +171,9 @@ function toolsListOf(file: string): ToolsList {
   return ToolsListSchema.parse(readJson(file));
 }
 
-/**
- * RFC 8785 (JCS) for the descriptor value domain (Step 10 §3, P3-3): objects,
- * arrays, strings, booleans, null and safe integers. Keys sort by UTF-16 code
- * units; primitives serialize as JSON.stringify. Anything else throws.
- */
-function canonicalizeJcs(value: unknown): string {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
-  if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value)) throw new Error(`JCS value domain allows safe integers only, got ${value}`);
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return `[${value.map((item) => canonicalizeJcs(item)).join(',')}]`;
-  if (typeof value === 'object') {
-    const proto: unknown = Object.getPrototypeOf(value);
-    if (proto !== Object.prototype && proto !== null) throw new Error('JCS value domain allows plain objects only');
-    const members = Object.entries(value)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, member]) => `${JSON.stringify(key)}:${canonicalizeJcs(member)}`);
-    return `{${members.join(',')}}`;
-  }
-  throw new Error(`JCS value domain does not include ${typeof value}`);
-}
+// canonicalizeJcs, toolsListAgrees, verifyDescriptorSignature and the pipeline
+// are the PRODUCTION primitives (./descriptor.js), so the well-formedness block
+// below proves the real code against the fixtures, not a test copy of it.
 
 function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -211,28 +197,6 @@ function digestFixtureDir(): string {
   return hash.digest('hex');
 }
 
-/**
- * The `tools/list` cross-check (Step 10 §3; DT4/D16 — proposed, normative when
- * T2.2/T3.2 implement): same name set as the union of the descriptor's tools,
- * and per tool `description` string-equal and `inputSchema` JCS-equal.
- * Duplicate listed names disagree; compare after exhausting `nextCursor`
- * pagination (each fixture is one complete page); other Tool fields (title,
- * annotations, outputSchema, _meta) are not compared, nor is `category`.
- */
-function toolsListAgrees(descriptor: Descriptor, toolsList: ToolsList): boolean {
-  const declared = new Map(descriptor.sourceSkills.flatMap((skill) => skill.tools).map((tool) => [tool.name, tool]));
-  const listedNames = new Set(toolsList.tools.map((tool) => tool.name));
-  if (listedNames.size !== toolsList.tools.length || listedNames.size !== declared.size) return false;
-  return toolsList.tools.every((listed) => {
-    const tool = declared.get(listed.name);
-    return (
-      tool !== undefined &&
-      tool.description === listed.description &&
-      canonicalizeJcs(tool.inputSchema) === canonicalizeJcs(listed.inputSchema)
-    );
-  });
-}
-
 const manifest = ManifestSchema.parse(readJson('manifest.json'));
 const descriptorFiles = [...new Set(manifest.variants.map((v) => v.descriptorFile))].sort();
 const toolsListFiles = [
@@ -248,8 +212,8 @@ function variantById(id: string): Variant {
 }
 
 function verifiesUnderManifestKey(wrapper: DescriptorWrapper): boolean {
-  const bytes = Buffer.from(canonicalizeJcs(wrapper.descriptor), 'utf8');
-  return verify(null, bytes, signingPublicKey, Buffer.from(wrapper.signature, 'base64'));
+  // Exercises the production verifier against the manifest's PEM SPKI key.
+  return verifyDescriptorSignature(wrapper.descriptor, wrapper.signature, manifest.signingKey.publicKeyPem);
 }
 
 function jcsEqual(a: unknown, b: unknown): boolean {
@@ -561,22 +525,9 @@ describe('descriptor conformance fixtures are well-formed', () => {
   });
 });
 
-// ── Pipeline contract: assertions written now, green at T3.1 ────────────────
+// ── Pipeline contract: the real T3.1 pipeline (./descriptor.js) ─────────────
 
-/** The shape the T3.1 pipeline is expected to satisfy (adapt this mapping if its signature differs). */
-type ResolveDescriptorTools = (input: {
-  definition: BackendDefinition;
-  wrapper: DescriptorWrapper;
-  installedSkillRef: string;
-  now: Date;
-  toolsList?: ToolsList;
-}) => { outcome: 'tools_exposed'; tools: Array<{ name: string }> } | { outcome: 'instruction_only'; reason: string };
-
-const resolveDescriptorTools: ResolveDescriptorTools = () => {
-  throw new Error('TODO(T3.1): import the real pipeline');
-};
-
-describe.skip('descriptor conformance pipeline — TODO(T3.1) flip to describe', () => {
+describe('descriptor conformance pipeline', () => {
   it.each(manifest.variants)('$id → $expected.outcome', (variant) => {
     const toolsList = variant.toolsListFile === undefined ? undefined : toolsListOf(variant.toolsListFile);
     const result = resolveDescriptorTools({

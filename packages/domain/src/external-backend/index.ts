@@ -11,3 +11,4 @@ export * from './sign.js';
 export * from './client.js';
 export * from './request-id.js';
 export * from './client-config.js';
+export * from './descriptor.js';
