@@ -271,6 +271,15 @@ header "5 / API smoke tests"
 # xstack.override.yml we pass to the up below). Unconditional — no flag.
 ensure_boundary_up
 
+# Cross-stack transport parity (Phase 3 T2.3, n36 → P3-43): the REAL herobids
+# McpTransport + RestTransport against the REAL traderton boundary route
+# (hard-coded localhost:8080; MCP enabled via the herobids-owned xstack
+# overlay). HEROBIDS_XSTACK_TRANSPORT_PARITY is process-scoped so G3's shell
+# stays clean; no URL is read from the ambient env (the test asserts
+# baseUrl === http://localhost:8080 before any call).
+run_tier "Cross-stack transport parity (rest + mcp)" \
+  bash -c "cd '${ROOT}' && HEROBIDS_XSTACK_TRANSPORT_PARITY=1 node --env-file=.env node_modules/vitest/vitest.mjs run apps/worker/src/__tests__/xstack/transport-parity.xstack.test.ts"
+
 log "Starting API + worker …"
 docker compose -f "${ROOT}/docker-compose.yaml" -f "${HEROBIDS_OVERLAY}" up -d --build api worker
 API_STARTED=true

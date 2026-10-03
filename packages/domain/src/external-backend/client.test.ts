@@ -472,11 +472,15 @@ describe('ExternalBackendClient.poll', () => {
 // IV-2: the per-attempt transport timeout is min(requestTimeoutMs, deadlineAt −
 // now), falling back to requestTimeoutMs once the deadline has passed. Observed
 // through the exact value the REST transport hands AbortSignal.timeout.
+function spyAbortSignalTimeout() {
+  return vi.spyOn(AbortSignal, 'timeout');
+}
+
 describe('ExternalBackendClient — per-attempt timeout bounded by the deadline (IV-2)', () => {
-  let timeoutSpy: ReturnType<typeof vi.spyOn>;
+  let timeoutSpy: ReturnType<typeof spyAbortSignalTimeout>;
 
   beforeEach(() => {
-    timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    timeoutSpy = spyAbortSignalTimeout();
   });
   afterEach(() => {
     timeoutSpy.mockRestore();
@@ -486,7 +490,7 @@ describe('ExternalBackendClient — per-attempt timeout bounded by the deadline 
     const calls = timeoutSpy.mock.calls;
     const last = calls[calls.length - 1];
     if (!last) throw new Error('AbortSignal.timeout was never called');
-    return last[0] as number;
+    return last[0];
   }
 
   it('bounds each attempt by the time remaining to the deadline', async () => {

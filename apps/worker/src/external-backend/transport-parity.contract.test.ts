@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { ExternalBackendProtocol } from '@herobids/domain';
 import {
   createExternalBackendClient,
   type ExternalBackendClient,
   type ExternalBackendFailureCode,
-  type ExternalBackendProtocol,
   type ExternalBackendSubject,
 } from '@herobids/domain/external-backend';
 import {

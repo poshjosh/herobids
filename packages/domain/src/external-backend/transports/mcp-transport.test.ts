@@ -234,7 +234,7 @@ describe('McpTransport — failures never throw', () => {
   });
 
   it('maps a non-2xx initialize to transport_error carrying the status', async () => {
-    vi.stubGlobal('fetch', async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    vi.stubGlobal('fetch', async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const method = (init?.method ?? 'GET').toUpperCase();
       if (method !== 'POST') return new Response(null, { status: 405, headers: { allow: 'POST' } });
       return new Response('upstream down', { status: 503 });
