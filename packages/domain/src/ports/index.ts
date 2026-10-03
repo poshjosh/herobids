@@ -17,4 +17,5 @@ export * from './preset-transition.js';
 export * from './blueprint-execution-capability.js';
 export * from './external-skill-provider.js';
 export * from './external-skill-installer.js';
+export * from './external-backend-descriptor-source.js';
 export * from './browser-pool.js';

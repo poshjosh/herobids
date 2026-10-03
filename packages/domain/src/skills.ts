@@ -33,6 +33,16 @@ export interface SkillDefinition {
   id: string;
   /** Unique human-readable slug: `author/name` (e.g. `system/trading`). */
   slug?: string;
+  /**
+   * The installed skills.sh source ref (`owner/repo/skill`, D11) this skill
+   * resolves from, when it maps to an external backend. The generic tool-visibility
+   * resolver (Step 12 T3.2) matches `sourceRef` against each registered backend's
+   * `approvedSourceSkillRefs`; a match drives tool exposure from the backend's
+   * signed descriptor. Absent for ordinary platform skills (no external backend).
+   * The three built-in trading skills carry their D11 refs via
+   * `BUILTIN_TRADING_SOURCE_REFS` (data, not an identity branch).
+   */
+  sourceRef?: string;
   /** Optional skill revision — incremented when the definition changes materially. */
   revision?: number;
   name: string;
@@ -98,12 +108,27 @@ You can also:
 };
 
 /**
+ * D11 source refs for the three built-in trading skills (Step 12 P3-48). The
+ * built-ins are platform-internal `SkillDefinition`s (no installed skills.sh
+ * ref), so this constant map is the bridge that lets the generic tool-visibility
+ * resolver match them against `externalBackends[].approvedSourceSkillRefs`. These
+ * refs are the operator-approved set in `config/default.yaml` and the T4.1 seed
+ * names — a declared datum, never a tool-name allow-list or identity branch.
+ */
+export const BUILTIN_TRADING_SOURCE_REFS: Readonly<Record<string, string>> = {
+  trading: 'traderton/skills/crypto-trading',
+  'bot-management': 'traderton/skills/crypto-bot-management',
+  'risk-monitoring': 'traderton/skills/crypto-risk-monitoring',
+};
+
+/**
  * `bot-management` skill — used by the `trading` preset.
  * Allows the agent to create, start, stop, and monitor bots.
  */
 export const BOT_MANAGEMENT_SKILL: SkillDefinition = {
   id: 'bot-management',
   slug: 'system/bot-management',
+  sourceRef: BUILTIN_TRADING_SOURCE_REFS['bot-management'],
   name: 'Bot Management',
   description: 'Create, start, stop, and monitor trading bots.',
   instructions: `You have access to bot-management tools.
@@ -141,6 +166,7 @@ export const BOT_MANAGEMENT_SKILL: SkillDefinition = {
 export const TRADING_SKILL: SkillDefinition = {
   id: 'trading',
   slug: 'system/trading',
+  sourceRef: BUILTIN_TRADING_SOURCE_REFS['trading'],
   name: 'Trading',
   description: 'Submit trade decisions and inspect trading state.',
   instructions: `You have access to trading tools, grouped by workflow phase.
@@ -187,6 +213,7 @@ To decide, you can:
 export const RISK_MONITORING_SKILL: SkillDefinition = {
   id: 'risk-monitoring',
   slug: 'system/risk-monitoring',
+  sourceRef: BUILTIN_TRADING_SOURCE_REFS['risk-monitoring'],
   name: 'Risk Monitoring',
   description: 'Watch open positions and alert the user when risk thresholds are approaching.',
   instructions: `You have access to risk-monitoring and alerting tools.
