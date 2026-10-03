@@ -13,7 +13,7 @@
 - [DONE] **Item 4 — Generic web renderers** (overview tiles + Details disclosure, feed table, collapsed feeds, `labelKey`/`valueKey` localization).
 - [DONE] **Item 5 — `TradingCapabilityPresentation` layout**.
 - [DONE] **Item 6 — i18n keys** (en/ar/hi).
-- [TODO] **Item 7 — Remove orphaned `formatPnl`/`pnlColor` (+ web `decimal.js`), correct ADR 014 Exposure note**.
+- [DONE] **Item 7 — Remove orphaned `formatPnl`/`pnlColor` (+ web `decimal.js`), correct ADR 014 Exposure note**.
 - [TODO] **Item 8 — Tests** (traderton, API, web, i18n, E2E).
 - [TODO] **Item 9 — UAT doc update, ledger fixture, browser UAT runs (desktop + mobile)**.
 - [TODO] **Item 10 — CHANGELOGs + verification**.
@@ -535,6 +535,9 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
   fill (direction still correct).
 
 ## Outstanding Issues
+
+### Item 7 — Remove orphans + ADR correction (no CRITICAL/HIGH)
+- [LOW] `apps/web/src/lib/formatting.ts` ends without a trailing newline (matches pre-existing file style; not a regression).
 
 ### Item 5 — TradingCapabilityPresentation layout (no CRITICAL/HIGH)
 - [LOW] Funding banner's "Dismiss" button is still hard-coded English (plan marked this optional/out-of-scope); revisit under i18n hygiene.

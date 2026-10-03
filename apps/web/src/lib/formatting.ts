@@ -1,5 +1,4 @@
 import type { IntlShape } from 'react-intl';
-import Decimal from 'decimal.js';
 
 export function formatShortDate(intl: IntlShape, iso: string | null): string {
   if (!iso) {
@@ -28,20 +27,4 @@ export function formatCurrencyFromCents(
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-}
-
-// Retained for the platform Exposure (trading telemetry) surface only; capability surfaces use server-computed presentation emphasis (C3b).
-export function formatPnl(pnl: string | number | null | undefined): string {
-  if (pnl == null) return '—';
-  const d = new Decimal(pnl);
-  const absValue = d.abs().toFixed(2);
-  return d.gte(0) ? `+$${absValue}` : `-$${absValue}`;
-}
-
-export function pnlColor(pnl: string | number | null | undefined): string {
-  if (pnl == null) return 'var(--color-text-muted)';
-  const d = new Decimal(pnl);
-  if (d.gt(0)) return 'var(--color-success)';
-  if (d.lt(0)) return 'var(--color-danger)';
-  return 'var(--color-text)';
 }

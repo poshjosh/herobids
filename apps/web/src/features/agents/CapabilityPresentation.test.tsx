@@ -36,7 +36,8 @@ describe('capability presentation components', () => {
     expect(html).not.toContain('trading');
   });
 
-  // These generic components never import trading formatters (`formatPnl`/`pnlColor`);
+  // These generic components never import trading formatters (the old
+  // `formatPnl`/`pnlColor` helpers are now removed entirely);
   // they only read the `emphasis` field and map it to theme tokens. The value
   // itself is rendered verbatim and never drives the color — a negative-looking
   // value with positive emphasis still renders the success (not danger) token.
