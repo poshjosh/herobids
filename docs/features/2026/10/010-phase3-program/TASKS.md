@@ -324,7 +324,7 @@ planning that later tasks depend on:
   mandated suite, so it ran at G0; see P3-1 and ESCALATIONS E1.
 
 **T0.3 — shared signing vectors (pre-rename).** traderton `phase3-mcp-surface`
-`a9ca3db`; herobids `phase3-external-backend` (this commit). Implementer wrote
+`a9ca3db`; herobids `phase3-external-backend` `3d6587f8`. Implementer wrote
 the generator, fixture and tests; CodeReviewer: 0 CRITICAL/HIGH, 2 MEDIUM fixed
 (real-app rejection now asserts `signature mismatch`; this record), LOWs L1–L3
 fixed, L4–L6 parked below.
