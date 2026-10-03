@@ -12,7 +12,7 @@
 # WHY THIS EXISTS
 #   herobids no longer executes trades in-process; its trading tools call the
 #   traderton REST boundary at http://localhost:8080 (herobids config default
-#   `boundary.baseUrl`). The plain `reset-and-run.sh` / `build-and-run.sh` bring
+#   `externalBackends.traderton.endpoint.baseUrl`). The plain `reset-and-run.sh` / `build-and-run.sh` bring
 #   up ONLY herobids and do NOT start the boundary, so trading paths fail-closed
 #   (503) with no boundary. This script brings both stacks up together.
 #

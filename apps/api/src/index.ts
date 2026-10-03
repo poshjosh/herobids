@@ -43,9 +43,9 @@ import { setupRoutes } from './routes/setup.js';
 import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
-import { loadConfig } from './config.js';
-import { ExternalSkillProviderHttp } from '@herobids/domain';
-import { createExternalBackendClient } from '@herobids/domain/external-backend';
+import { loadConfig, resolveConfiguredExternalBackend } from './config.js';
+import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, ExternalSkillProviderHttp, findExternalBackend } from '@herobids/domain';
+import { buildExternalBackendClientConfig, createExternalBackendClient } from '@herobids/domain/external-backend';
 import { TradingProfileReconciliationSaga } from './agents/trading-profile-reconciliation-saga.js';
 import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
@@ -192,30 +192,29 @@ const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
 // L3c: the SECOND Traderton client — constructed at the API composition root for
 // user-initiated bot side effects (POST /bots, start/stop, PATCH restart). The
 // subject actor is type:'user' with ownerId = request.userId, bound per-request
-// inside botRoutes. Undefined when unconfigured (no baseUrl/secret) → the write
+// inside botRoutes. Bound to the registry entry named by tradingBackendId (P3-17).
+// Undefined when that entry cannot be resolved (e.g. no HMAC secret) → the write
 // endpoints return a typed precondition; NO silent fallback to the lifecycle queue.
-const tradertonBotClient = (appConfig.boundary.baseUrl && appConfig.boundary.hmacSecret)
-  ? createExternalBackendClient({
-      baseUrl: appConfig.boundary.baseUrl,
-      consumerId: appConfig.boundary.consumerId,
-      keyId: appConfig.boundary.keyId,
-      hmacSecret: appConfig.boundary.hmacSecret,
-      requestTimeoutMs: appConfig.boundary.requestTimeoutMs,
-    })
+const tradingBackend = resolveConfiguredExternalBackend(appConfig, appConfig.tradingBackendId);
+const tradingBackendClient = tradingBackend.ok
+  ? createExternalBackendClient(buildExternalBackendClientConfig(tradingBackend.data.definition, tradingBackend.data.hmacSecret))
   : undefined;
+const tradingBackendTimeoutMs =
+  findExternalBackend(appConfig.externalBackends, appConfig.tradingBackendId)?.endpoint.requestTimeoutMs
+  ?? DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS;
 
 const profileReconciliationSaga = new TradingProfileReconciliationSaga(
   new TradingProfileReconciliationOutboxRepository(db),
   {
-    invoke: (input) => tradertonBotClient
-      ? tradertonBotClient.invoke({
+    invoke: (input) => tradingBackendClient
+      ? tradingBackendClient.invoke({
         toolName: input.toolName,
         payload: input.payload,
         subject: input.subject,
         requestId: input.requestId,
         idempotencyKey: input.idempotencyKey,
         correlationId: input.correlationId,
-        deadlineMs: appConfig.boundary.requestTimeoutMs,
+        deadlineMs: tradingBackendTimeoutMs,
       })
       : Promise.resolve({
         kind: 'transport_error' as const,
@@ -273,8 +272,8 @@ await telegramWebhookHandler(
   { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps,
   appConfig.agentRiskDefaults,
   appConfig.agentRuntime.llm.modelDefaults,
-  tradertonBotClient,
-  appConfig.boundary.requestTimeoutMs,
+  tradingBackendClient,
+  tradingBackendTimeoutMs,
   profileReconciliationSaga,
 );
 
@@ -286,38 +285,38 @@ await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPl
 // The AGENT trading-evidence endpoints (state/activity/outcomes/positions)
 // source fills/journal/positions over the Traderton read boundary, bound
 // per-request to the requesting user's subject — same client used for writes.
-await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient, tradingBackendClient, tradingBackendTimeoutMs);
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────
-await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradertonBotClient });
+await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradingBackendClient });
 await providerRoutes(app, appConfig.venues);
 
 // ── Platform primitives ───────────────────────────────────────────────────
-await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans, tradertonBotClient, profileReconciliationSaga);
+await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans, tradingBackendClient, profileReconciliationSaga);
 
 // ── Gmail OAuth connection flow ────────────────────────────────────────────
 await connectionsOauthRoutes(app, db, appConfig, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradertonBotClient, appConfig.boundary.requestTimeoutMs, profileReconciliationSaga);
+await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
 // venue_accounts to trading bindings and further reframe bots as internals.
-await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, tradertonBotClient);
-await journalRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
-await positionRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
-await reconciliationRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
-await dashboardRoutes(app, db, appConfig.plans, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, tradingBackendClient);
+await journalRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
+await positionRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
+await reconciliationRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
+await dashboardRoutes(app, db, appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs);
 
 // ── Core platform services ─────────────────────────────────────────────────
 // Billing routes — always registered; the summary endpoint is needed even when
 // billing is disabled so the web UI can render the "not enabled" state.
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
-await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradertonBotClient, appConfig.boundary.requestTimeoutMs, profileReconciliationSaga);
+await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
 await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults, profileReconciliationSaga);
-await analyticsRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await analyticsRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);
 const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
@@ -325,7 +324,7 @@ const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
   appConfig.plans,
   appConfig.usageBilling?.defaultRateCardName ?? 'default',
 );
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues, tradertonBotClient, profileReconciliationSaga);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues, tradingBackendClient, profileReconciliationSaga);
 await skillsRoutes(app, db, appConfig.plans, (() => {
   const ext = appConfig.externalSkills;
   if (!ext.enabled) return null;
@@ -342,7 +341,7 @@ await agentDocumentRoutes(app, db);
 // Agent trading-evidence exports source fills/journal/positions over the
 // Traderton read boundary, bound per-request to the requesting user's subject.
 // The read client is the same boundary client used for user-initiated writes.
-await exportRoutes(app, db, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await exportRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
 await agentEvaluationRoutes(app, evaluationQueue, db, {
   storageRoot: appConfig.evaluation.storageRoot,
   maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
@@ -360,7 +359,7 @@ await agentEvaluationRoutes(app, evaluationQueue, db, {
 await platformAssessmentReviewRoutes(app, manualReviewQueue, db, {
   platformAssessorEnabled: appConfig.platformAssessor?.enabled ?? false,
 });
-await actorHealthRoutes(app, db, redisClient, tradertonBotClient, appConfig.boundary.requestTimeoutMs);
+await actorHealthRoutes(app, db, redisClient, tradingBackendClient, tradingBackendTimeoutMs);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
 
 // ── Tool schema & discovery endpoints ─────────────────────────────────────

@@ -378,15 +378,34 @@ nomad:
   terminationPollIntervalMs: 30000       # how often to poll Nomad for agent allocation crashes (ms)
   requestTimeoutMs: 10000                # Nomad HTTP API request timeout (ms)
 
-# The Traderton REST boundary herobids consumes (L3a).
-boundary:
-  baseUrl: http://localhost:8080         # local compose boundary; override: TRADERTON_BOUNDARY_URL
-  consumerId: herobids                   # override: TRADERTON_BOUNDARY_CONSUMER_ID
-  keyId: current                         # override: TRADERTON_BOUNDARY_KEY_ID
-  hmacSecret: ""                         # override: TRADERTON_BOUNDARY_HMAC_SECRET
-  requestTimeoutMs: 10000                # per-request timeout (ms); override: TRADERTON_BOUNDARY_TIMEOUT_MS
-  idempotencyRetentionHours: 168         # informational — mirrors the boundary's retention
-
+# External Backend registry (Step 10 §1) — operator registration records, keyed by backendId.
+# Transport + trust metadata ONLY (ADR 015 §3). Parsed into ExternalBackendDefinition[].
+externalBackends:
+  traderton:
+    enabled: true
+    endpoint:
+      baseUrl: http://localhost:8080        # local compose boundary; override: TRADERTON_BOUNDARY_URL
+      contractVersion: "1.0"                # 005 invocation envelope version
+      protocol: rest                        # rest | mcp; mcp only in development/test (D19), YAML only
+      # toolProtocolOverrides: {}           # optional per-tool protocol; absent = every tool uses `protocol`
+      # mcpPath: /mcp                       # required when protocol or any override is mcp
+      requestTimeoutMs: 10000               # per-request timeout (ms); override: TRADERTON_BOUNDARY_TIMEOUT_MS
+    caller:
+      consumerId: herobids                  # override: TRADERTON_BOUNDARY_CONSUMER_ID
+      keyId: current                        # override: TRADERTON_BOUNDARY_KEY_ID
+      hmacSecretRef: TRADERTON_BOUNDARY_HMAC_SECRET   # NAME of the env var holding the HMAC secret — never the secret
+    health:
+      readyPath: /health/ready              # carried for later health gating; unread in Step 11
+    trustedDescriptorSigningKeys: []        # ed25519 public keys (dev key at T4.2)
+    approvedSourceSkillRefs:                # D11
+      - traderton/skills/crypto-trading
+      - traderton/skills/crypto-bot-management
+      - traderton/skills/crypto-risk-monitoring
+    descriptorPinning:
+      mode: maxAge
+      seconds: 3600
+# Registry entry the first-party trading call sites use until Step 14 removes them.
+tradingBackendId: traderton
 # Agent runtime — behavior policy for agent containers.
 #
 # These are OPERATOR-LEVEL FALLBACKS. Each agent can override every runtime

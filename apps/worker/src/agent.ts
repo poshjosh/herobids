@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, BoundaryConfigSchema } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
 import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills, agentConnections, connections } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -70,11 +70,8 @@ import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScou
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, parseEconomicCalendarBoundaryPayload, type RegimeBoundaryFreshness } from './venue-intelligence.js';
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
-import { createExternalBackendClient, type ExternalBackendClientConfig } from '@herobids/domain/external-backend';
-import { createTradertonReadBoundary, type TradertonReadBoundary } from './traderton/read-adapter.js';
+import { buildAgentExternalBackendPorts } from './external-backend/agent-ports.js';
 import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js';
-import { createTradertonSideEffectBoundary, createSubjectBoundWriteBoundary } from './traderton/write-adapter.js';
-import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
 import { getWorkspacePaths } from './tools/workspace.js';
@@ -117,9 +114,9 @@ const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOU
 const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
 const EXTERNAL_SKILLS_CONFIG_JSON = process.env['EXTERNAL_SKILLS_CONFIG_JSON'];
 const BROWSER_POOL_URL = process.env['BROWSER_POOL_URL'];
-// Traderton REST boundary config (L3b). Carries the HMAC secret — never passed
-// to a tool; only the worker adapter (holding the ExternalBackendClient) sees it.
-const BOUNDARY_CONFIG_RAW = process.env['BOUNDARY_CONFIG_JSON'];
+// Resolved trading backend (ResolvedExternalBackend JSON). Carries the HMAC
+// secret — never passed to a tool; only the client built from it sees it.
+const EXTERNAL_BACKEND_CONFIG_RAW = process.env['EXTERNAL_BACKEND_CONFIG_JSON'];
 
 // ── HTTP/1.1 fetch for sites that block HTTP/2 (e.g. Forex Factory) ─────
 
@@ -726,7 +723,7 @@ function refreshCapabilityPolicy(): void {
 function getTradingTickWorkPlan() {
   return deriveTradingTickWorkPlan(
     runtimeState.runtimeDescriptor.resolvedSkills,
-    tradertonReadBoundary != null,
+    externalBackendRead != null,
   );
 }
 
@@ -779,11 +776,11 @@ async function loadRawActiveWatches(agentId: string): Promise<RuntimeActiveWatch
   // Boundary-only: a non-success result (or absent boundary) yields an EMPTY
   // watch list, which the tick gate treats as digest-absent/stable (degrades
   // the tick, never breaks it). Same contract as the no-watch steady state.
-  if (!tradertonReadBoundary) {
+  if (!externalBackendRead) {
     return [];
   }
   try {
-    const result = await tradertonReadBoundary.invoke({ toolName: 'list_watches', payload: {} });
+    const result = await externalBackendRead.invoke({ toolName: 'list_watches', payload: {} });
     if (result.kind === 'success') {
       return parseBoundaryWatchList(result.data);
     }
@@ -889,78 +886,30 @@ const usageBillingService = createUsageBillingService(db, {
 // ---------------------------------------------------------------------------
 // Traderton REST boundaries (L3b read + L3d write)
 // ---------------------------------------------------------------------------
-// Build the Traderton REST read boundary (L3b) + side-effecting write boundary
-// (L3d) ONCE from forwarded config, at module scope, so the SAME read boundary
-// backs both the rewired read tools (in `executeTool`'s tool context) AND the
-// B2 in-runtime read re-points (the regime tick gate + venue intelligence).
+// Build the external-backend read port (L3b) + side-effecting write port (L3d)
+// ONCE from the forwarded EXTERNAL_BACKEND_CONFIG_JSON, at module scope, so the
+// SAME read boundary backs both the rewired read tools (in `executeTool`'s tool
+// context) AND the B2 in-runtime read re-points (the regime tick gate + venue
+// intelligence).
 //
-// GATE: only enable the boundaries when a real baseUrl + hmacSecret are set AND
-// the platform owner id (agentConfig.userId) is non-empty. When any is missing,
-// both stay undefined — read tools fall back to direct DB where available and
-// market-data reads are unavailable (in-process market-data removed in B7); the
-// `adjust_risk_limits` write hard-fails (fail-closed). The HMAC secret lives in
-// the client only; it never reaches a tool. The subject is bound here so the
-// tools never see it.
-function buildTradertonBoundaries(): {
-  read: TradertonReadBoundary | undefined;
-  write: ToolContext['tradertonWriteBoundary'];
-} {
-  if (!BOUNDARY_CONFIG_RAW) return { read: undefined, write: undefined };
-
-  let boundaryConfig: ExternalBackendClientConfig;
-  try {
-    const parsed = BoundaryConfigSchema.parse(JSON.parse(BOUNDARY_CONFIG_RAW));
-    boundaryConfig = {
-      baseUrl: parsed.baseUrl,
-      consumerId: parsed.consumerId,
-      keyId: parsed.keyId,
-      hmacSecret: parsed.hmacSecret,
-      requestTimeoutMs: parsed.requestTimeoutMs,
-    };
-  } catch (err) {
-    logger.warn({ err }, 'Failed to parse BOUNDARY_CONFIG_JSON — read tools fall back to direct DB');
-    return { read: undefined, write: undefined };
-  }
-
-  const ownerId = agentConfig.userId ?? '';
-  if (!boundaryConfig.baseUrl || !boundaryConfig.hmacSecret || !ownerId) {
-    logger.info(
-      { hasBaseUrl: !!boundaryConfig.baseUrl, hasSecret: !!boundaryConfig.hmacSecret, hasOwnerId: !!ownerId },
-      'Traderton boundary not fully configured — read tools use direct DB; adjust_risk_limits write hard-fails',
-    );
-    return { read: undefined, write: undefined };
-  }
-
-  const subject: ExternalBackendSubject = {
-    ownerId,
-    actor: { type: 'agent', id: AGENT_ID! },
-  };
-  const client = createExternalBackendClient(boundaryConfig);
-  logger.info({ baseUrl: boundaryConfig.baseUrl }, 'Traderton read + write boundaries enabled — read tools + risk-limit writes route over REST');
-
-  const read = createTradertonReadBoundary(client, subject, boundaryConfig.requestTimeoutMs);
-
-  // Bind the agent subject to the side-effecting adapter so the ToolContext
-  // port exposes a subject-less invokeAndAwait (the tool supplies only tool
-  // name + payload + deadline; the binding mints one idempotency key per write).
-  const write: ToolContext['tradertonWriteBoundary'] = createSubjectBoundWriteBoundary(
-    createTradertonSideEffectBoundary(client),
-    subject,
-  );
-
-  return { read, write };
-}
-
-const { read: tradertonReadBoundary, write: tradertonWriteBoundary } = buildTradertonBoundaries();
-
+// GATE: both stay undefined when the payload is absent/invalid or the platform
+// owner id (agentConfig.userId) is empty — read tools fall back to direct DB
+// where available and market-data reads are unavailable (in-process market-data
+// removed in B7); the `adjust_risk_limits` write hard-fails (fail-closed).
+const { read: externalBackendRead, write: externalBackendWrite } = buildAgentExternalBackendPorts({
+  rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
+  ownerId: agentConfig.userId ?? '',
+  agentId: AGENT_ID!,
+  logger,
+});
 // Fail-fast startup guard (B7): in-process market-data has been removed, so the
 // Traderton read boundary is the SOLE source of market data. A trading agent
 // without a boundary cannot function — crash at startup rather than silently
 // degrade every regime/volatility/venue/price read. Non-trading agents are
 // unaffected (they never touch the market-data reads).
-if (deriveHasTradingCapability(runtimeState.runtimeDescriptor.resolvedSkills) && !tradertonReadBoundary) {
+if (deriveHasTradingCapability(runtimeState.runtimeDescriptor.resolvedSkills) && !externalBackendRead) {
   throw new Error(
-    'Trading agent requires a Traderton read boundary (BOUNDARY_CONFIG_JSON) — in-process market-data has been removed (B7). Configure the boundary or remove trading skills.',
+    'Trading agent requires a Traderton read boundary (EXTERNAL_BACKEND_CONFIG_JSON) — in-process market-data has been removed (B7). Configure the boundary or remove trading skills.',
   );
 }
 
@@ -970,7 +919,7 @@ if (deriveHasTradingCapability(runtimeState.runtimeDescriptor.resolvedSkills) &&
 // the DATABASE_DEPENDENT_TOOLS exclusion pattern. A trading agent without a
 // boundary already threw above; this branch only fires for a non-trading agent
 // with no boundary, correctly hiding the market-data tools.
-if (!tradertonReadBoundary) {
+if (!externalBackendRead) {
   for (const tool of MARKET_DATA_TOOLS) {
     permanentlyExcludedTools.add(tool);
   }
@@ -979,7 +928,7 @@ if (!tradertonReadBoundary) {
 
 // ── Economic calendar (read over the Traderton boundary) ───────────────────
 // The economic-calendar fetch + provider are owned by Traderton (slice B6).
-// The per-tick read routes through `tradertonReadBoundary` (get_economic_calendar,
+// The per-tick read routes through `externalBackendRead` (get_economic_calendar,
 // cache-only) — no in-process provider or fetch runs in the herobids process.
 
 // ---------------------------------------------------------------------------
@@ -1065,10 +1014,10 @@ interface AgentOpenPosition {
  * preserve their existing catch/fallback behaviour.
  */
 async function fetchAgentOpenPositions(): Promise<AgentOpenPosition[]> {
-  if (!tradertonReadBoundary) {
+  if (!externalBackendRead) {
     throw new Error('trading boundary not configured — cannot read agent positions');
   }
-  const result = await tradertonReadBoundary.invoke({ toolName: 'get_agent_positions', payload: {} });
+  const result = await externalBackendRead.invoke({ toolName: 'get_agent_positions', payload: {} });
   if (result.kind !== 'success') {
     throw new Error(
       result.kind === 'failure'
@@ -1106,7 +1055,7 @@ async function refreshVenueIntelligence(): Promise<void> {
   // (`get_market_overview` for perps, `discover_tokens` + `search_tokens` for
   // DEX). In-process market-data has been removed (B7) — the boundary is the
   // sole source, so the early return stands whenever the boundary is absent.
-  if (!tradertonReadBoundary) {
+  if (!externalBackendRead) {
     recordVenueSignals(runtimeState, []);
     return;
   }
@@ -1122,7 +1071,7 @@ async function refreshVenueIntelligence(): Promise<void> {
   if (trackedPerpsSymbols.length > 0 && (tradingProviders.has('hyperliquid') || tradingProviders.has('bybit'))) {
     const bybitTracked = tradingProviders.has('bybit');
     const venueLabel = bybitTracked ? 'hyperliquid+bybit' : 'hyperliquid';
-    if (tradertonReadBoundary) {
+    if (externalBackendRead) {
       // Boundary path: a single `get_market_overview` returns the hyperliquid
       // asset fields for every requested symbol, plus longShortRatio when the
       // `bybit` venue is requested. Every per-symbol field + the missing-symbol
@@ -1132,7 +1081,7 @@ async function refreshVenueIntelligence(): Promise<void> {
         if (bybitTracked) {
           recordMarketDataAttempt('bybit');
         }
-        const result = await tradertonReadBoundary.invoke({
+        const result = await externalBackendRead.invoke({
           toolName: 'get_market_overview',
           payload: { symbols: trackedPerpsSymbols, venue: bybitTracked ? 'bybit' : 'hyperliquid' },
         });
@@ -1226,14 +1175,14 @@ async function refreshVenueIntelligence(): Promise<void> {
     let discoveryByNetworkAddress = new Map<string, DexDiscoveryMeta>();
     let discoveryFreshness: ReturnType<typeof providerFreshness> | null = null;
 
-    if (tradertonReadBoundary) {
+    if (externalBackendRead) {
       // Boundary discovery: `discover_tokens` returns the same aggregated token
       // list herobids consumed in-process (network/address/poolCreatedAt/
       // discoveryVectors verified present). Provider name is fixed to
       // 'aggregated-discovery' for freshness/telemetry parity.
       try {
         recordMarketDataAttempt('aggregated-discovery');
-        const result = await tradertonReadBoundary.invoke({
+        const result = await externalBackendRead.invoke({
           toolName: 'discover_tokens',
           payload: { maxResults: 25 },
         });
@@ -1264,7 +1213,7 @@ async function refreshVenueIntelligence(): Promise<void> {
         // field the signal renders; herobids still applies its own network
         // filter + top-pick to preserve the selection behaviour. The boundary is
         // guaranteed present (early return + startup guard).
-        const result = await tradertonReadBoundary!.invoke({
+        const result = await externalBackendRead!.invoke({
           toolName: 'search_tokens',
           payload: { query: target.symbol, ...(target.network ? { network: target.network } : {}) },
         });
@@ -1801,10 +1750,10 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
   })();
 
   // The Traderton REST read + write boundaries are built ONCE at module scope
-  // (see `buildTradertonBoundaries`) so the same read boundary backs both the
-  // rewired read tools here and the B2 in-runtime re-points (regime tick gate +
-  // venue intelligence). `tradertonReadBoundary` / `tradertonWriteBoundary` are
-  // module-level constants.
+  // (see `buildAgentExternalBackendPorts`) so the same read boundary backs both
+  // the rewired read tools here and the B2 in-runtime re-points (regime tick
+  // gate + venue intelligence). `externalBackendRead` / `externalBackendWrite`
+  // are module-level constants.
 
   // Build tool context from agent runtime state
   const agentConfigOps = buildAgentConfigOps();
@@ -1815,8 +1764,8 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     executionMode: 'paper',
     authorizationMode: (agentConfig.authorizationMode ?? 'direct') as 'direct' | 'approval_required',
     permissionLevel: agentPermissionLevel,
-    tradertonBoundary: tradertonReadBoundary,
-    tradertonWriteBoundary,
+    tradertonBoundary: externalBackendRead,
+    tradertonWriteBoundary: externalBackendWrite,
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),
@@ -2566,7 +2515,7 @@ async function runTick(): Promise<void> {
     let hasOpenPositions = Boolean(sessionMetrics.lastPositionSide && sessionMetrics.lastPositionSide !== 'flat');
     let openPositionSymbols: string[] = [];
     let openPositionInputs: PositionInput[] = [];
-    if (tradertonReadBoundary) {
+    if (externalBackendRead) {
       try {
         // c4.9i: tick-gate open-position fingerprint sourced over the Traderton
         // boundary (get_agent_positions, open-only) instead of a local read.
@@ -2685,7 +2634,7 @@ async function runTick(): Promise<void> {
               // trading agent without one, so the boundary is guaranteed here.
               const params: RegimeParams = {};
               recordMarketDataAttempt('binance');
-              const result = await tradertonReadBoundary!.invoke({
+              const result = await externalBackendRead!.invoke({
                 toolName: 'check_regime',
                 payload: { ...(params.benchmarkSymbol ? { benchmarkSymbol: params.benchmarkSymbol } : {}) },
               });
@@ -2717,7 +2666,7 @@ async function runTick(): Promise<void> {
             ? async () => {
               // Boundary-only (B7): gated on the boundary being present.
               recordMarketDataAttempt('binance');
-              const result = await tradertonReadBoundary!.invoke({
+              const result = await externalBackendRead!.invoke({
                 toolName: 'get_volatility',
                 payload: {},
               });
@@ -2761,7 +2710,7 @@ async function runTick(): Promise<void> {
           : { state: 'fresh', provider: 'binance' }
         : {
             state: 'unavailable',
-            note: tradertonReadBoundary ? 'regime not evaluated' : 'market-data unavailable',
+            note: externalBackendRead ? 'regime not evaluated' : 'market-data unavailable',
           };
       recordRegimeEvaluation(runtimeState, skipDecision.regime ?? null, regimeFreshness);
     }
@@ -2972,7 +2921,7 @@ async function runTick(): Promise<void> {
           logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID, billingReason: hybridCanSpend.reason, availableMicrousd: hybridCanSpend.availableMicrousd }, 'Billing gate blocked — skipping hybrid tick');
           // Collect open-position context for the stop notification.
           let hybridHardLimitPositions: string[] = [];
-          if (tradertonReadBoundary) {
+          if (externalBackendRead) {
             try {
               // c4.9i: hard-limit-stop notification open-position list sourced
               // over the Traderton boundary (get_agent_positions, open-only).
@@ -3074,13 +3023,13 @@ async function runTick(): Promise<void> {
               // Boundary-only (B7): the Traderton read boundary is the sole
               // price source — in-process market-data has been removed. Fail
               // closed when the boundary is absent.
-              if (!tradertonReadBoundary) {
+              if (!externalBackendRead) {
                 throw new Error(
                   `Hybrid sizing: no price source (Traderton boundary absent) — cannot convert USD size for ${symbol}`,
                 );
               }
 
-              const hybridPriceService = createBoundaryPriceService(tradertonReadBoundary);
+              const hybridPriceService = createBoundaryPriceService(externalBackendRead);
 
               const sizingResult = await resolveHybridTargetSize({
                 instrumentId: symbol,
@@ -3210,9 +3159,9 @@ async function runTick(): Promise<void> {
     // The fetch + provider live Traderton-side (slice B6). Read over the
     // boundary when present; any non-success / absent boundary omits the macro
     // block for this tick (null-tolerant degrade — same as a disabled calendar).
-    if (tradertonReadBoundary) {
+    if (externalBackendRead) {
       try {
-        const result = await tradertonReadBoundary.invoke({ toolName: 'get_economic_calendar', payload: {} });
+        const result = await externalBackendRead.invoke({ toolName: 'get_economic_calendar', payload: {} });
         if (result.kind === 'success') {
           const events = parseEconomicCalendarBoundaryPayload(result.data);
           runtimeState.metrics.macroEvents = events;

@@ -31,8 +31,8 @@ decisions; read this for coordinates and traps.
 |---|---|
 | Client + signing + contract (renamed at T1.1) | `packages/domain/src/external-backend/{client,sign,contract}.ts` (was `traderton/`) |
 | Subpath export (renamed at T1.1) | `@herobids/domain/external-backend` |
-| Config today | `config/schema.ts:1572` (`boundary` block), env `TRADERTON_BOUNDARY_*`, `apps/api/src/config.ts:71-75` |
-| Config target | `appConfig.externalBackends[]` registry, one `traderton` entry |
+| Config (since T1.3) | `config/default.yaml` `externalBackends.traderton` (map keyed by backendId → `appConfig.externalBackends[]`, schema `packages/domain/src/config/external-backends.ts`) + `tradingBackendId: traderton`; env `TRADERTON_BOUNDARY_{URL,CONSUMER_ID,KEY_ID,TIMEOUT_MS}` are ENV_OVERRIDES rows in both `apps/{api,worker}/src/config.ts`; the secret is the env var named by `caller.hmacSecretRef` (`TRADERTON_BOUNDARY_HMAC_SECRET`), read only by `resolveConfiguredExternalBackend` |
+| Agent payload | worker → agent container env `EXTERNAL_BACKEND_CONFIG_JSON` (a `ResolvedExternalBackend`: definition + secret; was `BOUNDARY_CONFIG_JSON`), parsed by `apps/worker/src/external-backend/agent-ports.ts` |
 | Tool definition consumed by the LLM | `packages/domain/src/trading/tool-contract.ts:335` → `packages/llm/src/llm-provider.ts:51` |
 | Backend dispatcher (reuse, do not reimplement) | `traderton/packages/boundary/src/dispatcher.ts` |
 | Backend HTTP app + auth | `traderton/packages/boundary/src/{app,auth}.ts` |

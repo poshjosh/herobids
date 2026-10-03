@@ -105,7 +105,11 @@ terraform output   # environment, server_ipv4, agent_node_private_ips, nomad_ena
 ## 4. Signed read-only probe (the 005 canonical string)
 
 Use a **read** tool (`get_price`) so the probe is side-effect-free. The probe
-reads creds from the container env — nothing is hardcoded. Canonical string
+reads creds from the container env — nothing is hardcoded. (herobids config:
+the `externalBackends.traderton` entry in `config/default.yaml`; the env names
+`TRADERTON_BOUNDARY_*` are unchanged, and the HMAC secret is the env var named
+by its `caller.hmacSecretRef`. Agent containers receive the resolved entry as
+`EXTERNAL_BACKEND_CONFIG_JSON`.) Canonical string
 (from `packages/domain/src/external-backend/sign.ts`):
 
 ```

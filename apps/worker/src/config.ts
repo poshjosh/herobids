@@ -2,8 +2,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { AppConfigSchema } from '@herobids/domain';
-import type { AppConfig } from '@herobids/domain';
+import { AppConfigSchema, findExternalBackendProtocolViolations, resolveExternalBackend } from '@herobids/domain';
+import type { AppConfig, ResolvedExternalBackend, Result } from '@herobids/domain';
 
 // Resolve monorepo root relative to this file (works for both src/ and dist/ execution)
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -79,12 +79,14 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Nomad
   NOMAD_TOKEN: { path: 'nomad.token', type: 'string' },
   NOMAD_ADDR: { path: 'nomad.addr', type: 'string' },
-  // Traderton REST boundary (L3a)
-  TRADERTON_BOUNDARY_URL: { path: 'boundary.baseUrl', type: 'string' },
-  TRADERTON_BOUNDARY_HMAC_SECRET: { path: 'boundary.hmacSecret', type: 'string' },
-  TRADERTON_BOUNDARY_CONSUMER_ID: { path: 'boundary.consumerId', type: 'string' },
-  TRADERTON_BOUNDARY_KEY_ID: { path: 'boundary.keyId', type: 'string' },
-  TRADERTON_BOUNDARY_TIMEOUT_MS: { path: 'boundary.requestTimeoutMs', type: 'number' },
+  // External backend `traderton` (P3-16) — targets the externalBackends.traderton
+  // registry entry in default.yaml. The HMAC secret is NOT an override: the
+  // entry's caller.hmacSecretRef names the env var (TRADERTON_BOUNDARY_HMAC_SECRET)
+  // and resolveConfiguredExternalBackend reads it.
+  TRADERTON_BOUNDARY_URL: { path: 'externalBackends.traderton.endpoint.baseUrl', type: 'string' },
+  TRADERTON_BOUNDARY_CONSUMER_ID: { path: 'externalBackends.traderton.caller.consumerId', type: 'string' },
+  TRADERTON_BOUNDARY_KEY_ID: { path: 'externalBackends.traderton.caller.keyId', type: 'string' },
+  TRADERTON_BOUNDARY_TIMEOUT_MS: { path: 'externalBackends.traderton.endpoint.requestTimeoutMs', type: 'number' },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
@@ -158,6 +160,13 @@ export function loadConfig(configDir?: string): AppConfig {
 
   const config = AppConfigSchema.parse(merged);
 
+  // D19 (P3-18): protocol mcp is development/test only. Uses the same `env` the
+  // billing checks below use (NODE_ENV, defaulting to development).
+  const protocolViolations = findExternalBackendProtocolViolations(config.externalBackends, env);
+  if (protocolViolations.length > 0) {
+    throw new Error(`Invalid externalBackends config: ${protocolViolations.join('; ')}`);
+  }
+
   if (env === 'production' && config.billing.primaryProvider === 'mock') {
     throw new Error(
       "billing.primaryProvider is 'mock' in a production environment — " +
@@ -175,4 +184,16 @@ export function loadConfig(configDir?: string): AppConfig {
   }
 
   return config;
+}
+
+/**
+ * Resolve a registered external backend + its HMAC secret from the env var its
+ * `caller.hmacSecretRef` names. The only process.env read for backend secrets
+ * (configuration best practice: env is read in the loader module).
+ */
+export function resolveConfiguredExternalBackend(
+  config: AppConfig,
+  backendId: string | undefined,
+): Result<ResolvedExternalBackend> {
+  return resolveExternalBackend(config.externalBackends, backendId, process.env);
 }

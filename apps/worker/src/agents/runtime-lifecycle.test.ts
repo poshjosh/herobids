@@ -211,6 +211,19 @@ describe('buildAgentEnv', () => {
     expect(env['EXTERNAL_SKILLS_CONFIG_JSON']).toBeUndefined();
   });
 
+  it('includes EXTERNAL_BACKEND_CONFIG_JSON when externalBackendConfigJson is set', () => {
+    const backendJson = JSON.stringify({ definition: { backendId: 'example-echo' }, hmacSecret: 'unit-secret' });
+    const config: AgentEnvConfig = { ...BASE_ENV_CONFIG, externalBackendConfigJson: backendJson };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['EXTERNAL_BACKEND_CONFIG_JSON']).toBe(backendJson);
+  });
+
+  it('omits EXTERNAL_BACKEND_CONFIG_JSON when externalBackendConfigJson is undefined', () => {
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', { ...BASE_ENV_CONFIG });
+    expect(env['EXTERNAL_BACKEND_CONFIG_JSON']).toBeUndefined();
+  });
+
   it('includes OPENROUTER_PROVIDER_CONTROLS when openRouterProviderControlsJson is set', () => {
     const controlsJson = JSON.stringify({ dataPolicy: 'deny-all' });
     const config: AgentEnvConfig = {

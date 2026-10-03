@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { loadConfig } from './config.js';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { buildExternalBackendClientConfig } from '@herobids/domain/external-backend';
+import { loadConfig, MONOREPO_CONFIG_DIR, resolveConfiguredExternalBackend } from './config.js';
 import { resolve } from 'node:path';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 // Minimal required fields for AppConfigSchema
@@ -977,6 +979,161 @@ marketData:
       const config = loadConfig(tmpDir);
 
       expect(config.marketData?.coinMarketCap?.enabled).toBe(true);
+    });
+  });
+});
+
+// External backend registry (Phase 3 T1.3): loader mapping, D19, resolution, parity.
+const BACKEND_ENV_VARS = [
+  'TRADERTON_BOUNDARY_URL',
+  'TRADERTON_BOUNDARY_HMAC_SECRET',
+  'TRADERTON_BOUNDARY_CONSUMER_ID',
+  'TRADERTON_BOUNDARY_KEY_ID',
+  'TRADERTON_BOUNDARY_TIMEOUT_MS',
+  'TEST_EXTERNAL_BACKEND_SECRET',
+] as const;
+
+function backendYaml(endpointExtra = '', tradingBackendId = 'traderton'): string {
+  return `
+externalBackends:
+  traderton:
+    endpoint:
+      baseUrl: http://localhost:8080
+${endpointExtra}    caller:
+      consumerId: herobids
+      keyId: current
+      hmacSecretRef: TEST_EXTERNAL_BACKEND_SECRET
+    descriptorPinning:
+      mode: maxAge
+      seconds: 3600
+tradingBackendId: ${tradingBackendId}
+`;
+}
+
+describe('loadConfig external backend registry', () => {
+  let tmpDir: string;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(resolve(tmpdir(), 'herobids-backend-config-test-'));
+    for (const name of BACKEND_ENV_VARS) delete process.env[name];
+    process.env['NODE_ENV'] = 'test';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('maps the TRADERTON_BOUNDARY_* overrides onto externalBackends.traderton', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml());
+    process.env['TRADERTON_BOUNDARY_URL'] = 'http://host.docker.internal:8080';
+    process.env['TRADERTON_BOUNDARY_CONSUMER_ID'] = 'consumer-from-env';
+    process.env['TRADERTON_BOUNDARY_KEY_ID'] = 'key-from-env';
+    process.env['TRADERTON_BOUNDARY_TIMEOUT_MS'] = '15000';
+
+    const config = loadConfig(tmpDir);
+
+    const [entry] = config.externalBackends;
+    expect(config.externalBackends).toHaveLength(1);
+    expect(entry?.backendId).toBe('traderton');
+    expect(entry?.endpoint.baseUrl).toBe('http://host.docker.internal:8080');
+    expect(entry?.endpoint.requestTimeoutMs).toBe(15000);
+    expect(entry?.caller).toEqual({
+      consumerId: 'consumer-from-env',
+      keyId: 'key-from-env',
+      hmacSecretRef: 'TEST_EXTERNAL_BACKEND_SECRET',
+    });
+  });
+
+  it('does not treat the HMAC secret env var as a config override', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml());
+    process.env['TRADERTON_BOUNDARY_HMAC_SECRET'] = 'must-not-land-in-config';
+
+    const config = loadConfig(tmpDir);
+
+    expect(JSON.stringify(config)).not.toContain('must-not-land-in-config');
+  });
+
+  it('rejects protocol mcp when NODE_ENV is staging', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml('      protocol: mcp\n      mcpPath: /mcp\n'));
+    process.env['NODE_ENV'] = 'staging';
+
+    expect(() => loadConfig(tmpDir)).toThrow(/externalBackends\.traderton\.endpoint\.protocol is mcp.*"staging"/);
+  });
+
+  it('rejects protocol mcp when NODE_ENV is production', () => {
+    writeFileSync(
+      resolve(tmpDir, 'default.yaml'),
+      BASE_YAML + backendYaml('      toolProtocolOverrides:\n        get_price: mcp\n      mcpPath: /mcp\n'),
+    );
+    process.env['NODE_ENV'] = 'production';
+
+    expect(() => loadConfig(tmpDir)).toThrow(/toolProtocolOverrides\.get_price is mcp.*"production"/);
+  });
+
+  it('allows protocol mcp with an mcpPath in development', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml('      protocol: mcp\n      mcpPath: /mcp\n'));
+    process.env['NODE_ENV'] = 'development';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.externalBackends[0]?.endpoint).toMatchObject({ protocol: 'mcp', mcpPath: '/mcp' });
+  });
+
+  it('rejects a tradingBackendId that names no registered backend', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml('', 'unknown-backend'));
+
+    expect(() => loadConfig(tmpDir)).toThrow(/tradingBackendId 'unknown-backend' does not name a registered externalBackends entry/);
+  });
+
+  it('loads without a registry or a tradingBackendId', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.externalBackends).toEqual([]);
+    expect(config.tradingBackendId).toBeUndefined();
+  });
+
+  it('resolveConfiguredExternalBackend reads the secret from the env var named by hmacSecretRef', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml());
+    const config = loadConfig(tmpDir);
+
+    const unresolved = resolveConfiguredExternalBackend(config, config.tradingBackendId);
+    expect(unresolved.ok ? undefined : unresolved.error.code).toBe('external_backend.secret_missing');
+
+    process.env['TEST_EXTERNAL_BACKEND_SECRET'] = 'secret-from-named-env-var';
+    const resolved = resolveConfiguredExternalBackend(config, config.tradingBackendId);
+
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.data.hmacSecret).toBe('secret-from-named-env-var');
+    expect(resolved.data.definition.backendId).toBe('traderton');
+  });
+
+  it('the default traderton entry yields the client config the boundary block produced', () => {
+    // Only the registry sections of the real default.yaml: the rest needs operator env.
+    const realDefaults = parseYaml(readFileSync(resolve(MONOREPO_CONFIG_DIR, 'default.yaml'), 'utf8')) as Record<string, unknown>;
+    const registrySections = {
+      externalBackends: realDefaults['externalBackends'],
+      tradingBackendId: realDefaults['tradingBackendId'],
+    };
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + stringifyYaml(registrySections));
+    process.env['TRADERTON_BOUNDARY_HMAC_SECRET'] = 'parity-secret';
+    const config = loadConfig(tmpDir);
+
+    const resolved = resolveConfiguredExternalBackend(config, config.tradingBackendId);
+
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(buildExternalBackendClientConfig(resolved.data.definition, resolved.data.hmacSecret)).toEqual({
+      baseUrl: 'http://localhost:8080',
+      consumerId: 'herobids',
+      keyId: 'current',
+      hmacSecret: 'parity-secret',
+      requestTimeoutMs: 10000,
+      protocol: 'rest',
     });
   });
 });

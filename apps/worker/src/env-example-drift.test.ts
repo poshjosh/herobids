@@ -5,8 +5,10 @@
  * but had no mechanical guard; this adds one, mirroring the sibling traderton test.
  *
  * Guard 1 — `.env.example` ⊇ every env var the code reads:
- *   (a) every ENV_OVERRIDES key in the worker + api config.ts maps, AND
- *   (b) every `process.env['X']` literal across the live apps + packages (ex-tests),
+ *   (a) every ENV_OVERRIDES key in the worker + api config.ts maps,
+ *   (b) every `process.env['X']` literal across the live apps + packages (ex-tests), AND
+ *   (c) every `externalBackends.*.caller.hmacSecretRef` env var named in default.yaml
+ *       (read through resolveConfiguredExternalBackend),
  *   plus a no-stale-entries check.
  * Guard 2 — `config/default.yaml` has a value for (near enough) every leaf the
  *   code documents, i.e. every ENV_OVERRIDES target path resolves to a present key.
@@ -14,6 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 
 // apps/worker/src → repo root is ../../..
 const REPO_ROOT = resolve(new URL('.', import.meta.url).pathname, '../../..');
@@ -50,7 +53,7 @@ const IGNORED_ENV_VARS = new Set<string>([
   'AGENT_ID', // per-agent identifier injected into the container
   'AGENT_RUNTIME_CONFIG_JSON', // per-agent runtime config JSON injected by the worker
   'AGENT_WORKSPACE_ROOT', // in-container workspace path, injected by the runtime
-  'BOUNDARY_CONFIG_JSON', // per-agent boundary/HMAC config JSON injected by the worker
+  'EXTERNAL_BACKEND_CONFIG_JSON', // per-agent resolved external backend (incl. HMAC secret) JSON injected by the worker
   'EXTERNAL_SKILLS_CONFIG_JSON', // per-agent external-skills config JSON injected by the worker
   'TRADING_HOURS_JSON', // per-agent trading-hours JSON injected by the worker
   'OPENROUTER_PROVIDER_CONTROLS', // per-agent OpenRouter controls JSON injected by the worker
@@ -127,6 +130,23 @@ function processEnvLiterals(): string[] {
   return [...keys];
 }
 
+/** Every `externalBackends.<id>.caller.hmacSecretRef` value in default.yaml (env var NAMES the loaders read). */
+function hmacSecretRefs(): string[] {
+  const parsed: unknown = parseYaml(readFileSync(DEFAULT_YAML, 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed['externalBackends'])) return [];
+  const refs = new Set<string>();
+  for (const entry of Object.values(parsed['externalBackends'])) {
+    const caller = isRecord(entry) ? entry['caller'] : undefined;
+    const ref = isRecord(caller) ? caller['hmacSecretRef'] : undefined;
+    if (typeof ref === 'string') refs.add(ref);
+  }
+  return [...refs];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** Env var names documented in .env.example (both active `KEY=` and commented `# KEY=`). */
 function envExampleKeys(): Set<string> {
   const src = readFileSync(ENV_EXAMPLE, 'utf8');
@@ -154,8 +174,16 @@ describe('.env.example is in lockstep with the code that reads env vars', () => 
     expect(missing, `process.env[...] literals missing from .env.example: ${missing.join(', ')}`).toEqual([]);
   });
 
+  it('documents every external-backend hmacSecretRef named in default.yaml', () => {
+    const refs = hmacSecretRefs();
+    expect(refs.length, 'default.yaml registers at least one external backend').toBeGreaterThan(0);
+    const documented = envExampleKeys();
+    const missing = refs.filter((k) => !documented.has(k));
+    expect(missing, `hmacSecretRef env vars missing from .env.example: ${missing.join(', ')}`).toEqual([]);
+  });
+
   it('does not document env vars the code never reads (no stale entries)', () => {
-    const codeVars = new Set<string>([...envOverrideKeys(), ...processEnvLiterals()]);
+    const codeVars = new Set<string>([...envOverrideKeys(), ...processEnvLiterals(), ...hmacSecretRefs()]);
     const stale = [...envExampleKeys()].filter((k) => !codeVars.has(k) && !IGNORED_ENV_VARS.has(k));
     expect(stale, `Env vars documented in .env.example but never read by the code: ${stale.join(', ')}`).toEqual([]);
   });

@@ -9,7 +9,7 @@ import {
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { AGENT_STREAM_MAXLEN, type ProvidersYaml, ok, err } from '@herobids/domain';
+import { AGENT_STREAM_MAXLEN, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml, ok, err } from '@herobids/domain';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import crypto from 'node:crypto';
@@ -17,7 +17,7 @@ import { lookup } from 'node:dns/promises';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
+import { loadConfig, MONOREPO_CONFIG_DIR, resolveConfiguredExternalBackend } from './config.js';
 import { AlertDispatcher, createBoundaryTradeEventFeed } from './alerting/index.js';
 import { TelegramClient, forceReply, PlatformAlertService, createEmailClient } from './alerting/index.js';
 import type { EmailClientConfig } from './alerting/index.js';
@@ -35,7 +35,7 @@ import {
   NomadClient,
   buildServiceRegistry,
 } from './agents/index.js';
-import { createExternalBackendClient } from '@herobids/domain/external-backend';
+import { buildExternalBackendClientConfig, createExternalBackendClient } from '@herobids/domain/external-backend';
 import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
 import { createTradertonReadBoundary } from './traderton/read-adapter.js';
@@ -80,6 +80,14 @@ const logger = createLogger('herobids-worker');
 
 // Load operator config: default.yaml → {NODE_ENV}.yaml → env var overrides
 const appConfig = loadConfig();
+
+// The first-party trading call sites bind to the registry entry named by
+// tradingBackendId (P3-17). Not ok (unselected / unregistered / disabled / no
+// secret) → each site below stays disabled, as an unconfigured boundary did.
+const tradingBackend = resolveConfiguredExternalBackend(appConfig, appConfig.tradingBackendId);
+const tradingBackendTimeoutMs =
+  findExternalBackend(appConfig.externalBackends, appConfig.tradingBackendId)?.endpoint.requestTimeoutMs
+  ?? DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS;
 
 // Load provider registry — used by UsageBillingRepository for per-model rate card seeding
 const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
@@ -280,10 +288,10 @@ const agentRuntimeLauncher = await (async () => {
     ...(appConfig.externalSkills.enabled
       ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
       : {}),
-    // Traderton boundary config (L3b): forwarded so the agent can route read
-    // tools over REST. The agent itself gates on baseUrl/hmacSecret/ownerId
-    // before enabling the boundary path.
-    boundaryConfigJson: JSON.stringify(appConfig.boundary),
+    // Resolved trading backend (definition + HMAC secret), forwarded so the
+    // agent can route trading tools over the backend. Absent when unresolved;
+    // the agent then gates its ports off (and on ownerId).
+    ...(tradingBackend.ok ? { externalBackendConfigJson: JSON.stringify(tradingBackend.data) } : {}),
     ...(resolvedBrowserPoolUrl
       ? { browserPoolUrl: resolvedBrowserPoolUrl }
       : {}),
@@ -337,7 +345,7 @@ const agentRuntimeLauncher = await (async () => {
         ...(appConfig.externalSkills.enabled
           ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
           : {}),
-        boundaryConfigJson: JSON.stringify(appConfig.boundary),
+        ...(tradingBackend.ok ? { externalBackendConfigJson: JSON.stringify(tradingBackend.data) } : {}),
         ...(resolvedBrowserPoolUrl
           ? { browserPoolUrl: resolvedBrowserPoolUrl }
           : {}),
@@ -423,28 +431,22 @@ const agentRuntimeLauncher = await (async () => {
 // engine-backed intake resolver — all removed with the actor slice. Mark
 // resolution is now Traderton-owned behind the boundary.
 
-// L3c: construct the Traderton side-effecting boundary from operator config
-// (appConfig.boundary). When baseUrl + hmacSecret are unset (unconfigured), leave
+// L3c: construct the Traderton side-effecting boundary from the trading backend
+// registry entry. When it cannot be resolved (e.g. no HMAC secret), leave
 // it undefined so the handler/broker return a typed precondition — NO silent
 // fallback to the in-process engine (differs from L3b's read fallback). The HMAC
 // secret lives only in the client; it never reaches a tool.
 const sideEffectBoundary = (() => {
-  const b = appConfig.boundary;
-  if (!b.baseUrl || !b.hmacSecret) {
+  if (!tradingBackend.ok) {
     logger.info(
-      { hasBaseUrl: !!b.baseUrl, hasSecret: !!b.hmacSecret },
+      { backendId: appConfig.tradingBackendId, reason: tradingBackend.error.code },
       'Traderton side-effecting boundary not configured — submit_decision + bot lifecycle will return precondition.not_ready',
     );
     return undefined;
   }
-  const client = createExternalBackendClient({
-    baseUrl: b.baseUrl,
-    consumerId: b.consumerId,
-    keyId: b.keyId,
-    hmacSecret: b.hmacSecret,
-    requestTimeoutMs: b.requestTimeoutMs,
-  });
-  logger.info({ baseUrl: b.baseUrl }, 'Traderton side-effecting boundary enabled — submit_decision + bot lifecycle route over REST');
+  const { definition, hmacSecret } = tradingBackend.data;
+  const client = createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
+  logger.info({ baseUrl: definition.endpoint.baseUrl }, 'Traderton side-effecting boundary enabled — submit_decision + bot lifecycle route over REST');
   return createTradertonSideEffectBoundary(client);
 })();
 
@@ -454,30 +456,24 @@ const sideEffectBoundary = (() => {
 // the shared worker process and serves platform-owned market intelligence, so
 // it binds a fixed SYSTEM subject. `score_candidate`/`check_regime` are
 // read-market-data — the boundary resolver short-circuits, so a system subject
-// suffices. Undefined when the boundary is unconfigured (baseUrl/hmacSecret
-// absent) — callers then propagate a typed "boundary unavailable" outcome.
+// suffices. Undefined when the trading backend is unresolved (e.g. no HMAC
+// secret) — callers then propagate a typed "boundary unavailable" outcome.
 const systemReadBoundary = (() => {
-  const b = appConfig.boundary;
-  if (!b.baseUrl || !b.hmacSecret) {
+  if (!tradingBackend.ok) {
     logger.info(
-      { hasBaseUrl: !!b.baseUrl, hasSecret: !!b.hmacSecret },
+      { backendId: appConfig.tradingBackendId, reason: tradingBackend.error.code },
       'Traderton system read boundary not configured — market-intel scoring/regime tools return a typed boundary-unavailable outcome',
     );
     return undefined;
   }
-  const client = createExternalBackendClient({
-    baseUrl: b.baseUrl,
-    consumerId: b.consumerId,
-    keyId: b.keyId,
-    hmacSecret: b.hmacSecret,
-    requestTimeoutMs: b.requestTimeoutMs,
-  });
+  const { definition, hmacSecret } = tradingBackend.data;
+  const client = createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
   const subject: ExternalBackendSubject = {
-    ownerId: b.consumerId,
+    ownerId: definition.caller.consumerId,
     actor: { type: 'system', id: 'market-intel' },
   };
-  logger.info({ baseUrl: b.baseUrl }, 'Traderton system read boundary enabled — market-intel scoring/regime route over REST');
-  return createTradertonReadBoundary(client, subject, b.requestTimeoutMs);
+  logger.info({ baseUrl: definition.endpoint.baseUrl }, 'Traderton system read boundary enabled — market-intel scoring/regime route over REST');
+  return createTradertonReadBoundary(client, subject, definition.endpoint.requestTimeoutMs);
 })();
 
 // c4.9j: a SYSTEM-subject read boundary for the AlertDispatcher's trade-event
@@ -487,31 +483,25 @@ const systemReadBoundary = (() => {
 // the consumer's operator-config `allowedActorTypes:['system']` grant (there is
 // no per-tool allow-list in the boundary config surface — c4.9j OQ-2). Wrapped
 // in the TradeEventFeed adapter the dispatcher depends on. Undefined when the
-// boundary is unconfigured (baseUrl/hmacSecret absent) — the dispatcher then
+// trading backend is unresolved (e.g. no HMAC secret) — the dispatcher then
 // does not start (OQ-4), mirroring `systemReadBoundary`'s undefined-when-absent
 // posture and the dispatcher's own warn-and-return for a missing Telegram token.
 const alertDispatcherFeed = (() => {
-  const b = appConfig.boundary;
-  if (!b.baseUrl || !b.hmacSecret) {
+  if (!tradingBackend.ok) {
     logger.info(
-      { hasBaseUrl: !!b.baseUrl, hasSecret: !!b.hmacSecret },
+      { backendId: appConfig.tradingBackendId, reason: tradingBackend.error.code },
       'Traderton alert-dispatcher read boundary not configured — alert dispatcher will not start',
     );
     return undefined;
   }
-  const client = createExternalBackendClient({
-    baseUrl: b.baseUrl,
-    consumerId: b.consumerId,
-    keyId: b.keyId,
-    hmacSecret: b.hmacSecret,
-    requestTimeoutMs: b.requestTimeoutMs,
-  });
+  const { definition, hmacSecret } = tradingBackend.data;
+  const client = createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
   const subject: ExternalBackendSubject = {
-    ownerId: b.consumerId,
+    ownerId: definition.caller.consumerId,
     actor: { type: 'system', id: 'alert-dispatcher' },
   };
-  logger.info({ baseUrl: b.baseUrl }, 'Traderton alert-dispatcher read boundary enabled — trade-event feed routes over REST');
-  return createBoundaryTradeEventFeed(createTradertonReadBoundary(client, subject, b.requestTimeoutMs));
+  logger.info({ baseUrl: definition.endpoint.baseUrl }, 'Traderton alert-dispatcher read boundary enabled — trade-event feed routes over REST');
+  return createBoundaryTradeEventFeed(createTradertonReadBoundary(client, subject, definition.endpoint.requestTimeoutMs));
 })();
 
 // L3c: resolve the approval-snapshot venue-account id from the connection grant
@@ -778,26 +768,20 @@ const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, even
 
 // Traderton read client for the evaluation runtime — sources agent trading
 // evidence (fills / journal / positions) over the boundary. Uses the SAME
-// operator config as the system read boundary. When unconfigured (baseUrl /
-// hmacSecret absent), leave it undefined: the per-agent evidence port then
+// trading backend entry as the system read boundary. When unresolved (e.g. no
+// HMAC secret), leave it undefined: the per-agent evidence port then
 // fails closed at invocation time (evaluation of trading evidence cannot
 // proceed without the boundary) — mirroring the fail-fast boundary posture.
 const evaluationReadClient = (() => {
-  const b = appConfig.boundary;
-  if (!b.baseUrl || !b.hmacSecret) {
+  if (!tradingBackend.ok) {
     logger.info(
-      { hasBaseUrl: !!b.baseUrl, hasSecret: !!b.hmacSecret },
+      { backendId: appConfig.tradingBackendId, reason: tradingBackend.error.code },
       'Traderton read boundary not configured for evaluation — agent evidence port will fail closed',
     );
     return undefined;
   }
-  return createExternalBackendClient({
-    baseUrl: b.baseUrl,
-    consumerId: b.consumerId,
-    keyId: b.keyId,
-    hmacSecret: b.hmacSecret,
-    requestTimeoutMs: b.requestTimeoutMs,
-  });
+  const { definition, hmacSecret } = tradingBackend.data;
+  return createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
 })();
 
 // Start evaluation runtime (BullMQ consumer for agent evaluation jobs)
@@ -810,7 +794,7 @@ const evaluationRuntime = new EvaluationRuntime(
     thresholds: appConfig.evaluation.thresholds,
     usageBillingRepo: new UsageBillingRepository(db),
     tradertonReadClient: evaluationReadClient,
-    tradertonReadTimeoutMs: appConfig.boundary.requestTimeoutMs,
+    tradertonReadTimeoutMs: tradingBackendTimeoutMs,
   },
   db,
 );
