@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T2.3** (`McpTransport` on herobids + contract suites over `['rest','mcp']` + xstack leg) — T2.1 gate 1 ✅, T2.2 traderton MCP surface ✅ (`6fc1099`,`e781a4b`,`dfda5eb`,`5ea82f9`). ←
+**Current cursor:** **T3.1** (descriptor type + verification pipeline — flip the T0.4 `describe.skip`) — Block 2 ✅ (T2.1–T2.3; MCP transport live on both repos, xstack parity executed). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -167,7 +167,7 @@ never pushed), and an update to this file (status + cursor + running notes),
     raw-body retention, and the existing `app.test.ts` +
     `boundary.verification.integration.test.ts` all pass **UNMODIFIED**.
   - Exit: both traderton suites green; REST bytes untouched.
-- ⬜ **T2.3 `McpTransport`** (herobids). *(From T1.2: register `mcp` in `transports/select-transport.ts` — the only file that names a transport; decide P3-25 (deadline-derived attempt timeout); `poll(requestId)` returns `precondition.not_ready` on a transport without `lookupStatus`; strengthen `select-transport.test.ts` override test once two transports exist; decide whether a lost re-issue inside the no-lookup loop should keep re-issuing until the deadline.)* Behind the seam. HMAC via the client
+- ✅ **T2.3 `McpTransport`** (herobids). *(From T1.2: register `mcp` in `transports/select-transport.ts` — the only file that names a transport; decide P3-25 (deadline-derived attempt timeout); `poll(requestId)` returns `precondition.not_ready` on a transport without `lookupStatus`; strengthen `select-transport.test.ts` override test once two transports exist; decide whether a lost re-issue inside the no-lookup loop should keep re-issuing until the deadline.)* Behind the seam. HMAC via the client
   transport's `fetch` middleware. **Per-call timeout driven from the envelope's
   `deadlineAt`** — the SDK client defaults to 60s, which would silently override
   the contract's deadline semantics. `in_progress` resolved by re-issuing
@@ -596,6 +596,43 @@ meant the dispatcher). Recorded in traderton 004 "MCP-FD" + 001 ledger; 005
 - Gate 2 (coexistence) is the binding invariant and holds. The heavy traderton
   cross-stack suites (`run-all-tests.sh --e2e`, `run-extra-tests.sh --all`) are
   owed at closeout G2.
+
+
+**T2.3 — herobids `McpTransport` (HC1–HC4) + xstack parity executed.**
+herobids: HC1 `e1800f85` (Step 10 §2.5 wire details + IV-2 + ADR 016 §8 note),
+HC2 `093974be` (`McpTransport`, `mcp-signing-fetch`/`mcp-wire`, `select-transport`
+registration, `attemptTimeoutMs`/IV-2), HC3 `6cbb3c2b` (fake MCP face over the
+same core + contract suites over `['rest','mcp']`), HC4 `aead86b9` (xstack leg +
+overlay `BOUNDARY_MCP_ENABLED=true`), review fix `2327f455` (MCP deadline
+headroom + mcp-wire comments). Implementer built it from the passing gate-1
+spike; CodeReviewer: **0 CRITICAL/HIGH**, no frozen file or seam invariant
+violated. Fixed its MEDIUM (timing flake — looped 5×5 green after) + 2 LOWs.
+- Seam intact (I2/I3/I3b): no transport type in `index.ts`/`package.json`; no
+  `transports/`|`modelcontextprotocol` in the public d.ts or `apps/web/dist`.
+  Frozen (I4): `sign.ts` + the 5 frozen test files unmodified, signing vectors
+  20 + `sign.test.ts` 8 green, fixture sha `1d4a04b8…20ef`. `McpTransport` never
+  throws, never calls tools/list (D16), lazy SDK `import()`, whole exchange
+  bounded by `attemptTimeoutMs` = `min(requestTimeoutMs, deadlineAt−now)` (P3-38,
+  **IV-2**), non-object payload → `transport_error` no I/O (P3-44).
+- Parameterised over `['rest','mcp']`: `write-idempotency.contract.test.ts`
+  (status-endpoint block REST-only, D15), `transport-parity.contract.test.ts`
+  (8 behaviours). Seam-specific: `mcp-transport`/`mcp-wire`/`mcp-signing-fetch`/
+  `select-transport`/`client` IV-2. Fake MCP face sits over the SAME
+  `createIdempotentBoundaryCore` on `/fake/v1/mcp` (not traderton's path →
+  proves `mcpPath` is read from config).
+- Tests: `packages/domain apps/worker apps/api` **5709 passed / 316 skipped**;
+  build + lint green; zod app-packages 3.25.76 (4.x only under
+  `@modelcontextprotocol/*`); I7 0 in production.
+- **xstack transport parity EXECUTED** (not skipped) against the REAL
+  MCP-enabled local boundary (traderton `phase3-mcp-surface` built from the
+  overlay, `BOUNDARY_MCP_ENABLED=true`, `GET /internal/v1/mcp` → 405): 7/7 —
+  **4 MCP-leg assertions** (read over mcp; same-key write replay over mcp;
+  changed-payload reject over mcp; rest→mcp cross-transport replay no second
+  execution) + 3 rest legs. Real HMAC over real HTTP into real Postgres.
+  `phase3-logs/t2.3-xstack-parity.log`; stack torn down after, host clean, G3
+  re-asserted before the run. This is G5 (transport-risk) + G7 (contract
+  parity) evidence on both transports.
+- Owed at closeout G2: the heavy traderton + herobids `--e2e` / `--all` suites.
 
 ---
 
