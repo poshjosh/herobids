@@ -12,7 +12,7 @@
 - [DONE] **Item 3 — Presentation route rewrite** (summary tiles, Trades table, Decisions list with status, Fills table, `PositionRow` mark fields).
 - [DONE] **Item 4 — Generic web renderers** (overview tiles + Details disclosure, feed table, collapsed feeds, `labelKey`/`valueKey` localization).
 - [TODO] **Item 5 — `TradingCapabilityPresentation` layout**.
-- [TODO] **Item 6 — i18n keys** (en/ar/hi).
+- [DONE] **Item 6 — i18n keys** (en/ar/hi).
 - [TODO] **Item 7 — Remove orphaned `formatPnl`/`pnlColor` (+ web `decimal.js`), correct ADR 014 Exposure note**.
 - [TODO] **Item 8 — Tests** (traderton, API, web, i18n, E2E).
 - [TODO] **Item 9 — UAT doc update, ledger fixture, browser UAT runs (desktop + mobile)**.
@@ -535,6 +535,10 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
   fill (direction still correct).
 
 ## Outstanding Issues
+
+### Item 6 — i18n keys (no CRITICAL/HIGH)
+- [LOW] ar `capability.trading.executionMode.shadow` = 'محاكاة' (simulation) diverges from the pre-existing `agents.executionMode.shadow` = 'تجريبي'; the new term is arguably clearer but inconsistent with the legacy entry.
+- [LOW] ar `value.long/short` render as شراء/بيع (buy/sell), identical to `value.buy/sell`; acceptable since used in different columns, but collapses the long↔buy / short↔sell distinction.
 
 ### Item 4 — Generic web renderers (no CRITICAL/HIGH)
 - [MEDIUM→Item 9] Feed table has a `role="region"` + `aria-label` but no `<caption>`; an optional visually-hidden caption would help some screen readers. Current markup satisfies the plan; revisit during the Item 9 a11y/mobile pass.
