@@ -13,7 +13,8 @@
     "upsert-system-skills": "tsx ts/upsert-system-skills.ts",
     "agent-trade-test": "tsx ts/agent-trade-test.ts",
     "build-docs-index": "tsx ts/build-docs-index.ts",
-    "generate-signing-vectors": "tsx ts/generate-signing-vectors.ts"
+    "generate-signing-vectors": "tsx ts/generate-signing-vectors.ts",
+    "generate-descriptor-fixtures": "tsx ts/generate-descriptor-conformance-fixtures.ts"
   },
   "dependencies": {
     "@herobids/db": "workspace:*",

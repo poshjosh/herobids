@@ -94,10 +94,47 @@ which must degrade the skill to instruction-only (Step 10 DT3):
 | pin digest mismatch | instruction-only |
 | `tools/list` disagrees with the descriptor | instruction-only (D16) |
 
+T0.4 added six rows to the fixture's variant set (14 variants in
+`manifest.json`): three **positive controls** that must expose tools —
+`valid-pinned` (pin equals the digest), `retiring-key-accepted` (key
+`status: "retiring"`, Step 10 §4 overlap) and `tools-list-agrees` — so a pipeline
+that always fails pinned mode, retiring keys or the cross-check cannot pass the
+matching negatives trivially; two more `tools/list` cross-check negatives —
+`tools-list-schema-disagrees` (only an `inputSchema` property description
+differs) and `tools-list-extra-tool` (one tool the descriptor does not declare);
+and `definition-disabled` (`enabled: false`, Step 10 §4 revocation →
+instruction-only).
+The fixtures encode Step 10 §3 "Canonicalization and encoding" (P3-3) and use a
+fictional generic backend (`example-echo`), not trading tool shapes.
+
+| Repo | Path | Asserts |
+|---|---|---|
+| herobids | `packages/domain/src/external-backend/__fixtures__/descriptor-conformance/` | well-formed (always on); the verification pipeline reaches each variant's `expected.outcome` (`describe.skip` until T3.1) |
+| traderton | `packages/boundary/src/__fixtures__/descriptor-conformance/` | well-formed: same JCS bytes, ed25519 encoding and `tools/list` cross-check rule |
+
+(Pre-T1.1 the herobids copy lives at `packages/domain/src/traderton/__fixtures__/descriptor-conformance/`; it moves with the directory to the path in the table above at T1.1.)
+
 ```
-Fixture digest (fill at T0.4):
-  descriptor-conformance/  sha256 = <RECORD HERE>
+Fixture digest (filled at T0.4):
+  descriptor-conformance/  sha256 = 823ceb2ba634fc6df21e53e82549f3db63a8fdb19caaf52fdaf5d80d60910766
 ```
+
+**Digest rule.** Files = entries directly in the directory whose name matches
+`^[a-z0-9.-]+\.json$` (no subdirectories; dotfiles such as `.DS_Store`
+excluded), names sorted with JS default sort (= byte order for these ASCII
+names); sha256 over the concatenation of `name + "\n" + <file bytes> + "\n"` per
+file; lowercase hex. `DESCRIPTOR_CONFORMANCE_DIR_SHA256` in both
+`descriptor-conformance.test.ts` files holds the same value. Shell equivalent:
+
+```sh
+cd <dir> && for f in $(ls | grep -E '^[a-z0-9.-]+\.json$' | LC_ALL=C sort); do printf '%s\n' "$f"; cat "$f"; printf '\n'; done | shasum -a 256
+```
+
+Regenerating (herobids `scripts/ts/generate-descriptor-conformance-fixtures.ts`)
+uses a fresh ephemeral ed25519 key — only the public key is written; the private
+key is discarded — so it changes every signature and the digest. It is a §4
+contract change: `cp -R` the directory to traderton and update both constants and
+this digest together.
 
 ### 3.3 Local fixture external-skill source
 

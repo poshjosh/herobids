@@ -1,0 +1,242 @@
+{
+  "formatVersion": 1,
+  "description": "Descriptor conformance fixtures (Step 10 §3, DT3/DT4). TEST-ONLY, dev-signed by an ephemeral key that was discarded. Byte-identical in herobids and traderton. DO NOT EDIT BY HAND: regenerate with herobids scripts/ts/generate-descriptor-conformance-fixtures.ts, copy the directory to traderton, update the dir digest in both tests and SEAM.md §3.2.",
+  "generator": "herobids scripts/ts/generate-descriptor-conformance-fixtures.ts",
+  "rules": {
+    "canonicalization": "RFC 8785 JCS, UTF-8; value domain: objects, arrays, strings, booleans, null, integers within ±(2^53−1)",
+    "signature": "ed25519 over UTF-8(JCS(descriptor)), base64 (RFC 4648 §4, padded)",
+    "keySelection": "wrapper keyId selects exactly one trustedDescriptorSigningKeys[] entry with status active or retiring; no try-every-key fallback. keyIds are unique within trustedDescriptorSigningKeys (rejected at config load); rotation always introduces a new keyId.",
+    "publicKey": "PEM SPKI",
+    "pinDigest": "lowercase hex sha256 of UTF-8(JCS(descriptor))",
+    "descriptorPinning": "descriptorPinning.maxAge.seconds bounds how long a fetched, verified descriptor may be served from cache (age measured from fetch/verification time); it is NOT a check against issuedAt — validity is issuedAt ≤ now < expiresAt",
+    "toolsListCrossCheck": "proposed, normative when T2.2/T3.2 implement: agree iff the tools/list name set equals the union of descriptor sourceSkills[].tools names and, per tool, description is string-equal and inputSchema is JCS-equal; duplicate listed names disagree; compare after exhausting nextCursor pagination; other Tool fields (title, annotations, outputSchema, _meta) are not compared; category is not compared",
+    "definitionOverrides": "shallow replace of top-level baseDefinition keys",
+    "expected": "outcome and reason are both normative: T3.1 adopts these reason codes as-is"
+  },
+  "evaluationTime": "2026-10-02T12:00:00.000Z",
+  "signingKey": {
+    "keyId": "example-echo-dev-1",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAfMgtobz4ygRWlnYmiNmxW7tq/jhSITxV8Q3EkH3rw80=\n-----END PUBLIC KEY-----\n"
+  },
+  "baseDefinition": {
+    "backendId": "example-echo",
+    "enabled": true,
+    "trustedDescriptorSigningKeys": [
+      {
+        "keyId": "example-echo-dev-1",
+        "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAfMgtobz4ygRWlnYmiNmxW7tq/jhSITxV8Q3EkH3rw80=\n-----END PUBLIC KEY-----\n",
+        "status": "active"
+      }
+    ],
+    "approvedSourceSkillRefs": [
+      "example/skills/echo",
+      "example/skills/reverse"
+    ],
+    "descriptorPinning": {
+      "mode": "maxAge",
+      "seconds": 604800
+    }
+  },
+  "variants": [
+    {
+      "id": "valid",
+      "description": "Validly signed by the active key. Only example/skills/echo is installed, so only its tools are exposed (per-ref scoping).",
+      "descriptorFile": "valid.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "tools_exposed",
+        "toolNames": [
+          "echo_text"
+        ]
+      }
+    },
+    {
+      "id": "valid-pinned",
+      "description": "Positive control: pinned mode whose sha256 equals the descriptor pin digest.",
+      "descriptorFile": "valid.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {
+        "descriptorPinning": {
+          "mode": "pinned",
+          "sha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e"
+        }
+      },
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "tools_exposed",
+        "toolNames": [
+          "echo_text"
+        ]
+      }
+    },
+    {
+      "id": "retiring-key-accepted",
+      "description": "Positive control: the signing key is retiring (rotation overlap window), which still verifies.",
+      "descriptorFile": "valid.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {
+        "trustedDescriptorSigningKeys": [
+          {
+            "keyId": "example-echo-dev-1",
+            "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAfMgtobz4ygRWlnYmiNmxW7tq/jhSITxV8Q3EkH3rw80=\n-----END PUBLIC KEY-----\n",
+            "status": "retiring"
+          }
+        ]
+      },
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "tools_exposed",
+        "toolNames": [
+          "echo_text"
+        ]
+      }
+    },
+    {
+      "id": "bad-signature",
+      "description": "The valid wrapper with signature byte 0 XOR 0x01.",
+      "descriptorFile": "bad-signature.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.signature_invalid"
+      }
+    },
+    {
+      "id": "wrong-backend-id",
+      "description": "Validly signed, but backendId does not match the definition.",
+      "descriptorFile": "wrong-backend-id.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "156ed4dfbcf9338b4346442a38e154dbc43912e13a4e86ae53c07c2a9753e4ab",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.backend_mismatch"
+      }
+    },
+    {
+      "id": "expired",
+      "description": "Validly signed, but expiresAt is before evaluationTime (and after issuedAt).",
+      "descriptorFile": "expired.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "a7709c32b9415b783afcff420afdc23d60c83644935ccc04f8af1278574b23e5",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.expired"
+      }
+    },
+    {
+      "id": "unapproved-ref",
+      "description": "Validly signed, but the installed ref (and its sourceSkill) is not in approvedSourceSkillRefs.",
+      "descriptorFile": "unapproved-ref.json",
+      "installedSkillRef": "example/skills/unapproved",
+      "definitionOverrides": {},
+      "canonicalSha256": "c07a296a9e3896c4bd2c99734e476ebdd1dcd207cbdbeb53f0e7813ec8f15f9b",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.ref_not_approved"
+      }
+    },
+    {
+      "id": "unknown-key-id",
+      "description": "The valid descriptor and signature, but the wrapper keyId names no trusted key.",
+      "descriptorFile": "unknown-key-id.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.unknown_key"
+      }
+    },
+    {
+      "id": "pin-mismatch",
+      "description": "Pinned mode whose sha256 is a real descriptor digest, but wrong-backend-id's, not this one's.",
+      "descriptorFile": "valid.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {
+        "descriptorPinning": {
+          "mode": "pinned",
+          "sha256": "156ed4dfbcf9338b4346442a38e154dbc43912e13a4e86ae53c07c2a9753e4ab"
+        }
+      },
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.pin_mismatch"
+      }
+    },
+    {
+      "id": "tools-list-agrees",
+      "description": "Positive control: tools/list matches the descriptor (tools and inputSchema keys in a different order; agreement is set and JCS equality).",
+      "descriptorFile": "valid.json",
+      "toolsListFile": "tools-list-agrees.tools-list.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "tools_exposed",
+        "toolNames": [
+          "echo_text"
+        ]
+      }
+    },
+    {
+      "id": "tools-list-disagrees",
+      "description": "tools/list alters echo_text.description (tool-poisoning style): DT4/D16 cross-check failure.",
+      "descriptorFile": "valid.json",
+      "toolsListFile": "tools-list-disagrees.tools-list.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.tools_list_mismatch"
+      }
+    },
+    {
+      "id": "tools-list-schema-disagrees",
+      "description": "tools/list alters only echo_text.inputSchema.properties.text.description: inputSchema is not JCS-equal, DT4/D16 cross-check failure.",
+      "descriptorFile": "valid.json",
+      "toolsListFile": "tools-list-schema-disagrees.tools-list.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.tools_list_mismatch"
+      }
+    },
+    {
+      "id": "tools-list-extra-tool",
+      "description": "tools/list is the agreeing list plus one tool the descriptor does not declare: name sets differ, DT4/D16 cross-check failure.",
+      "descriptorFile": "valid.json",
+      "toolsListFile": "tools-list-extra-tool.tools-list.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {},
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "descriptor.tools_list_mismatch"
+      }
+    },
+    {
+      "id": "definition-disabled",
+      "description": "Revocation (Step 10 §4): the definition is enabled: false.",
+      "descriptorFile": "valid.json",
+      "installedSkillRef": "example/skills/echo",
+      "definitionOverrides": {
+        "enabled": false
+      },
+      "canonicalSha256": "bafa3783056a6c5a02b0d5fc21ca23ae295a885f71e8e564cd1facd166279e5e",
+      "expected": {
+        "outcome": "instruction_only",
+        "reason": "definition.disabled"
+      }
+    }
+  ]
+}

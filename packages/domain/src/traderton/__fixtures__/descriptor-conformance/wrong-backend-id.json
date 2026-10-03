@@ -1,0 +1,62 @@
+{
+  "descriptor": {
+    "sourceSkills": [
+      {
+        "ref": "example/skills/echo",
+        "tools": [
+          {
+            "name": "echo_text",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 4096,
+                  "description": "Text to return unchanged."
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Returns the given text unchanged.",
+            "category": "read-config"
+          }
+        ],
+        "instructions": "Call echo_text to repeat text back verbatim — a quick connectivity check ✓"
+      },
+      {
+        "ref": "example/skills/reverse",
+        "tools": [
+          {
+            "name": "reverse_text",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 4096,
+                  "description": "Text to reverse."
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Returns the given text with its characters in reverse order.",
+            "category": "read-config"
+          }
+        ],
+        "instructions": "Call reverse_text to return text with its characters in reverse order."
+      }
+    ],
+    "expiresAt": "2099-01-01T00:00:00.000Z",
+    "backendId": "example-other",
+    "issuedAt": "2026-10-01T00:00:00.000Z",
+    "descriptorVersion": "2026-10-01.1"
+  },
+  "signature": "gJDfSOkdKEGhJPb1sazfP28i9R6e8r47Af8m0EVpuI/GDAfERAQkYsnlhJaoAaYKEjGqbD2QriH/Ja9p1sizDA==",
+  "keyId": "example-echo-dev-1"
+}

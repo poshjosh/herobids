@@ -1,6 +1,6 @@
 # Step 10 — External Backend Contract & Trust Plan
 
-**Status:** plan (ready to implement). **Date:** 2026-10-02. **Revised:** 2026-10-02 (ADR 016).
+**Status:** plan (ready to implement). **Date:** 2026-10-02. **Revised:** 2026-10-02 (ADR 016), 2026-10-03 (P3-3 descriptor encoding).
 **Program:** [ENTRYPOINT](./000-program/ENTRYPOINT.md) · [PROGRESS](./000-program/PROGRESS.md) · [roadmap](./001-staging-first-external-backend-roadmap.md) · [DECISIONS](./000-program/DECISIONS.md)
 **Governing:** [ADR 015](../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md) + [ADR 016](../../../../tech/architecture/adrs/2026/10/016-mcp-as-external-backend-transport.md) · **Builds on:** [Step 9 Discovery](./005-step9-external-backend-genericization-discovery.md)
 **Scope (D12 as amended by D14):** Phase 3 = Steps 10–13 **plus** the transport
@@ -107,7 +107,7 @@ interface ExternalBackendDefinition {
   };
   trustedDescriptorSigningKeys: Array<{  // ed25519 public keys (DT1)
     keyId: string;
-    publicKey: string;                   // PEM/base64
+    publicKey: string;                   // PEM SPKI (§3 "Canonicalization and encoding", P3-3)
     status: 'active' | 'retiring';       // overlap-window rotation (§4)
   }>;
   approvedSourceSkillRefs: string[];     // skills.sh refs this backend may deep-integrate (D11)
@@ -252,6 +252,45 @@ interface ExternalBackendDescriptor {
 }
 // Transport: { descriptor: <above, canonical JSON>, signature: <ed25519 over canonical bytes>, keyId }
 ```
+
+**Canonicalization and encoding (clarified 2026-10-03, P3-3).** Resolves
+"canonical JSON" above, §1's `publicKey` encoding (formerly "PEM/base64") and
+§1's `maxAge`, which were undefined:
+- **Canonical JSON = RFC 8785 (JCS):** object keys sorted recursively by UTF-16
+  code units (JS default `sort()`), no insignificant whitespace, arrays in order,
+  primitives serialized exactly as ECMAScript `JSON.stringify`, encoded UTF-8.
+  Value domain: objects, arrays, strings, booleans, `null`, integers within
+  ±(2^53−1); no non-integer numbers in descriptors. For this domain a recursive
+  sorted-key `JSON.stringify` **is** JCS.
+- **Transport wrapper** = `{ descriptor: <object>, signature, keyId }`.
+  `signature` = base64 (RFC 4648 §4, padded) of the 64-byte ed25519 signature over
+  `UTF-8(JCS(descriptor))`. Wrapper formatting and key order are not signed and
+  are irrelevant. (Rejected: carrying the descriptor as a pre-canonicalized
+  string — robust, but diverges from the text above, is worse to review/diff in
+  traderton-skills, and the verifier must canonicalize for the pin digest anyway.)
+- **`keyId` selects exactly one** `trustedDescriptorSigningKeys[]` entry with
+  `status` `active` or `retiring`; there is no try-every-key fallback. keyIds are
+  unique within `trustedDescriptorSigningKeys` (rejected at config load);
+  rotation always introduces a new keyId.
+- **`publicKey` = PEM SPKI** (`-----BEGIN PUBLIC KEY-----`).
+- **Pin digest** (`descriptorPinning.sha256`) = lowercase hex sha256 of
+  `UTF-8(JCS(descriptor))`.
+- **`descriptorPinning.maxAge.seconds`** bounds how long a fetched, verified
+  descriptor may be served from cache (age measured from fetch/verification
+  time); it is NOT a check against `issuedAt` — validity is
+  `issuedAt ≤ now < expiresAt`.
+- **`tools/list` cross-check (DT4/D16) — proposed; normative when T2.2/T3.2
+  implement:** a backend's `tools/list` agrees with the descriptor ⇔ its tool-name
+  set equals the union of the descriptor's `sourceSkills[].tools` names, and per
+  tool `description` is string-equal and `inputSchema` is JCS-equal. Duplicate
+  listed names disagree; compare after exhausting `nextCursor` pagination; other
+  Tool fields (`title`, `annotations`, `outputSchema`, `_meta`) are not compared.
+  `category` is not compared (MCP `tools/list` has no such field). Any
+  disagreement → instruction-only (DT3).
+
+The Phase-3 descriptor conformance fixtures (Phase 3 `SEAM.md §3.2`) pin these
+rules as data in both repos. Each variant's `expected.outcome` and
+`expected.reason` are normative: T3.1 adopts these reason codes as-is.
 
 **Verification pipeline (herobids side, Step 12):**
 1. Resolve the `ExternalBackendDefinition` for the installed skill's source ref

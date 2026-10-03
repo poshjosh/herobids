@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T0.4** (descriptor conformance fixtures) — T0.1–T0.3 ✅. ←
+**Current cursor:** **T0.5** (local fixture external-skill source) — T0.1–T0.4 ✅. ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -71,7 +71,7 @@ never pushed), and an update to this file (status + cursor + running notes),
     the herobids test still passes. These vectors replace it as the real guard.
   - Exit: vectors green in both repos; digests recorded in `SEAM.md`; the old
     replica comment annotated or removed.
-- ⬜ **T0.4 Descriptor conformance fixtures.** One signed descriptor plus tampered
+- ✅ **T0.4 Descriptor conformance fixtures.** One signed descriptor plus tampered
   variants: bad signature, wrong `backendId`, expired `expiresAt`, unapproved
   `ref`, unknown `keyId`, pin mismatch. Each must degrade to instruction-only
   (Step 10 DT3).
@@ -348,6 +348,33 @@ fixed, L4–L6 parked below.
   → 20 pass. I7: 0 escape hatches (test files type-checked ad hoc under strict
   by both sub-agents, since no tsconfig covers them).
 
+**T0.4 — descriptor conformance fixtures.** traderton `phase3-mcp-surface`
+`d072b97`; herobids `phase3-external-backend` (commit after this note).
+Implementer built the generator, fixtures and tests; CodeReviewer round 1: 0
+CRITICAL/HIGH, 5 MEDIUM (maxAge semantics undefined; cross-check coverage gap;
+Step 10 §1 `publicKey` still "PEM/base64"; keyId uniqueness unstated; this
+record) → Implementer rework → round 2: all MEDIUM resolved, none new.
+- **Doc first (SEAM §4):** Step 10 §3 gained "Canonicalization and encoding"
+  (P3-3): RFC 8785 JCS over a stated value domain; wrapper `{descriptor,
+  signature, keyId}`; padded-base64 ed25519 over `UTF-8(JCS(descriptor))`;
+  unique keyIds, `keyId` selects exactly one `active|retiring` key; PEM SPKI;
+  pin digest = sha256 of the JCS bytes; `maxAge` bounds cache age (validity is
+  `issuedAt ≤ now < expiresAt`); the `tools/list` cross-check rule; reason codes
+  normative. §1's `publicKey` comment updated.
+- **Fixtures:** fictional generic `example-echo` backend (no trading shapes),
+  11 files, 14 variants (8 required + positive controls `valid-pinned`,
+  `retiring-key-accepted`, `tools-list-agrees` + `tools-list-schema-disagrees`,
+  `tools-list-extra-tool`, `definition-disabled`). Each negative carries exactly
+  one defect (asserted by restore-and-compare). Dir sha256
+  `823ceb2ba634fc6df21e53e82549f3db63a8fdb19caaf52fdaf5d80d60910766` — test
+  constants in both repos, SEAM §3.2 shell command, `diff -r` all agree.
+- **Keys:** ephemeral ed25519 generated in memory; only the PEM SPKI public key
+  is written; `rg -l "PRIVATE KEY"` on all new files → none.
+- **Tests:** herobids `descriptor-conformance.test.ts` 23 always-on pass + 14
+  in `describe.skip('… TODO(T3.1) flip to describe')`; traderton 23 pass.
+  herobids `packages/domain/src/traderton` total 62 pass / 14 skip. Test files
+  and generator type-checked ad hoc under strict (both reviewers); I7 0.
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -364,3 +391,17 @@ fixed, L4–L6 parked below.
   case ids" check (covered indirectly by the pinned digest).
 - LOW (L6) — body mutation is exercised at `authenticateRequest` level only, not
   through `app.inject` (signature mutation is).
+
+**T0.4** (consider at T3.1, which adopts the reason codes)
+- LOW — rule text writes `descriptorPinning.maxAge.seconds`; the real path is
+  `descriptorPinning.seconds` when `mode: 'maxAge'`.
+- LOW — `issuedAt ≤ now` has no not-yet-valid variant/reason code; Step 10 §3
+  pipeline step 4 still says only "`expiresAt` not past".
+- LOW — no missing-tool or duplicate-name `tools/list` variant (rule text and
+  helper cover them; a ⊆-only check would pass the suite).
+- LOW — `descriptor.ref_not_approved` is a definition-level check; consider
+  `definition.ref_not_approved` before T3.1 makes codes final.
+- LOW — SEAM §3.2 intro and Step 10 §7 0c variant list don't mention positive
+  controls; Step 10 §4 rotation could say "under a new keyId" explicitly.
+- LOW — JCS rule does not reject lone surrogates (RFC 8785 requires I-JSON);
+  both sides are TS today.

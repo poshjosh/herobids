@@ -90,7 +90,8 @@ impossible.
 ```sh
 # In hb. tool name/description/inputSchema must be sourced from the verified
 # descriptor only. Expect ZERO hits where tools/list feeds a schema.
-rg -n "tools/list|toolsList" apps/ packages/ | rg -i "schema|inputSchema"
+# __fixtures__/ is excluded: fixture rule text is data, not code.
+rg -n --glob '!**/__fixtures__/**' "tools/list|toolsList" apps/ packages/ | rg -i "schema|inputSchema"
 ```
 
 **Pass:** zero hits, or hits only in cross-check/comparison code (never
