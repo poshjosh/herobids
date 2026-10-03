@@ -396,7 +396,12 @@ externalBackends:
       hmacSecretRef: TRADERTON_BOUNDARY_HMAC_SECRET   # NAME of the env var holding the HMAC secret — never the secret
     health:
       readyPath: /health/ready              # carried for later health gating; unread in Step 11
-    trustedDescriptorSigningKeys: []        # ed25519 public keys (dev key at T4.2)
+    # ed25519 public keys (PEM SPKI) trusting published descriptors. EMPTY in config:
+    # the T3.3 dev STUB_DESCRIPTOR is signed by an EPHEMERAL in-process key whose
+    # PUBLIC half the worker splices in at runtime for the dev/test run only (see
+    # apps/worker/src/external-backend/stub-descriptor-source.ts). The real
+    # operator-trusted key is added here at T4.2 when the stub is deleted.
+    trustedDescriptorSigningKeys: []
     approvedSourceSkillRefs:                # D11
       - traderton/skills/crypto-trading
       - traderton/skills/crypto-bot-management

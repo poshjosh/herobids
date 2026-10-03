@@ -204,7 +204,11 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
     expect(customSkill.capabilityFamilies).toEqual(['trading']);
   });
 
-  it('fails closed for an assigned custom skill with unscoped trading-account tools', async () => {
+  it('does not infer a trading family (nor throw) for a custom skill with unscoped account tools', async () => {
+    // Step 12 T3.2: the trading-account guard and the tool-name inference were
+    // removed. The DB resolver keeps the row's STORED capabilityFamilies verbatim
+    // (empty here) and never infers 'trading' from tool names. The visible tool
+    // set is governed downstream by the generic descriptor trust path, not here.
     let selectCount = 0;
     const db = {
       select: vi.fn().mockImplementation(() => {
@@ -216,9 +220,12 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
       }),
     } as unknown as Database;
 
-    await expect(resolveRuntimeCapabilityDescriptor(db, 'agent-with-legacy-custom-skill'))
-      .rejects
-      .toThrow('Skill legacy-custom-reader requires trading capability for: get_risk_limits, get_account_summary');
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-with-legacy-custom-skill');
+    const customSkill = descriptor.resolvedSkills.find((skill) => skill.id === 'legacy-custom-reader')!;
+
+    expect(customSkill.requiredTools).toEqual(['get_risk_limits', 'get_account_summary']);
+    expect(customSkill.capabilityFamilies).toEqual([]);
+    expect(customSkill.sourceRef).toBeUndefined();
   });
 
   it('fails loudly for unknown required tools in stored skill rows', async () => {

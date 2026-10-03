@@ -71,6 +71,7 @@ import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTracked
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
 import { buildAgentExternalBackendPorts } from './external-backend/agent-ports.js';
+import { buildDescriptorToolVisibility } from './external-backend/descriptor-tool-visibility.js';
 import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
@@ -467,20 +468,13 @@ const activeSkills = resolveSkills(skillIds);
 const allActiveSkills = [BASE_SKILL, ...activeSkills];
 
 function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
-  const isTradingSkill = (skillId: string) => skillId === 'bot-management' || skillId === 'risk-monitoring' || skillId === 'trading';
-  const resolvedSkills = allActiveSkills.map((skill) => ({
-    ...skill,
-    capabilityFamilies: isTradingSkill(skill.id) ? ['trading'] : [],
-    bindingRequirements: (isTradingSkill(skill.id)
-      ? { trading: { minBindings: 1, requireReady: true } }
-      : {}) as Record<string, { minBindings: number; requireReady: boolean }>,
-    requiredContextBlocks: isTradingSkill(skill.id)
-      ? ['corePlatformContext', 'tradingContext']
-      : ['corePlatformContext'],
-    promptRendererHints: isTradingSkill(skill.id)
-      ? ['readiness-summary', 'trading']
-      : ['core-system'],
-  })) as SkillDefinition[];
+  // Step 12 T3.2: no skill-id inference. Each built-in `SkillDefinition` already
+  // declares its own `capabilityFamilies`, `bindingRequirements`,
+  // `requiredContextBlocks`, and `promptRendererHints` (skills.ts), so the
+  // fallback uses them verbatim. The visible tool set is decided downstream by
+  // the generic descriptor-driven resolver (`applyDescriptorToolVisibility`),
+  // not by a hard-coded trading-skill branch here.
+  const resolvedSkills = allActiveSkills;
 
   return {
     schemaVersion: 'v1',
@@ -943,6 +937,29 @@ if (browserPool) {
   logger.info({ url: BROWSER_POOL_URL }, 'Browser pool adapter initialized');
 }
 const toolRegistry = createToolRegistry({ browserPool });
+
+// ── Generic descriptor-driven tool visibility (Step 12 T3.2 + T3.3) ────────
+// Rewrite the runtime descriptor's resolved skills so a skill mapped to a
+// registered backend (via its `sourceRef` ∈ `approvedSourceSkillRefs`) exposes
+// exactly its signed descriptor's tools — or degrades to instruction-only on any
+// trust failure (DT3). This is the single wiring point that replaced the removed
+// hard-coded trading inference. The dev-signed STUB_DESCRIPTOR (T3.3) supplies the
+// descriptor locally so trading agents resolve their current tools via the generic
+// path (parity). Tool schemas the stub mirrors are sourced from the registry so
+// the DT4 category cross-check passes. No backend identity appears here: the
+// backendId comes from the forwarded config, and the matcher iterates the registry.
+const descriptorToolVisibility = buildDescriptorToolVisibility({
+  rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
+  resolvedSkills: runtimeState.runtimeDescriptor.resolvedSkills,
+  lookupToolSchema: (toolName) => {
+    const tool = toolRegistry.get(toolName);
+    if (tool === undefined) return undefined;
+    return { name: tool.name, description: tool.description, category: tool.category, parameters: tool.parameters };
+  },
+  now: new Date(),
+  logger,
+});
+runtimeState.runtimeDescriptor.resolvedSkills = descriptorToolVisibility.resolvedSkills;
 
 // Initialize email tools if Gmail integration is configured.
 // Gmail client credentials and encryption key are forwarded from the worker
@@ -1936,9 +1953,25 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       // visibility controller uses reference identity to detect changes in
       // snapshotToolBaselines(). Mutating properties in place would silently
       // skip the baseline refresh.
+      // Re-run the generic descriptor-driven resolver over the freshly-resolved
+      // skills so newly-added skills mapped to a backend expose their descriptor
+      // tools (or degrade), exactly as at startup — not their unresolved built-in
+      // tool set. Same composition root, re-evaluated at `now`.
+      const refreshedVisibility = buildDescriptorToolVisibility({
+        rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
+        resolvedSkills: capabilityDescriptor.resolvedSkills,
+        lookupToolSchema: (toolName) => {
+          const tool = toolRegistry.get(toolName);
+          if (tool === undefined) return undefined;
+          return { name: tool.name, description: tool.description, category: tool.category, parameters: tool.parameters };
+        },
+        now: new Date(),
+        logger,
+      });
+
       runtimeState.runtimeDescriptor = {
         ...runtimeState.runtimeDescriptor,
-        resolvedSkills: capabilityDescriptor.resolvedSkills,
+        resolvedSkills: refreshedVisibility.resolvedSkills,
         grantedConnectionsByFamily: capabilityDescriptor.grantedConnectionsByFamily,
         readinessByFamily: capabilityDescriptor.readinessByFamily,
         defaultConnectionByFamily: capabilityDescriptor.defaultConnectionByFamily,

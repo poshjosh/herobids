@@ -19,8 +19,6 @@ const SYSTEM_SKILLS_BY_ID: Record<string, SkillDefinition> = Object.fromEntries(
   [BASE_SKILL, ...SYSTEM_SKILLS].map((skill) => [skill.id, skill]),
 );
 
-const TRADING_ACCOUNT_TOOLS = ['get_risk_limits', 'get_account_summary'] as const;
-
 function assertKnownRequiredTools(skillId: string, requiredTools: string[]): string[] {
   const unknownTools = findUnknownSkillTools(requiredTools);
   if (unknownTools.length > 0) {
@@ -140,25 +138,18 @@ function inferSkillFromRevisionRow(row: {
 
   const requiredTools = assertKnownRequiredTools(row.skillId, row.requiredTools);
 
-  const inferredTradingCapability = requiredTools.includes('create_bot')
-    || requiredTools.includes('submit_decision')
-    || requiredTools.includes('manage_bot')
-    || requiredTools.includes('bot_query')
-    || requiredTools.includes('list_positions')
-    || requiredTools.includes('get_analytics')
-    || row.contextRequirements.some((requirement) => ['bot_statuses', 'positions', 'fills', 'analytics'].includes(requirement));
-
-  const capabilityFamilies = row.capabilityFamilies.length > 0
-    ? row.capabilityFamilies
-    : inferredTradingCapability ? ['trading'] : [];
-  const hasTrading = capabilityFamilies.includes('trading');
-  const unscopedTradingAccountTools = TRADING_ACCOUNT_TOOLS.filter((tool) => requiredTools.includes(tool));
-  if (unscopedTradingAccountTools.length > 0 && !hasTrading) {
-    throw new Error(
-      `Skill ${row.skillId} requires trading capability for: ${unscopedTradingAccountTools.join(', ')}`,
-    );
-  }
-  const requiredContextBlocks = ['corePlatformContext', ...(hasTrading ? ['tradingContext'] : [])];
+  // Step 12 T3.2: no tool-name inference, no trading-account guard. The visible
+  // tool set is decided downstream by the generic descriptor-driven resolver
+  // (worker-side), not by inferring a `trading` family from tool names here. The
+  // row's STORED `capabilityFamilies` is authoritative data; the family-keyed
+  // binding/context/hint presentation is preserved (the §6-fence consumers —
+  // tick-work, readiness, prompt rendering — still read these). A user DB skill
+  // carries no installed source ref yet (that is T4 for installed external
+  // skills), so `sourceRef` is left undefined and such a skill is an ordinary
+  // platform skill until it maps to a backend.
+  const capabilityFamilies = row.capabilityFamilies;
+  const hasTradingFamily = capabilityFamilies.includes('trading');
+  const requiredContextBlocks = ['corePlatformContext', ...(hasTradingFamily ? ['tradingContext'] : [])];
 
   return {
     id: row.skillId,
@@ -169,12 +160,12 @@ function inferSkillFromRevisionRow(row: {
     promptTemplate: row.promptTemplate ?? undefined,
     requiredTools,
     capabilityFamilies,
-    bindingRequirements: (hasTrading
+    bindingRequirements: (hasTradingFamily
       ? { trading: { minBindings: 1, requireReady: true } }
       : {}) as Record<string, { minBindings: number; requireReady: boolean }>,
     contextRequirements: row.contextRequirements,
     requiredContextBlocks,
-    promptRendererHints: hasTrading ? ['readiness-summary', 'trading'] : ['core-system'],
+    promptRendererHints: hasTradingFamily ? ['readiness-summary', 'trading'] : ['core-system'],
     requiredGuardrails: row.requiredGuardrails,
     suggestedTickIntervalMs: row.suggestedTickIntervalMs ?? 900_000,
     visibility: 'private',
