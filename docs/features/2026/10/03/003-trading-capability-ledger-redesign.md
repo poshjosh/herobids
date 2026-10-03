@@ -16,7 +16,7 @@
 - [DONE] **Item 7 — Remove orphaned `formatPnl`/`pnlColor` (+ web `decimal.js`), correct ADR 014 Exposure note**.
 - [DONE] **Item 8 — Tests** (traderton, API, web, i18n, E2E).
 - [DONE] **Item 9 — UAT doc update, ledger fixture, browser UAT runs (desktop + mobile)**.
-- [TODO] **Item 10 — CHANGELOGs + verification**.
+- [DONE] **Item 10 — CHANGELOGs + verification**.
 
 ## Problem
 
@@ -535,6 +535,10 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
   fill (direction still correct).
 
 ## Outstanding Issues
+
+### Item 10 — CHANGELOGs + verification (no CRITICAL/HIGH)
+- [DONE] CHANGELOG entries: herobids `[Unreleased]` ledger-redesign entry added; traderton `[Unreleased]` `includeMarks` entry was added in Item 0.
+- [DONE] Verification (2026-10-04): herobids `pnpm lint` clean, `pnpm build` clean, `pnpm test` 6782 passed / 332 skipped (DB-integration suites needing a live DB) / 0 failures. traderton `pnpm lint` clean, `pnpm build` clean, `pnpm test` 2823 passed / 65 skipped / 0 failures. E2E against the live cross-stack on :8090: journey 19 (ledger) PASS, journey 07 PASS; journeys 07(2)/08 self-skip when the storage auth token is unavailable (pre-existing pattern, unrelated).
 
 ### Item 9 — UAT + fixture + browser runs (no CRITICAL/HIGH)
 - [DONE] UAT doc updated: AG-C02–C06 expectations rewritten; AG-C07–C10 added; AG-14/AG-C01 regression note. `seed-ledger-fixture.sh` created and schema-verified against the real traderton drizzle schema.
