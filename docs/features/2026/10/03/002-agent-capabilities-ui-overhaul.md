@@ -10,7 +10,7 @@
 - [DONE] **Item A1 — Family-generic display** (`agent-display.ts`): add `email` label.
 - [DONE] **Item A2 — Extract shared connection-setup unit** (`AgentConnectionField.tsx`) + refactor `EditAgentModal`.
 - [DONE] **Item A3 — Rework capabilities section** in `AgentDetailPage.tsx` (empty state + inline setup).
-- [PENDING] **Item B1 — Readiness view-model helper** (`capability-readiness-view.ts`) implementing the B2 mapping.
+- [DONE] **Item B1 — Readiness view-model helper** (`capability-readiness-view.ts`) implementing the B2 mapping.
 - [PENDING] **Item B3 — Rework** `AgentCapabilityPage.tsx` (single Status card + Details toggle).
 - [PENDING] **Item Tests — Unit + E2E/i18n/UAT updates** (consolidated test edits).
 
@@ -475,3 +475,7 @@ Non-critical observations recorded during implementation code review (no CRITICA
 - [LOW] `AgentDetailPage` and `AgentConnectionField` independently recompute the merged connection list from the same (React-Query-deduped) data — same intentional duplication noted for A2.
 - [LOW] Detail-page mutations do not invalidate the per-family capability page key `['agents', id, 'capabilities', family]` (separate route, out of A3 scope); the detail page's own `capability-readiness` key is invalidated.
 - [NOTE] Typecheck fix implemented via function overloads on `agentsApi.capabilityReadiness` (api-client.ts); redundant `as Promise<CapabilityReadiness>` casts + orphaned imports removed from EditAgentModal.tsx and AgentCapabilityPage.tsx. AgentDetailPage.test.tsx stale assertions updated (empty-state copy, 'email'→'Email'). Mutation-call-on-interaction unit tests still pending under Item Tests.
+
+### Item B1 — capability-readiness-view.ts
+- [LOW] `ReadinessView.action` nests `action: ReadinessAction` → consumers read `view.action.action.kind`. Matches the plan's B1 snippet (spec-conformant) but reads awkwardly; purely stylistic.
+- [LOW] `helperId` is emitted only on the no-connection branch, matching the B2 table (helper specified only there).
