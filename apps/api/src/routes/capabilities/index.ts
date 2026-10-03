@@ -106,5 +106,56 @@ export async function capabilityRoutes(
     },
   );
 
+  // Generic, family-agnostic per-family readiness. Returns a single
+  // CapabilityReadiness for the requested family (mirrors the trading-specific
+  // route's per-family contract), reusing the list handler's per-family logic.
+  // Registered BEFORE tradingCapabilityRoutes so the literal `trading` segment
+  // registered there keeps precedence over this `:family` param for
+  // `/capabilities/trading/readiness`.
+  app.get<{ Params: { agentId: string; family: string } }>(
+    '/agents/:agentId/capabilities/:family/readiness',
+    async (request, reply) => {
+      const { agentId, family } = request.params;
+
+      const [agent] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
+      if (!agent) {
+        return reply.status(404).send({ error: 'agent.not_found' });
+      }
+
+      const rows: RuntimeAssignmentRow[] = (await db
+        .select({
+          assignmentId: agentConnections.id,
+          grantStatus: agentConnections.status,
+          grantedAt: agentConnections.grantedAt,
+          connectionId: connections.id,
+          connectionStatus: connections.status,
+          provider: connections.provider,
+          label: connections.label,
+          providerRef: connections.providerRef,
+          profile: connections.profile,
+          resolvedVenueAccountId: connections.resolvedVenueAccountId,
+        })
+        .from(agentConnections)
+        .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
+        .where(eq(agentConnections.agentId, agentId))).map((row) => ({
+          ...row,
+          capabilities: getRuntimeFamiliesForProvider(row.provider),
+        }));
+
+      const familyRows = rows.filter((row) => (row.capabilities ?? []).includes(family));
+      const activeInFamily = familyRows.filter((row) => row.grantStatus === 'active');
+      // Surface 'revoked' only when the connection itself was revoked. Removed
+      // grants (PATCH connectionIds: []) should show 'unconfigured' instead.
+      const connectionRevokedInFamily = familyRows.filter((row) => row.connectionStatus === 'revoked');
+      const relevantRows = activeInFamily.length > 0 ? activeInFamily : connectionRevokedInFamily;
+      const latest = chooseLatest(relevantRows);
+
+      return reply.send(deriveReadiness(latest, family));
+    },
+  );
+
   await tradingCapabilityRoutes(app, db, plansConfig, budgets, redisClient, tradertonReadClient, tradertonReadTimeoutMs);
 }
