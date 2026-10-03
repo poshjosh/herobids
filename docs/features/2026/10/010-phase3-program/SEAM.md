@@ -76,7 +76,7 @@ Fixture digest (filled at T0.3):
   invocation-signing-vectors.json  sha256 = 1d4a04b8e92c2baddea4fc8fef787a310d756cfa621d88c11609ad0f9d0520ef
 ```
 
-(Moved at T1.1 (C1) from `packages/domain/src/traderton/__fixtures__/`, bytes unchanged.)
+(Moved at T1.1 (C1, `1b204d63`) from `packages/domain/src/traderton/__fixtures__/`, bytes unchanged.)
 
 ### 3.2 Descriptor conformance fixtures
 
@@ -112,7 +112,7 @@ fictional generic backend (`example-echo`), not trading tool shapes.
 | herobids | `packages/domain/src/external-backend/__fixtures__/descriptor-conformance/` | well-formed (always on); the verification pipeline reaches each variant's `expected.outcome` (`describe.skip` until T3.1) |
 | traderton | `packages/boundary/src/__fixtures__/descriptor-conformance/` | well-formed: same JCS bytes, ed25519 encoding and `tools/list` cross-check rule |
 
-(Moved at T1.1 (C1) from `packages/domain/src/traderton/__fixtures__/descriptor-conformance/`, bytes unchanged.)
+(Moved at T1.1 (C1, `1b204d63`) from `packages/domain/src/traderton/__fixtures__/descriptor-conformance/`, bytes unchanged.)
 
 ```
 Fixture digest (filled at T0.4):

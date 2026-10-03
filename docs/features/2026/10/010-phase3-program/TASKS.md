@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T1.1** (rename + definition schema, C1–C2) — Block 0 + 0b ✅ (T0.1–T0.6, T0.6 round-2 review done `89349ba7`). ←
+**Current cursor:** **T1.2** (transport seam + `RestTransport`, C3) — T1.1 ✅ (C1 `1b204d63`, C2 `5fc75081`); the registry wiring (T1.1's `appConfig.externalBackends` exit item) lands at T1.3 C4 (P3-22). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -111,7 +111,7 @@ never pushed), and an update to this file (status + cursor + running notes),
 
 ## Block 1 — Step 11: generic client migration + transport seam
 
-- ⬜ **T1.1 Rename + registry.** Rename `packages/domain/src/traderton/` and its
+- ✅ **T1.1 Rename + registry.** Rename `packages/domain/src/traderton/` and its
   subpath export → `external-backend` (`@herobids/domain/external-backend`);
   apply the Step 10 §2 symbol table. Add `ExternalBackendDefinition` + Zod schema;
   add the `appConfig.externalBackends[]` registry with the single `traderton`
@@ -452,6 +452,35 @@ review: 0 CRITICAL/HIGH; its MEDIUM (no test for the re-issue *replace* side)
 fixed. Tests: domain traderton + worker traderton/agents/approval + api **2272
 passed / 298 skipped**; build + lint green; I7 0. M3/M4 parked below.
 
+
+**T1.1 — rename + definition schema (C1, C2).** herobids `phase3-external-backend`
+C1 `1b204d63`, C2 `5fc75081`; traderton untouched. Implementer did C1 and C2;
+CodeReviewer on each: **0 CRITICAL/HIGH**.
+- **C1** (`refactor(domain): rename …`): `git mv` of 23 files; 93 files changed
+  (api 45, worker 16, domain 26, scripts 2, `.github` 2, SEAM 1, vitest config).
+  **R100 proof** on the commit (`HEAD~1:…/traderton/$f` vs `HEAD:…/external-backend/$f`
+  blob ids): `sign.ts`, `sign.test.ts`, `signing-vectors.test.ts`, the signing
+  fixture, all 11 descriptor-conformance files, `request-id(.test).ts`. Fixture
+  sha256 `1d4a04b8…20ef` and dir digest `823ceb2b…0766` unchanged;
+  `generate-signing-vectors --check` exit 0. I4: `sign.test.ts` 8 pass
+  unmodified; `-t "signing vectors"` 20 pass. Full `packages/domain apps/api
+  apps/worker`: **5561 passed / 309 skipped**. Completeness greps empty except
+  the frozen fixture description text (P3-9). I7: 36 `as unknown as
+  ExternalBackendClient…` hits, all pre-existing test-stub lines changed only by
+  the symbol rename (36 `-` / 36 `+`, identical after the rename); zero new.
+- **C2** (`feat(domain): ExternalBackendDefinition …`): `config/external-backends.ts`
+  (schema, map→array registry, `ResolvedExternalBackendSchema`,
+  `findExternalBackend`, `resolveExternalBackend` → `Result`,
+  `findExternalBackendProtocolViolations`), `external-backend/client-config.ts`.
+  Unwired. Review MEDIUMs fixed by the coordinator before commit: decision
+  numbers recorded (P3-9..P3-18 + placeholder map), `baseUrl` http(s)-only
+  without userinfo, `.strict()` at every level; LOWs fixed: timeout max,
+  `.`/`..` skill-ref segments, JSON round-trip test, Step 10 wording. T0.4
+  manifest accepted without fixture edits (14 variants). domain **1105 passed /
+  14 skipped**; build + lint green; new test type-checked ad hoc; I7 0.
+- Doc-first: Step 10 plan §1 "Config migration — amended Phase 3 T1.1" and the §2
+  rename table, in C2.
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -542,3 +571,18 @@ passed / 298 skipped**; build + lint green; I7 0. M3/M4 parked below.
 - LOW — traderton status lookup is not consumer/owner-scoped and requestIds are
   now predictable; within the current HMAC trust model. Follow-up: scope
   `findByRequestId` by the authenticated `consumerId`.
+
+**T1.1**
+- LOW — `hmacSecretRef` echoes the ref name in `secret_missing`; if an operator
+  pasted an uppercase base32 secret into the ref it would be echoed. Unlikely.
+- LOW — `contractVersion: z.literal('1.0')`: unquoted YAML `1.0` parses to a
+  number and is rejected (fails closed; `default.yaml` quotes it).
+- LOW (for C4) — the D19 check under `NODE_ENV ?? 'development'` lets `mcp`
+  through when `NODE_ENV` is unset; agent-ports must not log `JSON.parse` error
+  text for `EXTERNAL_BACKEND_CONFIG_JSON` (Node echoes a snippet; payload holds
+  the secret); T3.1 must still report the fixture reason `definition.disabled`.
+- LOW — prose "Traderton REST boundary" remains in `packages/domain/src/index.ts`
+  and `trading/tool-contract.ts` comments; traderton test headers still name the
+  old herobids fixture path.
+- LOW — `.github/skills/external-backend-genericization/SKILL.md` item 8 still
+  describes the pre-T0.6 idempotency state.

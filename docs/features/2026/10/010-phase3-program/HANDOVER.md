@@ -56,8 +56,7 @@ TASKS cursor as the only tracker.
   files ad hoc with a temp tsconfig in `/tmp` that extends the package tsconfig.
 - **Vitest alias trap:** root `vitest.config.ts` aliases `@herobids/domain` and
   Vite prefix-matches. A value import of a subpath needs its own alias placed
-  BEFORE the bare one (P3-8 added `@herobids/domain/traderton`; T1.1 must
-  rename it to `/external-backend`).
+  BEFORE the bare one (P3-8 added it; renamed to `/external-backend` at T1.1 C1).
 - **Run tests from the herobids root** with `pnpm exec vitest run <paths>`;
   rebuild domain (`pnpm --filter @herobids/domain build`) before worker/api
   runs.
