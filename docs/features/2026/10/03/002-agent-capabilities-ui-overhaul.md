@@ -193,7 +193,6 @@ convention.
 - `agents.detail.capabilities.emptyTitle` = "No capabilities yet"
 - `agents.detail.capabilities.emptyBody` = "Give this agent a capability by adding a skill (like Trading or Email) or connecting an account."
 - `agents.detail.capabilities.addSkills` = "Add skills"
-- `agents.detail.capabilities.connections` = "Connections"
 - `agents.detail.capabilities.saving` = "Saving…"
 - `agents.detail.capabilities.saveError` = "Couldn't update capabilities: {error}"
 
