@@ -19,12 +19,18 @@
 // The core (`createIdempotentBoundaryCore`) is transport-independent so a
 // second face (MCP, T2.3) can sit over the same store. The REST face
 // (`startFakeIdempotentBoundary`) is a real node:http server on 127.0.0.1:0.
+// The MCP face (`startFakeMcpBoundary`) is the same node:http server driving
+// the REAL `@modelcontextprotocol/server` SDK over the same core (n33), on
+// `POST /fake/v1/mcp` — deliberately NOT traderton's path, which proves herobids
+// reads the path from config rather than hard-coding it.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
+import { Server, WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server';
 import type {
   ExternalBackendFailureCode,
+  ExternalBackendOutcome,
   ExternalBackendToolInvocationStatusV1,
   ExternalBackendToolInvocationV1,
   ExternalBackendToolResultV1,
@@ -70,6 +76,14 @@ export interface IdempotentBoundaryCore {
   nextInProgressAnswer(): Promise<void>;
   /** The next execution runs and fails with this outcome, which is stored as its terminal result. */
   failNextExecution(failure: FakeExecutionFailure): void;
+  /**
+   * The next execution runs and produces this exact outcome (any closed-union
+   * code or a success payload), stored as its terminal result. Unlike
+   * `failNextExecution` this is not limited to the storable subset — it lets a
+   * contract test drive every failure code + retryable flag through the
+   * transport verbatim.
+   */
+  respondNextWith(outcome: ExternalBackendOutcome): void;
   /** The next execution runs but its row is never completed (stays `in_progress`). */
   stallNextCompletion(): void;
 }
@@ -182,6 +196,7 @@ export function createIdempotentBoundaryCore(options: FakeBoundaryOptions = {}):
   const executionCounts = new Map<string, number>();
   let pendingHold: Promise<void> | undefined;
   let pendingFailure: FakeExecutionFailure | undefined;
+  let pendingResponse: ExternalBackendOutcome | undefined;
   let stallNext = false;
   const inProgressWaiters: Array<() => void> = [];
 
@@ -210,6 +225,11 @@ export function createIdempotentBoundaryCore(options: FakeBoundaryOptions = {}):
     if (hold) await hold;
     const count = (executionCounts.get(toolName) ?? 0) + 1;
     executionCounts.set(toolName, count);
+    const programmed = pendingResponse;
+    pendingResponse = undefined;
+    if (programmed) {
+      return { contractVersion: '1.0', ...identity, outcome: programmed };
+    }
     const failure = pendingFailure;
     pendingFailure = undefined;
     if (failure) {
@@ -322,6 +342,9 @@ export function createIdempotentBoundaryCore(options: FakeBoundaryOptions = {}):
     failNextExecution(failure) {
       pendingFailure = failure;
     },
+    respondNextWith(outcome) {
+      pendingResponse = outcome;
+    },
     stallNextCompletion() {
       stallNext = true;
     },
@@ -335,6 +358,14 @@ export function createIdempotentBoundaryCore(options: FakeBoundaryOptions = {}):
 const INVOKE_PATH = '/internal/v1/tools:invoke';
 const STATUS_PATH_PREFIX = '/internal/v1/invocations/';
 
+/** A recorded request frame — lets a parity test inspect what crossed the wire. */
+export interface RecordedFrame {
+  method: string;
+  path: string;
+  rawBody: string;
+  headers: Record<string, string>;
+}
+
 /** The transport-neutral controls every face exposes to the contract suite. */
 export interface FakeBoundaryControls {
   executions(toolName: string): number;
@@ -343,11 +374,21 @@ export interface FakeBoundaryControls {
   holdNextExecution(): () => void;
   nextInProgressAnswer(): Promise<void>;
   failNextExecution(failure: FakeExecutionFailure): void;
+  /** Program the next execution's exact outcome (any closed-union code or success). */
+  respondNextWith(outcome: ExternalBackendOutcome): void;
   stallNextCompletion(): void;
+  /**
+   * Reject the next invocation as an authentication failure, before the core
+   * sees it (REST: HTTP 200 + `authentication.invalid_caller`; MCP: the
+   * initialize frame answers a JSON-RPC error whose data is that failure).
+   */
+  rejectNextAuthentication(): void;
+  /** Every request frame received so far (both faces). */
+  recordedFrames(): RecordedFrame[];
 }
 
 export interface FakeIdempotentBoundary extends FakeBoundaryControls {
-  /** Base URL of the REST face, e.g. `http://127.0.0.1:54321`. */
+  /** Base URL of the face, e.g. `http://127.0.0.1:54321`. */
   readonly url: string;
   close(): Promise<void>;
 }
@@ -368,18 +409,39 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+function flatHeaders(req: IncomingMessage): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (typeof value === 'string') headers[name] = value;
+    else if (Array.isArray(value)) headers[name] = value.join(', ');
+  }
+  return headers;
+}
+
+/** The authentication failure both faces return when `rejectNextAuthentication` fires. */
+function authFailure(identity: ResultIdentity): ExternalBackendToolResultV1 {
+  return failureResult(identity, 'authentication.invalid_caller', 'signature did not verify', false);
+}
+
 export async function startFakeIdempotentBoundary(options: FakeBoundaryOptions = {}): Promise<FakeIdempotentBoundary> {
   const core = createIdempotentBoundaryCore(options);
+  const frames: RecordedFrame[] = [];
   let loseNextResponse = false;
+  let rejectAuth = false;
 
-  async function handleInvoke(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const raw = await readBody(req);
+  async function handleInvoke(req: IncomingMessage, res: ServerResponse, raw: Buffer): Promise<void> {
     let parsed: unknown;
     try {
       parsed = raw.length > 0 ? JSON.parse(raw.toString('utf8')) : undefined;
     } catch {
       // A step 2: unparseable JSON is a typed 200 failure, not an HTTP error.
       sendJson(res, 200, failureResult({ requestId: '', correlationId: '' }, 'validation.invalid_payload', 'request body is not valid JSON', false));
+      return;
+    }
+    if (rejectAuth) {
+      // A: auth runs before dispatch — HTTP 200 + the typed auth failure, no execution.
+      rejectAuth = false;
+      sendJson(res, 200, authFailure(identityFromRaw(parsed)));
       return;
     }
     const outcome = await core.invoke(parsed);
@@ -394,10 +456,12 @@ export async function startFakeIdempotentBoundary(options: FakeBoundaryOptions =
   }
 
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const raw = await readBody(req);
     // A toSignedRequest: the path is matched with the query string stripped.
     const path = (req.url ?? '').split('?')[0] ?? '';
+    frames.push({ method: req.method ?? '', path, rawBody: raw.toString('utf8'), headers: flatHeaders(req) });
     if (req.method === 'POST' && path === INVOKE_PATH) {
-      await handleInvoke(req, res);
+      await handleInvoke(req, res, raw);
       return;
     }
     if (req.method === 'GET' && path.startsWith(STATUS_PATH_PREFIX)) {
@@ -427,7 +491,203 @@ export async function startFakeIdempotentBoundary(options: FakeBoundaryOptions =
     holdNextExecution: core.holdNextExecution,
     nextInProgressAnswer: core.nextInProgressAnswer,
     failNextExecution: core.failNextExecution,
+    respondNextWith: core.respondNextWith,
     stallNextCompletion: core.stallNextCompletion,
+    rejectNextAuthentication() {
+      rejectAuth = true;
+    },
+    recordedFrames: () => frames.slice(),
+    close() {
+      server.closeAllConnections();
+      return new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    },
+  };
+}
+
+// ── MCP face ─────────────────────────────────────────────────────────────────
+
+// Deliberately NOT traderton's /internal/v1/mcp: a herobids-chosen path proves
+// the client reads mcpPath from config rather than hard-coding the backend's.
+export const FAKE_MCP_PATH = '/fake/v1/mcp';
+const MCP_SERVER_INFO = { name: 'herobids-fake-mcp', version: '0.0.1' } as const;
+const ENVELOPE_META_KEYS = [
+  'contractVersion',
+  'requestId',
+  'idempotencyKey',
+  'correlationId',
+  'issuedAt',
+  'deadlineAt',
+  'caller',
+  'subject',
+] as const;
+
+/** Rebuild the 005 envelope from a tools/call (n25 inverse): name, arguments, _meta's 8 fields. */
+function envelopeFromToolCall(params: { name: string; arguments?: unknown; _meta?: unknown }): unknown {
+  const meta = isRecord(params._meta) ? params._meta : {};
+  const envelope: Record<string, unknown> = { toolName: params.name, payload: params.arguments };
+  for (const key of ENVELOPE_META_KEYS) envelope[key] = meta[key];
+  return envelope;
+}
+
+function outcomeIsFailure(result: ExternalBackendToolResultV1): boolean {
+  return result.outcome.kind === 'failure';
+}
+
+/** n25: encode a core response as a CallToolResult the client decodes. */
+function toCallToolResult(response: FakeInvokeResponse): {
+  content: Array<{ type: 'text'; text: string }>;
+  structuredContent: Record<string, unknown>;
+  isError?: boolean;
+} {
+  // A status wrapper is unwrapped: in_progress stays a status shape (no isError);
+  // terminal exposes its inner result with isError iff it is a failure.
+  if ('state' in response) {
+    if (response.state === 'in_progress') {
+      const body = { ...response };
+      return { content: [{ type: 'text', text: JSON.stringify(body) }], structuredContent: body };
+    }
+    const result = response.result;
+    const body = { ...result };
+    return {
+      content: [{ type: 'text', text: JSON.stringify(body) }],
+      structuredContent: body,
+      ...(outcomeIsFailure(result) ? { isError: true } : {}),
+    };
+  }
+  const body = { ...response };
+  return {
+    content: [{ type: 'text', text: JSON.stringify(body) }],
+    structuredContent: body,
+    ...(outcomeIsFailure(response) ? { isError: true } : {}),
+  };
+}
+
+function rpcMethodOf(parsed: unknown): string | undefined {
+  return isRecord(parsed) && typeof parsed['method'] === 'string' ? parsed['method'] : undefined;
+}
+function rpcIdOf(parsed: unknown): unknown {
+  return isRecord(parsed) ? parsed['id'] : undefined;
+}
+
+/** A JSON-RPC error body carrying the auth failure as `data` (n26 initialize rejection). */
+function jsonRpcAuthError(id: unknown, result: ExternalBackendToolResultV1): string {
+  return JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message: 'authentication failed', data: result } });
+}
+
+export async function startFakeMcpBoundary(options: FakeBoundaryOptions = {}): Promise<FakeIdempotentBoundary> {
+  const core = createIdempotentBoundaryCore(options);
+  const frames: RecordedFrame[] = [];
+  let loseNextResponse = false;
+  let rejectAuth = false;
+  // The last core invoke's execution flag, read after handleRequest to decide
+  // whether to drop a lost response (the SDK transport owns the HTTP write).
+  let lastExecuted = false;
+
+  function buildServer(): Server {
+    const server = new Server(MCP_SERVER_INFO, { capabilities: { tools: {} } });
+    // D16: tools/list is never a schema source; the fake serves an empty list.
+    server.setRequestHandler('tools/list', () => ({ tools: [] }));
+    server.setRequestHandler('tools/call', async (request) => {
+      const envelope = envelopeFromToolCall(request.params);
+      const outcome = await core.invoke(envelope);
+      lastExecuted = outcome.executed;
+      return toCallToolResult(outcome.response);
+    });
+    return server;
+  }
+
+  async function handleMcp(req: IncomingMessage, res: ServerResponse, raw: Buffer): Promise<void> {
+    let parsed: unknown;
+    try {
+      parsed = raw.length > 0 ? JSON.parse(raw.toString('utf8')) : undefined;
+    } catch {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }));
+      return;
+    }
+    // n26: auth is rejected at the first frame (initialize) with a JSON-RPC
+    // error whose data is the typed failure; the client's connect() rejects
+    // with a ProtocolError the transport decodes to the terminal failure.
+    if (rejectAuth && rpcMethodOf(parsed) === 'initialize') {
+      rejectAuth = false;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(jsonRpcAuthError(rpcIdOf(parsed), authFailure(identityFromRaw(parsed))));
+      return;
+    }
+
+    const server = buildServer();
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    lastExecuted = false;
+    try {
+      await server.connect(transport);
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(flatHeaders(req))) headers.set(name, value);
+      const webRequest = new Request(`http://fake${FAKE_MCP_PATH}`, { method: 'POST', headers, body: raw.toString('utf8') });
+      const response = await transport.handleRequest(webRequest, { parsedBody: parsed });
+
+      // Drop a lost response only AFTER the core executed (the write happened).
+      if (loseNextResponse && lastExecuted) {
+        loseNextResponse = false;
+        req.socket.destroy();
+        return;
+      }
+      const bodyText = await response.text();
+      const outHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        outHeaders[key] = value;
+      });
+      res.writeHead(response.status, outHeaders);
+      res.end(bodyText);
+    } finally {
+      await server.close();
+    }
+  }
+
+  async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const raw = await readBody(req);
+    const path = (req.url ?? '').split('?')[0] ?? '';
+    frames.push({ method: req.method ?? '', path, rawBody: raw.toString('utf8'), headers: flatHeaders(req) });
+    if (req.method === 'POST' && path === FAKE_MCP_PATH) {
+      await handleMcp(req, res, raw);
+      return;
+    }
+    // GET/DELETE (and anything else) on the MCP path → 405, no side effect.
+    if (path === FAKE_MCP_PATH) {
+      res.writeHead(405, { allow: 'POST' });
+      res.end();
+      return;
+    }
+    sendJson(res, 404, { error: 'not found' });
+  }
+
+  const server = createServer((req, res) => {
+    route(req, res).catch((err: unknown) => sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address: AddressInfo | string | null = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('fake MCP boundary did not bind a TCP port');
+  }
+
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    executions: core.executions,
+    loseNextResponseAfterExecution() {
+      loseNextResponse = true;
+    },
+    holdNextExecution: core.holdNextExecution,
+    nextInProgressAnswer: core.nextInProgressAnswer,
+    failNextExecution: core.failNextExecution,
+    respondNextWith: core.respondNextWith,
+    stallNextCompletion: core.stallNextCompletion,
+    rejectNextAuthentication() {
+      rejectAuth = true;
+    },
+    recordedFrames: () => frames.slice(),
     close() {
       server.closeAllConnections();
       return new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));

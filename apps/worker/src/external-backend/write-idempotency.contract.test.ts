@@ -6,7 +6,12 @@ import {
   type ExternalBackendSubject,
 } from '@herobids/domain/external-backend';
 import { createExternalBackendWriteBoundary, type ExternalBackendWriteBoundary } from './write-adapter.js';
-import { startFakeIdempotentBoundary, type FakeBoundaryControls } from './__tests__/fake-idempotent-boundary.js';
+import {
+  FAKE_MCP_PATH,
+  startFakeIdempotentBoundary,
+  startFakeMcpBoundary,
+  type FakeBoundaryControls,
+} from './__tests__/fake-idempotent-boundary.js';
 
 /**
  * Write-path idempotency contract (Phase 3 T0.6 / G5). Every case drives the
@@ -41,6 +46,18 @@ function restClient(baseUrl: string, options: HarnessOptions): ExternalBackendCl
   });
 }
 
+function mcpClient(baseUrl: string, options: HarnessOptions): ExternalBackendClient {
+  return createExternalBackendClient({
+    baseUrl,
+    consumerId: CONSUMER_ID,
+    keyId: 'contract',
+    hmacSecret: 'contract-secret',
+    requestTimeoutMs: options.requestTimeoutMs,
+    protocol: 'mcp',
+    mcpPath: FAKE_MCP_PATH,
+  });
+}
+
 async function createRestHarness(options: HarnessOptions): Promise<WriteContractHarness> {
   const backend = await startFakeIdempotentBoundary();
   return {
@@ -50,10 +67,22 @@ async function createRestHarness(options: HarnessOptions): Promise<WriteContract
   };
 }
 
+async function createMcpHarness(options: HarnessOptions): Promise<WriteContractHarness> {
+  const backend = await startFakeMcpBoundary();
+  return {
+    boundary: createExternalBackendWriteBoundary(mcpClient(backend.url, options)),
+    backend,
+    close: () => backend.close(),
+  };
+}
+
 const WRITE_CONTRACT_TRANSPORTS: ReadonlyArray<{
   transport: 'rest' | 'mcp';
   createHarness: (options: HarnessOptions) => Promise<WriteContractHarness>;
-}> = [{ transport: 'rest', createHarness: createRestHarness }]; // T2.3 appends { transport: 'mcp', ... }
+}> = [
+  { transport: 'rest', createHarness: createRestHarness },
+  { transport: 'mcp', createHarness: createMcpHarness },
+];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
