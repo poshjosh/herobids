@@ -36,6 +36,7 @@ import type {
   CapabilityPresentation,
   CapabilityPresentationEmphasis,
 } from './presentation.js';
+import { findClosingFill, holdMsOf, indexFillsByPositionKey } from './trading-ledger.js';
 const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume'] as const;
 type TradingAction = typeof SUPPORTED_ACTIONS[number];
 
@@ -975,37 +976,17 @@ export async function tradingCapabilityRoutes(
         .sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime())
         .slice(offset, offset + limit);
 
-      /**
-       * Reconstruct the correlated-subquery exitPrice in-app: the latest fill
-       * (by filledAt) matching the position's actor/venueAccount/venue/symbol
-       * with `filledAt <= closedAt`. Only closed positions carry an exitPrice.
-       */
-      const exitPriceFor = (position: ReadPositionRow): string | null => {
-        if (position.closedAt === null) return null;
-        const closedAtMs = position.closedAt.getTime();
-        let latest: ReadFillRow | null = null;
-        for (const fill of allFills) {
-          if (
-            fill.actorType === position.actorType &&
-            fill.actorId === position.actorId &&
-            fill.venueAccountId === position.venueAccountId &&
-            fill.venue === position.venue &&
-            fill.symbol === position.symbol &&
-            fill.filledAt.getTime() <= closedAtMs
-          ) {
-            if (latest === null || fill.filledAt.getTime() > latest.filledAt.getTime()) {
-              latest = fill;
-            }
-          }
-        }
-        return latest?.price ?? null;
-      };
+      // Reconstruct the correlated-subquery exitPrice in-app via the shared
+      // ledger helpers: index fills by position key once (avoids the O(P×F)
+      // scan), then pick the latest fill with `filledAt <= closedAt`. Only
+      // closed positions carry an exitPrice.
+      const fillIndex = indexFillsByPositionKey(allFills);
+      const now = new Date();
 
       const items = pagedPositions.map((row) => {
         const isClosed = row.closedAt !== null;
-        const holdMs = isClosed
-          ? row.closedAt!.getTime() - row.openedAt.getTime()
-          : null;
+        // Byte-identical shape: open rows report holdMs: null (not elapsed).
+        const holdMs = isClosed ? holdMsOf(row, now) : null;
         return {
           id: row.id,
           symbol: row.symbol,
@@ -1013,7 +994,7 @@ export async function tradingCapabilityRoutes(
           side: row.side,
           size: row.size,
           entryPrice: row.entryPrice,
-          exitPrice: isClosed ? exitPriceFor(row) : null,
+          exitPrice: isClosed ? (findClosingFill(row, fillIndex)?.price ?? null) : null,
           realizedPnl: parseFloat(row.realizedPnl).toFixed(6),
           status: isClosed ? 'closed' : 'open',
           openedAt: row.openedAt.toISOString(),

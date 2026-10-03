@@ -8,7 +8,7 @@
 
 - [DONE] **Item 0 — traderton: opt-in marks on `get_agent_positions`** (`includeMarks`, position-marks helper, ctx wiring, tests, contract doc).
 - [DONE] **Item 1 — Presentation contract extension** (`presentation.ts`, `api-client.ts`, ADR 014 note).
-- [TODO] **Item 2 — Shared ledger helpers** (`apps/api/src/routes/capabilities/trading-ledger.ts`) + refactor legacy `/positions` onto them.
+- [DONE] **Item 2 — Shared ledger helpers** (`apps/api/src/routes/capabilities/trading-ledger.ts`) + refactor legacy `/positions` onto them.
 - [TODO] **Item 3 — Presentation route rewrite** (summary tiles, Trades table, Decisions list with status, Fills table, `PositionRow` mark fields).
 - [TODO] **Item 4 — Generic web renderers** (overview tiles + Details disclosure, feed table, collapsed feeds, `labelKey`/`valueKey` localization).
 - [TODO] **Item 5 — `TradingCapabilityPresentation` layout**.
@@ -535,6 +535,13 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
   fill (direction still correct).
 
 ## Outstanding Issues
+
+### Item 2 — Shared ledger helpers + /positions refactor (no CRITICAL/HIGH)
+- [MEDIUM→resolves in Item 3] The old `parseFloat`-based `pnlEmphasis` still lives in `trading.ts` and is used by the presentation route; it differs from the new ledger `pnlEmphasis` on sub-cent values. Item 3 rewrites the presentation route onto the ledger helper and removes the old one. Must be reconciled by Item 3.
+- [LOW→Item 8] The new pure helpers (`formatSignedPnl`/`formatDecimal`/`formatDuration`/`closedTradeDetails`/`summarizeTrades`/`pnlEmphasis`) are only exercised indirectly until Item 3; dedicated `trading-ledger.test.ts` lands in Item 8.
+- [LOW→Item 3] `MarkablePositionRow.unrealizedPnl?` duplicates the `PositionRow` mark-field extension Item 3 adds; fold into one source of truth in Item 3.
+- [LOW] `now` threaded into `holdMsOf` is unused for closed rows in the legacy route (harmless; the presentation route uses it for open rows).
+- [NOTE] Fail-soft on malformed Decimal (em-dash + neutral) is now documented in the module header as deliberate (ADR 014 "unavailable, not guessed").
 
 ### Item 1 — Presentation contract extension (no CRITICAL/HIGH)
 - [LOW] API types use `type` aliases while the mirrored web types use `interface`; structurally identical and each matches its file's local convention. (The MEDIUM re-export of the new types via `CapabilityPresentation.tsx` was fixed in-item.)
