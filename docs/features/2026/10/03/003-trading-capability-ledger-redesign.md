@@ -10,7 +10,7 @@
 - [DONE] **Item 1 — Presentation contract extension** (`presentation.ts`, `api-client.ts`, ADR 014 note).
 - [DONE] **Item 2 — Shared ledger helpers** (`apps/api/src/routes/capabilities/trading-ledger.ts`) + refactor legacy `/positions` onto them.
 - [DONE] **Item 3 — Presentation route rewrite** (summary tiles, Trades table, Decisions list with status, Fills table, `PositionRow` mark fields).
-- [TODO] **Item 4 — Generic web renderers** (overview tiles + Details disclosure, feed table, collapsed feeds, `labelKey`/`valueKey` localization).
+- [DONE] **Item 4 — Generic web renderers** (overview tiles + Details disclosure, feed table, collapsed feeds, `labelKey`/`valueKey` localization).
 - [TODO] **Item 5 — `TradingCapabilityPresentation` layout**.
 - [TODO] **Item 6 — i18n keys** (en/ar/hi).
 - [TODO] **Item 7 — Remove orphaned `formatPnl`/`pnlColor` (+ web `decimal.js`), correct ADR 014 Exposure note**.
@@ -535,6 +535,12 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
   fill (direction still correct).
 
 ## Outstanding Issues
+
+### Item 4 — Generic web renderers (no CRITICAL/HIGH)
+- [MEDIUM→Item 9] Feed table has a `role="region"` + `aria-label` but no `<caption>`; an optional visually-hidden caption would help some screen readers. Current markup satisfies the plan; revisit during the Item 9 a11y/mobile pass.
+- [LOW] `valueParams: Record<string,string>` matches the wire contract; would need widening for future numeric/plural ICU args.
+- [LOW] `React.CSSProperties` referenced via the global namespace with no React value import (compiles; pre-existing pattern).
+- [LOW] Inline style objects recreated per render (immaterial at ~limit rows; KISS).
 
 ### Item 3 — Presentation route rewrite (no CRITICAL/HIGH)
 - [LOW→Item 7] Ledger `pnlEmphasis` export is now unused by any importer (the route uses `formatSignedPnl`); keep for Item 8 unit tests or remove in Item 7 cleanup.
