@@ -10,3 +10,4 @@ export * from './contract.js';
 export * from './sign.js';
 export * from './client.js';
 export * from './request-id.js';
+export * from './client-config.js';

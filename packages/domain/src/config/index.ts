@@ -134,6 +134,22 @@ export {
 } from './strategy-parameters.js';
 
 export {
+  EXTERNAL_BACKEND_PROTOCOLS,
+  DEFAULT_EXTERNAL_BACKEND_PROTOCOL,
+  DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS,
+  MCP_ALLOWED_ENVIRONMENTS,
+  ExternalBackendProtocolSchema,
+  ExternalBackendDefinitionSchema,
+  ExternalBackendRegistrySchema,
+  ResolvedExternalBackendSchema,
+  findExternalBackend,
+  resolveExternalBackend,
+  findExternalBackendProtocolViolations,
+  type ExternalBackendProtocol,
+  type ExternalBackendDefinition,
+  type ResolvedExternalBackend,
+} from './external-backends.js';
+export {
   resolveAssessmentConfig,
   type ResolvedAssessmentConfig,
 } from './assessment-config.js';

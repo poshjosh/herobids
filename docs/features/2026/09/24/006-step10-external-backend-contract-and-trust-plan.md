@@ -95,11 +95,12 @@ interface ExternalBackendDefinition {
     toolProtocolOverrides?: Record<string, 'rest' | 'mcp'>;
     // Path of the MCP endpoint when `protocol`/an override is 'mcp'.
     mcpPath?: string;                    // e.g. "/mcp"
+    requestTimeoutMs: number;            // was boundary.requestTimeoutMs; default 10000 (amended Phase 3 T1.1)
   };
   caller: {                              // was boundary.consumerId/keyId
     consumerId: string;
     keyId: string;
-    hmacSecretRef: string;               // reference/name, resolved from secret storage (NOT the secret)
+    hmacSecretRef: string;               // NAME of the env var holding the secret (NOT the secret; amended Phase 3 T1.1)
   };
   health: {
     readyPath: string;                   // default "/health/ready"
@@ -129,6 +130,30 @@ block (`config/schema.ts:1572`, env `TRADERTON_BOUNDARY_*`
 existing `boundary` block becomes the single `traderton` entry (back-compat not
 required — greenfield D6 — but a one-entry registry keeps Step 11 mechanical).
 
+**Config migration — amended Phase 3 T1.1** (P3-12..P3-15, P3-17, P3-18; schema +
+helpers in `packages/domain/src/config/external-backends.ts`, wired in T1.3):
+- **YAML shape:** `externalBackends` is a **map keyed by `backendId`**, parsed to
+  `ExternalBackendDefinition[]` (each entry gains its key as `backendId`). The
+  loader's `deepMerge` replaces arrays and env overrides address dotted keys, so
+  an array could not be overlaid or env-overridden; a map also makes duplicate ids
+  impossible. The in-memory/registry type is still the array above.
+- **Strict:** every registry object rejects unknown keys (a misspelt `enable: false`
+  must not fail open); `baseUrl` must be http(s) without userinfo.
+- **`endpoint.requestTimeoutMs` added** (default 10000, min 1000; read at ~15
+  sites). **`idempotencyRetentionHours` dropped** (informational, unread).
+- **`caller.hmacSecretRef` = the NAME of the env var** holding the secret (e.g.
+  `TRADERTON_BOUNDARY_HMAC_SECRET`), never the secret. The app config loaders
+  resolve it via the pure `resolveExternalBackend(registry, backendId, env)`
+  (`Result`; `external_backend.{not_selected,not_registered,disabled,secret_missing}`).
+  `AppConfig` holds no secret; the worker→agent payload carries the resolved
+  `{ definition, hmacSecret }` record.
+- **`tradingBackendId` binding:** a top-level config key names the registry entry
+  the first-party trading call sites use (no `'traderton'` literal in TS); removed
+  with those sites at Step 14.
+- **D19:** `findExternalBackendProtocolViolations` reports every `mcp` use (protocol
+  or tool override) outside `development`/`test` and the config loaders throw on any; `mcpPath` is
+  required whenever `mcp` is used.
+
 **The client-construction sites become registry lookups by `backendId`. There are
 6, across 3 files** (corrected 2026-10-02; §1 and §7 previously said 5, and Step 9
 Crit 2A listed `apps/api/src/routes/exports.ts` — line 348 there is a COMMENT,
@@ -154,6 +179,20 @@ invoke → map/poll → map terminal result`. Renames (mechanical, Step 11):
 | `TradertonClientResult` | `ExternalBackendClientResult` |
 | `@herobids/domain/traderton` subpath | `@herobids/domain/external-backend` |
 | `contract.ts` `Traderton*` types + `TRADERTON_*` paths | `ExternalBackend*` / `EXTERNAL_BACKEND_*` |
+
+Explicit rows (amended Phase 3 T1.1; P3-9..P3-11):
+
+| From | To |
+|---|---|
+| `TradertonActorType` / `TradertonCaller` / `TradertonSubject` | `ExternalBackendActorType` / `ExternalBackendCaller` / `ExternalBackendSubject` |
+| `TradertonToolInvocationV1` / `TradertonToolResultV1` / `TradertonToolInvocationStatusV1` | `ExternalBackendToolInvocationV1` / `ExternalBackendToolResultV1` / `ExternalBackendToolInvocationStatusV1` |
+| `TradertonSuccessOutcome` / `TradertonFailureOutcome` / `TradertonOutcome` | `ExternalBackendSuccessOutcome` / `ExternalBackendFailureOutcome` / `ExternalBackendOutcome` |
+| `TradertonBoundaryFailureCode` | `ExternalBackendFailureCode` |
+| `TRADERTON_INVOKE_PATH` / `TRADERTON_STATUS_PATH_PREFIX` / `tradertonStatusPath()` | `EXTERNAL_BACKEND_INVOKE_PATH` / `EXTERNAL_BACKEND_STATUS_PATH_PREFIX` / `externalBackendStatusPath()` (path values unchanged) |
+| `InvokeToolInput`, `PollOptions`, `SigningIdentity`, `deriveRequestId` (and the rest of `sign.ts`) | **kept** — already generic |
+| — (new) | `buildExternalBackendClientConfig(definition, hmacSecret)` in the subpath; `ExternalBackendDefinition` + schema/helpers in the main barrel (`config/external-backends.ts`) |
+
+Wire headers `x-traderton-*` are frozen bytes (§5) and are not renamed.
 
 The `TradingToolContext` boundary ports (`tradertonBoundary`,
 `tradertonWriteBoundary`) rename to `externalBackend`/`externalBackendWrite`
