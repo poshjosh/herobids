@@ -107,7 +107,7 @@ is outside this repo's committed state.
 
 This document is explicitly a **superseded, non-governing discovery draft**
 ("Do not implement from this document"), superseded by
-[ADR 015](../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md)
+[ADR 015](../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md)
 (status: **Accepted**). So "not implemented" is the correct and intended state.
 
 Confirmed against code:

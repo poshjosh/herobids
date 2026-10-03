@@ -1,7 +1,7 @@
 # Orphan i18n Key Sweep — tracking ledger
 
 **Created:** 2026-10-02. **Status:** living document — expect multiple passes.
-**Companion to:** [`007-frontend-trading-text-inventory.md`](./007-frontend-trading-text-inventory.md)
+**Companion to:** [`007-frontend-trading-text-inventory.md`](./002-frontend-trading-text-inventory.md)
 (the trading-text inventory). This doc tracks the broader **dead i18n key**
 cleanup in `apps/web/src/app/i18n/locales/{en,ar,hi}.ts`.
 
@@ -63,7 +63,7 @@ the page-chrome keys were dead), `public.notAvailableInLanguage`/`viewInEnglish`
 and the full web vitest suite green after removal.
 
 ### Pass 009 — 2026-10-02 — DELETED 4 keys (via change 009, Part B3)
-Change [`009-skill-first-agent-creation`](./009-skill-first-agent-creation/001-plan.md)
+Change [`009-skill-first-agent-creation`](./004-skill-first-agent-creation/001-plan.md)
 removed the create form's "Suggested skills" dropdown (a disguised type selector)
 and its dead code. The following keys were deleted from all three locales
 (`en`/`ar`/`hi`) in the same change: `agents.create.suggestedSkills`,
@@ -326,7 +326,7 @@ code · **KEEP (B2)** error-shaped, Pass-B review · **KEEP (C)** dynamic.
 ### Removed by change 009 (Part B3) — Suggested-skills dropdown (4)
 
 Deleted from all three locales (`en`/`ar`/`hi`) by
-[`009-skill-first-agent-creation`](./009-skill-first-agent-creation/001-plan.md)
+[`009-skill-first-agent-creation`](./004-skill-first-agent-creation/001-plan.md)
 when the create form's "Suggested skills" dropdown and its dead code
 (`SuggestedSkillSetId`, `SUGGESTED_SKILL_SETS`, `resolveSuggestedSkillIds`,
 `IntentState.suggestedSkills`) were removed.

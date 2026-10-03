@@ -7,7 +7,7 @@ that remains in the codebase.
 (relabeling the remaining copy) is a LATER task** (operator decision P2-19, E3
 resolved "keep as-is for now").
 **Companion:** the broader dead-i18n-key cleanup is tracked in
-[`008-orphan-i18n-key-sweep.md`](./008-orphan-i18n-key-sweep.md). Its **Pass A**
+[`008-orphan-i18n-key-sweep.md`](./003-orphan-i18n-key-sweep.md). Its **Pass A**
 (2026-10-02) removed 103 unused keys; rows below whose key was deleted in that
 pass have been dropped from this table.
 **Scope:** user-facing text in the herobids web frontend only

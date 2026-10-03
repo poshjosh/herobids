@@ -11,7 +11,7 @@
 - `docs/tech/architecture/adrs/2026/09/` — specifically `015-external-backend-skill-registration.md` (the ADR that governs Phase 3).
 
 ## Phase 2 (frontend/backend trading separation)
-- `docs/features/2026/10/004-phase2-program/` — the Phase 2 program folder (its own ENTRYPOINT/DECISIONS/TASKS/RECONCILIATION/ESCALATIONS).
+- `docs/features/2026/10/01/004-phase2-program/` — the Phase 2 program folder (its own ENTRYPOINT/DECISIONS/TASKS/RECONCILIATION/ESCALATIONS).
 - `docs/features/2026/10/` — the supporting Phase 2 docs around it:
   - `003-frontend-trading-coupling-audit.md`
   - `005-backend-trading-coupling-audit.md`
@@ -24,7 +24,7 @@
 - `docs/features/pending/000-capability-foundations/` — the capability/external-backend design corpus (e.g. `008-cross-service-capability-execution-design.md`, `013-native-capabilities-and-external-backends.md`, `016-mcp-registration-layer.md`).
 
 ## Phase 3 (generic External Backend + MCP transport)
-- `docs/features/2026/10/010-phase3-program/` — the **Phase 3 program folder**
+- `docs/features/2026/10/02/005-phase3-program/` — the **Phase 3 program folder**
   (ENTRYPOINT / TASKS / DECISIONS / INVARIANTS / SEAM / ESCALATIONS). This is
   where the autonomous Phase-3 run is driven from. Start at its ENTRYPOINT.
 - `docs/tech/architecture/adrs/2026/10/016-mcp-as-external-backend-transport.md` —

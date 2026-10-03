@@ -2,7 +2,7 @@
 
 Status: pending
 Owner: (unassigned)
-Related: feature 009 (`docs/features/2026/10/009-skill-first-agent-creation/001-plan.md`),
+Related: feature 009 (`docs/features/2026/10/02/004-skill-first-agent-creation/001-plan.md`),
 commit 35f28eab introduced `classifyPreset` in `apps/api/src/routes/chat.ts`.
 
 ## Problem

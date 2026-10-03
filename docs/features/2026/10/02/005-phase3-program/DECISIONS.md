@@ -5,7 +5,7 @@
 
 ## 1. Already settled — do not relitigate
 
-Program-level decisions live in `../../09/24/000-program/DECISIONS.md` (D1–D20).
+Program-level decisions live in `../../../09/24/000-program/DECISIONS.md` (D1–D20).
 **D13–D20 were recorded for this phase and are the ones you will trip over.**
 Summarised here for orientation only; that file is authoritative.
 
@@ -121,7 +121,7 @@ recorded note. Log every such change here.
 ## 5. Carried-forward obligations (fill at T5.2 — G9 is BLOCKING)
 
 Nothing in this phase substitutes for these. Each needs an evidence path and a
-home in `../../09/24/000-program/PROGRESS.md` and the Step-16 obligation list.
+home in `../../../09/24/000-program/PROGRESS.md` and the Step-16 obligation list.
 
 > **Read each row for BOTH what remains AND what is already satisfied — do not
 > treat "carried-forward" as "nothing done".** Some obligations are only
@@ -138,8 +138,8 @@ home in `../../09/24/000-program/PROGRESS.md` and the Step-16 obligation list.
 | CF-3 | REST differential vs pinned oracle `1f6978d740d45e466cf4149617b8afc1c721e751` — ≥99% payload equivalence per tool category, no novel failure category, zero idempotency violations | D12 deferred; infra-gated | Step 16 |
 | CF-4 | Representative load for `submit_decision` + a frequent read tool | D12 deferred; infra-gated; also blocked on CF-5 | Step 16 |
 | CF-5 | **No metrics system exists** (no prom-client/otel/statsd/`/metrics`). Every latency/throughput/overhead item is **N/A — not obtainable** until instrumentation is built. Do not promise these numbers | Pre-existing | A separate observability task, prerequisite to CF-4 |
-| CF-6 | **PARTIALLY DONE — do not treat as fully open.** Boundary restart mid-flight, health-visibility, fail-closed on outage (119 ms, no crash/hang), ~8–9s recovery, idempotent retry (same key → identical outcome), and HMAC-over-the-live-wire were **verified live and operator-approved on 2026-10-01** — see `../../../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md` §C (C2–C5). What **remains** is narrow: the **write-path durable dedup** assertion (same key → exactly ONE durable `submit_decision`) against live staging — §C ran against a *read* tool. The idempotency machinery is built + unit-proven (T0.6/IV-1); only the live-write proof is owed | Infra-gated (write leg only) | Step 16 |
-| CF-7 | **NOT a blocker pre-launch — recorded operator decision, not an open gap.** No rollback-to-in-process path exists; teardown+rebuild is the **accepted** pre-launch recovery (no users, no durable data) — recorded in `../../../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md` §E. Re-evaluate before public launch | Operator decision, pre-launch only | Pre-launch gate |
+| CF-6 | **PARTIALLY DONE — do not treat as fully open.** Boundary restart mid-flight, health-visibility, fail-closed on outage (119 ms, no crash/hang), ~8–9s recovery, idempotent retry (same key → identical outcome), and HMAC-over-the-live-wire were **verified live and operator-approved on 2026-10-01** — see `../../../../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md` §C (C2–C5). What **remains** is narrow: the **write-path durable dedup** assertion (same key → exactly ONE durable `submit_decision`) against live staging — §C ran against a *read* tool. The idempotency machinery is built + unit-proven (T0.6/IV-1); only the live-write proof is owed | Infra-gated (write leg only) | Step 16 |
+| CF-7 | **NOT a blocker pre-launch — recorded operator decision, not an open gap.** No rollback-to-in-process path exists; teardown+rebuild is the **accepted** pre-launch recovery (no users, no durable data) — recorded in `../../../../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md` §E. Re-evaluate before public launch | Operator decision, pre-launch only | Pre-launch gate |
 | CF-8 | Push gate — all `traderton` / `traderton-skills` commits stay local on branches | D20 | Operator approval |
 | CF-9 | Real operator-held ed25519 descriptor signing key; registering it is an infra mutation | DT1 + D20 | Operator step |
 | CF-10 | **Conditional:** if an MCP transport is reachable when Step 16 is planned, the differential becomes three-legged (oracle / REST / MCP) and **D10 is amended in that step's verification plan** | ADR 016 §Consequences | Step-16 plan authoring |

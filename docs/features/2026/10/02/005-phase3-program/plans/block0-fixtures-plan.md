@@ -1,7 +1,7 @@
 # Phase 3 Block 0 — fixture tasks T0.3, T0.4, T0.5 (plan)
 
 **Status:** plan only, not implemented. **Written:** during G0 baseline run (repos untouched).
-**Normative inputs:** `herobids/docs/features/2026/10/010-phase3-program/{ENTRYPOINT,TASKS,SEAM,INVARIANTS}.md`,
+**Normative inputs:** `herobids/docs/features/2026/10/02/005-phase3-program/{ENTRYPOINT,TASKS,SEAM,INVARIANTS}.md`,
 Step 10 plan `herobids/docs/features/2026/09/24/006-step10-external-backend-contract-and-trust-plan.md` (§3, §5, §7 Step 0).
 **Repos/branches:** `hb` = `~/dev_ai/herobids` (`phase3-external-backend`), `tt` = `~/dev_ai/traderton` (`phase3-mcp-surface`).
 

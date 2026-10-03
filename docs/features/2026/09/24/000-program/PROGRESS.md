@@ -8,7 +8,7 @@
 **Current phase:** Phase 1 complete; Phase 2 (Steps 6–8) complete (2026-10-02);
 **Phase 3 in progress** — Steps 9 and 10 ✅ done 2026-10-02.
 **Current step:** **Phase 3 Steps 11–13**, driven by the Phase-3 program package
-[`docs/features/2026/10/010-phase3-program/`](../../../10/010-phase3-program/ENTRYPOINT.md).
+[`docs/features/2026/10/02/005-phase3-program/`](../../../10/02/005-phase3-program/ENTRYPOINT.md).
 **Autonomous run in progress (started 2026-10-02).** Block 0 (baseline +
 shared fixtures) and Block 0b (CF-1/CF-2 idempotency fix, IV-1) are done;
 Block 1 (Step 11 REST half) is done; MCP gate 1 passed; next is T2.2 (traderton MCP surface). Live cursor: that package's `TASKS.md`; session
@@ -43,9 +43,9 @@ staging was re-provisioned after the 09/24 diagnosis. The earlier "state serial
   (`ghcr.io/poshjosh/traderton@sha256:b7b93427…`).
 
 **Phase 2 (Steps 6–8): COMPLETE 2026-10-02.** See the Phase 2 program
-`docs/features/2026/10/004-phase2-program/` (TASKS/DECISIONS/ESCALATIONS/
+`docs/features/2026/10/01/004-phase2-program/` (TASKS/DECISIONS/ESCALATIONS/
 RECONCILIATION) and the completion note
-`docs/features/2026/10/006-phase2-completion-note.md`. The batched legal
+`docs/features/2026/10/01/006-phase2-completion-note.md`. The batched legal
 questions (E1/E2/E3) have been resolved by the operator and T4.2 publish has
 been executed (`staging.traderton.com` live). No Phase 2 items remain.
 
@@ -87,14 +87,14 @@ Legend: ✅ done · 🔄 in progress · ⏸ paused · ⬜ not started · 🚫 bl
 
 - **Steps 1–5 (Phase 1), verified live 2026-10-01.** Evidence in
   [the Phase 1 operational-readiness runbook](../../../../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md)
-  and [the implementation status report](../../../10/001-implementation-status-report.md).
+  and [the implementation status report](../../../10/01/001-implementation-status-report.md).
   Both stacks live and independent, boundary reachable + HMAC-authenticated from
   the real caller, resilience behavior proven, deployed release SHAs pinned.
 - Phase 1 is substantially complete. Remaining full-cutover obligations
   (write-path shadow/differential + load) are explicitly deferred to Step 16.
 
 > **On the Phase-1 "has not completed" wording.** §3 of
-> [the implementation status report](../../../10/001-implementation-status-report.md)
+> [the implementation status report](../../../10/01/001-implementation-status-report.md)
 > still says the staging operational proof "has not completed". That clause sits
 > in the section about the **superseded 09/23 draft** and was written from a
 > then-stale tracker; §4 of the same document carries the explicit 2026-10-01
@@ -106,5 +106,5 @@ Legend: ✅ done · 🔄 in progress · ⏸ paused · ⬜ not started · 🚫 bl
 > exists), or rollback.
 
 - **Next:** Phase 3 Steps 11–13 via
-  [the Phase-3 program package](../../../10/010-phase3-program/ENTRYPOINT.md).
+  [the Phase-3 program package](../../../10/02/005-phase3-program/ENTRYPOINT.md).
   **Awaiting explicit operator greenlight before starting the autonomous run.**

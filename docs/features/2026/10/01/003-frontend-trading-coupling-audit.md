@@ -7,7 +7,7 @@
 > `ExposurePage`, `OutcomeBoardPage`, `ActivityFeedPage` — and the `PREVIEW_ITEMS`
 > nav + their routes) were **deleted on 2026-10-02**. The findings below are kept
 > as the point-in-time record; for current state see `RECONCILIATION.md`
-> (Buckets A/E) and `008-orphan-i18n-key-sweep.md`. This note is the only edit;
+> (Buckets A/E) and `../02/003-orphan-i18n-key-sweep.md`. This note is the only edit;
 > the audit body is unchanged.
 
 **Scope:** `apps/web/src` only (the web frontend). Audit of every surface that
@@ -142,7 +142,7 @@ wallet/venue-setup flows; triage per item during Step 8 proper.
 - **Reported defects (issues 1–3)** are a small, self-contained slice in bucket
   **B** (plus the matching **C** API-client/route change and **D** relabels).
   This is the first remediation and is specced in
-  `docs/features/2026/10/002-genericize-agent-capability-ui/`.
+  `docs/features/2026/10/01/002-genericize-agent-capability-ui/`.
 - **Buckets A/E (whole trading features + routes)** are larger and overlap the
   "move trading to Traderton" question (roadmap Steps 6 + 8). They are NOT in
   the 002 slice; they belong to the full Step 8 decision (make-generic / move /

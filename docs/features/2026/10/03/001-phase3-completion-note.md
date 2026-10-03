@@ -1,7 +1,7 @@
 # Phase 3 — Completion note (Steps 11–13)
 
 **Date:** 2026-10-03. **Author:** autonomous implementing run.
-**Package:** [`010-phase3-program/`](./010-phase3-program/ENTRYPOINT.md).
+**Package:** [`02/005-phase3-program/`](../02/005-phase3-program/ENTRYPOINT.md).
 **Branches (zero pushes, D20):** herobids `phase3-external-backend` · traderton
 `phase3-mcp-surface` · traderton-skills `phase3-skill-publication`.
 
@@ -59,7 +59,7 @@ above; it does not mean cutover-ready.
 
 **Read these for what is already satisfied, not only what is owed.** Several are
 only *partially* open; the behavioural/resilience evidence lives in the Phase-1
-readiness runbook (`../../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md`),
+readiness runbook (`../../../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md`),
 not in the carried-forward list — a reader judging "production readiness" from the
 obligations alone will overstate what remains.
 
@@ -77,12 +77,12 @@ accepted pre-launch), not a gap (runbook §E). **CF-4/CF-5** — N/A until a met
 system exists (runbook §D); deferred, not failed. **CF-12** — pre-existing
 baseline skips.
 
-Each has an evidence path in `010-phase3-program/DECISIONS.md §5` and a home in
+Each has an evidence path in `../02/005-phase3-program/DECISIONS.md §5` and a home in
 the program `PROGRESS.md` + the Step-16 obligation list.
 
 ## The single operator batch
 
-`010-phase3-program/ESCALATIONS.md`: **E1** only — the mandated herobids
+`../02/005-phase3-program/ESCALATIONS.md`: **E1** only — the mandated herobids
 `run-extra-tests.sh --all` Tier 6 contacts herobids staging (read-only) and sends
 a Telegram message. It was run green at the closeout G2 per P3-1; the operator
 owns the standing policy on whether that contact belongs in the Phase-3 gate.

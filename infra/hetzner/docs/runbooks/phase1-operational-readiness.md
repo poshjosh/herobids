@@ -154,6 +154,6 @@ runbook below). Re-evaluate this item before public launch.
 ## References
 
 - Reprovision runbook: `infra/hetzner/docs/staging-reprovision-runbook.md`
-- Status report: `docs/features/2026/10/001-implementation-status-report.md`
+- Status report: `docs/features/2026/10/01/001-implementation-status-report.md`
 - Roadmap: `docs/features/2026/09/24/001-staging-first-external-backend-roadmap.md`
 - Readiness spec: `docs/features/pending/000-capability-foundations/014-operational-readiness-for-external-backends.md`

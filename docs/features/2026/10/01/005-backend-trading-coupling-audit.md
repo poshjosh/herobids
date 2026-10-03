@@ -10,7 +10,7 @@ product/identity must not be first-party."
 (legal/product boundary audit), task **T2.1**, in
 `docs/features/2026/09/24/001-staging-first-external-backend-roadmap.md`. It is
 the companion to the frontend audit
-`docs/features/2026/10/003-frontend-trading-coupling-audit.md` and mirrors its
+`docs/features/2026/10/01/003-frontend-trading-coupling-audit.md` and mirrors its
 shape.
 **Nature:** this is an **inventory + classification**, not an implementation. No
 code was changed.

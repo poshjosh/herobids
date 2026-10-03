@@ -2,8 +2,8 @@
 
 **Status:** living. **Created:** 2026-10-01 (T5.1).
 **Purpose:** confirm every trading-coupled surface from BOTH Step 8 audits —
-the frontend audit (`../../003-frontend-trading-coupling-audit.md`) and the
-backend audit (`../../005-backend-trading-coupling-audit.md`) — is accounted
+the frontend audit (`../../01/003-frontend-trading-coupling-audit.md`) and the
+backend audit (`../../01/005-backend-trading-coupling-audit.md`) — is accounted
 for: either **done** (GENERIC/MOVE/REMOVE-SAFE executed), **deferred** (with a
 recorded lockstep/Phase-3 note), **escalated** (in `ESCALATIONS.md`), or
 **KEEP** (legitimately generic / runtime mechanics / the Phase-3 boundary).
@@ -44,8 +44,8 @@ Dispositions:
 Trading keys relabelled/retired across en/ar/hi in T1.1. The orphaned key
 `goalPlaceholder.personalAssistant` was later **removed** in the 008 orphan-key
 sweep (Pass A, 2026-10-02) along with 102 other unused keys — see
-[`../007-frontend-trading-text-inventory.md`](../007-frontend-trading-text-inventory.md)
-and [`../008-orphan-i18n-key-sweep.md`](../008-orphan-i18n-key-sweep.md).
+[`../../02/002-frontend-trading-text-inventory.md`](../../02/002-frontend-trading-text-inventory.md)
+and [`../../02/003-orphan-i18n-key-sweep.md`](../../02/003-orphan-i18n-key-sweep.md).
 
 ### Bucket A — whole trading features (MOVE/GATE) → ✅ some DELETED 2026-10-02; rest 🕓 Phase-3
 **Update 2026-10-02:** the admin-only Preview pages were **deleted** (not deferred)
@@ -160,7 +160,7 @@ Every surface in both audits maps to exactly one disposition above:
   that was skipped.
 - **⤴ escalated → RESOLVED (2026-10-01):** E1 (greeting preset) → retired
   (now ✅; it was governed by P2-2); E2 (billing meter) → leave as-is; E3 (SEO/OG)
-  → keep as-is + produced the frontend text inventory (`../007-…`). Note N1
+  → keep as-is + produced the frontend text inventory (`../../02/002-…`). Note N1
   stays deferred with E3. See DECISIONS P2-17/18/19.
 - **🧱 KEEP:** trading skills, runtime/engine mechanics, capability plumbing, and
   the deployed Traderton boundary (Phase-3-owned).

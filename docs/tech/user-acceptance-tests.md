@@ -95,7 +95,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 The `/bots` page was deleted when the admin-only Preview section was removed.
 Tests `I-01`–`I-06` no longer apply. See
-[`../features/2026/10/008-orphan-i18n-key-sweep.md`](../features/2026/10/008-orphan-i18n-key-sweep.md)
+[`../features/2026/10/02/003-orphan-i18n-key-sweep.md`](../features/2026/10/02/003-orphan-i18n-key-sweep.md)
 and the Preview-page deletion in the Phase 2 program.
 
 ---

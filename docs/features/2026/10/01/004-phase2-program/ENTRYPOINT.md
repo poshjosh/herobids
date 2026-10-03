@@ -21,10 +21,10 @@ platform, not a trading application.
 | `ESCALATIONS.md` | The single batch of legal/payment-provider questions you cannot decide (§5.3). Already present (pre-seeded); append to it, never pause for it. |
 
 Referenced (authoritative; do not duplicate — read them):
-- Roadmap: `../../09/24/001-staging-first-external-backend-roadmap.md` (Phase 2 = Steps 6, 7, 8)
-- Staging program charter: `../../09/24/000-program/ENTRYPOINT.md` — its §1 objective and §4 invariants GOVERN this program too.
-- Staging decision protocol: `../../09/24/000-program/DECISIONS.md` — the Contemplator handoff + trigger test. Reused verbatim here.
-- Architecture authority: `../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md` (ADR 015, Accepted).
+- Roadmap: `../../../09/24/001-staging-first-external-backend-roadmap.md` (Phase 2 = Steps 6, 7, 8)
+- Staging program charter: `../../../09/24/000-program/ENTRYPOINT.md` — its §1 objective and §4 invariants GOVERN this program too.
+- Staging decision protocol: `../../../09/24/000-program/DECISIONS.md` — the Contemplator handoff + trigger test. Reused verbatim here.
+- Architecture authority: `../../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md` (ADR 015, Accepted).
 - Frontend audit (already done): `../003-frontend-trading-coupling-audit.md`
 - First remediation slice (specced): `../002-genericize-agent-capability-ui/{000-analysis.md,001-plan.md}`
 
@@ -59,7 +59,7 @@ produced first inputs to Step 8. A matching **backend audit** is a Step 8 task
 
 ## 3. Invariants / governing law (inherited — do not break)
 
-All invariants in `../../09/24/000-program/ENTRYPOINT.md §4` apply. The ones that
+All invariants in `../../../09/24/000-program/ENTRYPOINT.md §4` apply. The ones that
 bite most in Phase 2:
 
 1. **No infrastructure mutation without explicit operator approval.** Terraform
@@ -143,7 +143,7 @@ else. The operator resolves the whole batch at the end of Step 8.
 For non-legal choices that are architecturally significant (could degrade the
 ownership boundary, change a contract/route/public copy, or contradict a
 recorded decision), route to a fresh **Contemplator** using the handoff protocol
-in `../../09/24/000-program/DECISIONS.md`. Record the ruling in DECISIONS.md.
+in `../../../09/24/000-program/DECISIONS.md`. Record the ruling in DECISIONS.md.
 Low-stakes mechanical choices: just decide.
 
 ## 6. Sub-agent / skill handoffs (available tooling)

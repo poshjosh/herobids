@@ -6,7 +6,7 @@
 **Scope (D12 as amended by D14):** Phase 3 = Steps 10–13 **plus** the transport
 seam, `McpTransport`, and a Traderton MCP server surface. Steps 14–16 deferred.
 **Execution:** driven by the Phase-3 program package
-[`docs/features/2026/10/010-phase3-program/`](../../10/010-phase3-program/ENTRYPOINT.md).
+[`docs/features/2026/10/02/005-phase3-program/`](../../10/02/005-phase3-program/ENTRYPOINT.md).
 
 > **Revision note (2026-10-02, ADR 016).** This plan was written while D4 ("MCP
 > deferred") stood. ADR 016 supersedes ADR 015 §8 and makes MCP the target
@@ -554,5 +554,5 @@ fixture vectors in §7 Step 0 replace it as the real guard.
 - [x] Construction-site count corrected to 6 across 3 files (§1).
 
 Step 10 is complete on acceptance of this plan. Execution runs from the Phase-3
-program package, [`docs/features/2026/10/010-phase3-program/`](../../10/010-phase3-program/ENTRYPOINT.md),
+program package, [`docs/features/2026/10/02/005-phase3-program/`](../../10/02/005-phase3-program/ENTRYPOINT.md),
 starting at its `TASKS.md` Block 0.

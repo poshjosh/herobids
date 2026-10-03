@@ -4,7 +4,7 @@
 **Date:** 2026-10-01
 **Parent:** Phase 2 Step 8 (legal/product boundary audit) of
 `docs/features/2026/09/24/001-staging-first-external-backend-roadmap.md`
-**Audit:** `docs/features/2026/10/003-frontend-trading-coupling-audit.md`
+**Audit:** `docs/features/2026/10/01/003-frontend-trading-coupling-audit.md`
 
 ## Problem
 

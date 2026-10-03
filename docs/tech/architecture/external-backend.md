@@ -1,7 +1,7 @@
 # External Backend — architecture overview
 
 **Status:** living. Implemented in Phase 3 (Steps 11–13); see the
-[completion note](../../features/2026/10/021-phase3-completion-note.md).
+[completion note](../../features/2026/10/03/001-phase3-completion-note.md).
 **Design records:** [ADR 015 — external-backend skill registration](./adrs/2026/09/015-external-backend-skill-registration.md),
 [ADR 016 — MCP as an external-backend transport](./adrs/2026/10/016-mcp-as-external-backend-transport.md),
 [ADR 008 — native capabilities and external backends](./adrs/2026/08/008-native-capabilities-and-external-backends.md).

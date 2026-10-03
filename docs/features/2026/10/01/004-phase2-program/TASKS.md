@@ -231,7 +231,7 @@ Genuine gates:
     coherent product-identity question with a consolidated recommendation.
 - ✅ **T5.3 Phase 2 closeout.** Update this file (all tasks ✅/⤴/🚫), update
   DECISIONS.md, and update the staging program tracker
-  `../../09/24/000-program/PROGRESS.md` Steps 6–8 to reflect reality. Write a
+  `../../../09/24/000-program/PROGRESS.md` Steps 6–8 to reflect reality. Write a
   short Phase 2 completion note under `docs/features/2026/10/`.
   - Exit: Phase 2 Definition of Done (ENTRYPOINT §8) met, modulo the batched
     legal escalations and any infra hard stops awaiting operator approval.

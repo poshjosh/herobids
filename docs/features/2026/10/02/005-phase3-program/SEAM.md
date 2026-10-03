@@ -17,8 +17,8 @@ a contract IS the drift it exists to prevent.
 | Failure behaviour | Step 10 plan **§6** | — |
 | Descriptor as sole schema authority | Step 10 plan **DT4** + D16 | — |
 
-Step 10 plan: `../../09/24/006-step10-external-backend-contract-and-trust-plan.md`
-ADR 016: `../../../../tech/architecture/adrs/2026/10/016-mcp-as-external-backend-transport.md`
+Step 10 plan: `../../../09/24/006-step10-external-backend-contract-and-trust-plan.md`
+ADR 016: `../../../../../tech/architecture/adrs/2026/10/016-mcp-as-external-backend-transport.md`
 
 **If this file and the Step 10 plan ever disagree, the Step 10 plan wins** and
 this file is the bug.

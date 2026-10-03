@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **COMPLETE** — Phase 3 Steps 11–13 locally verified (DoD G0–G9 all ✅; see `RECONCILIATION.md` + `../021-phase3-completion-note.md`). Steps 14–16 remain (D12); branches unpushed, await the operator's push/merge (CF-8).
+**Current cursor:** **COMPLETE** — Phase 3 Steps 11–13 locally verified (DoD G0–G9 all ✅; see `RECONCILIATION.md` + `../../03/001-phase3-completion-note.md`). Steps 14–16 remain (D12); branches unpushed, await the operator's push/merge (CF-8).
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -804,7 +804,7 @@ risk on both transports; G6 seam no-leak; G7 contract suites ×['rest','mcp']; G
 genericity (I1 visibility 0 + the I12 written answer); **G9 carried obligations
 CF-3..CF-14 recorded** in DECISIONS §5 + program PROGRESS + the Step-16 list.
 Wrote `RECONCILIATION.md` (every §7 task + Step-9 disposition classified, none
-unclassified) and the completion note `../021-phase3-completion-note.md` with the
+unclassified) and the completion note `../../03/001-phase3-completion-note.md` with the
 **verbatim G9 sentence**. ESCALATIONS finalised: **E1** only (Tier-6 staging
 contact policy); N1–N5 pre-seeded, none blocking. CHANGELOG updated. The three
 branches are unpushed and await the operator's push/merge decision (CF-8).

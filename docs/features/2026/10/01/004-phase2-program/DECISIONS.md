@@ -4,14 +4,14 @@
 settled decisions.** Append new decisions here as you make them.
 
 The decision *process* (Contemplator handoff + trigger test) is defined in the
-staging program's `../../09/24/000-program/DECISIONS.md` and is reused verbatim.
+staging program's `../../../09/24/000-program/DECISIONS.md` and is reused verbatim.
 This file records Phase-2-specific decisions and is the append target for new ones.
 
 ## Decisions already made (settled — treat as governing)
 
 | # | Decision | Status | Where |
 |---|---|---|---|
-| P2-1 | herobids must not be a trading application; trading product/identity is Traderton-owned. | Settled | ENTRYPOINT §1; staging ENTRYPOINT §1; [ADR 015](../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md) |
+| P2-1 | herobids must not be a trading application; trading product/identity is Traderton-owned. | Settled | ENTRYPOINT §1; staging ENTRYPOINT §1; [ADR 015](../../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md) |
 | P2-2 | **No persisted agent "type".** Agent identity is derived from its skills → `capabilityFamilies`. Do not add a `type` column. `skillPresetId` (in `unifiedConfig.metadata`) is a creation-time convenience, not identity. `capabilityMode` (`intelligence`/`hybrid`) stays — it is runtime wake/exec mechanics, domain-neutral. | Settled | `../002-…/000-analysis.md`; frontend audit `../003-…` |
 | P2-3 | Capability UI must be **generic/derived from skills**, not trading-hardcoded. The agent detail page lists one readiness card per family the agent actually has; Advanced settings exposes a generic **Capabilities** tab (trading config renders only when the trading family is present). | Settled | `../002-…`; audit bucket B |
 | P2-4 | The frontend trading-coupling audit is complete and authoritative for the web surface. Whole trading *features* (bots, exposure, instance detail, portfolios — audit buckets A/E) are NOT part of the 002 slice; they belong to the full Step 8 classification. | Settled | `../003-…` |
@@ -50,7 +50,7 @@ This file records Phase-2-specific decisions and is the append target for new on
 
 - **P2-17 | E1 resolved → retire the onboarding "AI crypto trader" greeting button (option b). This was NOT a new legal call — it is governed by the already-settled P2-2 ("no persisted agent type; identity derived from skills"). | 2026-10-01 | Operator.** The escalation was over-cautious: the operator had already recorded (P2-2; frontend audit 003; 002 analysis; backend audit 005 confirms there is NO persisted agent `type` column — `skillPresetId` lives in `unifiedConfig.metadata` as a creation-time convenience) that agent "type" is retired and identity comes from skills. The crypto-trader preset button is a direct instance of the type-picker that decision retires. Action taken: removed the `preset:trading` greeting quick-reply in `apps/api/src/routes/chat.ts`; onboarding is now capability-neutral (personal-assistant / custom), and trading is reachable via skill discovery (`list_available_skills`). The `preset:*` detection plumbing is unchanged (still accepts a token if typed) — its full demotion remains the deferred lockstep work (follow-on 5/7). **Lesson:** when a surface is already covered by a settled decision, act on it; do not re-escalate it as a fresh legal question.
 - **P2-18 | E2 resolved → leave the billable `assessment.request` ("strategy assessment") meter AS-IS (option a). | 2026-10-01 | Operator.** Billing *for* trading is distinct from carrying trading logic/identity: herobids bills agents for external actions (browser-use, trading, …), and a trading line item on the bill is acceptable. No change now. Optional future refinement: categorize such meters so externally-caused bills are visibly distinguished; a rule/decision that "billing for trading is OK" may be added later (not required now).
-- **P2-19 | E3 resolved → keep the SEO/OG crypto-trading positioning AS-IS for now (option a); instead produce an inventory table of all crypto/trading-related frontend text. | 2026-10-01 | Operator.** Producing the table (`../007-frontend-trading-text-inventory.md`: columns text · proposed replacement · notes) is the task; APPLYING it (relabeling the copy) is a LATER task, explicitly out of scope now. Note N1 (herobids→Traderton outbound link) stays deferred with E3.
+- **P2-19 | E3 resolved → keep the SEO/OG crypto-trading positioning AS-IS for now (option a); instead produce an inventory table of all crypto/trading-related frontend text. | 2026-10-01 | Operator.** Producing the table (`../../02/002-frontend-trading-text-inventory.md`: columns text · proposed replacement · notes) is the task; APPLYING it (relabeling the copy) is a LATER task, explicitly out of scope now. Note N1 (herobids→Traderton outbound link) stays deferred with E3.
 
 ## Open questions requiring operator / legal input
 

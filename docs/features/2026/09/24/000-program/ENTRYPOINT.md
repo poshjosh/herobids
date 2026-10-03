@@ -29,7 +29,7 @@ decide whether a payment provider accepts it.
 reaches External Backend tools only through a generic, trust-gated path with a
 pluggable transport, with BOTH `RestTransport` and `McpTransport` implemented
 (D14) and REST remaining the default (D19). Driven by the Phase-3 program
-package: `docs/features/2026/10/010-phase3-program/`. Steps 14–16 stay deferred
+package: `docs/features/2026/10/02/005-phase3-program/`. Steps 14–16 stay deferred
 (D12). The current step is recorded at the top of [PROGRESS.md](./PROGRESS.md).
 
 *Superseded milestone (Phase 1, complete 2026-10-01): restore Herobids staging,

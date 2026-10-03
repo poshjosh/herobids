@@ -333,7 +333,7 @@ type buttons); after the user describes a trading goal the flow collects trading
 setup, and after a non-trading goal it does not; the pre-create confirmation
 summary lists the resolved skills by name.
 
-**008 ledger.** In `docs/features/2026/10/008-orphan-i18n-key-sweep.md`, note
+**008 ledger.** In `docs/features/2026/10/02/003-orphan-i18n-key-sweep.md`, note
 that `agents.create.suggestedSkills` + `.custom` + `.trading` +
 `.personalAssistant` were removed by this change (Part B3).
 

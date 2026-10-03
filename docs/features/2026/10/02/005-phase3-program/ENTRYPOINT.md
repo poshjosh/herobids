@@ -25,13 +25,13 @@ plus the transport seam, `McpTransport`, and a Traderton MCP server surface.
 | `ESCALATIONS.md` | Non-blocking batch for anything you genuinely cannot decide. Append, never pause |
 
 Referenced (authoritative; do not duplicate — read them):
-- **Program charter:** `../../09/24/000-program/ENTRYPOINT.md` — its §1 objective and §4 invariants GOVERN this program.
-- **Program decisions:** `../../09/24/000-program/DECISIONS.md` — D1–D20. **D13–D20 were recorded for this phase; read them before any code.**
-- **Program tracker:** `../../09/24/000-program/PROGRESS.md` — update Steps 11–13 as you go.
-- **Roadmap:** `../../09/24/001-staging-first-external-backend-roadmap.md` — Phase 3 = Steps 9–16; this package covers 11–13.
-- **The contract (normative):** `../../09/24/006-step10-external-backend-contract-and-trust-plan.md` — §1 definition, §2/§2.4/§2.5 client + seam + MCP mapping, §3 descriptor, §4 rotation, §5 frozen REST bytes, §6 failure behaviour, **§7 your ordered tasks**.
-- **Discovery:** `../../09/24/005-step9-external-backend-genericization-discovery.md` — symbol dispositions, importer inventory, the hard-coded trading branches.
-- **Architecture:** ADR 015 (`../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md`) and **ADR 016** (`../../../../tech/architecture/adrs/2026/10/016-mcp-as-external-backend-transport.md`, which supersedes ADR 015 §8).
+- **Program charter:** `../../../09/24/000-program/ENTRYPOINT.md` — its §1 objective and §4 invariants GOVERN this program.
+- **Program decisions:** `../../../09/24/000-program/DECISIONS.md` — D1–D20. **D13–D20 were recorded for this phase; read them before any code.**
+- **Program tracker:** `../../../09/24/000-program/PROGRESS.md` — update Steps 11–13 as you go.
+- **Roadmap:** `../../../09/24/001-staging-first-external-backend-roadmap.md` — Phase 3 = Steps 9–16; this package covers 11–13.
+- **The contract (normative):** `../../../09/24/006-step10-external-backend-contract-and-trust-plan.md` — §1 definition, §2/§2.4/§2.5 client + seam + MCP mapping, §3 descriptor, §4 rotation, §5 frozen REST bytes, §6 failure behaviour, **§7 your ordered tasks**.
+- **Discovery:** `../../../09/24/005-step9-external-backend-genericization-discovery.md` — symbol dispositions, importer inventory, the hard-coded trading branches.
+- **Architecture:** ADR 015 (`../../../../../tech/architecture/adrs/2026/09/015-external-backend-skill-registration.md`) and **ADR 016** (`../../../../../tech/architecture/adrs/2026/10/016-mcp-as-external-backend-transport.md`, which supersedes ADR 015 §8).
 - **Repo rules:** `herobids/AGENTS.md`, `traderton/AGENTS.md`, `herobids/docs/best-practices/README.md`.
 - **Operational knowledge:** `.github/skills/external-backend-genericization/SKILL.md` (this phase) and `.github/skills/trading-boundary-ops/SKILL.md` (boundary observation).
 
@@ -139,7 +139,7 @@ not report a green you did not get, and do not push to make a test pass.**
 
 ## 4. Invariants / governing law (inherited — do not break)
 
-All invariants in `../../09/24/000-program/ENTRYPOINT.md §4` apply. `INVARIANTS.md`
+All invariants in `../../../09/24/000-program/ENTRYPOINT.md §4` apply. `INVARIANTS.md`
 in this folder turns the Phase-3-relevant ones into assertions with commands.
 The ones that bite hardest here:
 
@@ -185,7 +185,7 @@ clear deciding reason is yours to make; write the mechanics into the record. A
 brief that takes longer to write than the decision takes to make is a signal you
 have already decided.
 
-Use the handoff protocol in `../../09/24/000-program/DECISIONS.md` when you do
+Use the handoff protocol in `../../../09/24/000-program/DECISIONS.md` when you do
 route. Record every ruling in this folder's `DECISIONS.md`.
 
 ### 5.2 The stuck rule (do not grind)

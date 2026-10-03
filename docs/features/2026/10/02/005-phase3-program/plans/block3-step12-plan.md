@@ -3,7 +3,7 @@
 **Status:** plan (ready to implement). **Date:** 2026-10-DD.
 **Repo:** herobids `~/dev_ai/herobids` · **Branch:** `phase3-external-backend` · **HEAD at planning:** `e57fbbee`.
 **Program:** [ENTRYPOINT](../ENTRYPOINT.md) · [TASKS](../TASKS.md) · [DECISIONS](../DECISIONS.md) · [INVARIANTS](../INVARIANTS.md) · [SEAM](../SEAM.md)
-**Normative contract:** [Step 10 plan](../../../09/24/006-step10-external-backend-contract-and-trust-plan.md) — §1, §3, §4, §7 "Step 12".
+**Normative contract:** [Step 10 plan](../../../../09/24/006-step10-external-backend-contract-and-trust-plan.md) — §1, §3, §4, §7 "Step 12".
 **Builds on:** T3.1 (`747f6fdb`) — `packages/domain/src/external-backend/descriptor.ts`.
 
 > This plan covers **T3.2** (replace the hard-coded trading branches with a
