@@ -11,7 +11,7 @@
 - [DONE] **Item A2 — Extract shared connection-setup unit** (`AgentConnectionField.tsx`) + refactor `EditAgentModal`.
 - [DONE] **Item A3 — Rework capabilities section** in `AgentDetailPage.tsx` (empty state + inline setup).
 - [DONE] **Item B1 — Readiness view-model helper** (`capability-readiness-view.ts`) implementing the B2 mapping.
-- [PENDING] **Item B3 — Rework** `AgentCapabilityPage.tsx` (single Status card + Details toggle).
+- [DONE] **Item B3 — Rework** `AgentCapabilityPage.tsx` (single Status card + Details toggle).
 - [PENDING] **Item Tests — Unit + E2E/i18n/UAT updates** (consolidated test edits).
 
 ## Why one plan
@@ -479,3 +479,10 @@ Non-critical observations recorded during implementation code review (no CRITICA
 ### Item B1 — capability-readiness-view.ts
 - [LOW] `ReadinessView.action` nests `action: ReadinessAction` → consumers read `view.action.action.kind`. Matches the plan's B1 snippet (spec-conformant) but reads awkwardly; purely stylistic.
 - [LOW] `helperId` is emitted only on the no-connection branch, matching the B2 table (helper specified only there).
+
+### Item B3 — AgentCapabilityPage rework
+- [RESOLVED] Deleted the stale `i18n-regressions.test.ts` case "AgentCapabilityPage trading next steps no longer route to /connections" (its premise — `getCapabilityNextSteps` — was removed by B3), as the plan's Tests section prescribes.
+- [RESOLVED] Removed the now-orphaned `agents.capabilityPage.readiness` key from all three locales (its only consumer, the old Readiness-card title, was removed).
+- [LOW] `highlightTimer` has no `useEffect` unmount cleanup; a ~1.5s local-state timer, not a meaningful leak.
+- [NOTE] `tradingNote` (`agents.capabilityState.unconfigured.tradingNote`) line was dropped from the capability page (the Status card now conveys state in plain language). Its i18n key remains for other usages.
+- [NOTE] AgentCapabilityPage.test.tsx still only covers the unready/fallback path; new Status-headline + demoted-cards assertions are deferred to Item Tests.

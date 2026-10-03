@@ -595,7 +595,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.title': '{capability} capability',
   'agents.capabilityPage.subtitle': 'AI agent: {agent}',
   'agents.capabilityPage.backToAgent': 'Back to agent',
-  'agents.capabilityPage.readiness': 'Readiness',
   'agents.capabilityPage.status.readyHeadline': 'Ready to trade',
   'agents.capabilityPage.status.noConnectionHeadline': 'Not ready — no trading connection yet',
   'agents.capabilityPage.status.noConnectionReason': 'This agent needs a trading connection before it can trade.',

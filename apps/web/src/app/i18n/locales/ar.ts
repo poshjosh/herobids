@@ -507,7 +507,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.title': 'قدرة {capability}',
   'agents.capabilityPage.subtitle': 'وكيل الذكاء الاصطناعي: {agent}',
   'agents.capabilityPage.backToAgent': 'العودة إلى الوكيل',
-  'agents.capabilityPage.readiness': 'الجاهزية',
   'agents.capabilityPage.status.readyHeadline': 'جاهز للتداول',
   'agents.capabilityPage.status.noConnectionHeadline': 'غير جاهز — لا يوجد اتصال تداول بعد',
   'agents.capabilityPage.status.noConnectionReason': 'يحتاج هذا الوكيل إلى اتصال تداول قبل أن يتمكن من التداول.',

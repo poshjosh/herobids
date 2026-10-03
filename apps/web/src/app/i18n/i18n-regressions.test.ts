@@ -144,23 +144,12 @@ describe('setup flow copy changes', () => {
     }
   });
 
-  it('AgentCapabilityPage trading next steps no longer route to /connections', () => {
-    // The trading capability page must guide users to AI Agents for setup,
-    // not to /connections which is now an advanced/partial tool.
-    const source = readFileSync(
-      new URL('../../features/agents/AgentCapabilityPage.tsx', import.meta.url),
-      'utf8',
-    );
-    // The trading branch should use the setupOnAgents key, not the
-    // manageConnections key pointing to /connections.
-    const tradingBranchStart = source.indexOf("if (family === 'trading')");
-    const tradingBranchEnd = source.indexOf('return [', tradingBranchStart + 1);
-    const returnEnd = source.indexOf('];', tradingBranchEnd) + 2;
-    const tradingReturnBlock = source.slice(tradingBranchStart, returnEnd);
-
-    expect(tradingReturnBlock).toContain('setupOnAgents');
-    expect(tradingReturnBlock).not.toContain("path: '/connections'");
-  });
+  // The case "AgentCapabilityPage trading next steps no longer route to
+  // /connections" was removed: it parsed the body of `getCapabilityNextSteps`,
+  // which the capabilities UI overhaul (plan 002) deleted when the per-family
+  // page was reworked into a single plain-language Status card. Its premise
+  // (a `getCapabilityNextSteps` trading branch using `setupOnAgents`) no longer
+  // exists, so the assertion is retired rather than relaxed.
 });
 
 

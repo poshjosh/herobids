@@ -507,7 +507,6 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.title': '{capability} क्षमता',
   'agents.capabilityPage.subtitle': 'AI एजेंट: {agent}',
   'agents.capabilityPage.backToAgent': 'एजेंट पर वापस',
-  'agents.capabilityPage.readiness': 'तैयारी',
   'agents.capabilityPage.status.readyHeadline': 'ट्रेड करने के लिए तैयार',
   'agents.capabilityPage.status.noConnectionHeadline': 'तैयार नहीं — अभी तक कोई ट्रेडिंग कनेक्शन नहीं',
   'agents.capabilityPage.status.noConnectionReason': 'इस एजेंट को ट्रेड करने से पहले एक ट्रेडिंग कनेक्शन चाहिए।',
