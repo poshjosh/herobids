@@ -349,7 +349,7 @@ fixed, L4–L6 parked below.
   by both sub-agents, since no tsconfig covers them).
 
 **T0.4 — descriptor conformance fixtures.** traderton `phase3-mcp-surface`
-`d072b97`; herobids `phase3-external-backend` (commit after this note).
+`d072b97`; herobids `phase3-external-backend` `2bb453a8`.
 Implementer built the generator, fixtures and tests; CodeReviewer round 1: 0
 CRITICAL/HIGH, 5 MEDIUM (maxAge semantics undefined; cross-check coverage gap;
 Step 10 §1 `publicKey` still "PEM/base64"; keyId uniqueness unstated; this
