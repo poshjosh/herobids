@@ -1107,6 +1107,21 @@ export interface AgentDocument {
   createdAt: string;
 }
 
+// Overloaded so callers get a precise return type: the no-family call resolves
+// the full per-family list, while a family-scoped call resolves a single
+// readiness record. A single arrow with a ternary would collapse both into a
+// union and force every caller to narrow (or cast) — the overloads remove that.
+function agentCapabilityReadiness(id: string): Promise<{ agentId: string; capabilities: CapabilityReadiness[] }>;
+function agentCapabilityReadiness(id: string, family: string): Promise<CapabilityReadiness>;
+function agentCapabilityReadiness(
+  id: string,
+  family?: string,
+): Promise<CapabilityReadiness | { agentId: string; capabilities: CapabilityReadiness[] }> {
+  return family
+    ? request<CapabilityReadiness>(`/agents/${id}/capabilities/${family}/readiness`)
+    : request<{ agentId: string; capabilities: CapabilityReadiness[] }>(`/agents/${id}/capabilities/readiness`);
+}
+
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
@@ -1217,10 +1232,7 @@ export const agents = {
     request<unknown[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
   messages: (id: string, limit?: number, authoredBy?: 'agent' | 'platform') =>
     request<AgentOutboundMessage[]>(`/agents/${id}/messages${buildQuery({ limit, authoredBy })}`),
-  capabilityReadiness: (id: string, family?: string) =>
-    family
-      ? request<CapabilityReadiness>(`/agents/${id}/capabilities/${family}/readiness`)
-      : request<{ agentId: string; capabilities: CapabilityReadiness[] }>(`/agents/${id}/capabilities/readiness`),
+  capabilityReadiness: agentCapabilityReadiness,
   tradingConnections: (id: string) =>
     request<{ agentId: string; family: 'trading'; connections: ConnectionSummary[] }>(`/agents/${id}/capabilities/trading/connections`),
   getConnections: (id: string) =>

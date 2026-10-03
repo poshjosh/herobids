@@ -203,27 +203,27 @@ describe('AgentDetailPage capabilities list', () => {
     expect(html).not.toContain(messages['agents.summary.noCapabilitySetup']);
   });
 
-  it('renders both Trading and email cards for a trading+email agent', () => {
+  it('renders both Trading and Email cards for a trading+email agent', () => {
     const html = renderDetail({
       agentSkillIds: ['trading', 'email'],
       readinessFamilies: ['email', 'trading'],
     });
     const labels = renderedFamilyLabels(html);
     // resolveCapabilityFamilies sorts families alphabetically → email before trading.
-    expect(labels).toEqual(['email', 'Trading']);
+    expect(labels).toEqual(['Email', 'Trading']);
   });
 
-  it('renders only the email card for an email-only agent (no "no capabilities")', () => {
+  it('renders only the Email card for an email-only agent (no "no capabilities")', () => {
     const html = renderDetail({ agentSkillIds: ['email'], readinessFamilies: ['email'] });
     const labels = renderedFamilyLabels(html);
-    expect(labels).toEqual(['email']);
-    expect(html).not.toContain(messages['agents.summary.noCapabilitySetup']);
+    expect(labels).toEqual(['Email']);
+    expect(html).not.toContain(messages['agents.detail.capabilities.emptyTitle']);
   });
 
   it('shows the empty state only when the agent has zero capability families', () => {
     const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
     const labels = renderedFamilyLabels(html);
     expect(labels).toEqual([]);
-    expect(html).toContain(messages['agents.summary.noCapabilitySetup']);
+    expect(html).toContain(messages['agents.detail.capabilities.emptyTitle']);
   });
 });

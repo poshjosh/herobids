@@ -2,7 +2,7 @@ import { useNavigate, useParams } from 'react-router';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, capabilities as capabilitiesApi, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button, StatusBadge, KV } from '../../lib/ui.js';
 import { formatCapabilityFamily, formatCapabilityState } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -25,7 +25,7 @@ export function AgentCapabilityPage() {
 
   const readinessQuery = useQuery({
     queryKey: ['agents', agentId, 'capabilities', family],
-    queryFn: async () => agentsApi.capabilityReadiness(agentId!, family!) as Promise<CapabilityReadiness>,
+    queryFn: async () => agentsApi.capabilityReadiness(agentId!, family!),
     enabled: Boolean(agentId && family),
   });
 

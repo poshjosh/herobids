@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS, ReasoningLevelSchema } from '@herobids/domain';
-import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolvePromptTemplate, resolveGoalPlaceholderKey } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
@@ -168,7 +168,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   }
   const tradingCapabilityQuery = useQuery({
     queryKey: ['agents', agentId, 'capability-readiness', 'trading'],
-    queryFn: async () => agentsApi.capabilityReadiness(agentId, 'trading') as Promise<CapabilityReadiness>,
+    queryFn: async () => agentsApi.capabilityReadiness(agentId, 'trading'),
   });
   const currentHasTradingCapability = tradingCapabilityQuery.data != null && tradingCapabilityQuery.data.state !== 'unconfigured';
   const riskDefaultsQuery = useQuery({

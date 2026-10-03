@@ -3,10 +3,12 @@ import { useLocation, useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel, FieldLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
+import { SkillPicker } from './SkillPicker.js';
+import { AgentConnectionField } from './AgentConnectionField.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, formatSkillSelection, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, formatSkillSelection, listSelectableSkills, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
@@ -109,6 +111,72 @@ export function AgentDetailPage() {
   const familyCapabilities = capabilityFamilies
     .map((family) => readinessByFamily.get(family))
     .filter((cap): cap is CapabilityReadiness => cap !== undefined);
+
+  // Inline capability setup: source the agent's current connection ids the same
+  // way EditAgentModal does — union the active trading grants with the active
+  // generic connections — and seed a controlled local selection from them so
+  // the inline AgentConnectionField reflects what the agent currently has.
+  const agentTradingConnectionsQuery = useQuery({
+    queryKey: ['agents', id, 'capabilities', 'trading', 'connections'],
+    queryFn: () => agentsApi.tradingConnections(id!),
+    enabled: !!id,
+  });
+  const agentGenericConnectionsQuery = useQuery({
+    queryKey: ['agents', id, 'connections'],
+    queryFn: () => agentsApi.getConnections(id!),
+    enabled: !!id,
+  });
+
+  const [localConnectionIds, setLocalConnectionIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!agentTradingConnectionsQuery.isSuccess && !agentGenericConnectionsQuery.isSuccess) return;
+    const activeIds = new Set<string>();
+    for (const c of agentTradingConnectionsQuery.data?.connections ?? []) {
+      if (c.grantStatus === 'active') activeIds.add(c.connectionId);
+    }
+    for (const c of agentGenericConnectionsQuery.data?.connections ?? []) {
+      if (c.grantStatus === 'active' || c.status === 'active') activeIds.add(c.connectionId);
+    }
+    const nextIds = [...activeIds];
+    setLocalConnectionIds((prev) => {
+      if (prev.length === nextIds.length && prev.every((cid) => nextIds.includes(cid))) return prev;
+      return nextIds;
+    });
+  }, [
+    agentTradingConnectionsQuery.isSuccess,
+    agentTradingConnectionsQuery.data?.connections,
+    agentGenericConnectionsQuery.isSuccess,
+    agentGenericConnectionsQuery.data?.connections,
+  ]);
+
+  const [capabilitySaveError, setCapabilitySaveError] = useState<string | null>(null);
+
+  const skillsMutation = useMutation({
+    mutationFn: (skillIds: string[]) => agentsApi.update(id!, { skillIds }),
+    onSuccess: () => {
+      setCapabilitySaveError(null);
+      void qc.invalidateQueries({ queryKey: ['agents', id] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness'] });
+      void qc.invalidateQueries({ queryKey: ['skills'] });
+    },
+    onError: (error) => setCapabilitySaveError(localizeApiError(intl, error, 'common.errorTitle')),
+  });
+
+  const connectionsMutation = useMutation({
+    mutationFn: (connectionIds: string[]) => agentsApi.update(id!, { connectionIds }),
+    onSuccess: () => {
+      setCapabilitySaveError(null);
+      void qc.invalidateQueries({ queryKey: ['agents', id] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness'] });
+      void qc.invalidateQueries({ queryKey: ['connections'] });
+      void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'connections'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'capabilities', 'trading', 'connections'] });
+    },
+    onError: (error) => setCapabilitySaveError(localizeApiError(intl, error, 'common.errorTitle')),
+  });
+
+  const capabilitySaving = skillsMutation.isPending || connectionsMutation.isPending;
 
   const startMutation = useMutation({
     mutationFn: () => agentsApi.start(id!),
@@ -458,7 +526,10 @@ export function AgentDetailPage() {
             {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
             {capabilityQuery.isError && <ErrorState message={localizeApiError(intl, capabilityQuery.error, 'common.errorTitle')} />}
             {!skillsQuery.isLoading && !skillsQuery.isError && !hasAnyCapability && (
-              <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</div>
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '4px' }}>{intl.formatMessage({ id: 'agents.detail.capabilities.emptyTitle' })}</div>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem', lineHeight: '1.5' }}>{intl.formatMessage({ id: 'agents.detail.capabilities.emptyBody' })}</div>
+              </div>
             )}
             {!skillsQuery.isLoading && !skillsQuery.isError && hasAnyCapability && familyCapabilities.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -499,6 +570,44 @@ export function AgentDetailPage() {
                     </div>
                   </section>
                 ))}
+              </div>
+            )}
+            {!skillsQuery.isLoading && !skillsQuery.isError && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: hasAnyCapability ? '16px' : '0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <FieldLabel>{intl.formatMessage({ id: 'agents.detail.capabilities.addSkills' })}</FieldLabel>
+                  <SkillPicker
+                    initialSkills={listSelectableSkills(skillsQuery.data?.skills ?? [])}
+                    selectedSkillIds={agent.skillIds ?? []}
+                    loading={skillsQuery.isLoading}
+                    // Skill-load errors are already surfaced by the section-level
+                    // ErrorState above; this block only renders when the query is
+                    // not in an error state, so there is nothing to forward here.
+                    errorMessage={null}
+                    onChange={(skillIds) => skillsMutation.mutate(skillIds)}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <FieldLabel>{intl.formatMessage({ id: 'agents.detail.capabilities.connections' })}</FieldLabel>
+                  <AgentConnectionField
+                    connectionIds={localConnectionIds}
+                    onChange={(connectionIds) => {
+                      setLocalConnectionIds(connectionIds);
+                      connectionsMutation.mutate(connectionIds);
+                    }}
+                    oauthReturnTo={`/agents/${id}?oauthReturn=1`}
+                  />
+                </div>
+                {capabilitySaving && (
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                    {intl.formatMessage({ id: 'agents.detail.capabilities.saving' })}
+                  </div>
+                )}
+                {capabilitySaveError && (
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-danger, #dc2626)' }}>
+                    {intl.formatMessage({ id: 'agents.detail.capabilities.saveError' }, { error: capabilitySaveError })}
+                  </div>
+                )}
               </div>
             )}
               </div>

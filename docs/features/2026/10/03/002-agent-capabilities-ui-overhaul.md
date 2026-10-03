@@ -9,7 +9,7 @@
 - [DONE] **Item 0 — i18n keys**: add/remove keys across `en.ts`, `ar.ts`, `hi.ts`.
 - [DONE] **Item A1 — Family-generic display** (`agent-display.ts`): add `email` label.
 - [DONE] **Item A2 — Extract shared connection-setup unit** (`AgentConnectionField.tsx`) + refactor `EditAgentModal`.
-- [PENDING] **Item A3 — Rework capabilities section** in `AgentDetailPage.tsx` (empty state + inline setup).
+- [DONE] **Item A3 — Rework capabilities section** in `AgentDetailPage.tsx` (empty state + inline setup).
 - [PENDING] **Item B1 — Readiness view-model helper** (`capability-readiness-view.ts`) implementing the B2 mapping.
 - [PENDING] **Item B3 — Rework** `AgentCapabilityPage.tsx` (single Status card + Details toggle).
 - [PENDING] **Item Tests — Unit + E2E/i18n/UAT updates** (consolidated test edits).
@@ -469,3 +469,9 @@ Non-critical observations recorded during implementation code review (no CRITICA
 - [LOW] `PickerConnection.profile` is carried in the merged shape but never read by the component (matches the original inline behavior). Harmless; kept for parity/A3 reuse.
 - [LOW] `EditAgentModal` and `AgentConnectionField` independently recompute the `allPickerConnections` merge from the same (React-Query-deduped) data. Intentional — EditAgentModal still needs it for its auto-select/init effects. Potential future consolidation.
 - [LOW] Visual verification of EditAgentModal picker + A3 detail-page reuse deferred to end-of-plan Verification (Part A manual testing).
+
+### Item A3 — AgentDetailPage capabilities rework
+- [LOW] `SkillPicker errorMessage={null}` instead of the plan's `skillsQuery.error instanceof Error ...`: inside the inline block `skillsQuery.error` narrows to `never` under strict TS; skill-load errors are already surfaced by the section-level `ErrorState`. Documented with an inline comment.
+- [LOW] `AgentDetailPage` and `AgentConnectionField` independently recompute the merged connection list from the same (React-Query-deduped) data — same intentional duplication noted for A2.
+- [LOW] Detail-page mutations do not invalidate the per-family capability page key `['agents', id, 'capabilities', family]` (separate route, out of A3 scope); the detail page's own `capability-readiness` key is invalidated.
+- [NOTE] Typecheck fix implemented via function overloads on `agentsApi.capabilityReadiness` (api-client.ts); redundant `as Promise<CapabilityReadiness>` casts + orphaned imports removed from EditAgentModal.tsx and AgentCapabilityPage.tsx. AgentDetailPage.test.tsx stale assertions updated (empty-state copy, 'email'→'Email'). Mutation-call-on-interaction unit tests still pending under Item Tests.
