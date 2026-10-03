@@ -15,7 +15,7 @@
 - [DONE] **Item 6 — i18n keys** (en/ar/hi).
 - [DONE] **Item 7 — Remove orphaned `formatPnl`/`pnlColor` (+ web `decimal.js`), correct ADR 014 Exposure note**.
 - [DONE] **Item 8 — Tests** (traderton, API, web, i18n, E2E).
-- [TODO] **Item 9 — UAT doc update, ledger fixture, browser UAT runs (desktop + mobile)**.
+- [DONE] **Item 9 — UAT doc update, ledger fixture, browser UAT runs (desktop + mobile)**.
 - [TODO] **Item 10 — CHANGELOGs + verification**.
 
 ## Problem
@@ -535,6 +535,13 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
   fill (direction still correct).
 
 ## Outstanding Issues
+
+### Item 9 — UAT + fixture + browser runs (no CRITICAL/HIGH)
+- [DONE] UAT doc updated: AG-C02–C06 expectations rewritten; AG-C07–C10 added; AG-14/AG-C01 regression note. `seed-ledger-fixture.sh` created and schema-verified against the real traderton drizzle schema.
+- [DONE] Browser UATs run against the live cross-stack (herobids `85601309` / traderton `e8c37a0`): AG-C04, AG-C06, AG-C07, AG-C08, AG-C09, AG-C10 all PASS (desktop + 390×844 mobile + ar/hi). The open position got a live Hyperliquid mark, so the full Item 0 marks path was exercised end-to-end (unrealized `+247.23`). 0 console errors on the capability page.
+- [LOW] The `heldFor` cell emitted by `formatDuration` has no explicit `emphasis` (undefined) whereas every other cell sets `neutral`. Renders correctly (web treats undefined emphasis as the neutral token) but is a minor contract inconsistency — could default `formatDuration` cells to `emphasis:'neutral'`.
+- [NOTE] AG-C02 (two-ready-connection ledger scoping) and AG-C03 (unavailable state under the ledger UI) were not re-run with a dedicated second-connection / unavailable fixture this pass; their Status stays 🔄. Cross-connection exclusion is covered by API unit tests (`trading-presentation.test.ts`) and AG-C01 confirmed generic surfaces show no leak. A follow-up live two-connection switch remains the only outstanding UAT evidence.
+- [NOTE] Pre-existing unrelated console noise seen off the capability page: two 401s on `/api/auth/me` (pre-login probe) and one 404 on `/api/agents/.../prompt` (Prompt Surfaces). Not caused by this feature.
 
 ### Item 8 — Tests (no CRITICAL/HIGH)
 - [RESOLVED] MEDIUM test-hermeticity: a `RelativeTime` "ago" assertion was clock-dependent; changed to assert the stable `title="<iso>"` attribute instead. Full focused suite green (567 tests).
