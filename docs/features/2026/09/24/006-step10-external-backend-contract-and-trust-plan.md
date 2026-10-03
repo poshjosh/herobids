@@ -222,6 +222,19 @@ Rules:
   (see §7 Step 0) and makes DT5's `in_progress` resolution impossible.
 - Both transports are built in Phase 3 (D14). `protocol` defaults to `rest` and
   stays `rest` in staging/production until D10 is satisfied (D19).
+- **(amended Phase 3 T1.2)** Seam shape: `invoke(invocation, attempt)` plus an
+  OPTIONAL `lookupStatus(requestId, attempt)` capability — a non-executing
+  status lookup (REST `GET invocations/:requestId`; MCP has none, D15). The
+  client chooses how to resolve `in_progress` by capability: poll the status
+  lookup when present, otherwise re-issue the identical invocation (same
+  `requestId` + `idempotencyKey`) until it settles, never past `deadlineAt`.
+  That re-issue, and T0.6's one same-key re-issue on an unknown outcome, live in
+  `ExternalBackendClient.invokeAndAwait` (moved from the worker write adapter,
+  P3-20). `poll(requestId)` on a transport without `lookupStatus` returns
+  `precondition.not_ready` (non-retryable). Per-attempt timeout stays
+  `requestTimeoutMs` (P3-25). A configured protocol with no registered
+  transport throws `external_backend.protocol_unavailable` at client
+  construction (P3-18).
 
 ### 2.5 MCP wire mapping (DT5 / D15 / ADR 016 §Decision 5)
 

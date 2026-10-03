@@ -1,4 +1,4 @@
-// The external-backend REST boundary transport subpath (`@herobids/domain/external-backend`).
+// The external-backend boundary client subpath (`@herobids/domain/external-backend`).
 //
 // Exposed as a SUBPATH export (not the top-level barrel) because it pulls
 // node:crypto + fetch, which must not enter the browser (apps/web) bundle. Only

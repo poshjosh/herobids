@@ -1,33 +1,31 @@
-// The external-backend REST boundary client (005-consumer-boundary-contract.md).
+// The external-backend boundary client (005-consumer-boundary-contract.md).
 //
-// A small `fetch`-based client: it builds the 005 invocation envelope, signs it
-// (HMAC via ./sign), POSTs `tools:invoke`, polls `GET invocations/:requestId`,
-// and maps the boundary response into a typed discriminated-union result the
-// caller can branch on. Transport + envelope + mapping ONLY — it authors no
-// trading behaviour (no risk/planner/executor). The platform injects the
-// subject/caller VALUES at the call site.
-//
-// Nothing in production calls this yet (L3b/L3c wire it). This slice ADDS the
-// client + its config + tests against a stubbed boundary.
+// Builds the 005 invocation envelope and orchestrates every call above the
+// internal transport seam (Step 10 plan §2.4): identifiers, deadlines, the
+// same-key reconcile of an unknown write outcome, and the mapping into a typed
+// discriminated-union result the caller can branch on. The transport chosen per
+// tool (./transports/select-transport) only encodes, signs, sends and decodes.
+// Transport + envelope + mapping ONLY — it authors no trading behaviour (no
+// risk/planner/executor). The platform injects the subject/caller VALUES at the
+// call site.
 
 import { randomUUID } from 'node:crypto';
-import {
-  signInvoke,
-  signStatus,
-  type SigningIdentity,
-} from './sign.js';
-import {
-  EXTERNAL_BACKEND_INVOKE_PATH,
-  externalBackendStatusPath,
-  type ExternalBackendToolInvocationV1,
-  type ExternalBackendToolResultV1,
-  type ExternalBackendToolInvocationStatusV1,
-  type ExternalBackendSubject,
-  type ExternalBackendCaller,
-  type ExternalBackendFailureCode,
-  type ExternalBackendOutcome,
+import type { SigningIdentity } from './sign.js';
+import type {
+  ExternalBackendToolInvocationV1,
+  ExternalBackendToolResultV1,
+  ExternalBackendSubject,
+  ExternalBackendCaller,
+  ExternalBackendFailureCode,
+  ExternalBackendOutcome,
 } from './contract.js';
 import { deriveRequestId } from './request-id.js';
+import {
+  DEFAULT_EXTERNAL_BACKEND_PROTOCOL,
+  type ExternalBackendProtocol,
+} from '../config/external-backends.js';
+import { createTransportSelector, type TransportForTool } from './transports/select-transport.js';
+import type { TransportOutcome } from './transports/transport.js';
 
 /** Operator config the client needs (built from an ExternalBackendDefinition + resolved secret). */
 export interface ExternalBackendClientConfig {
@@ -36,6 +34,12 @@ export interface ExternalBackendClientConfig {
   keyId: string;
   hmacSecret: string;
   requestTimeoutMs: number;
+  /** Endpoint protocol for every tool without an override. Default `rest`. */
+  protocol?: ExternalBackendProtocol;
+  /** Per-tool protocol; absent tools use `protocol`. */
+  toolProtocolOverrides?: Readonly<Record<string, ExternalBackendProtocol>>;
+  /** MCP endpoint path; required by the definition schema whenever `mcp` is used. */
+  mcpPath?: string;
 }
 
 /** Inputs for a single tool invocation. Platform-owned values are injected here. */
@@ -63,6 +67,13 @@ export interface InvokeToolInput {
   correlationId?: string;
   issuedAt?: string;
 }
+
+/**
+ * Inputs for `invokeAndAwait`: one logical WRITE. The key is required because
+ * an unknown outcome is reconciled by re-issuing under the same key; a fresh
+ * key per attempt would make the re-issue a second write.
+ */
+export type InvokeAndAwaitInput = InvokeToolInput & { deadlineAt: string; idempotencyKey: string };
 
 /**
  * The typed client result — a discriminated union the caller branches on.
@@ -97,11 +108,15 @@ export interface PollOptions {
   correlationId?: string;
   /** Interval between status polls (ms). Default 1000. */
   pollIntervalMs?: number;
+  /** Selects whose transport's status lookup is used; absent → the endpoint protocol. */
+  toolName?: string;
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
-const UNRECOGNISED_STATUS_MESSAGE = 'boundary returned an unrecognised status response';
-const UNRECOGNISED_RESPONSE_MESSAGE = 'boundary returned an unrecognised response';
+const STATUS_LOOKUP_UNSUPPORTED_MESSAGE =
+  'status lookup is not supported by this backend transport; re-issue the invocation with the same idempotency key';
+
+type InProgressResult = Extract<ExternalBackendClientResult, { kind: 'in_progress' }>;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -133,73 +148,60 @@ function mapTerminalResult(result: ExternalBackendToolResultV1): ExternalBackend
   };
 }
 
-// invoke and poll read unvalidated JSON, so they check shape before mapping: a
-// body they do not recognise is a transport fault, never a TypeError thrown out.
-// A status body must carry one of the two known states.
-function hasStringIds(value: object): boolean {
+/**
+ * True for a poll (or re-issue) answer that describes the lookup/request rather than the write:
+ * the client's own deadline stop (`deadline.expired`), no row for the requestId
+ * (`not_found.resource`), or a rejected status request (`authentication.*`). A
+ * stored write result never carries these codes: both backend deadline checks
+ * (traderton dispatcher.ts steps 1b and 7) run before `beginOrResolve`, HMAC
+ * authentication runs in app.ts before dispatch, and `mapToolResult` maps a
+ * tool's `not_found.resource` errorCode to `validation.invalid_payload`.
+ */
+function isLookupLevelAnswer(result: ExternalBackendClientResult): boolean {
   return (
-    'requestId' in value &&
-    typeof value.requestId === 'string' &&
-    'correlationId' in value &&
-    typeof value.correlationId === 'string'
+    result.kind === 'failure' &&
+    (result.code === 'deadline.expired' ||
+      result.code === 'not_found.resource' ||
+      result.code.startsWith('authentication.'))
   );
 }
 
-function isStatusBody(value: unknown): value is ExternalBackendToolInvocationStatusV1 {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    hasStringIds(value) &&
-    'state' in value &&
-    (value.state === 'in_progress' || value.state === 'terminal')
-  );
+/** `Date.parse` of an RFC3339 deadline; NaN means "no usable deadline" (never expires). */
+function hasPassed(deadlineMs: number): boolean {
+  return !Number.isNaN(deadlineMs) && Date.now() >= deadlineMs;
 }
 
-function isOutcome(value: unknown): value is ExternalBackendOutcome {
-  if (typeof value !== 'object' || value === null || !('kind' in value)) return false;
-  // No `payload` check: the backend's `successResult(identity, result.data)`
-  // may carry `undefined`, which JSON drops, so an absent key is a valid success.
-  if (value.kind === 'success') return true;
-  return (
-    value.kind === 'failure' &&
-    'code' in value &&
-    typeof value.code === 'string' &&
-    'message' in value &&
-    typeof value.message === 'string' &&
-    'retryable' in value &&
-    typeof value.retryable === 'boolean'
-  );
-}
-
-function isToolResultBody(value: unknown): value is ExternalBackendToolResultV1 {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    hasStringIds(value) &&
-    'outcome' in value &&
-    isOutcome(value.outcome)
-  );
+/** Time left before the deadline, or the full interval when there is no usable deadline. */
+function remainingBefore(deadlineMs: number, intervalMs: number): number {
+  return Number.isNaN(deadlineMs) ? intervalMs : deadlineMs - Date.now();
 }
 
 /**
- * The external-backend REST boundary client. Construct once with operator config +
- * signing identity; call `invoke` per tool call and `poll` to resolve an
- * ambiguous/async invocation.
+ * The external-backend boundary client. Construct once with operator config +
+ * signing identity; call `invoke` per tool call, `poll` to resolve an
+ * ambiguous/async invocation, and `invokeAndAwait` for a write that must be
+ * reconciled to a terminal outcome within its deadline.
  */
 export class ExternalBackendClient {
-  private readonly baseUrl: string;
   private readonly identity: SigningIdentity;
   private readonly requestTimeoutMs: number;
+  private readonly selectTransport: TransportForTool;
 
   constructor(config: ExternalBackendClientConfig) {
-    // Trim a trailing slash so `${baseUrl}${path}` never doubles it.
-    this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.identity = {
       consumerId: config.consumerId,
       keyId: config.keyId,
       secret: config.hmacSecret,
     };
     this.requestTimeoutMs = config.requestTimeoutMs;
+    this.selectTransport = createTransportSelector({
+      // Trim a trailing slash so `${baseUrl}${path}` never doubles it.
+      baseUrl: config.baseUrl.replace(/\/+$/, ''),
+      identity: this.identity,
+      protocol: config.protocol ?? DEFAULT_EXTERNAL_BACKEND_PROTOCOL,
+      toolProtocolOverrides: config.toolProtocolOverrides,
+      mcpPath: config.mcpPath,
+    });
   }
 
   private caller(): ExternalBackendCaller {
@@ -239,129 +241,188 @@ export class ExternalBackendClient {
   }
 
   /**
-   * Invoke a tool: build → sign → POST → map. Returns the typed result union.
-   * A transport failure or non-terminal/unparseable response is surfaced as the
-   * distinct `transport_error` variant (never thrown raw).
+   * Invoke a tool: build → send through the tool's transport → map. Returns the
+   * typed result union. A transport failure or non-terminal/unparseable response
+   * is surfaced as the distinct `transport_error` variant (never thrown raw).
    */
   async invoke(input: InvokeToolInput): Promise<ExternalBackendClientResult> {
     const envelope = this.buildEnvelope(input);
-    const { headers, rawBody } = signInvoke(this.identity, EXTERNAL_BACKEND_INVOKE_PATH, envelope);
-
-    let response: Response;
-    try {
-      response = await fetch(`${this.baseUrl}${EXTERNAL_BACKEND_INVOKE_PATH}`, {
-        method: 'POST',
-        headers,
-        body: rawBody,
-        signal: AbortSignal.timeout(this.requestTimeoutMs),
-      });
-    } catch {
-      return this.transportError(envelope.requestId, 'request to boundary failed');
-    }
-
-    return this.parseInvokeResponse(response, envelope.requestId);
-  }
-
-  private async parseInvokeResponse(
-    response: Response,
-    requestId: string,
-  ): Promise<ExternalBackendClientResult> {
-    if (!response.ok) {
-      return this.transportError(requestId, `boundary returned status ${response.status}`);
-    }
-
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      return this.transportError(requestId, 'boundary returned an unreadable response');
-    }
-
-    if (isStatusBody(body)) {
-      if (body.state === 'in_progress') {
-        return { kind: 'in_progress', requestId: body.requestId, correlationId: body.correlationId };
-      }
-      return isToolResultBody(body.result)
-        ? mapTerminalResult(body.result)
-        : this.transportError(requestId, UNRECOGNISED_RESPONSE_MESSAGE);
-    }
-    return isToolResultBody(body)
-      ? mapTerminalResult(body)
-      : this.transportError(requestId, UNRECOGNISED_RESPONSE_MESSAGE);
+    const outcome = await this.selectTransport(envelope.toolName).invoke(envelope, {
+      timeoutMs: this.requestTimeoutMs,
+    });
+    return this.mapOutcome(outcome, envelope.requestId);
   }
 
   /**
-   * Poll `GET /internal/v1/invocations/:requestId` (signed, empty body) until
-   * the invocation reaches a terminal outcome, or the deadline passes. Resolves
-   * to the terminal result on completion, or a transport/timeout error once the
-   * deadline is exceeded. Exposed for the L3c synchronous-feel rewire — NOT
-   * wired to submit_decision here.
+   * Invoke one logical write and reconcile it to a terminal outcome within
+   * `deadlineAt` (Phase 3 T0.6 D-e; moved here from the worker write adapter,
+   * P3-20). On an unknown outcome (`transport_error`) while the deadline has
+   * not passed, re-issue ONCE with the identical input; never re-issue after a
+   * terminal outcome. Then resolve `in_progress` through the transport's status
+   * lookup, or — when it has none — by re-issuing the same invocation until it
+   * settles. A write still running at the deadline stays `in_progress`
+   * (unknown outcome), never a rejection.
+   */
+  async invokeAndAwait(
+    input: InvokeAndAwaitInput,
+    opts: { pollIntervalMs?: number } = {},
+  ): Promise<ExternalBackendClientResult> {
+    // Without a usable deadline nothing bounds the reconcile loop; refuse
+    // before sending anything (nothing was written).
+    if (Number.isNaN(Date.parse(input.deadlineAt))) {
+      return {
+        kind: 'failure',
+        requestId: input.requestId ?? '',
+        correlationId: input.correlationId ?? '',
+        code: 'validation.invalid_payload',
+        message: 'invokeAndAwait requires an RFC3339 deadlineAt',
+        retryable: false,
+      };
+    }
+    // One input for every attempt: same key, same derived requestId, same
+    // payload, same deadline, one correlationId for the whole logical write.
+    const invokeInput: InvokeAndAwaitInput = {
+      ...input,
+      correlationId: input.correlationId ?? randomUUID(),
+    };
+
+    let result = await this.invoke(invokeInput);
+
+    // Unknown outcome (the request or its response was lost). A same-key
+    // re-issue is at-most-once on the backend: it replays a stored result,
+    // reports in_progress, or executes once if the first never arrived. Worst
+    // case it overruns `deadlineAt` by one client request timeout.
+    if (result.kind === 'transport_error' && Date.now() < Date.parse(invokeInput.deadlineAt)) {
+      const reissued = await this.invoke(invokeInput);
+      // deadline.expired and authentication.* are answered BEFORE the
+      // idempotency lookup, and not_found.resource is never a stored write
+      // result, so such a re-issue answer says nothing about the first
+      // attempt — the outcome is still unknown; keep the original error.
+      if (!isLookupLevelAnswer(reissued)) {
+        result = reissued;
+      }
+    }
+
+    // Terminal (never re-issued — D-a) or still unknown.
+    if (result.kind !== 'in_progress') {
+      return result;
+    }
+
+    // Non-terminal — resolve to the shared deadline for the synchronous feel (D3).
+    const resolved = await this.awaitTerminal(invokeInput, result, opts.pollIntervalMs);
+    // The write was seen running, and the backend gates the deadline only
+    // BEFORE execution, so it may still complete after our deadline. A
+    // lookup-level answer says nothing about it: the outcome is unknown, not a
+    // rejection (callers map `failure` to a recorded rejection).
+    if (isLookupLevelAnswer(resolved)) {
+      return { kind: 'in_progress', requestId: result.requestId, correlationId: result.correlationId };
+    }
+    return resolved;
+  }
+
+  /** Resolve a running write by the transport's capability: status lookup, else same-key re-issue (D15). */
+  private async awaitTerminal(
+    input: InvokeAndAwaitInput,
+    inProgress: InProgressResult,
+    pollIntervalMs: number | undefined,
+  ): Promise<ExternalBackendClientResult> {
+    if (this.selectTransport(input.toolName).lookupStatus) {
+      return this.poll(inProgress.requestId, {
+        deadlineAt: input.deadlineAt,
+        correlationId: inProgress.correlationId,
+        toolName: input.toolName,
+        ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
+      });
+    }
+
+    const deadlineMs = Date.parse(input.deadlineAt);
+    // Every iteration re-issues a write, so a zero/negative/NaN interval must
+    // not turn this into back-to-back requests.
+    const intervalMs =
+      pollIntervalMs !== undefined && Number.isFinite(pollIntervalMs) && pollIntervalMs >= 1
+        ? pollIntervalMs
+        : DEFAULT_POLL_INTERVAL_MS;
+    for (;;) {
+      // Never sleep past the deadline, and never re-issue once it has passed (T0.6 R1).
+      await sleep(Math.max(0, Math.min(intervalMs, remainingBefore(deadlineMs, intervalMs))));
+      if (hasPassed(deadlineMs)) {
+        return this.deadlineExpired(inProgress.requestId, inProgress.correlationId);
+      }
+      const reissued = await this.invoke(input);
+      if (reissued.kind !== 'in_progress') {
+        return reissued;
+      }
+    }
+  }
+
+  /**
+   * Poll the tool's transport status lookup (REST: signed
+   * `GET /internal/v1/invocations/:requestId`) until the invocation reaches a
+   * terminal outcome, or the deadline passes. Resolves to the terminal result
+   * on completion, or a transport/timeout error once the deadline is exceeded.
+   * A transport without a status lookup returns `precondition.not_ready`: the
+   * invocation must be re-issued with the same idempotency key instead.
    */
   async poll(requestId: string, opts: PollOptions): Promise<ExternalBackendClientResult> {
-    const path = externalBackendStatusPath(requestId);
-    const url = `${this.baseUrl}${path}`;
+    const transport = this.selectTransport(opts.toolName);
     const deadlineMs = Date.parse(opts.deadlineAt);
     const intervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     const correlationId = opts.correlationId ?? requestId;
 
+    if (!transport.lookupStatus) {
+      return {
+        kind: 'failure',
+        requestId,
+        correlationId,
+        code: 'precondition.not_ready',
+        message: STATUS_LOOKUP_UNSUPPORTED_MESSAGE,
+        retryable: false,
+      };
+    }
+
     for (;;) {
-      if (!Number.isNaN(deadlineMs) && Date.now() >= deadlineMs) {
-        return {
-          kind: 'failure',
-          requestId,
-          correlationId,
-          code: 'deadline.expired',
-          message: 'deadline passed before the invocation reached a terminal outcome',
-          retryable: false,
-        };
+      if (hasPassed(deadlineMs)) {
+        return this.deadlineExpired(requestId, correlationId);
       }
 
-      const headers = signStatus(this.identity, path, { deadlineAt: opts.deadlineAt });
-
-      let response: Response;
-      try {
-        response = await fetch(url, {
-          method: 'GET',
-          headers,
-          signal: AbortSignal.timeout(this.requestTimeoutMs),
-        });
-      } catch {
-        return this.transportError(requestId, 'status request to boundary failed');
-      }
-
-      if (!response.ok) {
-        return this.transportError(requestId, `boundary returned status ${response.status}`);
-      }
-
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch {
-        return this.transportError(requestId, 'boundary returned an unreadable status response');
-      }
-
-      if (!isStatusBody(body)) {
-        // A plain result (no `state`) is the boundary answering for the lookup
-        // itself — e.g. `not_found.resource` when it has no record of the
-        // requestId. It is terminal: return it rather than polling to the deadline.
-        // An unknown `state` is unrecognised, never polled to the deadline.
-        return isToolResultBody(body)
-          ? mapTerminalResult(body)
-          : this.transportError(requestId, UNRECOGNISED_STATUS_MESSAGE);
-      }
-      if (body.state === 'terminal') {
-        return isToolResultBody(body.result)
-          ? mapTerminalResult(body.result)
-          : this.transportError(requestId, UNRECOGNISED_STATUS_MESSAGE);
+      const outcome = await transport.lookupStatus(requestId, {
+        timeoutMs: this.requestTimeoutMs,
+        deadlineAt: opts.deadlineAt,
+      });
+      if (outcome.kind !== 'in_progress') {
+        return this.mapOutcome(outcome, requestId);
       }
 
       // Still in progress — wait, but never sleep past the deadline.
-      const remaining = Number.isNaN(deadlineMs) ? intervalMs : deadlineMs - Date.now();
+      const remaining = remainingBefore(deadlineMs, intervalMs);
       if (remaining <= 0) {
         continue; // loop re-checks the deadline and returns the timeout error
       }
       await sleep(Math.min(intervalMs, remaining));
     }
+  }
+
+  /** Map one transport outcome; `requestId` labels a transport error (the request's own id). */
+  private mapOutcome(outcome: TransportOutcome, requestId: string): ExternalBackendClientResult {
+    switch (outcome.kind) {
+      case 'terminal':
+        return mapTerminalResult(outcome.result);
+      case 'in_progress':
+        return { kind: 'in_progress', requestId: outcome.requestId, correlationId: outcome.correlationId };
+      case 'transport_error':
+        return this.transportError(requestId, outcome.message);
+    }
+  }
+
+  private deadlineExpired(requestId: string, correlationId: string): ExternalBackendClientResult {
+    return {
+      kind: 'failure',
+      requestId,
+      correlationId,
+      code: 'deadline.expired',
+      message: 'deadline passed before the invocation reached a terminal outcome',
+      retryable: false,
+    };
   }
 
   private transportError(

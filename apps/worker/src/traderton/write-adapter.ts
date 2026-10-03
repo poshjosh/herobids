@@ -30,7 +30,6 @@
 import { randomUUID } from 'node:crypto';
 import type { TradingToolContext } from '@herobids/domain';
 import type {
-  InvokeToolInput,
   ExternalBackendClient,
   ExternalBackendClientResult,
   ExternalBackendSubject,
@@ -44,13 +43,13 @@ import type {
  * - `invoke` — a single signed `tools:invoke`. Returns the raw client result so
  *   the consumer can map `success`/`failure`/`in_progress`/`transport_error`
  *   (preserving `code`+`retryable`) onto its own reply/event shapes.
- * - `invokeAndAwait` — invoke; on an unknown outcome (`transport_error`) while
- *   the deadline has not passed, re-issue ONCE with the identical input; then
- *   (if the boundary returned `in_progress`) poll `GET invocations/:requestId`
- *   until terminal or the deadline passes — a write still running at the
- *   deadline stays `in_progress` (unknown outcome). Reproduces the synchronous
- *   30s-BLPOP feel the `submit_decision` path relies on (D3). The deadline is
- *   derived from `deadlineMs`.
+ * - `invokeAndAwait` — delegates to `ExternalBackendClient.invokeAndAwait`:
+ *   invoke; on an unknown outcome (`transport_error`) while the deadline has
+ *   not passed, re-issue ONCE with the identical input; then (if the boundary
+ *   returned `in_progress`) resolve it until terminal or the deadline passes —
+ *   a write still running at the deadline stays `in_progress` (unknown
+ *   outcome). Reproduces the synchronous 30s-BLPOP feel the `submit_decision`
+ *   path relies on (D3). The deadline is derived from `deadlineMs`.
  */
 export interface TradertonSideEffectBoundary {
   invoke(input: {
@@ -99,27 +98,10 @@ function rejectEmptyIdempotencyKey(input: { requestId?: string; correlationId?: 
 }
 
 /**
- * True for a poll (or re-issue) answer that describes the lookup/request rather than the write:
- * the client's own deadline stop (`deadline.expired`), no row for the requestId
- * (`not_found.resource`), or a rejected status request (`authentication.*`). A
- * stored write result never carries these codes: both backend deadline checks
- * (traderton dispatcher.ts steps 1b and 7) run before `beginOrResolve`, HMAC
- * authentication runs in app.ts before dispatch, and `mapToolResult` maps a
- * tool's `not_found.resource` errorCode to `validation.invalid_payload`.
- */
-function isLookupLevelAnswer(result: ExternalBackendClientResult): boolean {
-  return (
-    result.kind === 'failure' &&
-    (result.code === 'deadline.expired' ||
-      result.code === 'not_found.resource' ||
-      result.code.startsWith('authentication.'))
-  );
-}
-
-/**
  * Build the side-effecting boundary adapter over a constructed `ExternalBackendClient`.
- * `invokeAndAwait` uses the SAME `deadlineAt` for both the invoke envelope and
- * the poll loop so the boundary sees one consistent deadline.
+ * `invokeAndAwait` derives ONE `deadlineAt` from `deadlineMs`; the client uses
+ * it for every attempt and for the in_progress resolution, so the boundary sees
+ * one consistent deadline.
  */
 export function createTradertonSideEffectBoundary(
   client: ExternalBackendClient,
@@ -143,51 +125,17 @@ export function createTradertonSideEffectBoundary(
       if (input.idempotencyKey.trim() === '') {
         return rejectEmptyIdempotencyKey(input);
       }
-      const deadlineAt = new Date(Date.now() + input.deadlineMs).toISOString();
-      // One input for every attempt: same key, same derived requestId, same
-      // payload, same deadline, one correlationId for the whole logical write.
-      const invokeInput: InvokeToolInput = {
+      // The reconcile (same-key re-issue, in_progress resolution) lives in the
+      // client, above the transport seam (P3-20).
+      return client.invokeAndAwait({
         toolName: input.toolName,
         payload: input.payload,
         subject: input.subject,
-        deadlineAt,
+        deadlineAt: new Date(Date.now() + input.deadlineMs).toISOString(),
         requestId: input.requestId,
         idempotencyKey: input.idempotencyKey,
-        correlationId: input.correlationId ?? randomUUID(),
-      };
-
-      let result = await client.invoke(invokeInput);
-
-      // Unknown outcome (the request or its response was lost). A same-key
-      // re-issue is at-most-once on the backend: it replays a stored result,
-      // reports in_progress, or executes once if the first never arrived. Worst
-      // case it overruns `deadlineAt` by one client request timeout.
-      if (result.kind === 'transport_error' && Date.now() < Date.parse(deadlineAt)) {
-        const reissued = await client.invoke(invokeInput);
-        // deadline.expired and authentication.* are answered BEFORE the
-        // idempotency lookup, and not_found.resource is never a stored write
-        // result, so such a re-issue answer says nothing about the first
-        // attempt — the outcome is still unknown; keep the original error.
-        if (!isLookupLevelAnswer(reissued)) {
-          result = reissued;
-        }
-      }
-
-      // Terminal (never re-issued — D-a) or still unknown.
-      if (result.kind !== 'in_progress') {
-        return result;
-      }
-
-      // Non-terminal — poll to the shared deadline for the synchronous feel (D3).
-      const polled = await client.poll(result.requestId, { deadlineAt, correlationId: result.correlationId });
-      // The write was seen running, and the backend gates the deadline only
-      // BEFORE execution, so it may still complete after our deadline. A
-      // lookup-level answer says nothing about it: the outcome is unknown, not a
-      // rejection (callers map `failure` to a recorded rejection).
-      if (isLookupLevelAnswer(polled)) {
-        return { kind: 'in_progress', requestId: result.requestId, correlationId: result.correlationId };
-      }
-      return polled;
+        correlationId: input.correlationId,
+      });
     },
   };
 }

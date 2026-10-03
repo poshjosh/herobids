@@ -16,6 +16,29 @@ describe('buildExternalBackendClientConfig', () => {
       keyId: 'current',
       hmacSecret: 'test-secret',
       requestTimeoutMs: 15_000,
+      protocol: 'rest',
+      toolProtocolOverrides: undefined,
+      mcpPath: undefined,
+    });
+  });
+
+  it('carries the endpoint protocol, per-tool overrides and mcpPath onto the client config', () => {
+    const definition = ExternalBackendDefinitionSchema.parse({
+      backendId: 'example-echo',
+      endpoint: {
+        baseUrl: 'http://localhost:8080',
+        protocol: 'rest',
+        toolProtocolOverrides: { get_quote: 'mcp' },
+        mcpPath: '/mcp',
+      },
+      caller: { consumerId: 'herobids', keyId: 'current', hmacSecretRef: 'EXAMPLE_HMAC_SECRET' },
+      descriptorPinning: { mode: 'maxAge', seconds: 3600 },
+    });
+
+    expect(buildExternalBackendClientConfig(definition, 'test-secret')).toMatchObject({
+      protocol: 'rest',
+      toolProtocolOverrides: { get_quote: 'mcp' },
+      mcpPath: '/mcp',
     });
   });
 });

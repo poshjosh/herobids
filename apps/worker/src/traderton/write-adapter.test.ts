@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createExternalBackendClient,
-  type InvokeToolInput,
   type ExternalBackendClientResult,
   type ExternalBackendSubject,
 } from '@herobids/domain/external-backend';
@@ -21,7 +20,7 @@ const TRANSPORT_ERROR: ExternalBackendClientResult = {
 };
 const SUCCESS: ExternalBackendClientResult = { kind: 'success', requestId: 'req-1', correlationId: 'corr-1', payload: { ok: true } };
 
-/** A real client whose network methods are scripted per test (never reaches fetch). */
+/** A real client whose call methods are scripted per test (never reaches a transport). */
 function makeClient() {
   const client = createExternalBackendClient({
     baseUrl: 'http://boundary.unit.test',
@@ -33,10 +32,10 @@ function makeClient() {
   const invoke = vi.spyOn(client, 'invoke').mockImplementation(async () => {
     throw new Error('unscripted invoke');
   });
-  const poll = vi.spyOn(client, 'poll').mockImplementation(async () => {
-    throw new Error('unscripted poll');
+  const invokeAndAwait = vi.spyOn(client, 'invokeAndAwait').mockImplementation(async () => {
+    throw new Error('unscripted invokeAndAwait');
   });
-  return { client, invoke, poll };
+  return { client, invoke, invokeAndAwait };
 }
 
 function write(overrides: Partial<Parameters<TradertonSideEffectBoundary['invokeAndAwait']>[0]> = {}) {
@@ -56,178 +55,41 @@ afterEach(() => {
 });
 
 describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
-  it("re-issues once with the same key, requestId, payload and deadline when the first attempt's outcome is unknown", async () => {
-    const { client, invoke, poll } = makeClient();
-    // Cloned at call time: a later mutation of a shared input object must not
-    // make the two attempts compare equal after the fact.
-    const sent: InvokeToolInput[] = [];
-    invoke.mockImplementation(async (input) => {
-      sent.push(structuredClone(input));
-      return sent.length === 1 ? TRANSPORT_ERROR : SUCCESS;
-    });
-
-    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-    expect(result).toEqual(SUCCESS);
-    expect(invoke).toHaveBeenCalledTimes(2);
-    const [first, second] = sent;
-    expect(second).toEqual(first);
-    expect(first).toMatchObject({ idempotencyKey: 'dec-1', payload: { instrumentId: 'BTC', intent: 'go_long' }, subject: SUBJECT });
-    expect(typeof first?.deadlineAt).toBe('string');
-    expect(typeof first?.correlationId).toBe('string');
-    // The client derives the same requestId for both attempts from the key.
-    if (!first || !second) throw new Error('expected two invoke calls');
-    expect(client.buildEnvelope(second).requestId).toBe(client.buildEnvelope(first).requestId);
-    expect(poll).not.toHaveBeenCalled();
-  });
-
-  it('does not re-issue after a terminal failure, even a retryable one', async () => {
-    const { client, invoke } = makeClient();
-    const retryableFailure: ExternalBackendClientResult = {
-      kind: 'failure',
-      requestId: 'req-1',
-      correlationId: 'corr-1',
-      code: 'upstream.transient',
-      message: 'venue busy',
-      retryable: true,
-    };
-    invoke.mockResolvedValueOnce(retryableFailure);
-
-    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-    expect(result).toEqual(retryableFailure);
-    expect(invoke).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not re-issue once the deadline has passed', async () => {
+  it("invokeAndAwait delegates with a deadline derived from deadlineMs and the caller's idempotency key", async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    const { client, invoke } = makeClient();
-    invoke.mockImplementationOnce(async () => {
-      vi.setSystemTime(Date.now() + 60_000);
-      return TRANSPORT_ERROR;
+    vi.setSystemTime(new Date('2026-10-03T12:00:00.000Z'));
+    const { client, invokeAndAwait } = makeClient();
+    invokeAndAwait.mockResolvedValueOnce(SUCCESS);
+
+    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(
+      write({ requestId: 'req-explicit', correlationId: 'corr-explicit' }),
+    );
+
+    expect(result).toBe(SUCCESS);
+    expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+    expect(invokeAndAwait).toHaveBeenCalledWith({
+      toolName: 'submit_decision',
+      payload: { instrumentId: 'BTC', intent: 'go_long' },
+      subject: SUBJECT,
+      deadlineAt: '2026-10-03T12:00:30.000Z',
+      requestId: 'req-explicit',
+      idempotencyKey: 'dec-1',
+      correlationId: 'corr-explicit',
     });
-
-    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-    expect(result).toEqual(TRANSPORT_ERROR);
-    expect(invoke).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the original transport error when the re-issue reports deadline.expired', async () => {
-    const { client, invoke } = makeClient();
-    invoke.mockResolvedValueOnce(TRANSPORT_ERROR).mockResolvedValueOnce({
-      kind: 'failure',
-      requestId: 'req-1',
-      correlationId: 'corr-1',
-      code: 'deadline.expired',
-      message: 'request deadline has passed',
-      retryable: false,
-    });
+  it('returns the client result verbatim, including an unknown outcome', async () => {
+    const { client, invokeAndAwait } = makeClient();
+    const unknown: ExternalBackendClientResult = { kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' };
+    invokeAndAwait.mockResolvedValueOnce(TRANSPORT_ERROR).mockResolvedValueOnce(unknown);
+    const boundary = createTradertonSideEffectBoundary(client);
 
-    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-    expect(result).toEqual(TRANSPORT_ERROR);
-    expect(invoke).toHaveBeenCalledTimes(2);
-  });
-
-  it.each(['authentication.invalid_caller', 'not_found.resource'] as const)(
-    'keeps the original transport error when the re-issue reports the pre-dispatch %s',
-    async (code) => {
-      const { client, invoke, poll } = makeClient();
-      invoke
-        .mockResolvedValueOnce(TRANSPORT_ERROR)
-        .mockResolvedValueOnce({ kind: 'failure', requestId: 'req-1', correlationId: 'corr-1', code, message: 'rejected', retryable: false });
-
-      const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-      expect(result).toEqual(TRANSPORT_ERROR);
-      expect(invoke).toHaveBeenCalledTimes(2);
-      expect(poll).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each(['validation.invalid_payload', 'authorization.denied', 'upstream.transient'] as const)(
-    'returns the re-issue failure %s because it is a stored or decided write outcome',
-    async (code) => {
-      const { client, invoke, poll } = makeClient();
-      const failure = { kind: 'failure', requestId: 'req-1', correlationId: 'corr-1', code, message: 'm', retryable: false } as const;
-      invoke.mockResolvedValueOnce(TRANSPORT_ERROR).mockResolvedValueOnce(failure);
-
-      const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-      expect(result).toEqual(failure);
-      expect(invoke).toHaveBeenCalledTimes(2);
-      expect(poll).not.toHaveBeenCalled();
-    },
-  );
-
-  it('polls the requestId returned by an in_progress re-issue until terminal', async () => {
-    const { client, invoke, poll } = makeClient();
-    invoke
-      .mockResolvedValueOnce(TRANSPORT_ERROR)
-      .mockResolvedValueOnce({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
-    poll.mockResolvedValueOnce(SUCCESS);
-
-    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-    expect(result).toEqual(SUCCESS);
-    expect(poll).toHaveBeenCalledTimes(1);
-    const deadlineAt = invoke.mock.calls[0]?.[0].deadlineAt;
-    expect(poll).toHaveBeenCalledWith('req-1', { deadlineAt, correlationId: 'corr-1' });
-  });
-
-  it('reports an unknown outcome, not a rejection, when the write is still running at the deadline', async () => {
-    const { client, invoke, poll } = makeClient();
-    invoke.mockResolvedValue({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
-    // What the client's poll synthesises when its loop reaches the deadline.
-    poll.mockResolvedValueOnce({
-      kind: 'failure',
-      requestId: 'req-1',
-      correlationId: 'corr-1',
-      code: 'deadline.expired',
-      message: 'deadline passed before the invocation reached a terminal outcome',
-      retryable: false,
-    });
-
-    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-    expect(result).toEqual({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
-    expect(invoke).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(['not_found.resource', 'authentication.invalid_caller'] as const)(
-    'treats the %s status-lookup answer as an unknown outcome of the running write',
-    async (code) => {
-      const { client, invoke, poll } = makeClient();
-      invoke.mockResolvedValue({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
-      poll.mockResolvedValueOnce({ kind: 'failure', requestId: 'req-1', correlationId: '', code, message: 'lookup', retryable: false });
-
-      const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-      expect(result).toEqual({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
-    },
-  );
-
-  it("returns a polled write's stored terminal failure verbatim", async () => {
-    const { client, invoke, poll } = makeClient();
-    const stored: ExternalBackendClientResult = {
-      kind: 'failure',
-      requestId: 'req-1',
-      correlationId: 'corr-1',
-      code: 'validation.invalid_payload',
-      message: 'bot not found',
-      retryable: false,
-    };
-    invoke.mockResolvedValue({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
-    poll.mockResolvedValueOnce(stored);
-
-    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
-
-    expect(result).toEqual(stored);
+    expect(await boundary.invokeAndAwait(write())).toBe(TRANSPORT_ERROR);
+    expect(await boundary.invokeAndAwait(write())).toBe(unknown);
   });
 
   it('rejects an empty idempotency key without calling the boundary', async () => {
-    const { client, invoke, poll } = makeClient();
+    const { client, invoke, invokeAndAwait } = makeClient();
     const boundary = createTradertonSideEffectBoundary(client);
     const expected = { kind: 'failure', code: 'validation.invalid_payload', retryable: false, message: 'idempotencyKey must be non-empty' };
 
@@ -237,11 +99,11 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
     expect(awaited).toMatchObject(expected);
     expect(single).toMatchObject(expected);
     expect(invoke).not.toHaveBeenCalled();
-    expect(poll).not.toHaveBeenCalled();
+    expect(invokeAndAwait).not.toHaveBeenCalled();
   });
 
   it('rejects a whitespace-only idempotency key without calling the boundary', async () => {
-    const { client, invoke, poll } = makeClient();
+    const { client, invoke, invokeAndAwait } = makeClient();
     const boundary = createTradertonSideEffectBoundary(client);
     const expected = { kind: 'failure', code: 'validation.invalid_payload', retryable: false, message: 'idempotencyKey must be non-empty' };
 
@@ -251,7 +113,7 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
     expect(awaited).toMatchObject(expected);
     expect(single).toMatchObject(expected);
     expect(invoke).not.toHaveBeenCalled();
-    expect(poll).not.toHaveBeenCalled();
+    expect(invokeAndAwait).not.toHaveBeenCalled();
   });
 });
 

@@ -12,5 +12,8 @@ export function buildExternalBackendClientConfig(
     keyId: definition.caller.keyId,
     hmacSecret,
     requestTimeoutMs: definition.endpoint.requestTimeoutMs,
+    protocol: definition.endpoint.protocol,
+    toolProtocolOverrides: definition.endpoint.toolProtocolOverrides,
+    mcpPath: definition.endpoint.mcpPath,
   };
 }
