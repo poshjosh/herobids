@@ -112,6 +112,8 @@ export interface DecodableCallToolResult {
  * copies. The lazily-loaded `@modelcontextprotocol/client` module satisfies this.
  */
 export interface McpErrorSdk {
+  // Brand markers for `instanceof` only — never constructed here (the `never[]`
+  // constructor shape makes that explicit).
   ProtocolError: new (...args: never[]) => { code: number; data?: unknown };
   SdkHttpError: new (...args: never[]) => { status: number };
 }
@@ -163,8 +165,8 @@ export function decodeCallToolResult(result: DecodableCallToolResult): Transport
  * carries its status; anything else is an opaque request failure. Never throws.
  */
 export function decodeMcpError(err: unknown, sdk: McpErrorSdk): TransportOutcome {
-  // SdkHttpError is checked first: it is a ProtocolError sibling, not subclass,
-  // but order-independence here keeps the intent explicit.
+  // SdkHttpError and ProtocolError are disjoint siblings, so the check order
+  // does not matter.
   if (err instanceof sdk.SdkHttpError) {
     return transportError(`boundary returned status ${err.status}`);
   }

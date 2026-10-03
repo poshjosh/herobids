@@ -220,9 +220,13 @@ describe.each(WRITE_CONTRACT_TRANSPORTS)('write-path idempotency contract over $
     backend.loseNextResponseAfterExecution();
 
     // Executed, response lost, and the row never reaches terminal: the re-issue
-    // and every status poll report in_progress until the deadline.
-    const result = await boundary.invokeAndAwait(createBotWrite('key-stalled', 500));
+    // and every status poll report in_progress until the deadline. The deadline
+    // has headroom (2s) because the MCP leg's re-issue is a 4-round-trip SDK
+    // exchange — too tight a budget could abort the final re-issue mid-exchange
+    // under load, which is still an unknown outcome but a different discriminator.
+    const result = await boundary.invokeAndAwait(createBotWrite('key-stalled', 2_000));
 
+    // Unknown outcome, never a rejection; the single durable execution is the invariant.
     expect(result.kind).toBe('in_progress');
     expect(backend.executions('create_bot')).toBe(1);
   });
