@@ -362,7 +362,7 @@ export function SkillsPage() {
               value={createDraft.name ?? ''}
               onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))}
               style={inputStyle}
-              placeholder={intl.formatMessage({ id: 'skills.form.namePlaceholder', defaultMessage: 'Momentum screener' })}
+              placeholder={intl.formatMessage({ id: 'skills.form.namePlaceholder', defaultMessage: 'Deal finder' })}
             />
           </label>
           <label style={fieldLabelStyle}>
