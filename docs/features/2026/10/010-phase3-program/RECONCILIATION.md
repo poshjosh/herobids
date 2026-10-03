@@ -99,15 +99,29 @@ hard-coded trading branches that Phase 3 Steps 11–12 act on.
 
 ## 3. Carried-forward obligations (full set → see DECISIONS §5, G9 at T5.2)
 
-CF-3 REST differential vs the pinned oracle · CF-4 representative load · CF-5 no
-metrics system (latency/throughput N/A) · CF-6 staging restart/health/idempotent-
-retry/rollback (proven for a read tool only) · CF-7 no rollback path · CF-8 push
-gate (all three repos) · CF-9 real operator-held signing key · CF-10 conditional
-third (MCP) differential leg · CF-11 open legal/product dispositions · CF-12
-pre-existing baseline failures · **CF-13 1→N external-backend forwarding** (I12:
-a second backend resolves *visibility* with zero code change; *invoking* its
-tools over HMAC needs the N-forwarding change). Plus: real-remote `npx skills`
-resolution deferred to the post-push operator step (Step 13 task 17).
+**Not all of these are fully open — read for what is already satisfied too.**
+The behavioural/resilience evidence lives in the Phase-1 readiness runbook
+(`infra/hetzner/docs/runbooks/phase1-operational-readiness.md`), not in this list.
+
+Still fully open:
+- CF-3 REST differential vs the pinned pre-removal oracle `1f6978d7…` (the single
+  core safety gate for the extraction) · CF-8 push gate (all three repos) · CF-9
+  real operator-held signing key · CF-10 conditional third (MCP) differential leg
+  · CF-11 open legal/product dispositions · **CF-13 1→N external-backend
+  forwarding** (I12: a second backend resolves *visibility* with zero code change;
+  *invoking* its tools over HMAC needs the N-forwarding change) · CF-14
+  real-remote `npx skills` resolution (post-push operator step, Step 13 task 17).
+
+Partially satisfied / not a blocker (verify the evidence before calling open):
+- **CF-6 — mostly DONE.** Boundary restart/health/fail-closed/recovery
+  (~8–9s)/idempotent-retry/HMAC were proven **live, operator-approved, 2026-10-01**
+  (runbook §C, C2–C5). **Only** the write-path durable-dedup proof against live
+  staging remains (§C ran a read tool).
+- **CF-7 — NOT a blocker pre-launch.** Teardown+rebuild is the recorded accepted
+  recovery (no users/durable data); runbook §E. Re-evaluate before public launch.
+- **CF-4 / CF-5 — N/A until instrumentation exists.** No metrics system; load
+  numbers aren't obtainable until it's built (runbook §D). Deferred, not failed.
+- CF-12 pre-existing baseline skips (the `RUN_UNSTABLE_LLM_LATENCY_TESTS` trio).
 
 ---
 

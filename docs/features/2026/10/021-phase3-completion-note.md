@@ -57,14 +57,28 @@ above; it does not mean cutover-ready.
 
 ## Carried-forward obligations (G9 — blocking, all recorded)
 
-CF-3 REST differential vs the pinned oracle · CF-4 representative load · CF-5 no
-metrics system · CF-6 staging resilience (proven for a read tool only) · CF-7 no
-rollback path · CF-8 push gate (all three repos) · CF-9 real operator-held signing
-key · CF-10 conditional MCP differential leg · CF-11 open legal/product
-dispositions · CF-12 pre-existing baseline skips · CF-13 1→N forwarding · CF-14
-real-remote `npx skills` resolution. Each with an evidence path in
-`010-phase3-program/DECISIONS.md §5` and a home in the program `PROGRESS.md` +
-the Step-16 obligation list.
+**Read these for what is already satisfied, not only what is owed.** Several are
+only *partially* open; the behavioural/resilience evidence lives in the Phase-1
+readiness runbook (`../../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md`),
+not in the carried-forward list — a reader judging "production readiness" from the
+obligations alone will overstate what remains.
+
+Still fully open: CF-3 REST differential vs the pinned pre-removal oracle (the
+core extraction-safety gate) · CF-8 push gate (all three repos) · CF-9 real
+operator-held signing key · CF-10 conditional MCP differential leg · CF-11 open
+legal/product dispositions · CF-13 1→N forwarding · CF-14 real-remote `npx skills`
+resolution.
+
+Partially satisfied / not a blocker: **CF-6** — restart/health/fail-closed/
+recovery/idempotent-retry/HMAC proven **live, operator-approved, 2026-10-01**
+(runbook §C); only the write-path durable-dedup proof against live staging
+remains. **CF-7** — rollback is a recorded operator decision (teardown+rebuild
+accepted pre-launch), not a gap (runbook §E). **CF-4/CF-5** — N/A until a metrics
+system exists (runbook §D); deferred, not failed. **CF-12** — pre-existing
+baseline skips.
+
+Each has an evidence path in `010-phase3-program/DECISIONS.md §5` and a home in
+the program `PROGRESS.md` + the Step-16 obligation list.
 
 ## The single operator batch
 

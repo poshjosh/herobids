@@ -128,6 +128,15 @@ read ENTRYPOINT → read PROGRESS → prepare (investigate ⇄ plan) → [decisi
 - **implement** — no infra mutation without approval; keep changes atomic.
 - **verify** — build/lint/tests or the documented staging checks.
 - **record** — update PROGRESS.md, and log decisions in DECISIONS.md.
+  - **Carried-forward obligations must name BOTH what remains AND what is already
+    satisfied, each with an evidence link.** An obligation written only as
+    "what's owed" (e.g. "resilience proven for a read tool only") invites a later
+    reader to treat partially-done work as not-done — especially when the evidence
+    lives in a different doc (e.g. a readiness runbook) than the carried-forward
+    list. When you defer an item, state the already-captured part + its
+    file:§-anchor, so an agent judging readiness from the list alone cannot
+    overstate what is open. (This exact miss happened once: Phase-1 §C resilience
+    checks were overlooked because the Phase-3 CF list didn't link them.)
 
 ## 6. Decision trigger test (when to spin off Contemplator)
 
