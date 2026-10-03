@@ -6,8 +6,8 @@
 
 ## Implementation Status
 
-- [PENDING] **Item 0 — i18n keys**: add/remove keys across `en.ts`, `ar.ts`, `hi.ts`.
-- [PENDING] **Item A1 — Family-generic display** (`agent-display.ts`): add `email` label.
+- [DONE] **Item 0 — i18n keys**: add/remove keys across `en.ts`, `ar.ts`, `hi.ts`.
+- [DONE] **Item A1 — Family-generic display** (`agent-display.ts`): add `email` label.
 - [PENDING] **Item A2 — Extract shared connection-setup unit** (`AgentConnectionField.tsx`) + refactor `EditAgentModal`.
 - [PENDING] **Item A3 — Rework capabilities section** in `AgentDetailPage.tsx` (empty state + inline setup).
 - [PENDING] **Item B1 — Readiness view-model helper** (`capability-readiness-view.ts`) implementing the B2 mapping.
@@ -460,3 +460,6 @@ Non-critical observations recorded during implementation code review (no CRITICA
 
 ### Item 0 — i18n keys
 - [MEDIUM] The five removed Part B keys (`whyThisState`, `readyForUse`, `nextSteps`, `noGuidedSetup`, `setupOnAgents`) are still read by `AgentCapabilityPage.tsx` via `intl.formatMessage` until Item B3 lands. Between Item 0 and B3 the capability page renders missing-key fallbacks. Expected per plan sequencing — resolved by Item B3. Item 0 should not ship independently of B3.
+
+### Item A1 — Family-generic display
+- [LOW] No direct unit test yet for `formatCapabilityFamily('email', intl)` → "Email" nor for the unknown-family de-kebab path. Covered under Item Tests (consolidated).

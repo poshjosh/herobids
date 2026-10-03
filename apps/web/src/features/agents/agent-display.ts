@@ -9,6 +9,7 @@ export const EXECUTION_MODE_LABELS: Record<string, string> = {
 
 export const CAPABILITY_FAMILY_LABELS: Record<string, string> = {
   trading: 'Trading',
+  email: 'Email',
 };
 
 function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallback: string): string {
