@@ -87,10 +87,17 @@ mutation, it needs **human ratification before acting** — say so and stop.
 | P3-19 | 2026-10-03 | Seam = `invoke(invocation, attempt)` + optional `lookupStatus(requestId, attempt)` (internal, not exported); `in_progress` resolution chosen by capability in the client | Step 10 §2.4 forbids retry policy below the seam, and a same-key re-issue is a retry | I2/I3/I3b/I5 green | Coordinator (P3-n11) |
 | P3-20 | 2026-10-03 | T0.6's `invokeAndAwait` reconcile moved from the worker write adapter into `ExternalBackendClient.invokeAndAwait` (input requires `idempotencyKey`; refuses an unparseable `deadlineAt` before sending; the re-issue loop's interval is clamped ≥ 1 ms) | Orchestration belongs above the seam, and MCP's re-issue needs the invocation only the client holds; without a key or deadline the loop would be unbounded or a second write | T0.6 contract suite green **unmodified** | Coordinator (P3-n12 + C3 review M1) |
 | P3-21 | 2026-10-03 | Seam unit tests isolate via `vi.mock('./transports/select-transport.js')`, no constructor injection | Keeps every transport type out of the public d.ts (I3b) | I3b | Coordinator (P3-n13) |
+| P3-22 | 2026-10-03 | Registry wiring + site lookups landed together in T1.3 C4; T1.1 shipped the schema unwired | Removing `boundary` breaks the sites; keeping both is a D6 shim with a split env-override target | D6 | Coordinator (P3-n15) |
+| P3-23 | 2026-10-03 | Rename the generic surface only (module, contract/client types, ctx ports, `ExternalBackendReadResult`, worker adapters → `apps/worker/src/external-backend/`, `tools/external-backend-result.ts`); leave trading consumers' local names, `hybrid-price`/`price-contracts`, and CF-11 files | Steps 14/15 delete or move those consumers | — | Coordinator (P3-n16) |
+| P3-24 | 2026-10-03 | Agent payload env `BOUNDARY_CONFIG_JSON` → `EXTERNAL_BACKEND_CONFIG_JSON` carrying `ResolvedExternalBackend`; the worker sends it only when resolution succeeds; agent-ports logs a fixed message + issue codes/paths, never parse error text | Its shape changed; internal worker→agent contract built from the same commit; Node's `JSON.parse` message can echo the secret | Agent image rebuilt before E2E (R4) | Coordinator (P3-n17 + C2 review) |
+| P3-25 | 2026-10-03 | (placeholder P3-n18) REST per-attempt timeout stays `requestTimeoutMs` through Block 1; the deadline-derived timeout is T2.3's call (block2 plan n31) | Exact REST parity in Block 1 | — | Coordinator (P3-n18) |
+| P3-26 | 2026-10-03 | MCP era = legacy Streamable HTTP (protocol `2025-11-25`, the client SDK's default negotiation); server = per-request low-level `Server` + stateless JSON web-standard transport | It is what the SDK client and current MCP clients speak; gate 1 proved it end to end | D17 | Coordinator (block2 n19; T2.1 evidence) |
+| P3-41 | 2026-10-03 | Gate-1 spike tests are promoted into the permanent suites at T2.2/T2.3; the `phase3-mcp-spike` branches/worktrees are kept, unpushed, as evidence | Spike code that passes is the best regression test; deleting a branch needs operator OK | D20 | Coordinator (block2 n34) |
+| P3-45 | 2026-10-03 | Each repo adding `@modelcontextprotocol/*` also pins `abitype>zod: 3.25.76` in `pnpm-workspace.yaml` overrides | Adding the SDK made pnpm resolve viem→abitype's optional zod peer to 4.x; the pin restores base resolutions so app code stays on one zod (gate-1 item 7) | No runtime import of `abitype/zod` | Coordinator (T2.1 finding) |
 
-Plan placeholder → P3 mapping for the rest of Block 1: P3-n11→P3-19, n12→P3-20,
-n13→P3-21, **n14 = P3-8** (already recorded), n15→P3-22, n16→P3-23, n17→P3-24,
-n18→P3-25.
+Plan placeholder → P3 mapping: block1 P3-n11→P3-19, n12→P3-20, n13→P3-21,
+**n14 = P3-8** (already recorded), n15→P3-22, n16→P3-23, n17→P3-24, n18→P3-25.
+block2 n19..n37 → **P3-26..P3-44** (n + 7); P3-45 onwards are new.
 
 ## 4. Intentional-divergence register (parity-not-liveness)
 

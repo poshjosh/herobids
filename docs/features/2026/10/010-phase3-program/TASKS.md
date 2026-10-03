@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T1.3** (registry wiring C4 + ctx ports C5) — T1.1 ✅ (`1b204d63`, `5fc75081`), T1.2 ✅ (`4889e4bf`). ←
+**Current cursor:** **T2.2** (traderton MCP surface + gate 2) — Block 1 ✅ (T1.1–T1.3), T2.1 gate 1 **PASS** (spike branches, see running notes). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -127,7 +127,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   Orchestration (envelope, idempotency, deadline, health gating, retry,
   audit/correlation, result mapping) stays above it.
   - Exit: `INVARIANTS.md` seam checks green; no behaviour change.
-- ⬜ **T1.3 Rewire call sites + importers.** The **6** construction sites across
+- ✅ **T1.3 Rewire call sites + importers.** The **6** construction sites across
   **3** files — `apps/worker/src/index.ts:440,468,502,794`,
   `apps/worker/src/agent.ts:938`, `apps/api/src/index.ts:198` — become registry
   lookups by `backendId`. Rewire the ~32 type-level importers. Rename ctx ports
@@ -142,7 +142,7 @@ never pushed), and an update to this file (status + cursor + running notes),
 
 ## Block 2 — Step 11b: `McpTransport` + the backend MCP surface (D14)
 
-- ⬜ **T2.1 Spike gate 1 — `params._meta` inside the signed bytes. HARD STOP if
+- ✅ **T2.1 Spike gate 1 — `params._meta` inside the signed bytes. HARD STOP if
   it fails.** On a throwaway branch: stand up a low-level MCP `Server` on
   traderton's existing app; connect a herobids client whose transport `fetch` is
   wrapped with a middleware calling the existing signing logic over the outgoing
@@ -501,6 +501,68 @@ recorded), LOW fake-timer flake + already-past-deadline case, index header.
   only `private readonly selectTransport;`), I5: all green.
 - Doc-first: Step 10 §2.4 note "(amended Phase 3 T1.2)".
 
+
+**T1.3 — registry wiring + ctx ports (C4, C5).** herobids C4 `ae34241f`, C5
+`c79bd4c4`. Implementer did both; CodeReviewer on each: **0 CRITICAL/HIGH**.
+- **C4:** `appConfig.boundary` → `appConfig.externalBackends` (map in
+  `config/default.yaml`, entry `traderton`) + `tradingBackendId: traderton`;
+  both loaders retarget `TRADERTON_BOUNDARY_{URL,CONSUMER_ID,KEY_ID,TIMEOUT_MS}`
+  (P3-16), drop the HMAC row (now `caller.hmacSecretRef`), enforce D19 after
+  parse, export `resolveConfiguredExternalBackend`. 6 sites are registry lookups
+  (worker `index.ts` S1–S4, agent via new `apps/worker/src/external-backend/agent-ports.ts`,
+  api `index.ts`); payload `BOUNDARY_CONFIG_JSON` → `EXTERNAL_BACKEND_CONFIG_JSON`
+  (P3-24) carrying `{definition, hmacSecret}`; agent-ports logs no parse error
+  text (secret-safe, tested). Drift test learns `hmacSecretRef`s. Review parity
+  check: identical client config values, subjects, deadlines, degradation, log
+  text. Coordinator added the review MEDIUM (runtime-lifecycle env forwarding
+  tests) and a stale script comment. No new env key; `.env.example` comment only.
+  Stricter-than-before validation (http(s) baseUrl, non-empty ids, timeout cap)
+  affects only malformed configs.
+- **C5:** ctx ports `externalBackend` / `externalBackendWrite`,
+  `ExternalBackendReadResult`, worker adapters `git mv`'d to
+  `apps/worker/src/external-backend/` as `ExternalBackend{Read,Write,ToolWrite}Boundary`,
+  `tools/external-backend-result.ts`. Symmetric rename (52 files, +291/−291);
+  CF-11 api symbols and consumer-local names untouched (counts identical before
+  and after); T0.6 contract test changed by symbol renames only.
+- Tests: `packages/domain apps/worker apps/api` **5654 passed / 309 skipped**;
+  build + lint green; I7 0; I1 no new literal; I2/I3/I3b/I5 green.
+- **Suites (G3 asserted first; agent image rebuilt before each):**
+  `run-all-tests.sh --e2e` after C4 (`phase3-logs/c4-hb-all.log`) and at block
+  end (`b1end-hb-all.log`): exit 0, 9/9 tiers, unit **6595 passed / 339
+  skipped** (G0 6384 — growth is this phase's new tests), Playwright 16/16.
+  `run-extra-tests.sh --all --skip-tier 6` (P3-1): exit 0, 11 PASS, 3 SKIP (the
+  `RUN_UNSTABLE_LLM_LATENCY_TESTS` trio, as at G0) (`b1end-hb-extra.log`).
+- Plan §5 I12 note for closeout: after Block 1 a second backend registers with
+  config only (YAML entry + its own `hmacSecretRef`); remaining code-bound items:
+  the optional `TRADERTON_BOUNDARY_*` override rows, the `tradingBackendId`
+  binding of first-party trading sites (Step 14), tool visibility (T3.2).
+
+**T2.1 — MCP spike gate 1: PASS.** Implementer, in git worktrees (main trees
+untouched): traderton `~/dev_ai/wt/traderton-spike` branch `phase3-mcp-spike`
+(base `d072b97`) `6c386697` + `6b36a792`; herobids `~/dev_ai/wt/herobids-spike`
+branch `phase3-mcp-spike` (base `ae34241f`) `c9b1c0c2` + `acd9cd8f`. Never pushed.
+Logs `phase3-logs/t2.1-*.log`. Per item (block2 plan §2.2):
+1. Default client frames: `POST initialize`, `POST notifications/initialized`,
+   `GET` (405), `POST tools/call`; every POST body a `string` (both legs).
+2. Every POST passed the **unmodified** `authenticateRequest` on the real
+   `createBoundaryApp` (initialize 200, notification 202, tools/call 200 success).
+3. Server-received sha256 = middleware-hashed sha256 for all 3 POSTs;
+   `params._meta` strict-equals the 8 envelope fields (incl. non-ASCII), and so
+   does the handler's `request.params._meta`.
+4. Tamper controls → `authentication.invalid_caller`, tool not run: byte flip in
+   `_meta` (`signature mismatch`), deadline header ≠ `_meta.deadlineAt`, `_meta`
+   keyId ≠ header.
+5. SDK `notifications/cancelled` after a client timeout: string body, signed,
+   authenticated, 202.
+6. herobids `createSigningFetch` headers strict-equal `signRequest(...)` for every
+   frame; body forwarded unchanged; bridge: real traderton verifier accepted all
+   3 herobids-signed POSTs (+ byte-flip control rejected).
+7. build + lint green both; escape-hatch grep empty; strict tsc over spike tests
+   green; zod: app packages on 3.25.76, 4.6.5 only under `@modelcontextprotocol/*`
+   — **after** a `pnpm-workspace.yaml` override `abitype>zod: 3.25.76` (adding
+   the SDK made pnpm resolve viem→abitype's optional zod peer to 4.x; P3-45).
+`sign.ts` / `auth.ts` / `dev/sign.ts` unchanged. Hard stop 3 not triggered.
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -611,3 +673,14 @@ recorded), LOW fake-timer flake + already-past-deadline case, index header.
 - LOW — `TransportInvocation` restates `requestId`/`idempotencyKey`/`deadlineAt`
   that `ExternalBackendToolInvocationV1` already requires (kept as explicit I5
   documentation).
+
+**T1.3**
+- LOW — the api gives no startup log when the trading backend is unresolved
+  (pre-existing; adding one is new behaviour).
+- LOW — the drift test reads `hmacSecretRef`s from `default.yaml` only; a backend
+  added only in an environment overlay would bypass it.
+- LOW — `tradingBackend` setup duplicated in api/worker `index.ts` and the two
+  loaders (mirrored-loader convention; Step 14 deletes the sites).
+- LOW — "Traderton REST boundary" prose remains in the moved adapter headers and
+  log strings; `infra/hetzner/docs/runbooks/phase1-operational-readiness.md`
+  cites pre-move paths (dated capture).
