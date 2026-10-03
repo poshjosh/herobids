@@ -42,5 +42,6 @@ This page is intentionally high level. Deeper runtime boundaries, agent messagin
 
 Additional architecture documents:
 
+- [External Backend](./external-backend.md) — the generic, trust-gated, transport-pluggable path herobids reaches external services' tools on (registry, signed descriptor, REST/MCP transport seam)
 - [Market Data Architecture](./market-data.md) — current-state source of truth for provider wiring, source selection, caching, and degradation behavior
 - [Security Architecture](./security.md) — threat model, trust boundaries, defense-in-depth principles, and mitigation catalogue

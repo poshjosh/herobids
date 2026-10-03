@@ -116,6 +116,73 @@ export const AppConfigSchema = z.object({
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 ```
 
+### The External Backend registry (operator config)
+
+An **External Backend** is a trust-gated service herobids reaches tools on
+through a generic, transport-pluggable path (today: Traderton, the trading
+backend). It is registered as **operator config** — `config/default.yaml →
+externalBackends`, a map keyed by `backendId`, parsed into an
+`ExternalBackendDefinition[]`. There is no backend-identity branch in code; a new
+backend is added by adding a registry entry + publishing a signed descriptor
+(see the [External Backend architecture overview](../tech/architecture/external-backend.md)).
+
+```yaml
+# config/default.yaml
+externalBackends:
+  traderton:
+    enabled: true
+    endpoint:
+      baseUrl: http://localhost:8080        # override: TRADERTON_BOUNDARY_URL
+      contractVersion: "1.0"                # 005 invocation envelope version
+      protocol: rest                        # rest | mcp; mcp is development/test only (D19)
+      # mcpPath: /internal/v1/mcp           # required when protocol (or an override) is mcp
+      requestTimeoutMs: 10000               # override: TRADERTON_BOUNDARY_TIMEOUT_MS
+    caller:
+      consumerId: herobids                  # override: TRADERTON_BOUNDARY_CONSUMER_ID
+      keyId: current                        # override: TRADERTON_BOUNDARY_KEY_ID
+      hmacSecretRef: TRADERTON_BOUNDARY_HMAC_SECRET   # NAME of the env var holding the secret — never the secret
+    trustedDescriptorSigningKeys:           # ed25519 PEM-SPKI keys that verify published descriptors
+      - keyId: traderton-dev-1
+        status: active                      # active | retiring (overlap-window rotation)
+        publicKey: |
+          -----BEGIN PUBLIC KEY-----
+          ...
+          -----END PUBLIC KEY-----
+    approvedSourceSkillRefs:                # which skills.sh refs this backend may deep-integrate
+      - traderton/skills/crypto-trading
+    descriptorPinning:
+      mode: maxAge                          # maxAge { seconds } | pinned { sha256 }
+      seconds: 3600
+
+tradingBackendId: traderton                 # the first-party binding used by the trading call sites
+```
+
+Field notes:
+- **`hmacSecretRef` is the NAME of an env var, never the secret.** The loader
+  resolves it from `process.env` (`resolveConfiguredExternalBackend`) and the
+  secret stays out of `AppConfig`. The resolved `{ definition, hmacSecret }` is
+  forwarded to the agent container as `EXTERNAL_BACKEND_CONFIG_JSON` (a container
+  payload field, not an operator env var — see "Three Config Surfaces" below).
+- **`trustedDescriptorSigningKeys`** are the operator's trust anchors: a backend
+  publishes an ed25519-signed descriptor that is the sole authority for its tool
+  schemas; herobids exposes a backend's tools only if the descriptor verifies
+  against a trusted key, is unexpired, pins correctly, and matches the backend id
+  (ADR 015/016). A trust failure degrades the skill to instruction-only, never a
+  crash.
+- **`protocol`** picks the invocation transport (`rest` default; `mcp` is
+  dev/test only, D19). It is a config value, not a code branch — the client
+  selects the transport generically behind an internal seam.
+- The committed Traderton descriptor + its dev public key are regenerated as a
+  set by `pnpm --filter @herobids/scripts run generate-dev-descriptor` (the
+  private key is gitignored). A **real operator-held signing key** is a gated,
+  post-deploy step — not a dev concern.
+
+> **Env override limits.** `externalBackends` is a structured policy object, so
+> only the leaf scalars that infra injects get env overrides
+> (`TRADERTON_BOUNDARY_{URL,CONSUMER_ID,KEY_ID,TIMEOUT_MS}` → dotted paths under
+> `externalBackends.traderton.*`). The registry shape, trust keys, approved refs
+> and pinning live in YAML only (and the HMAC secret is referenced by name).
+
 ---
 
 ## User/Instance Config
@@ -320,6 +387,6 @@ SCRAPFLY_API_KEY=
 
 **Env overrides are not justified for:** structured policy objects (trading hours, market-data budgets, context diff policy, sandbox limits, retry backoff arrays). These belong in YAML.
 
-**Container payload fields** (`TRADING_HOURS_JSON`, `MARKET_DATA_CONFIG_JSON`, `AGENT_CONFIG`, `TOOL_POLICY`, `AGENT_RUNTIME_CONFIG_JSON`) are internal worker-to-agent transport contract. They are not operator env vars, must not appear in `docker-compose.yaml`, and must always be derived from resolved `appConfig` in `index.ts`.
+**Container payload fields** (`TRADING_HOURS_JSON`, `MARKET_DATA_CONFIG_JSON`, `EXTERNAL_BACKEND_CONFIG_JSON`, `AGENT_CONFIG`, `TOOL_POLICY`, `AGENT_RUNTIME_CONFIG_JSON`) are internal worker-to-agent transport contract. `EXTERNAL_BACKEND_CONFIG_JSON` carries the resolved `{ definition, hmacSecret }` for the trading backend (the HMAC secret reaches the agent only here, never as an operator env var on the container). They are not operator env vars, must not appear in `docker-compose.yaml`, and must always be derived from resolved `appConfig` in `index.ts`.
 
 **`docker-compose.yaml`** is infra wiring only: service URLs, Docker runtime wiring, and secret passthrough into worker. It is not a second home for structured operator policy.
