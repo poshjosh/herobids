@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T4.2** (produce the real dev-signed descriptor + DELETE the T3.3 stub; grep-proven I10) — T4.1 ✅ (traderton-skills `77fd7a59`). ←
+**Current cursor:** **T4.3** (end-to-end verify on the local fixture source over BOTH transports) — T4.2 ✅ (`636905f0`, stub deleted, I10 = 0). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -213,7 +213,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   `BOT_MANAGEMENT_SKILL` / `RISK_MONITORING_SKILL` as source of truth). Follow
   the skill-authoring guide.
   - Exit: three skills authored; branch commit; **no push**.
-- ⬜ **T4.2 Produce the real (dev-signed) descriptor and DELETE the stub.**
+- ✅ **T4.2 Produce the real (dev-signed) descriptor and DELETE the stub.**
   Generate a dev ed25519 keypair locally, **gitignore the private key**, mark the
   descriptor clearly as dev-signed. Bind the three refs → tool
   schemas/instructions. Wire `trustedDescriptorSigningKeys` +
@@ -730,6 +730,36 @@ resolution will work; the `requiredTools` vs `allowed-tools` frontmatter
 difference is immaterial (tool visibility is descriptor-driven, T3.2, not from
 SKILL.md).
 
+
+**T4.2 — dev-signed descriptor replaces the stub (I10 = 0).** herobids `636905f0`.
+Implementer: generator `scripts/ts/generate-dev-descriptor.ts`; committed signed
+wrapper `config/external-backends/traderton.descriptor.json` + public key
+`traderton.descriptor.pub.pem` (keyId `traderton-dev-1`), binding the three D11
+refs → the current trading tool schemas; private key gitignored
+(`config/external-backends/*.dev-key.pem`, NOT tracked); the public key is now in
+`config/default.yaml → externalBackends.traderton.trustedDescriptorSigningKeys`.
+New `file-descriptor-source.ts` reads the committed JSON; `descriptor-tool-
+visibility.ts` rewired to trust the CONFIG key (runtime key-splice removed);
+`stub-descriptor-source.ts`(+test) DELETED.
+- CodeReviewer: **0 CRITICAL/HIGH**. **I10 grep = 0** (stub gone, not emptied).
+  No committed private key (`git ls-files` → only the `.pub.pem`; no `PRIVATE
+  KEY` tracked). **Finding 4 verified: the committed public key reaches the
+  agent container** — `EXTERNAL_BACKEND_CONFIG_JSON` forwards the
+  `ExternalBackendDefinition` which includes `trustedDescriptorSigningKeys`, so
+  the agent trusts the real key (not just a hand-built unit policy); parity holds
+  in the real container. `category` per tool = `TOOL_CATALOG` (DT4).
+- **Regenerate** (dev throwaway; LOW-1): `pnpm --filter @herobids/scripts run
+  generate-dev-descriptor`, then paste the printed public key into
+  `config/default.yaml` (fresh keypair each run → regenerate as a set; the real
+  operator key is gated to a post-push step, CF-9). LOW-2: committed descriptor
+  `inputSchema` is a placeholder `{type:object}` (visibility keys on tool NAMES;
+  real schemas arrive with the real descriptor). Both parked below.
+- Tests: `apps/worker/src/external-backend packages/domain/src/external-backend`
+  + the parity + degrade matrix green (the committed descriptor verifies under
+  the committed key; D11-ref agent sees today's tool set); `config.test.ts` 60/60
+  with `DATABASE_URL` unset; build + lint green; I7 0; T3.1 `descriptor.ts`
+  untouched; no new env var (I11 N/A).
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -864,3 +894,11 @@ SKILL.md).
   astral-plane object KEY would need code-point order. Noted, no action.
 - LOW — the `expired` reason also covers a not-yet-valid descriptor
   (`now < issuedAt`); matches the manifest's single reason code.
+
+**T4.2**
+- LOW — the dev descriptor keypair is non-deterministic (fresh per generator
+  run; private key discarded/gitignored), so the exact committed descriptor
+  can't be re-signed later; acceptable for a dev throwaway superseded by the
+  gated real operator key (CF-9). A durable regenerate note would be nice.
+- LOW — committed descriptor tool `inputSchema` is a placeholder; real input
+  schemas land with the backend-published descriptor.
