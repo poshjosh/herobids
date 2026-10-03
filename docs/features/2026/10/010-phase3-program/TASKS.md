@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T1.1** (rename + definition schema) — Block 0 + 0b ✅ (T0.1–T0.6). First action of the next session: the T0.6 round-2 review (see `HANDOVER.md`). ←
+**Current cursor:** **T1.1** (rename + definition schema, C1–C2) — Block 0 + 0b ✅ (T0.1–T0.6, T0.6 round-2 review done `89349ba7`). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -437,6 +437,21 @@ the next session (`HANDOVER.md`).
 - Not done here: a herobids leg against the REAL local boundary (herobids
   vitest runs before `ensure_boundary_up`) → carried into CF-6.
 
+**T0.6 round 2 (session 2).** herobids `89349ba7`. CodeReviewer round 2 on
+`f495ab3d`: **0 CRITICAL/HIGH**; round-1 HIGH confirmed fixed and the
+`isLookupLevelAnswer` premise re-verified against traderton
+`dispatcher.ts`/`app.ts`/`result.ts`. Implementer fixed M1 (`parseInvokeResponse`
+now shape-checks an `unknown` body → transport_error, never throws), M2 (re-issue
+keeps the original transport_error on any lookup-level answer, not only
+`deadline.expired`), L1 (fake failure codes narrowed to the 5 storable codes),
+L3 (status `state` must be `in_progress|terminal`), L5 (blank key rejected).
+Coordinator: success outcome with no `payload` key accepted (backend
+`successResult(identity, undefined)` serialises without it — the Implementer's
+stricter guard would have regressed it); body ids must be strings. Follow-up
+review: 0 CRITICAL/HIGH; its MEDIUM (no test for the re-issue *replace* side)
+fixed. Tests: domain traderton + worker traderton/agents/approval + api **2272
+passed / 298 skipped**; build + lint green; I7 0. M3/M4 parked below.
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -503,3 +518,27 @@ the next session (`HANDOVER.md`).
   the HMAC-authenticated consumer.
 - LOW — `apps/worker/src/traderton/__tests__/fake-idempotent-boundary.ts`
   compiles into the worker dist (same as the api `__tests__` helpers precedent).
+
+**T0.6 round 2** (the `parseInvokeResponse` LOW above is fixed in `89349ba7`)
+- MEDIUM (M3, deferred — event-type change) — an unknown outcome still emits
+  `instance.decision.rejected` (`agent-decision-handler.ts` ~604), so
+  `runtime-composition.ts` counts it in `metrics.decisionsRejected` and the
+  activity feed shows "Decision rejected". The sync reply is correct (`error`).
+  Fix: a distinct `instance.decision.outcome_unknown` event, or stop counting it.
+- MEDIUM (M4, deferred — tool-contract wording) — agent-container
+  `mapWriteResultToToolResult` (`apps/worker/src/tools/traderton-read.ts` ~101)
+  maps `in_progress` to `precondition.not_ready` (same code as "not
+  configured") and `transport_error` to "unreachable"; W5 keys are per call, so
+  an LLM retry is a new write. Fix: unknown-outcome wording telling the agent to
+  verify (`list_watches`/`get_risk_limits`), maybe `boundary.in_progress`.
+- LOW — failure `code` checked only as a string (unknown codes pass through for
+  forward compatibility); `details` not shape-checked.
+- LOW — the cross-repo premise of `isLookupLevelAnswer` (stored results carry
+  only the 5 storable codes) is pinned by a comment only; a traderton
+  dispatcher test would pin it.
+- LOW — a re-issue during a rolling backend deploy could see a deterministic
+  pre-store rejection (unknown tool, `authorization.denied`) although attempt 1
+  executed. Rare; out of scope.
+- LOW — traderton status lookup is not consumer/owner-scoped and requestIds are
+  now predictable; within the current HMAC trust model. Follow-up: scope
+  `findByRequestId` by the authenticated `consumerId`.
