@@ -157,4 +157,94 @@ describe('toReadinessView', () => {
     expect(view.reasonId).toBeUndefined();
     expect(view.action?.variant).toBe('secondary');
   });
+
+  describe('non-trading family (email)', () => {
+    it('reports the neutral ready headline when an email capability is ready', () => {
+      const view = toReadinessView(
+        makeReadiness({
+          family: 'email',
+          state: 'ready',
+          effectiveReady: true,
+          connectionReadiness: 'ready',
+          reasons: [],
+        }),
+      );
+
+      expect(view.tone).toBe('ready');
+      expect(view.headlineId).toBe('agents.capabilityPage.status.readyHeadlineGeneric');
+      expect(view.reasonId).toBeUndefined();
+      expect(view.action).toBeUndefined();
+    });
+
+    it('uses neutral copy and a generic assign helper when no connection is assigned', () => {
+      const view = toReadinessView(
+        makeReadiness({
+          family: 'email',
+          state: 'unconfigured',
+          effectiveReady: false,
+          reasons: ['no connections have been assigned for this capability family'],
+        }),
+      );
+
+      expect(view.tone).toBe('warn');
+      expect(view.headlineId).toBe('agents.capabilityPage.status.noConnectionHeadlineGeneric');
+      expect(view.reasonId).toBe('agents.capabilityPage.status.noConnectionReasonGeneric');
+      expect(view.rawReason).toBeUndefined();
+      expect(view.action?.labelId).toBe('agents.capabilityPage.status.action.assignConnection');
+      expect(view.action?.helperId).toBe('agents.capabilityPage.status.action.assignHelperGeneric');
+      expect(view.action?.variant).toBe('primary');
+      expect(view.action?.action.kind).toBe('assignConnection');
+    });
+
+    it('uses the neutral revoked reason when the connection was revoked', () => {
+      const view = toReadinessView(
+        makeReadiness({
+          family: 'email',
+          state: 'revoked',
+          effectiveReady: false,
+          reasons: ['connection has been revoked'],
+        }),
+      );
+
+      expect(view.tone).toBe('blocked');
+      expect(view.headlineId).toBe('agents.capabilityPage.status.revokedHeadline');
+      expect(view.reasonId).toBe('agents.capabilityPage.status.revokedReasonGeneric');
+      expect(view.rawReason).toBeUndefined();
+      expect(view.action?.labelId).toBe('agents.capabilityPage.status.action.assignConnection');
+      expect(view.action?.action.kind).toBe('assignConnection');
+    });
+
+    it('keeps the family-neutral access-removed copy when the assignment was revoked', () => {
+      const view = toReadinessView(
+        makeReadiness({
+          family: 'email',
+          state: 'revoked',
+          effectiveReady: false,
+          reasons: ['connection assignment has been revoked'],
+        }),
+      );
+
+      expect(view.tone).toBe('blocked');
+      expect(view.headlineId).toBe('agents.capabilityPage.status.accessRemovedHeadline');
+      expect(view.reasonId).toBe('agents.capabilityPage.status.accessRemovedReason');
+      expect(view.rawReason).toBeUndefined();
+      expect(view.action?.action.kind).toBe('assignConnection');
+    });
+
+    it('does not show trading setup copy for a venue-account reason and falls back to the raw reason', () => {
+      const view = toReadinessView(
+        makeReadiness({
+          family: 'email',
+          state: 'unconfigured',
+          effectiveReady: false,
+          reasons: ['connection has no resolved venue account — complete trading setup first'],
+        }),
+      );
+
+      expect(view.headlineId).toBe('agents.capabilityPage.status.genericNotReadyHeadline');
+      expect(view.reasonId).toBeUndefined();
+      expect(view.rawReason).toBe('connection has no resolved venue account — complete trading setup first');
+      expect(view.action?.variant).toBe('secondary');
+    });
+  });
 });

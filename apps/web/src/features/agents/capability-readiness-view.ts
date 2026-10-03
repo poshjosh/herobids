@@ -41,11 +41,20 @@ export interface ReadinessView {
 export function toReadinessView(readiness: CapabilityReadiness): ReadinessView {
   const { state, effectiveReady, reasons } = readiness;
 
+  // The readiness contract carries `family`; copy for the connection-centric
+  // branches differs between trading (which has venue accounts and trade-flavoured
+  // wording) and every other family (email, future messaging/automation), which
+  // get neutral wording. Branches whose copy is already family-neutral
+  // (accessRemoved, generic fallback) do not read this flag.
+  const isTrading = readiness.family === 'trading';
+
   // 1. Ready — evaluated first so a ready capability never shows a reason.
   if (state === 'ready' && effectiveReady === true) {
     return {
       tone: 'ready',
-      headlineId: 'agents.capabilityPage.status.readyHeadline',
+      headlineId: isTrading
+        ? 'agents.capabilityPage.status.readyHeadline'
+        : 'agents.capabilityPage.status.readyHeadlineGeneric',
     };
   }
 
@@ -53,19 +62,28 @@ export function toReadinessView(readiness: CapabilityReadiness): ReadinessView {
   if (state === 'unconfigured' && reasons.includes(NO_CONNECTIONS)) {
     return {
       tone: 'warn',
-      headlineId: 'agents.capabilityPage.status.noConnectionHeadline',
-      reasonId: 'agents.capabilityPage.status.noConnectionReason',
+      headlineId: isTrading
+        ? 'agents.capabilityPage.status.noConnectionHeadline'
+        : 'agents.capabilityPage.status.noConnectionHeadlineGeneric',
+      reasonId: isTrading
+        ? 'agents.capabilityPage.status.noConnectionReason'
+        : 'agents.capabilityPage.status.noConnectionReasonGeneric',
       action: {
         labelId: 'agents.capabilityPage.status.action.assignConnection',
-        helperId: 'agents.capabilityPage.status.action.assignHelper',
+        helperId: isTrading
+          ? 'agents.capabilityPage.status.action.assignHelper'
+          : 'agents.capabilityPage.status.action.assignHelperGeneric',
         variant: 'primary',
         action: { kind: 'assignConnection' },
       },
     };
   }
 
-  // 3. Unconfigured — connection linked but trading account not set up.
-  if (state === 'unconfigured' && reasons.includes(NO_VENUE_ACCOUNT)) {
+  // 3. Unconfigured — connection linked but trading account not set up. The
+  // "no resolved venue account" reason is trading-specific by nature; guard on
+  // family so a non-trading family that somehow carries it falls through to the
+  // neutral verbatim fallback instead of showing "finish trading setup" copy.
+  if (isTrading && state === 'unconfigured' && reasons.includes(NO_VENUE_ACCOUNT)) {
     return {
       tone: 'warn',
       headlineId: 'agents.capabilityPage.status.setupIncompleteHeadline',
@@ -83,7 +101,9 @@ export function toReadinessView(readiness: CapabilityReadiness): ReadinessView {
     return {
       tone: 'blocked',
       headlineId: 'agents.capabilityPage.status.revokedHeadline',
-      reasonId: 'agents.capabilityPage.status.revokedReason',
+      reasonId: isTrading
+        ? 'agents.capabilityPage.status.revokedReason'
+        : 'agents.capabilityPage.status.revokedReasonGeneric',
       action: {
         labelId: 'agents.capabilityPage.status.action.assignConnection',
         variant: 'primary',

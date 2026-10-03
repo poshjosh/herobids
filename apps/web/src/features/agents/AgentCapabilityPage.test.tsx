@@ -166,3 +166,53 @@ describe('AgentCapabilityPage', () => {
   });
 });
 
+function renderEmailCapability(readiness: CapabilityReadiness): string {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  queryClient.setQueryData(['agents', 'agent-1'], makeAgent());
+  queryClient.setQueryData(['agents', 'agent-1', 'capabilities', 'email'], readiness);
+
+  return renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <IntlProvider locale="en" messages={messages}>
+        <MemoryRouter initialEntries={['/agents/agent-1/capabilities/email']}>
+          <Routes>
+            <Route path="/agents/:agentId/capabilities/:family" element={<AgentCapabilityPage />} />
+          </Routes>
+        </MemoryRouter>
+      </IntlProvider>
+    </QueryClientProvider>,
+  );
+}
+
+const EMAIL_NO_CONNECTION_READINESS: CapabilityReadiness = {
+  family: 'email',
+  state: 'unconfigured',
+  connectionReadiness: 'unconfigured',
+  agentEligibility: 'eligible',
+  effectiveReady: false,
+  reasons: ['no connections have been assigned for this capability family'],
+};
+
+describe('AgentCapabilityPage — non-trading (email) family', () => {
+  it('renders family-neutral readiness copy and omits trading-specific copy and the trading connections card', () => {
+    const html = renderEmailCapability(EMAIL_NO_CONNECTION_READINESS);
+
+    // Neutral, family-agnostic Status copy is shown.
+    expect(html).toContain(messages['agents.capabilityPage.status.noConnectionHeadlineGeneric']);
+    expect(html).toContain(messages['agents.capabilityPage.status.noConnectionReasonGeneric']);
+    expect(html).toContain(messages['agents.capabilityPage.status.action.assignHelperGeneric']);
+
+    // Trading-specific copy must not leak into a non-trading family page.
+    expect(html).not.toContain(messages['agents.capabilityPage.status.noConnectionHeadline']);
+    expect(html).not.toContain(messages['agents.capabilityPage.status.noConnectionReason']);
+
+    // Non-trading families get the Manage-connections link, never the trading
+    // Available-connections card (gated on family === 'trading').
+    expect(html).toContain(messages['agents.capabilityPage.manageConnections']);
+    expect(html).not.toContain(messages['agents.capabilityPage.availableConnections']);
+  });
+});
+

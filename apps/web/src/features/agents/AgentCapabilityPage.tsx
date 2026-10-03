@@ -174,7 +174,7 @@ export function AgentCapabilityPage() {
                     {intl.formatMessage({ id: 'agents.capabilityPage.manageConnections' })}
                   </Button>
                 )}
-                {isTrading && view.action.helperId && (
+                {view.action.helperId && (
                   <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '6px', lineHeight: '1.4' }}>
                     {intl.formatMessage({ id: view.action.helperId })}
                   </div>
