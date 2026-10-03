@@ -522,6 +522,9 @@ export class AgentMessageBroker {
     toolName: 'create_bot' | 'start_bot' | 'stop_bot' | 'adjust_bot_config',
     payload: Record<string, unknown>,
     subject: TradertonSubject,
+    // The inbound messageId: persisted (agent_messages) before routing, and one
+    // manage_bot message makes exactly one lifecycle write (D18).
+    idempotencyKey: string,
   ): Promise<TradertonClientResult> {
     if (!this.sideEffectBoundary) {
       throw new Error('Trading boundary is not configured — bot lifecycle actions are unavailable.');
@@ -531,6 +534,7 @@ export class AgentMessageBroker {
       payload,
       subject,
       deadlineMs: 30_000,
+      idempotencyKey,
     });
     if (result.kind === 'success') {
       return result;
@@ -538,14 +542,17 @@ export class AgentMessageBroker {
     if (result.kind === 'failure') {
       throw new Error(`Bot ${toolName} rejected by trading boundary: ${result.message} (${result.code})`);
     }
+    // Unknown outcome: the requestId lands in agent_messages.errorDetail so the
+    // write can be reconciled by requestId.
+    logger.warn({ toolName, requestId: result.requestId, idempotencyKey, kind: result.kind }, 'Bot lifecycle outcome unknown');
     if (result.kind === 'transport_error') {
-      throw new Error(`Bot ${toolName} failed — trading boundary is unreachable: ${result.message}`);
+      throw new Error(`Bot ${toolName} outcome unknown — trading boundary did not return a response: ${result.message} (requestId ${result.requestId})`);
     }
-    // in_progress after poll-to-deadline
-    throw new Error(`Bot ${toolName} did not reach a terminal outcome within the deadline.`);
+    // in_progress: still running at the deadline — it may yet complete.
+    throw new Error(`Bot ${toolName} outcome unknown — no terminal outcome within the deadline (requestId ${result.requestId}).`);
   }
 
-  private async handleManageBot(agentId: string, _envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {
+  private async handleManageBot(agentId: string, envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {
     const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) throw new Error('Agent not found');
 
@@ -666,7 +673,7 @@ export class AgentMessageBroker {
       await this.invokeBotLifecycle('create_bot', {
         venueAccountId: connection.resolvedVenueAccountId,
         config: rawConfig,
-      }, subject);
+      }, subject, envelope.messageId);
 
       logger.info({ agentId: agent.id }, 'Agent created bot via manage_bot (boundary)');
 
@@ -688,7 +695,7 @@ export class AgentMessageBroker {
       // bots-table read/write, no maxBots, no lifecycle enqueue (#4). Traderton
       // owns the bot + its config + the limit and validates ownership from the
       // subject. See 004-l3d-plan.md §C.
-      await this.invokeBotLifecycle('start_bot', { botId: payload.botId }, subject);
+      await this.invokeBotLifecycle('start_bot', { botId: payload.botId }, subject, envelope.messageId);
 
       await this.eventPublisher.emitInstanceStatus(agent.id, {
         status: 'running',
@@ -703,7 +710,7 @@ export class AgentMessageBroker {
 
       // L3c: stop over the boundary — bot-scoped. No bots-table write. Traderton
       // owns the bot + validates ownership from the subject.
-      await this.invokeBotLifecycle('stop_bot', { botId: payload.botId }, subject);
+      await this.invokeBotLifecycle('stop_bot', { botId: payload.botId }, subject, envelope.messageId);
       return;
     }
 
@@ -716,7 +723,7 @@ export class AgentMessageBroker {
       await this.invokeBotLifecycle('adjust_bot_config', {
         botId: payload.botId,
         config: partialConfig,
-      }, subject);
+      }, subject, envelope.messageId);
 
       return;
     }

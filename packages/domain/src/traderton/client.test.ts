@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createHmac, createHash } from 'node:crypto';
 import { TradertonClient, type TradertonClientConfig } from './client.js';
+import { deriveRequestId } from './request-id.js';
 import type {
   TradertonToolResultV1,
   TradertonToolInvocationStatusV1,
@@ -112,7 +113,70 @@ describe('TradertonClient.invoke — envelope', () => {
     expect(envelope['idempotencyKey']).toBe('fixed-idem');
     expect(envelope['correlationId']).toBe('fixed-corr');
   });
+
+  it('derives a stable requestId from the idempotency key when no requestId is supplied', async () => {
+    fetchMock.mockImplementation(async () => freshSuccessResponse());
+
+    await client().invoke({ toolName: 'submit_decision', payload: {}, subject: SUBJECT, idempotencyKey: 'dec-1' });
+    await client().invoke({ toolName: 'submit_decision', payload: {}, subject: SUBJECT, idempotencyKey: 'dec-1' });
+
+    const [first, second] = [sentEnvelope(0), sentEnvelope(1)];
+    const expected = deriveRequestId({
+      consumerId: CONFIG.consumerId,
+      ownerId: SUBJECT.ownerId,
+      toolName: 'submit_decision',
+      idempotencyKey: 'dec-1',
+    });
+    expect(first['requestId']).toBe(expected);
+    expect(second['requestId']).toBe(expected);
+    expect(first['idempotencyKey']).toBe('dec-1');
+    // correlationId is per call, not per key.
+    expect(first['correlationId']).not.toBe(second['correlationId']);
+  });
+
+  it('derives the requestId from whatever key it sends, even an empty one', async () => {
+    fetchMock.mockImplementation(async () => freshSuccessResponse());
+
+    await client().invoke({ toolName: 'submit_decision', payload: {}, subject: SUBJECT, idempotencyKey: '' });
+
+    const sent = sentEnvelope(0);
+    expect(sent['idempotencyKey']).toBe('');
+    expect(sent['requestId']).toBe(
+      deriveRequestId({ consumerId: CONFIG.consumerId, ownerId: SUBJECT.ownerId, toolName: 'submit_decision', idempotencyKey: '' }),
+    );
+  });
+
+  it('mints fresh identifiers per call when no idempotency key is supplied', async () => {
+    fetchMock.mockImplementation(async () => freshSuccessResponse());
+
+    await client().invoke({ toolName: 'get_positions', payload: {}, subject: SUBJECT });
+    await client().invoke({ toolName: 'get_positions', payload: {}, subject: SUBJECT });
+
+    const [first, second] = [sentEnvelope(0), sentEnvelope(1)];
+    expect(first['requestId']).not.toBe(second['requestId']);
+    expect(first['idempotencyKey']).not.toBe(second['idempotencyKey']);
+    expect(first['requestId']).not.toBe(first['idempotencyKey']);
+  });
 });
+
+/** A fresh success Response per call (a Response body can be read only once). */
+function freshSuccessResponse(): Response {
+  const body: TradertonToolResultV1 = {
+    contractVersion: '1.0',
+    requestId: 'r',
+    correlationId: 'c',
+    outcome: { kind: 'success', payload: {} },
+  };
+  return new Response(JSON.stringify(body), { status: 200 });
+}
+
+/** The envelope the client sent on its `index`-th fetch call. */
+function sentEnvelope(index: number): Record<string, unknown> {
+  const init: RequestInit | undefined = fetchMock.mock.calls[index]?.[1];
+  const parsed: unknown = JSON.parse(String(init?.body));
+  if (typeof parsed !== 'object' || parsed === null) throw new Error('fetch body is not an envelope');
+  return Object.fromEntries(Object.entries(parsed));
+}
 
 describe('TradertonClient.invoke — response mapping', () => {
   it('maps a success envelope to a success result carrying the payload', async () => {
@@ -283,6 +347,51 @@ describe('TradertonClient.poll', () => {
     const canonical = `GET\n/internal/v1/invocations/rp\n${headers['x-traderton-timestamp']}\n${createHash('sha256').update(Buffer.alloc(0)).digest('hex')}`;
     const expected = 'sha256=' + createHmac('sha256', CONFIG.hmacSecret).update(canonical).digest('hex');
     expect(headers['x-traderton-signature']).toBe(expected);
+  });
+
+  it('poll returns not_found.resource immediately when the boundary has no record of the requestId', async () => {
+    const notFound: TradertonToolResultV1 = {
+      contractVersion: '1.0',
+      requestId: 'unknown-req',
+      correlationId: '',
+      outcome: {
+        kind: 'failure',
+        code: 'not_found.resource',
+        message: 'no invocation for requestId: unknown-req',
+        retryable: false,
+      },
+    };
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify(notFound), { status: 200 }));
+
+    const deadlineAt = new Date(Date.now() + 60_000).toISOString();
+    const result = await client().poll('unknown-req', { deadlineAt, pollIntervalMs: 1 });
+
+    expect(result).toMatchObject({ kind: 'failure', code: 'not_found.resource', retryable: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('poll maps an unrecognised status body to a transport error', async () => {
+    const unrecognisedBodies: unknown[] = [
+      {},
+      null,
+      { outcome: null },
+      { contractVersion: '1.0', requestId: 'rp', correlationId: 'cp', state: 'terminal', result: {} },
+    ];
+    const deadlineAt = new Date(Date.now() + 60_000).toISOString();
+
+    for (const body of unrecognisedBodies) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
+
+      const result = await client().poll('rp', { deadlineAt, pollIntervalMs: 1 });
+
+      expect(result).toEqual({
+        kind: 'transport_error',
+        requestId: 'rp',
+        retryable: true,
+        message: 'boundary returned an unrecognised status response',
+      });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(unrecognisedBodies.length);
   });
 
   it('returns a deadline error once the deadline passes', async () => {

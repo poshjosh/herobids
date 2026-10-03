@@ -27,6 +27,7 @@ import {
   type TradertonBoundaryFailureCode,
   type TradertonOutcome,
 } from './contract.js';
+import { deriveRequestId } from './request-id.js';
 
 /** Operator config the client needs (subset of the domain BoundaryConfig). */
 export interface TradertonClientConfig {
@@ -49,9 +50,13 @@ export interface InvokeToolInput {
   deadlineAt?: string;
   deadlineMs?: number;
   /**
-   * Optional idempotency/correlation identifiers for retry reuse (005
-   * §Deadlines/Retries: a transport retry MUST reuse the same requestId +
-   * idempotencyKey). Generated via randomUUID when omitted.
+   * Idempotency/correlation identifiers (005 §Deadlines/Retries: a transport
+   * retry MUST reuse the same requestId + idempotencyKey). `idempotencyKey` is
+   * optional because this client also serves reads; every WRITE must supply one
+   * stable key per logical write. With a key and no explicit `requestId`, the
+   * `requestId` is derived from the key (`deriveRequestId`), so every re-issue of
+   * that write carries the same `requestId`. Without a key, all three are fresh
+   * randomUUIDs.
    */
   requestId?: string;
   idempotencyKey?: string;
@@ -95,6 +100,7 @@ export interface PollOptions {
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
+const UNRECOGNISED_STATUS_MESSAGE = 'boundary returned an unrecognised status response';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -133,6 +139,18 @@ function isStatusShape(
   return 'state' in body;
 }
 
+// The poll reads unvalidated JSON, so it checks shape before mapping: a body it
+// does not recognise is a transport fault, never a TypeError thrown out of poll.
+function isStatusBody(value: unknown): value is TradertonToolInvocationStatusV1 {
+  return typeof value === 'object' && value !== null && 'state' in value;
+}
+
+function isToolResultBody(value: unknown): value is TradertonToolResultV1 {
+  if (typeof value !== 'object' || value === null || !('outcome' in value)) return false;
+  const outcome = value.outcome;
+  return typeof outcome === 'object' && outcome !== null && 'kind' in outcome && typeof outcome.kind === 'string';
+}
+
 /**
  * The Traderton REST boundary client. Construct once with operator config +
  * signing identity; call `invoke` per tool call and `poll` to resolve an
@@ -165,9 +183,20 @@ export class TradertonClient {
       input.deadlineAt ??
       new Date(Date.now() + (input.deadlineMs ?? this.requestTimeoutMs)).toISOString();
 
+    const requestId =
+      input.requestId ??
+      (input.idempotencyKey !== undefined
+        ? deriveRequestId({
+            consumerId: this.identity.consumerId,
+            ownerId: input.subject.ownerId,
+            toolName: input.toolName,
+            idempotencyKey: input.idempotencyKey,
+          })
+        : randomUUID());
+
     return {
       contractVersion: '1.0',
-      requestId: input.requestId ?? randomUUID(),
+      requestId,
       idempotencyKey: input.idempotencyKey ?? randomUUID(),
       correlationId: input.correlationId ?? randomUUID(),
       issuedAt,
@@ -270,15 +299,25 @@ export class TradertonClient {
         return this.transportError(requestId, `boundary returned status ${response.status}`);
       }
 
-      let body: TradertonToolInvocationStatusV1;
+      let body: unknown;
       try {
-        body = (await response.json()) as TradertonToolInvocationStatusV1;
+        body = await response.json();
       } catch {
         return this.transportError(requestId, 'boundary returned an unreadable status response');
       }
 
+      if (!isStatusBody(body)) {
+        // A plain result (no `state`) is the boundary answering for the lookup
+        // itself — e.g. `not_found.resource` when it has no record of the
+        // requestId. It is terminal: return it rather than polling to the deadline.
+        return isToolResultBody(body)
+          ? mapTerminalResult(body)
+          : this.transportError(requestId, UNRECOGNISED_STATUS_MESSAGE);
+      }
       if (body.state === 'terminal') {
-        return mapTerminalResult(body.result);
+        return isToolResultBody(body.result)
+          ? mapTerminalResult(body.result)
+          : this.transportError(requestId, UNRECOGNISED_STATUS_MESSAGE);
       }
 
       // Still in progress — wait, but never sleep past the deadline.

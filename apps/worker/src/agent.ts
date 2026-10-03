@@ -73,7 +73,7 @@ import { createToolRegistry } from './tools/index.js';
 import { createTradertonClient, type TradertonClientConfig } from '@herobids/domain/traderton';
 import { createTradertonReadBoundary, type TradertonReadBoundary } from './traderton/read-adapter.js';
 import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js';
-import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
+import { createTradertonSideEffectBoundary, createSubjectBoundWriteBoundary } from './traderton/write-adapter.js';
 import type { TradertonSubject } from '@herobids/domain/traderton';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
@@ -942,17 +942,11 @@ function buildTradertonBoundaries(): {
 
   // Bind the agent subject to the side-effecting adapter so the ToolContext
   // port exposes a subject-less invokeAndAwait (the tool supplies only tool
-  // name + payload + deadline).
-  const sideEffectBoundary = createTradertonSideEffectBoundary(client);
-  const write: ToolContext['tradertonWriteBoundary'] = {
-    invokeAndAwait: (input) =>
-      sideEffectBoundary.invokeAndAwait({
-        toolName: input.toolName,
-        payload: input.payload,
-        subject,
-        deadlineMs: input.deadlineMs,
-      }),
-  };
+  // name + payload + deadline; the binding mints one idempotency key per write).
+  const write: ToolContext['tradertonWriteBoundary'] = createSubjectBoundWriteBoundary(
+    createTradertonSideEffectBoundary(client),
+    subject,
+  );
 
   return { read, write };
 }

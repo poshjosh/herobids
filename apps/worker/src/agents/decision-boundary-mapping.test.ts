@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSubmitDecisionPayload,
   buildRiskSpecPayloadFields,
+  mapBoundaryResultToDecisionOutcome,
 } from './decision-boundary-mapping.js';
 import type { DecisionSubmitPayload } from '@herobids/domain';
 
@@ -32,5 +33,28 @@ describe('decision-boundary-mapping — profile-era payloads', () => {
 
   it('sends no agents-row enforcement fields for an unresolved account', () => {
     expect(buildRiskSpecPayloadFields()).toEqual({});
+  });
+});
+
+describe('decision-boundary-mapping — unknown outcomes', () => {
+  it('maps a transport error to an unknown-outcome error rather than claiming the decision was not submitted', () => {
+    const outcome = mapBoundaryResultToDecisionOutcome({
+      kind: 'transport_error',
+      requestId: 'req-1',
+      retryable: true,
+      message: 'request to boundary failed',
+    });
+
+    expect(outcome).toMatchObject({ status: 'error', code: 'boundary.transport_error', retryable: true });
+    expect(outcome.message).toMatch(/outcome of this decision is unknown/);
+    expect(outcome.message).not.toMatch(/not submitted/);
+    expect(outcome.message).toMatch(/did not return a response/);
+  });
+
+  it('maps a write still running at the deadline to an unknown-outcome error, not a rejection', () => {
+    const outcome = mapBoundaryResultToDecisionOutcome({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
+
+    expect(outcome).toMatchObject({ status: 'error', code: 'boundary.in_progress', retryable: true });
+    expect(outcome.message).toMatch(/outcome of this decision is unknown/);
   });
 });

@@ -104,6 +104,9 @@ export interface MappedDecisionOutcome {
   data?: Record<string, unknown>;
 }
 
+const UNKNOWN_OUTCOME_GUIDANCE =
+  'the outcome of this decision is unknown. Check your open positions and orders before resubmitting.';
+
 /** Extract a `planId` from a success payload if the boundary returned one. */
 function extractPlanId(payload: unknown): string | undefined {
   if (payload && typeof payload === 'object') {
@@ -118,10 +121,10 @@ function extractPlanId(payload: unknown): string | undefined {
  *
  * - `success` → accepted (carrying any `planId` the boundary returned).
  * - `failure` → rejected, preserving `code`+`retryable` verbatim.
- * - `in_progress` → error (unexpected after poll-to-deadline; surfaces as a
- *   retryable processing error rather than a raw throw).
- * - `transport_error` → error (`precondition`/`transport` — retryable, NEVER a
- *   silent fall back to the in-process engine — L3c no-fallback posture).
+ * - `in_progress` → error (still running at the deadline — unknown outcome,
+ *   retryable, never a rejection).
+ * - `transport_error` → error (unknown outcome — retryable, NEVER a silent
+ *   fall back to the in-process engine — L3c no-fallback posture).
  */
 export function mapBoundaryResultToDecisionOutcome(
   result: TradertonClientResult,
@@ -143,17 +146,20 @@ export function mapBoundaryResultToDecisionOutcome(
         retryable: result.retryable,
       };
     case 'in_progress':
+      // Still running at the deadline: it may yet execute (D18).
       return {
         status: 'error',
         code: 'boundary.in_progress',
-        message: 'Trading boundary did not reach a terminal outcome within the deadline.',
+        message: `Trading boundary did not reach a terminal outcome within the deadline — ${UNKNOWN_OUTCOME_GUIDANCE}`,
         retryable: true,
       };
     case 'transport_error':
+      // The request or only its response may have been lost, so the decision
+      // may have executed: never claim it was not submitted (D18).
       return {
         status: 'error',
         code: 'boundary.transport_error',
-        message: 'Trading boundary is unreachable — the decision was not submitted.',
+        message: `Trading boundary did not return a response — ${UNKNOWN_OUTCOME_GUIDANCE}`,
         retryable: true,
       };
   }

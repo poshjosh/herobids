@@ -956,14 +956,19 @@ const evaluateAgentWatches = sideEffectBoundary
         return { triggered: [], reset: [] };
       }
       const subject: TradertonSubject = { ownerId, actor: { type: 'agent', id: agentId } };
+      // One key per evaluation, never content-derived: the payload is constant,
+      // so a derived key would replay the first evaluation's result forever. Not
+      // persisted — the next evaluation supersedes an unknown outcome.
+      const idempotencyKey = crypto.randomUUID();
       const result = await sideEffectBoundary.invokeAndAwait({
         toolName: 'check_watches',
         payload: { removeTriggered: false },
         subject,
         deadlineMs: 30_000,
+        idempotencyKey,
       });
       if (result.kind !== 'success') {
-        logger.warn({ agentId, kind: result.kind }, 'check_watches over boundary did not succeed');
+        logger.warn({ agentId, kind: result.kind, requestId: result.requestId, idempotencyKey }, 'check_watches over boundary did not succeed');
         return { triggered: [], reset: [] };
       }
       // The boundary returns WatchEntry & { currentPrice, priceSource, stale }

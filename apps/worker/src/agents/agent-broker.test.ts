@@ -665,13 +665,14 @@ describe('AgentMessageBroker', () => {
         ...(makeBoundaryBrokerArgs(botRepo, boundary) as [any]),
       );
 
-      const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({ messageId: 'msg-create-1' }));
       expect(result.accepted).toBe(true);
 
       // Routed to the boundary with the create_bot tool + platform-owned subject only.
       expect(invokeAndAwait).toHaveBeenCalledTimes(1);
       const arg = invokeAndAwait.mock.calls[0]![0];
       expect(arg.toolName).toBe('create_bot');
+      expect(arg.idempotencyKey).toBe('msg-create-1');
       expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-123' } });
       // Subject carries ownerId + actor ONLY — no venue account resolution leaked.
       expect(arg.subject).not.toHaveProperty('venueAccountId');
@@ -1794,6 +1795,38 @@ describe('AgentMessageBroker', () => {
           expect(result.accepted).toBe(true);
           expect(invokeAndAwait).toHaveBeenCalledTimes(1);
         });
+      });
+    });
+
+    describe('bot lifecycle write idempotency (T0.6)', () => {
+      /** The same positional ctor args as the tests above; the fakes are partial by design. */
+      function buildLifecycleBroker(boundary: TradertonSideEffectBoundary): AgentMessageBroker {
+        const botRepo = { isConnectionOwnedBy: vi.fn().mockResolvedValue(true) };
+        const args: unknown[] = [{}, agentRepo, decisionHandler, sessionManager, eventPublisher, ...makeBoundaryBrokerArgs(botRepo, boundary)];
+        return new AgentMessageBroker(...(args as ConstructorParameters<typeof AgentMessageBroker>));
+      }
+
+      it.each([
+        {
+          toolName: 'create_bot',
+          payload: {
+            action: 'create_and_start',
+            connectionId: 'binding-1',
+            config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' } },
+          },
+        },
+        { toolName: 'start_bot', payload: { action: 'start', botId: 'bot-1' } },
+        { toolName: 'stop_bot', payload: { action: 'stop', botId: 'bot-1' } },
+        { toolName: 'adjust_bot_config', payload: { action: 'adjust_config', botId: 'bot-1', config: { strategy: { threshold: 5 } } } },
+      ])('keys each bot lifecycle write by the inbound messageId ($toolName)', async ({ toolName, payload }) => {
+        const { boundary, invokeAndAwait } = makeBoundary();
+        const broker = buildLifecycleBroker(boundary);
+
+        const result = await broker.processInbound(makeManageBotEnvelope({ messageId: `msg-${toolName}`, payload }));
+
+        expect(result.accepted).toBe(true);
+        expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+        expect(invokeAndAwait.mock.calls[0]?.[0]).toMatchObject({ toolName, idempotencyKey: `msg-${toolName}` });
       });
     });
   });

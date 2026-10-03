@@ -527,11 +527,16 @@ export class AgentDecisionHandler {
       // resolver is wired — the boundary then keeps its per-owner default path.
       const venueAccountId = await this.resolveGrantVenueAccountId(effectiveAgentId) ?? undefined;
       const boundaryPayload = buildSubmitDecisionPayload(payload, venueAccountId);
+      // The decisionId is minted once per submit_decision tool call and persisted
+      // with the inbound agent_messages row before routing, so it names this one
+      // logical write (D18). It is not in the boundary payload/fingerprint.
+      const idempotencyKey = payload.decisionId;
       const result = await this.sideEffectBoundary.invokeAndAwait({
         toolName: 'submit_decision',
         payload: boundaryPayload,
         subject: { ownerId, actor: { type: initiatorType, id: effectiveAgentId } },
         deadlineMs: this.boundaryDeadlineMs,
+        idempotencyKey,
       });
       const outcome = mapBoundaryResultToDecisionOutcome(result);
 
@@ -587,6 +592,12 @@ export class AgentDecisionHandler {
       }
 
       // status === 'error' — in_progress after deadline, or transport error.
+      // The outcome is unknown: log the ids an operator reconciles with (the
+      // status endpoint by requestId, or a same-key re-issue).
+      logger.warn(
+        { decisionId: payload.decisionId, requestId: result.requestId, idempotencyKey, kind: result.kind },
+        'submit_decision outcome unknown — reconcile by requestId before resubmitting',
+      );
       const errCode = outcome.code ?? 'execution_error';
       const errMsg = outcome.message ?? 'Decision could not be processed.';
       setSyncReply('error', { code: errCode, message: errMsg });

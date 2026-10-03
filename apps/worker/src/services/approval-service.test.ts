@@ -119,6 +119,7 @@ describe('ApprovalService.executeApproval', () => {
     expect(invokeAndAwait).toHaveBeenCalledTimes(1);
     const call = invokeAndAwait.mock.calls[0]![0];
     expect(call.toolName).toBe('submit_decision');
+    expect(call.idempotencyKey).toBe('appr-1');
     expect(call.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-1' } });
     expect(call.subject.venueAccountId).toBeUndefined();
     // Payload built from the stored fields (optional values carried through) plus
@@ -138,6 +139,26 @@ describe('ApprovalService.executeApproval', () => {
     expect(approvalRepo.updateStatus).toHaveBeenCalledWith('appr-1', 'approved', expect.objectContaining({ resolvedByUserId: 'user-1' }));
     expect(approvalRepo.recordExecutionResult).toHaveBeenCalledWith('appr-1', expect.any(String), 'plan-1', 'accepted');
     expect(eventPublisher.emitDecisionAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it('keys the approved decision submission by the approvalId', async () => {
+    const { boundary, invokeAndAwait } = makeBoundary({
+      kind: 'transport_error',
+      requestId: 'req-unknown',
+      retryable: true,
+      message: 'request to boundary failed',
+    });
+    const { deps } = buildDeps({ approval: makeApprovalRow({ id: 'appr-7' }), boundary });
+    const svc = new ApprovalService(deps);
+
+    const res = await svc.executeApproval('appr-7', 'user-1', 'web', 'agent-1', 'bot-1');
+
+    // The key is the persisted approval, not the per-attempt decisionId, so the
+    // unknown outcome can be reconciled from the approval row alone.
+    expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+    expect(invokeAndAwait.mock.calls[0]?.[0]).toMatchObject({ toolName: 'submit_decision', idempotencyKey: 'appr-7' });
+    expect(res).toMatchObject({ kind: 'executed', status: 'error' });
+    expect(res.kind === 'executed' ? res.decisionId : undefined).not.toBe('appr-7');
   });
 
   it('maps a boundary failure → executed/rejected and records it', async () => {

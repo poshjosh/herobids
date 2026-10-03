@@ -9,8 +9,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
-import type { TradertonClientResult } from '@herobids/domain/traderton';
-import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import type { AgentRepository } from '@herobids/db';
+import { createTradertonClient, type TradertonClientResult } from '@herobids/domain/traderton';
+import { createTradertonSideEffectBoundary, type TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import { startFakeIdempotentBoundary } from '../traderton/__tests__/fake-idempotent-boundary.js';
+import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import { AgentDecisionHandler } from './agent-decision-handler.js';
 
 function makeEnvelope(overrides: Partial<MessageEnvelope> = {}): MessageEnvelope {
@@ -113,6 +116,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
     expect(invokeAndAwait).toHaveBeenCalledTimes(1);
     const arg = invokeAndAwait.mock.calls[0]![0];
     expect(arg.toolName).toBe('submit_decision');
+    expect(arg.idempotencyKey).toBe('dec-1');
     // Injects ownerId + actor ONLY; NO venueAccountId/venue/venueType.
     expect(arg.subject).toEqual({ ownerId: 'user-1', actor: { type: 'agent', id: 'agent-1' } });
     expect(arg.payload).toEqual({ instrumentId: 'BTC', intent: 'go_long', targetSize: '1', rationaleSummary: 'test', limitPrice: '100', confidence: 0.5 });
@@ -226,5 +230,105 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
       expect(approvalRepo.createApproval).not.toHaveBeenCalled();
       expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith('dec-1', expect.objectContaining({ status: 'rejected', code: 'instance_not_running' }));
     });
+  });
+});
+
+describe('AgentDecisionHandler — submit_decision idempotency (T0.6)', () => {
+  type AgentRow = NonNullable<Awaited<ReturnType<AgentRepository['getAgent']>>>;
+  type DecisionReplyPublisher = Pick<
+    InstanceEventPublisher,
+    'emitDecisionAccepted' | 'emitDecisionRejected' | 'emitGuardrailTriggered' | 'publishDecisionReply'
+  >;
+
+  /** A direct-mode handler over typed partial fakes (only the members this path reads). */
+  function makeDirectHandler(boundary: TradertonSideEffectBoundary) {
+    const agentRow = { id: 'agent-1', userId: 'user-1', status: 'active' } as AgentRow;
+    const agentRepo: Pick<AgentRepository, 'getAgent' | 'isActiveSession'> = {
+      getAgent: async () => agentRow,
+      isActiveSession: async () => true,
+    };
+    const publisher: DecisionReplyPublisher = {
+      emitDecisionAccepted: vi.fn<InstanceEventPublisher['emitDecisionAccepted']>(async () => undefined),
+      emitDecisionRejected: vi.fn<InstanceEventPublisher['emitDecisionRejected']>(async () => undefined),
+      emitGuardrailTriggered: vi.fn<InstanceEventPublisher['emitGuardrailTriggered']>(async () => undefined),
+      publishDecisionReply: vi.fn<InstanceEventPublisher['publishDecisionReply']>(async () => undefined),
+    };
+    const handler = new AgentDecisionHandler(
+      agentRepo as AgentRepository,
+      publisher as InstanceEventPublisher,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      boundary,
+    );
+    return { handler, publisher };
+  }
+
+  /** The real adapter + client wired to the fake idempotent backend. */
+  async function openBackend() {
+    const backend = await startFakeIdempotentBoundary();
+    const client = createTradertonClient({
+      baseUrl: backend.url,
+      consumerId: 'herobids',
+      keyId: 'current',
+      hmacSecret: 'unit-secret',
+      requestTimeoutMs: 5_000,
+    });
+    return { backend, boundary: createTradertonSideEffectBoundary(client) };
+  }
+
+  it('submits the decision under its decisionId as the idempotency key', async () => {
+    const invokeAndAwait = vi.fn<TradertonSideEffectBoundary['invokeAndAwait']>(async () => ({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: {},
+    }));
+    const boundary: TradertonSideEffectBoundary = { invoke: vi.fn<TradertonSideEffectBoundary['invoke']>(), invokeAndAwait };
+    const { handler } = makeDirectHandler(boundary);
+
+    await handler.handleDecisionSubmit(makeEnvelope(), makePayload({ decisionId: 'dec-key-1' }));
+
+    expect(invokeAndAwait).toHaveBeenCalledTimes(1);
+    expect(invokeAndAwait.mock.calls[0]?.[0]).toMatchObject({ toolName: 'submit_decision', idempotencyKey: 'dec-key-1' });
+    // The key never enters the signed payload, so it cannot change the fingerprint.
+    expect(invokeAndAwait.mock.calls[0]?.[0].payload).not.toHaveProperty('decisionId');
+  });
+
+  it('processing the same decision twice executes submit_decision once and replies accepted both times', async () => {
+    const { backend, boundary } = await openBackend();
+    try {
+      const { handler, publisher } = makeDirectHandler(boundary);
+
+      await handler.handleDecisionSubmit(makeEnvelope(), makePayload({ decisionId: 'dec-twice' }));
+      await handler.handleDecisionSubmit(makeEnvelope(), makePayload({ decisionId: 'dec-twice' }));
+
+      expect(backend.executions('submit_decision')).toBe(1);
+      expect(publisher.publishDecisionReply).toHaveBeenCalledTimes(2);
+      expect(publisher.publishDecisionReply).toHaveBeenNthCalledWith(1, 'dec-twice', expect.objectContaining({ status: 'accepted' }));
+      expect(publisher.publishDecisionReply).toHaveBeenNthCalledWith(2, 'dec-twice', expect.objectContaining({ status: 'accepted' }));
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('re-submitting a decisionId with a changed trade is rejected as validation.invalid_payload without a second execution', async () => {
+    const { backend, boundary } = await openBackend();
+    try {
+      const { handler, publisher } = makeDirectHandler(boundary);
+
+      await handler.handleDecisionSubmit(makeEnvelope(), makePayload({ decisionId: 'dec-changed', targetSize: '1' }));
+      await handler.handleDecisionSubmit(makeEnvelope(), makePayload({ decisionId: 'dec-changed', targetSize: '2' }));
+
+      expect(backend.executions('submit_decision')).toBe(1);
+      expect(publisher.publishDecisionReply).toHaveBeenNthCalledWith(
+        2,
+        'dec-changed',
+        expect.objectContaining({ status: 'rejected', code: 'validation.invalid_payload' }),
+      );
+    } finally {
+      await backend.close();
+    }
   });
 });

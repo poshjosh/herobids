@@ -113,6 +113,11 @@ export class ApprovalService {
     // so the boundary resolves deterministically — matching the direct path.
     const boundaryPayload = buildSubmitDecisionPayload(decisionPayload, approval.venueAccountId);
 
+    // The approval row (persisted, and set `approved` above before the call) is
+    // the one logical write; `decisionId` is minted per attempt and recorded only
+    // afterwards, so it cannot key the write (D18).
+    const idempotencyKey = approvalId;
+
     try {
       // Subject stays ownerId + actor ONLY (D2). The venue account rides in the
       // payload (threaded above from the approval snapshot), not the subject.
@@ -124,6 +129,7 @@ export class ApprovalService {
           actor: { type: approval.actorType as ActorType, id: approval.actorId },
         },
         deadlineMs: this.boundaryDeadlineMs,
+        idempotencyKey,
       });
       const outcome = mapBoundaryResultToDecisionOutcome(result);
       const planId = outcome.planId ?? null;
@@ -181,6 +187,11 @@ export class ApprovalService {
       }
 
       // status === 'error' — in_progress after deadline, or transport error.
+      // The outcome is unknown: log the ids an operator reconciles with.
+      logger.warn(
+        { approvalId, decisionId, requestId: result.requestId, idempotencyKey, kind: result.kind },
+        'approved submit_decision outcome unknown — reconcile by requestId',
+      );
       await this.deps.approvalRepo.recordExecutionResult(
         approvalId, decisionId, planId, 'error',
       );
