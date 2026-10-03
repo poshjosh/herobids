@@ -329,6 +329,8 @@ Rules:
 
 ## 3. External Backend Descriptor (published by backend, verified by herobids)
 
+> **SUPERSEDED 2026-10-03** by [ADR 017](../../../../tech/architecture/adrs/2026/10/017-uniform-skills-sh-skills-and-mcp-tool-discovery.md) and program D25/D26. §3 and §4 are kept as history. The descriptor, its signing, pinning and rotation are removed in Phase 4. Tools come from the backend's MCP `tools/list`, and skill text comes from the published `SKILL.md`.
+
 Signed, versioned (ADR-015 §4). Proposed shape:
 
 ```ts

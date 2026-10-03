@@ -1,18 +1,27 @@
 # Program Progress Tracker — External Backend / Staging
 
 **Status:** live. **Read this immediately after ENTRYPOINT.md.**
-**Updated:** 2026-10-02
+**Updated:** 2026-10-03
 
 ## Current state (read first)
 
-**Current phase:** Phase 1 complete; Phase 2 (Steps 6–8) complete (2026-10-02);
-**Phase 3 in progress** — Steps 9 and 10 ✅ done 2026-10-02.
-**Current step:** **Phase 3 Steps 11–13**, driven by the Phase-3 program package
+**Current phase:** Phases 1–2 complete. Phase 3 Steps 9–12 complete and Step 13
+**partial** (D21), all locally verified 2026-10-03 and merged and pushed by the
+operator (D22). **Phase 4 is the current milestone (not started):** replace the
+built-in trading skills with the Traderton `SKILL.md` skills (D21–D29,
+[ADR 017](../../../../../tech/architecture/adrs/2026/10/017-uniform-skills-sh-skills-and-mcp-tool-discovery.md)).
+**Current step:** Phase 4 task 0, driven by
+[`docs/features/2026/10/03/004-phase4-skill-replacement-program/`](../../../10/03/004-phase4-skill-replacement-program/ENTRYPOINT.md).
+Live cursor: that package's `TASKS.md`.
+
+> **Correction (2026-10-03).** This header previously said "Phase 3 in progress,
+> next is T2.2", and the line further down said "Not started: Phase 3". Both were
+> stale after the 2026-10-03 completion. The Phase 3 text below is history.
+
+*Superseded header (Phase 3, kept for history):* Block 0 (baseline +
+shared fixtures) and Block 0b (CF-1/CF-2 idempotency fix, IV-1) were done;
+Block 1 (Step 11 REST half) was done; MCP gate 1 passed. Phase 3 package:
 [`docs/features/2026/10/02/005-phase3-program/`](../../../10/02/005-phase3-program/ENTRYPOINT.md).
-**Autonomous run in progress (started 2026-10-02).** Block 0 (baseline +
-shared fixtures) and Block 0b (CF-1/CF-2 idempotency fix, IV-1) are done;
-Block 1 (Step 11 REST half) is done; MCP gate 1 passed; next is T2.2 (traderton MCP surface). Live cursor: that package's `TASKS.md`; session
-handover: its `HANDOVER.md`.
 
 > **Correction (2026-10-02).** This header previously read "next is Phase 3 Step 9
 > (Discovery)" while the step table below correctly showed 9 ✅ and 10 ✅. A
@@ -49,9 +58,7 @@ RECONCILIATION) and the completion note
 questions (E1/E2/E3) have been resolved by the operator and T4.2 publish has
 been executed (`staging.traderton.com` live). No Phase 2 items remain.
 
-**Not started:** Phase 3 (Steps 9–16). The concrete
-`packages/domain/src/traderton/` module is still in place; no generic
-`external-backend` code module exists yet.
+*(Stale line removed 2026-10-03. It previously said "Not started: Phase 3". See the step table.)*
 
 ## Step status
 
@@ -71,8 +78,8 @@ Legend: ✅ done · 🔄 in progress · ⏸ paused · ⬜ not started · 🚫 bl
 | 10 | External Backend contract and trust plan | ✅ | Phase 3. Plan: [006-step10-...plan.md](../006-step10-external-backend-contract-and-trust-plan.md) (2026-10-02). Defines ExternalBackendDefinition (operator registry), ExternalBackendClient rename map, signed ed25519 descriptor + verification/pinning/rotation/revocation, invocation-HMAC-preserved constraint, failure behavior, and ordered tasks for Steps 11–13. Engineering decisions DT1 (asymmetric descriptor sig), DT2 (fixed herobids-owned invocation paths), DT3 (trust-failure → instruction-only degradation). |
 | 11 | Generic client migration + transport seam | ✅ | **2026-10-03:** Step 0 done (G0 baseline all green; shared signing vectors herobids `3d6587f8` / traderton `a9ca3db`; descriptor conformance fixtures `2bb453a8` / `d072b97`; local fixture skill source `89184632`). Step 0b (CF-1/CF-2, D18) done at `f495ab3d` (+ round-2 fixes `89349ba7`) — recorded as IV-1. **Block 1 (REST half of Step 11) done 2026-10-03:** rename `1b204d63`, definition schema `5fc75081`, internal seam + `RestTransport` `4889e4bf`, registry wiring `ae34241f`, ctx ports `c79bd4c4`; herobids `run-all-tests.sh --e2e` exit 0 after C4 and at block end (9/9 tiers), `run-extra-tests.sh --all --skip-tier 6` exit 0. MCP spike gate 1 PASSED (T2.1). Step 11b DONE: T2.2 traderton MCP surface (traderton `6fc1099`/`e781a4b`/`dfda5eb`/`5ea82f9`, off by default), T2.3 `McpTransport` (herobids `093974be`..`2327f455`); xstack transport parity EXECUTED over the real MCP route (4 MCP legs, phase3-logs/t2.3-xstack-parity.log). Next: Step 12 (T3.x). Phase 3. **Scope changed by ADR 016 / D14:** rename + registry + internal transport seam, with BOTH `RestTransport` and `McpTransport` implemented. Two task groups run FIRST — shared signing-vector fixtures captured against pre-rename code, then the CF-1 write-path idempotency fix (D18). Construction sites corrected to **6 across 3 files** (`worker/index.ts:440,468,502,794`; `worker/agent.ts:938`; `api/index.ts:198`) — Step 9/10 said 5, and `api/routes/exports.ts:348` is a comment. Tasks: Step 10 plan §7 Steps 0/0b/11/11b. |
 | 12 | External skill deep integration | ✅ | **2026-10-03 (Phase 3 Block 3):** descriptor verification pipeline (T3.1 `747f6fdb`); generic trust-gated tool visibility replacing the hard-coded trading branches + dev-signed stub descriptor (T3.2+T3.3 `ac4fe432`, review `54edda94`); I1 intent met (only the `deriveReadiness` family-readiness stay remains — Step 14/15); trading parity preserved via the stub (a D11-ref agent sees today's tool set via the generic path); I12 — a second backend resolves visibility with zero code change, 1→N HMAC forwarding carried to Step 16 (CF-13). Descriptor is the **sole** schema authority (D16/DT4) — a backend's `tools/list` is cross-checked or ignored, never a schema source. Transport-independent (no rework for MCP). |
-| 13 | Traderton skill publication | ✅ | **2026-10-03 (Phase 3 Block 4):** three `SKILL.md` published to traderton-skills (T4.1 `77fd7a59`, not pushed); dev-signed descriptor replaces the T3.3 stub, I10=0, no committed private key (T4.2 `636905f0`); end-to-end publication chain verified on the local fixture source over BOTH transports — install→resolve→visibility→invoke→map (T4.3 `3c16064b`). Real-remote `npx skills` resolution deferred to the post-push operator step (D20). Phase 3. **Dev-signed** descriptor (no ed25519 material exists in any repo; real key is operator-held and gated). Verify against a **local fixture skill source**, NOT `npx skills add` — resolution is live/unpinned from the remote and cannot see local work (D20). Step-12 stub must be DELETED, proven by grep. |
-| 14 | Remove Herobids first-party trading ownership | ⬜ | Phase 3 — DEFERRED (D12) |
+| 13 | Traderton skill publication | ◐ partial (D21) | **Re-recorded 2026-10-03 (D21):** published, but herobids did NOT depend on it. Runtime instructions came from `skills.ts`, and the descriptor was generated by herobids from its own code. Completion is folded into Phase 4. Original record:  **2026-10-03 (Phase 3 Block 4):** three `SKILL.md` published to traderton-skills (T4.1 `77fd7a59`, not pushed); dev-signed descriptor replaces the T3.3 stub, I10=0, no committed private key (T4.2 `636905f0`); end-to-end publication chain verified on the local fixture source over BOTH transports — install→resolve→visibility→invoke→map (T4.3 `3c16064b`). Real-remote `npx skills` resolution deferred to the post-push operator step (D20). Phase 3. **Dev-signed** descriptor (no ed25519 material exists in any repo; real key is operator-held and gated). Verify against a **local fixture skill source**, NOT `npx skills add` — resolution is live/unpinned from the remote and cannot see local work (D20). Step-12 stub must be DELETED, proven by grep. |
+| 14 | Remove Herobids first-party trading ownership | ⬜ | **Skill layer = Phase 4** (D21; `docs/features/2026/10/03/004-phase4-skill-replacement-program/`). Tool, product and config layers = Phase 4 follow-ups F-1..F-6 (named in that package). |
 | 15 | Trading-domain module cleanup | ⬜ | Phase 3 — DEFERRED (D12) |
 | 16 | Final staging proof | ⬜ | Phase 3 — DEFERRED (D12) + infra-gated. **Conditional third differential leg** (pinned oracle / REST / MCP) if an MCP transport is reachable when this step is planned; D10 is amended in this step's own verification plan, not earlier. |
 

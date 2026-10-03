@@ -1,6 +1,6 @@
 # Runbook — External Backend descriptor signing (dev scheme + production key / CF-9)
 
-**Status:** living operational procedure.
+**Status:** SUPERSEDED 2026-10-03 by [ADR 017](../tech/architecture/adrs/2026/10/017-uniform-skills-sh-skills-and-mcp-tool-discovery.md) / D26. The descriptor and signing are removed in Phase 4, and this runbook is deleted with them. CF-9 is closed as N/A. Until that change lands, Part A still describes the code on `main`.
 **Audience:** a developer regenerating the dev descriptor, or an operator doing the
 production-key step (CF-9).
 **Design references (read these for *why*, not *how*):**

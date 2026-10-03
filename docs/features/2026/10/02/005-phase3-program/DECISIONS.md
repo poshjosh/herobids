@@ -163,7 +163,7 @@ home in `../../../09/24/000-program/PROGRESS.md` and the Step-16 obligation list
 | **G6** The seam does not leak | ✅ | I2/I3/I3b: no transport type above the seam, not exported, absent from the public d.ts; requestId+idempotencyKey first-class on both transports (I5) |
 | **G7** Contract tests parameterised over `['rest','mcp']` pass on both | ✅ | `transport-parity.contract.test.ts` + the T0.6 characterisation suite on both; the hb `--e2e` Cross-stack tier ran both |
 | **G8** Genericity (`INVARIANTS.md` all green) | ✅ | I1 visibility-path 0 (the `deriveReadiness` family hit is a recorded readiness stay, Step 14/15); I6 descriptor sole authority; I12 written answer below |
-| **G9** Carried-forward obligations recorded (BLOCKING) | ✅ | CF-3..CF-14 above, each with an evidence path + a home in the program `PROGRESS.md` and the Step-16 obligation list (roadmap §Step 16). The verbatim G9 sentence is in the completion note (`021-phase3-completion-note.md`) |
+| **G9** Carried-forward obligations recorded (BLOCKING) | ✅ | CF-3..CF-14 above, each with an evidence path + a home in the program `PROGRESS.md` and the Step-16 obligation list (roadmap §Step 16). The verbatim G9 sentence is in the completion note (`docs/features/2026/10/03/001-phase3-completion-note.md`; reference corrected 2026-10-03) |
 
 **I12 written answer (G8):** *Could a second, unrelated backend be registered
 with ZERO platform code change?* **For tool visibility — yes:** add an

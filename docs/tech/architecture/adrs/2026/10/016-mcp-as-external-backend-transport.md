@@ -1,7 +1,7 @@
 # ADR 016: MCP As External Backend Invocation Transport
 
 **Date:** 2026-10-02
-**Status:** Accepted
+**Status:** Accepted. Decision 4 (descriptor as sole tool authority) superseded by [ADR 017](./017-uniform-skills-sh-skills-and-mcp-tool-discovery.md) (2026-10-03): tools are discovered via MCP `tools/list`; calls stay REST.
 **Supersedes:** [ADR 015](../09/015-external-backend-skill-registration.md) §8 ("MCP is deferred")
 **Extends:** [ADR 015](../09/015-external-backend-skill-registration.md)
 **Reconciles:** [MCP Registration And Transport Layer](../../../../../features/pending/000-capability-foundations/016-mcp-registration-layer.md) (draft)

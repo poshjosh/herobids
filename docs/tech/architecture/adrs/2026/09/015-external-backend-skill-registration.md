@@ -1,8 +1,8 @@
 # ADR 015: External Backend Skill Registration
 
 **Date:** 2026-09-23
-**Status:** Accepted
-**Extends:** [ADR 008](./008-native-capabilities-and-external-backends.md)
+**Status:** Accepted. §8 superseded by ADR 016. §4 (signed descriptor) and the descriptor half of §5 superseded by [ADR 017](../10/017-uniform-skills-sh-skills-and-mcp-tool-discovery.md) (2026-10-03).
+**Extends:** [ADR 008](../08/008-native-capabilities-and-external-backends.md)
 
 ## Context
 
@@ -107,7 +107,7 @@ The implementation plan may be drafted only after discovery provides:
 ## References
 
 - [Staging-First External Backend Roadmap](../../../../../features/2026/09/24/001-staging-first-external-backend-roadmap.md)
-- [ADR 008](./008-native-capabilities-and-external-backends.md)
+- [ADR 008](../08/008-native-capabilities-and-external-backends.md)
 - [Native Capabilities And External Backends](../../../../../features/pending/000-capability-foundations/013-native-capabilities-and-external-backends.md)
 - [External Backend Execution Design](../../../../../features/pending/000-capability-foundations/008-cross-service-capability-execution-design.md)
 - [Herobids Trading Logic Ownership Audit](../../../../trading/audits/2026/09/001-herobids-trading-logic-ownership-audit.md)

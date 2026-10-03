@@ -25,12 +25,17 @@ decide whether a payment provider accepts it.
 
 ## 2. Next milestone objective (narrow, expires when done)
 
-**Current (2026-10-02):** Phase 3 — execute roadmap Steps 11–13 so herobids
-reaches External Backend tools only through a generic, trust-gated path with a
-pluggable transport, with BOTH `RestTransport` and `McpTransport` implemented
-(D14) and REST remaining the default (D19). Driven by the Phase-3 program
-package: `docs/features/2026/10/02/005-phase3-program/`. Steps 14–16 stay deferred
-(D12). The current step is recorded at the top of [PROGRESS.md](./PROGRESS.md).
+**Current (2026-10-03):** Phase 4 — replace herobids' built-in trading skills
+(`system/trading`, `system/bot-management`, `system/risk-monitoring`) with the
+Traderton `SKILL.md` skills, treating every skills.sh skill the same way.
+Backend-approved skills differ only in the tools (MCP `tools/list`) and connection
+requirement they unlock (D21–D29, [ADR 017](../../../../../tech/architecture/adrs/2026/10/017-uniform-skills-sh-skills-and-mcp-tool-discovery.md)).
+Driven by `docs/features/2026/10/03/004-phase4-skill-replacement-program/`.
+**Done = every frozen exit check in that package's `INVARIANTS.md` passes.**
+Steps 15–16 stay deferred.
+
+*Superseded milestone (Phase 3, Steps 11–13, locally verified 2026-10-03): generic,
+trust-gated External Backend path with REST and MCP transports.*
 
 *Superseded milestone (Phase 1, complete 2026-10-01): restore Herobids staging,
 then deploy Traderton as an independently reachable staging backend.*
