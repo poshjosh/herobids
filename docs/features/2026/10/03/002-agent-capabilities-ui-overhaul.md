@@ -8,7 +8,7 @@
 
 - [DONE] **Item 0 — i18n keys**: add/remove keys across `en.ts`, `ar.ts`, `hi.ts`.
 - [DONE] **Item A1 — Family-generic display** (`agent-display.ts`): add `email` label.
-- [PENDING] **Item A2 — Extract shared connection-setup unit** (`AgentConnectionField.tsx`) + refactor `EditAgentModal`.
+- [DONE] **Item A2 — Extract shared connection-setup unit** (`AgentConnectionField.tsx`) + refactor `EditAgentModal`.
 - [PENDING] **Item A3 — Rework capabilities section** in `AgentDetailPage.tsx` (empty state + inline setup).
 - [PENDING] **Item B1 — Readiness view-model helper** (`capability-readiness-view.ts`) implementing the B2 mapping.
 - [PENDING] **Item B3 — Rework** `AgentCapabilityPage.tsx` (single Status card + Details toggle).
@@ -463,3 +463,9 @@ Non-critical observations recorded during implementation code review (no CRITICA
 
 ### Item A1 — Family-generic display
 - [LOW] No direct unit test yet for `formatCapabilityFamily('email', intl)` → "Email" nor for the unknown-family de-kebab path. Covered under Item Tests (consolidated).
+
+### Item A2 — AgentConnectionField extraction
+- [LOW] `<select>` add-handler uses prop-captured `connectionIds` + `onChange` instead of the original functional `setForm` updater. Behaviorally equivalent for discrete clicks (standard controlled pattern); no drift.
+- [LOW] `PickerConnection.profile` is carried in the merged shape but never read by the component (matches the original inline behavior). Harmless; kept for parity/A3 reuse.
+- [LOW] `EditAgentModal` and `AgentConnectionField` independently recompute the `allPickerConnections` merge from the same (React-Query-deduped) data. Intentional — EditAgentModal still needs it for its auto-select/init effects. Potential future consolidation.
+- [LOW] Visual verification of EditAgentModal picker + A3 detail-page reuse deferred to end-of-plan Verification (Part A manual testing).
