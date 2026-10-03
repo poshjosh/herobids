@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T2.2** (traderton MCP surface + gate 2) — Block 1 ✅ (T1.1–T1.3), T2.1 gate 1 **PASS** (spike branches, see running notes). ←
+**Current cursor:** **T2.3** (`McpTransport` on herobids + contract suites over `['rest','mcp']` + xstack leg) — T2.1 gate 1 ✅, T2.2 traderton MCP surface ✅ (`6fc1099`,`e781a4b`,`dfda5eb`,`5ea82f9`). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -154,7 +154,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   - Also assert here: `pnpm lint` clean with **zero** escape hatches (grep the
     diff for `any`, `@ts-ignore`, `as unknown as`), and `pnpm why zod` shows our
     code still on a single zod version.
-- ⬜ **T2.2 Spike gate 2 + the backend MCP surface** (traderton repo, branch
+- ✅ **T2.2 Spike gate 2 + the backend MCP surface** (traderton repo, branch
   `phase3-mcp-surface`, traderton's own conventions). Mount an MCP route on the
   existing boundary app over the existing `ToolInvocationDispatcher` (whose
   public surface is exactly `dispatch(body, pathMajor)` and `status(requestId)`).
@@ -562,6 +562,40 @@ Logs `phase3-logs/t2.1-*.log`. Per item (block2 plan §2.2):
    — **after** a `pnpm-workspace.yaml` override `abitype>zod: 3.25.76` (adding
    the SDK made pnpm resolve viem→abitype's optional zod peer to 4.x; P3-45).
 `sign.ts` / `auth.ts` / `dev/sign.ts` unchanged. Hard stop 3 not triggered.
+
+
+**T2.2 — traderton MCP boundary surface (TC2–TC4) + decision ratified.**
+traderton `phase3-mcp-surface`: FD rewording `6138283`, TC2 `6fc1099`, TC3
+`e781a4b`, TC4 `dfda5eb`, review fixes `5ea82f9`. **Decision settled by the
+operator** ("one core, two seams; mcp and rest share all but the seams; swap most
+API tests rest↔mcp at will") — I passed it to the Contemplator for an independent
+view (verdict **"settled within the rules"**: MCP is a second *wire* onto the one
+dispatcher, not a second execution path; FD3 was worded against a route when it
+meant the dispatcher). Recorded in traderton 004 "MCP-FD" + 001 ledger; 005
+§Fixed Decisions 1–3 reworded + FD6 extended. Operator ratified the rewording.
+- TC2 pure move of signed-request material to `request-material.ts` (gate-2
+  files unmodified; REST handler + parser blocks textually identical).
+- TC3 `mcp/*` route over the existing `ToolInvocationDispatcher`, off by default
+  (`BOUNDARY_MCP_ENABLED=false`); `@modelcontextprotocol/server@2.3.0` dep +
+  `/client@2.3.0` devDep (exact) + `abitype>zod: 3.25.76` override; env twins
+  (both); exports; `descriptor-tools` projection (serves, never verifies — D16);
+  n25 result encoding, n26 pre-dispatch failures, dispatcher exception →
+  sanitized `-32603`, GET/DELETE→405, batch→-32600.
+- TC4 real-Postgres idempotency verification (4 cases) + `run-integration.sh`.
+- CodeReviewer: **0 CRITICAL/HIGH**; gate 2 confirmed (`auth.ts`/`dispatcher.ts`/
+  `dev/sign.ts` byte-unchanged; block-identity identical; app without `mcp`
+  registers no route). Fixed its LOW-1 (JCS-equal descriptor dedup, not raw
+  `JSON.stringify`) + LOW-2 (dropped unused predicate) in `5ea82f9` with a
+  reordered-keys test.
+- Tests: `packages/boundary` 164 passed / 32 skipped; `mcp/*` 36;
+  env-example-drift 7. **Integration (real Postgres, throwaway containers
+  55432/56379):** `run-integration.sh` exit 0 — MCP verification 4/4, REST
+  verification 15 (+1 skip) (`phase3-logs/t2.2-tt-integration.log`). build +
+  lint green; zod: app packages 3.25.76, 4.x only under `@modelcontextprotocol/*`;
+  I7 0 in production code.
+- Gate 2 (coexistence) is the binding invariant and holds. The heavy traderton
+  cross-stack suites (`run-all-tests.sh --e2e`, `run-extra-tests.sh --all`) are
+  owed at closeout G2.
 
 ---
 
