@@ -259,7 +259,7 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
   let authCfg: AuthConfig;
 
   // c4.9d-FG: the blueprint-instantiate BOT write now rides the Traderton
-  // boundary. A stubbed TradertonClient drives each outcome per-test: set
+  // boundary. A stubbed ExternalBackendClient drives each outcome per-test: set
   // `stubInvokeResult` before the request; `capturedInvokes` records every
   // invoke so we can assert what herobids sent (toolName / idempotencyKey /
   // payload). Reset in beforeEach to a success default that echoes the actorId.

@@ -11,7 +11,7 @@ import {
   ExecutionDefaultsSchema,
   RiskPostureSchema,
 } from '@herobids/domain';
-import type { TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import type {
   TradingProfileConnection,
   TradingProfileConfiguration,
@@ -35,11 +35,11 @@ export interface TradingProfileSagaBoundary {
   invoke(input: {
     toolName: string;
     payload: unknown;
-    subject: TradertonSubject;
+    subject: ExternalBackendSubject;
     requestId: string;
     idempotencyKey: string;
     correlationId: string;
-  }): Promise<TradertonClientResult>;
+  }): Promise<ExternalBackendClientResult>;
 }
 
 export interface TradingProfileStagedOperation {
@@ -301,7 +301,7 @@ export class TradingProfileReconciliationSaga {
   }
 
   private async applyForward(row: TradingProfileReconciliationOutboxRow, plan: TradingProfileReconciliationPlan): Promise<void> {
-    const subject: TradertonSubject = { ownerId: row.ownerId, actor: { type: 'agent', id: row.actorId } };
+    const subject: ExternalBackendSubject = { ownerId: row.ownerId, actor: { type: 'agent', id: row.actorId } };
     const actions = row.actions.map((action) => ({ ...action }));
     const configurations = new Map(plan.upserts.map((snapshot) => [snapshot.venueAccountId, snapshot]));
     const manifest = actions.map((action) => action.kind === 'set'
@@ -386,7 +386,7 @@ export class TradingProfileReconciliationSaga {
     await this.outbox.update(row.id, 'failed', row.actions, reason);
   }
 
-  private changeOperation(row: TradingProfileReconciliationOutboxRow, toolName: 'finalize_agent_trading_profile_change' | 'rollback_agent_trading_profile_change' | 'resume_agent_trading_profile_change'): Promise<TradertonClientResult> {
+  private changeOperation(row: TradingProfileReconciliationOutboxRow, toolName: 'finalize_agent_trading_profile_change' | 'rollback_agent_trading_profile_change' | 'resume_agent_trading_profile_change'): Promise<ExternalBackendClientResult> {
     return this.boundary.invoke({
       toolName,
       payload: { actorId: row.actorId, operationId: row.operationId },
@@ -410,14 +410,14 @@ function requiredSnapshot(snapshot: TradingProfileConfiguration | undefined): Tr
   return snapshot;
 }
 
-function resultMessage(result: TradertonClientResult): string {
+function resultMessage(result: ExternalBackendClientResult): string {
   if (result.kind === 'failure' || result.kind === 'transport_error') return result.message;
   if (result.kind === 'in_progress') return 'profile operation did not reach a terminal boundary result';
   return 'unexpected profile operation result';
 }
 
 function forwardResponseError(
-  result: Extract<TradertonClientResult, { kind: 'success' }>,
+  result: Extract<ExternalBackendClientResult, { kind: 'success' }>,
   operationId: string,
   operation: 'set' | 'clear',
 ): string | null {
@@ -430,7 +430,7 @@ function forwardResponseError(
 }
 
 function operationResponseError(
-  result: Extract<TradertonClientResult, { kind: 'success' }>,
+  result: Extract<ExternalBackendClientResult, { kind: 'success' }>,
   operationId: string,
   operation: 'finalize' | 'rollback' | 'resume',
 ): string | null {

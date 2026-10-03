@@ -8,7 +8,7 @@ import {
   agentSkills,
   loadAgentRuntimeSessions,
 } from '@herobids/db';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
 import {
   createTradertonReadBoundary,
@@ -345,7 +345,7 @@ const DEFAULT_READ_TIMEOUT_MS = 10_000;
  *
  * The AGENT trading-evidence endpoints (trades/journal/costs/bundle) source
  * their fills/journal/positions over the Traderton read boundary (D1-c1). Pass
- * the Traderton read client (the same `createTradertonClient` instance used for
+ * the Traderton read client (the same `createExternalBackendClient` instance used for
  * user-initiated writes); each request builds a per-request read boundary bound
  * to the REQUESTING USER's subject. When the client is unconfigured the agent
  * trading-evidence endpoints return a typed precondition (503) — there is NO
@@ -355,7 +355,7 @@ const DEFAULT_READ_TIMEOUT_MS = 10_000;
 export async function exportRoutes(
   app: FastifyInstance,
   db: Database,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   applyRateLimit(app);
@@ -369,7 +369,7 @@ export async function exportRoutes(
    */
   const agentReadBoundary = (userId: string, agentId: string) => {
     if (!tradertonReadClient) return null;
-    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
+    const subject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
     return createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
   };
 
@@ -383,7 +383,7 @@ export async function exportRoutes(
    */
   const userReadBoundary = (userId: string) => {
     if (!tradertonReadClient) return null;
-    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
+    const subject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
     return createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
   };
 

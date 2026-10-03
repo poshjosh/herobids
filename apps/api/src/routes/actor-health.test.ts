@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import { actorHealthRoutes } from './actor-health.js';
 import type { Database } from '@herobids/db';
 import type Redis from 'ioredis';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 const TEST_BOT_ID = 'bot-1';
@@ -23,23 +23,23 @@ function makeRedis(raw: string | null = null): Redis {
 const noDb = {} as unknown as Database;
 
 /** Success read client returning a get_owner_bot_status payload. */
-function makeStatusClient(status: string): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+function makeStatusClient(status: string): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
     const payload = input.toolName === 'get_owner_bot_status'
       ? { ok: true, id: TEST_BOT_ID, status }
       : {};
-    return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload } as TradertonClientResult);
+    return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload } as ExternalBackendClientResult);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
-function makeNotFoundClient(): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
-  const result: TradertonClientResult = {
+function makeNotFoundClient(): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
+  const result: ExternalBackendClientResult = {
     kind: 'failure', requestId: 'r', correlationId: 'c',
     code: 'validation.invalid_payload', message: 'Bot not found', retryable: false,
     details: { errorCode: 'not_found.resource' },
   };
-  return { client: { invoke: vi.fn().mockResolvedValue(result) } as unknown as TradertonClient, invoke: vi.fn() };
+  return { client: { invoke: vi.fn().mockResolvedValue(result) } as unknown as ExternalBackendClient, invoke: vi.fn() };
 }
 
 beforeEach(() => vi.clearAllMocks());

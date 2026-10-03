@@ -8,7 +8,7 @@ import { eq, and, lt } from 'drizzle-orm';
 import type { EvaluationJobData } from '@herobids/db';
 import type { EvaluationThresholds } from '@herobids/domain';
 import type { UsageBillingRepository } from '@herobids/db';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { runEvaluation } from './run-evaluation.js';
 import { createRedisSnapshotClient, type RedisSnapshotClient } from './collectors/redis-snapshot.js';
 
@@ -30,7 +30,7 @@ export interface EvaluationRuntimeConfig {
    * (fills / journal / positions). When absent, the boundary is unconfigured
    * and evaluation of trading evidence fails closed at port-invocation time.
    */
-  tradertonReadClient?: TradertonClient;
+  tradertonReadClient?: ExternalBackendClient;
   /** Per-request deadline for boundary reads (ms). */
   tradertonReadTimeoutMs?: number;
 }

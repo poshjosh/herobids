@@ -11,7 +11,7 @@
 // herobids and never crosses the wire (D3).
 
 import type { DecisionSubmitPayload } from '@herobids/domain';
-import type { TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 /**
  * The Traderton `submit_decision` payload — the same fields the copied tool's
@@ -127,7 +127,7 @@ function extractPlanId(payload: unknown): string | undefined {
  *   fall back to the in-process engine — L3c no-fallback posture).
  */
 export function mapBoundaryResultToDecisionOutcome(
-  result: TradertonClientResult,
+  result: ExternalBackendClientResult,
 ): MappedDecisionOutcome {
   switch (result.kind) {
     case 'success': {

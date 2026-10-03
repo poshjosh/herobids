@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createHmac, createHash } from 'node:crypto';
-import { TradertonClient, type TradertonClientConfig } from './client.js';
+import { ExternalBackendClient, type ExternalBackendClientConfig } from './client.js';
 import { deriveRequestId } from './request-id.js';
 import type {
-  TradertonToolResultV1,
-  TradertonToolInvocationStatusV1,
-  TradertonSubject,
+  ExternalBackendToolResultV1,
+  ExternalBackendToolInvocationStatusV1,
+  ExternalBackendSubject,
 } from './contract.js';
 
-const CONFIG: TradertonClientConfig = {
+const CONFIG: ExternalBackendClientConfig = {
   baseUrl: 'http://boundary.test',
   consumerId: 'herobids',
   keyId: 'current',
@@ -16,7 +16,7 @@ const CONFIG: TradertonClientConfig = {
   requestTimeoutMs: 10_000,
 };
 
-const SUBJECT: TradertonSubject = {
+const SUBJECT: ExternalBackendSubject = {
   ownerId: 'owner-1',
   actor: { type: 'agent', id: 'agent-1' },
 };
@@ -30,8 +30,8 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
   } as unknown as Response;
 }
 
-function client(): TradertonClient {
-  return new TradertonClient(CONFIG);
+function client(): ExternalBackendClient {
+  return new ExternalBackendClient(CONFIG);
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -46,15 +46,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('TradertonClient.invoke — envelope', () => {
-  it('emits a well-formed TradertonToolInvocationV1 with matching signed headers', async () => {
+describe('ExternalBackendClient.invoke — envelope', () => {
+  it('emits a well-formed ExternalBackendToolInvocationV1 with matching signed headers', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         contractVersion: '1.0',
         requestId: 'r',
         correlationId: 'c',
         outcome: { kind: 'success', payload: {} },
-      } satisfies TradertonToolResultV1),
+      } satisfies ExternalBackendToolResultV1),
     );
 
     await client().invoke({ toolName: 'get_positions', payload: { symbol: 'BTC' }, subject: SUBJECT });
@@ -96,7 +96,7 @@ describe('TradertonClient.invoke — envelope', () => {
         requestId: 'fixed-req',
         correlationId: 'fixed-corr',
         outcome: { kind: 'success', payload: {} },
-      } satisfies TradertonToolResultV1),
+      } satisfies ExternalBackendToolResultV1),
     );
 
     await client().invoke({
@@ -161,7 +161,7 @@ describe('TradertonClient.invoke — envelope', () => {
 
 /** A fresh success Response per call (a Response body can be read only once). */
 function freshSuccessResponse(): Response {
-  const body: TradertonToolResultV1 = {
+  const body: ExternalBackendToolResultV1 = {
     contractVersion: '1.0',
     requestId: 'r',
     correlationId: 'c',
@@ -178,7 +178,7 @@ function sentEnvelope(index: number): Record<string, unknown> {
   return Object.fromEntries(Object.entries(parsed));
 }
 
-describe('TradertonClient.invoke — response mapping', () => {
+describe('ExternalBackendClient.invoke — response mapping', () => {
   it('maps a success envelope to a success result carrying the payload', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
@@ -186,7 +186,7 @@ describe('TradertonClient.invoke — response mapping', () => {
         requestId: 'r1',
         correlationId: 'c1',
         outcome: { kind: 'success', payload: { positions: [] } },
-      } satisfies TradertonToolResultV1),
+      } satisfies ExternalBackendToolResultV1),
     );
 
     const result = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT });
@@ -212,7 +212,7 @@ describe('TradertonClient.invoke — response mapping', () => {
           retryable: false,
           details: { field: 'symbol' },
         },
-      } satisfies TradertonToolResultV1),
+      } satisfies ExternalBackendToolResultV1),
     );
 
     const result = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT });
@@ -233,7 +233,7 @@ describe('TradertonClient.invoke — response mapping', () => {
         requestId: 'r3',
         correlationId: 'c3',
         state: 'in_progress',
-      } satisfies TradertonToolInvocationStatusV1),
+      } satisfies ExternalBackendToolInvocationStatusV1),
     );
 
     const result = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT });
@@ -257,7 +257,7 @@ describe('TradertonClient.invoke — response mapping', () => {
           correlationId: 'c4',
           outcome: { kind: 'success', payload: { ok: true } },
         },
-      } satisfies TradertonToolInvocationStatusV1),
+      } satisfies ExternalBackendToolInvocationStatusV1),
     );
 
     const result = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT });
@@ -324,7 +324,7 @@ describe('TradertonClient.invoke — response mapping', () => {
   });
 });
 
-describe('TradertonClient.poll', () => {
+describe('ExternalBackendClient.poll', () => {
   it('resolves to the terminal result once the status endpoint reports terminal', async () => {
     fetchMock
       .mockResolvedValueOnce(
@@ -333,7 +333,7 @@ describe('TradertonClient.poll', () => {
           requestId: 'rp',
           correlationId: 'cp',
           state: 'in_progress',
-        } satisfies TradertonToolInvocationStatusV1),
+        } satisfies ExternalBackendToolInvocationStatusV1),
       )
       .mockResolvedValueOnce(
         jsonResponse({
@@ -347,7 +347,7 @@ describe('TradertonClient.poll', () => {
             correlationId: 'cp',
             outcome: { kind: 'success', payload: { done: true } },
           },
-        } satisfies TradertonToolInvocationStatusV1),
+        } satisfies ExternalBackendToolInvocationStatusV1),
       );
 
     const deadlineAt = new Date(Date.now() + 60_000).toISOString();
@@ -373,7 +373,7 @@ describe('TradertonClient.poll', () => {
           correlationId: 'cp',
           outcome: { kind: 'success', payload: {} },
         },
-      } satisfies TradertonToolInvocationStatusV1),
+      } satisfies ExternalBackendToolInvocationStatusV1),
     );
 
     const deadlineAt = new Date(Date.now() + 60_000).toISOString();
@@ -390,7 +390,7 @@ describe('TradertonClient.poll', () => {
   });
 
   it('poll returns not_found.resource immediately when the boundary has no record of the requestId', async () => {
-    const notFound: TradertonToolResultV1 = {
+    const notFound: ExternalBackendToolResultV1 = {
       contractVersion: '1.0',
       requestId: 'unknown-req',
       correlationId: '',

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { exportRoutes, clearRateLimitStore } from './exports.js';
 import type { Database } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 const TEST_BOT_ID = 'bot-1';
@@ -175,7 +175,7 @@ type ReadToolPayloads = {
  * records the bound subject so tests can assert the per-request subject.
  */
 function makeReadClient(payloads: ReadToolPayloads): {
-  client: TradertonClient;
+  client: ExternalBackendClient;
   invoke: ReturnType<typeof vi.fn>;
 } {
   const keyFor: Record<string, string> = {
@@ -198,7 +198,7 @@ function makeReadClient(payloads: ReadToolPayloads): {
       const rows = (payloads as Record<string, unknown[] | undefined>)[input.toolName] ?? [];
       payload = key ? { [key]: rows } : {};
     }
-    const result: TradertonClientResult = {
+    const result: ExternalBackendClientResult = {
       kind: 'success',
       requestId: 'r',
       correlationId: 'c',
@@ -206,7 +206,7 @@ function makeReadClient(payloads: ReadToolPayloads): {
     };
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /**
@@ -216,10 +216,10 @@ function makeReadClient(payloads: ReadToolPayloads): {
  * `details.errorCode`. Drives the bot-export 404 (unowned/absent bot) path.
  */
 function makeNotFoundReadClient(): {
-  client: TradertonClient;
+  client: ExternalBackendClient;
   invoke: ReturnType<typeof vi.fn>;
 } {
-  const result: TradertonClientResult = {
+  const result: ExternalBackendClientResult = {
     kind: 'failure',
     requestId: 'r',
     correlationId: 'c',
@@ -229,16 +229,16 @@ function makeNotFoundReadClient(): {
     details: { errorCode: 'not_found.resource' },
   };
   const invoke = vi.fn().mockResolvedValue(result);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /** A read client whose `invoke` resolves to a scripted non-success result. */
-function makeFailingReadClient(result: TradertonClientResult): {
-  client: TradertonClient;
+function makeFailingReadClient(result: ExternalBackendClientResult): {
+  client: ExternalBackendClient;
   invoke: ReturnType<typeof vi.fn>;
 } {
   const invoke = vi.fn().mockResolvedValue(result);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /**
@@ -247,8 +247,8 @@ function makeFailingReadClient(result: TradertonClientResult): {
  * to prove the config/bundle endpoints surface a bot-status boundary failure as
  * its mapped status (503 for transport) rather than the 404 not_found path.
  */
-function makeStatusFailingReadClient(statusResult: TradertonClientResult): {
-  client: TradertonClient;
+function makeStatusFailingReadClient(statusResult: ExternalBackendClientResult): {
+  client: ExternalBackendClient;
   invoke: ReturnType<typeof vi.fn>;
 } {
   const keyFor: Record<string, string> = {
@@ -259,7 +259,7 @@ function makeStatusFailingReadClient(statusResult: TradertonClientResult): {
   const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
     if (input.toolName === 'get_owner_bot_status') return Promise.resolve(statusResult);
     const key = keyFor[input.toolName];
-    const result: TradertonClientResult = {
+    const result: ExternalBackendClientResult = {
       kind: 'success',
       requestId: 'r',
       correlationId: 'c',
@@ -267,7 +267,7 @@ function makeStatusFailingReadClient(statusResult: TradertonClientResult): {
     };
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 beforeEach(() => {

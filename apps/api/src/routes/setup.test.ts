@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { setupRoutes } from './setup.js';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 
@@ -30,14 +30,14 @@ vi.mock('../crypto.js', () => ({
 }));
 
 /**
- * L3-P1b: a stubbed TradertonClient. Trading provider links now provision their
+ * L3-P1b: a stubbed ExternalBackendClient. Trading provider links now provision their
  * venue account + credential over this boundary (`provision_venue_account`)
  * instead of a local `user_credentials` + `venue_accounts` write. The stub
  * records invoke calls so tests can assert toolName + subject + payload +
  * idempotencyKey, and returns a scripted client result.
  */
 function makeTradertonClient(
-  result: TradertonClientResult = {
+  result: ExternalBackendClientResult = {
     kind: 'success',
     requestId: 'r',
     correlationId: 'c',
@@ -50,14 +50,14 @@ function makeTradertonClient(
    * plan limit to exercise the pre-provision limit gate.
    */
   venueAccountCount = 0,
-): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
     if (input.toolName === 'count_venue_accounts') {
-      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { count: venueAccountCount } } as TradertonClientResult);
+      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { count: venueAccountCount } } as ExternalBackendClientResult);
     }
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 let insertedValues: Record<string, unknown>[] = [];
@@ -788,11 +788,11 @@ describe('POST /setup/provider-link', () => {
     // 503, and provisioning never runs.
     const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
       if (input.toolName === 'count_venue_accounts') {
-        return Promise.resolve({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boundary down' } as TradertonClientResult);
+        return Promise.resolve({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boundary down' } as ExternalBackendClientResult);
       }
-      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { venueAccountId: 'va-new' } } as TradertonClientResult);
+      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { venueAccountId: 'va-new' } } as ExternalBackendClientResult);
     });
-    const client = { invoke } as unknown as TradertonClient;
+    const client = { invoke } as unknown as ExternalBackendClient;
     const plansConfig = {
       defaultPlanId: 'free',
       plans: {

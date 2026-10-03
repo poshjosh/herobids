@@ -12,7 +12,7 @@
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import type { AuthConfig, PlansConfig, AgentRiskDefaultsConfig, ModelDefaults } from '@herobids/domain';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createTradertonReadBoundary, loadAgentEvidence } from './exports-traderton.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { cloneAgentAsLive } from '../services/agent-go-live-service.js';
@@ -267,7 +267,7 @@ export async function handleLog(
   db: Database,
   userId: string,
   args: string[],
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<string> {
   try {
@@ -315,7 +315,7 @@ export async function handleLog(
     // DEGRADE to the platform legs only rather than surfacing an error (never
     // 503 a telegram command).
     if (tradertonReadClient) {
-      const subject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agent.id } };
+      const subject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'agent', id: agent.id } };
       const boundary = createTradertonReadBoundary(tradertonReadClient, subject, tradertonReadTimeoutMs ?? 10_000);
       const failuresLoaded = await loadAgentEvidence<{ failureCode?: string; failureMessage?: string; failedAt?: string }>(
         boundary,

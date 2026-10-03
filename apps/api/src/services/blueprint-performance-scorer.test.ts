@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { recomputeBlueprintPerformanceScore } from './blueprint-performance-scorer.js';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 // The scorer uses drizzle ops only as opaque predicate builders — stub them so
 // the query-chain mock below can ignore the arguments.
@@ -50,11 +50,11 @@ function positionIso(overrides: Record<string, unknown> = {}) {
  * capabilities/trading.test.ts / exports.test.ts.
  */
 function makeReadClient(positions: unknown[]): {
-  client: TradertonClient;
+  client: ExternalBackendClient;
   invoke: ReturnType<typeof vi.fn>;
 } {
   const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
-    const result: TradertonClientResult = {
+    const result: ExternalBackendClientResult = {
       kind: 'success',
       requestId: 'r',
       correlationId: 'c',
@@ -62,11 +62,11 @@ function makeReadClient(positions: unknown[]): {
     };
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /** A read client whose `invoke` returns a terminal boundary failure. */
-function makeFailingReadClient(): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+function makeFailingReadClient(): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockResolvedValue({
     kind: 'failure',
     requestId: 'r',
@@ -74,8 +74,8 @@ function makeFailingReadClient(): { client: TradertonClient; invoke: ReturnType<
     code: 'internal.error',
     message: 'boundary blew up',
     retryable: false,
-  } satisfies TradertonClientResult);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  } satisfies ExternalBackendClientResult);
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /**

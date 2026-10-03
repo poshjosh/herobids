@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '@herobids/db';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { ReconciliationEventQuerySchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { createTradertonReadBoundary, loadBoundaryObject } from './exports-traderton.js';
@@ -11,7 +11,7 @@ const DEFAULT_READ_TIMEOUT_MS = 10_000;
 export async function reconciliationRoutes(
   app: FastifyInstance,
   _db: Database,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
@@ -37,7 +37,7 @@ export async function reconciliationRoutes(
           'Trading service is unavailable — reconciliation events could not be read.',
         ));
       }
-      const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+      const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
       const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
       const loaded = await loadBoundaryObject(boundary, 'get_owner_bot_reconciliation_events', {
         botId: id,

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { connectionRoutes as registerConnectionRoutesImpl } from './connections.js';
 import type { PlansConfig } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
   loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
@@ -28,7 +28,7 @@ async function connectionRoutes(
   db: unknown,
   redisClient?: unknown,
   plansConfig?: PlansConfig,
-  tradertonClient?: TradertonClient,
+  tradertonClient?: ExternalBackendClient,
   profileReconciliationSaga = buildStagedSaga(db),
 ) {
   await registerConnectionRoutesImpl(app, db as never, TEST_RUNTIME_BUDGETS, redisClient as never, plansConfig, tradertonClient, profileReconciliationSaga as never);
@@ -67,7 +67,7 @@ function buildStagedSaga(db: unknown, onPrepared?: (input: TradingProfilePlanner
 function makeBoundaryClient(opts: {
   botsByAccount?: Record<string, string[]>;
   refByAccount?: Record<string, string | null>;
-} = {}): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+} = {}): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const botsByAccount = opts.botsByAccount ?? {};
   const refByAccount = opts.refByAccount ?? {};
   const invoke = vi.fn().mockImplementation((input: { toolName: string; payload: Record<string, unknown> }) => {
@@ -75,21 +75,21 @@ function makeBoundaryClient(opts: {
       const ids = (input.payload['venueAccountIds'] as string[]) ?? [];
       const byVenueAccount: Record<string, string[]> = {};
       for (const id of ids) byVenueAccount[id] = botsByAccount[id] ?? [];
-      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { ok: true, byVenueAccount } } as TradertonClientResult);
+      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { ok: true, byVenueAccount } } as ExternalBackendClientResult);
     }
     if (input.toolName === 'get_venue_account') {
       const id = input.payload['venueAccountId'] as string;
-      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { ok: true, venueAccountId: id, venueAccountRef: refByAccount[id] ?? null, venue: 'hyperliquid', label: 'label' } } as TradertonClientResult);
+      return Promise.resolve({ kind: 'success', requestId: 'r', correlationId: 'c', payload: { ok: true, venueAccountId: id, venueAccountRef: refByAccount[id] ?? null, venue: 'hyperliquid', label: 'label' } } as ExternalBackendClientResult);
     }
-    return Promise.resolve({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'unexpected tool' } as TradertonClientResult);
+    return Promise.resolve({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'unexpected tool' } as ExternalBackendClientResult);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /** A boundary client whose invoke always transport-errors (boundary down). */
-function makeDownBoundaryClient(): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
-  const invoke = vi.fn().mockResolvedValue({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boundary down' } as TradertonClientResult);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+function makeDownBoundaryClient(): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn().mockResolvedValue({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boundary down' } as ExternalBackendClientResult);
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 function makePlansConfig(maxConnections = 5): PlansConfig {

@@ -1,17 +1,17 @@
 // The worker-side read adapter for the Traderton REST boundary (L3b).
 //
-// It bridges the concrete L3a `TradertonClient` (which holds baseUrl, caller
+// It bridges the concrete L3a `ExternalBackendClient` (which holds baseUrl, caller
 // identity, and signing material) to the domain-clean `tradertonBoundary` port
 // on `TradingToolContext`. The read tools name a tool + forward a validated
 // payload; this adapter binds the platform-owned subject VALUES + the deadline
-// and maps the client's `TradertonClientResult` into the domain
+// and maps the client's `ExternalBackendClientResult` into the domain
 // `TradertonReadResult`. Transport/value-injection ONLY — no trading behaviour.
 //
-// The HMAC secret lives only in the `TradertonClient`; it never reaches the
+// The HMAC secret lives only in the `ExternalBackendClient`; it never reaches the
 // tool or the domain port.
 
 import type { TradertonReadResult } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 
 /** The narrow port the read tools consume via `ctx.tradertonBoundary`. */
 export interface TradertonReadBoundary {
@@ -19,7 +19,7 @@ export interface TradertonReadBoundary {
 }
 
 /** Map a concrete L3a client result into the domain-clean read result. */
-export function mapClientResultToReadResult(result: TradertonClientResult): TradertonReadResult {
+export function mapClientResultToReadResult(result: ExternalBackendClientResult): TradertonReadResult {
   switch (result.kind) {
     case 'success':
       return { kind: 'success', data: result.payload };
@@ -44,8 +44,8 @@ export function mapClientResultToReadResult(result: TradertonClientResult): Trad
  * NOT poll (polling is the L3c side-effecting concern).
  */
 export function createTradertonReadBoundary(
-  client: TradertonClient,
-  subject: TradertonSubject,
+  client: ExternalBackendClient,
+  subject: ExternalBackendSubject,
   deadlineMs: number,
 ): TradertonReadBoundary {
   return {

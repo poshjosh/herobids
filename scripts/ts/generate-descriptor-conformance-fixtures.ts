@@ -1,8 +1,8 @@
 /**
  * Generates the Phase 3 descriptor conformance fixtures (T0.4).
  *
- * Output dir: packages/domain/src/traderton/__fixtures__/descriptor-conformance/
- * (moves to external-backend/__fixtures__/ at T1.1). The whole directory is
+ * Output dir: packages/domain/src/external-backend/__fixtures__/descriptor-conformance/
+ * (moved from traderton/__fixtures__/ at T1.1, bytes unchanged). The whole directory is
  * copied byte-for-byte (`cp -R`) to traderton
  * packages/boundary/src/__fixtures__/descriptor-conformance/. Both repos pin the
  * directory digest (Phase 3 SEAM.md §3.2). The rules the fixtures encode are
@@ -30,10 +30,9 @@ import { createHash, generateKeyPairSync, sign, verify, type KeyObject } from 'n
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-// T1.1 must repoint this path when the directory is renamed (`rg -n "domain/src/traderton" scripts/`).
 const FIXTURE_DIR = resolve(
   import.meta.dirname,
-  '../../packages/domain/src/traderton/__fixtures__/descriptor-conformance',
+  '../../packages/domain/src/external-backend/__fixtures__/descriptor-conformance',
 );
 
 /** Files that count towards the dir digest (SEAM.md §3.2). */

@@ -5,7 +5,7 @@ import type { Database } from '@herobids/db';
 import { agents } from '@herobids/db';
 import type { ActorHealthSnapshot } from '@herobids/domain';
 import { actorHealthKey } from '@herobids/domain';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
 import { createTradertonReadBoundary, loadBoundaryObject } from './exports-traderton.js';
 
@@ -16,7 +16,7 @@ export async function actorHealthRoutes(
   app: FastifyInstance,
   db: Database,
   redis: Redis,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
@@ -60,7 +60,7 @@ export async function actorHealthRoutes(
         'Trading service is unavailable — bot health could not be read.',
       ));
     }
-    const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+    const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
     const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
     const loaded = await loadBoundaryObject(boundary, 'get_owner_bot_status', { botId: id });
     if (!loaded.ok) {

@@ -23,7 +23,7 @@ import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
 import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult, InvokeToolInput, TradertonBoundaryFailureCode } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult, InvokeToolInput, ExternalBackendFailureCode } from '@herobids/domain/external-backend';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { LlmRuntimeConfigSchema } from '@herobids/domain';
 import { syncSystemSkills } from '../../sync-system-skills.js';
@@ -133,7 +133,7 @@ function isPaperSwapConfig(config: Record<string, unknown>): boolean {
   return execMode === 'paper' && swapVenue;
 }
 
-export function makeStubTradertonClient(): TradertonClient {
+export function makeStubTradertonClient(): ExternalBackendClient {
   const bots = new Map<string, StubBot>();
   // Agent-scoped evidence reads (get_agent_fills / get_agent_positions) are keyed
   // by the AGENT id from the subject actor — routes build the subject as
@@ -143,17 +143,17 @@ export function makeStubTradertonClient(): TradertonClient {
   const agentPositions = new Map<string, unknown[]>();
   let seq = 0;
 
-  const ok = (payload: unknown): TradertonClientResult => ({
+  const ok = (payload: unknown): ExternalBackendClientResult => ({
     kind: 'success',
     requestId: 'fn-test',
     correlationId: 'fn-test',
     payload,
   });
   const failure = (
-    code: TradertonBoundaryFailureCode,
+    code: ExternalBackendFailureCode,
     message: string,
     details?: Record<string, unknown>,
-  ): TradertonClientResult => ({
+  ): ExternalBackendClientResult => ({
     kind: 'failure',
     requestId: 'fn-test',
     correlationId: 'fn-test',
@@ -168,11 +168,11 @@ export function makeStubTradertonClient(): TradertonClient {
   // `validation.invalid_payload` code with the original under `details.errorCode`.
   // (A top-level `not_found.resource` code would NOT exercise the route's unwrap
   // and would be a false green.)
-  const notFound = (): TradertonClientResult =>
+  const notFound = (): ExternalBackendClientResult =>
     failure('validation.invalid_payload', 'Bot not found', { errorCode: 'not_found.resource' });
 
   return {
-    invoke: (input: InvokeToolInput): Promise<TradertonClientResult> => {
+    invoke: (input: InvokeToolInput): Promise<ExternalBackendClientResult> => {
       const ownerId = input.subject.ownerId;
       const p = (input.payload ?? {}) as Record<string, unknown>;
       switch (input.toolName) {
@@ -361,8 +361,8 @@ export function makeStubTradertonClient(): TradertonClient {
       }
     },
     // Test-only seeding hooks (extra properties on the stub object — the
-    // TradertonClient type is NOT widened; the stub stays `as unknown as
-    // TradertonClient`). Rows are the same object shape the old dropped-table
+    // ExternalBackendClient type is NOT widened; the stub stays `as unknown as
+    // ExternalBackendClient`). Rows are the same object shape the old dropped-table
     // inserts used, with date fields as ISO strings (rehydrated to Date by
     // toFillRow/toPositionRow on the read path).
     seedAgentFills: (agentId: string, rows: unknown[]): void => {
@@ -371,7 +371,7 @@ export function makeStubTradertonClient(): TradertonClient {
     seedAgentPositions: (agentId: string, rows: unknown[]): void => {
       agentPositions.set(agentId, rows);
     },
-  } as unknown as TradertonClient & {
+  } as unknown as ExternalBackendClient & {
     seedAgentFills: (agentId: string, rows: unknown[]) => void;
     seedAgentPositions: (agentId: string, rows: unknown[]) => void;
   };
@@ -661,9 +661,9 @@ export async function buildApp() {
 
 /**
  * The seed helpers attached to the stub client object (NOT part of the
- * TradertonClient contract — kept out of that type by design).
+ * ExternalBackendClient contract — kept out of that type by design).
  */
-type StubTradertonClientWithSeed = TradertonClient & {
+type StubTradertonClientWithSeed = ExternalBackendClient & {
   seedAgentFills: (agentId: string, rows: unknown[]) => void;
   seedAgentPositions: (agentId: string, rows: unknown[]) => void;
 };

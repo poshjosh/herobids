@@ -13,8 +13,8 @@ export default defineConfig({
       '@herobids/domain/config/load-providers': new URL('./packages/domain/src/config/load-providers.ts', import.meta.url).pathname,
       // Must precede '@herobids/domain': aliases prefix-match in insertion order,
       // so a value import of this subpath would otherwise resolve to
-      // packages/domain/src/index.ts/traderton.
-      '@herobids/domain/traderton': new URL('./packages/domain/src/traderton/index.ts', import.meta.url).pathname,
+      // packages/domain/src/index.ts/external-backend.
+      '@herobids/domain/external-backend': new URL('./packages/domain/src/external-backend/index.ts', import.meta.url).pathname,
       '@herobids/domain': new URL('./packages/domain/src/index.ts', import.meta.url).pathname,
       '@herobids/db/schema': new URL('./packages/db/src/schema/index.ts', import.meta.url).pathname,
       '@herobids/db': new URL('./packages/db/src/index.ts', import.meta.url).pathname,

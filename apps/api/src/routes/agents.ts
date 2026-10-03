@@ -25,7 +25,7 @@ import {
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import {
   createTradertonReadBoundary,
   loadAgentEvidence,
@@ -407,7 +407,7 @@ export async function agentRoutes(
   agentCostEstimates?: AgentCostEstimatesConfig,
   redisClient?: Redis,
   operatorModelDefaults?: ModelDefaults,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
@@ -431,14 +431,14 @@ export async function agentRoutes(
   // trading reads (positions/decisions/failures) fold the agent's own bots, so a
   // per-agent boundary replaces the old local bots-scoping + union joins.
   const agentBoundary = (userId: string, agentId: string): TradertonReadBoundary => {
-    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
+    const subject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
     return createTradertonReadBoundary(tradertonReadClient!, subject, readDeadlineMs);
   };
 
   // Build a read boundary bound to the requesting user's actor subject — used by
   // the owner-scoped read tools (`list_owner_bots`) during the delete cascade.
   const userBoundary = (userId: string): TradertonReadBoundary => {
-    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
+    const subject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
     return createTradertonReadBoundary(tradertonReadClient!, subject, readDeadlineMs);
   };
 
@@ -451,7 +451,7 @@ export async function agentRoutes(
     toolName: 'stop_bot' | 'delete_bot',
     payload: Record<string, unknown>,
     userId: string,
-  ): Promise<TradertonClientResult> => {
+  ): Promise<ExternalBackendClientResult> => {
     if (!tradertonReadClient) {
       return { kind: 'transport_error', requestId: '', retryable: true, message: 'trading boundary not configured' };
     }

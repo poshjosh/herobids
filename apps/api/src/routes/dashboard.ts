@@ -8,7 +8,7 @@ import {
   agentRuntimeSessions,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { DashboardActivityQuerySchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import {
@@ -164,14 +164,14 @@ export async function dashboardRoutes(
   app: FastifyInstance,
   db: Database,
   plansConfig?: PlansConfig,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
 
   /** Build a read boundary bound to the requesting user's actor subject. */
   const userBoundary = (userId: string): TradertonReadBoundary => {
-    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
+    const subject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
     return createTradertonReadBoundary(tradertonReadClient!, subject, readDeadlineMs);
   };
 
@@ -292,7 +292,7 @@ export async function dashboardRoutes(
 
     let combinedPnl = 0;
     for (const agentId of agentIds) {
-      const agentSubject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
+      const agentSubject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
       const agentBoundary = createTradertonReadBoundary(tradertonReadClient, agentSubject, readDeadlineMs);
       const agentPos = await loadAgentEvidence<ReadPositionRow>(agentBoundary, 'get_agent_positions', {}, 'positions', toPositionRow);
       if (!agentPos.ok) {

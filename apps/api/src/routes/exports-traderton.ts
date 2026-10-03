@@ -8,7 +8,7 @@
 // transport + row-shape narrowing ONLY — no trading logic:
 //
 //   - `createTradertonReadBoundary` binds the per-request subject VALUES + the
-//     deadline onto a concrete `TradertonClient`, and maps the client result
+//     deadline onto a concrete `ExternalBackendClient`, and maps the client result
 //     into the domain-clean `TradertonReadResult`. The agent endpoints build one
 //     boundary per request bound to the REQUESTING USER's subject.
 //   - `toFillRow` / `toJournalRow` / `toPositionRow` rehydrate the date-typed
@@ -22,7 +22,7 @@
 //     so the endpoint can return the right HTTP status (never silently empty).
 
 import type { TradertonReadResult } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 
 // c4.9f: local trading-table schema dropped — these rows arrive from the
 // Traderton read boundary, whose schema is byte-identical to the dropped
@@ -91,7 +91,7 @@ export interface TradertonReadBoundary {
 }
 
 /** Map a concrete L3a client result into the domain-clean read result. */
-function mapClientResultToReadResult(result: TradertonClientResult): TradertonReadResult {
+function mapClientResultToReadResult(result: ExternalBackendClientResult): TradertonReadResult {
   switch (result.kind) {
     case 'success':
       return { kind: 'success', data: result.payload };
@@ -123,8 +123,8 @@ function mapClientResultToReadResult(result: TradertonClientResult): TradertonRe
  * single synchronous invoke within `deadlineMs` — it does NOT poll.
  */
 export function createTradertonReadBoundary(
-  client: TradertonClient,
-  subject: TradertonSubject,
+  client: ExternalBackendClient,
+  subject: ExternalBackendSubject,
   deadlineMs: number,
 ): TradertonReadBoundary {
   return {

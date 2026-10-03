@@ -6,7 +6,7 @@ import { agents, connections, agentConnections, agentSkills, skillRevisions, der
 import type { RuntimeAssignmentRow } from '@herobids/db';
 import type { CapabilityReadiness, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { getRuntimeFamiliesForProvider, SYSTEM_SKILLS } from '@herobids/domain';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { tradingCapabilityRoutes } from './trading.js';
 
 export async function capabilityRoutes(
@@ -15,7 +15,7 @@ export async function capabilityRoutes(
   plansConfig: PlansConfig | undefined,
   budgets: RuntimeBudgetPolicy,
   redisClient?: Redis,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   // Deduped, sorted set of every capability family declared by the system's

@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
-import { createTradertonClient, type TradertonClientResult } from '@herobids/domain/traderton';
+import { createExternalBackendClient, type ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { createTradertonSideEffectBoundary, type TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
 import { startFakeIdempotentBoundary } from '../traderton/__tests__/fake-idempotent-boundary.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -45,7 +45,7 @@ function makePayload(overrides: Partial<DecisionSubmitPayload> = {}): DecisionSu
 }
 
 /** A stubbed boundary whose invokeAndAwait returns a scripted client result. */
-function makeBoundary(result: TradertonClientResult): {
+function makeBoundary(result: ExternalBackendClientResult): {
   boundary: TradertonSideEffectBoundary;
   invokeAndAwait: ReturnType<typeof vi.fn>;
   invoke: ReturnType<typeof vi.fn>;
@@ -268,7 +268,7 @@ describe('AgentDecisionHandler — submit_decision idempotency (T0.6)', () => {
   /** The real adapter + client wired to the fake idempotent backend. */
   async function openBackend() {
     const backend = await startFakeIdempotentBoundary();
-    const client = createTradertonClient({
+    const client = createExternalBackendClient({
       baseUrl: backend.url,
       consumerId: 'herobids',
       keyId: 'current',

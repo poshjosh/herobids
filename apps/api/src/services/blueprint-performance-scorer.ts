@@ -1,7 +1,7 @@
 import { eq, and, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { blueprints, agents } from '@herobids/db';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import {
   createTradertonReadBoundary,
   loadAgentEvidence,
@@ -54,7 +54,7 @@ function clamp(value: number, min: number, max: number): number {
 export async function recomputeBlueprintPerformanceScore(
   db: Database,
   blueprintId: string,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   // Best-effort: without a read boundary we cannot source trading positions.
@@ -97,7 +97,7 @@ export async function recomputeBlueprintPerformanceScore(
   //    server-side by the subject's agent id (replacing the old local `bots`
   //    botId-scoping + `positions` read). Subject: the author's user id is the
   //    owner, the agent is the actor (mirrors the c1 evidence-assembler).
-  const subject: TradertonSubject = {
+  const subject: ExternalBackendSubject = {
     ownerId: bp.authorId,
     actor: { type: 'agent', id: agent.id },
   };

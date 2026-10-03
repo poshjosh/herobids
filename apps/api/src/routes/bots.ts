@@ -16,7 +16,7 @@ import { errorPayload } from '../error-payload.js';
 import { canonicalizeExecutionMode } from './agent-config-helpers.js';
 import { INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { TradertonReadResult } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { projectBotToBlueprintPayload } from '../services/blueprint-projection.js';
 import { buildBlueprintDetail } from './blueprints.js';
 import type { LifecycleJob } from '../types.js';
@@ -34,7 +34,7 @@ function normalizeBotConfig(config: Record<string, unknown>, venue: string, symb
   return normalized;
 }
 
-export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig, tradertonClient?: TradertonClient): Promise<void> {
+export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig, tradertonClient?: ExternalBackendClient): Promise<void> {
   // L3c: route a user-initiated bot side effect to the Traderton boundary,
   // injecting ownerId + actor(type:'user') ONLY (D2). Traderton owns bots + the
   // limit and resolves the venue account from the subject. Returns the typed
@@ -43,7 +43,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     toolName: 'create_bot' | 'start_bot' | 'stop_bot' | 'adjust_bot_config' | 'delete_bot',
     payload: Record<string, unknown>,
     userId: string,
-  ): Promise<TradertonClientResult> => {
+  ): Promise<ExternalBackendClientResult> => {
     if (!tradertonClient) {
       return { kind: 'transport_error', requestId: '', retryable: true, message: 'trading boundary not configured' };
     }

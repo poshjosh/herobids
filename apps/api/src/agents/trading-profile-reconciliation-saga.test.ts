@@ -3,7 +3,7 @@ import type {
   TradingProfileOutboxAction,
   TradingProfileOutboxState,
 } from '@herobids/db';
-import type { TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import {
   TradingProfileReconciliationSaga,
   TradingProfileResponseValidationError,
@@ -44,15 +44,15 @@ function row(state: TradingProfileOutboxState, actions: TradingProfileOutboxActi
   };
 }
 
-function success(operationId = 'operation-1', revision = '1'): TradertonClientResult {
+function success(operationId = 'operation-1', revision = '1'): ExternalBackendClientResult {
   return { kind: 'success', requestId: 'request-1', correlationId: 'correlation-1', payload: { operationId, revision } };
 }
 
-function clearSuccess(operationId = 'operation-1'): TradertonClientResult {
+function clearSuccess(operationId = 'operation-1'): ExternalBackendClientResult {
   return { kind: 'success', requestId: 'request-1', correlationId: 'correlation-1', payload: { operationId, revision: null } };
 }
 
-function successForTool(toolName: string): TradertonClientResult {
+function successForTool(toolName: string): ExternalBackendClientResult {
   if (toolName === 'clear_agent_trading_profile') return clearSuccess();
   return success();
 }
@@ -81,7 +81,7 @@ describe('TradingProfileReconciliationSaga', () => {
           riskOverrides: {},
           executionDefaults: { mode: 'paper' },
         },
-      }) as TradertonClientResult),
+      }) as ExternalBackendClientResult),
     };
     const saga = new TradingProfileReconciliationSaga({} as never, boundary);
 
@@ -113,7 +113,7 @@ describe('TradingProfileReconciliationSaga', () => {
       inTransaction: vi.fn(),
     };
     const boundary: TradingProfileSagaBoundary = {
-      invoke: vi.fn(async () => ({ kind: 'success', data: {}, payload }) as TradertonClientResult),
+      invoke: vi.fn(async () => ({ kind: 'success', data: {}, payload }) as ExternalBackendClientResult),
     };
     const saga = new TradingProfileReconciliationSaga(outbox as never, boundary);
     const commitLocal = vi.fn();
@@ -569,7 +569,7 @@ describe('TradingProfileReconciliationSaga', () => {
           message: 'maxOpenPositions cannot exceed the operator ceiling of 50',
           retryable: false,
           details: { errorCode: 'validation.risk_ceiling' },
-        } as TradertonClientResult
+        } as ExternalBackendClientResult
         : success()),
     };
     const saga = new TradingProfileReconciliationSaga(outbox as never, boundary);

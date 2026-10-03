@@ -18,7 +18,7 @@ import {
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 
 vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
@@ -345,9 +345,9 @@ function makeTradertonStub(payloads: {
   decisions?: unknown[];
   failures?: unknown[];
   ownerBots?: unknown[];
-} = {}): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+} = {}): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
-    let result: TradertonClientResult;
+    let result: ExternalBackendClientResult;
     switch (input.toolName) {
       case 'get_agent_positions':
         result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { positions: payloads.agentPositions ?? [] } };
@@ -370,7 +370,7 @@ function makeTradertonStub(payloads: {
     }
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 function makePlansConfig(): PlansConfig {

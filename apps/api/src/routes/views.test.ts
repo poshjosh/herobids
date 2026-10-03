@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { journalRoutes, positionRoutes } from './views.js';
 import type { Database } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 const TEST_BOT_ID = 'bot-1';
@@ -48,7 +48,7 @@ const journalIso = (over: Record<string, unknown> = {}) => ({
 function makeReadClient(payloads: {
   get_owner_bot_positions?: unknown[];
   get_owner_bot_journal?: unknown[];
-}): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+}): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const keyFor: Record<string, string> = {
     get_owner_bot_positions: 'positions',
     get_owner_bot_journal: 'events',
@@ -56,23 +56,23 @@ function makeReadClient(payloads: {
   const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
     const key = keyFor[input.toolName];
     const rows = (payloads as Record<string, unknown[] | undefined>)[input.toolName] ?? [];
-    const result: TradertonClientResult = {
+    const result: ExternalBackendClientResult = {
       kind: 'success', requestId: 'r', correlationId: 'c', payload: key ? { [key]: rows } : {},
     };
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /** Read client that resolves to the wire not_found shape (unowned/absent bot). */
-function makeNotFoundReadClient(): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
-  const result: TradertonClientResult = {
+function makeNotFoundReadClient(): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
+  const result: ExternalBackendClientResult = {
     kind: 'failure', requestId: 'r', correlationId: 'c',
     code: 'validation.invalid_payload', message: 'Bot not found', retryable: false,
     details: { errorCode: 'not_found.resource' },
   };
   const invoke = vi.fn().mockResolvedValue(result);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 const noDb = {} as unknown as Database;
@@ -203,7 +203,7 @@ describe('journalRoutes — /journal', () => {
     // Stub get_agent_journal_events via the invoke mock directly (agent tool
     // returns `{ events: [...] }`).
     invoke.mockImplementation((input: { toolName: string }) => {
-      const result: TradertonClientResult = {
+      const result: ExternalBackendClientResult = {
         kind: 'success', requestId: 'r', correlationId: 'c',
         payload: input.toolName === 'get_agent_journal_events' ? { events: [record] } : { events: [] },
       };

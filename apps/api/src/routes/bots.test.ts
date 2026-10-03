@@ -1,21 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { PlansConfig } from '@herobids/domain';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 
 /**
- * L3c: a stubbed TradertonClient. POST/stop/start/adjust now route bot side
+ * L3c: a stubbed ExternalBackendClient. POST/stop/start/adjust now route bot side
  * effects over this boundary instead of a local bots-table write + lifecycle
  * queue. The stub records invoke calls so tests can assert toolName + subject +
  * payload, and returns a scripted client result.
  */
 function makeTradertonClient(
-  result: TradertonClientResult = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { id: 'bot-1', status: 'stopped', userId: TEST_USER_ID, connectionId: 'binding-1' } },
-): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  result: ExternalBackendClientResult = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { id: 'bot-1', status: 'stopped', userId: TEST_USER_ID, connectionId: 'binding-1' } },
+): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockResolvedValue(result);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /**
@@ -525,11 +525,11 @@ describe('bot read + lifecycle routes route over the boundary (no local bots tab
    * A boundary client whose invoke dispatches a scripted result per toolName,
    * defaulting to a generic success. Records calls for assertions.
    */
-  function makeToolClient(perTool: Partial<Record<string, TradertonClientResult>> = {}) {
+  function makeToolClient(perTool: Partial<Record<string, ExternalBackendClientResult>> = {}) {
     const invoke = vi.fn(async (arg: { toolName: string }) => {
       return perTool[arg.toolName] ?? { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} };
     });
-    return { client: { invoke } as unknown as TradertonClient, invoke };
+    return { client: { invoke } as unknown as ExternalBackendClient, invoke };
   }
 
   const statusPayload = (overrides: Record<string, unknown> = {}) => ({
@@ -547,7 +547,7 @@ describe('bot read + lifecycle routes route over the boundary (no local bots tab
     },
   });
 
-  async function buildApp(client?: TradertonClient, planId = 'free') {
+  async function buildApp(client?: ExternalBackendClient, planId = 'free') {
     const { botRoutes } = await import('./bots.js');
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, planId);
@@ -576,7 +576,7 @@ describe('bot read + lifecycle routes route over the boundary (no local bots tab
   // ── GET /bots/:id ────────────────────────────────────────────────────────
   it('GET /bots/:id maps boundary not_found to 404', async () => {
     const { client } = makeToolClient({
-      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as TradertonClientResult,
+      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as ExternalBackendClientResult,
     });
     const app = await buildApp(client);
     const res = await app.inject({ method: 'GET', url: '/bots/bot-1' });
@@ -635,7 +635,7 @@ describe('bot read + lifecycle routes route over the boundary (no local bots tab
 
   it('PATCH /bots/:id/config maps boundary not_found to 404', async () => {
     const { client } = makeToolClient({
-      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as TradertonClientResult,
+      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as ExternalBackendClientResult,
     });
     const app = await buildApp(client);
     const res = await app.inject({
@@ -718,7 +718,7 @@ describe('bot read + lifecycle routes route over the boundary (no local bots tab
       get_owner_bot_status: statusPayload({ status: 'stopped' }),
       // Authoritative delete diverges: the bot started in the race window. The
       // raw client result carries a top-level `details.errorCode` (invokeBoundary
-      // returns the TradertonClientResult verbatim — NOT the unwrapped read shape).
+      // returns the ExternalBackendClientResult verbatim — NOT the unwrapped read shape).
       delete_bot: {
         kind: 'failure',
         code: 'validation.invalid_payload',
@@ -748,7 +748,7 @@ describe('bot read + lifecycle routes route over the boundary (no local bots tab
   // ── POST /bots/:id/blueprints ─────────────────────────────────────────────
   it('POST /bots/:id/blueprints reads the bot config via get_owner_bot_status and 404s on boundary not_found', async () => {
     const { client } = makeToolClient({
-      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as TradertonClientResult,
+      get_owner_bot_status: { kind: 'failure', code: 'not_found.resource', message: 'nope', retryable: false, requestId: 'r' } as unknown as ExternalBackendClientResult,
     });
     const app = await buildApp(client);
     const res = await app.inject({ method: 'POST', url: '/bots/bot-1/blueprints', payload: {} });

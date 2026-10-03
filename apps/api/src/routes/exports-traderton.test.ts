@@ -7,12 +7,12 @@ import {
   type TradertonReadBoundary,
 } from './exports-traderton.js';
 import type {
-  TradertonClient,
-  TradertonClientResult,
-  TradertonSubject,
-} from '@herobids/domain/traderton';
+  ExternalBackendClient,
+  ExternalBackendClientResult,
+  ExternalBackendSubject,
+} from '@herobids/domain/external-backend';
 
-const SUBJECT: TradertonSubject = {
+const SUBJECT: ExternalBackendSubject = {
   ownerId: 'owner-1',
   actor: { type: 'user', id: 'owner-1' },
 };
@@ -22,16 +22,16 @@ const SUBJECT: TradertonSubject = {
  * given scripted client result. Returns the boundary plus the underlying spy so
  * callers can assert what was dispatched onto the client (tool/payload/subject).
  */
-function boundaryOver(result: TradertonClientResult): {
+function boundaryOver(result: ExternalBackendClientResult): {
   boundary: TradertonReadBoundary;
   invoke: ReturnType<typeof vi.fn>;
 } {
   const invoke = vi.fn().mockResolvedValue(result);
-  const client = { invoke } as unknown as TradertonClient;
+  const client = { invoke } as unknown as ExternalBackendClient;
   return { boundary: createTradertonReadBoundary(client, SUBJECT, 10_000), invoke };
 }
 
-const successResult = (payload: unknown): TradertonClientResult => ({
+const successResult = (payload: unknown): ExternalBackendClientResult => ({
   kind: 'success',
   requestId: 'r',
   correlationId: 'c',
@@ -57,7 +57,7 @@ describe('loadBoundaryObject', () => {
     const arg = invoke.mock.calls[0]![0] as {
       toolName: string;
       payload: Record<string, unknown>;
-      subject: TradertonSubject;
+      subject: ExternalBackendSubject;
       deadlineMs: number;
     };
     expect(arg.toolName).toBe('get_owner_bot_status');

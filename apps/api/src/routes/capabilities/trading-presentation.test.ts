@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { tradingCapabilityRoutes as registerTradingCapabilityRoutesImpl } from './trading.js';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 const TEST_AGENT_ID = 'agent-1';
@@ -17,7 +17,7 @@ const TEST_RUNTIME_BUDGETS = {
 async function tradingCapabilityRoutes(
   app: ReturnType<typeof Fastify>,
   db: unknown,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
 ) {
   await registerTradingCapabilityRoutesImpl(
     app,
@@ -143,7 +143,7 @@ function buildDb(selectSequence: unknown[][] = []) {
  * the evidence tools) or a forced error.
  */
 function makeReadClient(input: {
-  onTool?: (toolName: string, payload: unknown) => TradertonClientResult;
+  onTool?: (toolName: string, payload: unknown) => ExternalBackendClientResult;
 }) {
   const invoke = vi.fn().mockImplementation(({ toolName }: { toolName: string; payload: unknown }) => {
     if (input.onTool) {
@@ -154,9 +154,9 @@ function makeReadClient(input: {
       requestId: 'r',
       correlationId: 'c',
       payload: {},
-    } as TradertonClientResult);
+    } as ExternalBackendClientResult);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /** Default success client returning a ready account summary + one of each feed item. */
@@ -197,7 +197,7 @@ function makeDefaultClient() {
         get_agent_decisions: { ok: true, decisions },
         get_agent_fills: { ok: true, fills },
       };
-      return { kind: 'success', requestId: 'r', correlationId: 'c', payload: payloadMap[toolName] ?? {} } as TradertonClientResult;
+      return { kind: 'success', requestId: 'r', correlationId: 'c', payload: payloadMap[toolName] ?? {} } as ExternalBackendClientResult;
     },
   });
 }
@@ -345,7 +345,7 @@ describe('trading capability presentation', () => {
           get_agent_decisions: { ok: true, decisions: [] },
           get_agent_fills: { ok: true, fills: [] },
         };
-        return { kind: 'success', requestId: 'r', correlationId: 'c', payload: payloadMap[toolName] ?? {} } as TradertonClientResult;
+        return { kind: 'success', requestId: 'r', correlationId: 'c', payload: payloadMap[toolName] ?? {} } as ExternalBackendClientResult;
       },
     });
     await tradingCapabilityRoutes(app, db, client);
@@ -381,7 +381,7 @@ describe('trading capability presentation', () => {
           get_agent_decisions: { ok: true, decisions: [] },
           get_agent_fills: { ok: true, fills: [] },
         };
-        return { kind: 'success', requestId: 'r', correlationId: 'c', payload: payloadMap[toolName] ?? {} } as TradertonClientResult;
+        return { kind: 'success', requestId: 'r', correlationId: 'c', payload: payloadMap[toolName] ?? {} } as ExternalBackendClientResult;
       },
     });
     await tradingCapabilityRoutes(app, db, client);
@@ -421,7 +421,7 @@ describe('trading capability presentation', () => {
     decorateWithAuth(app);
     const db = buildDb([[AGENT_ROW], [ACTIVE_ASSIGNMENT]]);
     const { client } = makeReadClient({
-      onTool: () => ({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boom' } as TradertonClientResult),
+      onTool: () => ({ kind: 'transport_error', requestId: 'r', retryable: true, message: 'boom' } as ExternalBackendClientResult),
     });
     await tradingCapabilityRoutes(app, db, client);
 

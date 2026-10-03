@@ -1,4 +1,4 @@
-// The Traderton REST boundary client (005-consumer-boundary-contract.md).
+// The external-backend REST boundary client (005-consumer-boundary-contract.md).
 //
 // A small `fetch`-based client: it builds the 005 invocation envelope, signs it
 // (HMAC via ./sign), POSTs `tools:invoke`, polls `GET invocations/:requestId`,
@@ -17,20 +17,20 @@ import {
   type SigningIdentity,
 } from './sign.js';
 import {
-  TRADERTON_INVOKE_PATH,
-  tradertonStatusPath,
-  type TradertonToolInvocationV1,
-  type TradertonToolResultV1,
-  type TradertonToolInvocationStatusV1,
-  type TradertonSubject,
-  type TradertonCaller,
-  type TradertonBoundaryFailureCode,
-  type TradertonOutcome,
+  EXTERNAL_BACKEND_INVOKE_PATH,
+  externalBackendStatusPath,
+  type ExternalBackendToolInvocationV1,
+  type ExternalBackendToolResultV1,
+  type ExternalBackendToolInvocationStatusV1,
+  type ExternalBackendSubject,
+  type ExternalBackendCaller,
+  type ExternalBackendFailureCode,
+  type ExternalBackendOutcome,
 } from './contract.js';
 import { deriveRequestId } from './request-id.js';
 
-/** Operator config the client needs (subset of the domain BoundaryConfig). */
-export interface TradertonClientConfig {
+/** Operator config the client needs (built from an ExternalBackendDefinition + resolved secret). */
+export interface ExternalBackendClientConfig {
   baseUrl: string;
   consumerId: string;
   keyId: string;
@@ -42,7 +42,7 @@ export interface TradertonClientConfig {
 export interface InvokeToolInput {
   toolName: string;
   payload: unknown;
-  subject: TradertonSubject;
+  subject: ExternalBackendSubject;
   /**
    * The deadline for this call. Provide either an absolute RFC3339 `deadlineAt`
    * or a `deadlineMs` duration from now (used to derive `deadlineAt`).
@@ -70,13 +70,13 @@ export interface InvokeToolInput {
  * boundary distinguishes THREE terminal-ish shapes plus a transport failure,
  * and callers must preserve the failure `code` + `retryable` verbatim.
  */
-export type TradertonClientResult =
+export type ExternalBackendClientResult =
   | { kind: 'success'; requestId: string; correlationId: string; payload: unknown }
   | {
       kind: 'failure';
       requestId: string;
       correlationId: string;
-      code: TradertonBoundaryFailureCode;
+      code: ExternalBackendFailureCode;
       message: string;
       retryable: boolean;
       details?: Record<string, unknown>;
@@ -111,9 +111,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));
 }
 
-/** Map a terminal `TradertonToolResultV1` outcome into the client result union. */
-function mapTerminalResult(result: TradertonToolResultV1): TradertonClientResult {
-  const outcome: TradertonOutcome = result.outcome;
+/** Map a terminal `ExternalBackendToolResultV1` outcome into the client result union. */
+function mapTerminalResult(result: ExternalBackendToolResultV1): ExternalBackendClientResult {
+  const outcome: ExternalBackendOutcome = result.outcome;
   if (outcome.kind === 'success') {
     return {
       kind: 'success',
@@ -145,7 +145,7 @@ function hasStringIds(value: object): boolean {
   );
 }
 
-function isStatusBody(value: unknown): value is TradertonToolInvocationStatusV1 {
+function isStatusBody(value: unknown): value is ExternalBackendToolInvocationStatusV1 {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -155,7 +155,7 @@ function isStatusBody(value: unknown): value is TradertonToolInvocationStatusV1 
   );
 }
 
-function isOutcome(value: unknown): value is TradertonOutcome {
+function isOutcome(value: unknown): value is ExternalBackendOutcome {
   if (typeof value !== 'object' || value === null || !('kind' in value)) return false;
   // No `payload` check: the backend's `successResult(identity, result.data)`
   // may carry `undefined`, which JSON drops, so an absent key is a valid success.
@@ -171,7 +171,7 @@ function isOutcome(value: unknown): value is TradertonOutcome {
   );
 }
 
-function isToolResultBody(value: unknown): value is TradertonToolResultV1 {
+function isToolResultBody(value: unknown): value is ExternalBackendToolResultV1 {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -182,16 +182,16 @@ function isToolResultBody(value: unknown): value is TradertonToolResultV1 {
 }
 
 /**
- * The Traderton REST boundary client. Construct once with operator config +
+ * The external-backend REST boundary client. Construct once with operator config +
  * signing identity; call `invoke` per tool call and `poll` to resolve an
  * ambiguous/async invocation.
  */
-export class TradertonClient {
+export class ExternalBackendClient {
   private readonly baseUrl: string;
   private readonly identity: SigningIdentity;
   private readonly requestTimeoutMs: number;
 
-  constructor(config: TradertonClientConfig) {
+  constructor(config: ExternalBackendClientConfig) {
     // Trim a trailing slash so `${baseUrl}${path}` never doubles it.
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.identity = {
@@ -202,12 +202,12 @@ export class TradertonClient {
     this.requestTimeoutMs = config.requestTimeoutMs;
   }
 
-  private caller(): TradertonCaller {
+  private caller(): ExternalBackendCaller {
     return { consumerId: this.identity.consumerId, keyId: this.identity.keyId };
   }
 
   /** Build the 005 invocation envelope, generating identifiers where not supplied. */
-  buildEnvelope(input: InvokeToolInput): TradertonToolInvocationV1 {
+  buildEnvelope(input: InvokeToolInput): ExternalBackendToolInvocationV1 {
     const issuedAt = input.issuedAt ?? nowIso();
     const deadlineAt =
       input.deadlineAt ??
@@ -243,13 +243,13 @@ export class TradertonClient {
    * A transport failure or non-terminal/unparseable response is surfaced as the
    * distinct `transport_error` variant (never thrown raw).
    */
-  async invoke(input: InvokeToolInput): Promise<TradertonClientResult> {
+  async invoke(input: InvokeToolInput): Promise<ExternalBackendClientResult> {
     const envelope = this.buildEnvelope(input);
-    const { headers, rawBody } = signInvoke(this.identity, TRADERTON_INVOKE_PATH, envelope);
+    const { headers, rawBody } = signInvoke(this.identity, EXTERNAL_BACKEND_INVOKE_PATH, envelope);
 
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}${TRADERTON_INVOKE_PATH}`, {
+      response = await fetch(`${this.baseUrl}${EXTERNAL_BACKEND_INVOKE_PATH}`, {
         method: 'POST',
         headers,
         body: rawBody,
@@ -265,7 +265,7 @@ export class TradertonClient {
   private async parseInvokeResponse(
     response: Response,
     requestId: string,
-  ): Promise<TradertonClientResult> {
+  ): Promise<ExternalBackendClientResult> {
     if (!response.ok) {
       return this.transportError(requestId, `boundary returned status ${response.status}`);
     }
@@ -297,8 +297,8 @@ export class TradertonClient {
    * deadline is exceeded. Exposed for the L3c synchronous-feel rewire — NOT
    * wired to submit_decision here.
    */
-  async poll(requestId: string, opts: PollOptions): Promise<TradertonClientResult> {
-    const path = tradertonStatusPath(requestId);
+  async poll(requestId: string, opts: PollOptions): Promise<ExternalBackendClientResult> {
+    const path = externalBackendStatusPath(requestId);
     const url = `${this.baseUrl}${path}`;
     const deadlineMs = Date.parse(opts.deadlineAt);
     const intervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
@@ -367,12 +367,12 @@ export class TradertonClient {
   private transportError(
     requestId: string,
     message: string,
-  ): Extract<TradertonClientResult, { kind: 'transport_error' }> {
+  ): Extract<ExternalBackendClientResult, { kind: 'transport_error' }> {
     return { kind: 'transport_error', requestId, retryable: true, message };
   }
 }
 
 /** Factory mirroring the herobids per-use-helper norm. */
-export function createTradertonClient(config: TradertonClientConfig): TradertonClient {
-  return new TradertonClient(config);
+export function createExternalBackendClient(config: ExternalBackendClientConfig): ExternalBackendClient {
+  return new ExternalBackendClient(config);
 }

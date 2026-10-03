@@ -1,7 +1,7 @@
 /**
  * Generates the shared 005 HMAC invocation signing vectors (Phase 3 T0.3).
  *
- * Output: packages/domain/src/traderton/__fixtures__/invocation-signing-vectors.json
+ * Output: packages/domain/src/external-backend/__fixtures__/invocation-signing-vectors.json
  * The same bytes are copied (plain `cp`) to traderton
  * packages/boundary/src/__fixtures__/invocation-signing-vectors.json. herobids
  * asserts its signer emits these bytes; traderton asserts its verifier accepts
@@ -24,23 +24,22 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-// Source, not dist: tsx resolves `.js` → `.ts`. T1.1 must repoint this import AND FIXTURE_PATH
-// when the directory is renamed (`rg -n "domain/src/traderton" scripts/`).
+// Source, not dist: tsx resolves `.js` → `.ts`.
 import {
-  TRADERTON_INVOKE_PATH,
-  TradertonClient,
+  EXTERNAL_BACKEND_INVOKE_PATH,
+  ExternalBackendClient,
   buildCanonicalString,
   signInvoke,
   signStatus,
-  tradertonStatusPath,
+  externalBackendStatusPath,
   type SignedHeaders,
   type SigningIdentity,
-  type TradertonSubject,
-} from '../../packages/domain/src/traderton/index.js';
+  type ExternalBackendSubject,
+} from '../../packages/domain/src/external-backend/index.js';
 
 const FIXTURE_PATH = resolve(
   import.meta.dirname,
-  '../../packages/domain/src/traderton/__fixtures__/invocation-signing-vectors.json',
+  '../../packages/domain/src/external-backend/__fixtures__/invocation-signing-vectors.json',
 );
 
 const TIMESTAMP = '2026-10-02T12:00:00.000Z';
@@ -79,7 +78,7 @@ interface SigningVectorFile {
   cases: SigningVectorCase[];
 }
 
-const client = new TradertonClient({
+const client = new ExternalBackendClient({
   baseUrl: 'http://boundary.signing-vector.test',
   consumerId: IDENTITY.consumerId,
   keyId: IDENTITY.keyId,
@@ -115,7 +114,7 @@ function buildCase(
 }
 
 function invokeCase(id: string, description: string, suffix: string, value: string): SigningVectorCase {
-  const subject: TradertonSubject = {
+  const subject: ExternalBackendSubject = {
     ownerId: `owner-vector-${suffix}`,
     actor: { type: 'agent', id: `agent-vector-${suffix}` },
   };
@@ -129,16 +128,16 @@ function invokeCase(id: string, description: string, suffix: string, value: stri
     correlationId: `corr-vector-${suffix}`,
     issuedAt: TIMESTAMP,
   });
-  const { headers, rawBody } = signInvoke(IDENTITY, TRADERTON_INVOKE_PATH, envelope, { timestamp: TIMESTAMP });
+  const { headers, rawBody } = signInvoke(IDENTITY, EXTERNAL_BACKEND_INVOKE_PATH, envelope, { timestamp: TIMESTAMP });
   return buildCase(
-    { id, description, method: 'POST', requestPath: TRADERTON_INVOKE_PATH, signedPath: TRADERTON_INVOKE_PATH },
+    { id, description, method: 'POST', requestPath: EXTERNAL_BACKEND_INVOKE_PATH, signedPath: EXTERNAL_BACKEND_INVOKE_PATH },
     rawBody,
     headers,
   );
 }
 
 function statusCase(id: string, description: string, requestId: string, query: string): SigningVectorCase {
-  const signedPath = tradertonStatusPath(requestId);
+  const signedPath = externalBackendStatusPath(requestId);
   const headers = signStatus(IDENTITY, signedPath, { timestamp: TIMESTAMP, deadlineAt: DEADLINE_AT });
   return buildCase({ id, description, method: 'GET', requestPath: signedPath + query, signedPath }, '', headers);
 }
@@ -153,6 +152,7 @@ function generate(): string {
     cases: [
       invokeCase(
         'invoke-full-envelope',
+        // Frozen fixture bytes (SEAM.md §3.1): keeps the pre-T1.1 class name.
         'POST tools:invoke with a full 005 envelope from TradertonClient.buildEnvelope (every identifier supplied).',
         '1',
         'hello',

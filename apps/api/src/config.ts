@@ -64,7 +64,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   GMAIL_CLIENT_SECRET: { path: 'integrations.gmail.clientSecret', type: 'string' },
   GMAIL_REDIRECT_URI: { path: 'integrations.gmail.redirectUri', type: 'string' },
   // Traderton REST boundary (L3) — MUST mirror apps/worker/src/config.ts. The API
-  // builds its TradertonClient from boundary.baseUrl + boundary.hmacSecret
+  // builds its ExternalBackendClient from boundary.baseUrl + boundary.hmacSecret
   // (apps/api/src/index.ts); without these overrides the config never picks up
   // the operator env, the client is never constructed, and every trading route
   // fail-closes to precondition.not_ready (503).

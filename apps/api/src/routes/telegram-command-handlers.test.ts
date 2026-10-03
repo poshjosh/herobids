@@ -23,7 +23,7 @@ import {
   handleLog,
   truncateForTelegram,
 } from './telegram-command-handlers.js';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -210,17 +210,17 @@ function makeLogDb(agent: Record<string, unknown>, platformRows: unknown[]) {
 }
 
 /**
- * Smallest TradertonClient stub. `loadAgentEvidence` → `boundary.invoke` →
+ * Smallest ExternalBackendClient stub. `loadAgentEvidence` → `boundary.invoke` →
  * `client.invoke({ toolName, payload, subject, deadlineMs })` and expects a
- * TradertonClientResult. A `success` payload with a `failures` array feeds the
+ * ExternalBackendClientResult. A `success` payload with a `failures` array feeds the
  * merge; a `transport_error` exercises the DEGRADE leg.
  */
-function makeFailuresClient(result: TradertonClientResult): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+function makeFailuresClient(result: ExternalBackendClientResult): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockResolvedValue(result);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
-function successFailures(failures: unknown[]): TradertonClientResult {
+function successFailures(failures: unknown[]): ExternalBackendClientResult {
   return { kind: 'success', requestId: 'r', correlationId: 'c', payload: { failures } };
 }
 

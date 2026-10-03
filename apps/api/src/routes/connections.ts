@@ -6,7 +6,7 @@ import type { Database, DatabaseTransaction } from '@herobids/db';
 import { agentConnections, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy, TradertonReadResult } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN, readSkillPresetId } from '@herobids/domain';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
@@ -63,7 +63,7 @@ export async function connectionRoutes(
   budgets: RuntimeBudgetPolicy,
   redisClient?: Redis,
   plansConfig?: PlansConfig,
-  tradertonClient?: TradertonClient,
+  tradertonClient?: ExternalBackendClient,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
   // Owner-scoped boundary READ helper (c4.9f). Mirrors the invoke+unwrap shape in

@@ -2,7 +2,7 @@
 //
 // Parallel to `read-adapter.ts`, but for the write/side-effecting tools
 // (`submit_decision`, `create_bot`, `start_bot`, `stop_bot`,
-// `adjust_bot_config`). It binds the concrete L3a `TradertonClient` (which holds
+// `adjust_bot_config`). It binds the concrete L3a `ExternalBackendClient` (which holds
 // baseUrl, caller identity, and signing material) to a NARROW port the broker /
 // decision-handler consume. Those consumers name a tool, forward an
 // already-platform-gated payload, and supply the platform-owned subject VALUES
@@ -10,11 +10,11 @@
 // container and binds one subject — the broker + decision handler run in the
 // shared WORKER process and serve MANY agents, so the subject is supplied
 // per-call (derived from the inbound envelope / the acting agent). The HMAC
-// secret lives only in the `TradertonClient`; it never reaches a consumer.
+// secret lives only in the `ExternalBackendClient`; it never reaches a consumer.
 //
 // Unlike the READ adapter (which maps to a domain-clean `TradertonReadResult`),
 // the side-effecting consumers live in the worker and need the raw
-// `TradertonClientResult` so they can preserve the failure `code` + `retryable`
+// `ExternalBackendClientResult` so they can preserve the failure `code` + `retryable`
 // verbatim when mapping onto the existing reply/event shapes. Transport +
 // value-injection ONLY — no trading behaviour.
 //
@@ -31,10 +31,10 @@ import { randomUUID } from 'node:crypto';
 import type { TradingToolContext } from '@herobids/domain';
 import type {
   InvokeToolInput,
-  TradertonClient,
-  TradertonClientResult,
-  TradertonSubject,
-} from '@herobids/domain/traderton';
+  ExternalBackendClient,
+  ExternalBackendClientResult,
+  ExternalBackendSubject,
+} from '@herobids/domain/external-backend';
 
 /**
  * The narrow side-effecting boundary port. The caller identity + signing are
@@ -56,7 +56,7 @@ export interface TradertonSideEffectBoundary {
   invoke(input: {
     toolName: string;
     payload: unknown;
-    subject: TradertonSubject;
+    subject: ExternalBackendSubject;
     /**
      * Stable and non-empty per logical write; reused only while its outcome is
      * unknown. An empty or whitespace-only key is rejected as
@@ -65,18 +65,18 @@ export interface TradertonSideEffectBoundary {
     idempotencyKey: string;
     requestId?: string;
     correlationId?: string;
-  }): Promise<TradertonClientResult>;
+  }): Promise<ExternalBackendClientResult>;
   invokeAndAwait(input: {
     toolName: string;
     payload: unknown;
-    subject: TradertonSubject;
+    subject: ExternalBackendSubject;
     /** Total budget for invoke + poll, in ms. Derives the boundary `deadlineAt`. */
     deadlineMs: number;
     /** As on `invoke`: stable and non-empty per logical write. */
     idempotencyKey: string;
     requestId?: string;
     correlationId?: string;
-  }): Promise<TradertonClientResult>;
+  }): Promise<ExternalBackendClientResult>;
 }
 
 /** The subject-less write port a tool sees on its context (domain-owned shape). */
@@ -87,7 +87,7 @@ export type TradertonToolWriteBoundary = NonNullable<TradingToolContext['tradert
  * never become a key shared by unrelated writes; nothing was sent, so this is a
  * genuine terminal failure.
  */
-function rejectEmptyIdempotencyKey(input: { requestId?: string; correlationId?: string }): TradertonClientResult {
+function rejectEmptyIdempotencyKey(input: { requestId?: string; correlationId?: string }): ExternalBackendClientResult {
   return {
     kind: 'failure',
     requestId: input.requestId ?? '',
@@ -107,7 +107,7 @@ function rejectEmptyIdempotencyKey(input: { requestId?: string; correlationId?: 
  * authentication runs in app.ts before dispatch, and `mapToolResult` maps a
  * tool's `not_found.resource` errorCode to `validation.invalid_payload`.
  */
-function isLookupLevelAnswer(result: TradertonClientResult): boolean {
+function isLookupLevelAnswer(result: ExternalBackendClientResult): boolean {
   return (
     result.kind === 'failure' &&
     (result.code === 'deadline.expired' ||
@@ -117,15 +117,15 @@ function isLookupLevelAnswer(result: TradertonClientResult): boolean {
 }
 
 /**
- * Build the side-effecting boundary adapter over a constructed `TradertonClient`.
+ * Build the side-effecting boundary adapter over a constructed `ExternalBackendClient`.
  * `invokeAndAwait` uses the SAME `deadlineAt` for both the invoke envelope and
  * the poll loop so the boundary sees one consistent deadline.
  */
 export function createTradertonSideEffectBoundary(
-  client: TradertonClient,
+  client: ExternalBackendClient,
 ): TradertonSideEffectBoundary {
   return {
-    async invoke(input): Promise<TradertonClientResult> {
+    async invoke(input): Promise<ExternalBackendClientResult> {
       if (input.idempotencyKey.trim() === '') {
         return rejectEmptyIdempotencyKey(input);
       }
@@ -139,7 +139,7 @@ export function createTradertonSideEffectBoundary(
       });
     },
 
-    async invokeAndAwait(input): Promise<TradertonClientResult> {
+    async invokeAndAwait(input): Promise<ExternalBackendClientResult> {
       if (input.idempotencyKey.trim() === '') {
         return rejectEmptyIdempotencyKey(input);
       }
@@ -202,7 +202,7 @@ export function createTradertonSideEffectBoundary(
  */
 export function createSubjectBoundWriteBoundary(
   boundary: TradertonSideEffectBoundary,
-  subject: TradertonSubject,
+  subject: ExternalBackendSubject,
 ): TradertonToolWriteBoundary {
   return {
     invokeAndAwait: (input) =>

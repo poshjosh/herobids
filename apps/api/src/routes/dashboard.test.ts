@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { dashboardRoutes } from './dashboard.js';
 import type { Database } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 const AGENT_ID = 'agent-1';
@@ -92,9 +92,9 @@ type StubPayloads = {
 };
 
 /** A read client that answers each owner/agent-scoped tool from supplied payloads. */
-function makeReadClient(payloads: StubPayloads): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+function makeReadClient(payloads: StubPayloads): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockImplementation((input: { toolName: string; payload: Record<string, unknown> }) => {
-    let result: TradertonClientResult;
+    let result: ExternalBackendClientResult;
     switch (input.toolName) {
       case 'list_owner_bots':
         result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { bots: payloads.bots ?? [] } };
@@ -121,7 +121,7 @@ function makeReadClient(payloads: StubPayloads): { client: TradertonClient; invo
     }
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /**

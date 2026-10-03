@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, agentSkills, blueprints, blueprintRevisions, blueprintRevisionSkills } from '@herobids/db';
 import { ok, err, type Result } from '@herobids/domain';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { validateSkillPortability } from './blueprint-skill-validator.js';
 import { recomputeBlueprintPerformanceScore } from './blueprint-performance-scorer.js';
@@ -107,7 +107,7 @@ export async function ensurePublishedBlueprintForAgent(
   db: Database,
   agentId: string,
   userId: string,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<
   Result<
@@ -204,7 +204,7 @@ async function createAndPublishBlueprint(
   userId: string,
   projectedPayload: ReturnType<typeof projectAgentToBlueprintPayload>,
   skillRefs: SkillRef[],
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<
   Result<
@@ -336,7 +336,7 @@ async function syncExistingBlueprint(
   projectedPayload: ReturnType<typeof projectAgentToBlueprintPayload>,
   skillRefs: SkillRef[],
   currentFingerprint: string,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<
   Result<
@@ -548,7 +548,7 @@ async function createNewRevisionAndPublish(
   currentRevision: typeof blueprintRevisions.$inferSelect,
   projectedPayload: ReturnType<typeof projectAgentToBlueprintPayload>,
   skillRefs: SkillRef[],
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<
   Result<

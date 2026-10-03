@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { reconciliationRoutes } from './reconciliation.js';
 import type { Database } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 const TEST_BOT_ID = 'bot-1';
@@ -17,14 +17,14 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 const noDb = {} as unknown as Database;
 
 function makeClient(payload: unknown, kind: 'success' | 'notfound' = 'success'): {
-  client: TradertonClient;
+  client: ExternalBackendClient;
   invoke: ReturnType<typeof vi.fn>;
 } {
-  const result: TradertonClientResult = kind === 'success'
+  const result: ExternalBackendClientResult = kind === 'success'
     ? { kind: 'success', requestId: 'r', correlationId: 'c', payload }
     : { kind: 'failure', requestId: 'r', correlationId: 'c', code: 'validation.invalid_payload', message: 'Bot not found', retryable: false, details: { errorCode: 'not_found.resource' } };
   const invoke = vi.fn().mockResolvedValue(result);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 beforeEach(() => vi.clearAllMocks());

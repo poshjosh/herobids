@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DecisionApprovalRow } from '@herobids/db';
-import type { TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { ApprovalService, type ApprovalServiceDeps } from './approval-service.js';
 import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
 
@@ -84,7 +84,7 @@ function buildDeps(opts: {
   return { deps, approvalRepo, eventPublisher };
 }
 
-function makeBoundary(result: TradertonClientResult) {
+function makeBoundary(result: ExternalBackendClientResult) {
   const invokeAndAwait = vi.fn().mockResolvedValue(result);
   const boundary: TradertonSideEffectBoundary = {
     invoke: vi.fn(),

@@ -106,7 +106,7 @@ terraform output   # environment, server_ipv4, agent_node_private_ips, nomad_ena
 
 Use a **read** tool (`get_price`) so the probe is side-effect-free. The probe
 reads creds from the container env — nothing is hardcoded. Canonical string
-(from `packages/domain/src/traderton/sign.ts`):
+(from `packages/domain/src/external-backend/sign.ts`):
 
 ```
 POST\n/internal/v1/tools:invoke\n<X-Traderton-Timestamp>\n<SHA256(rawBody) hex>
@@ -185,5 +185,5 @@ Cleanup: remove the probe from the host and container; confirm
 
 - `infra/hetzner/docs/runbooks/phase1-operational-readiness.md` (the runbook this skill operationalizes)
 - `infra/hetzner/docs/staging-reprovision-runbook.md`
-- `packages/domain/src/traderton/{sign,client,contract}.ts` (signing + invoke contract)
+- `packages/domain/src/external-backend/{sign,client,contract}.ts` (signing + invoke contract)
 - `docs/features/2026/09/24/001-staging-first-external-backend-roadmap.md` (roadmap + Step 16)

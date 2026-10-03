@@ -35,8 +35,8 @@ import {
   NomadClient,
   buildServiceRegistry,
 } from './agents/index.js';
-import { createTradertonClient } from '@herobids/domain/traderton';
-import type { TradertonSubject } from '@herobids/domain/traderton';
+import { createExternalBackendClient } from '@herobids/domain/external-backend';
+import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
 import { createTradertonReadBoundary } from './traderton/read-adapter.js';
 import { ApprovalService } from './services/approval-service.js';
@@ -437,7 +437,7 @@ const sideEffectBoundary = (() => {
     );
     return undefined;
   }
-  const client = createTradertonClient({
+  const client = createExternalBackendClient({
     baseUrl: b.baseUrl,
     consumerId: b.consumerId,
     keyId: b.keyId,
@@ -465,14 +465,14 @@ const systemReadBoundary = (() => {
     );
     return undefined;
   }
-  const client = createTradertonClient({
+  const client = createExternalBackendClient({
     baseUrl: b.baseUrl,
     consumerId: b.consumerId,
     keyId: b.keyId,
     hmacSecret: b.hmacSecret,
     requestTimeoutMs: b.requestTimeoutMs,
   });
-  const subject: TradertonSubject = {
+  const subject: ExternalBackendSubject = {
     ownerId: b.consumerId,
     actor: { type: 'system', id: 'market-intel' },
   };
@@ -499,14 +499,14 @@ const alertDispatcherFeed = (() => {
     );
     return undefined;
   }
-  const client = createTradertonClient({
+  const client = createExternalBackendClient({
     baseUrl: b.baseUrl,
     consumerId: b.consumerId,
     keyId: b.keyId,
     hmacSecret: b.hmacSecret,
     requestTimeoutMs: b.requestTimeoutMs,
   });
-  const subject: TradertonSubject = {
+  const subject: ExternalBackendSubject = {
     ownerId: b.consumerId,
     actor: { type: 'system', id: 'alert-dispatcher' },
   };
@@ -791,7 +791,7 @@ const evaluationReadClient = (() => {
     );
     return undefined;
   }
-  return createTradertonClient({
+  return createExternalBackendClient({
     baseUrl: b.baseUrl,
     consumerId: b.consumerId,
     keyId: b.keyId,
@@ -955,7 +955,7 @@ const evaluateAgentWatches = sideEffectBoundary
         logger.warn({ agentId }, 'evaluateAgentWatches: no ownerId — skipping');
         return { triggered: [], reset: [] };
       }
-      const subject: TradertonSubject = { ownerId, actor: { type: 'agent', id: agentId } };
+      const subject: ExternalBackendSubject = { ownerId, actor: { type: 'agent', id: agentId } };
       // One key per evaluation, never content-derived: the payload is constant,
       // so a derived key would replay the first evaluation's result forever. Not
       // persisted — the next evaluation supersedes an unknown outcome.

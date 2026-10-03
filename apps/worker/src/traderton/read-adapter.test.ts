@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { mapClientResultToReadResult, createTradertonReadBoundary } from './read-adapter.js';
-import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 
 describe('mapClientResultToReadResult', () => {
   it('maps success — payload becomes data', () => {
-    const client: TradertonClientResult = {
+    const client: ExternalBackendClientResult = {
       kind: 'success',
       requestId: 'req-1',
       correlationId: 'corr-1',
@@ -14,7 +14,7 @@ describe('mapClientResultToReadResult', () => {
   });
 
   it('maps failure — preserves code/message/retryable verbatim', () => {
-    const client: TradertonClientResult = {
+    const client: ExternalBackendClientResult = {
       kind: 'failure',
       requestId: 'req-1',
       correlationId: 'corr-1',
@@ -31,7 +31,7 @@ describe('mapClientResultToReadResult', () => {
   });
 
   it('maps a retryable failure preserving retryable:true', () => {
-    const client: TradertonClientResult = {
+    const client: ExternalBackendClientResult = {
       kind: 'failure',
       requestId: 'req-1',
       correlationId: 'corr-1',
@@ -43,12 +43,12 @@ describe('mapClientResultToReadResult', () => {
   });
 
   it('maps in_progress', () => {
-    const client: TradertonClientResult = { kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' };
+    const client: ExternalBackendClientResult = { kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' };
     expect(mapClientResultToReadResult(client)).toEqual({ kind: 'in_progress' });
   });
 
   it('maps transport_error — retryable true, carries message', () => {
-    const client: TradertonClientResult = {
+    const client: ExternalBackendClientResult = {
       kind: 'transport_error',
       requestId: 'req-1',
       retryable: true,
@@ -63,18 +63,18 @@ describe('mapClientResultToReadResult', () => {
 });
 
 describe('createTradertonReadBoundary', () => {
-  const subject: TradertonSubject = { ownerId: 'owner-1', actor: { type: 'agent', id: 'agent-1' } };
+  const subject: ExternalBackendSubject = { ownerId: 'owner-1', actor: { type: 'agent', id: 'agent-1' } };
 
   it('binds subject + deadline and forwards toolName/payload to the client', async () => {
     const invoke = vi.fn(
-      async (): Promise<TradertonClientResult> => ({
+      async (): Promise<ExternalBackendClientResult> => ({
         kind: 'success',
         requestId: 'req-1',
         correlationId: 'corr-1',
         payload: { ok: true },
       }),
     );
-    const client = { invoke } as unknown as TradertonClient;
+    const client = { invoke } as unknown as ExternalBackendClient;
 
     const boundary = createTradertonReadBoundary(client, subject, 10_000);
     const result = await boundary.invoke({ toolName: 'get_analytics', payload: { days: 7 } });
@@ -90,14 +90,14 @@ describe('createTradertonReadBoundary', () => {
 
   it('maps a client transport_error through to the domain result', async () => {
     const invoke = vi.fn(
-      async (): Promise<TradertonClientResult> => ({
+      async (): Promise<ExternalBackendClientResult> => ({
         kind: 'transport_error',
         requestId: 'req-1',
         retryable: true,
         message: 'fetch failed',
       }),
     );
-    const client = { invoke } as unknown as TradertonClient;
+    const client = { invoke } as unknown as ExternalBackendClient;
 
     const boundary = createTradertonReadBoundary(client, subject, 5_000);
     const result = await boundary.invoke({ toolName: 'list_positions', payload: {} });

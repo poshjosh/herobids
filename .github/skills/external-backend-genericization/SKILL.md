@@ -29,8 +29,8 @@ decisions; read this for coordinates and traps.
 
 | Thing | Where |
 |---|---|
-| Client + signing + contract (to be renamed) | `packages/domain/src/traderton/{client,sign,contract}.ts` → `external-backend/` |
-| Target subpath export | `@herobids/domain/traderton` → `@herobids/domain/external-backend` |
+| Client + signing + contract (renamed at T1.1) | `packages/domain/src/external-backend/{client,sign,contract}.ts` (was `traderton/`) |
+| Subpath export (renamed at T1.1) | `@herobids/domain/external-backend` |
 | Config today | `config/schema.ts:1572` (`boundary` block), env `TRADERTON_BOUNDARY_*`, `apps/api/src/config.ts:71-75` |
 | Config target | `appConfig.externalBackends[]` registry, one `traderton` entry |
 | Tool definition consumed by the LLM | `packages/domain/src/trading/tool-contract.ts:335` → `packages/llm/src/llm-provider.ts:51` |
@@ -93,7 +93,7 @@ before planning: `agent.ts` ≈ 4000 LOC, `runtime-composition.ts` ≈ 2300 LOC.
 7. **No metrics system exists.** No prom-client, otel, statsd or `/metrics`.
    Latency and throughput items are **N/A, not pending**. Do not promise them.
 8. **The write-path idempotency key is not threaded.**
-   `packages/domain/src/traderton/client.ts:169-171` defaults `requestId`,
+   `packages/domain/src/external-backend/client.ts:169-171` defaults `requestId`,
    `idempotencyKey` and `correlationId` to `randomUUID()`, and **no non-test call
    site supplies** the first two. The backend's `replay` branch is therefore
    unreachable, so a caller-level retry of a write can duplicate a side effect. A
@@ -172,7 +172,7 @@ ExternalBackendClient   ← orchestration, ONCE: envelope, idempotency, deadline
   `fromJsonSchema` from `@modelcontextprotocol/server`.
 - **Failures RETURN, never throw.** `isError: true` with the failure envelope in
   `structuredContent`. A thrown handler error becomes a JSON-RPC protocol error
-  and the closed `TradertonBoundaryFailureCode` union is lost. Protocol errors are
+  and the closed `ExternalBackendFailureCode` union is lost. Protocol errors are
   for pre-dispatch framing failures only.
 - **`in_progress` needs no status endpoint.** Re-issue `tools/call` with the same
   `idempotencyKey`: the backend's store returns the stored terminal result for a

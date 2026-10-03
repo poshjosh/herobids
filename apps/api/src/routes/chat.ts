@@ -10,7 +10,7 @@ import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig } from '@herobids/domain';
 import { normalizePersistedAiModelConfig, type AgentRiskDefaultsConfig } from '@herobids/domain';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
@@ -952,7 +952,7 @@ export async function executeChatAction(
   plansConfig: PlansConfig | undefined = undefined,
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
-  tradertonClient: TradertonClient | undefined = undefined,
+  tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
 ): Promise<string> {
   switch (toolCall.name) {
@@ -1637,7 +1637,7 @@ export async function invokeOnboardingLlm(
   plansConfig: PlansConfig | undefined = undefined,
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
-  tradertonClient: TradertonClient | undefined = undefined,
+  tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
 ): Promise<LlmInvocationResult> {
   // Generate a per-invocation random tag name (4 hex chars = 65536 possibilities)
@@ -2056,7 +2056,7 @@ export async function chatRoutes(
   plansConfig: PlansConfig | undefined = undefined,
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
-  tradertonClient: TradertonClient | undefined = undefined,
+  tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
   /**

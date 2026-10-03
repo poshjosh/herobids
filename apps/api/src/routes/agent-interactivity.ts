@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { eq, and, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { DecisionApprovalRepository } from '@herobids/db';
 import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
@@ -520,7 +520,7 @@ export async function telegramWebhookHandler(
   llmCatalogDeps?: LlmCatalogDeps,
   agentRiskDefaults?: AgentRiskDefaultsConfig,
   operatorModelDefaults?: ModelDefaults,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {

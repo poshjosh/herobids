@@ -38,7 +38,7 @@ import type { CapabilityGrant } from './capability-policy.js';
 import { assessStrategyPresetTool } from '../tools/assess-strategy-preset.js';
 import { changeStrategyPresetTool } from '../tools/change-strategy-preset.js';
 import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
-import type { TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('agent-message-broker');
@@ -521,11 +521,11 @@ export class AgentMessageBroker {
   private async invokeBotLifecycle(
     toolName: 'create_bot' | 'start_bot' | 'stop_bot' | 'adjust_bot_config',
     payload: Record<string, unknown>,
-    subject: TradertonSubject,
+    subject: ExternalBackendSubject,
     // The inbound messageId: persisted (agent_messages) before routing, and one
     // manage_bot message makes exactly one lifecycle write (D18).
     idempotencyKey: string,
-  ): Promise<TradertonClientResult> {
+  ): Promise<ExternalBackendClientResult> {
     if (!this.sideEffectBoundary) {
       throw new Error('Trading boundary is not configured — bot lifecycle actions are unavailable.');
     }
@@ -563,7 +563,7 @@ export class AgentMessageBroker {
 
     // L3c: inject ownerId + actor ONLY. Traderton owns bots + resolves the venue
     // account from the subject (D2/#4). herobids stamps nothing else.
-    const subject: TradertonSubject = {
+    const subject: ExternalBackendSubject = {
       ownerId: agent.userId,
       actor: { type: 'agent', id: agent.id },
     };

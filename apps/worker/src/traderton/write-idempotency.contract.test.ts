@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  createTradertonClient,
+  createExternalBackendClient,
   deriveRequestId,
-  type TradertonClient,
-  type TradertonSubject,
-} from '@herobids/domain/traderton';
+  type ExternalBackendClient,
+  type ExternalBackendSubject,
+} from '@herobids/domain/external-backend';
 import { createTradertonSideEffectBoundary, type TradertonSideEffectBoundary } from './write-adapter.js';
 import { startFakeIdempotentBoundary, type FakeBoundaryControls } from './__tests__/fake-idempotent-boundary.js';
 
@@ -28,11 +28,11 @@ interface WriteContractHarness {
 }
 
 const CONSUMER_ID = 'herobids-contract';
-const SUBJECT: TradertonSubject = { ownerId: 'owner-contract', actor: { type: 'agent', id: 'agent-contract' } };
+const SUBJECT: ExternalBackendSubject = { ownerId: 'owner-contract', actor: { type: 'agent', id: 'agent-contract' } };
 const DEFAULT_OPTIONS: HarnessOptions = { requestTimeoutMs: 5_000 };
 
-function restClient(baseUrl: string, options: HarnessOptions): TradertonClient {
-  return createTradertonClient({
+function restClient(baseUrl: string, options: HarnessOptions): ExternalBackendClient {
+  return createExternalBackendClient({
     baseUrl,
     consumerId: CONSUMER_ID,
     keyId: 'contract',

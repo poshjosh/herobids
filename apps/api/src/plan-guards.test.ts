@@ -2,19 +2,19 @@ import { describe, it, expect, vi } from 'vitest';
 import { checkConnectionLimit, checkLiveEnabled, checkVenueAccountLimit, resolvePlanEntitlements } from './plan-guards.js';
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 /**
- * A stubbed TradertonClient whose `invoke` resolves to a scripted result. The
+ * A stubbed ExternalBackendClient whose `invoke` resolves to a scripted result. The
  * venue-account count is now sourced from the boundary (`count_venue_accounts`),
  * so the limit check calls this instead of the local DB.
  */
-function makeTradertonClient(result: TradertonClientResult): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+function makeTradertonClient(result: ExternalBackendClientResult): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockResolvedValue(result);
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
-function countResult(count: number): TradertonClientResult {
+function countResult(count: number): ExternalBackendClientResult {
   return { kind: 'success', requestId: 'r', correlationId: 'c', payload: { count } };
 }
 

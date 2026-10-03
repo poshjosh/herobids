@@ -6,7 +6,7 @@
 // transport_error become typed retryable failures rather than raw throws.
 
 import type { ToolResult, TradertonReadResult } from '@herobids/domain';
-import type { TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 /**
  * Boundary failure codes that are content-level outcomes (the request was
@@ -72,7 +72,7 @@ export function mapReadResultToToolResult(result: TradertonReadResult): ToolResu
 }
 
 /**
- * Map a side-effecting boundary result (`TradertonClientResult`, the raw client
+ * Map a side-effecting boundary result (`ExternalBackendClientResult`, the raw client
  * union) into the tool contract's `ToolResult` (L3d). Parallel to
  * {@link mapReadResultToToolResult} but for the write path:
  *
@@ -87,7 +87,7 @@ export function mapReadResultToToolResult(result: TradertonReadResult): ToolResu
  *   as not-ready (non-fault; a retry may resolve it).
  * - `transport_error` becomes a retryable infrastructure fault.
  */
-export function mapWriteResultToToolResult(result: TradertonClientResult): ToolResult {
+export function mapWriteResultToToolResult(result: ExternalBackendClientResult): ToolResult {
   switch (result.kind) {
     case 'success':
       return { success: true, data: result.payload };

@@ -1,29 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  createTradertonClient,
+  createExternalBackendClient,
   type InvokeToolInput,
-  type TradertonClientResult,
-  type TradertonSubject,
-} from '@herobids/domain/traderton';
+  type ExternalBackendClientResult,
+  type ExternalBackendSubject,
+} from '@herobids/domain/external-backend';
 import {
   createSubjectBoundWriteBoundary,
   createTradertonSideEffectBoundary,
   type TradertonSideEffectBoundary,
 } from './write-adapter.js';
 
-const SUBJECT: TradertonSubject = { ownerId: 'owner-1', actor: { type: 'agent', id: 'agent-1' } };
+const SUBJECT: ExternalBackendSubject = { ownerId: 'owner-1', actor: { type: 'agent', id: 'agent-1' } };
 
-const TRANSPORT_ERROR: TradertonClientResult = {
+const TRANSPORT_ERROR: ExternalBackendClientResult = {
   kind: 'transport_error',
   requestId: 'req-1',
   retryable: true,
   message: 'request to boundary failed',
 };
-const SUCCESS: TradertonClientResult = { kind: 'success', requestId: 'req-1', correlationId: 'corr-1', payload: { ok: true } };
+const SUCCESS: ExternalBackendClientResult = { kind: 'success', requestId: 'req-1', correlationId: 'corr-1', payload: { ok: true } };
 
 /** A real client whose network methods are scripted per test (never reaches fetch). */
 function makeClient() {
-  const client = createTradertonClient({
+  const client = createExternalBackendClient({
     baseUrl: 'http://boundary.unit.test',
     consumerId: 'herobids',
     keyId: 'current',
@@ -83,7 +83,7 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
 
   it('does not re-issue after a terminal failure, even a retryable one', async () => {
     const { client, invoke } = makeClient();
-    const retryableFailure: TradertonClientResult = {
+    const retryableFailure: ExternalBackendClientResult = {
       kind: 'failure',
       requestId: 'req-1',
       correlationId: 'corr-1',
@@ -210,7 +210,7 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
 
   it("returns a polled write's stored terminal failure verbatim", async () => {
     const { client, invoke, poll } = makeClient();
-    const stored: TradertonClientResult = {
+    const stored: ExternalBackendClientResult = {
       kind: 'failure',
       requestId: 'req-1',
       correlationId: 'corr-1',

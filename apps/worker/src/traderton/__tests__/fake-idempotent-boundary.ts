@@ -24,13 +24,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type {
-  TradertonBoundaryFailureCode,
-  TradertonToolInvocationStatusV1,
-  TradertonToolInvocationV1,
-  TradertonToolResultV1,
-} from '@herobids/domain/traderton';
+  ExternalBackendFailureCode,
+  ExternalBackendToolInvocationStatusV1,
+  ExternalBackendToolInvocationV1,
+  ExternalBackendToolResultV1,
+} from '@herobids/domain/external-backend';
 
-export type FakeInvokeResponse = TradertonToolResultV1 | TradertonToolInvocationStatusV1;
+export type FakeInvokeResponse = ExternalBackendToolResultV1 | ExternalBackendToolInvocationStatusV1;
 
 interface ResultIdentity {
   requestId: string;
@@ -47,7 +47,7 @@ interface StoredInvocation {
   requestId: string;
   correlationId: string;
   state: 'in_progress' | 'terminal';
-  terminalResponse: TradertonToolResultV1 | null;
+  terminalResponse: ExternalBackendToolResultV1 | null;
 }
 
 /** What one invoke did — lets a transport face decide whether to lose the response. */
@@ -76,7 +76,7 @@ export interface IdempotentBoundaryCore {
 
 /** The failure codes an executed write can store (the rest are answered before the store). */
 export type FakeStorableFailureCode = Extract<
-  TradertonBoundaryFailureCode,
+  ExternalBackendFailureCode,
   | 'rate_limit.exceeded'
   | 'precondition.not_ready'
   | 'upstream.transient'
@@ -97,24 +97,24 @@ export interface FakeBoundaryOptions {
 }
 
 // RS: successResult / failureResult / inProgressStatus / terminalStatus.
-function successResult(identity: ResultIdentity, payload: unknown): TradertonToolResultV1 {
+function successResult(identity: ResultIdentity, payload: unknown): ExternalBackendToolResultV1 {
   return { contractVersion: '1.0', ...identity, outcome: { kind: 'success', payload } };
 }
 
 function failureResult(
   identity: ResultIdentity,
-  code: TradertonBoundaryFailureCode,
+  code: ExternalBackendFailureCode,
   message: string,
   retryable: boolean,
-): TradertonToolResultV1 {
+): ExternalBackendToolResultV1 {
   return { contractVersion: '1.0', ...identity, outcome: { kind: 'failure', code, message, retryable } };
 }
 
-function inProgressStatus(identity: ResultIdentity): TradertonToolInvocationStatusV1 {
+function inProgressStatus(identity: ResultIdentity): ExternalBackendToolInvocationStatusV1 {
   return { contractVersion: '1.0', ...identity, state: 'in_progress' };
 }
 
-function terminalStatus(identity: ResultIdentity, result: TradertonToolResultV1): TradertonToolInvocationStatusV1 {
+function terminalStatus(identity: ResultIdentity, result: ExternalBackendToolResultV1): ExternalBackendToolInvocationStatusV1 {
   return { contractVersion: '1.0', ...identity, state: 'terminal', result };
 }
 
@@ -123,7 +123,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Structural envelope check standing in for D step 1 (`TradertonToolInvocationV1Schema`). */
-function isInvocationEnvelope(value: unknown): value is TradertonToolInvocationV1 {
+function isInvocationEnvelope(value: unknown): value is ExternalBackendToolInvocationV1 {
   if (!isRecord(value)) return false;
   const stringFields = ['requestId', 'idempotencyKey', 'correlationId', 'issuedAt', 'deadlineAt', 'toolName'];
   const caller = value['caller'];
@@ -192,7 +192,7 @@ export function createIdempotentBoundaryCore(options: FakeBoundaryOptions = {}):
   }
 
   // R: the unique index uq_boundary_invocations_key is the four-tuple.
-  function findByKey(invocation: TradertonToolInvocationV1): StoredInvocation | undefined {
+  function findByKey(invocation: ExternalBackendToolInvocationV1): StoredInvocation | undefined {
     return rows.find(
       (row) =>
         row.consumerId === invocation.caller.consumerId &&
@@ -204,7 +204,7 @@ export function createIdempotentBoundaryCore(options: FakeBoundaryOptions = {}):
 
   // D executeAndMap: the tool runs and its outcome — success or failure, retryable
   // or not — becomes the mapped terminal result.
-  async function execute(toolName: string, identity: ResultIdentity): Promise<TradertonToolResultV1> {
+  async function execute(toolName: string, identity: ResultIdentity): Promise<ExternalBackendToolResultV1> {
     const hold = pendingHold;
     pendingHold = undefined;
     if (hold) await hold;

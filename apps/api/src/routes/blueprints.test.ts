@@ -8,7 +8,7 @@ import type { AgentRiskDefaultsConfig, BlueprintExecutionCapabilityResolver, Pla
 import { createTableAwareDb } from '../__tests__/helpers/table-aware-db-mock.js';
 import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevision, buildRevisionSkill, buildLike, buildAgentPayload, buildBotPayload, BP_ID, REV_ID, USER_ID, OTHER_USER_ID } from '../__tests__/helpers/blueprint-fixtures.js';
 import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, blueprintForkRequests, skills, skillRevisions, bots, connections } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
 
 /**
@@ -16,9 +16,9 @@ import { computeInstantiateRequestHash } from '../services/blueprint-idempotency
  * `count_bots_by_blueprint` answers from `byBlueprint`; unknown tools succeed
  * with an empty payload.
  */
-function makeCountBotsClient(byBlueprint: Record<string, string[]> = {}): TradertonClient {
+function makeCountBotsClient(byBlueprint: Record<string, string[]> = {}): ExternalBackendClient {
   const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
-    let result: TradertonClientResult;
+    let result: ExternalBackendClientResult;
     if (input.toolName === 'count_bots_by_blueprint') {
       result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { byBlueprint } };
     } else {
@@ -26,7 +26,7 @@ function makeCountBotsClient(byBlueprint: Record<string, string[]> = {}): Trader
     }
     return Promise.resolve(result);
   });
-  return { invoke } as unknown as TradertonClient;
+  return { invoke } as unknown as ExternalBackendClient;
 }
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
@@ -1297,11 +1297,11 @@ describe('POST /bots with blueprintId', () => {
     xadd: vi.fn().mockResolvedValue(undefined),
   } as unknown as import('ioredis').Redis;
 
-  // L3c: a stubbed TradertonClient — POST /bots now forwards create_bot to the
+  // L3c: a stubbed ExternalBackendClient — POST /bots now forwards create_bot to the
   // boundary instead of a local bots insert. Returns a scripted success payload.
   function makeBotClient(payload: Record<string, unknown> = { id: 'new-bot', status: 'stopped', userId: TEST_USER_ID }) {
     const invoke = vi.fn().mockResolvedValue({ kind: 'success', requestId: 'r', correlationId: 'c', payload });
-    return { client: { invoke } as unknown as import('@herobids/domain/traderton').TradertonClient, invoke };
+    return { client: { invoke } as unknown as import('@herobids/domain/external-backend').ExternalBackendClient, invoke };
   }
 
   it('creates bot from blueprint and returns 201', async () => {
@@ -1472,7 +1472,7 @@ describe('POST /bots with blueprintId', () => {
     const invoke = vi.fn().mockResolvedValue({
       kind: 'failure', requestId: 'r', correlationId: 'c', code: 'not_found.resource', message: 'account grant not found', retryable: false,
     });
-    const client = { invoke } as unknown as import('@herobids/domain/traderton').TradertonClient;
+    const client = { invoke } as unknown as import('@herobids/domain/external-backend').ExternalBackendClient;
 
     const app = Fastify();
     app.decorateRequest('userId', '');

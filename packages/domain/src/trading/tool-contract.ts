@@ -104,9 +104,9 @@ export interface ToolPositionRecord {
 /**
  * The result of a Traderton REST boundary invocation, as seen by a read tool
  * (L3b). A domain-clean discriminated union mirroring the worker's
- * `TradertonClientResult` without pulling any worker/transport type into the
+ * `ExternalBackendClientResult` without pulling any worker/transport type into the
  * domain package. The worker composition root adapts its concrete
- * `TradertonClient` result into this shape at the injection site.
+ * `ExternalBackendClient` result into this shape at the injection site.
  *
  * - `success` — a terminal success; `data` is the tool payload the boundary
  *   returned (the same object the tool used to build locally).
@@ -153,7 +153,7 @@ export interface TradingToolContext {
   /**
    * The Traderton REST boundary port (L3b). When present, read tools call the
    * boundary instead of reading the trading DB directly. This is a structural
-   * subset the worker's `TradertonClient` (adapted at the composition root)
+   * subset the worker's `ExternalBackendClient` (adapted at the composition root)
    * satisfies; the domain package MUST NOT depend on worker/transport types.
    *
    * The tool only names a tool + forwards its already-validated payload; the
@@ -183,7 +183,7 @@ export interface TradingToolContext {
       toolName: string;
       payload: unknown;
       deadlineMs: number;
-    }): Promise<import('../traderton/client.js').TradertonClientResult>;
+    }): Promise<import('../external-backend/client.js').ExternalBackendClientResult>;
   };
   /** Redis client for agent memory, watches, and pub/sub */
   redis: {

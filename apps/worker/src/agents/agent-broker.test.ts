@@ -4,7 +4,7 @@ import { CapabilityPolicyEngine } from './capability-policy.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
-import type { TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
 
 /**
@@ -16,7 +16,7 @@ import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js'
  */
 
 /** A stubbed side-effecting boundary whose invokeAndAwait returns a scripted result. */
-function makeBoundary(result: TradertonClientResult = { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} }): {
+function makeBoundary(result: ExternalBackendClientResult = { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} }): {
   boundary: TradertonSideEffectBoundary;
   invokeAndAwait: ReturnType<typeof vi.fn>;
   invoke: ReturnType<typeof vi.fn>;

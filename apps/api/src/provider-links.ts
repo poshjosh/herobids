@@ -5,7 +5,7 @@ import {
   agentConnections,
   agents,
 } from '@herobids/db';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('provider-links');
@@ -146,7 +146,7 @@ export async function deleteProviderLink(
   db: Database,
   connectionId: string,
   userId: string,
-  tradertonClient?: TradertonClient,
+  tradertonClient?: ExternalBackendClient,
 ): Promise<DeleteProviderLinkResult> {
   // 1. Load the connection and check eligibility.
   const resources = await resolveProviderLinkDependents(db, connectionId, userId);

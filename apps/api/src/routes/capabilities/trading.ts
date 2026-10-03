@@ -14,7 +14,7 @@ import {
 } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { getProviderIdsForRuntimeFamily, getRuntimeFamiliesForProvider, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { z } from 'zod';
 import { errorPayload } from '../../error-payload.js';
 import {
@@ -238,7 +238,7 @@ export async function tradingCapabilityRoutes(
   _plansConfig: PlansConfig | undefined,
   _budgets: RuntimeBudgetPolicy,
   _redisClient?: Redis,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
@@ -251,7 +251,7 @@ export async function tradingCapabilityRoutes(
    */
   const agentReadBoundary = (userId: string, agentId: string) => {
     if (!tradertonReadClient) return null;
-    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
+    const subject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'agent', id: agentId } };
     return createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
   };
 

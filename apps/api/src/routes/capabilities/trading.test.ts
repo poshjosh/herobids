@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import { capabilityRoutes as registerCapabilityRoutesImpl } from './index.js';
 import { tradingCapabilityRoutes as registerTradingCapabilityRoutesImpl } from './trading.js';
 import { agentConnectionAudit as agentConnectionAuditTable } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 const TEST_AGENT_ID = 'agent-1';
@@ -20,7 +20,7 @@ async function tradingCapabilityRoutes(
   app: ReturnType<typeof Fastify>,
   db: unknown,
   redisClient?: unknown,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
 ) {
   await registerTradingCapabilityRoutesImpl(
     app,
@@ -46,7 +46,7 @@ type ReadToolPayloads = {
  * seam mock used in exports.test.ts.
  */
 function makeReadClient(payloads: ReadToolPayloads): {
-  client: TradertonClient;
+  client: ExternalBackendClient;
   invoke: ReturnType<typeof vi.fn>;
 } {
   const keyFor: Record<string, string> = {
@@ -57,7 +57,7 @@ function makeReadClient(payloads: ReadToolPayloads): {
   const invoke = vi.fn().mockImplementation((input: { toolName: string }) => {
     const key = keyFor[input.toolName];
     const rows = (payloads as Record<string, unknown[] | undefined>)[input.toolName] ?? [];
-    const result: TradertonClientResult = {
+    const result: ExternalBackendClientResult = {
       kind: 'success',
       requestId: 'r',
       correlationId: 'c',
@@ -65,7 +65,7 @@ function makeReadClient(payloads: ReadToolPayloads): {
     };
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 async function capabilityRoutes(app: ReturnType<typeof Fastify>, db: unknown, redisClient?: unknown) {

@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents } from '@herobids/db';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { JournalQuerySchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import {
@@ -26,7 +26,7 @@ const boundaryUnconfiguredError = {
 export async function journalRoutes(
   app: FastifyInstance,
   db: Database,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
@@ -70,7 +70,7 @@ export async function journalRoutes(
 
     let loaded: Awaited<ReturnType<typeof loadAgentEvidence<ReadJournalRow>>>;
     if (ownedAgent) {
-      const agentSubject: TradertonSubject = { ownerId: request.userId, actor: { type: 'agent', id: parsed.data.actorId } };
+      const agentSubject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'agent', id: parsed.data.actorId } };
       const boundary = createTradertonReadBoundary(tradertonReadClient, agentSubject, readDeadlineMs);
       // get_agent_journal_events returns ALL agent events (native + owned bots)
       // with only from/to time filters — `type` is not server-filterable here,
@@ -86,7 +86,7 @@ export async function journalRoutes(
         loaded = { ok: true, rows: loaded.rows.filter((r) => r.type === parsed.data.type) };
       }
     } else {
-      const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+      const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
       const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
       loaded = await loadAgentEvidence<ReadJournalRow>(
         boundary,
@@ -114,7 +114,7 @@ export async function journalRoutes(
 export async function positionRoutes(
   app: FastifyInstance,
   _db: Database,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
@@ -136,7 +136,7 @@ export async function positionRoutes(
       );
       return null;
     }
-    const subject: TradertonSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
+    const subject: ExternalBackendSubject = { ownerId: userId, actor: { type: 'user', id: userId } };
     const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
     const loaded = await loadAgentEvidence<ReadPositionRow>(
       boundary,

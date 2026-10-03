@@ -17,9 +17,9 @@
       "import": "./dist/config/presets-loader.js",
       "types": "./dist/config/presets-loader.d.ts"
     },
-    "./traderton": {
-      "import": "./dist/traderton/index.js",
-      "types": "./dist/traderton/index.d.ts"
+    "./external-backend": {
+      "import": "./dist/external-backend/index.js",
+      "types": "./dist/external-backend/index.d.ts"
     }
   },
   "scripts": {

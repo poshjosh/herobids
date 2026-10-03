@@ -55,7 +55,7 @@ import {
   refreshForkCount,
 } from '../services/blueprint-scoring.js';
 import { recomputeBlueprintPerformanceScore } from '../services/blueprint-performance-scorer.js';
-import type { TradertonClient, TradertonClientResult, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createTradertonReadBoundary, loadBoundaryObject } from './exports-traderton.js';
 
 /** Fallback read deadline when the operator boundary timeout is not supplied. */
@@ -362,7 +362,7 @@ export async function blueprintRoutes(
   agentRiskDefaults: AgentRiskDefaultsConfig,
   executionCapabilityResolver: BlueprintExecutionCapabilityResolver,
   plansConfig: PlansConfig,
-  tradertonClient?: TradertonClient,
+  tradertonClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
@@ -372,13 +372,13 @@ export async function blueprintRoutes(
   // user subject, threads the boundary deadline, and passes `idempotencyKey` =
   // the SAME trimmedKey herobids advisory-locks on so the boundary four-tuple
   // dedups a retry onto the same bot row. The write client is `tradertonClient`
-  // (the same TradertonClient transport serves reads + writes). Returns the typed
+  // (the same ExternalBackendClient transport serves reads + writes). Returns the typed
   // client result; NO silent fallback to a local insert.
   const invokeInstantiateBot = async (
     payload: Record<string, unknown>,
     userId: string,
     idempotencyKey: string,
-  ): Promise<TradertonClientResult> => {
+  ): Promise<ExternalBackendClientResult> => {
     if (!tradertonClient) {
       return { kind: 'transport_error', requestId: '', retryable: true, message: 'trading boundary not configured' };
     }
@@ -1026,7 +1026,7 @@ export async function blueprintRoutes(
         message: 'The capability service is unavailable — the blueprint could not be deleted.',
       });
     }
-    const botDepSubject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+    const botDepSubject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
     const botDepBoundary = createTradertonReadBoundary(
       tradertonClient,
       botDepSubject,

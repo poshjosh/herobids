@@ -1,7 +1,7 @@
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { platformCredentials, agents, connections } from '@herobids/db';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { eq, and } from 'drizzle-orm';
 import { ok, err } from '@herobids/domain';
 
@@ -34,7 +34,7 @@ import { resolvePlanForCheck, type PlanCheckResult } from '@herobids/domain';
  * account cannot be provisioned without the boundary anyway.
  */
 export async function checkVenueAccountLimit(
-  tradertonClient: TradertonClient | undefined,
+  tradertonClient: ExternalBackendClient | undefined,
   config: PlansConfig,
   userId: string,
   planId: string,

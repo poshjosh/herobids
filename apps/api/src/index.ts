@@ -45,7 +45,7 @@ import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig } from './config.js';
 import { ExternalSkillProviderHttp } from '@herobids/domain';
-import { createTradertonClient } from '@herobids/domain/traderton';
+import { createExternalBackendClient } from '@herobids/domain/external-backend';
 import { TradingProfileReconciliationSaga } from './agents/trading-profile-reconciliation-saga.js';
 import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
@@ -195,7 +195,7 @@ const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
 // inside botRoutes. Undefined when unconfigured (no baseUrl/secret) → the write
 // endpoints return a typed precondition; NO silent fallback to the lifecycle queue.
 const tradertonBotClient = (appConfig.boundary.baseUrl && appConfig.boundary.hmacSecret)
-  ? createTradertonClient({
+  ? createExternalBackendClient({
       baseUrl: appConfig.boundary.baseUrl,
       consumerId: appConfig.boundary.consumerId,
       keyId: appConfig.boundary.keyId,

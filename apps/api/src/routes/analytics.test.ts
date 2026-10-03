@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { analyticsRoutes } from './analytics.js';
 import type { Database } from '@herobids/db';
-import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 const TEST_USER_ID = 'user-1';
 
@@ -66,9 +66,9 @@ type StubPayloads = {
  * A read client that answers each owner-scoped tool from the supplied payloads.
  * Records every invoke so tests can assert the payloads threaded to each tool.
  */
-function makeReadClient(payloads: StubPayloads): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+function makeReadClient(payloads: StubPayloads): { client: ExternalBackendClient; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn().mockImplementation((input: { toolName: string; payload: Record<string, unknown> }) => {
-    let result: TradertonClientResult;
+    let result: ExternalBackendClientResult;
     switch (input.toolName) {
       case 'list_owner_bots':
         result = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { bots: payloads.bots ?? [] } };
@@ -92,15 +92,15 @@ function makeReadClient(payloads: StubPayloads): { client: TradertonClient; invo
     }
     return Promise.resolve(result);
   });
-  return { client: { invoke } as unknown as TradertonClient, invoke };
+  return { client: { invoke } as unknown as ExternalBackendClient, invoke };
 }
 
 /** A read client that always fails at the transport layer (drives the 503 boundary path). */
-function makeTransportErrorClient(): TradertonClient {
+function makeTransportErrorClient(): ExternalBackendClient {
   const invoke = vi.fn().mockResolvedValue({
     kind: 'transport_error', requestId: 'r', correlationId: 'c', message: 'unreachable', retryable: true,
-  } as TradertonClientResult);
-  return { invoke } as unknown as TradertonClient;
+  } as ExternalBackendClientResult);
+  return { invoke } as unknown as ExternalBackendClient;
 }
 
 /** Local db stub for the agents / agentRuntimeSessions reads (empty by default). */

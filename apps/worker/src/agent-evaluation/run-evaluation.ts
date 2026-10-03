@@ -13,7 +13,7 @@ import {
   type InsertUsageEvent,
 } from '@herobids/db';
 import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore, EvaluationThresholds, TradertonReadResult } from '@herobids/domain';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 import { createLogger } from '../logger.js';
 import { createTradertonReadBoundary, type TradertonReadBoundary } from '../traderton/read-adapter.js';
@@ -71,7 +71,7 @@ export interface RunEvaluationContext {
    * resolved. When absent, the boundary is unconfigured: the port fails closed
    * on first use with a clear error (core evidence cannot be sourced).
    */
-  tradertonReadClient?: TradertonClient;
+  tradertonReadClient?: ExternalBackendClient;
   /** Per-request deadline for boundary reads (ms). Defaults to 10_000. */
   tradertonReadTimeoutMs?: number;
   /**
@@ -214,7 +214,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       if (!ownerId) {
         throw new Error(`Cannot resolve owner for agent ${agentId} — evidence port requires an owner subject`);
       }
-      const subject: TradertonSubject = { ownerId, actor: { type: 'agent', id: agentId } };
+      const subject: ExternalBackendSubject = { ownerId, actor: { type: 'agent', id: agentId } };
       const boundary = createTradertonReadBoundary(
         ctx.tradertonReadClient,
         subject,

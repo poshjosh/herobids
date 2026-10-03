@@ -70,11 +70,11 @@ import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScou
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, parseEconomicCalendarBoundaryPayload, type RegimeBoundaryFreshness } from './venue-intelligence.js';
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
-import { createTradertonClient, type TradertonClientConfig } from '@herobids/domain/traderton';
+import { createExternalBackendClient, type ExternalBackendClientConfig } from '@herobids/domain/external-backend';
 import { createTradertonReadBoundary, type TradertonReadBoundary } from './traderton/read-adapter.js';
 import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js';
 import { createTradertonSideEffectBoundary, createSubjectBoundWriteBoundary } from './traderton/write-adapter.js';
-import type { TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
 import { getWorkspacePaths } from './tools/workspace.js';
@@ -118,7 +118,7 @@ const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
 const EXTERNAL_SKILLS_CONFIG_JSON = process.env['EXTERNAL_SKILLS_CONFIG_JSON'];
 const BROWSER_POOL_URL = process.env['BROWSER_POOL_URL'];
 // Traderton REST boundary config (L3b). Carries the HMAC secret — never passed
-// to a tool; only the worker adapter (holding the TradertonClient) sees it.
+// to a tool; only the worker adapter (holding the ExternalBackendClient) sees it.
 const BOUNDARY_CONFIG_RAW = process.env['BOUNDARY_CONFIG_JSON'];
 
 // ── HTTP/1.1 fetch for sites that block HTTP/2 (e.g. Forex Factory) ─────
@@ -907,7 +907,7 @@ function buildTradertonBoundaries(): {
 } {
   if (!BOUNDARY_CONFIG_RAW) return { read: undefined, write: undefined };
 
-  let boundaryConfig: TradertonClientConfig;
+  let boundaryConfig: ExternalBackendClientConfig;
   try {
     const parsed = BoundaryConfigSchema.parse(JSON.parse(BOUNDARY_CONFIG_RAW));
     boundaryConfig = {
@@ -931,11 +931,11 @@ function buildTradertonBoundaries(): {
     return { read: undefined, write: undefined };
   }
 
-  const subject: TradertonSubject = {
+  const subject: ExternalBackendSubject = {
     ownerId,
     actor: { type: 'agent', id: AGENT_ID! },
   };
-  const client = createTradertonClient(boundaryConfig);
+  const client = createExternalBackendClient(boundaryConfig);
   logger.info({ baseUrl: boundaryConfig.baseUrl }, 'Traderton read + write boundaries enabled — read tools + risk-limit writes route over REST');
 
   const read = createTradertonReadBoundary(client, subject, boundaryConfig.requestTimeoutMs);

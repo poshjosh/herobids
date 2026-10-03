@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions } from '@herobids/db';
-import type { TradertonClient, TradertonSubject } from '@herobids/domain/traderton';
+import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
 import {
   createTradertonReadBoundary,
@@ -340,7 +340,7 @@ async function computeAnalytics(
 export async function analyticsRoutes(
   app: FastifyInstance,
   db: Database,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<void> {
   const readDeadlineMs = tradertonReadTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
@@ -357,7 +357,7 @@ export async function analyticsRoutes(
         errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
       );
     }
-    const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+    const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
     const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
 
     const computed = await computeAnalytics(db, boundary, request.userId, parsed.data);
@@ -379,7 +379,7 @@ export async function analyticsRoutes(
         errorPayload(boundaryUnconfiguredError.code, boundaryUnconfiguredError.message),
       );
     }
-    const subject: TradertonSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
+    const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'user', id: request.userId } };
     const boundary = createTradertonReadBoundary(tradertonReadClient, subject, readDeadlineMs);
 
     const computed = await computeAnalytics(db, boundary, request.userId, parsed.data);

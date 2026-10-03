@@ -4,7 +4,7 @@ import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions, users } from '@herobids/db';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import { ok, err, type Result } from '@herobids/domain';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { ensurePublishedBlueprintForAgent } from './agent-blueprint-sync-service.js';
 import { recomputeBlueprintPerformanceScore } from './blueprint-performance-scorer.js';
 
@@ -24,7 +24,7 @@ export async function startAgent(
   db: Database,
   agentId: string,
   userId: string,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<Result<{ status: string; sessionId?: string }, AgentLifecycleError>> {
   const sessionId = crypto.randomUUID();
@@ -302,7 +302,7 @@ export async function stopAgent(
   db: Database,
   agentId: string,
   userId: string,
-  tradertonReadClient?: TradertonClient,
+  tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
 ): Promise<Result<{ status: string }, AgentLifecycleError>> {
   const now = new Date();

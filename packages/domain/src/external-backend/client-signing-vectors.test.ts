@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { TradertonClient } from './client.js';
+import { ExternalBackendClient } from './client.js';
 import {
-  TRADERTON_STATUS_PATH_PREFIX,
-  tradertonStatusPath,
-  type TradertonActorType,
-  type TradertonSubject,
-  type TradertonToolInvocationStatusV1,
-  type TradertonToolResultV1,
+  EXTERNAL_BACKEND_STATUS_PATH_PREFIX,
+  externalBackendStatusPath,
+  type ExternalBackendActorType,
+  type ExternalBackendSubject,
+  type ExternalBackendToolInvocationStatusV1,
+  type ExternalBackendToolResultV1,
 } from './contract.js';
 
 /**
@@ -18,7 +18,7 @@ import {
 
 const FIXTURE_URL = new URL('./__fixtures__/invocation-signing-vectors.json', import.meta.url);
 const BASE_URL = 'http://boundary.signing-vector.test';
-const ACTOR_TYPES: readonly TradertonActorType[] = ['agent', 'bot', 'user', 'system'];
+const ACTOR_TYPES: readonly ExternalBackendActorType[] = ['agent', 'bot', 'user', 'system'];
 
 interface VectorCase {
   id: string;
@@ -41,7 +41,7 @@ interface RecordedInvokeFields {
   correlationId: string;
   issuedAt: string;
   deadlineAt: string;
-  subject: TradertonSubject;
+  subject: ExternalBackendSubject;
   toolName: string;
   payload: unknown;
 }
@@ -54,7 +54,7 @@ function isString(value: unknown): value is string {
   return typeof value === 'string';
 }
 
-function isActorType(value: unknown): value is TradertonActorType {
+function isActorType(value: unknown): value is ExternalBackendActorType {
   return ACTOR_TYPES.some((type) => type === value);
 }
 
@@ -71,7 +71,7 @@ function isVectorCase(value: unknown): value is VectorCase {
   );
 }
 
-function isSubject(value: unknown): value is TradertonSubject {
+function isSubject(value: unknown): value is ExternalBackendSubject {
   if (!isRecord(value) || !isString(value['ownerId'])) return false;
   const actor = value['actor'];
   return isRecord(actor) && isActorType(actor['type']) && isString(actor['id']);
@@ -106,8 +106,8 @@ function caseById(id: string): VectorCase {
   return found;
 }
 
-function clientFor(c: VectorCase): TradertonClient {
-  return new TradertonClient({
+function clientFor(c: VectorCase): ExternalBackendClient {
+  return new ExternalBackendClient({
     baseUrl: BASE_URL,
     consumerId: c.consumerId,
     keyId: c.keyId,
@@ -116,11 +116,11 @@ function clientFor(c: VectorCase): TradertonClient {
   });
 }
 
-function jsonResponse(body: TradertonToolResultV1 | TradertonToolInvocationStatusV1): Response {
+function jsonResponse(body: ExternalBackendToolResultV1 | ExternalBackendToolInvocationStatusV1): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
-function terminalResult(requestId: string): TradertonToolResultV1 {
+function terminalResult(requestId: string): ExternalBackendToolResultV1 {
   return { contractVersion: '1.0', requestId, correlationId: requestId, outcome: { kind: 'success', payload: {} } };
 }
 
@@ -169,8 +169,8 @@ describe('client wire bytes match the invocation signing vectors', () => {
   it('poll sends the recorded headers for status-empty-body', async () => {
     const c = caseById('status-empty-body');
     vi.setSystemTime(new Date(c.timestamp));
-    const requestId = decodeURIComponent(c.signedPath.slice(TRADERTON_STATUS_PATH_PREFIX.length));
-    expect(tradertonStatusPath(requestId)).toBe(c.signedPath);
+    const requestId = decodeURIComponent(c.signedPath.slice(EXTERNAL_BACKEND_STATUS_PATH_PREFIX.length));
+    expect(externalBackendStatusPath(requestId)).toBe(c.signedPath);
     fetchMock.mockImplementation(async () =>
       jsonResponse({
         contractVersion: '1.0',
@@ -194,9 +194,9 @@ describe('client wire bytes match the invocation signing vectors', () => {
 
   it('status-query-stripped: the client builds the bare signed path and never emits a query', () => {
     const c = caseById('status-query-stripped');
-    const requestId = decodeURIComponent(c.signedPath.slice(TRADERTON_STATUS_PATH_PREFIX.length));
+    const requestId = decodeURIComponent(c.signedPath.slice(EXTERNAL_BACKEND_STATUS_PATH_PREFIX.length));
     expect(c.requestPath.split('?')[0]).toBe(c.signedPath);
-    expect(tradertonStatusPath(requestId)).toBe(c.signedPath);
-    expect(tradertonStatusPath(requestId)).not.toContain('?');
+    expect(externalBackendStatusPath(requestId)).toBe(c.signedPath);
+    expect(externalBackendStatusPath(requestId)).not.toContain('?');
   });
 });

@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { platformCredentials, connections } from '@herobids/db';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
-import type { TradertonClient } from '@herobids/domain/traderton';
+import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { deriveSolanaAddress } from '../providers/solana-address.js';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { canonicalizeVenueSecrets, validateVenueSecrets } from '../providers/venue-secrets.js';
@@ -43,7 +43,7 @@ export interface SetupRouteDeps {
    * trading credentials/venue-accounts locally. Undefined when the boundary is
    * unconfigured → trading links return a typed precondition (no local write).
    */
-  tradertonClient?: TradertonClient;
+  tradertonClient?: ExternalBackendClient;
 }
 
 export interface CreateProviderLinkInput {
@@ -481,7 +481,7 @@ async function createTradingProviderLink(
  * outcome).
  */
 async function compensateProvision(
-  client: TradertonClient | undefined,
+  client: ExternalBackendClient | undefined,
   userId: string,
   venueAccountId: string,
   provider: string,

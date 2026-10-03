@@ -1,38 +1,38 @@
-// The Traderton consumer boundary contract (005-consumer-boundary-contract.md).
+// The external-backend consumer boundary contract (005-consumer-boundary-contract.md).
 //
 // These types mirror the boundary envelope, terminal result, and status shapes
-// EXACTLY as authored on the Traderton side. They are the wire contract herobids
+// EXACTLY as authored on the backend side. They are the wire contract herobids
 // speaks over REST — transport/envelope/mapping only, no trading behaviour.
 //
 // Kept strict: no `any`, unknown-typed payloads at the boundary are the tool's
-// concern (Traderton owns the per-tool schema), so `payload` is `unknown` here
+// concern (the backend owns the per-tool schema), so `payload` is `unknown` here
 // and callers narrow it.
 
 /** Actor provenance the boundary authorizes against (mirrors 005 §Invocation Contract). */
-export type TradertonActorType = 'agent' | 'bot' | 'user' | 'system';
+export type ExternalBackendActorType = 'agent' | 'bot' | 'user' | 'system';
 
 /** The caller identity carried in the envelope AND signed headers (they must match). */
-export interface TradertonCaller {
+export interface ExternalBackendCaller {
   consumerId: string;
   keyId: string;
 }
 
 /** The subject (owner + actor) the platform injects at the call site. */
-export interface TradertonSubject {
+export interface ExternalBackendSubject {
   ownerId: string;
-  actor: { type: TradertonActorType; id: string };
+  actor: { type: ExternalBackendActorType; id: string };
 }
 
 /** The 005 invocation envelope — generic over `toolName` + `payload`. */
-export interface TradertonToolInvocationV1 {
+export interface ExternalBackendToolInvocationV1 {
   contractVersion: '1.0';
   requestId: string;
   idempotencyKey: string;
   correlationId: string;
   issuedAt: string;
   deadlineAt: string;
-  caller: TradertonCaller;
-  subject: TradertonSubject;
+  caller: ExternalBackendCaller;
+  subject: ExternalBackendSubject;
   toolName: string;
   payload: unknown;
 }
@@ -42,7 +42,7 @@ export interface TradertonToolInvocationV1 {
  * union so callers can exhaustively branch; consumers must preserve `retryable`
  * rather than deriving it from the code.
  */
-export type TradertonBoundaryFailureCode =
+export type ExternalBackendFailureCode =
   | 'validation.invalid_payload'
   | 'authentication.invalid_caller'
   | 'authorization.denied'
@@ -55,32 +55,32 @@ export type TradertonBoundaryFailureCode =
   | 'contract.unsupported_version';
 
 /** A terminal success outcome. */
-export interface TradertonSuccessOutcome {
+export interface ExternalBackendSuccessOutcome {
   kind: 'success';
   payload: unknown;
 }
 
 /** A terminal failure outcome — `code` + `retryable` are preserved verbatim. */
-export interface TradertonFailureOutcome {
+export interface ExternalBackendFailureOutcome {
   kind: 'failure';
-  code: TradertonBoundaryFailureCode;
+  code: ExternalBackendFailureCode;
   message: string;
   retryable: boolean;
   details?: Record<string, unknown>;
 }
 
-export type TradertonOutcome = TradertonSuccessOutcome | TradertonFailureOutcome;
+export type ExternalBackendOutcome = ExternalBackendSuccessOutcome | ExternalBackendFailureOutcome;
 
 /** The 005 terminal result shape. */
-export interface TradertonToolResultV1 {
+export interface ExternalBackendToolResultV1 {
   contractVersion: '1.0';
   requestId: string;
   correlationId: string;
-  outcome: TradertonOutcome;
+  outcome: ExternalBackendOutcome;
 }
 
 /** The 005 invocation-status shape (returned by invoke on idempotency reuse, or by GET status). */
-export type TradertonToolInvocationStatusV1 =
+export type ExternalBackendToolInvocationStatusV1 =
   | {
       contractVersion: '1.0';
       requestId: string;
@@ -92,14 +92,14 @@ export type TradertonToolInvocationStatusV1 =
       requestId: string;
       correlationId: string;
       state: 'terminal';
-      result: TradertonToolResultV1;
+      result: ExternalBackendToolResultV1;
     };
 
 /** The boundary REST endpoints (paths only — no query strings, per 005 §Authentication). */
-export const TRADERTON_INVOKE_PATH = '/internal/v1/tools:invoke';
-export const TRADERTON_STATUS_PATH_PREFIX = '/internal/v1/invocations/';
+export const EXTERNAL_BACKEND_INVOKE_PATH = '/internal/v1/tools:invoke';
+export const EXTERNAL_BACKEND_STATUS_PATH_PREFIX = '/internal/v1/invocations/';
 
 /** Build the status path for a given requestId (path only, no query string). */
-export function tradertonStatusPath(requestId: string): string {
-  return `${TRADERTON_STATUS_PATH_PREFIX}${encodeURIComponent(requestId)}`;
+export function externalBackendStatusPath(requestId: string): string {
+  return `${EXTERNAL_BACKEND_STATUS_PATH_PREFIX}${encodeURIComponent(requestId)}`;
 }
