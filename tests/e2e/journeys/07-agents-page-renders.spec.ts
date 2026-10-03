@@ -78,16 +78,25 @@ test.describe('Journey 7: Capability setup and readiness', () => {
     await page.goto(`/agents/${agentId}/capabilities/trading`);
     await expect(page.getByRole('heading', { name: /Trading capability/i })).toBeVisible({ timeout: 5_000 });
     const initialReadiness = readinessCard(page);
-    await expect(initialReadiness.getByText(/^State$/)).toBeVisible({ timeout: 5_000 });
-    await expect(initialReadiness.getByText(/^State$/).locator('xpath=following-sibling::span')).toHaveText('Unconfigured', { timeout: 5_000 });
-    await expect(initialReadiness.getByText(/^Connection readiness$/)).toBeVisible({ timeout: 5_000 });
+    // Plan 002 replaced the three technical cards with one plain-language Status
+    // card. An agent with no trading connection shows the "no connection"
+    // headline; the technical KV rows now live behind a Details disclosure.
+    await expect(initialReadiness.getByText(/Not ready — no trading connection yet/i)).toBeVisible({ timeout: 5_000 });
+    // Expand Details before asserting the demoted technical KV rows. The
+    // reworked Details disclosure keeps Connection readiness / AI agent
+    // eligibility / Effective ready / Connection (no standalone "State" row).
+    await initialReadiness.locator('summary', { hasText: /Details/i }).click();
     await expect(initialReadiness.getByText(/^Connection readiness$/).locator('xpath=following-sibling::span')).toHaveText('Unconfigured', { timeout: 5_000 });
 
     await assignTradingConnection(page, request, agentId, connectionId);
     await page.reload();
 
     const readyReadiness = readinessCard(page);
-    await expect(readyReadiness.getByText(/^State$/).locator('xpath=following-sibling::span')).toHaveText('Ready', { timeout: 5_000 });
+    // Ready state leads with the "Ready to trade" headline.
+    await expect(readyReadiness.getByText(/Ready to trade/i)).toBeVisible({ timeout: 5_000 });
+    // Expand Details to reach the technical KV rows.
+    await readyReadiness.locator('summary', { hasText: /Details/i }).click();
+    await expect(readyReadiness.getByText(/^Connection readiness$/).locator('xpath=following-sibling::span')).toHaveText('Ready', { timeout: 5_000 });
     await expect(readyReadiness.getByText(/^Effective ready$/)).toBeVisible({ timeout: 5_000 });
     await expect(readyReadiness.getByText(/^Effective ready$/).locator('xpath=following-sibling::span')).toHaveText('Yes', { timeout: 5_000 });
     await expect(readyReadiness.getByText(/^Connection$/).locator('xpath=following-sibling::span')).toHaveText(connectionId, { timeout: 5_000 });

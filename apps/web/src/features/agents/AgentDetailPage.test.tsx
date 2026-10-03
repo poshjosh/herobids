@@ -19,9 +19,23 @@ vi.mock('../../lib/api-client.js', () => ({
     artifacts: vi.fn(),
     sessions: vi.fn(),
     getArtifactDownloadUrl: vi.fn(() => ''),
+    // The inline capability-setup block seeds its selection from these.
+    tradingConnections: vi.fn(),
+    getConnections: vi.fn(),
+    update: vi.fn(),
   },
   skills: {
     list: vi.fn(),
+  },
+  // AgentConnectionField (the inline connection picker) reads these.
+  capabilities: {
+    tradingConnections: vi.fn(),
+  },
+  connections: {
+    list: vi.fn(),
+  },
+  providerCatalog: {
+    get: vi.fn(),
   },
 }));
 
@@ -167,6 +181,55 @@ function renderDetail(opts: {
   queryClient.setQueryData(['agents', 'agent-1', 'messages'], []);
   queryClient.setQueryData(['agents', 'agent-1', 'artifacts'], []);
   queryClient.setQueryData(['agents', 'agent-1', 'sessions'], []);
+  // Inline capability-setup block + AgentConnectionField queries. Seeding them
+  // lets the connection picker render its options from cache during the sync
+  // static render (an unseeded query would render the "loading" branch, and its
+  // queryFn is never invoked by renderToStaticMarkup).
+  queryClient.setQueryData(['agents', 'agent-1', 'capabilities', 'trading', 'connections'], {
+    agentId: 'agent-1',
+    family: 'trading',
+    connections: [],
+  });
+  queryClient.setQueryData(['agents', 'agent-1', 'connections'], { agentId: 'agent-1', connections: [] });
+  queryClient.setQueryData(['capabilities', 'trading', 'connections'], { family: 'trading', connections: [] });
+  // Provider catalog is intentionally left unseeded so the picker uses the
+  // hardcoded VENUE_TYPE_MAP fallback (hyperliquid → trading optgroup).
+  queryClient.setQueryData(['connections'], {
+    connections: [
+      {
+        id: 'conn-trading-1',
+        userId: 'user-1',
+        credentialId: null,
+        provider: 'hyperliquid',
+        label: 'My Hyperliquid',
+        status: 'active',
+        meta: null,
+        profile: null,
+        resolvedVenueAccountId: 'va-1',
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+        assignedAgentCount: 0,
+        referencingBotCount: 0,
+        venueAccountRef: '0xabc',
+      },
+      {
+        id: 'conn-gmail-1',
+        userId: 'user-1',
+        credentialId: null,
+        provider: 'gmail',
+        label: 'My Gmail',
+        status: 'active',
+        meta: null,
+        profile: null,
+        resolvedVenueAccountId: null,
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+        assignedAgentCount: 0,
+        referencingBotCount: 0,
+        venueAccountRef: null,
+      },
+    ],
+  });
 
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
@@ -225,5 +288,35 @@ describe('AgentDetailPage capabilities list', () => {
     const labels = renderedFamilyLabels(html);
     expect(labels).toEqual([]);
     expect(html).toContain(messages['agents.detail.capabilities.emptyTitle']);
+  });
+
+  it('replaces the old "No capability setup required" dead-end with the new empty title and explainer', () => {
+    const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
+    expect(html).toContain(messages['agents.detail.capabilities.emptyTitle']);
+    expect(html).toContain(messages['agents.detail.capabilities.emptyBody']);
+    expect(html).not.toContain('No capability setup required');
+  });
+
+  it('renders the inline Add-skills and Connections setup controls in the empty state', () => {
+    const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
+    expect(html).toContain(messages['agents.detail.capabilities.addSkills']);
+    expect(html).toContain(messages['agents.detail.capabilities.connections']);
+  });
+
+  it('renders the inline Add-skills and Connections setup controls alongside existing capability cards', () => {
+    const html = renderDetail({ agentSkillIds: ['trading'], readinessFamilies: ['trading'] });
+    expect(renderedFamilyLabels(html)).toEqual(['Trading']);
+    expect(html).toContain(messages['agents.detail.capabilities.addSkills']);
+    expect(html).toContain(messages['agents.detail.capabilities.connections']);
+  });
+
+  it('offers assignable connections from the account picker in the inline setup block', () => {
+    const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
+    // The merged picker lists both a trading connection and a non-trading one.
+    expect(html).toContain('My Hyperliquid (hyperliquid)');
+    expect(html).toContain('My Gmail (gmail)');
+    // Trading / other optgroups come from the shared connection picker.
+    expect(html).toContain(messages['agents.create.connections.trading']);
+    expect(html).toContain(messages['agents.create.connections.other']);
   });
 });

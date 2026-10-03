@@ -101,6 +101,36 @@ function renderUnreadyTradingCapability(): string {
   );
 }
 
+function renderCapability(readiness: CapabilityReadiness): string {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  queryClient.setQueryData(['agents', 'agent-1'], makeAgent());
+  queryClient.setQueryData(['agents', 'agent-1', 'capabilities', 'trading'], readiness);
+
+  return renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <IntlProvider locale="en" messages={messages}>
+        <MemoryRouter initialEntries={['/agents/agent-1/capabilities/trading']}>
+          <Routes>
+            <Route path="/agents/:agentId/capabilities/:family" element={<AgentCapabilityPage />} />
+          </Routes>
+        </MemoryRouter>
+      </IntlProvider>
+    </QueryClientProvider>,
+  );
+}
+
+const NO_CONNECTION_READINESS: CapabilityReadiness = {
+  family: 'trading',
+  state: 'unconfigured',
+  connectionReadiness: 'unconfigured',
+  agentEligibility: 'eligible',
+  effectiveReady: false,
+  reasons: ['no connections have been assigned for this capability family'],
+};
+
 describe('AgentCapabilityPage', () => {
   it('does not mount trading adapter presentation until the selected connection is ready', () => {
     const html = renderUnreadyTradingCapability();
@@ -110,4 +140,29 @@ describe('AgentCapabilityPage', () => {
     expect(html).not.toContain('Trading adapter presentation');
     expect(tradingPresentation).not.toHaveBeenCalled();
   });
+
+  it('leads with the plain-language Status headline for an unready trading capability', () => {
+    const html = renderCapability(NO_CONNECTION_READINESS);
+
+    expect(html).toContain(messages['agents.capabilityPage.status.noConnectionHeadline']);
+    expect(html).toContain(messages['agents.capabilityPage.status.noConnectionReason']);
+  });
+
+  it('no longer renders the retired Why-this-state and Next-steps card titles', () => {
+    const html = renderCapability(NO_CONNECTION_READINESS);
+
+    // These keys were deleted in plan 002; their former English copy must be gone.
+    expect(html).not.toContain('Why this state');
+    expect(html).not.toContain('Next steps');
+  });
+
+  it('demotes the technical readiness fields into a Details disclosure', () => {
+    const html = renderCapability(NO_CONNECTION_READINESS);
+
+    expect(html).toContain('<details');
+    expect(html).toContain(messages['agents.capabilityPage.status.detailsToggle']);
+    // The connection-readiness KV label survives inside the Details disclosure.
+    expect(html).toContain(messages['agents.detail.connectionReadiness']);
+  });
 });
+

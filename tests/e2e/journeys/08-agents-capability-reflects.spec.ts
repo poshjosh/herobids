@@ -72,7 +72,10 @@ test.describe('Journey 8: AI Agents page reflects enabled capability', () => {
     await expect(page).toHaveURL(new RegExp(`/agents/${agentId}/capabilities/trading$`));
     await expect(page.getByRole('heading', { name: /Trading capability/i })).toBeVisible({ timeout: 5_000 });
     const card = readinessCard(page);
-    await expect(rowValue(card, /^State$/)).toHaveText('Ready', { timeout: 5_000 });
+    // Plan 002: the Status card leads with a plain-language headline; the
+    // technical KV rows moved behind a Details disclosure (no "State" row).
+    await expect(card.getByText(/Ready to trade/i)).toBeVisible({ timeout: 5_000 });
+    await card.locator('summary', { hasText: /Details/i }).click();
     await expect(rowValue(card, /^Connection readiness$/)).toHaveText('Ready', { timeout: 5_000 });
     await expect(rowValue(card, /^Effective ready$/)).toHaveText('Yes', { timeout: 5_000 });
   });

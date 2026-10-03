@@ -25,7 +25,10 @@ test.describe('Journey 1: Sign up → create agent → land on detail', () => {
     await expect(page.getByRole('heading', { name: /Capability Agent|Alert me when BTC drops/i })).toBeVisible({ timeout: 5_000 });
     // Capabilities section is collapsed by default — expand it before asserting on its content.
     await page.locator('summary', { hasText: /capabilities/i }).click();
-    await expect(page.getByText(/No capability setup required/i)).toBeVisible({ timeout: 5_000 });
+    // The dead-end "No capability setup required" copy was replaced by the
+    // "No capabilities yet" empty state plus inline Add-skills setup (plan 002).
+    await expect(page.getByText(/No capabilities yet/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Add skills/i)).toBeVisible({ timeout: 5_000 });
     // Verify the status badge is visible — for a newly created (stopped) agent.
     await expect(page.getByText(/status/i).first()).toBeVisible({ timeout: 5_000 });
   });

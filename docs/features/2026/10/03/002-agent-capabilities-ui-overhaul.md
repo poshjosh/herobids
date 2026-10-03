@@ -12,7 +12,7 @@
 - [DONE] **Item A3 — Rework capabilities section** in `AgentDetailPage.tsx` (empty state + inline setup).
 - [DONE] **Item B1 — Readiness view-model helper** (`capability-readiness-view.ts`) implementing the B2 mapping.
 - [DONE] **Item B3 — Rework** `AgentCapabilityPage.tsx` (single Status card + Details toggle).
-- [PENDING] **Item Tests — Unit + E2E/i18n/UAT updates** (consolidated test edits).
+- [DONE] **Item Tests — Unit + E2E/i18n/UAT updates** (consolidated test edits).
 
 ## Why one plan
 
@@ -486,3 +486,9 @@ Non-critical observations recorded during implementation code review (no CRITICA
 - [LOW] `highlightTimer` has no `useEffect` unmount cleanup; a ~1.5s local-state timer, not a meaningful leak.
 - [NOTE] `tradingNote` (`agents.capabilityState.unconfigured.tradingNote`) line was dropped from the capability page (the Status card now conveys state in plain language). Its i18n key remains for other usages.
 - [NOTE] AgentCapabilityPage.test.tsx still only covers the unready/fallback path; new Status-headline + demoted-cards assertions are deferred to Item Tests.
+
+### Item Tests — unit + E2E + UAT
+- [RESOLVED] AgentConnectionField chip test hardened to assert the chip element (label immediately followed by the `×` remove button) rather than the bare label (which also appears in the option text).
+- [RESOLVED] Added trailing newline to AgentCapabilityPage.test.tsx.
+- [LOW] Interaction coverage (SkillPicker onChange → agentsApi.update, chip-remove → onChange) is NOT unit-tested: the apps/web vitest env is `node` with no jsdom/@testing-library/react, and the whole suite uses `renderToStaticMarkup`. Introducing a DOM renderer was out of scope for a tests-only item; the onChange wiring is exercised by the E2E journeys against the live stack. New unit assertions are static-markup, consistent with the suite.
+- [NOTE] E2E KV-row assertions in journeys 07/08 changed from `/^State$/` to `/^Connection readiness$/` + the new Status headline, because the reworked Details disclosure has no standalone "State" row (B3). Playwright E2E not run here (needs the full dev stack); specs typecheck/transpile cleanly.
