@@ -11,7 +11,7 @@
 - [DONE] **Item 2 — Shared ledger helpers** (`apps/api/src/routes/capabilities/trading-ledger.ts`) + refactor legacy `/positions` onto them.
 - [DONE] **Item 3 — Presentation route rewrite** (summary tiles, Trades table, Decisions list with status, Fills table, `PositionRow` mark fields).
 - [DONE] **Item 4 — Generic web renderers** (overview tiles + Details disclosure, feed table, collapsed feeds, `labelKey`/`valueKey` localization).
-- [TODO] **Item 5 — `TradingCapabilityPresentation` layout**.
+- [DONE] **Item 5 — `TradingCapabilityPresentation` layout**.
 - [DONE] **Item 6 — i18n keys** (en/ar/hi).
 - [TODO] **Item 7 — Remove orphaned `formatPnl`/`pnlColor` (+ web `decimal.js`), correct ADR 014 Exposure note**.
 - [TODO] **Item 8 — Tests** (traderton, API, web, i18n, E2E).
@@ -535,6 +535,9 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
   fill (direction still correct).
 
 ## Outstanding Issues
+
+### Item 5 — TradingCapabilityPresentation layout (no CRITICAL/HIGH)
+- [LOW] Funding banner's "Dismiss" button is still hard-coded English (plan marked this optional/out-of-scope); revisit under i18n hygiene.
 
 ### Item 6 — i18n keys (no CRITICAL/HIGH)
 - [LOW] ar `capability.trading.executionMode.shadow` = 'محاكاة' (simulation) diverges from the pre-existing `agents.executionMode.shadow` = 'تجريبي'; the new term is arguably clearer but inconsistent with the legacy entry.

@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, providerCatalog, type DecisionApproval } from '../../lib/api-client.js';
-import { Button, Card, ErrorState, LoadingRows, SectionLabel } from '../../lib/ui.js';
+import { Button, Card, ErrorState, LoadingRows } from '../../lib/ui.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ApprovalsPanel } from './ApprovalsPanel.js';
-import { CapabilityAttributes, CapabilityFeeds, type CapabilityAttribute } from './CapabilityPresentation.js';
+import { CapabilityAttributes, CapabilityFeeds, CapabilityOverview, type CapabilityAttribute } from './CapabilityPresentation.js';
 
 interface TradingCapabilityPresentationProps {
   agentId: string;
@@ -99,8 +99,7 @@ export function TradingCapabilityPresentation({ agentId, connectionProvider, isA
         </div>
       )}
       <Card>
-        <SectionLabel>Trading details</SectionLabel>
-        <CapabilityAttributes attributes={presentation?.attributes ?? []} />
+        <CapabilityOverview attributes={presentation?.attributes ?? []} />
       </Card>
       <Card>
         <CapabilityFeeds feeds={presentation?.feeds ?? []} />
