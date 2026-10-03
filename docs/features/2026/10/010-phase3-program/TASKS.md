@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T4.1** (author the three `SKILL.md` in traderton-skills) — Block 3 ✅ (T3.1–T3.3; generic descriptor-driven visibility, I1 intent met, trading parity via the dev stub). ←
+**Current cursor:** **T4.2** (produce the real dev-signed descriptor + DELETE the T3.3 stub; grep-proven I10) — T4.1 ✅ (traderton-skills `77fd7a59`). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -206,7 +206,7 @@ never pushed), and an update to this file (status + cursor + running notes),
 
 ## Block 4 — Step 13: Traderton skill publication
 
-- ⬜ **T4.1 Author the three `SKILL.md`** in `~/dev_ai/traderton-skills/` (branch
+- ✅ **T4.1 Author the three `SKILL.md`** in `~/dev_ai/traderton-skills/` (branch
   `phase3-skill-publication`): `crypto-trading`, `crypto-bot-management`,
   `crypto-risk-monitoring` (frontmatter `name` + `description`; body = the
   backend-owned instructions, derived from the herobids seeds `TRADING_SKILL` /
@@ -713,6 +713,22 @@ CRITICAL/HIGH**, I1 intent MET, parity HOLDS, both deviations judged sound.
   to the async port path, which remains for a future async source.
 - Owed at closeout G2: the heavy herobids `--e2e`/`--all` suites (+ the real
   end-to-end install→resolve→invoke on the fixture source lands at T4.3).
+
+
+**T4.1 — three `SKILL.md` published.** traderton-skills `phase3-skill-publication`
+`77fd7a59` (NOT pushed). Implementer authored `skills/{crypto-trading,
+crypto-bot-management,crypto-risk-monitoring}/SKILL.md` from the herobids seeds
+(`TRADING_SKILL`/`BOT_MANAGEMENT_SKILL`/`RISK_MONITORING_SKILL`), instructions +
+`requiredTools` reproduced verbatim (20/10/13 tools), no invented tools. Each
+frontmatter `name` is single-line and EQUALS the skill segment
+(`crypto-trading` …) — the T0.5 constraint. Layout `skills/<skill>/SKILL.md`
+(this repo IS `traderton/skills`; matches the sibling `openaidom-skills`).
+README/CHANGELOG updated. Coordinator verified the T0.5
+`LocalDirectorySkillInstaller` reads `frontmatter['name']`+`['description']`
+(both present) and installs into `.agents/skills/<sanitize(name)>/`, so T4.3
+resolution will work; the `requiredTools` vs `allowed-tools` frontmatter
+difference is immaterial (tool visibility is descriptor-driven, T3.2, not from
+SKILL.md).
 
 ---
 
