@@ -375,7 +375,7 @@ record) → Implementer rework → round 2: all MEDIUM resolved, none new.
   herobids `packages/domain/src/traderton` total 62 pass / 14 skip. Test files
   and generator type-checked ad hoc under strict (both reviewers); I7 0.
 
-**T0.5 — local fixture external-skill source.** herobids only (commit below).
+**T0.5 — local fixture external-skill source.** herobids only, `89184632`.
 Implementer added the port + seam + local installer + fixtures + test;
 CodeReviewer: 0 CRITICAL/HIGH, 2 MEDIUM — M1 (`cp` kept symlinks pointing out
 of the workspace) fixed by the coordinator (`dereference: true` + the CLI's
