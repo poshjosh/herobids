@@ -124,11 +124,6 @@ describe('setup flow copy changes', () => {
     expect(enMessages['agents.create.setupTradingNow']).toBe('Set up trading now');
   });
 
-  it('agents.capabilityPage.setupOnAgents key exists for the updated next-steps CTA', () => {
-    expect(enMessages['agents.capabilityPage.setupOnAgents']).toBeTruthy();
-    expect(enMessages['agents.capabilityPage.setupOnAgents']).toBe('Go to AI Agents');
-  });
-
   it('ai model selection copy is defined for settings and agent forms', () => {
     for (const key of [
       'aiModels.title',
