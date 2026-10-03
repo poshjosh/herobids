@@ -38,6 +38,11 @@ That prevents the platform from presenting trading as one capability among many.
   migrate once that contract emits semantic emphasis.
 - C1 remains responsible for the trading-profile source of truth; this ADR does
   not change storage ownership.
+- Capability feeds may declare `columns` to render as a generic table. Items
+  then carry per-cell display values with optional semantic emphasis, and labels
+  and word values may carry stable i18n keys with an English fallback. The
+  frontend still renders values verbatim and maps only emphasis and prominence —
+  it never inspects or re-derives semantics from the values themselves.
 
 ## References
 

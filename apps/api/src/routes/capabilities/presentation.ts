@@ -9,11 +9,41 @@
 
 export type CapabilityPresentationEmphasis = 'neutral' | 'positive' | 'negative' | 'warning';
 
+/** Relative visual weight the web uses to lay out an attribute or feed. */
+export type CapabilityProminence = 'primary' | 'secondary';
+
+/**
+ * A single display cell. `value` is the already-formatted English string the
+ * web renders VERBATIM — the web never parses, re-formats, or inspects it to
+ * derive meaning. `valueKey` (with optional `valueParams`) lets the web swap in
+ * a localized string when the key is present in its catalog, falling back to
+ * `value` otherwise. `emphasis` is the only semantic signal the web acts on,
+ * mapping to a theme token (text colour only).
+ */
+export type CapabilityCell = {
+  value: string;
+  valueKey?: string;
+  valueParams?: Record<string, string>;
+  emphasis?: CapabilityPresentationEmphasis;
+};
+
+export type CapabilityFeedColumn = {
+  key: string;
+  label: string;
+  labelKey?: string;
+  align: 'start' | 'end';
+  format: 'text' | 'timestamp';
+};
+
 export type CapabilityAttribute = {
   key: string;
   label: string;
   value: string;
   emphasis?: CapabilityPresentationEmphasis;
+  labelKey?: string;
+  valueKey?: string;
+  valueParams?: Record<string, string>;
+  prominence?: CapabilityProminence;
 };
 
 export type CapabilityFeedItem = {
@@ -22,6 +52,9 @@ export type CapabilityFeedItem = {
   detail?: string;
   occurredAt: string;
   emphasis?: CapabilityPresentationEmphasis;
+  cells?: Record<string, CapabilityCell>;
+  titleKey?: string;
+  badge?: CapabilityCell;
 };
 
 export type CapabilityFeed = {
@@ -30,6 +63,9 @@ export type CapabilityFeed = {
   items: CapabilityFeedItem[];
   /** Full cursor pagination is future work — omitted for the first cut. */
   nextCursor?: string;
+  labelKey?: string;
+  prominence?: CapabilityProminence;
+  columns?: CapabilityFeedColumn[];
 };
 
 export type CapabilityConnection = {

@@ -1,9 +1,12 @@
 import { RelativeTime } from '../../lib/ui.js';
 import type {
   CapabilityAttribute,
+  CapabilityCell,
   CapabilityFeed,
+  CapabilityFeedColumn,
   CapabilityFeedItem,
   CapabilityPresentationEmphasis,
+  CapabilityProminence,
 } from '../../lib/api-client.js';
 
 // Re-export the wire types from api-client so this generic component is NOT a
@@ -11,9 +14,12 @@ import type {
 // `CapabilityAttribute`/`CapabilityFeed`/etc. from here keep working unchanged.
 export type {
   CapabilityAttribute,
+  CapabilityCell,
   CapabilityFeed,
+  CapabilityFeedColumn,
   CapabilityFeedItem,
   CapabilityPresentationEmphasis,
+  CapabilityProminence,
 };
 
 const EMPHASIS_TOKENS: Record<CapabilityPresentationEmphasis, { background: string; color: string }> = {
