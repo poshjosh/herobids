@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T4.3** (end-to-end verify on the local fixture source over BOTH transports) — T4.2 ✅ (`636905f0`, stub deleted, I10 = 0). ←
+**Current cursor:** **T5.1** (closeout — full DoD G0–G9 + `RECONCILIATION.md`) — Block 4 ✅ (T4.1–T4.3; publication chain verified end to end on both transports). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -221,7 +221,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   - **Exit: grep proves ZERO references to the T3.3 stub remain.** A run that
     leaves the stub in place is not done.
   - Gated and NOT attempted: registering a real operator-held public key.
-- ⬜ **T4.3 Verify against the LOCAL FIXTURE source (T0.5), not the live CLI.**
+- ✅ **T4.3 Verify against the LOCAL FIXTURE source (T0.5), not the live CLI.**
   herobids resolves external skills live and unpinned at runtime
   (`apps/worker/src/tools/skills.ts:37`; `normalizeExternalRef` maps the D11 ref
   to `traderton/skills@crypto-trading`), so the real CLI cannot see local work.
@@ -759,6 +759,38 @@ visibility.ts` rewired to trust the CONFIG key (runtime key-splice removed);
   the committed key; D11-ref agent sees today's tool set); `config.test.ts` 60/60
   with `DATABASE_URL` unset; build + lint green; I7 0; T3.1 `descriptor.ts`
   untouched; no new env var (I11 N/A).
+
+
+**T4.3 — publication chain verified end to end (local fixture, both transports).**
+herobids `3c16064b`. Tester built `skill-publication-e2e.test.ts` (14) +
+hermetic in-repo fixture `__fixtures__/traderton-skill-source/traderton/skills/
+skills/{crypto-trading,crypto-bot-management,crypto-risk-monitoring}/SKILL.md`
+(no `~/dev_ai/traderton-skills` dependency, no CLI, no network). Every leg
+composes the REAL unit:
+- **install** via `LocalDirectorySkillInstaller` (T0.5) → `.agents/skills/<name>/`
+  (name = skill segment); spawn mocked to throw (CLI never reached, D20).
+- **resolution + visibility** via `applyDescriptorToolVisibility` + the real
+  `createFileDescriptorSource` over the COMMITTED T4.2 descriptor + a trust
+  policy from the committed public key → `tools_exposed` with EXACTLY the
+  descriptor tool set for each approved ref; non-approved ref → no_match (no
+  tools); approved ref with no descriptor → instruction-only (DT3).
+- **invocation + result mapping PARAMETERISED over `['rest','mcp']`** (both faces
+  of the fake boundary + real `ExternalBackendClient`): success→success; all 10
+  closed-union failure codes + retryable preserved verbatim. **Both transports
+  executed** (2 legs each).
+- `sourceRef` derived from the install ref (`traderton/skills@crypto-trading` →
+  `.../crypto-trading`) and asserted EQUAL to the committed
+  `BUILTIN_TRADING_SOURCE_REFS` datum — not hand-faked.
+- Real-remote `npx skills` resolution DEFERRED to the post-push operator step
+  (D20) — not faked, stated in the test header.
+- Verified in a CLEAN env (coordinator): T4.3 14/14; `packages/domain apps/worker
+  apps/api packages/db` **5903 passed / 327 skipped / 0 failed**. (The 5 failures
+  the Tester's run showed were stale shell `DATABASE_URL`/`REDIS_URL` from the
+  earlier integration run pointing at torn-down services; with the env clean the
+  `skipIf(!REDIS_URL)` integration files skip cleanly — not a regression. G3 vars
+  were always clear.) build + lint green; I7 0.
+- No production code changed (T4.3 surfaced no gap). Heavy `--e2e`/`--all` suites
+  owed at closeout G2.
 
 ---
 
