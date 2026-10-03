@@ -388,7 +388,7 @@ externalBackends:
       contractVersion: "1.0"                # 005 invocation envelope version
       protocol: rest                        # rest | mcp; mcp only in development/test (D19), YAML only
       # toolProtocolOverrides: {}           # optional per-tool protocol; absent = every tool uses `protocol`
-      # mcpPath: /mcp                       # required when protocol or any override is mcp
+      # mcpPath: /internal/v1/mcp          # required when protocol or any override is mcp (Traderton's route)
       requestTimeoutMs: 10000               # per-request timeout (ms); override: TRADERTON_BOUNDARY_TIMEOUT_MS
     caller:
       consumerId: herobids                  # override: TRADERTON_BOUNDARY_CONSUMER_ID

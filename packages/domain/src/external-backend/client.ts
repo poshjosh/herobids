@@ -208,6 +208,24 @@ export class ExternalBackendClient {
     return { consumerId: this.identity.consumerId, keyId: this.identity.keyId };
   }
 
+  /**
+   * The per-attempt transport timeout (P3-18 resolution; IV-2). It is the
+   * smaller of the client's `requestTimeoutMs` and the time left to
+   * `deadlineAt`, falling back to the full `requestTimeoutMs` once the deadline
+   * has already passed or is unusable — the backend then answers
+   * `deadline.expired` rather than the attempt being clipped to zero. ONE method
+   * for both transports: for MCP it bounds the whole exchange; for REST it only
+   * ever shortens an attempt, so no transport-aware deadline arithmetic leaks
+   * below the seam.
+   */
+  private attemptTimeoutMs(deadlineAt: string): number {
+    const deadlineMs = Date.parse(deadlineAt);
+    if (Number.isNaN(deadlineMs)) return this.requestTimeoutMs;
+    const remaining = deadlineMs - Date.now();
+    if (remaining <= 0) return this.requestTimeoutMs;
+    return Math.min(this.requestTimeoutMs, remaining);
+  }
+
   /** Build the 005 invocation envelope, generating identifiers where not supplied. */
   buildEnvelope(input: InvokeToolInput): ExternalBackendToolInvocationV1 {
     const issuedAt = input.issuedAt ?? nowIso();
@@ -248,7 +266,7 @@ export class ExternalBackendClient {
   async invoke(input: InvokeToolInput): Promise<ExternalBackendClientResult> {
     const envelope = this.buildEnvelope(input);
     const outcome = await this.selectTransport(envelope.toolName).invoke(envelope, {
-      timeoutMs: this.requestTimeoutMs,
+      timeoutMs: this.attemptTimeoutMs(envelope.deadlineAt),
     });
     return this.mapOutcome(outcome, envelope.requestId);
   }
@@ -386,7 +404,7 @@ export class ExternalBackendClient {
       }
 
       const outcome = await transport.lookupStatus(requestId, {
-        timeoutMs: this.requestTimeoutMs,
+        timeoutMs: this.attemptTimeoutMs(opts.deadlineAt),
         deadlineAt: opts.deadlineAt,
       });
       if (outcome.kind !== 'in_progress') {

@@ -4,3 +4,8 @@ packages:
   - 'scripts'
   - 'tests/e2e'
   - 'tests/rate-limit-lab'
+overrides:
+  # Pin abitype's zod peer to 3.x so the MCP SDK's nested zod 4.x (Phase 3 T2.3)
+  # cannot float abitype onto zod 4. App code resolves zod 3.25.x; zod 4 stays
+  # confined under @modelcontextprotocol/*.
+  'abitype>zod': 3.25.76

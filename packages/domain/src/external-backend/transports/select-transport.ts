@@ -3,6 +3,7 @@
 
 import type { ExternalBackendProtocol } from '../../config/external-backends.js';
 import type { SigningIdentity } from '../sign.js';
+import { McpTransport } from './mcp-transport.js';
 import { RestTransport } from './rest-transport.js';
 import type { ExternalBackendTransport } from './transport.js';
 
@@ -19,8 +20,17 @@ export type TransportForTool = (toolName: string | undefined) => ExternalBackend
 
 type TransportFactory = (options: TransportSelectorOptions) => ExternalBackendTransport;
 
+/** The config schema requires `mcpPath` whenever `mcp` is used; this guards the client-side too. */
+function requireMcpPath(options: TransportSelectorOptions): string {
+  if (options.mcpPath === undefined) {
+    throw new Error('external_backend.mcp_path_missing: protocol mcp requires an mcpPath');
+  }
+  return options.mcpPath;
+}
+
 const TRANSPORT_FACTORIES: Partial<Record<ExternalBackendProtocol, TransportFactory>> = {
   rest: ({ baseUrl, identity }) => new RestTransport({ baseUrl, identity }),
+  mcp: (options) => new McpTransport({ baseUrl: options.baseUrl, mcpPath: requireMcpPath(options), identity: options.identity }),
 };
 
 /**

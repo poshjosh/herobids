@@ -468,3 +468,58 @@ describe('ExternalBackendClient.poll', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+// IV-2: the per-attempt transport timeout is min(requestTimeoutMs, deadlineAt −
+// now), falling back to requestTimeoutMs once the deadline has passed. Observed
+// through the exact value the REST transport hands AbortSignal.timeout.
+describe('ExternalBackendClient — per-attempt timeout bounded by the deadline (IV-2)', () => {
+  let timeoutSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+  });
+  afterEach(() => {
+    timeoutSpy.mockRestore();
+  });
+
+  function lastTimeoutArg(): number {
+    const calls = timeoutSpy.mock.calls;
+    const last = calls[calls.length - 1];
+    if (!last) throw new Error('AbortSignal.timeout was never called');
+    return last[0] as number;
+  }
+
+  it('bounds each attempt by the time remaining to the deadline', async () => {
+    fetchMock.mockResolvedValueOnce(freshSuccessResponse());
+    // Deadline 2s out, well inside the 10s requestTimeoutMs.
+    const deadlineAt = new Date(Date.now() + 2_000).toISOString();
+
+    await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT, deadlineAt });
+
+    const budget = lastTimeoutArg();
+    expect(budget).toBeLessThanOrEqual(2_000);
+    expect(budget).toBeGreaterThan(1_000); // not clipped to requestTimeoutMs, not zero
+  });
+
+  it('uses requestTimeoutMs when the deadline is further away', async () => {
+    fetchMock.mockResolvedValueOnce(freshSuccessResponse());
+    // Deadline 60s out — much further than the 10s requestTimeoutMs.
+    const deadlineAt = new Date(Date.now() + 60_000).toISOString();
+
+    await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT, deadlineAt });
+
+    expect(lastTimeoutArg()).toBe(CONFIG.requestTimeoutMs);
+  });
+
+  it('sends an already-expired invocation with the full attempt budget so the backend answers deadline.expired', async () => {
+    fetchMock.mockResolvedValueOnce(freshSuccessResponse());
+    const deadlineAt = new Date(Date.now() - 1_000).toISOString();
+
+    await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT, deadlineAt });
+
+    // The request IS sent (the backend owns the deadline verdict), and the
+    // attempt is given the full budget rather than being clipped to <= 0.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(lastTimeoutArg()).toBe(CONFIG.requestTimeoutMs);
+  });
+});
