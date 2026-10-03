@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T1.2** (transport seam + `RestTransport`, C3) — T1.1 ✅ (C1 `1b204d63`, C2 `5fc75081`); the registry wiring (T1.1's `appConfig.externalBackends` exit item) lands at T1.3 C4 (P3-22). ←
+**Current cursor:** **T1.3** (registry wiring C4 + ctx ports C5) — T1.1 ✅ (`1b204d63`, `5fc75081`), T1.2 ✅ (`4889e4bf`). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -121,7 +121,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   - **Preserve `sign.ts` bytes** (Step 10 §5). Acceptance: the T0.3 vectors AND
     `sign.test.ts` pass **unmodified**.
   - Exit: `pnpm lint` + api/worker tests + full build green.
-- ⬜ **T1.2 Extract the transport seam** per Step 10 §2.4, with `RestTransport`
+- ✅ **T1.2 Extract the transport seam** per Step 10 §2.4, with `RestTransport`
   as the first implementation. Seam interface **internal to the package — not
   exported**. `requestId` and `idempotencyKey` are first-class seam inputs.
   Orchestration (envelope, idempotency, deadline, health gating, retry,
@@ -167,7 +167,7 @@ never pushed), and an update to this file (status + cursor + running notes),
     raw-body retention, and the existing `app.test.ts` +
     `boundary.verification.integration.test.ts` all pass **UNMODIFIED**.
   - Exit: both traderton suites green; REST bytes untouched.
-- ⬜ **T2.3 `McpTransport`** (herobids). Behind the seam. HMAC via the client
+- ⬜ **T2.3 `McpTransport`** (herobids). *(From T1.2: register `mcp` in `transports/select-transport.ts` — the only file that names a transport; decide P3-25 (deadline-derived attempt timeout); `poll(requestId)` returns `precondition.not_ready` on a transport without `lookupStatus`; strengthen `select-transport.test.ts` override test once two transports exist; decide whether a lost re-issue inside the no-lookup loop should keep re-issuing until the deadline.)* Behind the seam. HMAC via the client
   transport's `fetch` middleware. **Per-call timeout driven from the envelope's
   `deadlineAt`** — the SDK client defaults to 60s, which would silently override
   the contract's deadline semantics. `in_progress` resolved by re-issuing
@@ -481,6 +481,26 @@ CodeReviewer on each: **0 CRITICAL/HIGH**.
 - Doc-first: Step 10 plan §1 "Config migration — amended Phase 3 T1.1" and the §2
   rename table, in C2.
 
+
+**T1.2 — internal transport seam (C3).** herobids `4889e4bf`. Implementer built
+`transports/{transport,rest-transport,select-transport}.ts`, rewired `client.ts`,
+moved the T0.6 reconcile into `ExternalBackendClient.invokeAndAwait` (worker
+adapter is a thin delegate; blank-key guard stays in the adapter). CodeReviewer:
+**0 CRITICAL/HIGH**; REST parity confirmed line by line (same envelope object to
+`signInvoke`, URLs, timeouts, messages, decode trees, requestId labelling).
+Coordinator fixed review M1 (unparseable `deadlineAt` refused; interval clamp),
+M2 (moved test now distinguishes the running row's requestId), M3 (P3-19..P3-21
+recorded), LOW fake-timer flake + already-past-deadline case, index header.
+- Unmodified and green: `client.test.ts` 28, `client-signing-vectors.test.ts`,
+  `sign.test.ts` 8, signing vectors 20, `write-idempotency.contract.test.ts` 10.
+- New: `client-await.test.ts` (29), `rest-transport.test.ts` (13),
+  `select-transport.test.ts` (5). `packages/domain apps/api apps/worker`:
+  **5631 passed / 309 skipped**. build + lint green; new tests type-checked ad
+  hoc; I7 0.
+- I2, I3, I3b (dist d.ts has no `transports/` reference; `client.d.ts` shows
+  only `private readonly selectTransport;`), I5: all green.
+- Doc-first: Step 10 §2.4 note "(amended Phase 3 T1.2)".
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -586,3 +606,8 @@ CodeReviewer on each: **0 CRITICAL/HIGH**.
   old herobids fixture path.
 - LOW — `.github/skills/external-backend-genericization/SKILL.md` item 8 still
   describes the pre-T0.6 idempotency state.
+
+**T1.2**
+- LOW — `TransportInvocation` restates `requestId`/`idempotencyKey`/`deadlineAt`
+  that `ExternalBackendToolInvocationV1` already requires (kept as explicit I5
+  documentation).
