@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T0.6** (CF-1/CF-2 write-path idempotency) — T0.1–T0.5 ✅. ←
+**Current cursor:** **T1.1** (rename + definition schema) — Block 0 + 0b ✅ (T0.1–T0.6). First action of the next session: the T0.6 round-2 review (see `HANDOVER.md`). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -87,7 +87,7 @@ never pushed), and an update to this file (status + cursor + running notes),
 > **This is a deliberate, recorded behaviour change** authorised by D18. Record it
 > as an Intentional-divergence note under the parity-not-liveness invariant.
 
-- ⬜ **T0.6 Thread a stable idempotency key + requestId.**
+- ✅ **T0.6 Thread a stable idempotency key + requestId.**
   `packages/domain/src/traderton/client.ts:169-171` defaults `requestId`,
   `idempotencyKey` and `correlationId` to `randomUUID()`, and **no non-test call
   site supplies either** of the first two — verified across `risk-limits.ts:131`,
@@ -403,6 +403,40 @@ pinned default-path error); L1/L3/L4 parked.
   sanitize to the ref's skill segment (`crypto-trading`, …) and be single-line —
   the installer names the dir from `name`, the post-install reader from the ref.
 
+**T0.6 — CF-1/CF-2 write-path idempotency (D18, IV-1).** herobids
+`f495ab3d`; traderton untouched (read-only confirmations only). PlanCreator
+wrote `plans/t0.6-idempotency-plan.md`; Implementer implemented it;
+CodeReviewer round 1: **1 HIGH** (a write still running at the deadline was
+reported as a terminal *rejection* — `client.poll`'s synthesised
+`deadline.expired` mapped to `rejected`, recorded by approval-service) + 2
+MEDIUM (poll could throw on an unrecognised 200 body; fake could not model
+stored failures / stalled completion) + LOWs → Implementer rework, all fixed.
+**Round-2 review was interrupted before it reported** — the coordinator
+re-verified instead (backend claim checked in traderton `dispatcher.ts`
+`mapToolResult`; tests below). A fresh round-2 review is the first action of
+the next session (`HANDOVER.md`).
+- Call sites: W1 `agent-decision-handler.ts` → `payload.decisionId`; W2
+  `approval-service.ts` → `approvalId`; W3 `agent-message-broker.ts`
+  `invokeBotLifecycle` → `envelope.messageId`; W4 worker `index.ts`
+  `evaluateAgentWatches` → uuid per evaluation; W5 `agent.ts` →
+  `createSubjectBoundWriteBoundary` (uuid per tool write). All five derive the
+  `requestId`. Correction to the TASKS list: 4 api sites were already keyed
+  (`setup.ts`, `provider-links.ts`, `blueprints.ts`, the saga) — they now get
+  derived `requestId`s; behaviour otherwise unchanged.
+- Decisions P3-5 (key lifecycle), P3-6 (derived requestId), P3-7 (in-call
+  reconcile + unknown-not-rejected), P3-8 (vitest subpath alias).
+- Tests: focused run (domain traderton, worker traderton/agents, approval,
+  risk-limits, watch) 38 files, **701 passed / 14 skipped**; contract suite
+  10/10 ×3 runs (+5 by the Implementer); worker + api full **4484 passed / 295
+  skipped**; `pnpm build` + `pnpm lint` green; I7 0. Mutation checks by the
+  Implementer: disabling the re-issue, the derived requestId or the HIGH-1
+  guard each fails the matching tests.
+- traderton read-only: `app.test.ts` 37/37; `run-integration.sh
+  packages/db/src/boundary-invocations.integration.test.ts` exit 0 (store 7/7 —
+  this file skips in every mandated suite, so it was run explicitly).
+- Not done here: a herobids leg against the REAL local boundary (herobids
+  vitest runs before `ensure_boundary_up`) → carried into CF-6.
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -444,3 +478,28 @@ pinned default-path error); L1/L3/L4 parked.
 - LOW (L4) — the installer imports `parseSkillFrontmatter` from `./skills.js`
   (whole tool module); extract `skill-frontmatter.ts` if it is ever wired from
   `skills.ts`.
+
+**T0.6**
+- MEDIUM (pre-existing, NOT fixed, out of scope) — `deprovision:${venueAccountId}`
+  (api `setup.ts` compensate + `provider-links.ts`) replays a first terminal
+  `provision.in_use` failure forever, so a user can never delete that link after
+  stopping the bot; saga `actionId` retries after a terminal failure behave the
+  same. Fix per P3-5 (per-attempt key). Verify with a backend test first.
+- LOW — `parseInvokeResponse` (invoke path) can still throw on a `null`/`{}` 200
+  body (`'state' in null`, `mapTerminalResult({})`); left untouched (REST invoke
+  path outside T0.6's scope). Candidate for T1.2's RestTransport decode.
+- LOW (pre-existing) — the decision handler emits `decision.rejected` for
+  `status: 'error'` (unknown outcome); only the log says "unknown". Changing the
+  event is an event-type change.
+- LOW — the re-issue/poll fetches use the full `requestTimeoutMs`, not the
+  remaining budget (≤ one timeout overrun, documented). T2.3 decides the
+  deadline-derived attempt timeout (block2 plan n31 / IV-2).
+- LOW — the in-call reconcile lives in the worker adapter, not the client
+  ("implemented once" per Step 10 §2.4); block1 plan C3 moves it into
+  `ExternalBackendClient.invokeAndAwait`. api direct-client writes get no in-call
+  reconcile today.
+- LOW — derived `requestId`s are predictable from (consumer, owner, tool, key);
+  matters only if the (non-owner-scoped) status lookup were ever exposed beyond
+  the HMAC-authenticated consumer.
+- LOW — `apps/worker/src/traderton/__tests__/fake-idempotent-boundary.ts`
+  compiles into the worker dist (same as the api `__tests__` helpers precedent).
