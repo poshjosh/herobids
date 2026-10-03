@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T3.2** (replace the hard-coded trading branches — generic descriptor-driven tool visibility; I1 → 0) — T3.1 ✅ (`747f6fdb`). ←
+**Current cursor:** **T4.1** (author the three `SKILL.md` in traderton-skills) — Block 3 ✅ (T3.1–T3.3; generic descriptor-driven visibility, I1 intent met, trading parity via the dev stub). ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -183,7 +183,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   domain: ed25519 verification against `trustedDescriptorSigningKeys`, pinning,
   expiry, `backendId` match, revocation. Failure → instruction-only (DT3).
   - Exit: the T0.4 conformance fixtures all go green.
-- ⬜ **T3.2 Replace the hard-coded trading branches.** The resolution path that
+- ✅ **T3.2 Replace the hard-coded trading branches.** The resolution path that
   today hard-codes trading: `skills.ts`, `provider-catalog.ts`,
   `agent-runtime-descriptor.ts`, worker `agent.ts:473`,
   `runtime-composition.ts:700`, `agent-capabilities.ts:18`. New rule: *skill ref
@@ -200,7 +200,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   - Exit: trading tools resolve for an agent whose skills include the D11 refs; a
     non-matching external skill gets NO tools; revocation strips tools; expiry /
     untrusted key / `backendId` mismatch each degrade without crashing a session.
-- ⬜ **T3.3 Register the Traderton definition + a dev-signed stub descriptor** so
+- ✅ **T3.3 Register the Traderton definition + a dev-signed stub descriptor** so
   the generic path works locally. **The stub is temporary and T4.2 must delete it.**
   - Exit: lint + builds + tests green; `INVARIANTS.md` genericity checks green.
 
@@ -655,6 +655,64 @@ Exported from the subpath `index.ts` for T3.2; nothing transport-typed exported.
 - Tests: `descriptor-conformance.test.ts` **37** (14 pipeline variants + the
   well-formed/defect blocks); `packages/domain apps/worker apps/api` **5723
   passed / 302 skipped**; build + lint green; I7 0.
+
+
+**T3.2 + T3.3 — generic trust-gated tool visibility + dev-signed stub (one block).**
+herobids: port + `sourceRef` `57423146`, generic resolver `2b6b23e8`,
+removal+wiring+stub (C3+C4 folded) `ac4fe432`, review fixes `54edda94`.
+PlanCreator wrote `plans/block3-step12-plan.md` (`fc0fddbb`) after a grounded
+Contemplator investigation; Implementer executed it; CodeReviewer: **0
+CRITICAL/HIGH**, I1 intent MET, parity HOLDS, both deviations judged sound.
+- **Generic rule replaces every hard-coded branch:** a resolved skill whose
+  `sourceRef` ∈ ANY `externalBackends[]` entry's `approvedSourceSkillRefs` →
+  `resolveDescriptorTools` → expose the descriptor's tools, else instruction-only
+  (DT3). The matcher (`apps/worker/src/external-backend/skill-tool-resolver.ts`)
+  names NO backend and never reads `tradingBackendId`. Removed:
+  `agent-runtime-descriptor.ts` `TRADING_ACCOUNT_TOOLS` + the `inferredTradingCapability`
+  tool-name allow-list + the `hasTrading` guard; `agent.ts` `isTradingSkill`
+  fallback; `skills.ts` `buildTradingCapabilityValidationError` + 3 call sites.
+- **Decisions P3-47..P3-51** (below). Built-in trading skills carry a declared
+  `SkillDefinition.sourceRef` (`BUILTIN_TRADING_SOURCE_REFS` → the D11 refs), data
+  not an identity branch (P3-48). `category` cross-checked against `TOOL_CATALOG`,
+  `ToolDefinition` NOT extended (P3-49). The T3.3 stub (`stub-descriptor-source.ts`,
+  I10-greppable `STUB_DESCRIPTOR`) is dev-signed by an **ephemeral** in-process
+  ed25519 key (no committed private key), binds the three D11 refs → the current
+  trading tool schemas, deleted at T4.2 (P3-51). The dev public key is spliced
+  into the trust policy for the dev/test run only; `config/default.yaml`
+  `trustedDescriptorSigningKeys: []` with a dev comment.
+- **Review fixes (`54edda94`):** shared the tool-schema lookup across the startup
+  and `onSkillsChanged` visibility passes (so they can't drift — parity after a
+  skill change depends on it); corrected the instruction-preservation comment.
+- **I1 disposition (plan §5):** strict grep over the visibility-path files → 0;
+  the one remaining strict hit `packages/db/src/agent-runtime-descriptor.ts:80`
+  (`family === 'trading'` in `deriveReadiness`) is a readiness/binding STAY
+  (class c, Step 14/15), NOT visibility — recorded as a known stay, not a
+  failure. The TICK-WORK gates (`agent-capabilities.ts`, `runtime-composition.ts`,
+  the `agent.ts` startup guard) are fenced OUT (§6), still read `capabilityFamilies`
+  (preserved by the resolver → trading tick work keeps firing → parity).
+- **I12 answer (P3-50):** a second backend's *visibility* resolves with config +
+  a signed descriptor and zero code change (proven by the resolver's
+  `example-echo` genericity test); *invoking* its tools over HMAC still needs the
+  1→N `EXTERNAL_BACKEND_CONFIG_JSON` forwarding — the single remaining
+  code-change item, carried to T5.2/Step 16.
+- **Tests:** `skill-tool-resolver.test.ts` 16 (matcher genericity via a non-trading
+  `example-echo` backend + every T0.4 reason-code degrade + category cross-check),
+  `stub-descriptor-source.test.ts` 4, `descriptor-tool-visibility.test.ts` 6
+  (**parity**: a D11-ref agent sees exactly today's trading tool set via the
+  generic path; non-matching external skill → no tools; degrade matrix:
+  disabled/ref-removed/malformed → no crash). Updated 2 obsolete suites
+  (`skills.test.ts`, `agent-runtime-descriptor.test.ts`) — weakened only where the
+  removed validation made cases impossible. `packages/domain apps/worker apps/api
+  packages/db` **5885 passed / 332 skipped**; build + lint green; I7 0; I10
+  greppable.
+- **Deviations judged sound:** (2) on `tools_exposed` the skill keeps its own
+  instructions (not the stub's dev placeholders) — not a D16 gap (D16 governs tool
+  SCHEMA authority, which IS the descriptor's); threading real descriptor
+  instructions is a T4.1 follow-up (comment corrected). (3) a sync resolver core
+  drives the in-process stub at `agent.ts` module scope; behaviourally identical
+  to the async port path, which remains for a future async source.
+- Owed at closeout G2: the heavy herobids `--e2e`/`--all` suites (+ the real
+  end-to-end install→resolve→invoke on the fixture source lands at T4.3).
 
 ---
 
