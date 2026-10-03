@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T0.5** (local fixture external-skill source) — T0.1–T0.4 ✅. ←
+**Current cursor:** **T0.6** (CF-1/CF-2 write-path idempotency) — T0.1–T0.5 ✅. ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -77,7 +77,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   (Step 10 DT3).
   - Exit: fixtures exist in both repos; the herobids-side assertions are written
     (they go green in T3.x when the verification pipeline exists).
-- ⬜ **T0.5 Local fixture external-skill source.** A local source the resolution
+- ✅ **T0.5 Local fixture external-skill source.** A local source the resolution
   path can install from, so Step 13 can be verified without `npx skills add`
   (D20 — the live CLI resolves from the remote and cannot see local work).
   - Exit: a skill can be installed from the fixture source end-to-end in a test.
@@ -375,6 +375,34 @@ record) → Implementer rework → round 2: all MEDIUM resolved, none new.
   herobids `packages/domain/src/traderton` total 62 pass / 14 skip. Test files
   and generator type-checked ad hoc under strict (both reviewers); I7 0.
 
+**T0.5 — local fixture external-skill source.** herobids only (commit below).
+Implementer added the port + seam + local installer + fixtures + test;
+CodeReviewer: 0 CRITICAL/HIGH, 2 MEDIUM — M1 (`cp` kept symlinks pointing out
+of the workspace) fixed by the coordinator (`dereference: true` + the CLI's
+exclusion list, with a test); M2 (ad-hoc result type) decided as P3-4. LOWs
+L2/L5/L6 fixed (reinstall-replaces + missing-frontmatter tests, port JSDoc,
+pinned default-path error); L1/L3/L4 parked.
+- `packages/domain/src/ports/external-skill-installer.ts` + optional
+  `ToolContext.externalSkillInstaller`; `apps/worker/src/tools/skills.ts` routes
+  `add_skills` through `ctx.externalSkillInstaller ?? npxSkillsCliInstaller`
+  (spawn args, `CI=1`, 30 s timeout, sequencing unchanged; list/remove untouched;
+  no production wiring of the local installer — grep-verified).
+- `LocalDirectorySkillInstaller` (test/T4.3 only): `owner/repo@skill` with
+  traversal-safe segments, `<sourceRoot>/<owner>/<repo>/skills/<skill>/`,
+  CLI-identical `sanitizeName`, rm-then-cp with dereference.
+- Fixtures `apps/worker/src/tools/__fixtures__/external-skill-source/example/skills/skills/{echo,echo-shell}/`
+  (same `example/skills/echo` ref as the T0.4 descriptor fixtures).
+- `skills-local-source.test.ts` 13 tests: `example/skills/echo` installs
+  end-to-end through the real `add_skills` with `spawn` mocked to throw;
+  Bash-detection follow-up; missing ref; 5 unsafe refs; symlink dereference +
+  exclusions; reinstall replaces; missing frontmatter; default path still spawns
+  `npx skills add example/skills@echo --yes`. With `skills.test.ts` and
+  `skills-bash-detection.test.ts`: 229/229. domain + worker build, `pnpm lint`
+  green; new test type-checked ad hoc under strict; I7 0.
+- **Constraint carried to T4.1:** each `SKILL.md` frontmatter `name` must
+  sanitize to the ref's skill segment (`crypto-trading`, …) and be single-line —
+  the installer names the dir from `name`, the post-install reader from the ref.
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -405,3 +433,14 @@ record) → Implementer rework → round 2: all MEDIUM resolved, none new.
   controls; Step 10 §4 rotation could say "under a new keyId" explicitly.
 - LOW — JCS rule does not reject lone surrogates (RFC 8785 requires I-JSON);
   both sides are TS today.
+
+**T0.5**
+- LOW (L1, for T4.3) — a traderton-skills checkout maps to
+  `<sourceRoot>/traderton/skills`; use a temp tree with a symlink, or add an
+  optional `repoDirs` option. The T4.3 test should take the checkout path from
+  an env var and skip when absent.
+- LOW (L3) — `parseSkillFrontmatter` is line-based: quoted values keep their
+  quotes; `description: >-` passes the presence check.
+- LOW (L4) — the installer imports `parseSkillFrontmatter` from `./skills.js`
+  (whole tool module); extract `skill-frontmatter.ts` if it is ever wired from
+  `skills.ts`.

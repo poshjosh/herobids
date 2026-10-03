@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, ToolContext, ExternalSkillInstaller, ExternalSkillInstallResult } from '@herobids/domain';
 import { AGENT_MESSAGE_TYPES, ManageAgentSkillsResultSchema, SYSTEM_SKILL_SLUGS } from '@herobids/domain';
 import { resolveSkillIdsBySlugOrId } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
@@ -25,7 +25,7 @@ const PROGRAMMING_SKILL_SLUG = 'system/programming';
 
 // ── External skill subprocess helpers ───────────────────────────────────────
 
-type ExternalSubprocessResult = { ok: true; output: string } | { ok: false; error: string };
+type ExternalSubprocessResult = ExternalSkillInstallResult;
 
 function runExternalSubprocess(
   args: string[],
@@ -89,9 +89,18 @@ function normalizeExternalRef(ref: string): { ref: string; wasNormalized: boolea
   return { ref, wasNormalized: false };
 }
 
-async function runExternalSkillInstall(ref: string, cwd: string): Promise<ExternalSubprocessResult> {
+/** Default installer: `npx skills add <owner/repo@skill> --yes` in the workspace root. */
+export const npxSkillsCliInstaller: ExternalSkillInstaller = {
+  install: (ref, cwd) => runExternalSubprocess(['add', ref, '--yes'], cwd, EXTERNAL_INSTALL_TIMEOUT_MS),
+};
+
+async function runExternalSkillInstall(
+  ref: string,
+  cwd: string,
+  installer: ExternalSkillInstaller,
+): Promise<ExternalSubprocessResult> {
   const normalized = normalizeExternalRef(ref);
-  return runExternalSubprocess(['add', normalized.ref, '--yes'], cwd, EXTERNAL_INSTALL_TIMEOUT_MS);
+  return installer.install(normalized.ref, cwd);
 }
 
 async function runExternalSkillRemove(name: string, cwd: string): Promise<ExternalSubprocessResult> {
@@ -471,11 +480,12 @@ const addSkillsTool: AgentTool = {
         try {
           const { getWorkspacePaths } = await import('./workspace.js');
           const cwd = getWorkspacePaths(ctx.agentId).root;
+          const installer = ctx.externalSkillInstaller ?? npxSkillsCliInstaller;
           // Run external installs sequentially — the skills CLI is not
           // safe to run in parallel within the same workspace directory.
           const results: Array<{ ref: string; ok: boolean; output?: string; error?: string }> = [];
           for (const ref of externalRefs) {
-            const result = await runExternalSkillInstall(ref, cwd);
+            const result = await runExternalSkillInstall(ref, cwd, installer);
             if (result.ok) {
               results.push({ ref, ok: true as const, output: result.output });
             } else {

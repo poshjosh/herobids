@@ -43,6 +43,8 @@ export interface ToolContext extends TradingToolContext {
   };
   /** External skill provider for search/browse (optional — absent when external skills are disabled) */
   externalSkillProvider?: import('./ports/external-skill-provider.js').ExternalSkillProvider;
+  /** External skill installer used by add_skills (optional — absent means the `npx skills` CLI). */
+  externalSkillInstaller?: import('./ports/external-skill-installer.js').ExternalSkillInstaller;
   /** Skill catalog operations for list_skills and search_skills. */
   skillOps?: {
     listAssigned(): Promise<Array<{ id: string; slug: string; name: string; description: string; dependsOn: string[] }>>;
