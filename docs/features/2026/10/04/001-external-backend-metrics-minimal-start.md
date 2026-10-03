@@ -47,7 +47,7 @@ the build steps.
 
 ## Work items
 
-### 1. Sink port + sample type (domain)
+### 1. Sink port + sample type (domain) — DONE
 
 **File (new):** `packages/domain/src/external-backend/metrics.ts`
 
@@ -65,7 +65,7 @@ the build steps.
 - `NOOP_METRICS_SINK.recordInvocation` is callable and returns void (behavioural:
   "no-op sink accepts a sample without throwing").
 
-### 2. Instrument the client (domain)
+### 2. Instrument the client (domain) — PENDING
 
 **File:** `packages/domain/src/external-backend/client.ts`
 
@@ -100,7 +100,7 @@ the build steps.
 - "a throwing metrics sink does not change the returned result" (inject a sink
   whose `recordInvocation` throws; assert the result is unchanged).
 
-### 3. pino sink adapter (apps)
+### 3. pino sink adapter (apps) — PENDING
 
 **File (new):** `apps/worker/src/external-backend/pino-metrics-sink.ts`
 
@@ -125,7 +125,7 @@ fall back to (a). Resolve during implementation; default to (b).
   - Under (b): new file `packages/domain/src/external-backend/logger-metrics-sink.ts`,
     exported from the subpath barrel; drop the `apps/worker` adapter file above.
 
-### 4. Wire the sink at the composition sites (apps)
+### 4. Wire the sink at the composition sites (apps) — PENDING
 
 Pass `metrics: createLoggerMetricsSink(createLogger('external-backend-metrics'))`
 into each `createExternalBackendClient(buildExternalBackendClientConfig(...))`
@@ -143,7 +143,7 @@ Sites (verified):
 
 Each site gets a one-line comment: `// metrics: see docs/tech/observability.md`.
 
-### 5. Config — latency budgets
+### 5. Config — latency budgets — PENDING
 
 **File:** `packages/domain/src/config/schema.ts`
 - Add a top-level block beside `externalBackends`:
@@ -171,7 +171,7 @@ Each site gets a one-line comment: `// metrics: see docs/tech/observability.md`.
 **Env twins:** none. These are operator YAML, not secrets — no `.env.example`
 change (consistent with AGENTS.md: `.example` documents env inputs only).
 
-### 6. Documentation backlinks (the "link every site" requirement)
+### 6. Documentation backlinks (the "link every site" requirement) — PENDING
 
 Add a short pointer to `docs/tech/observability.md` at every place that *calls
 for* metrics, so a reader at any entry point finds the one source of truth:
@@ -248,3 +248,13 @@ Additive `backendDurationMs` on `ExternalBackendToolResultV1`, stamped by the
 Traderton dispatcher and read into the sample, unlocking boundary-overhead =
 `durationMs − backendDurationMs`. Sink and aggregation unchanged. Tracked
 separately once this ships.
+
+## Outstanding Issues
+
+Non-blocking (LOW) review findings, grouped by work item. None are CRITICAL/HIGH.
+
+### Item 1 — Sink port + sample type
+- [LOW] The `metrics.test.ts` test only exercises a `'success'` sample literal; a
+  `'failure'` literal (with `code`+`retryable`) would additionally exercise the
+  optional fields' assignability. Covered indirectly by the Item 2 client tests,
+  so optional.
