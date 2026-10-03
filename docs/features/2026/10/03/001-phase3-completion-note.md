@@ -65,9 +65,10 @@ obligations alone will overstate what remains.
 
 Still fully open: CF-3 REST differential vs the pinned pre-removal oracle (the
 core extraction-safety gate) · CF-8 push gate (all three repos) · CF-9 real
-operator-held signing key · CF-10 conditional MCP differential leg · CF-11 open
-legal/product dispositions · CF-13 1→N forwarding · CF-14 real-remote `npx skills`
-resolution.
+operator-held signing key (procedure:
+[`docs/runbooks/external-backend-descriptor-signing.md`](../../../../runbooks/external-backend-descriptor-signing.md))
+· CF-10 conditional MCP differential leg · CF-11 open legal/product dispositions ·
+CF-13 1→N forwarding · CF-14 real-remote `npx skills` resolution.
 
 Partially satisfied / not a blocker: **CF-6** — restart/health/fail-closed/
 recovery/idempotent-retry/HMAC proven **live, operator-approved, 2026-10-01**

@@ -122,7 +122,8 @@ Fixed Decisions 1–3.)
   descriptor to the agent. Tool *visibility* is N-backend-ready; a second
   backend's tool *invocation* over HMAC needs this forwarding widened 1→N.
 - **CF-9** — the committed descriptor is **dev-signed**; a real operator-held
-  signing key is a gated post-deploy step.
+  signing key is a gated post-deploy step. Procedure (dev regenerate + the
+  production-key step): [descriptor-signing runbook](../../runbooks/external-backend-descriptor-signing.md).
 - Staging differential / load / resilience for the write path are Step 16
   (deferred). This mechanism is **locally verified, not cutover-proven** — see the
   completion note's G9 statement.

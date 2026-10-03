@@ -403,6 +403,8 @@ externalBackends:
     # descriptor are regenerated as a set by:
     #   pnpm --filter @herobids/scripts run generate-dev-descriptor
     # (the matching private key is gitignored: config/external-backends/*.dev-key.pem).
+    # Full procedure (regenerate + the production-key step, CF-9):
+    #   docs/runbooks/external-backend-descriptor-signing.md
     trustedDescriptorSigningKeys:
       - keyId: traderton-dev-1              # DEV key; must match the committed descriptor's keyId
         status: active
