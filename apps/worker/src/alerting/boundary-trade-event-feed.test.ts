@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createBoundaryTradeEventFeed } from './boundary-trade-event-feed.js';
-import type { TradertonReadBoundary } from '../traderton/read-adapter.js';
-import type { TradertonReadResult } from '@herobids/domain';
+import type { ExternalBackendReadBoundary } from '../external-backend/read-adapter.js';
+import type { ExternalBackendReadResult } from '@herobids/domain';
 
-function makeBoundary(result: TradertonReadResult): TradertonReadBoundary & { invoke: ReturnType<typeof vi.fn> } {
+function makeBoundary(result: ExternalBackendReadResult): ExternalBackendReadBoundary & { invoke: ReturnType<typeof vi.fn> } {
   return { invoke: vi.fn().mockResolvedValue(result) };
 }
 

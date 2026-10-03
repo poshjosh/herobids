@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ToolContext, TradertonReadResult } from '@herobids/domain';
+import type { ToolContext, ExternalBackendReadResult } from '@herobids/domain';
 import { marketDataTools } from './market-data.js';
 
 const discoverTokensTool = marketDataTools.find((tool) => tool.name === 'discover_tokens');
@@ -8,8 +8,8 @@ const checkRegimeTool = marketDataTools.find((tool) => tool.name === 'check_regi
 const getFundingRatesTool = marketDataTools.find((tool) => tool.name === 'get_funding_rates');
 const getMarketOverviewTool = marketDataTools.find((tool) => tool.name === 'get_market_overview');
 
-/** A stubbed tradertonBoundary whose invoke returns a fixed result and records calls. */
-function stubBoundary(result: TradertonReadResult) {
+/** A stubbed externalBackend whose invoke returns a fixed result and records calls. */
+function stubBoundary(result: ExternalBackendReadResult) {
   const invoke = vi.fn(async () => result);
   return { boundary: { invoke }, invoke };
 }
@@ -33,7 +33,7 @@ function makeContext(overrides: Partial<ToolContext> = {}): ToolContext {
 }
 
 // ── Fail-closed degrade (B7) ──────────────────────────────────────────────
-// The in-process market-data path has been removed. When ctx.tradertonBoundary
+// The in-process market-data path has been removed. When ctx.externalBackend
 // is absent, each tool degrades with `market_data_not_configured` and never
 // touches the registry or price service (which are no longer consulted).
 
@@ -125,8 +125,8 @@ describe('DiscoverTokensParamsSchema', () => {
 });
 
 // ── Traderton boundary routing (B4) ───────────────────────────────────────
-// When ctx.tradertonBoundary is present, each read routes over the boundary
-// (ctx.tradertonBoundary.invoke) instead of the in-process registry/price
+// When ctx.externalBackend is present, each read routes over the boundary
+// (ctx.externalBackend.invoke) instead of the in-process registry/price
 // service. The boundary branch forwards { toolName, payload } and maps the
 // result through mapReadResultToToolResult.
 
@@ -140,7 +140,7 @@ describe('market-data tools route over the Traderton boundary when present', () 
     const result = await searchTokensTool!.execute(
       { query: 'SOL', network: 'solana', minLiquidityUsd: 5000, limit: 5 },
       makeContext({
-        tradertonBoundary: boundary,
+        externalBackend: boundary,
         marketDataRegistry: { dexscreener: { search } } as ToolContext['marketDataRegistry'],
         priceService: { getPrice },
       }),
@@ -173,7 +173,7 @@ describe('market-data tools route over the Traderton boundary when present', () 
     const result = await discoverTokensTool!.execute(
       { network: 'solana', limit: 5, minLiquidityUsd: 10000 },
       makeContext({
-        tradertonBoundary: boundary,
+        externalBackend: boundary,
         marketDataRegistry: { discovery: { discover } } as ToolContext['marketDataRegistry'],
         priceService: { getPrice },
       }),
@@ -197,7 +197,7 @@ describe('market-data tools route over the Traderton boundary when present', () 
     const result = await checkRegimeTool!.execute(
       { benchmarkSymbol: 'BTC', emaFast: 20, emaAlignment: 'bullish' },
       makeContext({
-        tradertonBoundary: boundary,
+        externalBackend: boundary,
         marketDataRegistry: { binance: { candles } } as ToolContext['marketDataRegistry'],
       }),
     );
@@ -227,7 +227,7 @@ describe('market-data tools route over the Traderton boundary when present', () 
 
     const result = await getFundingRatesTool!.execute(
       { symbols: ['BTC', 'ETH'], venue: 'hyperliquid' },
-      makeContext({ tradertonBoundary: boundary, marketDataRegistry: {} as ToolContext['marketDataRegistry'] }),
+      makeContext({ externalBackend: boundary, marketDataRegistry: {} as ToolContext['marketDataRegistry'] }),
     );
 
     expect(invoke).toHaveBeenCalledWith({
@@ -244,7 +244,7 @@ describe('market-data tools route over the Traderton boundary when present', () 
 
     const result = await getMarketOverviewTool!.execute(
       { venue: 'hyperliquid', symbols: ['BTC'] },
-      makeContext({ tradertonBoundary: boundary, marketDataRegistry: {} as ToolContext['marketDataRegistry'] }),
+      makeContext({ externalBackend: boundary, marketDataRegistry: {} as ToolContext['marketDataRegistry'] }),
     );
 
     expect(invoke).toHaveBeenCalledWith({
@@ -265,7 +265,7 @@ describe('market-data tools route over the Traderton boundary when present', () 
 
     const result = await searchTokensTool!.execute(
       { query: 'SOL' },
-      makeContext({ tradertonBoundary: boundary }),
+      makeContext({ externalBackend: boundary }),
     );
 
     expect(result.success).toBe(false);

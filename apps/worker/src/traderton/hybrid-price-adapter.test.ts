@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBoundaryPriceService } from './hybrid-price-adapter.js';
-import type { TradertonReadBoundary } from './read-adapter.js';
-import type { TradertonReadResult } from '@herobids/domain';
+import type { ExternalBackendReadBoundary } from '../external-backend/read-adapter.js';
+import type { ExternalBackendReadResult } from '@herobids/domain';
 import { resolveHybridTargetSize } from '../hybrid-decision-sizing.js';
 import type { HybridPricingIdentity } from '../runtime-composition.js';
 
-function makeBoundary(invoke: TradertonReadBoundary['invoke']): TradertonReadBoundary {
+function makeBoundary(invoke: ExternalBackendReadBoundary['invoke']): ExternalBackendReadBoundary {
   return { invoke };
 }
 
-function successPayload(overrides?: Partial<Record<string, unknown>>): TradertonReadResult {
+function successPayload(overrides?: Partial<Record<string, unknown>>): ExternalBackendReadResult {
   return {
     kind: 'success',
     data: {
@@ -86,7 +86,7 @@ describe('createBoundaryPriceService — resolvePriceTarget', () => {
       code: 'price.not_found',
       message: 'not found',
       retryable: false,
-    } satisfies TradertonReadResult);
+    } satisfies ExternalBackendReadResult);
     const svc = createBoundaryPriceService(makeBoundary(invoke));
 
     const result = await svc.resolvePriceTarget('NOPE', 'solana');
@@ -103,7 +103,7 @@ describe('createBoundaryPriceService — resolvePriceTarget', () => {
       kind: 'transport_error',
       message: 'connection reset',
       retryable: true,
-    } satisfies TradertonReadResult);
+    } satisfies ExternalBackendReadResult);
     const svc = createBoundaryPriceService(makeBoundary(invoke));
 
     const result = await svc.resolvePriceTarget('SOL', 'solana');
@@ -116,7 +116,7 @@ describe('createBoundaryPriceService — resolvePriceTarget', () => {
   });
 
   it('maps in_progress into a fail-closed price error', async () => {
-    const invoke = vi.fn().mockResolvedValue({ kind: 'in_progress' } satisfies TradertonReadResult);
+    const invoke = vi.fn().mockResolvedValue({ kind: 'in_progress' } satisfies ExternalBackendReadResult);
     const svc = createBoundaryPriceService(makeBoundary(invoke));
 
     const result = await svc.resolvePriceTarget('SOL', 'solana');
@@ -144,7 +144,7 @@ describe('createBoundaryPriceService — resolvePriceTarget', () => {
     const invoke = vi.fn().mockResolvedValue({
       kind: 'success',
       data: { ok: true, symbol: 'PEPE', chain: 'ethereum' /* no priceUsd/source/... */ },
-    } satisfies TradertonReadResult);
+    } satisfies ExternalBackendReadResult);
     const svc = createBoundaryPriceService(makeBoundary(invoke));
 
     const result = await svc.resolvePriceTarget('PEPE', 'ethereum');
@@ -156,7 +156,7 @@ describe('createBoundaryPriceService — resolvePriceTarget', () => {
   });
 
   it('fails closed when the payload is not an object', async () => {
-    const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: null } satisfies TradertonReadResult);
+    const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: null } satisfies ExternalBackendReadResult);
     const svc = createBoundaryPriceService(makeBoundary(invoke));
 
     const result = await svc.resolvePriceTarget('PEPE', 'ethereum');

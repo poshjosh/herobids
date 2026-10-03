@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult } from './external-backend-result.js';
 
 // Supported chain identifiers for the price tool.
 // 'hyperliquid' routes to the execution (mark) price source.
@@ -118,7 +118,7 @@ const getPriceTool: AgentTool<TradingToolContext> = {
     // absent the tool degrades (fail-closed) — there is no in-process path. The
     // Traderton `get_price` tool does its own address auto-detection from the
     // symbol, so only { symbol, chain } is forwarded.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return {
         success: false,
         error: 'market_data_not_configured',
@@ -126,7 +126,7 @@ const getPriceTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    const result = await ctx.tradertonBoundary.invoke({
+    const result = await ctx.externalBackend.invoke({
       toolName: 'get_price',
       payload: { symbol: trimmedSymbol, chain },
     });

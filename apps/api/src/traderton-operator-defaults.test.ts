@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { TradertonReadResult } from '@herobids/domain';
+import type { ExternalBackendReadResult } from '@herobids/domain';
 import {
   loadOperatorRiskDefaults,
   clearOperatorRiskDefaultsCache,
@@ -8,7 +8,7 @@ import type { TradertonReadBoundary } from './routes/exports-traderton.js';
 
 /** Build a stubbable boundary whose `invoke` result is driven by a mock fn. */
 function makeStubBoundary(
-  invoke: (input: { toolName: string; payload: unknown }) => Promise<TradertonReadResult>,
+  invoke: (input: { toolName: string; payload: unknown }) => Promise<ExternalBackendReadResult>,
 ): TradertonReadBoundary {
   return { invoke };
 }
@@ -29,7 +29,7 @@ describe('loadOperatorRiskDefaults', () => {
     const invoke = vi.fn().mockResolvedValue({
       kind: 'success',
       data: sampleDefaults,
-    } satisfies TradertonReadResult);
+    } satisfies ExternalBackendReadResult);
     const boundary = makeStubBoundary(invoke);
 
     const result = await loadOperatorRiskDefaults(boundary);
@@ -50,7 +50,7 @@ describe('loadOperatorRiskDefaults', () => {
         code: 'validation.invalid_payload',
         message: 'x',
         retryable: false,
-      } satisfies TradertonReadResult),
+      } satisfies ExternalBackendReadResult),
     );
 
     const result = await loadOperatorRiskDefaults(boundary);
@@ -71,7 +71,7 @@ describe('loadOperatorRiskDefaults', () => {
         kind: 'transport_error',
         message: 'down',
         retryable: true,
-      } satisfies TradertonReadResult),
+      } satisfies ExternalBackendReadResult),
     );
 
     const result = await loadOperatorRiskDefaults(boundary);
@@ -90,7 +90,7 @@ describe('loadOperatorRiskDefaults', () => {
     const invoke = vi.fn().mockResolvedValue({
       kind: 'success',
       data: sampleDefaults,
-    } satisfies TradertonReadResult);
+    } satisfies ExternalBackendReadResult);
     const boundary = makeStubBoundary(invoke);
 
     const first = await loadOperatorRiskDefaults(boundary);
@@ -112,11 +112,11 @@ describe('loadOperatorRiskDefaults', () => {
         code: 'validation.invalid_payload',
         message: 'x',
         retryable: false,
-      } satisfies TradertonReadResult)
+      } satisfies ExternalBackendReadResult)
       .mockResolvedValueOnce({
         kind: 'success',
         data: sampleDefaults,
-      } satisfies TradertonReadResult);
+      } satisfies ExternalBackendReadResult);
     const boundary = makeStubBoundary(invoke);
 
     const failed = await loadOperatorRiskDefaults(boundary);

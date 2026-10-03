@@ -11,8 +11,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import { createExternalBackendClient, type ExternalBackendClientResult } from '@herobids/domain/external-backend';
-import { createTradertonSideEffectBoundary, type TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
-import { startFakeIdempotentBoundary } from '../traderton/__tests__/fake-idempotent-boundary.js';
+import { createExternalBackendWriteBoundary, type ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
+import { startFakeIdempotentBoundary } from '../external-backend/__tests__/fake-idempotent-boundary.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import { AgentDecisionHandler } from './agent-decision-handler.js';
 
@@ -46,7 +46,7 @@ function makePayload(overrides: Partial<DecisionSubmitPayload> = {}): DecisionSu
 
 /** A stubbed boundary whose invokeAndAwait returns a scripted client result. */
 function makeBoundary(result: ExternalBackendClientResult): {
-  boundary: TradertonSideEffectBoundary;
+  boundary: ExternalBackendWriteBoundary;
   invokeAndAwait: ReturnType<typeof vi.fn>;
   invoke: ReturnType<typeof vi.fn>;
 } {
@@ -183,7 +183,7 @@ describe('AgentDecisionHandler (L3c — boundary)', () => {
   });
 
   describe('approval_required mode — pre-boundary, boundary NOT called', () => {
-    function makeApprovalHandler(boundary: TradertonSideEffectBoundary, invokeAndAwait: ReturnType<typeof vi.fn>) {
+    function makeApprovalHandler(boundary: ExternalBackendWriteBoundary, invokeAndAwait: ReturnType<typeof vi.fn>) {
       const agentRepo = makeAgentRepo({
         getAgent: vi.fn().mockResolvedValue({
           id: 'agent-1', userId: 'user-1', status: 'active',
@@ -241,7 +241,7 @@ describe('AgentDecisionHandler — submit_decision idempotency (T0.6)', () => {
   >;
 
   /** A direct-mode handler over typed partial fakes (only the members this path reads). */
-  function makeDirectHandler(boundary: TradertonSideEffectBoundary) {
+  function makeDirectHandler(boundary: ExternalBackendWriteBoundary) {
     const agentRow = { id: 'agent-1', userId: 'user-1', status: 'active' } as AgentRow;
     const agentRepo: Pick<AgentRepository, 'getAgent' | 'isActiveSession'> = {
       getAgent: async () => agentRow,
@@ -275,17 +275,17 @@ describe('AgentDecisionHandler — submit_decision idempotency (T0.6)', () => {
       hmacSecret: 'unit-secret',
       requestTimeoutMs: 5_000,
     });
-    return { backend, boundary: createTradertonSideEffectBoundary(client) };
+    return { backend, boundary: createExternalBackendWriteBoundary(client) };
   }
 
   it('submits the decision under its decisionId as the idempotency key', async () => {
-    const invokeAndAwait = vi.fn<TradertonSideEffectBoundary['invokeAndAwait']>(async () => ({
+    const invokeAndAwait = vi.fn<ExternalBackendWriteBoundary['invokeAndAwait']>(async () => ({
       kind: 'success',
       requestId: 'r',
       correlationId: 'c',
       payload: {},
     }));
-    const boundary: TradertonSideEffectBoundary = { invoke: vi.fn<TradertonSideEffectBoundary['invoke']>(), invokeAndAwait };
+    const boundary: ExternalBackendWriteBoundary = { invoke: vi.fn<ExternalBackendWriteBoundary['invoke']>(), invokeAndAwait };
     const { handler } = makeDirectHandler(boundary);
 
     await handler.handleDecisionSubmit(makeEnvelope(), makePayload({ decisionId: 'dec-key-1' }));

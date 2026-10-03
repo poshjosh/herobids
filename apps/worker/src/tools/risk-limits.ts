@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult, mapWriteResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult, mapWriteResultToToolResult } from './external-backend-result.js';
 import { buildRiskSpecPayloadFields } from '../agents/decision-boundary-mapping.js';
 
 /** Deadline for the adjust_risk_limits boundary write (invoke + poll), in ms. */
@@ -40,7 +40,7 @@ const getRiskLimitsTool: AgentTool<TradingToolContext> = {
     // boundary-side RiskSource seam, so the previous in-process riskContractOps
     // fallback is a split-brain trap (consumer would read its own numbers while
     // traderton enforces from the same payload) and is deleted.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return {
         success: false,
         error: 'trading boundary not configured',
@@ -52,7 +52,7 @@ const getRiskLimitsTool: AgentTool<TradingToolContext> = {
     // The platform resolves the selected account. Traderton loads profile-owned
     // enforcement data from its durable profile store.
     const payload = await riskSpecReadPayload(ctx);
-    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_risk_limits', payload });
+    const result = await ctx.externalBackend.invoke({ toolName: 'get_risk_limits', payload });
     return mapReadResultToToolResult(result);
   },
 };
@@ -95,7 +95,7 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
     // the read path `get_risk_limits` shares this fail-closed posture. The
     // boundary returns the same success shape this tool used to build
     // in-process, so parity holds.
-    if (!ctx.tradertonWriteBoundary) {
+    if (!ctx.externalBackendWrite) {
       return {
         success: false,
         error: 'trading boundary not configured',
@@ -128,7 +128,7 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    const result = await ctx.tradertonWriteBoundary.invokeAndAwait({
+    const result = await ctx.externalBackendWrite.invokeAndAwait({
       toolName: 'adjust_risk_limits',
       payload: { ...overrides, venueAccountId },
       deadlineMs: ADJUST_RISK_LIMITS_DEADLINE_MS,

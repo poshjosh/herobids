@@ -1,4 +1,4 @@
-import type { MarketAssessmentIdentity, PresetEntry, PresetScorecardEntry, PriceCandle, TradertonReadResult } from '@herobids/domain';
+import type { MarketAssessmentIdentity, PresetEntry, PresetScorecardEntry, PriceCandle, ExternalBackendReadResult } from '@herobids/domain';
 import { computePresetBehaviorVersion, err, ok, type Result } from '@herobids/domain';
 import type { IndicatorConfig, ScanConfig } from './preset-scan-contracts.js';
 
@@ -8,12 +8,12 @@ import type { IndicatorConfig, ScanConfig } from './preset-scan-contracts.js';
  * The narrow `score_candidate` read-boundary port the runner consumes for ALL
  * scoring — orderbook/perp AND swap/dex (the swap arm now routes over the
  * boundary too; the boundary resolves the token → pool behind it). Structurally
- * identical to the read tools' `ctx.tradertonBoundary`; the composition root
+ * identical to the read tools' `ctx.externalBackend`; the composition root
  * binds a SYSTEM subject + deadline. When absent, scoring cannot proceed (the
  * caller supplies it; the assessor threads one from the worker composition root).
  */
 export interface ScoreCandidateBoundary {
-  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+  invoke(input: { toolName: string; payload: unknown }): Promise<ExternalBackendReadResult>;
 }
 
 export interface PresetScorecardRunnerDeps {

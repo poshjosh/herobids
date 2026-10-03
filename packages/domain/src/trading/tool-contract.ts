@@ -102,7 +102,7 @@ export interface ToolPositionRecord {
 }
 
 /**
- * The result of a Traderton REST boundary invocation, as seen by a read tool
+ * The result of an external-backend invocation, as seen by a read tool
  * (L3b). A domain-clean discriminated union mirroring the worker's
  * `ExternalBackendClientResult` without pulling any worker/transport type into the
  * domain package. The worker composition root adapts its concrete
@@ -117,7 +117,7 @@ export interface ToolPositionRecord {
  * - `transport_error` — a client/transport failure (fetch rejected, non-2xx,
  *   unparseable body, timeout). Always retryable; carries no boundary internals.
  */
-export type TradertonReadResult =
+export type ExternalBackendReadResult =
   | { kind: 'success'; data: unknown }
   | { kind: 'failure'; code: string; message: string; retryable: boolean }
   | { kind: 'in_progress' }
@@ -151,8 +151,8 @@ export interface TradingToolContext {
   /** Authorization mode for agent-direct trade decisions: 'direct' (execute immediately) or 'approval_required' (require user approval). */
   authorizationMode: 'direct' | 'approval_required';
   /**
-   * The Traderton REST boundary port (L3b). When present, read tools call the
-   * boundary instead of reading the trading DB directly. This is a structural
+   * The external-backend READ port (L3b). When present, read tools invoke the
+   * configured external backend instead of reading the DB directly. This is a structural
    * subset the worker's `ExternalBackendClient` (adapted at the composition root)
    * satisfies; the domain package MUST NOT depend on worker/transport types.
    *
@@ -162,13 +162,13 @@ export interface TradingToolContext {
    * absent, read tools fall back to the existing direct-DB behaviour (a
    * transitional L3b affordance; L3c/L3d tighten this).
    */
-  tradertonBoundary?: {
-    invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+  externalBackend?: {
+    invoke(input: { toolName: string; payload: unknown }): Promise<ExternalBackendReadResult>;
   };
   /**
-   * The Traderton REST SIDE-EFFECTING boundary port (L3d). When present, the
+   * The external-backend SIDE-EFFECTING (write) port (L3d). When present, the
    * write path of side-effecting tools (currently `adjust_risk_limits`) routes
-   * the mutation through the boundary. Subject-bound at construction by the
+   * the mutation through the external backend. Subject-bound at construction by the
    * worker adapter (the tool never sees the subject/caller/signing material);
    * the tool only names a tool + forwards its already-validated payload.
    *
@@ -178,7 +178,7 @@ export interface TradingToolContext {
    * verbatim. When ABSENT, the write path HARD-FAILS (`precondition.not_ready`)
    * — there is NO in-process fallback for the write (fail-closed).
    */
-  tradertonWriteBoundary?: {
+  externalBackendWrite?: {
     invokeAndAwait(input: {
       toolName: string;
       payload: unknown;

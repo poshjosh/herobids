@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult } from './external-backend-result.js';
 import { riskSpecReadPayload } from './risk-limits.js';
 
 // --- get_account_summary ---
@@ -19,7 +19,7 @@ const getAccountSummaryTool: AgentTool<TradingToolContext> = {
     // c4.9i: the Traderton boundary is the sole source; it returns the same
     // `data` shape this tool used to build locally. Fail-closed when the
     // boundary is absent (the dead in-process botRepo read was removed).
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return {
         success: false,
         fault: false,
@@ -34,7 +34,7 @@ const getAccountSummaryTool: AgentTool<TradingToolContext> = {
     // keeps its graceful `*_unavailable` warnings degrade.
     const payload = await riskSpecReadPayload(ctx);
 
-    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_account_summary', payload });
+    const result = await ctx.externalBackend.invoke({ toolName: 'get_account_summary', payload });
     return mapReadResultToToolResult(result);
   },
 };

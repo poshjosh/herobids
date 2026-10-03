@@ -20,8 +20,8 @@ function makeCtx(opts: {
   riskContractOps?: ToolContext['riskContractOps'];
   agentConfigOps?: ToolContext['agentConfigOps'];
   agentRepo?: ToolContext['agentRepo'];
-  tradertonWriteBoundary?: ToolContext['tradertonWriteBoundary'];
-  tradertonBoundary?: ToolContext['tradertonBoundary'];
+  externalBackendWrite?: ToolContext['externalBackendWrite'];
+  externalBackend?: ToolContext['externalBackend'];
   selectedVenueAccountResolver?: ToolContext['selectedVenueAccountResolver'];
 } = {}): ToolContext {
   return {
@@ -33,8 +33,8 @@ function makeCtx(opts: {
     riskContractOps: opts.riskContractOps,
     agentConfigOps: opts.agentConfigOps,
     agentRepo: opts.agentRepo,
-    tradertonWriteBoundary: opts.tradertonWriteBoundary,
-    tradertonBoundary: opts.tradertonBoundary,
+    externalBackendWrite: opts.externalBackendWrite,
+    externalBackend: opts.externalBackend,
     selectedVenueAccountResolver: opts.selectedVenueAccountResolver,
   } as unknown as ToolContext;
 }
@@ -65,7 +65,7 @@ describe('get_risk_limits tool', () => {
     const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: boundaryData });
     const getContract = vi.fn();
     const ctx = makeCtx({
-      tradertonBoundary: { invoke },
+      externalBackend: { invoke },
       riskContractOps: { getContract },
     });
 
@@ -86,7 +86,7 @@ describe('get_risk_limits tool', () => {
       retryable: true,
     });
     const ctx = makeCtx({
-      tradertonBoundary: { invoke },
+      externalBackend: { invoke },
       selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
@@ -104,12 +104,12 @@ describe('get_risk_limits tool', () => {
 
   it('degrades to an empty payload when the spec resolver is absent or throws', async () => {
     const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: { ok: true } });
-    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+    const ctx = makeCtx({ externalBackend: { invoke } });
     await getRiskLimitsTool.execute({}, ctx);
     expect(invoke).toHaveBeenCalledWith({ toolName: 'get_risk_limits', payload: {} });
 
     const throwingCtx = makeCtx({
-      tradertonBoundary: { invoke },
+      externalBackend: { invoke },
       selectedVenueAccountResolver: vi.fn(async () => { throw new Error('db down'); }),
     });
     await getRiskLimitsTool.execute({}, throwingCtx);
@@ -129,7 +129,7 @@ describe('get_risk_limits tool', () => {
       payload: successPayload,
     });
     const ctx = makeCtx({
-      tradertonWriteBoundary: { invokeAndAwait },
+      externalBackendWrite: { invokeAndAwait },
       selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
@@ -157,7 +157,7 @@ describe('get_risk_limits tool', () => {
       payload: { ok: true, note: 'Risk limits updated.' },
     });
     const ctx = makeCtx({
-      tradertonWriteBoundary: { invokeAndAwait },
+      externalBackendWrite: { invokeAndAwait },
       selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
@@ -178,7 +178,7 @@ describe('get_risk_limits tool', () => {
       retryable: false,
     });
     const ctx = makeCtx({
-      tradertonWriteBoundary: { invokeAndAwait },
+      externalBackendWrite: { invokeAndAwait },
       selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
@@ -193,7 +193,7 @@ describe('get_risk_limits tool', () => {
   it('maps a boundary in_progress to a precondition.not_ready failure', async () => {
     const invokeAndAwait = vi.fn().mockResolvedValue({ kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' });
     const ctx = makeCtx({
-      tradertonWriteBoundary: { invokeAndAwait },
+      externalBackendWrite: { invokeAndAwait },
       selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
@@ -207,7 +207,7 @@ describe('get_risk_limits tool', () => {
   it('maps a boundary transport_error to a retryable fault', async () => {
     const invokeAndAwait = vi.fn().mockResolvedValue({ kind: 'transport_error', requestId: 'req-1', retryable: true, message: 'down' });
     const ctx = makeCtx({
-      tradertonWriteBoundary: { invokeAndAwait },
+      externalBackendWrite: { invokeAndAwait },
       selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
@@ -221,7 +221,7 @@ describe('get_risk_limits tool', () => {
 
   it('returns error when no fields are provided (before touching the boundary)', async () => {
     const invokeAndAwait = vi.fn();
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({ externalBackendWrite: { invokeAndAwait } });
 
     const result = await adjustRiskLimitsTool.execute({}, ctx);
 

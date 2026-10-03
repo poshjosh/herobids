@@ -37,8 +37,8 @@ import {
 } from './agents/index.js';
 import { buildExternalBackendClientConfig, createExternalBackendClient } from '@herobids/domain/external-backend';
 import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
-import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
-import { createTradertonReadBoundary } from './traderton/read-adapter.js';
+import { createExternalBackendWriteBoundary } from './external-backend/write-adapter.js';
+import { createExternalBackendReadBoundary } from './external-backend/read-adapter.js';
 import { ApprovalService } from './services/approval-service.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
 import { DockerRuntimeDocumentMaterializer } from './agents/docker-document-materializer.js';
@@ -447,7 +447,7 @@ const sideEffectBoundary = (() => {
   const { definition, hmacSecret } = tradingBackend.data;
   const client = createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
   logger.info({ baseUrl: definition.endpoint.baseUrl }, 'Traderton side-effecting boundary enabled — submit_decision + bot lifecycle route over REST');
-  return createTradertonSideEffectBoundary(client);
+  return createExternalBackendWriteBoundary(client);
 })();
 
 // L3 Q2: a SYSTEM-subject read boundary for the shared worker's market-intel
@@ -473,7 +473,7 @@ const systemReadBoundary = (() => {
     actor: { type: 'system', id: 'market-intel' },
   };
   logger.info({ baseUrl: definition.endpoint.baseUrl }, 'Traderton system read boundary enabled — market-intel scoring/regime route over REST');
-  return createTradertonReadBoundary(client, subject, definition.endpoint.requestTimeoutMs);
+  return createExternalBackendReadBoundary(client, subject, definition.endpoint.requestTimeoutMs);
 })();
 
 // c4.9j: a SYSTEM-subject read boundary for the AlertDispatcher's trade-event
@@ -501,7 +501,7 @@ const alertDispatcherFeed = (() => {
     actor: { type: 'system', id: 'alert-dispatcher' },
   };
   logger.info({ baseUrl: definition.endpoint.baseUrl }, 'Traderton alert-dispatcher read boundary enabled — trade-event feed routes over REST');
-  return createBoundaryTradeEventFeed(createTradertonReadBoundary(client, subject, definition.endpoint.requestTimeoutMs));
+  return createBoundaryTradeEventFeed(createExternalBackendReadBoundary(client, subject, definition.endpoint.requestTimeoutMs));
 })();
 
 // L3c: resolve the approval-snapshot venue-account id from the connection grant

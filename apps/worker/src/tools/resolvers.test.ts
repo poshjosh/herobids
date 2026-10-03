@@ -29,7 +29,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
  * boundary, then matches client-side). */
 function ctxWithBots(bots: Array<{ id: string; status: string; symbol: string | null }>): ToolContext {
   return makeCtx({
-    tradertonBoundary: {
+    externalBackend: {
       invoke: vi.fn(async () => ({ kind: 'success' as const, data: { ok: true, bots } })),
     },
   });
@@ -104,7 +104,7 @@ describe('resolve_bot', () => {
 
   it('maps a boundary failure through the shared read→tool mapping', async () => {
     const ctx = makeCtx({
-      tradertonBoundary: {
+      externalBackend: {
         invoke: vi.fn(async () => ({
           kind: 'failure' as const,
           code: 'upstream.transient',
@@ -170,7 +170,7 @@ describe('resolve_watch', () => {
         ],
       },
     }));
-    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+    const ctx = makeCtx({ externalBackend: { invoke } });
 
     const result = await resolveWatch.execute({ note: 'breakout' }, ctx);
 
@@ -185,7 +185,7 @@ describe('resolve_watch', () => {
 
   it('resolves a watch by symbol substring', async () => {
     const ctx = makeCtx({
-      tradertonBoundary: {
+      externalBackend: {
         invoke: vi.fn(async () => ({
           kind: 'success' as const,
           data: { ok: true, watches: [{ watchId: 'watch-1', symbol: 'ETH/USD', note: 'ETH dip' }] },
@@ -204,7 +204,7 @@ describe('resolve_watch', () => {
 
   it('returns empty with a hint when no boundary watches match', async () => {
     const ctx = makeCtx({
-      tradertonBoundary: {
+      externalBackend: {
         invoke: vi.fn(async () => ({
           kind: 'success' as const,
           data: { ok: true, watches: [{ watchId: 'watch-1', symbol: 'BTC/USD', note: 'BTC pump' }] },
@@ -222,7 +222,7 @@ describe('resolve_watch', () => {
 
   it('maps a boundary failure through the shared read→tool mapping', async () => {
     const ctx = makeCtx({
-      tradertonBoundary: {
+      externalBackend: {
         invoke: vi.fn(async () => ({
           kind: 'failure' as const,
           code: 'upstream.transient',
@@ -241,7 +241,7 @@ describe('resolve_watch', () => {
 
   it('returns resolve.watch_failed when the boundary throws', async () => {
     const ctx = makeCtx({
-      tradertonBoundary: {
+      externalBackend: {
         invoke: vi.fn(async () => {
           throw new Error('Redis timeout');
         }),

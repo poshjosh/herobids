@@ -6,7 +6,7 @@ import {
   type ScoreCandidateBoundary,
 } from './preset-scorecard-runner.js';
 import type { PriceCandle } from '@herobids/domain';
-import type { MarketAssessmentIdentity, PresetEntry, TradertonReadResult } from '@herobids/domain';
+import type { MarketAssessmentIdentity, PresetEntry, ExternalBackendReadResult } from '@herobids/domain';
 
 // NOTE (Slice 4 Plan B, intentional divergence): the former
 // `vi.mock('@herobids/strategy')` + `scoreCandidate` spy assertions are removed
@@ -63,7 +63,7 @@ function makeMockPresetEntry(
 }
 
 /** A stubbed score_candidate boundary whose invoke returns a fixed result + records calls. */
-function stubBoundary(result: TradertonReadResult): { boundary: ScoreCandidateBoundary; invoke: ReturnType<typeof vi.fn> } {
+function stubBoundary(result: ExternalBackendReadResult): { boundary: ScoreCandidateBoundary; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn(async () => result);
   return { boundary: { invoke }, invoke };
 }

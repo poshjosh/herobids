@@ -3,7 +3,7 @@
 // Fulfils the narrow `TradeEventFeed` port by invoking Traderton's cross-owner
 // trade-event read tools (`scan_trade_events` / `get_events_by_ids` /
 // `get_event_by_id`) over the REST boundary. Mirrors the
-// `createTradertonReadBoundary` / `TradertonReadBoundary.invoke` pattern: it
+// `createExternalBackendReadBoundary` / `ExternalBackendReadBoundary.invoke` pattern: it
 // takes a bound read boundary (subject + deadline already baked in) and maps
 // each method to a named tool invocation.
 //
@@ -22,8 +22,8 @@
 
 import type { JournalEventRow } from './alert-policy.js';
 import type { TradeEventFeed } from './trade-event-feed.js';
-import type { TradertonReadBoundary } from '../traderton/read-adapter.js';
-import type { TradertonReadResult } from '@herobids/domain';
+import type { ExternalBackendReadBoundary } from '../external-backend/read-adapter.js';
+import type { ExternalBackendReadResult } from '@herobids/domain';
 
 /** Rehydrate an ISO string (or Date) into a Date. Throws on missing/invalid values. */
 function toDate(value: unknown, field: string): Date {
@@ -59,7 +59,7 @@ function toRow(record: unknown): JournalEventRow {
  * Surface a read result's rows, or throw on any non-success outcome so the
  * dispatcher tick's catch reschedules without advancing the cursor.
  */
-function requireSuccess(result: TradertonReadResult, toolName: string): unknown {
+function requireSuccess(result: ExternalBackendReadResult, toolName: string): unknown {
   switch (result.kind) {
     case 'success':
       return result.data;
@@ -72,7 +72,7 @@ function requireSuccess(result: TradertonReadResult, toolName: string): unknown 
   }
 }
 
-export function createBoundaryTradeEventFeed(boundary: TradertonReadBoundary): TradeEventFeed {
+export function createBoundaryTradeEventFeed(boundary: ExternalBackendReadBoundary): TradeEventFeed {
   return {
     async scanAfter(opts): Promise<JournalEventRow[]> {
       const result = await boundary.invoke({

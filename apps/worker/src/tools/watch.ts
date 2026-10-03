@@ -13,7 +13,7 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { WatchPurposeEnum } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult, mapWriteResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult, mapWriteResultToToolResult } from './external-backend-result.js';
 import { EXPLICIT_SUPPORTED_CHAINS } from './price.js';
 
 /** Deadline for single-record watch boundary writes (invoke + poll), in ms. */
@@ -89,11 +89,11 @@ const watchTokenTool: AgentTool<TradingToolContext> = {
     // resolution, instrument lookup, coverage derivation and positionKey strip.
     // FAIL CLOSED when the write boundary is absent. Coverage is forwarded
     // VERBATIM — do NOT pre-strip coverage.positionKey (the boundary owns it).
-    if (!ctx.tradertonWriteBoundary) {
+    if (!ctx.externalBackendWrite) {
       return BOUNDARY_NOT_READY;
     }
 
-    const result = await ctx.tradertonWriteBoundary.invokeAndAwait({
+    const result = await ctx.externalBackendWrite.invokeAndAwait({
       toolName: 'watch_token',
       payload: { symbol, chain, thresholdPrice, condition, note, purpose, coverage },
       deadlineMs: WATCH_WRITE_DEADLINE_MS,
@@ -120,12 +120,12 @@ const listWatchesTool: AgentTool<TradingToolContext> = {
     // is absent — the legacy local Redis hash no longer receives writes and
     // could only serve stale pre-migration data. Typed failure codes align
     // with the shared read→tool mapping (precondition.not_ready, non-fault).
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return BOUNDARY_NOT_READY;
     }
 
     return mapReadResultToToolResult(
-      await ctx.tradertonBoundary.invoke({ toolName: 'list_watches', payload: {} }),
+      await ctx.externalBackend.invoke({ toolName: 'list_watches', payload: {} }),
     );
   },
 };
@@ -148,11 +148,11 @@ const removeWatchTool: AgentTool<TradingToolContext> = {
     const { watchId } = params as z.infer<typeof RemoveWatchParamsSchema>;
 
     // Watch state lives Traderton-side — FAIL CLOSED when the boundary is absent.
-    if (!ctx.tradertonWriteBoundary) {
+    if (!ctx.externalBackendWrite) {
       return BOUNDARY_NOT_READY;
     }
 
-    const result = await ctx.tradertonWriteBoundary.invokeAndAwait({
+    const result = await ctx.externalBackendWrite.invokeAndAwait({
       toolName: 'remove_watch',
       payload: { watchId },
       deadlineMs: WATCH_WRITE_DEADLINE_MS,
@@ -194,11 +194,11 @@ const checkWatchesTool: AgentTool<TradingToolContext> = {
     const { removeTriggered } = params as z.infer<typeof CheckWatchesParamsSchema>;
 
     // Watch state lives Traderton-side — FAIL CLOSED when the boundary is absent.
-    if (!ctx.tradertonWriteBoundary) {
+    if (!ctx.externalBackendWrite) {
       return BOUNDARY_NOT_READY;
     }
 
-    const result = await ctx.tradertonWriteBoundary.invokeAndAwait({
+    const result = await ctx.externalBackendWrite.invokeAndAwait({
       toolName: 'check_watches',
       payload: { removeTriggered },
       deadlineMs: CHECK_WATCHES_DEADLINE_MS,

@@ -37,7 +37,7 @@ import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './capability-
 import type { CapabilityGrant } from './capability-policy.js';
 import { assessStrategyPresetTool } from '../tools/assess-strategy-preset.js';
 import { changeStrategyPresetTool } from '../tools/change-strategy-preset.js';
-import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
 import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createLogger } from '../logger.js';
 
@@ -91,7 +91,7 @@ export class AgentMessageBroker {
     // (create/start/stop/adjust) routes over REST instead of the in-process
     // lifecycle queue + actor. When absent (unconfigured), lifecycle actions
     // fail with a typed precondition — NEVER a silent fall back to the engine.
-    private readonly sideEffectBoundary?: TradertonSideEffectBoundary,
+    private readonly sideEffectBoundary?: ExternalBackendWriteBoundary,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TradertonReadResult } from '@herobids/domain';
+import type { ExternalBackendReadResult } from '@herobids/domain';
 
 const mockState = vi.hoisted(() => ({
   onLeaderAcquired: undefined as (() => void) | undefined,
@@ -82,7 +82,7 @@ function makeRedisMock() {
 }
 
 /** A stubbed read boundary whose invoke resolves a fixed result + records calls. */
-function stubBoundary(result: TradertonReadResult): { boundary: { invoke: ReturnType<typeof vi.fn> }; invoke: ReturnType<typeof vi.fn> } {
+function stubBoundary(result: ExternalBackendReadResult): { boundary: { invoke: ReturnType<typeof vi.fn> }; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn(async () => result);
   return { boundary: { invoke }, invoke };
 }
@@ -92,8 +92,8 @@ function stubBoundary(result: TradertonReadResult): { boundary: { invoke: Return
  * of (fake) time has elapsed — used to exercise the elapsed-age path in
  * markDiscoveryStale after a failed refresh.
  */
-function makeDelayedBoundary(result: TradertonReadResult, delayMs: number): { boundary: { invoke: ReturnType<typeof vi.fn> }; invoke: ReturnType<typeof vi.fn> } {
-  const invoke = vi.fn(() => new Promise<TradertonReadResult>((resolve) => {
+function makeDelayedBoundary(result: ExternalBackendReadResult, delayMs: number): { boundary: { invoke: ReturnType<typeof vi.fn> }; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn(() => new Promise<ExternalBackendReadResult>((resolve) => {
     setTimeout(() => resolve(result), delayMs);
   }));
   return { boundary: { invoke }, invoke };

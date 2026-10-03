@@ -15,7 +15,7 @@ import { checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import { canonicalizeExecutionMode } from './agent-config-helpers.js';
 import { INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
-import type { TradertonReadResult } from '@herobids/domain';
+import type { ExternalBackendReadResult } from '@herobids/domain';
 import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { projectBotToBlueprintPayload } from '../services/blueprint-projection.js';
 import { buildBlueprintDetail } from './blueprints.js';
@@ -74,7 +74,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       | 'get_owner_bot_journal',
     payload: Record<string, unknown>,
     userId: string,
-  ): Promise<TradertonReadResult> => {
+  ): Promise<ExternalBackendReadResult> => {
     if (!tradertonClient) {
       return { kind: 'transport_error', message: 'trading boundary not configured', retryable: true };
     }
@@ -90,7 +90,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       case 'failure': {
         // The boundary dispatcher maps a tool's fault:false errorCode (e.g.
         // `not_found.resource`) onto the closed wire code `validation.invalid_payload`
-        // and carries the ORIGINAL under `details.errorCode`. TradertonReadResult
+        // and carries the ORIGINAL under `details.errorCode`. ExternalBackendReadResult
         // has no `details` field, so unwrap it HERE: when the wire code is the
         // generic validation code and a tool errorCode is present, surface the
         // tool errorCode as `code` so the read handlers' not_found.resource → 404

@@ -14,8 +14,8 @@ function makeCtx(overrides: {
   redis?: Partial<ToolContext['redis']>;
   priceService?: ToolContext['priceService'] | null;
   instrumentRepo?: ToolContext['instrumentRepo'] | null;
-  tradertonBoundary?: ToolContext['tradertonBoundary'];
-  tradertonWriteBoundary?: ToolContext['tradertonWriteBoundary'];
+  externalBackend?: ToolContext['externalBackend'];
+  externalBackendWrite?: ToolContext['externalBackendWrite'];
 } = {}): ToolContext {
   const hstore = new Map<string, Record<string, string>>();
   const sets = new Map<string, Set<string>>();
@@ -67,8 +67,8 @@ function makeCtx(overrides: {
     publishToInbound: vi.fn().mockResolvedValue(undefined),
     priceService: overrides.priceService === null ? undefined : overrides.priceService,
     instrumentRepo: overrides.instrumentRepo === null ? undefined : overrides.instrumentRepo,
-    tradertonBoundary: overrides.tradertonBoundary,
-    tradertonWriteBoundary: overrides.tradertonWriteBoundary,
+    externalBackend: overrides.externalBackend,
+    externalBackendWrite: overrides.externalBackendWrite,
   } as unknown as ToolContext;
 }
 
@@ -90,7 +90,7 @@ describe('watch write tools — fail closed without a write boundary', () => {
   it('watch_token fails closed with precondition.not_ready', async () => {
     const resolvePriceTarget = vi.fn();
     const getPrice = vi.fn();
-    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } }); // no tradertonWriteBoundary
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } }); // no externalBackendWrite
 
     const result = await watchTokenTool.execute(
       { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
@@ -107,7 +107,7 @@ describe('watch write tools — fail closed without a write boundary', () => {
   });
 
   it('remove_watch fails closed with precondition.not_ready', async () => {
-    const ctx = makeCtx(); // no tradertonWriteBoundary
+    const ctx = makeCtx(); // no externalBackendWrite
 
     const result = await removeWatchTool.execute(
       { watchId: '00000000-0000-4000-8000-000000000000' },
@@ -123,7 +123,7 @@ describe('watch write tools — fail closed without a write boundary', () => {
   it('check_watches fails closed with precondition.not_ready', async () => {
     const getPrice = vi.fn();
     const resolvePriceTarget = vi.fn();
-    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } }); // no tradertonWriteBoundary
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } }); // no externalBackendWrite
 
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
 
@@ -156,9 +156,9 @@ describe('list_watches — fail closed without a read boundary (A6)', () => {
 
 // ── Traderton boundary routing (B3) ──────────────────────────────────────
 // After B3 the watch tools route over the Traderton boundary when it is
-// configured: list_watches is a READ (ctx.tradertonBoundary.invoke), and
+// configured: list_watches is a READ (ctx.externalBackend.invoke), and
 // watch_token / remove_watch / check_watches are WRITES
-// (ctx.tradertonWriteBoundary.invokeAndAwait). The boundary branch returns
+// (ctx.externalBackendWrite.invokeAndAwait). The boundary branch returns
 // before any in-process priceService/instrumentRepo/botRepo/redis logic.
 
 describe('list_watches — boundary routing', () => {
@@ -167,7 +167,7 @@ describe('list_watches — boundary routing', () => {
       { watchId: '00000000-0000-4000-8000-000000000001', symbol: 'SOL', chain: 'solana' },
     ];
     const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: { ok: true, watches: boundaryWatches } });
-    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+    const ctx = makeCtx({ externalBackend: { invoke } });
 
     const result = await listWatchesTool.execute({}, ctx);
 
@@ -185,7 +185,7 @@ describe('list_watches — boundary routing', () => {
       message: 'bad payload',
       retryable: false,
     });
-    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+    const ctx = makeCtx({ externalBackend: { invoke } });
 
     const result = await listWatchesTool.execute({}, ctx);
 
@@ -205,7 +205,7 @@ describe('watch_token — boundary routing', () => {
     const getPrice = vi.fn();
     const search = vi.fn();
     const ctx = makeCtx({
-      tradertonWriteBoundary: { invokeAndAwait },
+      externalBackendWrite: { invokeAndAwait },
       priceService: { getPrice, resolvePriceTarget },
       instrumentRepo: { search },
     });
@@ -251,7 +251,7 @@ describe('watch_token — boundary routing', () => {
     const invokeAndAwait = vi.fn().mockResolvedValue({
       kind: 'failure', requestId: 'req-1', code: 'validation.invalid_payload', message: 'nope', retryable: false,
     });
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({ externalBackendWrite: { invokeAndAwait } });
 
     const result = await watchTokenTool.execute(
       { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
@@ -269,7 +269,7 @@ describe('remove_watch — boundary routing', () => {
     const invokeAndAwait = vi.fn().mockResolvedValue({
       kind: 'success', requestId: 'req-1', correlationId: 'corr-1', payload: { ok: true, watchId: 'w-1', removed: true },
     });
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({ externalBackendWrite: { invokeAndAwait } });
 
     const watchId = '00000000-0000-4000-8000-000000000009';
     const result = await removeWatchTool.execute({ watchId }, ctx);
@@ -292,7 +292,7 @@ describe('check_watches — boundary routing', () => {
     const getPrice = vi.fn();
     const resolvePriceTarget = vi.fn();
     const ctx = makeCtx({
-      tradertonWriteBoundary: { invokeAndAwait },
+      externalBackendWrite: { invokeAndAwait },
       priceService: { getPrice, resolvePriceTarget },
     });
 
@@ -310,7 +310,7 @@ describe('check_watches — boundary routing', () => {
 
   it('maps a boundary transport_error to a retryable fault', async () => {
     const invokeAndAwait = vi.fn().mockResolvedValue({ kind: 'transport_error', requestId: 'req-1', retryable: true, message: 'down' });
-    const ctx = makeCtx({ tradertonWriteBoundary: { invokeAndAwait } });
+    const ctx = makeCtx({ externalBackendWrite: { invokeAndAwait } });
 
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
 

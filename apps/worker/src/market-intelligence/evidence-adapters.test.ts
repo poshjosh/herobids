@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { MarketAssessmentIdentity, TradertonReadResult } from '@herobids/domain';
+import type { MarketAssessmentIdentity, ExternalBackendReadResult } from '@herobids/domain';
 import { createEvidencePorts, type AssessmentReadBoundary } from './evidence-adapters.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -22,8 +22,8 @@ function makeIdentity(
  * invocation for assertion.
  */
 function routingBoundary(routes: {
-  get_volatility?: TradertonReadResult;
-  score_candidate?: TradertonReadResult;
+  get_volatility?: ExternalBackendReadResult;
+  score_candidate?: ExternalBackendReadResult;
 }): { boundary: AssessmentReadBoundary; invoke: ReturnType<typeof vi.fn> } {
   const invoke = vi.fn(async (input: { toolName: string; payload: unknown }) => {
     const result = routes[input.toolName as keyof typeof routes];
@@ -44,7 +44,7 @@ const VOLATILITY_SUCCESS = (
     | { averageTrueRange: number; volatilityRegime: 'low' | 'normal' | 'high' | 'extreme'; calculationVersion: string }
     | null,
   volatilityPct: number | null = null,
-): TradertonReadResult => ({
+): ExternalBackendReadResult => ({
   kind: 'success',
   data: { ok: true, volatilityPct, volatilityEvidence },
 });
@@ -52,7 +52,7 @@ const VOLATILITY_SUCCESS = (
 const SCORE_SUCCESS = (
   candlesEvaluated: number,
   candleWindow: { start: string; end: string } | null,
-): TradertonReadResult => ({
+): ExternalBackendReadResult => ({
   kind: 'success',
   data: { signal: { confidence: 0.5 }, candlesEvaluated, candleWindow },
 });

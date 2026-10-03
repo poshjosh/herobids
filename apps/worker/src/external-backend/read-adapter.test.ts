@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { mapClientResultToReadResult, createTradertonReadBoundary } from './read-adapter.js';
+import { mapClientResultToReadResult, createExternalBackendReadBoundary } from './read-adapter.js';
 import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 
 describe('mapClientResultToReadResult', () => {
@@ -62,7 +62,7 @@ describe('mapClientResultToReadResult', () => {
   });
 });
 
-describe('createTradertonReadBoundary', () => {
+describe('createExternalBackendReadBoundary', () => {
   const subject: ExternalBackendSubject = { ownerId: 'owner-1', actor: { type: 'agent', id: 'agent-1' } };
 
   it('binds subject + deadline and forwards toolName/payload to the client', async () => {
@@ -76,7 +76,7 @@ describe('createTradertonReadBoundary', () => {
     );
     const client = { invoke } as unknown as ExternalBackendClient;
 
-    const boundary = createTradertonReadBoundary(client, subject, 10_000);
+    const boundary = createExternalBackendReadBoundary(client, subject, 10_000);
     const result = await boundary.invoke({ toolName: 'get_analytics', payload: { days: 7 } });
 
     expect(invoke).toHaveBeenCalledWith({
@@ -99,7 +99,7 @@ describe('createTradertonReadBoundary', () => {
     );
     const client = { invoke } as unknown as ExternalBackendClient;
 
-    const boundary = createTradertonReadBoundary(client, subject, 5_000);
+    const boundary = createExternalBackendReadBoundary(client, subject, 5_000);
     const result = await boundary.invoke({ toolName: 'list_positions', payload: {} });
 
     expect(result).toEqual({ kind: 'transport_error', message: 'fetch failed', retryable: true });

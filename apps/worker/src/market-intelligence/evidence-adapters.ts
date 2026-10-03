@@ -3,7 +3,7 @@ import type {
   AssessmentData,
   AssessmentUnavailable,
   VolatilityEvidence,
-  TradertonReadResult,
+  ExternalBackendReadResult,
 } from '@herobids/domain';
 import { err, ok, type Result, RegimeResult, ScannerCandleTarget, VolatilityEvidenceSchema } from '@herobids/domain';
 import type {
@@ -131,7 +131,7 @@ function parseScoreCandidateMetadata(data: unknown): ScoreCandidateMetadata {
  * for a `success` result so the caller proceeds with the payload.
  */
 function boundaryFailureToErr(
-  result: TradertonReadResult,
+  result: ExternalBackendReadResult,
   toolName: string,
 ): Result<never> | undefined {
   switch (result.kind) {
@@ -179,7 +179,7 @@ function makeAssessmentData<T>(
  * evidence is unavailable (no in-process candle/regime fallback).
  */
 export interface CheckRegimeBoundary {
-  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+  invoke(input: { toolName: string; payload: unknown }): Promise<ExternalBackendReadResult>;
 }
 
 /**
@@ -191,7 +191,7 @@ export interface CheckRegimeBoundary {
  * structured unavailable error.
  */
 export interface AssessmentReadBoundary {
-  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+  invoke(input: { toolName: string; payload: unknown }): Promise<ExternalBackendReadResult>;
 }
 
 export interface CreateEvidencePortsParams {

@@ -5,7 +5,7 @@ import {
   type ExternalBackendClient,
   type ExternalBackendSubject,
 } from '@herobids/domain/external-backend';
-import { createTradertonSideEffectBoundary, type TradertonSideEffectBoundary } from './write-adapter.js';
+import { createExternalBackendWriteBoundary, type ExternalBackendWriteBoundary } from './write-adapter.js';
 import { startFakeIdempotentBoundary, type FakeBoundaryControls } from './__tests__/fake-idempotent-boundary.js';
 
 /**
@@ -22,7 +22,7 @@ interface HarnessOptions {
 }
 
 interface WriteContractHarness {
-  boundary: TradertonSideEffectBoundary;
+  boundary: ExternalBackendWriteBoundary;
   backend: FakeBoundaryControls;
   close(): Promise<void>;
 }
@@ -44,7 +44,7 @@ function restClient(baseUrl: string, options: HarnessOptions): ExternalBackendCl
 async function createRestHarness(options: HarnessOptions): Promise<WriteContractHarness> {
   const backend = await startFakeIdempotentBoundary();
   return {
-    boundary: createTradertonSideEffectBoundary(restClient(backend.url, options)),
+    boundary: createExternalBackendWriteBoundary(restClient(backend.url, options)),
     backend,
     close: () => backend.close(),
   };
@@ -205,7 +205,7 @@ describe('write-path idempotency contract — REST status endpoint', () => {
     const backend = await startFakeIdempotentBoundary();
     try {
       const client = restClient(backend.url, DEFAULT_OPTIONS);
-      const boundary = createTradertonSideEffectBoundary(client);
+      const boundary = createExternalBackendWriteBoundary(client);
       backend.loseNextResponseAfterExecution();
 
       // A single attempt whose response is lost (e.g. the worker crashed after sending).

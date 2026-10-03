@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ToolContext, TradertonReadResult } from '@herobids/domain';
+import type { ToolContext, ExternalBackendReadResult } from '@herobids/domain';
 import { analyticsTools } from './analytics.js';
 
 const getAnalyticsTool = analyticsTools.find((t) => t.name === 'get_analytics')!;
 const listPositionsTool = analyticsTools.find((t) => t.name === 'list_positions')!;
 
-/** A stubbed tradertonBoundary whose invoke returns a fixed result + records calls. */
-function stubBoundary(result: TradertonReadResult) {
+/** A stubbed externalBackend whose invoke returns a fixed result + records calls. */
+function stubBoundary(result: ExternalBackendReadResult) {
   const invoke = vi.fn(async () => result);
   return { boundary: { invoke }, invoke };
 }
@@ -36,7 +36,7 @@ describe('get_analytics — Traderton boundary', () => {
       kind: 'success',
       data: { ok: true, totalTrades: 3, days: 14 },
     });
-    const ctx = createToolContext({ tradertonBoundary: boundary });
+    const ctx = createToolContext({ externalBackend: boundary });
 
     const result = await getAnalyticsTool.execute({ days: 14 }, ctx);
 
@@ -52,7 +52,7 @@ describe('get_analytics — Traderton boundary', () => {
       message: 'slow',
       retryable: true,
     });
-    const ctx = createToolContext({ tradertonBoundary: boundary });
+    const ctx = createToolContext({ externalBackend: boundary });
 
     const result = await getAnalyticsTool.execute({ days: 7 }, ctx);
 
@@ -64,7 +64,7 @@ describe('get_analytics — Traderton boundary', () => {
 
   it('maps transport_error to a retryable fault', async () => {
     const { boundary } = stubBoundary({ kind: 'transport_error', message: 'down', retryable: true });
-    const ctx = createToolContext({ tradertonBoundary: boundary });
+    const ctx = createToolContext({ externalBackend: boundary });
 
     const result = await getAnalyticsTool.execute({ days: 7 }, ctx);
 
@@ -87,7 +87,7 @@ describe('get_analytics — Traderton boundary', () => {
 describe('list_positions — Traderton boundary', () => {
   it('routes over the boundary forwarding an empty payload', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, positions: [] } });
-    const ctx = createToolContext({ tradertonBoundary: boundary });
+    const ctx = createToolContext({ externalBackend: boundary });
 
     const result = await listPositionsTool.execute({}, ctx);
 

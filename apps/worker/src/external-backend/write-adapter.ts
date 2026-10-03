@@ -12,7 +12,7 @@
 // per-call (derived from the inbound envelope / the acting agent). The HMAC
 // secret lives only in the `ExternalBackendClient`; it never reaches a consumer.
 //
-// Unlike the READ adapter (which maps to a domain-clean `TradertonReadResult`),
+// Unlike the READ adapter (which maps to a domain-clean `ExternalBackendReadResult`),
 // the side-effecting consumers live in the worker and need the raw
 // `ExternalBackendClientResult` so they can preserve the failure `code` + `retryable`
 // verbatim when mapping onto the existing reply/event shapes. Transport +
@@ -51,7 +51,7 @@ import type {
  *   outcome). Reproduces the synchronous 30s-BLPOP feel the `submit_decision`
  *   path relies on (D3). The deadline is derived from `deadlineMs`.
  */
-export interface TradertonSideEffectBoundary {
+export interface ExternalBackendWriteBoundary {
   invoke(input: {
     toolName: string;
     payload: unknown;
@@ -79,7 +79,7 @@ export interface TradertonSideEffectBoundary {
 }
 
 /** The subject-less write port a tool sees on its context (domain-owned shape). */
-export type TradertonToolWriteBoundary = NonNullable<TradingToolContext['tradertonWriteBoundary']>;
+export type ExternalBackendToolWriteBoundary = NonNullable<TradingToolContext['externalBackendWrite']>;
 
 /**
  * An empty or whitespace-only key is a caller programming error. It is rejected locally so it can
@@ -103,9 +103,9 @@ function rejectEmptyIdempotencyKey(input: { requestId?: string; correlationId?: 
  * it for every attempt and for the in_progress resolution, so the boundary sees
  * one consistent deadline.
  */
-export function createTradertonSideEffectBoundary(
+export function createExternalBackendWriteBoundary(
   client: ExternalBackendClient,
-): TradertonSideEffectBoundary {
+): ExternalBackendWriteBoundary {
   return {
     async invoke(input): Promise<ExternalBackendClientResult> {
       if (input.idempotencyKey.trim() === '') {
@@ -149,9 +149,9 @@ export function createTradertonSideEffectBoundary(
  * A → B → A would replay the first A.
  */
 export function createSubjectBoundWriteBoundary(
-  boundary: TradertonSideEffectBoundary,
+  boundary: ExternalBackendWriteBoundary,
   subject: ExternalBackendSubject,
-): TradertonToolWriteBoundary {
+): ExternalBackendToolWriteBoundary {
   return {
     invokeAndAwait: (input) =>
       boundary.invokeAndAwait({

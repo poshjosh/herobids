@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult } from './external-backend-result.js';
 
 // --- find_instrument ---
 
@@ -28,7 +28,7 @@ const findInstrumentTool: AgentTool<TradingToolContext> = {
     // When the boundary is absent the tool fails closed — there is NO in-process
     // fallback (a local instruments read is forbidden), mirroring the other
     // mandatory-boundary reads.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return {
         success: false,
         fault: false,
@@ -37,7 +37,7 @@ const findInstrumentTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+    return mapReadResultToToolResult(await ctx.externalBackend.invoke({
       toolName: 'find_instrument',
       payload: { query, venue, limit },
     }));

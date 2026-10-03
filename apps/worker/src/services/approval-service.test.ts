@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DecisionApprovalRow } from '@herobids/db';
 import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { ApprovalService, type ApprovalServiceDeps } from './approval-service.js';
-import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
 
 /**
  * L3d-1: executeApproval drives the human-approve → execute path over the
@@ -59,7 +59,7 @@ function makeApprovalRow(overrides: Partial<DecisionApprovalRow> = {}): Decision
 
 function buildDeps(opts: {
   approval?: DecisionApprovalRow | undefined;
-  boundary?: TradertonSideEffectBoundary | undefined;
+  boundary?: ExternalBackendWriteBoundary | undefined;
 }) {
   const approvalRepo = {
     findById: vi.fn().mockResolvedValue(opts.approval),
@@ -86,7 +86,7 @@ function buildDeps(opts: {
 
 function makeBoundary(result: ExternalBackendClientResult) {
   const invokeAndAwait = vi.fn().mockResolvedValue(result);
-  const boundary: TradertonSideEffectBoundary = {
+  const boundary: ExternalBackendWriteBoundary = {
     invoke: vi.fn(),
     invokeAndAwait,
   };

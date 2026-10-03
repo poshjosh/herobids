@@ -57,7 +57,7 @@ herobids `server_ipv4` output for herobids (§3).
    has no background boundary health-poller that adds/removes boundary tools
    from a visibility snapshot. A down boundary surfaces as a typed
    `transport_error` / `precondition.not_ready` on the call itself. (See
-   `apps/worker/src/traderton/write-adapter.ts`, `tools/traderton-read.ts`,
+   `apps/worker/src/external-backend/write-adapter.ts`, `tools/external-backend-result.ts`,
    `apps/worker/src/index.ts` boundary construction.) `worker.agents.healthCheckIntervalMs`
    is the *agent-session* monitor, a different concern.
 6. **Deployed traderton has no `.git` checkout** — it is image-based. Read the

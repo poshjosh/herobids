@@ -12,11 +12,11 @@ import {
   type UsageBillingRepository,
   type InsertUsageEvent,
 } from '@herobids/db';
-import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore, EvaluationThresholds, TradertonReadResult } from '@herobids/domain';
+import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore, EvaluationThresholds, ExternalBackendReadResult } from '@herobids/domain';
 import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 import { createLogger } from '../logger.js';
-import { createTradertonReadBoundary, type TradertonReadBoundary } from '../traderton/read-adapter.js';
+import { createExternalBackendReadBoundary, type ExternalBackendReadBoundary } from '../external-backend/read-adapter.js';
 import { assembleEvidence, type AgentEvidencePort } from './collectors/evidence-assembler.js';
 import { toFillRow, toJournalRow, toPositionRow, type FillRow, type JournalRow, type PositionRow } from './collectors/evidence-row-mappers.js';
 import { analyzeCore } from './analyzers/core.js';
@@ -90,10 +90,10 @@ export interface RunEvaluationContext {
  * read tool, narrows the success payload, and rehydrates date columns. Any
  * non-success outcome throws — core evaluation evidence must succeed.
  */
-export function buildAgentEvidencePort(boundary: TradertonReadBoundary): AgentEvidencePort {
+export function buildAgentEvidencePort(boundary: ExternalBackendReadBoundary): AgentEvidencePort {
   const toIso = (d?: Date): string | undefined => (d ? d.toISOString() : undefined);
 
-  const narrowArray = (result: TradertonReadResult, toolName: string, key: string): unknown[] => {
+  const narrowArray = (result: ExternalBackendReadResult, toolName: string, key: string): unknown[] => {
     switch (result.kind) {
       case 'success': {
         const data = result.data;
@@ -215,7 +215,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
         throw new Error(`Cannot resolve owner for agent ${agentId} — evidence port requires an owner subject`);
       }
       const subject: ExternalBackendSubject = { ownerId, actor: { type: 'agent', id: agentId } };
-      const boundary = createTradertonReadBoundary(
+      const boundary = createExternalBackendReadBoundary(
         ctx.tradertonReadClient,
         subject,
         ctx.tradertonReadTimeoutMs ?? 10_000,

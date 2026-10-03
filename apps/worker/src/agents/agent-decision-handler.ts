@@ -2,7 +2,7 @@ import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
-import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
 import { buildSubmitDecisionPayload, mapBoundaryResultToDecisionOutcome } from './decision-boundary-mapping.js';
 import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
@@ -46,7 +46,7 @@ export class AgentDecisionHandler {
     // executes over REST (invoke → poll) instead of the in-process engine. When
     // absent (unconfigured), the decision is rejected with a typed
     // precondition.not_ready — NEVER a silent fall back to the engine.
-    private readonly sideEffectBoundary?: TradertonSideEffectBoundary,
+    private readonly sideEffectBoundary?: ExternalBackendWriteBoundary,
     // Total budget (ms) for the boundary invoke + poll. Matches the tool's 30s
     // blpop so the sync reply still lands in time.
     private readonly boundaryDeadlineMs: number = 30_000,

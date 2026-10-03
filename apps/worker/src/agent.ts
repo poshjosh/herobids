@@ -1764,8 +1764,8 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     executionMode: 'paper',
     authorizationMode: (agentConfig.authorizationMode ?? 'direct') as 'direct' | 'approval_required',
     permissionLevel: agentPermissionLevel,
-    tradertonBoundary: externalBackendRead,
-    tradertonWriteBoundary: externalBackendWrite,
+    externalBackend: externalBackendRead,
+    externalBackendWrite,
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),

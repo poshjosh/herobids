@@ -2,7 +2,7 @@ import type { Redis } from 'ioredis';
 import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
 import { createLeaderElection, type LeaderElection } from './leader-election.js';
-import type { TradertonReadResult } from '@herobids/domain';
+import type { ExternalBackendReadResult } from '@herobids/domain';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type { MarketMonitor } from './monitor.js';
 import { recordProviderSuccess, recordProviderFailure, recordFreshnessMode, recordRateLimitThrottle } from './provider-counters.js';
@@ -14,7 +14,7 @@ import { recordProviderSuccess, recordProviderFailure, recordFreshnessMode, reco
  * refresh records a provider failure and writes an unavailable snapshot.
  */
 export interface CheckRegimeBoundary {
-  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+  invoke(input: { toolName: string; payload: unknown }): Promise<ExternalBackendReadResult>;
 }
 
 /**
@@ -26,7 +26,7 @@ export interface CheckRegimeBoundary {
  * from herobids).
  */
 export interface DiscoveryBoundary {
-  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+  invoke(input: { toolName: string; payload: unknown }): Promise<ExternalBackendReadResult>;
 }
 
 /** The subset of the boundary `check_regime` success payload the coordinator needs. */

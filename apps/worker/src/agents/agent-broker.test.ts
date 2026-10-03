@@ -5,7 +5,7 @@ import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
-import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
 
 /**
  * L3c: the number of positional ctor args before the trailing
@@ -17,7 +17,7 @@ import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js'
 
 /** A stubbed side-effecting boundary whose invokeAndAwait returns a scripted result. */
 function makeBoundary(result: ExternalBackendClientResult = { kind: 'success', requestId: 'r', correlationId: 'c', payload: {} }): {
-  boundary: TradertonSideEffectBoundary;
+  boundary: ExternalBackendWriteBoundary;
   invokeAndAwait: ReturnType<typeof vi.fn>;
   invoke: ReturnType<typeof vi.fn>;
 } {
@@ -31,7 +31,7 @@ function makeBoundary(result: ExternalBackendClientResult = { kind: 'success', r
  * routes bot lifecycle over the boundary. Only `botRepo` (ownership + bot_query
  * reads) and the boundary are meaningful now — the lifecycle callbacks are dead.
  */
-function makeBoundaryBrokerArgs(botRepo: unknown, boundary: TradertonSideEffectBoundary): unknown[] {
+function makeBoundaryBrokerArgs(botRepo: unknown, boundary: ExternalBackendWriteBoundary): unknown[] {
   return [
     undefined,   // telegram
     botRepo,     // botRepo (ownership gate + bot_query reads)
@@ -1800,7 +1800,7 @@ describe('AgentMessageBroker', () => {
 
     describe('bot lifecycle write idempotency (T0.6)', () => {
       /** The same positional ctor args as the tests above; the fakes are partial by design. */
-      function buildLifecycleBroker(boundary: TradertonSideEffectBoundary): AgentMessageBroker {
+      function buildLifecycleBroker(boundary: ExternalBackendWriteBoundary): AgentMessageBroker {
         const botRepo = { isConnectionOwnedBy: vi.fn().mockResolvedValue(true) };
         const args: unknown[] = [{}, agentRepo, decisionHandler, sessionManager, eventPublisher, ...makeBoundaryBrokerArgs(botRepo, boundary)];
         return new AgentMessageBroker(...(args as ConstructorParameters<typeof AgentMessageBroker>));

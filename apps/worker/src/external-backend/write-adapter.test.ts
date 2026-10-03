@@ -6,8 +6,8 @@ import {
 } from '@herobids/domain/external-backend';
 import {
   createSubjectBoundWriteBoundary,
-  createTradertonSideEffectBoundary,
-  type TradertonSideEffectBoundary,
+  createExternalBackendWriteBoundary,
+  type ExternalBackendWriteBoundary,
 } from './write-adapter.js';
 
 const SUBJECT: ExternalBackendSubject = { ownerId: 'owner-1', actor: { type: 'agent', id: 'agent-1' } };
@@ -38,7 +38,7 @@ function makeClient() {
   return { client, invoke, invokeAndAwait };
 }
 
-function write(overrides: Partial<Parameters<TradertonSideEffectBoundary['invokeAndAwait']>[0]> = {}) {
+function write(overrides: Partial<Parameters<ExternalBackendWriteBoundary['invokeAndAwait']>[0]> = {}) {
   return {
     toolName: 'submit_decision',
     payload: { instrumentId: 'BTC', intent: 'go_long' },
@@ -54,14 +54,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
+describe('createExternalBackendWriteBoundary.invokeAndAwait', () => {
   it("invokeAndAwait delegates with a deadline derived from deadlineMs and the caller's idempotency key", async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-03T12:00:00.000Z'));
     const { client, invokeAndAwait } = makeClient();
     invokeAndAwait.mockResolvedValueOnce(SUCCESS);
 
-    const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(
+    const result = await createExternalBackendWriteBoundary(client).invokeAndAwait(
       write({ requestId: 'req-explicit', correlationId: 'corr-explicit' }),
     );
 
@@ -82,7 +82,7 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
     const { client, invokeAndAwait } = makeClient();
     const unknown: ExternalBackendClientResult = { kind: 'in_progress', requestId: 'req-1', correlationId: 'corr-1' };
     invokeAndAwait.mockResolvedValueOnce(TRANSPORT_ERROR).mockResolvedValueOnce(unknown);
-    const boundary = createTradertonSideEffectBoundary(client);
+    const boundary = createExternalBackendWriteBoundary(client);
 
     expect(await boundary.invokeAndAwait(write())).toBe(TRANSPORT_ERROR);
     expect(await boundary.invokeAndAwait(write())).toBe(unknown);
@@ -90,7 +90,7 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
 
   it('rejects an empty idempotency key without calling the boundary', async () => {
     const { client, invoke, invokeAndAwait } = makeClient();
-    const boundary = createTradertonSideEffectBoundary(client);
+    const boundary = createExternalBackendWriteBoundary(client);
     const expected = { kind: 'failure', code: 'validation.invalid_payload', retryable: false, message: 'idempotencyKey must be non-empty' };
 
     const awaited = await boundary.invokeAndAwait(write({ idempotencyKey: '' }));
@@ -104,7 +104,7 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
 
   it('rejects a whitespace-only idempotency key without calling the boundary', async () => {
     const { client, invoke, invokeAndAwait } = makeClient();
-    const boundary = createTradertonSideEffectBoundary(client);
+    const boundary = createExternalBackendWriteBoundary(client);
     const expected = { kind: 'failure', code: 'validation.invalid_payload', retryable: false, message: 'idempotencyKey must be non-empty' };
 
     const awaited = await boundary.invokeAndAwait(write({ idempotencyKey: ' \t\n' }));
@@ -119,9 +119,9 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
 
 describe('createSubjectBoundWriteBoundary', () => {
   it('subject-bound write boundary mints a distinct idempotency key per tool write and binds the subject', async () => {
-    const invokeAndAwait = vi.fn<TradertonSideEffectBoundary['invokeAndAwait']>(async () => SUCCESS);
-    const boundary: TradertonSideEffectBoundary = {
-      invoke: vi.fn<TradertonSideEffectBoundary['invoke']>(async () => SUCCESS),
+    const invokeAndAwait = vi.fn<ExternalBackendWriteBoundary['invokeAndAwait']>(async () => SUCCESS);
+    const boundary: ExternalBackendWriteBoundary = {
+      invoke: vi.fn<ExternalBackendWriteBoundary['invoke']>(async () => SUCCESS),
       invokeAndAwait,
     };
     const toolWrite = createSubjectBoundWriteBoundary(boundary, SUBJECT);

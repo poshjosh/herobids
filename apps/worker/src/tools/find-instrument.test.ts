@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ToolContext, TradertonReadResult } from '@herobids/domain';
+import type { ToolContext, ExternalBackendReadResult } from '@herobids/domain';
 import { instrumentTools } from './find-instrument.js';
 
 const findInstrument = instrumentTools.find((t) => t.name === 'find_instrument')!;
@@ -37,7 +37,7 @@ describe('find_instrument', () => {
   // -------------------------------------------------------------------------
 
   it('returns error when the Traderton boundary is unavailable', async () => {
-    const ctx = makeCtx({ tradertonBoundary: undefined });
+    const ctx = makeCtx({ externalBackend: undefined });
 
     const result = await findInstrument.execute({ query: 'BTC' }, ctx);
 
@@ -52,12 +52,12 @@ describe('find_instrument', () => {
 
   it('invokes the boundary find_instrument tool with query/venue/limit', async () => {
     const invoke = vi.fn(
-      async (): Promise<TradertonReadResult> => ({
+      async (): Promise<ExternalBackendReadResult> => ({
         kind: 'success',
         data: boundaryInstrumentsPayload([]),
       }),
     );
-    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+    const ctx = makeCtx({ externalBackend: { invoke } });
 
     await findInstrument.execute({ query: 'SOL', venue: 'jupiter', limit: 3 }, ctx);
 
@@ -69,12 +69,12 @@ describe('find_instrument', () => {
 
   it('defaults limit to 5 when omitted', async () => {
     const invoke = vi.fn(
-      async (): Promise<TradertonReadResult> => ({
+      async (): Promise<ExternalBackendReadResult> => ({
         kind: 'success',
         data: boundaryInstrumentsPayload([]),
       }),
     );
-    const ctx = makeCtx({ tradertonBoundary: { invoke } });
+    const ctx = makeCtx({ externalBackend: { invoke } });
 
     await findInstrument.execute({ query: 'BTC' }, ctx);
 
@@ -103,7 +103,7 @@ describe('find_instrument', () => {
       },
     ]);
     const ctx = makeCtx({
-      tradertonBoundary: { invoke: vi.fn(async (): Promise<TradertonReadResult> => ({ kind: 'success', data: payload })) },
+      externalBackend: { invoke: vi.fn(async (): Promise<ExternalBackendReadResult> => ({ kind: 'success', data: payload })) },
     });
 
     const result = await findInstrument.execute({ query: 'BTC' }, ctx);
@@ -118,9 +118,9 @@ describe('find_instrument', () => {
 
   it('maps a boundary not-found failure to a content-level tool failure', async () => {
     const ctx = makeCtx({
-      tradertonBoundary: {
+      externalBackend: {
         invoke: vi.fn(
-          async (): Promise<TradertonReadResult> => ({
+          async (): Promise<ExternalBackendReadResult> => ({
             kind: 'failure',
             code: 'not_found.resource',
             message: 'No instruments found for query "DOESNOTEXIST".',
@@ -144,8 +144,8 @@ describe('find_instrument', () => {
 
   it('maps a boundary transport error to a retryable fault', async () => {
     const ctx = makeCtx({
-      tradertonBoundary: {
-        invoke: vi.fn(async (): Promise<TradertonReadResult> => ({ kind: 'transport_error', message: 'unreachable', retryable: true })),
+      externalBackend: {
+        invoke: vi.fn(async (): Promise<ExternalBackendReadResult> => ({ kind: 'transport_error', message: 'unreachable', retryable: true })),
       },
     });
 

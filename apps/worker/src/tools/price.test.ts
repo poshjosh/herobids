@@ -101,7 +101,7 @@ describe('get_price tool', () => {
 
     const result = await getPriceTool!.execute(
       { symbol: 'SOL', chain: 'solana' },
-      makeContext({ tradertonBoundary: { invoke }, priceService: { getPrice } }),
+      makeContext({ externalBackend: { invoke }, priceService: { getPrice } }),
     );
 
     expect(invoke).toHaveBeenCalledWith({ toolName: 'get_price', payload: { symbol: 'SOL', chain: 'solana' } });
@@ -119,7 +119,7 @@ describe('get_price tool', () => {
 
     const result = await getPriceTool!.execute(
       { symbol: evmAddress, chain: 'ethereum' },
-      makeContext({ tradertonBoundary: { invoke } }),
+      makeContext({ externalBackend: { invoke } }),
     );
 
     expect(result.success).toBe(true);
@@ -137,7 +137,7 @@ describe('get_price tool', () => {
 
     const result = await getPriceTool!.execute(
       { symbol: 'SOL', chain: 'solana' },
-      makeContext({ tradertonBoundary: { invoke } }),
+      makeContext({ externalBackend: { invoke } }),
     );
 
     expect(result.success).toBe(false);
@@ -152,7 +152,7 @@ describe('get_price tool', () => {
 
     const result = await getPriceTool!.execute(
       { symbol: 'So11111111111111111111111111111111111111112', chain: 'ethereum' },
-      makeContext({ tradertonBoundary: { invoke } }),
+      makeContext({ externalBackend: { invoke } }),
     );
 
     expect(result.success).toBe(false);

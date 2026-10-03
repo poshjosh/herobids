@@ -1,7 +1,7 @@
 import type { DecisionSubmitPayload, ActorType } from '@herobids/domain';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
-import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
 import { buildSubmitDecisionPayload, mapBoundaryResultToDecisionOutcome } from '../agents/decision-boundary-mapping.js';
 import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
@@ -16,7 +16,7 @@ export interface ApprovalServiceDeps {
   // path routes `submit_decision` over REST (invoke → poll) instead of the
   // in-process engine. When absent (unconfigured), executeApproval returns a
   // typed precondition error — NEVER a silent fall back to the engine.
-  sideEffectBoundary?: TradertonSideEffectBoundary;
+  sideEffectBoundary?: ExternalBackendWriteBoundary;
   // Total budget (ms) for the boundary invoke + poll. Matches the decision
   // handler's 30s deadline so the synchronous feel is preserved.
   boundaryDeadlineMs?: number;

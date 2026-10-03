@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult } from './external-backend-result.js';
 
 // --- get_analytics ---
 
@@ -22,11 +22,11 @@ const getAnalyticsTool: AgentTool<TradingToolContext> = {
     // c4.9i: the Traderton boundary is the sole source; the boundary returns the
     // same analytics `data` shape this tool used to build. Fail-closed when the
     // boundary is absent (the dead in-process botRepo read was removed).
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'trading boundary not configured', errorCode: 'precondition.not_ready', fault: false };
     }
 
-    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_analytics', payload: { days } });
+    const result = await ctx.externalBackend.invoke({ toolName: 'get_analytics', payload: { days } });
     return mapReadResultToToolResult(result);
   },
 };
@@ -44,11 +44,11 @@ const listPositionsTool: AgentTool<TradingToolContext> = {
   async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     // c4.9i: the Traderton boundary is the sole source. Fail-closed when the
     // boundary is absent (the dead in-process botRepo read was removed).
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'trading boundary not configured', errorCode: 'precondition.not_ready', fault: false };
     }
 
-    const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_positions', payload: {} });
+    const result = await ctx.externalBackend.invoke({ toolName: 'list_positions', payload: {} });
     return mapReadResultToToolResult(result);
   },
 };

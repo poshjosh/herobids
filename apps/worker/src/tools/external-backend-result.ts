@@ -1,11 +1,11 @@
-// Shared mapping from a Traderton boundary read result to a tool `ToolResult`
+// Shared mapping from an external-backend read/write result to a tool `ToolResult`
 // (L3b §3c). All five rewired read tools use this so the mapping stays DRY and
 // consistent: success carries the boundary payload through unchanged; typed
 // failures preserve code/retryable and derive fault from whether the failure is
 // content-level (validation/not-found) or infrastructure; in_progress and
 // transport_error become typed retryable failures rather than raw throws.
 
-import type { ToolResult, TradertonReadResult } from '@herobids/domain';
+import type { ToolResult, ExternalBackendReadResult } from '@herobids/domain';
 import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 
 /**
@@ -37,8 +37,8 @@ const WRITE_CONTENT_LEVEL_FAILURE_CODES = new Set<string>([
   'authorization.denied',
 ]);
 
-/** Map a `TradertonReadResult` into the tool contract's `ToolResult`. */
-export function mapReadResultToToolResult(result: TradertonReadResult): ToolResult {
+/** Map an `ExternalBackendReadResult` into the tool contract's `ToolResult`. */
+export function mapReadResultToToolResult(result: ExternalBackendReadResult): ToolResult {
   switch (result.kind) {
     case 'success':
       return { success: true, data: result.data };

@@ -11,12 +11,12 @@ import {
   createExternalBackendClient,
   type ExternalBackendSubject,
 } from '@herobids/domain/external-backend';
-import { createTradertonReadBoundary, type TradertonReadBoundary } from '../traderton/read-adapter.js';
+import { createExternalBackendReadBoundary, type ExternalBackendReadBoundary } from './read-adapter.js';
 import {
   createSubjectBoundWriteBoundary,
-  createTradertonSideEffectBoundary,
-  type TradertonToolWriteBoundary,
-} from '../traderton/write-adapter.js';
+  createExternalBackendWriteBoundary,
+  type ExternalBackendToolWriteBoundary,
+} from './write-adapter.js';
 
 export interface AgentExternalBackendPortsLogger {
   info(fields: Record<string, unknown>, message: string): void;
@@ -33,8 +33,8 @@ export interface AgentExternalBackendPortsInput {
 }
 
 export interface AgentExternalBackendPorts {
-  read: TradertonReadBoundary | undefined;
-  write: TradertonToolWriteBoundary | undefined;
+  read: ExternalBackendReadBoundary | undefined;
+  write: ExternalBackendToolWriteBoundary | undefined;
 }
 
 const NO_PORTS: AgentExternalBackendPorts = { read: undefined, write: undefined };
@@ -89,9 +89,9 @@ export function buildAgentExternalBackendPorts(input: AgentExternalBackendPortsI
     { backendId: definition.backendId, baseUrl: definition.endpoint.baseUrl },
     'Traderton read + write boundaries enabled — read tools + risk-limit writes route over REST',
   );
-  const read = createTradertonReadBoundary(client, subject, definition.endpoint.requestTimeoutMs);
+  const read = createExternalBackendReadBoundary(client, subject, definition.endpoint.requestTimeoutMs);
   // The binding mints one idempotency key per write; tools supply only tool
   // name + payload + deadline.
-  const write = createSubjectBoundWriteBoundary(createTradertonSideEffectBoundary(client), subject);
+  const write = createSubjectBoundWriteBoundary(createExternalBackendWriteBoundary(client), subject);
   return { read, write };
 }

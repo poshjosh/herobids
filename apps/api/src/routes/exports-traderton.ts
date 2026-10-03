@@ -9,7 +9,7 @@
 //
 //   - `createTradertonReadBoundary` binds the per-request subject VALUES + the
 //     deadline onto a concrete `ExternalBackendClient`, and maps the client result
-//     into the domain-clean `TradertonReadResult`. The agent endpoints build one
+//     into the domain-clean `ExternalBackendReadResult`. The agent endpoints build one
 //     boundary per request bound to the REQUESTING USER's subject.
 //   - `toFillRow` / `toJournalRow` / `toPositionRow` rehydrate the date-typed
 //     columns (which arrive as ISO strings over JSON) back into `Date` objects
@@ -21,7 +21,7 @@
 //     array; any non-success outcome is surfaced to the caller as a typed error
 //     so the endpoint can return the right HTTP status (never silently empty).
 
-import type { TradertonReadResult } from '@herobids/domain';
+import type { ExternalBackendReadResult } from '@herobids/domain';
 import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 
 // c4.9f: local trading-table schema dropped — these rows arrive from the
@@ -87,11 +87,11 @@ export interface PositionRow {
 
 /** The narrow read boundary the agent-export endpoints consume. */
 export interface TradertonReadBoundary {
-  invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+  invoke(input: { toolName: string; payload: unknown }): Promise<ExternalBackendReadResult>;
 }
 
 /** Map a concrete L3a client result into the domain-clean read result. */
-function mapClientResultToReadResult(result: ExternalBackendClientResult): TradertonReadResult {
+function mapClientResultToReadResult(result: ExternalBackendClientResult): ExternalBackendReadResult {
   switch (result.kind) {
     case 'success':
       return { kind: 'success', data: result.payload };
@@ -99,7 +99,7 @@ function mapClientResultToReadResult(result: ExternalBackendClientResult): Trade
       // The boundary dispatcher maps a tool's fault:false errorCode (e.g.
       // `not_found.resource`, raised by the owner-scoped bot tools for an
       // unowned/absent bot) onto the closed wire code `validation.invalid_payload`
-      // and carries the ORIGINAL under `details.errorCode`. TradertonReadResult
+      // and carries the ORIGINAL under `details.errorCode`. ExternalBackendReadResult
       // has no `details` field, so unwrap it HERE: when the wire code is the
       // generic validation code and a tool errorCode is present, surface the
       // tool errorCode as `code` so the bot-export handlers' not_found.resource
@@ -128,7 +128,7 @@ export function createTradertonReadBoundary(
   deadlineMs: number,
 ): TradertonReadBoundary {
   return {
-    async invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult> {
+    async invoke(input: { toolName: string; payload: unknown }): Promise<ExternalBackendReadResult> {
       const result = await client.invoke({
         toolName: input.toolName,
         payload: input.payload,
@@ -266,7 +266,7 @@ export async function loadBoundaryObject(
 
 /** Map any non-success read outcome to the HTTP-shaped {@link ReadBoundaryError}. */
 export function mapNonSuccessToError(
-  result: Exclude<TradertonReadResult, { kind: 'success' }>,
+  result: Exclude<ExternalBackendReadResult, { kind: 'success' }>,
 ): ReadBoundaryError {
   switch (result.kind) {
     case 'failure':

@@ -23,7 +23,7 @@ export {
   type ToolBotRecord,
   type ToolPositionRecord,
   type ToolAnalyticsResult,
-  type TradertonReadResult,
+  type ExternalBackendReadResult,
   type TradingToolContext,
   type TradingAgentTool,
   type ToolDefinition,
@@ -53,7 +53,7 @@ export * from './external-skill-provider-http.js';
 // signer) is NOT exported from this top-level barrel — it pulls node:crypto +
 // fetch, which must not enter the browser (apps/web) bundle. It is exposed via
 // the `@herobids/domain/external-backend` SUBPATH export (see package.json) that only
-// apps/worker + apps/api import. `TradertonReadResult` (a pure type) lives in
+// apps/worker + apps/api import. `ExternalBackendReadResult` (a pure type) lives in
 // ./trading/tool-contract.ts and IS barrel-exported for the read tools.
 export * from './text-search.js';
 export * from './pagination.js';

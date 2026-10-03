@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult } from './external-backend-result.js';
 
 // --- resolve_bot ---
 
@@ -22,7 +22,7 @@ const resolveBotTool: AgentTool<TradingToolContext> = {
     // c4.9i: fetch the agent's bots over the Traderton boundary (`list_bots`),
     // then do the same client-side substring match in-app. Fail-closed when the
     // boundary is absent (mirrors the sibling read tools).
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return {
         success: false,
         fault: false,
@@ -32,7 +32,7 @@ const resolveBotTool: AgentTool<TradingToolContext> = {
     }
 
     try {
-      const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_bots', payload: {} });
+      const result = await ctx.externalBackend.invoke({ toolName: 'list_bots', payload: {} });
       if (result.kind !== 'success') {
         // Surface the boundary failure through the shared read→tool mapping so
         // code/retryable/fault stay consistent with the other read tools.
@@ -151,7 +151,7 @@ const resolveWatchTool: AgentTool<TradingToolContext> = {
     // like resolve_bot does against `list_bots`. The legacy local Redis hash no
     // longer receives writes (it could only serve stale pre-migration data),
     // so fail closed when the boundary is absent.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return {
         success: false,
         fault: false,
@@ -161,7 +161,7 @@ const resolveWatchTool: AgentTool<TradingToolContext> = {
     }
 
     try {
-      const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_watches', payload: {} });
+      const result = await ctx.externalBackend.invoke({ toolName: 'list_watches', payload: {} });
       if (result.kind !== 'success') {
         // Surface the boundary failure through the shared read→tool mapping so
         // code/retryable/fault stay consistent with the other read tools.

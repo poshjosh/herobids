@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult } from './external-backend-result.js';
 
 // --- search_tokens ---
 
@@ -28,11 +28,11 @@ const searchTokensTool: AgentTool<TradingToolContext> = {
 
     // L3: route the read over the Traderton boundary. When the boundary is
     // absent the tool degrades (fail-closed) — there is no in-process path.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+    return mapReadResultToToolResult(await ctx.externalBackend.invoke({
       toolName: 'search_tokens',
       payload: { query, network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit },
     }));
@@ -59,11 +59,11 @@ const discoverTokensTool: AgentTool<TradingToolContext> = {
 
     // L3: route the read over the Traderton boundary. When the boundary is
     // absent the tool degrades (fail-closed) — there is no in-process path.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+    return mapReadResultToToolResult(await ctx.externalBackend.invoke({
       toolName: 'discover_tokens',
       payload: { network, limit, minLiquidityUsd },
     }));
@@ -102,11 +102,11 @@ const checkRegimeTool: AgentTool<TradingToolContext> = {
 
     // L3: route the read over the Traderton boundary. When the boundary is
     // absent the tool degrades (fail-closed) — there is no in-process path.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+    return mapReadResultToToolResult(await ctx.externalBackend.invoke({
       toolName: 'check_regime',
       payload: { benchmarkSymbol, emaFast, emaSlow, emaTrend, adxMin, emaAlignment, marketStructure, priceAboveVwap, disableWhenChoppy },
     }));
@@ -131,11 +131,11 @@ const getFundingRatesTool: AgentTool<TradingToolContext> = {
 
     // L3: route the read over the Traderton boundary. When the boundary is
     // absent the tool degrades (fail-closed) — there is no in-process path.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+    return mapReadResultToToolResult(await ctx.externalBackend.invoke({
       toolName: 'get_funding_rates',
       payload: { symbols, venue },
     }));
@@ -160,11 +160,11 @@ const getMarketOverviewTool: AgentTool<TradingToolContext> = {
 
     // L3: route the read over the Traderton boundary. When the boundary is
     // absent the tool degrades (fail-closed) — there is no in-process path.
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'market_data_not_configured', retryable: false };
     }
 
-    return mapReadResultToToolResult(await ctx.tradertonBoundary.invoke({
+    return mapReadResultToToolResult(await ctx.externalBackend.invoke({
       toolName: 'get_market_overview',
       payload: { venue, symbols },
     }));

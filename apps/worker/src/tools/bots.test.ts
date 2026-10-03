@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ToolContext, TradertonReadResult } from '@herobids/domain';
+import type { ToolContext, ExternalBackendReadResult } from '@herobids/domain';
 import { botManagementTools } from './bots.js';
 
 const adjustBotConfigTool = botManagementTools.find((t) => t.name === 'adjust_bot_config')!;
 const listBotsTool = botManagementTools.find((t) => t.name === 'list_bots')!;
 const getBotStatusTool = botManagementTools.find((t) => t.name === 'get_bot_status')!;
 
-/** A stubbed tradertonBoundary whose invoke returns a fixed result + records calls. */
-function stubBoundary(result: TradertonReadResult) {
+/** A stubbed externalBackend whose invoke returns a fixed result + records calls. */
+function stubBoundary(result: ExternalBackendReadResult) {
   const invoke = vi.fn(async () => result);
   return { boundary: { invoke }, invoke };
 }
@@ -179,7 +179,7 @@ describe('stop_bot / start_bot — L3c: boundary routing via MANAGE_BOT', () => 
 describe('list_bots — Traderton boundary (L3b)', () => {
   it('routes over the boundary forwarding { days } and returns the payload as data', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, bots: [] } });
-    const ctx = makeCtx({ tradertonBoundary: boundary });
+    const ctx = makeCtx({ externalBackend: boundary });
 
     const result = await listBotsTool.execute({ days: 30 }, ctx);
 
@@ -190,7 +190,7 @@ describe('list_bots — Traderton boundary (L3b)', () => {
 
   it('forwards { days: undefined } when days is omitted', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, bots: [] } });
-    const ctx = makeCtx({ tradertonBoundary: boundary });
+    const ctx = makeCtx({ externalBackend: boundary });
 
     await listBotsTool.execute({}, ctx);
 
@@ -211,7 +211,7 @@ describe('list_bots — Traderton boundary (L3b)', () => {
 describe('get_bot_status — Traderton boundary (L3b)', () => {
   it('routes over the boundary forwarding { botId } and returns the payload as data', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, id: 'bot-1', status: 'running' } });
-    const ctx = makeCtx({ tradertonBoundary: boundary });
+    const ctx = makeCtx({ externalBackend: boundary });
 
     const result = await getBotStatusTool.execute({ botId: 'bot-1' }, ctx);
 
@@ -227,7 +227,7 @@ describe('get_bot_status — Traderton boundary (L3b)', () => {
       message: 'bot bot-9 not found',
       retryable: false,
     });
-    const ctx = makeCtx({ tradertonBoundary: boundary });
+    const ctx = makeCtx({ externalBackend: boundary });
 
     const result = await getBotStatusTool.execute({ botId: 'bot-9' }, ctx);
 
@@ -238,7 +238,7 @@ describe('get_bot_status — Traderton boundary (L3b)', () => {
 
   it('maps transport_error to a retryable fault', async () => {
     const { boundary } = stubBoundary({ kind: 'transport_error', message: 'down', retryable: true });
-    const ctx = makeCtx({ tradertonBoundary: boundary });
+    const ctx = makeCtx({ externalBackend: boundary });
 
     const result = await getBotStatusTool.execute({ botId: 'bot-1' }, ctx);
 
@@ -249,7 +249,7 @@ describe('get_bot_status — Traderton boundary (L3b)', () => {
 
   it('maps in_progress to a retryable non-fault failure', async () => {
     const { boundary } = stubBoundary({ kind: 'in_progress' });
-    const ctx = makeCtx({ tradertonBoundary: boundary });
+    const ctx = makeCtx({ externalBackend: boundary });
 
     const result = await getBotStatusTool.execute({ botId: 'bot-1' }, ctx);
 

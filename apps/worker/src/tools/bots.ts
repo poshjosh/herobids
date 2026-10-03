@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { AGENT_MESSAGE_TYPES, checkModeEscalation } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import { mapReadResultToToolResult } from './traderton-read.js';
+import { mapReadResultToToolResult } from './external-backend-result.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('tools:bots');
@@ -109,11 +109,11 @@ const listBotsTool: AgentTool = {
     // c4.9i: the Traderton boundary is the sole source. `days` is optional and
     // forwarded as-is (undefined when not supplied). Fail-closed when the
     // boundary is absent (the dead in-process botRepo read was removed).
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'trading boundary not configured', errorCode: 'precondition.not_ready', fault: false };
     }
 
-    const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_bots', payload: { days } });
+    const result = await ctx.externalBackend.invoke({ toolName: 'list_bots', payload: { days } });
     return mapReadResultToToolResult(result);
   },
 };
@@ -136,11 +136,11 @@ const getBotStatusTool: AgentTool = {
     // c4.9i: the Traderton boundary is the sole source. Ownership + not-found
     // are enforced boundary-side and surface as typed failures. Fail-closed when
     // the boundary is absent (the dead in-process botRepo read was removed).
-    if (!ctx.tradertonBoundary) {
+    if (!ctx.externalBackend) {
       return { success: false, error: 'trading boundary not configured', errorCode: 'precondition.not_ready', fault: false };
     }
 
-    const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_bot_status', payload: { botId } });
+    const result = await ctx.externalBackend.invoke({ toolName: 'get_bot_status', payload: { botId } });
     return mapReadResultToToolResult(result);
   },
 };

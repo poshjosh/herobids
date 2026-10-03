@@ -22,7 +22,7 @@ import type {
   PriceSource,
   ResolvePriceTargetResult,
 } from './price-contracts.js';
-import type { TradertonReadBoundary } from './read-adapter.js';
+import type { ExternalBackendReadBoundary } from '../external-backend/read-adapter.js';
 
 const PRICE_SOURCES: readonly PriceSource[] = ['execution', 'oracle', 'cached'];
 
@@ -81,7 +81,7 @@ function narrowResolvedTarget(data: unknown): ResolvePriceTargetResult {
  * path; `getPrice` is provided for `PriceService` conformance and projects the
  * resolved target down to the price-only shape, mirroring the in-process service.
  */
-export function createBoundaryPriceService(boundary: TradertonReadBoundary): PriceService {
+export function createBoundaryPriceService(boundary: ExternalBackendReadBoundary): PriceService {
   async function resolvePriceTarget(
     symbol: string,
     chain: string,

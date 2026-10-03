@@ -4,7 +4,7 @@ import type { Redis } from 'ioredis';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import type { Database, DatabaseTransaction } from '@herobids/db';
 import { agentConnections, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, agents } from '@herobids/db';
-import type { PlansConfig, RuntimeBudgetPolicy, TradertonReadResult } from '@herobids/domain';
+import type { PlansConfig, RuntimeBudgetPolicy, ExternalBackendReadResult } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN, readSkillPresetId } from '@herobids/domain';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { CreateConnectionSchema } from '../schemas.js';
@@ -75,7 +75,7 @@ export async function connectionRoutes(
     toolName: 'count_bots_by_venue_account' | 'get_venue_account',
     payload: Record<string, unknown>,
     userId: string,
-  ): Promise<TradertonReadResult> => {
+  ): Promise<ExternalBackendReadResult> => {
     if (!tradertonClient) {
       return { kind: 'transport_error', message: 'trading boundary not configured', retryable: true };
     }
