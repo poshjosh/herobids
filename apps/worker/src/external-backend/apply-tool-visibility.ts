@@ -6,9 +6,14 @@
 // resolver.
 //
 // For a matched skill:
-//  - tools_exposed  → `requiredTools` becomes exactly the descriptor's tool names;
-//                     the skill's instructions are replaced by the descriptor's.
-//  - instruction_only → `requiredTools` becomes empty (no tools), instructions kept.
+//  - tools_exposed  → `requiredTools` becomes exactly the descriptor's tool names.
+//  - instruction_only → `requiredTools` becomes empty (no tools).
+// Instructions are PRESERVED in both cases — this applicator only moves the
+// visible tool set. (Making the descriptor's instructions authoritative is
+// deferred to T4.1, when real descriptors carry distinct instruction content;
+// `tools_exposed` does not yet carry an `instructions` field, so that is a
+// deliberate follow-up, not a D16 gap: D16 governs tool SCHEMA authority, which
+// is already the descriptor's.)
 // `capabilityFamilies`, `bindingRequirements`, `requiredContextBlocks`,
 // `promptRendererHints` are left untouched — the §6-fence consumers (tick-work,
 // readiness, prompt rendering) still read them. Only the VISIBLE TOOL SET moves to
