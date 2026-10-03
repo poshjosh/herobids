@@ -14,7 +14,7 @@
 - [DONE] **Item 5 — `TradingCapabilityPresentation` layout**.
 - [DONE] **Item 6 — i18n keys** (en/ar/hi).
 - [DONE] **Item 7 — Remove orphaned `formatPnl`/`pnlColor` (+ web `decimal.js`), correct ADR 014 Exposure note**.
-- [TODO] **Item 8 — Tests** (traderton, API, web, i18n, E2E).
+- [DONE] **Item 8 — Tests** (traderton, API, web, i18n, E2E).
 - [TODO] **Item 9 — UAT doc update, ledger fixture, browser UAT runs (desktop + mobile)**.
 - [TODO] **Item 10 — CHANGELOGs + verification**.
 
@@ -535,6 +535,12 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
   fill (direction still correct).
 
 ## Outstanding Issues
+
+### Item 8 — Tests (no CRITICAL/HIGH)
+- [RESOLVED] MEDIUM test-hermeticity: a `RelativeTime` "ago" assertion was clock-dependent; changed to assert the stable `title="<iso>"` attribute instead. Full focused suite green (567 tests).
+- [LOW] `TradingCapabilityPresentation.test.tsx` uses `html.indexOf`/`not.toContain('<details open')` on static markup (coupled to serialized HTML shape); a DOM-query assertion would be less brittle.
+- [LOW] The i18n key-presence guard is a hand-maintained mirror of the API constants; dynamic `authorizationMode` values beyond `direct`/`approval_required` fall back to raw rather than failing the guard (intended fallback design).
+- [NOTE] E2E journey 19 typechecks and is registered by Playwright but was not executed here (needs the running dev stack); it runs in Item 9's browser UAT pass.
 
 ### Item 7 — Remove orphans + ADR correction (no CRITICAL/HIGH)
 - [LOW] `apps/web/src/lib/formatting.ts` ends without a trailing newline (matches pre-existing file style; not a regression).

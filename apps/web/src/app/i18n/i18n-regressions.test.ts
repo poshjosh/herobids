@@ -186,3 +186,116 @@ describe('permission level i18n keys', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Trading capability ledger redesign — ADR 014 guards + key presence (feature 003)
+// ---------------------------------------------------------------------------
+
+describe('trading capability presentation — ADR 014 value-inspection guards', () => {
+  // The web renders server-supplied display strings VERBATIM and only acts on
+  // `emphasis`/`prominence`. It must never compute P&L, derive a colour from a
+  // value, parse a number, or pull in a decimal library.
+  const BANNED_VALUE_TOKENS = ['formatPnl', 'pnlColor', 'decimal.js', 'parseFloat', 'Number('];
+
+  const guardedFiles = [
+    new URL('../../features/agents/CapabilityPresentation.tsx', import.meta.url),
+    new URL('../../features/agents/TradingCapabilityPresentation.tsx', import.meta.url),
+  ];
+
+  it('CapabilityPresentation and TradingCapabilityPresentation never inspect values', () => {
+    for (const file of guardedFiles) {
+      const source = readFileSync(file, 'utf8');
+      for (const token of BANNED_VALUE_TOKENS) {
+        expect(source, `${file.pathname} must not contain "${token}"`).not.toContain(token);
+      }
+    }
+  });
+
+  it('formatting.ts no longer exports the removed trading formatters', () => {
+    const source = readFileSync(new URL('../../lib/formatting.ts', import.meta.url), 'utf8');
+    expect(source).not.toContain('formatPnl');
+    expect(source).not.toContain('pnlColor');
+  });
+});
+
+describe('trading capability presentation — server-emitted i18n keys', () => {
+  // Mirrored from the API presentation constants (feature 003, Item 6). Every
+  // key the server emits via `labelKey`/`valueKey`/`titleKey`/`columns` must
+  // resolve in the English catalog, or the web silently falls back to the raw
+  // server string. Keep this list EXPLICIT so a dropped key fails loudly.
+  const SERVER_EMITTED_TRADING_KEYS = [
+    // Generic contract keys.
+    'capability.details',
+    'capability.feed.empty',
+    // Attributes.
+    'capability.trading.attr.totalPnl',
+    'capability.trading.attr.totalPnlClosedOnly',
+    'capability.trading.attr.realizedPnl',
+    'capability.trading.attr.unrealizedPnl',
+    'capability.trading.attr.winningTrades',
+    'capability.trading.attr.connection',
+    'capability.trading.attr.executionMode',
+    'capability.trading.attr.authorization',
+    'capability.trading.attr.capital',
+    'capability.trading.attr.openPositions',
+    'capability.trading.attr.positionSizeMode',
+    'capability.trading.attr.warnings',
+    // Feeds.
+    'capability.trading.feed.trades',
+    'capability.trading.feed.decisions',
+    'capability.trading.feed.fills',
+    // Columns.
+    'capability.trading.col.when',
+    'capability.trading.col.asset',
+    'capability.trading.col.direction',
+    'capability.trading.col.size',
+    'capability.trading.col.entryPrice',
+    'capability.trading.col.exitPrice',
+    'capability.trading.col.pnl',
+    'capability.trading.col.heldFor',
+    'capability.trading.col.status',
+    'capability.trading.col.side',
+    'capability.trading.col.quantity',
+    'capability.trading.col.price',
+    // Values.
+    'capability.trading.value.long',
+    'capability.trading.value.short',
+    'capability.trading.value.open',
+    'capability.trading.value.closed',
+    'capability.trading.value.buy',
+    'capability.trading.value.sell',
+    'capability.trading.value.notSet',
+    'capability.trading.value.winsOfClosed',
+    // Decision statuses.
+    'capability.trading.decisionStatus.pending',
+    'capability.trading.decisionStatus.executing',
+    'capability.trading.decisionStatus.completed',
+    'capability.trading.decisionStatus.failed',
+    'capability.trading.decisionStatus.none',
+    // Intents.
+    'capability.trading.intent.go_long',
+    'capability.trading.intent.go_short',
+    'capability.trading.intent.go_flat',
+    'capability.trading.intent.increase',
+    'capability.trading.intent.decrease',
+    // Durations.
+    'capability.trading.duration.lessThanMinute',
+    'capability.trading.duration.minutes',
+    'capability.trading.duration.hoursMinutes',
+    'capability.trading.duration.daysHours',
+    // Execution modes.
+    'capability.trading.executionMode.paper',
+    'capability.trading.executionMode.shadow',
+    'capability.trading.executionMode.live',
+    // Authorizations.
+    'capability.trading.authorization.direct',
+    'capability.trading.authorization.approval_required',
+  ] as const;
+
+  it('every server-emitted trading key resolves in the English catalog', () => {
+    for (const key of SERVER_EMITTED_TRADING_KEYS) {
+      expect(enMessages, `Missing en key: ${key}`).toHaveProperty(key);
+      expect(enMessages[key], `Empty en key: ${key}`).toBeTruthy();
+    }
+  });
+});
