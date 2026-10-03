@@ -9,7 +9,7 @@
 - [DONE] **Item 0 — traderton: opt-in marks on `get_agent_positions`** (`includeMarks`, position-marks helper, ctx wiring, tests, contract doc).
 - [DONE] **Item 1 — Presentation contract extension** (`presentation.ts`, `api-client.ts`, ADR 014 note).
 - [DONE] **Item 2 — Shared ledger helpers** (`apps/api/src/routes/capabilities/trading-ledger.ts`) + refactor legacy `/positions` onto them.
-- [TODO] **Item 3 — Presentation route rewrite** (summary tiles, Trades table, Decisions list with status, Fills table, `PositionRow` mark fields).
+- [DONE] **Item 3 — Presentation route rewrite** (summary tiles, Trades table, Decisions list with status, Fills table, `PositionRow` mark fields).
 - [TODO] **Item 4 — Generic web renderers** (overview tiles + Details disclosure, feed table, collapsed feeds, `labelKey`/`valueKey` localization).
 - [TODO] **Item 5 — `TradingCapabilityPresentation` layout**.
 - [TODO] **Item 6 — i18n keys** (en/ar/hi).
@@ -536,8 +536,13 @@ a 390×844 mobile pass (AG-C06, C07, C08). Check console errors = 0 and that `/p
 
 ## Outstanding Issues
 
+### Item 3 — Presentation route rewrite (no CRITICAL/HIGH)
+- [LOW→Item 7] Ledger `pnlEmphasis` export is now unused by any importer (the route uses `formatSignedPnl`); keep for Item 8 unit tests or remove in Item 7 cleanup.
+- [NOTE] The two MEDIUM test-coverage gaps the reviewer flagged (open-row/null-mark/limit-totals/cross-connection path untested; no assertion that `get_agent_positions` is called with `{includeMarks:true}`) were CLOSED in-item: 5 behavior-named route tests added + a readability hoist. No production bug surfaced.
+- [NOTE] `MarkablePositionRow` folded into a mark-aware `PositionRow` (single source of truth); old `parseFloat` `pnlEmphasis` removed from the route.
+
 ### Item 2 — Shared ledger helpers + /positions refactor (no CRITICAL/HIGH)
-- [MEDIUM→resolves in Item 3] The old `parseFloat`-based `pnlEmphasis` still lives in `trading.ts` and is used by the presentation route; it differs from the new ledger `pnlEmphasis` on sub-cent values. Item 3 rewrites the presentation route onto the ledger helper and removes the old one. Must be reconciled by Item 3.
+- [RESOLVED in Item 3] The old `parseFloat`-based `pnlEmphasis` in `trading.ts` was removed; the presentation route now uses the ledger helpers only.
 - [LOW→Item 8] The new pure helpers (`formatSignedPnl`/`formatDecimal`/`formatDuration`/`closedTradeDetails`/`summarizeTrades`/`pnlEmphasis`) are only exercised indirectly until Item 3; dedicated `trading-ledger.test.ts` lands in Item 8.
 - [LOW→Item 3] `MarkablePositionRow.unrealizedPnl?` duplicates the `PositionRow` mark-field extension Item 3 adds; fold into one source of truth in Item 3.
 - [LOW] `now` threaded into `holdMsOf` is unused for closed rows in the legacy route (harmless; the presentation route uses it for open rows).

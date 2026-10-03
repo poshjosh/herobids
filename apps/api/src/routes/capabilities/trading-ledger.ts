@@ -186,14 +186,6 @@ export function formatDuration(ms: number): CapabilityCell {
   };
 }
 
-/**
- * A position row carrying the opt-in mark fields `get_agent_positions`
- * returns under `includeMarks`. Closed rows carry nulls.
- */
-export type MarkablePositionRow = PositionRow & {
-  unrealizedPnl?: string | null;
-};
-
 export type TradesSummary = {
   realized: Decimal;
   unrealized: Decimal | null;
@@ -208,7 +200,7 @@ export type TradesSummary = {
  * present a partial sum as the total). Wins = closed rows whose realized P&L,
  * rounded to 2dp, is positive.
  */
-export function summarizeTrades(rows: MarkablePositionRow[]): TradesSummary {
+export function summarizeTrades(rows: PositionRow[]): TradesSummary {
   let realized = new Decimal(0);
   let unrealized: Decimal | null = new Decimal(0);
   let wins = 0;

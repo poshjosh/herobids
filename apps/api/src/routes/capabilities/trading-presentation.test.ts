@@ -184,8 +184,9 @@ function makeDefaultClient() {
     },
   ];
   const decisions = [
-    { id: 'dec-1', intent: 'go_long', instrumentId: 'BTC-USD', createdAt: NOW_ISO, status: 'approved', venueAccountId: 'va-1' },
-    { id: 'dec-a', intent: 'go_short', instrumentId: 'ETH-USD', createdAt: NOW_ISO, status: 'approved', venueAccountId: 'va-a' },
+    // `status: null` models a decision with no execution plan → badge "Not executed".
+    { id: 'dec-1', intent: 'go_long', instrumentId: 'BTC-USD', createdAt: NOW_ISO, status: null, venueAccountId: 'va-1' },
+    { id: 'dec-a', intent: 'go_short', instrumentId: 'ETH-USD', createdAt: NOW_ISO, status: 'failed', venueAccountId: 'va-a' },
   ];
   const fills = [{ id: 'fill-1', orderId: 'o-1', venueAccountId: 'va-1', actorType: 'agent', actorId: TEST_AGENT_ID, venue: 'hyperliquid', symbol: 'BTC-PERP', side: 'buy', quantity: '0.1', price: '50000', fee: '1', feeCurrency: 'USDC', realizedPnlDelta: '2.500000', filledAt: NOW_ISO, createdAt: NOW_ISO }];
 
@@ -297,30 +298,79 @@ describe('trading capability presentation', () => {
 
     expect(body.connection).toEqual({ id: TEST_CONNECTION_ID, label: 'HL connection', state: 'ready' });
 
-    const attrs = body.attributes as Array<{ key: string; value: string; emphasis?: string }>;
+    const attrs = body.attributes as Array<{ key: string; value: string; emphasis?: string; prominence?: string; labelKey?: string }>;
     const byKey = Object.fromEntries(attrs.map((a) => [a.key, a]));
+    // Secondary account attributes (now inside the Details disclosure) keep their values.
     expect(byKey['execution-mode'].value).toBe('paper');
+    expect(byKey['execution-mode'].prominence).toBe('secondary');
     expect(byKey['authorization-mode'].value).toBe('approval_required');
     expect(byKey['capital'].value).toBe('1000.00');
     expect(byKey['capital'].emphasis).toBe('neutral');
+    expect(byKey['capital'].prominence).toBe('secondary');
     expect(byKey['connection'].value).toBe('HL connection');
 
-    const feeds = body.feeds as Array<{ key: string; items: Array<{ id: string; emphasis?: string }> }>;
+    // Primary P&L summary tiles. The fixture has one closed position (realized
+    // -4.00) and no open rows, so unrealized is +0.00 and the total is -4.00.
+    expect(byKey['total-pnl'].prominence).toBe('primary');
+    expect(byKey['total-pnl'].labelKey).toBe('capability.trading.attr.totalPnl');
+    expect(byKey['total-pnl'].value).toBe('-4.00');
+    expect(byKey['total-pnl'].emphasis).toBe('negative');
+    expect(byKey['realized-pnl'].value).toBe('-4.00');
+    expect(byKey['unrealized-pnl'].value).toBe('0.00');
+    expect(byKey['winning-trades'].value).toBe('0 of 1');
+    expect(byKey['winning-trades'].emphasis).toBe('neutral');
+
+    const feeds = body.feeds as Array<{
+      key: string;
+      prominence?: string;
+      labelKey?: string;
+      columns?: Array<{ key: string }>;
+      items: Array<{
+        id: string;
+        title: string;
+        detail?: string;
+        emphasis?: string;
+        titleKey?: string;
+        badge?: { value: string; valueKey?: string; emphasis?: string };
+        cells?: Record<string, { value: string; valueKey?: string; emphasis?: string }>;
+      }>;
+    }>;
     const feedKeys = feeds.map((f) => f.key);
-    expect(feedKeys).toEqual(['positions', 'decisions', 'fills']);
+    expect(feedKeys).toEqual(['trades', 'decisions', 'fills']);
 
-    // Negative realizedPnl position → 'negative' emphasis.
-    const positionsFeed = feeds.find((f) => f.key === 'positions')!;
-    expect(positionsFeed.items[0].id).toBe('pos-neg');
-    expect(positionsFeed.items[0].emphasis).toBe('negative');
+    // Trades table: the closed position renders a Closed status cell, a negative
+    // P&L cell (realized -4.00), and a direction inferred from the closing fill
+    // (`buy` close → the trade was short). Size is '—' for a closed row.
+    const tradesFeed = feeds.find((f) => f.key === 'trades')!;
+    expect(tradesFeed.prominence).toBe('primary');
+    expect(tradesFeed.columns?.map((c) => c.key)).toEqual([
+      'when', 'asset', 'direction', 'size', 'entryPrice', 'exitPrice', 'pnl', 'heldFor', 'status',
+    ]);
+    const tradeRow = tradesFeed.items[0]!;
+    expect(tradeRow.id).toBe('pos-neg');
+    expect(tradeRow.emphasis).toBe('negative');
+    expect(tradeRow.cells!['status']!.valueKey).toBe('capability.trading.value.closed');
+    expect(tradeRow.cells!['pnl']!.value).toBe('-4.00');
+    expect(tradeRow.cells!['pnl']!.emphasis).toBe('negative');
+    expect(tradeRow.cells!['direction']!.valueKey).toBe('capability.trading.value.short');
+    expect(tradeRow.cells!['size']!.value).toBe('—');
 
+    // Decisions stay a list; the badge carries the plan status (fixture has no
+    // plan → "Not executed", neutral).
     const decisionsFeed = feeds.find((f) => f.key === 'decisions')!;
-    expect(decisionsFeed.items[0].title).toBe('go long');
-    expect(decisionsFeed.items[0].detail).toBe('BTC-USD');
+    expect(decisionsFeed.prominence).toBe('secondary');
+    expect(decisionsFeed.items[0]!.title).toBe('go long');
+    expect(decisionsFeed.items[0]!.titleKey).toBe('capability.trading.intent.go_long');
+    expect(decisionsFeed.items[0]!.detail).toBe('BTC-USD');
+    expect(decisionsFeed.items[0]!.badge!.valueKey).toBe('capability.trading.decisionStatus.none');
+    expect(decisionsFeed.items[0]!.badge!.emphasis).toBe('neutral');
 
+    // Fills table: positive realizedPnlDelta → positive emphasis on the P&L cell.
     const fillsFeed = feeds.find((f) => f.key === 'fills')!;
-    expect(fillsFeed.items[0].title).toBe('buy BTC-PERP');
-    expect(fillsFeed.items[0].emphasis).toBe('positive');
+    expect(fillsFeed.prominence).toBe('secondary');
+    expect(fillsFeed.items[0]!.title).toBe('buy BTC-PERP');
+    expect(fillsFeed.items[0]!.cells!['side']!.valueKey).toBe('capability.trading.value.buy');
+    expect(fillsFeed.items[0]!.cells!['pnl']!.emphasis).toBe('positive');
   });
 
   it('marks capital emphasis as warning when capitalAvailable is false', async () => {
@@ -428,5 +478,245 @@ describe('trading capability presentation', () => {
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/presentation` });
     expect(res.statusCode).toBe(503);
     expect(res.json<Record<string, unknown>>()['error']).toBe('precondition.not_ready');
+  });
+
+  /**
+   * Build a success client whose feeds are driven by the supplied positions /
+   * fills (summary stays ready, decisions empty). Lets the mark-path tests seed
+   * open positions carrying `unrealizedPnl`/`markPrice`/`markedAt`.
+   */
+  function makeMarksClient(input: { positions: unknown[]; fills?: unknown[] }) {
+    const summary = {
+      ok: true,
+      agentId: TEST_AGENT_ID,
+      capital: '1000.00',
+      capitalAvailable: true,
+      executionMode: 'paper',
+      positionSizeMode: 'fixed',
+      openPositionCount: 1,
+      positions: [],
+    };
+    const payloadMap: Record<string, unknown> = {
+      get_account_summary: summary,
+      get_agent_positions: { ok: true, positions: input.positions },
+      get_agent_decisions: { ok: true, decisions: [] },
+      get_agent_fills: { ok: true, fills: input.fills ?? [] },
+    };
+    return makeReadClient({
+      onTool: (toolName) =>
+        ({ kind: 'success', requestId: 'r', correlationId: 'c', payload: payloadMap[toolName] ?? {} } as ExternalBackendClientResult),
+    });
+  }
+
+  /** A full open position row (closedAt null) for the `va-1` venue account. */
+  function openPositionRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'pos-open',
+      venueAccountId: 'va-1',
+      actorType: 'agent',
+      actorId: TEST_AGENT_ID,
+      venue: 'hyperliquid',
+      symbol: 'ETH-PERP',
+      instrumentId: null,
+      side: 'long',
+      size: '2',
+      entryPrice: '3000',
+      realizedPnl: '0.000000',
+      markSource: 'oracle',
+      exitReason: null,
+      stopLoss: null,
+      takeProfit: null,
+      openedAt: NOW_ISO,
+      closedAt: null,
+      updatedAt: NOW_ISO,
+      ...overrides,
+    };
+  }
+
+  it('shows signed unrealized P&L and realized+unrealized total for an open marked position', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([[AGENT_ROW], [ACTIVE_ASSIGNMENT]]);
+    // One CLOSED position (realized -4.00) + one OPEN position carrying a mark
+    // (unrealized +15.00). Total = realized(-4) + unrealized(+15) = +11.00.
+    const closed = {
+      id: 'pos-closed',
+      venueAccountId: 'va-1',
+      actorType: 'agent',
+      actorId: TEST_AGENT_ID,
+      venue: 'hyperliquid',
+      symbol: 'BTC-PERP',
+      instrumentId: null,
+      side: 'flat',
+      size: '0',
+      entryPrice: '50000',
+      realizedPnl: '-4.000000',
+      markSource: 'last_fill',
+      exitReason: null,
+      stopLoss: null,
+      takeProfit: null,
+      openedAt: NOW_ISO,
+      closedAt: NOW_ISO,
+      updatedAt: NOW_ISO,
+    };
+    const open = openPositionRow({
+      unrealizedPnl: '15.000000',
+      markPrice: '3100',
+      markedAt: NOW_ISO,
+    });
+    const { client } = makeMarksClient({ positions: [closed, open] });
+    await tradingCapabilityRoutes(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/presentation` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    const attrs = body.attributes as Array<{ key: string; value: string; emphasis?: string; labelKey?: string }>;
+    const byKey = Object.fromEntries(attrs.map((a) => [a.key, a]));
+    expect(byKey['unrealized-pnl'].value).toBe('+15.00');
+    expect(byKey['unrealized-pnl'].emphasis).toBe('positive');
+    expect(byKey['total-pnl'].value).toBe('+11.00');
+    expect(byKey['total-pnl'].emphasis).toBe('positive');
+    expect(byKey['total-pnl'].labelKey).toBe('capability.trading.attr.totalPnl');
+
+    // The open position's trade row: P&L from unrealizedPnl, Exit '—', Status
+    // Open, Size from the row (not '—').
+    const feeds = body.feeds as Array<{ key: string; items: Array<{ id: string; cells?: Record<string, { value: string; valueKey?: string; emphasis?: string }> }> }>;
+    const tradesFeed = feeds.find((f) => f.key === 'trades')!;
+    const openRow = tradesFeed.items.find((i) => i.id === 'pos-open')!;
+    expect(openRow.cells!['pnl']!.value).toBe('+15.00');
+    expect(openRow.cells!['pnl']!.emphasis).toBe('positive');
+    expect(openRow.cells!['exitPrice']!.value).toBe('—');
+    expect(openRow.cells!['status']!.valueKey).toBe('capability.trading.value.open');
+    expect(openRow.cells!['size']!.value).toBe('2');
+    expect(openRow.cells!['size']!.value).not.toBe('—');
+  });
+
+  it('renders a neutral em-dash unrealized tile and closed-only total when an open mark is missing', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([[AGENT_ROW], [ACTIVE_ASSIGNMENT]]);
+    const open = openPositionRow({ unrealizedPnl: null, markPrice: null, markedAt: null });
+    const { client } = makeMarksClient({ positions: [open] });
+    await tradingCapabilityRoutes(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/presentation` });
+    expect(res.statusCode).toBe(200);
+    const attrs = res.json().attributes as Array<{ key: string; value: string; emphasis?: string; labelKey?: string }>;
+    const byKey = Object.fromEntries(attrs.map((a) => [a.key, a]));
+    expect(byKey['unrealized-pnl'].value).toBe('—');
+    expect(byKey['unrealized-pnl'].emphasis).toBe('neutral');
+    // Realized-only total, relabelled "closed trades only" (never a partial sum).
+    expect(byKey['total-pnl'].labelKey).toBe('capability.trading.attr.totalPnlClosedOnly');
+  });
+
+  it('computes totals over the full scoped set while the trades table is capped by limit', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([[AGENT_ROW], [ACTIVE_ASSIGNMENT]]);
+    // Seed 3 CLOSED winning positions, each realized +10.00. Query limit=2 so the
+    // table shows 2 rows while the totals (+30.00, 3 of 3 wins) span all 3.
+    const positions = [0, 1, 2].map((i) => ({
+      id: `pos-win-${i}`,
+      venueAccountId: 'va-1',
+      actorType: 'agent',
+      actorId: TEST_AGENT_ID,
+      venue: 'hyperliquid',
+      symbol: `SYM-${i}`,
+      instrumentId: null,
+      side: 'flat',
+      size: '0',
+      entryPrice: '100',
+      realizedPnl: '10.000000',
+      markSource: 'last_fill',
+      exitReason: null,
+      stopLoss: null,
+      takeProfit: null,
+      // Stagger openedAt so the newest-first slice is deterministic.
+      openedAt: new Date(`2026-02-0${i + 1}T00:00:00.000Z`).toISOString(),
+      closedAt: new Date(`2026-02-0${i + 1}T01:00:00.000Z`).toISOString(),
+      updatedAt: NOW_ISO,
+    }));
+    const { client } = makeMarksClient({ positions });
+    await tradingCapabilityRoutes(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/presentation?limit=2` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const attrs = body.attributes as Array<{ key: string; value: string }>;
+    const byKey = Object.fromEntries(attrs.map((a) => [a.key, a]));
+    expect(byKey['realized-pnl'].value).toBe('+30.00');
+    expect(byKey['winning-trades'].value).toBe('3 of 3');
+
+    const feeds = body.feeds as Array<{ key: string; items: unknown[] }>;
+    const tradesFeed = feeds.find((f) => f.key === 'trades')!;
+    expect(tradesFeed.items).toHaveLength(2);
+  });
+
+  it('excludes a different-venue position and fill from totals and both feeds', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([[AGENT_ROW], [ACTIVE_ASSIGNMENT]]);
+    // One in-scope closed win (+10) on va-1, one OTHER-connection position (+99)
+    // on va-other, plus fills on each venue account.
+    const inScope = {
+      id: 'pos-mine',
+      venueAccountId: 'va-1',
+      actorType: 'agent',
+      actorId: TEST_AGENT_ID,
+      venue: 'hyperliquid',
+      symbol: 'BTC-PERP',
+      instrumentId: null,
+      side: 'flat',
+      size: '0',
+      entryPrice: '100',
+      realizedPnl: '10.000000',
+      markSource: 'last_fill',
+      exitReason: null,
+      stopLoss: null,
+      takeProfit: null,
+      openedAt: NOW_ISO,
+      closedAt: NOW_ISO,
+      updatedAt: NOW_ISO,
+    };
+    const otherVenue = { ...inScope, id: 'pos-other', venueAccountId: 'va-other', realizedPnl: '99.000000' };
+    const mineFill = { id: 'fill-mine', orderId: 'o-1', venueAccountId: 'va-1', actorType: 'agent', actorId: TEST_AGENT_ID, venue: 'hyperliquid', symbol: 'BTC-PERP', side: 'buy', quantity: '0.1', price: '100', fee: '1', feeCurrency: 'USDC', realizedPnlDelta: '1.000000', filledAt: NOW_ISO, createdAt: NOW_ISO };
+    const otherFill = { ...mineFill, id: 'fill-other', venueAccountId: 'va-other' };
+    const { client } = makeMarksClient({ positions: [inScope, otherVenue], fills: [mineFill, otherFill] });
+    await tradingCapabilityRoutes(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/presentation` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    // Totals span only va-1 (+10.00), never the va-other +99.
+    const attrs = body.attributes as Array<{ key: string; value: string }>;
+    const byKey = Object.fromEntries(attrs.map((a) => [a.key, a]));
+    expect(byKey['realized-pnl'].value).toBe('+10.00');
+    expect(byKey['winning-trades'].value).toBe('1 of 1');
+
+    const feeds = body.feeds as Array<{ key: string; items: Array<{ id: string }> }>;
+    const tradeIds = feeds.find((f) => f.key === 'trades')!.items.map((i) => i.id);
+    expect(tradeIds).toEqual(['pos-mine']);
+    const fillIds = feeds.find((f) => f.key === 'fills')!.items.map((i) => i.id);
+    expect(fillIds).toEqual(['fill-mine']);
+
+    expect(JSON.stringify(body)).not.toContain('pos-other');
+    expect(JSON.stringify(body)).not.toContain('fill-other');
+  });
+
+  it('requests agent positions with marks included', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([[AGENT_ROW], [ACTIVE_ASSIGNMENT]]);
+    const { client, invoke } = makeMarksClient({ positions: [] });
+    await tradingCapabilityRoutes(app, db, client);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/presentation` });
+    expect(res.statusCode).toBe(200);
+
+    const positionsCall = invoke.mock.calls.find((c) => (c[0] as { toolName: string }).toolName === 'get_agent_positions');
+    expect(positionsCall).toBeDefined();
+    expect((positionsCall![0] as { payload: unknown }).payload).toEqual({ includeMarks: true });
   });
 });

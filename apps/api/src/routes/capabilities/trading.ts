@@ -31,12 +31,22 @@ import {
 } from '../exports-traderton.js';
 import type {
   CapabilityAttribute,
+  CapabilityCell,
   CapabilityFeed,
+  CapabilityFeedColumn,
   CapabilityFeedItem,
   CapabilityPresentation,
-  CapabilityPresentationEmphasis,
 } from './presentation.js';
-import { findClosingFill, holdMsOf, indexFillsByPositionKey } from './trading-ledger.js';
+import {
+  closedTradeDetails,
+  findClosingFill,
+  formatDecimal,
+  formatDuration,
+  formatSignedPnl,
+  holdMsOf,
+  indexFillsByPositionKey,
+  summarizeTrades,
+} from './trading-ledger.js';
 const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume'] as const;
 type TradingAction = typeof SUPPORTED_ACTIONS[number];
 
@@ -174,6 +184,8 @@ interface DecisionRow {
   createdAt: Date;
   instrumentId?: string | null;
   venueAccountId?: string | null;
+  /** Latest execution-plan status: `pending|executing|completed|failed`, or null when no plan exists. */
+  status: string | null;
 }
 
 /** Rehydrate a decision record's `createdAt` (arrives as an ISO string over JSON). */
@@ -189,12 +201,14 @@ function toDecisionRow(record: unknown): DecisionRow {
   const intent = typeof r['intent'] === 'string' ? r['intent'] : '';
   const instrumentId = typeof r['instrumentId'] === 'string' ? r['instrumentId'] : null;
   const venueAccountId = typeof r['venueAccountId'] === 'string' ? r['venueAccountId'] : null;
+  const status = typeof r['status'] === 'string' ? r['status'] : null;
   return {
     id: typeof r['id'] === 'string' ? r['id'] : '',
     intent,
     createdAt,
     instrumentId: instrumentId ?? undefined,
     venueAccountId: venueAccountId ?? undefined,
+    status,
   };
 }
 
@@ -220,14 +234,6 @@ function accountSummaryOf(record: Record<string, unknown>): AccountSummary {
       ? (record['warnings'] as string[])
       : undefined,
   };
-}
-
-/** Server-derived emphasis from a signed P&L value — the web must NOT compute signs. */
-function pnlEmphasis(value: string | null | undefined): CapabilityPresentationEmphasis {
-  if (value === null || value === undefined) return 'neutral';
-  const n = parseFloat(value);
-  if (Number.isNaN(n) || n === 0) return 'neutral';
-  return n > 0 ? 'positive' : 'negative';
 }
 
 /** Fallback read deadline when the operator boundary timeout is not supplied. */
@@ -430,9 +436,10 @@ export async function tradingCapabilityRoutes(
       if (!queryResult.success) {
         return reply.status(400).send({ error: 'validation_error', details: queryResult.error.issues });
       }
-      // `limit` is currently applied to the decisions feed only (passed through to
-      // `get_agent_decisions`); `cursor` / `nextCursor` pagination is deferred — the
-      // `cursor` query param is accepted but not consumed yet.
+      // `limit` caps the rows shown in each feed (trades, decisions, fills); the
+      // P&L summary totals are over the FULL filtered set, not the capped rows.
+      // `cursor` / `nextCursor` pagination is deferred — the `cursor` query param
+      // is accepted but not consumed yet.
       const { connectionId, limit } = queryResult.data;
 
       // 1. Ownership.
@@ -492,125 +499,365 @@ export async function tradingCapabilityRoutes(
         );
       }
 
-      const summaryLoaded = await loadBoundaryObject(boundary, 'get_account_summary', {
-        venueAccountId: resolvedVenueAccountId,
-      });
+      // Fetch the four reads concurrently to offset the mark latency the
+      // `includeMarks: true` positions read adds, but check `.ok` in a DETERMINISTIC
+      // order (summary → positions → decisions → fills) so the surfaced error — and
+      // the 503/404 status mapping — is identical to the previous sequential reads.
+      const [summaryLoaded, positionsLoaded, decisionsLoaded, fillsLoaded] = await Promise.all([
+        loadBoundaryObject(boundary, 'get_account_summary', { venueAccountId: resolvedVenueAccountId }),
+        loadAgentEvidence<ReadPositionRow>(boundary, 'get_agent_positions', { includeMarks: true }, 'positions', toPositionRow),
+        loadAgentEvidence<DecisionRow>(boundary, 'get_agent_decisions', { limit }, 'decisions', toDecisionRow),
+        loadAgentEvidence<ReadFillRow>(boundary, 'get_agent_fills', {}, 'fills', toFillRow),
+      ]);
       if (!summaryLoaded.ok) {
         return reply.status(summaryLoaded.error.status).send(
           errorPayload(summaryLoaded.error.code, summaryLoaded.error.message),
         );
       }
-      const summary = accountSummaryOf(summaryLoaded.data);
-
-      const positionsLoaded = await loadAgentEvidence<ReadPositionRow>(
-        boundary,
-        'get_agent_positions',
-        {},
-        'positions',
-        toPositionRow,
-      );
       if (!positionsLoaded.ok) {
         return reply.status(positionsLoaded.error.status).send(
           errorPayload(positionsLoaded.error.code, positionsLoaded.error.message),
         );
       }
-
-      const decisionsLoaded = await loadAgentEvidence<DecisionRow>(
-        boundary,
-        'get_agent_decisions',
-        { limit },
-        'decisions',
-        toDecisionRow,
-      );
       if (!decisionsLoaded.ok) {
         return reply.status(decisionsLoaded.error.status).send(
           errorPayload(decisionsLoaded.error.code, decisionsLoaded.error.message),
         );
       }
-
-      const fillsLoaded = await loadAgentEvidence<ReadFillRow>(
-        boundary,
-        'get_agent_fills',
-        {},
-        'fills',
-        toFillRow,
-      );
       if (!fillsLoaded.ok) {
         return reply.status(fillsLoaded.error.status).send(
           errorPayload(fillsLoaded.error.code, fillsLoaded.error.message),
         );
       }
+      const summary = accountSummaryOf(summaryLoaded.data);
 
-      // 6. Map to attributes.
+      // 6. Scope positions/fills to the selected connection's venue account
+      // BEFORE summarizing (same cross-connection rule as the feeds). Totals use
+      // the filtered FULL set; the tables slice to `limit` after sorting.
+      const scopedPositions = positionsLoaded.rows.filter((p) => p.venueAccountId === resolvedVenueAccountId);
+      const scopedFills = fillsLoaded.rows.filter((f) => f.venueAccountId === resolvedVenueAccountId);
+
+      const now = new Date();
+      const fillIndex = indexFillsByPositionKey(scopedFills);
+      const totals = summarizeTrades(scopedPositions);
+
+      // 7. P&L summary tiles (primary) + account attributes (secondary). Every
+      // attribute carries a `labelKey`; the English `label`/`value` are the
+      // fallback the web renders until the i18n catalog (Item 6) lands.
+      const realizedPnl = formatSignedPnl(totals.realized.toFixed());
+      const unrealizedPnl = totals.unrealized === null
+        ? { value: '—', emphasis: 'neutral' as const }
+        : formatSignedPnl(totals.unrealized.toFixed());
+
+      // Never present a partial sum as the total: when any open mark is missing,
+      // the total is realized-only and relabelled "closed trades only".
+      const totalPnl = totals.unrealized === null
+        ? formatSignedPnl(totals.realized.toFixed())
+        : formatSignedPnl(totals.realized.plus(totals.unrealized).toFixed());
+      const totalPnlLabel = totals.unrealized === null
+        ? { label: 'Total profit / loss (closed trades only)', labelKey: 'capability.trading.attr.totalPnlClosedOnly' }
+        : { label: 'Total profit / loss', labelKey: 'capability.trading.attr.totalPnl' };
+
       const attributes: CapabilityAttribute[] = [
-        { key: 'connection', label: 'Connection', value: assignment.label, emphasis: 'neutral' },
-        { key: 'execution-mode', label: 'Execution mode', value: summary.executionMode ?? 'Not set', emphasis: 'neutral' },
-        { key: 'authorization-mode', label: 'Authorization', value: authorizationMode, emphasis: 'neutral' },
         {
+          key: 'total-pnl',
+          label: totalPnlLabel.label,
+          labelKey: totalPnlLabel.labelKey,
+          value: totalPnl.value,
+          emphasis: totalPnl.emphasis,
+          prominence: 'primary',
+        },
+        {
+          key: 'realized-pnl',
+          label: 'From closed trades',
+          labelKey: 'capability.trading.attr.realizedPnl',
+          value: realizedPnl.value,
+          emphasis: realizedPnl.emphasis,
+          prominence: 'primary',
+        },
+        {
+          key: 'unrealized-pnl',
+          label: 'From open trades',
+          labelKey: 'capability.trading.attr.unrealizedPnl',
+          value: unrealizedPnl.value,
+          emphasis: unrealizedPnl.emphasis,
+          prominence: 'primary',
+        },
+        {
+          key: 'winning-trades',
+          label: 'Winning trades',
+          labelKey: 'capability.trading.attr.winningTrades',
+          value: `${totals.wins} of ${totals.closed}`,
+          valueKey: 'capability.trading.value.winsOfClosed',
+          valueParams: { wins: String(totals.wins), closed: String(totals.closed) },
+          emphasis: 'neutral',
+          prominence: 'primary',
+        },
+      ];
+
+      // Warnings and an unavailable-capital flag stay visible (primary) — hiding a
+      // blocking state would bury it. The web only follows `prominence`.
+      if (summary.warnings && summary.warnings.length > 0) {
+        attributes.push({
+          key: 'warnings',
+          label: 'Warnings',
+          labelKey: 'capability.trading.attr.warnings',
+          value: summary.warnings.join(', '),
+          emphasis: 'warning',
+          prominence: 'primary',
+        });
+      }
+      if (summary.capitalAvailable === false) {
+        attributes.push({
           key: 'capital',
           label: 'Capital',
+          labelKey: 'capability.trading.attr.capital',
           value: summary.capital ?? 'Not set',
-          emphasis: summary.capitalAvailable ? 'neutral' : 'warning',
-        },
-        { key: 'open-positions', label: 'Open positions', value: String(summary.openPositionCount), emphasis: 'neutral' },
-        { key: 'position-size-mode', label: 'Position size mode', value: summary.positionSizeMode ?? 'Not set', emphasis: 'neutral' },
-      ];
-      if (summary.warnings && summary.warnings.length > 0) {
-        attributes.push({ key: 'warnings', label: 'Warnings', value: summary.warnings.join(', '), emphasis: 'warning' });
+          valueKey: summary.capital === null ? 'capability.trading.value.notSet' : undefined,
+          emphasis: 'warning',
+          prominence: 'primary',
+        });
       }
 
-      // 7. Map to feeds (server-side emphasis only).
-      // Scope feed rows to the selected connection's venue account (cross-connection data bleed).
-      const positionsFeed: CapabilityFeed = {
-        key: 'positions',
-        label: 'Positions',
-        items: positionsLoaded.rows
-          .filter((p) => p.venueAccountId === resolvedVenueAccountId)
-          .map((p): CapabilityFeedItem => ({
-            id: p.id,
-            title: p.symbol,
-            detail: `${p.venue} · ${p.size}`,
-            occurredAt: (p.closedAt ?? p.openedAt).toISOString(),
-            emphasis: pnlEmphasis(p.realizedPnl),
-          })),
+      // Secondary account attributes (rendered inside a Details disclosure).
+      attributes.push(
+        {
+          key: 'connection',
+          label: 'Connection',
+          labelKey: 'capability.trading.attr.connection',
+          value: assignment.label,
+          emphasis: 'neutral',
+          prominence: 'secondary',
+        },
+        {
+          key: 'execution-mode',
+          label: 'Execution mode',
+          labelKey: 'capability.trading.attr.executionMode',
+          value: summary.executionMode ?? 'Not set',
+          valueKey: summary.executionMode === null
+            ? 'capability.trading.value.notSet'
+            : `capability.trading.executionMode.${summary.executionMode}`,
+          emphasis: 'neutral',
+          prominence: 'secondary',
+        },
+        {
+          key: 'authorization-mode',
+          label: 'Authorization',
+          labelKey: 'capability.trading.attr.authorization',
+          value: authorizationMode,
+          valueKey: `capability.trading.authorization.${authorizationMode}`,
+          emphasis: 'neutral',
+          prominence: 'secondary',
+        },
+        {
+          key: 'position-size-mode',
+          label: 'Position size mode',
+          labelKey: 'capability.trading.attr.positionSizeMode',
+          value: summary.positionSizeMode ?? 'Not set',
+          valueKey: summary.positionSizeMode === null ? 'capability.trading.value.notSet' : undefined,
+          emphasis: 'neutral',
+          prominence: 'secondary',
+        },
+        {
+          key: 'open-positions',
+          label: 'Open trades',
+          labelKey: 'capability.trading.attr.openPositions',
+          value: String(summary.openPositionCount),
+          emphasis: 'neutral',
+          prominence: 'secondary',
+        },
+      );
+      // Capital is only a secondary attribute when it IS available — the
+      // unavailable case is already surfaced above as a primary warning.
+      if (summary.capitalAvailable !== false) {
+        attributes.push({
+          key: 'capital',
+          label: 'Capital',
+          labelKey: 'capability.trading.attr.capital',
+          value: summary.capital ?? 'Not set',
+          valueKey: summary.capital === null ? 'capability.trading.value.notSet' : undefined,
+          emphasis: 'neutral',
+          prominence: 'secondary',
+        });
+      }
+
+      // 8. Feeds. The web renders cells verbatim and acts only on emphasis; the
+      // `valueKey`s localize word values (direction/status/side) in Item 6.
+
+      const tradesColumns: CapabilityFeedColumn[] = [
+        { key: 'when', label: 'When', labelKey: 'capability.trading.col.when', align: 'start', format: 'timestamp' },
+        { key: 'asset', label: 'Asset', labelKey: 'capability.trading.col.asset', align: 'start', format: 'text' },
+        { key: 'direction', label: 'Direction', labelKey: 'capability.trading.col.direction', align: 'start', format: 'text' },
+        { key: 'size', label: 'Size', labelKey: 'capability.trading.col.size', align: 'end', format: 'text' },
+        { key: 'entryPrice', label: 'Entry price', labelKey: 'capability.trading.col.entryPrice', align: 'end', format: 'text' },
+        { key: 'exitPrice', label: 'Exit price', labelKey: 'capability.trading.col.exitPrice', align: 'end', format: 'text' },
+        { key: 'pnl', label: 'Profit / loss', labelKey: 'capability.trading.col.pnl', align: 'end', format: 'text' },
+        { key: 'heldFor', label: 'Held for', labelKey: 'capability.trading.col.heldFor', align: 'end', format: 'text' },
+        { key: 'status', label: 'Status', labelKey: 'capability.trading.col.status', align: 'start', format: 'text' },
+      ];
+
+      const directionCell = (direction: 'long' | 'short' | null): CapabilityCell => {
+        if (direction === null) return { value: '—', emphasis: 'neutral' };
+        return {
+          value: direction === 'long' ? 'Long' : 'Short',
+          valueKey: `capability.trading.value.${direction}`,
+          emphasis: 'neutral',
+        };
       };
 
-      // Decisions carry a non-null `venueAccountId` at the source; the null
-      // branch here guards against missing/non-string `venueAccountId` in the
-      // untracked boundary payload. Keep only rows matching the selected
-      // connection's venue account to prevent cross-connection data bleed.
+      const tradeRows = scopedPositions
+        .slice()
+        .sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime())
+        .slice(0, limit)
+        .map((p): CapabilityFeedItem => {
+          const isClosed = p.closedAt !== null;
+          const held = formatDuration(holdMsOf(p, now));
+          const statusCell: CapabilityCell = {
+            value: isClosed ? 'Closed' : 'Open',
+            valueKey: isClosed ? 'capability.trading.value.closed' : 'capability.trading.value.open',
+            emphasis: 'neutral',
+          };
+
+          let direction: 'long' | 'short' | null;
+          let sizeCell: CapabilityCell;
+          let exitCell: CapabilityCell;
+          let pnlCell: CapabilityCell;
+          if (isClosed) {
+            const closed = closedTradeDetails(p, fillIndex);
+            direction = closed.direction;
+            // On full close the position row carries side:'flat'/size:'0', so size
+            // is not representable for a closed trade — render the em-dash (Decision 7).
+            sizeCell = { value: '—', emphasis: 'neutral' };
+            exitCell = { value: closed.exitPrice ?? '—', emphasis: 'neutral' };
+            pnlCell = formatSignedPnl(p.realizedPnl);
+          } else {
+            direction = p.side === 'long' || p.side === 'short' ? p.side : null;
+            sizeCell = { value: formatDecimal(p.size), emphasis: 'neutral' };
+            exitCell = { value: '—', emphasis: 'neutral' };
+            pnlCell = formatSignedPnl(p.unrealizedPnl ?? null);
+          }
+
+          const dirCell = directionCell(direction);
+
+          return {
+            id: p.id,
+            title: p.symbol,
+            detail: `${dirCell.value} · ${pnlCell.value}`,
+            occurredAt: p.openedAt.toISOString(),
+            emphasis: pnlCell.emphasis,
+            cells: {
+              when: { value: p.openedAt.toISOString(), emphasis: 'neutral' },
+              asset: { value: p.symbol, emphasis: 'neutral' },
+              direction: dirCell,
+              size: sizeCell,
+              entryPrice: { value: formatDecimal(p.entryPrice), emphasis: 'neutral' },
+              exitPrice: exitCell,
+              pnl: pnlCell,
+              heldFor: held,
+              status: statusCell,
+            },
+          };
+        });
+
+      const tradesFeed: CapabilityFeed = {
+        key: 'trades',
+        label: 'Trades',
+        labelKey: 'capability.trading.feed.trades',
+        prominence: 'primary',
+        columns: tradesColumns,
+        items: tradeRows,
+      };
+
+      // Decisions carry a non-null `venueAccountId` at the source; the null branch
+      // guards against a missing/non-string `venueAccountId` in the untracked
+      // boundary payload. Scope to the selected connection's venue account.
+      const decisionStatusCell = (status: string | null): CapabilityCell => {
+        if (status === null) {
+          return { value: 'Not executed', valueKey: 'capability.trading.decisionStatus.none', emphasis: 'neutral' };
+        }
+        return {
+          value: status,
+          valueKey: `capability.trading.decisionStatus.${status}`,
+          emphasis: status === 'failed' ? 'warning' : 'neutral',
+        };
+      };
+
       const decisionsFeed: CapabilityFeed = {
         key: 'decisions',
         label: 'Decisions',
+        labelKey: 'capability.trading.feed.decisions',
+        prominence: 'secondary',
         items: decisionsLoaded.rows
           .filter((d) => !d.venueAccountId || d.venueAccountId === resolvedVenueAccountId)
+          .slice(0, limit)
           .map((d): CapabilityFeedItem => ({
             id: d.id,
             title: d.intent.replace(/_/g, ' '),
+            titleKey: `capability.trading.intent.${d.intent}`,
             detail: d.instrumentId ?? undefined,
             occurredAt: d.createdAt.toISOString(),
+            badge: decisionStatusCell(d.status),
           })),
       };
 
-      const fillsFeed: CapabilityFeed = {
-        key: 'fills',
-        label: 'Fills',
-        items: fillsLoaded.rows
-          .filter((f) => f.venueAccountId === resolvedVenueAccountId)
-          .map((f): CapabilityFeedItem => ({
+      const fillsColumns: CapabilityFeedColumn[] = [
+        { key: 'when', label: 'When', labelKey: 'capability.trading.col.when', align: 'start', format: 'timestamp' },
+        { key: 'asset', label: 'Asset', labelKey: 'capability.trading.col.asset', align: 'start', format: 'text' },
+        { key: 'side', label: 'Side', labelKey: 'capability.trading.col.side', align: 'start', format: 'text' },
+        { key: 'quantity', label: 'Quantity', labelKey: 'capability.trading.col.quantity', align: 'end', format: 'text' },
+        { key: 'price', label: 'Price', labelKey: 'capability.trading.col.price', align: 'end', format: 'text' },
+        { key: 'pnl', label: 'Profit / loss', labelKey: 'capability.trading.col.pnl', align: 'end', format: 'text' },
+      ];
+
+      const sideCell = (side: string): CapabilityCell => {
+        const normalized = side.toLowerCase();
+        if (normalized === 'buy' || normalized === 'sell') {
+          return {
+            value: normalized === 'buy' ? 'Buy' : 'Sell',
+            valueKey: `capability.trading.value.${normalized}`,
+            emphasis: 'neutral',
+          };
+        }
+        return { value: side, emphasis: 'neutral' };
+      };
+
+      const fillRows = scopedFills
+        .slice()
+        .sort((a, b) => b.filledAt.getTime() - a.filledAt.getTime())
+        .slice(0, limit)
+        .map((f): CapabilityFeedItem => {
+          const pnlCell = formatSignedPnl(f.realizedPnlDelta);
+          return {
             id: f.id,
             title: `${f.side} ${f.symbol}`,
             detail: `${f.quantity} @ ${f.price}`,
             occurredAt: f.filledAt.toISOString(),
-            emphasis: pnlEmphasis(f.realizedPnlDelta),
-          })),
+            emphasis: pnlCell.emphasis,
+            cells: {
+              when: { value: f.filledAt.toISOString(), emphasis: 'neutral' },
+              asset: { value: f.symbol, emphasis: 'neutral' },
+              side: sideCell(f.side),
+              quantity: { value: formatDecimal(f.quantity), emphasis: 'neutral' },
+              price: { value: formatDecimal(f.price), emphasis: 'neutral' },
+              pnl: pnlCell,
+            },
+          };
+        });
+
+      const fillsFeed: CapabilityFeed = {
+        key: 'fills',
+        label: 'Fills',
+        labelKey: 'capability.trading.feed.fills',
+        prominence: 'secondary',
+        columns: fillsColumns,
+        items: fillRows,
       };
 
       return reply.send({
         family: 'trading',
         connection: { id: assignment.connectionId, label: assignment.label, state: 'ready' as const },
         attributes,
-        feeds: [positionsFeed, decisionsFeed, fillsFeed],
+        feeds: [tradesFeed, decisionsFeed, fillsFeed],
       } satisfies CapabilityPresentation);
     },
   );

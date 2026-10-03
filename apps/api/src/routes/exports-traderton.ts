@@ -83,6 +83,14 @@ export interface PositionRow {
   openedAt: Date;
   closedAt: Date | null;
   updatedAt: Date;
+  // Opt-in mark fields `get_agent_positions` returns under `includeMarks: true`
+  // (traderton Item 0). Absent with an older traderton or a non-marked read;
+  // closed rows and per-position mark failures carry nulls. `toPositionRow`
+  // spreads `...r`, so these pass through verbatim (no date rehydration needed —
+  // `markedAt` stays an ISO string the presentation renders directly).
+  markPrice?: string | null;
+  unrealizedPnl?: string | null;
+  markedAt?: string | null;
 }
 
 /** The narrow read boundary the agent-export endpoints consume. */
@@ -186,7 +194,10 @@ export function toJournalRow(record: unknown): JournalRow {
 
 /**
  * Narrow a boundary record into a position row, rehydrating `openedAt`,
- * `updatedAt`, and the nullable `closedAt`.
+ * `updatedAt`, and the nullable `closedAt`. The `...r` spread passes through the
+ * optional mark fields (`markPrice`/`unrealizedPnl`/`markedAt`) when the read
+ * requested `includeMarks` — they need no rehydration (`markedAt` stays an ISO
+ * string).
  */
 export function toPositionRow(record: unknown): PositionRow {
   const r = asRecord(record);
