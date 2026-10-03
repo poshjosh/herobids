@@ -9,13 +9,17 @@ import {
 } from './sign.js';
 
 /**
- * Signer byte-parity with the Traderton verifier.
+ * Signer self-consistency against an inline replica of the verifier algorithm.
  *
- * The sibling `@traderton/boundary` package is a separate repo, not resolvable
- * from herobids' workspace, so these tests REPLICATE the verifier's exact
- * algorithm inline (from traderton/packages/boundary/src/auth.ts) and assert the
- * signer produces the same bytes. If a message signed here verifies against this
- * replica, it verifies against the real `authenticateRequest`.
+ * NOT a cross-repo guard. `verifierCanonical` / `verifierSignature` below are a
+ * hand-copied snapshot of traderton/packages/boundary/src/auth.ts: if that file
+ * changes, these tests still pass, so they cannot detect signer/verifier drift.
+ * The cross-repo guard is the shared fixture
+ * `./__fixtures__/invocation-signing-vectors.json`, asserted here by
+ * `./signing-vectors.test.ts` and in traderton by
+ * packages/boundary/src/signing-vectors.test.ts against the real
+ * `authenticateRequest` (Phase 3 SEAM.md §2, §3.1). Test logic is intentionally
+ * unchanged: this file must pass unmodified after the T1.1 rename (Step 10 §5).
  */
 
 const IDENTITY: SigningIdentity = {
@@ -24,13 +28,13 @@ const IDENTITY: SigningIdentity = {
   secret: 'test-signing-secret',
 };
 
-/** Exact replica of the Traderton verifier's canonical string (auth.ts). */
+/** Inline snapshot of the verifier's canonical string (auth.ts) — not a drift guard; see header. */
 function verifierCanonical(method: string, path: string, timestamp: string, rawBody: Buffer): string {
   const bodyHash = createHash('sha256').update(rawBody).digest('hex');
   return `${method}\n${path}\n${timestamp}\n${bodyHash}`;
 }
 
-/** Exact replica of the Traderton verifier's expected signature (auth.ts). */
+/** Inline snapshot of the verifier's expected signature (auth.ts) — not a drift guard; see header. */
 function verifierSignature(secret: string, canonical: string): string {
   return createHmac('sha256', secret).update(canonical).digest('hex');
 }

@@ -3,7 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** **T0.3** (shared signing vectors) — T0.1, T0.2 ✅. ←
+**Current cursor:** **T0.4** (descriptor conformance fixtures) — T0.1–T0.3 ✅. ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -56,7 +56,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   - Exit: baseline table in the running notes below. Pre-existing failures named
     and explicitly excluded from this run's scope.
   - Note: run **G3** (local-boundary assertion) before the suites, every time.
-- ⬜ **T0.3 Shared signing vectors — against PRE-RENAME code.** Create
+- ✅ **T0.3 Shared signing vectors — against PRE-RENAME code.** Create
   `invocation-signing-vectors.json` in both herobids and traderton: POST invoke;
   GET status with empty body; a path with a query string (must be stripped);
   non-ASCII body. Each case records the expected canonical string and
@@ -323,6 +323,31 @@ planning that later tasks depend on:
   `staging.openaidom.com`) and sends a real Telegram `sendMessage`. It is a G2
   mandated suite, so it ran at G0; see P3-1 and ESCALATIONS E1.
 
+**T0.3 — shared signing vectors (pre-rename).** traderton `phase3-mcp-surface`
+`a9ca3db`; herobids `phase3-external-backend` (this commit). Implementer wrote
+the generator, fixture and tests; CodeReviewer: 0 CRITICAL/HIGH, 2 MEDIUM fixed
+(real-app rejection now asserts `signature mismatch`; this record), LOWs L1–L3
+fixed, L4–L6 parked below.
+- Fixture `invocation-signing-vectors.json`, byte-identical in both repos
+  (`cmp` + `shasum`), sha256 `1d4a04b8e92c2baddea4fc8fef787a310d756cfa621d88c11609ad0f9d0520ef`
+  (SEAM §3.1). 4 cases: full-envelope POST, empty-body GET, query-stripped GET,
+  non-ASCII POST (428 UTF-8 bytes vs 414 UTF-16 units). Test-only secret.
+- Generated from the CURRENT herobids signer by `scripts/ts/generate-signing-vectors.ts`
+  (`--check` exits 0 = deterministic; a one-byte edit makes it and the digest
+  test fail — verified, then restored).
+- herobids: `signing-vectors.test.ts` 16 tests (imports only `./sign.js`, so it
+  survives T1.1 byte-unmodified), `client-signing-vectors.test.ts` 4 tests
+  (client wire body + headers). `sign.test.ts` comment-only: the replica is
+  labelled "NOT a cross-repo guard" and points at the vectors.
+- traderton: `signing-vectors.test.ts` 26 tests — real `authenticateRequest`
+  accepts every case; one-byte body and signature mutations rejected with
+  `signature mismatch`; unstripped query path rejected; real `createBoundaryApp`
+  via `app.inject` accepts all 4 (query case proves `toSignedRequest` strips)
+  and rejects a mutated signature. `app.test.ts` 37/37 unchanged.
+- I4 forms: `pnpm --filter @herobids/domain exec vitest run -t "signing vectors"`
+  → 20 pass. I7: 0 escape hatches (test files type-checked ad hoc under strict
+  by both sub-agents, since no tsconfig covers them).
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
@@ -331,3 +356,11 @@ planning that later tasks depend on:
 - LOW — `pnpm lint` type-checks nothing in herobids or traderton (root tsconfig
   `files: []` + references, run with `--noEmit`), and test files are in no
   tsconfig. Pre-existing; mitigated by P3-2. Fix belongs to a tooling task.
+
+**T0.3**
+- LOW (L4) — no `.gitattributes` in either repo; a CRLF-converting checkout
+  would fail the fixture digests (fails closed). Optional: `**/__fixtures__/** -text`.
+- LOW (L5) — traderton `signing-vectors.test.ts` has no explicit "exactly four
+  case ids" check (covered indirectly by the pinned digest).
+- LOW (L6) — body mutation is exercised at `authenticateRequest` level only, not
+  through `app.inject` (signature mutation is).

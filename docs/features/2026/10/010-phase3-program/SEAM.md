@@ -26,8 +26,9 @@ this file is the bug.
 ## 2. Why a shared fixture, not a shared document
 
 The existing anti-drift guard is weaker than it looks.
-`herobids/packages/domain/src/traderton/sign.test.ts:28-36` hand-replicates the
-traderton verifier inline (`verifierCanonical`, `verifierSignature`) with a
+`herobids/packages/domain/src/traderton/sign.test.ts:28-36` (pre-T0.3 line
+numbers; the header was re-annotated at T0.3 and now points here) hand-replicates
+the traderton verifier inline (`verifierCanonical`, `verifierSignature`) with a
 comment claiming:
 
 > "If a message signed here verifies against this replica, it verifies against
@@ -71,9 +72,11 @@ the expected canonical string and the expected `sha256=<hex>` signature.
 editing one copy fails on both sides rather than silently diverging.
 
 ```
-Fixture digest (fill at T0.3):
-  invocation-signing-vectors.json  sha256 = <RECORD HERE>
+Fixture digest (filled at T0.3):
+  invocation-signing-vectors.json  sha256 = 1d4a04b8e92c2baddea4fc8fef787a310d756cfa621d88c11609ad0f9d0520ef
 ```
+
+(Pre-T1.1 the herobids copy lives at `packages/domain/src/traderton/__fixtures__/`; it moves with the directory to the path in the table above at T1.1.)
 
 ### 3.2 Descriptor conformance fixtures
 

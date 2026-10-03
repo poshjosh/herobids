@@ -1,0 +1,112 @@
+{
+  "formatVersion": 1,
+  "description": "Shared 005 HMAC invocation signing vectors. Byte-identical in herobids and traderton. DO NOT EDIT BY HAND: regenerate with herobids scripts/ts/generate-signing-vectors.ts, copy to traderton, update the sha256 constant in both tests and SEAM.md §3.1.",
+  "generator": "herobids scripts/ts/generate-signing-vectors.ts",
+  "secretIsTestOnly": true,
+  "cases": [
+    {
+      "id": "invoke-full-envelope",
+      "description": "POST tools:invoke with a full 005 envelope from TradertonClient.buildEnvelope (every identifier supplied).",
+      "method": "POST",
+      "requestPath": "/internal/v1/tools:invoke",
+      "signedPath": "/internal/v1/tools:invoke",
+      "timestamp": "2026-10-02T12:00:00.000Z",
+      "deadlineAt": "2026-10-02T12:00:30.000Z",
+      "consumerId": "herobids",
+      "keyId": "signing-vector-key",
+      "secret": "phase3-signing-vector-test-secret",
+      "body": "{\"contractVersion\":\"1.0\",\"requestId\":\"req-vector-1\",\"idempotencyKey\":\"idem-vector-1\",\"correlationId\":\"corr-vector-1\",\"issuedAt\":\"2026-10-02T12:00:00.000Z\",\"deadlineAt\":\"2026-10-02T12:00:30.000Z\",\"caller\":{\"consumerId\":\"herobids\",\"keyId\":\"signing-vector-key\"},\"subject\":{\"ownerId\":\"owner-vector-1\",\"actor\":{\"type\":\"agent\",\"id\":\"agent-vector-1\"}},\"toolName\":\"echo_vector\",\"payload\":{\"value\":\"hello\"}}",
+      "bodyUtf8ByteLength": 398,
+      "bodyUtf16Length": 398,
+      "bodySha256": "9cf7db1960b5e5fd74e2f9159373da9df6c38295920ea8a0d206e73bd0c2c1cd",
+      "expectedCanonical": "POST\n/internal/v1/tools:invoke\n2026-10-02T12:00:00.000Z\n9cf7db1960b5e5fd74e2f9159373da9df6c38295920ea8a0d206e73bd0c2c1cd",
+      "expectedSignature": "sha256=1da5e9dc78bd0b6f3a95d929d4f87034abe30cb5d954724b6705795cb8837f05",
+      "expectedHeaders": {
+        "content-type": "application/json",
+        "x-traderton-consumer-id": "herobids",
+        "x-traderton-key-id": "signing-vector-key",
+        "x-traderton-timestamp": "2026-10-02T12:00:00.000Z",
+        "x-traderton-signature": "sha256=1da5e9dc78bd0b6f3a95d929d4f87034abe30cb5d954724b6705795cb8837f05",
+        "x-request-deadline-at": "2026-10-02T12:00:30.000Z"
+      }
+    },
+    {
+      "id": "status-empty-body",
+      "description": "GET invocation status: empty body, so the canonical string hashes zero bytes.",
+      "method": "GET",
+      "requestPath": "/internal/v1/invocations/req-vector-2",
+      "signedPath": "/internal/v1/invocations/req-vector-2",
+      "timestamp": "2026-10-02T12:00:00.000Z",
+      "deadlineAt": "2026-10-02T12:00:30.000Z",
+      "consumerId": "herobids",
+      "keyId": "signing-vector-key",
+      "secret": "phase3-signing-vector-test-secret",
+      "body": "",
+      "bodyUtf8ByteLength": 0,
+      "bodyUtf16Length": 0,
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expectedCanonical": "GET\n/internal/v1/invocations/req-vector-2\n2026-10-02T12:00:00.000Z\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expectedSignature": "sha256=0c4b01753dbceee1a38e7b664fed71dcb117e85c5b1060a2a4ddfdda262f5537",
+      "expectedHeaders": {
+        "content-type": "application/json",
+        "x-traderton-consumer-id": "herobids",
+        "x-traderton-key-id": "signing-vector-key",
+        "x-traderton-timestamp": "2026-10-02T12:00:00.000Z",
+        "x-traderton-signature": "sha256=0c4b01753dbceee1a38e7b664fed71dcb117e85c5b1060a2a4ddfdda262f5537",
+        "x-request-deadline-at": "2026-10-02T12:00:30.000Z"
+      }
+    },
+    {
+      "id": "status-query-stripped",
+      "description": "GET invocation status sent with a query string: the verifier strips the query, so the signature covers signedPath only.",
+      "method": "GET",
+      "requestPath": "/internal/v1/invocations/req-vector-3?wait=true&trace=1",
+      "signedPath": "/internal/v1/invocations/req-vector-3",
+      "timestamp": "2026-10-02T12:00:00.000Z",
+      "deadlineAt": "2026-10-02T12:00:30.000Z",
+      "consumerId": "herobids",
+      "keyId": "signing-vector-key",
+      "secret": "phase3-signing-vector-test-secret",
+      "body": "",
+      "bodyUtf8ByteLength": 0,
+      "bodyUtf16Length": 0,
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expectedCanonical": "GET\n/internal/v1/invocations/req-vector-3\n2026-10-02T12:00:00.000Z\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expectedSignature": "sha256=5bad56ff7fa858cfb12b7038289685515870b8f2381fc95de57da2ff46631d89",
+      "expectedHeaders": {
+        "content-type": "application/json",
+        "x-traderton-consumer-id": "herobids",
+        "x-traderton-key-id": "signing-vector-key",
+        "x-traderton-timestamp": "2026-10-02T12:00:00.000Z",
+        "x-traderton-signature": "sha256=5bad56ff7fa858cfb12b7038289685515870b8f2381fc95de57da2ff46631d89",
+        "x-request-deadline-at": "2026-10-02T12:00:30.000Z"
+      }
+    },
+    {
+      "id": "invoke-non-ascii-body",
+      "description": "POST tools:invoke whose payload holds 2-, 3- and 4-byte UTF-8 sequences: the body hash is over UTF-8 bytes, not UTF-16 code units.",
+      "method": "POST",
+      "requestPath": "/internal/v1/tools:invoke",
+      "signedPath": "/internal/v1/tools:invoke",
+      "timestamp": "2026-10-02T12:00:00.000Z",
+      "deadlineAt": "2026-10-02T12:00:30.000Z",
+      "consumerId": "herobids",
+      "keyId": "signing-vector-key",
+      "secret": "phase3-signing-vector-test-secret",
+      "body": "{\"contractVersion\":\"1.0\",\"requestId\":\"req-vector-4\",\"idempotencyKey\":\"idem-vector-4\",\"correlationId\":\"corr-vector-4\",\"issuedAt\":\"2026-10-02T12:00:00.000Z\",\"deadlineAt\":\"2026-10-02T12:00:30.000Z\",\"caller\":{\"consumerId\":\"herobids\",\"keyId\":\"signing-vector-key\"},\"subject\":{\"ownerId\":\"owner-vector-4\",\"actor\":{\"type\":\"agent\",\"id\":\"agent-vector-4\"}},\"toolName\":\"echo_vector\",\"payload\":{\"value\":\"naïve café – 日本語 – 🚀\"}}",
+      "bodyUtf8ByteLength": 428,
+      "bodyUtf16Length": 414,
+      "bodySha256": "cf726e23346d27ca5578792d49ea223d43e3dad6d57f60bc088a3db2320cf957",
+      "expectedCanonical": "POST\n/internal/v1/tools:invoke\n2026-10-02T12:00:00.000Z\ncf726e23346d27ca5578792d49ea223d43e3dad6d57f60bc088a3db2320cf957",
+      "expectedSignature": "sha256=8a5bb67a3cfd2e48305c04ebbb5f9fddeddf565e1c7fcaf94eb926a3de90ca95",
+      "expectedHeaders": {
+        "content-type": "application/json",
+        "x-traderton-consumer-id": "herobids",
+        "x-traderton-key-id": "signing-vector-key",
+        "x-traderton-timestamp": "2026-10-02T12:00:00.000Z",
+        "x-traderton-signature": "sha256=8a5bb67a3cfd2e48305c04ebbb5f9fddeddf565e1c7fcaf94eb926a3de90ca95",
+        "x-request-deadline-at": "2026-10-02T12:00:30.000Z"
+      }
+    }
+  ]
+}
