@@ -29,7 +29,7 @@ decide it and record it in `DECISIONS.md` instead.
 
 | # | What | Options | Recommendation | Why it needs the operator |
 |---|---|---|---|---|
-| | | | | |
+| E1 | G2 mandates `herobids/scripts/shell/tests/run-extra-tests.sh --all`; its Tier 6 (`run-extra-tests.sh` ~line 615 onward) SSHes to the **herobids** staging control plane (read-only: nomad status, capacity check, `scale-in.sh --dry-run`, `terraform workspace show`), probes `https://staging.openaidom.com`, and sends a real Telegram `sendMessage` to `TEST_CHAT_IDS`. ENTRYPOINT §2/§7 forbid *Traderton* staging contact; herobids staging is not named either way | (a) keep G2 as written (Tier 6 at G0 + closeout only — current practice, P3-1); (b) amend G2 to `--skip-tier 6` for Phase 3 | (a) — it is the operator-mandated gate, non-destructive, and does not touch Traderton | The prohibition's scope (herobids vs Traderton staging) and outbound Telegram traffic are operator policy, not engineering |
 
 ---
 

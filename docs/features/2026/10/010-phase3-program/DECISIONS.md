@@ -65,7 +65,8 @@ mutation, it needs **human ratification before acting** — say so and stop.
 
 | # | Date | Decision | Rationale | Invariant check | Ruling source |
 |---|---|---|---|---|---|
-| | | | | | |
+| P3-1 | 2026-10-03 | herobids `run-extra-tests.sh --all` (incl. Tier 6) runs only at G0 and at the closeout G2 run; intermediate per-task verification runs use `run-extra-tests.sh --skip-tier 6` | Tier 6 reaches herobids staging (read-only) and sends a real Telegram message; per-task runs gain nothing from it, and G2 still runs it at default gates at closeout | No infra mutation (`--dry-run`, `AUTOSCALE_DESTRUCTIVE` unset); G2 unchanged | Coordinator (§5.1) |
+| P3-2 | 2026-10-03 | `pnpm build` is the type gate in both repos alongside `pnpm lint`; I7's escape-hatch grep covers test files | `pnpm lint` checks a `files: []` tsconfig and tests are in no tsconfig, so lint alone would not catch a type error | G1 strengthened, not weakened | Coordinator |
 
 ## 4. Intentional-divergence register (parity-not-liveness)
 

@@ -3,8 +3,7 @@
 **Status:** live tracker. **Read `ENTRYPOINT.md` first, then work this list.**
 **Do not pause between tasks.** Only the three hard stops in ENTRYPOINT §6 stop you.
 
-**Current cursor:** `NOT STARTED — awaiting operator greenlight.` First task is
-**T0.1**. ←
+**Current cursor:** **T0.3** (shared signing vectors) — T0.1, T0.2 ✅. ←
 *Update this line to the task you are on after every task.*
 
 ### Status scheme (use the emoji, NOT a checkbox)
@@ -41,7 +40,7 @@ never pushed), and an update to this file (status + cursor + running notes),
 
 ## Block 0 — Orientation, baseline, fixtures
 
-- ⬜ **T0.1 Load context.** Read, in order: this package's `ENTRYPOINT`, `TASKS`,
+- ✅ **T0.1 Load context.** Read, in order: this package's `ENTRYPOINT`, `TASKS`,
   `DECISIONS`, `INVARIANTS`, `SEAM`, `ESCALATIONS`; the program
   `ENTRYPOINT`/`DECISIONS` (**D13–D20 especially**)/`PROGRESS`; **ADR 016** then
   ADR 015; the **Step 10 plan** (the normative contract — §1, §2, §2.4, §2.5, §3,
@@ -49,7 +48,7 @@ never pushed), and an update to this file (status + cursor + running notes),
   - Exit: you can restate, without re-reading — the objective, the three hard
     stops, the branch/push rule per repo, which document is normative for the
     seam, and why T0.3 and T0.6 precede T1.
-- ⬜ **T0.2 Confirm repo state + capture baseline (G0).** For herobids, traderton
+- ✅ **T0.2 Confirm repo state + capture baseline (G0).** For herobids, traderton
   and traderton-skills: `git rev-parse HEAD`, `git status --short`, `pnpm lint`
   exit code, and the five mandated scripts' exit codes. Create the three branches
   (ENTRYPOINT §3). **If a repo's tree is dirty, stop and report** rather than
@@ -257,13 +256,39 @@ never pushed), and an update to this file (status + cursor + running notes),
 
 ## Baseline (fill at T0.2)
 
+Captured 2026-10-02 23:41 → 2026-10-03 09:08 (local), before any edit. G3 asserted
+before each suite (`env | grep TRADERTON_` empty; no `TRADERTON_BOUNDARY_URL` in
+herobids `.env`; `BOUNDARY_BASE_URL` unset). Logs (outside the repos):
+`~/dev_ai/herobids-traderton/phase3-logs/g0-*.log`, runner `run-five.sh`.
+
 | Repo | HEAD | Tree | `pnpm lint` | Mandated suites |
 |---|---|---|---|---|
-| herobids | | | | |
-| traderton | | | | |
-| traderton-skills | | | | |
+| herobids | `8d30dd46` (= `origin/main`) | clean | 0 | `run-all-tests.sh --e2e` **0** (vitest 6384 passed / 325 skipped; all 9 tiers PASS incl. Playwright 16/16) · `run-extra-tests.sh --all` **0** (16 PASS, 3 SKIP = the `RUN_UNSTABLE_LLM_LATENCY_TESTS` trio) |
+| traderton | `84c37210` (= `origin/main`) | clean | 0 | `run-all-tests.sh --e2e` **0** (2716 passed / 61 skipped; boundary-e2e 7/7) · `run-extra-tests.sh --all` **0** (3 executed) · `run-integration.sh` **0** (14 passed / 1 skipped) |
+| traderton-skills | `00963fc2` (= `origin/main`) | clean | n/a (no package.json) | n/a |
 
-Pre-existing failures excluded from this run's scope:
+Branches created from those HEADs: herobids `phase3-external-backend`, traderton
+`phase3-mcp-surface`, traderton-skills `phase3-skill-publication`.
+
+Pre-existing failures excluded from this run's scope: **none failing.** Known
+pre-existing *skips*: the three Tier-5 tests behind `RUN_UNSTABLE_LLM_LATENCY_TESTS`
+(bug 2026-09-05/001, CF-12); traderton `boundary-invocations.integration.test.ts`
+and other DB-gated integration files skip in `run-all-tests.sh` (no `DATABASE_URL`).
+The herobids `run-all-tests.sh` wall-clock (23:43 → 09:01) includes host sleep
+(`pmset` log; a ~9.2 h gap inside the log) — not a test-duration signal.
+
+Invariant baselines (INVARIANTS.md):
+
+| Inv | Baseline |
+|---|---|
+| I1 | literal grep: **2** hits (`agent-runtime-descriptor.ts:82`, `agent.ts:473`). Broader inventory (`'trading'`/`'traderton'` string literals in the six files): **39** — T3.2's work list |
+| I2, I3, I5, I6 | N/A — no `external-backend/` module yet; `Transport` in `packages/domain/package.json`: 0 |
+| I4 | `sign.test.ts` green (part of the unit tier) |
+| I7 | 0 (no branch diff) |
+| I8 | clear |
+| I9 | all three repos on their `phase3-*` branch; 0 commits ahead of `origin/main` |
+| I10 | 0 (N/A until T4.2) |
+| I11 | `apps/worker/src/env-example-drift.test.ts` green (unit tier) — used as the I11 check; the literal `rg` pair in INVARIANTS is not line-number-safe |
 
 ---
 
@@ -273,6 +298,36 @@ Pre-existing failures excluded from this run's scope:
 verified and with what counts · anything gated. This is the operator's only
 audit surface — three local working trees with no pushes.*
 
+**T0.1 / T0.2 (herobids `phase3-external-backend`, docs commit below).**
+Coordinator read the package + program docs, ADR 016/015, Step 9/10, the skill.
+Baseline table above. PlanCreator sub-agents wrote working plans for Block 0,
+T0.6, Block 1 and Block 2 (copied into `plans/` in this folder; plans are
+working documents — the commits and these notes are the record). Findings from
+planning that later tasks depend on:
+- `pnpm lint` (`tsc --noEmit` on a `files: []` solution tsconfig) appears to
+  type-check no inputs in either repo, and `*.test.ts` are excluded from every
+  tsconfig. **`pnpm build` is treated as the real type gate**; I7's grep covers
+  test files. Parked as an Outstanding Issue (not fixed: out of scope).
+- Root `vitest.config.ts` aliases `@herobids/domain` → `src/index.ts`; Vite
+  prefix-matches, so a VALUE import of `@herobids/domain/<subpath>` in a test
+  resolves to a non-existent file. Works today only because every such import is
+  `import type`. Fixed (and recorded in DECISIONS) where a task first needs a
+  value import.
+- Four api write sites already pass an idempotency key (`setup.ts`,
+  `provider-links.ts`, `blueprints.ts`, the reconciliation saga) — a correction
+  to the T0.6 call-site list, which covers the 8 worker sites.
+- `client.poll` treats a `not_found.resource` status answer as still running and
+  spins to the deadline — fixed in T0.6 (status-based reconciliation needs it).
+- `run-extra-tests.sh --all` Tier 6 contacts **herobids** staging (read-only SSH
+  autoscale probe incl. `scale-in.sh --dry-run`, HTTPS to
+  `staging.openaidom.com`) and sends a real Telegram `sendMessage`. It is a G2
+  mandated suite, so it ran at G0; see P3-1 and ESCALATIONS E1.
+
 ---
 
 ## Outstanding Issues (park LOW findings here; do not fix them mid-task)
+
+**Baseline / cross-cutting**
+- LOW — `pnpm lint` type-checks nothing in herobids or traderton (root tsconfig
+  `files: []` + references, run with `--noEmit`), and test files are in no
+  tsconfig. Pre-existing; mitigated by P3-2. Fix belongs to a tooling task.
