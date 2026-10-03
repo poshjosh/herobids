@@ -396,12 +396,20 @@ externalBackends:
       hmacSecretRef: TRADERTON_BOUNDARY_HMAC_SECRET   # NAME of the env var holding the HMAC secret — never the secret
     health:
       readyPath: /health/ready              # carried for later health gating; unread in Step 11
-    # ed25519 public keys (PEM SPKI) trusting published descriptors. EMPTY in config:
-    # the T3.3 dev STUB_DESCRIPTOR is signed by an EPHEMERAL in-process key whose
-    # PUBLIC half the worker splices in at runtime for the dev/test run only (see
-    # apps/worker/src/external-backend/stub-descriptor-source.ts). The real
-    # operator-trusted key is added here at T4.2 when the stub is deleted.
-    trustedDescriptorSigningKeys: []
+    # ed25519 public keys (PEM SPKI) trusting published descriptors (Step 10 §3).
+    # DEV-signed (T4.2): this key verifies the COMMITTED dev descriptor at
+    # config/external-backends/traderton.descriptor.json. It is NOT an operator key —
+    # registering a real operator-held key is a post-push step (D20/CF-9). The key +
+    # descriptor are regenerated as a set by:
+    #   pnpm --filter @herobids/scripts run generate-dev-descriptor
+    # (the matching private key is gitignored: config/external-backends/*.dev-key.pem).
+    trustedDescriptorSigningKeys:
+      - keyId: traderton-dev-1              # DEV key; must match the committed descriptor's keyId
+        status: active
+        publicKey: |
+          -----BEGIN PUBLIC KEY-----
+          MCowBQYDK2VwAyEAkXto/gFbxvCMxgiUT8xaema2uS+fui5icTQEI9ltp+c=
+          -----END PUBLIC KEY-----
     approvedSourceSkillRefs:                # D11
       - traderton/skills/crypto-trading
       - traderton/skills/crypto-bot-management

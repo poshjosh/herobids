@@ -1,24 +1,26 @@
-// Composition root for descriptor-driven tool visibility (Step 12 T3.2 + T3.3).
+// Composition root for descriptor-driven tool visibility (Step 12 T3.2 + T4.2).
 //
 // Sits beside `buildAgentExternalBackendPorts`: both consume the forwarded
 // EXTERNAL_BACKEND_CONFIG_JSON. This module turns the forwarded backend definition
-// into a trust-policy registry, builds the dev-signed STUB_DESCRIPTOR source
-// (T3.3), splices the stub's ephemeral public key into the backend's trust policy
-// for the dev/test run, and rewrites a runtime descriptor's resolved skills so the
-// visible tool set flows from the signed descriptor via the generic resolver.
+// into a trust-policy registry, loads the backend's COMMITTED dev-signed
+// descriptor from the config dir (T4.2), and rewrites a runtime descriptor's
+// resolved skills so the visible tool set flows from the signed descriptor via the
+// generic resolver. Trust comes from the committed public key the forwarded
+// definition carries (`trustedDescriptorSigningKeys`) — there is NO runtime key
+// splice.
 //
 // It names NO backend: the backendId comes from the forwarded definition, and the
 // matcher iterates the registry. When no backend is forwarded (non-trading agent,
 // or boundary unconfigured), the resolver still runs with an empty registry → every
 // skill is `no_match` → unchanged (ordinary platform skills).
-import { ResolvedExternalBackendSchema, SYSTEM_SKILLS, type SkillDefinition } from '@herobids/domain';
+import { ResolvedExternalBackendSchema, type SkillDefinition } from '@herobids/domain';
 import type { DescriptorTrustPolicy } from '@herobids/domain/external-backend';
 import {
   applyDescriptorToolVisibility,
   type ApplyToolVisibilityResult,
   type SyncDescriptorSource,
 } from './apply-tool-visibility.js';
-import { createStubDescriptorSource, type StubToolSchemaLookup } from './stub-descriptor-source.js';
+import { createFileDescriptorSource } from './file-descriptor-source.js';
 
 export interface DescriptorToolVisibilityLogger {
   info(fields: Record<string, unknown>, message: string): void;
@@ -29,17 +31,9 @@ export interface BuildDescriptorToolVisibilityInput {
   /** Raw EXTERNAL_BACKEND_CONFIG_JSON (same payload buildAgentExternalBackendPorts reads). */
   rawConfigJson: string | undefined;
   resolvedSkills: readonly SkillDefinition[];
-  /** Resolves a tool name to its registered schema; the stub mirrors these (DT4). */
-  lookupToolSchema: StubToolSchemaLookup;
   now: Date;
   logger: DescriptorToolVisibilityLogger;
 }
-
-/** The built-in trading skills, used as the stub descriptor's bound source skills. */
-const TRADING_SKILL_IDS = new Set(['trading', 'bot-management', 'risk-monitoring']);
-const BUILTIN_TRADING_SKILLS: readonly SkillDefinition[] = SYSTEM_SKILLS.filter((skill) =>
-  TRADING_SKILL_IDS.has(skill.id),
-);
 
 /**
  * Parse the forwarded backend definition into a trust policy, or `undefined` when
@@ -73,7 +67,7 @@ function parseTrustPolicy(
  * runtime descriptor before composition state is built.
  */
 export function buildDescriptorToolVisibility(input: BuildDescriptorToolVisibilityInput): ApplyToolVisibilityResult {
-  const { rawConfigJson, resolvedSkills, lookupToolSchema, now, logger } = input;
+  const { rawConfigJson, resolvedSkills, now, logger } = input;
 
   if (rawConfigJson === undefined) {
     // No backend forwarded → empty registry → every skill is no_match (unchanged).
@@ -85,26 +79,13 @@ export function buildDescriptorToolVisibility(input: BuildDescriptorToolVisibili
     return applyDescriptorToolVisibility({ resolvedSkills, registry: [], descriptorSource: EMPTY_SOURCE, now });
   }
 
-  // T3.3 dev stub: bind the three D11 refs → the current trading tool schemas and
-  // sign with an ephemeral key, then trust that key for this dev/test run by
-  // splicing its public key into the forwarded definition's signing keys.
-  const stub = createStubDescriptorSource({
-    backendId: definition.backendId,
-    tradingSkills: BUILTIN_TRADING_SKILLS,
-    lookupToolSchema,
-    now,
-  });
-  const registry: DescriptorTrustPolicy[] = [
-    {
-      ...definition,
-      trustedDescriptorSigningKeys: [
-        ...definition.trustedDescriptorSigningKeys,
-        { keyId: stub.keyId, publicKey: stub.publicKeyPem, status: 'active' },
-      ],
-    },
-  ];
+  // The forwarded definition already carries the committed trusted public key
+  // (config `trustedDescriptorSigningKeys`), so the registry is used as-is — the
+  // descriptor is loaded from its committed file and verified against that key.
+  const registry: DescriptorTrustPolicy[] = [definition];
+  const descriptorSource = createFileDescriptorSource({ backendId: definition.backendId, logger });
 
-  const result = applyDescriptorToolVisibility({ resolvedSkills, registry, descriptorSource: stub.source, now });
+  const result = applyDescriptorToolVisibility({ resolvedSkills, registry, descriptorSource, now });
   for (const outcome of result.outcomes) {
     if (outcome.outcome === 'instruction_only') {
       logger.warn(

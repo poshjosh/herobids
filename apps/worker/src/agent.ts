@@ -72,7 +72,6 @@ import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
 import { buildAgentExternalBackendPorts } from './external-backend/agent-ports.js';
 import { buildDescriptorToolVisibility } from './external-backend/descriptor-tool-visibility.js';
-import type { StubToolSchemaLookup } from './external-backend/stub-descriptor-source.js';
 import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
@@ -939,29 +938,19 @@ if (browserPool) {
 }
 const toolRegistry = createToolRegistry({ browserPool });
 
-// Shared by the startup and onSkillsChanged visibility passes so the two cannot
-// drift (parity after a skill change relies on identical schema sourcing). The
-// stub mirrors these registered schemas so the DT4 category cross-check passes.
-const lookupRegisteredToolSchema: StubToolSchemaLookup = (toolName) => {
-  const tool = toolRegistry.get(toolName);
-  if (tool === undefined) return undefined;
-  return { name: tool.name, description: tool.description, category: tool.category, parameters: tool.parameters };
-};
-
-// ── Generic descriptor-driven tool visibility (Step 12 T3.2 + T3.3) ────────
+// ── Generic descriptor-driven tool visibility (Step 12 T3.2 + T4.2) ────────
 // Rewrite the runtime descriptor's resolved skills so a skill mapped to a
 // registered backend (via its `sourceRef` ∈ `approvedSourceSkillRefs`) exposes
 // exactly its signed descriptor's tools — or degrades to instruction-only on any
 // trust failure (DT3). This is the single wiring point that replaced the removed
-// hard-coded trading inference. The dev-signed STUB_DESCRIPTOR (T3.3) supplies the
-// descriptor locally so trading agents resolve their current tools via the generic
-// path (parity). Tool schemas the stub mirrors are sourced from the registry so
-// the DT4 category cross-check passes. No backend identity appears here: the
-// backendId comes from the forwarded config, and the matcher iterates the registry.
+// hard-coded trading inference. The committed dev-signed descriptor (T4.2) supplies
+// the descriptor from the config dir so trading agents resolve their current tools
+// via the generic path (parity); trust is the committed public key in config. No
+// backend identity appears here: the backendId comes from the forwarded config,
+// and the matcher iterates the registry.
 const descriptorToolVisibility = buildDescriptorToolVisibility({
   rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
   resolvedSkills: runtimeState.runtimeDescriptor.resolvedSkills,
-  lookupToolSchema: lookupRegisteredToolSchema,
   now: new Date(),
   logger,
 });
@@ -1966,7 +1955,6 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       const refreshedVisibility = buildDescriptorToolVisibility({
         rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
         resolvedSkills: capabilityDescriptor.resolvedSkills,
-        lookupToolSchema: lookupRegisteredToolSchema,
         now: new Date(),
         logger,
       });

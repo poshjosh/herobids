@@ -1,31 +1,45 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   BASE_SKILL,
   BOT_MANAGEMENT_SKILL,
   RISK_MONITORING_SKILL,
   TRADING_SKILL,
   WEB_ACCESS_SKILL,
-  getToolCatalogEntry,
   type SkillDefinition,
 } from '@herobids/domain';
 import { ExternalBackendRegistrySchema, resolveExternalBackend } from '@herobids/domain';
 import { buildDescriptorToolVisibility, type DescriptorToolVisibilityLogger } from './descriptor-tool-visibility.js';
-import type { StubToolSchemaLookup } from './stub-descriptor-source.js';
 
-const NOW = new Date('2026-10-15T00:00:00.000Z');
+// The committed descriptor is dev-signed; the parity path verifies it against the
+// committed public key, which the config forwards in trustedDescriptorSigningKeys.
+const REPO_ROOT = resolve(import.meta.dirname, '../../../..');
+const COMMITTED_PUBLIC_KEY_PEM = readFileSync(
+  resolve(REPO_ROOT, 'config/external-backends/traderton.descriptor.pub.pem'),
+  'utf8',
+);
+const KEY_ID = 'traderton-dev-1';
+// Inside the committed descriptor's validity window.
+const NOW = new Date('2027-01-01T00:00:00.000Z');
 
 // The three D11 refs are the operator-approved set; config carries them. This
 // fixture reproduces the forwarded ResolvedExternalBackend payload the worker
 // builds (registry → resolveExternalBackend → JSON.stringify), with the real
-// traderton approvedSourceSkillRefs and an EMPTY trustedDescriptorSigningKeys
-// (the stub splices its ephemeral public key in at runtime).
-function tradertonConfigJson(overrides: { approvedSourceSkillRefs?: string[] } = {}): string {
+// traderton approvedSourceSkillRefs and the COMMITTED dev public key in
+// trustedDescriptorSigningKeys (trust is config-committed, not a runtime splice).
+function tradertonConfigJson(
+  overrides: { approvedSourceSkillRefs?: string[]; trustedKeys?: boolean } = {},
+): string {
   const registry = ExternalBackendRegistrySchema.parse({
     traderton: {
       enabled: true,
       endpoint: { baseUrl: 'http://localhost:8080', requestTimeoutMs: 10_000 },
       caller: { consumerId: 'herobids', keyId: 'current', hmacSecretRef: 'TRADERTON_BOUNDARY_HMAC_SECRET' },
-      trustedDescriptorSigningKeys: [],
+      trustedDescriptorSigningKeys:
+        overrides.trustedKeys === false
+          ? []
+          : [{ keyId: KEY_ID, publicKey: COMMITTED_PUBLIC_KEY_PEM, status: 'active' }],
       approvedSourceSkillRefs: overrides.approvedSourceSkillRefs ?? [
         'traderton/skills/crypto-trading',
         'traderton/skills/crypto-bot-management',
@@ -38,17 +52,6 @@ function tradertonConfigJson(overrides: { approvedSourceSkillRefs?: string[] } =
   if (!resolved.ok) throw new Error(`fixture did not resolve: ${resolved.error.code}`);
   return JSON.stringify(resolved.data);
 }
-
-const lookupToolSchema: StubToolSchemaLookup = (toolName) => {
-  const entry = getToolCatalogEntry(toolName);
-  if (entry === undefined) return undefined;
-  return {
-    name: toolName,
-    description: entry.description,
-    category: entry.category,
-    parameters: { type: 'object', properties: {}, additionalProperties: false },
-  };
-};
 
 function makeLogger(): { logger: DescriptorToolVisibilityLogger; warn: ReturnType<typeof vi.fn> } {
   const warn = vi.fn();
@@ -72,7 +75,6 @@ describe('buildDescriptorToolVisibility — parity (the success bar)', () => {
     const result = buildDescriptorToolVisibility({
       rawConfigJson: tradertonConfigJson(),
       resolvedSkills,
-      lookupToolSchema,
       now: NOW,
       logger,
     });
@@ -100,7 +102,6 @@ describe('buildDescriptorToolVisibility — parity (the success bar)', () => {
     const result = buildDescriptorToolVisibility({
       rawConfigJson: tradertonConfigJson(),
       resolvedSkills,
-      lookupToolSchema,
       now: NOW,
       logger,
     });
@@ -114,7 +115,6 @@ describe('buildDescriptorToolVisibility — parity (the success bar)', () => {
     const result = buildDescriptorToolVisibility({
       rawConfigJson: undefined,
       resolvedSkills,
-      lookupToolSchema,
       now: NOW,
       logger,
     });
@@ -136,7 +136,6 @@ describe('buildDescriptorToolVisibility — degrade matrix (instruction-only, no
     const result = buildDescriptorToolVisibility({
       rawConfigJson: JSON.stringify(payload),
       resolvedSkills,
-      lookupToolSchema,
       now: NOW,
       logger,
     });
@@ -144,6 +143,25 @@ describe('buildDescriptorToolVisibility — degrade matrix (instruction-only, no
     expect(outcomes).toHaveLength(3);
     expect(outcomes.every((o) => o.outcome === 'instruction_only' && o.reason === 'definition.disabled')).toBe(true);
     // instruction-only: no tools for the degraded skills.
+    for (const skill of TRADING_SKILLS) {
+      expect(result.resolvedSkills.find((s) => s.id === skill.id)!.requiredTools).toEqual([]);
+    }
+  });
+
+  it('an untrusted key (empty trustedDescriptorSigningKeys) → every matched skill degrades (descriptor.unknown_key)', () => {
+    // Trust now comes from committed config, not a runtime splice: with no trusted
+    // key the committed descriptor's keyId names no key → degrade (no crash).
+    const resolvedSkills = [BASE_SKILL, ...TRADING_SKILLS];
+    const { logger } = makeLogger();
+    const result = buildDescriptorToolVisibility({
+      rawConfigJson: tradertonConfigJson({ trustedKeys: false }),
+      resolvedSkills,
+      now: NOW,
+      logger,
+    });
+    const outcomes = result.outcomes.filter((o) => TRADING_SKILLS.some((s) => s.id === o.skillId));
+    expect(outcomes).toHaveLength(3);
+    expect(outcomes.every((o) => o.outcome === 'instruction_only' && o.reason === 'descriptor.unknown_key')).toBe(true);
     for (const skill of TRADING_SKILLS) {
       expect(result.resolvedSkills.find((s) => s.id === skill.id)!.requiredTools).toEqual([]);
     }
@@ -162,7 +180,6 @@ describe('buildDescriptorToolVisibility — degrade matrix (instruction-only, no
         ],
       }),
       resolvedSkills,
-      lookupToolSchema,
       now: NOW,
       logger,
     });
@@ -182,7 +199,6 @@ describe('buildDescriptorToolVisibility — degrade matrix (instruction-only, no
     const result = buildDescriptorToolVisibility({
       rawConfigJson: '{ not valid json',
       resolvedSkills,
-      lookupToolSchema,
       now: NOW,
       logger,
     });

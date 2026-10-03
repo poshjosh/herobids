@@ -1,0 +1,460 @@
+{
+  "descriptor": {
+    "descriptorVersion": "traderton-dev.1",
+    "backendId": "traderton",
+    "issuedAt": "2026-10-03T16:46:13.608Z",
+    "expiresAt": "2036-09-30T17:46:13.608Z",
+    "sourceSkills": [
+      {
+        "ref": "traderton/skills/crypto-bot-management",
+        "instructions": "You have access to bot-management tools.\n\n- Use `create_bot` to create a trading bot.\n- Use `list_bots` to inspect existing bots.\n- Use `get_bot_status` to inspect a bot's current state.\n- Use `start_bot` to start a bot.\n- Use `stop_bot` to stop a bot.\n- Use `adjust_bot_config` to update a bot's configuration.\n- Use `get_analytics` to inspect bot performance.\n- Use `list_positions` to inspect open positions tied to managed bots.\n- Use `resolve_bot` to find a bot ID by name or symbol before calling stop_bot, start_bot, get_bot_status, or adjust_bot_config when you don't have the UUID.\n- Use `send_message` to report actions, status, or issues to the user.",
+        "tools": [
+          {
+            "name": "create_bot",
+            "description": "Create and start a new trading bot with its own strategy and risk parameters.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "execute-trade"
+          },
+          {
+            "name": "stop_bot",
+            "description": "Stop a running bot. Positions remain open unless manually closed.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-database"
+          },
+          {
+            "name": "start_bot",
+            "description": "Start a stopped bot. Resumes trading per its configuration.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-database"
+          },
+          {
+            "name": "adjust_bot_config",
+            "description": "Update configuration for a specific bot. Changes merged and take effect next tick.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-database"
+          },
+          {
+            "name": "list_bots",
+            "description": "List bots created by this agent, optionally filtered by creation date.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "get_bot_status",
+            "description": "Get detailed status for a specific bot: config, runtime state, timestamps.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "get_analytics",
+            "description": "Get trading analytics: total trades, win rate, P&L, fees, per-bot/agent-direct breakdown.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "list_positions",
+            "description": "List open positions owned by this agent (bot-created + direct).",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "resolve_bot",
+            "description": "Resolve a bot name/symbol to its bot ID for stop/start/config operations.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "send_message",
+            "description": "Send a message to the user via the platform messaging system. For user-directed communication only — use send_email for email delivery.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-messaging"
+          }
+        ]
+      },
+      {
+        "ref": "traderton/skills/crypto-trading",
+        "instructions": "You have access to trading tools, grouped by workflow phase.\n\nTo observe, gather market context, you can:\n- Use `get_market_overview` to inspect broad market state.\n- Use `check_regime` to assess current market conditions.\n- Use `get_price` for focused price checks.\n- Use `get_funding_rates` to inspect perpetual funding conditions.\n- Use `search_tokens` to find a token by name or symbol.\n- Use `discover_tokens` to explore available trading candidates.\n\nTo assess, check your risk and position before acting, you can:\n- Use `get_risk_limits` to inspect your effective risk limits and their sources. If you are blocked (e.g. daily loss limit exceeded), DO NOT submit any trade — wait for the cooldown to expire.\n- Use `get_account_summary` to fetch usable capital, equity, open positions, and P&L before sizing decisions.\n- Use `get_analytics` to inspect recent trading outcomes and exposure.\n- Use `list_positions` to inspect current open positions.\n- Use `watch_token`, `list_watches`, `remove_watch`, `resolve_watch`, and `check_watches` to maintain and inspect watch-based monitoring. Use resolve_watch to find a watch ID by note or symbol before calling remove_watch.\n\nTo decide, you can:\n- Use `find_instrument` to resolve an instrumentId by symbol, name, or pair before calling submit_decision. Filter by venue (e.g. venue=\"jupiter\" for Solana, venue=\"hyperliquid\" for perpetuals).\n- Use `submit_decision` to submit a trade intent for a specific instrument. Only call this after completing the Observe and Assess phases above.\n- Use `adjust_risk_limits` to adjust mutable (default-derived) risk limits within operator ceilings.",
+        "tools": [
+          {
+            "name": "get_market_overview",
+            "description": "Aggregated market overview: top movers, volume leaders, market breadth metrics.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-market-data"
+          },
+          {
+            "name": "check_regime",
+            "description": "Evaluate market regime using EMA alignment, ADX, VWAP, and structure filters.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-market-data"
+          },
+          {
+            "name": "get_price",
+            "description": "Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-market-data"
+          },
+          {
+            "name": "get_funding_rates",
+            "description": "Get current funding rates for perpetual contracts.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-market-data"
+          },
+          {
+            "name": "search_tokens",
+            "description": "Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-market-data"
+          },
+          {
+            "name": "discover_tokens",
+            "description": "Discover trending/popular tokens from aggregated market data sources.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-market-data"
+          },
+          {
+            "name": "get_risk_limits",
+            "description": "Get effective risk limits: which are mutable vs locked, plus runtime state.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "get_account_summary",
+            "description": "Agent's trading account summary: capital, equity, open positions, P&L, risk limits.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "get_analytics",
+            "description": "Get trading analytics: total trades, win rate, P&L, fees, per-bot/agent-direct breakdown.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "list_positions",
+            "description": "List open positions owned by this agent (bot-created + direct).",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "watch_token",
+            "description": "Register a price watch. Fires when price crosses a threshold in specified direction.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-memory"
+          },
+          {
+            "name": "list_watches",
+            "description": "List all active price watches registered by this agent.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-memory"
+          },
+          {
+            "name": "remove_watch",
+            "description": "Remove a price watch by its ID.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-memory"
+          },
+          {
+            "name": "resolve_watch",
+            "description": "Resolve a price watch to its ID by searching note text or symbol.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-memory"
+          },
+          {
+            "name": "check_watches",
+            "description": "Evaluate all active price watches against current prices. Optionally auto-remove triggered.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-memory"
+          },
+          {
+            "name": "find_instrument",
+            "description": "Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "submit_decision",
+            "description": "Submit a trade decision for a specific instrument. In direct mode, accepted decisions execute immediately. In approval_required mode, the decision is recorded and sent to the user for approval — no trade executes until the user responds with /yes <code> or /no <code>.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "execute-trade"
+          },
+          {
+            "name": "adjust_risk_limits",
+            "description": "Adjust mutable risk limits. Only operator-default-derived limits can be changed.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-database"
+          },
+          {
+            "name": "assess_strategy_preset",
+            "description": "Request a billable market preset assessment for one or more trading symbols. Returns ranked presets, confidence, market summary, and the exact transition reference for change_strategy_preset.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "change_strategy_preset",
+            "description": "Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. Supports: entries_only (future entries only) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-database"
+          }
+        ]
+      },
+      {
+        "ref": "traderton/skills/crypto-risk-monitoring",
+        "instructions": "You have access to risk-monitoring and alerting tools.\n\n- Use `list_positions` to inspect current open positions and exposure.\n- Use `get_analytics` to inspect realized and unrealized performance context.\n- Use `get_price` for focused price checks.\n- Use `watch_token`, `list_watches`, `remove_watch`, `resolve_watch`, and `check_watches` to maintain and inspect watch-based monitoring. Use resolve_watch to find a watch ID by note or symbol before calling remove_watch.\n- Use `send_message` to alert the user.\n- Use `publish_artifact` to publish structured monitoring outputs.\n- Use `get_risk_limits` to inspect effective risk limits and sources.\n- Use `get_account_summary` to inspect usable capital, equity, open positions, and P&L when assessing portfolio-level risk.\n- Use `adjust_risk_limits` to adjust mutable risk limits within operator ceilings.",
+        "tools": [
+          {
+            "name": "send_message",
+            "description": "Send a message to the user via the platform messaging system. For user-directed communication only — use send_email for email delivery.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-messaging"
+          },
+          {
+            "name": "publish_artifact",
+            "description": "Publish an artifact (analysis result, chart, report) for user review.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-messaging"
+          },
+          {
+            "name": "list_positions",
+            "description": "List open positions owned by this agent (bot-created + direct).",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "get_analytics",
+            "description": "Get trading analytics: total trades, win rate, P&L, fees, per-bot/agent-direct breakdown.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "get_price",
+            "description": "Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-market-data"
+          },
+          {
+            "name": "watch_token",
+            "description": "Register a price watch. Fires when price crosses a threshold in specified direction.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-memory"
+          },
+          {
+            "name": "list_watches",
+            "description": "List all active price watches registered by this agent.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-memory"
+          },
+          {
+            "name": "remove_watch",
+            "description": "Remove a price watch by its ID.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-memory"
+          },
+          {
+            "name": "resolve_watch",
+            "description": "Resolve a price watch to its ID by searching note text or symbol.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-memory"
+          },
+          {
+            "name": "check_watches",
+            "description": "Evaluate all active price watches against current prices. Optionally auto-remove triggered.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-memory"
+          },
+          {
+            "name": "get_risk_limits",
+            "description": "Get effective risk limits: which are mutable vs locked, plus runtime state.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "get_account_summary",
+            "description": "Agent's trading account summary: capital, equity, open positions, P&L, risk limits.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "read-database"
+          },
+          {
+            "name": "adjust_risk_limits",
+            "description": "Adjust mutable risk limits. Only operator-default-derived limits can be changed.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "category": "write-database"
+          }
+        ]
+      }
+    ]
+  },
+  "signature": "O59lP0YLfr72iJtNyMb02zH45/LiaE0QEbS7Jt6RdjzdwaaM1wFs9C7ojwmj8ecAEhupktesovmTddXsFXGTCw==",
+  "keyId": "traderton-dev-1"
+}
