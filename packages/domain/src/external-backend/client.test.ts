@@ -7,6 +7,7 @@ import type {
   ExternalBackendToolInvocationStatusV1,
   ExternalBackendSubject,
 } from './contract.js';
+import type { MetricsSink, ExternalBackendInvocationSample } from './metrics.js';
 
 const CONFIG: ExternalBackendClientConfig = {
   baseUrl: 'http://boundary.test',
@@ -321,6 +322,139 @@ describe('ExternalBackendClient.invoke — response mapping', () => {
     const result = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT, requestId: 'req-x' });
 
     expect(result).toEqual({ kind: 'success', requestId: 'r', correlationId: 'c', payload: undefined });
+  });
+});
+
+describe('ExternalBackendClient.invoke — metrics', () => {
+  /** A capturing sink that records every sample it is handed. */
+  function capturingSink(): { samples: ExternalBackendInvocationSample[]; sink: MetricsSink } {
+    const samples: ExternalBackendInvocationSample[] = [];
+    return {
+      samples,
+      sink: {
+        recordInvocation(sample) {
+          samples.push(sample);
+        },
+      },
+    };
+  }
+
+  function clientWith(overrides: Partial<ExternalBackendClientConfig>): ExternalBackendClient {
+    return new ExternalBackendClient({ ...CONFIG, ...overrides });
+  }
+
+  it('records one success sample with the invoked tool name and a non-negative durationMs', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        contractVersion: '1.0',
+        requestId: 'r1',
+        correlationId: 'c1',
+        outcome: { kind: 'success', payload: {} },
+      } satisfies ExternalBackendToolResultV1),
+    );
+    const { samples, sink } = capturingSink();
+
+    // The sample's identifiers come from the sent envelope, not the response
+    // body — so pin them to make the assertion deterministic.
+    await clientWith({ metrics: sink, backendId: 'traderton' }).invoke({
+      toolName: 'get_positions',
+      payload: {},
+      subject: SUBJECT,
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+    });
+
+    expect(samples).toHaveLength(1);
+    const sample = samples[0]!;
+    expect(sample.backendId).toBe('traderton');
+    expect(sample.toolName).toBe('get_positions');
+    expect(sample.outcome).toBe('success');
+    expect(sample.durationMs).toBeGreaterThanOrEqual(0);
+    expect(sample.requestId).toBe('req-1');
+    expect(sample.correlationId).toBe('corr-1');
+    expect(sample.code).toBeUndefined();
+    expect(sample.retryable).toBeUndefined();
+  });
+
+  it('records a failure sample carrying the failure code and retryable flag', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        contractVersion: '1.0',
+        requestId: 'r2',
+        correlationId: 'c2',
+        outcome: { kind: 'failure', code: 'validation.invalid_payload', message: 'bad', retryable: false },
+      } satisfies ExternalBackendToolResultV1),
+    );
+    const { samples, sink } = capturingSink();
+
+    await clientWith({ metrics: sink }).invoke({ toolName: 't', payload: {}, subject: SUBJECT });
+
+    expect(samples).toHaveLength(1);
+    const sample = samples[0]!;
+    expect(sample.outcome).toBe('failure');
+    expect(sample.code).toBe('validation.invalid_payload');
+    expect(sample.retryable).toBe(false);
+  });
+
+  it('records a transport_error sample as retryable', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const { samples, sink } = capturingSink();
+
+    await clientWith({ metrics: sink }).invoke({ toolName: 't', payload: {}, subject: SUBJECT });
+
+    expect(samples).toHaveLength(1);
+    const sample = samples[0]!;
+    expect(sample.outcome).toBe('transport_error');
+    expect(sample.retryable).toBe(true);
+    expect(sample.code).toBeUndefined();
+  });
+
+  it('records an in_progress sample with no code or retryable', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        contractVersion: '1.0',
+        requestId: 'r4',
+        correlationId: 'c4',
+        state: 'in_progress',
+      } satisfies ExternalBackendToolInvocationStatusV1),
+    );
+    const { samples, sink } = capturingSink();
+
+    await clientWith({ metrics: sink }).invoke({ toolName: 't', payload: {}, subject: SUBJECT });
+
+    expect(samples).toHaveLength(1);
+    const sample = samples[0]!;
+    expect(sample.outcome).toBe('in_progress');
+    expect(sample.code).toBeUndefined();
+    expect(sample.retryable).toBeUndefined();
+  });
+
+  it('a throwing metrics sink does not change the returned result', async () => {
+    const body: ExternalBackendToolResultV1 = {
+      contractVersion: '1.0',
+      requestId: 'r3',
+      correlationId: 'c3',
+      outcome: { kind: 'success', payload: { positions: [] } },
+    };
+    const throwingSink: MetricsSink = {
+      recordInvocation() {
+        throw new Error('sink exploded');
+      },
+    };
+
+    // Baseline: the same call with no sink (uses the default no-op).
+    fetchMock.mockResolvedValueOnce(jsonResponse(body));
+    const baseline = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT });
+
+    // With the throwing sink: the result must be identical and no error escapes.
+    fetchMock.mockResolvedValueOnce(jsonResponse(body));
+    const withThrowingSink = await clientWith({ metrics: throwingSink }).invoke({
+      toolName: 't',
+      payload: {},
+      subject: SUBJECT,
+    });
+
+    expect(withThrowingSink).toEqual(baseline);
   });
 });
 

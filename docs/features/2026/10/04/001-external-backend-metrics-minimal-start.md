@@ -65,7 +65,7 @@ the build steps.
 - `NOOP_METRICS_SINK.recordInvocation` is callable and returns void (behavioural:
   "no-op sink accepts a sample without throwing").
 
-### 2. Instrument the client (domain) — PENDING
+### 2. Instrument the client (domain) — DONE
 
 **File:** `packages/domain/src/external-backend/client.ts`
 
@@ -258,3 +258,13 @@ Non-blocking (LOW) review findings, grouped by work item. None are CRITICAL/HIGH
   `'failure'` literal (with `code`+`retryable`) would additionally exercise the
   optional fields' assignability. Covered indirectly by the Item 2 client tests,
   so optional.
+
+### Item 2 — Instrument the client
+- [RESOLVED] [was MEDIUM] `in_progress` sample shape was untested — added test
+  "records an in_progress sample with no code or retryable" (full outcome coverage).
+- [LOW] `durationMs` is captured after `buildEnvelope` (excludes envelope build,
+  includes transport + map). Consistent with observability.md ("encode→send→
+  decode→map"); envelope build is non-I/O and negligible. No action.
+- [LOW] Sample is built with mutually-exclusive conditional spreads
+  (`failure`→code+retryable, `transport_error`→retryable). Correct today; prefer
+  an explicit switch if a future outcome also needs `retryable`.

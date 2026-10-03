@@ -8,9 +8,18 @@
 // Transport + envelope + mapping ONLY — it authors no trading behaviour (no
 // risk/planner/executor). The platform injects the subject/caller VALUES at the
 // call site.
+//
+// `invoke` is also the single metrics seam: it emits one
+// `ExternalBackendInvocationSample` per invocation through an injected
+// `MetricsSink` (default no-op). See docs/tech/observability.md.
 
 import { randomUUID } from 'node:crypto';
 import type { SigningIdentity } from './sign.js';
+import {
+  NOOP_METRICS_SINK,
+  type MetricsSink,
+  type ExternalBackendInvocationSample,
+} from './metrics.js';
 import type {
   ExternalBackendToolInvocationV1,
   ExternalBackendToolResultV1,
@@ -40,6 +49,10 @@ export interface ExternalBackendClientConfig {
   toolProtocolOverrides?: Readonly<Record<string, ExternalBackendProtocol>>;
   /** MCP endpoint path; required by the definition schema whenever `mcp` is used. */
   mcpPath?: string;
+  /** Sink for invocation metrics; defaults to a no-op (see docs/tech/observability.md). */
+  metrics?: MetricsSink;
+  /** Identifies the backend in emitted samples; defaults to `'unknown'`. */
+  backendId?: string;
 }
 
 /** Inputs for a single tool invocation. Platform-owned values are injected here. */
@@ -186,6 +199,8 @@ export class ExternalBackendClient {
   private readonly identity: SigningIdentity;
   private readonly requestTimeoutMs: number;
   private readonly selectTransport: TransportForTool;
+  private readonly metrics: MetricsSink;
+  private readonly backendId: string;
 
   constructor(config: ExternalBackendClientConfig) {
     this.identity = {
@@ -194,6 +209,8 @@ export class ExternalBackendClient {
       secret: config.hmacSecret,
     };
     this.requestTimeoutMs = config.requestTimeoutMs;
+    this.metrics = config.metrics ?? NOOP_METRICS_SINK;
+    this.backendId = config.backendId ?? 'unknown';
     this.selectTransport = createTransportSelector({
       // Trim a trailing slash so `${baseUrl}${path}` never doubles it.
       baseUrl: config.baseUrl.replace(/\/+$/, ''),
@@ -265,10 +282,40 @@ export class ExternalBackendClient {
    */
   async invoke(input: InvokeToolInput): Promise<ExternalBackendClientResult> {
     const envelope = this.buildEnvelope(input);
+    const start = Date.now();
     const outcome = await this.selectTransport(envelope.toolName).invoke(envelope, {
       timeoutMs: this.attemptTimeoutMs(envelope.deadlineAt),
     });
-    return this.mapOutcome(outcome, envelope.requestId);
+    const result = this.mapOutcome(outcome, envelope.requestId);
+    this.recordInvocationSample(envelope, result, Date.now() - start);
+    return result;
+  }
+
+  /**
+   * Emit exactly one metrics sample per invocation (see docs/tech/observability.md).
+   * A sink error can never alter or block the returned result, so emission is
+   * wrapped in a swallowing try/catch.
+   */
+  private recordInvocationSample(
+    envelope: ExternalBackendToolInvocationV1,
+    result: ExternalBackendClientResult,
+    durationMs: number,
+  ): void {
+    const sample: ExternalBackendInvocationSample = {
+      backendId: this.backendId,
+      toolName: envelope.toolName,
+      outcome: result.kind,
+      durationMs,
+      requestId: envelope.requestId,
+      correlationId: envelope.correlationId,
+      ...(result.kind === 'failure' ? { code: result.code, retryable: result.retryable } : {}),
+      ...(result.kind === 'transport_error' ? { retryable: true } : {}),
+    };
+    try {
+      this.metrics.recordInvocation(sample);
+    } catch {
+      // Swallow — a metrics sink failure must never change a trading result.
+    }
   }
 
   /**

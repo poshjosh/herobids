@@ -15,5 +15,8 @@ export function buildExternalBackendClientConfig(
     protocol: definition.endpoint.protocol,
     toolProtocolOverrides: definition.endpoint.toolProtocolOverrides,
     mcpPath: definition.endpoint.mcpPath,
+    backendId: definition.backendId,
+    // `metrics` is injected at the composition site, not here (this helper has
+    // no sink). See docs/tech/observability.md.
   };
 }
