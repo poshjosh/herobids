@@ -133,6 +133,17 @@ reflected in D4 below.
    `inputSchema` is already JSON Schema. `setRequestHandler('tools/list', …)`
    serves it verbatim, preserving §4.
 
+   > **Note (2026-10-DD, Phase 3 T2.1/T2.2; traderton 008 ruling n20 → P3-27).**
+   > The descriptive phrase "plus the adapter for its HTTP framework" above is
+   > narrowed in practice: the Traderton backend adds `@modelcontextprotocol/server`
+   > **only** and mounts the stateless web-standard transport on its existing
+   > Fastify listener via the app's own raw-body parser. `@modelcontextprotocol/fastify`
+   > is NOT adopted — it only creates a *new* `Fastify()` app plus Host/Origin
+   > hooks and carries no protocol code, so it cannot mount on the existing app
+   > and nothing is hand-rolled by omitting it. The operative half of this
+   > decision (official SDK, pinned exact, low-level `Server`) is unchanged;
+   > herobids adds `@modelcontextprotocol/client` only.
+
 ## Constraints that do not change
 
 - **The REST invocation bytes stay frozen.** Step 10 §5 remains a hard

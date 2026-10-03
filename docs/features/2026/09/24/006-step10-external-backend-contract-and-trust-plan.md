@@ -94,7 +94,7 @@ interface ExternalBackendDefinition {
     // Absent = every tool uses `protocol`.
     toolProtocolOverrides?: Record<string, 'rest' | 'mcp'>;
     // Path of the MCP endpoint when `protocol`/an override is 'mcp'.
-    mcpPath?: string;                    // e.g. "/mcp"
+    mcpPath?: string;                    // e.g. "/internal/v1/mcp" (Traderton's route; Phase 3 T2.2/T2.3)
     requestTimeoutMs: number;            // was boundary.requestTimeoutMs; default 10000 (amended Phase 3 T1.1)
   };
   caller: {                              // was boundary.consumerId/keyId
@@ -244,15 +244,44 @@ Rules:
 | `payload` | `tools/call` → `params.arguments` |
 | `contractVersion`, `requestId`, `idempotencyKey`, `correlationId`, `issuedAt`, `deadlineAt`, `caller`, `subject` | `params._meta` |
 
+> **Wire details confirmed at gate 1 and ruled at TC1 (added 2026-10-DD, Phase 3
+> T2.1/T2.3; traderton 008 ruling n19–n28 → Phase-3 P3-26..P3-35).** The table
+> and bullets above are the normative mapping (SEAM §1, n35); the paragraphs
+> below record the era, framing and timeout facts the gate-1 spike proved so a
+> reader never has to re-derive them from the SDK.
+
+- **Era = legacy Streamable HTTP (2025-11-25), the client SDK default** (n19).
+  The client negotiates nothing modern; the backend serves per-request with the
+  low-level `Server` + a stateless JSON web-standard transport. The observed
+  frame sequence per invocation is `POST initialize` → `POST
+  notifications/initialized` (202) → `GET` (the SDK's standalone SSE probe) →
+  `POST tools/call`; on a client timeout the SDK also sends a signed `POST
+  notifications/cancelled`. Every POST body the SDK hands the signing middleware
+  is a `string`, so the signed bytes are the wire bytes.
 - **Signature:** `POST\n<mcpPath>\n<X-…-Timestamp>\nSHA256(body)` where `body`
   is the ENTIRE JSON-RPC frame including `params._meta`. Method and path become
   constants; the body hash already covers the JSON-RPC method, tool name,
   arguments and metadata. `buildCanonicalString`, the header set and the
   lowercase-hex HMAC are unchanged in shape — the REST module is REUSED, not
-  refactored (§5).
+  refactored (§5). EVERY frame of an exchange (initialize, the notification, and
+  tools/call) is signed with the same unmodified `signRequest`.
+- **`params._meta` carries the eight envelope fields** verbatim —
+  `contractVersion`, `requestId`, `idempotencyKey`, `correlationId`, `issuedAt`,
+  `deadlineAt`, `caller`, `subject` — while `params.name` carries `toolName` and
+  `params.arguments` carries `payload`. The SDK serializes `_meta` byte-for-byte
+  as handed to `callTool`, inside the signed bytes (gate 1, item 3).
+- **One `x-request-deadline-at` per exchange.** The client sends
+  `x-request-deadline-at = envelope.deadlineAt` on EVERY frame of the exchange
+  (not only tools/call); an exchange has exactly one deadline (n23).
 - **Header↔body assertions retained.** The backend still asserts
   `caller.consumerId`, `caller.keyId` and `deadlineAt` match the headers, reading
   them from `params._meta` instead of the body root.
+- **GET and DELETE on the MCP path → `405` with `Allow: POST`**, no auth and no
+  side effect; the SDK treats the 405 on its standalone SSE GET as "no stream"
+  and the session stays usable. There are no sessions and no `mcp-session-id`
+  (the stateless server issues none, so the SDK never sends DELETE). **JSON-RPC
+  batches are rejected** (`-32600`): batching left the spec in 2025-06-18 and
+  would dodge the per-frame assertions (n24).
 - **`tools/list`** is served verbatim from the signed descriptor on the backend
   side, via the low-level MCP `Server` (D17). It exists for third-party clients
   and as a cross-check surface. It is never a schema source (DT4).
@@ -270,6 +299,23 @@ Rules:
 - **Client timeout** must be driven from the envelope's `deadlineAt` per call.
   The MCP TS SDK client defaults to a 60s per-request timeout; leaving it at the
   default would silently override the contract's deadline semantics.
+  **P3-18 resolved (n31 → P3-38):** the per-attempt timeout is
+  `attemptTimeoutMs = min(requestTimeoutMs, deadlineAt − now)`, falling back to
+  `requestTimeoutMs` once the deadline has already passed (the backend then
+  answers `deadline.expired`). This is ONE client method used by both transports
+  — for MCP it bounds the whole exchange via a single `AbortSignal.timeout`
+  threaded into the signing fetch, `connect` and `callTool`; for REST it only
+  ever shortens an attempt — so no transport-aware deadline arithmetic leaks
+  below the seam. Recorded as **IV-2** in the divergence register: "Per-attempt
+  timeout is bounded by the time remaining to `deadlineAt` (REST and MCP);
+  previously a flat `requestTimeoutMs`."
+- **`McpTransport` connects per invocation** (connect → callTool → `close()`)
+  and has NO status lookup (D15): an `in_progress` answer is resolved by the
+  client re-issuing `tools/call` under the same idempotency key, never past
+  `deadlineAt`. The SDK client is loaded by a lazy `import()` on first MCP
+  invoke (n30 → P3-37), so REST-only processes (all of staging/prod, D19) never
+  execute SDK code. `arguments` must be an object; a non-object payload is a
+  `transport_error` with no I/O (n37 → P3-44).
 
 **Two spike gates before any MCP implementation:**
 1. **`params._meta` must be inside the request bytes the client signs.** If the
