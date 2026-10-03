@@ -74,9 +74,19 @@ export interface IdempotentBoundaryCore {
   stallNextCompletion(): void;
 }
 
+/** The failure codes an executed write can store (the rest are answered before the store). */
+export type FakeStorableFailureCode = Extract<
+  TradertonBoundaryFailureCode,
+  | 'rate_limit.exceeded'
+  | 'precondition.not_ready'
+  | 'upstream.transient'
+  | 'validation.invalid_payload'
+  | 'internal.non_retryable'
+>;
+
 /** A tool-level failure the fake records as an executed write's terminal result. */
 export interface FakeExecutionFailure {
-  code: TradertonBoundaryFailureCode;
+  code: FakeStorableFailureCode;
   retryable: boolean;
   message?: string;
 }

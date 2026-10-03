@@ -101,6 +101,7 @@ export interface PollOptions {
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const UNRECOGNISED_STATUS_MESSAGE = 'boundary returned an unrecognised status response';
+const UNRECOGNISED_RESPONSE_MESSAGE = 'boundary returned an unrecognised response';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -132,23 +133,52 @@ function mapTerminalResult(result: TradertonToolResultV1): TradertonClientResult
   };
 }
 
-/** Discriminate the two shapes `POST tools:invoke` (or a status body) can return. */
-function isStatusShape(
-  body: TradertonToolResultV1 | TradertonToolInvocationStatusV1,
-): body is TradertonToolInvocationStatusV1 {
-  return 'state' in body;
+// invoke and poll read unvalidated JSON, so they check shape before mapping: a
+// body they do not recognise is a transport fault, never a TypeError thrown out.
+// A status body must carry one of the two known states.
+function hasStringIds(value: object): boolean {
+  return (
+    'requestId' in value &&
+    typeof value.requestId === 'string' &&
+    'correlationId' in value &&
+    typeof value.correlationId === 'string'
+  );
 }
 
-// The poll reads unvalidated JSON, so it checks shape before mapping: a body it
-// does not recognise is a transport fault, never a TypeError thrown out of poll.
 function isStatusBody(value: unknown): value is TradertonToolInvocationStatusV1 {
-  return typeof value === 'object' && value !== null && 'state' in value;
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    hasStringIds(value) &&
+    'state' in value &&
+    (value.state === 'in_progress' || value.state === 'terminal')
+  );
+}
+
+function isOutcome(value: unknown): value is TradertonOutcome {
+  if (typeof value !== 'object' || value === null || !('kind' in value)) return false;
+  // No `payload` check: the backend's `successResult(identity, result.data)`
+  // may carry `undefined`, which JSON drops, so an absent key is a valid success.
+  if (value.kind === 'success') return true;
+  return (
+    value.kind === 'failure' &&
+    'code' in value &&
+    typeof value.code === 'string' &&
+    'message' in value &&
+    typeof value.message === 'string' &&
+    'retryable' in value &&
+    typeof value.retryable === 'boolean'
+  );
 }
 
 function isToolResultBody(value: unknown): value is TradertonToolResultV1 {
-  if (typeof value !== 'object' || value === null || !('outcome' in value)) return false;
-  const outcome = value.outcome;
-  return typeof outcome === 'object' && outcome !== null && 'kind' in outcome && typeof outcome.kind === 'string';
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    hasStringIds(value) &&
+    'outcome' in value &&
+    isOutcome(value.outcome)
+  );
 }
 
 /**
@@ -240,20 +270,24 @@ export class TradertonClient {
       return this.transportError(requestId, `boundary returned status ${response.status}`);
     }
 
-    let body: TradertonToolResultV1 | TradertonToolInvocationStatusV1;
+    let body: unknown;
     try {
-      body = (await response.json()) as TradertonToolResultV1 | TradertonToolInvocationStatusV1;
+      body = await response.json();
     } catch {
       return this.transportError(requestId, 'boundary returned an unreadable response');
     }
 
-    if (isStatusShape(body)) {
+    if (isStatusBody(body)) {
       if (body.state === 'in_progress') {
         return { kind: 'in_progress', requestId: body.requestId, correlationId: body.correlationId };
       }
-      return mapTerminalResult(body.result);
+      return isToolResultBody(body.result)
+        ? mapTerminalResult(body.result)
+        : this.transportError(requestId, UNRECOGNISED_RESPONSE_MESSAGE);
     }
-    return mapTerminalResult(body);
+    return isToolResultBody(body)
+      ? mapTerminalResult(body)
+      : this.transportError(requestId, UNRECOGNISED_RESPONSE_MESSAGE);
   }
 
   /**
@@ -310,6 +344,7 @@ export class TradertonClient {
         // A plain result (no `state`) is the boundary answering for the lookup
         // itself — e.g. `not_found.resource` when it has no record of the
         // requestId. It is terminal: return it rather than polling to the deadline.
+        // An unknown `state` is unrecognised, never polled to the deadline.
         return isToolResultBody(body)
           ? mapTerminalResult(body)
           : this.transportError(requestId, UNRECOGNISED_STATUS_MESSAGE);

@@ -130,6 +130,37 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
     expect(invoke).toHaveBeenCalledTimes(2);
   });
 
+  it.each(['authentication.invalid_caller', 'not_found.resource'] as const)(
+    'keeps the original transport error when the re-issue reports the pre-dispatch %s',
+    async (code) => {
+      const { client, invoke, poll } = makeClient();
+      invoke
+        .mockResolvedValueOnce(TRANSPORT_ERROR)
+        .mockResolvedValueOnce({ kind: 'failure', requestId: 'req-1', correlationId: 'corr-1', code, message: 'rejected', retryable: false });
+
+      const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
+
+      expect(result).toEqual(TRANSPORT_ERROR);
+      expect(invoke).toHaveBeenCalledTimes(2);
+      expect(poll).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['validation.invalid_payload', 'authorization.denied', 'upstream.transient'] as const)(
+    'returns the re-issue failure %s because it is a stored or decided write outcome',
+    async (code) => {
+      const { client, invoke, poll } = makeClient();
+      const failure = { kind: 'failure', requestId: 'req-1', correlationId: 'corr-1', code, message: 'm', retryable: false } as const;
+      invoke.mockResolvedValueOnce(TRANSPORT_ERROR).mockResolvedValueOnce(failure);
+
+      const result = await createTradertonSideEffectBoundary(client).invokeAndAwait(write());
+
+      expect(result).toEqual(failure);
+      expect(invoke).toHaveBeenCalledTimes(2);
+      expect(poll).not.toHaveBeenCalled();
+    },
+  );
+
   it('polls the requestId returned by an in_progress re-issue until terminal', async () => {
     const { client, invoke, poll } = makeClient();
     invoke
@@ -202,6 +233,20 @@ describe('createTradertonSideEffectBoundary.invokeAndAwait', () => {
 
     const awaited = await boundary.invokeAndAwait(write({ idempotencyKey: '' }));
     const single = await boundary.invoke({ toolName: 'submit_decision', payload: {}, subject: SUBJECT, idempotencyKey: '' });
+
+    expect(awaited).toMatchObject(expected);
+    expect(single).toMatchObject(expected);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(poll).not.toHaveBeenCalled();
+  });
+
+  it('rejects a whitespace-only idempotency key without calling the boundary', async () => {
+    const { client, invoke, poll } = makeClient();
+    const boundary = createTradertonSideEffectBoundary(client);
+    const expected = { kind: 'failure', code: 'validation.invalid_payload', retryable: false, message: 'idempotencyKey must be non-empty' };
+
+    const awaited = await boundary.invokeAndAwait(write({ idempotencyKey: ' \t\n' }));
+    const single = await boundary.invoke({ toolName: 'submit_decision', payload: {}, subject: SUBJECT, idempotencyKey: '   ' });
 
     expect(awaited).toMatchObject(expected);
     expect(single).toMatchObject(expected);

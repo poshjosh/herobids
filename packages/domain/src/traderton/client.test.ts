@@ -282,6 +282,46 @@ describe('TradertonClient.invoke — response mapping', () => {
     const result = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT });
     expect(result.kind).toBe('transport_error');
   });
+
+  it.each<[string, unknown]>([
+    ['a null body', null],
+    ['a number body', 42],
+    ['an empty object', {}],
+    ['a terminal status with no result', { contractVersion: '1.0', requestId: 'r', correlationId: 'c', state: 'terminal' }],
+    ['a status with an unknown state', { contractVersion: '1.0', requestId: 'r', correlationId: 'c', state: 'queued' }],
+    [
+      'a failure outcome with no code',
+      { contractVersion: '1.0', requestId: 'r', correlationId: 'c', outcome: { kind: 'failure', message: 'm', retryable: false } },
+    ],
+    [
+      'a failure outcome with a non-boolean retryable',
+      { contractVersion: '1.0', requestId: 'r', correlationId: 'c', outcome: { kind: 'failure', code: 'upstream.transient', message: 'm', retryable: 'yes' } },
+    ],
+    ['a status with no requestId', { contractVersion: '1.0', correlationId: 'c', state: 'in_progress' }],
+    ['a result with a non-string correlationId', { contractVersion: '1.0', requestId: 'r', correlationId: 7, outcome: { kind: 'success', payload: {} } }],
+    ['an outcome of unknown kind', { contractVersion: '1.0', requestId: 'r', correlationId: 'c', outcome: { kind: 'partial' } }],
+  ])('maps %s returned by invoke to a transport error without throwing', async (_label, body) => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
+
+    const result = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT, requestId: 'req-x' });
+
+    expect(result).toEqual({
+      kind: 'transport_error',
+      requestId: 'req-x',
+      retryable: true,
+      message: 'boundary returned an unrecognised response',
+    });
+  });
+
+  it('maps a success outcome whose payload key is absent to a success result', async () => {
+    // The backend's successResult(identity, undefined) serialises without `payload`.
+    const body = { contractVersion: '1.0', requestId: 'r', correlationId: 'c', outcome: { kind: 'success' } };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
+
+    const result = await client().invoke({ toolName: 't', payload: {}, subject: SUBJECT, requestId: 'req-x' });
+
+    expect(result).toEqual({ kind: 'success', requestId: 'r', correlationId: 'c', payload: undefined });
+  });
 });
 
 describe('TradertonClient.poll', () => {
@@ -376,6 +416,7 @@ describe('TradertonClient.poll', () => {
       null,
       { outcome: null },
       { contractVersion: '1.0', requestId: 'rp', correlationId: 'cp', state: 'terminal', result: {} },
+      { contractVersion: '1.0', requestId: 'rp', correlationId: 'cp', outcome: { kind: 'failure', message: 'm', retryable: false } },
     ];
     const deadlineAt = new Date(Date.now() + 60_000).toISOString();
 
@@ -392,6 +433,26 @@ describe('TradertonClient.poll', () => {
       });
     }
     expect(fetchMock).toHaveBeenCalledTimes(unrecognisedBodies.length);
+  });
+
+  it('poll stops with a transport error on an unknown state instead of polling to the deadline', async () => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ contractVersion: '1.0', requestId: 'rp', correlationId: 'cp', state: 'queued' }), {
+          status: 200,
+        }),
+    );
+
+    const deadlineAt = new Date(Date.now() + 60_000).toISOString();
+    const result = await client().poll('rp', { deadlineAt, pollIntervalMs: 1 });
+
+    expect(result).toEqual({
+      kind: 'transport_error',
+      requestId: 'rp',
+      retryable: true,
+      message: 'boundary returned an unrecognised status response',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns a deadline error once the deadline passes', async () => {

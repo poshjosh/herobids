@@ -59,7 +59,8 @@ export interface TradertonSideEffectBoundary {
     subject: TradertonSubject;
     /**
      * Stable and non-empty per logical write; reused only while its outcome is
-     * unknown. An empty key is rejected as `validation.invalid_payload` without I/O.
+     * unknown. An empty or whitespace-only key is rejected as
+     * `validation.invalid_payload` without I/O.
      */
     idempotencyKey: string;
     requestId?: string;
@@ -82,7 +83,7 @@ export interface TradertonSideEffectBoundary {
 export type TradertonToolWriteBoundary = NonNullable<TradingToolContext['tradertonWriteBoundary']>;
 
 /**
- * An empty key is a caller programming error. It is rejected locally so it can
+ * An empty or whitespace-only key is a caller programming error. It is rejected locally so it can
  * never become a key shared by unrelated writes; nothing was sent, so this is a
  * genuine terminal failure.
  */
@@ -98,7 +99,7 @@ function rejectEmptyIdempotencyKey(input: { requestId?: string; correlationId?: 
 }
 
 /**
- * True for a poll answer that describes the status lookup rather than the write:
+ * True for a poll (or re-issue) answer that describes the lookup/request rather than the write:
  * the client's own deadline stop (`deadline.expired`), no row for the requestId
  * (`not_found.resource`), or a rejected status request (`authentication.*`). A
  * stored write result never carries these codes: both backend deadline checks
@@ -125,7 +126,7 @@ export function createTradertonSideEffectBoundary(
 ): TradertonSideEffectBoundary {
   return {
     async invoke(input): Promise<TradertonClientResult> {
-      if (input.idempotencyKey === '') {
+      if (input.idempotencyKey.trim() === '') {
         return rejectEmptyIdempotencyKey(input);
       }
       return client.invoke({
@@ -139,7 +140,7 @@ export function createTradertonSideEffectBoundary(
     },
 
     async invokeAndAwait(input): Promise<TradertonClientResult> {
-      if (input.idempotencyKey === '') {
+      if (input.idempotencyKey.trim() === '') {
         return rejectEmptyIdempotencyKey(input);
       }
       const deadlineAt = new Date(Date.now() + input.deadlineMs).toISOString();
@@ -163,10 +164,11 @@ export function createTradertonSideEffectBoundary(
       // case it overruns `deadlineAt` by one client request timeout.
       if (result.kind === 'transport_error' && Date.now() < Date.parse(deadlineAt)) {
         const reissued = await client.invoke(invokeInput);
-        // The backend checks the deadline BEFORE the idempotency lookup, so a
-        // deadline.expired re-issue says nothing about the first attempt — the
-        // outcome is still unknown; keep the original transport error.
-        if (!(reissued.kind === 'failure' && reissued.code === 'deadline.expired')) {
+        // deadline.expired and authentication.* are answered BEFORE the
+        // idempotency lookup, and not_found.resource is never a stored write
+        // result, so such a re-issue answer says nothing about the first
+        // attempt — the outcome is still unknown; keep the original error.
+        if (!isLookupLevelAnswer(reissued)) {
           result = reissued;
         }
       }
