@@ -501,7 +501,6 @@ export const messages: Record<string, string> = {
   'agents.detail.capabilities.emptyTitle': 'No capabilities yet',
   'agents.detail.capabilities.emptyBody': 'Give this agent a capability by adding a skill (like Trading or Email) or connecting to an external platform.',
   'agents.detail.capabilities.addSkills': 'Add skills',
-  'agents.detail.capabilities.connections': 'Connections',
   'agents.detail.capabilities.saving': 'Saving…',
   'agents.detail.capabilities.saveError': 'Couldn\'t update capabilities: {error}',
   'agents.detail.connectionReadiness': 'Connection readiness',

@@ -300,14 +300,15 @@ describe('AgentDetailPage capabilities list', () => {
   it('renders the inline Add-skills and Connections setup controls in the empty state', () => {
     const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
     expect(html).toContain(messages['agents.detail.capabilities.addSkills']);
-    expect(html).toContain(messages['agents.detail.capabilities.connections']);
+    expect(html).toContain(messages['agents.create.connections']);
+    expect(html).not.toContain('>Connections<');
   });
 
   it('renders the inline Add-skills and Connections setup controls alongside existing capability cards', () => {
     const html = renderDetail({ agentSkillIds: ['trading'], readinessFamilies: ['trading'] });
     expect(renderedFamilyLabels(html)).toEqual(['Trading']);
     expect(html).toContain(messages['agents.detail.capabilities.addSkills']);
-    expect(html).toContain(messages['agents.detail.capabilities.connections']);
+    expect(html).toContain(messages['agents.create.connections']);
   });
 
   it('offers assignable connections from the account picker in the inline setup block', () => {

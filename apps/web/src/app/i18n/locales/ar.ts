@@ -470,7 +470,6 @@ export const messages: Record<string, string> = {
   'agents.detail.capabilities.emptyTitle': 'لا توجد قدرات بعد',
   'agents.detail.capabilities.emptyBody': 'امنح هذا الوكيل قدرة بإضافة مهارة (مثل التداول أو البريد الإلكتروني) أو بالاتصال بمنصة خارجية.',
   'agents.detail.capabilities.addSkills': 'إضافة مهارات',
-  'agents.detail.capabilities.connections': 'الاتصالات',
   'agents.detail.capabilities.saving': 'جارٍ الحفظ…',
   'agents.detail.capabilities.saveError': 'تعذر تحديث القدرات: {error}',
   'agents.detail.connectionReadiness': 'جاهزية الاتصال',

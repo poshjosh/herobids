@@ -470,7 +470,6 @@ export const messages: Record<string, string> = {
   'agents.detail.capabilities.emptyTitle': 'अभी तक कोई क्षमता नहीं',
   'agents.detail.capabilities.emptyBody': 'इस एजेंट को कोई कौशल (जैसे ट्रेडिंग या ईमेल) जोड़कर या किसी बाहरी प्लेटफ़ॉर्म से कनेक्ट करके क्षमता दें।',
   'agents.detail.capabilities.addSkills': 'कौशल जोड़ें',
-  'agents.detail.capabilities.connections': 'कनेक्शन',
   'agents.detail.capabilities.saving': 'सहेजा जा रहा है…',
   'agents.detail.capabilities.saveError': 'क्षमताएँ अपडेट नहीं हो सकीं: {error}',
   'agents.detail.connectionReadiness': 'कनेक्शन तैयारी',

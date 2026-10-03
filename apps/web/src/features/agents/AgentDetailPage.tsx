@@ -588,7 +588,6 @@ export function AgentDetailPage() {
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <FieldLabel>{intl.formatMessage({ id: 'agents.detail.capabilities.connections' })}</FieldLabel>
                   <AgentConnectionField
                     connectionIds={localConnectionIds}
                     onChange={(connectionIds) => {
