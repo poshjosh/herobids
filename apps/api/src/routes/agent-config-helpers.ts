@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Decimal, SYSTEM_SKILLS, resolveAgentRiskContract, resolveAgentRuntimePolicy, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig, type RiskPosture } from '@herobids/domain';
+import { externalSkillIdForRef } from '@herobids/db';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
 
@@ -14,11 +15,20 @@ const CAPABILITY_FAMILIES_BY_SKILL_ID = new Map(SYSTEM_SKILLS.map((skill) => [sk
  */
 const BACKEND_REF_FAMILIES = new Map<string, string>();
 
-/** Register the approved-ref → connection-family mapping from operator config. */
+/**
+ * Register the approved-ref → connection-family mapping from operator config.
+ * Each ref is registered under BOTH its ref form (`owner/repo/skill`) AND its
+ * deterministic external skill id (`ext_…`), because the agent-create path
+ * resolves refs → ids early (resolveSkillSlugs) while family checks may run with
+ * either form. (Phase 4 T8.)
+ */
 export function registerBackendRefFamilies(entries: ReadonlyArray<{ refs: readonly string[]; family: string }>): void {
   BACKEND_REF_FAMILIES.clear();
   for (const { refs, family } of entries) {
-    for (const ref of refs) BACKEND_REF_FAMILIES.set(ref, family);
+    for (const ref of refs) {
+      BACKEND_REF_FAMILIES.set(ref, family);
+      BACKEND_REF_FAMILIES.set(externalSkillIdForRef(ref), family);
+    }
   }
 }
 

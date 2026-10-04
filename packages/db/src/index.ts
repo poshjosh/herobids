@@ -68,5 +68,5 @@ export {
 export type { ManualReviewRunRow, ManualReviewResultSummary } from './manual-review-repository.js';
 export { isSkillSelectableForUser, resolveSkillIdsBySlugOrId, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './skill-assignment.js';
 export type { SkillAssignmentResolution } from './skill-assignment.js';
-export { upsertExternalSkill, normalizeSourceRefToSlug, deriveSourceKind } from './external-skill-catalog.js';
+export { upsertExternalSkill, normalizeSourceRefToSlug, deriveSourceKind, ensureExternalSkillIds, externalSkillIdForRef } from './external-skill-catalog.js';
 export type { ExternalSkillUpsert, ExternalSkillRow } from './external-skill-catalog.js';

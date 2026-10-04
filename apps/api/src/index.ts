@@ -318,11 +318,16 @@ await capabilityRoutes(
   redisClient,
   tradingBackendClient,
   tradingBackendTimeoutMs,
-  // Phase 4 T8: connection families declared by registered external backends,
-  // so GET /capabilities advertises them without the deleted trading built-ins.
-  appConfig.externalBackends
-    .map((backend) => backend.requiresConnectionFamily)
-    .filter((family): family is string => typeof family === 'string'),
+  // Phase 4 T8: approved external skill ref → backend connection family, so
+  // GET /capabilities and per-agent readiness resolve the family without the
+  // deleted trading built-ins.
+  new Map<string, string>(
+    appConfig.externalBackends.flatMap((backend) =>
+      typeof backend.requiresConnectionFamily === 'string'
+        ? backend.approvedSourceSkillRefs.map((ref) => [ref, backend.requiresConnectionFamily as string] as const)
+        : [],
+    ),
+  ),
 );
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────

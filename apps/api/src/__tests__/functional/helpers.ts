@@ -560,7 +560,13 @@ export async function buildApp() {
     profileSaga as never,
   );
   await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any, stubTradertonClient, profileSaga as never);
-  await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient, stubTradertonClient, 5000);
+  await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient, stubTradertonClient, 5000,
+    // Phase 4 T8: approved external skill ref → connection family, mirroring API startup.
+    new Map<string, string>([
+      ['traderton/skills/crypto-trading', 'trading'],
+      ['traderton/skills/crypto-bot-management', 'trading'],
+      ['traderton/skills/crypto-risk-monitoring', 'trading'],
+    ]));
   await botRoutes(app, lifecycleQueue, db, redisClient, testPlansConfig as any, stubTradertonClient);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)

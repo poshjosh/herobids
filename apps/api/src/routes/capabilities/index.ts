@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { agents, connections, agentConnections, agentSkills, skillRevisions, deriveReadiness, chooseLatest } from '@herobids/db';
+import { agents, connections, agentConnections, agentSkills, skillRevisions, skills, deriveReadiness, chooseLatest } from '@herobids/db';
 import type { RuntimeAssignmentRow } from '@herobids/db';
 import type { CapabilityReadiness, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { getRuntimeFamiliesForProvider, SYSTEM_SKILLS } from '@herobids/domain';
@@ -18,12 +18,14 @@ export async function capabilityRoutes(
   tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
   /**
-   * Phase 4 T8: the connection families declared by registered external
-   * backends (`externalBackends[].requiresConnectionFamily`). These replace the
-   * trading family that used to come from the deleted built-in trading skills —
-   * `GET /capabilities` no longer derives trading from SYSTEM_SKILLS.
+   * Phase 4 T8: approved external skill ref → the backend's required connection
+   * family (`externalBackends[].approvedSourceSkillRefs` × `requiresConnectionFamily`).
+   * Replaces the trading family that used to come from the deleted built-in
+   * trading skills: `GET /capabilities` advertises these families (not
+   * SYSTEM_SKILLS), and per-agent readiness unions the family for an assigned
+   * approved skill (whose placeholder/metadata row carries no family itself).
    */
-  backendConnectionFamilies: readonly string[] = [],
+  backendApprovedFamilyByRef: ReadonlyMap<string, string> = new Map(),
 ): Promise<void> {
   // Deduped, sorted set of every advertised capability family: the families
   // declared by non-backend system skills (e.g. email) UNION the connection
@@ -32,7 +34,7 @@ export async function capabilityRoutes(
   const catalogFamilies = Array.from(
     new Set([
       ...SYSTEM_SKILLS.flatMap((skill) => skill.capabilityFamilies),
-      ...backendConnectionFamilies,
+      ...backendApprovedFamilyByRef.values(),
     ].filter((family) => family.length > 0)),
   ).sort();
 
@@ -79,11 +81,15 @@ export async function capabilityRoutes(
           capabilities: getRuntimeFamiliesForProvider(row.provider),
         }));
 
-      // Families the agent's resolved skills declare (via assigned skill revisions).
+      // Families the agent's resolved skills declare (via assigned skill
+      // revisions) UNION, for an assigned backend-approved external skill, the
+      // backend's connection family (Phase 4 T8 — the placeholder/metadata row
+      // carries no family of its own; the family is config-driven).
       const skillFamilyRows = await db
-        .select({ capabilityFamilies: skillRevisions.capabilityFamilies })
+        .select({ capabilityFamilies: skillRevisions.capabilityFamilies, sourceRef: skills.sourceRef })
         .from(agentSkills)
         .innerJoin(skillRevisions, eq(agentSkills.skillRevisionId, skillRevisions.id))
+        .innerJoin(skills, eq(agentSkills.skillId, skills.id))
         .where(eq(agentSkills.agentId, agentId));
 
       // Emit one readiness entry per family the agent actually has:
@@ -93,6 +99,8 @@ export async function capabilityRoutes(
         for (const family of skillRow.capabilityFamilies ?? []) {
           allFamilies.add(family);
         }
+        const approvedFamily = skillRow.sourceRef ? backendApprovedFamilyByRef.get(skillRow.sourceRef) : undefined;
+        if (approvedFamily) allFamilies.add(approvedFamily);
       }
       for (const row of rows) {
         for (const cap of row.capabilities ?? []) {

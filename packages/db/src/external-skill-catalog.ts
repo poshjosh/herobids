@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { skillRevisions, skills } from './schema/index.js';
+import { resolveSkillIdsBySlugOrId } from './skill-assignment.js';
 import type { SourceKind } from '@herobids/domain';
 
 /**
@@ -23,6 +24,16 @@ export function normalizeSourceRefToSlug(ref: string): string {
     return `${ref.slice(0, at)}/${ref.slice(at + 1)}`;
   }
   return ref;
+}
+
+/**
+ * The deterministic `skills.id` for an external skill, derived from its
+ * canonical `owner/repo/skill` ref so repeated adds collapse to one row and
+ * callers can predict the id without a DB round-trip. Pass the slug form.
+ */
+export function externalSkillIdForRef(sourceRefOrSlug: string): string {
+  const slug = normalizeSourceRefToSlug(sourceRefOrSlug);
+  return `ext_${crypto.createHash('sha256').update(slug).digest('hex').slice(0, 24)}`;
 }
 
 /** Derive the skill's source kind without an identity branch (ADR 017, T4). */
@@ -46,6 +57,60 @@ export interface ExternalSkillUpsert {
 export interface ExternalSkillRow {
   skillId: string;
   skillRevisionId: string;
+}
+
+/**
+ * A ref is an installable skills.sh ref only in the canonical `owner/repo/skill`
+ * three-segment form, or the CLI `owner/repo@skill` form. A two-segment
+ * `author/name` is a marketplace skill slug (NOT installable) and must still
+ * resolve against the catalog — so it is NOT treated as an external ref here.
+ * `system/*` is a platform slug, also excluded.
+ */
+function isExternalRef(ref: string): boolean {
+  if (ref.startsWith('system/')) return false;
+  if (ref.includes('@')) {
+    // owner/repo@skill
+    const [left] = ref.split('@');
+    return (left ?? '').split('/').length === 2;
+  }
+  return ref.split('/').length === 3;
+}
+
+/**
+ * Phase 4 T6: translate the agent-create `skillIds` list into resolvable skill
+ * ids, creating placeholder metadata rows for any skills.sh-shaped ref that is
+ * not yet in the catalog. The assignment is recorded now (name = the last ref
+ * segment, empty description); the first agent start installs the folder and
+ * refreshes name/description from the frontmatter (T5). Agent creation is never
+ * blocked by an unknown ref. Non-ref ids (system/user skill ids) pass through
+ * unchanged. Returns the input order with each ref replaced by its skill id.
+ */
+export async function ensureExternalSkillIds(
+  db: Database,
+  skillIds: readonly string[],
+): Promise<string[]> {
+  // Resolve everything already known (by slug or id) in one query first, so an
+  // already-catalogued ref (installed earlier, or seeded) is reused as-is and we
+  // only create a placeholder for a genuinely-unknown skills.sh ref.
+  const known = await resolveSkillIdsBySlugOrId(db, [...skillIds]);
+  const out: string[] = [];
+  for (const idOrRef of skillIds) {
+    const resolved = known.get(idOrRef);
+    if (resolved) {
+      out.push(resolved);
+      continue;
+    }
+    if (!isExternalRef(idOrRef)) {
+      // Unknown non-ref id/slug — leave it unresolved so the caller reports it.
+      out.push(idOrRef);
+      continue;
+    }
+    const slug = normalizeSourceRefToSlug(idOrRef);
+    const lastSegment = slug.split('/').pop() ?? slug;
+    const row = await upsertExternalSkill(db, { sourceRef: slug, name: lastSegment, description: '' });
+    out.push(row.skillId);
+  }
+  return out;
 }
 
 /**
@@ -108,7 +173,7 @@ export async function upsertExternalSkill(
     }
 
     // New external skill. id is deterministic from the ref so re-adds collapse.
-    const skillId = `ext_${crypto.createHash('sha256').update(sourceRef).digest('hex').slice(0, 24)}`;
+    const skillId = externalSkillIdForRef(sourceRef);
     const revisionId = `${skillId}:external:1`;
 
     await tx.insert(skills).values({

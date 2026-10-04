@@ -17,7 +17,7 @@ import { prepareAgentCreateFields } from '../agents/agent-create-normalization.j
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode, optionalPositiveDecimalStringSchema } from './agent-config-helpers.js';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
-import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
+import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments, ensureExternalSkillIds } from '@herobids/db';
 import { createProviderLink } from './setup.js';
 import { createLogger } from '../logger.js';
 
@@ -1365,10 +1365,12 @@ export async function executeChatAction(
         const skillPlanPolicy = plansConfig
           ? resolvePlanSkillEntitlements(plansConfig, userPlanId, isAdmin)
           : { canViewMarketplaceSkills: true };
+        // Phase 4 T6: translate external skills.sh refs → (placeholder) skill ids.
+        const assignmentSkillIds = await ensureExternalSkillIds(db, skillIds);
         const assignmentResolution = await resolveSkillAssignmentsForUser(
           db,
           userId,
-          skillIds,
+          assignmentSkillIds,
           new Set(),
           skillPlanPolicy.canViewMarketplaceSkills,
         );

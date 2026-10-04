@@ -22,6 +22,7 @@ import {
   resolveSkillAssignmentsForUser,
   resolveSkillIdsBySlugOrId,
   syncAgentSkillAssignments,
+  ensureExternalSkillIds,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
@@ -355,8 +356,12 @@ class ConnectionValidationError extends Error {
 
 /** Resolve skill slugs/IDs to canonical IDs. Returns resolved IDs, or null if an error response was sent. */
 async function resolveSkillSlugs(db: Database, skillIds: string[], reply: FastifyReply): Promise<string[] | null> {
-  const resolved = await resolveSkillIdsBySlugOrId(db, skillIds);
-  const unresolved = skillIds.filter((ref) => !resolved.has(ref));
+  // Phase 4 T6: a skills.sh ref may not be catalogued yet — record a placeholder
+  // metadata row so creation is never blocked (installed + refreshed at first
+  // agent start). This translates external refs → their (ext_) skill ids.
+  const ensuredIds = await ensureExternalSkillIds(db, skillIds);
+  const resolved = await resolveSkillIdsBySlugOrId(db, ensuredIds);
+  const unresolved = ensuredIds.filter((ref) => !resolved.has(ref));
   if (unresolved.length > 0) {
     reply.status(400).send({
       error: 'validation_error',
@@ -364,7 +369,7 @@ async function resolveSkillSlugs(db: Database, skillIds: string[], reply: Fastif
     });
     return null;
   }
-  return skillIds.map((ref) => resolved.get(ref)!);
+  return ensuredIds.map((ref) => resolved.get(ref)!);
 }
 
 
@@ -635,6 +640,9 @@ export async function agentRoutes(
     }
 
     const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
+    // `parsed.data.skillIds` were already ensured + resolved to ids by
+    // resolveSkillSlugs above (Phase 4 T6 — unknown skills.sh refs get a
+    // placeholder row there, so creation is never blocked).
     const assignmentResolution = await resolveSkillAssignmentsForUser(
       db,
       request.userId,
@@ -1261,6 +1269,8 @@ export async function agentRoutes(
     }
 
     const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
+    // `mergedSkillIds` are already-resolved ids (resolveSkillSlugs ran above and
+    // ensured any external refs). No further translation needed here.
     const assignmentResolution = await resolveSkillAssignmentsForUser(
       db,
       request.userId,
