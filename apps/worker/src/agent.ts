@@ -71,7 +71,7 @@ import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTracked
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
 import { buildAgentExternalBackendPorts } from './external-backend/agent-ports.js';
-import { buildDescriptorToolVisibility } from './external-backend/descriptor-tool-visibility.js';
+import { buildBackendToolVisibility } from './external-backend/backend-tool-visibility.js';
 import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
@@ -939,24 +939,17 @@ if (browserPool) {
   logger.info({ url: BROWSER_POOL_URL }, 'Browser pool adapter initialized');
 }
 const toolRegistry = createToolRegistry({ browserPool });
+// The names the local registry can actually invoke — the intersection target
+// for backend-approved tool visibility (Phase 4 T8).
+const registryToolNames = new Set(toolRegistry.list().map((t) => t.name));
 
-// ── Generic descriptor-driven tool visibility (Step 12 T3.2 + T4.2) ────────
-// Rewrite the runtime descriptor's resolved skills so a skill mapped to a
-// registered backend (via its `sourceRef` ∈ `approvedSourceSkillRefs`) exposes
-// exactly its signed descriptor's tools — or degrades to instruction-only on any
-// trust failure (DT3). This is the single wiring point that replaced the removed
-// hard-coded trading inference. The committed dev-signed descriptor (T4.2) supplies
-// the descriptor from the config dir so trading agents resolve their current tools
-// via the generic path (parity); trust is the committed public key in config. No
-// backend identity appears here: the backendId comes from the forwarded config,
-// and the matcher iterates the registry.
-const descriptorToolVisibility = buildDescriptorToolVisibility({
-  rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
-  resolvedSkills: runtimeState.runtimeDescriptor.resolvedSkills,
-  now: new Date(),
-  logger,
-});
-runtimeState.runtimeDescriptor.resolvedSkills = descriptorToolVisibility.resolvedSkills;
+// ── Backend-approved tool visibility (Phase 4 T8, ADR 017 §3-4) ────────────
+// For a skill whose `sourceRef` is approved by the forwarded backend, the
+// visible tool set = the backend's MCP `tools/list` tools tagged with that ref,
+// intersected with the local registry, and the backend's `requiresConnectionFamily`
+// is applied. This is DISCOVERY over MCP (D25/D27) — tool calls stay REST. The
+// resolution is async (a network tools/list), so it runs in `main()` before the
+// first tick, not at module top level. See `resolveBackendApprovedSkills` below.
 
 // Initialize email tools if Gmail integration is configured.
 // Gmail client credentials and encryption key are forwarded from the worker
@@ -1950,20 +1943,15 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       // visibility controller uses reference identity to detect changes in
       // snapshotToolBaselines(). Mutating properties in place would silently
       // skip the baseline refresh.
-      // Re-run the generic descriptor-driven resolver over the freshly-resolved
-      // skills so newly-added skills mapped to a backend expose their descriptor
-      // tools (or degrade), exactly as at startup — not their unresolved built-in
-      // tool set. Same composition root, re-evaluated at `now`.
-      const refreshedVisibility = buildDescriptorToolVisibility({
-        rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
-        resolvedSkills: capabilityDescriptor.resolvedSkills,
-        now: new Date(),
-        logger,
-      });
+      // Re-run backend-approved tool visibility over MCP tools/list for the
+      // freshly-resolved skills so a newly-added approved skill exposes its
+      // backend tools (or hides them if the backend is unreachable), exactly as
+      // at startup (Phase 4 T8).
+      const refreshedSkills = await resolveBackendApprovedSkills(capabilityDescriptor.resolvedSkills);
 
       runtimeState.runtimeDescriptor = {
         ...runtimeState.runtimeDescriptor,
-        resolvedSkills: refreshedVisibility.resolvedSkills,
+        resolvedSkills: refreshedSkills,
         grantedConnectionsByFamily: capabilityDescriptor.grantedConnectionsByFamily,
         readinessByFamily: capabilityDescriptor.readinessByFamily,
         defaultConnectionByFamily: capabilityDescriptor.defaultConnectionByFamily,
@@ -3924,6 +3912,27 @@ async function runTick(): Promise<void> {
   }
 }
 
+/**
+ * Resolve backend-approved tool visibility over MCP discovery (Phase 4 T8) and
+ * swap the result into the live runtime descriptor. Replaces the removed
+ * descriptor-file visibility. Safe to call at start and on hot-reload. Never
+ * throws — a discovery failure hides the approved tools and logs a warning.
+ */
+async function resolveBackendApprovedSkills(resolvedSkills: readonly SkillDefinition[]): Promise<SkillDefinition[]> {
+  try {
+    const result = await buildBackendToolVisibility({
+      rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
+      resolvedSkills,
+      registryToolNames,
+      logger,
+    });
+    return result.resolvedSkills;
+  } catch (err) {
+    logger.warn({ err }, 'Backend tool visibility resolution failed — leaving skills unchanged');
+    return [...resolvedSkills];
+  }
+}
+
 async function main(): Promise<void> {
   process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
   process.on('SIGINT', () => { void shutdown('SIGINT'); });
@@ -3992,6 +4001,13 @@ async function main(): Promise<void> {
   } catch (err) {
     logger.warn({ err }, 'External skill install loop failed — continuing without external skill bodies');
   }
+
+  // Phase 4 T8: resolve backend-approved tool visibility over MCP tools/list
+  // (after install, so an approved skill's tools reflect the installed ref) and
+  // swap the result into the live runtime descriptor before the first tick.
+  runtimeState.runtimeDescriptor.resolvedSkills = await resolveBackendApprovedSkills(
+    runtimeState.runtimeDescriptor.resolvedSkills,
+  );
 
   await new Promise<void>((resolve) => setTimeout(resolve, 1000));
   await sendHeartbeat('ready');

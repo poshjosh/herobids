@@ -5,6 +5,23 @@ import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-mode
 
 const CAPABILITY_FAMILIES_BY_SKILL_ID = new Map(SYSTEM_SKILLS.map((skill) => [skill.id, skill.capabilityFamilies] as const));
 
+/**
+ * Phase 4 T8: config-driven map from an approved backend skill ref
+ * (`owner/repo/skill`) to the connection family the backend declares
+ * (`requiresConnectionFamily`). Registered once at API startup so
+ * `hasSkillCapabilityFamily` resolves an external trading skill's family without
+ * the deleted built-in trading skills — no backend name is hard-coded here.
+ */
+const BACKEND_REF_FAMILIES = new Map<string, string>();
+
+/** Register the approved-ref → connection-family mapping from operator config. */
+export function registerBackendRefFamilies(entries: ReadonlyArray<{ refs: readonly string[]; family: string }>): void {
+  BACKEND_REF_FAMILIES.clear();
+  for (const { refs, family } of entries) {
+    for (const ref of refs) BACKEND_REF_FAMILIES.set(ref, family);
+  }
+}
+
 const AGENT_EXECUTION_MODES = new Set(['paper', 'shadow', 'live'] as const);
 /** Test-tier modes for the immutability guard. paper↔shadow is allowed; test↔live is not. */
 const TEST_MODES: ReadonlySet<string> = new Set(['paper', 'shadow']);
@@ -97,7 +114,11 @@ export const nullablePositiveDecimalStringSchema = z.preprocess((value) => {
 }, positiveDecimalStringSchema.nullable().optional());
 
 export function hasSkillCapabilityFamily(skillIds: string[] | null | undefined, capabilityFamily: string): boolean {
-  return (skillIds ?? []).some((skillId) => CAPABILITY_FAMILIES_BY_SKILL_ID.get(skillId)?.includes(capabilityFamily));
+  return (skillIds ?? []).some(
+    (skillId) =>
+      CAPABILITY_FAMILIES_BY_SKILL_ID.get(skillId)?.includes(capabilityFamily) ||
+      BACKEND_REF_FAMILIES.get(skillId) === capabilityFamily,
+  );
 }
 
 function normalizeExecutionMode(

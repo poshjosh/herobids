@@ -64,21 +64,15 @@ const ExternalBackendEntryObject = z.object({
     hmacSecretRef: EnvVarNameSchema,
   }).strict(),
   health: z.object({ readyPath: z.string().regex(/^\//).default('/health/ready') }).strict().default({}),
-  trustedDescriptorSigningKeys: z
-    .array(
-      z.object({
-        keyId: z.string().min(1),
-        // PEM SPKI (Step 10 §3 "Canonicalization and encoding").
-        publicKey: z.string().startsWith('-----BEGIN PUBLIC KEY-----'),
-        status: z.enum(['active', 'retiring']),
-      }).strict(),
-    )
-    .default([]),
   approvedSourceSkillRefs: z.array(SkillRefSchema).default([]),
-  descriptorPinning: z.discriminatedUnion('mode', [
-    z.object({ mode: z.literal('pinned'), sha256: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
-    z.object({ mode: z.literal('maxAge'), seconds: z.number().int().positive() }).strict(),
-  ]),
+  /**
+   * ONE connection family (ADR 017 §3, D28) inherited by every approved skill of
+   * this backend. An agent assigned an approved ref gets this family's
+   * capability — driving readiness, the startup guard, tick-work and
+   * GET /capabilities. For Traderton it is the opaque label `trading`. Optional:
+   * a backend may expose approved skills that need no connection.
+   */
+  requiresConnectionFamily: z.string().regex(/^[a-z][a-z0-9-]*$/, 'connection family is lowercase kebab-case').optional(),
 }).strict();
 type ExternalBackendEntry = z.infer<typeof ExternalBackendEntryObject>;
 
@@ -93,18 +87,6 @@ function refineExternalBackendEntry(entry: ExternalBackendEntry, ctx: z.Refineme
       message: 'mcpPath is required when the protocol or any tool override is mcp',
     });
   }
-  // Key selection is by keyId with no fallback, so a keyId must name exactly one key.
-  const seenKeyIds = new Set<string>();
-  entry.trustedDescriptorSigningKeys.forEach((key, index) => {
-    if (seenKeyIds.has(key.keyId)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['trustedDescriptorSigningKeys', index, 'keyId'],
-        message: `duplicate descriptor signing keyId "${key.keyId}"`,
-      });
-    }
-    seenKeyIds.add(key.keyId);
-  });
   const seenSkillRefs = new Set<string>();
   entry.approvedSourceSkillRefs.forEach((ref, index) => {
     if (seenSkillRefs.has(ref)) {

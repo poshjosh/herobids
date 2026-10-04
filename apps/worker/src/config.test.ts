@@ -1003,9 +1003,6 @@ ${endpointExtra}    caller:
       consumerId: herobids
       keyId: current
       hmacSecretRef: TEST_EXTERNAL_BACKEND_SECRET
-    descriptorPinning:
-      mode: maxAge
-      seconds: 3600
 tradingBackendId: ${tradingBackendId}
 `;
 }
@@ -1136,7 +1133,8 @@ describe('loadConfig external backend registry', () => {
       protocol: 'rest',
       backendId: 'traderton',
       toolProtocolOverrides: undefined,
-      mcpPath: undefined,
+      // Phase 4 D27: mcpPath is set for tools/list discovery while protocol stays rest.
+      mcpPath: '/internal/v1/mcp',
     });
   });
 });

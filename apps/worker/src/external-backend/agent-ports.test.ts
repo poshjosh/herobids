@@ -18,7 +18,6 @@ function resolvedPayload(): ResolvedExternalBackend {
       endpoint: { baseUrl: 'http://backend.unit.test', requestTimeoutMs: 5_000 },
       caller: { consumerId: 'unit-consumer', keyId: 'unit-key', hmacSecretRef: 'UNIT_BACKEND_SECRET' },
       approvedSourceSkillRefs: ['owner/repo/skill'],
-      descriptorPinning: { mode: 'maxAge', seconds: 60 },
     },
   });
   const resolved = resolveExternalBackend(registry, 'unit-backend', { UNIT_BACKEND_SECRET: SECRET });

@@ -17,12 +17,23 @@ export async function capabilityRoutes(
   redisClient?: Redis,
   tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
+  /**
+   * Phase 4 T8: the connection families declared by registered external
+   * backends (`externalBackends[].requiresConnectionFamily`). These replace the
+   * trading family that used to come from the deleted built-in trading skills —
+   * `GET /capabilities` no longer derives trading from SYSTEM_SKILLS.
+   */
+  backendConnectionFamilies: readonly string[] = [],
 ): Promise<void> {
-  // Deduped, sorted set of every capability family declared by the system's
-  // skills. Derived once at registration time — the catalog is static for the
-  // lifetime of the process (SYSTEM_SKILLS is a compile-time constant).
+  // Deduped, sorted set of every advertised capability family: the families
+  // declared by non-backend system skills (e.g. email) UNION the connection
+  // families declared by registered external backends (config-driven, D28).
+  // Derived once at registration time (both sources are process-static).
   const catalogFamilies = Array.from(
-    new Set(SYSTEM_SKILLS.flatMap((skill) => skill.capabilityFamilies).filter((family) => family.length > 0)),
+    new Set([
+      ...SYSTEM_SKILLS.flatMap((skill) => skill.capabilityFamilies),
+      ...backendConnectionFamilies,
+    ].filter((family) => family.length > 0)),
   ).sort();
 
   app.get('/capabilities', async (_request, reply) => {

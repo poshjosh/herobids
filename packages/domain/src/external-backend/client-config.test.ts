@@ -8,7 +8,6 @@ describe('buildExternalBackendClientConfig', () => {
       backendId: 'example-echo',
       endpoint: { baseUrl: 'http://localhost:8080', requestTimeoutMs: 15_000 },
       caller: { consumerId: 'herobids', keyId: 'current', hmacSecretRef: 'EXAMPLE_HMAC_SECRET' },
-      descriptorPinning: { mode: 'maxAge', seconds: 3600 },
     });
     expect(buildExternalBackendClientConfig(definition, 'test-secret')).toEqual({
       baseUrl: 'http://localhost:8080',
@@ -33,7 +32,6 @@ describe('buildExternalBackendClientConfig', () => {
         mcpPath: '/mcp',
       },
       caller: { consumerId: 'herobids', keyId: 'current', hmacSecretRef: 'EXAMPLE_HMAC_SECRET' },
-      descriptorPinning: { mode: 'maxAge', seconds: 3600 },
     });
 
     expect(buildExternalBackendClientConfig(definition, 'test-secret')).toMatchObject({

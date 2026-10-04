@@ -39,6 +39,7 @@ import { makeCatalogContext, type LlmCatalogDeps } from './llm-model-catalog.js'
 import { connectionRoutes } from './routes/connections.js';
 import { connectionsOauthRoutes } from './routes/connections-oauth.js';
 import { capabilityRoutes } from './routes/capabilities/index.js';
+import { registerBackendRefFamilies } from './routes/agent-config-helpers.js';
 import { setupRoutes } from './routes/setup.js';
 import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
@@ -291,7 +292,30 @@ await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPl
 // The AGENT trading-evidence endpoints (state/activity/outcomes/positions)
 // source fills/journal/positions over the Traderton read boundary, bound
 // per-request to the requesting user's subject — same client used for writes.
-await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient, tradingBackendClient, tradingBackendTimeoutMs);
+// Phase 4 T8: register the approved-ref → connection-family map from config so
+// hasSkillCapabilityFamily resolves an external trading skill without the
+// deleted built-in trading skills (no backend name hard-coded).
+registerBackendRefFamilies(
+  appConfig.externalBackends
+    .filter((backend): backend is typeof backend & { requiresConnectionFamily: string } =>
+      typeof backend.requiresConnectionFamily === 'string')
+    .map((backend) => ({ refs: backend.approvedSourceSkillRefs, family: backend.requiresConnectionFamily })),
+);
+
+await capabilityRoutes(
+  app,
+  db,
+  appConfig.plans,
+  appConfig.agentRuntime.defaultBudgets,
+  redisClient,
+  tradingBackendClient,
+  tradingBackendTimeoutMs,
+  // Phase 4 T8: connection families declared by registered external backends,
+  // so GET /capabilities advertises them without the deleted trading built-ins.
+  appConfig.externalBackends
+    .map((backend) => backend.requiresConnectionFamily)
+    .filter((family): family is string => typeof family === 'string'),
+);
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────
 await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradingBackendClient });

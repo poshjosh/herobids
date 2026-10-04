@@ -1,6 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { z } from 'zod';
 import {
   ExternalBackendDefinitionSchema,
   ExternalBackendRegistrySchema,
@@ -11,14 +9,11 @@ import {
   type ExternalBackendDefinition,
 } from './external-backends.js';
 
-const PEM = '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAfMgtobz4ygRWlnYmiNmxW7tq/jhSITxV8Q3EkH3rw80=\n-----END PUBLIC KEY-----\n';
-
 /** Minimal valid YAML-side entry (everything defaultable omitted). */
 function minimalEntry(): Record<string, unknown> {
   return {
     endpoint: { baseUrl: 'http://localhost:8080' },
     caller: { consumerId: 'herobids', keyId: 'current', hmacSecretRef: 'EXAMPLE_HMAC_SECRET' },
-    descriptorPinning: { mode: 'maxAge', seconds: 3600 },
   };
 }
 
@@ -41,7 +36,7 @@ function issuePaths(input: Record<string, unknown>): string[] {
 }
 
 describe('ExternalBackendDefinitionSchema', () => {
-  it('applies defaults: enabled, contractVersion 1.0, protocol rest, health.readyPath, empty trust lists', () => {
+  it('applies defaults: enabled, contractVersion 1.0, protocol rest, health.readyPath, empty approved refs', () => {
     const definition = parseDefinition();
     expect(definition.enabled).toBe(true);
     expect(definition.endpoint.contractVersion).toBe('1.0');
@@ -50,8 +45,18 @@ describe('ExternalBackendDefinitionSchema', () => {
     expect(definition.endpoint.toolProtocolOverrides).toBeUndefined();
     expect(definition.endpoint.mcpPath).toBeUndefined();
     expect(definition.health.readyPath).toBe('/health/ready');
-    expect(definition.trustedDescriptorSigningKeys).toEqual([]);
     expect(definition.approvedSourceSkillRefs).toEqual([]);
+    expect(definition.requiresConnectionFamily).toBeUndefined();
+  });
+
+  it('accepts a requiresConnectionFamily (Phase 4) and rejects a non-kebab-case value', () => {
+    expect(parseDefinition({ requiresConnectionFamily: 'trading' }).requiresConnectionFamily).toBe('trading');
+    expect(issuePaths(minimalDefinitionInput({ requiresConnectionFamily: 'Trading' }))).toContain(
+      'requiresConnectionFamily',
+    );
+    expect(issuePaths(minimalDefinitionInput({ requiresConnectionFamily: 'trading_desk' }))).toContain(
+      'requiresConnectionFamily',
+    );
   });
 
   it('rejects an unknown protocol', () => {
@@ -79,6 +84,13 @@ describe('ExternalBackendDefinitionSchema', () => {
     ).toEqual([]);
   });
 
+  it('accepts mcpPath for discovery while protocol stays rest (Phase 4 D27)', () => {
+    // Discovery over MCP while tool calls stay REST: mcpPath set, protocol rest.
+    expect(issuePaths(minimalDefinitionInput(endpointWith({ protocol: 'rest', mcpPath: '/internal/v1/mcp' })))).toEqual(
+      [],
+    );
+  });
+
   it('rejects an mcpPath that is not an absolute path without query or fragment', () => {
     for (const mcpPath of ['mcp', '/mcp?x=1', '/mcp#frag']) {
       expect(issuePaths(minimalDefinitionInput(endpointWith({ protocol: 'mcp', mcpPath })))).toContain(
@@ -100,23 +112,6 @@ describe('ExternalBackendDefinitionSchema', () => {
     }
   });
 
-  it('rejects duplicate descriptor signing keyIds', () => {
-    const input = minimalDefinitionInput({
-      trustedDescriptorSigningKeys: [
-        { keyId: 'dev-1', publicKey: PEM, status: 'active' },
-        { keyId: 'dev-1', publicKey: PEM, status: 'retiring' },
-      ],
-    });
-    expect(issuePaths(input)).toEqual(['trustedDescriptorSigningKeys.1.keyId']);
-  });
-
-  it('rejects a descriptor signing key that is not PEM SPKI', () => {
-    const input = minimalDefinitionInput({
-      trustedDescriptorSigningKeys: [{ keyId: 'dev-1', publicKey: 'MCowBQYDK2VwAyEA', status: 'active' }],
-    });
-    expect(issuePaths(input)).toContain('trustedDescriptorSigningKeys.0.publicKey');
-  });
-
   it('rejects a malformed approved skill ref', () => {
     for (const ref of ['example/echo', 'example/skills/echo/extra', 'example skills/echo/x']) {
       expect(issuePaths(minimalDefinitionInput({ approvedSourceSkillRefs: [ref] }))).toContain(
@@ -128,24 +123,6 @@ describe('ExternalBackendDefinitionSchema', () => {
   it('rejects duplicate approved skill refs', () => {
     const input = minimalDefinitionInput({ approvedSourceSkillRefs: ['example/skills/echo', 'example/skills/echo'] });
     expect(issuePaths(input)).toEqual(['approvedSourceSkillRefs.1']);
-  });
-
-  it('pinned descriptorPinning requires a 64-hex sha256', () => {
-    const digest = 'a'.repeat(64);
-    expect(issuePaths(minimalDefinitionInput({ descriptorPinning: { mode: 'pinned', sha256: digest } }))).toEqual([]);
-    for (const sha256 of ['a'.repeat(63), 'A'.repeat(64), 'g'.repeat(64)]) {
-      expect(issuePaths(minimalDefinitionInput({ descriptorPinning: { mode: 'pinned', sha256 } }))).toContain(
-        'descriptorPinning.sha256',
-      );
-    }
-    expect(issuePaths(minimalDefinitionInput({ descriptorPinning: { mode: 'pinned' } }))).toContain(
-      'descriptorPinning.sha256',
-    );
-  });
-
-  it('requires descriptorPinning', () => {
-    const { descriptorPinning: _omitted, ...input } = minimalDefinitionInput();
-    expect(issuePaths(input)).toContain('descriptorPinning');
   });
 
   it('accepts http(s) base URLs including docker-internal hostnames', () => {
@@ -180,9 +157,15 @@ describe('ExternalBackendDefinitionSchema', () => {
     expect(
       ExternalBackendDefinitionSchema.safeParse(minimalDefinitionInput(endpointWith({ protocl: 'mcp' }))).success,
     ).toBe(false);
+    // The removed descriptor keys are now unknown keys → rejected (fail-closed).
     expect(
       ExternalBackendDefinitionSchema.safeParse(
-        minimalDefinitionInput({ descriptorPinning: { mode: 'maxAge', seconds: 60, sha256: 'a'.repeat(64) } }),
+        minimalDefinitionInput({ descriptorPinning: { mode: 'maxAge', seconds: 60 } }),
+      ).success,
+    ).toBe(false);
+    expect(
+      ExternalBackendDefinitionSchema.safeParse(
+        minimalDefinitionInput({ trustedDescriptorSigningKeys: [] }),
       ).success,
     ).toBe(false);
   });
@@ -216,44 +199,6 @@ describe('ExternalBackendRegistrySchema', () => {
       'example-echo': { ...minimalEntry(), ...endpointWith({ protocol: 'mcp' }) },
     });
     expect(result.success).toBe(false);
-  });
-});
-
-const ConformanceManifestSchema = z.object({
-  baseDefinition: z.record(z.unknown()),
-  variants: z.array(z.object({ id: z.string(), definitionOverrides: z.record(z.unknown()) })).min(1),
-});
-
-describe('T0.4 descriptor conformance manifest', () => {
-  // Filesystem read, not an import: config/ never depends on the client subpath.
-  const manifest = ConformanceManifestSchema.parse(
-    JSON.parse(
-      readFileSync(
-        new URL('../external-backend/__fixtures__/descriptor-conformance/manifest.json', import.meta.url),
-        'utf8',
-      ),
-    ),
-  );
-  // The trust-field projection the fixtures carry (no endpoint/caller/health).
-  const TrustFieldsSchema = ExternalBackendDefinitionSchema.innerType()
-    .pick({
-      backendId: true,
-      enabled: true,
-      trustedDescriptorSigningKeys: true,
-      approvedSourceSkillRefs: true,
-      descriptorPinning: true,
-    })
-    .strict();
-
-  it('accepts the T0.4 conformance manifest baseDefinition and every variant override as trust fields', () => {
-    for (const variant of manifest.variants) {
-      // Manifest rule: definitionOverrides shallow-replace top-level baseDefinition keys.
-      const trustFields = { ...manifest.baseDefinition, ...variant.definitionOverrides };
-      expect(TrustFieldsSchema.safeParse(trustFields).success, variant.id).toBe(true);
-      // The full schema (incl. keyId/skill-ref uniqueness refinements) accepts them too.
-      const full = ExternalBackendDefinitionSchema.safeParse({ ...minimalEntry(), ...trustFields });
-      expect(full.success ? [] : full.error.issues, variant.id).toEqual([]);
-    }
   });
 });
 
