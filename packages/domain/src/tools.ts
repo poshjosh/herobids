@@ -69,6 +69,22 @@ export interface ToolContext extends TradingToolContext {
   usageBilling?: {
     recordBrowserSession(input: { durationMs: number; browserSessionId: string }): void;
   };
+  /**
+   * Per-session external-skill state for `read_skill` (Phase 4 T7). The worker
+   * wires this to the live runtime state so a skill loaded via `read_skill` stays
+   * in the prompt for the rest of the session. Absent in contexts with no
+   * external-skill support (tests, onboarding chat).
+   */
+  externalSkillSession?: {
+    /** Canonical refs of the agent's assigned external skills. */
+    assignedRefs(): string[];
+    /** Install availability recorded at agent start for a ref, if known. */
+    availabilityFor(sourceRef: string): { available: boolean; name: string; description: string; unavailableReason?: string } | undefined;
+    /** Mark a ref's body loaded for this session (included on later ticks). */
+    markLoaded(sourceRef: string, body: string): void;
+    /** Whether a ref's body is already loaded this session. */
+    isLoaded(sourceRef: string): boolean;
+  };
 }
 
 /**
@@ -125,6 +141,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'read_app_docs',
   'read_document',
   'read_file',
+  'read_skill',
   'remove_skills',
   'remove_watch',
   'resolve_bot',
@@ -242,6 +259,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   read_file:           { category: 'read-filesystem',     description: 'Read contents of a file in the agent workspace.' },
   list_files:          { category: 'read-filesystem',     description: 'List files and directories in the agent workspace.' },
   stat_file:           { category: 'read-filesystem',     description: 'Get metadata about a file/directory: exists, type, size, modification time.' },
+  read_skill:          { category: 'read-filesystem',     description: "Load an external skill's full instructions by its ref. The prompt lists external skills by name and description; read_skill loads the one you need for the rest of the session." },
 
   // write-filesystem
   write_file:          { category: 'write-filesystem',    description: 'Create or overwrite a file in the agent workspace.' },

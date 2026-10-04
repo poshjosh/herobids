@@ -1,4 +1,4 @@
-import type { CapabilityReadiness, HybridPricingIdentity, RegimeResult, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent } from '@herobids/domain';
+import type { CapabilityReadiness, HybridPricingIdentity, RegimeResult, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent, SkillDefinition } from '@herobids/domain';
 import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { ScoredSignal } from './market-intelligence/preset-scan-contracts.js';
@@ -314,6 +314,22 @@ export interface RuntimeCompositionState {
   tickCount: number;
   context: RuntimeCompositionContext;
   metrics: RuntimeSessionMetrics;
+  /**
+   * Per-session state for external skills.sh skills (Phase 4 T5/T7). Populated
+   * by the install-at-start loop and mutated by `read_skill`. Not persisted —
+   * a restart reinstalls and forgets loaded bodies (the agent reloads on demand).
+   */
+  externalSkills: ExternalSkillSessionState;
+}
+
+/**
+ * Per-session external-skill state (Phase 4). Keyed by canonical `owner/repo/skill`.
+ * `availability` is set once at agent start; `loadedBodies` grows as the agent
+ * calls `read_skill` and is injected into later ticks of the SAME session.
+ */
+export interface ExternalSkillSessionState {
+  availability: Map<string, { available: boolean; name: string; description: string; unavailableReason?: string }>;
+  loadedBodies: Map<string, string>;
 }
 
 export interface RuntimeCompositionContext {
@@ -1552,6 +1568,10 @@ export function createRuntimeCompositionState(
     context: {
       workspaceRoot: context.workspaceRoot ?? null,
     },
+    externalSkills: {
+      availability: new Map(),
+      loadedBodies: new Map(),
+    },
     metrics: {
       decisionsSubmitted: 0,
       decisionsAccepted: 0,
@@ -2214,8 +2234,49 @@ export function resolveAgentIdentityLine(skillPresetId: string | undefined, name
   return `You are ${articleFor(role)} ${role} named "${name}".`;
 }
 
+/**
+ * Render one skill's prompt block (Phase 4 T7, progressive disclosure).
+ *
+ * - A `system/*` skill (no `sourceRef`) renders exactly as before:
+ *   `## Skill: <name>\n\n<instructions>` — its body stays injected in full.
+ * - An external skills.sh skill (has `sourceRef`) is listed by `name` and
+ *   `description` plus a "use `read_skill` to load" hint. Once the agent has
+ *   loaded it this session, its installed `SKILL.md` body is appended and stays
+ *   for the rest of the session. An install that failed this session is listed
+ *   as temporarily unavailable.
+ *
+ * The surrounding prompt structure is unchanged — this only varies the per-skill
+ * block that the existing `## Skill:` map already produced.
+ */
+export function renderSkillPromptBlock(
+  skill: SkillDefinition,
+  externalSkills: ExternalSkillSessionState,
+): string {
+  if (!skill.sourceRef) {
+    return `## Skill: ${skill.name}\n\n${skill.instructions}`;
+  }
+
+  const ref = skill.sourceRef;
+  const availability = externalSkills.availability.get(ref);
+  const name = availability?.name ?? skill.name;
+  const description = availability?.description ?? skill.description;
+  const loadedBody = externalSkills.loadedBodies.get(ref);
+
+  if (loadedBody) {
+    return `## Skill: ${name}\n\n${description}\n\n${loadedBody}`;
+  }
+
+  if (availability && !availability.available) {
+    return `## Skill: ${name}\n\n${description}\n\n_This skill is temporarily unavailable this session (install failed). Its tools, if any, still work; its guidance cannot be loaded right now._`;
+  }
+
+  return `## Skill: ${name}\n\n${description}\n\nUse \`read_skill\` with ref "${ref}" to load this skill's full instructions.`;
+}
+
 export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, _toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
-  const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => `## Skill: ${skill.name}\n\n${skill.instructions}`).join('\n\n');
+  const skillInstructions = state.runtimeDescriptor.resolvedSkills
+    .map((skill) => renderSkillPromptBlock(skill, state.externalSkills))
+    .join('\n\n');
   const allowedTools = formatVisibleTools(state.runtimeDescriptor);
   const staticContext = buildContextSection(state, 'static', policy);
   const tokenBudget = state.runtimeDescriptor.guardrails.dailyTokenBudget;

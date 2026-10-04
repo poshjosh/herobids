@@ -2017,9 +2017,9 @@ describe('add_skills — external refs', () => {
     expect(typeof external[0]!.ok).toBe('boolean');
   });
 
-  it('auto-resolves file-management dependency for external skills when includeDependencies is true', async () => {
+  it('does NOT auto-add file-management for external skills (Phase 4 T6 — read_skill replaces it)', async () => {
     const publishToInbound = vi.fn(async () => undefined);
-    const reply = makeBrokerReply({ action: 'add', skillIds: ['file-management'] });
+    const reply = makeBrokerReply({ action: 'add', skillIds: [] });
     const ctx = makeCtx({
       publishToInbound,
       redis: makeRedisWithReply(reply),
@@ -2035,20 +2035,16 @@ describe('add_skills — external refs', () => {
     );
 
     expect(result.success).toBe(true);
-    // file-management should have been added to the broker call
-    expect(publishToInbound).toHaveBeenCalledOnce();
-    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
-    expect(payload.skillIds).toEqual(expect.arrayContaining(['file-management']));
-    // autoResolved should mention file-management
+    // file-management must NOT be auto-resolved for an external skill anymore.
     const data = result.data as Record<string, unknown>;
-    const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
-    expect(autoResolved).toBeDefined();
-    expect(autoResolved).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        skill: 'system/file-management',
-        requiredBy: 'owner/external-skill',
-      }),
-    ]));
+    const autoResolved = (data.autoResolved as Array<{ skill: string }> | undefined) ?? [];
+    expect(autoResolved.every((r) => r.skill !== 'system/file-management')).toBe(true);
+    // Any broker call made must not carry file-management.
+    for (const call of publishToInbound.mock.calls) {
+      const payload = call[1] as Record<string, unknown> | undefined;
+      const ids = (payload?.skillIds as string[] | undefined) ?? [];
+      expect(ids).not.toContain('file-management');
+    }
   });
 
   it('does NOT auto-resolve file-management for external skills when already assigned', async () => {

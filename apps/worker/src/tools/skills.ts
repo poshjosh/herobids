@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext, ExternalSkillInstaller, ExternalSkillInstallResult } from '@herobids/domain';
 import { AGENT_MESSAGE_TYPES, ManageAgentSkillsResultSchema, SYSTEM_SKILL_SLUGS } from '@herobids/domain';
-import { resolveSkillIdsBySlugOrId } from '@herobids/db';
+import { resolveSkillIdsBySlugOrId, upsertExternalSkill, type Database } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
 import { parseBrokerDenialReply } from './tool-errors.js';
 import { createLogger } from '../logger.js';
@@ -16,9 +16,6 @@ const SKILLS_REPLY_TIMEOUT_S = 15;
 const EXTERNAL_INSTALL_TIMEOUT_MS = 30_000;
 const EXTERNAL_LIST_TIMEOUT_MS = 15_000;
 const EXTERNAL_REMOVE_TIMEOUT_MS = 15_000;
-
-const FILE_MANAGEMENT_SKILL_ID = 'file-management';
-const FILE_MANAGEMENT_SLUG = 'system/file-management';
 
 const PROGRAMMING_SKILL_ID = 'programming';
 const PROGRAMMING_SKILL_SLUG = 'system/programming';
@@ -81,7 +78,7 @@ function runExternalSubprocess(
  * segments (owner/repo/skill), rewrite to owner/repo@skill which is the
  * format the skills CLI expects.
  */
-function normalizeExternalRef(ref: string): { ref: string; wasNormalized: boolean } {
+export function normalizeExternalRef(ref: string): { ref: string; wasNormalized: boolean } {
   const parts = ref.split('/');
   if (parts.length === 3 && !ref.includes('@')) {
     return { ref: `${parts[0]}/${parts[1]}@${parts[2]}`, wasNormalized: true };
@@ -94,7 +91,7 @@ export const npxSkillsCliInstaller: ExternalSkillInstaller = {
   install: (ref, cwd) => runExternalSubprocess(['add', ref, '--yes'], cwd, EXTERNAL_INSTALL_TIMEOUT_MS),
 };
 
-async function runExternalSkillInstall(
+export async function runExternalSkillInstall(
   ref: string,
   cwd: string,
   installer: ExternalSkillInstaller,
@@ -136,7 +133,7 @@ export function parseSkillFrontmatter(content: string): Record<string, string> {
  * - `owner/repo@skill` → `skill`
  * - `owner/repo/skill` (pre-normalization) → `skill`
  */
-function deriveSkillDirName(ref: string): string {
+export function deriveSkillDirName(ref: string): string {
   if (ref.includes('@')) {
     return ref.split('@').pop()!;
   }
@@ -159,7 +156,10 @@ export async function detectExternalSkillBashDependency(
       const content = await readFile(skillMdPath, 'utf-8');
       const frontmatter = parseSkillFrontmatter(content);
       const allowedTools = frontmatter['allowed-tools'] ?? '';
-      if (allowedTools.includes('Bash(')) {
+      // Match the `Bash` tool whether declared as a bare token (`allowed-tools:
+      // Bash`) or command-scoped (`Bash(git:*)`). A word boundary avoids false
+      // positives like `Bashful`.
+      if (/\bBash\b/.test(allowedTools)) {
         return ref;
       }
     } catch (err) {
@@ -461,14 +461,10 @@ const addSkillsTool: AgentTool = {
         }
       }
 
-      // 3. Auto-resolve file-management for external skills
-      if (includeDependencies && externalRefs.length > 0) {
-        const assignedSet = new Set(cachedAssigned.map(s => s.id));
-        if (!assignedSet.has(FILE_MANAGEMENT_SKILL_ID) && !allPlatformIds.includes(FILE_MANAGEMENT_SKILL_ID)) {
-          allPlatformIds.push(FILE_MANAGEMENT_SKILL_ID);
-          autoResolved.push({ skill: FILE_MANAGEMENT_SLUG, requiredBy: externalRefs[0]! });
-        }
-      }
+      // 3. (Phase 4 T6) No longer auto-add system/file-management for external
+      // skills — read_skill now loads the installed SKILL.md body, so an external
+      // skill does not need the file tools. file-management stays available for
+      // agents that explicitly want to browse bundled references/.
 
       // 4. Execute platform add + external installs in parallel
       const brokerPromise = allPlatformIds.length > 0
@@ -559,9 +555,49 @@ const addSkillsTool: AgentTool = {
         }
       }
 
+      // 5c. (Phase 4 T6) Record each successfully-installed external skill as a
+      // metadata-only DB row and ASSIGN it via the broker, so it appears in
+      // resolvedSkills (prompt listing + read_skill + hot-reload). Metadata comes
+      // from the just-installed SKILL.md frontmatter.
+      let externalAssignResult: { added: string[]; warnings: string[] } | undefined;
+      const successfulExternal = externalResults.filter(r => r.ok).map(r => r.ref);
+      if (successfulExternal.length > 0 && ctx.db) {
+        const externalSkillIds: string[] = [];
+        try {
+          const { getWorkspacePaths } = await import('./workspace.js');
+          const cwd = getWorkspacePaths(ctx.agentId).root;
+          for (const ref of successfulExternal) {
+            let name = deriveSkillDirName(normalizeExternalRef(ref).ref);
+            let description = '';
+            try {
+              const dirName = deriveSkillDirName(normalizeExternalRef(ref).ref);
+              const content = await readFile(join(cwd, '.agents', 'skills', dirName, 'SKILL.md'), 'utf-8');
+              const fm = parseSkillFrontmatter(content);
+              name = fm['name'] ?? name;
+              description = fm['description'] ?? '';
+            } catch { /* frontmatter optional — fall back to the ref segment */ }
+            const row = await upsertExternalSkill(ctx.db as Database, { sourceRef: ref, name, description, lastInstalledAt: new Date() });
+            externalSkillIds.push(row.skillId);
+          }
+        } catch (err) {
+          logger.warn({ err, agentId: ctx.agentId }, 'Failed to upsert external skill metadata rows');
+        }
+        if (externalSkillIds.length > 0) {
+          try {
+            const assignResult = await sendBrokerSkillMutation('add', externalSkillIds, ctx);
+            if (assignResult.success && assignResult._brokerResult) {
+              externalAssignResult = { added: assignResult._brokerResult.skillIds, warnings: assignResult._brokerResult.warnings };
+            }
+          } catch (err) {
+            logger.warn({ err, agentId: ctx.agentId }, 'Failed to assign external skills via broker');
+          }
+        }
+      }
+
       // 6. Hot-reload after platform changes
       const hadPlatformAdds = (platformResult && platformResult.added.length > 0)
-        || (postInstallBrokerResult && postInstallBrokerResult.added.length > 0);
+        || (postInstallBrokerResult && postInstallBrokerResult.added.length > 0)
+        || (externalAssignResult && externalAssignResult.added.length > 0);
       let activeSkills: string[] | undefined;
       if (hadPlatformAdds && ctx.onSkillsChanged) {
         try {

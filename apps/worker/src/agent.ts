@@ -76,6 +76,8 @@ import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js'
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
 import { getWorkspacePaths } from './tools/workspace.js';
+import { installExternalSkillsAtStart, type InstallableExternalSkill } from './external-skill-startup.js';
+import { npxSkillsCliInstaller } from './tools/skills.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults, type OperatorModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
@@ -1982,6 +1984,20 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     usageBilling: usageBillingService
       ? { recordBrowserSession: usageBillingService.recordBrowserSession.bind(usageBillingService) }
       : undefined,
+    // Phase 4 T7: progressive disclosure for external skills. Reads/writes the
+    // live per-session state on runtimeState so a skill loaded via read_skill
+    // stays in the prompt for the rest of the session.
+    externalSkillSession: {
+      assignedRefs: () =>
+        runtimeState.runtimeDescriptor.resolvedSkills
+          .map((s) => s.sourceRef)
+          .filter((ref): ref is string => typeof ref === 'string'),
+      availabilityFor: (sourceRef: string) => runtimeState.externalSkills.availability.get(sourceRef),
+      markLoaded: (sourceRef: string, body: string) => {
+        runtimeState.externalSkills.loadedBodies.set(sourceRef, body);
+      },
+      isLoaded: (sourceRef: string) => runtimeState.externalSkills.loadedBodies.has(sourceRef),
+    },
   };
 
   try {
@@ -3951,6 +3967,31 @@ async function main(): Promise<void> {
   sandboxEnforcer.registerSession(SESSION_ID!);
 
   await sendHeartbeat('starting');
+
+  // Phase 4 T5: install every assigned external skills.sh skill into the
+  // workspace, refreshing name/description from frontmatter and recording
+  // per-session availability for progressive disclosure (T7). Never throws into
+  // agent start — a failed install leaves the skill listed-but-unavailable.
+  try {
+    const externalSkillsToInstall: InstallableExternalSkill[] = runtimeState.runtimeDescriptor.resolvedSkills
+      .filter((s): s is typeof s & { sourceRef: string } => typeof s.sourceRef === 'string')
+      .map((s) => ({ id: s.id, name: s.name, description: s.description, sourceRef: s.sourceRef }));
+    if (externalSkillsToInstall.length > 0) {
+      const availability = await installExternalSkillsAtStart({
+        externalSkills: externalSkillsToInstall,
+        workspaceRoot: workspacePaths.root,
+        installer: npxSkillsCliInstaller,
+        db: db ?? undefined,
+      });
+      runtimeState.externalSkills.availability = availability;
+      logger.info(
+        { installed: [...availability.values()].filter((s) => s.available).length, total: availability.size },
+        'External skills installed at agent start',
+      );
+    }
+  } catch (err) {
+    logger.warn({ err }, 'External skill install loop failed — continuing without external skill bodies');
+  }
 
   await new Promise<void>((resolve) => setTimeout(resolve, 1000));
   await sendHeartbeat('ready');

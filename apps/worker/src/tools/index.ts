@@ -22,6 +22,7 @@ import { changeStrategyPresetTool } from './change-strategy-preset.js';
 import { assessStrategyPresetTool } from './assess-strategy-preset.js';
 import { platformDocsTools } from './platform-docs.js';
 import { skillTools } from './skills.js';
+import { readSkillTool } from './read-skill.js';
 import { createBrowserTools } from './browser.js';
 import { httpClientTools } from './http-client.js';
 import { shellTools } from './shell.js';
@@ -114,6 +115,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...emailTools,
     ...platformDocsTools,
     ...skillTools,
+    readSkillTool,
     assessStrategyPresetTool,
     changeStrategyPresetTool,
   ];

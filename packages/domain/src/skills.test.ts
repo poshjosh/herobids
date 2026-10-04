@@ -40,7 +40,6 @@ describe('BASE_SKILL', () => {
 
   it('instructions describe slug-based skill addressing', () => {
     expect(BASE_SKILL.instructions).toContain('Skills are identified by their slug');
-    expect(BASE_SKILL.instructions).toContain('system/trading');
     expect(BASE_SKILL.instructions).toContain('system/programming');
   });
 
@@ -49,11 +48,12 @@ describe('BASE_SKILL', () => {
     expect(BASE_SKILL.instructions).toContain('includeDependencies');
   });
 
-  it('instructions describe external skill support', () => {
+  it('instructions describe external skill support via read_skill (Phase 4 progressive disclosure)', () => {
     expect(BASE_SKILL.instructions).toContain('external skills');
     expect(BASE_SKILL.instructions).toContain('twostraws/swiftui-agent-skill');
-    expect(BASE_SKILL.instructions).toContain('the platform installs them');
-    expect(BASE_SKILL.instructions).toContain('file-management skill');
+    expect(BASE_SKILL.instructions).toContain('read_skill');
+    // file-management is no longer auto-added for external skills (T6).
+    expect(BASE_SKILL.requiredTools).toContain('read_skill');
   });
 
   it('instructions mention add by slug and drop by slug', () => {
