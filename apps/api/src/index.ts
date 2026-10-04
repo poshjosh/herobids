@@ -45,9 +45,9 @@ import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig, resolveConfiguredExternalBackend } from './config.js';
 import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, ExternalSkillProviderHttp, findExternalBackend } from '@herobids/domain';
-import { buildExternalBackendClientConfig, createExternalBackendClient } from '@herobids/domain/external-backend';
+import { buildExternalBackendClientConfig, createExternalBackendClient, createLoggerMetricsSink } from '@herobids/domain/external-backend';
 import { TradingProfileReconciliationSaga } from './agents/trading-profile-reconciliation-saga.js';
-import { createFastifyLogger } from './logger.js';
+import { createFastifyLogger, createLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as os from 'node:os';
@@ -196,8 +196,14 @@ const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
 // Undefined when that entry cannot be resolved (e.g. no HMAC secret) → the write
 // endpoints return a typed precondition; NO silent fallback to the lifecycle queue.
 const tradingBackend = resolveConfiguredExternalBackend(appConfig, appConfig.tradingBackendId);
+// One metrics sink per api process. metrics: see docs/tech/observability.md
+const externalBackendMetricsSink = createLoggerMetricsSink(createLogger('external-backend-metrics'));
 const tradingBackendClient = tradingBackend.ok
-  ? createExternalBackendClient(buildExternalBackendClientConfig(tradingBackend.data.definition, tradingBackend.data.hmacSecret))
+  ? createExternalBackendClient(
+    buildExternalBackendClientConfig(tradingBackend.data.definition, tradingBackend.data.hmacSecret, {
+      metrics: externalBackendMetricsSink,
+    }),
+  )
   : undefined;
 const tradingBackendTimeoutMs =
   findExternalBackend(appConfig.externalBackends, appConfig.tradingBackendId)?.endpoint.requestTimeoutMs

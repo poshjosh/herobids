@@ -35,7 +35,7 @@ import {
   NomadClient,
   buildServiceRegistry,
 } from './agents/index.js';
-import { buildExternalBackendClientConfig, createExternalBackendClient } from '@herobids/domain/external-backend';
+import { buildExternalBackendClientConfig, createExternalBackendClient, createLoggerMetricsSink } from '@herobids/domain/external-backend';
 import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createExternalBackendWriteBoundary } from './external-backend/write-adapter.js';
 import { createExternalBackendReadBoundary } from './external-backend/read-adapter.js';
@@ -77,6 +77,10 @@ const TELEGRAM_AGENT_COMMANDS: Array<{ command: string; description: string }> =
 ];
 
 const logger = createLogger('herobids-worker');
+
+// One metrics sink per worker process, reused across every external-backend
+// client built below. metrics: see docs/tech/observability.md
+const externalBackendMetricsSink = createLoggerMetricsSink(createLogger('external-backend-metrics'));
 
 // Load operator config: default.yaml → {NODE_ENV}.yaml → env var overrides
 const appConfig = loadConfig();
@@ -445,7 +449,9 @@ const sideEffectBoundary = (() => {
     return undefined;
   }
   const { definition, hmacSecret } = tradingBackend.data;
-  const client = createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
+  const client = createExternalBackendClient(
+    buildExternalBackendClientConfig(definition, hmacSecret, { metrics: externalBackendMetricsSink }),
+  );
   logger.info({ baseUrl: definition.endpoint.baseUrl }, 'Traderton side-effecting boundary enabled — submit_decision + bot lifecycle route over REST');
   return createExternalBackendWriteBoundary(client);
 })();
@@ -467,7 +473,9 @@ const systemReadBoundary = (() => {
     return undefined;
   }
   const { definition, hmacSecret } = tradingBackend.data;
-  const client = createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
+  const client = createExternalBackendClient(
+    buildExternalBackendClientConfig(definition, hmacSecret, { metrics: externalBackendMetricsSink }),
+  );
   const subject: ExternalBackendSubject = {
     ownerId: definition.caller.consumerId,
     actor: { type: 'system', id: 'market-intel' },
@@ -495,7 +503,9 @@ const alertDispatcherFeed = (() => {
     return undefined;
   }
   const { definition, hmacSecret } = tradingBackend.data;
-  const client = createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
+  const client = createExternalBackendClient(
+    buildExternalBackendClientConfig(definition, hmacSecret, { metrics: externalBackendMetricsSink }),
+  );
   const subject: ExternalBackendSubject = {
     ownerId: definition.caller.consumerId,
     actor: { type: 'system', id: 'alert-dispatcher' },
@@ -781,7 +791,9 @@ const evaluationReadClient = (() => {
     return undefined;
   }
   const { definition, hmacSecret } = tradingBackend.data;
-  return createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
+  return createExternalBackendClient(
+    buildExternalBackendClientConfig(definition, hmacSecret, { metrics: externalBackendMetricsSink }),
+  );
 })();
 
 // Start evaluation runtime (BullMQ consumer for agent evaluation jobs)

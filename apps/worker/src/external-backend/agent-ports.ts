@@ -9,6 +9,7 @@ import { ResolvedExternalBackendSchema, type ResolvedExternalBackend } from '@he
 import {
   buildExternalBackendClientConfig,
   createExternalBackendClient,
+  createLoggerMetricsSink,
   type ExternalBackendSubject,
 } from '@herobids/domain/external-backend';
 import { createExternalBackendReadBoundary, type ExternalBackendReadBoundary } from './read-adapter.js';
@@ -84,7 +85,11 @@ export function buildAgentExternalBackendPorts(input: AgentExternalBackendPortsI
   }
   const { definition, hmacSecret } = resolved;
   const subject: ExternalBackendSubject = { ownerId, actor: { type: 'agent', id: agentId } };
-  const client = createExternalBackendClient(buildExternalBackendClientConfig(definition, hmacSecret));
+  // metrics: reuse the injected ports logger (the agent runs in its own
+  // container). See docs/tech/observability.md.
+  const client = createExternalBackendClient(
+    buildExternalBackendClientConfig(definition, hmacSecret, { metrics: createLoggerMetricsSink(logger) }),
+  );
   logger.info(
     { backendId: definition.backendId, baseUrl: definition.endpoint.baseUrl },
     'Traderton read + write boundaries enabled — read tools + risk-limit writes route over REST',

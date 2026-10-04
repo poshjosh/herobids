@@ -19,6 +19,7 @@ describe('buildExternalBackendClientConfig', () => {
       protocol: 'rest',
       toolProtocolOverrides: undefined,
       mcpPath: undefined,
+      backendId: 'example-echo',
     });
   });
 

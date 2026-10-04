@@ -125,7 +125,7 @@ fall back to (a). Resolve during implementation; default to (b).
   - Under (b): new file `packages/domain/src/external-backend/logger-metrics-sink.ts`,
     exported from the subpath barrel; drop the `apps/worker` adapter file above.
 
-### 4. Wire the sink at the composition sites (apps) — PENDING
+### 4. Wire the sink at the composition sites (apps) — DONE
 
 Pass `metrics: createLoggerMetricsSink(createLogger('external-backend-metrics'))`
 into each `createExternalBackendClient(buildExternalBackendClientConfig(...))`
@@ -280,3 +280,22 @@ Non-blocking (LOW) review findings, grouped by work item. None are CRITICAL/HIGH
 - [LOW] No sink-level test for `in_progress`/`transport_error` round-trip — the
   adapter is outcome-agnostic and the client layer (Item 2) has full outcome
   coverage. No action.
+
+### Item 4 — Wire the sink at the composition sites
+- Chose the recommended uniform approach: `buildExternalBackendClientConfig`
+  gained an optional 3rd `options?: { metrics? }` arg; the key is omitted when
+  absent (no-op default path preserved). Wired 6 sites: api `tradingBackendClient`;
+  worker `sideEffectBoundary`, `systemReadBoundary`, `alertDispatcherFeed`,
+  `evaluationReadClient` (one shared per-process sink); agent-ports (reuses its
+  injected per-container logger).
+- [RESOLVED] [was HIGH] Three config parity tests
+  (`client-config.test.ts`, worker `config.test.ts`, api `config.test.ts`) were
+  RED — they `.toEqual(...)` the exact `buildExternalBackendClientConfig` shape
+  and had not been updated when `backendId` landed in Item 2 (commit 3d34004e;
+  `mcpPath`/`toolProtocolOverrides` even earlier). Fixed by adding the missing
+  expected fields. Root cause: Item 2's Implementer ran lint + client tests but
+  not these parity suites, and the Item 2 review did not run the full suite. No
+  production behaviour was wrong.
+- [LOW] The two app parity tests use full `.toEqual(...)` shape and are brittle;
+  consider `.toMatchObject(...)` in future.
+- [LOW] Minor comment-accuracy nit in `logger-metrics-sink.ts` (noted, no action).

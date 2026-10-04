@@ -4,7 +4,7 @@ Rules and guidelines for AI agents working on this herobids codebase.
 
 ## Project Overview
 
-OpenAIdom is an AI agent platform — describe what you want, and an agent gets it for you. Our core skills are crypto trading and personal assistance.
+OpenAIdom is an AI agent platform — describe what you want, and an agent gets it for you. Choose from over a million skills for your agents.
 
 Tech stack: TypeScript (strict), Node.js ≥22, ESM modules, pnpm monorepo, PostgreSQL + Drizzle ORM, Redis, Zod validation, vitest.
 
@@ -85,7 +85,7 @@ See `docs/best-practices/configuration.md` for full details.
 ### Actor Trading Model
 
 - The system defines four actor types: `agent`, `bot`, `user`, `system`.
-- Agents can trade directly via `submit_decision` — they do NOT need to create a bot first.
+- Agents can add traderton/crypto-trading skill to trade crypto. Agents who have that skill can trade directly via `submit_decision` — they do NOT need to create a bot first.
 - Bots are optional tools for agents (and users), useful for automated trading, strategy testing, parallel execution, etc.
 - The `DecisionIntakeResolver` must resolve execution context for any actor that submits a decision.
 - Execution context resolution varies by actor type:
@@ -98,9 +98,6 @@ See `docs/best-practices/configuration.md` for full details.
 ```
 packages/
   domain/      # Types, ports, value objects, config schemas (zero deps)
-  engine/      # Core trading logic: planner, risk gate, executors, position tracker
-  strategy/    # Strategy implementations (momentum, etc.)
-  venues/      # Venue adapters (Hyperliquid, Jupiter), stream pool, mark sources
   db/          # Drizzle schema, migrations, repositories
 
 apps/
@@ -116,7 +113,7 @@ Package dependency direction: `domain` ← `engine` ← `strategy` / `venues` / 
 
 ## Agent Mode Purity
 
-When an agent is running, the agent's goal text and any explicit creator-specified constraints are the **source of trading policy**. Do not inject hidden constraints the creator did not ask for.
+When an agent is running, the agent's goal text and any explicit creator-specified constraints are the **source of policy**. Do not inject hidden constraints the creator did not ask for.
 
 | Category | Examples | Rule |
 |---|---|---|

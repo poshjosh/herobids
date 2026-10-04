@@ -286,6 +286,9 @@ describe('loadConfig external backend registry', () => {
       hmacSecret: 'parity-secret',
       requestTimeoutMs: 10000,
       protocol: 'rest',
+      backendId: 'traderton',
+      toolProtocolOverrides: undefined,
+      mcpPath: undefined,
     });
   });
 });
