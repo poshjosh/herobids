@@ -1,7 +1,7 @@
 # Phase 4 — ENTRYPOINT (read first, every session)
 
 **Status:** living. **Created:** 2026-10-03. **Not started.**
-**Read in order:** ENTRYPOINT → [INVARIANTS](./INVARIANTS.md) (frozen exit checks) → [TASKS](./TASKS.md).
+**Read in order:** ENTRYPOINT → [INVARIANTS](./INVARIANTS.md) (frozen exit checks) → [TASKS](./TASKS.md) → [HANDOVER](./HANDOVER.md) (where the last session stopped) → [ESCALATIONS](./ESCALATIONS.md). At the end, fill in [CLOSEOUT](./CLOSEOUT.md).
 
 **Governing records (read them; don't duplicate them):**
 - Program charter `../../../09/24/000-program/ENTRYPOINT.md` §1, objective and invariants.
@@ -22,11 +22,11 @@ The program's strategic objective still governs: herobids is a generic agent hos
 
 **Every check in [INVARIANTS.md](./INVARIANTS.md) passes.** There is no partial credit.
 - The checks are **frozen**. Only the operator may change them.
-- **Stop rule:** if any check cannot pass, stop and report to the operator: the check, why it fails, and the options. Do **not**:
+- **Failing-check rule (never weaken, never stop):** if a check cannot pass, first route *how to meet it* to a fresh Contemplator (§8). If it still cannot pass, keep working on everything else, and report it in [CLOSEOUT](./CLOSEOUT.md) as **not done**, with what is satisfied, what remains, and the evidence for each. Do **not**:
   - keep code to work around the check
-  - weaken the check
-  - add a deferral note
-  - mark the phase done
+  - weaken or reinterpret the check
+  - record a deferral as if it were completion
+  - declare the phase done while any check fails
 
 ## 3. Design in one screen (from ADR 017)
 
@@ -74,16 +74,15 @@ The program's strategic objective still governs: herobids is a generic agent hos
 | traderton | Author and commit on a branch | Merging to `main` triggers the image build (`.github/workflows/build-push.yml`) |
 | traderton-skills | Author and commit on a branch | A push to `main` reaches every agent on its next start (D23). Merge only with operator approval |
 
-**Gated (operator only):**
-- enabling Traderton's MCP route in staging or production
-- any staging change (staging will be torn down and restarted)
-- merges and pushes
+**Gated (operator only), none of which Phase 4 needs mid-run:**
+- merges and pushes to `main` in any repo. This is the **only** end-of-run stop: finish on branches, fill in CLOSEOUT, report.
+- enabling Traderton's MCP route in staging or production, and any staging change. Phase 4 needs neither. Enabling the route **locally** (stack scripts, tests) is not an infrastructure change and is autonomous (program DECISIONS, open question "Does the MCP route need operator approval?").
 
 ## 6. Top risks (each mitigated by a task or exit check)
 
 | Risk | Mitigation |
 |---|---|
-| **Goalpost drift:** done declared with built-ins or copied text still present | Frozen EC-1..EC-4; stop rule |
+| **Goalpost drift:** done declared with built-ins or copied text still present | Frozen EC-1..EC-4; failing-check rule (§2); CLOSEOUT exit-check table |
 | **Readiness, guard, tick-work or `GET /capabilities` regress** once `SKILL.md`-driven families replace the TS ones | T8, EC-9 |
 | A bad push to a skills repo reaches agents on the next start | Accepted (D23). Rollback = revert in the skill repo. Traderton merges to `traderton-skills` `main` need review |
 | Traderton unreachable at agent start → approved skills have no tools | Accepted degradation (D26); EC-8 asserts no crash |
@@ -106,3 +105,32 @@ The program's strategic objective still governs: herobids is a generic agent hos
 | F-8 | Optional: progressive disclosure for `system/*` skills |
 
 **Out of scope:** Step 15 module moves; the Step 16 staging proof; the Skills page "All" tab ordering. (Picker and `search_skills` ordering **are in scope**: T9b, EC-17.)
+
+## 8. How to operate (autonomy contract)
+
+This follows the program's own rules: charter ENTRYPOINT §5 (operating loop) and §6 (decision trigger test), plus the DECISIONS "Contemplator handoff protocol". **Read those sections; they govern. This section only applies them to Phase 4.**
+
+**Run start to finish without pausing.** Work through TASKS from the `Current cursor:` line. Do not stop between tasks or ask for confirmation.
+
+**Decisions (charter §6):**
+- **Decide inline** whenever you can state the deciding reason in one sentence and it survives a check against the charter §4 invariants. Log it as a row in the TASKS decisions log. Mechanical choices (names, helpers, test layout, commit splits) need no record.
+- **Route to a fresh Contemplator** only when a choice is both significant (it could degrade the ownership boundary, change externally visible behaviour, or contradict a recorded decision or invariant) **and** genuinely contested (no one-sentence deciding reason). Use the DECISIONS handoff brief. Apply the ruling and record it.
+- **Operator ratification** is needed only if a ruling would violate an invariant or contradict a recorded decision. Do not wait for it: log it in [ESCALATIONS](./ESCALATIONS.md), continue with work that doesn't depend on it, and list it in CLOSEOUT.
+
+**Facts that contradict the design** (for example, T0.7 finds a tool Traderton lacks): apply the pre-ruled cases in the task. If none applies, decide or route as above. Never stop for this.
+
+**Failing exit checks:** the §2 failing-check rule. Never weaken, never stop, report as not done.
+
+**The only stop is at the end:** merges and pushes need the operator (§5). Finish on branches, fill in CLOSEOUT.md, update HANDOVER.md, and report.
+
+**Every session:**
+- At the start, read HANDOVER.md and the TASKS cursor.
+- At the end, update HANDOVER.md with: done (commit SHAs per repo), in progress, next action, failing checks. Update the cursor.
+
+**Baseline before editing:** record which suites already fail on the untouched branches, so pre-existing failures are not mistaken for regressions. How is your choice. Record the result in HANDOVER.md.
+
+**Recording open items (charter §5 "record"):** anything left open names **both** what remains **and** what is already satisfied, each with evidence.
+
+**Repo rules still apply:** `herobids/AGENTS.md`, `traderton/AGENTS.md`, `docs/best-practices/README.md` and what it points to (configuration, `.env.example` twins). Run `pnpm lint` and `pnpm build` in each repo you change.
+
+**Line numbers in this package are hints.** Re-locate code by symbol before editing.

@@ -2,7 +2,7 @@
 
 **Current cursor:** T0.1 (T0.4–T0.6 ruled; not started otherwise). **Branches:** create `phase4-skill-replacement` in herobids, traderton and traderton-skills.
 
-Each task lists its exit checks from [INVARIANTS.md](./INVARIANTS.md). A task is done only when its checks pass. Work found that fits no task: stop and ask the operator for a home (ENTRYPOINT §2). Never defer an item without a named home.
+Each task lists its exit checks from [INVARIANTS.md](./INVARIANTS.md). A task is done only when its checks pass. Work found that fits no task: decide or route it per ENTRYPOINT §8, give it a home (an existing task, a new task appended here, or a CLOSEOUT row), and continue. Never defer an item without a named home.
 
 ## T0 — Pre-reads and small rulings (before any code)
 
@@ -14,6 +14,7 @@ Each task lists its exit checks from [INVARIANTS.md](./INVARIANTS.md). A task is
 | T0.4 | **Ruling:** the neutral `_meta` key for a tool's skill ref(s). It must not be herobids-specific (Traderton 005 non-goal 2). Proposal: a key in the skills.sh / Agent Skills ref vocabulary, e.g. `"skills/refs": ["traderton/skills/crypto-trading"]` | ✅ Ruled: see P4-1 |
 | T0.5 | ✅ **Ruled (operator, 2026-10-03):** the DB stores the assignment only. The full skill folder, including bundled files, is installed into the workspace at every agent start | — |
 | T0.6 | ✅ **Ruled (operator, 2026-10-03):** keep `npx skills add`, run in the worker at agent start. Telemetry and audit calls are acceptable | — |
+| T0.7 | **Tool-name parity check.** List every tool the three current trading skills expose: the `requiredTools` of `TRADING_SKILL`, `BOT_MANAGEMENT_SKILL` and `RISK_MONITORING_SKILL` in `packages/domain/src/skills.ts`, minus base-skill tools such as `send_message` and `publish_artifact`. For each, check whether Traderton's tool registry (`traderton/packages/worker/src/tools/`) has a tool with the **same name**. Check the broker-routed ones especially: `submit_decision` (`DECISION_SUBMIT`), `create_bot`/`stop_bot`/`start_bot`/`adjust_bot_config` (`MANAGE_BOT`), and the strategy-preset tools. Visible tools = Traderton `tools/list` ∩ herobids registry, so a missing name disappears. **Rule: the agent-facing name must be a Traderton tool name (Traderton owns the tool contract).** Apply these pre-ruled cases (operator, 2026-10-03), with no stop:<br>**1. Same operation, different name:** Traderton's name wins. Rename the herobids tool, update the `SKILL.md` text in traderton-skills, and record an IV.<br>**2. Convenience tool composed only of other Traderton tools** (e.g. `resolve_bot`, `resolve_watch`): implement it in Traderton and list it there.<br>**3. Traderton executes it and herobids adds platform UX** (e.g. `submit_decision` dry run and approval mode): Traderton lists it under that name; herobids keeps its wrapper unchanged.<br>**4. Logic lives only in herobids and isn't platform UX** (e.g. possibly the strategy-preset tools): if moving it to Traderton is **small**, move it. If it is **large** (needs new Traderton storage, a new contract, or a broker re-route), **do not move it and do not stop.** It will be invisible to agents after Phase 4 (accepted by the operator, 2026-10-03). Record it in CLOSEOUT "Tools not moved" with its impact.<br>"Small" vs "large" is decided inline (one-sentence reason), or by a Contemplator if contested | Table in this file, plus CLOSEOUT rows for case 4-large |
 
 ## T1 — Records ✅ (2026-10-03)
 
@@ -22,9 +23,10 @@ D21–D29 and ADR 017 written. Charter §2 and PROGRESS updated, Step 13 re-reco
 ## T2 — traderton: MCP `tools/list` from its own registry (EC-13, part of EC-4)
 
 1. Build `tools/list` from Traderton's tool registry: real `name`, `description` and `inputSchema`.
-2. Add a Traderton-authored map from skill ref to tool names, and emit it in each tool's `_meta` (T0.4 key).
+2. Add a Traderton-authored map from skill ref to tool names. Keep it in **one** Traderton module next to the MCP surface (for example `packages/boundary/src/mcp/skill-tool-map.ts`), and emit it in each tool's `_meta` under the P4-1 key. The three refs and their tool sets start as the T0.7 table.
 3. Remove `descriptor-tools.ts`, the descriptor path config (`BOUNDARY_MCP_DESCRIPTOR_PATH`, plus its `.env*.example` entries) and the descriptor conformance fixtures and tests.
-4. Keep the MCP route off by default. Enabling it in staging or production is an operator step.
+4. Keep the MCP route off by default (`BOUNDARY_MCP_ENABLED=false` in `.env.example` and `infra/hetzner/.env.environment.example`). Enabling it in staging or production is an operator step.
+5. **Local stack:** the herobids local stack scripts that start Traderton (`herobids/scripts/shell/run/reset-and-run-xstack.sh`, `boundary.sh`, and the boundary that `run-all-tests.sh` brings up) must start it with `BOUNDARY_MCP_ENABLED=true`. Otherwise EC-9 cannot pass locally. Herobids config: uncomment `endpoint.mcpPath: /internal/v1/mcp` in `config/default.yaml` for discovery, and keep `protocol: rest` for calls (D27).
 
 ## T3 — traderton-skills: frontmatter to spec (EC-14)
 
@@ -43,14 +45,14 @@ Keep `name` and `description`. Move `tags` into `metadata` if they're still want
 - At every agent start, for each assigned external skill, run `npx skills add <ref> --yes` in the workspace through the existing `externalSkillInstaller` port (P3-4).
 - Then read the installed `SKILL.md` frontmatter to refresh `name` and `description`.
 - Sequential installs, as today; each failure is a `Result`. On failure, mark the skill unavailable for this session and log a warning. Never throw into agent start.
-- Tests use a local git fixture repo through the **real** CLI where it accepts a local or `file://` source. If it cannot, stop and escalate (EC-7 is the dependency proof).
+- Tests use a local git fixture repo through the **real** CLI where it accepts a local or `file://` source. This is confirmed to work (P4-2).
 
 ## T6 — One lifecycle for all external skills (EC-5, EC-6, EC-7)
 
 - `add_skills` for any external ref: install now (so the agent can use the skill this session), upsert the metadata row, and assign via the broker.
 - `remove_skills`: unassign (and `npx skills remove` in the live workspace).
 - `list_skills`: show the install time (and the commit where known).
-- Presets and the API assign refs at agent creation. The API records the assignment only; the name and description come from the skills.sh catalog provider, and installation happens at the agent's first start (T5).
+- Presets and the API assign refs at agent creation. The API records the assignment only; the name and description come from the skills.sh catalog provider, and installation happens at the agent's first start (T5). **If the catalog is unreachable or doesn't know the ref:** record the assignment with `name` = the last ref segment and an empty description. The first successful install (T5) fills them in from the frontmatter. Never block agent creation.
 - Stop auto-adding `system/file-management` for external skills, because `read_skill` replaces it for `SKILL.md`. Keep it available for agents that need bundled `references/`.
   - Keep the bash-dependency detection, but fix it to match `allowed-tools: Bash` without `(`.
 
@@ -58,7 +60,7 @@ Keep `name` and `description`. Move `tags` into `metadata` if they're still want
 
 - The prompt lists each assigned external skill's `name` and `description`, plus "use `read_skill` to load".
 - A new `read_skill` tool, in snake_case, returns the installed `SKILL.md` body from the workspace (no network), or "temporarily unavailable" if this session's install failed. Register it in `TOOL_CATALOG`, the known names and `BASE_SKILL`.
-- Track loaded skills per session in runtime state; loaded bodies are included on later ticks.
+- Track loaded skills per **session**, which means one agent runtime from start to stop (one container lifetime). Loaded bodies are included on later ticks. A restart forgets them, and the agent reloads with `read_skill` as needed. Do not persist loaded state to the DB.
 - Update the `BASE_SKILL` instructions (they currently describe the workspace and file-management flow).
 - `system/*` skills stay injected.
 
@@ -98,7 +100,16 @@ Keep `name` and `description`. Move `tags` into `metadata` if they're still want
 
 ## T10 — Deletions (EC-1, EC-2, EC-4)
 
-Delete:
+**Known descriptor machinery to delete or rewrite** (from a 2026-10-03 grep; confirm with EC-4):
+- herobids domain: `packages/domain/src/external-backend/descriptor.ts`, `descriptor-conformance.test.ts`, `__fixtures__/descriptor-conformance/`, and descriptor exports in that folder's `index.ts`. **Keep** `invocation-signing-vectors.json`, `sign.ts` and the client/transport code: those are HMAC request signing, not descriptor signing.
+- herobids worker: `apps/worker/src/external-backend/{apply-tool-visibility,skill-tool-resolver,descriptor-tool-visibility,file-descriptor-source}.ts` and their tests, `skill-publication-e2e.test.ts`, `__fixtures__/traderton-skill-source/`.
+- herobids scripts and config: `scripts/ts/generate-dev-descriptor.ts`, `scripts/ts/generate-descriptor-conformance-fixtures.ts`, `config/external-backends/`, and `trustedDescriptorSigningKeys` / `descriptorPinning` in `config/default.yaml` and the config schema.
+- traderton: `packages/boundary/src/mcp/descriptor-tools.ts` and its test, `descriptor-conformance.test.ts` and its fixtures, descriptor parts of `surface-config.ts` (+ test), `mcp.sdk.test.ts` and `bin.ts`, and `BOUNDARY_MCP_DESCRIPTOR_PATH` in both `.env*.example` files.
+- The herobids `--e2e` "Cross-stack transport parity (rest + mcp)" tier (`apps/worker/src/__tests__/xstack/transport-parity.xstack.test.ts`) does not reference the descriptor by grep. Keep it, and re-run it; if it breaks, fix it so it keeps passing.
+- Many other files mention "descriptor" because of `runtimeDescriptor` / `agent-runtime-descriptor`. That is unrelated and stays.
+
+**Also delete:**
+
 - `TRADING_SKILL`, `BOT_MANAGEMENT_SKILL`, `RISK_MONITORING_SKILL` and `BUILTIN_TRADING_SOURCE_REFS`
 - the trading entries in `TOOL_OWNER_OVERRIDES` (or the mechanism, if unused)
 - `SkillDefinition.sourceRef`, if now unused
@@ -117,7 +128,7 @@ Delete:
 
 ## T12 — Intentional divergences (EC-16)
 
-Record each in the program PROGRESS evidence section:
+Record each as a row in the program `PROGRESS.md` under `## Steps completed with evidence`, using this format (one per IV, after the work lands): `**IV-x (Phase 4):** <change>. Reason: <why>. Evidence: <commit SHA / test name>. Accepted: operator, 2026-10-03 (D29).`
 
 | IV | Change |
 |---|---|
@@ -132,7 +143,7 @@ Record each in the program PROGRESS evidence section:
 
 - Run every EC. Run all suites, the agent trade test and the browser UAT.
 - Update PROGRESS rows 13 and 14, and this cursor.
-- Report to the operator, who decides on the merge.
+- Fill in CLOSEOUT.md: exit-check table, tools not moved, T0.7 outcomes, escalations, Contemplator rulings, IVs, branches. Then report to the operator, who decides on the merges.
 
 ## Phase 4 decisions log (append here)
 

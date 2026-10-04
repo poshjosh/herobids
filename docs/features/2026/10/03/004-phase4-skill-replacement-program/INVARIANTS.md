@@ -1,6 +1,6 @@
 # Phase 4 — Frozen exit checks
 
-**Frozen on 2026-10-03.** Only the operator may change a check. Phase 4 is done only when **every** check passes. (EC-17 was added by the operator on 2026-10-03.) See ENTRYPOINT §2 for the stop rule.
+**Frozen on 2026-10-03.** Only the operator may change a check. Phase 4 is done only when **every** check passes. A check that cannot pass is never weakened and never stops the run; it is reported as not done in CLOSEOUT (ENTRYPOINT §2). (EC-17 was added by the operator on 2026-10-03.) See ENTRYPOINT §2 for the stop rule.
 
 **Grep scope** (unless stated otherwise): herobids `apps packages scripts config`, excluding `node_modules`, `dist` and `**/*.d.ts`. `docs/` is history and is excluded.
 

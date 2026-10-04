@@ -13,7 +13,7 @@
 
 1. **State "done" as a behaviour of the system, not an artifact.** "Herobids depends on `SKILL.md`" is checked by editing the file and seeing the agent change. "The file is published" is not that check.
 2. **Freeze exit checks before implementing.** Only the operator may change them. A partially met check means not done.
-3. **A blocker is not permission to keep code.** If something can't be removed or completed, stop and escalate. Don't keep it, add a deferral note, or mark the step done.
+3. **A blocker is not permission to keep code or claim completion.** If something can't be removed or completed, report it plainly as **not done**, with what is satisfied and what remains. Don't keep it, weaken the check, or mark the step done. (Autonomy and honesty are compatible: keep working, and report the gap.)
 4. **Every leftover gets a named home before work starts.** Two overlapping steps ("13" and "14") give leftovers somewhere to hide.
 5. **Defer only with a home, never as an explanation.** A deferral recorded *after* the fact, used to explain a gap, is goalpost drift.
 6. **Copies drift.** If text lives in more than one place, one of them is wrong already, or soon will be.
