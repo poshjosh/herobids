@@ -603,12 +603,12 @@ describe('ManageAgentSkillsPayloadSchema', () => {
   it('accepts a valid add payload', () => {
     const result = ManageAgentSkillsPayloadSchema.safeParse({
       action: 'add',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.action).toBe('add');
-      expect(result.data.skillIds).toEqual(['trading']);
+      expect(result.data.skillIds).toEqual(['traderton/skills/crypto-trading']);
     }
   });
 
@@ -657,14 +657,14 @@ describe('ManageAgentSkillsPayloadSchema', () => {
   it('rejects invalid action value', () => {
     const result = ManageAgentSkillsPayloadSchema.safeParse({
       action: 'update',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
     });
     expect(result.success).toBe(false);
   });
 
   it('rejects missing action field', () => {
     const result = ManageAgentSkillsPayloadSchema.safeParse({
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
     });
     expect(result.success).toBe(false);
   });
@@ -705,14 +705,14 @@ describe('ManageAgentSkillsResultSchema', () => {
     const result = ManageAgentSkillsResultSchema.safeParse({
       status: 'ok',
       action: 'add',
-      skillIds: ['trading', 'web-access'],
+      skillIds: ['traderton/skills/crypto-trading', 'web-access'],
       warnings: [],
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.status).toBe('ok');
       expect(result.data.action).toBe('add');
-      expect(result.data.skillIds).toEqual(['trading', 'web-access']);
+      expect(result.data.skillIds).toEqual(['traderton/skills/crypto-trading', 'web-access']);
       expect(result.data.warnings).toEqual([]);
     }
   });
@@ -750,7 +750,7 @@ describe('ManageAgentSkillsResultSchema', () => {
     const result = ManageAgentSkillsResultSchema.safeParse({
       status: 'ok',
       action: 'add',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       warnings: ['Skill already assigned'],
     });
     expect(result.success).toBe(true);

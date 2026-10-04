@@ -6,7 +6,6 @@ import {
   FILE_MANAGEMENT_SKILL,
   PROGRAMMING_SKILL,
   TASK_MANAGEMENT_SKILL,
-  TRADING_SKILL,
   WEB_ACCESS_SKILL,
 } from '@herobids/domain';
 
@@ -165,23 +164,9 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
     expect(instructions).not.toContain('get_account_summary');
   });
 
-  it('retains trading-account tools when resolving the trading skill', async () => {
-    let selectCount = 0;
-    const db = {
-      select: vi.fn().mockImplementation(() => {
-        selectCount++;
-        return makeChain(selectCount === 1 ? [createSkillRow({ skillId: TRADING_SKILL.id })] : []);
-      }),
-    } as unknown as Database;
-
-    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'trading-agent-1');
-    const tradingSkill = descriptor.resolvedSkills.find((skill) => skill.id === 'trading')!;
-
-    expect(tradingSkill.requiredTools).toContain('get_risk_limits');
-    expect(tradingSkill.requiredTools).toContain('get_account_summary');
-    expect(tradingSkill.instructions).toContain('get_risk_limits');
-    expect(tradingSkill.instructions).toContain('get_account_summary');
-  });
+  // Phase 4 (D21/EC-1): the built-in `trading` system skill was removed, so the
+  // resolver no longer special-cases it. A trading-capable skill now arrives as
+  // a stored row whose `capabilityFamilies` includes 'trading' (covered below).
 
   it('resolves both trading-account tools for an assigned trading-scoped custom skill', async () => {
     let selectCount = 0;
@@ -250,7 +235,7 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
       select: vi.fn().mockImplementation(() => {
         selectCount++;
         return makeChain(selectCount === 1
-          ? [createSkillRow({ skillId: 'trading', requiredTools: ['submit_decision'], capabilityFamilies: ['trading'] })]
+          ? [createSkillRow({ skillId: 'traderton/skills/crypto-trading', requiredTools: ['submit_decision'], capabilityFamilies: ['trading'] })]
           : [
               {
                 grantStatus: 'active',

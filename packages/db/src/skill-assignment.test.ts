@@ -32,19 +32,19 @@ describe('resolveSkillIdsBySlugOrId', () => {
 
   it('resolves a single slug match', async () => {
     const db = buildMockDb([
-      { id: 'skill-uuid-1', slug: 'system/trading' },
+      { id: 'skill-uuid-1', slug: 'system/programming' },
     ]);
 
-    const result = await resolveSkillIdsBySlugOrId(db, ['system/trading']);
+    const result = await resolveSkillIdsBySlugOrId(db, ['system/programming']);
 
     expect(result).toEqual(new Map([
-      ['system/trading', 'skill-uuid-1'],
+      ['system/programming', 'skill-uuid-1'],
     ]));
   });
 
   it('resolves a single ID match', async () => {
     const db = buildMockDb([
-      { id: 'skill-uuid-1', slug: 'system/trading' },
+      { id: 'skill-uuid-1', slug: 'system/programming' },
     ]);
 
     const result = await resolveSkillIdsBySlugOrId(db, ['skill-uuid-1']);
@@ -56,50 +56,50 @@ describe('resolveSkillIdsBySlugOrId', () => {
 
   it('resolves mixed slugs and IDs in one call', async () => {
     const db = buildMockDb([
-      { id: 'skill-uuid-1', slug: 'system/trading' },
-      { id: 'skill-uuid-2', slug: 'system/assistant' },
+      { id: 'skill-uuid-1', slug: 'system/programming' },
+      { id: 'skill-uuid-2', slug: 'system/web-access' },
     ]);
 
     const result = await resolveSkillIdsBySlugOrId(db, [
-      'system/trading',
+      'system/programming',
       'skill-uuid-2',
     ]);
 
     expect(result).toEqual(new Map([
-      ['system/trading', 'skill-uuid-1'],
+      ['system/programming', 'skill-uuid-1'],
       ['skill-uuid-2', 'skill-uuid-2'],
     ]));
   });
 
   it('omits refs that match nothing', async () => {
     const db = buildMockDb([
-      { id: 'skill-uuid-1', slug: 'system/trading' },
+      { id: 'skill-uuid-1', slug: 'system/programming' },
     ]);
 
     const result = await resolveSkillIdsBySlugOrId(db, [
-      'system/trading',
+      'system/programming',
       'nonexistent-ref',
     ]);
 
     expect(result).toEqual(new Map([
-      ['system/trading', 'skill-uuid-1'],
+      ['system/programming', 'skill-uuid-1'],
     ]));
     expect(result.has('nonexistent-ref')).toBe(false);
   });
 
   it('deduplicates refs so each appears once in the result', async () => {
     const db = buildMockDb([
-      { id: 'skill-uuid-1', slug: 'system/trading' },
+      { id: 'skill-uuid-1', slug: 'system/programming' },
     ]);
 
     const result = await resolveSkillIdsBySlugOrId(db, [
-      'system/trading',
-      'system/trading',
-      'system/trading',
+      'system/programming',
+      'system/programming',
+      'system/programming',
     ]);
 
     expect(result).toEqual(new Map([
-      ['system/trading', 'skill-uuid-1'],
+      ['system/programming', 'skill-uuid-1'],
     ]));
     expect(result.size).toBe(1);
   });

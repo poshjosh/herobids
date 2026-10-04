@@ -41,7 +41,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       payload: {
         name,
         prompt,
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         executionDefaults: { mode: 'paper' },
       },
     });
@@ -408,7 +408,7 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
         payload: {
           name: 'Risk Config Agent',
           prompt: 'Trade carefully.',
-          skillIds: ['trading'],
+          skillIds: ['traderton/skills/crypto-trading'],
           executionDefaults: { mode: 'paper' },
           capital: '1000.00',
           style: 'careful',

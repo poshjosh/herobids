@@ -63,20 +63,20 @@ function buildDb(options: {
       currentRevisionId: 'rev-task-management',
     },
     {
-      id: 'trading',
-      slug: 'system/trading',
+      id: 'web-access',
+      slug: 'system/web-access',
       authorId: null,
       publicationStatus: 'published',
       priceCents: 0,
-      currentRevisionId: 'rev-trading',
+      currentRevisionId: 'rev-web-access',
     },
     {
-      id: 'bot-management',
-      slug: 'system/bot-management',
+      id: 'programming',
+      slug: 'system/programming',
       authorId: null,
       publicationStatus: 'published',
       priceCents: 0,
-      currentRevisionId: 'rev-bot-management',
+      currentRevisionId: 'rev-programming',
     },
   ];
 

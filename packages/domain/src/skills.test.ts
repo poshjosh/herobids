@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   BASE_SKILL,
-  BOT_MANAGEMENT_SKILL,
   EMAIL_SKILL,
+  FILE_MANAGEMENT_SKILL,
   PROGRAMMING_SKILL,
-  RISK_MONITORING_SKILL,
   SYSTEM_SKILLS,
   TOOL_OWNER_OVERRIDES,
-  TRADING_SKILL,
   buildToolOwnershipMap,
   inferDependsOn,
 } from './skills.js';
@@ -106,42 +104,34 @@ describe('EMAIL_SKILL', () => {
   });
 });
 
-describe('TRADING_SKILL', () => {
-  it('has id trading', () => {
-    expect(TRADING_SKILL.id).toBe('trading');
-  });
-
-  it('requires assess_strategy_preset tool', () => {
-    expect(TRADING_SKILL.requiredTools).toContain('assess_strategy_preset');
-  });
-
-  it('requires change_strategy_preset tool', () => {
-    expect(TRADING_SKILL.requiredTools).toContain('change_strategy_preset');
-  });
-
-  it.each(['get_risk_limits', 'get_account_summary'])(
-    'retains trading-account tool %s',
-    (toolName) => {
-      expect(TRADING_SKILL.requiredTools).toContain(toolName);
-      expect(TRADING_SKILL.instructions).toContain(toolName);
-    },
-  );
-});
-
-describe('RISK_MONITORING_SKILL', () => {
-  it.each(['get_risk_limits', 'get_account_summary'])(
-    'includes trading-account tool %s for portfolio risk assessment',
-    (toolName) => {
-      expect(RISK_MONITORING_SKILL.requiredTools).toContain(toolName);
-      expect(RISK_MONITORING_SKILL.instructions).toContain(toolName);
-    },
-  );
-});
+// Phase 4 (D21/EC-1): the built-in trading, bot-management and risk-monitoring
+// skills were removed from the domain. Trading capability now comes from
+// external skills.sh skills (`traderton/skills/crypto-*`), so there are no
+// domain skill definitions to assert here.
 
 describe('SYSTEM_SKILLS', () => {
   it('does not contain a skill with id gmail', () => {
     const gmailSkill = SYSTEM_SKILLS.find((s) => s.id === 'gmail');
     expect(gmailSkill).toBeUndefined();
+  });
+
+  it('does not contain the removed built-in trading skills', () => {
+    const ids = SYSTEM_SKILLS.map((s) => s.id);
+    expect(ids).not.toContain('trading');
+    expect(ids).not.toContain('bot-management');
+    expect(ids).not.toContain('risk-monitoring');
+  });
+
+  it('contains exactly the non-trading system skills', () => {
+    expect(SYSTEM_SKILLS.map((s) => s.id).sort()).toEqual([
+      'browser',
+      'email',
+      'file-management',
+      'platform-docs',
+      'programming',
+      'task-management',
+      'web-access',
+    ]);
   });
 });
 
@@ -157,19 +147,18 @@ describe('buildToolOwnershipMap', () => {
     },
   );
 
-  it.each(['get_analytics', 'list_positions', 'get_price', 'adjust_risk_limits'])(
-    'maps override tool %s to trading',
-    (tool) => {
-      expect(ownershipMap.get(tool)).toBe('trading');
-    },
-  );
-
-  it('maps create_bot to bot-management', () => {
-    expect(ownershipMap.get('create_bot')).toBe('bot-management');
-  });
-
   it('maps execute_code to programming', () => {
     expect(ownershipMap.get('execute_code')).toBe('programming');
+  });
+
+  it('maps write_file to file-management', () => {
+    expect(ownershipMap.get('write_file')).toBe('file-management');
+  });
+
+  it('does not map any tool to a removed trading owner', () => {
+    for (const owner of ownershipMap.values()) {
+      expect(['trading', 'bot-management', 'risk-monitoring']).not.toContain(owner);
+    }
   });
 
   it('returns the same cached instance on repeated calls', () => {
@@ -181,28 +170,12 @@ describe('buildToolOwnershipMap', () => {
 // ── inferDependsOn ──────────────────────────────────────────────────────────
 
 describe('inferDependsOn', () => {
-  it('returns ["trading"] for bot-management (shared tools overridden to trading)', () => {
+  it('returns [] for file-management (all tools are base or self-owned)', () => {
     const deps = inferDependsOn(
-      BOT_MANAGEMENT_SKILL.requiredTools,
-      BOT_MANAGEMENT_SKILL.id,
-    );
-    expect(deps).toEqual(['trading']);
-  });
-
-  it('returns [] for trading (all tools are base or self-owned)', () => {
-    const deps = inferDependsOn(
-      TRADING_SKILL.requiredTools,
-      TRADING_SKILL.id,
+      FILE_MANAGEMENT_SKILL.requiredTools,
+      FILE_MANAGEMENT_SKILL.id,
     );
     expect(deps).toEqual([]);
-  });
-
-  it('returns ["trading"] for risk-monitoring (overridden tools owned by trading)', () => {
-    const deps = inferDependsOn(
-      RISK_MONITORING_SKILL.requiredTools,
-      RISK_MONITORING_SKILL.id,
-    );
-    expect(deps).toEqual(['trading']);
   });
 
   it('returns [] for programming (execute_code is its own)', () => {
@@ -214,10 +187,15 @@ describe('inferDependsOn', () => {
   });
 
   it('excludes BASE_SKILL tools from dependency inference', () => {
-    // Synthetic list: send_message is a base tool, create_bot is bot-management.
-    // Only create_bot should produce a dependency.
-    const deps = inferDependsOn(['send_message', 'create_bot'], 'some-skill');
-    expect(deps).toEqual(['bot-management']);
+    // Synthetic list: send_message is a base tool, execute_code is programming.
+    // Only execute_code should produce a dependency.
+    const deps = inferDependsOn(['send_message', 'execute_code'], 'some-skill');
+    expect(deps).toEqual(['programming']);
+  });
+
+  it('returns [] when the only foreign tool is self-owned', () => {
+    const deps = inferDependsOn(['execute_code'], 'programming');
+    expect(deps).toEqual([]);
   });
 
   it('returns [] for empty requiredTools', () => {
@@ -228,13 +206,13 @@ describe('inferDependsOn', () => {
     expect(inferDependsOn(['nonexistent_tool'], 'x')).toEqual([]);
   });
 
-  it('returns a sorted array', () => {
+  it('returns a sorted array across multiple foreign skills', () => {
     // Craft a requiredTools list that touches multiple foreign skills in reverse order.
     const deps = inferDependsOn(
-      ['execute_code', 'create_bot', 'get_analytics'],
+      ['write_file', 'execute_code'],
       'some-other-skill',
     );
-    expect(deps).toEqual(['bot-management', 'programming', 'trading']);
+    expect(deps).toEqual(['file-management', 'programming']);
     // Also verify sort invariant structurally.
     const sorted = [...deps].sort();
     expect(deps).toEqual(sorted);
@@ -244,31 +222,11 @@ describe('inferDependsOn', () => {
 // ── TOOL_OWNER_OVERRIDES ────────────────────────────────────────────────────
 
 describe('TOOL_OWNER_OVERRIDES', () => {
-  it('contains only the expected override entries', () => {
-    expect(Object.keys(TOOL_OWNER_OVERRIDES).sort()).toEqual([
-      'adjust_risk_limits',
-      'check_watches',
-      'get_analytics',
-      'get_price',
-      'list_positions',
-      'list_watches',
-      'remove_watch',
-      'resolve_watch',
-      'watch_token',
-    ]);
-  });
-
-  it('maps every override to trading', () => {
-    for (const owner of Object.values(TOOL_OWNER_OVERRIDES)) {
-      expect(owner).toBe('trading');
-    }
-  });
-
-  it('every override tool exists in at least one SYSTEM_SKILLS skill', () => {
-    const allSkillTools = new Set(SYSTEM_SKILLS.flatMap(s => s.requiredTools));
-    for (const tool of Object.keys(TOOL_OWNER_OVERRIDES)) {
-      expect(allSkillTools.has(tool), `override tool "${tool}" not found in any SYSTEM_SKILLS skill`).toBe(true);
-    }
+  // Phase 4 (D21/EC-3): every prior override mapped a trading tool to the
+  // removed `trading` built-in skill. With those skills gone there are no
+  // cross-skill ownership overrides among the remaining system skills.
+  it('is empty', () => {
+    expect(Object.keys(TOOL_OWNER_OVERRIDES)).toEqual([]);
   });
 });
 

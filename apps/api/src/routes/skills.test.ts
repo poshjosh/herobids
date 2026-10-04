@@ -649,8 +649,8 @@ describe('GET /skills pagination', () => {
 
 describe('dependsOn in SkillView', () => {
   it('includes dependsOn derived from requiredTools on POST /skills', async () => {
-    // create_bot is owned by 'bot-management', submit_decision by 'trading'
-    const tools = ['create_bot', 'submit_decision'];
+    // execute_code is owned by 'programming', write_file by 'file-management'
+    const tools = ['execute_code', 'write_file'];
 
     const createdRow = {
       id: 'skill-deps-test',
@@ -819,7 +819,7 @@ describe('dependsOn in SkillView', () => {
       instructions: 'inst',
       promptHint: null,
       promptTemplate: null,
-      requiredTools: ['create_bot'],
+      requiredTools: ['execute_code'],
       contextRequirements: [],
       requiredGuardrails: [],
       capabilityFamilies: [],
@@ -865,10 +865,10 @@ describe('dependsOn in SkillView', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     // dependsOn should be derived from the REVISION's requiredTools, not the row's
-    expect(body.dependsOn).toEqual(inferDependsOn(['create_bot'], skillId));
-    expect(body.dependsOn).toContain('bot-management');
+    expect(body.dependsOn).toEqual(inferDependsOn(['execute_code'], skillId));
+    expect(body.dependsOn).toContain('programming');
     // And NOT from the row's empty requiredTools
-    expect(body.requiredTools).toEqual(['create_bot']);
+    expect(body.requiredTools).toEqual(['execute_code']);
   });
 
   it('falls back to row requiredTools when no current revision exists', async () => {
@@ -887,7 +887,7 @@ describe('dependsOn in SkillView', () => {
       name: 'Skill No Rev',
       description: 'desc',
       instructions: 'inst',
-      requiredTools: ['submit_decision'],
+      requiredTools: ['write_file'],
       contextRequirements: [],
       requiredGuardrails: [],
       capabilityFamilies: [],
@@ -923,13 +923,13 @@ describe('dependsOn in SkillView', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     // No revision → dependsOn derived from the row's requiredTools
-    expect(body.dependsOn).toEqual(inferDependsOn(['submit_decision'], skillId));
-    expect(body.dependsOn).toContain('trading');
+    expect(body.dependsOn).toEqual(inferDependsOn(['write_file'], skillId));
+    expect(body.dependsOn).toContain('file-management');
   });
 
   it('does not include self in dependsOn', async () => {
-    // A skill that is actually 'bot-management' shouldn't list itself as a dependency
-    const skillId = 'bot-management';
+    // A skill that is actually 'programming' shouldn't list itself as a dependency
+    const skillId = 'programming';
     const skillRow = {
       id: skillId,
       authorId: null, // system skill
@@ -941,10 +941,10 @@ describe('dependsOn in SkillView', () => {
       popularityScore: 0,
       trendingScore: 0,
       currentRevisionId: null,
-      name: 'Bot Management',
+      name: 'Programming',
       description: 'desc',
       instructions: 'inst',
-      requiredTools: ['create_bot', 'list_bots', 'submit_decision'],
+      requiredTools: ['execute_code', 'execute_shell', 'write_file'],
       contextRequirements: [],
       requiredGuardrails: [],
       capabilityFamilies: [],
@@ -979,10 +979,10 @@ describe('dependsOn in SkillView', () => {
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    // Self-exclusion: bot-management should not appear in its own dependsOn
-    expect(body.dependsOn).not.toContain('bot-management');
-    // But trading tools (submit_decision) should still create a dependency
-    expect(body.dependsOn).toContain('trading');
+    // Self-exclusion: programming should not appear in its own dependsOn
+    expect(body.dependsOn).not.toContain('programming');
+    // But a foreign tool (write_file) should still create a dependency
+    expect(body.dependsOn).toContain('file-management');
   });
 });
 
@@ -1065,11 +1065,11 @@ describe('GET /skills sourceKind filter', () => {
     it('returns only system skills (authorId IS NULL) and skips external fetch', async () => {
       const systemSkill = makeSkillRow({
         id: 'sys-1',
-        slug: 'system/trading',
+        slug: 'system/programming',
         authorId: null,
-        name: 'Trading',
-        description: 'System trading skill',
-        instructions: 'trade',
+        name: 'Programming',
+        description: 'System programming skill',
+        instructions: 'code',
       });
 
       // scope=selectable issues:

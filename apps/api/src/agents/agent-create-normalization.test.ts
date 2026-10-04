@@ -20,9 +20,16 @@ vi.mock('../plan-guards.js', () => ({
   resolvePlanLimitEntitlements: vi.fn().mockReturnValue({ maxBots: 5 }),
 }));
 
+// Phase 4 (D21): trading capability resolves from external skills.sh refs via
+// hasSkillCapabilityFamily. The mock recognises the trading ref so the
+// manage_bot derivation path is exercised without the removed built-in skills.
+const CRYPTO_TRADING_REF = 'traderton/skills/crypto-trading';
+
 // Mock agent-config-helpers to avoid DB dependencies.
 vi.mock('../routes/agent-config-helpers.js', () => ({
   resolveNotificationPolicy: vi.fn().mockReturnValue(null),
+  hasSkillCapabilityFamily: (skillIds: string[] | null | undefined, family: string) =>
+    family === 'trading' && (skillIds ?? []).includes('traderton/skills/crypto-trading'),
 }));
 
 import { resolveAgentStrategyPreset } from './strategy-preset-resolver.js';
@@ -368,12 +375,14 @@ describe('deriveToolPolicyFromSkills — manage_agent_skills', () => {
     });
   });
 
-  it('adds manage_agent_skills even without bot-management skill', () => {
-    const result = deriveToolPolicyFromSkills(['web-access', 'trading']);
+  it('adds manage_agent_skills even for a non-trading skill set', () => {
+    const result = deriveToolPolicyFromSkills(['web-access', 'programming']);
 
     expect(result).not.toBeNull();
     expect(result!['manage_agent_skills']).toBeDefined();
     expect((result!['manage_agent_skills'] as Record<string, unknown>)['enabled']).toBe(true);
+    // Non-trading skill set must NOT get manage_bot.
+    expect(result!['manage_bot']).toBeUndefined();
   });
 
   it('does not overwrite existing manage_agent_skills in the policy', () => {
@@ -397,8 +406,8 @@ describe('deriveToolPolicyFromSkills — manage_agent_skills', () => {
     });
   });
 
-  it('returns both manage_bot and manage_agent_skills when bot-management skill is present', () => {
-    const result = deriveToolPolicyFromSkills(['bot-management']);
+  it('returns both manage_bot and manage_agent_skills when a trading skill is present', () => {
+    const result = deriveToolPolicyFromSkills([CRYPTO_TRADING_REF]);
 
     expect(result).not.toBeNull();
     expect(result!['manage_bot']).toBeDefined();

@@ -27,6 +27,7 @@ import type { ExternalBackendClient, ExternalBackendClientResult, InvokeToolInpu
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { LlmRuntimeConfigSchema } from '@herobids/domain';
 import { syncSystemSkills } from '../../sync-system-skills.js';
+import { registerBackendRefFamilies } from '../../routes/agent-config-helpers.js';
 import { loadActiveTradingProfileConnections } from '../../agents/trading-profile-reconciliation-adapter.js';
 import { selectExecutionBinding } from '../../agents/trading-profile-reconciliation.js';
 import { resolve, dirname } from 'node:path';
@@ -593,6 +594,17 @@ export async function buildApp() {
   // Sync system skills before route registration, mirroring the startup sequence
   // in apps/api/src/index.ts. This is the single canonical sync point.
   await syncSystemSkills(db);
+
+  // Phase 4 (EC-3): register the external crypto-skill refs → trading family so
+  // hasSkillCapabilityFamily resolves them, mirroring API startup (index.ts T8).
+  registerBackendRefFamilies([{
+    refs: [
+      'traderton/skills/crypto-trading',
+      'traderton/skills/crypto-bot-management',
+      'traderton/skills/crypto-risk-monitoring',
+    ],
+    family: 'trading',
+  }]);
   await skillsRoutes(app, db, testPlansConfig as any);
   await datasetRoutes(app, db, redisClient);
   await exportRoutes(app, db, stubTradertonClient);

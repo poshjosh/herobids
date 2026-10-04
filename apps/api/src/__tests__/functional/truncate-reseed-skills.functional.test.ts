@@ -1,9 +1,10 @@
 /**
  * Integration test: truncate-and-reseed preserves the current skill contract.
  *
- * After truncateAll() runs, the skills table must contain exactly the six
- * system skills with requiredTools, contextRequirements, and requiredGuardrails
- * that mirror the live SkillDefinition constants in packages/domain/src/skills.ts.
+ * After truncateAll() runs, the skills table must contain exactly the current
+ * set of system skills with requiredTools, contextRequirements, and
+ * requiredGuardrails that mirror the live SkillDefinition constants in
+ * packages/domain/src/skills.ts. (Phase 4 removed the built-in trading skills.)
  *
  * Requires DATABASE_URL and REDIS_URL.  Skipped otherwise.
  */
@@ -12,7 +13,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll } from './helpers.js';
 import { sql } from 'drizzle-orm';
 import { skills } from '@herobids/db';
-import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL, WEB_ACCESS_SKILL, TASK_MANAGEMENT_SKILL, SYSTEM_SKILLS } from '@herobids/domain';
+import { WEB_ACCESS_SKILL, TASK_MANAGEMENT_SKILL, SYSTEM_SKILLS } from '@herobids/domain';
 
 describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
   let ctx: Awaited<ReturnType<typeof buildApp>>;
@@ -46,134 +47,43 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(ids).toEqual(SYSTEM_SKILLS.map((s) => s.id).sort());
   });
 
-  it('bot-management has the full management tool surface', async () => {
+  // Phase 4 (D21/EC-1): the built-in trading, bot-management and risk-monitoring
+  // skills were removed from the domain, so they are no longer reseeded. The
+  // tool-surface contract is now validated against a remaining system skill.
+
+  it('web-access reseeds with the correct tool surface', async () => {
     const [skill] = await ctx.db
       .select()
       .from(skills)
-      .where(sql`${skills.id} = 'bot-management'`);
+      .where(sql`${skills.id} = 'web-access'`);
 
     expect(skill).toBeDefined();
-    expect(skill!.id).toBe('bot-management');
+    expect(skill!.id).toBe('web-access');
     expect(skill!.authorId).toBeNull();
     expect(skill!.publicationStatus).toBe('published');
-    expect(skill!.instructions).toBe(BOT_MANAGEMENT_SKILL.instructions);
+    expect(skill!.instructions).toBe(WEB_ACCESS_SKILL.instructions);
 
     const tools = skill!.requiredTools as string[];
-    // Must include all management tools — no more, no less (order-independent)
-    const expectedTools = new Set([
-      'create_bot',
-      'stop_bot',
-      'start_bot',
-      'adjust_bot_config',
-      'list_bots',
-      'get_bot_status',
-      'get_analytics',
-      'list_positions',
-      'resolve_bot',
-      'send_message',
-    ]);
-    expect(new Set(tools)).toEqual(expectedTools);
-
-    // submit_decision must NOT be in bot-management (it belongs to the trading skill)
-    expect(tools).not.toContain('submit_decision');
-
-    const contexts = skill!.contextRequirements as string[];
-    expect(contexts).toContain('bot_statuses');
-    expect(contexts).toContain('positions');
-    expect(contexts).toContain('costs');
+    expect(new Set(tools)).toEqual(new Set(WEB_ACCESS_SKILL.requiredTools));
 
     const guardrails = skill!.requiredGuardrails as string[];
-    expect(guardrails).toContain('token-budget');
-    expect(guardrails).toContain('daily-loss');
-    expect(guardrails).toContain('bot-limit');
+    expect(new Set(guardrails)).toEqual(new Set(WEB_ACCESS_SKILL.requiredGuardrails));
   });
 
-  it('trading skill has the correct direct-trading tool set', async () => {
+  it('task-management reseeds with the correct tool surface', async () => {
     const [skill] = await ctx.db
       .select()
       .from(skills)
-      .where(sql`${skills.id} = 'trading'`);
+      .where(sql`${skills.id} = 'task-management'`);
 
     expect(skill).toBeDefined();
-    expect(skill!.id).toBe('trading');
+    expect(skill!.id).toBe('task-management');
     expect(skill!.authorId).toBeNull();
     expect(skill!.publicationStatus).toBe('published');
-    expect(skill!.instructions).toBe(TRADING_SKILL.instructions);
+    expect(skill!.instructions).toBe(TASK_MANAGEMENT_SKILL.instructions);
 
     const tools = skill!.requiredTools as string[];
-    const expectedTools = new Set([
-      'submit_decision',
-      'list_positions',
-      'get_analytics',
-      'check_regime',
-      'search_tokens',
-      'discover_tokens',
-      'get_funding_rates',
-      'get_market_overview',
-      'get_price',
-      'watch_token',
-      'list_watches',
-      'remove_watch',
-      'check_watches',
-      'get_risk_limits',
-      'adjust_risk_limits',
-      'find_instrument',
-      'get_account_summary',
-      'resolve_watch',
-      'assess_strategy_preset',
-      'change_strategy_preset',
-    ]);
-    expect(new Set(tools)).toEqual(expectedTools);
-
-    const contexts = skill!.contextRequirements as string[];
-    expect(contexts).toContain('positions');
-    expect(contexts).toContain('fills');
-    expect(contexts).toContain('analytics');
-    expect(contexts).toContain('costs');
-
-    const guardrails = skill!.requiredGuardrails as string[];
-    expect(guardrails).toContain('token-budget');
-    expect(guardrails).toContain('daily-loss');
-  });
-
-  it('risk-monitoring includes list_positions and get_analytics', async () => {
-    const [skill] = await ctx.db
-      .select()
-      .from(skills)
-      .where(sql`${skills.id} = 'risk-monitoring'`);
-
-    expect(skill).toBeDefined();
-    expect(skill!.id).toBe('risk-monitoring');
-    expect(skill!.authorId).toBeNull();
-    expect(skill!.publicationStatus).toBe('published');
-    expect(skill!.instructions).toBe(RISK_MONITORING_SKILL.instructions);
-
-    const tools = skill!.requiredTools as string[];
-    const expectedTools = new Set([
-      'send_message',
-      'publish_artifact',
-      'list_positions',
-      'get_analytics',
-      'get_price',
-      'watch_token',
-      'list_watches',
-      'remove_watch',
-      'check_watches',
-      'get_risk_limits',
-      'get_account_summary',
-      'adjust_risk_limits',
-      'resolve_watch',
-    ]);
-    expect(new Set(tools)).toEqual(expectedTools);
-
-    const contexts = skill!.contextRequirements as string[];
-    expect(contexts).toContain('positions');
-    expect(contexts).toContain('fills');
-    expect(contexts).toContain('analytics');
-
-    const guardrails = skill!.requiredGuardrails as string[];
-    expect(guardrails).toContain('token-budget');
-    expect(guardrails).toContain('daily-loss');
+    expect(new Set(tools)).toEqual(new Set(TASK_MANAGEMENT_SKILL.requiredTools));
   });
 
   it('is idempotent — calling truncateAll twice yields the same skills', async () => {

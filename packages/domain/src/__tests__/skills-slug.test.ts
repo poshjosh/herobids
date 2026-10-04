@@ -60,8 +60,8 @@ describe('slugify', () => {
 
 describe('buildSkillSlug', () => {
   it.each([
-    ['system', 'Trading', 'system/trading'],
-    ['system', 'Bot Management', 'system/bot-management'],
+    ['system', 'Programming', 'system/programming'],
+    ['system', 'Web Access', 'system/web-access'],
     ['alice', 'My Custom Strategy', 'alice/my-custom-strategy'],
     ['alice', '  My Skill (v2)  ', 'alice/my-skill-v2'],
   ])('buildSkillSlug(%s, %s) → %s', (author, name, expected) => {
@@ -69,7 +69,7 @@ describe('buildSkillSlug', () => {
   });
 
   it('does not slugify the authorHandle (pass-through)', () => {
-    expect(buildSkillSlug('Alice', 'Trading')).toBe('alice/trading');
+    expect(buildSkillSlug('Alice', 'Programming')).toBe('alice/programming');
   });
 
   it('produces trailing slash for empty name', () => {
@@ -89,9 +89,9 @@ describe('SYSTEM_SKILL_SLUGS', () => {
   });
 
   it.each([
-    ['system/trading', 'trading'],
-    ['system/bot-management', 'bot-management'],
     ['system/programming', 'programming'],
+    ['system/web-access', 'web-access'],
+    ['system/file-management', 'file-management'],
   ])('maps %s → %s', (slug, id) => {
     expect(SYSTEM_SKILL_SLUGS.get(slug)).toBe(id);
   });

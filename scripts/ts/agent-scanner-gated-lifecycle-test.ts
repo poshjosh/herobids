@@ -216,7 +216,7 @@ async function scenario_scanner_gated_happy_path(token: string): Promise<void> {
       hybridMode: 'scanner_gated',
       strategyPreset: 'momentum',
       style: 'balanced',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       connectionIds: [connectionId],
       executionDefaults: { mode: 'paper', slippageBps: 50 },
     },

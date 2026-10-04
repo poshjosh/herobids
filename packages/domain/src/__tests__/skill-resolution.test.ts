@@ -8,7 +8,7 @@ import {
 
 describe('classifySkillRef', () => {
   it.each([
-    ['system/trading', { kind: 'slug', slug: 'system/trading' }],
+    ['system/programming', { kind: 'slug', slug: 'system/programming' }],
     ['alice/my-skill', { kind: 'slug', slug: 'alice/my-skill' }],
     [
       'twostraws/swiftui-agent-skill',
@@ -19,8 +19,8 @@ describe('classifySkillRef', () => {
   });
 
   it.each([
-    ['trading', { kind: 'legacy-id', id: 'trading' }],
-    ['bot-management', { kind: 'legacy-id', id: 'bot-management' }],
+    ['programming', { kind: 'legacy-id', id: 'programming' }],
+    ['web-access', { kind: 'legacy-id', id: 'web-access' }],
   ])('classifies legacy ID ref: %s', (ref, expected) => {
     expect(classifySkillRef(ref)).toEqual(expected);
   });
@@ -34,8 +34,8 @@ describe('classifySkillRef', () => {
   });
 
   it('does not trim whitespace (caller responsibility)', () => {
-    expect(classifySkillRef(' trading ')).toEqual({ kind: 'legacy-id', id: ' trading ' });
-    expect(classifySkillRef(' system/trading ')).toEqual({ kind: 'slug', slug: ' system/trading ' });
+    expect(classifySkillRef(' programming ')).toEqual({ kind: 'legacy-id', id: ' programming ' });
+    expect(classifySkillRef(' system/programming ')).toEqual({ kind: 'slug', slug: ' system/programming ' });
   });
 });
 
@@ -47,26 +47,26 @@ describe('partitionSkillRefs', () => {
   });
 
   it('puts all slug-like refs into slugLike', () => {
-    const refs = ['system/trading', 'alice/my-skill'];
+    const refs = ['system/programming', 'alice/my-skill'];
     expect(partitionSkillRefs(refs)).toEqual({
-      slugLike: ['system/trading', 'alice/my-skill'],
+      slugLike: ['system/programming', 'alice/my-skill'],
       legacyIds: [],
     });
   });
 
   it('puts all legacy refs into legacyIds', () => {
-    const refs = ['trading', 'bot-management'];
+    const refs = ['programming', 'web-access'];
     expect(partitionSkillRefs(refs)).toEqual({
       slugLike: [],
-      legacyIds: ['trading', 'bot-management'],
+      legacyIds: ['programming', 'web-access'],
     });
   });
 
   it('partitions mixed refs into correct buckets', () => {
-    const refs = ['trading', 'system/trading', 'bot-management', 'alice/my-skill'];
+    const refs = ['programming', 'system/programming', 'web-access', 'alice/my-skill'];
     expect(partitionSkillRefs(refs)).toEqual({
-      slugLike: ['system/trading', 'alice/my-skill'],
-      legacyIds: ['trading', 'bot-management'],
+      slugLike: ['system/programming', 'alice/my-skill'],
+      legacyIds: ['programming', 'web-access'],
     });
   });
 
@@ -88,9 +88,9 @@ describe('partitionSkillRefs', () => {
   });
 
   it('does not deduplicate — duplicates appear in both buckets', () => {
-    const refs = ['trading', 'trading', 'system/trading', 'system/trading'];
+    const refs = ['programming', 'programming', 'system/programming', 'system/programming'];
     const result = partitionSkillRefs(refs);
-    expect(result.legacyIds).toEqual(['trading', 'trading']);
-    expect(result.slugLike).toEqual(['system/trading', 'system/trading']);
+    expect(result.legacyIds).toEqual(['programming', 'programming']);
+    expect(result.slugLike).toEqual(['system/programming', 'system/programming']);
   });
 });

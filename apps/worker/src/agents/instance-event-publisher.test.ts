@@ -121,7 +121,7 @@ describe('InstanceEventPublisher — publishSkillsReply', () => {
     const result = {
       status: 'ok' as const,
       action: 'add' as const,
-      skillIds: ['trading', 'web-access'],
+      skillIds: ['traderton/skills/crypto-trading', 'web-access'],
     };
 
     await publisher.publishSkillsReply('req-abc', result);
@@ -134,7 +134,7 @@ describe('InstanceEventPublisher — publishSkillsReply', () => {
     expect(parsed).toEqual({
       status: 'ok',
       action: 'add',
-      skillIds: ['trading', 'web-access'],
+      skillIds: ['traderton/skills/crypto-trading', 'web-access'],
     });
   });
 
@@ -176,7 +176,7 @@ describe('InstanceEventPublisher — publishSkillsReply', () => {
     await publisher.publishSkillsReply('req-warn', {
       status: 'ok' as const,
       action: 'add' as const,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       warnings: ['skill already present'],
     });
 
@@ -189,7 +189,7 @@ describe('InstanceEventPublisher — publishSkillsReply', () => {
     await publisher.publishSkillsReply('req-nowarn', {
       status: 'ok' as const,
       action: 'add' as const,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
     });
 
     const [, raw] = redis.lpush.mock.calls[0] as [string, string];
@@ -207,7 +207,7 @@ describe('InstanceEventPublisher — publishSkillsReply', () => {
     await publisher.publishSkillsReply('req-direct', {
       status: 'ok' as const,
       action: 'add' as const,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
     });
 
     const [, raw] = redis.lpush.mock.calls[0] as [string, string];

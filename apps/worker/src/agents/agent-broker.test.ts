@@ -2136,7 +2136,7 @@ describe('manage_agent_skills — capability routing', () => {
       createdAt: new Date().toISOString(),
       payload: {
         action: 'add',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
       },
       ...overrides,
     };
@@ -2206,7 +2206,7 @@ describe('manage_agent_skills — capability routing', () => {
     );
 
     const envelope = makeSkillsEnvelope({
-      payload: { action: 'invalid_action', skillIds: ['trading'] },
+      payload: { action: 'invalid_action', skillIds: ['traderton/skills/crypto-trading'] },
     });
     const result = await broker.processInbound(envelope);
     expect(result.accepted).toBe(false);
@@ -2232,7 +2232,7 @@ describe('handleManageAgentSkills — handler logic', () => {
       createdAt: new Date().toISOString(),
       payload: {
         action: 'add',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         requestMessageId: 'req-abc-123',
       },
       ...overrides,
@@ -2318,7 +2318,7 @@ describe('handleManageAgentSkills — handler logic', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resolveSkillAssignmentsMock.mockResolvedValue({
-      assignments: [{ skillId: 'trading', skillRevisionId: 'rev-1' }],
+      assignments: [{ skillId: 'traderton/skills/crypto-trading', skillRevisionId: 'rev-1' }],
     });
     syncAgentSkillAssignmentsMock.mockResolvedValue(undefined);
   });
@@ -2364,7 +2364,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         expect.objectContaining({
           status: 'ok',
           action: 'add',
-          skillIds: expect.arrayContaining(['trading']),
+          skillIds: expect.arrayContaining(['traderton/skills/crypto-trading']),
         }),
       );
     });
@@ -2410,13 +2410,13 @@ describe('handleManageAgentSkills — handler logic', () => {
     });
 
     it('is idempotent for already-assigned skill (still publishes success)', async () => {
-      // Skill 'trading' is already assigned
+      // Skill 'traderton/skills/crypto-trading' is already assigned
       const db = makeAddDbMock(
         { planId: 'plan-free', isAdmin: false },
-        [{ skillId: 'trading' }],
+        [{ skillId: 'traderton/skills/crypto-trading' }],
       );
       resolveSkillAssignmentsMock.mockResolvedValue({
-        assignments: [{ skillId: 'trading', skillRevisionId: 'rev-1' }],
+        assignments: [{ skillId: 'traderton/skills/crypto-trading', skillRevisionId: 'rev-1' }],
       });
 
       const agentRepo = mockAgentRepo();
@@ -2605,7 +2605,7 @@ describe('handleManageAgentSkills — handler logic', () => {
       agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
 
       const eventPublisher = makeSkillsEventPublisher();
-      const db = makeRemoveDbMock([{ skillId: 'trading' }]);
+      const db = makeRemoveDbMock([{ skillId: 'traderton/skills/crypto-trading' }]);
 
       resolveSkillAssignmentsMock.mockResolvedValue({ assignments: [] });
 
@@ -2620,7 +2620,7 @@ describe('handleManageAgentSkills — handler logic', () => {
       );
 
       const envelope = makeSkillsEnvelope({
-        payload: { action: 'remove', skillIds: ['trading'], requestMessageId: 'req-remove-1' },
+        payload: { action: 'remove', skillIds: ['traderton/skills/crypto-trading'], requestMessageId: 'req-remove-1' },
       });
       const result = await broker.processInbound(envelope);
 
@@ -2637,7 +2637,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         expect.objectContaining({
           status: 'ok',
           action: 'remove',
-          skillIds: ['trading'],
+          skillIds: ['traderton/skills/crypto-trading'],
           warnings: [],
         }),
       );
@@ -2716,9 +2716,9 @@ describe('handleManageAgentSkills — handler logic', () => {
       agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
 
       const eventPublisher = makeSkillsEventPublisher();
-      // Agent has both 'trading' and 'analytics' — we remove 'trading', leaving 'analytics'
+      // Agent has both 'traderton/skills/crypto-trading' and 'analytics' — we remove 'traderton/skills/crypto-trading', leaving 'analytics'
       const db = makeRemoveDbMock(
-        [{ skillId: 'trading' }, { skillId: 'analytics' }],
+        [{ skillId: 'traderton/skills/crypto-trading' }, { skillId: 'analytics' }],
         { planId: 'plan-free', isAdmin: false },
       );
 
@@ -2737,7 +2737,7 @@ describe('handleManageAgentSkills — handler logic', () => {
       );
 
       const envelope = makeSkillsEnvelope({
-        payload: { action: 'remove', skillIds: ['trading'], requestMessageId: 'req-remove-partial' },
+        payload: { action: 'remove', skillIds: ['traderton/skills/crypto-trading'], requestMessageId: 'req-remove-partial' },
       });
       const result = await broker.processInbound(envelope);
 
@@ -2762,7 +2762,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         expect.objectContaining({
           status: 'ok',
           action: 'remove',
-          skillIds: ['trading'],
+          skillIds: ['traderton/skills/crypto-trading'],
           warnings: [],
         }),
       );
@@ -2791,7 +2791,7 @@ describe('handleManageAgentSkills — handler logic', () => {
 
       const customRequestId = 'custom-req-id-xyz';
       const envelope = makeSkillsEnvelope({
-        payload: { action: 'add', skillIds: ['trading'], requestMessageId: customRequestId },
+        payload: { action: 'add', skillIds: ['traderton/skills/crypto-trading'], requestMessageId: customRequestId },
       });
       const result = await broker.processInbound(envelope);
 
@@ -2818,7 +2818,7 @@ describe('handleManageAgentSkills — handler logic', () => {
       );
 
       const envelope = makeSkillsEnvelope({
-        payload: { action: 'add', skillIds: ['trading'] }, // no requestMessageId
+        payload: { action: 'add', skillIds: ['traderton/skills/crypto-trading'] }, // no requestMessageId
       });
       const result = await broker.processInbound(envelope);
 
@@ -2922,7 +2922,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
       createdAt: new Date().toISOString(),
       payload: {
         action: 'add',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         requestMessageId: 'req-slug-test',
       },
       ...overrides,
@@ -2942,7 +2942,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resolveSkillAssignmentsMock.mockResolvedValue({
-      assignments: [{ skillId: 'trading', skillRevisionId: 'rev-1' }],
+      assignments: [{ skillId: 'traderton/skills/crypto-trading', skillRevisionId: 'rev-1' }],
     });
     syncAgentSkillAssignmentsMock.mockResolvedValue(undefined);
   });
@@ -3061,7 +3061,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
       const db = makeAddDbMockWithSlugs(
         { planId: 'plan-free', isAdmin: false },
         [],
-        [{ id: 'skill-id-abc', slug: 'system/trading' }],
+        [{ id: 'skill-id-abc', slug: 'system/programming' }],
       );
 
       const broker = new AgentMessageBroker(
@@ -3088,12 +3088,12 @@ describe('handleManageAgentSkills — slug enrichment', () => {
           action: 'add',
           errorCode: 'validation_error',
           // The enriched error should contain the slug replacing the ID
-          error: expect.stringContaining('system/trading'),
+          error: expect.stringContaining('system/programming'),
         }),
       );
       // The enriched message should include the original message followed by a dash and the detail
       const call = (eventPublisher as any).publishSkillsReply.mock.calls[0];
-      expect(call[1].error).toMatch(/Some selected skills do not exist — Unknown skillIds: system\/trading/);
+      expect(call[1].error).toMatch(/Some selected skills do not exist — Unknown skillIds: system\/programming/);
     });
 
     it('falls back to raw IDs when slug lookup fails (lookupSlugsForIds degrades gracefully)', async () => {
@@ -3184,7 +3184,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         { planId: 'plan-free', isAdmin: false },
         [],
         [
-          { id: 'skill-id-1', slug: 'system/trading' },
+          { id: 'skill-id-1', slug: 'system/programming' },
           { id: 'skill-id-2', slug: 'community/analytics' },
         ],
       );
@@ -3206,7 +3206,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
 
       expect(result.accepted).toBe(true);
       const call = (eventPublisher as any).publishSkillsReply.mock.calls[0];
-      expect(call[1].error).toContain('system/trading');
+      expect(call[1].error).toContain('system/programming');
       expect(call[1].error).toContain('community/analytics');
       expect(call[1].error).not.toContain('skill-id-1');
       expect(call[1].error).not.toContain('skill-id-2');
@@ -3228,7 +3228,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
       const db = makeAddDbMockWithSlugs(
         { planId: 'plan-free', isAdmin: false },
         [],
-        [{ id: 'skill-id-abc', slug: 'system/trading' }],
+        [{ id: 'skill-id-abc', slug: 'system/programming' }],
       );
 
       const broker = new AgentMessageBroker(
@@ -3363,7 +3363,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
 
   describe('remove action — error enrichment with slugs', () => {
     it('enriches resolution error message with slugs during remove', async () => {
-      // Agent has 'trading' and 'analytics' — we remove 'trading', leaving 'analytics'
+      // Agent has 'traderton/skills/crypto-trading' and 'analytics' — we remove 'traderton/skills/crypto-trading', leaving 'analytics'
       // resolveSkillAssignmentsForUser returns an error for the remaining skills
       resolveSkillAssignmentsMock.mockResolvedValue({
         error: {
@@ -3388,7 +3388,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
           { type: 'users', data: [{ planId: 'plan-free', isAdmin: false }] },
           { type: 'slugLookup', data: [
             { id: 'skill-id-analytics', slug: 'system/analytics' },
-            { id: 'skill-id-trading', slug: 'system/trading' },
+            { id: 'skill-id-trading', slug: 'system/programming' },
           ]},
         ],
       );

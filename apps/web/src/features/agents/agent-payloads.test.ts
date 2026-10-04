@@ -41,7 +41,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading', 'bot-management'],
+      skillIds: ['traderton/skills/crypto-trading', 'traderton/skills/crypto-bot-management'],
       hasBotManagementSkill: true,
       requiresTradingSetup: true,
       executionMode: 'test',
@@ -61,7 +61,7 @@ describe('agent payload builders', () => {
     })).toMatchObject({
       name: 'market-watch-01',
       prompt: 'Trade BTC on breakouts',
-      skillIds: ['trading', 'bot-management'],
+      skillIds: ['traderton/skills/crypto-trading', 'traderton/skills/crypto-bot-management'],
       capabilityMode: 'intelligence',
     });
   });
@@ -159,7 +159,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
       executionMode: 'test',
@@ -189,7 +189,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
       executionMode: 'test',
@@ -218,7 +218,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
       executionMode: 'live',
@@ -276,7 +276,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: true,
       technical: TECHNICAL_CONFIG,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: false,
       executionMode: 'test',
@@ -296,7 +296,7 @@ describe('agent payload builders', () => {
     })).toMatchObject({
       name: 'technical scout',
       prompt: 'Trade BTC',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       technical: TECHNICAL_CONFIG,
       capabilityMode: 'hybrid',
     });
@@ -326,7 +326,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
       hasTradingCapability: true,
@@ -348,7 +348,7 @@ describe('agent payload builders', () => {
     })).toMatchObject({
       name: 'Momentum scout',
       prompt: 'Watch BTC and trade breakouts.',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       telegramChatId: null,
       costPreset: null,
       dailySpendBudgetUsd: null,
@@ -383,7 +383,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
       hasTradingCapability: true,
@@ -415,7 +415,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: true,
       technical: TECHNICAL_CONFIG,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: '',
       hasTradingCapability: false,
@@ -438,7 +438,7 @@ describe('agent payload builders', () => {
 
     expect(payload.name).toBe('Hybrid scout');
     expect(payload.prompt).toBe('Watch BTC and scan order flow.');
-    expect(payload.skillIds).toEqual(['trading']);
+    expect(payload.skillIds).toEqual(['traderton/skills/crypto-trading']);
     expect(payload.provider).toBe('openai');
     expect(payload.lightModel).toBe('gpt-4.1-mini');
     expect(payload.heavyModel).toBe('gpt-4.1');
@@ -453,7 +453,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
       executionMode: 'test',
@@ -475,7 +475,7 @@ describe('agent payload builders', () => {
     })).toMatchObject({
       name: 'agent',
       prompt: 'trade',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       executionVenue: 'hyperliquid',
       connectionIds: ['conn-1', 'conn-2'],
     });
@@ -489,7 +489,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
       executionMode: 'test',
@@ -519,7 +519,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
       executionMode: 'test',
@@ -548,7 +548,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'test',
       hasTradingCapability: true,
@@ -571,7 +571,7 @@ describe('agent payload builders', () => {
     })).toMatchObject({
       name: 'agent',
       prompt: 'trade',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       connectionIds: ['conn-1', 'conn-2'],
     });
   });
@@ -584,7 +584,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'test',
       hasTradingCapability: true,
@@ -616,7 +616,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'test',
       hasTradingCapability: true,
@@ -681,7 +681,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'live',
       hasTradingCapability: true,
@@ -745,7 +745,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: true,
       technical: TECHNICAL_CONFIG,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
       hasTradingCapability: false,
@@ -767,7 +767,7 @@ describe('agent payload builders', () => {
     })).toMatchObject({
       name: 'Technical scout',
       prompt: 'legacy objective',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       technical: TECHNICAL_CONFIG,
     });
   });
@@ -808,7 +808,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
       hasTradingCapability: true,
@@ -901,7 +901,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
       hasTradingCapability: true,
@@ -933,7 +933,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
       hasTradingCapability: true,
@@ -1025,7 +1025,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
       hasTradingCapability: true,
@@ -1057,7 +1057,7 @@ describe('agent payload builders', () => {
       hybridMode: 'mixed',
       technicalPreFilterEnabled: false,
       technical: null,
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
       hasTradingCapability: true,

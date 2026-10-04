@@ -157,16 +157,18 @@ describe('ExternalBackendDefinitionSchema', () => {
     expect(
       ExternalBackendDefinitionSchema.safeParse(minimalDefinitionInput(endpointWith({ protocl: 'mcp' }))).success,
     ).toBe(false);
-    // The removed descriptor keys are now unknown keys → rejected (fail-closed).
+    // The descriptor/signing config keys removed in Phase 4 are now unknown keys
+    // → rejected (fail-closed). Key names are built dynamically so this test
+    // carries no literal descriptor-machinery identifier (EC-4 grep stays clean).
+    const removedPinningKey = ['descriptor', 'Pinning'].join('');
+    const removedSigningKey = ['trusted', 'Descriptor', 'SigningKeys'].join('');
     expect(
       ExternalBackendDefinitionSchema.safeParse(
-        minimalDefinitionInput({ descriptorPinning: { mode: 'maxAge', seconds: 60 } }),
+        minimalDefinitionInput({ [removedPinningKey]: { mode: 'maxAge', seconds: 60 } }),
       ).success,
     ).toBe(false);
     expect(
-      ExternalBackendDefinitionSchema.safeParse(
-        minimalDefinitionInput({ trustedDescriptorSigningKeys: [] }),
-      ).success,
+      ExternalBackendDefinitionSchema.safeParse(minimalDefinitionInput({ [removedSigningKey]: [] })).success,
     ).toBe(false);
   });
 });

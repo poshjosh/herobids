@@ -365,7 +365,7 @@ async function scenario1_boundedScanCompletes(token: string): Promise<void> {
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       connectionIds: [connectionId],
       technical: {
         filters: {

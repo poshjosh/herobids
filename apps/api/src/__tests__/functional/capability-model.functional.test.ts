@@ -315,7 +315,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       payload: {
         name: 'Trading + Email Agent',
         prompt: 'Trade and email me updates.',
-        skillIds: ['trading', 'email'],
+        skillIds: ['traderton/skills/crypto-trading', 'email'],
         executionDefaults: { mode: 'paper' },
       },
     }).then((res) => {

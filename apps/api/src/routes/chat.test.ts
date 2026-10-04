@@ -2172,9 +2172,9 @@ describe('invokeOnboardingLlm — connection autowiring', () => {
       [{ id: 'conn-created', resolvedVenueAccountId: 'va-1', label: 'HW', provider: 'hyperliquid' }],
       [{ planId: 'free', isAdmin: false, aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
       [], // resolveRuntimePolicyOverrides user lookup — empty is fine
-      [{ id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0 }],
+      [{ id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0 }],
       [], // entitlements
-      [{ skillId: 'trading', revisionId: 'rev-1', version: 1 }],
+      [{ skillId: 'traderton/skills/crypto-trading', revisionId: 'rev-1', version: 1 }],
       [{ id: 'conn-created', resolvedVenueAccountId: 'va-1' }],
       [], // syncAgentSkillAssignments → agentSkills select
       [], [], [], // extra slots

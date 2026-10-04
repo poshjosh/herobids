@@ -156,7 +156,7 @@ function makeReadiness(family: string): CapabilityReadiness {
 }
 
 const ALL_SKILLS: Skill[] = [
-  makeSkill('trading', ['trading']),
+  makeSkill('traderton/skills/crypto-trading', ['trading']),
   makeSkill('email', ['email']),
   makeSkill('task-management', []),
 ];
@@ -260,7 +260,7 @@ function renderedFamilyLabels(html: string): string[] {
 
 describe('AgentDetailPage capabilities list', () => {
   it('renders a single Trading card for a trading-only agent', () => {
-    const html = renderDetail({ agentSkillIds: ['trading'], readinessFamilies: ['trading'] });
+    const html = renderDetail({ agentSkillIds: ['traderton/skills/crypto-trading'], readinessFamilies: ['trading'] });
     const labels = renderedFamilyLabels(html);
     expect(labels).toEqual(['Trading']);
     expect(html).not.toContain(messages['agents.summary.noCapabilitySetup']);
@@ -268,7 +268,7 @@ describe('AgentDetailPage capabilities list', () => {
 
   it('renders both Trading and Email cards for a trading+email agent', () => {
     const html = renderDetail({
-      agentSkillIds: ['trading', 'email'],
+      agentSkillIds: ['traderton/skills/crypto-trading', 'email'],
       readinessFamilies: ['email', 'trading'],
     });
     const labels = renderedFamilyLabels(html);
@@ -305,7 +305,7 @@ describe('AgentDetailPage capabilities list', () => {
   });
 
   it('renders the inline Add-skills and Connections setup controls alongside existing capability cards', () => {
-    const html = renderDetail({ agentSkillIds: ['trading'], readinessFamilies: ['trading'] });
+    const html = renderDetail({ agentSkillIds: ['traderton/skills/crypto-trading'], readinessFamilies: ['trading'] });
     expect(renderedFamilyLabels(html)).toEqual(['Trading']);
     expect(html).toContain(messages['agents.detail.capabilities.addSkills']);
     expect(html).toContain(messages['agents.create.connections']);

@@ -253,8 +253,8 @@ async function createBenchmarkAgent(token: string, bc: BenchmarkCase): Promise<s
   const payload: Record<string, unknown> = {
     name: `bench-${bc.id}`,
     prompt: BENCHMARK_GOAL,
-    // 'trading' skill required to run ticks; executionDefaults.mode: 'paper' keeps it safe
-    skillIds: ['trading'],
+    // crypto-trading skill required to run ticks; executionDefaults.mode: 'paper' keeps it safe
+    skillIds: ['traderton/skills/crypto-trading'],
     executionDefaults: { mode: 'paper' },
     tickIntervalMs: TICK_INTERVAL_MS,
     capital: '10000',

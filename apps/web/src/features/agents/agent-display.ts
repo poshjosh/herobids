@@ -88,9 +88,9 @@ export function hasCapabilityFamily(skills: Array<{ capabilityFamilies: string[]
 
 /**
  * Phase 4 (EC-3): does the agent's SELECTED skill set carry a capability family?
- * Replaces hard-coded skill-id checks (`skillIds.includes('bot-management')`) in
- * the agent forms — the family comes from the skill views (config-driven for
- * backend-approved external skills), not a hard-coded id.
+ * Replaces hard-coded skill-id checks (e.g. skillIds.includes of a specific
+ * built-in id) in the agent forms — the family comes from the skill views
+ * (config-driven for backend-approved external skills), not a hard-coded id.
  */
 export function selectedSkillsHaveCapabilityFamily(skillIds: string[], skills: Skill[], family: string): boolean {
   return hasCapabilityFamily(resolveSelectedSkills(skillIds, skills), family);

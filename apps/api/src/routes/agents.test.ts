@@ -34,11 +34,26 @@ import {
   type TypedTradingProfile,
 } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfilePlannerInput, TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
+import { registerBackendRefFamilies } from './agent-config-helpers.js';
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
 // In test, cwd is the package dir (apps/api), so we must point to the repo root.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 process.env['HEROBIDS_CONFIG_DIR'] = resolve(__dirname, '../../../..');
+
+// Phase 4 (D21): trading capability resolves from external skills.sh refs via the
+// config-registered backend-ref family map. Register the trading refs so
+// hasSkillCapabilityFamily(skillIds, 'trading') recognises them (mirrors API startup).
+beforeEach(() => {
+  registerBackendRefFamilies([{
+    refs: [
+      'traderton/skills/crypto-trading',
+      'traderton/skills/crypto-bot-management',
+      'traderton/skills/crypto-risk-monitoring',
+    ],
+    family: 'trading',
+  }]);
+});
 
 const mockLlmCatalogDeps: LlmCatalogDeps = {
   db: {} as never,
@@ -117,18 +132,18 @@ function buildDb(options: {
       currentRevisionId: 'rev-task-management',
     },
     {
-      id: 'trading',
+      id: 'traderton/skills/crypto-trading',
       authorId: null,
       publicationStatus: 'published',
       priceCents: 0,
-      currentRevisionId: 'rev-trading',
+      currentRevisionId: 'rev-crypto-trading',
     },
     {
-      id: 'bot-management',
+      id: 'traderton/skills/crypto-bot-management',
       authorId: null,
       publicationStatus: 'published',
       priceCents: 0,
-      currentRevisionId: 'rev-bot-management',
+      currentRevisionId: 'rev-crypto-bot-management',
     },
   ];
 
@@ -1354,7 +1369,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       id: 'agent-1',
       userId: TEST_USER_ID,
       status: 'stopped',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
       executionMode: 'shadow',
     };
@@ -1362,8 +1377,8 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       agentRows: [createdAgent],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
       skillRows: [
-        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
-        { id: 'bot-management', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-bot-management' },
+        { id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-trading' },
+        { id: 'traderton/skills/crypto-bot-management', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-bot-management' },
       ],
       // Shadow execution requires a granted connection — see validateConnectionRequirement.
       connectionRows: [{ id: 'conn-1', userId: TEST_USER_ID, status: 'active' }],
@@ -1379,7 +1394,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       payload: {
         name: 'shadow agent',
         prompt: 'test',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         executionDefaults: { mode: 'shadow' },
         connectionIds: ['conn-1'],
       },
@@ -1394,7 +1409,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   it('rejects creating an agent with shadow or live execution mode and no granted connection', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({
-      agentRows: [{ id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['trading'], modelPolicy: null, executionDefaults: { mode: 'shadow' } }],
+      agentRows: [{ id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['traderton/skills/crypto-trading'], modelPolicy: null, executionDefaults: { mode: 'shadow' } }],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
@@ -1408,7 +1423,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       payload: {
         name: 'shadow agent',
         prompt: 'test',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         executionDefaults: { mode: 'shadow' },
       },
     });
@@ -1423,9 +1438,9 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   it('allows non-admin users to update agents to shadow execution mode', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
-      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'shadow' }],
-      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionMode: 'shadow' }],
+      agentSkillRows: [{ skillId: 'traderton/skills/crypto-trading', orderIndex: 0 }],
       // Shadow execution requires a granted connection — see validateConnectionRequirement.
       agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
     });
@@ -1450,8 +1465,8 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   it('rejects updating an agent to shadow execution mode with no granted connection', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
-      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
+      agentSkillRows: [{ skillId: 'traderton/skills/crypto-trading', orderIndex: 0 }],
     });
 
     const app = Fastify();
@@ -1478,9 +1493,9 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   it('allows explicitly clearing connectionIds from a paper-mode agent', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
-      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
-      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      agentSkillRows: [{ skillId: 'traderton/skills/crypto-trading', orderIndex: 0 }],
       agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
     });
 
@@ -1505,9 +1520,9 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     ]);
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
-      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'shadow' } }],
-      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'shadow' } }],
+      agentSkillRows: [{ skillId: 'traderton/skills/crypto-trading', orderIndex: 0 }],
       agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
     });
     const stagedSaga = makeStagedProfileSaga(db);
@@ -1533,9 +1548,9 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
-      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
-      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
+      agentSkillRows: [{ skillId: 'traderton/skills/crypto-trading', orderIndex: 0 }],
     });
     const stagedSaga = makeStagedProfileSaga(db);
 
@@ -1601,7 +1616,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       payload: {
         name: 'no exec defaults',
         prompt: 'trade',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
       },
     });
 
@@ -1617,7 +1632,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['task-management'], modelPolicy: null, executionMode: null,
     };
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
       activeLinkRows: [updatedAgent],
       agentSkillRows: [{ skillId: 'task-management', orderIndex: 0 }],
     });
@@ -1996,7 +2011,7 @@ describe('agent routes strategy preset resolution', () => {
         { id: 'conn-1', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
       ],
       skillRows: [
-        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+        { id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-trading' },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
@@ -2012,7 +2027,7 @@ describe('agent routes strategy preset resolution', () => {
         name: 'hybrid-filter-agent',
         prompt: 'trade momentum',
         style: 'balanced',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         strategyPreset: 'momentum',
         capabilityMode: 'hybrid',
         hybridMode: 'scanner_gated',
@@ -2046,7 +2061,7 @@ describe('agent routes strategy preset resolution', () => {
         { id: 'conn-1', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
       ],
       skillRows: [
-        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+        { id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-trading' },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
@@ -2062,7 +2077,7 @@ describe('agent routes strategy preset resolution', () => {
         name: 'merge-filter-agent',
         prompt: 'trade momentum',
         style: 'balanced',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         capabilityMode: 'hybrid',
         hybridMode: 'scanner_gated',
         executionDefaults: { mode: 'paper' },
@@ -2097,7 +2112,7 @@ describe('agent routes strategy preset resolution', () => {
       agentRows: [createdAgent],
       connectionRows: [],
       skillRows: [
-        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+        { id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-trading' },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
@@ -2113,7 +2128,7 @@ describe('agent routes strategy preset resolution', () => {
         name: 'no-conn-agent',
         prompt: 'trade momentum',
         style: 'balanced',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         strategyPreset: 'momentum',
         capabilityMode: 'hybrid',
         hybridMode: 'scanner_gated',
@@ -4264,7 +4279,7 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
       agentRows: [createdAgent],
       activeLinkRows: [createdAgent],
       skillRows: [
-        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+        { id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-trading' },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
@@ -4279,7 +4294,7 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
       payload: {
         name: 'hybrid-default',
         technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         capabilityMode: 'hybrid',
         executionDefaults: { mode: 'paper' },
       },
@@ -4306,7 +4321,7 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
       agentRows: [createdAgent],
       activeLinkRows: [createdAgent],
       skillRows: [
-        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+        { id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-trading' },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
@@ -4321,7 +4336,7 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
       payload: {
         name: 'hybrid-ok',
         technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
         capabilityMode: 'hybrid',
         hybridMode: 'scanner_gated',
         executionDefaults: { mode: 'paper' },

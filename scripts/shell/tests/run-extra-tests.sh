@@ -68,7 +68,7 @@
 # for trading capability, not capabilityMode. The CreateAgentSchema superRefine
 # considers capabilityMode='hybrid' as trading-capable. This forces test
 # payloads for hybrid agents to include BOTH executionDefaults AND
-# skillIds:['trading'], even though skills are auto-resolved later in the
+# skillIds:['traderton/skills/crypto-trading'], even though skills are auto-resolved later in the
 # handler flow. See .ignore/test-related-changes.md for details.
 #
 # Tiers (run in order; tiers 5-6 are opt-in):

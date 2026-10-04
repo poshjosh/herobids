@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement } from './agent-config-helpers.js';
+import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement, registerBackendRefFamilies } from './agent-config-helpers.js';
 
 describe('resolveNotificationPolicy', () => {
   beforeEach(() => {
@@ -95,9 +95,22 @@ describe('resolveNotificationPolicy', () => {
   });
 });
 
-// 'trading', 'bot-management', 'risk-monitoring' all carry the 'trading' capability family
-const TRADING_SKILL = 'trading';
-const NON_TRADING_SKILL = 'base';
+// Phase 4 (D21): trading capability now resolves from an external skills.sh ref
+// via the config-registered backend-ref family map (registerBackendRefFamilies).
+// Register the map so hasSkillCapabilityFamily(skillIds, 'trading') resolves.
+const CRYPTO_TRADING_REF = 'traderton/skills/crypto-trading';
+const NONTRADING_ID = 'base';
+
+beforeEach(() => {
+  registerBackendRefFamilies([{
+    refs: [
+      'traderton/skills/crypto-trading',
+      'traderton/skills/crypto-bot-management',
+      'traderton/skills/crypto-risk-monitoring',
+    ],
+    family: 'trading',
+  }]);
+});
 
 describe('resolveExecutionModeForSkills', () => {
   describe('non-trading agents', () => {
@@ -113,7 +126,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('returns null when agent only has non-trading skills', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [NON_TRADING_SKILL],
+        skillIds: [NONTRADING_ID],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
       });
@@ -122,7 +135,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('returns an issue when a non-trading agent provides an execution mode', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [NON_TRADING_SKILL],
+        skillIds: [NONTRADING_ID],
         submittedExecutionMode: 'paper',
         executionModeProvided: true,
       });
@@ -132,7 +145,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('silently ignores explicit null mode for non-trading agent', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [NON_TRADING_SKILL],
+        skillIds: [NONTRADING_ID],
         submittedExecutionMode: null,
         executionModeProvided: true,
       });
@@ -145,7 +158,7 @@ describe('resolveExecutionModeForSkills', () => {
   describe('trading agents — mode provided', () => {
     it('resolves paper mode', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'paper',
         executionModeProvided: true,
       });
@@ -155,7 +168,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('resolves shadow mode', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'shadow',
         executionModeProvided: true,
       });
@@ -164,7 +177,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('resolves live mode', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'live',
         executionModeProvided: true,
       });
@@ -173,7 +186,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('returns an issue when test mode is submitted (non-canonical, rejected)', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'test',
         executionModeProvided: true,
       });
@@ -184,7 +197,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('returns an issue when an invalid mode string is submitted', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: null, // null is treated as "unset" → issue
         executionModeProvided: true,
       });
@@ -198,7 +211,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('rejects paper → live', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'live',
         executionModeProvided: true,
         currentExecutionMode: 'paper',
@@ -210,7 +223,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('rejects shadow → live', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'live',
         executionModeProvided: true,
         currentExecutionMode: 'shadow',
@@ -222,7 +235,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('rejects live → paper', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'paper',
         executionModeProvided: true,
         currentExecutionMode: 'live',
@@ -234,7 +247,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('rejects live → shadow', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'shadow',
         executionModeProvided: true,
         currentExecutionMode: 'live',
@@ -246,7 +259,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('allows paper → shadow (test↔test)', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'shadow',
         executionModeProvided: true,
         currentExecutionMode: 'paper',
@@ -257,7 +270,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('allows shadow → paper (test↔test)', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'paper',
         executionModeProvided: true,
         currentExecutionMode: 'shadow',
@@ -268,7 +281,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('allows paper → paper (no-op)', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'paper',
         executionModeProvided: true,
         currentExecutionMode: 'paper',
@@ -279,7 +292,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('allows shadow → shadow (no-op)', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'shadow',
         executionModeProvided: true,
         currentExecutionMode: 'shadow',
@@ -290,7 +303,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('allows live → live (no-op)', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: 'live',
         executionModeProvided: true,
         currentExecutionMode: 'live',
@@ -302,7 +315,7 @@ describe('resolveExecutionModeForSkills', () => {
     it('allows any mode when currentExecutionMode is null (creation path)', () => {
       for (const mode of ['paper', 'shadow', 'live'] as const) {
         const result = resolveExecutionModeForSkills({
-          skillIds: [TRADING_SKILL],
+          skillIds: [CRYPTO_TRADING_REF],
           submittedExecutionMode: mode,
           executionModeProvided: true,
           currentExecutionMode: null,
@@ -315,7 +328,7 @@ describe('resolveExecutionModeForSkills', () => {
     it('allows any mode when currentExecutionMode is undefined (creation path)', () => {
       for (const mode of ['paper', 'shadow', 'live'] as const) {
         const result = resolveExecutionModeForSkills({
-          skillIds: [TRADING_SKILL],
+          skillIds: [CRYPTO_TRADING_REF],
           submittedExecutionMode: mode,
           executionModeProvided: true,
         });
@@ -326,7 +339,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('allows paper↔shadow auto-transition when executionModeProvided is false (carry-forward path unchanged)', () => {
       const upgradeResult = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'paper',
@@ -336,7 +349,7 @@ describe('resolveExecutionModeForSkills', () => {
       expect(upgradeResult.issue).toBeUndefined();
 
       const downgradeResult = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'shadow',
@@ -350,7 +363,7 @@ describe('resolveExecutionModeForSkills', () => {
   describe('trading agents — mode not provided', () => {
     it('carries forward existing mode when available', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'live',
@@ -361,7 +374,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('defaults to paper when no existing mode is set (creation path)', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: null,
@@ -372,7 +385,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('defaults to paper when currentExecutionMode is omitted entirely', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
       });
@@ -381,7 +394,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('ignores a corrupt currentExecutionMode and defaults to paper', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'invalid-mode',
@@ -391,7 +404,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('upgrades paper to shadow when connections become available', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'paper',
@@ -402,7 +415,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('downgrades shadow to paper when connections are removed', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'shadow',
@@ -413,7 +426,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('keeps shadow when connections are still present', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'shadow',
@@ -424,7 +437,7 @@ describe('resolveExecutionModeForSkills', () => {
 
     it('keeps paper when no connections are present', () => {
       const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'paper',
@@ -439,7 +452,7 @@ describe('resolveAuthorizationMode', () => {
   describe('non-trading agents', () => {
     it('returns null when no explicit authMode is provided', () => {
       const result = resolveAuthorizationMode({
-        skillIds: [NON_TRADING_SKILL],
+        skillIds: [NONTRADING_ID],
         submittedAuthorizationMode: undefined,
         authorizationModeProvided: false,
       });
@@ -449,7 +462,7 @@ describe('resolveAuthorizationMode', () => {
 
     it('returns an issue when an explicit authMode is provided for a non-trading agent', () => {
       const result = resolveAuthorizationMode({
-        skillIds: [NON_TRADING_SKILL],
+        skillIds: [NONTRADING_ID],
         submittedAuthorizationMode: 'direct',
         authorizationModeProvided: true,
       });
@@ -473,7 +486,7 @@ describe('resolveAuthorizationMode', () => {
   describe('trading agents — mode provided', () => {
     it('resolves explicit "direct" mode', () => {
       const result = resolveAuthorizationMode({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedAuthorizationMode: 'direct',
         authorizationModeProvided: true,
       });
@@ -483,7 +496,7 @@ describe('resolveAuthorizationMode', () => {
 
     it('resolves explicit "approval_required" mode', () => {
       const result = resolveAuthorizationMode({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedAuthorizationMode: 'approval_required',
         authorizationModeProvided: true,
       });
@@ -493,7 +506,7 @@ describe('resolveAuthorizationMode', () => {
 
     it('returns an issue for an invalid authMode string', () => {
       const result = resolveAuthorizationMode({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedAuthorizationMode: 'invalid_mode',
         authorizationModeProvided: true,
       });
@@ -504,7 +517,7 @@ describe('resolveAuthorizationMode', () => {
 
     it('returns an issue for null authMode when explicitly provided', () => {
       const result = resolveAuthorizationMode({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedAuthorizationMode: null,
         authorizationModeProvided: true,
       });
@@ -517,7 +530,7 @@ describe('resolveAuthorizationMode', () => {
   describe('trading agents — mode not provided', () => {
     it('defaults to "direct" when no explicit authMode is provided', () => {
       const result = resolveAuthorizationMode({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedAuthorizationMode: undefined,
         authorizationModeProvided: false,
       });
@@ -528,7 +541,7 @@ describe('resolveAuthorizationMode', () => {
     it('defaults to "direct" when authorizationModeProvided is false even with a value', () => {
       // The submitted value is ignored when the flag indicates it was not provided.
       const result = resolveAuthorizationMode({
-        skillIds: [TRADING_SKILL],
+        skillIds: [CRYPTO_TRADING_REF],
         submittedAuthorizationMode: 'approval_required',
         authorizationModeProvided: false,
       });

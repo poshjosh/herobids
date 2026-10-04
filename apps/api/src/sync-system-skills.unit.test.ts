@@ -17,33 +17,33 @@ import type { Database } from '@herobids/db';
 
 const MOCK_SKILLS: SkillDefinition[] = [
   {
-    id: 'trading',
-    slug: 'system/trading',
-    name: 'Trading',
-    description: 'Submit trade decisions and inspect trading state.',
-    instructions: 'Use trading tools to submit decisions.',
+    id: 'programming',
+    slug: 'system/programming',
+    name: 'Programming',
+    description: 'Run code for automation and analysis.',
+    instructions: 'Use programming tools to run code.',
     promptHint: undefined,
     promptTemplate: undefined,
-    requiredTools: ['submit_decision'],
-    capabilityFamilies: ['trading'],
+    requiredTools: ['execute_code'],
+    capabilityFamilies: [],
     bindingRequirements: {},
-    contextRequirements: ['positions'],
+    contextRequirements: ['costs'],
     requiredContextBlocks: [],
     promptRendererHints: [],
-    requiredGuardrails: ['daily-loss'],
+    requiredGuardrails: ['token-budget'],
     suggestedTickIntervalMs: 900_000,
     visibility: 'public',
   },
   {
-    id: 'bot-management',
-    slug: 'system/bot-management',
-    name: 'Bot Management',
-    description: 'Create, start, stop, and monitor trading bots.',
-    instructions: 'Use bot lifecycle tools.',
+    id: 'file-management',
+    slug: 'system/file-management',
+    name: 'File Management',
+    description: 'Read, write, list, and delete workspace files.',
+    instructions: 'Use workspace file tools.',
     promptHint: undefined,
     promptTemplate: undefined,
-    requiredTools: ['create_bot'],
-    capabilityFamilies: ['trading'],
+    requiredTools: ['write_file'],
+    capabilityFamilies: [],
     bindingRequirements: {},
     contextRequirements: [],
     requiredContextBlocks: [],
@@ -214,10 +214,10 @@ describe('syncSystemSkills — slug field', () => {
       await syncSystemSkills(db);
 
       const skillInserts = calls.filter(
-        (c) => c.type === 'insert' && c.values?.['id'] === 'trading',
+        (c) => c.type === 'insert' && c.values?.['id'] === 'programming',
       );
       expect(skillInserts).toHaveLength(1);
-      expect(skillInserts[0]!.values!['slug']).toBe('system/trading');
+      expect(skillInserts[0]!.values!['slug']).toBe('system/programming');
     });
   });
 
@@ -226,9 +226,9 @@ describe('syncSystemSkills — slug field', () => {
 
     await withSingleSkill(skill, async () => {
       const { db, calls } = buildMockTx({
-        existingSkill: { id: skill.id, currentRevisionId: 'trading:system:1' },
+        existingSkill: { id: skill.id, currentRevisionId: 'programming:system:1' },
         existingRevision: {
-          id: 'trading:system:1',
+          id: 'programming:system:1',
           name: skill.name,
           description: skill.description,
           instructions: 'OLD instructions that differ from incoming',
@@ -251,7 +251,7 @@ describe('syncSystemSkills — slug field', () => {
         (c) => c.type === 'update' && c.set?.['slug'] !== undefined,
       );
       expect(skillUpdates.length).toBeGreaterThanOrEqual(1);
-      expect(skillUpdates[0]!.set!['slug']).toBe('system/trading');
+      expect(skillUpdates[0]!.set!['slug']).toBe('system/programming');
     });
   });
 
@@ -280,15 +280,15 @@ describe('syncSystemSkills — slug field', () => {
     }
 
     // Spot-check specific known slugs
-    const tradingInsert = calls.find(
-      (c) => c.type === 'insert' && c.values?.['id'] === 'trading',
+    const programmingInsert = calls.find(
+      (c) => c.type === 'insert' && c.values?.['id'] === 'programming',
     );
-    expect(tradingInsert!.values!['slug']).toBe('system/trading');
+    expect(programmingInsert!.values!['slug']).toBe('system/programming');
 
-    const botInsert = calls.find(
-      (c) => c.type === 'insert' && c.values?.['id'] === 'bot-management',
+    const fileMgmtInsert = calls.find(
+      (c) => c.type === 'insert' && c.values?.['id'] === 'file-management',
     );
-    expect(botInsert!.values!['slug']).toBe('system/bot-management');
+    expect(fileMgmtInsert!.values!['slug']).toBe('system/file-management');
   });
 
   it('skips update when content hash matches (no slug write needed)', async () => {
@@ -296,9 +296,9 @@ describe('syncSystemSkills — slug field', () => {
 
     await withSingleSkill(skill, async () => {
       const { db, calls } = buildMockTx({
-        existingSkill: { id: skill.id, currentRevisionId: 'trading:system:1' },
+        existingSkill: { id: skill.id, currentRevisionId: 'programming:system:1' },
         existingRevision: {
-          id: 'trading:system:1',
+          id: 'programming:system:1',
           name: skill.name,
           description: skill.description,
           instructions: skill.instructions,
@@ -340,8 +340,8 @@ describe('syncSystemSkills — slug field', () => {
       expect(skillInsert).toBeDefined();
 
       const values = skillInsert!.values!;
-      expect(values['slug']).toBe('system/trading');
-      expect(values['id']).toBe('trading');
+      expect(values['slug']).toBe('system/programming');
+      expect(values['id']).toBe('programming');
       expect(values['publicationStatus']).toBe('published');
       expect(values['authorId']).toBeNull();
       expect(values['name']).toBe(skill.name);
@@ -355,9 +355,9 @@ describe('syncSystemSkills — slug field', () => {
 
     await withSingleSkill(skill, async () => {
       const { db, calls } = buildMockTx({
-        existingSkill: { id: skill.id, currentRevisionId: 'trading:system:1' },
+        existingSkill: { id: skill.id, currentRevisionId: 'programming:system:1' },
         existingRevision: {
-          id: 'trading:system:1',
+          id: 'programming:system:1',
           name: skill.name,
           description: 'Old description that triggers update',
           instructions: skill.instructions,
@@ -380,7 +380,7 @@ describe('syncSystemSkills — slug field', () => {
       expect(updates.length).toBeGreaterThanOrEqual(1);
 
       const skillUpdate = updates.find((c) => c.set?.['slug'] !== undefined)!;
-      expect(skillUpdate.set!['slug']).toBe('system/trading');
+      expect(skillUpdate.set!['slug']).toBe('system/programming');
       expect(skillUpdate.set!['publicationStatus']).toBe('published');
       expect(skillUpdate.set!['name']).toBe(skill.name);
       expect(skillUpdate.set!['description']).toBe(skill.description);

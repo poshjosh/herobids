@@ -231,7 +231,7 @@ async function scenario_intelligence_patch(token: string): Promise<void> {
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       // No connectionIds — not needed for this test
     },
   });
@@ -265,7 +265,7 @@ async function scenario_hybrid_mixed_post(token: string): Promise<void> {
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       connectionIds: [connectionId],
     },
   });
@@ -292,7 +292,7 @@ async function scenario_hybrid_mixed_patch(token: string): Promise<void> {
       strategyPreset: 'swing',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       connectionIds: [connectionId],
     },
   });
@@ -333,7 +333,7 @@ async function scenario_hybrid_scanner_post(token: string): Promise<void> {
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       connectionIds: [connectionId],
     },
   });
@@ -359,7 +359,7 @@ async function scenario_hybrid_scanner_patch(token: string): Promise<void> {
       strategyPreset: 'swing',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       connectionIds: [connectionId],
     },
   });

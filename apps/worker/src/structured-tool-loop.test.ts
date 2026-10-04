@@ -598,7 +598,7 @@ describe('runStructuredToolLoop', () => {
               ok: true,
               data: {
                 content: 'adding skill',
-                toolCalls: [{ id: 'call_1', name: 'add_skills', args: { skillIds: ['trading'] } }],
+                toolCalls: [{ id: 'call_1', name: 'add_skills', args: { skillIds: ['traderton/skills/crypto-trading'] } }],
                 model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
               },
             },

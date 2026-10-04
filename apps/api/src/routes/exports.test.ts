@@ -1077,7 +1077,7 @@ describe('GET /agents/:id/export/config', () => {
       id: TEST_AGENT_ID,
       name: 'my agent',
       prompt: 'trade BTC',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       executionMode: 'paper',
       dailyTokenBudget: 1000,
       dailyLossLimit: null,

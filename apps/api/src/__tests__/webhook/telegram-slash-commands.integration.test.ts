@@ -792,7 +792,7 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
       select: vi.fn().mockImplementation(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([stubAgent({ status: 'stopped' })]);
-        return makeChain([{ skillId: 'trading' }]);
+        return makeChain([{ skillId: 'traderton/skills/crypto-trading' }]);
       }),
     } as unknown as Database;
 

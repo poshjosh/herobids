@@ -38,7 +38,7 @@ function makeFormState(overrides: Partial<AgentFormState> = {}): AgentFormState 
     hybridMode: undefined,
     technicalPreFilterEnabled: false,
     technicalConfig: defaultTechnicalConfigFormState(),
-    skillIds: ['trading'],
+    skillIds: ['traderton/skills/crypto-trading'],
     connectionIds: ['conn-1'],
     executionMode: 'test',
     capital: '1500',

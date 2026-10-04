@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { agentInteractivityRoutes as registerAgentInteractivityRoutes, telegramWebhookHandler } from './agent-interactivity.js';
+import { registerBackendRefFamilies } from './agent-config-helpers.js';
 import type { Database } from '@herobids/db';
 import type { AlertsConfig } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
@@ -143,6 +144,16 @@ beforeEach(() => {
   currentProfiles = new Map();
   stagedPlannerInputs.length = 0;
   vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+  // Phase 4 (EC-3): trading capability resolves from the external crypto-trading
+  // ref via the config-registered backend-ref family map (mirrors API startup).
+  registerBackendRefFamilies([{
+    refs: [
+      'traderton/skills/crypto-trading',
+      'traderton/skills/crypto-bot-management',
+      'traderton/skills/crypto-risk-monitoring',
+    ],
+    family: 'trading',
+  }]);
 });
 
 // ─── PUT /agents/:id ──────────────────────────────────────────────────────
@@ -185,7 +196,7 @@ describe('PUT /agents/:id', () => {
     vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([{
       connectionId: 'connection-1', venueAccountId: profile.venueAccountId, active: true, ready: true,
     }]);
-    const db = buildAgentDb({ ...stubAgent, skillIds: ['trading'] });
+    const db = buildAgentDb({ ...stubAgent, skillIds: ['traderton/skills/crypto-trading'] });
     const app = Fastify();
     decorateWithAuth(app);
     await agentInteractivityRoutes(app, db, buildMockRedis());
@@ -212,7 +223,7 @@ describe('PUT /agents/:id', () => {
     vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([{
       connectionId: 'connection-1', venueAccountId: 'venue-account-1', active: true, ready: true,
     }]);
-    const db = buildAgentDb({ ...stubAgent, skillIds: ['trading'] });
+    const db = buildAgentDb({ ...stubAgent, skillIds: ['traderton/skills/crypto-trading'] });
     const app = Fastify();
     decorateWithAuth(app);
     await agentInteractivityRoutes(app, db, buildMockRedis());
@@ -436,7 +447,7 @@ describe('PUT /agents/:id', () => {
           return makeChain([{ ...stubAgent, executionDefaults: { mode: 'paper' } }]);
         }
         if (selectCount === 2) {
-          return makeChain([{ skillId: 'trading' }]);
+          return makeChain([{ skillId: 'traderton/skills/crypto-trading' }]);
         }
         if (selectCount === 3) {
           // hasAgentConnections lookup (agent_connections) — no active connections.
@@ -458,7 +469,7 @@ describe('PUT /agents/:id', () => {
           return makeChain([]);
         }
         if (selectCount === 7) {
-          return makeChain([{ skillId: 'trading', skillRevisionId: 'trading:v1' }]);
+          return makeChain([{ skillId: 'traderton/skills/crypto-trading', skillRevisionId: 'traderton/skills/crypto-trading:v1' }]);
         }
         if (selectCount === 8) {
           return makeChain([updatedAgent]);
@@ -511,17 +522,17 @@ describe('PUT /agents/:id', () => {
       ...stubAgent,
       name: 'Updated',
       prompt: 'New prompt',
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       executionDefaults: { mode: 'paper' },
     };
     const db = {
       select: vi.fn().mockImplementation(() => {
         selectCount++;
         if (selectCount === 1) {
-          return makeChain([{ ...stubAgent, executionDefaults: { mode: 'paper' }, skillIds: ['trading'] }]);
+          return makeChain([{ ...stubAgent, executionDefaults: { mode: 'paper' }, skillIds: ['traderton/skills/crypto-trading'] }]);
         }
         if (selectCount === 2) {
-          return makeChain([{ skillId: 'trading' }]);
+          return makeChain([{ skillId: 'traderton/skills/crypto-trading' }]);
         }
         if (selectCount === 3) {
           // hasAgentConnections lookup (agent_connections) — no active connections.
@@ -529,11 +540,11 @@ describe('PUT /agents/:id', () => {
         }
         if (selectCount === 4) {
           return makeChain([{
-            id: 'trading',
+            id: 'traderton/skills/crypto-trading',
             authorId: null,
             publicationStatus: 'published',
             priceCents: 0,
-            currentRevisionId: 'trading:v1',
+            currentRevisionId: 'traderton/skills/crypto-trading:v1',
           }]);
         }
         if (selectCount === 5) {
@@ -543,12 +554,12 @@ describe('PUT /agents/:id', () => {
           return makeChain([]);
         }
         if (selectCount === 7) {
-          return makeChain([{ skillId: 'trading', skillRevisionId: 'trading:v1' }]);
+          return makeChain([{ skillId: 'traderton/skills/crypto-trading', skillRevisionId: 'traderton/skills/crypto-trading:v1' }]);
         }
         if (selectCount === 8) {
           return makeChain([updatedAgent]);
         }
-        return makeChain([{ skillId: 'trading' }]);
+        return makeChain([{ skillId: 'traderton/skills/crypto-trading' }]);
       }),
       update: vi.fn().mockReturnValue({ set: updateSet }),
       delete: vi.fn().mockReturnValue({ where: deleteWhere }),
@@ -568,7 +579,7 @@ describe('PUT /agents/:id', () => {
       payload: {
         name: 'Updated',
         prompt: 'New prompt',
-        skillIds: ['trading'],
+        skillIds: ['traderton/skills/crypto-trading'],
       },
     });
 

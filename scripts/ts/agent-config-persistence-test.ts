@@ -199,7 +199,7 @@ async function scenario1_completeConfigPersisted(token: string): Promise<void> {
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       technical: COMPLETE_TECHNICAL,
     },
   });
@@ -312,7 +312,7 @@ async function scenario2_incompleteConfigRejected(token: string): Promise<void> 
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       technical: {
         ...COMPLETE_TECHNICAL,
         indicators: undefined,
@@ -347,7 +347,7 @@ async function scenario3_mixedModeDefaultsApplied(token: string): Promise<void> 
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       technical: {
         filters: { venue: 'hyperliquid', venueType: 'orderbook' },
         // ⚠️ Minimal technical — Zod defaults should fill the rest
@@ -399,7 +399,7 @@ async function scenario4_patchPreservesFields(token: string): Promise<void> {
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       technical: COMPLETE_TECHNICAL,
     },
   });
@@ -521,7 +521,7 @@ async function scenario6_patchInvalidRejected(token: string): Promise<void> {
       strategyPreset: 'momentum',
       style: 'balanced',
       executionDefaults: { mode: 'paper' as const },
-      skillIds: ['trading'],
+      skillIds: ['traderton/skills/crypto-trading'],
       technical: COMPLETE_TECHNICAL,
     },
   });

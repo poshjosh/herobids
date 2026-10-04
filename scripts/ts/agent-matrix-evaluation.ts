@@ -281,7 +281,7 @@ async function createAgent(
   mc: MatrixCase,
   connectionId: string,
 ): Promise<string> {
-  const skillIds = ['trading'];
+  const skillIds = ['traderton/skills/crypto-trading'];
   }
 
   const payload: Record<string, unknown> = {

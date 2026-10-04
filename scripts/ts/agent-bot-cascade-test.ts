@@ -336,7 +336,7 @@ Just wait for further instructions.
       body: {
         name: `Cascade Test ${new Date().toISOString().slice(0, 10)}`,
         prompt: goal,
-        skillIds: ['bot-management'],
+        skillIds: ['traderton/skills/crypto-bot-management'],
         executionDefaults: { mode: EXECUTION_MODE },
         tickIntervalMs: TICK_INTERVAL_MS,
         capital: '100000',

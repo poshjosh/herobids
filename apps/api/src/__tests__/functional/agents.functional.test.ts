@@ -513,7 +513,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
         payload: {
           name: 'Paper Mode Agent',
           prompt: 'Trade BTC.',
-          skillIds: ['trading'],
+          skillIds: ['traderton/skills/crypto-trading'],
           executionDefaults: { mode: 'paper' },
           executionVenue: 'hyperliquid',
         },
@@ -571,7 +571,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
         payload: {
           name: 'Paper To Live Agent',
           prompt: 'Trade SOL.',
-          skillIds: ['trading'],
+          skillIds: ['traderton/skills/crypto-trading'],
           executionDefaults: { mode: 'paper' },
         },
       });
