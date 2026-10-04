@@ -401,6 +401,8 @@ export interface Skill {
   isLikedByViewer: boolean;
   isSelectable: boolean;
   selectabilityReason: string;
+  /** Phase 4: the skill's ref is in a registered backend's approvedSourceSkillRefs. */
+  isBackendApproved: boolean;
   currentRevisionId: string | null;
   currentRevisionVersion: number | null;
   name: string;

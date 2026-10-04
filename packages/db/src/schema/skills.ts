@@ -11,7 +11,7 @@ export const skills = pgTable('skills', {
   id: text('id').primaryKey(),
   /** null = system-owned; userId = user-authored */
   authorId: text('author_id').references(() => users.id),
-  /** Human-readable address: 'system/trading', 'alice/my-skill'. */
+  /** Human-readable address: 'system/programming', 'alice/my-skill'. */
   slug: text('slug').notNull(),
   /** draft | private | published | delisted | archived */
   publicationStatus: text('publication_status').notNull().default('draft'),

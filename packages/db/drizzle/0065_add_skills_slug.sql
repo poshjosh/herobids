@@ -1,4 +1,4 @@
--- Add slug column for unified skill addressing (system/trading, alice/my-skill).
+-- Add slug column for unified skill addressing (system/programming, alice/my-skill).
 ALTER TABLE "skills" ADD COLUMN "slug" text;
 --> statement-breakpoint
 -- Backfill system skills: author_id IS NULL → 'system/<kebab-name>'

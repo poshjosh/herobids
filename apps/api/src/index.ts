@@ -21,7 +21,7 @@ import { analyticsRoutes } from './routes/analytics.js';
 import { aiRoutes } from './routes/ai.js';
 import { chatRoutes } from './routes/chat.js';
 import { ChatUsageBillingRecorder } from './billing/chat-usage-billing-recorder.js';
-import { skillsRoutes } from './routes/skills.js';
+import { skillsRoutes, registerBackendApprovedSkillRefs } from './routes/skills.js';
 import { datasetRoutes } from './routes/datasets.js';
 import { agentDocumentRoutes } from './routes/agent-documents.js';
 import { exportRoutes } from './routes/exports.js';
@@ -300,6 +300,14 @@ registerBackendRefFamilies(
     .filter((backend): backend is typeof backend & { requiresConnectionFamily: string } =>
       typeof backend.requiresConnectionFamily === 'string')
     .map((backend) => ({ refs: backend.approvedSourceSkillRefs, family: backend.requiresConnectionFamily })),
+);
+// Phase 4 T9b: register the approved external skill refs (+ their family) so
+// skill views carry isBackendApproved and the backend's family.
+registerBackendApprovedSkillRefs(
+  appConfig.externalBackends.map((backend) => ({
+    refs: backend.approvedSourceSkillRefs,
+    ...(backend.requiresConnectionFamily ? { family: backend.requiresConnectionFamily } : {}),
+  })),
 );
 
 await capabilityRoutes(

@@ -9,7 +9,7 @@ import { ChatUsageBillingRecorder, type AggregateChatLlmUsage } from '../billing
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig } from '@herobids/domain';
-import { normalizePersistedAiModelConfig, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, SKILL_PRESET_MAP, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
@@ -645,16 +645,10 @@ function now(): Date {
  * to keep the chat-created agents consistent with form-created agents.
  */
 function resolveSkillPresetSkillIds(skillPresetId: string): string[] {
-  // System skill IDs — these are seeded by syncSystemSkills at API startup.
-  // The IDs must match what the existing form uses.
-  const PRESET_SKILL_MAP: Record<string, string[]> = {
-    trading: ['trading', 'bot-management'],
-    'direct-trading': ['trading'],
-    'trading-assistant': ['trading'],
-    'personal-assistant': ['task-management', 'web-access', 'email'],
-    custom: [],
-  };
-  return PRESET_SKILL_MAP[skillPresetId] ?? [];
+  // Phase 4 (D21): the canonical preset→skill map (packages/domain/src/skills.ts).
+  // Trading presets expand to the external skills.sh refs; the API records the
+  // assignment only, and the first agent start installs them (T5/T6).
+  return SKILL_PRESET_MAP[skillPresetId] ?? [];
 }
 
 /**

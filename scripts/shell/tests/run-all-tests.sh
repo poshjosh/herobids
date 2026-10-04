@@ -316,64 +316,6 @@ INSERT INTO "skills" (
   "created_at", "updated_at"
 ) VALUES
   (
-    'bot-management', NULL,
-    'Bot Management',
-    'Create, start, stop, and monitor trading bots.',
-    $$You have access to bot-management tools.
-
-- Use `create_bot` to create a trading bot.
-- Use `list_bots` to inspect existing bots.
-- Use `get_bot_status` to inspect a bot's current state.
-- Use `start_bot` to start a bot.
-- Use `stop_bot` to stop a bot.
-- Use `adjust_bot_config` to update a bot's configuration.
-- Use `get_analytics` to inspect bot performance.
-- Use `list_positions` to inspect open positions tied to managed bots.
-- Use `send_message` to report actions, status, or issues to the user.$$,
-    ARRAY['create_bot', 'stop_bot', 'start_bot', 'adjust_bot_config', 'list_bots', 'get_bot_status', 'get_analytics', 'list_positions', 'send_message'],
-    ARRAY['bot_statuses', 'positions', 'costs'],
-    ARRAY['token-budget', 'daily-loss', 'bot-limit'],
-    ARRAY['trading'], 900000, 'published', 'bot-management:system:1', 0, false, ARRAY[]::text[], now(), now()
-  ),
-  (
-    'trading', NULL,
-    'Trading',
-    'Submit trade decisions and inspect trading state.',
-    $$You have access to trading tools.
-
-- Use `submit_decision` to submit a trade intent for a specific instrument.
-- Use `list_positions` to inspect current open positions.
-- Use `get_analytics` to inspect recent trading outcomes and exposure.
-- Use `check_regime` to assess current market conditions.
-- Use `search_tokens` to find a token by name or symbol.
-- Use `discover_tokens` to explore available trading candidates.
-- Use `get_funding_rates` to inspect perpetual funding conditions.
-- Use `get_market_overview` to inspect broad market state.
-- Use `get_price` for focused price checks.
-- Use `watch_token`, `list_watches`, `remove_watch`, and `check_watches` to maintain and inspect watch-based monitoring.$$,
-    ARRAY['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
-    ARRAY['positions', 'fills', 'analytics', 'costs'],
-    ARRAY['token-budget', 'daily-loss'],
-    ARRAY['trading'], 300000, 'published', 'trading:system:1', 0, false, ARRAY[]::text[], now(), now()
-  ),
-  (
-    'risk-monitoring', NULL,
-    'Risk Monitoring',
-    'Watch open positions and alert the user when risk thresholds are approaching.',
-    $$You have access to risk-monitoring and alerting tools.
-
-- Use `list_positions` to inspect current open positions and exposure.
-- Use `get_analytics` to inspect realized and unrealized performance context.
-- Use `get_price` for focused price checks.
-- Use `watch_token`, `list_watches`, `remove_watch`, and `check_watches` to maintain and inspect watch-based monitoring.
-- Use `send_message` to alert the user.
-- Use `publish_artifact` to publish structured monitoring outputs.$$,
-    ARRAY['send_message', 'publish_artifact', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
-    ARRAY['positions', 'fills', 'analytics'],
-    ARRAY['token-budget', 'daily-loss'],
-    ARRAY['trading'], 300000, 'published', 'risk-monitoring:system:1', 0, false, ARRAY[]::text[], now(), now()
-  ),
-  (
     'programming', NULL,
     'Programming',
     'Run sandboxed code for analysis, calculations, and implementation support.',

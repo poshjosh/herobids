@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, TASK_MANAGEMENT_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
 import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills, agentConnections, connections } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -120,6 +120,23 @@ const BROWSER_POOL_URL = process.env['BROWSER_POOL_URL'];
 // Resolved trading backend (ResolvedExternalBackend JSON). Carries the HMAC
 // secret — never passed to a tool; only the client built from it sees it.
 const EXTERNAL_BACKEND_CONFIG_RAW = process.env['EXTERNAL_BACKEND_CONFIG_JSON'];
+
+/**
+ * Phase 4 T9b: the forwarded backend's approved external skill refs, parsed once
+ * for the `search_skills` ORDER BY so backend-approved skills sort above other
+ * external skills. Config-driven (no backend name in code). Empty when no backend
+ * is forwarded or the payload is unreadable.
+ */
+const APPROVED_SOURCE_REFS: ReadonlySet<string> = (() => {
+  if (!EXTERNAL_BACKEND_CONFIG_RAW) return new Set();
+  try {
+    const parsed = JSON.parse(EXTERNAL_BACKEND_CONFIG_RAW) as { definition?: { approvedSourceSkillRefs?: unknown } };
+    const refs = parsed.definition?.approvedSourceSkillRefs;
+    return Array.isArray(refs) ? new Set(refs.filter((r): r is string => typeof r === 'string')) : new Set();
+  } catch {
+    return new Set();
+  }
+})();
 
 // ── HTTP/1.1 fetch for sites that block HTTP/2 (e.g. Forex Factory) ─────
 
@@ -448,13 +465,13 @@ const resolvedBaseUrl = provider !== LLM_PROVIDER ? undefined : LLM_BASE_URL;
 // Skill resolution
 // ---------------------------------------------------------------------------
 
+// Phase 4 (D21): the built-in trading skills are gone. This fallback map covers
+// only the remaining `system/*` skills; a trading agent's skills come from its
+// DB assignments (external refs), resolved by the capability descriptor.
 const ALL_SKILLS_BY_ID: Record<string, SkillDefinition> = {
   base: BASE_SKILL,
-  'bot-management': BOT_MANAGEMENT_SKILL,
   'file-management': FILE_MANAGEMENT_SKILL,
   programming: PROGRAMMING_SKILL,
-  trading: TRADING_SKILL,
-  'risk-monitoring': RISK_MONITORING_SKILL,
   'web-access': WEB_ACCESS_SKILL,
   'task-management': TASK_MANAGEMENT_SKILL,
 };
@@ -1915,6 +1932,20 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
           ne(skills.id, 'base'),
           or(...tokenClauses),
         ))
+        // T9b (EC-17): order matching rows system → backend-approved → user →
+        // other external, then by name. Only re-orders rows that already match
+        // the query (the WHERE above); external-provider results are a separate,
+        // later section. Backend-approved = source_ref ∈ the config-approved set.
+        .orderBy(
+          sql`CASE
+            WHEN ${skills.sourceRef} IS NULL AND ${skills.authorId} IS NULL THEN 0
+            WHEN ${skills.sourceRef} IS NOT NULL AND ${skills.sourceRef} = ANY(${sql.raw(`ARRAY[${[...APPROVED_SOURCE_REFS].map((r) => `'${r.replace(/'/g, "''")}'`).join(',') || `NULL`}]::text[]`)}) THEN 1
+            WHEN ${skills.authorId} IS NOT NULL THEN 2
+            ELSE 3
+          END`,
+          sql`${skills.name} ASC`,
+          sql`${skills.id} ASC`,
+        )
         .limit(effectiveLimit);
 
         // Build id→slug map so dependsOn returns slugs, not raw IDs

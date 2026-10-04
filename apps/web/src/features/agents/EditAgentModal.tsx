@@ -4,7 +4,7 @@ import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS, ReasoningLevelSchema } from '@herobids/domain';
 import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolvePromptTemplate, resolveGoalPlaceholderKey } from './agent-display.js';
+import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolvePromptTemplate, resolveGoalPlaceholderKey, selectedSkillsHaveCapabilityFamily } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -241,10 +241,12 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       // Don't override existing selections
       if ((prev.connectionIds ?? []).length > 0) return prev;
 
-      const hasEmailSkill = prev.skillIds.includes('email');
-      const hasTradingSkill = prev.skillIds.includes('trading') || prev.skillIds.includes('bot-management');
-      const newlyAddedEmail = hasEmailSkill && !prevSkillIds.includes('email');
-      const newlyAddedTrading = hasTradingSkill && !prevSkillIds.some((id) => id === 'trading' || id === 'bot-management');
+      // Phase 4 (EC-3): detect trading via the selected skills' capability family
+      // (config-driven for backend-approved external skills), not hard-coded ids.
+      const hasEmailSkill = selectedSkillsHaveCapabilityFamily(prev.skillIds, selectableSkills, 'email');
+      const hasTradingSkill = selectedSkillsHaveCapabilityFamily(prev.skillIds, selectableSkills, 'trading');
+      const newlyAddedEmail = hasEmailSkill && !selectedSkillsHaveCapabilityFamily(prevSkillIds, selectableSkills, 'email');
+      const newlyAddedTrading = hasTradingSkill && !selectedSkillsHaveCapabilityFamily(prevSkillIds, selectableSkills, 'trading');
 
       if (newlyAddedEmail) {
         const emailConn = allPickerConnections.find((c) => c.provider === 'gmail');
@@ -291,7 +293,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   }, [agentConnectionsQuery.isSuccess, agentConnectionsQuery.data?.connections, agentGenericConnectionsQuery.isSuccess, agentGenericConnectionsQuery.data?.connections]);
 
   const selectedSkills = resolveSelectedSkills(form.skillIds, selectableSkills);
-  const hasBotManagementSkill = form.skillIds.includes('bot-management');
+  const hasBotManagementSkill = selectedSkillsHaveCapabilityFamily(form.skillIds, selectableSkills, 'trading');
   const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(form.tickIntervalMins);
   const tickIntervalError = tickIntervalValidationMessageId
     ? intl.formatMessage({ id: tickIntervalValidationMessageId })

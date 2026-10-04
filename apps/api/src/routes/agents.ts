@@ -1123,7 +1123,8 @@ export async function agentRoutes(
     const basePolicy: Record<string, unknown> = parsed.data.toolPolicy !== undefined
       ? { ...parsed.data.toolPolicy }
       : { ...((agent.toolPolicy as Record<string, unknown> | null) ?? {}) };
-    if (mergedSkillIds.includes('bot-management') && !basePolicy['manage_bot']) {
+    const mergedIsTradingCapable = hasSkillCapabilityFamily(mergedSkillIds, 'trading');
+    if (mergedIsTradingCapable && !basePolicy['manage_bot']) {
       basePolicy['manage_bot'] = {
         capability: 'manage_bot',
         tier: 'brokered',
@@ -1131,7 +1132,7 @@ export async function agentRoutes(
         limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 },
       };
     } else if (
-      !mergedSkillIds.includes('bot-management') &&
+      !mergedIsTradingCapable &&
       // Only auto-remove if the caller did not explicitly supply a grant entry.
       !(parsed.data.toolPolicy && 'manage_bot' in parsed.data.toolPolicy)
     ) {

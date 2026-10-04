@@ -243,40 +243,8 @@ const SKILL_PRESET_ENTRY: DocsIndexEntry = {
   id: 'mapping/skill-presets',
   title: 'Skill Preset to Skill Mapping',
   kind: 'mapping',
-  content: `
-When a user selects a preset in the UI, these are the skills assigned:
-
-trading (AI crypto trader):
-  - bot-management: Create, start, stop, and monitor trading bots
-  - trading: Submit trade decisions and inspect trading state
-
-direct-trading (AI direct trader):
-  - trading: Submit trade decisions and inspect trading state
-
-trading-assistant (AI trading assistant):
-  - trading: Submit trade decisions and inspect trading state
-
-personal-assistant (AI personal assistant):
-  - task-management: Create, track, and complete tasks; schedule reminders
-  - web-access: Search the internet, read web pages, fetch documents
-  - email: Send emails on behalf of the user
-
-custom (Custom AI):
-  - No preset skills; user selects skills manually
-
-Available skills (all public):
-  - base: Core tools (memory, messaging, cost, schema) — auto-injected
-  - bot-management: Bot lifecycle management
-  - trading: Direct trade decisions and state inspection
-  - risk-monitoring: Watch positions and alert on drawdowns
-  - programming: Code execution (JS/Python)
-  - file-management: Per-agent workspace file operations
-  - web-access: Internet search, URL reading, document fetching
-  - task-management: Durable task tracking and reminders
-  - email: Send emails on user's behalf
-  - platform-docs: Search and read platform documentation and schemas
-`,
-  headings: ['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom', 'Available skills'],
+  content: "\nWhen a user selects a preset in the UI, these are the skills assigned:\n\ntrading (AI crypto trader):\n  - traderton/skills/crypto-trading\n  - traderton/skills/crypto-bot-management\n\ndirect-trading (AI direct trader):\n  - traderton/skills/crypto-trading\n\ntrading-assistant (AI trading assistant):\n  - traderton/skills/crypto-trading\n\npersonal-assistant (AI personal assistant):\n  - task-management\n  - web-access\n  - email\n\ncustom (Custom AI):\n  - No preset skills; user selects skills manually\n\nTrading presets assign external skills.sh refs (installed at the agent's first start).\n\nAvailable platform skills (all public):\n  - system/base: Core tools: memory, messaging, cost tracking, and schema fetching. Auto-injected into every agent.\n  - system/programming: Code execution tools\n  - system/file-management: Manage a per-agent workspace for intermediate files and outputs.\n  - system/web-access: Search the internet, read web pages, fetch documents, and make structured HTTP requests for research and information gathering.\n  - system/task-management: Create, track, and complete durable tasks; schedule one-shot reminders.\n  - system/email: Send emails on behalf of the user.\n  - system/platform-docs: Search and read platform documentation, form schemas, and configuration references.\n  - system/browser: Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.\n",
+  headings: ["trading","direct-trading","trading-assistant","personal-assistant","custom","Available platform skills"],
   tags: ['skills', 'presets', 'mapping', 'configuration'],
 };
 

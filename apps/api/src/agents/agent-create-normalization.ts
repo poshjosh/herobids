@@ -14,7 +14,7 @@ import {
 import type { PlansConfig } from '@herobids/domain';
 import { resolvePlanLimitEntitlements } from '../plan-guards.js';
 import { resolveAgentStrategyPreset } from './strategy-preset-resolver.js';
-import { resolveNotificationPolicy } from '../routes/agent-config-helpers.js';
+import { resolveNotificationPolicy, hasSkillCapabilityFamily } from '../routes/agent-config-helpers.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,15 +70,16 @@ export interface AgentCreateFields {
 
 /**
  * Auto-populate toolPolicy from skillIds.
- * If 'bot-management' is in skillIds, add a brokered manage_bot grant.
- * Merges with any existing toolPolicy entries supplied by the caller.
+ * A trading-capable agent (via a backend-approved trading skill ref, resolved by
+ * the config-registered family map — no hard-coded skill id, EC-3) gets a
+ * brokered manage_bot grant. Merges with any existing toolPolicy entries.
  */
 export function deriveToolPolicyFromSkills(
   skillIds: string[],
   existingToolPolicy?: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
   const basePolicy: Record<string, unknown> = { ...(existingToolPolicy ?? {}) };
-  if (skillIds.includes('bot-management') && !basePolicy['manage_bot']) {
+  if (hasSkillCapabilityFamily(skillIds, 'trading') && !basePolicy['manage_bot']) {
     basePolicy['manage_bot'] = {
       capability: 'manage_bot',
       tier: 'brokered',

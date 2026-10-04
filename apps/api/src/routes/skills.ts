@@ -6,7 +6,7 @@ import type { SQL } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import type { PlanSkillsEntitlements, PlansConfig, ExternalSkillProvider, ExternalSkillSummary, SourceKind } from '@herobids/domain';
 import { buildSkillSlug, findUnknownSkillTools, inferDependsOn, slugify, tokenize, expandToken } from '@herobids/domain';
-import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
+import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills, users, deriveSourceKind } from '@herobids/db';
 import { resolvePlanSkillEntitlements } from '../plan-guards.js';
 
 const PublicationStatusSchema = z.enum(['draft', 'private', 'published', 'delisted', 'archived']);
@@ -109,6 +109,8 @@ type SkillView = {
   isLikedByViewer: boolean;
   isSelectable: boolean;
   selectabilityReason: string;
+  /** Phase 4 T9b: this skill's ref is in a registered backend's approvedSourceSkillRefs. */
+  isBackendApproved: boolean;
   currentRevisionId: string | null;
   currentRevisionVersion: number | null;
   name: string;
@@ -127,8 +129,36 @@ type SkillView = {
   updatedAt: Date;
 };
 
-function sourceKindForSkill(row: typeof skills.$inferSelect): 'system' | 'user' {
-  return row.authorId === null ? 'system' : 'user';
+function sourceKindForSkill(row: typeof skills.$inferSelect): SourceKind {
+  // Phase 4 T4: an installed external skill carries a source_ref; derive its
+  // kind generically (external > system/user) rather than only authorId.
+  return deriveSourceKind({ sourceRef: row.sourceRef ?? null, authorId: row.authorId });
+}
+
+/**
+ * Phase 4 T9b: the operator-approved external skill refs (from
+ * externalBackends[].approvedSourceSkillRefs), registered once at API startup so
+ * skill views can carry an `isBackendApproved` flag and the backend's connection
+ * family — without the web app needing config. No backend name is hard-coded.
+ */
+const BACKEND_APPROVED_REFS = new Map<string, string | undefined>();
+
+export function registerBackendApprovedSkillRefs(
+  entries: ReadonlyArray<{ refs: readonly string[]; family?: string }>,
+): void {
+  BACKEND_APPROVED_REFS.clear();
+  for (const { refs, family } of entries) {
+    for (const ref of refs) BACKEND_APPROVED_REFS.set(ref, family);
+  }
+}
+
+/** Is this skill (by its source_ref/slug) approved by a registered backend? */
+function skillBackendApproval(row: { sourceRef: string | null; slug: string }): { approved: boolean; family?: string } {
+  const ref = row.sourceRef ?? row.slug;
+  if (BACKEND_APPROVED_REFS.has(ref)) {
+    return { approved: true, family: BACKEND_APPROVED_REFS.get(ref) };
+  }
+  return { approved: false };
 }
 
 function resolvePlanPolicy(plansConfig: PlansConfig | undefined, planId: string, isAdmin: boolean): PlanSkillsEntitlements {
@@ -330,11 +360,19 @@ async function buildSkillViews(
     const latestVersion = latestVersionBySkillId.get(row.id) ?? 0;
     const currentRevisionVersion = currentRevision?.version ?? 0;
     const selectability = evaluateSelectability(row, viewerUserId, viewerContext, planPolicy.canViewMarketplaceSkills);
+    const approval = skillBackendApproval({ sourceRef: row.sourceRef ?? null, slug: row.slug });
+    // An approved external skill inherits the backend's connection family so the
+    // picker/readiness/placeholder work before the first install populates it.
+    const baseFamilies = currentRevision?.capabilityFamilies ?? row.capabilityFamilies;
+    const effectiveFamilies = approval.approved && approval.family && !baseFamilies.includes(approval.family)
+      ? [...baseFamilies, approval.family]
+      : baseFamilies;
     views.push({
       id: row.id,
       slug: row.slug,
       authorId: row.authorId,
       sourceKind: sourceKindForSkill(row),
+      isBackendApproved: approval.approved,
       publicationStatus: row.publicationStatus as SkillView['publicationStatus'],
       hasStagedRevision: latestVersion > currentRevisionVersion,
       priceCents: row.priceCents,
@@ -356,7 +394,7 @@ async function buildSkillViews(
       requiredTools: currentRevision?.requiredTools ?? row.requiredTools,
       contextRequirements: currentRevision?.contextRequirements ?? row.contextRequirements,
       requiredGuardrails: currentRevision?.requiredGuardrails ?? row.requiredGuardrails,
-      capabilityFamilies: currentRevision?.capabilityFamilies ?? row.capabilityFamilies,
+      capabilityFamilies: effectiveFamilies,
       suggestedTickIntervalMs: currentRevision?.suggestedTickIntervalMs ?? row.suggestedTickIntervalMs,
       tags: currentRevision?.tags ?? row.tags ?? [],
       dependsOn: inferDependsOn(currentRevision?.requiredTools ?? row.requiredTools, row.id),
@@ -511,6 +549,7 @@ function mapExternalToSkillView(ext: ExternalSkillSummary): SkillView {
     isLikedByViewer: false,
     isSelectable: true,
     selectabilityReason: 'external',
+    isBackendApproved: BACKEND_APPROVED_REFS.has(ext.ref),
     currentRevisionId: null,
     currentRevisionVersion: null,
     promptTemplate: null,

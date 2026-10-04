@@ -8,7 +8,7 @@ import { PageShell, PageHeader, LoadingRows, ErrorState, Button, MetricCard, Fie
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
 import type { BlueprintSummary } from '../../lib/api-client.js';
-import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolvePromptTemplate, resolveGoalPlaceholderKey } from './agent-display.js';
+import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolvePromptTemplate, resolveGoalPlaceholderKey, selectedSkillsHaveCapabilityFamily } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -518,7 +518,7 @@ export function CreateAgentFlow({
   }, [intent.capital, riskDefaultsQuery.data?.dailyMaxLossPct]);
 
   const selectedSkills = skills.filter((skill) => intent.skillIds.includes(skill.id));
-  const hasBotManagementSkill = intent.skillIds.includes('bot-management');
+  const hasBotManagementSkill = selectedSkillsHaveCapabilityFamily(intent.skillIds, skills, 'trading');
   const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(intent.tickIntervalMins);
   const tickIntervalError = tickIntervalValidationMessageId
     ? intl.formatMessage({ id: tickIntervalValidationMessageId })
@@ -571,10 +571,12 @@ export function CreateAgentFlow({
       // Don't override existing selections
       if (state.connectionIds.length > 0) return state;
 
-      const hasEmailSkill = state.skillIds.includes('email');
-      const hasTradingSkill = state.skillIds.includes('trading') || state.skillIds.includes('bot-management');
-      const newlyAddedEmail = hasEmailSkill && !prevSkillIds.includes('email');
-      const newlyAddedTrading = hasTradingSkill && !prevSkillIds.some((id) => id === 'trading' || id === 'bot-management');
+      // Phase 4 (EC-3): detect trading/email via the selected skills' capability
+      // family (config-driven for backend-approved external skills), not ids.
+      const hasEmailSkill = selectedSkillsHaveCapabilityFamily(state.skillIds, skills, 'email');
+      const hasTradingSkill = selectedSkillsHaveCapabilityFamily(state.skillIds, skills, 'trading');
+      const newlyAddedEmail = hasEmailSkill && !selectedSkillsHaveCapabilityFamily(prevSkillIds, skills, 'email');
+      const newlyAddedTrading = hasTradingSkill && !selectedSkillsHaveCapabilityFamily(prevSkillIds, skills, 'trading');
 
       if (newlyAddedEmail) {
         const emailConn = allPickerConnections.find((c) => c.provider === 'gmail');

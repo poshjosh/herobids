@@ -338,7 +338,7 @@ async function sendBrokerSkillMutation(
 const addSkillsTool: AgentTool = {
   name: 'add_skills',
   description:
-    'Add skills to this agent by slug (e.g. system/trading) or ID. Dependencies are added automatically by default. External skills use owner/repo@skill format (e.g. tychohq/agent-skills@flights). The @ separates the repo from the skill name.',
+    'Add skills to this agent by slug (e.g. system/programming) or ID. Dependencies are added automatically by default. External skills use owner/repo@skill format (e.g. tychohq/agent-skills@flights). The @ separates the repo from the skill name.',
   parametersSchema: AddSkillsParamsSchema,
   parameters: convertZodToJsonSchema(AddSkillsParamsSchema),
   category: 'write-database',
@@ -657,7 +657,7 @@ const RemoveSkillsParamsSchema = z.object({
 const removeSkillsTool: AgentTool = {
   name: 'remove_skills',
   description:
-    'Remove skills from this agent by slug (e.g. system/trading) or ID. External skills are removed via skills.sh.',
+    'Remove skills from this agent by slug (e.g. system/programming) or ID. External skills are removed via skills.sh.',
   parametersSchema: RemoveSkillsParamsSchema,
   parameters: convertZodToJsonSchema(RemoveSkillsParamsSchema),
   category: 'write-database',

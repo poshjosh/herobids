@@ -31,16 +31,14 @@ export type SourceKind = 'system' | 'user' | 'external';
 
 export interface SkillDefinition {
   id: string;
-  /** Unique human-readable slug: `author/name` (e.g. `system/trading`). */
+  /** Unique human-readable slug: `author/name` (e.g. `system/programming`). */
   slug?: string;
   /**
    * The installed skills.sh source ref (`owner/repo/skill`, D11) this skill
-   * resolves from, when it maps to an external backend. The generic tool-visibility
-   * resolver (Step 12 T3.2) matches `sourceRef` against each registered backend's
-   * `approvedSourceSkillRefs`; a match drives tool exposure from the backend's
-   * signed descriptor. Absent for ordinary platform skills (no external backend).
-   * The three built-in trading skills carry their D11 refs via
-   * `BUILTIN_TRADING_SOURCE_REFS` (data, not an identity branch).
+   * resolves from. Set for external skills.sh skills (Phase 4 T4). The
+   * backend-approval resolver matches `sourceRef` against each registered
+   * backend's `approvedSourceSkillRefs`; a match drives tool exposure from the
+   * backend's MCP `tools/list`. Absent for `system/*` skills.
    */
   sourceRef?: string;
   /** Optional skill revision — incremented when the definition changes materially. */
@@ -108,142 +106,10 @@ You can also:
   visibility: 'public',
 };
 
-/**
- * D11 source refs for the three built-in trading skills (Step 12 P3-48). The
- * built-ins are platform-internal `SkillDefinition`s (no installed skills.sh
- * ref), so this constant map is the bridge that lets the generic tool-visibility
- * resolver match them against `externalBackends[].approvedSourceSkillRefs`. These
- * refs are the operator-approved set in `config/default.yaml` and the T4.1 seed
- * names — a declared datum, never a tool-name allow-list or identity branch.
- */
-export const BUILTIN_TRADING_SOURCE_REFS: Readonly<Record<string, string>> = {
-  trading: 'traderton/skills/crypto-trading',
-  'bot-management': 'traderton/skills/crypto-bot-management',
-  'risk-monitoring': 'traderton/skills/crypto-risk-monitoring',
-};
-
-/**
- * `bot-management` skill — used by the `trading` preset.
- * Allows the agent to create, start, stop, and monitor bots.
- */
-export const BOT_MANAGEMENT_SKILL: SkillDefinition = {
-  id: 'bot-management',
-  slug: 'system/bot-management',
-  sourceRef: BUILTIN_TRADING_SOURCE_REFS['bot-management'],
-  name: 'Bot Management',
-  description: 'Create, start, stop, and monitor trading bots.',
-  instructions: `You have access to bot-management tools.
-
-- Use \`create_bot\` to create a trading bot.
-- Use \`list_bots\` to inspect existing bots.
-- Use \`get_bot_status\` to inspect a bot's current state.
-- Use \`start_bot\` to start a bot.
-- Use \`stop_bot\` to stop a bot.
-- Use \`adjust_bot_config\` to update a bot's configuration.
-- Use \`get_analytics\` to inspect bot performance.
-- Use \`list_positions\` to inspect open positions tied to managed bots.
-- Use \`resolve_bot\` to find a bot ID by name or symbol before calling stop_bot, start_bot, get_bot_status, or adjust_bot_config when you don't have the UUID.
-- Use \`send_message\` to report actions, status, or issues to the user.`,
-  requiredTools: ['create_bot', 'stop_bot', 'start_bot', 'adjust_bot_config', 'list_bots', 'get_bot_status', 'get_analytics', 'list_positions', 'resolve_bot', 'send_message'],
-  capabilityFamilies: ['trading'],
-  bindingRequirements: {
-    trading: {
-      minBindings: 1,
-      requireReady: true,
-    },
-  },
-  contextRequirements: ['bot_statuses', 'positions', 'costs'],
-  requiredContextBlocks: ['corePlatformContext', 'tradingContext'],
-  promptRendererHints: ['readiness-summary', 'trading'],
-  requiredGuardrails: ['token-budget', 'daily-loss', 'bot-limit'],
-  suggestedTickIntervalMs: 900_000, // 15 minutes
-  visibility: 'public',
-  promptHint: 'Describe what trading bots to create and how to configure them (e.g., "Create a momentum bot for SOL with $500 capital and 5% stop-loss")',
-};
-
-/**
- * `trading` skill — used for direct trade decisions and state inspection.
- */
-export const TRADING_SKILL: SkillDefinition = {
-  id: 'trading',
-  slug: 'system/trading',
-  sourceRef: BUILTIN_TRADING_SOURCE_REFS['trading'],
-  name: 'Trading',
-  description: 'Submit trade decisions and inspect trading state.',
-  instructions: `You have access to trading tools, grouped by workflow phase.
-
-To observe, gather market context, you can:
-- Use \`get_market_overview\` to inspect broad market state.
-- Use \`check_regime\` to assess current market conditions.
-- Use \`get_price\` for focused price checks.
-- Use \`get_funding_rates\` to inspect perpetual funding conditions.
-- Use \`search_tokens\` to find a token by name or symbol.
-- Use \`discover_tokens\` to explore available trading candidates.
-
-To assess, check your risk and position before acting, you can:
-- Use \`get_risk_limits\` to inspect your effective risk limits and their sources. If you are blocked (e.g. daily loss limit exceeded), DO NOT submit any trade — wait for the cooldown to expire.
-- Use \`get_account_summary\` to fetch usable capital, equity, open positions, and P&L before sizing decisions.
-- Use \`get_analytics\` to inspect recent trading outcomes and exposure.
-- Use \`list_positions\` to inspect current open positions.
-- Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, \`resolve_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring. Use resolve_watch to find a watch ID by note or symbol before calling remove_watch.
-
-To decide, you can:
-- Use \`find_instrument\` to resolve an instrumentId by symbol, name, or pair before calling submit_decision. Filter by venue (e.g. venue="jupiter" for Solana, venue="hyperliquid" for perpetuals).
-- Use \`submit_decision\` to submit a trade intent for a specific instrument. Only call this after completing the Observe and Assess phases above.
-- Use \`adjust_risk_limits\` to adjust mutable (default-derived) risk limits within operator ceilings.`,
-  requiredTools: ['get_market_overview', 'check_regime', 'get_price', 'get_funding_rates', 'search_tokens', 'discover_tokens', 'get_risk_limits', 'get_account_summary', 'get_analytics', 'list_positions', 'watch_token', 'list_watches', 'remove_watch', 'resolve_watch', 'check_watches', 'find_instrument', 'submit_decision', 'adjust_risk_limits', 'assess_strategy_preset', 'change_strategy_preset'],
-  capabilityFamilies: ['trading'],
-  bindingRequirements: {
-    trading: {
-      minBindings: 1,
-      requireReady: true,
-    },
-  },
-  contextRequirements: ['positions', 'fills', 'analytics', 'costs'],
-  requiredContextBlocks: ['corePlatformContext', 'tradingContext'],
-  promptRendererHints: ['readiness-summary', 'trading'],
-  requiredGuardrails: ['token-budget', 'daily-loss'],
-  suggestedTickIntervalMs: 300_000,
-  visibility: 'public',
-  promptHint: 'Describe your trading strategy, which assets to focus on, and your risk tolerance (e.g., "Trade SOL and BTC using momentum signals, keep positions under $500 each")',
-};
-
-/**
- * `risk-monitoring` skill — watches positions and alerts on drawdowns.
- */
-export const RISK_MONITORING_SKILL: SkillDefinition = {
-  id: 'risk-monitoring',
-  slug: 'system/risk-monitoring',
-  sourceRef: BUILTIN_TRADING_SOURCE_REFS['risk-monitoring'],
-  name: 'Risk Monitoring',
-  description: 'Watch open positions and alert the user when risk thresholds are approaching.',
-  instructions: `You have access to risk-monitoring and alerting tools.
-
-- Use \`list_positions\` to inspect current open positions and exposure.
-- Use \`get_analytics\` to inspect realized and unrealized performance context.
-- Use \`get_price\` for focused price checks.
-- Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, \`resolve_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring. Use resolve_watch to find a watch ID by note or symbol before calling remove_watch.
-- Use \`send_message\` to alert the user.
-- Use \`publish_artifact\` to publish structured monitoring outputs.
-- Use \`get_risk_limits\` to inspect effective risk limits and sources.
-- Use \`get_account_summary\` to inspect usable capital, equity, open positions, and P&L when assessing portfolio-level risk.
-- Use \`adjust_risk_limits\` to adjust mutable risk limits within operator ceilings.`,
-  requiredTools: ['send_message', 'publish_artifact', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'resolve_watch', 'check_watches', 'get_risk_limits', 'get_account_summary', 'adjust_risk_limits'],
-  capabilityFamilies: ['trading'],
-  bindingRequirements: {
-    trading: {
-      minBindings: 1,
-      requireReady: true,
-    },
-  },
-  contextRequirements: ['positions', 'fills', 'analytics'],
-  requiredContextBlocks: ['corePlatformContext', 'tradingContext'],
-  promptRendererHints: ['readiness-summary', 'trading'],
-  requiredGuardrails: ['token-budget', 'daily-loss'],
-  suggestedTickIntervalMs: 300_000, // 5 minutes
-  visibility: 'public',
-  promptHint: 'Describe which positions or risk thresholds to monitor (e.g., "Watch all open positions and alert me if any drop 5% from entry")',
-};
+// Phase 4 (D21/D26): the three built-in trading skill definitions and their
+// source-ref map have been removed. Trading skills are now external skills.sh
+// skills (`traderton/skills/crypto-*`), installed at agent start and discovered
+// over MCP. Herobids holds no trading skill text.
 
 /**
  * `programming` skill — code execution tools.
@@ -496,19 +362,20 @@ When following a skill's instructions, prefer whichever browser automation optio
  * Preset → skill ID mapping.
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
+// Phase 4 (D21): the trading presets now assign the external skills.sh refs
+// (D11), not the deleted built-in trading skill ids. The API records the
+// assignment only; the install at the agent's first start fills in name /
+// description from the frontmatter (T6).
 export const SKILL_PRESET_MAP: Record<string, string[]> = {
-  trading: ['trading', 'bot-management'],
-  'direct-trading': ['trading'],
-  'trading-assistant': ['trading'],
+  trading: ['traderton/skills/crypto-trading', 'traderton/skills/crypto-bot-management'],
+  'direct-trading': ['traderton/skills/crypto-trading'],
+  'trading-assistant': ['traderton/skills/crypto-trading'],
   'personal-assistant': ['task-management', 'web-access', 'email'],
   custom: [],       // user configures skills manually
 };
 
 /** All seeded system skills (excluding base which is auto-injected). */
 export const SYSTEM_SKILLS: SkillDefinition[] = [
-  BOT_MANAGEMENT_SKILL,
-  TRADING_SKILL,
-  RISK_MONITORING_SKILL,
   PROGRAMMING_SKILL,
   FILE_MANAGEMENT_SKILL,
   WEB_ACCESS_SKILL,
@@ -537,17 +404,11 @@ export const SYSTEM_SKILL_SLUGS: ReadonlyMap<string, string> = new Map(
  * Explicit canonical owner for tools that appear in multiple skills.
  * Exported for testability.
  */
-export const TOOL_OWNER_OVERRIDES: Readonly<Record<string, string>> = {
-  get_analytics: 'trading',
-  list_positions: 'trading',
-  get_price: 'trading',
-  adjust_risk_limits: 'trading',
-  watch_token: 'trading',
-  list_watches: 'trading',
-  remove_watch: 'trading',
-  resolve_watch: 'trading',
-  check_watches: 'trading',
-};
+// Phase 4 (D21/EC-3): every prior override mapped a trading tool to the deleted
+// `trading` built-in skill. With the built-in trading skills gone, there are no
+// cross-skill tool-ownership overrides among the remaining system skills. The
+// mechanism (consumed by inferDependsOn) stays; the map is empty.
+export const TOOL_OWNER_OVERRIDES: Readonly<Record<string, string>> = {};
 
 const baseToolSet = new Set(BASE_SKILL.requiredTools);
 

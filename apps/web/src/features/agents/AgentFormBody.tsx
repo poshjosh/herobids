@@ -4,6 +4,7 @@ import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import { bots as botsApi, type Skill } from '../../lib/api-client.js';
 import type { AgentFormState } from './agent-form-state.js';
+import { selectedSkillsHaveCapabilityFamily } from './agent-display.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
 import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
 import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
@@ -139,7 +140,9 @@ export function AgentFormBody(props: AgentFormBodyProps) {
   const [advancedErrorTabIdx, setAdvancedErrorTabIdx] = useState(1);
   const [, setAdvancedOpen] = useState(false);
 
-  const hasBotManagementSkill = props.value.skillIds.includes('bot-management');
+  // Phase 4 (EC-3): gate bot-management controls on the trading capability family
+  // of the selected skills, not a hard-coded 'bot-management' skill id.
+  const hasBotManagementSkill = selectedSkillsHaveCapabilityFamily(props.value.skillIds, props.selectableSkills, 'trading');
 
   // Fetch style-based strategy presets from the backend (single source of truth
   // for preset identity, labels, and descriptions). The tier is derived from the

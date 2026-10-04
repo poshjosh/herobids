@@ -21,7 +21,7 @@ export type ClassifiedSkillRef =
 /**
  * Classify a single skill reference string.
  *
- * - Contains `/`  → treated as a slug (`system/trading`, `alice/my-skill`,
+ * - Contains `/`  → treated as a slug (`system/programming`, `alice/my-skill`,
  *   or potentially an external `owner/repo`).  The caller resolves against
  *   the DB; if no match is found the ref is external.
  * - No `/`        → legacy skill ID (`trading`, `bot-management`, …).

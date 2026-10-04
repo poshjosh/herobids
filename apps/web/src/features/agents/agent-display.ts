@@ -24,18 +24,25 @@ function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallba
   }
 }
 
+/**
+ * Group order for the skill picker (Phase 4 T9b, EC-17): system → backend-approved
+ * → user → other external. Backend-approved external skills (config-driven, via
+ * the API's isBackendApproved flag — no backend name in the web app) sort above
+ * ordinary external skills.
+ */
+function skillGroupRank(skill: Skill): number {
+  if (skill.sourceKind === 'system') return 0;
+  if (skill.isBackendApproved) return 1;
+  if (skill.sourceKind === 'user') return 2;
+  return 3; // other external
+}
+
 export function listSelectableSkills(skills: Skill[]): Skill[] {
   return skills
     .filter((skill) => skill.id !== 'base' && skill.isSelectable)
     .slice()
     .sort((left, right) => {
-      const sourceOrder: Record<Skill['sourceKind'], number> = {
-        system: 0,
-        user: 1,
-        external: 2,
-      };
-
-      const sourceDelta = sourceOrder[left.sourceKind] - sourceOrder[right.sourceKind];
+      const sourceDelta = skillGroupRank(left) - skillGroupRank(right);
       if (sourceDelta !== 0) {
         return sourceDelta;
       }
@@ -77,6 +84,16 @@ export function formatObjectivePreview(objective: string, maxLength = 160): stri
 
 export function hasCapabilityFamily(skills: Array<{ capabilityFamilies: string[] }>, family: string): boolean {
   return skills.some((skill) => skill.capabilityFamilies.includes(family));
+}
+
+/**
+ * Phase 4 (EC-3): does the agent's SELECTED skill set carry a capability family?
+ * Replaces hard-coded skill-id checks (`skillIds.includes('bot-management')`) in
+ * the agent forms — the family comes from the skill views (config-driven for
+ * backend-approved external skills), not a hard-coded id.
+ */
+export function selectedSkillsHaveCapabilityFamily(skillIds: string[], skills: Skill[], family: string): boolean {
+  return hasCapabilityFamily(resolveSelectedSkills(skillIds, skills), family);
 }
 
 /**
