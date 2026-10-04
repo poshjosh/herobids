@@ -1,4 +1,4 @@
-// The external-backend invocation metrics seam (see docs/tech/observability.md).
+// The external-backend invocation metrics seam (see docs/tech/architecture/observability.md).
 //
 // A `MetricsSink` port plus a flat, serialisable `ExternalBackendInvocationSample`
 // — the single way the platform measures external-backend tool invocations. Kept

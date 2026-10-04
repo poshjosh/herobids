@@ -1,4 +1,4 @@
-// A logger-backed `MetricsSink` adapter (see docs/tech/observability.md).
+// A logger-backed `MetricsSink` adapter (see docs/tech/architecture/observability.md).
 //
 // The default sink: one structured log line per external-backend invocation,
 // carrying the stable event tag `external_backend.invocation`. p50/p95/p99,
