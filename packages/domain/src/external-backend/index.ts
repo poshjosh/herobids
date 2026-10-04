@@ -13,3 +13,4 @@ export * from './request-id.js';
 export * from './client-config.js';
 export * from './descriptor.js';
 export * from './metrics.js';
+export * from './logger-metrics-sink.js';

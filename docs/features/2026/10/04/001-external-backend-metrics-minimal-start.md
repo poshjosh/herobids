@@ -100,7 +100,7 @@ the build steps.
 - "a throwing metrics sink does not change the returned result" (inject a sink
   whose `recordInvocation` throws; assert the result is unchanged).
 
-### 3. pino sink adapter (apps) — PENDING
+### 3. pino sink adapter (apps) — DONE (option b: logger sink in domain)
 
 **File (new):** `apps/worker/src/external-backend/pino-metrics-sink.ts`
 
@@ -268,3 +268,15 @@ Non-blocking (LOW) review findings, grouped by work item. None are CRITICAL/HIGH
 - [LOW] Sample is built with mutually-exclusive conditional spreads
   (`failure`→code+retryable, `transport_error`→retryable). Correct today; prefer
   an explicit switch if a future outcome also needs `retryable`.
+
+### Item 3 — Logger-backed sink (option b, domain)
+- Chose option (b): `createLoggerMetricsSink(logger)` in
+  `packages/domain/src/external-backend/logger-metrics-sink.ts`, taking a
+  structural `MetricsLogger` (`info(fields, msg)`); no pino import, domain stays
+  I/O-free. The `apps/worker` adapter file in the original plan draft is NOT
+  created.
+- [LOW] The barrel re-exports `MetricsLogger` package-wide (intended; apps may
+  want the type). No action.
+- [LOW] No sink-level test for `in_progress`/`transport_error` round-trip — the
+  adapter is outcome-agnostic and the client layer (Item 2) has full outcome
+  coverage. No action.
