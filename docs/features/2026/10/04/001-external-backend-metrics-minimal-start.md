@@ -143,7 +143,7 @@ Sites (verified):
 
 Each site gets a one-line comment: `// metrics: see docs/tech/observability.md`.
 
-### 5. Config — latency budgets — PENDING
+### 5. Config — latency budgets — DONE
 
 **File:** `packages/domain/src/config/schema.ts`
 - Add a top-level block beside `externalBackends`:
@@ -299,3 +299,12 @@ Non-blocking (LOW) review findings, grouped by work item. None are CRITICAL/HIGH
 - [LOW] The two app parity tests use full `.toEqual(...)` shape and are brittle;
   consider `.toMatchObject(...)` in future.
 - [LOW] Minor comment-accuracy nit in `logger-metrics-sink.ts` (noted, no action).
+
+### Item 5 — Config latency budgets
+- Added `externalBackendObservability.latencyTargets.{p50Ms,p95Ms,p99Ms}`
+  (defaults 200/500/2000) as a top-level sibling of `externalBackends` in
+  `schema.ts` + `config/default.yaml`. Measurement targets only; nothing on the
+  runtime/request path reads them (verified by grep). No `.env` twin (operator
+  YAML, not a secret).
+- [LOW] Targets have no upper bound and no p50≤p95≤p99 ordering invariant.
+  Harmless (never enforced at runtime); defensive polish only. No action.

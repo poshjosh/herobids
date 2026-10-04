@@ -21,6 +21,7 @@ import {
   RiskConfigSchema,
   BotRiskSchema,
   ExecutionDefaultsSchema,
+  AppConfigSchema,
   type AgentStyleValue,
   type ReasoningLevel,
 } from './schema.js';
@@ -1682,5 +1683,56 @@ describe('PermissionLevelSchema', () => {
 
   it('has exactly three valid values', () => {
     expect(PermissionLevelSchema.options).toEqual(['restricted', 'standard', 'full']);
+  });
+});
+
+// ── externalBackendObservability.latencyTargets (measurement budgets) ────────
+
+describe('AppConfigSchema — externalBackendObservability.latencyTargets', () => {
+  // Minimal valid AppConfig: only fields without a Zod default are supplied.
+  const minimalAppConfig = {
+    app: {},
+    database: { url: 'postgres://localhost/test' },
+    redis: {},
+    execution: {},
+    agentRuntime: {
+      defaultBudgets: {
+        maxHistoryMessages: 20,
+        maxHistoryTokens: 40000,
+        maxRecentToolMessages: 6,
+        maxToolResultChars: 4000,
+        maxVisibleToolSchemas: 64,
+        maxContextBlockChars: 4000,
+      },
+    },
+  };
+
+  it('defaults external-backend latency targets to 200/500/2000 when the block is absent', () => {
+    const result = AppConfigSchema.safeParse(minimalAppConfig);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.externalBackendObservability.latencyTargets).toEqual({
+        p50Ms: 200,
+        p95Ms: 500,
+        p99Ms: 2000,
+      });
+    }
+  });
+
+  it('accepts operator overrides for the external-backend latency targets', () => {
+    const result = AppConfigSchema.safeParse({
+      ...minimalAppConfig,
+      externalBackendObservability: {
+        latencyTargets: { p50Ms: 100, p95Ms: 250, p99Ms: 1000 },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.externalBackendObservability.latencyTargets).toEqual({
+        p50Ms: 100,
+        p95Ms: 250,
+        p99Ms: 1000,
+      });
+    }
   });
 });

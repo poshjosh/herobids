@@ -1604,6 +1604,14 @@ export const AppConfigSchema = z.object({
   }).default({}),
   /** External Backend registry (Step 10 §1): YAML map keyed by backendId, parsed to ExternalBackendDefinition[]. */
   externalBackends: ExternalBackendRegistrySchema,
+  /** External-backend latency budgets — measurement targets consumed by load/perf harnesses, NOT runtime request guards. See docs/tech/observability.md. */
+  externalBackendObservability: z.object({
+    latencyTargets: z.object({
+      p50Ms: z.number().int().positive().default(200),
+      p95Ms: z.number().int().positive().default(500),
+      p99Ms: z.number().int().positive().default(2000),
+    }).default({}),
+  }).default({}),
   /**
    * Registry entry the first-party trading call sites use. A pre-Step-12
    * binding, removed with those sites at Step 14 (P3-17). Startup stays lenient

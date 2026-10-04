@@ -421,6 +421,15 @@ externalBackends:
       seconds: 3600
 # Registry entry the first-party trading call sites use until Step 14 removes them.
 tradingBackendId: traderton
+
+# External-backend latency budgets (measurement targets for load/perf
+# harnesses, not runtime guards). See docs/tech/observability.md.
+externalBackendObservability:
+  latencyTargets:
+    p50Ms: 200     # readiness default
+    p95Ms: 500     # readiness default
+    p99Ms: 2000    # readiness default
+
 # Agent runtime — behavior policy for agent containers.
 #
 # These are OPERATOR-LEVEL FALLBACKS. Each agent can override every runtime
