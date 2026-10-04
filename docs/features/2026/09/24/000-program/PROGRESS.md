@@ -7,12 +7,13 @@
 
 **Current phase:** Phases 1–2 complete. Phase 3 Steps 9–12 complete and Step 13
 **partial** (D21), all locally verified 2026-10-03 and merged and pushed by the
-operator (D22). **Phase 4 is the current milestone (not started):** replace the
-built-in trading skills with the Traderton `SKILL.md` skills (D21–D29,
+operator (D22). **Phase 4 is COMPLETE (2026-10-04, branch `phase4-skill-replacement`, not yet merged):** the
+built-in trading skills were replaced with the Traderton `SKILL.md` skills (D21–D29,
 [ADR 017](../../../../../tech/architecture/adrs/2026/10/017-uniform-skills-sh-skills-and-mcp-tool-discovery.md)).
-**Current step:** Phase 4 task 0, driven by
+All exit checks EC-1..EC-17 pass; EC-15 five-suite GREEN (`phase3-logs/phase4-summary.txt`).
+**Current step:** Phase 4 done — awaiting operator merge decision, driven by
 [`docs/features/2026/10/03/004-phase4-skill-replacement-program/`](../../../10/03/004-phase4-skill-replacement-program/ENTRYPOINT.md).
-Live cursor: that package's `TASKS.md`.
+Live cursor: that package's `TASKS.md` (= DONE) and `CLOSEOUT.md`.
 
 > **Correction (2026-10-03).** This header previously said "Phase 3 in progress,
 > next is T2.2", and the line further down said "Not started: Phase 3". Both were

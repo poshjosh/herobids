@@ -1,6 +1,16 @@
 # Phase 4 — Tasks
 
-**Current cursor:** T0.1 (T0.4–T0.6 ruled; not started otherwise). **Branches:** create `phase4-skill-replacement` in herobids, traderton and traderton-skills.
+**Current cursor:** DONE — T0..T13 complete. All exit checks pass (EC-1..EC-17); EC-15 five-suite GREEN (`phase3-logs/phase4-summary.txt`). CLOSEOUT.md filled; awaiting operator merge decision (no merge/push performed). **Branches:** herobids `phase4-skill-replacement` @ `df6dfa42`, traderton @ `8ef8c3e` (T2 = `51674ae`), traderton-skills @ `213c8fb` (2026-10-04).
+
+### T2 notes (done 2026-10-04)
+- New `traderton/packages/boundary/src/mcp/skill-tool-map.ts`: `SKILL_REFS_META_KEY = 'io.agentskills/skillRefs'`, `SKILL_TOOL_MAP` (the three skills → T0.7 tool sets; crypto-trading omits assess/change_strategy_preset), `buildToolSkillRefs()`.
+- New `traderton/packages/boundary/src/mcp/tools-from-registry.ts`: `buildToolsFromRegistry(registry, skillToolMap=SKILL_TOOL_MAP)` → `{name,description,inputSchema(=tool.parameters),_meta:{[key]:refs}}`; fails fast on a mapped-but-missing tool or non-object schema. Serves only tools belonging to ≥1 published skill (inline decision: skill surface is the only consumer contract Phase 4 defines; satisfies EC-13 "every tool carries skill ref(s)").
+- `surface-config.ts` rewritten: `resolveMcpSurfaceConfig(env, registry)` (no descriptor file); `bin.ts` passes the registry, dropped `BOUNDARY_MCP_DESCRIPTOR_PATH` + `readFileSync`.
+- Deleted: `descriptor-tools.ts`(+test), `descriptor-conformance.test.ts`, `__fixtures__/descriptor-conformance/`. Kept `invocation-signing-vectors.json` (HMAC request signing).
+- `mcp.sdk.test.ts` rewritten to build the surface from a ToolRegistry + fixture skill-map (descriptor parts removed); new `tools-from-registry.test.ts`; `surface-config.test.ts` rewritten. All boundary MCP tests pass (27 + 7). traderton `pnpm lint` exit 0.
+- `.env.example` + `infra/hetzner/.env.environment.example`: removed `BOUNDARY_MCP_DESCRIPTOR_PATH`, kept `BOUNDARY_MCP_ENABLED=false`.
+- herobids `config/default.yaml`: `mcpPath: /internal/v1/mcp` uncommented, `protocol: rest` kept (D27), removed `trustedDescriptorSigningKeys`+`descriptorPinning`, added `requiresConnectionFamily: trading`. (herobids config SCHEMA update + consumers = T8/T10; herobids lint will fail until then — expected.)
+- Local stack: `herobids/docker/traderton-xstack.override.yml` already sets `BOUNDARY_MCP_ENABLED: "true"` on the boundary (Phase 3), so EC-9 harness has MCP on.
 
 Each task lists its exit checks from [INVARIANTS.md](./INVARIANTS.md). A task is done only when its checks pass. Work found that fits no task: decide or route it per ENTRYPOINT §8, give it a home (an existing task, a new task appended here, or a CLOSEOUT row), and continue. Never defer an item without a named home.
 
@@ -14,7 +24,56 @@ Each task lists its exit checks from [INVARIANTS.md](./INVARIANTS.md). A task is
 | T0.4 | **Ruling:** the neutral `_meta` key for a tool's skill ref(s). It must not be herobids-specific (Traderton 005 non-goal 2). Proposal: a key in the skills.sh / Agent Skills ref vocabulary, e.g. `"skills/refs": ["traderton/skills/crypto-trading"]` | ✅ Ruled: see P4-1 |
 | T0.5 | ✅ **Ruled (operator, 2026-10-03):** the DB stores the assignment only. The full skill folder, including bundled files, is installed into the workspace at every agent start | — |
 | T0.6 | ✅ **Ruled (operator, 2026-10-03):** keep `npx skills add`, run in the worker at agent start. Telemetry and audit calls are acceptable | — |
-| T0.7 | **Tool-name parity check.** List every tool the three current trading skills expose: the `requiredTools` of `TRADING_SKILL`, `BOT_MANAGEMENT_SKILL` and `RISK_MONITORING_SKILL` in `packages/domain/src/skills.ts`, minus base-skill tools such as `send_message` and `publish_artifact`. For each, check whether Traderton's tool registry (`traderton/packages/worker/src/tools/`) has a tool with the **same name**. Check the broker-routed ones especially: `submit_decision` (`DECISION_SUBMIT`), `create_bot`/`stop_bot`/`start_bot`/`adjust_bot_config` (`MANAGE_BOT`), and the strategy-preset tools. Visible tools = Traderton `tools/list` ∩ herobids registry, so a missing name disappears. **Rule: the agent-facing name must be a Traderton tool name (Traderton owns the tool contract).** Apply these pre-ruled cases (operator, 2026-10-03), with no stop:<br>**1. Same operation, different name:** Traderton's name wins. Rename the herobids tool, update the `SKILL.md` text in traderton-skills, and record an IV.<br>**2. Convenience tool composed only of other Traderton tools** (e.g. `resolve_bot`, `resolve_watch`): implement it in Traderton and list it there.<br>**3. Traderton executes it and herobids adds platform UX** (e.g. `submit_decision` dry run and approval mode): Traderton lists it under that name; herobids keeps its wrapper unchanged.<br>**4. Logic lives only in herobids and isn't platform UX** (e.g. possibly the strategy-preset tools): if moving it to Traderton is **small**, move it. If it is **large** (needs new Traderton storage, a new contract, or a broker re-route), **do not move it and do not stop.** It will be invisible to agents after Phase 4 (accepted by the operator, 2026-10-03). Record it in CLOSEOUT "Tools not moved" with its impact.<br>"Small" vs "large" is decided inline (one-sentence reason), or by a Contemplator if contested | Table in this file, plus CLOSEOUT rows for case 4-large |
+### T0 notes (recorded 2026-10-04)
+
+**T0.1 — broker MANAGE_AGENT_SKILLS / `add_skills` write path.** No `skillOps` write path exists in `apps/worker/src/agent.ts` (skillOps is read-only). Writes go: tool `add_skills`/`remove_skills` (`apps/worker/src/tools/skills.ts`) → Redis `agent.manage_skills` (`AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS`, payload `{action:'add'|'remove', skillIds[1..10]}`, reply on `agent:skills:reply:<id>`) → broker `handleManageAgentSkills` → `handleSkillAdd`/`handleSkillRemove` (`apps/worker/src/agents/agent-message-broker.ts` ~891-1130) → `resolveSkillAssignmentsForUser` + `syncAgentSkillAssignments(db, agentId, userId, assignments, source)` (`packages/db/src/skill-assignment.ts` 68-213; full reconcile-to-target-set, upsert on `[agentId,skillId]`). `add_skills.execute`: resolves refs via `resolveSkillIdsBySlugOrId`; partitions platform vs external (`contains '/'` → external); external install runs `npx skills add <ref> --yes` via `runExternalSubprocess` (installer injectable as `ctx.externalSkillInstaller`); `normalizeExternalRef` rewrites `owner/repo/skill` → `owner/repo@skill`. Auto-adds `system/file-management` for ANY external ref (when includeDependencies); then `detectExternalSkillBashDependency` reads each installed SKILL.md frontmatter and, if `allowed-tools` contains the substring `'Bash('`, issues a second broker add for `system/programming`. NOTE the Bash detection matches `Bash(` not bare `Bash` — T6 asks to fix it to match `allowed-tools: Bash` without `(`.
+
+**T0.2 — preset expansion at agent creation.** Canonical map `SKILL_PRESET_MAP` in `packages/domain/src/skills.ts` (trading→['trading','bot-management'], direct-trading→['trading'], trading-assistant→['trading'], personal-assistant→[...], custom→[]). Two API create paths: (a) **form `POST /agents`** (`apps/api/src/routes/agents.ts`) does NOT expand the preset server-side — the web client sends already-expanded `skillIds`; `skillPresetId` is only stamped into `unifiedConfig.metadata`; skills written via `syncAgentSkillAssignments(..., 'user_select')`. (b) **guided-setup/chat `create_agent`** (`apps/api/src/routes/chat.ts` ~1198) DOES expand via a LOCAL duplicate `PRESET_SKILL_MAP` (`resolveSkillPresetSkillIds`, ~647-658) identical to the domain map; writes via `syncAgentSkillAssignments(..., 'guided_setup')`. (c) **blueprint/go-live** `createAgentFromPayload` (`apps/api/src/services/agent-instantiation-service.ts`) inserts `agentSkills` directly from pre-resolved refs. Real file is `apps/api/src/agents/agent-create-normalization.ts` (not `routes/`). → T9 must point chat.ts's duplicate map at the three refs (or import the domain map).
+
+**T0.3 — Traderton Zod schemas vs `tools/list` serialisation.** Zod `^3.25.76` (v3, no native toJSONSchema); conversion via `zod-to-json-schema@3.25.2` already a dep of `@traderton/worker`, used by `convertZodToJsonSchema` in `packages/worker/src/tools/registry.ts` (target:'openAi', $refStrategy:'none', plus `normalizeRequiredFields` and `normalizeDraft4ExclusiveBounds`). No un-serialisable constructs in any tool schema (no z.function/date/bigint/map/set/symbol/custom/instanceof/lazy/pipe/branded, no non-string-key records). Present-but-benign: discriminated unions (→anyOf/oneOf, nested only: create_bot `StrategyInputSchema`, trading-profile `ForwardActionSchema`), `.transform()`/`.preprocess()`/`.refine()` (silently dropped by converter — schema under-describes but does not fail; provision already derives `.parameters` from the un-refined base), and the Draft-4 exclusive-bound boolean quirk (already patched). Conclusion: building `tools/list` from the worker registry's already-computed `.parameters` JSON Schema is safe. The boundary package currently has NO `zod-to-json-schema` dep and never converts Zod — it serves a herobids-generated descriptor file (to be removed in T2/T10). MCP SDK: `@modelcontextprotocol/server`/`client` `2.3.0`.
+
+ List every tool the three current trading skills expose: the `requiredTools` of `TRADING_SKILL`, `BOT_MANAGEMENT_SKILL` and `RISK_MONITORING_SKILL` in `packages/domain/src/skills.ts`, minus base-skill tools such as `send_message` and `publish_artifact`. For each, check whether Traderton's tool registry (`traderton/packages/worker/src/tools/`) has a tool with the **same name**. Check the broker-routed ones especially: `submit_decision` (`DECISION_SUBMIT`), `create_bot`/`stop_bot`/`start_bot`/`adjust_bot_config` (`MANAGE_BOT`), and the strategy-preset tools. Visible tools = Traderton `tools/list` ∩ herobids registry, so a missing name disappears. **Rule: the agent-facing name must be a Traderton tool name (Traderton owns the tool contract).** Apply these pre-ruled cases (operator, 2026-10-03), with no stop:<br>**1. Same operation, different name:** Traderton's name wins. Rename the herobids tool, update the `SKILL.md` text in traderton-skills, and record an IV.<br>**2. Convenience tool composed only of other Traderton tools** (e.g. `resolve_bot`, `resolve_watch`): implement it in Traderton and list it there.<br>**3. Traderton executes it and herobids adds platform UX** (e.g. `submit_decision` dry run and approval mode): Traderton lists it under that name; herobids keeps its wrapper unchanged.<br>**4. Logic lives only in herobids and isn't platform UX** (e.g. possibly the strategy-preset tools): if moving it to Traderton is **small**, move it. If it is **large** (needs new Traderton storage, a new contract, or a broker re-route), **do not move it and do not stop.** It will be invisible to agents after Phase 4 (accepted by the operator, 2026-10-03). Record it in CLOSEOUT "Tools not moved" with its impact.<br>"Small" vs "large" is decided inline (one-sentence reason), or by a Contemplator if contested | Table in this file, plus CLOSEOUT rows for case 4-large |
+
+### T0.7 — Tool-name parity table (recorded 2026-10-04)
+
+Universe = `requiredTools` of the three skills minus base tools (`send_message`, `publish_artifact`). Traderton registry names from `grep "name: '...'" traderton/packages/worker/src/tools/*.ts` (authoritative, 2026-10-04). **Rule applied (operator, this session): a tool is only moved/listed in Traderton if a trading skill needs it.**
+
+| Tool | In skill(s) | Traderton has same name? | Case | Action |
+|---|---|---|---|---|
+| get_market_overview | crypto-trading | ✅ | — | visible via `tools/list` ∩ registry |
+| check_regime | crypto-trading | ✅ | — | visible |
+| get_price | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| get_funding_rates | crypto-trading | ✅ | — | visible |
+| search_tokens | crypto-trading | ✅ | — | visible |
+| discover_tokens | crypto-trading | ✅ | — | visible |
+| get_risk_limits | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| get_account_summary | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| get_analytics | all three | ✅ | — | visible |
+| list_positions | all three | ✅ | — | visible |
+| watch_token | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| list_watches | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| remove_watch | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| resolve_watch | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| check_watches | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| find_instrument | crypto-trading | ✅ | — | visible |
+| submit_decision | crypto-trading | ✅ | 3 | Traderton lists it; herobids keeps its dry-run/approval wrapper unchanged |
+| adjust_risk_limits | crypto-trading, crypto-risk-monitoring | ✅ | — | visible |
+| create_bot | crypto-bot-management | ✅ | — | visible |
+| stop_bot | crypto-bot-management | ✅ | — | visible |
+| start_bot | crypto-bot-management | ✅ | — | visible |
+| adjust_bot_config | crypto-bot-management | ✅ | — | visible |
+| list_bots | crypto-bot-management | ✅ | — | visible |
+| get_bot_status | crypto-bot-management | ✅ | — | visible |
+| resolve_bot | crypto-bot-management | ✅ | — | visible |
+| **assess_strategy_preset** | crypto-trading | ❌ | **4 (large)** | **Not moved.** See decision below. CLOSEOUT "Tools not moved". |
+| **change_strategy_preset** | crypto-trading | ❌ | **4 (large)** | **Not moved.** See decision below. CLOSEOUT "Tools not moved". |
+
+**Only two parity gaps:** `assess_strategy_preset` and `change_strategy_preset` (both in crypto-trading only). Every other tool matches a Traderton tool by exact name → no renames (no case-1), no new Traderton convenience tools (no case-2). `submit_decision` is case-3 (Traderton executes; herobids keeps the dry-run/approval UX wrapper).
+
+**Decision — assess_strategy_preset / change_strategy_preset = case 4, LARGE, NOT MOVED.** One-sentence reason: the entire billable preset-assessment + transition machinery (DB tables `market_assessment_requests/_runs/_artifacts`, `PlatformAssessor`, `AssessmentRequestService` implementing `AssessmentRequestPort`, `PresetTransitionService`/`PresetTransitionPort`, usage-billing reservation/capture) lives in herobids and Traderton has **no** executor (only the Zod schemas in `traderton/packages/domain/src/tool-schemas.ts` plus a display helper `deriveStrategyPreset`), so moving it would require new Traderton storage, a new contract and a broker re-route — the definition of "large". Independently corroborated by Traderton's own `011-premerge-backlog.md` c4.9h ruling classifying `market_assessment_*` as **PLATFORM-KEEP** (herobids). Evidence: `apps/worker/src/tools/assess-strategy-preset.ts` (delegates to herobids `AssessmentRequestPort`), `apps/worker/src/tools/change-strategy-preset.ts` (reads herobids `marketAssessmentArtifacts`, gates on herobids `platformAssessment.enabled`, delegates to herobids `PresetTransitionPort`), `apps/worker/src/market-intelligence/assessment-request-service.ts`, `preset-transition-service.ts`; traderton grep for assessment/transition executor = 0 hits.
+
+**Consequence (accepted by operator 2026-10-03 per T0.7 case-4):** after Phase 4, since visible tools = Traderton `tools/list` ∩ herobids registry, and Traderton will not list these two names, they become **invisible to agents**. The crypto-trading SKILL.md still mentions them in its last line (IV-a); an agent calling them will get "not in the allowed set" (a visible error, not a safety failure — ADR 017 Consequences). Recorded in CLOSEOUT "Tools not moved" at T13. This is noted for the operator at the §8 stop below.
+
 
 ## T1 — Records ✅ (2026-10-03)
 
@@ -139,16 +198,17 @@ Record each as a row in the program `PROGRESS.md` under `## Steps completed with
 | IV-e | Traderton's MCP `tools/list` serves real schemas (previously placeholders) |
 | IV-f | Ordinary external skills are now recorded as assignments, reinstalled at every agent start (latest from the default branch, so they survive restarts), and loaded via `read_skill`. Previously they were installed once and lost on restart |
 
-## T13 — Verification and closeout (EC-15, EC-16)
+## T13 — Verification and closeout (EC-15, EC-16) — ✅ DONE (2026-10-04)
 
-- Run every EC. Run all suites, the agent trade test and the browser UAT.
-- Update PROGRESS rows 13 and 14, and this cursor.
-- Fill in CLOSEOUT.md: exit-check table, tools not moved, T0.7 outcomes, escalations, Contemplator rulings, IVs, branches. Then report to the operator, who decides on the merges.
+- Ran every EC. EC-1..EC-4 via `scripts/shell/checks/phase4-exit-checks.sh` = PASS. EC-5..EC-14, EC-16, EC-17 verified (see CLOSEOUT §2).
+- **EC-15 GREEN**: `run-five.sh phase4` → `phase3-logs/phase4-summary.txt` all five suites `exit=0`, ends `DONE` (hb-all incl. 17 Playwright journeys; hb-extra all suites PASS). The agent-trade-test stays a harness SKIP (pre-existing unstable, bug 2026-09-05/001); `bot-trade-test` lifecycle PASS exercises the live boundary.
+- Root-cause fix that unblocked EC-15: external skills were being swept into the e2e reseed's `:system:1` revision reset, leaving `skills.current_revision_id` dangling → trading-agent-create FK 500 → plan-limit 403 cascade. Scoped reseed to `source_ref IS NULL` (herobids `df6dfa42`).
+- Updated PROGRESS rows 13 and 14, this cursor, HANDOVER, and CLOSEOUT.md (exit-check table, tools not moved, T0.7 outcomes, escalations, Contemplator rulings, IVs, branches). Reported to operator; no merge/push performed.
 
 ## Phase 4 decisions log (append here)
 
 | # | Decision | Date |
 |---|---|---|
-| P4-1 | **Tool → skill `_meta` key (T0.4).** First check whether the MCP Skills extension (SEP-2640) defines a field linking tools to skills; if it does, use it. Otherwise use `io.agentskills/skillRefs`, whose value is an array of refs in `owner/repo/skill` form (e.g. `["traderton/skills/crypto-trading"]`). Neutral: names neither herobids nor Traderton | 2026-10-03 (operator) |
+| P4-1 | **Tool → skill `_meta` key (T0.4).** First check whether the MCP Skills extension (SEP-2640) defines a field linking tools to skills; if it does, use it. Otherwise use `io.agentskills/skillRefs`, whose value is an array of refs in `owner/repo/skill` form (e.g. `["traderton/skills/crypto-trading"]`). Neutral: names neither herobids nor Traderton. **Resolved 2026-10-04:** SEP-2640 (stable `io.modelcontextprotocol/skills`) defines only skill-RESOURCE `_meta` keys (under `io.modelcontextprotocol.skills/`) for frontmatter; it defines NO tool→skill linking key. So the fallback applies: key = `io.agentskills/skillRefs`. Implemented as `SKILL_REFS_META_KEY` in `traderton/packages/boundary/src/mcp/skill-tool-map.ts`. | 2026-10-03 (operator); confirmed 2026-10-04 |
 | P4-2 | **`npx skills add` accepts a local path and a `file://` git URL**, and picks up committed edits on reinstall (verified 2026-10-03 against a clone of `traderton/skills`). EC-7 uses the real CLI with a `file://` fixture repo | 2026-10-03 |
 | P4-3 | **Skill names must match their directory** (Agent Skills spec). `npx` resolves `@<skill>` against the frontmatter `name`. openaidom-skills was fixed and pushed on 2026-10-03; the traderton skills already comply. Herobids assumes ref segment == `name` | 2026-10-03 (operator) |
