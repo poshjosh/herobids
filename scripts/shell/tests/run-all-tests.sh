@@ -374,8 +374,15 @@ ON CONFLICT ("id") DO UPDATE SET
   "updated_at"                 = now()
 WHERE "skills"."author_id" IS NULL;
 
+-- Only sweep built-in SYSTEM skills here. External skills.sh skills also have
+-- author_id IS NULL but own a `:external:1` revision that the API startup
+-- cataloguer (ensureExternalSkillIds) created and that skills.current_revision_id
+-- points at — deleting it here would leave a dangling FK and break trading-agent
+-- creation. Exclude them via source_ref IS NOT NULL.
 DELETE FROM "skill_revisions"
-WHERE "skill_id" IN (SELECT "id" FROM "skills" WHERE "author_id" IS NULL)
+WHERE "skill_id" IN (
+    SELECT "id" FROM "skills" WHERE "author_id" IS NULL AND "source_ref" IS NULL
+  )
   AND "id" NOT LIKE '%:system:%';
 
 INSERT INTO "skill_revisions" (
@@ -396,7 +403,7 @@ SELECT
   NULL AS "created_by_user_id",
   COALESCE(s."created_at", now()) AS "created_at"
 FROM "skills" s
-WHERE s."author_id" IS NULL
+WHERE s."author_id" IS NULL AND s."source_ref" IS NULL
 ON CONFLICT ("id") DO NOTHING;
 PSQL
 fi
