@@ -174,7 +174,9 @@ export async function createAgent(
     const body = await response.json() as { skills: Array<{ id: string; slug?: string; name: string }> };
 
     for (const skillId of skillIdsToSelect) {
-      const skill = body.skills.find((item) => item.id === skillId);
+      // Phase 4: an external skills.sh skill is addressed by its ref/slug; its
+      // internal id is opaque (ext_…). Match by id OR slug.
+      const skill = body.skills.find((item) => item.id === skillId || item.slug === skillId);
       if (!skill) {
         throw new Error(`Could not find skill ${skillId} in the skills API response`);
       }

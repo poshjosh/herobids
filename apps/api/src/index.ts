@@ -54,6 +54,7 @@ import { fileURLToPath } from 'node:url';
 import * as os from 'node:os';
 import type { LifecycleJob } from './types.js';
 import { syncSystemSkills } from './sync-system-skills.js';
+import { ensureExternalSkillIds } from '@herobids/db';
 import { ServerHealthPublisher } from '@herobids/domain';
 import { parseAppVersion, checkPostgres, checkRedis, getRunningSessionCount, getRunningContainerCount } from './admin-utils.js';
 
@@ -185,6 +186,20 @@ redisClient.on('error', (err: Error) => app.log.error({ err }, 'Redis client err
 const db = createDatabase(appConfig.database.url);
 await syncSystemSkills(db);
 app.log.info('System skills synced');
+
+// Phase 4 (T6/EC-17): seed the operator-approved external skill refs as
+// placeholder catalog rows so they are discoverable + selectable in the picker
+// before any agent installs them. Metadata is refreshed from the installed
+// SKILL.md frontmatter at the first agent start (name = ref segment until then).
+{
+  const approvedRefs = [
+    ...new Set(appConfig.externalBackends.flatMap((backend) => backend.approvedSourceSkillRefs)),
+  ];
+  if (approvedRefs.length > 0) {
+    await ensureExternalSkillIds(db, approvedRefs);
+    app.log.info({ count: approvedRefs.length }, 'Approved external skill refs catalogued');
+  }
+}
 
 const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
   connection: redisConnection,

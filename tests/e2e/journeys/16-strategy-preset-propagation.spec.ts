@@ -57,14 +57,15 @@ test.describe('Journey 16: Strategy preset propagation', () => {
       });
       expect(resp.ok(), `GET /skills returned ${resp.status()}`).toBe(true);
       const body = (await resp.json()) as { skills: Array<{ id: string; slug?: string; name: string }> };
-      const tradingSkill = body.skills.find((s) => s.slug === 'system/trading');
-      expect(tradingSkill, 'system/trading skill must be selectable').toBeTruthy();
+      // Phase 4: the trading skill is the external skills.sh ref (catalogued at
+      // API startup), not the removed built-in `system/trading` slug.
+      const tradingSkill = body.skills.find((s) => s.slug === 'traderton/skills/crypto-trading');
+      expect(tradingSkill, 'traderton/skills/crypto-trading skill must be selectable').toBeTruthy();
 
       await page.getByRole('button', { name: /add skills|edit skills/i }).click();
-      // Each SkillPicker row renders name + slug + description, so the checkbox's
-      // accessible name is a concatenation (matching by the bare name "Trading"
-      // is ambiguous with "Bot Management"). Locate the row by its unique slug.
-      const tradingRow = page.locator('label').filter({ hasText: 'system/trading' });
+      // Each SkillPicker row renders name + slug + description; locate the row by
+      // its unique slug.
+      const tradingRow = page.locator('label').filter({ hasText: 'traderton/skills/crypto-trading' });
       await tradingRow.getByRole('checkbox').check();
       // Let capabilityMode/requiresTradingSetup derive from the selected skill.
       await page.waitForTimeout(400);

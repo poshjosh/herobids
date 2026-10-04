@@ -155,7 +155,7 @@ test.describe('Journey 19: trading capability ledger renders', () => {
       return;
     }
 
-    const agentId = await createAgent(page, 'Ledger agent for journey 19', { skillIds: ['bot-management'] });
+    const agentId = await createAgent(page, 'Ledger agent for journey 19', { skillIds: ['traderton/skills/crypto-bot-management'] });
 
     const readiness = await mockTradingReadiness(page, agentId);
     readiness.setReady(CONNECTION_ID);

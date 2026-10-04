@@ -39,10 +39,12 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     const skillsResponse = await page.request.get('/api/skills', {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const { skills } = await skillsResponse.json() as { skills: Array<{ id: string; name: string }> };
-    const botSkill = skills.find((s) => s.id === 'bot-management');
+    const { skills } = await skillsResponse.json() as { skills: Array<{ id: string; slug?: string; name: string }> };
+    // Phase 4: trading skills are the external skills.sh refs (approved refs are
+    // catalogued at API startup), not the removed built-in `bot-management` id.
+    const botSkill = skills.find((s) => s.slug === 'traderton/skills/crypto-bot-management');
     if (!botSkill) {
-      throw new Error('bot-management skill not found in API response');
+      throw new Error('crypto-bot-management skill not found in API response');
     }
 
     // The "Suggested skills" dropdown was removed (change 009); skills are
