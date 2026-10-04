@@ -31,17 +31,18 @@ The program's strategic objective still governs: herobids is a generic agent hos
 ## 3. Design in one screen (from ADR 017)
 
 1. **Every skills.sh skill follows one lifecycle.**
-   - On install, fetch the latest `SKILL.md` from the default branch and store its body and commit in the DB.
-   - Re-fetch at agent start. If the fetch fails, keep the stored copy.
-   - Show the commit in use.
+   - Install (`add_skills` or a preset) records an **assignment only** in the DB: the ref, `name` and `description`. **No skill content is stored in the DB.**
+   - At every agent start, the worker runs `npx skills add <ref>`, which installs the latest full skill folder into the workspace.
+   - If the install fails, the skill is listed but unavailable for that session. Log a warning; never crash.
+   - Show the install time (and the commit where known).
    - No signing, digest or pinning.
 2. **External skills use progressive disclosure.**
    - The prompt lists each skill's `name` and `description`.
-   - `read_skill` loads the body, and a loaded skill stays in the prompt for the session.
+   - `read_skill` loads the installed `SKILL.md` body from the workspace (no network), and a loaded skill stays in the prompt for the session.
    - `system/*` skills stay injected in full.
 3. **Backend-approved skills unlock two extra things.** Approval comes from operator config (`approvedSourceSkillRefs`), not from code that knows the backend.
    - **Tools:** taken from the backend's MCP `tools/list`, where each tool carries its skill ref(s) in a neutral-namespace `_meta` key.
-   - **A required connection family:** declared per ref in config. For Traderton it is `trading`, an opaque label (D28).
+   - **A required connection family:** declared **once per backend** in config (`requiresConnectionFamily`) and inherited by all its approved skills. For Traderton it is `trading`, an opaque label (D28).
 4. **Tool calls stay REST** in staging and production (D27).
 5. **Delete** the built-in trading skills and the whole descriptor and signing machinery in the same change set (D26).
 
@@ -87,7 +88,7 @@ The program's strategic objective still governs: herobids is a generic agent hos
 | A bad push to a skills repo reaches agents on the next start | Accepted (D23). Rollback = revert in the skill repo. Traderton merges to `traderton-skills` `main` need review |
 | Traderton unreachable at agent start → approved skills have no tools | Accepted degradation (D26); EC-8 asserts no crash |
 | A `_meta` key leaks consumer semantics into Traderton (its 005 non-goal 2) | T0.4 picks a neutral namespace and records it |
-| GitHub rate limits at agent-start fan-out | T5: fetch via raw content with conditional requests; stored copy as fallback |
+| GitHub unavailable or rate-limited at agent start | Accepted: the skill is unavailable for that session (it affects every skills.sh user). Revisit with less frequent refresh only if it becomes a real problem |
 | Third-party skill text is untrusted model input (true for all skills.sh skills) | Unchanged threat. Progressive disclosure reduces exposure; enforcement stays server-side |
 | An agent acts before loading trading guidance (IV-d) | Accepted; Traderton's risk gate enforces limits |
 

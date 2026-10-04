@@ -41,27 +41,28 @@ Nothing in herobids depended on them. A review on 2026-10-03 found the following
 ### 1. Every skills.sh skill works the same way
 
 This covers Traderton's skills and every other skills.sh skill.
-- **Install:** `add_skills`, or a preset at agent creation. Fetch the latest `SKILL.md` from the repository's default branch, then store its body and the commit it came from in the DB, attached to the agent.
-- **Refresh:** re-fetch the latest when the agent starts. If the fetch fails, use the stored copy and log a warning. Never crash.
-- **Visibility:** the commit in use is shown to the user and operator. What a user sees on GitHub or skills.sh is what the agent runs, as of the last refresh.
+- **Install:** `add_skills`, or a preset at agent creation, records an **assignment** in the DB: the ref, plus the skill's `name` and `description` for the picker and the prompt listing. **No skill content is stored in the DB.**
+- **At every agent start:** the worker runs `npx skills add <ref>`, which installs the latest full skill folder (`SKILL.md` plus any `scripts/`, `references/`, `assets/`) from the default branch into the agent workspace. The stored `name` and `description` are refreshed from the installed frontmatter.
+- **If the install fails** (for example, GitHub is down): the skill stays listed, `read_skill` reports it as temporarily unavailable, and a warning is logged. Never crash. A GitHub outage affects every skills.sh user, not only herobids.
+- **Visibility:** the install time (and the commit, where it can be determined) is shown. What a user sees on GitHub or skills.sh is what the agent runs, as of its last start.
 - **Remove:** delete the assignment.
-- **No signing, no digest, no commit pinning.**
+- **No signing, no digest, no commit pinning.** `npx` telemetry and audit calls are acceptable; the skills are public and meant to be popular.
 
 ### 2. External skills are loaded on demand (progressive disclosure)
 
 This follows the Agent Skills spec and the way Kiro and Claude Code work.
 - The system prompt lists each assigned external skill's `name` and `description`, plus how to load it.
-- A `read_skill` tool returns the stored body.
+- A `read_skill` tool returns the body of the installed `SKILL.md` from the workspace. It never touches the network; the install step does that.
 - A loaded skill stays in the prompt for the rest of the session. The prompt is rebuilt every tick, so loaded state must be kept by the runtime.
 - Built-in `system/*` skills remain injected in full. Changing that is a separate decision.
 
 ### 3. Backend-approved skills differ only in what they unlock
 
-What makes a skill "backend-approved" is generic operator config, not code that knows about Traderton. An External Backend Definition lists its approved skill refs, and each ref can declare a required connection family.
+What makes a skill "backend-approved" is generic operator config, not code that knows about Traderton. An External Backend Definition lists its approved skill refs and declares **one** required connection family for the backend, which every approved skill of that backend inherits (`requiresConnectionFamily`).
 
 For an approved skill, herobids additionally:
 - **Exposes tools.** The backend's tools for that skill, as listed by the backend's MCP `tools/list`. Each tool marks the skill ref or refs it belongs to in its `_meta`. The visible set is those names, intersected with what the herobids tool registry can invoke.
-- **Requires a connection.** The declared family drives the readiness checks, setup screens, the trading-capability startup guard and tick-work. For Traderton the family is `trading`, kept as an opaque label (§6).
+- **Requires a connection.** The backend's declared family drives the readiness checks, setup screens, the trading-capability startup guard and tick-work. For Traderton the family is `trading`, kept as an opaque label (§6).
 
 Unapproved skills get no tools, exactly as before.
 
@@ -97,6 +98,9 @@ It is declared by operator config for the backend's approved refs, not by herobi
 | B: Traderton projects `SKILL.md` text into a signed descriptor | Herobids depends on a copy, not the published file; signing adds little for a vendored artifact |
 | C: signed descriptor carries `{commit, path, sha256}` and herobids fetches and verifies | The most rigorous option, but it pins agents to a commit users can't see, and MCP and the ecosystem have no signing. Judged over-engineering for the current threat model (operator, 2026-10-03) |
 | D′: operator pins `ref@commit` in config | Hidden version skew between what users see and what agents run; a deploy for every text change |
+| Store `SKILL.md` content in the DB (optionally skipping refresh for single-file skills) | A partial copy that misses bundled files; skipping refresh freezes skills, so users and agents see different versions; two serving paths |
+| Fetch over HTTPS or `git` instead of `npx` | Only needed if the API had to fetch content; with assignment-only storage the worker installs at agent start, where `npx` already runs |
+| Per-skill connection requirement, or one published by the backend over MCP | Every Traderton skill needs a trading account, so it is a backend fact; one config line suffices |
 | Fetch at API startup for approved refs only | Treats backend skills differently from other skills.sh skills for no reason |
 | Inject every external skill's full text | Diverges from the spec; more tokens and more third-party text always in context |
 | Tool list as a file copied from Traderton into herobids config | Herobids holds a stale-able copy; MCP `tools/list` is the standard mechanism and already half-built |

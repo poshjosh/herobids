@@ -1,6 +1,6 @@
 # Phase 4 — Tasks
 
-**Current cursor:** T0 (not started). **Branches:** create `phase4-skill-replacement` in herobids, traderton and traderton-skills.
+**Current cursor:** T0.1 (T0.4–T0.6 ruled; not started otherwise). **Branches:** create `phase4-skill-replacement` in herobids, traderton and traderton-skills.
 
 Each task lists its exit checks from [INVARIANTS.md](./INVARIANTS.md). A task is done only when its checks pass. Work found that fits no task: stop and ask the operator for a home (ENTRYPOINT §2). Never defer an item without a named home.
 
@@ -11,9 +11,9 @@ Each task lists its exit checks from [INVARIANTS.md](./INVARIANTS.md). A task is
 | T0.1 | Read the broker `MANAGE_AGENT_SKILLS` handler (where `add_skills` writes `agent_skills`) | Notes in this file |
 | T0.2 | Read the preset expansion at agent creation: `apps/api/src/services/agent-instantiation-service.ts`, `routes/agents.ts`, `agent-create-normalization.ts`, blueprints | Notes in this file |
 | T0.3 | Check Traderton tool schemas for anything `tools/list` serialisation or MCP clients would choke on | Notes in this file |
-| T0.4 | **Ruling:** the neutral `_meta` key for a tool's skill ref(s). It must not be herobids-specific (Traderton 005 non-goal 2). Proposal: a key in the skills.sh / Agent Skills ref vocabulary, e.g. `"skills/refs": ["traderton/skills/crypto-trading"]` | Record as a Phase 4 decision below; operator confirms |
-| T0.5 | **Ruling:** handling of a skill's **bundled files** (`scripts/`, `references/`). The Traderton skills have none; ordinary skills.sh skills may. Recommendation: store `SKILL.md` in the DB as decided. At agent start, also materialise the full skill directory at the stored commit into the workspace, so bundled files and Bash usage keep working as today | Operator confirms |
-| T0.6 | **Ruling:** the fetch mechanism. Recommendation: resolve the default-branch HEAD commit, then read files at that commit over HTTPS (raw content), with conditional requests and the stored copy as fallback. `npx skills` is no longer used for install, so there's no CLI telemetry and no workspace coupling. Search stays on the existing `ExternalSkillProvider` | Operator confirms |
+| T0.4 | **Ruling:** the neutral `_meta` key for a tool's skill ref(s). It must not be herobids-specific (Traderton 005 non-goal 2). Proposal: a key in the skills.sh / Agent Skills ref vocabulary, e.g. `"skills/refs": ["traderton/skills/crypto-trading"]` | ✅ Ruled: see P4-1 |
+| T0.5 | ✅ **Ruled (operator, 2026-10-03):** the DB stores the assignment only. The full skill folder, including bundled files, is installed into the workspace at every agent start | — |
+| T0.6 | ✅ **Ruled (operator, 2026-10-03):** keep `npx skills add`, run in the worker at agent start. Telemetry and audit calls are acceptable | — |
 
 ## T1 — Records ✅ (2026-10-03)
 
@@ -30,47 +30,45 @@ D21–D29 and ADR 017 written. Charter §2 and PROGRESS updated, Step 13 re-reco
 
 Keep `name` and `description`. Move `tags` into `metadata` if they're still wanted. Drop `requiredTools`. Leave the bodies unchanged (IV-a stands).
 
-## T4 — herobids DB (EC-5)
+## T4 — herobids DB: assignment rows (EC-5)
 
-- Migration: add `skills.source_ref` (unique when set) and `skills.source_commit`. External skills become rows.
+- External skills become `skills` rows holding **metadata only**: `source_ref` (unique when set), `name`, `description` and `last_installed_at`, plus the commit if `npx` or a lookup can report it. **No instructions or body.**
+- Assignment is the existing `agent_skills` link.
 - Derive `sourceKind: 'external'` from `source_ref`, keeping `authorId` null semantics for `system`.
-- Allow ref-shaped (three-segment) slugs for `source_ref` rows.
+- Allow ref-shaped (three-segment) slugs for `source_ref` rows. Normalise `owner/repo/skill` ↔ `owner/repo@skill` (the existing `normalizeExternalRef`).
 - Greenfield, so no data migration (D6, D29).
 
-## T5 — Skill content source (EC-5, EC-7)
+## T5 — Install at agent start (EC-6, EC-7)
 
-- A `SkillContentSource` port with two adapters:
-  - **`github`:** public repos only (D23), no token.
-  - **`localGit` / `directory`:** tests and dev.
-- Operator YAML selects the adapter and base URL. Add an `.env.example` twin only if an env var is introduced.
-- Fetch: resolve the default-branch commit, then read `SKILL.md` and (per T0.5) the skill directory.
-- Errors return `Result`; never throw into agent start.
+- At every agent start, for each assigned external skill, run `npx skills add <ref> --yes` in the workspace through the existing `externalSkillInstaller` port (P3-4).
+- Then read the installed `SKILL.md` frontmatter to refresh `name` and `description`.
+- Sequential installs, as today; each failure is a `Result`. On failure, mark the skill unavailable for this session and log a warning. Never throw into agent start.
+- Tests use a local git fixture repo through the **real** CLI where it accepts a local or `file://` source. If it cannot, stop and escalate (EC-7 is the dependency proof).
 
 ## T6 — One lifecycle for all external skills (EC-5, EC-6, EC-7)
 
-- `add_skills` for any external ref: fetch, upsert the row and revision (content-hash dedup), and assign via the broker.
-- `remove_skills`: unassign.
-- `list_skills`: show the commit.
-- Presets and the API can assign refs at agent creation.
-- **Refresh at agent start:** re-fetch each assigned external skill. On success, store a new revision and advance the agent to it (Q10: always latest). On failure, keep the stored copy and log a warning.
-- Remove the `npx skills add/remove/list` paths and the auto-add of `system/file-management` for external skills.
+- `add_skills` for any external ref: install now (so the agent can use the skill this session), upsert the metadata row, and assign via the broker.
+- `remove_skills`: unassign (and `npx skills remove` in the live workspace).
+- `list_skills`: show the install time (and the commit where known).
+- Presets and the API assign refs at agent creation. The API records the assignment only; the name and description come from the skills.sh catalog provider, and installation happens at the agent's first start (T5).
+- Stop auto-adding `system/file-management` for external skills, because `read_skill` replaces it for `SKILL.md`. Keep it available for agents that need bundled `references/`.
   - Keep the bash-dependency detection, but fix it to match `allowed-tools: Bash` without `(`.
 
 ## T7 — Progressive disclosure (EC-8)
 
 - The prompt lists each assigned external skill's `name` and `description`, plus "use `read_skill` to load".
-- A new `read_skill` tool, in snake_case, returns the stored body. Register it in `TOOL_CATALOG`, the known names and `BASE_SKILL`.
+- A new `read_skill` tool, in snake_case, returns the installed `SKILL.md` body from the workspace (no network), or "temporarily unavailable" if this session's install failed. Register it in `TOOL_CATALOG`, the known names and `BASE_SKILL`.
 - Track loaded skills per session in runtime state; loaded bodies are included on later ticks.
 - Update the `BASE_SKILL` instructions (they currently describe the workspace and file-management flow).
 - `system/*` skills stay injected.
 
 ## T8 — Backend-approved skills (EC-9, EC-10, EC-11, EC-12)
 
-- Config schema: `approvedSourceSkillRefs` changes from `string[]` to `[{ ref, requiresConnectionFamilies: string[] }]`, as operator YAML only.
+- Config schema: `approvedSourceSkillRefs` stays `string[]`. The backend definition gains **one** field, `requiresConnectionFamily` (e.g. `trading`), inherited by all its approved skills. Operator YAML only. No follow-up is planned (operator, 2026-10-03).
 - Worker, at agent start, for each assigned approved ref:
   - Call the backend's MCP `tools/list` via the existing MCP client, and cache it for the session.
   - Visible tools = tools tagged with the ref, intersected with the registry.
-  - If the backend is unreachable: hide the tools, keep the skill text, and don't crash.
+  - If the backend is unreachable: hide the tools, keep the skill loadable, and don't crash.
 - Calls stay on `RestTransport` (D27).
 - Approved rows get `capabilityFamilies` from config. Then verify every consumer (ENTRYPOINT §4 table), with one test each:
   - trading readiness
@@ -128,7 +126,7 @@ Record each in the program PROGRESS evidence section:
 | IV-c | Adding bot-management or risk-monitoring no longer auto-adds trading |
 | IV-d | Trading guidance is loaded on demand, not always injected |
 | IV-e | Traderton's MCP `tools/list` serves real schemas (previously placeholders) |
-| IV-f | Ordinary external skills now persist across restarts, refresh to the latest at agent start, and are loaded on demand, instead of living in the workspace |
+| IV-f | Ordinary external skills are now recorded as assignments, reinstalled at every agent start (latest from the default branch, so they survive restarts), and loaded via `read_skill`. Previously they were installed once and lost on restart |
 
 ## T13 — Verification and closeout (EC-15, EC-16)
 
@@ -140,4 +138,6 @@ Record each in the program PROGRESS evidence section:
 
 | # | Decision | Date |
 |---|---|---|
-| | | |
+| P4-1 | **Tool → skill `_meta` key (T0.4).** First check whether the MCP Skills extension (SEP-2640) defines a field linking tools to skills; if it does, use it. Otherwise use `io.agentskills/skillRefs`, whose value is an array of refs in `owner/repo/skill` form (e.g. `["traderton/skills/crypto-trading"]`). Neutral: names neither herobids nor Traderton | 2026-10-03 (operator) |
+| P4-2 | **`npx skills add` accepts a local path and a `file://` git URL**, and picks up committed edits on reinstall (verified 2026-10-03 against a clone of `traderton/skills`). EC-7 uses the real CLI with a `file://` fixture repo | 2026-10-03 |
+| P4-3 | **Skill names must match their directory** (Agent Skills spec). `npx` resolves `@<skill>` against the frontmatter `name`. openaidom-skills was fixed and pushed on 2026-10-03; the traderton skills already comply. Herobids assumes ref segment == `name` | 2026-10-03 (operator) |
