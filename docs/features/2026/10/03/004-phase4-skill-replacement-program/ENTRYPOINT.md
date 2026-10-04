@@ -104,4 +104,4 @@ The program's strategic objective still governs: herobids is a generic agent hos
 | F-7 | Tool calls over MCP (Step 16 differential, D27) |
 | F-8 | Optional: progressive disclosure for `system/*` skills |
 
-**Out of scope:** Step 15 module moves; the Step 16 staging proof; `search_skills` ordering.
+**Out of scope:** Step 15 module moves; the Step 16 staging proof; the Skills page "All" tab ordering. (Picker and `search_skills` ordering **are in scope**: T9b, EC-17.)

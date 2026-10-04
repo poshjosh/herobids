@@ -19,8 +19,6 @@ Each task lists its exit checks from [INVARIANTS.md](./INVARIANTS.md). A task is
 
 D21–D29 and ADR 017 written. Charter §2 and PROGRESS updated, Step 13 re-recorded as partial. Supersession notes added to ADR 015, ADR 016, the Step 10 plan §3 and the signing runbook. Stale references fixed (PROGRESS header, Phase 3 G9 reference, ADR 015 → ADR 008 links). Lesson recorded.
 
-**Still open:** `herobids/AGENTS.md:7` says "Our core skills are crypto trading and personal assistance", which contradicts charter §1. It is a repo rule file, so the operator decides the wording.
-
 ## T2 — traderton: MCP `tools/list` from its own registry (EC-13, part of EC-4)
 
 1. Build `tools/list` from Traderton's tool registry: real `name`, `description` and `inputSchema`.
@@ -89,6 +87,16 @@ Keep `name` and `description`. Move `tags` into `metadata` if they're still want
 - Delete the trading entries in `SKILL_PRESET_MAP`.
 - Replace web and API id checks with `hasCapabilityFamily` (or the equivalent family check).
 - Generate the docs index from catalog rows instead of hard-coded skill text.
+
+## T9b — Skill ordering: picker and `search_skills` (EC-17)
+
+**Order:** `system/*` → backend-approved (any ref in an External Backend's `approvedSourceSkillRefs`; config-driven, no backend names in code) → user → other external. Within a group, keep each surface's existing secondary order.
+
+- **Agent skill picker:** `listSelectableSkills` in `apps/web/src/features/agents/agent-display.ts` gains the backend-approved group. The API must expose an `isBackendApproved` (or equivalent) flag on the skill view so the web app doesn't need config.
+- **Agent `search_skills` tool:** `skillOps.search` in `apps/worker/src/agent.ts` currently has **no ORDER BY**. Add one that implements the order above.
+  - Only re-order rows that already match the query. Never add non-matching skills, so "email" never surfaces trading skills.
+  - External-provider results (skills.sh catalog) stay in their separate section, after local results.
+- **Out of scope (operator, 2026-10-03):** the Skills page "All" tab ordering.
 
 ## T10 — Deletions (EC-1, EC-2, EC-4)
 

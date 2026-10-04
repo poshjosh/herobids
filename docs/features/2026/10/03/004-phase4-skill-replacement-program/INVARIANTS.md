@@ -1,6 +1,6 @@
 # Phase 4 — Frozen exit checks
 
-**Frozen on 2026-10-03.** Only the operator may change a check. Phase 4 is done only when **every** check passes. See ENTRYPOINT §2 for the stop rule.
+**Frozen on 2026-10-03.** Only the operator may change a check. Phase 4 is done only when **every** check passes. (EC-17 was added by the operator on 2026-10-03.) See ENTRYPOINT §2 for the stop rule.
 
 **Grep scope** (unless stated otherwise): herobids `apps packages scripts config`, excluding `node_modules`, `dist` and `**/*.d.ts`. `docs/` is history and is excluded.
 
@@ -40,4 +40,5 @@ T11 should turn checks EC-1..EC-4 into a script at `scripts/shell/checks/phase4-
 |---|---|---|
 | EC-14 | The `traderton-skills` frontmatter has only spec fields: `name`, `description`, optional `license`, `compatibility`, `metadata` | Pass |
 | EC-15 | Both repos pass `pnpm build` and `pnpm lint`. Herobids passes `scripts/shell/tests/run-all-tests.sh --e2e` and `run-extra-tests.sh --all`. Traderton passes `run-all-tests.sh --e2e`, `run-extra-tests.sh --all` and `run-integration.sh`. The agent trade test passes. Browser UAT passes for: create a trading-preset agent, trading setup, readiness, and the skill list showing commits | All pass |
+| EC-17 | **Ordering**, set by the operator on 2026-10-03. (a) The agent skill picker lists system skills, then backend-approved skills, then user skills, then other external skills (unit test on `listSelectableSkills`). (b) `search_skills` local results follow the same group order, with matching rows only. A query with no match in a group returns nothing from that group: "email" must return no `traderton/skills/*` rows (worker test). The Skills page "All" tab is not checked | Pass |
 | EC-16 | Records: IV-a..IV-f recorded (TASKS T12); PROGRESS rows 13/14 updated to done; `.env.example` twins match every env change | Present |
