@@ -99,6 +99,13 @@ receives the mapped `ToolResult`. This includes:
 
 ### Default Targets
 
+> Config + measurement: the operator-configurable targets and the measurement
+> layer that produces these numbers are documented in
+> [docs/tech/observability.md](../../../tech/observability.md). The implemented
+> config path is `externalBackendObservability.latencyTargets.*` (the sibling-key
+> rationale vs the `externalBackends.latencyTargets.*` naming below is explained
+> there).
+
 The following are default operator-configurable targets. Domain-specific phase
 docs may tighten them for their backend.
 
@@ -217,6 +224,11 @@ exercise:
    peak load or a defined multiplier of current average load
 
 ### Metrics To Record
+
+> Instrumentation: these metrics are produced by the external-backend metrics
+> layer documented in [docs/tech/observability.md](../../../tech/observability.md)
+> (Phase 1 delivers end-to-end latency, throughput, and error-rate-by-code;
+> boundary overhead is the Phase 2 slot).
 
 | Metric | Required |
 | --- | --- |

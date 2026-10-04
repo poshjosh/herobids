@@ -171,7 +171,7 @@ Each site gets a one-line comment: `// metrics: see docs/tech/observability.md`.
 **Env twins:** none. These are operator YAML, not secrets — no `.env.example`
 change (consistent with AGENTS.md: `.example` documents env inputs only).
 
-### 6. Documentation backlinks (the "link every site" requirement) — PENDING
+### 6. Documentation backlinks (the "link every site" requirement) — DONE
 
 Add a short pointer to `docs/tech/observability.md` at every place that *calls
 for* metrics, so a reader at any entry point finds the one source of truth:
@@ -308,3 +308,14 @@ Non-blocking (LOW) review findings, grouped by work item. None are CRITICAL/HIGH
   YAML, not a secret).
 - [LOW] Targets have no upper bound and no p50≤p95≤p99 ordering invariant.
   Harmless (never enforced at runtime); defensive polish only. No action.
+
+### Item 6 — Documentation backlinks
+- Added blockquote backlinks to `docs/tech/observability.md` in readiness docs
+  014 (Metrics To Record + Default Targets) and 005 (Operational readiness), and
+  an append-only dated forward-pointer in the phase1 runbook §D (historical
+  2026-10-01 evidence left intact). The traderton 007 doc references the herobids
+  tech doc by repo-relative description (cross-repo — no dangling markdown link).
+  Code top-of-file backlinks were added in Items 1–4. All herobids relative links
+  verified to resolve.
+- [LOW] Backlink note style is now blockquote across all herobids sites (resolved
+  the 005 `0.`-ordinal nit). traderton uses the same blockquote device.

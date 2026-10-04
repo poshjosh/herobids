@@ -92,6 +92,15 @@ confirmed healthy (HTTP 200) at end.
 
 ## D. Metrics-based readiness items — N/A (no instrumentation exists)
 
+> **Forward pointer (2026-10-04):** the "no metrics system" finding below was
+> accurate at capture time. A minimal external-backend metrics layer is now
+> defined in [`docs/tech/observability.md`](../../../../docs/tech/observability.md)
+> and implemented in Phase 1 (end-to-end latency, throughput, error-rate-by-code
+> via a per-invocation structured log line). Once deployed, §D1 and §D3 become
+> obtainable from logs; boundary overhead (§D2) remains a Phase 2 contract
+> addition. The historical evidence below is left unchanged as the 2026-10-01
+> record.
+
 The generic readiness spec (`014-…`) asks for a latency budget, shadow-mode
 equivalence rate, load-test throughput/latency, and boundary-overhead
 histograms. **None of these are obtainable today** because the codebase has no

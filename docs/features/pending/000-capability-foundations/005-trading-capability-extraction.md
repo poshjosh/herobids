@@ -175,6 +175,11 @@ This phase is complete only when:
 
 ### Operational readiness
 
+> Instrumentation: metrics for the latency budget / load-test numbers are
+> documented in [docs/tech/observability.md](../../../tech/observability.md)
+> (Phase 1: end-to-end latency, throughput, error-rate-by-code; boundary
+> overhead is Phase 2).
+
 1. The latency budget, shadow-mode protocol, and restart-resilience
    requirements follow
    [014-operational-readiness-for-external-backends.md](./014-operational-readiness-for-external-backends.md).
