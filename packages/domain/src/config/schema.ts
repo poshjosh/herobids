@@ -1604,7 +1604,7 @@ export const AppConfigSchema = z.object({
   }).default({}),
   /** External Backend registry (Step 10 §1): YAML map keyed by backendId, parsed to ExternalBackendDefinition[]. */
   externalBackends: ExternalBackendRegistrySchema,
-  /** External-backend latency budgets — measurement targets consumed by load/perf harnesses, NOT runtime request guards. See docs/tech/observability.md. */
+  /** External-backend latency budgets — measurement targets consumed by load/perf harnesses, NOT runtime request guards. See docs/tech/architecture/observability.md. */
   externalBackendObservability: z.object({
     latencyTargets: z.object({
       p50Ms: z.number().int().positive().default(200),

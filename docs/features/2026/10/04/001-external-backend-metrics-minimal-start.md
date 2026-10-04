@@ -2,7 +2,7 @@
 
 **Status:** plan
 **Created:** 2026-10-04
-**Tech doc (source of truth):** [`docs/tech/observability.md`](../../../../tech/observability.md)
+**Tech doc (source of truth):** [`docs/tech/architecture/observability.md`](../../../../tech/architecture/observability.md)
 **Satisfies (partially, Phase 1):**
 - `docs/features/pending/000-capability-foundations/005-trading-capability-extraction.md` (criterion 8; validation 8)
 - `docs/features/pending/000-capability-foundations/014-operational-readiness-for-external-backends.md` (Latency Budget, Load-Test metrics)
@@ -56,7 +56,7 @@ the build steps.
 - Export `MetricsSink` with `recordInvocation(sample): void`.
 - Export `NOOP_METRICS_SINK: MetricsSink` (empty body).
 - Pure types + a const. No node imports (keeps the module barrel-safe).
-- Top-of-file comment MUST link to `docs/tech/observability.md`.
+- Top-of-file comment MUST link to `docs/tech/architecture/observability.md`.
 
 **File:** `packages/domain/src/external-backend/index.ts`
 - Add `export * from './metrics.js';`.
@@ -84,7 +84,7 @@ the build steps.
 - Do NOT instrument `invokeAndAwait`/`poll` separately in Phase 1 — they call
   `invoke`, so each underlying attempt is already one sample. (A logical-write
   timer is a documented later option, not now — keeps the slice minimal.)
-- Update the top-of-file comment to reference `docs/tech/observability.md` for
+- Update the top-of-file comment to reference `docs/tech/architecture/observability.md` for
   the metrics seam.
 
 **File:** `packages/domain/src/external-backend/client-config.ts`
@@ -107,7 +107,7 @@ the build steps.
 - `createPinoMetricsSink(logger): MetricsSink` — `recordInvocation` emits
   `logger.info({ evt: 'external_backend.invocation', ...sample })`. Omit
   `undefined` fields. Never throw.
-- Top-of-file comment links `docs/tech/observability.md`.
+- Top-of-file comment links `docs/tech/architecture/observability.md`.
 - Reuse `createLogger('external-backend-metrics')` from `apps/worker/src/logger.ts`
   at the composition sites (do not create a logger inside the adapter — inject it).
 
@@ -141,14 +141,14 @@ Sites (verified):
 - `apps/worker/src/external-backend/agent-ports.ts` — `buildAgentExternalBackendPorts`.
 - `apps/api/src/index.ts` — `tradingBackendClient`.
 
-Each site gets a one-line comment: `// metrics: see docs/tech/observability.md`.
+Each site gets a one-line comment: `// metrics: see docs/tech/architecture/observability.md`.
 
 ### 5. Config — latency budgets — DONE
 
 **File:** `packages/domain/src/config/schema.ts`
 - Add a top-level block beside `externalBackends`:
   ```ts
-  /** External-backend latency budgets (measurement targets; see docs/tech/observability.md). */
+  /** External-backend latency budgets (measurement targets; see docs/tech/architecture/observability.md). */
   externalBackendObservability: z.object({
     latencyTargets: z.object({
       p50Ms: z.number().int().positive().default(200),
@@ -173,7 +173,7 @@ change (consistent with AGENTS.md: `.example` documents env inputs only).
 
 ### 6. Documentation backlinks (the "link every site" requirement) — DONE
 
-Add a short pointer to `docs/tech/observability.md` at every place that *calls
+Add a short pointer to `docs/tech/architecture/observability.md` at every place that *calls
 for* metrics, so a reader at any entry point finds the one source of truth:
 
 Readiness docs (add a one-line "Instrumentation" note linking the tech doc):
@@ -186,7 +186,7 @@ Readiness docs (add a one-line "Instrumentation" note linking the tech doc):
 
 Runbook (update the stale "no instrumentation" framing to point forward):
 - `infra/hetzner/docs/runbooks/phase1-operational-readiness.md` — in §D add a line:
-  Phase 1 instrumentation now defined in `docs/tech/observability.md`; §D1/D3
+  Phase 1 instrumentation now defined in `docs/tech/architecture/observability.md`; §D1/D3
   become obtainable once this plan ships. Do NOT rewrite the historical evidence;
   append a dated forward-pointer only.
 
@@ -204,7 +204,7 @@ Code backlinks (top-of-file comment → tech doc):
 New:
 - `packages/domain/src/external-backend/metrics.ts` (+ `.test.ts`)
 - `packages/domain/src/external-backend/logger-metrics-sink.ts` (option (b))
-- `docs/tech/observability.md` (already created)
+- `docs/tech/architecture/observability.md` (already created)
 - this plan
 
 Edited:
@@ -237,7 +237,7 @@ Edited:
 3. Latency targets are operator-configurable with the documented defaults and are
    not consulted on the live request path.
 4. No new dependency; `pnpm lint`/`test`/`build` pass.
-5. `docs/tech/observability.md` exists and every metrics-calling site (readiness
+5. `docs/tech/architecture/observability.md` exists and every metrics-calling site (readiness
    docs, runbook, instrumented code) links to it.
 6. No `traderton/` change and no boundary-contract change in this phase
    (`backendDurationMs` stays an unused reserved slot).
@@ -310,7 +310,7 @@ Non-blocking (LOW) review findings, grouped by work item. None are CRITICAL/HIGH
   Harmless (never enforced at runtime); defensive polish only. No action.
 
 ### Item 6 — Documentation backlinks
-- Added blockquote backlinks to `docs/tech/observability.md` in readiness docs
+- Added blockquote backlinks to `docs/tech/architecture/observability.md` in readiness docs
   014 (Metrics To Record + Default Targets) and 005 (Operational readiness), and
   an append-only dated forward-pointer in the phase1 runbook §D (historical
   2026-10-01 evidence left intact). The traderton 007 doc references the herobids

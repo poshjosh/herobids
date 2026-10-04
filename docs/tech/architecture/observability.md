@@ -156,7 +156,8 @@ not with this metrics layer, and is intentionally out of scope here.
 
 ## Related
 
-- Readiness spec (generic): [`docs/features/pending/000-capability-foundations/014-operational-readiness-for-external-backends.md`](../features/pending/000-capability-foundations/014-operational-readiness-for-external-backends.md)
-- Trading extraction phase: [`docs/features/pending/000-capability-foundations/005-trading-capability-extraction.md`](../features/pending/000-capability-foundations/005-trading-capability-extraction.md)
-- Phase-1 operational-readiness runbook: [`infra/hetzner/docs/runbooks/phase1-operational-readiness.md`](../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md)
-- Configuration layering: [`docs/tech/configuration.md`](./configuration.md)
+- External-backend architecture: [`external-backend.md`](./external-backend.md)
+- Readiness spec (generic): [`docs/features/pending/000-capability-foundations/014-operational-readiness-for-external-backends.md`](../../features/pending/000-capability-foundations/014-operational-readiness-for-external-backends.md)
+- Trading extraction phase: [`docs/features/pending/000-capability-foundations/005-trading-capability-extraction.md`](../../features/pending/000-capability-foundations/005-trading-capability-extraction.md)
+- Phase-1 operational-readiness runbook: [`infra/hetzner/docs/runbooks/phase1-operational-readiness.md`](../../../infra/hetzner/docs/runbooks/phase1-operational-readiness.md)
+- Configuration layering: [`docs/tech/configuration.md`](../configuration.md)

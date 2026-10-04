@@ -423,7 +423,7 @@ externalBackends:
 tradingBackendId: traderton
 
 # External-backend latency budgets (measurement targets for load/perf
-# harnesses, not runtime guards). See docs/tech/observability.md.
+# harnesses, not runtime guards). See docs/tech/architecture/observability.md.
 externalBackendObservability:
   latencyTargets:
     p50Ms: 200     # readiness default

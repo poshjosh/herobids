@@ -94,7 +94,7 @@ confirmed healthy (HTTP 200) at end.
 
 > **Forward pointer (2026-10-04):** the "no metrics system" finding below was
 > accurate at capture time. A minimal external-backend metrics layer is now
-> defined in [`docs/tech/observability.md`](../../../../docs/tech/observability.md)
+> defined in [`docs/tech/architecture/observability.md`](../../../../docs/tech/architecture/observability.md)
 > and implemented in Phase 1 (end-to-end latency, throughput, error-rate-by-code
 > via a per-invocation structured log line). Once deployed, §D1 and §D3 become
 > obtainable from logs; boundary overhead (§D2) remains a Phase 2 contract

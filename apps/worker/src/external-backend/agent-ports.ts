@@ -86,7 +86,7 @@ export function buildAgentExternalBackendPorts(input: AgentExternalBackendPortsI
   const { definition, hmacSecret } = resolved;
   const subject: ExternalBackendSubject = { ownerId, actor: { type: 'agent', id: agentId } };
   // metrics: reuse the injected ports logger (the agent runs in its own
-  // container). See docs/tech/observability.md.
+  // container). See docs/tech/architecture/observability.md.
   const client = createExternalBackendClient(
     buildExternalBackendClientConfig(definition, hmacSecret, { metrics: createLoggerMetricsSink(logger) }),
   );

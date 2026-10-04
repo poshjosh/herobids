@@ -196,7 +196,7 @@ const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
 // Undefined when that entry cannot be resolved (e.g. no HMAC secret) → the write
 // endpoints return a typed precondition; NO silent fallback to the lifecycle queue.
 const tradingBackend = resolveConfiguredExternalBackend(appConfig, appConfig.tradingBackendId);
-// One metrics sink per api process. metrics: see docs/tech/observability.md
+// One metrics sink per api process. metrics: see docs/tech/architecture/observability.md
 const externalBackendMetricsSink = createLoggerMetricsSink(createLogger('external-backend-metrics'));
 const tradingBackendClient = tradingBackend.ok
   ? createExternalBackendClient(

@@ -79,7 +79,7 @@ const TELEGRAM_AGENT_COMMANDS: Array<{ command: string; description: string }> =
 const logger = createLogger('herobids-worker');
 
 // One metrics sink per worker process, reused across every external-backend
-// client built below. metrics: see docs/tech/observability.md
+// client built below. metrics: see docs/tech/architecture/observability.md
 const externalBackendMetricsSink = createLoggerMetricsSink(createLogger('external-backend-metrics'));
 
 // Load operator config: default.yaml → {NODE_ENV}.yaml → env var overrides

@@ -176,7 +176,7 @@ This phase is complete only when:
 ### Operational readiness
 
 > Instrumentation: metrics for the latency budget / load-test numbers are
-> documented in [docs/tech/observability.md](../../../tech/observability.md)
+> documented in [docs/tech/architecture/observability.md](../../../tech/architecture/observability.md)
 > (Phase 1: end-to-end latency, throughput, error-rate-by-code; boundary
 > overhead is Phase 2).
 

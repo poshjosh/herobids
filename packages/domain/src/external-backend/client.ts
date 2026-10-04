@@ -11,7 +11,7 @@
 //
 // `invoke` is also the single metrics seam: it emits one
 // `ExternalBackendInvocationSample` per invocation through an injected
-// `MetricsSink` (default no-op). See docs/tech/observability.md.
+// `MetricsSink` (default no-op). See docs/tech/architecture/observability.md.
 
 import { randomUUID } from 'node:crypto';
 import type { SigningIdentity } from './sign.js';
@@ -49,7 +49,7 @@ export interface ExternalBackendClientConfig {
   toolProtocolOverrides?: Readonly<Record<string, ExternalBackendProtocol>>;
   /** MCP endpoint path; required by the definition schema whenever `mcp` is used. */
   mcpPath?: string;
-  /** Sink for invocation metrics; defaults to a no-op (see docs/tech/observability.md). */
+  /** Sink for invocation metrics; defaults to a no-op (see docs/tech/architecture/observability.md). */
   metrics?: MetricsSink;
   /** Identifies the backend in emitted samples; defaults to `'unknown'`. */
   backendId?: string;
@@ -292,7 +292,7 @@ export class ExternalBackendClient {
   }
 
   /**
-   * Emit exactly one metrics sample per invocation (see docs/tech/observability.md).
+   * Emit exactly one metrics sample per invocation (see docs/tech/architecture/observability.md).
    * A sink error can never alter or block the returned result, so emission is
    * wrapped in a swallowing try/catch.
    */

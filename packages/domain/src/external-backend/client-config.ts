@@ -4,7 +4,7 @@ import type { MetricsSink } from './metrics.js';
 
 /** Optional composition-site inputs the helper cannot derive from the registry. */
 export interface BuildExternalBackendClientConfigOptions {
-  /** Metrics sink injected by the app (see docs/tech/observability.md). */
+  /** Metrics sink injected by the app (see docs/tech/architecture/observability.md). */
   metrics?: MetricsSink;
 }
 
@@ -26,7 +26,7 @@ export function buildExternalBackendClientConfig(
     backendId: definition.backendId,
     // `metrics` is injected at the composition site via `options.metrics` (this
     // helper has no sink of its own). Omit the key when absent so unconfigured
-    // clients keep the no-op default path. See docs/tech/observability.md.
+    // clients keep the no-op default path. See docs/tech/architecture/observability.md.
     ...(options?.metrics ? { metrics: options.metrics } : {}),
   };
 }
