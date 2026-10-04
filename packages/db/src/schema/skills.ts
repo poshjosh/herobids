@@ -31,6 +31,19 @@ export const skills = pgTable('skills', {
   popularityScore: doublePrecision('popularity_score').notNull().default(0),
   trendingScore: doublePrecision('trending_score').notNull().default(0),
 
+  /**
+   * The installed skills.sh source ref (`owner/repo/skill`, D11) this row
+   * resolves from. Set (and unique) for external skills.sh skills; null for
+   * system and user-authored skills. `sourceKind` is DERIVED: source_ref set →
+   * 'external'; else authorId null → 'system'; else 'user' (ADR 017, T4). The
+   * full skill folder is installed into the workspace at every agent start — no
+   * skill body is stored in this table for external skills (instructions stays
+   * empty for them).
+   */
+  sourceRef: text('source_ref'),
+  /** When the external skill folder was last successfully installed (T5). */
+  lastInstalledAt: timestamp('last_installed_at', { withTimezone: true }),
+
   // Legacy content columns retained during runtime/API migration.
   name: text('name').notNull(),
   description: text('description').notNull(),
@@ -61,4 +74,6 @@ export const skills = pgTable('skills', {
   index('idx_skills_publication_status').on(t.publicationStatus),
   index('idx_skills_popularity_score').on(t.popularityScore),
   index('idx_skills_trending_score').on(t.trendingScore),
+  // One skills row per external source ref (unique only when set).
+  uniqueIndex('uq_skills_source_ref').on(t.sourceRef).where(sql`${t.sourceRef} IS NOT NULL`),
 ]);

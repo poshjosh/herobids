@@ -22,6 +22,8 @@ export const skillRevisions = pgTable('skill_revisions', {
   capabilityFamilies: text('capability_families').array().notNull().default(sql`'{}'::text[]`),
   suggestedTickIntervalMs: integer('suggested_tick_interval_ms'),
   tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
+  /** The installed skills.sh source ref for external skills (ADR 017, T4); null otherwise. */
+  sourceRef: text('source_ref'),
   changeSummary: text('change_summary'),
   createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   /** When this revision was first published. null = staged/never published. */

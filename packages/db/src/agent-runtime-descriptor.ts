@@ -130,6 +130,7 @@ function inferSkillFromRevisionRow(row: {
   requiredGuardrails: string[];
   capabilityFamilies: string[];
   suggestedTickIntervalMs: number | null;
+  sourceRef: string | null;
 }): SkillDefinition {
   const systemSkill = SYSTEM_SKILLS_BY_ID[row.skillId];
   if (systemSkill) {
@@ -138,15 +139,14 @@ function inferSkillFromRevisionRow(row: {
 
   const requiredTools = assertKnownRequiredTools(row.skillId, row.requiredTools);
 
-  // Step 12 T3.2: no tool-name inference, no trading-account guard. The visible
-  // tool set is decided downstream by the generic descriptor-driven resolver
-  // (worker-side), not by inferring a `trading` family from tool names here. The
-  // row's STORED `capabilityFamilies` is authoritative data; the family-keyed
-  // binding/context/hint presentation is preserved (the §6-fence consumers —
-  // tick-work, readiness, prompt rendering — still read these). A user DB skill
-  // carries no installed source ref yet (that is T4 for installed external
-  // skills), so `sourceRef` is left undefined and such a skill is an ordinary
-  // platform skill until it maps to a backend.
+  // Step 12 T3.2 / Phase 4 T4: no tool-name inference, no trading-account guard.
+  // The visible tool set is decided downstream by the generic backend-approval
+  // resolver (worker-side), not by inferring a `trading` family from tool names
+  // here. The row's STORED `capabilityFamilies` is authoritative data; the
+  // family-keyed binding/context/hint presentation is preserved (the §6-fence
+  // consumers — tick-work, readiness, prompt rendering — still read these). An
+  // installed external skill carries its skills.sh `source_ref` (T4), which the
+  // backend-approval resolver matches against `approvedSourceSkillRefs`.
   const capabilityFamilies = row.capabilityFamilies;
   const hasTradingFamily = capabilityFamilies.includes('trading');
   const requiredContextBlocks = ['corePlatformContext', ...(hasTradingFamily ? ['tradingContext'] : [])];
@@ -156,6 +156,7 @@ function inferSkillFromRevisionRow(row: {
     name: row.name,
     description: row.description,
     instructions: row.instructions,
+    ...(row.sourceRef ? { sourceRef: row.sourceRef } : {}),
     promptHint: row.promptHint ?? undefined,
     promptTemplate: row.promptTemplate ?? undefined,
     requiredTools,
@@ -196,6 +197,9 @@ export async function resolveRuntimeCapabilityDescriptor(
       requiredGuardrails: skillRevisions.requiredGuardrails,
       capabilityFamilies: skillRevisions.capabilityFamilies,
       suggestedTickIntervalMs: skillRevisions.suggestedTickIntervalMs,
+      // The external skill's installed source ref (T4): prefer the catalog row
+      // (refreshed at install), fall back to the pinned revision snapshot.
+      sourceRef: skills.sourceRef,
     })
     .from(agentSkills)
     .innerJoin(skills, eq(agentSkills.skillId, skills.id))

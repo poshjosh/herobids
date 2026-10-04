@@ -505,6 +505,13 @@
       "when": 1789831319537,
       "tag": "0071_flimsy_morgan_stark",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1791078364592,
+      "tag": "0072_bouncy_lorna_dane",
+      "breakpoints": true
     }
   ]
 }
