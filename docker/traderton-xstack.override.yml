@@ -43,14 +43,6 @@ services:
     ports: !override
       - "6380:6379"
 
-  boundary:
-    environment:
-      # Mount POST /internal/v1/mcp so the herobids cross-stack transport-parity
-      # leg (apps/worker/src/__tests__/xstack/transport-parity.xstack.test.ts)
-      # can exercise the REAL MCP route. DEV/TEST ONLY — staging/prod keep the
-      # MCP route off and herobids stays protocol: rest everywhere (D19).
-      BOUNDARY_MCP_ENABLED: "true"
-
 networks:
   default:
     ipam:

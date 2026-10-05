@@ -109,7 +109,7 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
 
     // Fill in the setup form — provider is auto-selected (Hyperliquid) from catalog
     await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('hyperliquid', { timeout: 5_000 });
-    await page.getByPlaceholder('e.g. My Hyperliquid account').fill('My HL Account J14');
+    await page.getByPlaceholder('e.g. My Gmail account').fill('My HL Account J14');
 
     // Credential fields render for the selected provider (Hyperliquid: apiKey, secret, walletAddress)
     await expect(page.getByPlaceholder('0x...')).toHaveCount(2, { timeout: 5_000 });

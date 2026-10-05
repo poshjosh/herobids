@@ -1,6 +1,6 @@
 # Bug 005 — Staging Traderton has no MCP route, so agents get no trading tools
 
-- **Status:** OPEN — needs a decision (not a code fix)
+- **Status:** FIXED (code; needs a Traderton deploy) — decision: remove the flag. Traderton now always mounts `/internal/v1/mcp`; `BOUNDARY_MCP_ENABLED` is removed from code, both `.env` example twins and herobids' `docker/traderton-xstack.override.yml`. A leftover value only triggers a startup warning. Verify after deploy: `GET https://api.staging.traderton.com/internal/v1/mcp` → 405.
 - **Severity:** High
 - **Date:** 2026-10-05
 - **Summary:** Phase 4 made MCP `tools/list` the only source of backend-skill tool visibility, but staging Traderton runs with `BOUNDARY_MCP_ENABLED` unset (off), so every agent with a `traderton/skills/*` skill starts with those skills' tools hidden for the whole session.

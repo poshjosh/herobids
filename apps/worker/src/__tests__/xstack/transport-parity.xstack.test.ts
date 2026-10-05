@@ -76,8 +76,8 @@ describe.skipIf(!ENABLED)('cross-stack transport parity against the local trader
       console.warn(
         '[xstack parity] MCP route not mounted at ' +
           `${EXPECTED_BASE_URL}${MCP_PATH} (GET did not return 405). ` +
-          'MCP legs are SKIPPED. To run them, rebuild/checkout traderton phase3-mcp-surface ' +
-          'and bring the boundary up with BOUNDARY_MCP_ENABLED=true (docker/traderton-xstack.override.yml).',
+          'MCP legs are SKIPPED. To run them, rebuild the traderton boundary from a ' +
+          'checkout that always mounts the MCP route.',
       );
     }
   });
