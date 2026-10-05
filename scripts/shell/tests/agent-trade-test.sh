@@ -54,7 +54,13 @@
 # Optional
 #   EXECUTION_MODE        paper (default) | shadow | live
 #   TICK_INTERVAL_MS      Tick interval in ms. Default: 60000 (1 min)
-#   TIMEOUT_MS            Total watch timeout in ms. Default: 600000 (10 min)
+#   TIMEOUT_MS            Close-wait timeout in ms (and the trade watch window
+#                         when REQUIRE_TRADE=1). Default: 600000 (10 min)
+#   REQUIRE_TRADE         1 to require the full trade cycle. Default: unset —
+#                         the trade phases are best-effort (SKIP if the LLM does
+#                         not trade); the agent + bot lifecycle is always gated.
+#   TRADE_WATCH_TIMEOUT_MS  Trade watch window. Default: 180000 (180s), or
+#                         TIMEOUT_MS when REQUIRE_TRADE=1
 #   DOCKER_COMPOSE_UP     1 to auto-start Docker stack when API is unreachable
 #   DOCKER_COMPOSE_DOWN   1 to stop the Docker stack on exit (only if started here)
 #   SKIP_TEARDOWN         1 to leave the agent running for manual inspection
@@ -240,6 +246,7 @@ log "  Venue:          $VENUE"
 log "  Execution mode: $EXECUTION_MODE"
 log "  Tick interval:  $((TICK_INTERVAL_MS / 1000))s"
 log "  Timeout:        $((TIMEOUT_MS / 1000))s"
+log "  Require trade:  ${REQUIRE_TRADE:-0} (1 = trade cycle mandatory; default best-effort)"
 log "  Env file:       $ENV_FILE"
 log ""
 

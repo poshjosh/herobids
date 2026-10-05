@@ -1,8 +1,32 @@
 /**
- * agent-trade-test.ts — End-to-end smoke test that verifies an agent can open and close a trade.
+ * agent-trade-test.ts — End-to-end test of an agent's bot lifecycle across the
+ * herobids → Traderton boundary, plus a best-effort agent trade cycle.
  *
- * This script is NOT part of the routine test suite. Run it manually to
- * diagnose agent trading issues against a live or local stack.
+ * Runs in the routine Tier-5 suite (run-extra-tests.sh). Two parts:
+ *
+ *  DETERMINISTIC GATE (must pass — no LLM judgement involved):
+ *    stack health, setup, agent reaches running, an agent-subject manage_bot
+ *    create_and_start produces a running bot (herobids broker → boundary →
+ *    Traderton config validation), the bot is STILL running after the watch
+ *    window (spans >= 2 Traderton orphan-sweep ticks — regression guard for
+ *    traderton bug 2026-10-05/004), and teardown completes (bot stopped via
+ *    manage_bot, agent stopped + deleted, bot gone).
+ *
+ *  BEST-EFFORT (LLM-dependent):
+ *    Phases 3.5–3.7 run only if the agent opens a position inside the watch
+ *    window. Whether the LLM decides to trade is not deterministic (ticks are
+ *    often skipped as `context_unchanged`), so with no trade they are reported as
+ *    SKIP and the run still passes. A trade that IS attempted but rejected,
+ *    silently dropped, mis-attributed or mis-booked still FAILS the run.
+ *    REQUIRE_TRADE=1 makes the trade cycle mandatory (manual diagnosis).
+ *
+ * Known gaps worked around (documented in traderton
+ * docs/bug-reports/2026/10/05/004-orphan-sweep-stops-every-agent-bot.md):
+ *  - herobids DELETE /agents/:id cannot stop a running agent bot (it calls
+ *    stop_bot as the user; stop_bot only accepts the creating agent). Teardown
+ *    therefore stops the bot as the agent (manage_bot stop) BEFORE stopping the
+ *    agent.
+ *  - Stopping an agent does not cascade to its bots (pending traderton E1-H).
  *
  * What it does
  * ────────────
@@ -10,15 +34,21 @@
  *  Phase 2    Setup    — registers/logs in, creates a provider-link (credential +
  *                        connection + trading binding), creates a trading agent,
  *                        binds trading capability to it, and starts it.
+ *  Phase 2.5  Bot      — publishes manage_bot create_and_start; the bot must
+ *                        appear within 90s.
  *  Phase 3    Watch    — polls activity-feed, decisions, and trading state every
- *                        10 s until an open position is confirmed.
+ *                        10 s for TRADE_WATCH_TIMEOUT_MS (default 180s; strict
+ *                        mode uses TIMEOUT_MS) until an open position is confirmed.
+ *  Phase 3.1  Survive  — the agent's bot is still running (deterministic).
  *  Phase 3.5  Assert   — verifies decisions are non-rejected, journal events exist,
  *                        and position visibility is consistent (system vs agent-visible).
  *  Phase 3.6  Close    — waits for the agent to submit go_flat and confirms
  *                        openPositionCount drops to 0.
  *  Phase 3.7  Audit    — checks DB bookkeeping: closedAt set, go_flat plan settled,
  *                        journal event count, worker error logs, Redis reminder cleanup.
- *  Phase 4    Teardown — stops and deletes the agent; optionally stops Docker.
+ *  Phase 4    Teardown — stops the bot (manage_bot), stops + deletes the agent,
+ *                        deprovisions the provider-link; optionally stops Docker.
+ *                        Deterministic: a failed step fails the run.
  *
  * Required env vars
  * ─────────────────
@@ -40,7 +70,11 @@
  *  VENUE                 hyperliquid (default) | bybit | 1inch
  *  EXECUTION_MODE        paper (default) | shadow | live
  *  TICK_INTERVAL_MS      60000 (default, 1 minute)
- *  TIMEOUT_MS            600000 (default, 10 minutes)
+ *  TIMEOUT_MS            600000 (default, 10 minutes) — close-wait timeout, and
+ *                        the trade watch window when REQUIRE_TRADE=1
+ *  REQUIRE_TRADE         1 to make the trade cycle mandatory (default: best-effort)
+ *  TRADE_WATCH_TIMEOUT_MS  trade watch window; default 180000, or TIMEOUT_MS
+ *                        when REQUIRE_TRADE=1
  *  LLM_PROVIDER          ollama (default) — LLM provider for agent reasoning
  *  LLM_LIGHT_MODEL       qwen3:8b (default) — fast/cheap model
  *  LLM_HEAVY_MODEL       qwen3.6:35b-a3b-q4_K_M (default) — powerful model for strategy
@@ -84,6 +118,18 @@ const VENUE = process.env['VENUE'] ?? 'hyperliquid';
 const EXECUTION_MODE = process.env['EXECUTION_MODE'] ?? 'paper';
 const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '60000', 10);
 const TIMEOUT_MS = parseInt(process.env['TIMEOUT_MS'] ?? '600000', 10);
+/** 1 = a trade is required to pass (strict, manual diagnosis). Default: trade is best-effort. */
+const REQUIRE_TRADE = process.env['REQUIRE_TRADE'] === '1';
+/**
+ * How long Phase 3 watches for a trade. Best-effort mode defaults to 180s: long
+ * enough to span at least two Traderton orphan-sweep ticks (60s default) so the
+ * bot-survival check is meaningful. Strict mode keeps the full TIMEOUT_MS.
+ */
+const TRADE_WATCH_TIMEOUT_MS = parseInt(
+  // `||` (not `??`): a blank `TRADE_WATCH_TIMEOUT_MS=` in the env file means "default".
+  process.env['TRADE_WATCH_TIMEOUT_MS'] || (REQUIRE_TRADE ? String(TIMEOUT_MS) : '180000'),
+  10,
+);
 const LLM_PROVIDER = process.env['LLM_PROVIDER'] ?? 'ollama';
 const LLM_LIGHT_MODEL = process.env['LLM_LIGHT_MODEL'] ?? 'qwen3:8b';
 const LLM_HEAVY_MODEL = process.env['LLM_HEAVY_MODEL'] ?? 'qwen3.6:35b-a3b-q4_K_M';
@@ -590,11 +636,63 @@ async function fetchDirectAgentJournalEvents(token: string, agentId: string): Pr
   return res.body.events;
 }
 
+/**
+ * Publish an `agent.manage_bot` envelope to the agent's inbound stream — the
+ * same broker path an agent's own manage_bot tool uses. The broker forwards it
+ * over the boundary with the AGENT as subject, which is what the agent-scoped
+ * bot guards (start/stop_bot) require. Returns the publish time (ISO) for log
+ * correlation. Requires the agent session to be running.
+ */
+function publishManageBot(agentId: string, payload: Record<string, unknown>, correlationId: string): string {
+  const envelope = {
+    schemaVersion: 'v1',
+    messageId: crypto.randomUUID(),
+    correlationId,
+    initiatorType: 'system',
+    initiatorId: agentId,
+    agentId,
+    type: 'agent.manage_bot',
+    createdAt: new Date().toISOString(),
+    payload,
+  };
+  const envelopeJson = JSON.stringify(envelope).replace(/'/g, "'\\''");
+  const publishedAt = new Date().toISOString();
+  execSync(
+    `docker compose exec -T redis redis-cli XADD 'agent:inbound:${agentId}' '*' envelope '${envelopeJson}'`,
+    { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
+  );
+  return publishedAt;
+}
+
+/** The bot's current status over the boundary (`GET /bots/:id`), or null if unreadable. */
+async function fetchBotStatus(token: string, botId: string): Promise<string | null> {
+  const res = await apiRequest<{ status?: string }>('GET', `/bots/${botId}`, { token });
+  return res.status === 200 && typeof res.body.status === 'string' ? res.body.status : null;
+}
+
+/**
+ * Deterministic gate: the agent's bot must still be running after the watch
+ * window (which spans >= 2 Traderton orphan-sweep ticks). Regression guard for
+ * traderton bug 2026-10-05/004, where the sweep silently stopped every
+ * agent-created bot within one sweep interval.
+ */
+async function assertBotSurvived(token: string, botId: string): Promise<boolean> {
+  section('Phase 3.1: Agent bot survived the watch window');
+  const status = await fetchBotStatus(token, botId);
+  if (status === 'running') {
+    ok(`Bot ${botId} still running after the watch window (orphan sweep left it alone)`);
+    return true;
+  }
+  warn(`Bot ${botId} is '${status ?? 'unreadable'}' after the watch window — it was stopped while its agent was running`);
+  warn('  Check the boundary log for "orphan sweep: stopped bot" (traderton bug 2026-10-05/004) or a strategy halt.');
+  return false;
+}
+
 async function watchAgent(token: string, agentId: string): Promise<WatchOutcome> {
   section('Phase 3: Watching agent');
-  log(`Timeout: ${TIMEOUT_MS / 1000}s  Poll interval: ${POLL_INTERVAL_MS / 1000}s`);
+  log(`Timeout: ${TRADE_WATCH_TIMEOUT_MS / 1000}s  Poll interval: ${POLL_INTERVAL_MS / 1000}s  (trade ${REQUIRE_TRADE ? 'REQUIRED' : 'best-effort'})`);
 
-  const deadline = Date.now() + TIMEOUT_MS;
+  const deadline = Date.now() + TRADE_WATCH_TIMEOUT_MS;
   let lastDecisionCount = 0;
   let decisionObservedAt: number | null = null;
 
@@ -963,52 +1061,106 @@ async function runBookkeepingAudit(
 // Phase 4: Teardown
 // ---------------------------------------------------------------------------
 
-async function teardown(token: string, agentId: string, agentBotId: string | null): Promise<void> {
+/** Poll until `check` returns true or the timeout elapses. Returns whether it succeeded. */
+async function waitFor(check: () => Promise<boolean>, timeoutMs: number, intervalMs = 2_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return true;
+    await sleep(intervalMs);
+  }
+  return false;
+}
+
+/**
+ * Tear down everything the test created. Returns false if any step failed —
+ * teardown is part of the deterministic gate (it exercises the bot stop + agent
+ * delete paths over the boundary).
+ *
+ * Order matters:
+ *  1. Stop the agent's bot via manage_bot `stop` while the agent session is
+ *     still running. A USER cannot stop an agent's bot (`stop_bot` requires
+ *     creatorId === the calling agent), and herobids `DELETE /agents/:id` tries
+ *     exactly that for a running bot, failing with 503 (traderton bug report
+ *     2026-10-05/004, gap 2). Stopping it as the agent first sidesteps that gap.
+ *  2. Stop the agent and wait for status=stopped (delete requires it).
+ *  3. Delete the agent — herobids deletes the (now stopped) bot over the
+ *     owner-scoped `delete_bot`.
+ *  4. Deprovision the provider-link (connection + venue account).
+ */
+async function teardown(token: string, agentId: string, agentBotId: string | null, connectionId: string): Promise<boolean> {
   section('Phase 4: Teardown');
 
   if (SKIP_TEARDOWN) {
     warn('SKIP_TEARDOWN=1 — leaving agent and bot running for manual inspection');
     warn(`  Agent ID: ${agentId}`);
     if (agentBotId) warn(`  Bot ID: ${agentBotId}`);
-    return;
+    return true;
   }
 
-  // Stop and delete the bot first (cleanup before agent deletion)
-  if (agentBotId) {
+  let teardownOk = true;
+
+  // 1. Stop the agent's bot as the agent (manage_bot stop).
+  if (agentBotId && (await fetchBotStatus(token, agentBotId)) === 'running') {
     try {
-      execSync(
-        `docker compose exec -T postgres psql -U herobids -d herobids -c "DELETE FROM bots WHERE id = '${agentBotId}'"`,
-        { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
-      );
-      ok(`Bot ${agentBotId} deleted`);
+      publishManageBot(agentId, { action: 'stop', botId: agentBotId, rationale: 'e2e teardown' }, 'e2e-bot-stop');
+      const stopped = await waitFor(async () => (await fetchBotStatus(token, agentBotId)) === 'stopped', 30_000);
+      if (stopped) {
+        ok(`Bot ${agentBotId} stopped via manage_bot (agent subject)`);
+      } else {
+        warn(`Bot ${agentBotId} did not reach 'stopped' within 30s of manage_bot stop`);
+        teardownOk = false;
+      }
     } catch (err) {
-      warn(`Bot cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+      warn(`Failed to publish manage_bot stop: ${err instanceof Error ? err.message : String(err)}`);
+      teardownOk = false;
     }
   }
 
-  // Stop
-  const stopRes = await apiRequest<{ error?: string }>(
-    'POST', `/agents/${agentId}/stop`,
-    { token },
-  );
+  // 2. Stop the agent and wait for the status to settle.
+  const stopRes = await apiRequest<{ error?: string }>('POST', `/agents/${agentId}/stop`, { token });
   if (stopRes.status === 200 || stopRes.status === 202) {
-    ok('Agent stopped');
+    ok('Agent stop requested');
   } else {
     warn(`Stop returned ${stopRes.status}: ${JSON.stringify(stopRes.body)}`);
+    teardownOk = false;
+  }
+  const agentStopped = await waitFor(async () => {
+    const res = await apiRequest<AgentStatusBody>('GET', `/agents/${agentId}`, { token });
+    return res.status === 200 && res.body.status === 'stopped';
+  }, 30_000);
+  if (agentStopped) {
+    ok('Agent status → stopped');
+  } else {
+    warn('Agent did not reach status=stopped within 30s');
+    teardownOk = false;
   }
 
-  // Wait briefly for the status to settle before deleting
-  await sleep(3000);
-
-  // Delete
-  const deleteRes = await apiRequest<{ error?: string }>(
-    'DELETE', `/agents/${agentId}`,
-    { token },
-  );
+  // 3. Delete the agent (herobids deletes its stopped bot over the boundary).
+  const deleteRes = await apiRequest<{ error?: string }>('DELETE', `/agents/${agentId}`, { token });
   if (deleteRes.status === 204) {
-    ok('Agent deleted');
+    ok('Agent deleted (and its bot, over the boundary)');
   } else {
     warn(`Delete returned ${deleteRes.status}: ${JSON.stringify(deleteRes.body)}`);
+    teardownOk = false;
+  }
+  if (agentBotId && deleteRes.status === 204) {
+    const botGone = await apiRequest('GET', `/bots/${agentBotId}`, { token });
+    if (botGone.status === 404) {
+      ok(`Bot ${agentBotId} gone after agent delete`);
+    } else {
+      warn(`Bot ${agentBotId} still readable after agent delete (HTTP ${botGone.status})`);
+      teardownOk = false;
+    }
+  }
+
+  // 4. Deprovision the provider-link (connection + credential + venue account).
+  //    Best-effort, as in bot-trade-test: a leak here is housekeeping, not a
+  //    lifecycle defect, so it warns without failing the gate.
+  const linkDelete = await apiRequest<{ error?: string }>('DELETE', `/setup/provider-link/${connectionId}`, { token });
+  if (linkDelete.status === 200 || linkDelete.status === 204) {
+    ok(`Provider-link deprovisioned (connection: ${connectionId})`);
+  } else {
+    warn(`Provider-link deprovision returned ${linkDelete.status}: ${JSON.stringify(linkDelete.body)} — venue account may be leaked`);
   }
 
   if (DOCKER_COMPOSE_DOWN && stackStartedByUs) {
@@ -1020,6 +1172,8 @@ async function teardown(token: string, agentId: string, agentBotId: string | nul
       warn(`docker compose down failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+
+  return teardownOk;
 }
 
 // ---------------------------------------------------------------------------
@@ -1041,7 +1195,8 @@ async function main(): Promise<void> {
   console.log(`  Venue:          ${VENUE}`);
   console.log(`  Execution mode: ${EXECUTION_MODE}`);
   console.log(`  Tick interval:  ${TICK_INTERVAL_MS / 1000}s`);
-  console.log(`  Timeout:        ${TIMEOUT_MS / 1000}s`);
+  console.log(`  Trade watch:    ${TRADE_WATCH_TIMEOUT_MS / 1000}s (${REQUIRE_TRADE ? 'trade REQUIRED' : 'trade best-effort'})`);
+  console.log(`  Close timeout:  ${TIMEOUT_MS / 1000}s`);
   console.log('');
 
   // Phase 1
@@ -1090,21 +1245,27 @@ async function main(): Promise<void> {
     // Build venue-aware bot config — swap venues (1inch) require swapAssets and cannot use paper mode.
     // Symbol must use BASE/QUOTE format for swap venues (validated by the broker's safety gate).
     const botSymbol = VENUE === '1inch' ? 'WETH/USDC' : 'BTC';
+    // Must satisfy Traderton's BotConfigSchema: `risk` is strict (BotRiskSchema
+    // has no takeProfitPct — an unknown key rejects the whole config), and the
+    // mechanical strategy params must satisfy MechanicalParamsSchema
+    // (stopLossPct, takeProfitPct, positionSize required). Bot creation does not
+    // check the params; an invalid set halts the bot on its first evaluated tick
+    // with strategy.config_invalid. Same params as bot-trade-test.ts.
     const botConfig: Record<string, unknown> = {
       strategy: {
         type: 'momentum',
         decisionMode: 'mechanical',
         params: {
-          lookbackPeriod: 14,
-          entryThreshold: 0.5,
-          exitThreshold: 0.3,
-          adxThreshold: 20,
-          momentumWindow: 7,
+          candleInterval: '15m',
+          stopLossPct: 2,
+          takeProfitPct: 5,
+          positionSize: '0.001',
+          positionSizeMode: 'fixed',
         },
       },
       symbol: botSymbol,
       execution: { mode: EXECUTION_MODE, slippageBps: 5 },
-      risk: { stopLossPct: 3, takeProfitPct: 6, maxDrawdownPct: 5, maxPositionSizePct: 10 },
+      risk: { stopLossPct: 3, maxDrawdownPct: 5, maxPositionSizePct: 10 },
     };
     if (VENUE === '1inch') {
       botConfig['swapAssets'] = {
@@ -1115,29 +1276,12 @@ async function main(): Promise<void> {
       };
     }
 
-    const botCreatePayload = {
-      action: 'create_and_start',
-      connectionId,
-      config: botConfig,
-    };
-
-    const envelope = {
-      schemaVersion: 'v1',
-      messageId: crypto.randomUUID(),
-      correlationId: 'e2e-bot-creation',
-      initiatorType: 'system',
-      initiatorId: agentId,
-      agentId,
-      type: 'agent.manage_bot',
-      createdAt: new Date().toISOString(),
-      payload: botCreatePayload,
-    };
-
-    const envelopeJson = JSON.stringify(envelope).replace(/'/g, "'\\''");
+    let manageBotPublishedAt = new Date().toISOString();
     try {
-      execSync(
-        `docker compose exec -T redis redis-cli XADD 'agent:inbound:${agentId}' '*' envelope '${envelopeJson}'`,
-        { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
+      manageBotPublishedAt = publishManageBot(
+        agentId,
+        { action: 'create_and_start', connectionId, config: botConfig },
+        'e2e-bot-creation',
       );
       ok('Manage-bot message published to agent inbound stream');
     } catch (err) {
@@ -1157,10 +1301,10 @@ async function main(): Promise<void> {
         'GET', '/bots', { token },
       );
       if (botsRes.status === 200 && Array.isArray(botsRes.body.bots)) {
-        const agentBots = botsRes.body.bots.filter((b) => b.creatorId === agentId);
-        if (agentBots.length > 0) {
-          agentBotId = agentBots[0].id;
-          ok(`Bot created — id=${agentBotId} status=${agentBots[0].status}`);
+        const firstAgentBot = botsRes.body.bots.find((b) => b.creatorId === agentId);
+        if (firstAgentBot) {
+          agentBotId = firstAgentBot.id;
+          ok(`Bot created — id=${agentBotId} status=${firstAgentBot.status}`);
           botFound = true;
           break;
         }
@@ -1168,13 +1312,33 @@ async function main(): Promise<void> {
     }
 
     if (!botFound) {
-      fatal('Bot was not created within 90s — broker may have rejected the manage_bot message');
+      // The broker's rejection reason (e.g. the boundary refusing the bot config)
+      // is only in the worker log — surface it so the failure explains itself.
+      let brokerErrors = '';
+      try {
+        brokerErrors = execSync(
+          `docker compose logs --no-log-prefix --since "${manageBotPublishedAt}" worker 2>&1 | grep -E 'rejected by trading boundary|Message processing failed|manage_bot' | head -10 || true`,
+          { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
+        ).trim();
+      } catch (err) {
+        brokerErrors = `(worker log check failed: ${err instanceof Error ? err.message : String(err)})`;
+      }
+      fatal(
+        'Bot was not created within 90s — broker may have rejected the manage_bot message.\n' +
+        (brokerErrors ? `  Worker log since publish:\n  ${brokerErrors.split('\n').join('\n  ')}` : '  (no broker errors found in the worker log)'),
+      );
     }
   }
 
-  // Phase 3
+  // Phase 3 — watch for a trade (best-effort unless REQUIRE_TRADE=1).
   let outcome = await watchAgent(token, agentId);
 
+  // Phase 3.1 — deterministic: the agent's bot survived the watch window.
+  const botSurvived = agentBotId ? await assertBotSurvived(token, agentBotId) : false;
+
+  // Phases 3.5–3.7 run only when a trade was actually observed. Whether the LLM
+  // decides to trade inside the window is not deterministic, so without one
+  // these phases are SKIPPED (not failed) unless REQUIRE_TRADE=1.
   // Phase 3.5: Post-trade assertions (cross-check consistency)
   if (outcome === 'success') {
     outcome = await runPostTradeAssertions(token, agentId, testStartedAt);
@@ -1190,13 +1354,27 @@ async function main(): Promise<void> {
     outcome = await runBookkeepingAudit(token, agentId, testStartedAt);
   }
 
-  // Phase 4
-  await teardown(token, agentId, agentBotId);
+  // Phase 4 — deterministic: teardown must complete.
+  const teardownOk = await teardown(token, agentId, agentBotId, connectionId);
 
-  // Result
+  // Result. The deterministic gate (bot survival + teardown) fails the run on
+  // its own, whatever the trade outcome.
   console.log('');
+  if (!botSurvived) {
+    console.log(`${BOLD}${RED}FAIL${RESET} — the agent's bot was stopped while the agent was running (see Phase 3.1).`);
+    process.exit(1);
+  }
+  if (!teardownOk) {
+    console.log(`${BOLD}${RED}FAIL${RESET} — teardown did not complete (bot stop / agent stop / agent delete). See Phase 4.`);
+    process.exit(1);
+  }
   if (outcome === 'success') {
     console.log(`${BOLD}${GREEN}PASS${RESET} — agent opened and closed a position — full trade cycle confirmed.`);
+  } else if (outcome === 'timeout' && !REQUIRE_TRADE) {
+    console.log(`${BOLD}${GREEN}PASS${RESET} — agent + bot lifecycle confirmed (setup, manage_bot create, bot survived, teardown).`);
+    console.log(`  ${YELLOW}SKIP${RESET} trade phases 3.5–3.7 — no trade within ${TRADE_WATCH_TIMEOUT_MS / 1000}s.`);
+    console.log('       Whether the agent trades is LLM-dependent (ticks are often skipped as context_unchanged).');
+    console.log('       Run with REQUIRE_TRADE=1 (and a longer TIMEOUT_MS) to require the full trade cycle.');
   } else if (outcome === 'crashed') {
     console.log(`${BOLD}${RED}FAIL${RESET} — agent crashed. Check the activity feed above for the cause.`);
     process.exit(1);
@@ -1228,7 +1406,7 @@ async function main(): Promise<void> {
     console.log('    · go_flat execution plan stuck in pending/executing state (engine may be hung)');
     process.exit(1);
   } else {
-    console.log(`${BOLD}${RED}FAIL${RESET} — no trade was observed within ${TIMEOUT_MS / 1000}s.`);
+    console.log(`${BOLD}${RED}FAIL${RESET} — no trade was observed within ${TRADE_WATCH_TIMEOUT_MS / 1000}s (REQUIRE_TRADE=1).`);
     console.log('  Possible causes:');
     console.log('    · Agent still starting / waiting for first tick');
     console.log('    · Scout held (no market change detected) — add TICK_INTERVAL_MS=30000 to force faster ticks');

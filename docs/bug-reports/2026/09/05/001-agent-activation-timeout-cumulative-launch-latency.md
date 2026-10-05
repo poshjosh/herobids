@@ -6,6 +6,15 @@
 - **Discovered By:** `scripts/shell/tests/run-extra-tests.sh --all` → `agent-trade-test` and `preset-review-gap-closure` FAIL. Reproduced in isolation with `docker-compose.dev.yaml` (worker logs accessible) + a warm Ollama.
 - **Components:** `apps/worker` agent launch pipeline (`AgentSessionManager`, `AgentRuntimeLauncher`, `docker-agent-manager`), and the smoke tests' 30s activation budget.
 
+> **Update 2026-10-05 — `agent-trade-test` is no longer gated by this bug.** On re-investigation, its
+> "Bot was not created" failure was NOT launch latency. The agent reached `running` in 3–12s. The
+> failure came from (1) a stale bot config the Traderton boundary rejected (`risk.takeProfitPct`), and
+> (2) the Traderton orphan sweep stopping every agent bot (traderton
+> `docs/bug-reports/2026/10/05/004-orphan-sweep-stops-every-agent-bot.md`). Both are fixed. The test
+> now runs first in Tier 5 (outside the burst-start window), gates the agent + bot lifecycle, and
+> treats the LLM-dependent trade cycle as best-effort. `preset-review-gap-closure` and
+> `scanner-provider-smoke` remain gated by this bug.
+
 ## Summary
 
 When several agents are created and started in quick succession (as the preset-review and agent-trade smoke tests do), the **first one or two** reach `active` quickly (~3–15s) but **every subsequent agent** exceeds the test's 30s activation timeout. The test then deletes the still-starting agent (SIGTERM), which the worker records as a `runtime_crash`. This is NOT an LLM cold-start problem: it reproduces with a fully warm Ollama.

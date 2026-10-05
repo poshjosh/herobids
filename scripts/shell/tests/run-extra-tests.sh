@@ -8,17 +8,20 @@
 # it is not part of CI and hits live venue endpoints (one variant needs an
 # operator-managed API key; see its header).
 #
-# ── CURRENT STATE (2026-09-05) — read this first ─────────────────────────────
+# ── CURRENT STATE (2026-10-05) — read this first ─────────────────────────────
 #
-# The full suite is GREEN by default. Three Tier-5 tests are DISABLED by default
-# because they are currently UNSTABLE (not because of a test bug):
+# agent-trade-test is UN-GATED (2026-10-05) and runs first in Tier 5. Its agent +
+# bot lifecycle is a hard gate; its trade cycle is best-effort (an LLM that does
+# not trade in the window is a SKIP, not a FAIL; REQUIRE_TRADE=1 makes it strict).
+# See the header of scripts/ts/agent-trade-test.ts.
 #
-#   agent-trade-test            Tier 5
+# Two Tier-5 tests remain DISABLED by default because they are UNSTABLE (not
+# because of a test bug):
+#
 #   preset-review-gap-closure   Tier 5
 #   scanner-provider-smoke      Tier 5
 #
-# Why: all three require agents to reach 'active' (and agent-trade to create a
-# bot) within a deadline. Under burst-start — several agents created
+# Why: both require several agents to reach 'active' within a deadline. Under burst-start — several agents created
 # back-to-back, as these tests do — worker-side launch latency grows and blows
 # the deadline, even with a warm LLM and after widening the budgets to 90s.
 # They PASS in isolation on a warm stack (scanner-provider verified 8/8) but
@@ -42,8 +45,9 @@
 #                                     Default dev config uses 'mock' provider.
 #                                     Set in config/{staging,production}.yaml.
 #
-# agent-trade-test            Tier 5  (disabled by default — see CURRENT STATE.)
-# preset-review-gap-closure   Tier 5  When enabled, they also self-skip (exit 0)
+# agent-trade-test            Tier 5  Self-skips (exit 0) on a cold Ollama, as below.
+# preset-review-gap-closure   Tier 5  (disabled by default — see CURRENT STATE.)
+#                                     When enabled, they also self-skip (exit 0)
 #                                     on a cold Ollama via a readiness pre-check:
 #                                       1. /api/tags reachable
 #                                       2. light + heavy models present
@@ -266,9 +270,9 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 4 && echo -e "                                          → agent-scanner-gated-lifecycle-test.sh"
   tier_enabled 4 && echo -e "                                          → browser-pool-agent-browser-smoke-test.sh"
   tier_enabled 4 && echo -e "                                          → sandbox-allowlist-smoke-test.sh"
-  tier_enabled 5 && echo -e "  ${BLUE}Tier 5${RESET} (full stack + venue)  → bot-trade-test.sh"
+  tier_enabled 5 && echo -e "  ${BLUE}Tier 5${RESET} (full stack + venue)  → agent-trade-test.sh            [trade cycle best-effort]"
+  tier_enabled 5 && echo -e "                                          → bot-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → platform-preset-assessment-test.sh"
-  tier_enabled 5 && echo -e "                                          → agent-trade-test.sh            ${YELLOW}[unstable: skipped unless RUN_UNSTABLE_LLM_LATENCY_TESTS=1]${RESET}"
   tier_enabled 5 && echo -e "                                          → preset-review-gap-closure-test.sh ${YELLOW}[unstable: skipped unless RUN_UNSTABLE_LLM_LATENCY_TESTS=1]${RESET}"
   tier_enabled 5 && echo -e "                                          → scanner-provider-smoke-test.sh ${YELLOW}[unstable: skipped unless RUN_UNSTABLE_LLM_LATENCY_TESTS=1]${RESET}"
   tier_enabled 6 && echo -e "  ${BLUE}Tier 6${RESET} (external infra)     → autoscale-smoke-test.sh"
@@ -397,8 +401,8 @@ fi
 : "${LLM_LIGHT_MODEL:=qwen3:8b}"
 : "${LLM_HEAVY_MODEL:=qwen3.6:35b-a3b-q4_K_M}"
 
-# Unstable-test gate. Three Tier-5 tests (agent-trade-test,
-# preset-review-gap-closure, scanner-provider-smoke) depend on agents reaching
+# Unstable-test gate. Two Tier-5 tests (preset-review-gap-closure,
+# scanner-provider-smoke) depend on agents reaching
 # 'active' quickly, which is currently unreliable under burst-start due to
 # worker launch latency (see docs/bug-reports/2026/09/05/001-agent-activation-
 # timeout-cumulative-launch-latency.md). They pass in isolation on a warm stack
@@ -581,6 +585,13 @@ if tier_enabled 5; then
     OVERALL_EXIT=1
   else
     # ── Stable Tier-5 tests (always run) ─────────────────────────────────
+    # agent-trade-test runs FIRST: it starts one agent, and running it before the
+    # agent-starting tests below keeps it out of the burst-start window
+    # (bug 2026-09-05/001). Its agent + bot lifecycle is gated; the trade cycle is
+    # best-effort (LLM-dependent → SKIP, not FAIL). See the test's header.
+    run_script "agent-trade-test (agent + bot lifecycle; trade best-effort)" \
+      "${TESTS_DIR}/agent-trade-test.sh"
+
     run_script "bot-trade-test (bot lifecycle)" \
       "${TESTS_DIR}/bot-trade-test.sh"
 
@@ -588,27 +599,23 @@ if tier_enabled 5; then
       "${TESTS_DIR}/platform-preset-assessment-test.sh"
 
     # ── Unstable Tier-5 tests (skipped by default) ───────────────────────
-    # These three depend on agents reaching 'active' / creating a bot within a
-    # deadline, which is currently unreliable under burst-start (multiple agents
-    # created back-to-back). Root cause: worker launch latency, documented in
+    # These two depend on several agents reaching 'active' within a deadline,
+    # which is unreliable under burst-start (multiple agents created back-to-back).
+    # Root cause: worker launch latency, documented in
     # docs/bug-reports/2026/09/05/001-agent-activation-timeout-cumulative-launch-latency.md
     # They pass in isolation on a warm stack (scanner-provider verified 8/8) but
     # fail intermittently here. Skipped by default; opt in with
     # RUN_UNSTABLE_LLM_LATENCY_TESTS=1. Un-skip once bug 09/05/001 is fixed.
     if [[ "${RUN_UNSTABLE_LLM_LATENCY_TESTS}" == "1" ]]; then
-      run_script "agent-trade-test (agent smoke)" \
-        "${TESTS_DIR}/agent-trade-test.sh"
-
       run_script "preset-review-gap-closure (hybrid preset resolution + intelligence gating)" \
         "${TESTS_DIR}/preset-review-gap-closure-test.sh"
 
       run_script "scanner-provider-smoke (BTC+ETH candle scan)" \
         "${TESTS_DIR}/scanner-provider-smoke-test.sh"
     else
-      warn "Skipping unstable Tier-5 tests (agent-trade-test, preset-review-gap-closure, scanner-provider-smoke)"
-      warn "  Reason: agent activation/bot-creation is unreliable under burst-start — bug 2026-09-05/001."
+      warn "Skipping unstable Tier-5 tests (preset-review-gap-closure, scanner-provider-smoke)"
+      warn "  Reason: agent activation is unreliable under burst-start — bug 2026-09-05/001."
       warn "  Run them with RUN_UNSTABLE_LLM_LATENCY_TESTS=1 (warm stack recommended: reset-and-run.sh)."
-      RESULTS+=("${YELLOW}SKIP${RESET}  agent-trade-test (unstable — bug 2026-09-05/001)")
       RESULTS+=("${YELLOW}SKIP${RESET}  preset-review-gap-closure (unstable — bug 2026-09-05/001)")
       RESULTS+=("${YELLOW}SKIP${RESET}  scanner-provider-smoke (unstable — bug 2026-09-05/001)")
     fi
