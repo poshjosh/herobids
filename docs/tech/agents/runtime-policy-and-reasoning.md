@@ -34,8 +34,8 @@ Three styles define the baseline. All numeric values are backed by
 | **Tick interval** | 90 min | 30 min | 10 min |
 | **Daily spend budget** | $3 | $10 | $30 |
 | **Escalation policy** | never | uncovered_or_triggered | always |
-| `scoutMaxTurns` | 10 | 30 | 100 |
-| `judgeMaxTurns` | 25 | 75 | 300 |
+| `scoutMaxTurns` | 499 | 499 | 499 |
+| `judgeMaxTurns` | 9 999 | 9 999 | 9 999 |
 | `scoutMaxTokens` | 512 | 1 024 | 2 048 |
 | `judgeMaxTokens` | 2 048 | 4 096 | 8 192 |
 | `lightThinkingTokens` | 1 024 | 2 048 | 4 096 |
@@ -52,6 +52,35 @@ Three styles define the baseline. All numeric values are backed by
 
 A missing or invalid style falls back to **balanced**.
 
+### Note on `scoutMaxTurns` / `judgeMaxTurns` and the operator `llm.*` turn config
+
+There is a **second home** for the scout/judge turn caps: the operator config
+`agentRuntime.llm.scout.maxTurns` / `agentRuntime.llm.judge.maxTurns`
+(`config/default.yaml`, backed by Zod defaults in `schema.ts`). At agent startup
+`apps/worker/src/agent.ts` copies the resolved style/override value over the
+operator value before the loop reads it, so today the style/instance value wins
+and the operator value has no effect for a running agent.
+
+That precedence is **not** what we ultimately want (external operator config
+should beat hardcoded defaults, user overrides should beat operator config, all
+bounded by the ceiling). Until that is fixed, every tier has been **aligned to
+the same near-ceiling values** so whichever one wins produces identical numbers
+and nothing is silently contradictory:
+
+- `scoutMaxTurns`: ceiling 500; all styles 499; operator `llm.scout.maxTurns` 499.
+- `judgeMaxTurns`: ceiling 10 000; all styles 9 999; operator `llm.judge.maxTurns` 9 999.
+
+**Why near-ceiling and uniform:** turn caps are runaway-loop protection, not
+behavioural tuning — the only cost of a high cap is spend, which the daily budget
+already governs, so agents are not cut off early. Turn budgets are therefore
+intentionally uniform across styles; only token/history/reasoning budgets stay
+graduated.
+
+The proper precedence-ladder fix is specified in
+[`docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md`](../../features/pending/000-runtime-turn-budget-precedence/001-plan.md).
+Do not "fix" the duplication by only editing one home — update the plan or
+implement the ladder.
+
 ---
 
 ## Operator Ceilings
@@ -62,7 +91,7 @@ No agent can be configured beyond these, regardless of style or overrides.
 | Ceiling | Value |
 |---------|-------|
 | `scoutMaxTurns` | 500 |
-| `judgeMaxTurns` | 1 000 |
+| `judgeMaxTurns` | 10 000 |
 | `scoutMaxTokens` | 4 096 |
 | `judgeMaxTokens` | 16 384 |
 | `lightThinkingTokens` | 8 192 |

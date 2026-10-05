@@ -18,8 +18,8 @@ describe('resolveStyleDefaults', () => {
     expect(config.costPreset).toBe('minimal');
     expect(config.tickIntervalMins).toBe('90');
     expect(config.dailySpendBudgetUsd).toBe('3');
-    expect(config.scoutMaxTurns).toBe(10);
-    expect(config.judgeMaxTurns).toBe(25);
+    expect(config.scoutMaxTurns).toBe(499);
+    expect(config.judgeMaxTurns).toBe(9_999);
     expect(config.maxHistoryTokens).toBe(20_000);
     expect(config.weekendPause).toBe(false);
     expect(config.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
@@ -30,8 +30,8 @@ describe('resolveStyleDefaults', () => {
     expect(config.costPreset).toBe('standard');
     expect(config.tickIntervalMins).toBe('30');
     expect(config.dailySpendBudgetUsd).toBe('10');
-    expect(config.scoutMaxTurns).toBe(30);
-    expect(config.judgeMaxTurns).toBe(75);
+    expect(config.scoutMaxTurns).toBe(499);
+    expect(config.judgeMaxTurns).toBe(9_999);
     expect(config.maxHistoryTokens).toBe(40_000);
     expect(config.weekendPause).toBe(false);
   });
@@ -41,8 +41,8 @@ describe('resolveStyleDefaults', () => {
     expect(config.costPreset).toBe('premium');
     expect(config.tickIntervalMins).toBe('10');
     expect(config.dailySpendBudgetUsd).toBe('30');
-    expect(config.scoutMaxTurns).toBe(100);
-    expect(config.judgeMaxTurns).toBe(300);
+    expect(config.scoutMaxTurns).toBe(499);
+    expect(config.judgeMaxTurns).toBe(9_999);
     expect(config.maxHistoryTokens).toBe(80_000);
     expect(config.weekendPause).toBe(false);
     expect(config.allowedHoursUtc).toEqual([]);
@@ -149,8 +149,10 @@ describe('resolveStyleDefaults', () => {
     it('bold has highest tool turn and token limits', () => {
       const careful = STYLE_CONFIG.careful;
       const bold = STYLE_CONFIG.bold;
-      expect(bold.scoutMaxTurns).toBeGreaterThan(careful.scoutMaxTurns);
-      expect(bold.judgeMaxTurns).toBeGreaterThan(careful.judgeMaxTurns);
+      // Turn budgets are intentionally uniform across styles (all set to near-ceiling);
+      // only token/history budgets remain graduated.
+      expect(bold.scoutMaxTurns).toBeGreaterThanOrEqual(careful.scoutMaxTurns);
+      expect(bold.judgeMaxTurns).toBeGreaterThanOrEqual(careful.judgeMaxTurns);
       expect(bold.scoutMaxTokens).toBeGreaterThan(careful.scoutMaxTokens);
       expect(bold.judgeMaxTokens).toBeGreaterThan(careful.judgeMaxTokens);
       expect(bold.maxHistoryTokens).toBeGreaterThan(careful.maxHistoryTokens);

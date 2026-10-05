@@ -23,8 +23,8 @@ import {
 describe('resolveAgentRuntimePolicy', () => {
   it('resolves bold style with no overrides', () => {
     const policy = resolveAgentRuntimePolicy('bold', null);
-    expect(policy.scoutMaxTurns).toBe(100);
-    expect(policy.judgeMaxTurns).toBe(300);
+    expect(policy.scoutMaxTurns).toBe(499);
+    expect(policy.judgeMaxTurns).toBe(9_999);
     expect(policy.scoutMaxTokens).toBe(2048);
     expect(policy.judgeMaxTokens).toBe(8192);
     expect(policy.lightThinkingTokens).toBe(4096);
@@ -44,8 +44,8 @@ describe('resolveAgentRuntimePolicy', () => {
 
   it('resolves careful style with no overrides', () => {
     const policy = resolveAgentRuntimePolicy('careful', null);
-    expect(policy.scoutMaxTurns).toBe(10);
-    expect(policy.judgeMaxTurns).toBe(25);
+    expect(policy.scoutMaxTurns).toBe(499);
+    expect(policy.judgeMaxTurns).toBe(9_999);
     expect(policy.scoutMaxTokens).toBe(512);
     expect(policy.judgeMaxTokens).toBe(2048);
     expect(policy.lightThinkingTokens).toBe(1024);
@@ -59,8 +59,8 @@ describe('resolveAgentRuntimePolicy', () => {
 
   it('resolves balanced style with no overrides', () => {
     const policy = resolveAgentRuntimePolicy('balanced', null);
-    expect(policy.scoutMaxTurns).toBe(30);
-    expect(policy.judgeMaxTurns).toBe(75);
+    expect(policy.scoutMaxTurns).toBe(499);
+    expect(policy.judgeMaxTurns).toBe(9_999);
     expect(policy.scoutMaxTokens).toBe(1024);
     expect(policy.judgeMaxTokens).toBe(4096);
     expect(policy.maxHistoryTokens).toBe(40000);
@@ -72,22 +72,22 @@ describe('resolveAgentRuntimePolicy', () => {
 
   it('falls back to balanced when style is undefined', () => {
     const policy = resolveAgentRuntimePolicy(undefined, null);
-    expect(policy.scoutMaxTurns).toBe(30);
+    expect(policy.scoutMaxTurns).toBe(499);
   });
 
   it('falls back to balanced when style is null', () => {
     const policy = resolveAgentRuntimePolicy(null, null);
-    expect(policy.scoutMaxTurns).toBe(30);
+    expect(policy.scoutMaxTurns).toBe(499);
   });
 
   it('falls back to balanced when style is invalid', () => {
     const policy = resolveAgentRuntimePolicy('aggressive', null);
-    expect(policy.scoutMaxTurns).toBe(30);
+    expect(policy.scoutMaxTurns).toBe(499);
   });
 
   it('falls back to balanced when style is empty string', () => {
     const policy = resolveAgentRuntimePolicy('', null);
-    expect(policy.scoutMaxTurns).toBe(30);
+    expect(policy.scoutMaxTurns).toBe(499);
   });
 });
 
@@ -97,7 +97,7 @@ describe('runtime policy override merging', () => {
   it('single override wins over style default', () => {
     const policy = resolveAgentRuntimePolicy('bold', { scoutMaxTurns: 25 });
     expect(policy.scoutMaxTurns).toBe(25); // override
-    expect(policy.judgeMaxTurns).toBe(300); // bold default preserved
+    expect(policy.judgeMaxTurns).toBe(9_999); // bold default preserved
   });
 
   it('multiple overrides all win', () => {
@@ -110,7 +110,7 @@ describe('runtime policy override merging', () => {
     expect(policy.maxHistoryTokens).toBe(10000);
     expect(policy.weekendPause).toBe(false);
     // balanced defaults for non-overridden fields
-    expect(policy.judgeMaxTurns).toBe(75);
+    expect(policy.judgeMaxTurns).toBe(9_999);
     expect(policy.maxHistoryMessages).toBe(20);
   });
 
@@ -127,7 +127,7 @@ describe('runtime policy override merging', () => {
 
   it('empty overrides object leaves all style defaults intact', () => {
     const policy = resolveAgentRuntimePolicy('careful', {});
-    expect(policy.scoutMaxTurns).toBe(10);
+    expect(policy.scoutMaxTurns).toBe(499);
     expect(policy.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
     expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
   });

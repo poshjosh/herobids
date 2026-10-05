@@ -17,6 +17,7 @@ function makeSkill(overrides: Partial<Skill> & Pick<Skill, 'id' | 'name' | 'sour
     isLikedByViewer: false,
     isSelectable: true,
     selectabilityReason: 'ok',
+    isBackendApproved: false,
     currentRevisionId: null,
     currentRevisionVersion: null,
     description: '',

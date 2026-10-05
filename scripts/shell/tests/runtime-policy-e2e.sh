@@ -150,8 +150,8 @@ else
   ok "Created Bold agent: $agentId"
 
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
-  assert_eq "scoutMaxTurns"    "100"  "$(echo "$policy" | jq -r '.scoutMaxTurns')"
-  assert_eq "judgeMaxTurns"    "300"  "$(echo "$policy" | jq -r '.judgeMaxTurns')"
+  assert_eq "scoutMaxTurns"    "499"  "$(echo "$policy" | jq -r '.scoutMaxTurns')"
+  assert_eq "judgeMaxTurns"    "9999"  "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryTokens" "80000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause"     "false" "$(echo "$policy" | jq -r '.weekendPause')"
   assert_eq "maxHoldDurationMs" "600000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
@@ -173,8 +173,8 @@ else
   ok "Created Careful agent: $agentId"
 
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
-  assert_eq "scoutMaxTurns" "10" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
-  assert_eq "judgeMaxTurns" "25" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
+  assert_eq "scoutMaxTurns" "499" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
+  assert_eq "judgeMaxTurns" "9999" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryTokens" "20000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause" "false" "$(echo "$policy" | jq -r '.weekendPause')"
   assert_eq "maxHoldDurationMs" "27000000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
@@ -202,7 +202,7 @@ else
   assert_eq "maxHistoryTokens (override)" "10000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause (override)"     "false" "$(echo "$policy" | jq -r '.weekendPause')"
   # Balanced defaults preserved for non-overridden fields
-  assert_eq "judgeMaxTurns (default)"     "75"    "$(echo "$policy" | jq -r '.judgeMaxTurns')"
+  assert_eq "judgeMaxTurns (default)"     "9999"    "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryMessages (default)" "20"   "$(echo "$policy" | jq -r '.maxHistoryMessages')"
 
   api DELETE "/agents/$agentId" > /dev/null
@@ -234,8 +234,8 @@ else
   ok "Created no-style agent: $agentId"
 
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
-  assert_eq "scoutMaxTurns" "30" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
-  assert_eq "judgeMaxTurns" "75" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
+  assert_eq "scoutMaxTurns" "499" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
+  assert_eq "judgeMaxTurns" "9999" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -266,10 +266,10 @@ response=$(update_agent "$agentId" '{
 }')
 policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
 scout=$(echo "$policy" | jq -r '.scoutMaxTurns // empty')
-if [ "$scout" = "100" ]; then
-  ok "Style updated to bold: scoutMaxTurns=100"
+if [ "$scout" = "499" ]; then
+  ok "Style updated to bold: scoutMaxTurns=499"
 else
-  fail "Style update failed: expected scoutMaxTurns=100, got $scout"
+  fail "Style update failed: expected scoutMaxTurns=499, got $scout"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════

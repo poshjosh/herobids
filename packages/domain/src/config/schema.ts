@@ -129,12 +129,18 @@ export const ModelDefaultsSchema = z.object({
 }).optional();
 
 const AgentRuntimeLlmScoutControlsSchema = z.object({
-  maxTurns: z.number().int().min(1).default(10),
+  // Aligned to the scout turn ceiling-adjacent value (styles also default to 499)
+  // so every tier agrees until the precedence-ladder fix lands. See
+  // docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md.
+  maxTurns: z.number().int().min(1).default(499),
   maxTokens: z.number().int().min(1).default(1_024),
   temperature: z.number().min(0).max(2).default(0),
 });
 const LlmJudgeConfigSchema = z.object({
-  maxTurns: z.number().int().min(1).default(25),
+  // Aligned to the judge turn ceiling-adjacent value (styles also default to 9999)
+  // so every tier agrees until the precedence-ladder fix lands. See
+  // docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md.
+  maxTurns: z.number().int().min(1).default(9_999),
   temperature: z.number().min(0).max(2).default(0.3),
 });
 
@@ -159,7 +165,7 @@ export { TradingSessionNameSchema };
  *  in the enum array (e.g. scoutReasoningMax: 'medium' allows 'none', 'low', 'medium' but not 'high'). */
 export const RUNTIME_POLICY_CEILINGS = {
   scoutMaxTurns: 500,
-  judgeMaxTurns: 1_000,
+  judgeMaxTurns: 10_000,
   scoutMaxTokens: 4_096,
   judgeMaxTokens: 16_384,
   lightThinkingTokens: 8_192,
@@ -286,8 +292,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     tickIntervalMins: '90',
     dailySpendBudgetUsd: '3',
     openPositionEscalationToJudgePolicy: 'never',
-    scoutMaxTurns: 10,
-    judgeMaxTurns: 25,
+    scoutMaxTurns: 499,
+    judgeMaxTurns: 9_999,
     scoutMaxTokens: 512,
     judgeMaxTokens: 2_048,
     lightThinkingTokens: 1_024,
@@ -314,8 +320,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     tickIntervalMins: '30',
     dailySpendBudgetUsd: '10',
     openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
-    scoutMaxTurns: 30,
-    judgeMaxTurns: 75,
+    scoutMaxTurns: 499,
+    judgeMaxTurns: 9_999,
     scoutMaxTokens: 1_024,
     judgeMaxTokens: 4_096,
     lightThinkingTokens: 2_048,
@@ -342,8 +348,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     tickIntervalMins: '10',
     dailySpendBudgetUsd: '30',
     openPositionEscalationToJudgePolicy: 'always',
-    scoutMaxTurns: 100,
-    judgeMaxTurns: 300,
+    scoutMaxTurns: 499,
+    judgeMaxTurns: 9_999,
     scoutMaxTokens: 2_048,
     judgeMaxTokens: 8_192,
     lightThinkingTokens: 4_096,

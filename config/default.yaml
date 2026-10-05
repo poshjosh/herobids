@@ -488,11 +488,11 @@ agentRuntime:
       lightModel: qwen3:8b                   # suggested economy (scout) model
       heavyModel: qwen3.6:35b-a3b-q4_K_M     # suggested premium (judge) model
     scout:
-      maxTurns: 10             # cap read-only scout tool rounds; raise for deeper discovery, lower to bound latency and spend
+      maxTurns: 499            # cap read-only scout tool rounds; aligned to the per-style default (499) and just under the ceiling (500) — see docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md
       maxTokens: 1024          # scout response budget per turn; increase only if scout JSON/tool planning is getting truncated
       temperature: 0           # keep scout deterministic so repeated scouting converges on the same escalation decision
     judge:
-      maxTurns: 25             # cap full judge/tool rounds; higher values improve persistence but can amplify bad tool loops and cost
+      maxTurns: 9999           # cap full judge/tool rounds; aligned to the per-style default (9999) and just under the ceiling (10000) — see docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md
       temperature: 0.3         # modest exploration for judge synthesis; lower values make actions more repeatable during incidents
   wake:
     minIntervalMs: 15000       # minimum cooldown between wake-driven ticks; lower reacts faster, higher suppresses bursty market churn

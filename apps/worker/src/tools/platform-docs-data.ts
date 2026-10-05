@@ -289,7 +289,7 @@ Careful:
   - tickInterval: 90 minutes
   - dailySpendBudget: $3/day
   - openPositionEscalationToJudgePolicy: never
-  - scoutMaxTurns: 10, judgeMaxTurns: 25
+  - scoutMaxTurns: 499, judgeMaxTurns: 9,999
   - scoutMaxTokens: 512, judgeMaxTokens: 2,048
   - allowedHoursUtc: 14-20 (US market hours)
   - weekendPause: false
@@ -300,7 +300,7 @@ Balanced:
   - tickInterval: 30 minutes
   - dailySpendBudget: $10/day
   - openPositionEscalationToJudgePolicy: uncovered_or_triggered
-  - scoutMaxTurns: 30, judgeMaxTurns: 75
+  - scoutMaxTurns: 499, judgeMaxTurns: 9,999
   - scoutMaxTokens: 1,024, judgeMaxTokens: 4,096
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
@@ -311,7 +311,7 @@ Bold:
   - tickInterval: 10 minutes
   - dailySpendBudget: $30/day
   - openPositionEscalationToJudgePolicy: always
-  - scoutMaxTurns: 100, judgeMaxTurns: 300
+  - scoutMaxTurns: 499, judgeMaxTurns: 9,999
   - scoutMaxTokens: 2,048, judgeMaxTokens: 8,192
   - allowedHoursUtc: all (24/7)
   - weekendPause: false

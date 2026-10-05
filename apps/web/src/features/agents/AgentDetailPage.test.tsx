@@ -124,6 +124,7 @@ function makeSkill(id: string, families: string[]): Skill {
     isLikedByViewer: false,
     isSelectable: true,
     selectabilityReason: '',
+    isBackendApproved: false,
     currentRevisionId: null,
     currentRevisionVersion: null,
     name: id,

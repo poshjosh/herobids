@@ -6,6 +6,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Maxed scout/judge turn-budget defaults, raised the judge turn ceiling, and aligned every config tier.** All three agent styles now default to `scoutMaxTurns` 499 and `judgeMaxTurns` 9,999 in `AGENT_STYLE_RUNTIME_DEFAULTS` (and the frontend `STYLE_CONFIG` mirror). The `RUNTIME_POLICY_CEILINGS.judgeMaxTurns` ceiling is raised from 1,000 to 10,000 (so the 9,999 default sits just under it); the `scoutMaxTurns` ceiling stays 500. Turn caps are runaway-loop protection rather than behavioural tuning, so near-ceiling defaults let agents complete work without an artificial early cutoff; the only downside is spend, which the daily budget already governs. Turn budgets are now intentionally uniform across styles — only token/history/reasoning budgets remain graduated. The separate operator-config home for these caps (`agentRuntime.llm.scout.maxTurns` / `judge.maxTurns` in `config/default.yaml` and the Zod defaults in `schema.ts`) was aligned to the same values (499 / 9,999) so every tier agrees; this is a deliberate stopgap because the agent runtime currently overwrites the operator value with the per-agent value, inverting the intended precedence. The proper precedence-ladder fix (operator config beats hardcoded defaults; user overrides beat operator config; all bounded by the ceiling) is specified in `docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md`. Platform docs surfaced to agents, `docs/tech/agents/runtime-policy-and-reasoning.md`, and `docs/best-practices/configuration.md` updated to match.
+
 ## v0.5.0 - 2026-10-05
 
 ### Added
