@@ -26,7 +26,6 @@
  * Optional env vars
  * ─────────────────
  *  EXECUTION_MODE        paper (default) | shadow | live
- *  TICK_INTERVAL_MS      60000 (default)
  *  TIMEOUT_MS            600000 (default, 10 minutes)
  *  DOCKER_COMPOSE_UP     1 to auto-start Docker
  *  DOCKER_COMPOSE_DOWN   1 to stop Docker on exit
@@ -53,7 +52,6 @@ const TEST_EMAIL = process.env['TEST_EMAIL'] ?? 'trade-test@local.test';
 const TEST_PASSWORD = process.env['TEST_PASSWORD'] ?? 'TradeTest123!';
 const VENUE = process.env['VENUE'] ?? 'hyperliquid';
 const EXECUTION_MODE = process.env['EXECUTION_MODE'] ?? 'paper';
-const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '60000', 10);
 const TIMEOUT_MS = parseInt(process.env['TIMEOUT_MS'] ?? '600000', 10);
 const DOCKER_COMPOSE_UP = process.env['DOCKER_COMPOSE_UP'] === '1';
 const DOCKER_COMPOSE_DOWN = process.env['DOCKER_COMPOSE_DOWN'] === '1';
@@ -195,6 +193,45 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ── Bot diagnostics ─────────────────────────────────────────────────────
+
+/** Statuses a bot only reaches by stopping (explicitly, by halt, or by crash). */
+const TERMINAL_BOT_STATUSES = new Set(['stopped', 'crashed']);
+
+interface BotJournalEvent {
+  type: string;
+  createdAt?: string;
+  payload?: unknown;
+}
+
+/** The bot's most recent journal events, one per line, for failure messages. */
+async function describeRecentEvents(botId: string, token: string): Promise<string> {
+  const res = await get<{ events?: BotJournalEvent[] }>(`/bots/${botId}/events?limit=10`, token);
+  if (res.status !== 200 || !Array.isArray(res.body.events)) {
+    return `  (events unavailable: HTTP ${res.status})`;
+  }
+  if (res.body.events.length === 0) {
+    return '  (no journal events — the bot was stopped from outside the actor, e.g. a sweep or an explicit stop)';
+  }
+  return res.body.events
+    .map((e) => `  ${e.createdAt ?? '?'}  ${e.type}  ${JSON.stringify(e.payload ?? {}).slice(0, 300)}`)
+    .join('\n');
+}
+
+/**
+ * Fail fast if the bot reached a terminal status the test did not ask for.
+ * A bot that halts or crashes on its first tick otherwise only surfaces minutes
+ * later as a confusing `already_stopped` reply to the test's own stop.
+ */
+async function failIfBotTerminated(botId: string, token: string, context: string): Promise<void> {
+  const res = await get<{ status: string; stoppedAt: string | null }>(`/bots/${botId}`, token);
+  if (res.status !== 200 || !TERMINAL_BOT_STATUSES.has(res.body.status)) return;
+  fatal(
+    `Bot became '${res.body.status}' unexpectedly ${context} (stoppedAt=${res.body.stoppedAt ?? 'null'}). ` +
+    `Recent journal events:\n${await describeRecentEvents(botId, token)}`,
+  );
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -283,12 +320,23 @@ async function main(): Promise<void> {
   // Create bot — venue-aware config (swap venues use BASE/QUOTE symbols)
   log('Creating bot...');
   const botSymbol = VENUE === '1inch' ? 'WETH/USDC' : 'BTC-PERP';
+  // Mechanical strategy params must satisfy Traderton's MechanicalParamsSchema
+  // (stopLossPct, takeProfitPct and positionSize are required). Bot creation does
+  // not validate them; an invalid set halts the bot on its first evaluated tick
+  // with strategy.config_invalid. positionSize is a small fixed base-asset size.
+  const strategyParams = {
+    candleInterval: '15m',
+    stopLossPct: 2,
+    takeProfitPct: 5,
+    positionSize: '0.001',
+    positionSizeMode: 'fixed',
+  };
   const botPayload: Record<string, unknown> = {
     connectionId: connectionId,
     venue: VENUE,
     symbol: botSymbol,
     config: {
-      strategy: { type: 'momentum', decisionMode: 'mechanical', params: { symbol: botSymbol, intervalMs: TICK_INTERVAL_MS, lookbackPeriods: 14 } },
+      strategy: { type: 'momentum', decisionMode: 'mechanical', params: strategyParams },
       risk: {},
       execution: { mode: EXECUTION_MODE },
       venue: VENUE,
@@ -354,6 +402,7 @@ async function main(): Promise<void> {
   let sawActivity = false;
   const activityDeadline = Date.now() + Math.min(120_000, TIMEOUT_MS);
   while (Date.now() < activityDeadline) {
+    await failIfBotTerminated(botId, token, 'while waiting for trading activity');
     const res = await get<{ events: Array<{ type: string }> }>(`/bots/${botId}/events?limit=5`, token);
     if (res.status === 200) {
       const fillEvents = res.body.events.filter((e) => e.type.startsWith('fill.') || e.type.startsWith('order.'));
@@ -371,9 +420,17 @@ async function main(): Promise<void> {
 
   // 3e. Stop bot
   log('Stopping bot...');
+  // Catch a terminal status that landed after the last activity poll.
+  await failIfBotTerminated(botId, token, 'before the test stopped it');
   const stopRes = await post<{ status: string; botId: string }>(`/bots/${botId}/stop`, {}, token);
   if (stopRes.status !== 202) {
-    fatal(`Stop failed: ${stopRes.status} ${JSON.stringify(stopRes.body)}`);
+    // `already_stopped` covers both 'stopped' and 'crashed' — say which, and why.
+    const statusRes = await get<{ status: string }>(`/bots/${botId}`, token);
+    fatal(
+      `Stop failed: ${stopRes.status} ${JSON.stringify(stopRes.body)} ` +
+      `(bot status=${statusRes.status === 200 ? statusRes.body.status : `HTTP ${statusRes.status}`}). ` +
+      `Recent journal events:\n${await describeRecentEvents(botId, token)}`,
+    );
   }
   ok(`Stop accepted: ${stopRes.body.status}`);
 

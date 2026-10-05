@@ -38,7 +38,6 @@
 #
 # Optional
 #   EXECUTION_MODE        paper (default) | shadow | live
-#   TICK_INTERVAL_MS      Tick interval in ms. Default: 60000 (1 min)
 #   TIMEOUT_MS            Total timeout in ms. Default: 600000 (10 min)
 #   DOCKER_COMPOSE_UP     1 to auto-start Docker stack
 #   DOCKER_COMPOSE_DOWN   1 to stop Docker stack on exit
@@ -101,7 +100,6 @@ export TEST_EMAIL="${TEST_EMAIL:-trade-test@local.test}"
 export TEST_PASSWORD="${TEST_PASSWORD:-TradeTest123!}"
 export VENUE="${VENUE:-hyperliquid}"
 export EXECUTION_MODE="${EXECUTION_MODE:-paper}"
-export TICK_INTERVAL_MS="${TICK_INTERVAL_MS:-60000}"
 export TIMEOUT_MS="${TIMEOUT_MS:-600000}"
 export DOCKER_COMPOSE_UP="${DOCKER_COMPOSE_UP:-0}"
 export DOCKER_COMPOSE_DOWN="${DOCKER_COMPOSE_DOWN:-0}"
@@ -150,7 +148,6 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "  TEST_EMAIL=$TEST_EMAIL"
   echo "  VENUE=$VENUE"
   echo "  EXECUTION_MODE=$EXECUTION_MODE"
-  echo "  TICK_INTERVAL_MS=$TICK_INTERVAL_MS"
   echo "  TIMEOUT_MS=$TIMEOUT_MS"
   exit 0
 fi
