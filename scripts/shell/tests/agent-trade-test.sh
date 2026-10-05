@@ -278,7 +278,8 @@ fi
 # The agent trade test needs the agent to REASON via the LLM and create a bot
 # within a 30s deadline. A reachable-but-cold Ollama (models not pulled, or
 # pulled but not loaded into memory) blows that deadline and the test fails
-# spuriously. So we gate on three things and self-skip (exit 0) otherwise:
+# spuriously. So we gate on three things and self-skip otherwise (exit 0
+# standalone; TEST_SKIP_EXIT_CODE under run-extra-tests.sh, reported as SKIP):
 #   1. /api/tags reachable (server up)
 #   2. the configured light + heavy models are present in /api/tags
 #   3. a warmup /api/generate on the light model responds within a deadline
@@ -287,7 +288,9 @@ if [[ "${LLM_PROVIDER:-}" == "ollama" ]]; then
   ollama_skip() {
     warn "Skipping agent trade test — $1"
     warn "Start Ollama and ensure models (${LLM_LIGHT_MODEL:-qwen3:8b}, ${LLM_HEAVY_MODEL:-qwen3.6:35b-a3b-q4_K_M}) are pulled and warm."
-    exit 0
+    # 0 when run standalone; run-extra-tests.sh sets TEST_SKIP_EXIT_CODE=77 so
+    # the suite reports SKIP rather than PASS.
+    exit "${TEST_SKIP_EXIT_CODE:-0}"
   }
 
   OLLAMA_URL="${OLLAMA_BASE_URL:-http://localhost:11434}"

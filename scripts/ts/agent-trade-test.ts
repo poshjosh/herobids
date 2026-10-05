@@ -20,12 +20,12 @@
  *    silently dropped, mis-attributed or mis-booked still FAILS the run.
  *    REQUIRE_TRADE=1 makes the trade cycle mandatory (manual diagnosis).
  *
- * Known gaps worked around (documented in traderton
- * docs/bug-reports/2026/10/05/004-orphan-sweep-stops-every-agent-bot.md):
- *  - herobids DELETE /agents/:id cannot stop a running agent bot (it calls
- *    stop_bot as the user; stop_bot only accepts the creating agent). Teardown
- *    therefore stops the bot as the agent (manage_bot stop) BEFORE stopping the
- *    agent.
+ * Teardown notes (traderton docs/bug-reports/2026/10/05/004-orphan-sweep-stops-every-agent-bot.md):
+ *  - The bot is stopped as the AGENT first (manage_bot stop) to exercise the
+ *    agent's own bot-control path. If that is impossible (the session already
+ *    ended) the test falls back to the owner path (POST /bots/:id/stop — an
+ *    owner may stop its agent's bot since gap 2 was fixed) so no bot leaks, but
+ *    still fails, stating why.
  *  - Stopping an agent does not cascade to its bots (pending traderton E1-H).
  *
  * What it does
@@ -1078,10 +1078,8 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs: number, interva
  *
  * Order matters:
  *  1. Stop the agent's bot via manage_bot `stop` while the agent session is
- *     still running. A USER cannot stop an agent's bot (`stop_bot` requires
- *     creatorId === the calling agent), and herobids `DELETE /agents/:id` tries
- *     exactly that for a running bot, failing with 503 (traderton bug report
- *     2026-10-05/004, gap 2). Stopping it as the agent first sidesteps that gap.
+ *     still running (the agent's own path), falling back to the owner path
+ *     (POST /bots/:id/stop) when the session is gone, so no bot leaks.
  *  2. Stop the agent and wait for status=stopped (delete requires it).
  *  3. Delete the agent — herobids deletes the (now stopped) bot over the
  *     owner-scoped `delete_bot`.
@@ -1099,20 +1097,43 @@ async function teardown(token: string, agentId: string, agentBotId: string | nul
 
   let teardownOk = true;
 
-  // 1. Stop the agent's bot as the agent (manage_bot stop).
+  // 1. Stop the agent's bot. Preferred path: as the agent (manage_bot stop), which
+  //    exercises the agent's own bot-control path and needs a running session.
+  //    If the session has already ended, or the agent path does not stop it, fall
+  //    back to the owner path (POST /bots/:id/stop as the user — owner-scoped since
+  //    traderton bug 2026-10-05/004 gap 2) so a bot is never leaked across runs
+  //    (leaks count against the per-owner bot limit). Either way the agent path
+  //    failing fails teardown, with the reason stated.
   if (agentBotId && (await fetchBotStatus(token, agentBotId)) === 'running') {
-    try {
-      publishManageBot(agentId, { action: 'stop', botId: agentBotId, rationale: 'e2e teardown' }, 'e2e-bot-stop');
-      const stopped = await waitFor(async () => (await fetchBotStatus(token, agentBotId)) === 'stopped', 30_000);
-      if (stopped) {
-        ok(`Bot ${agentBotId} stopped via manage_bot (agent subject)`);
-      } else {
-        warn(`Bot ${agentBotId} did not reach 'stopped' within 30s of manage_bot stop`);
-        teardownOk = false;
+    const agentRes = await apiRequest<AgentStatusBody>('GET', `/agents/${agentId}`, { token });
+    const sessionStatus = agentRes.status === 200 ? (agentRes.body.activeSession?.status ?? 'none') : `unreadable (HTTP ${agentRes.status})`;
+    let stoppedByAgent = false;
+    if (sessionStatus === 'running') {
+      try {
+        publishManageBot(agentId, { action: 'stop', botId: agentBotId, rationale: 'e2e teardown' }, 'e2e-bot-stop');
+        stoppedByAgent = await waitFor(async () => (await fetchBotStatus(token, agentBotId)) === 'stopped', 30_000);
+        if (stoppedByAgent) {
+          ok(`Bot ${agentBotId} stopped via manage_bot (agent subject)`);
+        } else {
+          warn(`Bot ${agentBotId} did not reach 'stopped' within 30s of manage_bot stop`);
+        }
+      } catch (err) {
+        warn(`Failed to publish manage_bot stop: ${err instanceof Error ? err.message : String(err)}`);
       }
-    } catch (err) {
-      warn(`Failed to publish manage_bot stop: ${err instanceof Error ? err.message : String(err)}`);
+    } else {
+      warn(`Agent session is '${sessionStatus}' at teardown, not 'running' — the agent can no longer stop its bot itself.`);
+    }
+
+    if (!stoppedByAgent) {
       teardownOk = false;
+      const ownerStop = await apiRequest<{ status?: string }>('POST', `/bots/${agentBotId}/stop`, { body: {}, token });
+      const ownerStopped = (ownerStop.status === 202 || ownerStop.status === 200)
+        && await waitFor(async () => (await fetchBotStatus(token, agentBotId)) === 'stopped', 30_000);
+      if (ownerStopped) {
+        warn(`Bot ${agentBotId} stopped via the owner fallback (POST /bots/:id/stop) — no bot leaked`);
+      } else {
+        warn(`Bot ${agentBotId} could NOT be stopped (owner stop HTTP ${ownerStop.status}: ${JSON.stringify(ownerStop.body)}) — it is LEAKED and still running.`);
+      }
     }
   }
 

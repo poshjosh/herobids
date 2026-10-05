@@ -45,7 +45,7 @@
 #                                     Default dev config uses 'mock' provider.
 #                                     Set in config/{staging,production}.yaml.
 #
-# agent-trade-test            Tier 5  Self-skips (exit 0) on a cold Ollama, as below.
+# agent-trade-test            Tier 5  Self-skips on a cold Ollama, as below; reported as SKIP (exit 77).
 # preset-review-gap-closure   Tier 5  (disabled by default — see CURRENT STATE.)
 #                                     When enabled, they also self-skip (exit 0)
 #                                     on a cold Ollama via a readiness pre-check:
@@ -359,8 +359,13 @@ run_script() {
   shift 2
 
   log "Running: ${script_path}${*:+ $*}"
-  if bash "${script_path}" "$@"; then
+  local rc=0
+  bash "${script_path}" "$@" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then
     RESULTS+=("${GREEN}PASS${RESET}  ${label}")
+  elif [[ "${rc}" -eq "${TEST_SKIP_EXIT_CODE}" ]]; then
+    # The script self-skipped (e.g. cold Ollama) — report SKIP, not PASS/FAIL.
+    RESULTS+=("${YELLOW}SKIP${RESET}  ${label} (self-skipped — see its log above)")
   else
     RESULTS+=("${RED}FAIL${RESET}  ${label}")
     OVERALL_EXIT=1
@@ -412,6 +417,10 @@ fi
 
 # Prevent child scripts from auto-managing the stack — we handle it centrally.
 export DOCKER_COMPOSE_UP=0
+# Exit code a child script uses to say "I self-skipped" (automake convention 77),
+# so run_script reports SKIP instead of PASS. Scripts that support it exit with
+# "${TEST_SKIP_EXIT_CODE:-0}", so a standalone run still exits 0 on skip.
+export TEST_SKIP_EXIT_CODE=77
 export DOCKER_COMPOSE_DOWN=0
 export SKIP_TEARDOWN="${SKIP_TEARDOWN:-0}"
 
