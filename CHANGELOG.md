@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## v0.5.2 - 2026-10-05
 ### Fixed
 - **Backend tool discovery (MCP `tools/list`) now retries instead of leaving an agent without trading tools for its whole session.** A single transient failure during `discoverExternalBackendTools` at agent start used to permanently hide every backend-approved skill's tools (e.g. `traderton/skills/crypto-trading`) unless the LLM happened to call `add_skills` again. `discoverViaMcp` now retries the discovery call with exponential backoff (new `discoverWithRetry`, operator config `externalBackends.<id>.endpoint.discoveryRetry.{maxAttempts,baseDelayMs,maxDelayMs}`, default 3 attempts/250ms/2s), and a new tick-start check (`BackendDiscoveryRetryTracker`, operator config `agentRuntime.backendDiscoveryRetry.{baseIntervalMs,maxIntervalMs}`, default 30s/10min) re-runs discovery once a later tick's backoff window elapses if the last attempt left any approved skill `backend_unreachable`, so a backend that recovers mid-session is picked up automatically. Both paths are advisory only — never throw, never shut the agent down. See `docs/features/2026/10/05/001-backend-tool-discovery-retry/001-plan.md`.
 - **Cross-stack overlay no longer sets `BOUNDARY_MCP_ENABLED`.** Traderton now always mounts its MCP route, so `docker/traderton-xstack.override.yml` dropped the flag and its "DEV/TEST ONLY" comment. Staging agents get their trading tools once Traderton is redeployed. See `docs/bug-reports/2026/10/05/005-staging-traderton-mcp-route-off-hides-trading-tools.md`.
