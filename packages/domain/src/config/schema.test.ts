@@ -207,6 +207,22 @@ describe('AgentRuntimePolicySchema', () => {
     }
   });
 
+  it('applies pause defaults and rejects pause values below their minimums', () => {
+    const defaults = AgentRuntimePolicySchema.safeParse({ defaultBudgets: REQUIRED_RUNTIME_BUDGETS, llm: {} });
+    expect(defaults.success).toBe(true);
+    if (defaults.success) {
+      expect(defaults.data.pause.statusPollMs).toBe(30_000);
+      expect(defaults.data.pause.maxHeldMessages).toBe(500);
+    }
+
+    const tooLow = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+      pause: { statusPollMs: 1_000, maxHeldMessages: 1 },
+    });
+    expect(tooLow.success).toBe(false);
+  });
+
   it('accepts an explicit scout maxHoldDurationMs override', () => {
     const result = AgentRuntimePolicySchema.safeParse({
       defaultBudgets: REQUIRED_RUNTIME_BUDGETS,

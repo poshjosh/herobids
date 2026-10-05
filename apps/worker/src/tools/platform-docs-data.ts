@@ -405,21 +405,23 @@ Agents operate on a tick-based lifecycle:
    c. Judge: Heavy reasoning phase — makes decisions and takes actions
    d. Sleep: Agent waits until next tick interval
 3. Paused: Agent stops ticking but retains all state (positions, memory, bots). Can be resumed.
+   While paused there are no scout/judge ticks and no market or watch wakes; trade decisions are rejected.
+   Bots keep running. User messages received while paused are kept and answered on the first tick after resume.
 4. Stopped: Agent is fully stopped. All bots stopped. State preserved. Can be restarted.
 
 Agent states:
-- idle: Created but not yet started
-- running: Actively ticking
-- paused: Temporarily suspended (bots remain active, agent doesn't tick)
-- stopped: Fully stopped (bots stopped, agent doesn't tick)
-- error: Encountered an unrecoverable error
+- stopped: Not running (never started, or stopped by the user or platform). Bots stopped, agent doesn't tick
+- starting: Runtime is launching; becomes active on its first heartbeat
+- active: Actively ticking
+- paused: Temporarily suspended (bots remain active, agent doesn't tick or wake; resumes with a full evaluation)
+- crashed: The runtime exited unexpectedly or hit an unrecoverable error
 
 Lifecycle actions:
-- Start: Transitions from idle → running
-- Pause: Transitions from running → paused
-- Resume: Transitions from paused → running
-- Stop: Transitions from any active state → stopped
-- Restart: Transitions from stopped → running
+- Start: Transitions from stopped → starting → active
+- Pause: Transitions to paused (takes effect by the next scheduled tick)
+- Resume: Transitions from paused → active (takes effect within the operator-configured pause poll interval)
+- Stop: Transitions from any running state → stopped
+- Restart: Stop then start
 
 Bots share the agent's lifecycle but can be independently started/stopped while the agent runs.
 `,

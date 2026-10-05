@@ -1134,6 +1134,13 @@ export const AgentRuntimeConfigSchema = z.object({
     minIntervalMs: z.number().int().min(1_000).default(15_000),
     pollMs: z.number().int().min(100).default(1_000),
   }).default({}),
+  /** Runtime-side pause handling (bug 2026-10-05/001). */
+  pause: z.object({
+    /** While paused, the runtime re-checks agents.status at min(tick interval, statusPollMs). */
+    statusPollMs: z.number().int().min(5_000).default(30_000),
+    /** Max outbound messages held while paused; user messages and config updates are always kept. */
+    maxHeldMessages: z.number().int().min(10).default(500),
+  }).default({}),
   marketIntelligence: z.object({
     maxTrackedPerps: z.number().int().min(1).default(3),
     maxTrackedDexTargets: z.number().int().min(1).default(3),

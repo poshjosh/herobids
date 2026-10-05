@@ -40,6 +40,19 @@ Because the wake group and the runtime group race for the same `agent.wake` mess
 
 ---
 
+### Paused agents
+
+When `agents.status = 'paused'` the runtime does no wake-driven work (bug `docs/bug-reports/2026/10/05/001-paused-agent-keeps-ticking.md`):
+
+- `pollWakeSignals()` ACKs `agent.wake` without buffering it or calling `requestWakeDrivenTick()`. A `user.message` only sets `pendingUserMessage`; no early tick is requested.
+- Paused ticks (at `min(tick interval, agentRuntime.pause.statusPollMs)`) keep reading the runtime group so `MAXLEN` trimming cannot drop user messages. What they read is held in a bounded queue (`agentRuntime.pause.maxHeldMessages`) and fed, in order, into the first resumed tick.
+- `agent.wake` envelopes read by the runtime group while paused are **dropped, not held**. In practice the runtime group also receives `agent.wake` (Redis delivers every entry to every consumer group), and replaying them on resume would present stale market signals as current. On pause, `pendingWakeSignalBuffer` and `currentMarketWake` are cleared too.
+- The first resumed tick is forced past the context-hash gate (treated like a buffered wake).
+
+Pure logic lives in `apps/worker/src/runtime-pause.ts`.
+
+---
+
 ## 3. The technical-scan lifecycle
 
 1. The worker's technical scanner runs every `scanIntervalMs` (default 60s) and produces a `TechnicalScanState`.

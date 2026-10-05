@@ -89,6 +89,7 @@ function buildManager() {
     markSessionStartTimedOut: vi.fn().mockResolvedValue(true),
     updateSession: vi.fn().mockResolvedValue(undefined),
     updateAgent: vi.fn().mockResolvedValue(undefined),
+    activateAgentUnlessPaused: vi.fn().mockResolvedValue('active'),
     getActiveSession: vi.fn().mockResolvedValue(null),
     isActiveSession: vi.fn().mockResolvedValue(true),
     getSessionForAgentAndInstance: vi.fn().mockResolvedValue(null),

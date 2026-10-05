@@ -54,6 +54,7 @@ describe('AgentSessionManager', () => {
       markSessionStartTimedOut: vi.fn().mockResolvedValue(true),
       updateSession: vi.fn().mockResolvedValue(undefined),
       updateAgent: vi.fn().mockResolvedValue(undefined),
+      activateAgentUnlessPaused: vi.fn().mockResolvedValue('active'),
       getActiveSession: vi.fn().mockResolvedValue(null),
       isActiveSession: vi.fn().mockResolvedValue(true),
       getSessionForAgentAndInstance: vi.fn().mockResolvedValue(null),
@@ -392,7 +393,7 @@ describe('AgentSessionManager', () => {
     );
 
     expect(agentRepo.markSessionRunning).toHaveBeenCalledWith('sess-1', expect.any(Date));
-    expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { status: 'active' });
+    expect(agentRepo.activateAgentUnlessPaused).toHaveBeenCalledWith('agent-1');
     expect(reconnectHandler.handleReconnect).toHaveBeenCalledWith('agent-1', 'sess-1');
   });
 
@@ -486,7 +487,7 @@ describe('AgentSessionManager', () => {
     );
 
     expect(agentRepo.markSessionRunning).toHaveBeenCalledWith('sess-1', expect.any(Date));
-    expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { status: 'active' });
+    expect(agentRepo.activateAgentUnlessPaused).toHaveBeenCalledWith('agent-1');
     expect(runtimeLauncher.registerRecoveredRuntime).toHaveBeenCalledWith('agent-1', 'sess-1');
     expect(reconnectHandler.handleReconnect).toHaveBeenCalledWith('agent-1', 'sess-1');
   });
@@ -2500,6 +2501,85 @@ describe('AgentSessionManager', () => {
         expect.stringContaining('crash_loop_blocked'),
         expect.objectContaining({ agentId: 'agent-1' }),
       );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Paused status survives worker restart and first boot (bug 2026-10-05/001, R6)
+  // ---------------------------------------------------------------------------
+
+  describe('paused status on heartbeat recovery', () => {
+    function buildPausedManager(sessionStatus: 'running' | 'starting') {
+      const redis = makeRedisMock();
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+      const onAgentStatusChange = vi.fn();
+      const onSessionActive = vi.fn().mockResolvedValue(true);
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-paused',
+        agentId: 'agent-1',
+        status: sessionStatus,
+      });
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue(makeAgent({ status: 'paused' }));
+      (agentRepo.activateAgentUnlessPaused as ReturnType<typeof vi.fn>).mockResolvedValue('paused');
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS, onAgentStatusChange, onSessionActive },
+        reconnectHandler as any,
+        undefined,
+        redis,
+      );
+      return { manager, agentRepo, runtimeLauncher, reconnectHandler, redis, onAgentStatusChange, onSessionActive };
+    }
+
+    it('keeps a paused agent paused when a surviving session sends its first heartbeat after worker restart', async () => {
+      const { manager, agentRepo } = buildPausedManager('running');
+
+      await manager.handleHeartbeat(HEARTBEAT_ENVELOPE, { sessionId: 'sess-paused', status: 'ready' });
+
+      expect(agentRepo.activateAgentUnlessPaused).toHaveBeenCalledWith('agent-1');
+      expect(agentRepo.updateAgent).not.toHaveBeenCalledWith('agent-1', expect.objectContaining({ status: 'active' }));
+    });
+
+    it('keeps an agent paused when it was paused while its session was still starting', async () => {
+      const { manager, agentRepo } = buildPausedManager('starting');
+
+      await manager.handleHeartbeat(HEARTBEAT_ENVELOPE, { sessionId: 'sess-paused', status: 'ready' });
+
+      expect(agentRepo.activateAgentUnlessPaused).toHaveBeenCalledWith('agent-1');
+      expect(agentRepo.updateAgent).not.toHaveBeenCalledWith('agent-1', expect.objectContaining({ status: 'active' }));
+    });
+
+    it('still marks a non-paused agent active on first-boot and recovery heartbeats', async () => {
+      const { manager, agentRepo, onAgentStatusChange } = buildPausedManager('starting');
+      (agentRepo.activateAgentUnlessPaused as ReturnType<typeof vi.fn>).mockResolvedValue('active');
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue(makeAgent({ status: 'starting' }));
+
+      await manager.handleHeartbeat(HEARTBEAT_ENVELOPE, { sessionId: 'sess-paused', status: 'ready' });
+
+      expect(agentRepo.activateAgentUnlessPaused).toHaveBeenCalledWith('agent-1');
+      expect(onAgentStatusChange).toHaveBeenCalledWith('agent-1', 'user-1', 'active');
+    });
+
+    it('still registers the recovered runtime handle and session-active projection for a paused agent', async () => {
+      const { manager, runtimeLauncher, reconnectHandler, redis, onSessionActive } = buildPausedManager('starting');
+
+      await manager.handleHeartbeat(HEARTBEAT_ENVELOPE, { sessionId: 'sess-paused', status: 'ready' });
+
+      expect(runtimeLauncher.registerRecoveredRuntime).toHaveBeenCalledWith('agent-1', 'sess-paused');
+      expect(onSessionActive).toHaveBeenCalledWith('agent-1', 'sess-paused');
+      expect(redis._sset.get('agent:sessions:active')?.has('agent-1')).toBe(true);
+      expect(reconnectHandler.handleReconnect).toHaveBeenCalledWith('agent-1', 'sess-paused');
+    });
+
+    it('reports the actual resulting status to onAgentStatusChange when the active write is skipped', async () => {
+      const { manager, onAgentStatusChange } = buildPausedManager('running');
+
+      await manager.handleHeartbeat(HEARTBEAT_ENVELOPE, { sessionId: 'sess-paused', status: 'ready' });
+
+      expect(onAgentStatusChange).toHaveBeenCalledWith('agent-1', 'user-1', 'paused');
+      expect(onAgentStatusChange).not.toHaveBeenCalledWith('agent-1', 'user-1', 'active');
     });
   });
 });

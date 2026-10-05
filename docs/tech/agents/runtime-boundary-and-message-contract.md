@@ -192,6 +192,10 @@ Minimum required properties:
 
 Implementation details for tools and sandbox policy are defined in [Tool Access And Sandboxing](./tool-access-and-sandboxing.md).
 
+### Pause semantics
+
+Pause is an agent guardrail, not a container stop. Pause and resume only write `agents.status`; the runtime session stays `running` and heartbeats continue. The runtime reads its own status (read-only) at tick start and, while paused, does no ticks, wakes or LLM calls; bots keep running and the engine still rejects decisions with `agent_paused` as defence in depth. Messages received while paused are held and processed on the first resumed tick, which always runs a full evaluation. Worker restart or first-boot heartbeats never overwrite `paused`. See `docs/bug-reports/2026/10/05/001-paused-agent-keeps-ticking.md`.
+
 ## Message Contract Principles
 
 1. The contract is versioned and deployment-neutral.

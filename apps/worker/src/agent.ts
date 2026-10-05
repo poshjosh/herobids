@@ -66,6 +66,7 @@ import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailur
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState, isUserMessageType, extractUserMessageText } from './tick-gate-state.js';
+import { createPauseStateTracker, HeldMessageQueue, PAUSED_TICK_GATE, PAUSED_TICK_REASON, resolvePausedTickDelay, resolvePausedWakeAction, runPauseGatedTick } from './runtime-pause.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, parseEconomicCalendarBoundaryPayload, type RegimeBoundaryFreshness } from './venue-intelligence.js';
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
@@ -855,6 +856,20 @@ if (!DATABASE_URL) {
   }
 }
 
+// ── Pause handling (bug 2026-10-05/001) ──────────────────────────────────
+// Pause/resume only write agents.status; the runtime polls it at tick start.
+// Without DB access the agent is treated as never paused (previous behaviour).
+const PAUSE_STATUS_POLL_MS = agentRuntimePolicy.pause.statusPollMs;
+const pauseTracker = createPauseStateTracker({
+  readStatus: agentRepo ? () => agentRepo.getAgentStatus(AGENT_ID!) : null,
+  onReadError: (err) => logger.warn({ err }, 'Failed to read agent status for pause check — keeping last-known pause state'),
+});
+// Outbound messages read during paused ticks; fed into the first resumed tick.
+const heldPausedMessages = new HeldMessageQueue(agentRuntimePolicy.pause.maxHeldMessages);
+// Set on a paused → active transition so the first resumed tick bypasses the
+// context-hash gate (R5) without replaying stale wake envelopes.
+let resumedPendingFullEvaluation = false;
+
 const scoutLoopConfig = agentRuntimePolicy.llm.scout;
 const judgeLoopConfig = agentRuntimePolicy.llm.judge;
 const marketIntelligencePolicy = agentRuntimePolicy.marketIntelligence;
@@ -1583,7 +1598,15 @@ async function pollWakeSignals(): Promise<void> {
 
           try {
             const envelope = JSON.parse(fields[envelopeIdx + 1]!) as Record<string, unknown>;
-            if (envelope['type'] === 'agent.wake') {
+            // While paused (last-known state): ACK and suppress market wakes; for a
+            // user message only set the pending flag so the first resumed tick
+            // bypasses the context-hash gate. Never request an early tick.
+            const pausedWakeAction = pauseTracker.isPaused() ? resolvePausedWakeAction(envelope['type']) : 'pass_through';
+            if (pausedWakeAction === 'suppress') {
+              logger.debug('Suppressing wake signal — agent paused');
+            } else if (pausedWakeAction === 'flag_user_message') {
+              pendingUserMessage = true;
+            } else if (envelope['type'] === 'agent.wake') {
               // Suppress wake-driven ticks when circuit breaker is in cooldown
               if (sessionCircuitBreaker.isOpen() && sessionCircuitBreaker.state !== 'TERMINATED') {
                 // ACK but don't wake — breaker is suppressing LLM dispatch
@@ -2248,7 +2271,11 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
   // only wake-triggered ticks reach the LLM (D3: event-driven).
   // maxHoldDurationMs is evaluated at gate time in runTick(), not by
   // accelerating the schedule. The tick cadence is owned solely by tickIntervalMs.
-  const holdLimitedDelayMs = delayMs;
+  // While paused, re-check agents.status at min(tick interval, pause poll) so
+  // resume takes effect within a bounded delay even on long tick intervals.
+  const holdLimitedDelayMs = pauseTracker.isPaused()
+    ? resolvePausedTickDelay(delayMs, PAUSE_STATUS_POLL_MS)
+    : delayMs;
 
   const delayDecision = resolveNextTickDelay({
     requestedDelayMs: holdLimitedDelayMs,
@@ -2414,7 +2441,51 @@ function buildPresetReviewMessage(
  */
 import { buildAssessmentReviewMessage } from './assessment-review-message.js';
 
+/**
+ * Tick entry with the pause gate in front (see runtime-pause.ts).
+ * Paused tick (bug 2026-10-05/001): no decision work. Enforces wall-clock
+ * expiry, keeps consuming the outbound stream so MAXLEN trimming cannot drop
+ * user messages, holds what it reads for the first resumed tick, and emits a
+ * tick_skipped event. Does not touch tickCount, backoff, circuit breaker, the
+ * tick interval, previousContextHash, or send a 'busy' heartbeat.
+ */
 async function runTick(): Promise<void> {
+  await runPauseGatedTick({
+    tracker: pauseTracker,
+    heldMessages: heldPausedMessages,
+    runActiveTick: async ({ resumed }) => {
+      if (resumed) {
+        logger.info({ heldMessages: heldPausedMessages.size }, 'Agent resumed — running full evaluation with messages held during pause');
+        resumedPendingFullEvaluation = true;
+      }
+      await runActiveTick();
+    },
+    isSessionExpired: () => sandboxEnforcer.isExpired(SESSION_ID!),
+    shutdownExpired: () => shutdown('wall_clock_expired'),
+    readOutboundMessages: () => Promise.race([
+      readOutboundMessages(),
+      new Promise<Array<Record<string, unknown>>>((resolve) => setTimeout(() => resolve([]), OUTBOUND_READ_TIMEOUT_MS)),
+    ]),
+    emitPausedSkip: () => emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+      tickId: crypto.randomUUID(),
+      reason: PAUSED_TICK_REASON,
+      gate: PAUSED_TICK_GATE,
+      trigger: 'scheduled',
+      positionSide: sessionMetrics.lastPositionSide ?? undefined,
+    }),
+    onPauseEntered: () => {
+      logger.info('Agent paused — suspending ticks, wakes and LLM dispatch until resumed');
+      // Discard wakes buffered before the pause was detected so none replay on resume.
+      pendingWakeSignalBuffer.splice(0, pendingWakeSignalBuffer.length);
+      runtimeState.metrics.currentMarketWake = null;
+      wakePending = false;
+    },
+    onHeldOverflow: (droppedOverflow) => logger.warn({ droppedOverflow, heldSize: heldPausedMessages.size }, 'Held-message queue overflow while paused — dropped oldest non-priority messages'),
+    onPausedReadError: (err) => logger.warn({ err }, 'Failed to read outbound messages while paused'),
+  });
+}
+
+async function runActiveTick(): Promise<void> {
   tickCount++;
   refreshToolCircuits();
   logger.info({ tickCount }, 'Agent tick starting');
@@ -2436,10 +2507,15 @@ async function runTick(): Promise<void> {
 
   try {
     // Read incoming platform messages (context snapshots, decisions, etc.)
-    const incomingMessages = await Promise.race([
+    const freshMessages = await Promise.race([
       readOutboundMessages(),
       new Promise<Array<Record<string, unknown>>>((resolve) => setTimeout(() => resolve([]), OUTBOUND_READ_TIMEOUT_MS)),
     ]);
+    // Messages held during a pause go first, in original order, so this tick
+    // processes them exactly as if it had read them itself (bug 2026-10-05/001).
+    const incomingMessages = heldPausedMessages.size > 0
+      ? [...heldPausedMessages.drain(), ...freshMessages]
+      : freshMessages;
 
     for (const message of incomingMessages) {
       applyRuntimeMessage(runtimeState, message);
@@ -2637,12 +2713,15 @@ async function runTick(): Promise<void> {
     // runtime group's cursor has not yet reached the user.message entry.
     const hasPendingUserMessage = pendingUserMessage;
     pendingUserMessage = false;
+    // First tick after resume: force a full evaluation (treated like a buffered wake).
+    const isResumedFullEvaluation = resumedPendingFullEvaluation;
+    resumedPendingFullEvaluation = false;
 
     const tickGateState = buildTickGateState({
       tickNumber: tickCount,
       incomingMessages,
       hasOpenPositions,
-      hasBufferedWake: hasBufferedWake || hasPendingUserMessage,
+      hasBufferedWake: hasBufferedWake || hasPendingUserMessage || isResumedFullEvaluation,
       lastKnownPositionSide: sessionMetrics.lastPositionSide,
       tradingHours,
       now: new Date(),

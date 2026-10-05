@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run-extra-tests.sh — Run test scripts NOT covered by run-all-tests.sh
 #
-# This script runs the 18 test scripts that live in scripts/shell/tests/ but
+# This script runs the 19 test scripts that live in scripts/shell/tests/ but
 # are NOT invoked by run-all-tests.sh.  The 1inch and Jupiter validators were
 # migrated to traderton (Slice 2) — venue validation now happens there.
 # validate-swap-venue.sh remains excluded by design (operator-run, deferred):
@@ -270,6 +270,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 4 && echo -e "                                          → agent-scanner-gated-lifecycle-test.sh"
   tier_enabled 4 && echo -e "                                          → browser-pool-agent-browser-smoke-test.sh"
   tier_enabled 4 && echo -e "                                          → sandbox-allowlist-smoke-test.sh"
+  tier_enabled 4 && echo -e "                                          → agent-pause-test.sh             [restarts worker]"
   tier_enabled 5 && echo -e "  ${BLUE}Tier 5${RESET} (full stack + venue)  → agent-trade-test.sh            [trade cycle best-effort]"
   tier_enabled 5 && echo -e "                                          → bot-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → platform-preset-assessment-test.sh"
@@ -569,6 +570,9 @@ if tier_enabled 4; then
 
   run_script "sandbox-allowlist-smoke (SANDBOX_ALLOWED_HOSTS iptables)" \
     "${TESTS_DIR}/sandbox-allowlist-smoke-test.sh"
+  # Last in Tier 4: it restarts the worker (PAUSE_TEST_RESTART_WORKER=0 skips that step).
+  run_script "agent-pause (pause → no ticks/wakes → worker restart → resume)" \
+    "${TESTS_DIR}/agent-pause-test.sh"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════

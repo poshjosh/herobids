@@ -541,6 +541,40 @@ describe('shouldSkipTick', () => {
     expect(result.skip).toBe(false);
   });
 
+  it('runs a full evaluation on the first tick after resume even if context is unchanged', async () => {
+    // Bug 2026-10-05/001 (R5): agent.ts feeds the resumed flag into
+    // hasBufferedWake, so an unchanged context must not be skipped.
+    const enabledGates = { contextHash: true, regime: false, session: false, adaptiveInterval: false };
+    const first = await shouldSkipTick(buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [],
+      hasOpenPositions: false,
+      lastKnownPositionSide: 'flat',
+      enabledGates,
+    }), {});
+
+    const unchanged = await shouldSkipTick(buildTickGateState({
+      tickNumber: 2,
+      incomingMessages: [],
+      hasOpenPositions: false,
+      lastKnownPositionSide: 'flat',
+      previousContextHash: first.contextHash,
+      enabledGates,
+    }), {});
+    expect(unchanged.skip).toBe(true);
+
+    const resumed = await shouldSkipTick(buildTickGateState({
+      tickNumber: 2,
+      incomingMessages: [],
+      hasOpenPositions: false,
+      lastKnownPositionSide: 'flat',
+      previousContextHash: first.contextHash,
+      hasBufferedWake: true,
+      enabledGates,
+    }), {});
+    expect(resumed.skip).toBe(false);
+  });
+
   it('forces a full evaluation every tenth tick even when the context hash matches', async () => {
     const regime = makeRegimeResult(true, ['All regime checks passed']);
     const first = await shouldSkipTick(

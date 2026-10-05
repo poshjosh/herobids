@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { AgentRepository } from './agent-repository.js';
 import type { ProvidersYaml } from '@herobids/domain';
 
@@ -175,6 +177,57 @@ describe('AgentRepository runtime session retirement', () => {
 
     expect(setFn).toHaveBeenCalledWith(expect.objectContaining({ status: 'crashed', stoppedAt: expect.any(Date) }));
     expect(returningFn).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// activateAgentUnlessPaused (bug 2026-10-05/001)
+// ---------------------------------------------------------------------------
+
+function buildConditionalActivateDb(updatedRows: Array<{ status: string }>, currentStatus: string | null) {
+  const returningFn = vi.fn().mockResolvedValue(updatedRows);
+  const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
+  const setFn = vi.fn().mockReturnValue({ where: whereFn });
+  const updateFn = vi.fn().mockReturnValue({ set: setFn });
+  const select = vi.fn().mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue(currentStatus === null ? [] : [{ status: currentStatus }]),
+      }),
+    }),
+  });
+  return { db: { update: updateFn, select }, setFn, whereFn };
+}
+
+function renderWhere(condition: unknown): { sql: string; params: unknown[] } {
+  return new PgDialect().sqlToQuery(condition as SQL);
+}
+
+describe('AgentRepository.activateAgentUnlessPaused', () => {
+  it('conditional activate does not overwrite paused', async () => {
+    const { db, whereFn } = buildConditionalActivateDb([], 'paused');
+    const repo = new AgentRepository(db as never);
+
+    await expect(repo.activateAgentUnlessPaused('agent-1')).resolves.toBe('paused');
+
+    const rendered = renderWhere(whereFn.mock.calls[0]?.[0]);
+    expect(rendered.sql).toContain('<>');
+    expect(rendered.params).toContain('paused');
+  });
+
+  it('conditional activate sets active from other statuses', async () => {
+    const { db, setFn } = buildConditionalActivateDb([{ status: 'active' }], 'starting');
+    const repo = new AgentRepository(db as never);
+
+    await expect(repo.activateAgentUnlessPaused('agent-1')).resolves.toBe('active');
+    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({ status: 'active' }));
+  });
+
+  it('returns null when the agent row is missing', async () => {
+    const { db } = buildConditionalActivateDb([], null);
+    const repo = new AgentRepository(db as never);
+
+    await expect(repo.activateAgentUnlessPaused('agent-1')).resolves.toBeNull();
   });
 });
 

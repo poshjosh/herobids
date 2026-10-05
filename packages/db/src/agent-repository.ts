@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, desc, inArray, asc } from 'drizzle-orm';
+import { eq, and, desc, inArray, asc, ne } from 'drizzle-orm';
 import type { Database } from './index.js';
 import {
   agentArtifacts,
@@ -267,6 +267,27 @@ export class AgentRepository {
       ...update,
       updatedAt: new Date(),
     }).where(eq(agents.id, id));
+  }
+
+  /** Narrow status read (no JSONB config). Returns null when the agent row is missing. */
+  async getAgentStatus(id: string): Promise<string | null> {
+    const rows = await this.db.select({ status: agents.status }).from(agents).where(eq(agents.id, id)).limit(1);
+    return rows[0]?.status ?? null;
+  }
+
+  /**
+   * Atomically mark an agent `active` unless it is `paused`. A pause that lands
+   * concurrently is never overwritten because the guard is part of the UPDATE.
+   * Returns the resulting status (`'active'`, `'paused'`), or null when the row is missing.
+   */
+  async activateAgentUnlessPaused(id: string): Promise<string | null> {
+    const updated = await this.db.update(agents).set({
+      status: 'active',
+      updatedAt: new Date(),
+    }).where(and(eq(agents.id, id), ne(agents.status, 'paused')))
+      .returning({ status: agents.status });
+    if (updated.length > 0) return 'active';
+    return this.getAgentStatus(id);
   }
 
   async deleteAgent(id: string): Promise<void> {

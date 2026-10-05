@@ -497,6 +497,9 @@ agentRuntime:
   wake:
     minIntervalMs: 15000       # minimum cooldown between wake-driven ticks; lower reacts faster, higher suppresses bursty market churn
     pollMs: 1000               # Redis wake-stream block timeout; lower improves wake pickup latency, higher reduces idle polling churn
+  pause:
+    statusPollMs: 30000        # while paused, re-check agents.status at min(tick interval, this); bounds resume latency (min 5000)
+    maxHeldMessages: 500       # cap on outbound messages held while paused; user messages and config updates are always kept, oldest others dropped first
   marketIntelligence:
     maxTrackedPerps: 3         # number of perp symbols to enrich per tick; raise for broader awareness, lower to protect market-data budgets
     maxTrackedDexTargets: 3    # number of DEX watch targets to consider per tick before refresh fanout is applied

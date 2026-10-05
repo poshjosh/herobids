@@ -825,12 +825,18 @@ export class AgentSessionManager {
           }
         }
       }
-      await this.agentRepo.updateAgent(session.agentId, { status: 'active' });
-      // Notify real-time event stream (best-effort)
-      if (this.config.onAgentStatusChange) {
+      // Conditional write: a paused agent must stay paused across worker restarts
+      // and first boot (bug 2026-10-05/001). The guard is atomic in the UPDATE so a
+      // pause landing concurrently is never lost.
+      const resultingStatus = await this.agentRepo.activateAgentUnlessPaused(session.agentId);
+      if (resultingStatus === 'paused') {
+        logger.info({ agentId: session.agentId, sessionId: payload.sessionId }, 'Agent is paused — session activated without changing agent status');
+      }
+      // Notify real-time event stream (best-effort) with the actual resulting status.
+      if (this.config.onAgentStatusChange && resultingStatus) {
         const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
         if (agent) {
-          this.config.onAgentStatusChange(session.agentId, agent.userId, 'active');
+          this.config.onAgentStatusChange(session.agentId, agent.userId, resultingStatus);
         }
       }
       if (isFirstBoot && activationEstablished && this.config.onSessionStarted) {

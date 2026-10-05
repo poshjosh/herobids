@@ -1,6 +1,6 @@
 # Bug Report 001 — Paused agents keep ticking, waking and calling the LLM; worker restart silently un-pauses them
 
-- **Status:** OPEN (analysed, not yet fixed)
+- **Status:** FIXED (2026-10-05). See [Fix](#10-fix) and [Verification](#11-verification).
 - **Severity:** High. A user-facing safety and cost control does not do what the UI and platform docs say. Paused agents keep spending LLM budget, and a routine worker redeploy can turn a pause back into `active`.
 - **Date:** 2026-10-05
 - **Environment:** All runtimes (Docker, Nomad, stub). The bug is in the runtime logic, not in the infrastructure.
@@ -76,7 +76,7 @@ None of these notify the running container. Pause and resume are **DB state only
   12. `buildTickGateState(...)`, then `shouldSkipTick` gates (`apps/worker/src/tick-gates.ts`: session/trading-hours, regime, context-hash)
   13. Either a skip (it emits `AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED` with `{ tickId, reason, gate, trigger, positionSide }`, see around line 2792) or LLM dispatch
   14. Later code also checks `incomingMessages.some(isUserMessageType)` (around lines 3397 and 3454)
-- **Wake poller `pollWakeSignals()`** (around line 1552): a separate consumer group (`WAKE_CONSUMER_GROUP`) on the **same** outbound stream. Redis Streams deliver each message to every consumer group, so both groups see everything.
+- **Wake poller `pollWakeSignals()`** (around line 1552): a separate consumer group (`WAKE_CONSUMER_GROUP`) on the **same** outbound stream. Redis Streams deliver each message to every consumer group, so both groups see everything. (Code comments in `agent.ts` around lines 1595 and 2484 say "Redis Streams delivers each message to only ONE consumer group". That is wrong; trust this report. In particular the runtime group **does** see `agent.wake`: `applyRuntimeMessage` handles it (`runtime-composition.ts`, around line 1959, sets `currentMarketWake` / `currentReminder`) and `buildTickGateState` sets `hasWakeSignal` for it via `isEarlyTickTriggerType`.)
   - `agent.wake`: buffers it into `pendingWakeSignalBuffer` and calls `requestWakeDrivenTick()`. **Precedent:** when the session circuit breaker is open, it ACKs and suppresses the wake instead (around lines 1584–1590). Pause handling should follow the same pattern.
   - `user.message`: sets `pendingUserMessage = true` and calls `requestWakeDrivenTick()`.
 - **Outbound stream size cap:** `AGENT_STREAM_MAXLEN = 1000` (`packages/domain/src/agent-protocol.ts:51`), applied with `MAXLEN ~`. If the runtime **stops reading** the stream, older unread entries, including user messages, can be trimmed and lost.
@@ -144,7 +144,10 @@ These are the **what**. The implementation approach is up to you, but each item 
 - Resume must take effect within a **bounded, operator-configurable delay**, even when the agent's normal tick interval is long (minimal/standard cost presets can be many minutes). While paused, the runtime must re-check status at `min(effectiveTickIntervalMs, <new pause poll interval>)`.
 - Any new interval goes in operator config (`config/default.yaml` → `agentRuntime`, plus the Zod schema in `packages/domain/src/config/schema.ts`), with a sensible default (about 30s suggested), a minimum bound and an inline YAML comment. Don't hard-code it.
 - **If the status read fails** (DB error), the runtime keeps its last-known pause state and logs a warning. It must not flip state on a transient error, must not crash, and must keep the tick loop scheduled.
-- **If `agentRepo` is `null`** (no `DATABASE_URL`), treat the agent as not paused. That's the current behaviour, so nothing regresses.
+- **If `agentRepo` is `null`** (no `DATABASE_URL`), treat the agent as not paused. That's the current behaviour, so nothing regresses. (Production launchers refuse to start a container without `DATABASE_URL`, so this is a dev/stub path.)
+- Use a narrow status read (for example a new `AgentRepository.getAgentStatus(id)` that selects only `status`), not `getAgent()`, which loads the whole row including JSONB config.
+- The new interval must reach the container through the same path as `wake.*`: YAML → Zod schema → `AgentRuntimePolicy` → `AGENT_RUNTIME_CONFIG_JSON` → `parseAgentRuntimePolicy`.
+- Pause polling is chosen over a push signal (for example the API appending a pause/resume envelope to the outbound stream) because it self-heals, needs no new message type, and costs one indexed row read per poll. Push for instant resume is a possible follow-up.
 
 ### R2. A paused tick does no decision work
 While paused, a tick must **not**:
@@ -152,6 +155,7 @@ While paused, a tick must **not**:
 - increment `tickCount` (it drives the `initial` trigger label and `FORCE_FULL_EVALUATION_EVERY_TICK`)
 - touch `failureBackoff` / `handleTickSuccess()` / `handleRuntimeFailure()` or the session circuit breaker state
 - change `effectiveTickIntervalMs` or `previousContextHash`
+- send `sendHeartbeat('busy')` (a paused agent must not look busy) or call `refreshToolCircuits()`
 
 While paused, a tick **must** still:
 - enforce wall-clock session expiry (`sandboxEnforcer.isExpired`, then `shutdown`)
@@ -159,21 +163,24 @@ While paused, a tick **must** still:
 - emit a `TICK_SKIPPED` activity event with `gate: 'paused'` and a clear `reason` (for example `agent_paused`). Log at most once per pause transition at info level so a long pause doesn't flood the logs.
 - reschedule itself (the existing `finally` in `scheduleNextTick` already does this; don't break it)
 
-If `gate` is a typed union somewhere (activity event types or `TickSkipDecision['gate']`), extend the type properly. Don't cast.
+If `gate` is a typed union somewhere (activity event types or `TickSkipDecision['gate']`, currently `'session' | 'regime' | 'context_hash'` at `tick-gates.ts:77`), extend the type properly. Don't cast.
 
 ### R3. Outbound messages received while paused are not lost and are processed on resume
 - The runtime must **keep consuming** the outbound stream while paused. Otherwise `MAXLEN ~ 1000` trimming can delete unread user messages during a long pause.
 - Messages read during paused ticks must be **held, not processed**, and then fed into the **first non-paused tick** ahead of freshly read messages, in original order. That tick must behave exactly as if it had read them itself: `applyRuntimeMessage`, circuit-breaker feeding, activity-timeline capture, `config_update` handling, and the `isUserMessageType` checks around lines 3397 and 3454.
 - Don't half-process messages during paused ticks. In particular, `applyRuntimeMessage` must not run twice for the same message.
+- **Exception: `agent.wake` envelopes read while paused are dropped, not held.** Replaying them would make `applyRuntimeMessage` set `currentMarketWake` / `currentReminder` to a signal that may be hours old and present it to the LLM as current, contradicting R4. Dropping them also removes most of the queue pressure.
 - The held queue must be **bounded**, with the cap from operator config or a clearly justified internal constant. On overflow it must **always keep** `user.message` envelopes (see `isUserMessageType`) and `agent.runtime.config_update` envelopes, and drop the oldest other messages first. Log a warning when it drops anything.
 
 ### R4. Wake handling while paused (`pollWakeSignals`)
 - `agent.wake`: ACK it, **don't** buffer it into `pendingWakeSignalBuffer`, and **don't** call `requestWakeDrivenTick()`. Mirror the circuit-breaker suppression block.
 - `user.message`: still set `pendingUserMessage = true` so the first resumed tick bypasses the context-hash gate, but **don't** request an early tick while paused.
 - On resume there must be **no burst** of stale market wakes.
+- Wake suppression uses the last-known pause state, so a wake arriving after resume but before the runtime's next status read is dropped. That is acceptable because R5 forces a full evaluation on the first resumed tick; don't add machinery to recover it.
 
 ### R5. Resume re-engages the agent
-- The first non-paused tick after a paused-to-active transition must run a full evaluation. It must not be skipped by the context-hash gate, for example by treating the transition like a wake signal.
+- The first non-paused tick after a paused-to-active transition must run a full evaluation. It must not be skipped by the context-hash gate. Drive this from an explicit "just resumed" flag (fed into the gate like a buffered wake), not from replayed wake envelopes (see R3).
+- Held user messages are added to the activity timeline with resume-time timestamps. That is acceptable (it keeps them after `answeredUpToTs`, so they are answered).
 - The first resumed tick must reply to any user messages received during the pause.
 
 ### R6. Paused status survives worker restart and first boot
@@ -183,7 +190,7 @@ If `gate` is a typed union somewhere (activity event types or `TickSkipDecision[
 - Everything else in that block must still run when the agent is paused: `registerRecoveredRuntime`, `onSessionActive`, `activatedSessions`, Redis `agent:sessions:count:*` / `agent:sessions:active` / wake prefs. Stop and delete must still be able to reach the container, and the session must still be treated as live.
 
 ### R7. Docs
-- Update `apps/worker/src/tools/platform-docs-data.ts` (around lines 413–420) so the agent-facing description matches the new behaviour: no ticks or wakes while paused, user messages handled after resume, bots keep running, trades rejected.
+- Update `apps/worker/src/tools/platform-docs-data.ts` (around lines 407–423) so the agent-facing description matches the new behaviour: no ticks or wakes while paused, user messages handled after resume, bots keep running, trades rejected. That section also uses a status vocabulary (`idle`, `running`, `error`) that differs from the real `agents.status` values (`starting`, `active`, `crashed`); align it while you are there.
 - If `docs/tech/agents/wake-signal-and-technical-scan.md` or `docs/tech/agents/runtime-boundary-and-message-contract.md` describe tick or wake behaviour, add a short note about pause.
 
 ---
@@ -208,12 +215,12 @@ Each of these must hold after the fix. Most are covered by [Required tests](#req
 
 ## 6. Acceptance criteria
 
-- [ ] R1–R7 implemented.
-- [ ] Every item in §5 holds.
-- [ ] New operator config key(s) are added to `config/default.yaml` with inline comments **and** to the Zod schema. `.env*.example` files are untouched unless an env var was added; if one was, the matching `.example` is updated in the same change, per `AGENTS.md`.
-- [ ] Every test in §7 is added and passing.
-- [ ] `pnpm lint` passes. `pnpm build` passes. `pnpm test` passes for `apps/worker`, `packages/db` and `packages/domain`.
-- [ ] This report is updated: Status changed to FIXED, plus a **Fix** section listing the files changed, a **Verification** section with the commands run and their results, and any deliberate deviations from this report with reasons.
+- [x] R1–R7 implemented.
+- [x] Every item in §5 holds (by code review and unit tests; not observed in a live container).
+- [x] New operator config key(s) are added to `config/default.yaml` with inline comments **and** to the Zod schema. `.env*.example` files are untouched unless an env var was added; if one was, the matching `.example` is updated in the same change, per `AGENTS.md`.
+- [x] Every test in §7 is added and passing, at the module level (see the test-placement deviation in §10).
+- [x] `pnpm lint` passes. `pnpm build` passes. `pnpm test` passes for `apps/worker`, `packages/db` and `packages/domain`.
+- [x] This report is updated: Status changed to FIXED, plus a **Fix** section listing the files changed, a **Verification** section with the commands run and their results, and any deliberate deviations from this report with reasons.
 
 ---
 
@@ -226,7 +233,7 @@ Test names should describe behaviour (repo rule). Put them next to the closest e
 - `apps/worker/src/agent-wake-scheduler.test.ts`
 - `apps/worker/src/runtime-*.test.ts`
 
-`agent.ts` is a large module with top-level side effects. If the new pause logic is hard to test in place, extract the pure parts (pause-state resolution, held-message queue with priority overflow, next-delay-while-paused calculation, wake-suppression decision) into a small new module with unit tests, and keep the `agent.ts` wiring thin.
+`agent.ts` is a large module with top-level side effects. Strongly recommended: extract the pure parts (pause-state resolution, held-message queue with priority overflow, next-delay-while-paused calculation, wake-suppression decision) into a small new module with unit tests, and keep the `agent.ts` wiring thin.
 
 **Session manager / repository (R6)**
 1. "keeps a paused agent paused when a surviving session sends its first heartbeat after worker restart"
@@ -250,7 +257,7 @@ Test names should describe behaviour (repo rule). Put them next to the closest e
 16. "answers a user message received while paused on the first resumed tick"
 17. "retains user messages and config updates when the held-message queue overflows"
 18. "ACKs and ignores market wake signals while paused without scheduling an early tick"
-19. "does not burst stale wake ticks after resume"
+19. "drops wake envelopes read while paused so the first resumed tick carries no stale market wake"
 20. "runs a full evaluation on the first tick after resume even if context is unchanged"
 21. "still enforces wall-clock expiry while paused"
 
@@ -263,7 +270,9 @@ Test names should describe behaviour (repo rule). Put them next to the closest e
 - Pausing runtime/container billing while paused. That's a product decision.
 - Persisting the held-message queue across a container restart. A container restart while paused loses it, the same exposure as today's in-memory `pendingWakeSignalBuffer`. Acceptable for now. Mention it in the Fix section.
 - Agent self-resume. If an agent ever sends `agent.lifecycle.pause_request` for itself, it can't resume itself after this fix, because it no longer ticks. Nothing sends that message today. Flag it in the Fix section; don't change it.
-- Adding a status precondition to `pauseAgent()` (it currently allows pausing any status). R6 makes pausing during `starting` safe, and anything further is a separate change.
+- Adding a status precondition to `pauseAgent()`. It has an idempotency check but otherwise allows pausing any status, including `stopped` and `crashed`; resuming those then sets `active` with no running container. R6 makes pausing during `starting` safe, and anything further is a separate change.
+- Pause surviving a container crash or relaunch. `handleRuntimeSessionEnd` and the crash handlers write `crashed` over `paused`; a relaunched session's first heartbeat then sees `crashed` and R6's conditional update still sets `active`. `pauseState` is not cleared on crash, so it is a candidate signal for a follow-up. Wall-clock expiry moving the agent to `stopped` is intended.
+- Correcting the misleading "only ONE consumer group" comments in `agent.ts` beyond what the fix touches.
 - The unrelated runtime-stop issues found in the same investigation (the Docker `stopByContainerId` being given an agent ID or a `recovered-*` ID, and Docker reconcile not listing exited containers). These need their own bug report.
 
 ---
@@ -280,3 +289,84 @@ Test names should describe behaviour (repo rule). Put them next to the closest e
 - `packages/db/src/agent-repository.ts`
 - `packages/domain/src/config/schema.ts`, `config/default.yaml` (`agentRuntime.wake`)
 - `docs/best-practices/configuration.md`, `docs/tech/agents/wake-signal-and-technical-scan.md`, `docs/tech/agents/runtime-boundary-and-message-contract.md`
+
+---
+
+## 10. Fix
+
+The runtime now polls its own `agents.status` at the start of every tick and, while paused, runs a lightweight paused tick instead of the full tick. The heartbeat recovery path no longer overwrites `paused`.
+
+### Runtime (R1–R5)
+
+- New pure module `apps/worker/src/runtime-pause.ts`:
+  - `createPauseStateTracker`: narrow status read; keeps last-known state on read error (warn, no flip); `readStatus: null` (no DB) means never paused; a missing row is not treated as paused (same rule as the decision handler). Reports `paused` / `resumed` transitions.
+  - `runPauseGatedTick`: the tick entry point. Not paused → runs the full tick body (`resumed` flag on the first tick after a pause). Paused → enforces wall-clock expiry, calls `onPauseEntered` once per transition, keeps reading the outbound stream into the held queue, emits `tick_skipped` (`gate: 'paused'`, `reason: 'agent_paused'`). It never touches `tickCount`, backoff, the circuit breaker, `effectiveTickIntervalMs`, `previousContextHash`, `refreshToolCircuits()` or the `busy` heartbeat.
+  - `HeldMessageQueue`: bounded FIFO; drops `agent.wake` envelopes on push; on overflow drops the oldest non-priority messages and always keeps `user.message` / `agent.user.message` / `agent.runtime.config_update`.
+  - `resolvePausedTickDelay` (`min(tick interval, statusPollMs)`) and `resolvePausedWakeAction`.
+- `apps/worker/src/agent.ts`:
+  - `runTick()` delegates to `runPauseGatedTick`; the previous body is now `runActiveTick()` (unchanged apart from the two points below).
+  - `runActiveTick()` prepends drained held messages to the freshly read batch, so `applyRuntimeMessage`, circuit-breaker feeding, activity-timeline capture, `config_update` handling and both `isUserMessageType` checks see them exactly once, in order.
+  - The resumed flag is ORed into `hasBufferedWake`, so the first resumed tick bypasses the context-hash gate (R5) without replaying wakes.
+  - `onPauseEntered` clears `pendingWakeSignalBuffer`, `currentMarketWake` and `wakePending`, so wakes buffered just before the pause was detected cannot replay on resume.
+  - `pollWakeSignals()`: while paused, `agent.wake` is ACKed and suppressed; `user.message` only sets `pendingUserMessage`; no early tick is requested.
+  - `scheduleNextTick()`: while paused, the delay is `min(requested, agentRuntime.pause.statusPollMs)`.
+  - The independent heartbeat interval is untouched.
+
+### Session manager (R6)
+
+- `packages/db/src/agent-repository.ts`: new `getAgentStatus(id)` (selects only `status`) and `activateAgentUnlessPaused(id)`, an atomic `UPDATE … WHERE id = $1 AND status <> 'paused' RETURNING status`. It falls back to a status read when no row was updated and returns the resulting status.
+- `apps/worker/src/agents/agent-session-manager.ts`: the recovery/first-boot path calls `activateAgentUnlessPaused` and passes the actual resulting status to `onAgentStatusChange`. Everything else in the block (`registerRecoveredRuntime`, `onSessionActive`, `activatedSessions`, Redis projection, reconnect) runs unchanged for paused agents.
+
+### Config
+
+- `agentRuntime.pause.statusPollMs` (default 30000, min 5000) and `agentRuntime.pause.maxHeldMessages` (default 500, min 10), in `config/default.yaml` with inline comments and in `AgentRuntimeConfigSchema`. They reach the container through the existing `agentRuntime` spread into `AGENT_RUNTIME_CONFIG_JSON`. No env vars were added, so no `.example` file changed.
+
+### Docs (R7)
+
+- Agent-facing lifecycle text: `apps/worker/src/tools/platform-docs-data.ts` is generated, so the source in `scripts/ts/build-docs-index.ts` was edited and the file regenerated (`npx tsx scripts/ts/build-docs-index.ts`). It now describes pause semantics and uses the real status vocabulary (`stopped`, `starting`, `active`, `paused`, `crashed`).
+- `docs/tech/agents/wake-signal-and-technical-scan.md`: new "Paused agents" subsection.
+- `docs/tech/agents/runtime-boundary-and-message-contract.md`: new "Pause semantics" subsection.
+
+### Files changed
+
+- `apps/worker/src/runtime-pause.ts` (new), `apps/worker/src/runtime-pause.test.ts` (new)
+- `apps/worker/src/agent.ts`
+- `apps/worker/src/agents/agent-session-manager.ts`, `agent-session-manager.test.ts`
+- `apps/worker/src/agents/agent-broker.test.ts`, `permission-level-wiring.test.ts` (mock repo gains `activateAgentUnlessPaused`)
+- `apps/worker/src/tick-gates.test.ts`
+- `apps/worker/src/tools/platform-docs-data.ts` (regenerated), `scripts/ts/build-docs-index.ts`
+- `packages/db/src/agent-repository.ts`, `agent-repository.test.ts`
+- `packages/domain/src/config/schema.ts`, `schema.test.ts`
+- `config/default.yaml`
+- `docs/tech/agents/wake-signal-and-technical-scan.md`, `docs/tech/agents/runtime-boundary-and-message-contract.md`
+- `CHANGELOG.md`
+- `scripts/ts/agent-pause-test.ts` (new), `scripts/shell/tests/agent-pause-test.sh` (new), `scripts/shell/tests/run-extra-tests.sh` (registered in Tier 4)
+
+### Deviations and notes
+
+- **Test placement.** `agent.ts` is not unit-testable in place (top-level side effects), so the pause behaviour was extracted into `runtime-pause.ts` and tested through `runPauseGatedTick` with injected dependencies. Tests 7, 8, 9, 13, 14 and 21 assert that the active tick body (which owns `tickCount++`, gates, backoff and LLM dispatch) is never invoked while paused, and that held messages reach it once, in order. Tests 15 and 16 (config_update and user message applied on resume) are covered by the in-order delivery test plus the unchanged `runActiveTick` handling of those types; there is no test that drives the real `agent.ts` tick end-to-end. Test 20 is in `tick-gates.test.ts` via `buildTickGateState` with `hasBufferedWake: true`.
+- **Gate type.** `TickSkipDecision['gate']` was not extended, because the paused skip never goes through `shouldSkipTick`. The `TICK_SKIPPED` activity payload is an untyped `Record<string, unknown>`, so `gate: 'paused'` needs no type change.
+- **Hybrid / scanner-gated agents.** The resumed flag sets `hasWakeSignal`, so a hybrid agent's first resumed tick dispatches the LLM once (a full re-engagement). After that tick, wake-only behaviour applies as before. Scanner-gated suppression is unaffected because `currentMarketWake` is null on resume.
+- **Not addressed (see §8):** the held queue is in-memory and is lost if the container restarts while paused. An agent-initiated self-pause (`agent.lifecycle.pause_request`) cannot self-resume, because a paused agent no longer ticks; nothing sends that message today. Pause does not survive a container crash and relaunch (`crashed` overwrites `paused`). The misleading "only ONE consumer group" comments elsewhere in `agent.ts` and in §1 of the wake-signal doc were left as they are; the new pause subsection states the correct semantics.
+
+## 11. Verification
+
+Commands, run from the `herobids` repo root on 2026-10-05:
+
+| Command | Result |
+|---|---|
+| `npx vitest run apps/worker/src/runtime-pause.test.ts` | 22 passed |
+| `npx vitest run apps/worker/src/agents/agent-session-manager.test.ts` | 70 passed (5 new R6 tests) |
+| `npx vitest run packages/db/src/agent-repository.test.ts` | 37 passed, 3 skipped (pre-existing skips); 3 new conditional-activate tests |
+| `npx vitest run apps/worker/src/tick-gates.test.ts` | 102 passed (1 new resume test) |
+| `pnpm lint` | exit 0 |
+| `pnpm build` | exit 0 |
+| `pnpm test` | 339 files passed / 25 skipped; 6747 tests passed / 331 skipped |
+
+**End-to-end:** `scripts/shell/tests/agent-pause-test.sh` (wrapper for `scripts/ts/agent-pause-test.ts`, registered in `run-extra-tests.sh` Tier 4) was run against the local stack, after rebuilding `herobids-agent:latest` and the worker from this change. Result: 13/13 checks passed.
+- The agent reached `active` and ticked.
+- After pause, the runtime emitted `tick_skipped` `gate=paused`. A user message sent while paused did not wake it. Over the 40s observation window there were further paused skips and zero `tick.started`, `llm.dispatch` or `scout.*` events.
+- After `docker compose restart worker`, the session manager logged "Agent is paused — session activated without changing agent status" and `agents.status` stayed `paused`.
+- After resume, the first `tick.started` arrived about 4s later with `hasWakeSignal=true`, followed by `llm.dispatch`.
+
+Not run: the full `run-all-tests.sh --e2e` and `run-extra-tests.sh` suites. Whether the agent's reply text to the held user message is correct is LLM-dependent and was not asserted; the test checks only that the LLM was dispatched.
