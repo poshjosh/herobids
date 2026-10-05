@@ -119,6 +119,10 @@ async function main(): Promise<void> {
   const logger = createLogger('backfill-profile-scan-config');
   const appConfig = loadConfig();
   const db = createDatabase(appConfig.database.url);
+  // The full saga (incl. the L1 agent-actor lifecycle hook) — so a backfill that
+  // changes a live agent's profile also (re)starts its traderton actor, exactly
+  // like a normal profile write. Intended: this is how a backfilled scanner_gated
+  // agent gets its scan loop running.
   const { saga } = createTradingProfileSaga({ appConfig, db, logger });
 
   const agentsList = await db.select({

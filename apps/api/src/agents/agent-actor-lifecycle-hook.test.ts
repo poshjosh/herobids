@@ -38,9 +38,9 @@ function event(overrides: Partial<ProfilesCommittedEvent> = {}): ProfilesCommitt
 }
 
 describe('createAgentActorLifecycleHook', () => {
-  it('stops the actor when the last profile is cleared', async () => {
+  it('stops the actor when the last profile is cleared and no session is live', async () => {
     const { client, invoke } = makeClient();
-    const hook = createAgentActorLifecycleHook({ client, db: makeDb({ id: 's1' }), timeoutMs: 5000, logger: silentLogger() });
+    const hook = createAgentActorLifecycleHook({ client, db: makeDb(null), timeoutMs: 5000, logger: silentLogger() });
 
     await hook.onProfilesCommitted!(event({ upserted: 0, cleared: 2, remainingProfiles: 0, executionVenueAccountId: null }));
 
@@ -49,6 +49,15 @@ describe('createAgentActorLifecycleHook', () => {
     expect(call.toolName).toBe('stop_agent_actor');
     expect(call.payload).toEqual({});
     expect(call.subject).toEqual({ ownerId: 'owner-1', actor: { type: 'agent', id: 'agent-1' } });
+  });
+
+  it('does not stop the actor after a clear when a session is live (D7 guard)', async () => {
+    const { client, invoke } = makeClient();
+    const hook = createAgentActorLifecycleHook({ client, db: makeDb({ id: 's1' }), timeoutMs: 5000, logger: silentLogger() });
+
+    await hook.onProfilesCommitted!(event({ upserted: 0, cleared: 2, remainingProfiles: 0, executionVenueAccountId: null }));
+
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it('starts the actor after an upsert on an agent with a live session', async () => {

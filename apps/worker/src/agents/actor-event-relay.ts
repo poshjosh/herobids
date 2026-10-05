@@ -46,9 +46,10 @@ interface PersistedCursor {
  * are lost if the relay is down longer than that.
  */
 export class ActorEventRelay {
-  private timer: ReturnType<typeof setInterval> | undefined;
+  private timer: ReturnType<typeof setTimeout> | undefined;
   private leaseHeld = false;
   private ticking = false;
+  private stopped = false;
   private tickDrain: Promise<void> = Promise.resolve();
 
   constructor(
@@ -79,15 +80,32 @@ export class ActorEventRelay {
       return;
     }
     this.deps.logger.info({ intervalMs: this.deps.config.pollIntervalMs }, 'Actor-event relay started');
-    this.timer = setInterval(() => {
-      if (!this.ticking) this.tickDrain = this.tick();
-    }, this.deps.config.pollIntervalMs);
-    this.tickDrain = this.tick();
+    this.stopped = false;
+    this.scheduleTick(0);
+  }
+
+  /**
+   * setTimeout-reschedule-in-finally loop (AGENTS.md: every async loop
+   * reschedules itself). Each run records its drain promise so stop() can await
+   * the in-flight tick; the next run is scheduled in finally regardless of
+   * outcome, and never scheduled once stopped.
+   */
+  private scheduleTick(delayMs: number): void {
+    this.timer = setTimeout(() => {
+      this.tickDrain = (async () => {
+        try {
+          await this.tick();
+        } finally {
+          if (!this.stopped) this.scheduleTick(this.deps.config.pollIntervalMs);
+        }
+      })();
+    }, delayMs);
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = undefined;
     }
     await this.tickDrain;

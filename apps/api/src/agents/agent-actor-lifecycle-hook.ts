@@ -64,6 +64,17 @@ export function createAgentActorLifecycleHook(deps: {
     async onProfilesCommitted(event: ProfilesCommittedEvent): Promise<void> {
       try {
         if (event.remainingProfiles === 0 && event.cleared > 0) {
+          // D7 guard: do not stop the actor when a non-terminal session is live
+          // for the agent. A profile-clear racing a fresh session start could
+          // otherwise evict the new session's actor. (The worker's
+          // AgentActorLifecycle applies the same guard keyed on the stopped
+          // sessionId; the API path has no sessionId, so it skips whenever ANY
+          // non-terminal session exists.)
+          const session = await agentRepo.getCurrentSession(event.actorId);
+          if (session) {
+            deps.logger.debug({ actorId: event.actorId }, 'agent-actor lifecycle hook: a session is live, skipping stop after clear');
+            return;
+          }
           await invoke('stop_agent_actor', {}, event);
           return;
         }
