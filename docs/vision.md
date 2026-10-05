@@ -20,6 +20,6 @@ We offer AI agents as a service and believe that AI agents:
 
 2. **should remain in contact.** You remain in contact with any agent working for you. An example is by using messaging apps or email.
 
-3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistantance.
+3. **can be subject matter experts** We use skills to make agents experts. Our agents have access to millions of free-to-use skills.
 
 4. **are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.
