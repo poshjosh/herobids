@@ -163,3 +163,16 @@ UAT rows (when UI changes): AG-C02, AG-C04 updated to ✅.
 Residual risks / blockers: `cursor`/`nextCursor` pagination deferred (limit applies to decisions only); `state:'unavailable'` reserved for future use; orphaned authorization-mode i18n keys pending a later sweep.
 Next allowed item: C4 verification (DB-backed skill-reseed functional suite) and C5 final certification.
 ```
+
+```text
+Date: 2026-10-05
+Item / batch: E1H-E3H — restore agent-actor lifecycle + scanner wake delivery (plans/E1H-E3H-agent-wake-and-lifecycle-restore.md)
+Starting SHAs: herobids=d08ab623, traderton=4a25832
+Scope completed: All seven parts (T→A→L→R→B→C→V) on branch feat/e1h-e3h-agent-wake in both repos (never merged, never pushed). Part T (traderton): absent=unchanged / null=clear for scanMode+creatorStrategy on a profile set; start_agent_actor gains optional venueAccountId; swap-preset regression tests. Part A: herobids derives { scanMode, creatorStrategy } from each agent's post-mutation unified config and sends it on all 10 profile-write sites; scan-config boundary rejections map to 400. Part L: a post-commit saga hook + a worker AgentActorLifecycle start/stop the traderton actor on session transitions so a scanner_gated agent's scan loop runs without submit_decision. Part R: bufferWakeEnvelope reads the wake from envelope.payload (was top-level → source 'unknown' → suppressed). Part B: ActorEventRelay republishes traderton's consumer_notifications outbox (wakes/scans/journal/bot+agent status) onto the agent streams via strict publisher variants. Part C: a REDIS_URL-gated end-to-end relay→Redis→runtime-parsing test. Part V: backfill CLI + extracted createTradingProfileSaga factory.
+Commits: traderton `7392ae7`; herobids `bf06eed7`, `94c49d6a`, `150ec905`, `02def8d9`, `76f06b01`, `f3d1879e`.
+Focused validation: see the plan's Implementation log for per-part gate evidence.
+Broader validation: herobids `pnpm lint`/`pnpm build` clean, `pnpm test` 6834 passed/332 skipped/0 failed, Part C integration 1 passed (throwaway redis:7); traderton `pnpm lint` clean, focused 28 passed, `pnpm test:integration` 58 passed/1 skipped.
+UAT rows (when UI changes): N/A (no UI changes).
+Residual risks / blockers: Live cross-stack verification (V1.4 backfill --apply + V2 live DB/Redis/agent-log checks) and the traderton xstack boundary deploy were DEFERRED — no stack running and bringing one up needs operator credentials; covered by the automated gates per the plan's non-reachable fallback. Open follow-ups: D10 missed-stop reconciliation; traderton consumer-only actor-type fence for scan_consumer_notifications + lifecycle tools; preset identity on swap venues (D3); full cross-stack CI leg for Part C.
+Next allowed item: live verification once a non-destructive cross-stack is available (run the backfill CLI, then the plan's V2 checks).
+```

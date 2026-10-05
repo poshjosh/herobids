@@ -423,3 +423,124 @@ Find ids: `SELECT a.id, a.name, a.status, a.user_id FROM agents a WHERE a.name I
 ## Implementation log
 
 (Implementer: append dated entries — gate evidence, deviations, assumptions, pre-existing failures.)
+
+### 2026-10-05 — PART T (traderton) complete
+
+Branch `feat/e1h-e3h-agent-wake` created in both repos from `main` (herobids d08ab623, traderton 4a25832), both clean.
+
+T1 — `trading-profiles.ts`: `ForwardSetActionSchema.scanMode/creatorStrategy` now `.nullable().optional()` (was `.nullable().default(null)`); `ForwardClearActionSchema` unchanged. `setActions` omits an absent (undefined) scan key from the action object. The `set` tool's validation loop recomputes the EFFECTIVE scanMode/creatorStrategy with the absent=unchanged / null=clear rule (reads the stored profile), skips validation when effective scanMode is null, and passes `existingActive = null` when `creatorStrategy` is explicitly null. `agent-trading-profiles.ts`: forward-action type `scanMode?/creatorStrategy?` optional. Repository `applyAction` + `deriveActiveStrategy`: undefined→keep stored, null→clear. Added `stripUndefined` helper applied before persisting the forward action and inside `sameManifest`, so a replayed manifest (jsonb drops undefined keys) compares equal (no spurious `TradingProfileOperationConflictError`). `applyChange` also preserves the undefined/null distinction.
+
+T2 — `agent-lifecycle.ts`: `StartAgentActorParamsSchema` gains optional `venueAccountId`. Verified (subject-resolver.test.ts "honours a payload-supplied venueAccountId even when the owner has multiple accounts and no default") that the resolver already honours a payload `venueAccountId`; the only gap was the schema stripping it. No boundary test added — that existing resolver test already locks the multi-account resolution; the new `agent-lifecycle.test.ts` "keeps venueAccountId in the parsed payload" locks the schema.
+
+T3 — regression tests in `trading-profiles.test.ts`: preset+scanner_gated on jupiter → `swap.network_unresolved`; customTechnical with `filters.networks:['solana']` + canonical USDC on jupiter → success.
+
+Deviation: the integration test `action()` helper previously hard-coded `scanMode:null/creatorStrategy:null` for set actions (the OLD "unchanged" encoding). Under T1 that now means "clear", so the helper was changed to OMIT scan keys unless explicitly provided in `extra` (explicit null still passes through for the clear-tests).
+
+Gate T evidence:
+- `pnpm lint` → exit 0 (tsc --noEmit).
+- `pnpm exec vitest run packages/worker/src/tools/trading-profiles.test.ts packages/worker/src/tools/agent-lifecycle.test.ts` → 28 passed.
+- `pnpm test:integration` → 58 passed, 1 skipped; `agent-trading-profile-repository.integration.test.ts` → 10 passed (incl. 4 new T1 cases).
+- `pnpm exec vitest run packages/worker/src/tools packages/db/src` → 539 passed, 59 skipped.
+- Commit `7392ae7`.
+- Live xstack deploy of the traderton boundary deferred to Part V (bundled with the herobids live checks) to avoid an extra rebuild cycle.
+
+### 2026-10-05 — PART A (herobids) complete
+
+A1 domain types `ScanModeSchema`/`CreatorStrategySchema` + `ScanMode`/`CreatorStrategy` added next to `HybridModeSchema` in `packages/domain/src/config/schema.ts` and re-exported from `config/index.ts` (schema value block + type block).
+
+A2 `apps/api/src/agents/profile-scan-config.ts`: `deriveProfileScanConfig` + `canonicalJson`. Preset identity only when the schema-parsed agent technical equals the schema-parsed `{...preset.technical, filters: agent.filters}` AND the venue is non-swap; else `customTechnical` (schema-normalised). Reads `metadata.strategyPreset`/`strategyPresetStyle` off the loose unified-config metadata.
+
+A3 reconciliation + saga: scan fields on `TypedTradingProfile`/`TradingProfileConfiguration`, `sameSnapshot` (scanMode `===`, creatorStrategy canonicalJson), `proposeTradingProfiles` gains required `scanConfig` and stamps it onto every proposed profile (overriding template/existing), default base gets null scan fields. Saga `AgentTradingProfileResponseSchema` gains `scanMode`/`creatorStrategy` nullable+optional, `readCurrentProfiles` maps them. Set payload + manifest flow the fields automatically via the snapshot spread; clear branch leaves nulls.
+
+A4 all 10 sites wired. #1 create guards the derive behind "has ≥1 resolvable connection" (an unbound create has no profile and no resolved venue). #2 patch computes the post-mutation unified config (`unifiedConfigPatch` when defined, else stored) and style once. #4 connections DELETE widened the affectedAgents select to carry unifiedConfig/style. #5/#6 extended `prepareConnectionChange`'s agent select + a `scanConfig` field on the `ready` result. #7 go-live reconstructs the live clone's unified config from `livePayload` + source metadata above `executeStaged`. #8 interactivity re-derives from the (unchanged) stored config. #9 chat and #10 blueprint derive from the insert config (blueprint carries no preset metadata → always customTechnical). Functional helper's `FunctionalProfile` + `getProfile` carry null scan fields.
+
+A5 `TradingProfileScanValidationError` (code = failing errorCode) thrown in `applyForward` when `details.errorCode` is `validation.strategy_required|technical_config|unknown_preset` or `swap.*`; mapped to 400 in agents.ts (both ceiling sites), go-live, agent-interactivity. NOT added to chat/blueprints (they don't map the ceiling error either).
+
+A6 tests: new `profile-scan-config.test.ts` (9); reconciliation.test.ts (+3 scan cases, existing exact-snapshot assertions updated with the two null fields); saga.test.ts (+4: readCurrentProfiles preserves scan, payload==manifest scan fields, no activeStrategy at any depth, swap.network_unresolved → scan validation error); agent-config-service.test.ts (+1 grant sends scan config); connections.test.ts (+1 delete re-sends scan config); agents.test.ts (+1 PATCH hybrid→intelligence sends explicit null scanMode).
+
+Deviation (recorded): `deriveProfileScanConfig` fails safe — the final `TechnicalConfigSchema.parse` was changed to `safeParse` returning `creatorStrategy: null` on failure, because the create path can build a hybrid technical config with no resolved venue/venueType (unbound agent). Without this a pre-existing test ("does NOT populate technical.filters when creating agent without connections") turned 201→500. The site-#1 guard also skips the derive entirely when there are no connections.
+
+Gate A evidence:
+- `pnpm exec tsc --build` → 0 errors (root `pnpm lint`/`tsc --noEmit` passes but does not deep-check referenced projects; use `tsc --build` for apps).
+- `pnpm build` → Done (all packages + apps).
+- Focused: profile-scan-config (9), reconciliation (12), saga (38), agent-config-service (5), connections (39), agents (140) — all green.
+- `pnpm test` → 6785 passed, 331 skipped, 0 failed.
+- Commit `bf06eed7`.
+
+### 2026-10-05 — PART L (herobids) complete
+
+L1: `TradingProfileReconciliationSaga` constructor gains optional 3rd param `hooks?: { onProfilesCommitted? }`; `executeStaged` computes the plan once, passes it to `execute`, and (only when `upserts+clears > 0`) emits a `ProfilesCommittedEvent` (ownerId, actorId, upserted, cleared, remainingProfiles via `buildTradingProfileSnapshots(proposed)`, executionVenueAccountId via `plan.selectedBinding.next`). The hook call is wrapped in try/catch and swallowed. `recover()` doesn't touch `executeStaged`, so it never fires the hook. New `apps/api/src/agents/agent-actor-lifecycle-hook.ts` (`createAgentActorLifecycleHook`): stop when `remainingProfiles===0 && cleared>0`; start (with `{venueAccountId}`) when `upserted>0 && executionVenueAccountId` AND `getCurrentSession` is non-null. Fresh idempotency key per call; never throws. Wired in `apps/api/src/index.ts` only when `tradingBackendClient` is defined, with `timeoutMs = tradingBackendTimeoutMs`.
+
+L2: `apps/worker/src/agents/agent-actor-lifecycle.ts` `AgentActorLifecycle` — `start`/`stop` catch everything and never reject; no-op when `boundary` undefined; `ownerId = agent.userId`; `start` resolves venueAccountId (null → debug + return); `stop` skips when a newer session is live (`getCurrentSession().id !== stoppedSessionId`, D7). Invokes `boundary.invokeAndAwait` with an agent subject + fresh idempotency key + `deadlineMs`.
+
+L3: worker wiring in `index.ts`. `approvalVenueAccountResolver` was already a named const — reused directly as `resolveVenueAccountId`. `AgentActorLifecycle` constructed right after it. `onSessionActive` adds `void start('session_active')` (keeps returning true). `onSessionStopped` now uses the real `sessionId` and adds `void stop('session_stopped', sessionId)`. `DockerAgentManager.onAgentCrashed` adds `void stop('agent_crashed', sessionId)` after `handleAgentCrashed`. `AgentHealthMonitor` wired `onTerminalSessionCleanup: (agentId, sessionId) => stop('terminal_cleanup', sessionId)` (replacing the "no terminal-cleanup hook needed" comment) — this is the path that catches API-initiated stops.
+
+L4: `AgentActorLifecycleConfigSchema` (deadlineMs default 5000) added before `AlertsConfigSchema`, registered as `agentActorLifecycle` in `AppConfigSchema`, type exported from schema + config index; `config/default.yaml` block added.
+
+L5: `agent-actor-lifecycle.test.ts` (worker, 8), `agent-actor-lifecycle-hook.test.ts` (api, 6), saga tests (+4: emits event with counts/binding; no event for no-op plan; no event for failed write; a failing hook doesn't fail executeStaged).
+
+Gate L evidence:
+- `pnpm exec tsc --build` → 0 errors; `pnpm build` → Done.
+- Focused: lifecycle (8), hook (6), saga (42) green.
+- `pnpm test` → 6803 passed, 331 skipped, 0 failed.
+- Commit `94c49d6a`.
+
+### 2026-10-05 — PART R (herobids) complete
+
+`bufferWakeEnvelope` now `AgentWakePayloadSchema.safeParse(envelope['payload'])`; on success builds the entry from `parsed.data` (validated `source`, typed `context`), on failure falls back to the previous top-level reads so legacy flat envelopes keep working. Doc comment NOTE updated to explain the nested-payload shape. Only the runtime wake consumer touched; `applyRuntimeMessage` already read `message['payload']` so the two paths now agree.
+
+Confirmed `AgentWakePayloadSchema` (trading-protocol.ts) is a discriminated union on `source` with required `wakeId`/`reason`/`eventIds`/`priority`/`requestedAt`/`context` — so the published fixture must carry `eventIds` + `priority`.
+
+Gate R evidence:
+- `pnpm exec tsc --build` → 0 errors.
+- `pnpm exec vitest run apps/worker/src/runtime-composition.test.ts` → 152 passed (3 new: buffers a published scanner wake with source scanner; drains it into currentMarketWake source scanner; still buffers a legacy flat envelope). Existing tests kept.
+- Commit `150ec905`.
+
+### 2026-10-05 — PART B (herobids) complete
+
+B1: `instance-event-publisher.ts` — `publish` split into `publishStrict` (the XADD core, rethrows) + a lenient wrapper (logs/swallows, behaviour unchanged); added `emitAgentWakeStrict`/`emitTechnicalScanCompletedStrict`/`emitJournalEventStrict`/`emitInstanceStatusStrict`. `user-event-publisher.ts` — same split (`publishStrict`) + `publishBotStatusStrict`.
+
+B2: `boundary-consumer-notification-feed.ts` — `ConsumerNotificationFeed` port + `createBoundaryConsumerNotificationFeed` adapter (calls `scan_consumer_notifications` with cursor/types/limit, Zod-validates the row envelope, rehydrates `createdAt`→Date, throws on non-success). `RELAY_NOTIFICATION_TYPES` exported. `actor-event-relay.ts` — `ActorEventRelay` modelled on `AlertDispatcher` (lease `lease:actor-event-relay` TTL 30s via SET NX EX + Lua renew/delete; `stop()` awaits the in-flight tick). Cursor persisted at `actor-event-relay:cursor`; init = `now - settleLagMs`. `tick()`: hold lease → load cursor → scan → stop at the first row younger than the settle lag → per row: Zod-validate payload (invalid → warn + handled), stale `agent_wake`/`scan_completed` by `maxEventAgeMs` → debug + handled, else republish via strict variants; a republish throw stops the batch and does NOT advance past the row. Cursor advances to the last handled row with the seenIds-merge-on-tie rule. Republish table exactly per plan (agent_wake/scan_completed require agentId; journal_event skips when no agentId; bot_status → instance status when agentId + user bot status when botId; agent_status → `handleRuntimeFailure` only when a live session started at/before the crash). `scan_completed` forwards the stored scan verbatim via a documented trust-boundary cast to `TechnicalScanState`.
+
+B3: `ActorEventRelayConfigSchema` (enabled true / pollIntervalMs 5000 / maxBatchSize 100 max 500 / maxEventAgeMs 600000 / settleLagMs 5000) registered as `actorEventRelay` + type exported + `config/default.yaml` block. Worker wiring: `actorEventRelayFeed` built like `alertDispatcherFeed` with system actor id `actor-event-relay` (undefined when the backend is unresolved); `ActorEventRelay` constructed + `start()`ed next to the alert dispatcher; `actorEventRelay?.stop()` added to both SIGTERM and SIGINT.
+
+B4: `actor-event-relay.test.ts` (14 — fake feed/publishers/Map-backed Redis/injected now), `boundary-consumer-notification-feed.test.ts` (3), strict/lenient publisher tests appended to `instance-event-publisher.test.ts` (+3) and new `user-event-publisher.test.ts` (3).
+
+Deviation: the "does not advance the cursor when a republish fails" test asserts the cursor stays at its init value (`now - settleLag`) and omits the failed id, rather than comparing to a pre-tick undefined (the init write happens inside the tick).
+
+Gate B evidence:
+- `pnpm exec tsc --build` → 0 errors; `pnpm build` → Done.
+- Focused: relay (14), feed (3), instance-event-publisher (17), user-event-publisher (3) green.
+- `pnpm test` → 6829 passed, 331 skipped, 0 failed.
+- Commit `02def8d9`.
+
+### 2026-10-05 — PART C (herobids) complete
+
+New `apps/worker/src/__tests__/integration/actor-event-relay.integration.test.ts` (`describe.skipIf(!REDIS_URL)`). A stubbed `ConsumerNotificationFeed` returns one `agent_wake` row (createdAt older than the settle lag) with a valid scanner `AgentWakePayload`; a real `ActorEventRelay` + real `InstanceEventPublisher` run one `tick()` against real Redis; the test asserts the stream holds an `agent.wake` envelope with the wake nested under `payload`, then feeds that envelope through `bufferWakeEnvelope` → `drainNewestWakeIntoMarketWake` (source scanner), `applyRuntimeMessage` (currentMarketWake.source scanner), and `buildTickGateState` (hasWakeSignal true). A second `tick()` publishes nothing. `afterAll` deletes the test stream + the relay cursor/lease keys. The composition state is built with a minimal `{ agentId }` descriptor cast — `applyRuntimeMessage`'s agent.wake branch only touches `state.metrics`, which the factory fully initialises.
+
+Gate C evidence:
+- Throwaway `redis:7` on :6399 (never the traderton Redis).
+- `REDIS_URL="redis://localhost:6399" pnpm exec vitest run apps/worker/src/__tests__/integration/actor-event-relay.integration.test.ts` → 1 passed.
+- Without `REDIS_URL`: 1 skipped (confirmed the gate).
+- `pnpm exec tsc --build` → 0 errors.
+- Commit `76f06b01`.
+- Follow-up recorded (plan Follow-ups #4): full cross-stack CI leg (real traderton scan → outbox → relay).
+
+### 2026-10-05 — PART V (herobids) + final verification
+
+V1.1: extracted the saga construction (boundary client + L1 hook) from `apps/api/src/index.ts` into `apps/api/src/agents/create-trading-profile-saga.ts` (`createTradingProfileSaga` → `{ client, saga, timeoutMs }`); `index.ts` now calls it and keeps its own `tradingBackendClient`/`tradingBackendTimeoutMs` for the routes (unchanged). Removed the now-unused `TradingProfileReconciliationSaga`/`createAgentActorLifecycleHook`/`TradingProfileReconciliationOutboxRepository` imports from `index.ts`.
+
+V1.2: `apps/api/src/bin/backfill-profile-scan-config.ts` — `backfillProfileScanConfig` core (unit-testable) + a `main()` guarded to run only when executed directly. For each agent with ≥1 active trading connection it reads the current profiles, proposes with the derived scan config, and (with `--apply`) runs `executeStaged` with `localMutationId backfill-scan-config:<agentId>:<uuid>`; dry-run prints the plan. One line per agent (`sent|unchanged|failed <code>`); continues after a failure; exits non-zero if any failed.
+
+V1.3: `backfill-profile-scan-config.test.ts` (5) — dry-run makes no boundary call; apply sends for a profile lacking scan config; an already-matching profile is unchanged (remote scan config computed via `deriveProfileScanConfig` so it compares equal); one failure does not stop the rest; no-connection agents skipped.
+
+V1.4 + V2 (live) — DEFERRED and recorded: no cross-stack is running (`docker ps` empty) and bringing herobids api/worker + the traderton xstack up non-destructively needs `.env.ops.dev` operator credentials + HMAC secrets. Per the plan's "if the live stacks are not running or not reachable … skip the live checks, record it, and rely on the automated gates" fallback, the backfill `--apply` run and the V2 live DB/Redis/agent-log checks were not performed. The traderton xstack boundary deploy (deferred from Gate T) is likewise not performed. All behaviour is covered by the automated gates below.
+
+Final verification:
+- herobids: `pnpm lint` → ok; `pnpm build` → Done; `pnpm test` → 6834 passed, 332 skipped, 0 failed; Part C `REDIS_URL=redis://localhost:6399 pnpm exec vitest run apps/worker/src/__tests__/integration/actor-event-relay.integration.test.ts` → 1 passed (throwaway redis:7).
+- traderton: `pnpm lint` → ok; focused `pnpm exec vitest run packages/worker/src/tools/trading-profiles.test.ts packages/worker/src/tools/agent-lifecycle.test.ts` → 28 passed; `pnpm test:integration` → 58 passed, 1 skipped.
+- Commit `f3d1879e`.
+
+Branches (never merged, never pushed): herobids `feat/e1h-e3h-agent-wake` (T0 d08ab623 → commits bf06eed7, 94c49d6a, 150ec905, 02def8d9, 76f06b01, f3d1879e); traderton `feat/e1h-e3h-agent-wake` (T0 4a25832 → commit 7392ae7).
+
+Open follow-ups (also in the Follow-ups section): D10 missed-stop reconciliation; traderton consumer-only actor-type fence for scan_consumer_notifications + lifecycle tools; preset identity on swap venues (D3); full cross-stack CI leg for Part C; the deferred live verification (V1.4/V2) + traderton xstack boundary deploy.
