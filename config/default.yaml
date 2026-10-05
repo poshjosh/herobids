@@ -815,6 +815,16 @@ marketIntelligence:
 agentActorLifecycle:
   deadlineMs: 5000                  # deadline for a start/stop agent-actor boundary call
 
+# Actor-event relay — polls traderton's consumer_notifications outbox and
+# republishes agent wakes / scans / journal / bot & agent status onto the agent
+# streams, so scanner_gated agents receive their scanner wakes.
+actorEventRelay:
+  enabled: true                     # master switch for the relay loop
+  pollIntervalMs: 5000              # poll interval for the outbox
+  maxBatchSize: 100                 # max rows per scan (capped at 500 by the tool)
+  maxEventAgeMs: 600000             # drop agent_wake/scan_completed older than this (10 min)
+  settleLagMs: 5000                 # only process rows older than this so commits settle first
+
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
   enabled: false                    # controls whether the system dispatches journal events to Telegram channels — it doesn't affect agent-to-user communication via tools like send_message

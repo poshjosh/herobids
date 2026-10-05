@@ -195,11 +195,47 @@ export class InstanceEventPublisher {
     await this.redis.expire(replyKey, 60);
   }
 
+  // ─── Strict publish variants (E3-H) ─────────────────────────────────────
+  //
+  // The actor-event relay republishes outbox rows and must NOT advance its
+  // cursor when an XADD fails (the lenient `publish` swallows XADD errors and
+  // would silently drop the event). These strict twins rethrow so the relay can
+  // hold its cursor and retry on the next tick.
+
+  async emitAgentWakeStrict(agentId: string, payload: AgentWakePayload): Promise<void> {
+    await this.publishStrict(agentId, MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE, payload as unknown as Record<string, unknown>);
+  }
+
+  async emitTechnicalScanCompletedStrict(agentId: string, payload: TechnicalScanState): Promise<void> {
+    await this.publishStrict(agentId, 'agent.technical.scan_completed', payload as unknown as Record<string, unknown>);
+  }
+
+  async emitJournalEventStrict(agentId: string, payload: { journalType: string; timestamp?: string; detail?: string }): Promise<void> {
+    await this.publishStrict(agentId, INSTANCE_MESSAGE_TYPES.JOURNAL_EVENT, payload);
+  }
+
+  async emitInstanceStatusStrict(agentId: string, payload: InstanceStatusPayload): Promise<void> {
+    await this.publishStrict(agentId, INSTANCE_MESSAGE_TYPES.STATUS, payload as unknown as Record<string, unknown>);
+  }
+
   /**
    * Publish a protocol message to the instance's outbound Redis Stream.
    * Stream key: `agent:outbound:{agentId}`
    */
   private async publish(agentId: string, type: string, payload: Record<string, unknown>): Promise<void> {
+    try {
+      await this.publishStrict(agentId, type, payload);
+    } catch (err) {
+      logger.error({ streamKey: `agent:outbound:${agentId}`, type, err }, 'Failed to publish to Redis Stream');
+    }
+  }
+
+  /**
+   * The XADD core. Rethrows on failure (unlike `publish`, which logs and
+   * swallows). The relay's strict emitters use this so a failed republish holds
+   * the cursor instead of dropping the event.
+   */
+  private async publishStrict(agentId: string, type: string, payload: Record<string, unknown>): Promise<void> {
     const streamKey = `agent:outbound:${agentId}`;
     const envelope = {
       schemaVersion: 'v1',
@@ -215,16 +251,12 @@ export class InstanceEventPublisher {
       payload,
     };
 
-    try {
-      await this.redis.xadd(
-        streamKey,
-        'MAXLEN', '~', AGENT_STREAM_MAXLEN,
-        '*',
-        'envelope',
-        JSON.stringify(envelope),
-      );
-    } catch (err) {
-      logger.error({ streamKey, type, err }, 'Failed to publish to Redis Stream');
-    }
+    await this.redis.xadd(
+      streamKey,
+      'MAXLEN', '~', AGENT_STREAM_MAXLEN,
+      '*',
+      'envelope',
+      JSON.stringify(envelope),
+    );
   }
 }

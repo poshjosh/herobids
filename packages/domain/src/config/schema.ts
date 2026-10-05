@@ -522,6 +522,24 @@ export const AgentActorLifecycleConfigSchema = z.object({
   deadlineMs: z.number().int().positive().default(5000),
 });
 
+/**
+ * Actor-event relay (E3-H). Polls traderton's `consumer_notifications` outbox
+ * and republishes agent_wake / scan_completed / journal_event / bot_status /
+ * agent_status onto the herobids agent streams.
+ */
+export const ActorEventRelayConfigSchema = z.object({
+  /** Master switch for the relay loop. */
+  enabled: z.boolean().default(true),
+  /** How often the relay polls the outbox (ms). */
+  pollIntervalMs: z.number().int().positive().default(5000),
+  /** Max rows per scan (capped at the tool's 500). */
+  maxBatchSize: z.number().int().positive().max(500).default(100),
+  /** Drop agent_wake / scan_completed older than this (ms) — a stale wake is noise. */
+  maxEventAgeMs: z.number().int().positive().default(600_000),
+  /** Only process rows older than this (ms) so out-of-order commits settle first. */
+  settleLagMs: z.number().int().positive().default(5000),
+});
+
 export const AlertsConfigSchema = z.object({
   /** Master switch for alert dispatching */
   enabled: z.boolean().default(false),
@@ -1655,6 +1673,7 @@ export const AppConfigSchema = z.object({
   tradingBackendId: z.string().min(1).optional(),
   alerts: AlertsConfigSchema.default({}),
   agentActorLifecycle: AgentActorLifecycleConfigSchema.default({}),
+  actorEventRelay: ActorEventRelayConfigSchema.default({}),
   auth: AuthConfigSchema.default({}),
   plans: PlansConfigSchema.default({}),
   billing: BillingConfigSchema.default({}),
@@ -1857,6 +1876,7 @@ export type PlatformAssessorConfig = z.infer<typeof PlatformAssessorConfigSchema
 export type AgentApprovalsConfig = z.infer<typeof AgentApprovalsConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AgentActorLifecycleConfig = z.infer<typeof AgentActorLifecycleConfigSchema>;
+export type ActorEventRelayConfig = z.infer<typeof ActorEventRelayConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type PlansConfig = z.infer<typeof PlansConfigSchema>;
 export type BillingConfig = z.infer<typeof BillingConfigSchema>;

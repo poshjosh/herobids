@@ -246,3 +246,46 @@ describe('InstanceEventPublisher — publishSkillsReply', () => {
     ).rejects.toThrow('read-only');
   });
 });
+
+
+describe('InstanceEventPublisher — strict vs lenient publish (E3-H)', () => {
+  const wake = {
+    wakeId: 'wake-1',
+    source: 'scanner' as const,
+    reason: 'signals ready',
+    eventIds: ['e1'],
+    priority: 'normal' as const,
+    requestedAt: '2026-06-11T00:00:00.000Z',
+    context: { scannerKind: 'signal_scoring' as const, signalCount: 1, topSymbol: 'BTC', topConfidence: 0.9, regimePass: true },
+  };
+
+  it('strict publish rejects when XADD fails', async () => {
+    const redis = makeRedisMock();
+    redis.xadd.mockRejectedValueOnce(new Error('stream down'));
+    const publisher = new InstanceEventPublisher(redis);
+
+    await expect(publisher.emitAgentWakeStrict('agent-1', wake)).rejects.toThrow('stream down');
+  });
+
+  it('lenient publish still only logs when XADD fails', async () => {
+    const redis = makeRedisMock();
+    redis.xadd.mockRejectedValueOnce(new Error('stream down'));
+    const publisher = new InstanceEventPublisher(redis);
+
+    // emitAgentWake is the lenient twin — it must swallow the error.
+    await expect(publisher.emitAgentWake('agent-1', wake)).resolves.toBeUndefined();
+  });
+
+  it('strict publish writes the wake nested under envelope.payload', async () => {
+    const redis = makeRedisMock();
+    const publisher = new InstanceEventPublisher(redis);
+
+    await publisher.emitAgentWakeStrict('agent-1', wake);
+
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    const args = redis.xadd.mock.calls[0] as unknown[];
+    const envelope = JSON.parse(args[args.length - 1] as string);
+    expect(envelope.type).toBe('agent.wake');
+    expect(envelope.payload).toMatchObject({ wakeId: 'wake-1', source: 'scanner' });
+  });
+});

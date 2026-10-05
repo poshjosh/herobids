@@ -39,6 +39,8 @@ import { buildExternalBackendClientConfig, createExternalBackendClient, createLo
 import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createExternalBackendWriteBoundary } from './external-backend/write-adapter.js';
 import { AgentActorLifecycle } from './agents/agent-actor-lifecycle.js';
+import { ActorEventRelay } from './agents/actor-event-relay.js';
+import { createBoundaryConsumerNotificationFeed } from './agents/boundary-consumer-notification-feed.js';
 import { createExternalBackendReadBoundary } from './external-backend/read-adapter.js';
 import { ApprovalService } from './services/approval-service.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
@@ -518,6 +520,31 @@ const alertDispatcherFeed = (() => {
   return createBoundaryTradeEventFeed(createExternalBackendReadBoundary(client, subject, definition.endpoint.requestTimeoutMs));
 })();
 
+// E3-H: a SYSTEM-subject read boundary for the ActorEventRelay's consumer-
+// notification feed (`scan_consumer_notifications`). Same construction as the
+// alert-dispatcher feed with a DISTINCT system actor id (`actor-event-relay`).
+// Undefined when the trading backend is unresolved — the relay then does not
+// start, mirroring the alert-dispatcher's undefined-when-absent posture.
+const actorEventRelayFeed = (() => {
+  if (!tradingBackend.ok) {
+    logger.info(
+      { backendId: appConfig.tradingBackendId, reason: tradingBackend.error.code },
+      'Traderton actor-event relay read boundary not configured — relay will not start',
+    );
+    return undefined;
+  }
+  const { definition, hmacSecret } = tradingBackend.data;
+  const client = createExternalBackendClient(
+    buildExternalBackendClientConfig(definition, hmacSecret, { metrics: externalBackendMetricsSink }),
+  );
+  const subject: ExternalBackendSubject = {
+    ownerId: definition.caller.consumerId,
+    actor: { type: 'system', id: 'actor-event-relay' },
+  };
+  logger.info({ baseUrl: definition.endpoint.baseUrl }, 'Traderton actor-event relay read boundary enabled — consumer-notification feed routes over REST');
+  return createBoundaryConsumerNotificationFeed(createExternalBackendReadBoundary(client, subject, definition.endpoint.requestTimeoutMs));
+})();
+
 // L3c: resolve the approval-snapshot venue-account id from the connection grant
 // (a KEEP platform value), NOT the engine. Picks the agent's ready trading
 // connection's resolvedVenueAccountId. Returns null when none exists.
@@ -955,6 +982,29 @@ if (alertDispatcher) {
   logger.warn('Alert dispatcher not started — Traderton trade-event feed boundary is unconfigured');
 }
 
+// E3-H: the actor-event relay republishes traderton's consumer_notifications
+// (agent wakes, scans, journal, bot/agent status) onto the agent streams, so a
+// scanner_gated agent receives its scanner wakes. Only constructed when the
+// consumer-notification feed boundary is configured.
+const actorEventRelay = actorEventRelayFeed
+  ? new ActorEventRelay({
+    config: appConfig.actorEventRelay,
+    feed: actorEventRelayFeed,
+    eventPublisher,
+    userEventPublisher,
+    sessionManager,
+    agentRepo,
+    redis: redisClient,
+    workerId,
+    logger,
+  })
+  : undefined;
+if (actorEventRelay) {
+  await actorEventRelay.start();
+} else {
+  logger.warn('Actor-event relay not started — Traderton consumer-notification feed boundary is unconfigured');
+}
+
 // Start always-on market intelligence coordinator and monitor.
 // Uses Redis-based leader election so only one worker instance runs
 // discovery polling and monitor evaluation at a time. The monitor is
@@ -1369,6 +1419,7 @@ process.on('SIGTERM', async () => {
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher?.stop();
+  await actorEventRelay?.stop();
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
@@ -1395,6 +1446,7 @@ process.on('SIGINT', async () => {
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher?.stop();
+  await actorEventRelay?.stop();
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();

@@ -21,6 +21,19 @@ export class UserEventPublisher {
   constructor(private readonly redis: Redis) {}
 
   async publish(userId: string, event: UserEvent): Promise<void> {
+    try {
+      await this.publishStrict(userId, event);
+    } catch (err) {
+      logger.error({ channel: `events:${userId}`, type: event.type, err }, 'Failed to publish user event');
+    }
+  }
+
+  /**
+   * The pub/sub core. Rethrows on failure (unlike `publish`, which logs and
+   * swallows). The actor-event relay uses the strict variant so a failed
+   * republish holds its cursor instead of dropping the event.
+   */
+  private async publishStrict(userId: string, event: UserEvent): Promise<void> {
     const channel = `events:${userId}`;
     const envelope: PlatformEventEnvelope = {
       id: crypto.randomUUID(),
@@ -30,16 +43,16 @@ export class UserEventPublisher {
       eventType: event.type,
       payload: event as unknown as Record<string, unknown>,
     };
-    const message = JSON.stringify(envelope);
-    try {
-      await this.redis.publish(channel, message);
-    } catch (err) {
-      logger.error({ channel, type: event.type, err }, 'Failed to publish user event');
-    }
+    await this.redis.publish(channel, JSON.stringify(envelope));
   }
 
   async publishBotStatus(userId: string, botId: string, status: string): Promise<void> {
     await this.publish(userId, { type: 'bot.status', botId, status, timestamp: new Date().toISOString() });
+  }
+
+  /** Strict twin of publishBotStatus — rethrows on XADD/pub failure (E3-H relay). */
+  async publishBotStatusStrict(userId: string, botId: string, status: string): Promise<void> {
+    await this.publishStrict(userId, { type: 'bot.status', botId, status, timestamp: new Date().toISOString() });
   }
 
   async publishAgentStatus(userId: string, agentId: string, status: string): Promise<void> {
