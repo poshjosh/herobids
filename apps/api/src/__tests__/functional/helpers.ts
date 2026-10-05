@@ -384,6 +384,8 @@ export type FunctionalProfile = {
   capital: string | null;
   riskPosture: Record<string, unknown> | null;
   executionDefaults: { mode: 'paper' | 'shadow' | 'live' } | null;
+  scanMode: 'scanner_gated' | 'mixed' | null;
+  creatorStrategy: Record<string, unknown> | null;
 };
 
 export function makeFunctionalProfileSaga(db: Parameters<typeof agentInteractivityRoutes>[1]) {
@@ -669,6 +671,8 @@ export async function buildApp() {
         capital: capital ?? null,
         riskPosture: null,
         executionDefaults: mode != null ? { mode } : null,
+        scanMode: null,
+        creatorStrategy: null,
       };
     },
     // Test-only: seed the stub boundary's agent-scoped evidence stores.

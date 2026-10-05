@@ -2441,6 +2441,21 @@ export const HybridModeSchema = z.enum(['mixed', 'scanner_gated']);
 export const AuthorizationModeSchema = z.enum(['direct', 'approval_required']);
 export type AuthorizationMode = z.infer<typeof AuthorizationModeSchema>;
 
+/**
+ * 004 ownership rule — creator inputs herobids sends to traderton with every
+ * profile write. `scanMode` is the scan-loop mode; `creatorStrategy` is the
+ * creator-chosen strategy (a preset reference OR a custom technical config).
+ * herobids NEVER sends `activeStrategy` — traderton derives it. Mirrors
+ * traderton `packages/domain/src/config/agent-strategy.ts`.
+ */
+export const ScanModeSchema = z.enum(['scanner_gated', 'mixed']);
+export const CreatorStrategySchema = z.union([
+  z.object({ presetKey: z.string().min(1), styleTier: z.string().min(1) }).strict(),
+  z.object({ customTechnical: TechnicalConfigSchema }).strict(),
+]);
+export type ScanMode = z.infer<typeof ScanModeSchema>;
+export type CreatorStrategy = z.infer<typeof CreatorStrategySchema>;
+
 export const UnifiedAgentConfigSchema = z.object({
   technical: TechnicalConfigSchema.optional(),
   intelligence: IntelligenceConfigSchema.optional(),

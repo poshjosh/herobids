@@ -8,6 +8,7 @@ import {
   TradingProfileReconciliationSaga,
   TradingProfileResponseValidationError,
   TradingProfileCeilingViolationError,
+  TradingProfileScanValidationError,
   type TradingProfileSagaBoundary,
 } from './trading-profile-reconciliation-saga.js';
 import type { TradingProfileReconciliationPlan } from './trading-profile-reconciliation.js';
@@ -19,6 +20,8 @@ const plan: TradingProfileReconciliationPlan = {
     capital: '100',
     riskPosture: null,
     executionDefaults: null,
+    scanMode: null,
+    creatorStrategy: null,
   }],
   clears: ['venue-b'],
   selectedBinding: { previous: null, next: { connectionId: 'connection-a', venueAccountId: 'venue-a' } },
@@ -92,8 +95,8 @@ describe('TradingProfileReconciliationSaga', () => {
     ]);
 
     expect(profiles).toEqual(new Map([
-      ['venue-a', { actorId: 'agent-1', venueAccountId: 'venue-a', capital: '100', riskPosture: null, executionDefaults: { mode: 'paper' } }],
-      ['venue-b', { actorId: 'agent-1', venueAccountId: 'venue-b', capital: '200', riskPosture: null, executionDefaults: { mode: 'paper' } }],
+      ['venue-a', { actorId: 'agent-1', venueAccountId: 'venue-a', capital: '100', riskPosture: null, executionDefaults: { mode: 'paper' }, scanMode: null, creatorStrategy: null }],
+      ['venue-b', { actorId: 'agent-1', venueAccountId: 'venue-b', capital: '200', riskPosture: null, executionDefaults: { mode: 'paper' }, scanMode: null, creatorStrategy: null }],
     ]));
     expect(vi.mocked(boundary.invoke).mock.calls).toHaveLength(2);
     expect(vi.mocked(boundary.invoke).mock.calls.every(([call]) => call.subject.actor.type === 'agent')).toBe(true);
@@ -582,5 +585,134 @@ describe('TradingProfileReconciliationSaga', () => {
       plan: { ...plan, clears: [] },
       commitLocal,
     })).rejects.toBeInstanceOf(TradingProfileCeilingViolationError);
+  });
+
+  it('readCurrentProfiles preserves scanMode and creatorStrategy', async () => {
+    const boundary: TradingProfileSagaBoundary = {
+      invoke: vi.fn(async () => ({
+        kind: 'success',
+        payload: {
+          actorId: 'agent-1',
+          venueAccountId: 'venue-a',
+          capital: '100',
+          riskPosture: null,
+          riskOverrides: {},
+          executionDefaults: { mode: 'paper' },
+          scanMode: 'scanner_gated',
+          creatorStrategy: { presetKey: 'momentum', styleTier: 'standard' },
+        },
+      }) as ExternalBackendClientResult),
+    };
+    const saga = new TradingProfileReconciliationSaga({} as never, boundary);
+
+    const profiles = await saga.readCurrentProfiles('owner-1', 'agent-1', [
+      { connectionId: 'connection-a', venueAccountId: 'venue-a', active: true, ready: true, isDefault: true },
+    ]);
+
+    expect(profiles.get('venue-a')).toMatchObject({
+      scanMode: 'scanner_gated',
+      creatorStrategy: { presetKey: 'momentum', styleTier: 'standard' },
+    });
+  });
+
+  it('the set payload and its manifest entry carry identical explicit scan fields', async () => {
+    const actions = [action('set-a', 'set', 'venue-a')];
+    const outbox = {
+      createOrLoad: vi.fn().mockResolvedValue(row('pending_remote', actions)),
+      update: vi.fn().mockResolvedValue(undefined),
+      markLocalCommitted: vi.fn().mockResolvedValue(undefined),
+      claimLive: vi.fn().mockResolvedValue('live-claim'),
+      releaseClaim: vi.fn().mockResolvedValue(undefined),
+      claimRecoverable: vi.fn(),
+      inTransaction: vi.fn(async (callback) => callback('transaction-handle')),
+    };
+    const boundary: TradingProfileSagaBoundary = { invoke: vi.fn(async ({ toolName }) => successForTool(toolName)) };
+    const saga = new TradingProfileReconciliationSaga(outbox as never, boundary);
+    const scanPlan: TradingProfileReconciliationPlan = {
+      ...plan,
+      clears: [],
+      upserts: [{
+        actorId: 'agent-1', venueAccountId: 'venue-a', capital: '100', riskPosture: null, executionDefaults: null,
+        scanMode: 'scanner_gated', creatorStrategy: { presetKey: 'momentum', styleTier: 'standard' },
+      }],
+    };
+
+    await saga.execute({
+      ownerId: 'owner-1', actorId: 'agent-1', localMutationId: 'mutation-1', plan: scanPlan,
+      commitLocal: async (_tx, markLocalCommitted) => markLocalCommitted(),
+    });
+
+    const payload = vi.mocked(boundary.invoke).mock.calls[0]![0].payload as {
+      scanMode: unknown; creatorStrategy: unknown; actions: Array<{ actionId: string; scanMode: unknown; creatorStrategy: unknown }>;
+    };
+    const manifestSet = payload.actions.find((a) => a.actionId === 'set-a')!;
+    expect(payload.scanMode).toBe('scanner_gated');
+    expect(payload.creatorStrategy).toEqual({ presetKey: 'momentum', styleTier: 'standard' });
+    expect(manifestSet.scanMode).toBe(payload.scanMode);
+    expect(manifestSet.creatorStrategy).toEqual(payload.creatorStrategy);
+  });
+
+  it('the set_agent_trading_profile payload contains no activeStrategy or active_strategy key at any depth', async () => {
+    const actions = [action('set-a', 'set', 'venue-a')];
+    const outbox = {
+      createOrLoad: vi.fn().mockResolvedValue(row('pending_remote', actions)),
+      update: vi.fn().mockResolvedValue(undefined),
+      markLocalCommitted: vi.fn().mockResolvedValue(undefined),
+      claimLive: vi.fn().mockResolvedValue('live-claim'),
+      releaseClaim: vi.fn().mockResolvedValue(undefined),
+      claimRecoverable: vi.fn(),
+      inTransaction: vi.fn(async (callback) => callback('transaction-handle')),
+    };
+    const boundary: TradingProfileSagaBoundary = { invoke: vi.fn(async ({ toolName }) => successForTool(toolName)) };
+    const saga = new TradingProfileReconciliationSaga(outbox as never, boundary);
+    const scanPlan: TradingProfileReconciliationPlan = {
+      ...plan,
+      clears: [],
+      upserts: [{
+        actorId: 'agent-1', venueAccountId: 'venue-a', capital: '100', riskPosture: null, executionDefaults: null,
+        scanMode: 'scanner_gated', creatorStrategy: { presetKey: 'momentum', styleTier: 'standard' },
+      }],
+    };
+
+    await saga.execute({
+      ownerId: 'owner-1', actorId: 'agent-1', localMutationId: 'mutation-1', plan: scanPlan,
+      commitLocal: async (_tx, markLocalCommitted) => markLocalCommitted(),
+    });
+
+    const serialized = JSON.stringify(vi.mocked(boundary.invoke).mock.calls[0]![0].payload);
+    expect(serialized).not.toContain('activeStrategy');
+    expect(serialized).not.toContain('active_strategy');
+  });
+
+  it('a swap.network_unresolved failure surfaces as TradingProfileScanValidationError', async () => {
+    const actions = [action('set-a', 'set', 'venue-a')];
+    const outbox = {
+      createOrLoad: vi.fn().mockResolvedValue(row('pending_remote', actions)),
+      update: vi.fn().mockResolvedValue(undefined),
+      markLocalCommitted: vi.fn(),
+      claimLive: vi.fn().mockResolvedValue('live-claim'),
+      releaseClaim: vi.fn().mockResolvedValue(undefined),
+      claimRecoverable: vi.fn(),
+      inTransaction: vi.fn(async (callback) => callback('transaction-handle')),
+    };
+    const boundary: TradingProfileSagaBoundary = {
+      invoke: vi.fn(async ({ toolName }) => toolName === 'set_agent_trading_profile'
+        ? {
+          kind: 'failure',
+          requestId: 'request-1',
+          correlationId: 'correlation-1',
+          code: 'validation.invalid_payload',
+          message: 'Binding network is unresolved',
+          retryable: false,
+          details: { errorCode: 'swap.network_unresolved' },
+        } as ExternalBackendClientResult
+        : success()),
+    };
+    const saga = new TradingProfileReconciliationSaga(outbox as never, boundary);
+
+    await expect(saga.execute({
+      ownerId: 'owner-1', actorId: 'agent-1', localMutationId: 'mutation-1',
+      plan: { ...plan, clears: [] }, commitLocal: vi.fn(),
+    })).rejects.toBeInstanceOf(TradingProfileScanValidationError);
   });
 });

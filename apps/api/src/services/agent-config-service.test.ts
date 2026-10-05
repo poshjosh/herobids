@@ -40,6 +40,8 @@ function buildStagedSaga(db: Database, onPrepared?: (input: TradingProfilePlanne
         capital: '1000',
         riskPosture: null,
         executionDefaults: { mode: 'paper' },
+        scanMode: null,
+        creatorStrategy: null,
       } satisfies TypedTradingProfile] as const]),
     )),
     executeStaged: vi.fn(async (input: {
@@ -133,6 +135,42 @@ describe('agent connection configuration reconciliation', () => {
     await expect(grantConnection(db, 'agent-1', 'connection-new', 'user-1', saga)).resolves.toMatchObject({ ok: true });
     expect(prepared).toBe(true);
     expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('granting a connection sends the agent\'s scan config', async () => {
+    // A hybrid scanner_gated agent with a custom technical config. The grant
+    // carries no profile change, but every proposed profile must still carry the
+    // agent's scan config (herobids re-asserts it on every write).
+    const hybridAgent = {
+      ...agent,
+      style: 'balanced',
+      unifiedConfig: {
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+        technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+      },
+    };
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'connection-old', venueAccountId: 'venue-old', active: true, ready: true, isDefault: true },
+    ]);
+    const db = buildDb([
+      [hybridAgent],
+      [{ id: 'connection-new', userId: 'user-1', status: 'active', venueAccountId: 'venue-new' }],
+      [],
+      [hybridAgent],
+      [{ userId: 'user-1', status: 'active' }],
+      [],
+    ]);
+    let stagedInput: TradingProfilePlannerInput | undefined;
+    const saga = buildStagedSaga(db, (input) => { stagedInput = input; });
+
+    const result = await grantConnection(db, 'agent-1', 'connection-new', 'user-1', saga);
+
+    expect(result.ok).toBe(true);
+    for (const profile of stagedInput!.proposed.profiles.values()) {
+      expect(profile.scanMode).toBe('scanner_gated');
+      expect(profile.creatorStrategy).toHaveProperty('customTechnical');
+    }
   });
 
   it('returns an internal error without local writes when staged reconciliation compensates a remote failure', async () => {

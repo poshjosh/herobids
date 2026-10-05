@@ -8,8 +8,10 @@ import {
 } from '@herobids/db';
 import {
   AgentRiskOverridesSchema,
+  CreatorStrategySchema,
   ExecutionDefaultsSchema,
   RiskPostureSchema,
+  ScanModeSchema,
 } from '@herobids/domain';
 import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import type {
@@ -55,6 +57,10 @@ const AgentTradingProfileResponseSchema = z.object({
   riskPosture: RiskPostureSchema.strict().nullable(),
   riskOverrides: AgentRiskOverridesSchema.nullable(),
   executionDefaults: ExecutionDefaultsSchema.strict().nullable(),
+  // 004 creator inputs read back from traderton. Optional/nullable: a profile
+  // written before scan config existed carries neither.
+  scanMode: ScanModeSchema.nullable().optional(),
+  creatorStrategy: CreatorStrategySchema.nullable().optional(),
 }).passthrough();
 
 const ForwardSetMutationResponseSchema = z.object({
@@ -93,6 +99,34 @@ export class TradingProfileCeilingViolationError extends Error {
     super(message);
     this.name = 'TradingProfileCeilingViolationError';
   }
+}
+
+/**
+ * The boundary rejected the creator scan config (traderton
+ * `set_agent_trading_profile` → a `validation.strategy_required` /
+ * `validation.technical_config` / `validation.unknown_preset` / `swap.*`
+ * errorCode). Surfaced distinct from the generic forward failure so routes can
+ * map it to a 400 `validation_error` rather than a 500. The failing errorCode
+ * is preserved on `.code`.
+ */
+export class TradingProfileScanValidationError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'TradingProfileScanValidationError';
+    this.code = code;
+  }
+}
+
+/** Scan-config errorCodes the boundary surfaces that map to a client 400. */
+function isScanValidationErrorCode(code: unknown): code is string {
+  return typeof code === 'string' && (
+    code === 'validation.strategy_required'
+    || code === 'validation.technical_config'
+    || code === 'validation.unknown_preset'
+    || code.startsWith('swap.')
+  );
 }
 
 export class TradingProfileReconciliationSaga {
@@ -202,6 +236,8 @@ export class TradingProfileReconciliationSaga {
         capital: profile.capital,
         riskPosture: profile.riskPosture,
         executionDefaults: profile.executionDefaults,
+        scanMode: profile.scanMode ?? null,
+        creatorStrategy: profile.creatorStrategy ?? null,
       } satisfies TypedTradingProfile] as const;
     }));
     return new Map(profiles);
@@ -339,6 +375,11 @@ export class TradingProfileReconciliationSaga {
         // a typed client-facing error before the generic forward failure.
         if (result.kind === 'failure' && result.details?.['errorCode'] === 'validation.risk_ceiling') {
           throw new TradingProfileCeilingViolationError(result.message);
+        }
+        // Scan-config rejections (strategy_required, technical_config,
+        // unknown_preset, swap.*) are creator input errors → client 400.
+        if (result.kind === 'failure' && isScanValidationErrorCode(result.details?.['errorCode'])) {
+          throw new TradingProfileScanValidationError(result.message, result.details['errorCode'] as string);
         }
         throw new Error(action.error);
       }

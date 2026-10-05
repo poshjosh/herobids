@@ -14,6 +14,7 @@ import type {
   PlansConfig,
   AgentRiskDefaultsConfig,
   ModelDefaults,
+  UnifiedAgentConfig,
 } from '@herobids/domain';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import { checkLiveEnabled, checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -27,7 +28,8 @@ import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
 import { selectExecutionBinding, type TradingProfileConnection } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
-import { TradingProfileCeilingViolationError } from '../agents/trading-profile-reconciliation-saga.js';
+import { TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
+import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -306,6 +308,22 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     return result;
   };
 
+  // Reconstruct the unified config the live clone will persist for scan-config
+  // derivation only: createAgentFromPayload builds it from livePayload
+  // (technical, capabilityMode, hybridMode) and commitLocal overlays the
+  // source's preserved `metadata` subtree. We mirror that here without the
+  // transaction so the scan config matches what is stored.
+  const liveUnifiedConfig = {
+    ...(livePayload.technical ? { technical: livePayload.technical } : {}),
+    capabilityMode: livePayload.capabilityMode,
+    ...(livePayload.hybridMode ? { hybridMode: livePayload.hybridMode } : {}),
+    ...(sourceUc['metadata'] !== undefined ? { metadata: sourceUc['metadata'] } : {}),
+  } as UnifiedAgentConfig;
+  const liveScanConfig = deriveProfileScanConfig({
+    unifiedConfig: liveUnifiedConfig,
+    style: sourceAgent.style ?? null,
+  });
+
   try {
     await profileReconciliationSaga.executeStaged({
       ownerId: userId,
@@ -320,6 +338,8 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
             capital: livePayload.capital != null ? String(livePayload.capital) : null,
             riskPosture: livePayload.risk ?? null,
             executionDefaults: livePayload.executionDefaults ?? null,
+            scanMode: liveScanConfig.scanMode,
+            creatorStrategy: liveScanConfig.creatorStrategy,
           }] as const));
         return {
           prior: { profiles: new Map(), connections: [] },
@@ -330,6 +350,9 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     });
   } catch (error) {
     if (error instanceof TradingProfileCeilingViolationError) {
+      return { ok: false, status: 400, error: 'validation_error', message: error.message };
+    }
+    if (error instanceof TradingProfileScanValidationError) {
       return { ok: false, status: 400, error: 'validation_error', message: error.message };
     }
     throw error;

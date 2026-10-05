@@ -43,6 +43,8 @@ function buildStagedSaga(db: unknown, onPrepared?: (input: TradingProfilePlanner
         capital: '1000',
         riskPosture: null,
         executionDefaults: { mode: 'paper' },
+        scanMode: null,
+        creatorStrategy: null,
       } satisfies TypedTradingProfile] as const]),
     )),
     executeStaged: vi.fn(async (input: {
@@ -704,6 +706,51 @@ describe('DELETE /connections/:id', () => {
         kind: 'select_binding',
         binding: expect.objectContaining({ connectionId: 'conn-1' }),
       });
+    }
+  });
+
+  it('deleting a connection re-sends the remaining agents\' scan config', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    let selectCount = 0;
+    // The affectedAgents select now carries unifiedConfig/style so the revoke
+    // fanout can re-derive and re-send each agent's scan config.
+    db.select = vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            {
+              agentId: 'agent-1',
+              unifiedConfig: {
+                capabilityMode: 'hybrid',
+                hybridMode: 'scanner_gated',
+                technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+              },
+              style: 'balanced',
+            },
+          ]),
+        }),
+        where: vi.fn().mockImplementation(() => {
+          selectCount++;
+          return Promise.resolve(selectCount === 1 ? [CONNECTION_ROW] : [{ id: `grant-${selectCount}`, userId: TEST_USER_ID, status: 'active' }]);
+        }),
+      }),
+    }));
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, grantedAt: new Date('2026-01-02'), assignmentId: 'grant-b' },
+      { connectionId: 'conn-fallback', venueAccountId: 'venue-fallback', active: true, ready: true, grantedAt: new Date('2026-01-01'), assignmentId: 'grant-a' },
+    ]);
+    const stagedInputs: TradingProfilePlannerInput[] = [];
+    await connectionRoutes(app, db, undefined, undefined, undefined, buildStagedSaga(db, (input) => stagedInputs.push(input)));
+
+    const response = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
+
+    expect(response.statusCode).toBe(204);
+    expect(stagedInputs).toHaveLength(1);
+    for (const profile of stagedInputs[0]!.proposed.profiles.values()) {
+      expect(profile.scanMode).toBe('scanner_gated');
+      expect(profile.creatorStrategy).toHaveProperty('customTechnical');
     }
   });
 

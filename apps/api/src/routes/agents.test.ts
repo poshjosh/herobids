@@ -299,6 +299,8 @@ function makeStagedProfileSaga(
           capital: '1000',
           riskPosture: null,
           executionDefaults: { mode: 'paper' },
+          scanMode: null,
+          creatorStrategy: null,
         } satisfies TypedTradingProfile] as const]
     )));
   });
@@ -1542,6 +1544,48 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     expect(res.statusCode).toBe(200);
     expect(updateSets.some((update) => 'executionDefaults' in update)).toBe(false);
     expect(stagedSaga.plannerInputs[0]!.proposed.profiles.get('venue-1')?.executionDefaults).toEqual({ mode: 'shadow' });
+  });
+
+  it('PATCH switching hybrid to intelligence sends explicit null scanMode', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'venue-1', active: true, ready: true, isDefault: true },
+    ]);
+    const { agentRoutes } = await import('./agents.js');
+    const hybridUnifiedConfig = {
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+    };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, style: 'balanced', unifiedConfig: hybridUnifiedConfig }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null }],
+      agentSkillRows: [{ skillId: 'traderton/skills/crypto-trading', orderIndex: 0 }],
+      agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
+    });
+    // The stored (prior) profile is scanner_gated; after the switch the proposed
+    // profile must carry an explicit null scanMode so traderton clears the scan.
+    const stagedSaga = makeStagedProfileSaga(db, {
+      remoteProfiles: new Map([['venue-1', {
+        actorId: 'agent-1', venueAccountId: 'venue-1', capital: '1000', riskPosture: null,
+        executionDefaults: { mode: 'paper' }, scanMode: 'scanner_gated',
+        creatorStrategy: { customTechnical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } } } as unknown as TypedTradingProfile['creatorStrategy'],
+      }]]),
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { capabilityMode: 'intelligence' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const proposed = stagedSaga.plannerInputs[0]!.proposed.profiles.get('venue-1')!;
+    expect(proposed.scanMode).toBeNull();
+    expect(proposed.creatorStrategy).toBeNull();
   });
 
   it('resolves test mode to paper on PATCH when the agent has no connections', async () => {

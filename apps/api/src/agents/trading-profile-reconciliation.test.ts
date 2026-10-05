@@ -16,7 +16,11 @@ const profile: TypedTradingProfile = {
   capital: null,
   riskPosture: null,
   executionDefaults: null,
+  scanMode: null,
+  creatorStrategy: null,
 };
+
+const NULL_SCAN = { scanMode: null, creatorStrategy: null } as const;
 
 function profiles(...items: TypedTradingProfile[]): Map<string, TypedTradingProfile> {
   return new Map(items.map((item) => [item.venueAccountId, item]));
@@ -41,6 +45,8 @@ describe('trading profile reconciliation', () => {
       capital: null,
       riskPosture: null,
       executionDefaults: null,
+      scanMode: null,
+      creatorStrategy: null,
     }]);
   });
 
@@ -129,7 +135,7 @@ describe('trading profile reconciliation', () => {
       {
         kind: 'upsert',
         snapshot: {
-          actorId: 'agent-1', venueAccountId: 'venue-account-1', capital: null, riskPosture: null, executionDefaults: null,
+          actorId: 'agent-1', venueAccountId: 'venue-account-1', capital: null, riskPosture: null, executionDefaults: null, ...NULL_SCAN,
         },
       },
     ]);
@@ -171,14 +177,14 @@ describe('trading profile reconciliation', () => {
       {
         kind: 'upsert',
         snapshot: {
-          actorId: 'agent-1', venueAccountId: 'venue-account-c', capital: null, riskPosture: null, executionDefaults: null,
+          actorId: 'agent-1', venueAccountId: 'venue-account-c', capital: null, riskPosture: null, executionDefaults: null, ...NULL_SCAN,
         },
       },
       { kind: 'clear', venueAccountId: 'venue-account-b' },
       {
         kind: 'upsert',
         snapshot: {
-          actorId: 'agent-1', venueAccountId: 'venue-account-a', capital: null, riskPosture: null, executionDefaults: null,
+          actorId: 'agent-1', venueAccountId: 'venue-account-a', capital: null, riskPosture: null, executionDefaults: null, ...NULL_SCAN,
         },
       },
     ]);
@@ -216,17 +222,78 @@ describe('trading profile reconciliation', () => {
       priorConnections,
       proposedConnections,
       changes: {},
+      scanConfig: NULL_SCAN,
     }).get('venue-account-2')).toEqual({ ...profile, venueAccountId: 'venue-account-2', capital: '250', executionDefaults: { mode: 'paper' } });
 
     expect(proposeTradingProfiles({
       actorId: 'agent-1',
-      priorProfiles: new Map(), priorConnections: [], proposedConnections: [connection({})], changes: {},
+      priorProfiles: new Map(), priorConnections: [], proposedConnections: [connection({})], changes: {}, scanConfig: NULL_SCAN,
     }).get('venue-account-1')).toEqual({
       actorId: 'agent-1',
       venueAccountId: 'venue-account-1',
       capital: null,
       riskPosture: null,
       executionDefaults: null,
+      scanMode: null,
+      creatorStrategy: null,
     });
+  });
+
+  it('a scan-only change produces an upsert', () => {
+    const prior = profiles(profile);
+    const connections = [connection({})];
+    const proposed = proposeTradingProfiles({
+      actorId: 'agent-1',
+      priorProfiles: prior,
+      priorConnections: connections,
+      proposedConnections: connections,
+      changes: {},
+      scanConfig: { scanMode: 'scanner_gated', creatorStrategy: { presetKey: 'momentum', styleTier: 'standard' } },
+    });
+    const plan = planTradingProfileReconciliation({
+      prior: { profiles: prior, connections },
+      proposed: { profiles: proposed, connections },
+    });
+    expect(plan.upserts).toHaveLength(1);
+    expect(plan.upserts[0]).toMatchObject({ scanMode: 'scanner_gated', creatorStrategy: { presetKey: 'momentum', styleTier: 'standard' } });
+  });
+
+  it('an unchanged scan config produces no upsert', () => {
+    const stored = { ...profile, scanMode: 'mixed' as const, creatorStrategy: { presetKey: 'momentum', styleTier: 'standard' } };
+    const prior = profiles(stored);
+    const connections = [connection({})];
+    const proposed = proposeTradingProfiles({
+      actorId: 'agent-1',
+      priorProfiles: prior,
+      priorConnections: connections,
+      proposedConnections: connections,
+      changes: {},
+      scanConfig: { scanMode: 'mixed', creatorStrategy: { presetKey: 'momentum', styleTier: 'standard' } },
+    });
+    const plan = planTradingProfileReconciliation({
+      prior: { profiles: prior, connections },
+      proposed: { profiles: proposed, connections },
+    });
+    expect(plan.upserts).toEqual([]);
+  });
+
+  it('proposeTradingProfiles stamps the scan config on every proposed profile', () => {
+    const connections = [
+      connection({ isDefault: true }),
+      connection({ connectionId: 'connection-2', venueAccountId: 'venue-account-2' }),
+    ];
+    const scanConfig = { scanMode: 'scanner_gated' as const, creatorStrategy: { customTechnical: { marker: true } } as unknown as TypedTradingProfile['creatorStrategy'] };
+    const proposed = proposeTradingProfiles({
+      actorId: 'agent-1',
+      priorProfiles: profiles(profile),
+      priorConnections: connections,
+      proposedConnections: connections,
+      changes: {},
+      scanConfig,
+    });
+    for (const value of proposed.values()) {
+      expect(value.scanMode).toBe('scanner_gated');
+      expect(value.creatorStrategy).toEqual(scanConfig.creatorStrategy);
+    }
   });
 });

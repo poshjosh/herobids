@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { eq, and } from 'drizzle-orm';
 import type { Database, DatabaseTransaction } from '@herobids/db';
 import { agentConnections, agentConnectionAudit, connections, agents } from '@herobids/db';
-import { ok, err, type Result } from '@herobids/domain';
+import { ok, err, type Result, type UnifiedAgentConfig } from '@herobids/domain';
 import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
@@ -10,6 +10,7 @@ import type {
   TradingProfileConnection,
 } from '../agents/trading-profile-reconciliation.js';
 import { proposeTradingProfiles } from '../agents/trading-profile-reconciliation.js';
+import { deriveProfileScanConfig, type ProfileScanConfig } from '../agents/profile-scan-config.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 /**
@@ -44,6 +45,10 @@ type PreparedConnectionChange = {
   priorConnections: TradingProfileConnection[];
   existing: boolean;
   activeGrant: { id: string } | undefined;
+  // The agent's post-mutation scan config: unchanged by a grant/revoke (the scan
+  // config is a property of the agent, not of its connection set), so it is
+  // computed once here from the agent's stored config and re-sent with the write.
+  scanConfig: ProfileScanConfig;
 } | {
   kind: 'agent_not_found' | 'agent_not_owned' | 'connection_not_found' | 'connection_not_owned';
 } | {
@@ -65,6 +70,8 @@ async function prepareConnectionChange(
     id: agents.id,
     userId: agents.userId,
     status: agents.status,
+    unifiedConfig: agents.unifiedConfig,
+    style: agents.style,
   }).from(agents).where(eq(agents.id, agentId));
   if (!agent) return { kind: 'agent_not_found' };
   if (agent.userId !== userId) return { kind: 'agent_not_owned' };
@@ -94,6 +101,10 @@ async function prepareConnectionChange(
     priorConnections: await loadActiveTradingProfileConnections(db, agentId),
     existing: activeGrant !== undefined,
     activeGrant,
+    scanConfig: deriveProfileScanConfig({
+      unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
+      style: agent.style ?? null,
+    }),
   };
 }
 
@@ -175,7 +186,7 @@ export async function grantConnection(
         ];
         return {
           prior: { profiles, connections: prepared.priorConnections },
-          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {}, scanConfig: prepared.scanConfig }), connections: proposedConnections },
         };
       },
       commitLocal: async (tx, markLocalCommitted) => {
@@ -232,7 +243,7 @@ export async function revokeConnection(
         const proposedConnections = prepared.priorConnections.filter((connection) => connection.connectionId !== connectionId);
         return {
           prior: { profiles, connections: prepared.priorConnections },
-          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {}, scanConfig: prepared.scanConfig }), connections: proposedConnections },
         };
       },
       commitLocal: async (tx, markLocalCommitted) => {

@@ -4,7 +4,7 @@ import type { Redis } from 'ioredis';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import type { Database, DatabaseTransaction } from '@herobids/db';
 import { agentConnections, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, agents } from '@herobids/db';
-import type { PlansConfig, RuntimeBudgetPolicy, ExternalBackendReadResult } from '@herobids/domain';
+import type { PlansConfig, RuntimeBudgetPolicy, ExternalBackendReadResult, UnifiedAgentConfig } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN, readSkillPresetId } from '@herobids/domain';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { CreateConnectionSchema } from '../schemas.js';
@@ -14,6 +14,7 @@ import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
 import { proposeTradingProfiles } from '../agents/trading-profile-reconciliation.js';
+import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import type { TradingProfileStagedOperation } from '../agents/trading-profile-reconciliation-saga.js';
 import {
@@ -447,6 +448,8 @@ export async function connectionRoutes(
     const affectedAgents = await db
       .select({
         agentId: agentConnections.agentId,
+        unifiedConfig: agents.unifiedConfig,
+        style: agents.style,
       })
       .from(agentConnections)
       .innerJoin(agents, eq(agentConnections.agentId, agents.id))
@@ -473,9 +476,13 @@ export async function connectionRoutes(
           preparedPriorConnections = priorConnections;
           const profiles = await profileReconciliationSaga!.readCurrentProfiles(request.userId, agent.agentId, priorConnections);
           const proposedConnections = priorConnections.filter((connection) => connection.connectionId !== id);
+          const scanConfig = deriveProfileScanConfig({
+            unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
+            style: agent.style ?? null,
+          });
           return {
             prior: { profiles, connections: priorConnections },
-            proposed: { profiles: proposeTradingProfiles({ actorId: agent.agentId, priorProfiles: profiles, priorConnections, proposedConnections, changes: {} }), connections: proposedConnections },
+            proposed: { profiles: proposeTradingProfiles({ actorId: agent.agentId, priorProfiles: profiles, priorConnections, proposedConnections, changes: {}, scanConfig }), connections: proposedConnections },
           };
         },
         commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {

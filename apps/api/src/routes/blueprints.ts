@@ -41,8 +41,10 @@ import type {
   AgentBlueprintRevisionPayload,
   BotBlueprintRevisionPayload,
   PlansConfig,
+  UnifiedAgentConfig,
 } from '@herobids/domain';
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
+import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 import { resolvePlanBlueprintEntitlements } from '../plan-guards.js';
 import { createAgentFromPayload } from '../services/agent-instantiation-service.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
@@ -2292,6 +2294,16 @@ export async function blueprintRoutes(
                     ready: true,
                     isDefault: index === 0,
                   }));
+              // The unified config the agent will be inserted with, for scan-
+              // config derivation. A blueprint payload carries no preset metadata,
+              // so a hybrid agent with a technical config always sends
+              // customTechnical (no preset identity to match).
+              const instantiateUnifiedConfig = {
+                ...(agentPayloadFinal.technical ? { technical: agentPayloadFinal.technical } : {}),
+                capabilityMode: agentPayloadFinal.capabilityMode,
+                ...(agentPayloadFinal.hybridMode ? { hybridMode: agentPayloadFinal.hybridMode } : {}),
+              } as UnifiedAgentConfig;
+              const scanConfig = deriveProfileScanConfig({ unifiedConfig: instantiateUnifiedConfig, style: null });
               const profiles = new Map(proposedConnections
                 .filter((connection): connection is typeof connection & { venueAccountId: string } => connection.venueAccountId !== null)
                 .map((connection) => [connection.venueAccountId, {
@@ -2300,6 +2312,8 @@ export async function blueprintRoutes(
                   capital: agentPayloadFinal.capital != null ? String(agentPayloadFinal.capital) : null,
                   riskPosture: agentPayloadFinal.risk ?? null,
                   executionDefaults: agentPayloadFinal.executionDefaults ?? null,
+                  scanMode: scanConfig.scanMode,
+                  creatorStrategy: scanConfig.creatorStrategy,
                 }] as const));
               return {
                 prior: { profiles: new Map(), connections: [] },

@@ -8,8 +8,9 @@ import { chatThreads, chatMessages, connections, agentConnections, agents, skill
 import { ChatUsageBillingRecorder, type AggregateChatLlmUsage } from '../billing/chat-usage-billing-recorder.js';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
-import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig } from '@herobids/domain';
+import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig, UnifiedAgentConfig } from '@herobids/domain';
 import { normalizePersistedAiModelConfig, SKILL_PRESET_MAP, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
@@ -1425,6 +1426,10 @@ export async function executeChatAction(
                   ready: connection.status === 'active',
                   isDefault: false,
                 }));
+            const scanConfig = deriveProfileScanConfig({
+              unifiedConfig: (createFields.unifiedConfig as UnifiedAgentConfig | null) ?? null,
+              style,
+            });
             const profiles = new Map(proposedConnections
               .filter((connection): connection is typeof connection & { venueAccountId: string } => connection.venueAccountId !== null)
               .map((connection) => [connection.venueAccountId, {
@@ -1433,6 +1438,8 @@ export async function executeChatAction(
                 capital: parsed.data.capital ?? null,
                 riskPosture: createFields.risk,
                 executionDefaults: createFields.executionDefaults,
+                scanMode: scanConfig.scanMode,
+                creatorStrategy: scanConfig.creatorStrategy,
               }] as const));
             return {
               prior: { profiles: new Map(), connections: [] },

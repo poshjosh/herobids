@@ -11,7 +11,7 @@ import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
-import type { AgentRiskDefaultsConfig, AgentApprovalsConfig, AlertsConfig, AuthConfig, ModelDefaults, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AgentApprovalsConfig, AlertsConfig, AuthConfig, ModelDefaults, PlanAgentsEntitlements, PlansConfig, UnifiedAgentConfig } from '@herobids/domain';
 import { AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -20,7 +20,8 @@ import {
 } from '../agents/trading-profile-reconciliation-adapter.js';
 import { selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
-import { TradingProfileCeilingViolationError } from '../agents/trading-profile-reconciliation-saga.js';
+import { TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
+import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
 import {
   parseSlashCommand,
@@ -310,6 +311,14 @@ export async function agentInteractivityRoutes(
         actorId: id,
         localMutationId: crypto.randomUUID(),
         preparePlannerInput: async () => {
+          // This PUT surface does not change capabilityMode/hybridMode/technical/
+          // style, so the scan config is the agent's current one — derive it and
+          // re-assert it (herobids is the source of truth) rather than trusting
+          // whatever traderton returned.
+          const scanConfig = deriveProfileScanConfig({
+            unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
+            style: agent.style ?? null,
+          });
           const proposedProfiles = new Map([...profiles].map(([venueAccountId, profile]) => [venueAccountId, {
             ...profile,
             ...(agentUpdates.capital !== undefined ? { capital: agentUpdates.capital } : {}),
@@ -319,6 +328,8 @@ export async function agentInteractivityRoutes(
             ...(executionMode.value !== null ? {
               executionDefaults: { ...(profile.executionDefaults ?? {}), mode: executionMode.value },
             } : {}),
+            scanMode: scanConfig.scanMode,
+            creatorStrategy: scanConfig.creatorStrategy,
           }]));
           return {
             prior: { profiles, connections: priorProfileConnections },
@@ -332,6 +343,9 @@ export async function agentInteractivityRoutes(
       });
     } catch (error) {
       if (error instanceof TradingProfileCeilingViolationError) {
+        return reply.status(400).send({ error: 'validation_error', message: error.message });
+      }
+      if (error instanceof TradingProfileScanValidationError) {
         return reply.status(400).send({ error: 'validation_error', message: error.message });
       }
       throw error;

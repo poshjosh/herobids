@@ -1,9 +1,12 @@
 import {
   ExecutionDefaultsSchema,
   RiskPostureSchema,
+  type CreatorStrategy,
   type ExecutionDefaults,
   type RiskPosture,
+  type ScanMode,
 } from '@herobids/domain';
+import { canonicalJson, type ProfileScanConfig } from './profile-scan-config.js';
 
 export interface TypedTradingProfile {
   actorId: string;
@@ -11,6 +14,9 @@ export interface TypedTradingProfile {
   capital: string | null;
   riskPosture: RiskPosture | null;
   executionDefaults: ExecutionDefaults | null;
+  // 004 creator inputs sent to traderton; never includes activeStrategy.
+  scanMode: ScanMode | null;
+  creatorStrategy: CreatorStrategy | null;
 }
 
 export type TradingProfileChanges = {
@@ -33,6 +39,9 @@ export interface TradingProfileConfiguration {
   capital: string | null;
   riskPosture: RiskPosture | null;
   executionDefaults: ExecutionDefaults | null;
+  // 004 creator inputs sent to traderton; never includes activeStrategy.
+  scanMode: ScanMode | null;
+  creatorStrategy: CreatorStrategy | null;
 }
 
 export interface ExecutionBinding {
@@ -62,7 +71,9 @@ function sameSnapshot(left: TradingProfileConfiguration, right: TradingProfileCo
     && left.venueAccountId === right.venueAccountId
     && left.capital === right.capital
     && JSON.stringify(left.riskPosture) === JSON.stringify(right.riskPosture)
-    && JSON.stringify(left.executionDefaults) === JSON.stringify(right.executionDefaults);
+    && JSON.stringify(left.executionDefaults) === JSON.stringify(right.executionDefaults)
+    && left.scanMode === right.scanMode
+    && canonicalJson(left.creatorStrategy) === canonicalJson(right.creatorStrategy);
 }
 
 function sameBinding(left: ExecutionBinding | null, right: ExecutionBinding | null): boolean {
@@ -112,6 +123,7 @@ export function proposeTradingProfiles(input: {
   priorConnections: TradingProfileConnection[];
   proposedConnections: TradingProfileConnection[];
   changes: TradingProfileChanges;
+  scanConfig: ProfileScanConfig;
 }): Map<string, TypedTradingProfile> {
   const templateAccountId = selectExecutionBinding(input.priorConnections)?.venueAccountId;
   const template = (templateAccountId ? input.priorProfiles.get(templateAccountId) : undefined)
@@ -129,8 +141,17 @@ export function proposeTradingProfiles(input: {
             capital: null,
             riskPosture: null,
             executionDefaults: null,
+            scanMode: null,
+            creatorStrategy: null,
           });
-    proposed.set(connection.venueAccountId, overlayTradingProfile(base, input.changes));
+    // Stamp the (post-mutation) scan config onto every proposed profile — it is
+    // a property of the agent, not of a per-venue overlay, so it overrides any
+    // value carried in from a template or an existing profile.
+    proposed.set(connection.venueAccountId, {
+      ...overlayTradingProfile(base, input.changes),
+      scanMode: input.scanConfig.scanMode,
+      creatorStrategy: input.scanConfig.creatorStrategy,
+    });
   }
   return proposed;
 }

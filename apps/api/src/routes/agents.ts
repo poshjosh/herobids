@@ -60,8 +60,10 @@ import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
 import { proposeTradingProfiles, selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
-import { TradingProfileReconciliationSaga, TradingProfileCeilingViolationError } from '../agents/trading-profile-reconciliation-saga.js';
+import { TradingProfileReconciliationSaga, TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
 import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.js';
+import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
+import type { UnifiedAgentConfig } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
 import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
@@ -760,14 +762,26 @@ export async function agentRoutes(
             ready: true,
             isDefault: connection.assignmentId === defaultAssignmentId,
           }));
-      const profiles = new Map(proposedConnections
-        .filter((connection): connection is typeof connection & { venueAccountId: string } => connection.venueAccountId !== null)
+      const resolvableConnections = proposedConnections
+        .filter((connection): connection is typeof connection & { venueAccountId: string } => connection.venueAccountId !== null);
+      // Only derive the scan config when at least one venue account exists to
+      // stamp it onto — an unbound create has no profile yet, and its technical
+      // config has no resolved venue/venueType to parse against.
+      const scanConfig = resolvableConnections.length === 0
+        ? { scanMode: null, creatorStrategy: null }
+        : deriveProfileScanConfig({
+          unifiedConfig: (createFields.unifiedConfig as UnifiedAgentConfig | null) ?? null,
+          style: parsed.data.style ?? null,
+        });
+      const profiles = new Map(resolvableConnections
         .map((connection) => [connection.venueAccountId, {
           actorId: agentId,
           venueAccountId: connection.venueAccountId,
           capital: parsed.data.capital ?? null,
           riskPosture: riskJsonb,
           executionDefaults: executionDefaultsJsonb,
+          scanMode: scanConfig.scanMode,
+          creatorStrategy: scanConfig.creatorStrategy,
         }] as const));
       return {
         prior: { profiles: new Map(), connections: [] },
@@ -879,6 +893,7 @@ export async function agentRoutes(
     } catch (error) {
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
       if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
+      if (error instanceof TradingProfileScanValidationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       throw error;
     }
 
@@ -1728,6 +1743,14 @@ export async function agentRoutes(
 
     const preparePatchProfilePlan = async () => {
       const priorProfiles = preparedPatchPriorProfiles;
+      // The post-mutation unified config: the merged patch when the request
+      // touched config (unifiedConfigPatch is an object or an explicit null),
+      // otherwise the stored config unchanged. Style follows the same rule.
+      const patchedUnifiedConfig = (unifiedConfigPatch !== undefined
+        ? (unifiedConfigPatch as UnifiedAgentConfig | null)
+        : (agent.unifiedConfig as UnifiedAgentConfig | null)) ?? null;
+      const patchedStyle = parsed.data.style !== undefined ? (parsed.data.style ?? null) : (agent.style ?? null);
+      const scanConfig = deriveProfileScanConfig({ unifiedConfig: patchedUnifiedConfig, style: patchedStyle });
       // Resolution B: seed a newly-created (first-bind) profile from the unbound
       // unifiedConfig snapshot so mode (paper→shadow via resolveExecutionModeForSkills)
       // and capital survive the create-before-bind window. Explicit request fields
@@ -1748,7 +1771,7 @@ export async function agentRoutes(
       if (parsed.data.connectionIds === undefined) {
         return {
           prior: { profiles: priorProfiles, connections: preparedPatchPriorConnections },
-          proposed: { profiles: proposeTradingProfiles({ actorId: id, priorProfiles, priorConnections: preparedPatchPriorConnections, proposedConnections: preparedPatchPriorConnections, changes }), connections: preparedPatchPriorConnections },
+          proposed: { profiles: proposeTradingProfiles({ actorId: id, priorProfiles, priorConnections: preparedPatchPriorConnections, proposedConnections: preparedPatchPriorConnections, changes, scanConfig }), connections: preparedPatchPriorConnections },
         };
       }
 
@@ -1776,7 +1799,7 @@ export async function agentRoutes(
           ];
       return {
         prior: { profiles: priorProfiles, connections: preparedPatchPriorConnections },
-        proposed: { profiles: proposeTradingProfiles({ actorId: id, priorProfiles, priorConnections: preparedPatchPriorConnections, proposedConnections, changes }), connections: proposedConnections },
+        proposed: { profiles: proposeTradingProfiles({ actorId: id, priorProfiles, priorConnections: preparedPatchPriorConnections, proposedConnections, changes, scanConfig }), connections: proposedConnections },
       };
     };
 
@@ -1921,6 +1944,7 @@ export async function agentRoutes(
     } catch (error) {
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
       if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
+      if (error instanceof TradingProfileScanValidationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       throw error;
     }
 
