@@ -541,6 +541,14 @@ Final verification:
 - traderton: `pnpm lint` → ok; focused `pnpm exec vitest run packages/worker/src/tools/trading-profiles.test.ts packages/worker/src/tools/agent-lifecycle.test.ts` → 28 passed; `pnpm test:integration` → 58 passed, 1 skipped.
 - Commit `f3d1879e`.
 
-Branches (never merged, never pushed): herobids `feat/e1h-e3h-agent-wake` (T0 d08ab623 → commits bf06eed7, 94c49d6a, 150ec905, 02def8d9, 76f06b01, f3d1879e); traderton `feat/e1h-e3h-agent-wake` (T0 4a25832 → commit 7392ae7).
+Branches (never merged, never pushed): herobids `feat/e1h-e3h-agent-wake` (T0 d08ab623 → commits bf06eed7, 94c49d6a, 150ec905, 02def8d9, 76f06b01, f3d1879e, 1b3d1915, cb0e7766); traderton `feat/e1h-e3h-agent-wake` (T0 4a25832 → commit 7392ae7).
+
+### 2026-10-05 — post-implementation review rework
+
+A full-change review (both repos) found no HIGH issues and two MEDIUM, both addressed in `cb0e7766`:
+- The API `agent-actor-lifecycle-hook` stop-after-clear branch lacked a D7-style guard (the worker path has one keyed on stoppedSessionId). Added a `getCurrentSession` check so a profile clear racing a fresh session start cannot evict the new actor; +1 test ("does not stop the actor after a clear when a session is live").
+- `ActorEventRelay` used `setInterval` + a reentrancy guard rather than the plan/AGENTS.md self-rescheduling `setTimeout`-in-`finally` loop. Switched to reschedule-in-finally with a `stopped` flag.
+Plus a LOW doc note: the backfill CLI reuses the full saga (incl. the lifecycle hook) by design.
+Re-verified: `pnpm exec tsc --build` clean, `pnpm test` 6835 passed / 332 skipped / 0 failed, Part C integration 1 passed. Remaining findings are LOW only.
 
 Open follow-ups (also in the Follow-ups section): D10 missed-stop reconciliation; traderton consumer-only actor-type fence for scan_consumer_notifications + lifecycle tools; preset identity on swap venues (D3); full cross-stack CI leg for Part C; the deferred live verification (V1.4/V2) + traderton xstack boundary deploy.
