@@ -810,6 +810,11 @@ marketIntelligence:
       # So we went for a higher cooldown to avoid waking the agent too frequently.
       cooldownMs: 900000           # 15 min between successive regime-change deliveries per agent
 
+# Agent-actor lifecycle — bounds the fire-and-forget start/stop agent-actor calls
+# the worker (and the API profile-saga hook) make to traderton.
+agentActorLifecycle:
+  deadlineMs: 5000                  # deadline for a start/stop agent-actor boundary call
+
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
   enabled: false                    # controls whether the system dispatches journal events to Telegram channels — it doesn't affect agent-to-user communication via tools like send_message

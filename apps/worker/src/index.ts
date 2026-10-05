@@ -38,6 +38,7 @@ import {
 import { buildExternalBackendClientConfig, createExternalBackendClient, createLoggerMetricsSink } from '@herobids/domain/external-backend';
 import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createExternalBackendWriteBoundary } from './external-backend/write-adapter.js';
+import { AgentActorLifecycle } from './agents/agent-actor-lifecycle.js';
 import { createExternalBackendReadBoundary } from './external-backend/read-adapter.js';
 import { ApprovalService } from './services/approval-service.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
@@ -361,6 +362,9 @@ const agentRuntimeLauncher = await (async () => {
           : {}),
         onAgentCrashed: async (agentId, sessionId?) => {
           await sessionManager.handleAgentCrashed(agentId, sessionId);
+          // handleAgentCrashed does not call onSessionStopped, so stop the
+          // traderton actor here too (E1-H / L3). Fire-and-forget.
+          void agentActorLifecycle.stop(agentId, 'agent_crashed', sessionId);
         },
       },
       agentRepo,
@@ -536,6 +540,21 @@ const approvalVenueAccountResolver = async (agentId: string): Promise<string | n
   }
 };
 
+// E1-H / L3: the agent-actor lifecycle driver. Session transitions
+// (active/stopped/crashed/terminal-cleanup) start or stop the agent's traderton
+// actor over the SAME side-effecting boundary the decision handler uses, so a
+// scanner_gated agent's actor exists (and its scan loop runs) without the agent
+// ever calling submit_decision. Fire-and-forget: never blocks or fails a
+// transition. Reuses approvalVenueAccountResolver (ready trading connection →
+// venue account).
+const agentActorLifecycle = new AgentActorLifecycle({
+  boundary: sideEffectBoundary,
+  agentRepo,
+  resolveVenueAccountId: approvalVenueAccountResolver,
+  deadlineMs: appConfig.agentActorLifecycle.deadlineMs,
+  logger,
+});
+
 const agentDecisionHandler = new AgentDecisionHandler(
   agentRepo,
   eventPublisher,
@@ -696,6 +715,11 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     // always had): mark it active + start the platform review scheduler (gated
     // internally on hybrid + platformAssessment.enabled + operator switch). With
     // no async actor start to protect, activation is established synchronously.
+    // E1-H / L3: also (re)start the traderton agent-actor so a scanner_gated
+    // agent's scan loop runs. Fire-and-forget — never gates activation. This
+    // also re-fires after a worker restart (the activatedSessions guard is
+    // empty), a harmless idempotent reconcile.
+    void agentActorLifecycle.start(agentId, 'session_active');
     return (async (): Promise<boolean> => {
       const agent = await agentRepo.getAgent(agentId);
       if (agent) {
@@ -707,8 +731,9 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
       return true;
     })();
   },
-  onSessionStopped: (agentId, _sessionId) => {
+  onSessionStopped: (agentId, sessionId) => {
     stopReviewSchedulerForAgent(agentId);
+    void agentActorLifecycle.stop(agentId, 'session_stopped', sessionId);
   },
   onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
   usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems, providersYaml, appConfig.usageBilling.fallbackCacheReadPct),
@@ -763,9 +788,12 @@ const agentHealthMonitor = new AgentHealthMonitor(
   db,
   sessionManager,
   {
-    // L3d-5: the onTerminalSessionCleanup cascade-stop of an agent's in-process
-    // bots was removed — Traderton owns bot lifecycle. No terminal-cleanup hook
-    // is needed here anymore.
+    // E1-H / L3: terminal-cleanup is the path that catches API-initiated stops —
+    // the API flips the session row directly, so the worker's stopSession
+    // early-returns without onSessionStopped, and the health monitor is the only
+    // place that notices. Stop the traderton actor here too. Fire-and-forget.
+    onTerminalSessionCleanup: (agentId, sessionId) =>
+      agentActorLifecycle.stop(agentId, 'terminal_cleanup', sessionId),
     checkIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
   },
   agentRuntimeLauncher,

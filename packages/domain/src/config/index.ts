@@ -192,6 +192,7 @@ export type {
   AgentStyleValue,
   ResolvedAgentRuntimePolicy,
   AlertsConfig,
+  AgentActorLifecycleConfig,
   AuthConfig,
   PlansConfig,
   PlanEntitlements,

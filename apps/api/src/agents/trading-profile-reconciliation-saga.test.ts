@@ -684,6 +684,132 @@ describe('TradingProfileReconciliationSaga', () => {
     expect(serialized).not.toContain('active_strategy');
   });
 
+  it('calls onProfilesCommitted after a successful staged write with counts and binding', async () => {
+    const actions = [action('set-a', 'set', 'venue-a')];
+    const outbox = {
+      createOrLoad: vi.fn().mockResolvedValue(row('pending_remote', actions)),
+      update: vi.fn().mockResolvedValue(undefined),
+      markLocalCommitted: vi.fn().mockResolvedValue(undefined),
+      claimLive: vi.fn().mockResolvedValue('live-claim'),
+      releaseClaim: vi.fn().mockResolvedValue(undefined),
+      claimRecoverable: vi.fn(),
+      inTransaction: vi.fn(async (callback) => callback('transaction-handle')),
+    };
+    const boundary: TradingProfileSagaBoundary = { invoke: vi.fn(async ({ toolName }) => successForTool(toolName)) };
+    const onProfilesCommitted = vi.fn().mockResolvedValue(undefined);
+    const saga = new TradingProfileReconciliationSaga(outbox as never, boundary, { onProfilesCommitted });
+    const profile = plan.upserts[0]!;
+
+    await saga.executeStaged({
+      ownerId: 'owner-1',
+      actorId: 'agent-1',
+      localMutationId: 'mutation-1',
+      preparePlannerInput: () => ({
+        prior: { profiles: new Map(), connections: [] },
+        proposed: {
+          profiles: new Map([['venue-a', profile]]),
+          connections: [{ connectionId: 'connection-a', venueAccountId: 'venue-a', active: true, ready: true, isDefault: true }],
+        },
+      }),
+      commitLocal: async (_tx, markLocalCommitted) => markLocalCommitted(),
+    });
+
+    expect(onProfilesCommitted).toHaveBeenCalledTimes(1);
+    expect(onProfilesCommitted).toHaveBeenCalledWith({
+      ownerId: 'owner-1',
+      actorId: 'agent-1',
+      upserted: 1,
+      cleared: 0,
+      remainingProfiles: 1,
+      executionVenueAccountId: 'venue-a',
+    });
+  });
+
+  it('does not call onProfilesCommitted for a no-op plan', async () => {
+    const outbox = { inTransaction: vi.fn(async (callback) => callback('transaction-handle')) };
+    const boundary: TradingProfileSagaBoundary = { invoke: vi.fn() };
+    const onProfilesCommitted = vi.fn().mockResolvedValue(undefined);
+    const saga = new TradingProfileReconciliationSaga(outbox as never, boundary, { onProfilesCommitted });
+
+    await saga.executeStaged({
+      ownerId: 'owner-1',
+      actorId: 'agent-1',
+      localMutationId: 'mutation-1',
+      // No connections → no proposed snapshots → empty plan.
+      preparePlannerInput: () => ({
+        prior: { profiles: new Map(), connections: [] },
+        proposed: { profiles: new Map(), connections: [] },
+      }),
+      commitLocal: async (_tx, markLocalCommitted) => markLocalCommitted(),
+    });
+
+    expect(onProfilesCommitted).not.toHaveBeenCalled();
+  });
+
+  it('does not call onProfilesCommitted when the staged write fails', async () => {
+    const actions = [action('set-a', 'set', 'venue-a')];
+    const outbox = {
+      createOrLoad: vi.fn().mockResolvedValue(row('pending_remote', actions)),
+      update: vi.fn().mockResolvedValue(undefined),
+      markLocalCommitted: vi.fn(),
+      claimLive: vi.fn().mockResolvedValue('live-claim'),
+      releaseClaim: vi.fn().mockResolvedValue(undefined),
+      claimRecoverable: vi.fn(),
+      inTransaction: vi.fn(async (callback) => callback('transaction-handle')),
+    };
+    const boundary: TradingProfileSagaBoundary = { invoke: vi.fn().mockResolvedValue(success()) };
+    const onProfilesCommitted = vi.fn().mockResolvedValue(undefined);
+    const saga = new TradingProfileReconciliationSaga(outbox as never, boundary, { onProfilesCommitted });
+
+    await expect(saga.executeStaged({
+      ownerId: 'owner-1',
+      actorId: 'agent-1',
+      localMutationId: 'mutation-1',
+      preparePlannerInput: () => ({
+        prior: { profiles: new Map(), connections: [] },
+        proposed: {
+          profiles: new Map([['venue-a', plan.upserts[0]!]]),
+          connections: [{ connectionId: 'connection-a', venueAccountId: 'venue-a', active: true, ready: true, isDefault: true }],
+        },
+      }),
+      commitLocal: async () => { throw new Error('local write failed'); },
+    })).rejects.toThrow('local write failed');
+
+    expect(onProfilesCommitted).not.toHaveBeenCalled();
+  });
+
+  it('a failing hook does not fail executeStaged', async () => {
+    const actions = [action('set-a', 'set', 'venue-a')];
+    const outbox = {
+      createOrLoad: vi.fn().mockResolvedValue(row('pending_remote', actions)),
+      update: vi.fn().mockResolvedValue(undefined),
+      markLocalCommitted: vi.fn().mockResolvedValue(undefined),
+      claimLive: vi.fn().mockResolvedValue('live-claim'),
+      releaseClaim: vi.fn().mockResolvedValue(undefined),
+      claimRecoverable: vi.fn(),
+      inTransaction: vi.fn(async (callback) => callback('transaction-handle')),
+    };
+    const boundary: TradingProfileSagaBoundary = { invoke: vi.fn(async ({ toolName }) => successForTool(toolName)) };
+    const onProfilesCommitted = vi.fn().mockRejectedValue(new Error('hook exploded'));
+    const saga = new TradingProfileReconciliationSaga(outbox as never, boundary, { onProfilesCommitted });
+
+    await expect(saga.executeStaged({
+      ownerId: 'owner-1',
+      actorId: 'agent-1',
+      localMutationId: 'mutation-1',
+      preparePlannerInput: () => ({
+        prior: { profiles: new Map(), connections: [] },
+        proposed: {
+          profiles: new Map([['venue-a', plan.upserts[0]!]]),
+          connections: [{ connectionId: 'connection-a', venueAccountId: 'venue-a', active: true, ready: true, isDefault: true }],
+        },
+      }),
+      commitLocal: async (_tx, markLocalCommitted) => markLocalCommitted(),
+    })).resolves.toBeUndefined();
+
+    expect(onProfilesCommitted).toHaveBeenCalledTimes(1);
+  });
+
   it('a swap.network_unresolved failure surfaces as TradingProfileScanValidationError', async () => {
     const actions = [action('set-a', 'set', 'venue-a')];
     const outbox = {

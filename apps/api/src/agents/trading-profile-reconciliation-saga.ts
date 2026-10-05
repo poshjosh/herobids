@@ -20,7 +20,26 @@ import type {
   TradingProfileReconciliationPlan,
   TypedTradingProfile,
 } from './trading-profile-reconciliation.js';
-import { planTradingProfileReconciliation } from './trading-profile-reconciliation.js';
+import { buildTradingProfileSnapshots, planTradingProfileReconciliation } from './trading-profile-reconciliation.js';
+
+/**
+ * Emitted after a staged profile write commits successfully (and only when it
+ * changed something). The L1 lifecycle hook turns this into a `start`/`stop`
+ * agent-actor call to traderton. Fire-and-forget: a hook failure never fails
+ * the request (the profile write already committed).
+ */
+export interface ProfilesCommittedEvent {
+  ownerId: string;
+  actorId: string;
+  upserted: number;
+  cleared: number;
+  remainingProfiles: number;
+  executionVenueAccountId: string | null;
+}
+
+export interface TradingProfileReconciliationHooks {
+  onProfilesCommitted?(event: ProfilesCommittedEvent): Promise<void>;
+}
 
 export interface TradingProfilePlannerInput {
   prior: {
@@ -133,6 +152,7 @@ export class TradingProfileReconciliationSaga {
   constructor(
     private readonly outbox: TradingProfileReconciliationOutboxRepository,
     private readonly boundary: TradingProfileSagaBoundary,
+    private readonly hooks?: TradingProfileReconciliationHooks,
   ) {}
 
   async execute<T>(input: {
@@ -298,15 +318,38 @@ export class TradingProfileReconciliationSaga {
     deferFinalization?: boolean;
   }): Promise<T> {
     const plannerInput = await input.preparePlannerInput();
+    const plan = planTradingProfileReconciliation(plannerInput);
     const result = await this.execute({
       ownerId: input.ownerId,
       actorId: input.actorId,
       localMutationId: input.localMutationId,
-      plan: planTradingProfileReconciliation(plannerInput),
+      plan,
       commitLocal: input.commitLocal,
       onOperationStaged: input.onOperationStaged,
       deferFinalization: input.deferFinalization,
     });
+
+    // Post-commit agent-actor lifecycle hook (L1 / D6). Only when the write
+    // actually changed something. Fire-and-forget: a hook failure must never
+    // fail the request — the profile write already committed.
+    if (this.hooks?.onProfilesCommitted && plan.upserts.length + plan.clears.length > 0) {
+      const event: ProfilesCommittedEvent = {
+        ownerId: input.ownerId,
+        actorId: input.actorId,
+        upserted: plan.upserts.length,
+        cleared: plan.clears.length,
+        remainingProfiles: buildTradingProfileSnapshots(
+          plannerInput.proposed.profiles,
+          plannerInput.proposed.connections,
+        ).length,
+        executionVenueAccountId: plan.selectedBinding.next?.venueAccountId ?? null,
+      };
+      try {
+        await this.hooks.onProfilesCommitted(event);
+      } catch {
+        // Swallowed deliberately: logged inside the hook. The write succeeded.
+      }
+    }
     return result;
   }
 

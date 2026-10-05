@@ -48,6 +48,7 @@ import { loadConfig, resolveConfiguredExternalBackend } from './config.js';
 import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, ExternalSkillProviderHttp, findExternalBackend } from '@herobids/domain';
 import { buildExternalBackendClientConfig, createExternalBackendClient, createLoggerMetricsSink } from '@herobids/domain/external-backend';
 import { TradingProfileReconciliationSaga } from './agents/trading-profile-reconciliation-saga.js';
+import { createAgentActorLifecycleHook } from './agents/agent-actor-lifecycle-hook.js';
 import { createFastifyLogger, createLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -225,6 +226,25 @@ const tradingBackendTimeoutMs =
   findExternalBackend(appConfig.externalBackends, appConfig.tradingBackendId)?.endpoint.requestTimeoutMs
   ?? DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS;
 
+const agentActorLifecycleHook = tradingBackendClient
+  ? createAgentActorLifecycleHook({
+    client: {
+      invoke: (input) => tradingBackendClient.invoke({
+        toolName: input.toolName,
+        payload: input.payload,
+        subject: input.subject,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        correlationId: input.correlationId,
+        deadlineMs: input.deadlineMs,
+      }),
+    },
+    db,
+    timeoutMs: tradingBackendTimeoutMs,
+    logger: createLogger('agent-actor-lifecycle'),
+  })
+  : undefined;
+
 const profileReconciliationSaga = new TradingProfileReconciliationSaga(
   new TradingProfileReconciliationOutboxRepository(db),
   {
@@ -245,6 +265,7 @@ const profileReconciliationSaga = new TradingProfileReconciliationSaga(
         retryable: true,
       }),
   },
+  agentActorLifecycleHook,
 );
 const recoverProfileReconciliations = async (): Promise<void> => {
   const result = await profileReconciliationSaga.recover(50);

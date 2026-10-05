@@ -512,6 +512,16 @@ export const TelegramChannelConfigSchema = z.object({
   minSeverity: z.enum(['info', 'warn', 'critical']).default('warn'),
 });
 
+/**
+ * Agent-actor lifecycle (E1-H / L4). Bounds the fire-and-forget start/stop
+ * agent-actor calls the worker and API saga hook make to traderton when an
+ * agent session activates/stops or its profiles change.
+ */
+export const AgentActorLifecycleConfigSchema = z.object({
+  /** Deadline for a start/stop agent-actor boundary call (ms). */
+  deadlineMs: z.number().int().positive().default(5000),
+});
+
 export const AlertsConfigSchema = z.object({
   /** Master switch for alert dispatching */
   enabled: z.boolean().default(false),
@@ -1644,6 +1654,7 @@ export const AppConfigSchema = z.object({
    */
   tradingBackendId: z.string().min(1).optional(),
   alerts: AlertsConfigSchema.default({}),
+  agentActorLifecycle: AgentActorLifecycleConfigSchema.default({}),
   auth: AuthConfigSchema.default({}),
   plans: PlansConfigSchema.default({}),
   billing: BillingConfigSchema.default({}),
@@ -1845,6 +1856,7 @@ export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSc
 export type PlatformAssessorConfig = z.infer<typeof PlatformAssessorConfigSchema>;
 export type AgentApprovalsConfig = z.infer<typeof AgentApprovalsConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
+export type AgentActorLifecycleConfig = z.infer<typeof AgentActorLifecycleConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type PlansConfig = z.infer<typeof PlansConfigSchema>;
 export type BillingConfig = z.infer<typeof BillingConfigSchema>;
