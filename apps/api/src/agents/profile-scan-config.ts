@@ -72,8 +72,19 @@ export function deriveProfileScanConfig(input: {
     return { scanMode, creatorStrategy: null };
   }
 
-  const isSwap = technical.filters.venueType === 'swap'
-    || (SWAP_VENUES as readonly string[]).includes(technical.filters.venue);
+  // Normalise the agent's technical config BEFORE reading any field off it. An
+  // incomplete config (e.g. an unbound agent whose technical has no `filters`
+  // yet — filters are populated from a connection) cannot be parsed: fail safe
+  // with a null creatorStrategy. traderton rejects a scanner-gated profile
+  // without a strategy, which the route surfaces as a 400 — never a 500.
+  const parsedTechnical = TechnicalConfigSchema.safeParse(technical);
+  if (!parsedTechnical.success) {
+    return { scanMode, creatorStrategy: null };
+  }
+  const { filters } = parsedTechnical.data;
+
+  const isSwap = filters.venueType === 'swap'
+    || (SWAP_VENUES as readonly string[]).includes(filters.venue);
 
   const metadata = readMetadata(unifiedConfig);
   const presetKey = typeof metadata?.['strategyPreset'] === 'string' ? (metadata['strategyPreset'] as string) : undefined;
@@ -82,19 +93,10 @@ export function deriveProfileScanConfig(input: {
     ? metaStyle
     : agentStyleToPresetStyle(style ?? 'balanced');
 
-  // Normalise the agent's technical config. An incomplete config (e.g. an
-  // unbound agent whose venue/venueType is not yet resolved) cannot be parsed:
-  // fail safe with a null creatorStrategy. traderton rejects a scanner-gated
-  // profile without a strategy, which the route surfaces as a 400 — never a 500.
-  const parsedTechnical = TechnicalConfigSchema.safeParse(technical);
-  if (!parsedTechnical.success) {
-    return { scanMode, creatorStrategy: null };
-  }
-
   if (presetKey && !isSwap) {
     const presetTechnical = resolvePresetTechnical(presetKey, presetStyle);
     if (presetTechnical) {
-      const fromPreset = TechnicalConfigSchema.safeParse({ ...presetTechnical, filters: technical.filters });
+      const fromPreset = TechnicalConfigSchema.safeParse({ ...presetTechnical, filters });
       if (fromPreset.success && canonicalJson(fromPreset.data) === canonicalJson(parsedTechnical.data)) {
         return { scanMode, creatorStrategy: { presetKey, styleTier: presetStyle } };
       }

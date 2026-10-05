@@ -56,6 +56,19 @@ describe('deriveProfileScanConfig', () => {
       .toEqual({ scanMode: 'scanner_gated', creatorStrategy: null });
   });
 
+  it('returns a null creatorStrategy without throwing when an unbound agent technical has no filters', () => {
+    // An unbound hybrid agent: the preset fills technical, but filters are only
+    // populated from a connection, so there are none yet.
+    const preset = getPreset('momentum', 'standard')!;
+    const unboundTechnical = applyPresetToAgent('momentum', preset, 'standard', 'llm').technical;
+    const config = hybridConfig({
+      hybridMode: 'mixed',
+      technical: unboundTechnical as unknown as UnifiedAgentConfig['technical'],
+    });
+    expect(deriveProfileScanConfig({ unifiedConfig: config, style: 'balanced' }))
+      .toEqual({ scanMode: 'mixed', creatorStrategy: null });
+  });
+
   it('sends presetKey and styleTier when technical equals the preset resolution', () => {
     const config = hybridConfig({
       technical: presetMatchedTechnical('momentum', 'standard'),
