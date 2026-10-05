@@ -30,3 +30,39 @@ export async function discoverExternalBackendTools(
 }
 
 export type { ListToolsOutcome };
+
+/** Options for {@link discoverWithRetry} — operator config, never hardcoded at the call site. */
+export interface DiscoveryRetryOptions {
+  /** Total attempts, including the first. 1 = no retry. */
+  maxAttempts: number;
+  /** Delay before the 2nd attempt; doubles each subsequent attempt. */
+  baseDelayMs: number;
+  /** Upper bound on any single retry delay. */
+  maxDelayMs: number;
+}
+
+/**
+ * Retry a `tools/list` discovery attempt with exponential backoff, closing the
+ * "one transient failure strands the agent without trading tools all session"
+ * gap (docs/features/2026/10/05/001-backend-tool-discovery-retry). Pure over an
+ * injected `sleep` so it stays unit-testable without real timers. Only retries
+ * `unreachable` outcomes — `attempt` itself never throws (same contract as
+ * `discoverExternalBackendTools`), so this never throws either.
+ */
+export async function discoverWithRetry(
+  attempt: () => Promise<ListToolsOutcome>,
+  options: DiscoveryRetryOptions,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<ListToolsOutcome> {
+  let last: ListToolsOutcome = { kind: 'unreachable', message: 'no discovery attempt made' };
+  for (let attemptIndex = 0; attemptIndex < options.maxAttempts; attemptIndex++) {
+    last = await attempt();
+    if (last.kind === 'ok') return last;
+    const isLastAttempt = attemptIndex === options.maxAttempts - 1;
+    if (!isLastAttempt) {
+      const delayMs = Math.min(options.baseDelayMs * 2 ** attemptIndex, options.maxDelayMs);
+      await sleep(delayMs);
+    }
+  }
+  return last;
+}

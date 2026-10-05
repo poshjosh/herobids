@@ -18,7 +18,11 @@ import {
   type ResolvedExternalBackend,
   type SkillDefinition,
 } from '@herobids/domain';
-import { discoverExternalBackendTools, type DiscoveredBackendTool } from '@herobids/domain/external-backend';
+import {
+  discoverExternalBackendTools,
+  discoverWithRetry,
+  type DiscoveredBackendTool,
+} from '@herobids/domain/external-backend';
 
 export interface BackendToolVisibilityLogger {
   info(fields: Record<string, unknown>, message: string): void;
@@ -71,18 +75,39 @@ function parseResolved(
   return parsed.data;
 }
 
-/** Default discovery: the backend's MCP `tools/list` (null = unreachable, reason logged). */
+/**
+ * Default discovery: the backend's MCP `tools/list`, retried with backoff
+ * (docs/features/2026/10/05/001-backend-tool-discovery-retry) for a transient
+ * blip within this single agent-start/refresh call. Null = still unreachable
+ * after exhausting retries, reason logged once per retried attempt plus once
+ * on final failure.
+ */
 async function discoverViaMcp(
   resolved: ResolvedExternalBackend,
   logger: BackendToolVisibilityLogger,
 ): Promise<DiscoveredBackendTool[] | null> {
-  const outcome = await discoverExternalBackendTools(resolved.definition, resolved.hmacSecret);
+  const retryOptions = resolved.definition.endpoint.discoveryRetry;
+  let retryCount = 0;
+  const outcome = await discoverWithRetry(
+    async () => {
+      if (retryCount > 0) {
+        logger.info(
+          { backendId: resolved.definition.backendId, attempt: retryCount + 1, maxAttempts: retryOptions.maxAttempts },
+          'Backend tool visibility: retrying MCP tools/list discovery',
+        );
+      }
+      retryCount += 1;
+      return discoverExternalBackendTools(resolved.definition, resolved.hmacSecret);
+    },
+    retryOptions,
+  );
   if (outcome.kind === 'ok') return outcome.tools;
   logger.warn(
     {
       backendId: resolved.definition.backendId,
       baseUrl: resolved.definition.endpoint.baseUrl,
       mcpPath: resolved.definition.endpoint.mcpPath,
+      attempts: retryCount,
       reason: outcome.message,
     },
     'Backend tool visibility: MCP tools/list discovery failed',

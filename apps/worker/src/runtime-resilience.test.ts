@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyToolExclusions, FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure } from './runtime-resilience.js';
+import { applyToolExclusions, BackendDiscoveryRetryTracker, FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure } from './runtime-resilience.js';
 
 describe('FailureBackoffController', () => {
   it('backs off after repeated failures and stops after the threshold', () => {
@@ -72,6 +72,65 @@ describe('FailureBackoffController', () => {
       expect(controller.recordFailure('redis')).toMatchObject({ shouldShutdown: false });
     }
     expect(controller.recordFailure('redis')).toMatchObject({ shouldShutdown: true });
+  });
+});
+
+describe('BackendDiscoveryRetryTracker', () => {
+  it('is not retry-due before any outcome is recorded', () => {
+    const tracker = new BackendDiscoveryRetryTracker({ baseIntervalMs: 1_000 });
+    expect(tracker.isRetryDue(0)).toBe(false);
+    expect(tracker.isRetryDue(1_000_000)).toBe(false);
+  });
+
+  it('schedules a retry after a backend_unreachable outcome, due once the backoff window elapses', () => {
+    const tracker = new BackendDiscoveryRetryTracker({ baseIntervalMs: 1_000 });
+    tracker.recordOutcome(true, 0);
+    expect(tracker.isRetryDue(500)).toBe(false);
+    expect(tracker.isRetryDue(999)).toBe(false);
+    expect(tracker.isRetryDue(1_000)).toBe(true);
+    expect(tracker.isRetryDue(5_000)).toBe(true);
+  });
+
+  it('clears pending retry state on a reachable outcome', () => {
+    const tracker = new BackendDiscoveryRetryTracker({ baseIntervalMs: 1_000 });
+    tracker.recordOutcome(true, 0);
+    tracker.recordOutcome(false, 500);
+    expect(tracker.isRetryDue(500)).toBe(false);
+    expect(tracker.isRetryDue(1_500)).toBe(false);
+  });
+
+  it('doubles the backoff interval on repeated backend_unreachable outcomes', () => {
+    const tracker = new BackendDiscoveryRetryTracker({ baseIntervalMs: 1_000 });
+    tracker.recordOutcome(true, 0); // 1st failure: next retry at 1_000
+    expect(tracker.isRetryDue(1_000)).toBe(true);
+
+    tracker.recordOutcome(true, 1_000); // 2nd consecutive failure: delay doubles to 2_000
+    expect(tracker.isRetryDue(2_999)).toBe(false);
+    expect(tracker.isRetryDue(3_000)).toBe(true);
+
+    tracker.recordOutcome(true, 3_000); // 3rd consecutive failure: delay doubles to 4_000
+    expect(tracker.isRetryDue(6_999)).toBe(false);
+    expect(tracker.isRetryDue(7_000)).toBe(true);
+  });
+
+  it('caps the backoff interval at maxIntervalMs', () => {
+    const tracker = new BackendDiscoveryRetryTracker({ baseIntervalMs: 1_000, maxIntervalMs: 2_500 });
+    tracker.recordOutcome(true, 0); // delay 1_000
+    tracker.recordOutcome(true, 1_000); // delay 2_000
+    tracker.recordOutcome(true, 3_000); // delay would be 4_000, capped to 2_500
+    expect(tracker.isRetryDue(5_499)).toBe(false);
+    expect(tracker.isRetryDue(5_500)).toBe(true);
+  });
+
+  it('resets the backoff after a recovery, so a later failure starts from baseIntervalMs again', () => {
+    const tracker = new BackendDiscoveryRetryTracker({ baseIntervalMs: 1_000 });
+    tracker.recordOutcome(true, 0);
+    tracker.recordOutcome(true, 1_000); // consecutiveFailures = 2, delay 2_000
+    tracker.recordOutcome(false, 2_000); // recovered — resets
+
+    tracker.recordOutcome(true, 10_000); // first failure again after recovery
+    expect(tracker.isRetryDue(10_999)).toBe(false);
+    expect(tracker.isRetryDue(11_000)).toBe(true);
   });
 });
 

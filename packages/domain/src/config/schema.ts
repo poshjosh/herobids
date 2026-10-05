@@ -1117,6 +1117,18 @@ export const AgentRuntimeConfigSchema = z.object({
     maxFailures: z.number().int().min(1).default(5),
     maxIntervalMs: z.number().int().min(1000).default(1_800_000),
   }).default({}),
+  /**
+   * Tick-start retry for backend-approved tool discovery (docs/features/2026/
+   * 10/05/001-backend-tool-discovery-retry). When the last MCP `tools/list`
+   * discovery left any approved skill `backend_unreachable`, the agent retries
+   * discovery at the start of a later tick instead of staying without trading
+   * tools for the rest of the session. Advisory only — never shuts the agent
+   * down, independent of `failureBackoff`'s shutdown-eligible sources.
+   */
+  backendDiscoveryRetry: z.object({
+    baseIntervalMs: z.number().int().min(1000).default(30_000),
+    maxIntervalMs: z.number().int().min(1000).default(600_000),
+  }).default({}),
   toolCircuitBreaker: z.object({
     failureThreshold: z.number().int().min(1).default(3),
     reopenAfterTicks: z.number().int().min(1).default(1),

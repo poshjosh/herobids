@@ -1,15 +1,24 @@
 // Phase 4 T8 — backend-approved tool visibility over MCP discovery.
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { SkillDefinition } from '@herobids/domain';
 import type { DiscoveredBackendTool } from '@herobids/domain/external-backend';
 import { buildBackendToolVisibility } from './backend-tool-visibility.js';
 
+const DEFAULT_UNREACHABLE = { kind: 'unreachable' as const, message: 'HTTP 404: route not found' };
+
 // Only the default (no `discoverTools` override) path reaches this; every other
-// test injects its own discovery.
+// test injects its own discovery. The retry-focused describe block below
+// overrides this per-test with mockResolvedValueOnce chains; restored after
+// each test so unrelated tests keep seeing the stable default.
 vi.mock('@herobids/domain/external-backend', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@herobids/domain/external-backend')>()),
-  discoverExternalBackendTools: vi.fn(async () => ({ kind: 'unreachable', message: 'HTTP 404: route not found' })),
+  discoverExternalBackendTools: vi.fn(async () => DEFAULT_UNREACHABLE),
 }));
+
+afterEach(async () => {
+  const { discoverExternalBackendTools } = await import('@herobids/domain/external-backend');
+  vi.mocked(discoverExternalBackendTools).mockReset().mockResolvedValue(DEFAULT_UNREACHABLE);
+});
 
 const APPROVED_REF = 'example/skills/echo';
 
@@ -31,11 +40,17 @@ function skill(partial: Partial<SkillDefinition> & { id: string }): SkillDefinit
   };
 }
 
-function resolvedConfigJson(opts: { family?: string } = {}): string {
+function resolvedConfigJson(opts: { family?: string; discoveryRetry?: Record<string, number> } = {}): string {
   return JSON.stringify({
     definition: {
       backendId: 'example-echo',
-      endpoint: { baseUrl: 'http://localhost:8080', mcpPath: '/internal/v1/mcp' },
+      endpoint: {
+        baseUrl: 'http://localhost:8080',
+        mcpPath: '/internal/v1/mcp',
+        // Fast, deterministic retry timing for tests that exercise the real
+        // discoverViaMcp path — avoids real backoff delays slowing the suite.
+        discoveryRetry: opts.discoveryRetry ?? { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 },
+      },
       caller: { consumerId: 'herobids', keyId: 'current', hmacSecretRef: 'EXAMPLE_HMAC_SECRET' },
       approvedSourceSkillRefs: [APPROVED_REF],
       ...(opts.family ? { requiresConnectionFamily: opts.family } : {}),
@@ -136,8 +151,74 @@ describe('buildBackendToolVisibility', () => {
     });
     expect(result.outcomes[0]?.outcome).toBe('backend_unreachable');
     expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ backendId: 'example-echo', mcpPath: '/internal/v1/mcp', reason: 'HTTP 404: route not found' }),
+      expect.objectContaining({ backendId: 'example-echo', mcpPath: '/internal/v1/mcp', attempts: 1, reason: 'HTTP 404: route not found' }),
       'Backend tool visibility: MCP tools/list discovery failed',
     );
+  });
+
+  describe('discovery retry (docs/features/2026/10/05/001-backend-tool-discovery-retry)', () => {
+    it('recovers after a transient discovery failure within the retry budget', async () => {
+      const { discoverExternalBackendTools } = await import('@herobids/domain/external-backend');
+      vi.mocked(discoverExternalBackendTools)
+        .mockResolvedValueOnce({ kind: 'unreachable', message: 'connect timeout' })
+        .mockResolvedValueOnce({ kind: 'ok', tools: [tool('submit_decision', [APPROVED_REF])] });
+
+      const info = vi.fn();
+      const result = await buildBackendToolVisibility({
+        rawConfigJson: resolvedConfigJson({ family: 'trading', discoveryRetry: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 } }),
+        resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
+        registryToolNames: new Set(['submit_decision']),
+        logger: { info, warn: vi.fn() },
+      });
+
+      expect(result.outcomes[0]?.outcome).toBe('tools_exposed');
+      expect(result.resolvedSkills[0]?.requiredTools).toEqual(['submit_decision']);
+      expect(discoverExternalBackendTools).toHaveBeenCalledTimes(2);
+      expect(info).toHaveBeenCalledWith(
+        expect.objectContaining({ backendId: 'example-echo', attempt: 2, maxAttempts: 3 }),
+        'Backend tool visibility: retrying MCP tools/list discovery',
+      );
+    });
+
+    it('reports backend_unreachable only after exhausting the configured retry budget', async () => {
+      const { discoverExternalBackendTools } = await import('@herobids/domain/external-backend');
+      vi.mocked(discoverExternalBackendTools).mockResolvedValue({ kind: 'unreachable', message: 'connect timeout' });
+
+      const warn = vi.fn();
+      const result = await buildBackendToolVisibility({
+        rawConfigJson: resolvedConfigJson({ family: 'trading', discoveryRetry: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 } }),
+        resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
+        registryToolNames: new Set(['submit_decision']),
+        logger: { info: vi.fn(), warn },
+      });
+
+      expect(result.outcomes[0]?.outcome).toBe('backend_unreachable');
+      expect(discoverExternalBackendTools).toHaveBeenCalledTimes(3);
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ backendId: 'example-echo', attempts: 3, reason: 'connect timeout' }),
+        'Backend tool visibility: MCP tools/list discovery failed',
+      );
+    });
+
+    it('does not log a retry attempt when the first attempt succeeds', async () => {
+      const { discoverExternalBackendTools } = await import('@herobids/domain/external-backend');
+      vi.mocked(discoverExternalBackendTools).mockResolvedValue({ kind: 'ok', tools: [tool('submit_decision', [APPROVED_REF])] });
+
+      const info = vi.fn();
+      await buildBackendToolVisibility({
+        rawConfigJson: resolvedConfigJson({ family: 'trading', discoveryRetry: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 } }),
+        resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
+        registryToolNames: new Set(['submit_decision']),
+        logger: { info, warn: vi.fn() },
+      });
+
+      expect(discoverExternalBackendTools).toHaveBeenCalledTimes(1);
+      // The success-path "approved skill tools resolved" info log is expected
+      // (asserted elsewhere); only the retry-attempt log must be absent here.
+      expect(info).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'Backend tool visibility: retrying MCP tools/list discovery',
+      );
+    });
   });
 });

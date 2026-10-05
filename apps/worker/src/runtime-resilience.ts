@@ -53,6 +53,47 @@ export class FailureBackoffController {
   }
 }
 
+export interface BackendDiscoveryRetryTrackerOptions {
+  baseIntervalMs: number;
+  maxIntervalMs?: number;
+}
+
+/**
+ * Advisory-only backoff for retrying backend tool discovery at tick start
+ * (docs/features/2026/10/05/001-backend-tool-discovery-retry). Deliberately
+ * separate from {@link FailureBackoffController}: that controller's failure
+ * counting is wired to shutdown-eligible sources (llm/redis/sandbox/startup),
+ * and backend tool discovery must never shut the agent down — a missing
+ * trading skill tool is a degraded capability, not a reason to crash.
+ */
+export class BackendDiscoveryRetryTracker {
+  private pending = false;
+  private consecutiveFailures = 0;
+  private nextRetryAtMs = 0;
+
+  constructor(private readonly options: BackendDiscoveryRetryTrackerOptions) {}
+
+  /** Record the outcome of a discovery attempt (success = no backend_unreachable skills). */
+  recordOutcome(hadUnreachableBackend: boolean, now: number): void {
+    if (!hadUnreachableBackend) {
+      this.pending = false;
+      this.consecutiveFailures = 0;
+      this.nextRetryAtMs = 0;
+      return;
+    }
+    this.pending = true;
+    this.consecutiveFailures += 1;
+    const maxIntervalMs = this.options.maxIntervalMs ?? 600_000;
+    const delayMs = Math.min(this.options.baseIntervalMs * 2 ** (this.consecutiveFailures - 1), maxIntervalMs);
+    this.nextRetryAtMs = now + delayMs;
+  }
+
+  /** True when a prior discovery left an approved backend unreachable and the backoff window has elapsed. */
+  isRetryDue(now: number): boolean {
+    return this.pending && now >= this.nextRetryAtMs;
+  }
+}
+
 export interface ToolCircuitBreakerOptions {
   failureThreshold?: number;
   reopenAfterTicks?: number;

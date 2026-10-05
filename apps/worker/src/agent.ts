@@ -63,7 +63,7 @@ import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from '
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
 import { classifyRuntimeError } from './runtime-errors.js';
-import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure, SessionCircuitBreaker } from './runtime-resilience.js';
+import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure, SessionCircuitBreaker, BackendDiscoveryRetryTracker } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState, isUserMessageType, extractUserMessageText } from './tick-gate-state.js';
@@ -588,6 +588,13 @@ const failureBackoff = new FailureBackoffController({
   backoffThreshold: agentRuntimePolicy.failureBackoff?.backoffThreshold,
   maxFailures: agentRuntimePolicy.failureBackoff?.maxFailures,
   maxIntervalMs: agentRuntimePolicy.failureBackoff?.maxIntervalMs,
+});
+// Phase 4 T8 follow-up (docs/features/2026/10/05/001-backend-tool-discovery-retry):
+// retries backend-approved tool discovery at tick start when the last attempt
+// left any approved skill backend_unreachable. Advisory only.
+const backendDiscoveryRetry = new BackendDiscoveryRetryTracker({
+  baseIntervalMs: agentRuntimePolicy.backendDiscoveryRetry?.baseIntervalMs ?? 30_000,
+  maxIntervalMs: agentRuntimePolicy.backendDiscoveryRetry?.maxIntervalMs,
 });
 const breakerCfg = agentRuntimePolicy.sessionCircuitBreaker;
 const sessionCircuitBreaker = new SessionCircuitBreaker({
@@ -2495,6 +2502,19 @@ async function runActiveTick(): Promise<void> {
   refreshToolCircuits();
   logger.info({ tickCount }, 'Agent tick starting');
 
+  // docs/features/2026/10/05/001-backend-tool-discovery-retry: a prior
+  // discovery that left an approved skill backend_unreachable retries here,
+  // once the backoff window elapses, instead of staying tool-less all session.
+  // Runs before any skip/pause gating so tools come back regardless of
+  // whether this particular tick dispatches to the LLM.
+  if (backendDiscoveryRetry.isRetryDue(Date.now())) {
+    runtimeState.runtimeDescriptor.resolvedSkills = await resolveBackendApprovedSkills(
+      runtimeState.runtimeDescriptor.resolvedSkills,
+    );
+    toolVisibility.snapshotToolBaselines();
+    applyToolVisibility();
+  }
+
   const tickId = crypto.randomUUID();
   currentTickId = tickId;
 
@@ -4030,8 +4050,12 @@ async function runActiveTick(): Promise<void> {
 /**
  * Resolve backend-approved tool visibility over MCP discovery (Phase 4 T8) and
  * swap the result into the live runtime descriptor. Replaces the removed
- * descriptor-file visibility. Safe to call at start and on hot-reload. Never
+ * descriptor-file visibility. Safe to call at start, on hot-reload, and at tick
+ * start (docs/features/2026/10/05/001-backend-tool-discovery-retry). Never
  * throws — a discovery failure hides the approved tools and logs a warning.
+ * Records the outcome into `backendDiscoveryRetry` so a `backend_unreachable`
+ * result schedules a tick-start retry instead of leaving tools hidden all
+ * session.
  */
 async function resolveBackendApprovedSkills(resolvedSkills: readonly SkillDefinition[]): Promise<SkillDefinition[]> {
   try {
@@ -4041,9 +4065,12 @@ async function resolveBackendApprovedSkills(resolvedSkills: readonly SkillDefini
       registryToolNames,
       logger,
     });
+    const hadUnreachableBackend = result.outcomes.some((outcome) => outcome.outcome === 'backend_unreachable');
+    backendDiscoveryRetry.recordOutcome(hadUnreachableBackend, Date.now());
     return result.resolvedSkills;
   } catch (err) {
     logger.warn({ err }, 'Backend tool visibility resolution failed — leaving skills unchanged');
+    backendDiscoveryRetry.recordOutcome(true, Date.now());
     return [...resolvedSkills];
   }
 }

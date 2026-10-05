@@ -57,6 +57,18 @@ const ExternalBackendEntryObject = z.object({
       .min(1_000)
       .max(MAX_REQUEST_TIMEOUT_MS)
       .default(DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS),
+    /**
+     * Bounded retry for a single `tools/list` discovery call (docs/features/
+     * 2026/10/05/001-backend-tool-discovery-retry). Closes the "one transient
+     * failure strands the agent without trading tools all session" gap without
+     * widening the no-retry transport contract. Tool CALLS are unaffected —
+     * this only covers discovery.
+     */
+    discoveryRetry: z.object({
+      maxAttempts: z.number().int().min(1).default(3),
+      baseDelayMs: z.number().int().min(1).default(250),
+      maxDelayMs: z.number().int().min(1).default(2_000),
+    }).strict().default({}),
   }).strict(),
   caller: z.object({
     consumerId: z.string().min(1),

@@ -390,6 +390,10 @@ externalBackends:
       # toolProtocolOverrides: {}           # optional per-tool protocol; absent = every tool uses `protocol`
       mcpPath: /internal/v1/mcp             # Traderton's MCP route — used for tools/list DISCOVERY (D27); calls stay rest
       requestTimeoutMs: 10000               # per-request timeout (ms); override: TRADERTON_BOUNDARY_TIMEOUT_MS
+      discoveryRetry:                       # bounded retry for a single tools/list discovery call (one transient blip, not a sustained outage)
+        maxAttempts: 3                      # total attempts including the first
+        baseDelayMs: 250                    # delay before the 2nd attempt; doubles each retry
+        maxDelayMs: 2000                    # cap on any single retry delay
     caller:
       consumerId: herobids                  # override: TRADERTON_BOUNDARY_CONSUMER_ID
       keyId: current                        # override: TRADERTON_BOUNDARY_KEY_ID
@@ -458,6 +462,9 @@ agentRuntime:
     backoffThreshold: 3        # consecutive failures before doubling tick interval
     maxFailures: 5             # consecutive failures before agent shutdown
     maxIntervalMs: 1800000     # cap on backed-off tick interval (30 min)
+  backendDiscoveryRetry:
+    baseIntervalMs: 30000      # min delay before retrying backend tool discovery at tick start, once backend_unreachable (30s)
+    maxIntervalMs: 600000      # cap on the doubled retry delay while the backend stays unreachable (10 min)
   toolCircuitBreaker:
     failureThreshold: 3        # consecutive tool failures before circuit opens
     reopenAfterTicks: 5        # 1 means: circuit is locked for the remainder of the current tick, 
