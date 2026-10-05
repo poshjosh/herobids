@@ -592,7 +592,7 @@ export const messages: Record<string, string> = {
   'setup.form.group.other': 'अन्य',
   'setup.form.group.custom': 'कस्टम',
   'setup.form.name': 'नाम',
-  'setup.form.namePlaceholder': 'उदा. मेरा Hyperliquid खाता',
+  'setup.form.namePlaceholder': 'उदा. मेरा Gmail खाता',
   'setup.form.secrets': 'सीक्रेट्स',
   'setup.form.secretNamePlaceholder': 'सीक्रेट नाम',
   'setup.form.secretValuePlaceholder': 'सीक्रेट मान',

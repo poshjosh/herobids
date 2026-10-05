@@ -681,7 +681,7 @@ export const messages: Record<string, string> = {
   'setup.form.group.other': 'Other',
   'setup.form.group.custom': 'Custom',
   'setup.form.name': 'Name',
-  'setup.form.namePlaceholder': 'e.g. My Hyperliquid account',
+  'setup.form.namePlaceholder': 'e.g. My Gmail account',
   'setup.form.secrets': 'Secrets',
   'setup.form.secretNamePlaceholder': 'Secret name',
   'setup.form.secretValuePlaceholder': 'Secret value',

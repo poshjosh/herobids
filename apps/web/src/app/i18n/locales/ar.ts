@@ -592,7 +592,7 @@ export const messages: Record<string, string> = {
   'setup.form.group.other': 'أخرى',
   'setup.form.group.custom': 'مخصص',
   'setup.form.name': 'الاسم',
-  'setup.form.namePlaceholder': 'مثلاً حسابي على Hyperliquid',
+  'setup.form.namePlaceholder': 'مثلاً حساب Gmail الخاص بي',
   'setup.form.secrets': 'الأسرار',
   'setup.form.secretNamePlaceholder': 'اسم السر',
   'setup.form.secretValuePlaceholder': 'قيمة السر',
