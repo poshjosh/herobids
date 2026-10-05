@@ -86,12 +86,15 @@ export interface PendingWakeSignalBufferEntry {
  * the wake context must be buffered here (not re-read) to be visible to the
  * tick. Safe defaults are used for missing fields.
  *
- * NOTE: `source` is not validated against the known union here (unlike the
- * runtime-group path, which validates via AgentWakePayloadSchema). A malformed
- * envelope with an unknown source degrades gracefully — isScannerWake is false
- * and the scanner-gated suppression gate handles non-scanner sources — but
- * validating `source` here would be more robust. See the plan's Outstanding
- * Issues.
+ * NOTE: `InstanceEventPublisher.publish` nests the wake fields (`wakeId`,
+ * `source`, `reason`, `requestedAt`, `context`) under `envelope.payload` — the
+ * same place the runtime-group path reads them. So this parses
+ * `AgentWakePayloadSchema` against `envelope.payload`, giving a validated
+ * `source` and typed `context`. A legacy FLAT envelope (fields at the top
+ * level) falls back to the top-level reads, so both shapes keep working. A
+ * payload that fails validation also falls back, degrading gracefully (an
+ * unknown source makes isScannerWake false and the scanner-gated gate handles
+ * non-scanner sources).
  */
 export function bufferWakeEnvelope(
   envelope: Record<string, unknown>,
@@ -100,6 +103,19 @@ export function bufferWakeEnvelope(
   if (envelope['type'] !== 'agent.wake') {
     return null;
   }
+  const parsed = AgentWakePayloadSchema.safeParse(envelope['payload']);
+  if (parsed.success) {
+    const wake = parsed.data;
+    return {
+      wakeId: wake.wakeId,
+      source: wake.source,
+      reason: wake.reason,
+      requestedAt: wake.requestedAt ?? null,
+      context: wake.context ?? null,
+      receivedAt,
+    };
+  }
+  // Legacy flat envelope (fields at the top level) or an unvalidatable payload.
   return {
     wakeId: String(envelope['wakeId'] ?? ''),
     source: String(envelope['source'] ?? 'unknown'),

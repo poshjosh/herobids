@@ -3448,6 +3448,67 @@ describe('runtime composition helpers', () => {
       // here we assert the flag that drives it is correctly set.)
       expect(hasBufferedWake).toBe(true);
     });
+
+    // An envelope shaped exactly like `InstanceEventPublisher.publish` output:
+    // the wake fields are nested under `payload`, not at the top level. This is
+    // the shape the live scanner path produces (the regression Part R fixes).
+    const publishedScannerEnvelope = {
+      schemaVersion: 1,
+      messageId: 'msg-001',
+      correlationId: 'corr-001',
+      initiatorType: 'system',
+      initiatorId: 'scanner',
+      agentId: 'agent-1',
+      type: 'agent.wake',
+      createdAt: '2026-06-11T00:00:00.000Z',
+      payload: {
+        wakeId: 'wake-p-001',
+        source: 'scanner',
+        reason: '3 ranked scanner signals ready',
+        eventIds: ['evt-1'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+        context: {
+          scannerKind: 'signal_scoring',
+          signalCount: 3,
+          topSymbol: 'ETH',
+          topConfidence: 0.88,
+          regimePass: true,
+        },
+      },
+    };
+
+    it('buffers a published scanner wake with source scanner', () => {
+      const entry = bufferWakeEnvelope(publishedScannerEnvelope, 999);
+
+      expect(entry).not.toBeNull();
+      expect(entry!.wakeId).toBe('wake-p-001');
+      expect(entry!.source).toBe('scanner');
+      expect(entry!.reason).toBe('3 ranked scanner signals ready');
+      expect(entry!.requestedAt).toBe('2026-06-11T00:00:00.000Z');
+      expect(entry!.context).toMatchObject({ scannerKind: 'signal_scoring', signalCount: 3 });
+      expect(entry!.receivedAt).toBe(999);
+    });
+
+    it('drains a published scanner wake into currentMarketWake with source scanner', () => {
+      const buffer = [bufferWakeEnvelope(publishedScannerEnvelope, 200)!];
+      const { wake } = drainNewestWakeIntoMarketWake(buffer, null);
+
+      expect(wake).not.toBeNull();
+      expect(wake!.source).toBe('scanner');
+      // The scanner-gated suppression gate keys off source === 'scanner'; the
+      // old top-level read produced 'unknown' here and suppressed the wake.
+      expect(wake!.source === 'scanner').toBe(true);
+      expect(wake!.context).toMatchObject({ scannerKind: 'signal_scoring' });
+    });
+
+    it('still buffers a legacy flat envelope', () => {
+      // The pre-publish flat shape (fields at the top level) keeps working via
+      // the fallback path.
+      const entry = bufferWakeEnvelope(scannerEnvelope, 1);
+      expect(entry!.source).toBe('scanner');
+      expect(entry!.wakeId).toBe('wake-s-001');
+    });
   });
 
 describe('resolveAgentIdentityLine', () => {
