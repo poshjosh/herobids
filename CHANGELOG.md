@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.5.0 - 2026-10-05
+
 ### Added
 - **External-backend invocation metrics (Phase 1, minimal + evolvable).** Every external-backend boundary call now emits one metrics sample (tool, outcome, failure code/retryable, `durationMs`, request/correlation ids) through a `MetricsSink` port instrumented at the single `ExternalBackendClient.invoke` chokepoint. The domain default is a no-op sink; a logger-backed sink (`createLoggerMetricsSink`, no pino import in domain) writes one `external_backend.invocation` structured line per call, wired at every worker/api/agent composition site. Sink errors are swallowed so metrics can never alter a trading result. Adds operator-configurable budgets `externalBackendObservability.latencyTargets.{p50Ms,p95Ms,p99Ms}` (200/500/2000) consumed only by load/perf harnesses, not the live path. Phase 1 delivers end-to-end latency, throughput, and error-rate-by-code; boundary overhead is a reserved Phase 2 slot (`backendDurationMs`). No new dependency, no boundary-contract change. See `docs/tech/architecture/observability.md` and `docs/features/2026/10/04/001-external-backend-metrics-minimal-start.md`.
 
