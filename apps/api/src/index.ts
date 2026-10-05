@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME, TradingProfileReconciliationOutboxRepository, UsageBillingRepository } from '@herobids/db';
+import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME, UsageBillingRepository } from '@herobids/db';
 import type { EvaluationJobData, ManualReviewJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
@@ -47,8 +47,7 @@ import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig, resolveConfiguredExternalBackend } from './config.js';
 import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, ExternalSkillProviderHttp, findExternalBackend } from '@herobids/domain';
 import { buildExternalBackendClientConfig, createExternalBackendClient, createLoggerMetricsSink } from '@herobids/domain/external-backend';
-import { TradingProfileReconciliationSaga } from './agents/trading-profile-reconciliation-saga.js';
-import { createAgentActorLifecycleHook } from './agents/agent-actor-lifecycle-hook.js';
+import { createTradingProfileSaga } from './agents/create-trading-profile-saga.js';
 import { createFastifyLogger, createLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -226,47 +225,13 @@ const tradingBackendTimeoutMs =
   findExternalBackend(appConfig.externalBackends, appConfig.tradingBackendId)?.endpoint.requestTimeoutMs
   ?? DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS;
 
-const agentActorLifecycleHook = tradingBackendClient
-  ? createAgentActorLifecycleHook({
-    client: {
-      invoke: (input) => tradingBackendClient.invoke({
-        toolName: input.toolName,
-        payload: input.payload,
-        subject: input.subject,
-        requestId: input.requestId,
-        idempotencyKey: input.idempotencyKey,
-        correlationId: input.correlationId,
-        deadlineMs: input.deadlineMs,
-      }),
-    },
-    db,
-    timeoutMs: tradingBackendTimeoutMs,
-    logger: createLogger('agent-actor-lifecycle'),
-  })
-  : undefined;
-
-const profileReconciliationSaga = new TradingProfileReconciliationSaga(
-  new TradingProfileReconciliationOutboxRepository(db),
-  {
-    invoke: (input) => tradingBackendClient
-      ? tradingBackendClient.invoke({
-        toolName: input.toolName,
-        payload: input.payload,
-        subject: input.subject,
-        requestId: input.requestId,
-        idempotencyKey: input.idempotencyKey,
-        correlationId: input.correlationId,
-        deadlineMs: tradingBackendTimeoutMs,
-      })
-      : Promise.resolve({
-        kind: 'transport_error' as const,
-        requestId: input.requestId,
-        message: 'trading boundary not configured',
-        retryable: true,
-      }),
-  },
-  agentActorLifecycleHook,
-);
+// The saga (with its boundary client + the L1 agent-actor lifecycle hook) is
+// built by the shared factory so the backfill CLI constructs it identically.
+const { saga: profileReconciliationSaga } = createTradingProfileSaga({
+  appConfig,
+  db,
+  logger: createLogger('trading-profile-saga'),
+});
 const recoverProfileReconciliations = async (): Promise<void> => {
   const result = await profileReconciliationSaga.recover(50);
   if (result.failed > 0) app.log.warn(result, 'trading profile reconciliation recovery left operations pending');
