@@ -2,26 +2,39 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult, mapWriteResultToToolResult } from './external-backend-result.js';
-import { buildRiskSpecPayloadFields } from '../agents/decision-boundary-mapping.js';
 
 /** Deadline for the adjust_risk_limits boundary write (invoke + poll), in ms. */
 const ADJUST_RISK_LIMITS_DEADLINE_MS = 30_000;
 
 /**
- * Attach the platform-resolved selected account to a boundary read payload.
- * Profile enforcement data remains Traderton-owned and never enters an LLM tool
- * schema or Herobids payload echo.
+ * Resolve the platform-selected venue account for an account-scoped boundary
+ * call. Null when there is no resolver, it finds no ready account, or it fails.
+ * Profile enforcement data stays Traderton-owned and never enters an LLM tool
+ * schema.
  */
-export async function riskSpecReadPayload(ctx: TradingToolContext): Promise<Record<string, unknown>> {
-  if (!ctx.selectedVenueAccountResolver) return {};
+export async function resolveSelectedVenueAccountId(ctx: TradingToolContext): Promise<string | null> {
+  if (!ctx.selectedVenueAccountResolver) return null;
   try {
-    return buildRiskSpecPayloadFields((await ctx.selectedVenueAccountResolver()) ?? undefined);
+    return await ctx.selectedVenueAccountResolver();
   } catch {
-    // Platform-side spec resolution failed — degrade to an un-annotated read
-    // (traderton returns its typed precondition) rather than throwing past the
-    // tool boundary.
-    return {};
+    // Treated as "no ready account": callers return a typed precondition
+    // instead of throwing past the tool boundary.
+    return null;
   }
+}
+
+/**
+ * Typed result for an account-scoped tool when no venue account is ready.
+ * Traderton requires `venueAccountId` on these calls, so sending an empty
+ * payload would only produce a `validation.invalid_payload` rejection.
+ */
+export function selectedAccountUnavailable(): ToolResult {
+  return {
+    success: false,
+    error: 'selected trading account is unavailable',
+    errorCode: 'precondition.not_ready',
+    fault: false,
+  };
 }
 
 // --- get_risk_limits ---
@@ -51,8 +64,9 @@ const getRiskLimitsTool: AgentTool<TradingToolContext> = {
 
     // The platform resolves the selected account. Traderton loads profile-owned
     // enforcement data from its durable profile store.
-    const payload = await riskSpecReadPayload(ctx);
-    const result = await ctx.externalBackend.invoke({ toolName: 'get_risk_limits', payload });
+    const venueAccountId = await resolveSelectedVenueAccountId(ctx);
+    if (!venueAccountId) return selectedAccountUnavailable();
+    const result = await ctx.externalBackend.invoke({ toolName: 'get_risk_limits', payload: { venueAccountId } });
     return mapReadResultToToolResult(result);
   },
 };
@@ -104,29 +118,8 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    if (!ctx.selectedVenueAccountResolver) {
-      return {
-        success: false,
-        error: 'selected trading account is unavailable',
-        errorCode: 'precondition.not_ready',
-        fault: false,
-      };
-    }
-
-    let venueAccountId: string | null;
-    try {
-      venueAccountId = await ctx.selectedVenueAccountResolver();
-    } catch {
-      venueAccountId = null;
-    }
-    if (!venueAccountId) {
-      return {
-        success: false,
-        error: 'selected trading account is unavailable',
-        errorCode: 'precondition.not_ready',
-        fault: false,
-      };
-    }
+    const venueAccountId = await resolveSelectedVenueAccountId(ctx);
+    if (!venueAccountId) return selectedAccountUnavailable();
 
     const result = await ctx.externalBackendWrite.invokeAndAwait({
       toolName: 'adjust_risk_limits',

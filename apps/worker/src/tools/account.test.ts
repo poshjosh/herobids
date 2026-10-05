@@ -34,17 +34,6 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 // tests (capital/positions/warnings assembly) were removed with that dead path.
 
 describe('get_account_summary — Traderton boundary', () => {
-  it('routes over the boundary, forwarding an empty payload (no spec resolver)', async () => {
-    const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: '10000' } });
-    const ctx = makeCtx({ externalBackend: boundary });
-
-    const result = await getAccountSummary.execute({}, ctx);
-
-    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
-    expect(result.success).toBe(true);
-    expect(result.data).toEqual({ ok: true, capital: '10000' });
-  });
-
   it('attaches only the platform-selected venue account to the read payload', async () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: '1000' } });
     const ctx = makeCtx({
@@ -61,27 +50,20 @@ describe('get_account_summary — Traderton boundary', () => {
     });
   });
 
-  it('attaches nothing when no venue account is selected', async () => {
-    const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: null } });
-    const ctx = makeCtx({
-      externalBackend: boundary,
-      selectedVenueAccountResolver: vi.fn(async () => null),
-    });
-
-    await getAccountSummary.execute({}, ctx);
-    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
-  });
-
-  it('degrades to an empty payload when the spec resolver throws', async () => {
+  it.each([
+    ['no resolver is configured', undefined],
+    ['no venue account is selected', vi.fn(async () => null)],
+    ['the resolver throws', vi.fn(async () => { throw new Error('db down'); })],
+  ])('returns precondition.not_ready without calling the boundary when %s', async (_label, resolver) => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true } });
-    const ctx = makeCtx({
-      externalBackend: boundary,
-      agentRiskSpecResolver: vi.fn(async () => { throw new Error('db down'); }),
-    });
+    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: resolver });
 
     const result = await getAccountSummary.execute({}, ctx);
-    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
-    expect(result.success).toBe(true);
+
+    expect(invoke).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.fault).toBe(false);
   });
 
   it('maps a content-level failure (not_found) to a non-fault failure preserving code/retryable', async () => {
@@ -91,7 +73,7 @@ describe('get_account_summary — Traderton boundary', () => {
       message: 'no account',
       retryable: false,
     });
-    const ctx = makeCtx({ externalBackend: boundary });
+    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => 'venue-account-1' });
 
     const result = await getAccountSummary.execute({}, ctx);
 
@@ -109,7 +91,7 @@ describe('get_account_summary — Traderton boundary', () => {
       message: 'boom',
       retryable: false,
     });
-    const ctx = makeCtx({ externalBackend: boundary });
+    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => 'venue-account-1' });
 
     const result = await getAccountSummary.execute({}, ctx);
 
@@ -120,7 +102,7 @@ describe('get_account_summary — Traderton boundary', () => {
 
   it('maps transport_error to a retryable fault', async () => {
     const { boundary } = stubBoundary({ kind: 'transport_error', message: 'down', retryable: true });
-    const ctx = makeCtx({ externalBackend: boundary });
+    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => 'venue-account-1' });
 
     const result = await getAccountSummary.execute({}, ctx);
 

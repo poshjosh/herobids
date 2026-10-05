@@ -27,6 +27,7 @@ import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
 import { buildToolResultMetadata } from './tool-result-metadata.js';
 import {
+  applyOwnToolResult,
   applyRuntimeMessage,
   buildSystemPrompt as composeSystemPrompt,
   buildTickUserContext,
@@ -2115,6 +2116,10 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       return errorResult;
     }
 
+    // Keep the per-tick portfolio block in sync with the agent's own reads
+    // (no other producer feeds it; see bug 006).
+    applyOwnToolResult(runtimeState, call.tool, result.data);
+
     // For tools that return ToolResult, serialize the data
     const serialized = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
     logger.debug({ tool: call.tool, result: serialized.slice(0, 500) }, 'Tool result');
@@ -4118,6 +4123,12 @@ async function main(): Promise<void> {
   runtimeState.runtimeDescriptor.resolvedSkills = await resolveBackendApprovedSkills(
     runtimeState.runtimeDescriptor.resolvedSkills,
   );
+  // Re-baseline tool visibility on the discovered tools. Without this the
+  // per-tick applyToolVisibility() resets each skill's requiredTools from the
+  // pre-discovery baseline (an external skill's DB revision has none), hiding
+  // every backend tool from tick 1 on.
+  toolVisibility.snapshotToolBaselines();
+  applyToolVisibility();
 
   await new Promise<void>((resolve) => setTimeout(resolve, 1000));
   await sendHeartbeat('ready');

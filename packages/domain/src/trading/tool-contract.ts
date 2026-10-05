@@ -279,13 +279,13 @@ export interface TradingToolContext {
     maxDrawdownPct: number;
   };
   /**
-   * A3 — resolves the agent's CURRENT platform risk context (capital + creator
-   * risk posture + runtime overrides) off the `agents` row, for the PLATFORM to
-   * attach to the boundary read calls (`get_risk_limits` /
-   * `get_account_summary`). Post-LLM, fresh-read (current values, not a
-   * snapshot) — the LLM never sees or supplies these. Null when the agent row
-   * is absent. Absent resolver → the read payload carries no risk spec and
-   * traderton degrades (typed precondition on get_risk_limits).
+   * Resolves the agent's selected venue account (its newest active grant to an
+   * active connection with a resolved account), which the PLATFORM attaches as
+   * `venueAccountId` to account-scoped boundary calls (`get_risk_limits`,
+   * `get_account_summary`, `adjust_risk_limits`). Post-LLM and read fresh; the
+   * LLM never sees or supplies it. Null when no ready account exists. Absent or
+   * null → those tools return `precondition.not_ready` without calling the
+   * boundary, which requires the field.
    */
   selectedVenueAccountResolver?: () => Promise<string | null>;
   /**

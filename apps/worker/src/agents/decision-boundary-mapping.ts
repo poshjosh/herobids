@@ -65,27 +65,6 @@ export function buildSubmitDecisionPayload(
   return out;
 }
 
-// ── A3: risk-spec attachment for the boundary READ calls ──────────────────────
-
-/**
- * The risk-spec fields the PLATFORM attaches to the boundary read calls
- * (`get_risk_limits` / `get_account_summary`). Same fields `submit_decision`
- * already carries; traderton declares them in those tools' schemas (Zod strips
- * undeclared fields) and binds them via its single RiskSource seam.
- */
-export type RiskSpecPayloadFields = { venueAccountId?: string };
-
-/**
- * Build the risk-spec payload fields from the platform risk context
- * (the `agents` row's capital/risk/riskOverrides). Carried through only when
- * present/non-null so a risk-context-less consumer keeps traderton's
- * operator-default behaviour. Reuses the exact field stamping of
- * {@link buildSubmitDecisionPayload} so both tools' payloads agree.
- */
-export function buildRiskSpecPayloadFields(venueAccountId?: string): RiskSpecPayloadFields {
-  return venueAccountId ? { venueAccountId } : {};
-}
-
 /** The mapped sync-reply status the tool understands. */
 export type MappedDecisionStatus = 'accepted' | 'rejected' | 'error';
 

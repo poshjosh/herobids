@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import {
+  applyOwnToolResult,
   applyRuntimeMessage,
   buildVenueLines,
   buildSystemPrompt,
@@ -645,6 +646,33 @@ describe('runtime composition helpers', () => {
 
     expect(summary).toBe('Account summary: available capital $15.0K');
     expect(state.metrics.portfolio.availableCapitalUsd).toBe(15000);
+  });
+
+  // Bug 006: nothing published instance.tool.result, so the portfolio block
+  // stayed "unavailable" even after the agent's own successful reads.
+  it('fills the portfolio block from the agent\'s own get_account_summary, get_analytics and list_positions results', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    applyOwnToolResult(state, 'get_account_summary', { ok: true, capital: '1000', capitalAvailable: true });
+    applyOwnToolResult(state, 'get_analytics', { ok: true, realizedPnlUsd: 12.5, winRate: 50 });
+    applyOwnToolResult(state, 'list_positions', {
+      ok: true,
+      positions: [{ symbol: 'BTC', instrumentId: 'BTC-PERP', side: 'long', size: '0.01', entryPrice: '85000', openedAt: '2026-10-05T15:00:00.000Z' }],
+    });
+
+    expect(state.metrics.portfolio.availableCapitalUsd).toBe(1000);
+    expect(state.metrics.portfolio.realizedPnlUsd).toBe(12.5);
+    expect(state.metrics.openPositions).toHaveLength(1);
+    expect(state.metrics.portfolio.exposureUsd).toBe(850);
+  });
+
+  it('ignores the agent\'s own results for non-portfolio tools and non-object data', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    applyOwnToolResult(state, 'get_price', { capital: '1000' });
+    applyOwnToolResult(state, 'get_account_summary', 'not an object');
+
+    expect(state.metrics.portfolio.availableCapitalUsd).toBeNull();
   });
 
   it('renders freshness markers for mixed venue intelligence and keeps performance summary last', () => {

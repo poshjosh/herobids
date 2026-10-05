@@ -1860,6 +1860,20 @@ export {
   recordVenueSignals as setVenueSignals,
 };
 
+/** The agent's own read tools whose results feed the portfolio summary block. */
+const PORTFOLIO_FEED_TOOLS = new Set(['get_account_summary', 'list_positions', 'get_analytics']);
+
+/**
+ * Fold the agent's OWN successful portfolio read into composition state, so
+ * the per-tick portfolio block reflects what the agent just read instead of
+ * staying "unavailable". Reuses the `instance.tool.result` handlers; other
+ * tools and non-object data are ignored.
+ */
+export function applyOwnToolResult(state: RuntimeCompositionState, tool: string, data: unknown): void {
+  if (!PORTFOLIO_FEED_TOOLS.has(tool) || typeof data !== 'object' || data === null) return;
+  applyRuntimeMessage(state, { type: 'instance.tool.result', payload: { tool, data } });
+}
+
 export function applyRuntimeMessage(
   state: RuntimeCompositionState,
   message: Record<string, unknown>,

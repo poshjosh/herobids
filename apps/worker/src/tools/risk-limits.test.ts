@@ -67,11 +67,12 @@ describe('get_risk_limits tool', () => {
     const ctx = makeCtx({
       externalBackend: { invoke },
       riskContractOps: { getContract },
+      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
     });
 
     const result = await getRiskLimitsTool.execute({}, ctx);
 
-    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_risk_limits', payload: {} });
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_risk_limits', payload: { venueAccountId: 'venue-account-1' } });
     expect(getContract).not.toHaveBeenCalled(); // boundary sourced, not in-process
     expect(result.success).toBe(true);
     expect(result.data).toEqual(boundaryData);
@@ -101,18 +102,20 @@ describe('get_risk_limits tool', () => {
     expect(result.fault).toBe(false);
   });
 
-  it('degrades to an empty payload when the spec resolver is absent or throws', async () => {
+  it.each([
+    ['no resolver is configured', undefined],
+    ['no venue account is selected', vi.fn(async () => null)],
+    ['the resolver throws', vi.fn(async () => { throw new Error('db down'); })],
+  ])('returns precondition.not_ready without calling the boundary when %s', async (_label, resolver) => {
     const invoke = vi.fn().mockResolvedValue({ kind: 'success', data: { ok: true } });
-    const ctx = makeCtx({ externalBackend: { invoke } });
-    await getRiskLimitsTool.execute({}, ctx);
-    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_risk_limits', payload: {} });
+    const ctx = makeCtx({ externalBackend: { invoke }, selectedVenueAccountResolver: resolver });
 
-    const throwingCtx = makeCtx({
-      externalBackend: { invoke },
-      selectedVenueAccountResolver: vi.fn(async () => { throw new Error('db down'); }),
-    });
-    await getRiskLimitsTool.execute({}, throwingCtx);
-    expect(invoke).toHaveBeenLastCalledWith({ toolName: 'get_risk_limits', payload: {} });
+    const result = await getRiskLimitsTool.execute({}, ctx);
+
+    expect(invoke).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.fault).toBe(false);
   });
 
   it('routes the write through the boundary and returns the boundary success payload', async () => {

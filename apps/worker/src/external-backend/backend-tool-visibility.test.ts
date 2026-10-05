@@ -4,6 +4,13 @@ import type { SkillDefinition } from '@herobids/domain';
 import type { DiscoveredBackendTool } from '@herobids/domain/external-backend';
 import { buildBackendToolVisibility } from './backend-tool-visibility.js';
 
+// Only the default (no `discoverTools` override) path reaches this; every other
+// test injects its own discovery.
+vi.mock('@herobids/domain/external-backend', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@herobids/domain/external-backend')>()),
+  discoverExternalBackendTools: vi.fn(async () => ({ kind: 'unreachable', message: 'HTTP 404: route not found' })),
+}));
+
 const APPROVED_REF = 'example/skills/echo';
 
 function skill(partial: Partial<SkillDefinition> & { id: string }): SkillDefinition {
@@ -117,5 +124,20 @@ describe('buildBackendToolVisibility', () => {
     expect(ext.requiredTools).toEqual(['echo']);
     expect(ext.capabilityFamilies).toEqual([]);
     expect(ext.bindingRequirements).toEqual({});
+  });
+
+  it('logs why MCP discovery failed when the backend is unreachable', async () => {
+    const warn = vi.fn();
+    const result = await buildBackendToolVisibility({
+      rawConfigJson: resolvedConfigJson({ family: 'trading' }),
+      resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
+      registryToolNames: new Set(['submit_decision']),
+      logger: { info: vi.fn(), warn },
+    });
+    expect(result.outcomes[0]?.outcome).toBe('backend_unreachable');
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ backendId: 'example-echo', mcpPath: '/internal/v1/mcp', reason: 'HTTP 404: route not found' }),
+      'Backend tool visibility: MCP tools/list discovery failed',
+    );
   });
 });

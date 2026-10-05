@@ -68,10 +68,15 @@ export function createRuntimeToolVisibilityController(
   const degradedExcludedTools = new Set<string>();
   const dependencyDegradations = new Set<RuntimeDependency>();
   let lastSnapshotDescriptor: RuntimeDescriptor | null = null;
+  let lastSnapshotSkills: RuntimeDescriptor['resolvedSkills'] | null = null;
 
   function snapshotToolBaselines(): void {
     const runtimeDescriptor = getDescriptor();
-    if (runtimeDescriptor === lastSnapshotDescriptor) {
+    // Re-snapshot when EITHER the descriptor or its resolvedSkills array was
+    // replaced. Startup backend discovery reassigns `resolvedSkills` on the same
+    // descriptor; keying on descriptor identity alone kept the pre-discovery
+    // (empty) baseline and wiped the discovered tools on every tick.
+    if (runtimeDescriptor === lastSnapshotDescriptor && runtimeDescriptor.resolvedSkills === lastSnapshotSkills) {
       return;
     }
     baseRequiredToolsBySkill.clear();
@@ -79,6 +84,7 @@ export function createRuntimeToolVisibilityController(
       baseRequiredToolsBySkill.set(skill.id, [...skill.requiredTools]);
     }
     lastSnapshotDescriptor = runtimeDescriptor;
+    lastSnapshotSkills = runtimeDescriptor.resolvedSkills;
   }
 
   function applyToolVisibility(circuitBlockedTools = new Set<string>()): void {

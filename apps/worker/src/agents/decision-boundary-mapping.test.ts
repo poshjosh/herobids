@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSubmitDecisionPayload,
-  buildRiskSpecPayloadFields,
   mapBoundaryResultToDecisionOutcome,
 } from './decision-boundary-mapping.js';
 import type { DecisionSubmitPayload } from '@herobids/domain';
@@ -27,13 +26,6 @@ describe('decision-boundary-mapping — profile-era payloads', () => {
     expect(out).not.toHaveProperty('executionMode');
   });
 
-  it('sends the selected venue account for profile-owned risk reads', () => {
-    expect(buildRiskSpecPayloadFields('va-1')).toEqual({ venueAccountId: 'va-1' });
-  });
-
-  it('sends no agents-row enforcement fields for an unresolved account', () => {
-    expect(buildRiskSpecPayloadFields()).toEqual({});
-  });
 });
 
 describe('decision-boundary-mapping — unknown outcomes', () => {

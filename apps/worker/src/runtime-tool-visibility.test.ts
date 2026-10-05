@@ -228,6 +228,24 @@ describe('createRuntimeToolVisibilityController', () => {
     expect(descriptorV1.resolvedSkills[0]!.requiredTools).not.toContain('list_bots');
   });
 
+  // Regression (startup backend discovery): main() reassigns resolvedSkills on the
+  // SAME descriptor after MCP tools/list. The external skill's DB baseline has no
+  // tools, so a stale baseline wiped the discovered tools on the first tick.
+  it('keeps backend-discovered tools across ticks when resolvedSkills is replaced on the same descriptor', () => {
+    const descriptor = makeDescriptor([{ id: 'ext_trading', tools: [] }]);
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+
+    descriptor.resolvedSkills = makeDescriptor([
+      { id: 'ext_trading', tools: ['get_account_summary', 'get_risk_limits', 'submit_decision'] },
+    ]).resolvedSkills;
+    controller.snapshotToolBaselines();
+    controller.applyToolVisibility(); // what every tick does first
+
+    expect(controller.allowedTools()).toContain('get_account_summary');
+    expect(controller.allowedTools()).toContain('get_risk_limits');
+    expect(controller.allowedTools()).toContain('submit_decision');
+  });
+
   it('hides watch_token and check_watches but keeps list_watches and remove_watch when market-data is unavailable', () => {
     const watchTools = ['watch_token', 'list_watches', 'remove_watch', 'check_watches', 'send_message'];
     const descriptor = makeDescriptor([{ id: 'monitoring', tools: watchTools }]);

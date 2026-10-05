@@ -71,10 +71,23 @@ function parseResolved(
   return parsed.data;
 }
 
-/** Default discovery: the backend's MCP `tools/list` (null = unreachable). */
-async function discoverViaMcp(resolved: ResolvedExternalBackend): Promise<DiscoveredBackendTool[] | null> {
+/** Default discovery: the backend's MCP `tools/list` (null = unreachable, reason logged). */
+async function discoverViaMcp(
+  resolved: ResolvedExternalBackend,
+  logger: BackendToolVisibilityLogger,
+): Promise<DiscoveredBackendTool[] | null> {
   const outcome = await discoverExternalBackendTools(resolved.definition, resolved.hmacSecret);
-  return outcome.kind === 'ok' ? outcome.tools : null;
+  if (outcome.kind === 'ok') return outcome.tools;
+  logger.warn(
+    {
+      backendId: resolved.definition.backendId,
+      baseUrl: resolved.definition.endpoint.baseUrl,
+      mcpPath: resolved.definition.endpoint.mcpPath,
+      reason: outcome.message,
+    },
+    'Backend tool visibility: MCP tools/list discovery failed',
+  );
+  return null;
 }
 
 /**
@@ -106,7 +119,9 @@ export async function buildBackendToolVisibility(
   let discovered: DiscoveredBackendTool[] | null = null;
   if (needsDiscovery) {
     try {
-      discovered = await (input.discoverTools ?? discoverViaMcp)(resolved);
+      discovered = input.discoverTools
+        ? await input.discoverTools(resolved)
+        : await discoverViaMcp(resolved, logger);
     } catch (err) {
       logger.warn({ err }, 'Backend tool visibility: tools/list discovery threw — treating backend as unreachable');
       discovered = null;

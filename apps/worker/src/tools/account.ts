@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult } from './external-backend-result.js';
-import { riskSpecReadPayload } from './risk-limits.js';
+import { resolveSelectedVenueAccountId, selectedAccountUnavailable } from './risk-limits.js';
 
 // --- get_account_summary ---
 
@@ -28,13 +28,13 @@ const getAccountSummaryTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    // A3: attach the PLATFORM risk spec (post-LLM, from the `agents` row via
-    // agentRiskSpecResolver) so traderton's get_account_summary serves capital +
-    // the risk contract from its single RiskSource seam. Absent spec → traderton
-    // keeps its graceful `*_unavailable` warnings degrade.
-    const payload = await riskSpecReadPayload(ctx);
+    // The platform attaches the selected venue account (post-LLM); Traderton
+    // requires it and serves capital + the risk contract from that account's
+    // profile. No ready account → typed precondition, not an empty payload.
+    const venueAccountId = await resolveSelectedVenueAccountId(ctx);
+    if (!venueAccountId) return selectedAccountUnavailable();
 
-    const result = await ctx.externalBackend.invoke({ toolName: 'get_account_summary', payload });
+    const result = await ctx.externalBackend.invoke({ toolName: 'get_account_summary', payload: { venueAccountId } });
     return mapReadResultToToolResult(result);
   },
 };
