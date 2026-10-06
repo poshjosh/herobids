@@ -480,6 +480,37 @@ describe('AgentRuntimePolicySchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('applies reminders and nonTradingDefaults defaults', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reminders.pollIntervalMs).toBe(10_000);
+      expect(result.data.reminders.minRepeatIntervalMs).toBe(900_000);
+      expect(result.data.reminders.maxRepeatIntervalMs).toBe(2_678_400_000);
+      expect(result.data.reminders.maxActivePerAgent).toBe(50);
+      expect(result.data.reminders.promptMaxEntries).toBe(10);
+      expect(result.data.reminders.coordinatorLeaseTtlSeconds).toBe(30);
+      expect(result.data.nonTradingDefaults.tickIntervalMs).toBe(86_400_000);
+    }
+  });
+
+  it('rejects reminders when minRepeatIntervalMs exceeds maxRepeatIntervalMs', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+      reminders: {
+        minRepeatIntervalMs: 2_678_400_000,
+        maxRepeatIntervalMs: 900_000,
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('promptEnrichment activityTimeline maxEvents rejects 31 (max 30)', () => {
     const result = AgentRuntimePolicySchema.safeParse({
       defaultBudgets: REQUIRED_RUNTIME_BUDGETS,

@@ -134,7 +134,7 @@ reuse it or move it to `@herobids/domain` if the API needs it too.
   creator-set hours.
 - Session-manager config includes the resolved hours.
 
-### WP2. Reminder config (D1, D7) — PENDING
+### WP2. Reminder config (D1, D7) — DONE
 
 Add to `AgentRuntimeConfigSchema` (`packages/domain/src/config/schema.ts` ~line 1142):
 
@@ -567,3 +567,6 @@ Non-critical review findings deferred during implementation (grouped by work pac
 ### WP1
 - LOW (`apps/worker/src/runtime-composition.ts`): reminder-context reconstruction is duplicated between the drain path and `applyRuntimeMessage`. Consider extracting a `toRuntimeReminderContext(wakeId, requestedAt, ctx)` helper to keep them in sync.
 - LOW (`apps/worker/src/tick-gate-state.ts`): the `payload?.source === 'reminder'` check uses a narrow cast rather than the `AgentWakePayloadSchema`. A typed guard would be marginally safer; acceptable for a hot gate path.
+
+### WP2
+- LOW (stylistic only, no action needed): `config/default.yaml` comments use em dashes while the schema uses hyphens; the refine message uses ASCII `<=` (verbatim from the plan) while nearby messages use `≤`.

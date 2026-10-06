@@ -1351,6 +1351,21 @@ export const AgentRuntimeConfigSchema = z.object({
     webAccess: WebAccessToolsConfigSchema.default({}),
     httpClient: HttpClientConfigSchema,
   }).default({}),
+  /** Repeating-reminder bounds and coordinator settings (operator config). */
+  reminders: z.object({
+    pollIntervalMs: z.number().int().min(1_000).default(10_000),
+    minRepeatIntervalMs: z.number().int().min(60_000).default(900_000),        // 15 min
+    maxRepeatIntervalMs: z.number().int().min(60_000).default(2_678_400_000),  // 31 days
+    maxActivePerAgent: z.number().int().min(1).default(50),
+    promptMaxEntries: z.number().int().min(1).default(10),
+    coordinatorLeaseTtlSeconds: z.number().int().min(5).default(30),
+  }).refine((r) => r.minRepeatIntervalMs <= r.maxRepeatIntervalMs, {
+    message: 'minRepeatIntervalMs must be <= maxRepeatIntervalMs',
+  }).default({}),
+  /** Defaults applied to non-trading agents (operator config). */
+  nonTradingDefaults: z.object({
+    tickIntervalMs: z.number().int().min(60_000).default(86_400_000),          // 24 h
+  }).default({}),
 });
 
 export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({

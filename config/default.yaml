@@ -673,6 +673,17 @@ agentRuntime:
         - "localhost"
         - "0.0.0.0"
         - "[::1]"
+  # Repeating-reminder bounds and coordinator settings.
+  reminders:
+    pollIntervalMs: 10000              # how often the reminder coordinator polls for due reminders
+    minRepeatIntervalMs: 900000        # 15 min — minimum allowed repeat interval
+    maxRepeatIntervalMs: 2678400000    # 31 days — maximum allowed repeat interval
+    maxActivePerAgent: 50              # max active reminders a single agent may hold
+    promptMaxEntries: 10               # max reminders listed in the agent prompt
+    coordinatorLeaseTtlSeconds: 30     # Redis lease TTL for single-worker coordinator election
+  # Defaults applied to non-trading agents.
+  nonTradingDefaults:
+    tickIntervalMs: 86400000           # 24 h — default tick interval for non-trading agents
 
 # ── Platform Assessor ──────────────────────────────────────────────────────
 # On-demand per-symbol assessment — no scheduled background generation.
