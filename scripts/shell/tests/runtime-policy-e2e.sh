@@ -179,8 +179,15 @@ else
   assert_eq "weekendPause" "false" "$(echo "$policy" | jq -r '.weekendPause')"
   assert_eq "maxHoldDurationMs" "27000000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
 
+  # D6: style-default active hours (14–20 UTC for careful) apply ONLY to agents
+  # with trading capability. This agent has no skills → non-trading → the style
+  # hours are dropped and allowedHoursUtc resolves to empty (always-on). The
+  # creator can still set hours explicitly via runtimePolicyOverrides.
   hours=$(echo "$policy" | jq -r '.allowedHoursUtc | join(",")')
-  assert_eq "allowedHoursUtc" "14,15,16,17,18,19,20" "$hours"
+  assert_eq "allowedHoursUtc (non-trading drops style hours)" "" "$hours"
+
+  # D9: skipUnchangedTicks defaults to false for a non-trading agent.
+  assert_eq "skipUnchangedTicks (non-trading default)" "false" "$(echo "$policy" | jq -r '.skipUnchangedTicks')"
 
   api DELETE "/agents/$agentId" > /dev/null
 fi
