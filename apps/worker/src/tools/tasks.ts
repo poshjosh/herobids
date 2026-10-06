@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import type { ReminderRecord } from '../reminders/reminder-record.js';
 
 // Tasks are stored as a Redis hash: agent:tasks:{agentId}
 // Each field key is the task ID, value is a JSON-encoded task record.
@@ -18,14 +19,7 @@ interface TaskRecord {
 
 // Reminders are stored as a Redis hash: agent:reminders:{agentId}
 // Each field key is the reminder ID, value is a JSON-encoded reminder record.
-
-interface ReminderRecord {
-  id: string;
-  message: string;
-  triggerAt: string;
-  firedAt?: string;
-  scheduledBy?: 'scout' | 'judge';
-}
+// The record shape and validation live in ../reminders/reminder-record.ts.
 
 // --- create_task ---
 
@@ -162,4 +156,4 @@ export const taskTools: AgentTool[] = [
   scheduleReminderTool,
 ];
 
-export type { ReminderRecord };
+export type { ReminderRecord } from '../reminders/reminder-record.js';

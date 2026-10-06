@@ -164,7 +164,7 @@ comment per key.
 
 **Tests:** defaults load; min > max is rejected.
 
-### WP3. Reminder record and schedule math — PENDING
+### WP3. Reminder record and schedule math — DONE
 
 New module `apps/worker/src/reminders/`:
 
@@ -570,3 +570,7 @@ Non-critical review findings deferred during implementation (grouped by work pac
 
 ### WP2
 - LOW (stylistic only, no action needed): `config/default.yaml` comments use em dashes while the schema uses hyphens; the refine message uses ASCII `<=` (verbatim from the plan) while nearby messages use `≤`.
+
+### WP3
+- LOW: `scheduledBy` ↔ `ctx.phase` coupling is guaranteed only by the typechecker.
+- LOW: `reminder-coordinator.ts` still uses `JSON.parse(raw) as ReminderRecord` (unvalidated); switched to `parseReminderRecord` in WP5.
