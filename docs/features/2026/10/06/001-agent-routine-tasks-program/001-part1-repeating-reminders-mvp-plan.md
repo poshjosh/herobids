@@ -1,430 +1,561 @@
-# Part 1 (MVP): Repeating Reminders and Routine Visibility
+# Part 1 (MVP): Repeating Reminders, Base Task Tools, Ungated Check-ins
 
-**Status:** Draft
+**Status:** Ready for implementation (reviewed 2026-10-06)
 **Created:** 2026-10-06
-**Program:** [Outline](./000-outline.md) · Next: [Part 2](./002-part2-agent-controlled-tick-interval-plan.md) · [Part 3](./003-part3-schedule-continuity-and-visibility-plan.md)
-**Precedence:** this program takes precedence over overlapping plans (see the outline).
+**Program:** [Outline](./000-outline.md) · Later: [Part 2 (optional)](./002-part2-agent-controlled-tick-interval-plan.md) · [Part 3](./003-part3-schedule-continuity-and-visibility-plan.md)
+**Precedence:** this program takes precedence over any existing plan it overlaps with (see the outline's precedence table).
 
-## Summary
+## How to use this plan
 
-Today a routine depends on the agent re-scheduling a one-shot reminder every cycle
-(e.g. `docs/agents/skills/flight-deal-monitoring.md`). One missed re-schedule ends
-the routine silently. The agent can't list or cancel reminders, so after a restart or
-history trim it either loses its routine or creates a duplicate. Separately, the
-active-hours gate can skip user messages and reminders, and the careful style's
-trading hours (14–20 UTC) apply to non-trading agents.
+This document is self-contained: an implementer needs only this file plus the repo's
+`AGENTS.md`. Line numbers are approximate (`~`); find code by the symbol names given.
+Work through the work packages (WP) in order. Each WP ends with its own tests, and
+`pnpm lint` must pass after each one. Don't implement Part 2 or Part 3.
 
-After this part:
+Repo rules that matter here (from `AGENTS.md`):
+- No magic numbers: limits and intervals go in operator config
+  (`config/default.yaml` + Zod in `packages/domain/src/config/schema.ts`).
+- Zod at boundaries (Redis reads, tool params).
+- `Result`/`ok()`/`err()` with dot-namespaced error codes.
+- Tool names are `verb_noun`, and tests are named after behaviour.
+- Don't swallow errors: log and continue for non-fatal reads.
 
-- An agent schedules a routine once with `schedule_reminder` + `repeatEveryMinutes` +
-  `key`. The platform re-schedules each occurrence, including across restarts.
-- The agent sees its reminders on every judge tick and can list and cancel them.
-- User messages are never blocked by active hours. Reminders due outside active hours
-  wait for the window and fire once.
-- **Every agent gets task and reminder tools.** The task-management tools and
-  instructions move into the auto-injected base skill, and the base skill explains how
-  to run routine work. Agents are meant to help people, and scheduling ("remind me",
-  "every morning…") is basic to that.
+## Goal
 
-Design rule (see the [outline](./000-outline.md#design-rule-tick-interval-vs-routine-schedule)):
-a routine runs when its reminder fires; ordinary ticks don't run it unless it is
-overdue. The `context_hash` gate is not changed.
+Non-trading agents that do routine work at intervals run reliably. They're still woken
+by user messages and other wake signals. After this part:
 
-## Decisions
+1. **Repeating reminders.** An agent schedules a routine once
+   (`schedule_reminder` + `repeatEveryMinutes` + `key`), and the platform re-schedules
+   every occurrence, including across restarts. The agent can list and cancel
+   reminders, and sees them in every judge prompt.
+2. **Every agent has task and reminder tools.** They move into the auto-injected base
+   skill, and the `task-management` system skill is removed.
+3. **Non-trading agents check in once a day, without skipping.** A new per-agent
+   setting, "skip unchanged check-ins", is on for trading agents and off for others.
+   Non-trading agents default to a 24 h check-in.
+4. **Active hours never block user messages or reminders,** and the careful style's
+   default hours (14–20 UTC) apply only to trading agents.
 
-From the [outline](./000-outline.md#decisions-defaults-the-user-can-revisit): 1, 5a, 5b,
-5c, 6, 7, 8, 10, 11.
+## Background (why; verified in code 2026-10-06)
 
-## Verified vs assumed
+- **Every scheduled tick is checked by the gates in `shouldSkipTick`
+  (`apps/worker/src/tick-gates.ts`):**
+  - The session (active-hours) gate runs first. It ignores wake signals and applies
+    whenever the agent has no open positions.
+  - The `context_hash` gate then skips the tick (`reason: 'context_unchanged'`)
+    unless a wake or user message arrived (`hasWakeSignal`), it's every 10th tick, or
+    `maxHoldDurationMs` has passed (checked in `apps/worker/src/agent.ts` ~line 2888).
+  - A non-trading agent's hash inputs never change, so nearly all its scheduled ticks
+    are skipped.
+- **Ticks that aren't skipped go to the scout, which can hold.** The pre-scout logic in
+  `resolvePreScoutDecision` (`apps/worker/src/scout-gating.ts`) forces the judge for
+  the first tick, user messages, and reminders scheduled by the judge.
+- **Reminders today:**
+  - `schedule_reminder` (`apps/worker/src/tools/tasks.ts`) is one-shot. It writes a
+    JSON record to Redis hash `agent:reminders:{agentId}` (field = reminder UUID).
+  - `ReminderCoordinator` (`apps/worker/src/reminder-coordinator.ts`) polls every
+    10 s, only for agents with status `active`, and calls
+    `eventPublisher.emitAgentWake(...)` with `source: 'reminder'`. It deletes the
+    record after a successful publish; a failed publish leaves it for retry.
+  - The coordinator has no lease, so with more than one worker a reminder could fire
+    twice.
+  - A reminder wake sets `hasWakeSignal` (`apps/worker/src/tick-gate-state.ts`
+    `isEarlyTickTriggerType`). It bypasses the `context_hash` gate, but not the
+    session gate.
+- **Tick timing:** there's one tick timer (`scheduleNextTick` in `agent.ts`
+  ~line 2273). After any tick, the next is `now + effectiveTickIntervalMs`. Wakes only
+  pull it earlier.
 
-Verified by reading code (2026-10-06):
+## Decisions (final)
 
-- `apps/worker/src/tools/tasks.ts`: one-shot `schedule_reminder` writes
-  `agent:reminders:{agentId}` (hash field = UUID); `scheduledBy = ctx.phase`;
-  `ReminderRecord` is exported from here and imported by the coordinator.
-- `apps/worker/src/reminder-coordinator.ts`: hard-coded `POLL_INTERVAL_MS = 10_000`;
-  polls `agentRepo.listActiveAgents()`; `JSON.parse(...) as ReminderRecord` (no Zod);
-  `emitAgentWake` then `HDEL`; publish failure leaves the record. No lease.
-- Lease precedent: `SET key workerId EX ttl NX` in
-  `apps/worker/src/alerting/alert-dispatcher.ts`,
-  `apps/worker/src/agents/actor-event-relay.ts`, and
-  `apps/worker/src/market-intelligence/leader-election.ts`.
-- `ReminderWakeContextSchema` lives in `packages/domain/src/trading/trading-protocol.ts`
-  (relocated 2026-09-07; a copy exists in traderton).
-- Reminder ticks reach the judge: `isEarlyTickTriggerType` sets `hasWakeSignal`
-  (`apps/worker/src/tick-gate-state.ts`), and `resolvePreScoutDecision` forces
-  escalation for `scheduledBy: 'judge'` (`apps/worker/src/scout-gating.ts`). The scout
-  only gets `read-*` tools, so it can't schedule reminders.
-- `shouldSkipTick` (`apps/worker/src/tick-gates.ts`): the session gate runs first,
-  ignores `hasWakeSignal`, and applies when `!hasOpenPositions`.
-  `apps/worker/src/agent.ts` (~line 431) builds `tradingHours` from
-  `resolvedRuntimePolicy` for every agent. `agent.ts` (~line 2747) folds
-  `hasPendingUserMessage` into `hasBufferedWake`.
-- `AgentRuntimeConfigSchema` (`packages/domain/src/config/schema.ts`) reaches the
-  worker as `appConfig.agentRuntime` and the container via `agentRuntimeConfigJson`
-  (`apps/worker/src/index.ts` ~line 180) → `AGENT_RUNTIME_CONFIG_JSON` →
-  `AgentRuntimePolicySchema`.
-- The context hash takes explicit inputs only (`computeDecisionContextHash`), so new
-  prompt state does not change it.
-- Tool names are registered in `KNOWN_AGENT_TOOL_NAMES` and the tool metadata map in
-  `packages/domain/src/tools.ts`; skill text and ownership live in
-  `packages/domain/src/skills.ts` (`TOOL_OWNER_OVERRIDES` is empty).
-- `BASE_SKILL` is auto-injected for every agent and is not stored in the DB. Its tools
-  are excluded from `buildToolOwnershipMap`/`inferDependsOn`.
-- References to the `task-management` id or `system/task-management` slug:
-  - `SKILL_PRESET_MAP['personal-assistant']`, `SYSTEM_SKILLS` and `SYSTEM_SKILL_SLUGS`
-    (`packages/domain/src/skills.ts`).
-  - The worker's built-in skill map (`apps/worker/src/agent.ts` ~line 478).
-  - Platform docs data (`apps/worker/src/tools/platform-docs-data.ts`,
-    `scripts/ts/build-docs-index.ts`).
-  - Tests in domain, db, api, web and worker.
-  - Existing agents' `agent_skills` rows (any agent created with the
-    personal-assistant preset).
-- Markdown skills `docs/agents/skills/flight-deal-monitoring.md` and
-  `docs/agents/skills/personal-property-locator-tools.md` re-schedule manually with
-  `schedule_reminder`.
+| # | Decision |
+|---|---|
+| D1 | Repeat interval bounds: 15 min to 31 days, from operator config. |
+| D2 | `schedule_reminder` gains optional `repeatEveryMinutes` and `key`. Scheduling with an existing `key` replaces that reminder: it gets a new `reminderId`, and the result returns the previous one. One-shot reminders may also have a `key`. `triggerAt` stays required (it's the first occurrence). |
+| D3 | A reminder may repeat more often than the agent's tick interval, bounded only by the operator minimum and the spend budget. |
+| D4 | Occurrences missed while the agent was stopped fire once on return. The schedule continues on its original slots, and the wake reports `missedOccurrences`. |
+| D5 | User messages and reminder wakes always bypass the active-hours gate. Market wakes and plain scheduled ticks still respect it. |
+| D6 | Style-default active hours (`allowedHoursUtc`, `weekendPause`, `tradingSessions` from the style) apply only to agents with trading capability. Hours the creator set explicitly in `runtimePolicyOverrides` apply to every agent. |
+| D7 | `ReminderCoordinator` runs on one worker at a time via a Redis lease. |
+| D8 | Task and reminder tools move into `BASE_SKILL`. `TASK_MANAGEMENT_SKILL` is removed, old references fail soft, and a data migration removes its rows. |
+| D9 | New per-agent setting `skipUnchangedTicks`: `null` = default (`true` for trading agents, `false` otherwise). When `false`, scheduled ticks skip neither the `context_hash` gate nor the scout; they go straight to the judge. |
+| D10 | Non-trading agents created without an explicit tick interval get 24 h, from operator config. Trading agents keep the style intervals. |
+| D11 | No migration of existing agents' intervals. Nothing is live, and the one non-trading staging agent is set to 24 h manually by the operator. |
 
-Assumed (verify during implementation):
+"Trading capability" everywhere means: at least one resolved skill has
+`capabilityFamilies` containing `'trading'`. The worker already has
+`deriveHasTradingCapability(resolvedSkills)` (`apps/worker/src/agent-capabilities.ts`);
+reuse it or move it to `@herobids/domain` if the API needs it too.
 
-- More than one worker instance can run (implied by the existing leader election).
-- The agent rows returned by `listActiveAgents()` carry `style` and
-  `runtimePolicyOverrides`, so the coordinator can resolve active hours.
-- External trading skills appear in `resolvedSkills` with `capabilityFamilies`
-  containing `trading` (used by `deriveHasTradingCapability`).
-- `apps/worker/src/agents/agent-session-manager.ts` is the single place that builds
-  `resolvedRuntimePolicy` for the container.
+## Work packages
 
-## Detailed plan
+### WP1. Active-hours gate (D5, D6)
 
-### 1. Regression tests first (active hours)
-
-File: `apps/worker/src/tick-gates.test.ts`
-
-Add failing tests before any change:
-
+**1a. Failing tests first** (`apps/worker/src/tick-gates.test.ts`):
 - "does not skip a user-message tick outside active hours"
 - "does not skip a reminder-wake tick outside active hours"
-- "still skips a market-wake tick outside active hours for an agent with no open positions" (behaviour kept)
+- "still skips a market-wake tick outside active hours when the agent has no open positions"
+- "still skips a plain scheduled tick outside active hours"
 
-### 2. Operator config
+**1b. Gate change:**
+- `TickGateState` gains `hasUserMessage?: boolean` and `hasReminderWake?: boolean`.
+- In `shouldSkipTick`, the session gate skips only if both are false (in addition to
+  its current conditions).
+- `buildTickGateState` (`tick-gate-state.ts`) sets:
+  - `hasUserMessage` from `isUserMessageType` on any incoming message, or a new param
+    `hasPendingUserMessage`.
+  - `hasReminderWake` from any incoming message with `type === 'agent.wake'` and
+    `payload.source === 'reminder'`, or a new param `hasBufferedReminderWake`.
+- In `agent.ts` (~line 2747), `hasPendingUserMessage` is folded into
+  `hasBufferedWake`. Also pass it separately as `hasPendingUserMessage`, and pass
+  `hasBufferedReminderWake: runtimeState.metrics.currentReminder !== null` (set when
+  the buffered wake drained is a reminder).
 
-Files: `packages/domain/src/config/schema.ts`, `config/default.yaml`,
-`packages/domain/src/config/schema.test.ts`
+**1c. Style-default hours only for trading agents (D6):**
+- `resolveAgentRuntimePolicy(style, overrides)` (`packages/domain/src/config/schema.ts`
+  ~line 381) gains a third argument, `options?: { hasTradingCapability?: boolean }`.
+  - When `hasTradingCapability === false`, `allowedHoursUtc`, `weekendPause` and
+    `tradingSessions` come only from `overrides`. If unset, the fallbacks are `[]`,
+    `false` and `null`.
+  - When the argument is omitted, behaviour is unchanged.
+- It has three callers. Pass the option in all of them:
+  - `apps/worker/src/agents/agent-session-manager.ts` (~line 526): compute
+    `hasTradingCapability` from `runtimeDescriptor.resolvedSkills`, which is already in
+    scope.
+  - `apps/api/src/routes/agent-config-helpers.ts` `decorateAgentResponse` (~line 494)
+    and `validateMaxHoldDurationInvariant` (~line 533): compute it from the agent's
+    skill ids. Reuse the logic behind `hasSkillCapabilityFamily(skillIds, 'trading')`
+    used in `apps/api/src/routes/agents.ts` (~line 226), and check that it recognises
+    external trading skills (e.g. `traderton/skills/crypto-trading`).
 
-Add `reminders` to `AgentRuntimeConfigSchema`:
+**Tests:**
+- `resolveAgentRuntimePolicy` drops style hours for non-trading agents and keeps
+  creator-set hours.
+- Session-manager config includes the resolved hours.
+
+### WP2. Reminder config (D1, D7)
+
+Add to `AgentRuntimeConfigSchema` (`packages/domain/src/config/schema.ts` ~line 1142):
 
 ```ts
 reminders: z.object({
   pollIntervalMs: z.number().int().min(1_000).default(10_000),
-  minRepeatIntervalMs: z.number().int().min(60_000).default(900_000),      // 15 min
-  maxRepeatIntervalMs: z.number().int().min(60_000).default(2_678_400_000), // 31 days
+  minRepeatIntervalMs: z.number().int().min(60_000).default(900_000),        // 15 min
+  maxRepeatIntervalMs: z.number().int().min(60_000).default(2_678_400_000),  // 31 days
   maxActivePerAgent: z.number().int().min(1).default(50),
   promptMaxEntries: z.number().int().min(1).default(10),
   coordinatorLeaseTtlSeconds: z.number().int().min(5).default(30),
-}).refine((r) => r.minRepeatIntervalMs <= r.maxRepeatIntervalMs, { message: 'minRepeatIntervalMs must be <= maxRepeatIntervalMs' })
-  .default({}),
+}).refine((r) => r.minRepeatIntervalMs <= r.maxRepeatIntervalMs, {
+  message: 'minRepeatIntervalMs must be <= maxRepeatIntervalMs',
+}).default({}),
+nonTradingDefaults: z.object({
+  tickIntervalMs: z.number().int().min(60_000).default(86_400_000),          // 24 h
+}).default({}),
 ```
 
-Add the matching `agentRuntime.reminders` block to `config/default.yaml` with one
-inline comment per key. `pollIntervalMs` replaces the coordinator's literal. No env
-overrides: this is structured policy (configuration best practices). No `.env`
-changes.
+Add the matching blocks under `agentRuntime:` in `config/default.yaml`, with one inline
+comment per key.
+- Nothing extra is needed to reach the container. `AgentRuntimePolicySchema` extends
+  `AgentRuntimeConfigSchema`, and `apps/worker/src/index.ts` (~line 180) already
+  forwards `appConfig.agentRuntime`, so `agentRuntimePolicy.reminders` is available in
+  `agent.ts`.
+- No env vars and no `.env` changes.
 
-### 3. Reminder record and schedule math (new module)
+**Tests:** defaults load; min > max is rejected.
 
-New files: `apps/worker/src/reminders/reminder-record.ts`,
-`apps/worker/src/reminders/reminder-schedule.ts` (+ tests)
+### WP3. Reminder record and schedule math
 
-- `ReminderRecordSchema` (Zod): `id`, `message`, `triggerAt` (next due, ISO),
-  `scheduledBy`, plus optional `createdAt`, `key`, `repeatEveryMs`, `anchorAt`,
-  `lastFiredAt`. New fields are optional, so existing records still parse.
+New module `apps/worker/src/reminders/`:
+
+**`reminder-record.ts`:** the Zod `ReminderRecordSchema` replaces the interface in
+`tools/tasks.ts`. Update the imports in `tools/tasks.ts` and the coordinator.
+
+```ts
+{ id: string; message: string; triggerAt: string /* ISO, next due slot */;
+  scheduledBy?: 'scout' | 'judge';
+  createdAt?: string; key?: string; repeatEveryMs?: number;
+  anchorAt?: string /* first slot */; lastFiredAt?: string; firedAt?: string /* legacy */ }
+```
+
+- Every new field is optional, so existing records still parse.
 - `parseReminderRecord(raw: string): Result<ReminderRecord, { code: 'reminder.malformed' }>`.
-- `computeNextOccurrence({ anchorAt, repeatEveryMs, firedSlotAt, now })` returns
-  `{ nextTriggerAt, missedOccurrences }`. Here `nextTriggerAt` = anchor + k × interval
-  for the smallest k with a time after `now`, and `missedOccurrences` = slots between
-  `firedSlotAt` and `now` that weren't fired. Pure, no I/O.
-- Move the `ReminderRecord` type here; `tools/tasks.ts` and the coordinator import it.
 
-### 4. Tools
+**`reminder-schedule.ts`:** a pure function that runs when the coordinator fires a due
+repeating reminder.
+
+```ts
+advanceRepeatingReminder({ triggerAtMs, repeatEveryMs, nowMs }):
+  { nextTriggerAtMs: number; missedOccurrences: number }
+// precondition: triggerAtMs <= nowMs
+// missedOccurrences = floor((nowMs - triggerAtMs) / repeatEveryMs)
+//   (slots after the due one that are also already past; they are not fired separately)
+// nextTriggerAtMs  = triggerAtMs + (missedOccurrences + 1) * repeatEveryMs   // always > nowMs
+```
+
+**Tests:**
+- On time → 0 missed, next = due + interval.
+- Three intervals late → 3 missed, and the next slot stays on the original grid.
+- `now` exactly on a later slot → that slot counts as missed, and next is strictly
+  after `now`.
+
+### WP4. Tools (D1, D2, D3)
 
 Files: `apps/worker/src/tools/tasks.ts`, `apps/worker/src/tools/index.ts`,
-`packages/domain/src/tools.ts` (+ tests)
+`packages/domain/src/tools.ts`
 
-- Convert `taskTools` to `createTaskTools({ reminders })`. The registry builder in
-  `tools/index.ts` already passes deps to factories (e.g.
-  `createBrowserTools(deps?.browserPool)`); pass `agentRuntimePolicy.reminders` the
-  same way.
-- `schedule_reminder`:
-  - New optional params: `repeatEveryMinutes` (int, bounds from config) and `key`
-    (`^[a-z0-9][a-z0-9_-]{0,63}$`). `triggerAt` stays required and becomes the anchor
-    for repeats.
-  - If a reminder with the same `key` exists, replace it. Return
-    `{ reminderId, triggerAt, repeatEveryMinutes, key, replaced, previousReminderId }`.
-  - Reject when the agent already has `maxActivePerAgent` reminders (and isn't
-    replacing by key).
-  - Error codes: `reminder.invalid_interval`, `reminder.limit_exceeded`.
-  - Description: say it can repeat, and that the same `key` replaces.
-- New `list_reminders` (category `read-memory`, so the scout can use it too). It
-  returns reminders sorted by `triggerAt` with `reminderId`, `key`, `message`,
-  `nextTriggerAt`, `repeatEveryMinutes`, `anchorAt`, `lastFiredAt`.
-- New `cancel_reminder` (category `write-memory`): `{ reminderId? , key? }`, exactly
-  one (Zod refine). Returns `{ found }`; error code `reminder.invalid_target`.
-- `packages/domain/src/tools.ts`: add `list_reminders` and `cancel_reminder` to
-  `KNOWN_AGENT_TOOL_NAMES` and the metadata map, and update the `schedule_reminder`
-  metadata description.
-- Concurrency note: key upsert is a read-modify-write on the agent's own hash. Tool
-  calls for one agent run sequentially, so no lock is added.
+**Wiring:** export `createTaskTools(config: { reminders: ReminderConfig })` instead of
+the `taskTools` array. In `tools/index.ts`, follow how other factories receive deps
+(e.g. `createBrowserTools(deps?.browserPool)`) and pass the reminders config from
+`agentRuntimePolicy.reminders`.
 
-### 5. ReminderCoordinator
+**`schedule_reminder`:**
+- **New optional params:**
+  - `repeatEveryMinutes` (int). Its ms value must be within `[minRepeatIntervalMs, maxRepeatIntervalMs]`, else `reminder.invalid_interval`.
+  - `key` (`/^[a-z0-9][a-z0-9_-]{0,63}$/`).
+- **Validation unchanged:** `triggerAt` must be in the future.
+- **Same `key` exists:** delete the old field, write the new record, and set
+  `replaced: true` and `previousReminderId`.
+- **Limit:** if not replacing and the agent already has `maxActivePerAgent` records,
+  return `reminder.limit_exceeded`.
+- **New record:** `{ id, message, triggerAt, scheduledBy: ctx.phase, createdAt, key?, repeatEveryMs?, anchorAt: triggerAt (if repeating) }`.
+- **Result:** `{ ok, reminderId, triggerAt, repeatEveryMinutes?, key?, replaced, previousReminderId? }`.
+- **Description:** "Schedule a reminder at an absolute datetime (ISO 8601 UTC). It can
+  repeat with `repeatEveryMinutes`. Scheduling with an existing `key` replaces that
+  reminder."
 
-File: `apps/worker/src/reminder-coordinator.ts` (+ test)
+**`list_reminders`** (new, category `read-memory`, so the scout can use it too):
+- No params.
+- Returns `{ reminders: [{ reminderId, key, message, nextTriggerAt, repeatEveryMinutes, anchorAt, lastFiredAt }] }`, sorted by `nextTriggerAt`.
+- Skips malformed records with a warn log.
 
-- **Lease:** only the lease holder polls, using
-  `SET reminder-coordinator:lease <workerId> EX <coordinatorLeaseTtlSeconds> NX` with
-  renewal, as in `alert-dispatcher.ts`. The constructor takes `workerId` and the
-  `reminders` config (`apps/worker/src/index.ts` ~line 829).
-- Poll every `reminders.pollIntervalMs`.
-- Parse each record with `parseReminderRecord`; warn and skip malformed ones (as
-  today).
-- **Active hours (5b):** resolve the agent's active hours with the same rule as the
-  runtime (section 6). If the agent is outside its window, don't fire; the reminder
-  stays pending and fires once the window opens.
-- **Fire:** `emitAgentWake` with the extended context (section 7).
-- **After a successful publish:**
+**`cancel_reminder`** (new, category `write-memory`):
+- Takes `{ reminderId?: string; key?: string }`, exactly one (Zod refine, else `reminder.invalid_target`).
+- Returns `{ ok, found }`.
+
+**`packages/domain/src/tools.ts`:** add both names to `KNOWN_AGENT_TOOL_NAMES` and to
+the metadata map (~line 247), and update the `schedule_reminder` description there.
+
+**Concurrency:** key replacement is a read-then-write on the agent's own hash. One
+agent's tool calls run sequentially, so no lock is needed.
+
+**Tests:**
+- Below-minimum and above-maximum repeats are rejected.
+- The same key replaces and reports the previous id.
+- The limit is enforced, but not when replacing.
+- A one-shot reminder without a key behaves exactly as before.
+- List is sorted.
+- Cancel works by id and by key; an unknown target returns `found: false`; both or
+  neither target is rejected.
+
+### WP5. ReminderCoordinator (D4, D5, D7)
+
+File: `apps/worker/src/reminder-coordinator.ts` (constructed in
+`apps/worker/src/index.ts` ~line 829)
+
+**Constructor:** add `workerId` and `config: ReminderConfig`
+(`appConfig.agentRuntime.reminders`). Replace `POLL_INTERVAL_MS` with
+`config.pollIntervalMs`.
+
+**Lease:** each poll, before scanning:
+- If not holding it: `SET reminder-coordinator:lease <workerId> EX <ttl> NX`. Skip the
+  poll unless the result is `OK`.
+- If holding it: renew it. Copy the acquire/renew/release pattern in
+  `apps/worker/src/alerting/alert-dispatcher.ts` (~line 111).
+- Release on `stop()`.
+
+**Per record:**
+- Parse with `parseReminderRecord`; warn and skip malformed records.
+- Skip records with a legacy `firedAt` (as today).
+- Skip records that aren't due yet.
+
+**Due record:**
+- **Repeating:** compute `{ nextTriggerAtMs, missedOccurrences }` with
+  `advanceRepeatingReminder`. One-shot reminders have `missedOccurrences = 0`.
+- **Emit** `emitAgentWake` with
+  `context: { reminderId, message, scheduledBy, key?, repeatEveryMs?, scheduledFor: triggerAt, missedOccurrences, nextTriggerAt? }`.
+- **On success:**
   - One-shot: `HDEL` (unchanged).
-  - Repeating: `HSET` the updated record (`triggerAt = nextTriggerAt`,
-    `lastFiredAt = now`).
-  - Publish failure: no change; retried next poll (unchanged).
-- Inactive agents are still not polled, so an overdue reminder fires once on return
-  with `missedOccurrences` (decision 6).
+  - Repeating: `HSET` the record with `triggerAt = nextTriggerAt` and
+    `lastFiredAt = now`.
+- **On failure:** leave the record unchanged and log an error (retried next poll).
 
-### 6. Active-hours gate
+**Unchanged:**
+- The coordinator does no active-hours check. The runtime gate lets reminder wakes
+  through (D5).
+- Inactive agents are still not polled, so overdue reminders fire once when the agent
+  is active again (D4).
 
-Files: `apps/worker/src/tick-gates.ts`, `apps/worker/src/tick-gate-state.ts`,
-`apps/worker/src/agent.ts`, `packages/domain/src/config/schema.ts`,
-`apps/worker/src/agents/agent-session-manager.ts`
-
-- `TickGateState` gains `hasUserMessage?: boolean` and `hasReminderWake?: boolean`.
-  The session gate skips only when both are false. The reminder bypass covers
-  boundary races; the coordinator already holds reminders outside the window. Market
-  wakes keep today's behaviour.
-- `buildTickGateState` derives the two flags:
-  - `hasUserMessage` from `isUserMessageType` on incoming messages, or the new
-    `hasPendingUserMessage` param.
-  - `hasReminderWake` from an incoming `agent.wake` whose `payload.source` is
-    `reminder`, or a buffered reminder.
-- `agent.ts`: pass `hasPendingUserMessage` on its own instead of folding it into
-  `hasBufferedWake`.
-- **Decision 5c:** style-default active hours apply only to agents with trading
-  capability.
-  - `resolveAgentRuntimePolicy` gains an options argument
-    `{ applyStyleActiveHours?: boolean }` (default `true`, so existing callers are
-    unchanged). When it's `false`, `allowedHoursUtc`, `weekendPause` and
-    `tradingSessions` come only from `runtimePolicyOverrides`.
-  - The session manager passes `false` for agents without trading capability; the
-    coordinator uses the same resolution.
-  - The UI display of effective hours is a Part 3 follow-up.
-
-### 7. Wake contract
-
-File: `packages/domain/src/trading/trading-protocol.ts` (+ test)
-
-Extend `ReminderWakeContextSchema` with optional `key`, `repeatEveryMs`,
-`scheduledFor`, `missedOccurrences` and `nextTriggerAt`. Optional-only additions keep
-old payloads valid and stay wire-compatible with the traderton copy. Moving the
-schema out of the trading module is out of scope.
-
-### 8. Prompt
-
-Files: `apps/worker/src/agent.ts`, `apps/worker/src/runtime-composition.ts`,
-`apps/worker/src/prompt-timing-context.ts` (+ tests)
-
-- **Load reminders each tick.** In `agent.ts`, load `agent:reminders:{agentId}` once
-  per tick, next to the memory enrichment load (~line 2611). Parse the records and
-  store them in `runtimeState.metrics.scheduledRoutines`, sorted by next due and
-  capped at `promptMaxEntries`. On failure, warn and continue.
-- **New context provider `scheduled-routines`.** It is `free`, `dynamic` and
-  `preserveWhenTrimmed`. Title: "Your scheduled reminders". Example line:
-  `- [daily_report] Send the daily summary — repeats every 24h; last fired 2026-10-06T09:00Z; next 2026-10-07T09:00Z`
-  When over the cap, it ends with "N more (use list_reminders)". It renders nothing
-  when there are no reminders.
-- **Extend the `reminder-context` block** (`RuntimeReminderContext` and its population
-  at ~line 2014) with:
-  - repeats every X, or one-shot
-  - scheduled for vs delivered at
-  - missed occurrences
-  - next occurrence
-- **Timing context.** `prompt-timing-context.ts` gains an optional
-  `Next scheduled reminder (UTC): …` line.
-- The context hash is unchanged; reminders are not hash inputs.
-
-### 9. Fold task management into the base skill
-
-Files: `packages/domain/src/skills.ts`, `apps/worker/src/agent.ts` (built-in skill map
-~line 478), `apps/worker/src/tools/platform-docs-data.ts`,
-`scripts/ts/build-docs-index.ts`, affected tests (domain, db, api, web, worker), and a
-data migration in `packages/db` (see below).
-
-**`BASE_SKILL`:**
-- Description: "Core tools: memory, tasks, reminders, messaging, cost tracking, and
-  schema fetching. Auto-injected into every agent."
-- `requiredTools`: add `create_task`, `list_tasks`, `resolve_task`, `complete_task`,
-  `schedule_reminder`, `list_reminders`, `cancel_reminder`.
-- Instructions: move the current `TASK_MANAGEMENT_SKILL` tool lines in, updating the
-  `schedule_reminder` line to mention repeats. Then append the "Routine work" text in
-  section 10.
-
-**Remove `TASK_MANAGEMENT_SKILL`** (preferred over keeping an empty alias, which
-would show a no-op skill in the catalog and in `list_skills`):
-- Delete it from `SYSTEM_SKILLS` (and so from `SYSTEM_SKILL_SLUGS`) and from the
-  worker's built-in skill map.
-- `SKILL_PRESET_MAP['personal-assistant']` becomes `['web-access', 'email']`.
-- Existing data:
-  - **Migration:** delete `agent_skills` rows with `skill_id = 'task-management'`, then
-    the `skills` row and its revisions. Check foreign keys and revision history in the
-    `packages/db` schema before writing the delete.
-  - **Fail-soft fallback:** until the migration runs, descriptor resolution and the
-    `add_skills` tool skip the id/slug `task-management` / `system/task-management`
-    with a log line, so they never error. `add_skills` returns "already included in
-    the base skill".
-  - `syncSystemSkills` only upserts, so it won't recreate the row.
-- Platform docs data and the docs-index script: remove the task-management entry and
-  update the preset mapping text.
-
-**Effects to accept:**
-- Prompt size: every agent gets 7 more tool schemas. Check against
-  `maxVisibleToolSchemas` (careful 32) so no agent loses a tool it relies on.
-- `inferDependsOn`: skills listing `schedule_reminder` or `create_task` no longer
-  depend on `task-management`. That's correct, since base tools are universal.
-- Capability gating stays as today: these tools are Redis-only and ungated.
-
-### 10. Routine guidance and docs
-
-Files: `packages/domain/src/skills.ts`, `docs/agents/skills/flight-deal-monitoring.md`,
-`docs/agents/skills/personal-property-locator-tools.md`,
-`docs/agents/prompts/security-audit-prompt.md`,
-`docs/tech/agents/wake-signal-and-technical-scan.md`,
-`docs/tech/agents/skill-authoring.md`, `docs/tech/configuration.md` (if it indexes
-`agentRuntime` keys)
-
-- Append to the `BASE_SKILL` instructions (skill-authoring tone):
-
-  ```text
-  Routine work:
-  - If you have work that repeats on a schedule, you can schedule it once with `schedule_reminder` using `repeatEveryMinutes` and a stable `key` (e.g. `daily_report`). The platform schedules each next occurrence for you, including across restarts.
-  - Scheduling again with the same `key` replaces the existing reminder instead of adding a second one.
-  - Your scheduled reminders are listed in your context. You can also use `list_reminders` to check them and `cancel_reminder` to stop one.
-  - A routine is normally done when its reminder arrives. On other ticks, you can check your scheduled reminders before doing routine work early.
-  - You can record each completed run with `set_memory` so you can tell whether an occurrence was handled.
-  - When a reminder arrives late or reports missed occurrences, you can decide whether one catch-up run is enough.
-  ```
-
-- `flight-deal-monitoring.md`: replace "use `schedule_reminder` to trigger the next
-  scan" with repeating reminders keyed `scan` and `report`.
-- `personal-property-locator-tools.md`: replace "`schedule_reminder` for the next
-  tick" with one repeating reminder keyed `sweep`.
-- Markdown skills may keep listing these tools in `requiredTools`; they're base tools,
-  so this is harmless.
-- `security-audit-prompt.md`: change "Use task-management…" to "Use tasks
-  (`create_task`)…".
-- `skill-authoring.md`: note that task and reminder tools come with the base skill.
-- `wake-signal-and-technical-scan.md`: add a reminders section covering repeats,
-  key, lease, active-hours hold, and missed occurrences.
-
-## Testing plan
-
-Test names describe behaviour.
-
-**Domain**
-- Reminder config defaults load, and min > max is rejected.
-- `ReminderWakeContextSchema` accepts both old and extended payloads.
-- `resolveAgentRuntimePolicy` without style active hours keeps creator-set hours and
-  drops style defaults.
-- `BASE_SKILL` includes the task and reminder tools.
-- `SYSTEM_SKILLS` no longer contains `task-management`.
-- The personal-assistant preset maps to `web-access` and `email`.
-- A markdown skill requiring `schedule_reminder` infers no dependency.
-- An agent with a stale `task-management` assignment resolves without error and still
-  has reminder tools.
-- `add_skills('system/task-management')` reports that it's already included.
-
-**Worker: schedule math**
-- Next occurrence stays anchored after a late fire.
-- Missed occurrences are counted after an outage.
-- An exact-boundary `now` advances to the next slot.
-
-**Worker: tools**
-- A repeat below the minimum or above the maximum is rejected.
-- The same key replaces the existing reminder and reports `replaced`.
-- The per-agent limit is enforced.
-- `list_reminders` sorts by next due.
-- `cancel_reminder` works by id and by key, and an unknown target returns
-  `found: false`.
-- A one-shot reminder behaves as before.
-
-**Worker: coordinator**
-- A one-shot reminder fires and is removed.
-- A repeating reminder fires and is re-scheduled.
-- A publish failure keeps the reminder.
-- No lease means no fire.
-- A reminder due outside active hours waits, then fires once with a missed count.
+**Tests:**
+- One-shot fires and is removed.
+- Repeating fires and is re-scheduled on the grid.
+- Late repeating fires once with a missed count.
+- A failed publish leaves the record unchanged.
+- Without the lease nothing fires.
 - Malformed records are skipped.
 
-**Worker: gate**
-- The section 1 tests pass.
-- Style-default hours don't apply to a non-trading agent.
-- Creator-set hours do apply.
+### WP6. Wake contract and prompt
 
-**Worker: prompt**
-- The routines block renders, caps, and is absent when there are no reminders.
-- The reminder block shows repeat, missed and next lines.
-- The context hash is unchanged by reminder state.
+**Wake contract** (`packages/domain/src/trading/trading-protocol.ts`): add optional
+fields to `ReminderWakeContextSchema`:
+- `key: z.string()`
+- `repeatEveryMs: z.number().int()`
+- `scheduledFor: z.string().datetime()`
+- `missedOccurrences: z.number().int().min(0)`
+- `nextTriggerAt: z.string().datetime()`
 
-**Suite:** `pnpm lint`, focused Vitest runs, then
-`scripts/shell/tests/run-all-tests.sh`.
+Optional-only additions keep old payloads valid. A copy of this file exists in the
+separate traderton repo; it doesn't need changing.
 
-## Implementation order
+**Reminder block on the tick it fires** (`apps/worker/src/runtime-composition.ts`):
+- Extend `RuntimeReminderContext` (~line 49) and its population from the wake
+  (~line 2014) with the new fields.
+- The `reminder-context` provider (~line 1028) adds these lines:
+  - `Repeats every: 24h` or `One-shot`
+  - `Scheduled for: <ISO>`
+  - `Missed occurrences: <n>` (only if > 0)
+  - `Next occurrence: <ISO>`
 
-1. Failing gate tests (section 1), then the gate fix and active-hours resolution (section 6).
-2. Config (section 2).
-3. Record and schedule module (section 3).
-4. Tools and domain registry (section 4).
-5. Coordinator (section 5).
-6. Wake contract and prompt (sections 7 and 8).
-7. Fold task management into base: fallback first, then remove the skill and add the
-   migration (section 9).
-8. Routine guidance and docs (section 10).
-9. `pnpm lint`, focused tests, full suite.
+**Always-visible reminder list:**
+- In `agent.ts`, once per tick and next to the agent-memory load (~line 2611), read
+  `agent:reminders:{agentId}` (`HGETALL`) and parse each entry. Store the result,
+  sorted by `triggerAt` and capped at `promptMaxEntries`, in a new
+  `runtimeState.metrics.scheduledReminders`. Also store the total count.
+- On a Redis error, warn and keep the previous value.
+- New context provider `id: 'scheduled-reminders'`, modelled on `reminder-context`
+  (`costTier: 'free'`, `section: 'dynamic'`, `preserveWhenTrimmed: true`):
+  - Title: "Your scheduled reminders".
+  - One line each, e.g.
+    `- [daily_report] Send the daily summary — repeats every 24h; last fired 2026-10-06T09:00Z; next 2026-10-07T09:00Z`.
+  - Ends with `…and N more (use list_reminders)` when capped.
+  - Returns `null` when there are none.
+
+**Timing line:** `apps/worker/src/prompt-timing-context.ts` gets an optional
+`nextReminderIso`, rendered as `Next scheduled reminder (UTC): <ISO>`. Pass the earliest
+`triggerAt` from the list above.
+
+**Do not** add reminders to the context hash (`computeDecisionContextHash` inputs stay
+the same).
+
+**Tests:**
+- The list block renders, caps and is absent when empty.
+- The fire block shows the repeat, missed and next lines.
+- The timing line shows the next reminder.
+- The hash is identical with and without reminders.
+
+### WP7. Task and reminder tools move into the base skill (D8)
+
+File: `packages/domain/src/skills.ts`
+
+**`BASE_SKILL`:**
+- `description`: "Core tools: memory, tasks, reminders, messaging, cost tracking, and
+  schema fetching. Auto-injected into every agent."
+- `requiredTools`: append `create_task`, `list_tasks`, `resolve_task`,
+  `complete_task`, `schedule_reminder`, `list_reminders`, `cancel_reminder`.
+- `instructions`: move in the five tool lines from `TASK_MANAGEMENT_SKILL` (update the
+  `schedule_reminder` line to mention repeating and `key`), then the WP8 text.
+
+**Remove `TASK_MANAGEMENT_SKILL`:**
+- **Domain:** delete the constant and its entry in `SYSTEM_SKILLS`.
+  `SYSTEM_SKILL_SLUGS` is derived from it.
+- **Preset:** `SKILL_PRESET_MAP['personal-assistant']` becomes `['web-access', 'email']`.
+- **Worker:** remove the `'task-management'` entry from the built-in skill map in
+  `apps/worker/src/agent.ts` (~line 478).
+- **Platform docs:** in `apps/worker/src/tools/platform-docs-data.ts` and
+  `scripts/ts/build-docs-index.ts`, remove the task-management skill entry and its
+  line in the preset mapping text, and mention the tasks/reminders in the base skill
+  entry.
+- **Tests:** update every one that imports `TASK_MANAGEMENT_SKILL` or uses the id
+  `'task-management'`. Run `rg "TASK_MANAGEMENT_SKILL|'task-management'|system/task-management" apps packages scripts`.
+  Where a test only needs some non-trading skill, use `WEB_ACCESS_SKILL`.
+
+**Fail-soft for old references** (until the migration runs, and for safety after):
+- **Descriptor resolution** (`packages/db/src/agent-runtime-descriptor.ts`, around
+  `buildRuntimeDescriptor`): when an assigned skill id is `task-management`, drop it
+  without error and log at info.
+- **`add_skills`** (`apps/worker/src/tools/skills.ts` ~line 339): for
+  `task-management` or `system/task-management`, return success with
+  `"already included in the base skill"` and write nothing.
+- **API create/update** (`resolveSkillSlugs` in `apps/api/src/routes/agents.ts`
+  ~line 360): silently drop the id/slug, so old clients don't get "Unknown skills".
+
+**Data migration:**
+- Create it with `pnpm --filter @herobids/db exec drizzle-kit generate --custom --name remove_task_management_skill`
+  (the existing scripts are `db:generate` / `db:migrate`).
+- SQL: delete from `agent_skills` where `skill_id = 'task-management'`, then delete the
+  `skills` row with that id.
+- First check foreign keys from `skill_revisions` and any other table referencing
+  `skills.id` (`packages/db/src/schema/`), and delete or let cascade in the right order.
+- `syncSystemSkills` (`apps/api/src/sync-system-skills.ts`) only upserts skills in
+  `SYSTEM_SKILLS`, so it won't recreate the row. Confirm this by reading it.
+
+**Tool-visibility budget check:**
+- `getVisibleToolNames` (`apps/worker/src/runtime-tool-visibility.ts` ~line 38) stops
+  adding tools at `maxVisibleToolSchemas` (careful style: 32), in `resolvedSkills`
+  order.
+- Confirm `base` is first in `resolvedSkills` (an existing descriptor test expects
+  `['base', ...]`).
+- Then count: base goes from 12 to 19 tools. Add a test that a careful agent with
+  base + `web-access` + `email` + `programming` still sees all of their tools. If not,
+  raise careful's `maxVisibleToolSchemas` default and say so in the PR.
+
+**Tests:**
+- `BASE_SKILL` has the seven tools.
+- `SYSTEM_SKILLS` has no `task-management`.
+- The preset maps to `web-access` + `email`.
+- `inferDependsOn(['schedule_reminder'], 'x')` returns `[]`.
+- A descriptor with a stale `task-management` assignment resolves without error.
+- `add_skills('system/task-management')` reports that it's already included.
+- The visibility budget test above.
+
+### WP8. Routine guidance and docs
+
+Append to the `BASE_SKILL` instructions. Keep the non-assertive "you can" tone from
+`docs/tech/agents/skill-authoring.md`:
+
+```text
+Routine work:
+- If you have work that repeats on a schedule, you can schedule it once with `schedule_reminder` using `repeatEveryMinutes` and a stable `key` (e.g. `daily_report`). The platform schedules each next occurrence for you, including across restarts.
+- Scheduling again with the same `key` replaces the existing reminder instead of adding a second one.
+- Your scheduled reminders are listed in your context. You can also use `list_reminders` to check them and `cancel_reminder` to stop one.
+- A routine is normally done when its reminder arrives. On other ticks, you can check your scheduled reminders before doing routine work early.
+- You can record each completed run with `set_memory` so you can tell whether an occurrence was handled.
+- When a reminder reports missed occurrences, you can decide whether one catch-up run is enough.
+```
+
+Docs:
+- `docs/agents/skills/flight-deal-monitoring.md`: replace "Use `schedule_reminder` to
+  trigger the next scan and the next scheduled summary" with repeating reminders keyed
+  `scan` (search interval) and `report` (report frequency).
+- `docs/agents/skills/personal-property-locator-tools.md`: replace both "schedule the
+  next tick" mentions with one repeating reminder keyed `sweep`.
+- `docs/agents/prompts/security-audit-prompt.md`: "Use task-management to track…" →
+  "Use tasks (`create_task`) to track…".
+- `docs/tech/agents/skill-authoring.md`: note that task and reminder tools come with
+  the base skill. Markdown skills may still list them in `requiredTools`, which is
+  harmless.
+- `docs/tech/agents/wake-signal-and-technical-scan.md`: add a "Reminders" section:
+  - one-shot vs repeating, and `key` replacement
+  - the coordinator lease
+  - missed occurrences
+  - reminders and user messages bypass active hours
+
+### WP9. Skip-unchanged setting and 24 h default (D9, D10)
+
+**9a. Domain** (`packages/domain/src/config/schema.ts`):
+- `AgentRuntimePolicyOverridesSchema` gains
+  `skipUnchangedTicks: z.boolean().nullable().optional()`.
+- `ResolvedAgentRuntimePolicy` gains `skipUnchangedTicks: boolean`.
+- `resolveAgentRuntimePolicy` resolves it as `overrides.skipUnchangedTicks ?? (options?.hasTradingCapability ?? true)`.
+  When the option is omitted, that's `true`, matching today. All three callers already
+  pass the option (WP1c).
+
+**9b. Worker** (`apps/worker/src/agent.ts`, `apps/worker/src/scout-gating.ts`). When
+`agentConfig.resolvedRuntimePolicy?.skipUnchangedTicks === false`:
+- Pass `enabledGates: { ...costProfile.enabledGates, contextHash: false }` to
+  `buildTickGateState` (~line 2760).
+- `resolvePreScoutDecision` gains `forceJudgeOnScheduledTick?: boolean`. When true, it
+  returns `{ disposition: 'escalate', reason: 'scheduled_check_in' }` with a new
+  `source: 'forced_scheduled_check_in'`. It's checked after the user-message and
+  judge-reminder checks, so those reasons keep priority.
+- The session gate, billing gate and circuit breaker are unchanged.
+
+**9c. Default interval at create** (`apps/api/src/routes/agents.ts`, create handler):
+- If the request has no `tickIntervalMs` and the agent has no trading capability, set
+  `tickIntervalMs = agentRuntime.nonTradingDefaults.tickIntervalMs`.
+- Check how operator `agentRuntime` config reaches the API routes (the route module
+  already receives `agentRiskDefaults` / `agentCostEstimates`). If it doesn't, pass the
+  value in the same way.
+- PATCH never recomputes it.
+
+**9d. maxHold validation:**
+- `validateMaxHoldDurationInvariant` (API) returns no issues when the resolved
+  `skipUnchangedTicks` is `false`.
+- Its web twin in `apps/web/src/features/agents/form-validation.ts` (~line 56) gets the
+  same rule.
+- Reason: max hold only affects skipped ticks. Without this, careful style (450 min)
+  rejects a 24 h interval.
+
+**9e. Long interval vs active hours.** In `agent.ts`, when a tick is skipped by the
+session gate (`skipDecision.gate === 'session'`), schedule the next tick at
+min(normal interval, ms until the start of the next allowed hour).
+- Put the "next allowed hour" calculation in `tick-gates.ts`, next to
+  `isWithinTradingHours`, and reuse its session/hour logic.
+- Without this, a 24 h check-in that lands outside the window would be skipped every
+  day.
+
+**9f. Web** (`apps/web/src/features/agents/`):
+- **Tick interval default:** in `style-mapping.ts` and where the create form fills
+  `tickIntervalMins` from the style, use 24 h (1440 min) when the selected skills have
+  no trading capability. Use `hasCapabilityFamily(selectedSkills, 'trading')`, as
+  `AgentsPage.tsx` and `EditAgentModal.tsx` already do.
+  - Get the 24 h value from the API if an operator-defaults endpoint exists (check
+    `/agents/risk-defaults` or similar). Otherwise mirror the default in one shared
+    constant with a comment pointing to the operator config key.
+- **Checkbox** in the Advanced → AI section, under Tick interval:
+  - Label: "Skip check-ins when nothing has changed".
+  - Helper: "Saves cost for agents that check in often, such as trading agents.
+    Reminders and messages always reach the agent."
+  - The unchecked default follows the skills (checked for trading, unchecked
+    otherwise).
+  - Map it into `runtimePolicyOverrides.skipUnchangedTicks` in `agent-payloads.ts`,
+    hydrate it in `agent-form-state.ts`, and send `null` when the user hasn't touched
+    it.
+- **Cost hint:** when skipping is off and the interval is under 60 min, show "Each
+  check-in runs the full model, about N runs a day."
+- **i18n:** add every new string to `apps/web/src/app/i18n/locales/en.ts`, `ar.ts` and
+  `hi.ts`.
+
+**Tests:**
+- **Resolution:** a non-trading agent resolves to `false`, a trading agent to `true`,
+  and an explicit override wins.
+- **Ticks:** with skipping off, an unchanged-context scheduled tick escalates to the
+  judge as `scheduled_check_in`.
+- **Create default:** a non-trading create without an interval stores 24 h; a trading
+  create stores the style interval.
+- **Validation:** a 24 h interval passes validation with skipping off and still fails
+  with skipping on (careful style).
+- **Active hours:** a session-gate skip schedules the next tick at the window start.
+- **Web:** the checkbox round-trips; a style change keeps 1440 min for non-trading
+  skills; strings exist in all three locales.
+
+## Verification (run before declaring done)
+
+```bash
+pnpm install
+pnpm --filter @herobids/db run db:migrate      # applies the WP7 migration (needs docker compose up -d)
+pnpm lint
+pnpm build
+pnpm test
+scripts/shell/tests/run-all-tests.sh --e2e
+```
+
+Then do a manual smoke test with `scripts/shell/run/reset-and-run.sh`:
+1. Create a non-trading agent and confirm the tick interval defaults to 24 h.
+2. Ask it "remind me every 15 minutes to stretch, key stretch".
+3. Confirm one reminder in Redis, `agent:reminders:<agentId>`, with `repeatEveryMs: 900000`.
+4. Confirm it fires twice, about 15 min apart, with no "Tick skipped — context_unchanged" entries.
+5. Send a message outside the agent's active hours and confirm it gets a reply.
 
 ## Risks
 
-- **Cost:** every reminder tick is a judge run, so a 15-minute repeat is ~96 judge
-  runs a day. Mitigation: operator minimum, spend budget, and the effective-cadence
-  display in [Part 3](./003-part3-schedule-continuity-and-visibility-plan.md).
-- **Duplicate fires across workers.** Mitigation: the coordinator lease.
-- **Runaway reminder creation.** Mitigation: `maxActivePerAgent` and key upsert.
-- **Removing the `task-management` skill touches existing data and many tests.**
-  Mitigation: the fail-soft fallback ships before the migration; the migration only
-  deletes rows for a skill whose tools every agent now has.
-- **More tool schemas per agent.** Mitigation: check `maxVisibleToolSchemas` per style
-  and raise the careful default if needed.
-- **Behaviour changes, accepted by decisions 5a/5c:**
-  - Trading agents now answer user messages outside active hours.
+- **Cost:** every reminder tick is a judge run (a 15 min repeat is about 96 runs a
+  day). The operator minimum and spend budget cap it; Part 3 makes the effective
+  cadence visible.
+- **Behaviour changes** (accepted, D5/D6):
+  - Trading agents answer user messages and reminders outside active hours.
   - Careful non-trading agents are no longer limited to 14–20 UTC unless the creator
     set those hours.
-- **Prompt growth.** Mitigation: `promptMaxEntries`.
-- **Traderton copy of the wake contract.** Mitigation: optional fields only.
+- **Removing a skill** touches data and many tests. The fail-soft paths ship in the
+  same change as the migration.
+- **Tool budget:** see the WP7 check.
+- **Prompt growth:** capped by `promptMaxEntries`.
 
 ## Non-goals
 
-- Time-of-day and timezone schedules, delivery acknowledgement, UI
-  ([Part 3](./003-part3-schedule-continuity-and-visibility-plan.md)).
-- Agent-chosen tick interval ([Part 2](./002-part2-agent-controlled-tick-interval-plan.md)).
-- Any change to the `context_hash` gate or `maxHoldDurationMs`.
-- Editing a reminder in place; use key replacement.
-
-## Open decisions (minor)
-
-1. Key replacement issues a new `reminderId` and returns the previous one.
-   Recommendation: yes.
-2. One-shot reminders can also take a `key`. Recommendation: yes.
+- Time-of-day/timezone schedules, delivery acknowledgement, schedules UI, scout
+  awareness (Part 3).
+- Agent-controlled tick interval (Part 2, optional).
+- Changing the `context_hash` gate's logic or `maxHoldDurationMs` values.
+- Editing a reminder in place (use key replacement).
+- Migrating existing agents' intervals (D11).

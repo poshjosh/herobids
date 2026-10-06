@@ -7,6 +7,13 @@
 - Supersedes [070 agent min tick interval extension](../../../../pending/070-agent-min-tick-interval-extension/001-plan.md).
 - Takes precedence over [071 skill-driven tick interval defaults](../../../../pending/071-skill-driven-tick-interval-defaults/001-plan.md) where they overlap.
 
+> **Optional (2026-10-06).** Part 1 now gives non-trading agents a 24 h ungated
+> check-in, with reminders as their schedule, so this part is no longer needed for the
+> program goal. Build it only if agents still need to control their own check-ins
+> after Part 1 ships. If built, decision 12's skip setting stays creator-owned (the
+> agent can't change it), and for non-trading agents the reset target is the 24 h
+> default.
+
 ## Summary
 
 The agent can set its own check-in (tick) interval within operator bounds

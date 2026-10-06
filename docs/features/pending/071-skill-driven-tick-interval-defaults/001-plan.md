@@ -5,6 +5,8 @@
 > 2. The stored `tickIntervalMs` is no longer always the effective cadence: the agent may override it (Part 2), and a creator edit clears that override.
 > 3. "Rely on wake signals (reminders…)" for non-trading agents is delivered by [Part 1](../../2026/10/06/001-agent-routine-tasks-program/001-part1-repeating-reminders-mvp-plan.md) repeating reminders.
 > 4. The `maxHoldDurationMs` comment updates should describe the creator default; Part 2 leaves `maxHoldDurationMs` unchanged when the agent changes its interval.
+> 6. Skill-derived defaults apply only to agents with trading capability. Non-trading agents default to 24 h (operator config `agentRuntime.nonTradingDefaults.tickIntervalMs`), and their unchanged-tick skipping is off by default ([Part 1](../../2026/10/06/001-agent-routine-tasks-program/001-part1-repeating-reminders-mvp-plan.md), WP9). The personal-assistant worked examples (60/180/20 min) no longer apply.
+> 5. The `task-management` skill is removed (its tools move into the base skill, Part 1). Drop its row from the `suggestedTickIntervalMs` table. The personal-assistant baseline becomes `web-access` + `email`; at the proposed values that is still 60 min.
 
 ## Summary
 

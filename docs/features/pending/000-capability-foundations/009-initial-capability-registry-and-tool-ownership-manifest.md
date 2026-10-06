@@ -1,6 +1,6 @@
 # Initial Native Capability And External Backend Registration Manifest
 
-> **Note (2026-10-06):** the [agent routine tasks program](../../2026/10/06/001-agent-routine-tasks-program/000-outline.md) adds the tools `list_reminders` and `cancel_reminder` (owner: `task-management`, `general`) and `set_tick_interval` (base skill, `general`). That program takes precedence where they overlap; add these rows when implementing this manifest.
+> **Partially superseded (2026-10-06)** by the [agent routine tasks program](../../2026/10/06/001-agent-routine-tasks-program/000-outline.md), which takes precedence where the two overlap. The `task-management` system skill is removed and its tools move into the base skill ([Part 1](../../2026/10/06/001-agent-routine-tasks-program/001-part1-repeating-reminders-mvp-plan.md)). So `create_task`, `list_tasks`, `resolve_task`, `complete_task` and `schedule_reminder` become `core` (not `general`). Add `list_reminders`, `cancel_reminder` and `set_tick_interval` as `core` too.
 
 **Status:** draft
 **Created:** 2026-07-18  

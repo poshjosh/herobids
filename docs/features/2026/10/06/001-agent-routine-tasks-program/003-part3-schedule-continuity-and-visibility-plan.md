@@ -63,7 +63,8 @@ Files: `apps/worker/src/tools/tasks.ts`, `apps/worker/src/reminders/reminder-rec
   offset helper is generalised from `tick-gates.ts`). Daylight-saving rules:
   - A local time that doesn't exist (spring forward) fires at the next valid minute.
   - An ambiguous local time (fall back) fires at the first occurrence.
-- Missed-occurrence counting and the active-hours hold from Part 1 apply unchanged.
+- Missed-occurrence counting from Part 1 applies unchanged, and reminder wakes still
+  bypass active hours.
 
 ### 2. Delivery acknowledgement and missed runs
 
