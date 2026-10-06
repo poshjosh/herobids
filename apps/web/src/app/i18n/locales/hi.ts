@@ -288,7 +288,7 @@ export const messages: Record<string, string> = {
   'connections.deleteFailed': 'कनेक्शन हटाने में विफल। कृपया पुनः प्रयास करें।',
   'connections.cascadeDelete': 'कनेक्शन + लिंक्ड डेटा हटाएँ',
   'connections.cascadeDeleteConfirm': 'कनेक्शन "{label}" और इसका लिंक्ड वॉलेट रिकॉर्ड और OpenAIdom से संग्रहीत क्रेडेंशियल/प्राइवेट की हटाएँ? इसे वापस नहीं लाया जा सकता।',
-  'connections.cascadeDeleteBlocked': 'लिंक्ड वॉलेट डेटा नहीं हटा सकते। पहले एजेंट अनुदान और बॉट हटाएँ। अवरोधक एजेंट: {blockingAgentIds}. कनेक्शन पर अवरोधक बॉट: {blockingConnectionBotIds}. ट्रेडिंग अकाउंट पर अवरोधक बॉट: {blockingVenueAccountBotIds}.',
+  'connections.cascadeDeleteBlocked': 'लिंक्ड वॉलेट डेटा नहीं हटा सकते। पहले एजेंट अनुदान और बॉट हटाएँ। अवरोधक एजेंट: {blockingAgentIds}. कनेक्शन पर अवरोधक बॉट: {blockingConnectionBotIds}. लिंक्ड अकाउंट पर अवरोधक बॉट: {blockingVenueAccountBotIds}.',
   'connections.assignmentSuccess': 'कनेक्शन चयनित एजेंटों को सौंपा गया।',
   'connections.oauth.success': '{provider} सफलतापूर्वक कनेक्ट हो गया!',
   'connections.oauth.error': 'कनेक्शन विफल',

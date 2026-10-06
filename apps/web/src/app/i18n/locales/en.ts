@@ -286,7 +286,7 @@ export const messages: Record<string, string> = {
   'connections.deleteFailed': 'Failed to delete connection. Please try again.',
   'connections.cascadeDelete': 'Delete connection + linked data',
   'connections.cascadeDeleteConfirm': 'Delete connection "{label}" and its linked wallet record and stored credential/private key from OpenAIdom? This cannot be undone.',
-  'connections.cascadeDeleteBlocked': 'Cannot delete the linked wallet data. Remove agent grants and bots first. Blocking agents: {blockingAgentIds}. Blocking bots on connection: {blockingConnectionBotIds}. Blocking bots on trading account: {blockingVenueAccountBotIds}.',
+  'connections.cascadeDeleteBlocked': 'Cannot delete the linked wallet data. Remove agent grants and bots first. Blocking agents: {blockingAgentIds}. Blocking bots on connection: {blockingConnectionBotIds}. Blocking bots on linked account: {blockingVenueAccountBotIds}.',
   'connections.assignmentSuccess': 'Connection assigned to selected agents.',
   'connections.oauth.success': '{provider} connected successfully!',
   'connections.oauth.error': 'Connection failed',

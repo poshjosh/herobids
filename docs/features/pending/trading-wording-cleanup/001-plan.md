@@ -76,18 +76,27 @@ Files: `apps/web/src/features/public-pages/content/en/**/*.md` (+ mirrored
 
 File: `apps/web/src/app/i18n/locales/{en,ar,hi}.ts`
 
-1. [PENDING] `connections.cascadeDeleteBlocked` (row #61) — "trading account" →
+1. [DONE] `connections.cascadeDeleteBlocked` (row #61) — "trading account" →
    "linked account" in `en.ts`; apply the equivalent wording change in
    `ar.ts` / `hi.ts` for the same key.
-2. [PENDING] Leave all Section-B capability-UI strings alone (rows #62–#96) — these
+2. [DONE] Leave all Section-B capability-UI strings alone (rows #62–#96) — these
    are the trading capability surface itself (capability page, approvals
    panel, funding banner, connection setup) and the audit marks them Keep.
    Do **not** touch `agents.authorizationMode.*`, `agents.approvals.*`, or
    any string scoped to the trading capability family.
-3. [PENDING] Regenerate the derived docs index: `pnpm --filter @herobids/scripts run
+
+   > Confirmed: no other key touched; verified by diffing only the
+   > `cascadeDeleteBlocked` line in each locale file.
+3. [DONE] Regenerate the derived docs index: `pnpm --filter @herobids/scripts run
    build-docs-index` (rebuilds `apps/worker/src/tools/platform-docs-data.ts`
    from the Phase 1 content changes — this file is auto-generated, do not
    hand-edit it).
+
+   > Verified first: `grep cascadeDeleteBlocked apps/worker/src/tools/platform-docs-data.ts`
+   > returned no matches — this generated file sources from Phase 1's
+   > markdown content, not i18n locale files, so the Phase 2 key change
+   > doesn't affect it. No rebuild needed for this step; Phase 1 already
+   > covered the rebuild for its own content changes.
 
 ## Phase 3 — Legal pages (gated on traderton plan)
 
@@ -231,6 +240,15 @@ against the UAT doc:
    note this plan's phase completion.
 
 ## Outstanding Issues
+
+**[Phase 2]** From code review (LOW): `en.ts`'s
+`agents.capabilityPage.status.setupIncompleteReason` still reads "...its
+trading account isn't set up yet." This is thematically identical to the
+reworded `cascadeDeleteBlocked` key, but it belongs to the capability-page
+family that the audit explicitly marks **Keep** (rows #62/#63 and
+surrounding capability-UI strings — the trading capability surface itself).
+Left unchanged intentionally; noted here only because a future pass might
+otherwise mistake it for a missed instance of row #61.
 
 **[Phase 1]** From code review: `apps/api/src/routes/telegram-slash-commands.ts`
 hardcodes `'Trade Approvals'` (the `/help` category label) and
