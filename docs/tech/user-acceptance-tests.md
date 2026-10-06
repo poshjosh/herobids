@@ -395,3 +395,21 @@ Tests `AF-01`–`AF-05` no longer apply. The agent-state metrics it once showed
 | TRY-07 | Authenticated user visiting `/try` | Log in, then navigate to `/try` | Redirected to `/agents/new?ui=chat` | — | |
 | TRY-08 | `/try` page works on mobile | Visit `/try` on a mobile viewport (or resize browser) | Layout adjusts, inputs are full-width, messages readable | — | |
 | TRY-09 | Post-auth experience after `/try` | Complete flow: `/try` → email → click link → authenticate | User lands at `/agents/new?ui=chat` and sees the guided chat | — | |
+
+## 18. Trading Wording Cleanup (docs/product/trading-wording-audit.md)
+
+Verifies the content-page reword/removal, the one reworded i18n string, and
+the legal-page trading-clause removal implemented by
+`docs/features/pending/trading-wording-cleanup/001-plan.md`.
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| TW-01 | Agents docs index — no presets, Authorization heading | Open `/docs/agents` | No Agent Presets table; "Authorization" h2 heading; body says "proposal" not "trade proposal" | ✅ | 2026-10-06: Confirmed via browser snapshot |
+| TW-02 | FAQs — approvals heading reworded | Open `/help/faqs` | "How do approvals work?" heading; no "Trade Authorization"/"trade proposal" | ✅ | 2026-10-06: Confirmed; cross-ref link correctly points to `/docs/agents/#authorization` |
+| TW-03 | Get Started — no preset list | Open `/help/get-started` | Reworded onboarding; no Trading/Direct Trading/Trading Assistant preset list | ✅ | 2026-10-06: Confirmed |
+| TW-04 | What are AI agents — new capability list | Open `/docs/agents/what-are-ai-agents` | New capability bullets (web browser, Gmail/Telegram) replace old Trade crypto/forex bullets | ✅ | 2026-10-06: Confirmed; "Connecto" typo also fixed |
+| TW-05 | Telegram slash commands — Approvals heading | Open `/docs/messaging/telegram/slash-commands` | "Approvals" heading, not "Trade Approvals" | ✅ | 2026-10-06: Confirmed on content page. Known gap: live bot `/help` output still says "Trade Approvals" (`apps/api/src/routes/telegram-slash-commands.ts`) — logged as a deliberate out-of-scope follow-up in the plan's Outstanding Issues, not a regression of this change |
+| TW-06 | Connections cascade-delete-blocked wording | Delete a connection with a linked agent/bot | Error message says "linked account", not "trading account" | 🔒 | 2026-10-06: Source string confirmed correct (`en.ts`/`ar.ts`/`hi.ts` `cascadeDeleteBlocked`, commit `eadfcd6d`). Could not reproduce live in this pass — fresh stack had no agent linked to the connection, so delete hit a 503 venue-boundary error instead (traderton boundary not running in that stack). Needs `reset-and-run-xstack.sh` + a provisioned agent to verify the live rendering; blocked on availability, not a defect |
+| TW-07 | Privacy Policy — trading clauses removed, Traderton link | Open `/legal/privacy-policy` | Trading data/venues/records clauses gone; working link to Traderton's privacy policy | ✅ (content) / 🔒 (link) | 2026-10-06: Content fully verified correct (all removed/reworded clauses). The link to `https://staging.traderton.com/legal/privacy-policy.html` currently 404s on the live staging host — expected, not a defect: traderton's legal-pages commits are on an unpushed local branch, staging deploys from `main` via CI. Re-verify the link returns 200 once that branch is merged/pushed and deployed |
+| TW-08 | User Agreement — trading clauses removed, Traderton link | Open `/legal/user-agreement` | Trading Agents/decisions/risk/Trading sections, no-advice/no-guarantees, Test/Live definitions all gone; working link to Traderton's user agreement | ✅ (content) / 🔒 (link) | 2026-10-06: Content fully verified correct, including the new "Trading-specific terms" section naming all six migrated concepts. Same link-not-yet-deployed situation as TW-07 — re-verify once traderton's branch ships |
+| TW-09 | ar/hi mirrors reworded, RTL intact | Switch to Arabic and Hindi locales; open about-us, faqs, get-started | Reworded content renders; RTL layout intact for Arabic | ✅ | 2026-10-06: Confirmed both locales; `dir="rtl"`/`lang="ar"` correct for Arabic, `dir="ltr"` for Hindi; no stale "trading bots"/preset wording in either |

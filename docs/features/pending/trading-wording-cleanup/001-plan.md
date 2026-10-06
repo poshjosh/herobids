@@ -280,6 +280,21 @@ against the UAT doc:
 
 ## Outstanding Issues
 
+**[Phase 3 — deploy timing, not a code defect]** Visual UAT found that
+`https://staging.traderton.com/legal/privacy-policy.html` and
+`/legal/user-agreement.html` currently 404 on the live staging site, even
+though `/` and `/status.html` return 200 there. This is expected, not a
+regression: traderton's legal-pages commits (`e7f102b`, `18cef4a`, `3a0629a`)
+are on an unpushed local branch (`feat/e1h-e3h-agent-wake`), while staging
+deploys from `main` via CI on push (confirmed: `origin/main` is at `v0.0.4`,
+authored before these commits existed). The herobids pointer links are
+correct and will resolve once traderton's branch is merged/pushed to `main`
+and the CI site-image deploy runs. Until then, these two links will 404 in
+any environment that hits the real `staging.traderton.com` instead of a
+local traderton compose stack. Action needed: push/merge the traderton
+legal-pages commits before relying on these links in a live demo or review;
+re-verify both URLs return 200 once that deploy lands.
+
 **[Phase 3]** From code review (HIGH, fixed before commit): the pointer
 sentence in `user-agreement.md` originally omitted "no investment advice"
 and "no guarantees" from its parenthetical list of migrated concepts, even
