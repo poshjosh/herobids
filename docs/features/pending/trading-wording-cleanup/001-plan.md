@@ -1,6 +1,6 @@
 # Plan: Remove trading-centric wording from herobids public-facing surfaces
 
-Status: pending — Phase 3 dependency resolved: `traderton/docs/features/pending/trading-legal-pages-and-wording-receiver/001-plan.md` is done, with a clause-mapping record (`002-clause-mapping.md`) confirming 1:1+ coverage of audit rows #47–#60. Phase 3 may proceed.
+Status: done — all three phases implemented, reviewed, and committed. Final verification (lint, build, full test suite, manual UAT pass) pending as the plan's own last step.
 Owner: (unassigned)
 Source audit: `docs/product/trading-wording-audit.md`
 
@@ -106,7 +106,15 @@ Before starting: confirm the traderton plan's clause-mapping record covers
 every row below. If any row lacks a published traderton clause, stop and
 flag it rather than deleting.
 
-1. [PENDING] `legal/privacy-policy.md`:
+> Gate confirmed satisfied: traderton's
+> `docs/features/pending/trading-legal-pages-and-wording-receiver/002-clause-mapping.md`
+> confirms 1:1 (or better) coverage for every row #47–#60, including its own
+> "Gap check" section specifically addressing the two grouping headings
+> (#52 `Trading Agents`, #57 `Trading`) that don't have a verbatim structural
+> match on the traderton side — see that section for the reasoning. herobids'
+> Phase 3 relied on that reasoning being correct.
+
+1. [DONE] `legal/privacy-policy.md`:
    - Row #47 — remove "Trading data" heading.
    - Row #48 — remove "Trading activity (orders, fills, positions, P&L)".
    - Row #49 — reword the Database bullet to "Account data, agent
@@ -118,7 +126,16 @@ flag it rather than deleting.
      linked a trading connection (the actual trading-data processor is
      traderton, not herobids — this is a genuine disclosure improvement,
      not just a deletion).
-2. [PENDING] `legal/user-agreement.md`:
+
+   > Note: the "Trading data" heading's two sibling bullets (Agent
+   > configuration, Agent reasoning logs) were never actually trading data —
+   > a pre-existing mislabel. Renamed that heading to "### Agent data" rather
+   > than deleting the whole heading, since those two bullets still needed a
+   > home. Pointer line added under "## Third-party services", linking to
+   > `https://staging.traderton.com/legal/privacy-policy.html` (traderton has
+   > no apex domain deployed — only staging is live; confirmed against
+   > traderton's own Caddyfiles and `site-isolation.sh` asserted routes).
+2. [DONE] `legal/user-agreement.md`:
    - Row #52 — remove "Trading Agents" heading.
    - Row #53 — remove "Trading decisions" heading.
    - Row #54 — remove the no-advice/liability sentence.
@@ -131,9 +148,31 @@ flag it rather than deleting.
      limited to data loss." (drop "trading losses").
    - Add a line pointing users with a trading connection to traderton's
      user agreement for the trading-specific terms.
-3. [PENDING] No `ar`/`hi` legal mirrors exist today (confirmed: only `en/legal/*`
+
+   > Note — deliberate scope addition beyond this task's literal row list,
+   > recorded per AGENTS.md: removing the parent "### Trading" heading (row
+   > #57) necessarily removed its two un-numbered child clauses too —
+   > "No investment advice" and "No guarantees" — since the audit's own text
+   > describes row #57 as removing "the whole section". Both clauses have a
+   > confirmed home in traderton's User Agreement (see traderton's
+   > `002-clause-mapping.md`, which explicitly covers them as part of its
+   > row #57 gap-check), so nothing is lost, but it goes beyond what rows
+   > #52–60 individually enumerate. The pointer sentence (added under its own
+   > "### Trading-specific terms" subheading, not just appended after
+   > Platform limitations) explicitly names all six migrated concepts
+   > (trading decisions, trading risk, no investment advice, no guarantees,
+   > execution modes, liability for trading losses) so nothing migrated is
+   > left undisclosed. Links to
+   > `https://staging.traderton.com/legal/user-agreement.html` for the same
+   > reason as above (no apex domain live). The generic "AI Agent behavior"
+   > bullet in Platform limitations was kept — it's agent-behavior language,
+   > not trading-specific, consistent with traderton's own gap-check note.
+3. [DONE] No `ar`/`hi` legal mirrors exist today (confirmed: only `en/legal/*`
    present) — no translation work needed for this phase.
-4. [PENDING] Bump `*Last updated*` dates on both files.
+4. [DONE] Bumped `*Last updated*` to 2026-10-06 on both files. Regenerated
+   `apps/worker/src/tools/platform-docs-data.ts` (sources from these
+   markdown files) — confirmed no stale "Trading data"/"Trading Agents"/
+   "Trading venues"/"trading records" text remains in the generated output.
 
 ## Explicitly out of scope
 
@@ -240,6 +279,16 @@ against the UAT doc:
    note this plan's phase completion.
 
 ## Outstanding Issues
+
+**[Phase 3]** From code review (HIGH, fixed before commit): the pointer
+sentence in `user-agreement.md` originally omitted "no investment advice"
+and "no guarantees" from its parenthetical list of migrated concepts, even
+though removing the parent "### Trading" heading (row #57) necessarily took
+those two clauses with it. Fixed by naming all six migrated concepts
+explicitly and giving the pointer its own "### Trading-specific terms"
+subheading instead of leaving it as a trailing sentence under "Platform
+limitations". See the row #52/#57 notes above for the full reasoning this
+relies on (traderton's own gap-check section).
 
 **[Phase 2]** From code review (LOW): `en.ts`'s
 `agents.capabilityPage.status.setupIncompleteReason` still reads "...its

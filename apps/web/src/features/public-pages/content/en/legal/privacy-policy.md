@@ -1,6 +1,6 @@
 # Privacy Policy
 
-*Last updated: 2026-08-19*
+*Last updated: 2026-10-06*
 
 OpenAIdom, ("we", "our", or "us"), is an AI agent platform. This policy explains how we collect, use, and protect your data.
 
@@ -10,8 +10,7 @@ OpenAIdom, ("we", "our", or "us"), is an AI agent platform. This policy explains
 - Email address (required for sign-in)
 - Telegram Chat ID (optional, for agent messaging)
 
-### Trading data
-- Trading activity (orders, fills, positions, P&L)
+### Agent data
 - Agent configuration (goals, styles, risk limits)
 - Agent reasoning logs and decisions
 
@@ -31,7 +30,7 @@ OpenAIdom, ("we", "our", or "us"), is an AI agent platform. This policy explains
 
 Your data is stored in persistent storage like:
 
-- **Database** — Account data, trading records, agent configurations.
+- **Database** — Account data, agent configurations.
 - **Cache** — Ephemeral session state and caching.
 
 All data is encrypted in transit (TLS) and at rest.
@@ -41,11 +40,12 @@ All data is encrypted in transit (TLS) and at rest.
 To operate the platform, we share necessary data with:
 
 - **LLM providers** — Your agent's reasoning is processed by AI model providers. Only the context needed for the current tick is sent. Data derived from Google Workspace APIs is never used by these providers to train or improve their models.
-- **Trading venues** — Orders are submitted to trading venues like Hyperliquid and Jupiter. Only order data is transmitted.
 - **Telegram** — If you link Telegram, agent messages are delivered through the Telegram Bot API.
 - **Google Workspace (Gmail)** — If you connect Gmail, we use it only to send email on your behalf through the Gmail API (`gmail.send` scope) and to read your connected account's email address (`userinfo.email` scope). We do not read, search, or store your inbox contents.
 
 We do not share your data with third parties for their own marketing or analytics purposes.
+
+If you have linked a trading connection, trading-specific data (orders, fills, positions, P&L, and venue disclosures) is processed by Traderton, the trading-infrastructure provider — see [Traderton's Privacy Policy](https://staging.traderton.com/legal/privacy-policy.html) for that disclosure.
 
 ## Google API Services User Data Policy
 
@@ -59,7 +59,7 @@ OpenAIdom's use and transfer of information received from Google APIs adheres to
 ## Your rights
 
 - **Correction** — You can update your account details and agent configurations at any time.
-- **Deletion** — You can request account deletion by contacting us at support@openaidom.com. Trading records required for regulatory compliance may be retained.
+- **Deletion** — You can request account deletion by contacting us at support@openaidom.com.
 
 ## Contact
 
