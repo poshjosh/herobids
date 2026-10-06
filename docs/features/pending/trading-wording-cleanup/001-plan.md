@@ -1,6 +1,6 @@
 # Plan: Remove trading-centric wording from herobids public-facing surfaces
 
-Status: done — all three phases implemented, reviewed, and committed. Final verification (lint, build, full test suite, manual UAT pass) pending as the plan's own last step.
+Status: done — all three phases implemented, reviewed, committed, and verified: `pnpm lint` and `pnpm build` both pass clean; `scripts/shell/tests/run-all-tests.sh --e2e` passes (unit, integration, functional, API smoke, 17/17 non-skipped E2E journeys); `scripts/shell/tests/run-extra-tests.sh --all` passes (all executed tiers, 2 pre-existing documented skips unrelated to this change); manual browser UAT pass recorded as section 18 of `docs/tech/user-acceptance-tests.md` (7/9 fully pass, 2 blocked/pending for reasons unrelated to code correctness — see Outstanding Issues).
 Owner: (unassigned)
 Source audit: `docs/product/trading-wording-audit.md`
 
@@ -47,6 +47,26 @@ Files: `apps/web/src/features/public-pages/content/en/**/*.md` (+ mirrored
    > `apps/worker/src/tools/platform-docs-data.ts` (`pnpm --filter
    > @herobids/scripts run build-docs-index`) to kill a stale anchor —
    > caught by code review, fixed before commit.
+   >
+   > Correction to the audit's own stated rationale, flagged by final code
+   > review: the audit justified this removal with "presets are no longer
+   > used" — that's imprecise. `skillPresetId` (`trading`, `direct-trading`,
+   > `trading-assistant`, `personal-assistant`, `custom`) is still a live
+   > backend/API field (`apps/api/src/routes/agents.ts`,
+   > `apps/api/src/routes/chat.ts`) driving the guided-setup chat flow today.
+   > What's actually true, and what makes this removal defensible anyway: the
+   > *UI* no longer shows preset names to users — `GuidedSetupPanel.tsx` is a
+   > pure conversational flow with no preset-picker buttons, and `chat.ts`
+   > itself says "Do not expose internal preset names to the user." The
+   > preset system became an internal implementation detail, not a
+   > user-facing concept, which is why the public docs page describing named
+   > presets (Direct Trading, Trading Assistant, etc.) is correctly stale —
+   > but it's stale because presets became invisible, not because they
+   > stopped existing. This drift (`skillPresetId`/`SKILL_PRESET_MAP`
+   > demotion) is independently tracked as deliberately deferred, pre-existing
+   > backend cleanup in `docs/features/2026/10/01/006-phase2-completion-note.md`
+   > line 66 — out of scope for this plan to resolve, but recorded here so a
+   > future reader doesn't take the audit's "no longer used" at face value.
 6. [DONE] `docs/agents/what-are-ai-agents.md` — replace rows #23–#25 with the new
    capability list from the audit (web-browser capability bullets +
    Gmail/Telegram), fixing "Connecto" typo.
@@ -60,6 +80,10 @@ Files: `apps/web/src/features/public-pages/content/en/**/*.md` (+ mirrored
     stop-loss/take-profit — genuinely trading-specific risk mechanics).
 11. [DONE] `help/get-started.md` — reword rows #42–#43; **remove** rows #44–#46
     (Agent Presets mirror).
+
+    > Same correction as item 5 above applies here: removal is justified by
+    > the preset system having become UI-invisible, not by presets having
+    > stopped existing.
 12. [DONE] Mirror every reworded/removed line into the matching `ar/` and `hi/`
     files found above. Rows that don't exist in `ar`/`hi` today (e.g. the
     full agents/docs tree) need no action there — only the pages that
@@ -279,6 +303,16 @@ against the UAT doc:
    note this plan's phase completion.
 
 ## Outstanding Issues
+
+**[Phase 1 — audit premise correction]** Final code review caught that the
+audit's stated rationale for removing the Agent Presets table ("presets are
+no longer used") is factually imprecise — `skillPresetId` is still a live
+backend/API field driving the guided-setup chat flow (see the item 5 and 11
+notes above for the full explanation and the independent tracking reference).
+The removal is still the right call because the preset system is no longer
+*user-facing* — no UI shows preset names to a user today — but a future
+reader should not take "no longer used" at face value if they go looking for
+why this table was deleted.
 
 **[Phase 3 — deploy timing, not a code defect]** Visual UAT found that
 `https://staging.traderton.com/legal/privacy-policy.html` and
