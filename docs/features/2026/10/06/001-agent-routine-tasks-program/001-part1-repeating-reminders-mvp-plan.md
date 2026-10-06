@@ -248,7 +248,7 @@ agent's tool calls run sequentially, so no lock is needed.
 - Cancel works by id and by key; an unknown target returns `found: false`; both or
   neither target is rejected.
 
-### WP5. ReminderCoordinator (D4, D5, D7) — PENDING
+### WP5. ReminderCoordinator (D4, D5, D7) — DONE
 
 File: `apps/worker/src/reminder-coordinator.ts` (constructed in
 `apps/worker/src/index.ts` ~line 829)
@@ -579,3 +579,8 @@ Non-critical review findings deferred during implementation (grouped by work pac
 - MEDIUM: `cancel_reminder`'s internal `safeParse` → `reminder.invalid_target` is effectively redundant because the dispatch boundary validates params first (surfaces `validation.invalid_parameters`). Behaviour satisfies the plan; consider dropping the re-parse or commenting that it exists for direct-call/test safety.
 - LOW: `list_reminders` could emit a fractional `repeatEveryMinutes` if a future path writes a non-minute-aligned `repeatEveryMs` (today always aligned).
 - LOW: `isNaN(triggerDate.getTime())` branch in `schedule_reminder` is practically unreachable given `z.string().datetime()`; harmless defensive code.
+
+### WP5
+- LOW: the "drain cannot throw" guarantee lives in `start()`'s `.catch` wrapper rather than structurally in `stop()`; consider hoisting the wrap into a private helper used by any `tickDrain` assignment site.
+- LOW: the stop-drain test assigns a raw `tick()` promise (no `.catch`) rather than the exact promise shape `start()` produces; informational.
+- LOW (deferred to WP6): wake `context` carries `key`/`repeatEveryMs`/`scheduledFor`/`missedOccurrences`/`nextTriggerAt` which are stripped by the current `ReminderWakeContextSchema` until WP6 extends it.

@@ -826,7 +826,13 @@ const agentHealthMonitor = new AgentHealthMonitor(
   agentRuntimeLauncher,
 );
 
-const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, eventPublisher);
+const reminderCoordinator = new ReminderCoordinator(
+  redisClient,
+  agentRepo,
+  eventPublisher,
+  workerId,
+  appConfig.agentRuntime.reminders,
+);
 
 // L3d-5: the strategy factory (createStrategy) + reconciliation config were only
 // consumed by the deleted in-process trading actors. Removed with the actor slice.
@@ -1410,7 +1416,6 @@ process.on('SIGTERM', async () => {
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
-  reminderCoordinator.stop();
   marketMonitor.stop();
   // Stop per-agent review schedulers
   for (const scheduler of reviewSchedulers.values()) {
@@ -1419,6 +1424,7 @@ process.on('SIGTERM', async () => {
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher?.stop();
+  await reminderCoordinator.stop(); // async: releases the Redis coordinator lease
   await actorEventRelay?.stop();
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
@@ -1437,7 +1443,6 @@ process.on('SIGINT', async () => {
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
-  reminderCoordinator.stop();
   marketMonitor.stop();
   // Stop per-agent review schedulers
   for (const scheduler of reviewSchedulers.values()) {
@@ -1446,6 +1451,7 @@ process.on('SIGINT', async () => {
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher?.stop();
+  await reminderCoordinator.stop(); // async: releases the Redis coordinator lease
   await actorEventRelay?.stop();
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
