@@ -47,9 +47,10 @@ OpenAIdom offers long-running agents at a fraction of the cost. See [how costs a
 
 AI agents on OpenAIdom can:
 
-* Connecto to external services like gmail/trading platforms
-* Send notifications
+* Use a web browser like a human, so they can:
+  - Find deals
+  - Order food
+  - Buy stocks
+* Connect to external services like Gmail
   - [send email on your behalf, or send you an email](/docs/messaging/email/how-agents-send-email)
-  - [send telegram messages to you](/docs/messaging/telegram/slash-commands)
-* Trade crypto
-* Trade forex (coming soon)
+  - [send notifications via Telegram](/docs/messaging/telegram/slash-commands) and WhatsApp (coming soon)

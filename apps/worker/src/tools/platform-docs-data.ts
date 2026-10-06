@@ -508,13 +508,13 @@ We offer AI agents as a service. AI agents:
 
 2. **should remain in contact.** You remain in contact with any agent working for you. An example is by using messaging apps or email.
 
-3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistantance.
+3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistance.
 
 4. **are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.
 
 ## AI-first, not AI-wrapped
 
-OpenAIdom, was built from the ground up around AI agents. The agent is the product. The dashboard, tools and trading bots etc. exist to support the agent, not the other way around.
+OpenAIdom, was built from the ground up around AI agents. The agent is the product. Everything else exists to support agents.
 
 ## How it works
 
@@ -557,7 +557,7 @@ Check the OpenAIdom status page (coming soon) for service uptime and incident re
     kind: 'markdown',
     content: `# Agent Style
 
-Agent style controls how deeply the agent reasons and how broadly it retains context. It determines tick cadence, tool-turn limits, token budgets, trading hours, and context window sizes. Style is independent of the cost preset — you can run a **Bold** agent on cheap models, or a **Careful** agent on premium models.
+Agent style controls how deeply the agent reasons and how broadly it retains context. It determines tick cadence, tool-turn limits, token budgets, active hours, and context window sizes. Style is independent of the cost preset — you can run a **Bold** agent on cheap models, or a **Careful** agent on premium models.
 
 ## Styles
 
@@ -588,7 +588,7 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 | **Light thinking tokens** | 1,024 | 2,048 | 4,096 |
 | **Deep thinking tokens** | 4,096 | 10,240 | 20,480 |
 
-### Trading Hours
+### Active Hours
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
@@ -632,9 +632,9 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 
 **Light / Deep thinking tokens** — How many tokens the model may use for internal chain-of-thought reasoning before producing a response. \`lightThinkingTokens\` applies when brief reasoning is sufficient; \`deepThinkingTokens\` applies when extended analysis is requested.
 
-**Allowed hours (UTC)** — The UTC hours during which the agent is permitted to trade. An empty list means all hours are allowed. **Careful** restricts trading to 14:00–20:00 UTC (US session overlap).
+**Allowed hours (UTC)** — The UTC hours during which the agent is permitted to act. An empty list means all hours are allowed. **Careful** restricts agent activity to 14:00–20:00 UTC (US session overlap).
 
-**Weekend pause** — When enabled, the agent suspends trading from Friday close to Monday open.
+**Weekend pause** — When enabled, the agent suspends activity from Friday close to Monday open.
 
 **Max history messages** — How many past conversation messages are included in each tick's context window.
 
@@ -657,7 +657,7 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 ## Selecting a style
 
 - **Careful** — Long-horizon or cost-sensitive agents. Restricted to US session hours, weekday-only, shallow tool loops, compact context.
-- **Balanced** — General-purpose trading agents. Runs 24/7 weekdays, moderate tool depth, standard context.
+- **Balanced** — General-purpose agents. Runs 24/7 weekdays, moderate tool depth, standard context.
 - **Bold** — High-frequency or time-sensitive agents. Runs 24/7 including weekends, deepest tool loops, largest context window.
 
 To go beyond a preset, select a base style and override individual fields in **Advanced Settings → Runtime Policy**.
@@ -667,7 +667,7 @@ To go beyond a preset, select a base style and override individual fields in **A
 Agent style sets the default daily spend budget and cost preset, but does not enforce a hard ceiling. Separate from style, you can set **spending caps** (soft and hard limits) from the Billing page.
 
 See [Agent Billing Limits](/docs/agents/billing-limits) for details.`,
-    headings: ['Styles', 'Cost & Cadence', 'Tool Turn Limits', 'LLM Token Limits', 'Trading Hours', 'Context Budgets', 'Scout Hold', 'What each field means', 'Selecting a style', 'Billing limits'],
+    headings: ['Styles', 'Cost & Cadence', 'Tool Turn Limits', 'LLM Token Limits', 'Active Hours', 'Context Budgets', 'Scout Hold', 'What each field means', 'Selecting a style', 'Billing limits'],
     tags: ['agent-style', 'agents', 'docs'],
   },
   {
@@ -684,11 +684,11 @@ OpenAIdom enforces spending limits on your agent's LLM usage so you never get a 
 |---|---|---|
 | **What it is** | An early-warning threshold | A spending stop |
 | **Effect on your agent** | None — your agent keeps running normally | Your agent stops reasoning on the next tick |
-| **What you receive** | A notification (Telegram, email, or both) telling you the cap has been reached and what happens next | A notification explaining that the agent has stopped, and whether any open trades remain unmanaged |
+| **What you receive** | A notification (Telegram, email, or both) telling you the cap has been reached and what happens next | A notification explaining that the agent has stopped, and whether any open activity remains unmanaged |
 
 ## Why the soft cap does not change agent behavior
 
-Your agent's trading logic is yours. The platform does not silently degrade, pause, or alter how your agent thinks or trades just because a spending threshold was crossed.
+Your agent's logic is yours. The platform does not silently degrade, pause, or alter how your agent thinks or acts just because a spending threshold was crossed.
 
 The soft cap is purely a notification boundary. It tells you that spending is approaching your plan's hard limit, so you can decide what to do — top up, upgrade your plan, or let it reach the hard cap.
 
@@ -700,7 +700,7 @@ When spending reaches the hard cap:
 2. You receive a notification explaining the stop.
 3. If the agent has open positions, the notification makes this explicit — those positions will remain unmanaged until you take action.
 
-The agent does **not** automatically close positions, submit orders, or change your trading state at the hard cap. It simply stops reasoning.
+The agent does **not** automatically close positions, submit orders, or change your agent's state at the hard cap. It simply stops reasoning.
 
 The hard-cap boundary is exact. For example:
 
@@ -769,7 +769,7 @@ OpenAIdom splits the job in two:
 | Role | What it does |
 |------|--------------|
 | **Scout** | Cheap, fast checks: research, scanning, fact-finding, spotting change |
-| **Judge** | Higher-level decisions: whether to act, trade, change course, or go deeper |
+| **Judge** | Higher-level decisions: whether to act, change course, or go deeper |
 
 The scout handles the routine work.  
 The judge only steps in when there is something worth deciding.
@@ -781,8 +781,6 @@ That keeps costs down without making the agent dull.
 OpenAIdom does not ask the AI to think just because time passed.
 
 Before an agent spends money on a full reasoning pass, the platform checks:
-- Is it even trading time?
-- Is the market worth acting on?
 - Did anything meaningful actually change?
 - Is there a real setup here, or just noise?
 
@@ -942,32 +940,20 @@ Documentation covering AI agent configuration and management on OpenAIdom.
 
 - [What are AI agents?](/docs/agents/what-are-ai-agents) — A quick introduction to what AI agents are and what they can do.
 - [How agent costs are kept low](/docs/agents/how-agent-costs-are-kept-low) — How OpenAIdom keeps long-running agents affordable.
-- [Agent Style](/docs/agents/agent-style) — How agent styles control LLM budget and trading behavior.
+- [Agent Style](/docs/agents/agent-style) — How agent styles control LLM budget and other cost-affecting behavior.
 - [Billing Limits](/docs/agents/billing-limits) — Soft caps, hard caps, and what happens when your agent hits its spending limit.
 
-## Agent Presets
+## Authorization
 
-When creating an agent, you choose a preset that determines which tools and capabilities your agent has:
-
-| Preset | Skills | Description |
-|---|---|---|
-| **Trading** | Trading, Bot management | Full trading autonomy — the agent can trade directly and create/manage automated bots. |
-| **Direct Trading** | Trading | The agent trades directly but cannot create bots. |
-| **Trading Assistant** | Trading | Trading analysis with per-trade user approval. The agent researches and proposes trades, but you must approve each one before execution. Trade Authorization defaults to **Approval required**. |
-| **Personal Assistant** | Task management, Web access, Email | General-purpose assistant for tasks, research, and communication. No trading. |
-| **Custom** | You choose | Full control over which skills to enable. |
-
-## Trade Authorization
-
-Trade Authorization (\`authorizationMode\`) controls how your agent's trade decisions reach the market. It applies to agents with the **Trading** capability.
+Authorization (\`authorizationMode\`) controls how your agent's decisions reach the market.
 
 | Mode | Behavior |
 |---|---|
-| **Direct** | The agent executes accepted trade decisions immediately with no human review. |
-| **Approval required** | Each trade proposal is sent to you for approval before any market action. You approve or reject from the web app or Telegram using \`/yes <code>\` and \`/no <code>\`. |
+| **Direct** | The agent executes accepted decisions immediately with no human review. |
+| **Approval required** | Each proposal is sent to you for approval before any market action. You approve or reject from the web app or Telegram using \`/yes <code>\` and \`/no <code>\`. |
 
-The **Trading Assistant** preset defaults to Approval required. All other trading presets default to Direct, but you can change the mode at any time when creating or editing your agent.`,
-    headings: ['Agent Presets', 'Trade Authorization'],
+Authorization defaults to Direct unless you set Approval required.`,
+    headings: ['Authorization'],
     tags: ['agents', 'docs'],
   },
   {
@@ -1023,12 +1009,13 @@ OpenAIdom offers long-running agents at a fraction of the cost. See [how costs a
 
 AI agents on OpenAIdom can:
 
-* Connecto to external services like gmail/trading platforms
-* Send notifications
+* Use a web browser like a human, so they can:
+  - Find deals
+  - Order food
+  - Buy stocks
+* Connect to external services like Gmail
   - [send email on your behalf, or send you an email](/docs/messaging/email/how-agents-send-email)
-  - [send telegram messages to you](/docs/messaging/telegram/slash-commands)
-* Trade crypto
-* Trade forex (coming soon)`,
+  - [send notifications via Telegram](/docs/messaging/telegram/slash-commands) and WhatsApp (coming soon)`,
     headings: ['What can an AI agent do?', 'AI agents on OpenAIdom'],
     tags: ['agents', 'docs', 'what-are-ai-agents'],
   },
@@ -1057,7 +1044,7 @@ We provide AI agents as a service. Our AI agents may be configured to send messa
 
 Documentation covering messaging integrations between OpenAIdom agents and external platforms.
 
-- [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) — Complete reference for Telegram slash commands: agent discovery, status checks, lifecycle control (start/pause/resume/stop/restart), configuration (mode/connect/disconnect), trade approvals (/yes, /no), and messaging.
+- [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) — Complete reference for Telegram slash commands: agent discovery, status checks, lifecycle control (start/pause/resume/stop/restart), configuration (mode/connect/disconnect), approvals (/yes, /no), and messaging.
 - [Telegram Reply Threading](/docs/messaging/telegram/reply-threading) — How agent Telegram messages use reply anchors and route replies back to the agent.
 - [How Agents Send Email](/docs/messaging/email/how-agents-send-email) — The steps required before an agent can send email: add a Gmail connection, assign it to the agent, enable the email skill, then instruct the agent.`,
     headings: [],
@@ -1157,12 +1144,12 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., \`"DCA
 |---|---|
 | \`/to <agent> <message>\` | Send a message to an agent |
 
-### Trade Approvals
+### Approvals
 
 | Command | Description |
 |---|---|
-| \`/yes <code>\` | Approve a pending trade proposal (code required unless exactly 1 pending) |
-| \`/no <code>\` | Reject a pending trade proposal (code required unless exactly 1 pending) |
+| \`/yes <code>\` | Approve a pending proposal (code required unless exactly 1 pending) |
+| \`/no <code>\` | Reject a pending proposal (code required unless exactly 1 pending) |
 
 ## Usage Examples
 
@@ -1190,9 +1177,9 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., \`"DCA
 /no 26B8D
 \`\`\`
 
-## Trade Approval Workflow
+## Approval Workflow
 
-When your agent's **Trade Authorization** is set to **Approval required**, the agent will send you a trade proposal before executing. Each proposal includes a **6-character short code** (e.g. \`26B8D\`).
+When your agent's Authorization is set to **Approval required**, the agent will send you a proposal before executing. Each proposal includes a **6-character short code** (e.g. \`26B8D\`).
 
 To respond from Telegram:
 
@@ -1214,7 +1201,7 @@ If you send a plain Telegram message without a slash command:
 ## Interaction With Reply Threading
 
 Reply-threading still takes priority. If you reply directly to an OpenAIdom Telegram message, OpenAIdom routes that reply using the original message anchor instead of slash-command parsing.`,
-    headings: ['Command Reference', 'Help', 'Discovery & Read-Only', 'Lifecycle', 'Configuration (agent must be stopped)', 'Messaging', 'Trade Approvals', 'Usage Examples', 'Trade Approval Workflow', 'Default Routing', 'Interaction With Reply Threading'],
+    headings: ['Command Reference', 'Help', 'Discovery & Read-Only', 'Lifecycle', 'Configuration (agent must be stopped)', 'Messaging', 'Approvals', 'Usage Examples', 'Approval Workflow', 'Default Routing', 'Interaction With Reply Threading'],
     tags: ['docs', 'messaging', 'slash-commands', 'telegram'],
   },
   {
@@ -1267,9 +1254,9 @@ One iteration of your agent's thinking cycle. On each tick, the agent reads cont
     kind: 'faq',
     content: `# Frequently Asked Questions
 
-## How do trade approvals work?
+## How do approvals work?
 
-If your agent's **Trade Authorization** is set to **Approval required**, the agent won't execute trades on its own. Instead, it sends each trade proposal to you for review.
+If your agent's Authorization is set to **Approval required**, the agent won't execute actions on its own. Instead, it sends each proposal to you for review.
 
 Each proposal includes:
 - What the agent wants to do (buy/sell, size, price)
@@ -1284,9 +1271,9 @@ You have three ways to respond:
 
 3. **API** — Use the approvals API endpoints for programmatic resolution.
 
-Approvals expire after a configurable time window (default 24 hours). Expired approvals cannot be actioned — the agent will submit a new proposal if it still wants to trade.
+Approvals expire after a configurable time window (default 24 hours). Expired approvals cannot be actioned — the agent will submit a new proposal if it still wants to act.
 
-See [Trade Authorization](/docs/agents/#trade-authorization) for more on configuring authorization mode.
+See [Authorization](/docs/agents/#authorization) for more on configuring authorization mode.
 
 ## How do I talk to my agent from Telegram?
 
@@ -1311,7 +1298,7 @@ Once set up, you have three options:
 OpenAIdom uses a two-stage LLM routing system to balance cost and decision quality:
 
 - **Scout** — A cheaper, faster model that runs every tick. It does triage: scanning positions, checking market conditions, and deciding whether the situation is routine or needs deeper analysis.
-- **Judge** — A more capable (and more expensive) model called in when the scout escalates. The judge has access to the full tool set and makes the actual trading decisions.
+- **Judge** — A more capable (and more expensive) model called in when the scout escalates. The judge has access to the full tool set and makes the actual decisions.
 
 ### When does escalation happen?
 
@@ -1330,7 +1317,7 @@ Your [agent style](/docs/agents/agent-style) sets the default policy (Careful �
 
 OpenAIdom lets you set spending limits so you never get a surprise bill. There are two kinds:
 
-- **Soft cap** — A warning threshold. When reached, you receive a notification (Telegram, email, or both) but your agent **keeps running normally**. No trading behavior changes.
+- **Soft cap** — A warning threshold. When reached, you receive a notification (Telegram, email, or both) but your agent **keeps running normally**. No behavior changes.
 - **Hard cap** — A spending stop. When reached, your agent halts on the next tick. No further LLM calls are made. You receive a notification explaining the stop, and if you have open positions, the notification lists them so you can act.
 
 The hard cap never closes your positions automatically. It simply stops reasoning. If you have open positions at the hard cap, those positions become unmanaged until you top up, raise the cap, or take manual action.
@@ -1341,7 +1328,7 @@ See [Agent Billing Limits](/docs/agents/billing-limits) for the full explanation
 
 ## How do agents with "Filter" mode (scanner-gated) manage or close open positions?
 
-Agents in **Filter** mode (\`scanner_gated\`) only receive trading decisions when the technical scanner wakes them — so it's natural to wonder how they handle exits if no position trigger is active.
+Agents in **Filter** mode (\`scanner_gated\`) only receive decisions when the scanner wakes them — so it's natural to wonder how they handle exits if no position trigger is active.
 
 The answer: **the scanner evaluates every open position on every cycle**, even when there are no new entry opportunities. It fetches live candles for each of your agent's open positions, checks the indicators (RSI, price action, etc.), and flags any that look like they should be closed.
 
@@ -1358,7 +1345,7 @@ These execute automatically regardless of mode. Per-trade stop-loss and take-pro
 > **Note:** If your agent hits a hard billing cap (see [Billing Limits](/docs/agents/billing-limits)), it will stop reasoning but **will not automatically close positions**. You'll need to act manually or adjust the cap.
 
 > **Note:** If your agent hits a hard billing cap (see [Billing Limits](/docs/agents/billing-limits)), it will stop reasoning but **will not automatically close positions**. You'll need to act manually or adjust the cap.`,
-    headings: ['How do trade approvals work?', 'How do I talk to my agent from Telegram?', 'What is the scout-judge model, and how does escalation work?', 'When does escalation happen?', 'What are billing limits, and what happens when I hit them?', 'How do agents with "Filter" mode (scanner-gated) manage or close open positions?', 'What about stop-losses and take-profits?'],
+    headings: ['How do approvals work?', 'How do I talk to my agent from Telegram?', 'What is the scout-judge model, and how does escalation work?', 'When does escalation happen?', 'What are billing limits, and what happens when I hit them?', 'How do agents with "Filter" mode (scanner-gated) manage or close open positions?', 'What about stop-losses and take-profits?'],
     tags: ['faqs', 'help'],
   },
   {
@@ -1367,7 +1354,7 @@ These execute automatically regardless of mode. Per-trade stop-loss and take-pro
     kind: 'markdown',
     content: `# Get Started with OpenAIdom
 
-OpenAIdom offers AI agents as a service. Describe what you want, and an agent gets it for you — starting with crypto trading on Hyperliquid perpetuals, Jupiter DEX swaps, and more.
+OpenAIdom offers AI agents as a service. Describe what you want, and an agent gets it for you — with skills like crypto trading on Hyperliquid and Jupiter, and more.
 
 ## 1. Sign up
 
@@ -1387,14 +1374,9 @@ See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how t
 
 1. Go to **AI Agents** in the sidebar.
 2. Click **New AI Agent**.
-3. Give it a name and a goal — describe what you want it to trade and how.
-4. Choose a **preset**:
-   - **Trading** — Full autonomy with direct trading and bot management.
-   - **Direct Trading** — Direct trading without bot management.
-   - **Trading Assistant** — Trading analysis with per-trade user approval. The agent proposes trades; you approve or reject each one.
-   - **Personal Assistant** — General-purpose tasks, research, and communication.
-5. Choose an **agent style** (Careful, Balanced, or Bold). This controls how aggressively it spends its LLM budget. See [Agent Style](/docs/agents/agent-style) for the full breakdown.
-6. Optionally set billing caps from the **Billing** page to prevent surprise costs.
+3. Give it a name and a goal — describe what you want it to do and how.
+4. Choose an **agent style** (Careful, Balanced, or Bold). This controls how aggressively it spends its LLM budget. See [Agent Style](/docs/agents/agent-style) for the full breakdown.
+5. Optionally set billing caps from the **Billing** page to prevent surprise costs.
 
 ## 4. Start your agent
 

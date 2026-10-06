@@ -49,12 +49,12 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 |---|---|
 | `/to <agent> <message>` | Send a message to an agent |
 
-### Trade Approvals
+### Approvals
 
 | Command | Description |
 |---|---|
-| `/yes <code>` | Approve a pending trade proposal (code required unless exactly 1 pending) |
-| `/no <code>` | Reject a pending trade proposal (code required unless exactly 1 pending) |
+| `/yes <code>` | Approve a pending proposal (code required unless exactly 1 pending) |
+| `/no <code>` | Reject a pending proposal (code required unless exactly 1 pending) |
 
 ## Usage Examples
 
@@ -82,9 +82,9 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 /no 26B8D
 ```
 
-## Trade Approval Workflow
+## Approval Workflow
 
-When your agent's **Trade Authorization** is set to **Approval required**, the agent will send you a trade proposal before executing. Each proposal includes a **6-character short code** (e.g. `26B8D`).
+When your agent's Authorization is set to **Approval required**, the agent will send you a proposal before executing. Each proposal includes a **6-character short code** (e.g. `26B8D`).
 
 To respond from Telegram:
 

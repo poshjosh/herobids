@@ -8,11 +8,11 @@ OpenAIdom enforces spending limits on your agent's LLM usage so you never get a 
 |---|---|---|
 | **What it is** | An early-warning threshold | A spending stop |
 | **Effect on your agent** | None — your agent keeps running normally | Your agent stops reasoning on the next tick |
-| **What you receive** | A notification (Telegram, email, or both) telling you the cap has been reached and what happens next | A notification explaining that the agent has stopped, and whether any open trades remain unmanaged |
+| **What you receive** | A notification (Telegram, email, or both) telling you the cap has been reached and what happens next | A notification explaining that the agent has stopped, and whether any open activity remains unmanaged |
 
 ## Why the soft cap does not change agent behavior
 
-Your agent's trading logic is yours. The platform does not silently degrade, pause, or alter how your agent thinks or trades just because a spending threshold was crossed.
+Your agent's logic is yours. The platform does not silently degrade, pause, or alter how your agent thinks or acts just because a spending threshold was crossed.
 
 The soft cap is purely a notification boundary. It tells you that spending is approaching your plan's hard limit, so you can decide what to do — top up, upgrade your plan, or let it reach the hard cap.
 
@@ -24,7 +24,7 @@ When spending reaches the hard cap:
 2. You receive a notification explaining the stop.
 3. If the agent has open positions, the notification makes this explicit — those positions will remain unmanaged until you take action.
 
-The agent does **not** automatically close positions, submit orders, or change your trading state at the hard cap. It simply stops reasoning.
+The agent does **not** automatically close positions, submit orders, or change your agent's state at the hard cap. It simply stops reasoning.
 
 The hard-cap boundary is exact. For example:
 

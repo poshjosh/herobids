@@ -1,6 +1,6 @@
 # Agent Style
 
-Agent style controls how deeply the agent reasons and how broadly it retains context. It determines tick cadence, tool-turn limits, token budgets, trading hours, and context window sizes. Style is independent of the cost preset — you can run a **Bold** agent on cheap models, or a **Careful** agent on premium models.
+Agent style controls how deeply the agent reasons and how broadly it retains context. It determines tick cadence, tool-turn limits, token budgets, active hours, and context window sizes. Style is independent of the cost preset — you can run a **Bold** agent on cheap models, or a **Careful** agent on premium models.
 
 ## Styles
 
@@ -31,7 +31,7 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 | **Light thinking tokens** | 1,024 | 2,048 | 4,096 |
 | **Deep thinking tokens** | 4,096 | 10,240 | 20,480 |
 
-### Trading Hours
+### Active Hours
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
@@ -75,9 +75,9 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 
 **Light / Deep thinking tokens** — How many tokens the model may use for internal chain-of-thought reasoning before producing a response. `lightThinkingTokens` applies when brief reasoning is sufficient; `deepThinkingTokens` applies when extended analysis is requested.
 
-**Allowed hours (UTC)** — The UTC hours during which the agent is permitted to trade. An empty list means all hours are allowed. **Careful** restricts trading to 14:00–20:00 UTC (US session overlap).
+**Allowed hours (UTC)** — The UTC hours during which the agent is permitted to act. An empty list means all hours are allowed. **Careful** restricts agent activity to 14:00–20:00 UTC (US session overlap).
 
-**Weekend pause** — When enabled, the agent suspends trading from Friday close to Monday open.
+**Weekend pause** — When enabled, the agent suspends activity from Friday close to Monday open.
 
 **Max history messages** — How many past conversation messages are included in each tick's context window.
 
@@ -100,7 +100,7 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 ## Selecting a style
 
 - **Careful** — Long-horizon or cost-sensitive agents. Restricted to US session hours, weekday-only, shallow tool loops, compact context.
-- **Balanced** — General-purpose trading agents. Runs 24/7 weekdays, moderate tool depth, standard context.
+- **Balanced** — General-purpose agents. Runs 24/7 weekdays, moderate tool depth, standard context.
 - **Bold** — High-frequency or time-sensitive agents. Runs 24/7 including weekends, deepest tool loops, largest context window.
 
 To go beyond a preset, select a base style and override individual fields in **Advanced Settings → Runtime Policy**.

@@ -1,8 +1,8 @@
 # Frequently Asked Questions
 
-## How do trade approvals work?
+## How do approvals work?
 
-If your agent's **Trade Authorization** is set to **Approval required**, the agent won't execute trades on its own. Instead, it sends each trade proposal to you for review.
+If your agent's Authorization is set to **Approval required**, the agent won't execute actions on its own. Instead, it sends each proposal to you for review.
 
 Each proposal includes:
 - What the agent wants to do (buy/sell, size, price)
@@ -17,9 +17,9 @@ You have three ways to respond:
 
 3. **API** — Use the approvals API endpoints for programmatic resolution.
 
-Approvals expire after a configurable time window (default 24 hours). Expired approvals cannot be actioned — the agent will submit a new proposal if it still wants to trade.
+Approvals expire after a configurable time window (default 24 hours). Expired approvals cannot be actioned — the agent will submit a new proposal if it still wants to act.
 
-See [Trade Authorization](/docs/agents/#trade-authorization) for more on configuring authorization mode.
+See [Authorization](/docs/agents/#authorization) for more on configuring authorization mode.
 
 ## How do I talk to my agent from Telegram?
 
@@ -44,7 +44,7 @@ Once set up, you have three options:
 OpenAIdom uses a two-stage LLM routing system to balance cost and decision quality:
 
 - **Scout** — A cheaper, faster model that runs every tick. It does triage: scanning positions, checking market conditions, and deciding whether the situation is routine or needs deeper analysis.
-- **Judge** — A more capable (and more expensive) model called in when the scout escalates. The judge has access to the full tool set and makes the actual trading decisions.
+- **Judge** — A more capable (and more expensive) model called in when the scout escalates. The judge has access to the full tool set and makes the actual decisions.
 
 ### When does escalation happen?
 
@@ -63,7 +63,7 @@ Your [agent style](/docs/agents/agent-style) sets the default policy (Careful �
 
 OpenAIdom lets you set spending limits so you never get a surprise bill. There are two kinds:
 
-- **Soft cap** — A warning threshold. When reached, you receive a notification (Telegram, email, or both) but your agent **keeps running normally**. No trading behavior changes.
+- **Soft cap** — A warning threshold. When reached, you receive a notification (Telegram, email, or both) but your agent **keeps running normally**. No behavior changes.
 - **Hard cap** — A spending stop. When reached, your agent halts on the next tick. No further LLM calls are made. You receive a notification explaining the stop, and if you have open positions, the notification lists them so you can act.
 
 The hard cap never closes your positions automatically. It simply stops reasoning. If you have open positions at the hard cap, those positions become unmanaged until you top up, raise the cap, or take manual action.
@@ -74,7 +74,7 @@ See [Agent Billing Limits](/docs/agents/billing-limits) for the full explanation
 
 ## How do agents with "Filter" mode (scanner-gated) manage or close open positions?
 
-Agents in **Filter** mode (`scanner_gated`) only receive trading decisions when the technical scanner wakes them — so it's natural to wonder how they handle exits if no position trigger is active.
+Agents in **Filter** mode (`scanner_gated`) only receive decisions when the scanner wakes them — so it's natural to wonder how they handle exits if no position trigger is active.
 
 The answer: **the scanner evaluates every open position on every cycle**, even when there are no new entry opportunities. It fetches live candles for each of your agent's open positions, checks the indicators (RSI, price action, etc.), and flags any that look like they should be closed.
 

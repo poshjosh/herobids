@@ -21,7 +21,7 @@ OpenAIdom splits the job in two:
 | Role | What it does |
 |------|--------------|
 | **Scout** | Cheap, fast checks: research, scanning, fact-finding, spotting change |
-| **Judge** | Higher-level decisions: whether to act, trade, change course, or go deeper |
+| **Judge** | Higher-level decisions: whether to act, change course, or go deeper |
 
 The scout handles the routine work.  
 The judge only steps in when there is something worth deciding.
@@ -33,8 +33,6 @@ That keeps costs down without making the agent dull.
 OpenAIdom does not ask the AI to think just because time passed.
 
 Before an agent spends money on a full reasoning pass, the platform checks:
-- Is it even trading time?
-- Is the market worth acting on?
 - Did anything meaningful actually change?
 - Is there a real setup here, or just noise?
 
