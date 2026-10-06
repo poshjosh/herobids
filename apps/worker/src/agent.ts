@@ -978,7 +978,7 @@ const browserPool = BROWSER_POOL_URL
 if (browserPool) {
   logger.info({ url: BROWSER_POOL_URL }, 'Browser pool adapter initialized');
 }
-const toolRegistry = createToolRegistry({ browserPool });
+const toolRegistry = createToolRegistry({ browserPool, reminders: agentRuntimePolicy.reminders });
 // The names the local registry can actually invoke — the intersection target
 // for backend-approved tool visibility (Phase 4 T8).
 const registryToolNames = new Set(toolRegistry.list().map((t) => t.name));

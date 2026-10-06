@@ -199,7 +199,7 @@ advanceRepeatingReminder({ triggerAtMs, repeatEveryMs, nowMs }):
 - `now` exactly on a later slot → that slot counts as missed, and next is strictly
   after `now`.
 
-### WP4. Tools (D1, D2, D3) — PENDING
+### WP4. Tools (D1, D2, D3) — DONE
 
 Files: `apps/worker/src/tools/tasks.ts`, `apps/worker/src/tools/index.ts`,
 `packages/domain/src/tools.ts`
@@ -574,3 +574,8 @@ Non-critical review findings deferred during implementation (grouped by work pac
 ### WP3
 - LOW: `scheduledBy` ↔ `ctx.phase` coupling is guaranteed only by the typechecker.
 - LOW: `reminder-coordinator.ts` still uses `JSON.parse(raw) as ReminderRecord` (unvalidated); switched to `parseReminderRecord` in WP5.
+
+### WP4
+- MEDIUM: `cancel_reminder`'s internal `safeParse` → `reminder.invalid_target` is effectively redundant because the dispatch boundary validates params first (surfaces `validation.invalid_parameters`). Behaviour satisfies the plan; consider dropping the re-parse or commenting that it exists for direct-call/test safety.
+- LOW: `list_reminders` could emit a fractional `repeatEveryMinutes` if a future path writes a non-minute-aligned `repeatEveryMs` (today always aligned).
+- LOW: `isNaN(triggerDate.getTime())` branch in `schedule_reminder` is practically unreachable given `z.string().datetime()`; harmless defensive code.

@@ -1151,6 +1151,21 @@ export const SessionCircuitBreakerSchema = z.object({
   probeIntervalMs: z.number().int().min(5_000).default(60_000),
 });
 
+/** Repeating-reminder bounds and coordinator settings (operator config). */
+export const RemindersConfigSchema = z.object({
+  pollIntervalMs: z.number().int().min(1_000).default(10_000),
+  minRepeatIntervalMs: z.number().int().min(60_000).default(900_000),        // 15 min
+  maxRepeatIntervalMs: z.number().int().min(60_000).default(2_678_400_000),  // 31 days
+  maxActivePerAgent: z.number().int().min(1).default(50),
+  promptMaxEntries: z.number().int().min(1).default(10),
+  coordinatorLeaseTtlSeconds: z.number().int().min(5).default(30),
+}).refine((r) => r.minRepeatIntervalMs <= r.maxRepeatIntervalMs, {
+  message: 'minRepeatIntervalMs must be <= maxRepeatIntervalMs',
+});
+
+/** Resolved operator reminder config (bounds + coordinator settings). */
+export type ReminderConfig = z.infer<typeof RemindersConfigSchema>;
+
 export const AgentRuntimeConfigSchema = z.object({
   failureBackoff: z.object({
     backoffThreshold: z.number().int().min(1).default(3),
@@ -1352,16 +1367,7 @@ export const AgentRuntimeConfigSchema = z.object({
     httpClient: HttpClientConfigSchema,
   }).default({}),
   /** Repeating-reminder bounds and coordinator settings (operator config). */
-  reminders: z.object({
-    pollIntervalMs: z.number().int().min(1_000).default(10_000),
-    minRepeatIntervalMs: z.number().int().min(60_000).default(900_000),        // 15 min
-    maxRepeatIntervalMs: z.number().int().min(60_000).default(2_678_400_000),  // 31 days
-    maxActivePerAgent: z.number().int().min(1).default(50),
-    promptMaxEntries: z.number().int().min(1).default(10),
-    coordinatorLeaseTtlSeconds: z.number().int().min(5).default(30),
-  }).refine((r) => r.minRepeatIntervalMs <= r.maxRepeatIntervalMs, {
-    message: 'minRepeatIntervalMs must be <= maxRepeatIntervalMs',
-  }).default({}),
+  reminders: RemindersConfigSchema.default({}),
   /** Defaults applied to non-trading agents (operator config). */
   nonTradingDefaults: z.object({
     tickIntervalMs: z.number().int().min(60_000).default(86_400_000),          // 24 h

@@ -11,7 +11,7 @@ import { marketDataTools } from './market-data.js';
 import { priceTools } from './price.js';
 import { watchTools } from './watch.js';
 import { webAccessTools } from './web-access.js';
-import { taskTools } from './tasks.js';
+import { createTaskTools } from './tasks.js';
 import { riskLimitsTools } from './risk-limits.js';
 import { schemaTools } from './schema.js';
 import { accountTools } from './account.js';
@@ -26,7 +26,12 @@ import { readSkillTool } from './read-skill.js';
 import { createBrowserTools } from './browser.js';
 import { httpClientTools } from './http-client.js';
 import { shellTools } from './shell.js';
-import type { BrowserPoolPort } from '@herobids/domain';
+import { RemindersConfigSchema, type BrowserPoolPort, type ReminderConfig } from '@herobids/domain';
+
+// Operator reminder defaults, derived from the schema so there are no magic
+// numbers here. Used when a caller (e.g. a test) builds the registry without
+// passing operator config.
+const DEFAULT_REMINDER_CONFIG: ReminderConfig = RemindersConfigSchema.parse({});
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredTools = registry.list();
@@ -84,6 +89,7 @@ function assertBuiltInSkillToolsAreKnown(): void {
 
 export interface ToolRegistryDeps {
   browserPool?: BrowserPoolPort;
+  reminders?: ReminderConfig;
 }
 
 /** Create a registry with all agent tools pre-registered. */
@@ -106,7 +112,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...webAccessTools,
     ...createBrowserTools(deps?.browserPool),
     ...httpClientTools,
-    ...taskTools,
+    ...createTaskTools({ reminders: deps?.reminders ?? DEFAULT_REMINDER_CONFIG }),
     ...riskLimitsTools,
     ...schemaTools,
     ...accountTools,
