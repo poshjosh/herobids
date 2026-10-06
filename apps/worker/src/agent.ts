@@ -25,6 +25,7 @@ import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages 
 import { buildIncrementalContext, estimateTokens } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
+import { parseReminderRecord, type ReminderRecord } from './reminders/reminder-record.js';
 import { buildToolResultMetadata } from './tool-result-metadata.js';
 import {
   applyOwnToolResult,
@@ -2634,6 +2635,31 @@ async function runActiveTick(): Promise<void> {
       }
     }
 
+    // ── Scheduled reminders: load once per tick for the always-visible list ──
+    // These refresh every tick (unlike the per-fire `currentReminder`) and are
+    // not part of the context hash. On a Redis error, warn and keep the previous
+    // snapshot rather than crashing or silently clearing it.
+    try {
+      const rawReminders = await redis.hgetall(`agent:reminders:${AGENT_ID}`);
+      const parsed: ReminderRecord[] = [];
+      for (const [field, value] of Object.entries(rawReminders ?? {})) {
+        const result = parseReminderRecord(value);
+        if (!result.ok) {
+          logger.warn({ field }, 'Skipping malformed scheduled reminder record');
+          continue;
+        }
+        parsed.push(result.data);
+      }
+      parsed.sort((a, b) => a.triggerAt.localeCompare(b.triggerAt));
+      runtimeState.metrics.scheduledRemindersTotal = parsed.length;
+      runtimeState.metrics.scheduledReminders = parsed.slice(
+        0,
+        agentRuntimePolicy.reminders.promptMaxEntries,
+      );
+    } catch (err) {
+      logger.warn({ err }, 'Failed to load scheduled reminders for context — keeping previous');
+    }
+
     // ── Conversation state: hydrate the answered-up-to marker ─────────────
     // Gated on the same activityTimeline enrichment the Conversation section reuses.
     // Warn-and-continue: a hydrate failure must not crash the tick — the marker
@@ -3429,6 +3455,7 @@ async function runActiveTick(): Promise<void> {
       currentTimeMs: promptNowMs,
       nominalTickIntervalMs: costProfile.tickIntervalMs,
       expectedNextTickAtMs: nextTickDueAt > 0 ? nextTickDueAt : promptNowMs + effectiveTickIntervalMs,
+      nextReminderIso: runtimeState.metrics.scheduledReminders[0]?.triggerAt ?? null,
     });
     const systemPrompt = composeSystemPrompt(runtimeState, promptTiming, undefined, enrichmentPolicy);
     // Redis keys for prompt surfaces (served by GET /agents/:id/prompt)

@@ -1078,6 +1078,114 @@ describe('runtime composition helpers', () => {
     expect(secondTick).not.toContain('## A reminder you set for yourself is now due');
   });
 
+  it('renders repeat, missed and next lines in the reminder-fire block', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    const userContext = buildTickUserContext(state, [{
+      type: 'agent.wake',
+      payload: {
+        wakeId: 'rem-rep-001',
+        reason: 'Send the daily summary',
+        eventIds: ['rem-rep-001'],
+        priority: 'normal',
+        requestedAt: '2026-10-06T09:00:00.000Z',
+        source: 'reminder',
+        context: {
+          reminderId: 'rem-rep-001',
+          message: 'Send the daily summary',
+          scheduledBy: 'judge',
+          key: 'daily_report',
+          repeatEveryMs: 86_400_000,
+          scheduledFor: '2026-10-06T09:00:00.000Z',
+          missedOccurrences: 2,
+          nextTriggerAt: '2026-10-07T09:00:00.000Z',
+        },
+      },
+    }]);
+
+    expect(userContext).toContain('## A reminder you set for yourself is now due');
+    expect(userContext).toContain('Repeats every: 24h');
+    expect(userContext).toContain('Scheduled for: 2026-10-06T09:00:00.000Z');
+    expect(userContext).toContain('Missed occurrences: 2');
+    expect(userContext).toContain('Next occurrence: 2026-10-07T09:00:00.000Z');
+  });
+
+  it('renders One-shot and omits missed line for a one-shot reminder fire', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    const userContext = buildTickUserContext(state, [{
+      type: 'agent.wake',
+      payload: {
+        wakeId: 'rem-one-001',
+        reason: 'Follow up with the user',
+        eventIds: ['rem-one-001'],
+        priority: 'normal',
+        requestedAt: '2026-10-06T09:00:00.000Z',
+        source: 'reminder',
+        context: {
+          reminderId: 'rem-one-001',
+          message: 'Follow up with the user',
+          scheduledBy: 'judge',
+          scheduledFor: '2026-10-06T09:00:00.000Z',
+          missedOccurrences: 0,
+        },
+      },
+    }]);
+
+    expect(userContext).toContain('One-shot');
+    expect(userContext).not.toContain('Missed occurrences:');
+  });
+
+  it('renders the scheduled reminders list sorted with keys and repeat info', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    state.metrics.scheduledReminders = [
+      {
+        id: 'r1',
+        message: 'Send the daily summary',
+        triggerAt: '2026-10-07T09:00:00.000Z',
+        key: 'daily_report',
+        repeatEveryMs: 86_400_000,
+        lastFiredAt: '2026-10-06T09:00:00.000Z',
+      },
+      {
+        id: 'r2',
+        message: 'Water the plants',
+        triggerAt: '2026-10-08T09:00:00.000Z',
+      },
+    ];
+    state.metrics.scheduledRemindersTotal = 2;
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).toContain('## Your scheduled reminders');
+    expect(userContext).toContain(
+      '- [daily_report] Send the daily summary — repeats every 24h; last fired 2026-10-06T09:00:00.000Z; next 2026-10-07T09:00:00.000Z',
+    );
+    expect(userContext).toContain('- Water the plants — next 2026-10-08T09:00:00.000Z');
+    expect(userContext).not.toContain('…and');
+  });
+
+  it('shows the "and N more" line when the scheduled reminders list is capped', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    state.metrics.scheduledReminders = [
+      { id: 'r1', message: 'first', triggerAt: '2026-10-07T09:00:00.000Z' },
+      { id: 'r2', message: 'second', triggerAt: '2026-10-08T09:00:00.000Z' },
+    ];
+    state.metrics.scheduledRemindersTotal = 5;
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).toContain('…and 3 more (use list_reminders)');
+  });
+
+  it('omits the scheduled reminders block when there are none', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).not.toContain('## Your scheduled reminders');
+  });
+
   it('applyRuntimeMessage returns the wake reason when a typed market wake has no extra context', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const summary = applyRuntimeMessage(state, {

@@ -47,6 +47,12 @@ export const ReminderWakeContextSchema = z.object({
   reminderId: z.string().min(1),
   message: z.string().min(1),
   scheduledBy: z.enum(['scout', 'judge']),
+  // Repeating-reminder fields. All optional so older one-shot payloads stay valid.
+  key: z.string().optional(),
+  repeatEveryMs: z.number().int().optional(),
+  scheduledFor: z.string().datetime().optional(),
+  missedOccurrences: z.number().int().min(0).optional(),
+  nextTriggerAt: z.string().datetime().optional(),
 });
 export type ReminderWakeContext = z.infer<typeof ReminderWakeContextSchema>;
 

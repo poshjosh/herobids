@@ -2,12 +2,14 @@ export interface PromptTimingContext {
   currentTimeIso: string;
   nominalTickIntervalMs: number;
   expectedNextTickIso: string | null;
+  nextReminderIso: string | null;
 }
 
 export function createPromptTimingContext(input: {
   currentTimeMs: number;
   nominalTickIntervalMs: number;
   expectedNextTickAtMs: number | null;
+  nextReminderIso?: string | null;
 }): PromptTimingContext {
   return {
     currentTimeIso: new Date(input.currentTimeMs).toISOString(),
@@ -15,10 +17,11 @@ export function createPromptTimingContext(input: {
     expectedNextTickIso: input.expectedNextTickAtMs !== null
       ? new Date(input.expectedNextTickAtMs).toISOString()
       : null,
+    nextReminderIso: input.nextReminderIso ?? null,
   };
 }
 
-function formatInterval(ms: number): string {
+export function formatInterval(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) {
     return 'unavailable';
   }
@@ -44,6 +47,9 @@ export function formatPromptTimingContextLines(timing: PromptTimingContext): str
     `Nominal tick interval: ${formatInterval(timing.nominalTickIntervalMs)}`,
     ...(timing.expectedNextTickIso
       ? [`Expected next tick (UTC, tentative): ${timing.expectedNextTickIso}`]
+      : []),
+    ...(timing.nextReminderIso
+      ? [`Next scheduled reminder (UTC): ${timing.nextReminderIso}`]
       : []),
   ];
 }

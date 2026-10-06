@@ -3,11 +3,12 @@ import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, isBlankAgentGoal, 
 import crypto from 'node:crypto';
 import type { ScoredSignal } from './market-intelligence/preset-scan-contracts.js';
 import type { PromptTimingContext } from './prompt-timing-context.js';
-import { formatPromptTimingContextLines } from './prompt-timing-context.js';
+import { formatPromptTimingContextLines, formatInterval } from './prompt-timing-context.js';
 import type { PositionIndicatorUpdate, SymbolFetchOutcome } from './scan-types.js';
 import type { WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from './watch-types.js';
 import type { CoverageEvaluationResult } from './position-coverage.js';
 import { fmtUsd } from './fmt.js';
+import type { ReminderRecord } from './reminders/reminder-record.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
 
@@ -52,6 +53,35 @@ export interface RuntimeReminderContext {
   message: string;
   requestedAt: string | null;
   scheduledBy: 'scout' | 'judge';
+  key?: string;
+  repeatEveryMs?: number;
+  scheduledFor?: string;
+  missedOccurrences?: number;
+  nextTriggerAt?: string;
+}
+
+/**
+ * Build a {@link RuntimeReminderContext} from a reminder wake. Shared by the two
+ * population sites (`drainNewestWakeIntoMarketWake` buffered-wake path and
+ * `applyRuntimeMessage` runtime-group path) so the carried fields stay in sync.
+ */
+export function toRuntimeReminderContext(
+  wakeId: string,
+  requestedAt: string | null,
+  ctx: ReminderWakeContext,
+): RuntimeReminderContext {
+  return {
+    wakeId,
+    reminderId: ctx.reminderId,
+    message: ctx.message,
+    requestedAt,
+    scheduledBy: ctx.scheduledBy,
+    key: ctx.key,
+    repeatEveryMs: ctx.repeatEveryMs,
+    scheduledFor: ctx.scheduledFor,
+    missedOccurrences: ctx.missedOccurrences,
+    nextTriggerAt: ctx.nextTriggerAt,
+  };
 }
 
 export interface RuntimeMarketWakeContext {
@@ -155,13 +185,7 @@ export function drainNewestWakeIntoMarketWake(
   const remaining = buffer.slice(0, -1);
   if (newest.source === 'reminder') {
     const ctx = newest.context as ReminderWakeContext;
-    const reminder: RuntimeReminderContext = {
-      wakeId: newest.wakeId,
-      reminderId: ctx.reminderId,
-      message: ctx.message,
-      requestedAt: newest.requestedAt,
-      scheduledBy: ctx.scheduledBy,
-    };
+    const reminder = toRuntimeReminderContext(newest.wakeId, newest.requestedAt, ctx);
     return { buffer: remaining, wake: null, reminder };
   }
   const wake: RuntimeMarketWakeContext = {
@@ -312,6 +336,14 @@ export interface RuntimeSessionMetrics {
   lastPnlSummary: string | null;
   lastPositionSide: string | null;
   currentReminder: RuntimeReminderContext | null;
+  /**
+   * The agent's scheduled reminders, refreshed each tick from Redis (sorted by
+   * triggerAt, capped at the operator `promptMaxEntries`). Unlike
+   * `currentReminder` these persist across ticks and are NOT reset at tick end.
+   */
+  scheduledReminders: ReminderRecord[];
+  /** Total scheduled reminders before the prompt cap, for the "…and N more" line. */
+  scheduledRemindersTotal: number;
   currentMarketWake: RuntimeMarketWakeContext | null;
   degradedCapabilities: Array<{ dependency: string; summary: string; guidance: string }>;
   managedBots: Array<{ id: string; status: string; strategyPreset?: string; symbol?: string }> | null;
@@ -1059,16 +1091,76 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         return null;
       }
 
+      const lines = [
+        `Message: ${reminder.message}`,
+        `Requested at: ${reminder.requestedAt ?? 'unavailable'}`,
+        `Reminder ID: ${reminder.reminderId ?? 'unavailable'}`,
+        `Wake ID: ${reminder.wakeId}`,
+      ];
+
+      lines.push(
+        reminder.repeatEveryMs !== undefined
+          ? `Repeats every: ${formatInterval(reminder.repeatEveryMs)}`
+          : 'One-shot',
+      );
+      if (reminder.scheduledFor !== undefined) {
+        lines.push(`Scheduled for: ${reminder.scheduledFor}`);
+      }
+      if (reminder.missedOccurrences !== undefined && reminder.missedOccurrences > 0) {
+        lines.push(`Missed occurrences: ${reminder.missedOccurrences}`);
+      }
+      if (reminder.nextTriggerAt !== undefined) {
+        lines.push(`Next occurrence: ${reminder.nextTriggerAt}`);
+      }
+
       return {
         id: 'reminderContext',
         title: 'A reminder you set for yourself is now due',
         provider: 'reminder-context',
-        content: [
-          `Message: ${reminder.message}`,
-          `Requested at: ${reminder.requestedAt ?? 'unavailable'}`,
-          `Reminder ID: ${reminder.reminderId ?? 'unavailable'}`,
-          `Wake ID: ${reminder.wakeId}`,
-        ].join('\n'),
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
+    id: 'scheduled-reminders',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: [],
+    trimOrder: 1,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const reminders = state.metrics.scheduledReminders;
+      if (reminders.length === 0) {
+        return null;
+      }
+
+      const lines = reminders.map((r) => {
+        const parts: string[] = [];
+        if (r.key !== undefined) {
+          parts.push(`[${r.key}]`);
+        }
+        parts.push(r.message);
+        const suffix: string[] = [];
+        if (r.repeatEveryMs !== undefined) {
+          suffix.push(`repeats every ${formatInterval(r.repeatEveryMs)}`);
+        }
+        if (r.lastFiredAt !== undefined) {
+          suffix.push(`last fired ${r.lastFiredAt}`);
+        }
+        suffix.push(`next ${r.triggerAt}`);
+        return `- ${parts.join(' ')} — ${suffix.join('; ')}`;
+      });
+
+      const hidden = state.metrics.scheduledRemindersTotal - reminders.length;
+      if (hidden > 0) {
+        lines.push(`…and ${hidden} more (use list_reminders)`);
+      }
+
+      return {
+        id: 'scheduledReminders',
+        title: 'Your scheduled reminders',
+        provider: 'scheduled-reminders',
+        content: lines.join('\n'),
       };
     },
   },
@@ -1617,6 +1709,8 @@ export function createRuntimeCompositionState(
       lastPnlSummary: null,
       lastPositionSide: null,
       currentReminder: null,
+      scheduledReminders: [],
+      scheduledRemindersTotal: 0,
       currentMarketWake: null,
       degradedCapabilities: [],
       managedBots: null,
@@ -2034,7 +2128,7 @@ export function applyRuntimeMessage(
 
     if (wake.source === 'reminder') {
       const ctx = wake.context as ReminderWakeContext;
-      state.metrics.currentReminder = { wakeId, reminderId: ctx.reminderId, message: ctx.message, requestedAt, scheduledBy: ctx.scheduledBy };
+      state.metrics.currentReminder = toRuntimeReminderContext(wakeId, requestedAt, ctx);
       state.metrics.currentMarketWake = null;
       const summary = `Reminder: ${ctx.message}`;
       pushRecentEvent(state, type, summary);

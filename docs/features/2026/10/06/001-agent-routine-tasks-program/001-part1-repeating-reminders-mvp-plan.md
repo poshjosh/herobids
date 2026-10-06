@@ -294,7 +294,7 @@ File: `apps/worker/src/reminder-coordinator.ts` (constructed in
 - Without the lease nothing fires.
 - Malformed records are skipped.
 
-### WP6. Wake contract and prompt — PENDING
+### WP6. Wake contract and prompt — DONE
 
 **Wake contract** (`packages/domain/src/trading/trading-protocol.ts`): add optional
 fields to `ReminderWakeContextSchema`:
@@ -584,3 +584,8 @@ Non-critical review findings deferred during implementation (grouped by work pac
 - LOW: the "drain cannot throw" guarantee lives in `start()`'s `.catch` wrapper rather than structurally in `stop()`; consider hoisting the wrap into a private helper used by any `tickDrain` assignment site.
 - LOW: the stop-drain test assigns a raw `tick()` promise (no `.catch`) rather than the exact promise shape `start()` produces; informational.
 - LOW (deferred to WP6): wake `context` carries `key`/`repeatEveryMs`/`scheduledFor`/`missedOccurrences`/`nextTriggerAt` which are stripped by the current `ReminderWakeContextSchema` until WP6 extends it.
+
+### WP6
+- LOW: the hash-invariant test is effectively tautological (same inputs both sides); the real guard is that `computeDecisionContextHash`'s input type has no reminder field. Optional to strengthen or delete.
+- LOW: `scheduledRemindersTotal` counts valid (parsed) records, not raw hash size, so the "…and N more" footer excludes malformed entries — sensible but an undocumented deviation from a literal "total count".
+- LOW: no direct test that a Redis `hgetall` rejection keeps the previous `scheduledReminders` snapshot (covered only indirectly).

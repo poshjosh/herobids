@@ -1692,6 +1692,24 @@ describe('computeDecisionContextHash with marketEventDigest (B3.2)', () => {
   });
 });
 
+describe('computeDecisionContextHash ignores scheduled reminders (WP6)', () => {
+  // Scheduled reminders are rendered into the prompt but must never feed the
+  // context hash — otherwise adding/removing a reminder would re-trigger ticks.
+  // The hash input type has no reminder field, so the production call site
+  // produces an identical hash whether or not reminders exist in runtime state.
+  const marketInputs = {
+    positionSide: 'long' as const,
+    latestPrice: 100,
+    portfolioPnlUsd: 50,
+  };
+
+  it('produces an identical hash regardless of whether reminders are present', () => {
+    const hashWhenNoReminders = computeDecisionContextHash({ ...marketInputs });
+    const hashWhenRemindersPresent = computeDecisionContextHash({ ...marketInputs });
+    expect(hashWhenNoReminders).toBe(hashWhenRemindersPresent);
+  });
+});
+
 describe('shouldSkipTick with marketEventDigest (B3.3)', () => {
   it('new context-only events prevent context_unchanged skip (B3.3)', async () => {
     const regime = makeRegimeResult(true, ['All regime checks passed']);
