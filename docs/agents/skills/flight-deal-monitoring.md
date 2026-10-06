@@ -39,7 +39,7 @@ You have access to airfare research, monitoring, history, scheduling, and alerti
 - Use `browse_url(url)` to inspect fare pages, baggage rules, and booking terms.
 - Use `read_document(url)` to read fare rules or policy documents when needed.
 - Use `set_memory`, `get_memory`, `list_memory_keys`, and `delete_memory` to persist trip parameters, observed fares, prior reports, and trend baselines across monitoring cycles.
-- Use `schedule_reminder` to trigger the next scan and the next scheduled summary.
+- Use `schedule_reminder` to set up two repeating reminders: one with `key: scan` and `repeatEveryMinutes` matching your <search-interval> to drive each market scan, and one with `key: report` and `repeatEveryMinutes` matching your <report-frequency> to drive each scheduled summary. Scheduling again with the same key replaces that reminder, so you can adjust an interval without creating duplicates.
 - Use `send_message` for immediate fare alerts and summary updates.
 - Use `publish_artifact` for structured ranked results, fare histories, and recommendation snapshots.
 

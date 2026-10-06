@@ -61,6 +61,8 @@ You have access to weather data sources and alerting tools.
 
 | `promptTemplate` | No | string | Pre-populated starter text for the agent goal field. Use `\|` for multi-line blocks. |
 
+> **Task and reminder tools come with the base skill.** `create_task`, `list_tasks`, `resolve_task`, `complete_task`, `schedule_reminder`, `list_reminders`, and `cancel_reminder` are auto-injected into every agent via `BASE_SKILL`, so a skill does not need to request them. Listing them in `requiredTools` is harmless — they resolve to the base skill's tools — but it is not necessary.
+
 ### What not to put here
 
 - **Agent prompts** (goal text for a specific agent instance) go in `docs/agents/prompts/`, not `docs/agents/skills/`. Prompts are not skills — they're injected directly into an agent's goal field, not posted to the skill catalog.

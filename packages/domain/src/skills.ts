@@ -103,7 +103,15 @@ You can use skills to gain additional capabilities/expertise. For example, if yo
 You can also:
 - Use \`publish_artifact\` to publish structured outputs.
 - Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" to indicate urgency; "routine" is the default. Use contextRef to link the message to a specific context. Use \`send_email\` for email delivery.
-- Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.`,
+- Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.
+
+Routine work:
+- If you have work that repeats on a schedule, you can schedule it once with \`schedule_reminder\` using \`repeatEveryMinutes\` and a stable \`key\` (e.g. \`daily_report\`). The platform schedules each next occurrence for you, including across restarts.
+- Scheduling again with the same \`key\` replaces the existing reminder instead of adding a second one.
+- Your scheduled reminders are listed in your context. You can also use \`list_reminders\` to check them and \`cancel_reminder\` to stop one.
+- A routine is normally done when its reminder arrives. On other ticks, you can check your scheduled reminders before doing routine work early.
+- You can record each completed run with \`set_memory\` so you can tell whether an occurrence was handled.
+- When a reminder reports missed occurrences, you can decide whether one catch-up run is enough.`,
   requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder'],
   capabilityFamilies: [],
   bindingRequirements: {},

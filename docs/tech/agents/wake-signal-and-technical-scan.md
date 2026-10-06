@@ -53,7 +53,31 @@ Pure logic lives in `apps/worker/src/runtime-pause.ts`.
 
 ---
 
-## 3. The technical-scan lifecycle
+## 3. Reminders
+
+Reminders are a wake source an agent schedules for itself. A reminder record lives in the Redis hash `agent:reminders:<agentId>` (field = reminder UUID), and the `ReminderCoordinator` (`apps/worker/src/reminder-coordinator.ts`) polls for due records and emits an `agent.wake` with `source: 'reminder'`. A reminder wake sets `hasWakeSignal`, so it bypasses the context-hash gate like any other wake.
+
+### One-shot vs repeating, and `key` replacement
+
+- A reminder scheduled with `schedule_reminder` and no `repeatEveryMinutes` is **one-shot**: it fires once and the coordinator deletes the record.
+- A reminder scheduled with `repeatEveryMinutes` is **repeating**: when it fires, the coordinator re-schedules the record on its original grid (`advanceRepeatingReminder` in `apps/worker/src/reminders/reminder-schedule.ts`) instead of deleting it.
+- An optional `key` names a reminder. Scheduling again with an existing `key` **replaces** the record in place — the old field is removed, a new `reminderId` is written, and the result reports `replaced: true` with `previousReminderId`. This is how an agent adjusts a routine without accumulating duplicates; there is no edit-in-place.
+
+### The coordinator lease
+
+The coordinator must run on **one worker at a time**. Before each poll it acquires a short-lived Redis lease (`SET reminder-coordinator:lease <workerId> EX <ttl> NX`, renewed while held, released on `stop()`). A worker that does not hold the lease skips the poll. Without the lease, more than one worker could fire the same reminder twice.
+
+### Missed occurrences
+
+The coordinator only polls agents with status `active`, so occurrences that come due while an agent is stopped are not fired then. When the agent is active again, a due repeating reminder fires **once** and the wake reports `missedOccurrences` (the number of grid slots already past, excluding the one being fired). The schedule continues on its original slots — missed occurrences are not replayed one-by-one.
+
+### Reminders and user messages bypass active hours
+
+The session (active-hours) gate in `shouldSkipTick` (`apps/worker/src/tick-gates.ts`) skips a tick only when it is neither a user-message tick nor a reminder-wake tick. Reminder wakes and user messages therefore always reach the agent, even outside its active hours. Market wakes and plain scheduled ticks still respect the gate.
+
+---
+
+## 4. The technical-scan lifecycle
 
 1. The worker's technical scanner runs every `scanIntervalMs` (default 60s) and produces a `TechnicalScanState`.
 2. The scan producer now lives Traderton-side (the in-process `complete-technical-scan.ts` scanner was removed with the L3d-5 actor slice). Traderton emits an `agent.technical.scan_completed` message, which herobids consumes over the boundary into the same `agent:outbound:<agentId>` stream (`apps/worker/src/scan-types.ts` defines the DTO; `apps/worker/src/agents/instance-event-publisher.ts` still carries the publisher seam).
@@ -66,7 +90,7 @@ Because the `agent-runtime` group only drains once per tick with `COUNT 10`, and
 
 ---
 
-## 4. The race condition and the fix
+## 5. The race condition and the fix
 
 ### The race
 
@@ -93,7 +117,7 @@ After the fix, the tick sees the wake context no matter which group consumed the
 
 ---
 
-## 5. Key source references
+## 6. Key source references
 
 | File | Symbol | Role |
 |---|---|---|
@@ -109,7 +133,7 @@ After the fix, the tick sees the wake context no matter which group consumed the
 
 ---
 
-## 6. Related documents
+## 7. Related documents
 
 - **Bug report:** `docs/bug-reports/2026/08/05/001-scanner-gated-agents-stale-scan-blocks-trading.md`
 - **Implementation plan:** `docs/features/2026/08/05/001-fix-wake-consumer-group-race/001-plan.md`

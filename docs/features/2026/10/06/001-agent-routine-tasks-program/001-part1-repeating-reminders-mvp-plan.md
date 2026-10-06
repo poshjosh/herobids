@@ -408,7 +408,7 @@ File: `packages/domain/src/skills.ts`
 - `add_skills('system/task-management')` reports that it's already included.
 - The visibility budget test above.
 
-### WP8. Routine guidance and docs — PENDING
+### WP8. Routine guidance and docs — DONE
 
 Append to the `BASE_SKILL` instructions. Keep the non-assertive "you can" tone from
 `docs/tech/agents/skill-authoring.md`:
@@ -594,3 +594,6 @@ Non-critical review findings deferred during implementation (grouped by work pac
 - Regression fixed during WP7 (root cause in WP1): `deriveHasTradingCapability` threw when a `RuntimeDescriptor.resolvedSkills` entry omitted `capabilityFamilies` (the runtime shape is narrower than the `SkillDefinition` type), which the session-launch try/catch swallowed and blocked `runtimeLauncher.launch`. Fixed with an `Array.isArray` guard. Bug report: `docs/bug-reports/2026/10/06/002-derive-has-trading-capability-throws-on-runtime-skill-shape.md`.
 - LOW: fail-soft logging asymmetry — only the descriptor-resolution path logs when a stale `task-management` ref is dropped; the `add_skills` (returns a user-visible note) and API `resolveSkillSlugs` (silent) paths do not. Consistent with the plan, which permits note/silent for those two.
 - LOW (pre-existing, unrelated to this feature): `apps/worker/src/runtime-composition.ts:785` uses the same unguarded `.capabilityFamilies.includes(...)` pattern; left untouched to keep the fix targeted.
+
+### WP8
+- LOW: `flight-deal-monitoring.md` new sentence is long (could split for readability); `security-audit-prompt.md` has no trailing newline (pre-existing). Both harmless.

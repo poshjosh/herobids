@@ -83,7 +83,7 @@ To search and inspect listings:
 
 To continue the operation and report:
 
-- Use `schedule_reminder` to trigger the next tick.
+- Use `schedule_reminder` once to set up a repeating reminder with `key: sweep` and `repeatEveryMinutes` matching your tick cadence; it drives each subsequent tick. Scheduling again with the same key replaces it, so you can adjust the cadence without creating duplicates.
 - Use `send_message` to deliver periodic review reports and any high-confidence alert.
 - Use `publish_artifact` to publish the ranked leaderboard as a structured output.
 
@@ -106,7 +106,7 @@ Because workspace files may not survive a runtime restart, also persist a durabl
 3. Run a bounded batch of searches (a handful per tick) with `search_web`, `browse_url`, and `browse_interactive`.
 4. For each new hit, capture evidence: listing ID, URL, seller, location, price, post date, image URLs, capture timestamp. De-dupe by listing ID, not URL.
 5. Score each hit with the rubric, update `leaderboard.md` and the memory snapshot, extend `seen-ledger.md` and `search-log.md`.
-6. Persist state to files and memory, then `schedule_reminder` for the next tick.
+6. Persist state to files and memory. The repeating `sweep` reminder drives the next tick; set it up once with `schedule_reminder` if it is not already scheduled.
 
 **Ranking rubric (pre-committed)**
 
