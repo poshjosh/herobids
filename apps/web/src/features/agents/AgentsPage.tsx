@@ -20,7 +20,7 @@ import { buildCreateAgentPayload, resolveCreateAgentConnectionIds } from './agen
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode, type HybridMode } from './CapabilitySelector.js';
-import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
+import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, resolveStyleTickIntervalMins, resolveEffectiveSkipUnchangedTicks, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 
 const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
   careful: 'agents.style.careful.label',
@@ -295,7 +295,8 @@ export function CreateAgentFlow({
     style: 'balanced',
     costPreset: styleDefaults.costPreset,
     dailySpendBudgetUsd: styleDefaults.dailySpendBudgetUsd,
-    tickIntervalMins: styleDefaults.tickIntervalMins,
+    // D10: no skills selected at init → non-trading → 24 h default.
+    tickIntervalMins: resolveStyleTickIntervalMins('balanced', false),
     capital: '1000',
     dailyMaxLossPct: '',
     maxDrawdownPct: '',
@@ -714,6 +715,7 @@ export function CreateAgentFlow({
       hasConnection: intent.connectionIds.length > 0,
       style: intent.style,
       runtimePolicyOverrides: intent.runtimePolicyOverrides,
+      skipUnchangedTicks: resolveEffectiveSkipUnchangedTicks(intent.runtimePolicyOverrides?.skipUnchangedTicks, requiresTradingSetup),
     }, validationConstraints);
 
     setFormErrors((prev) => {
@@ -808,11 +810,14 @@ export function CreateAgentFlow({
                 const styleSources = state.technicalPreFilterEnabled
                   ? [...tradingSources, 'scanner']
                   : tradingSources;
+                // D10: non-trading agents default to a 24 h (1440 min) interval;
+                // trading agents keep the style's interval.
+                const styleHasTradingCapability = selectedSkillsHaveCapabilityFamily(state.skillIds, skills, 'trading');
                 const next: IntentState = {
                   ...state,
                   style,
                   costPreset: defaults.costPreset,
-                  tickIntervalMins: defaults.tickIntervalMins,
+                  tickIntervalMins: resolveStyleTickIntervalMins(style, styleHasTradingCapability),
                   dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
                   subscribedSources: styleSources,
                   ...(policyManuallySetRef.current ? {} : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
@@ -927,6 +932,22 @@ export function CreateAgentFlow({
             onBlurField={validateFieldOnBlur}
             validationConstraints={validationConstraints}
             tickIntervalError={tickIntervalError}
+            skipUnchangedTicks={intent.runtimePolicyOverrides?.skipUnchangedTicks ?? null}
+            hasTradingCapability={requiresTradingSetup}
+            onSkipUnchangedChange={(nextValue) => {
+              setIntent((state) => {
+                const next = { ...(state.runtimePolicyOverrides ?? {}) };
+                if (nextValue === null) {
+                  delete next.skipUnchangedTicks;
+                } else {
+                  next.skipUnchangedTicks = nextValue;
+                }
+                return {
+                  ...state,
+                  runtimePolicyOverrides: Object.keys(next).length > 0 ? next as RuntimePolicyOverrides : null,
+                };
+              });
+            }}
             subscribedSources={intent.subscribedSources}
             onSubscribedSourcesChange={(sources) => setIntent((state) => ({ ...state, subscribedSources: sources }))}
             computeBudgetSlot={
@@ -1367,6 +1388,9 @@ export function CreateAgentFlow({
                       executionMode: intent.executionMode,
                       requiresTradingSetup,
                       hasConnection: intent.connectionIds.length > 0,
+                      style: intent.style,
+                      runtimePolicyOverrides: intent.runtimePolicyOverrides,
+                      skipUnchangedTicks: resolveEffectiveSkipUnchangedTicks(intent.runtimePolicyOverrides?.skipUnchangedTicks, requiresTradingSetup),
                     }, validationConstraints);
 
                     if (!result.valid) {
@@ -1412,6 +1436,9 @@ export function CreateAgentFlow({
                   executionMode: intent.executionMode,
                   requiresTradingSetup,
                   hasConnection: intent.connectionIds.length > 0,
+                  style: intent.style,
+                  runtimePolicyOverrides: intent.runtimePolicyOverrides,
+                  skipUnchangedTicks: resolveEffectiveSkipUnchangedTicks(intent.runtimePolicyOverrides?.skipUnchangedTicks, requiresTradingSetup),
                 }, validationConstraints);
 
                 if (!result.valid) {

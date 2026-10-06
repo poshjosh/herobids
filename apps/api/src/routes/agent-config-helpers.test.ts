@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement, registerBackendRefFamilies } from './agent-config-helpers.js';
+import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement, registerBackendRefFamilies, validateMaxHoldDurationInvariant } from './agent-config-helpers.js';
 
 describe('resolveNotificationPolicy', () => {
   beforeEach(() => {
@@ -581,5 +581,52 @@ describe('validateConnectionRequirement', () => {
 
   it('returns null when execution mode is null', () => {
     expect(validateConnectionRequirement(null, false)).toBeNull();
+  });
+});
+
+describe('validateMaxHoldDurationInvariant (D9)', () => {
+  const TWENTY_FOUR_HOURS_MINS = 1440;
+  const CAREFUL_MAX_HOLD_MS = 27_000_000; // 450 min
+
+  it('rejects a 24 h interval on a careful trading agent when skip-unchanged is on', () => {
+    const issues = validateMaxHoldDurationInvariant({
+      tickIntervalMs: TWENTY_FOUR_HOURS_MINS * 60_000,
+      style: 'careful',
+      runtimePolicyOverrides: { skipUnchangedTicks: true },
+      skillIds: ['traderton/skills/crypto-trading'],
+    });
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues[0]?.path).toEqual(['runtimePolicyOverrides', 'maxHoldDurationMs']);
+  });
+
+  it('accepts the same 24 h interval when skip-unchanged is off', () => {
+    const issues = validateMaxHoldDurationInvariant({
+      tickIntervalMs: TWENTY_FOUR_HOURS_MINS * 60_000,
+      style: 'careful',
+      runtimePolicyOverrides: { skipUnchangedTicks: false },
+      skillIds: [],
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it('accepts a 24 h interval for a non-trading agent by default (skip-unchanged resolves off)', () => {
+    const issues = validateMaxHoldDurationInvariant({
+      tickIntervalMs: TWENTY_FOUR_HOURS_MINS * 60_000,
+      style: 'careful',
+      runtimePolicyOverrides: null,
+      skillIds: [],
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it('still rejects a sub-maxHold interval mismatch when skip-unchanged is on', () => {
+    // tick interval just above the careful max hold → invalid.
+    const issues = validateMaxHoldDurationInvariant({
+      tickIntervalMs: CAREFUL_MAX_HOLD_MS + 60_000,
+      style: 'careful',
+      runtimePolicyOverrides: { skipUnchangedTicks: true },
+      skillIds: ['traderton/skills/crypto-trading'],
+    });
+    expect(issues.length).toBeGreaterThan(0);
   });
 });

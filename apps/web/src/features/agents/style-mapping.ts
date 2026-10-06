@@ -63,6 +63,7 @@ export type RuntimePolicyOverrides = Partial<{
   judgeReasoning: ReasoningLevel | null;
   adaptScoutReasoning: boolean | null;
   adaptJudgeReasoning: boolean | null;
+  skipUnchangedTicks: boolean | null;
 }>;
 
 export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
@@ -155,6 +156,48 @@ export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {
     return STYLE_CONFIG.balanced;
   }
   return config;
+}
+
+/**
+ * D10: default tick interval (in minutes) for a non-trading agent created
+ * without an explicit interval — 24 h. Mirrors the operator config key
+ * `agentRuntime.nonTradingDefaults.tickIntervalMs` (86_400_000 ms); the backend
+ * is authoritative at create time, this is only the form's pre-fill so the UI
+ * shows the same value the server will store.
+ */
+export const NON_TRADING_DEFAULT_TICK_INTERVAL_MINS = '1440';
+
+/**
+ * The tick-interval minutes to pre-fill when a style is selected. Non-trading
+ * agents (no selected skill with the 'trading' capability family) default to
+ * 24 h; trading agents keep the style's interval.
+ */
+export function resolveStyleTickIntervalMins(style: AgentStyleValue, hasTradingCapability: boolean): string {
+  if (!hasTradingCapability) {
+    return NON_TRADING_DEFAULT_TICK_INTERVAL_MINS;
+  }
+  return resolveStyleDefaults(style).tickIntervalMins;
+}
+
+/**
+ * D9: the effective skip-unchanged default for the form, following the selected
+ * skills — on for trading agents, off otherwise. Mirrors the resolver default in
+ * `@herobids/domain` resolveAgentRuntimePolicy.
+ */
+export function resolveDefaultSkipUnchangedTicks(hasTradingCapability: boolean): boolean {
+  return hasTradingCapability;
+}
+
+/**
+ * D9: resolve the effective skip-unchanged value from the form's override and
+ * the trading capability of the selected skills. `null`/`undefined` override =
+ * follow the skills (trading → true, otherwise false).
+ */
+export function resolveEffectiveSkipUnchangedTicks(
+  override: boolean | null | undefined,
+  hasTradingCapability: boolean,
+): boolean {
+  return override ?? resolveDefaultSkipUnchangedTicks(hasTradingCapability);
 }
 
 function isPositiveFiniteNumber(value: number | null | undefined): value is number {

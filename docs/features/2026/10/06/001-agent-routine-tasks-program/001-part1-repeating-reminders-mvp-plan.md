@@ -440,7 +440,7 @@ Docs:
   - missed occurrences
   - reminders and user messages bypass active hours
 
-### WP9. Skip-unchanged setting and 24 h default (D9, D10) — PENDING
+### WP9. Skip-unchanged setting and 24 h default (D9, D10) — DONE
 
 **9a. Domain** (`packages/domain/src/config/schema.ts`):
 - `AgentRuntimePolicyOverridesSchema` gains
@@ -597,3 +597,8 @@ Non-critical review findings deferred during implementation (grouped by work pac
 
 ### WP8
 - LOW: `flight-deal-monitoring.md` new sentence is long (could split for readability); `security-audit-prompt.md` has no trailing newline (pre-existing). Both harmless.
+
+### WP9
+- LOW: web sends the key omitted (deleted) rather than explicit `null` when the toggle matches the default; behaviourally identical given the `.nullable().optional()` schema + `??` resolver.
+- LOW: API create-time `isTradingCapable` includes `capabilityMode === 'hybrid'` (affects the default interval only), while skip-unchanged resolution is skill-only; a hybrid-mode agent with no trading skill keeps a short interval but resolves `skipUnchangedTicks=false` (cost-only, self-corrects when a trading skill is attached).
+- NOTE: the 9e scheduling hand-off (session-gate skip → module override → scheduleNextTick clamp) is covered at the unit level via the `msUntilNextAllowedHour` composition contract test in tick-gates.test.ts; the agent.ts module-var hand-off itself has no isolated harness (would require refactor). Consider an integration test later.

@@ -225,4 +225,44 @@ describe('validateCreateAgentForm', () => {
     // goal is now optional — no error expected for empty goal
     expect(result.errors.goal).toBeUndefined();
   });
+
+  // ── D9: skip-unchanged relaxes the maxHold-vs-tickInterval check ──────────
+  describe('skip-unchanged (D9)', () => {
+    // careful style's maxHold is 450 min; a 24 h (1440 min) interval exceeds it.
+    const careful24h = {
+      style: 'careful',
+      requiresTradingSetup: false,
+      venue: '',
+      capital: '',
+      tickIntervalMins: '1440',
+      runtimePolicyOverrides: { maxHoldDurationMs: 27_000_000 },
+    } as const;
+
+    it('rejects a 24 h interval against careful max hold when skip-unchanged is on', () => {
+      const result = validateCreateAgentForm(
+        validIntent({ ...careful24h, skipUnchangedTicks: true }),
+        DEFAULT_CONSTRAINTS,
+      );
+      expect(result.valid).toBe(false);
+      expect(result.errors.tickIntervalMins).toBeDefined();
+    });
+
+    it('accepts the same 24 h interval when skip-unchanged is off', () => {
+      const result = validateCreateAgentForm(
+        validIntent({ ...careful24h, skipUnchangedTicks: false }),
+        DEFAULT_CONSTRAINTS,
+      );
+      expect(result.valid).toBe(true);
+      expect(result.errors.tickIntervalMins).toBeUndefined();
+    });
+
+    it('still validates the integer tick interval when skip-unchanged is off', () => {
+      const result = validateCreateAgentForm(
+        validIntent({ ...careful24h, skipUnchangedTicks: false, tickIntervalMins: '1.5' }),
+        DEFAULT_CONSTRAINTS,
+      );
+      expect(result.valid).toBe(false);
+      expect(result.errors.tickIntervalMins).toBeDefined();
+    });
+  });
 });

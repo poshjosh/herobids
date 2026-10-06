@@ -37,6 +37,7 @@ import {
 import { loadOperatorRiskDefaults } from '../traderton-operator-defaults.js';
 import {
   AgentRiskDefaultsSchema,
+  AgentRuntimeNonTradingDefaultsSchema,
   AgentRuntimePolicyOverridesSchema,
   CapabilityModeSchema,
   ExecutionDefaultsSchema,
@@ -350,6 +351,12 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
 
 const DEFAULT_AGENT_RISK_DEFAULTS: AgentRiskDefaultsConfig = AgentRiskDefaultsSchema.parse({});
 
+// D10: fallback for the non-trading default tick interval when the operator
+// config is not threaded in (e.g. unit tests). Sourced from the schema default
+// (agentRuntime.nonTradingDefaults.tickIntervalMs = 24 h) — no magic literal.
+const DEFAULT_NON_TRADING_TICK_INTERVAL_MS: number =
+  AgentRuntimeNonTradingDefaultsSchema.parse({}).tickIntervalMs;
+
 class ConnectionValidationError extends Error {
   constructor(readonly status: number, readonly body: Record<string, unknown>) {
     super('connection validation failed');
@@ -423,6 +430,9 @@ export async function agentRoutes(
   tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
+  // D10: operator default tick interval for non-trading agents created without
+  // an explicit interval. Threaded from appConfig.agentRuntime.nonTradingDefaults.
+  nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
 ): Promise<void> {
   const approvalRepo = new DecisionApprovalRepository(db);
   const stagedProfileReconciliationSaga = profileReconciliationSaga ?? new TradingProfileReconciliationSaga(
@@ -726,6 +736,14 @@ export async function agentRoutes(
     // profile when the first connection is bound. For bound agents the profile
     // remains authoritative; this is only the unbound fallback snapshot.
     const isTradingCapable = hasSkillCapabilityFamily(parsed.data.skillIds ?? [], 'trading') || capabilityMode === 'hybrid';
+
+    // D10: a non-trading agent created without an explicit tick interval defaults
+    // to the operator non-trading interval (24 h). Trading agents keep the
+    // style-derived interval (null here means "use the style default downstream").
+    // PATCH never recomputes this (see the update handler).
+    const resolvedTickIntervalMs = parsed.data.tickIntervalMs
+      ?? (isTradingCapable ? null : nonTradingDefaultTickIntervalMs);
+
     if (isTradingCapable && (executionDefaultsJsonb?.mode != null || parsed.data.capital != null)) {
       const uc = (createFields.unifiedConfig ?? {}) as Record<string, unknown>;
       if (executionDefaultsJsonb?.mode != null) {
@@ -814,7 +832,7 @@ export async function agentRoutes(
           telegramChatId: parsed.data.telegramChatId?.trim() || null,
           notificationPolicy: createFields.notificationPolicy,
           maxBots: createFields.maxBots,
-          tickIntervalMs: parsed.data.tickIntervalMs ?? null,
+          tickIntervalMs: resolvedTickIntervalMs,
           style: parsed.data.style ?? null,
           permissionLevel: parsed.data.permissionLevel ?? 'standard',
           runtimePolicyOverrides: createFields.runtimePolicyOverrides,

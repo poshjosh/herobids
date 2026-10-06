@@ -56,6 +56,77 @@ describe('AgentControlsSection rendering', () => {
     expect(html).toContain('Estimated daily LLM spend: ~$21.60');
   });
 
+  // --- skip-unchanged check-ins (D9) ---
+
+  it('renders the skip-unchanged label and help text', () => {
+    const html = renderControls();
+    expect(html).toContain(messages['agents.controls.skipUnchanged.label']);
+    expect(html).toContain(messages['agents.controls.skipUnchanged.help']);
+  });
+
+  it('checks the box for a trading agent by default (no override)', () => {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={messages}>
+        <AgentControlsSection
+          value={{ costPreset: 'standard', dailySpendBudgetUsd: '', tickIntervalMins: '30', dailyMaxLossPct: '', maxSlippageBps: '', maxOpenPositions: '', maxPositionSizePct: '', stopLossPct: '', stopLossCooldownSecs: '' }}
+          onChange={() => undefined}
+          showBotControls
+          hasTradingCapability
+          skipUnchangedTicks={null}
+        />
+      </IntlProvider>,
+    );
+    // The skip-unchanged checkbox is rendered checked.
+    expect(html).toContain('id="skip-unchanged-ticks"');
+    expect(html).toMatch(/id="skip-unchanged-ticks"[^>]*checked/);
+  });
+
+  it('leaves the box unchecked for a non-trading agent by default', () => {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={messages}>
+        <AgentControlsSection
+          value={{ costPreset: 'standard', dailySpendBudgetUsd: '', tickIntervalMins: '1440', dailyMaxLossPct: '', maxSlippageBps: '', maxOpenPositions: '', maxPositionSizePct: '', stopLossPct: '', stopLossCooldownSecs: '' }}
+          onChange={() => undefined}
+          showBotControls
+          hasTradingCapability={false}
+          skipUnchangedTicks={null}
+        />
+      </IntlProvider>,
+    );
+    expect(html).not.toMatch(/id="skip-unchanged-ticks"[^>]*checked/);
+  });
+
+  it('shows the cost hint when skipping is off and the interval is under 60 min', () => {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={messages}>
+        <AgentControlsSection
+          value={{ costPreset: 'standard', dailySpendBudgetUsd: '', tickIntervalMins: '15', dailyMaxLossPct: '', maxSlippageBps: '', maxOpenPositions: '', maxPositionSizePct: '', stopLossPct: '', stopLossCooldownSecs: '' }}
+          onChange={() => undefined}
+          showBotControls
+          hasTradingCapability={false}
+          skipUnchangedTicks={false}
+        />
+      </IntlProvider>,
+    );
+    // 1440 / 15 = 96 runs a day.
+    expect(html).toContain('about 96 runs a day');
+  });
+
+  it('hides the cost hint when the interval is 60 min or more', () => {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={messages}>
+        <AgentControlsSection
+          value={{ costPreset: 'standard', dailySpendBudgetUsd: '', tickIntervalMins: '90', dailyMaxLossPct: '', maxSlippageBps: '', maxOpenPositions: '', maxPositionSizePct: '', stopLossPct: '', stopLossCooldownSecs: '' }}
+          onChange={() => undefined}
+          showBotControls
+          hasTradingCapability={false}
+          skipUnchangedTicks={false}
+        />
+      </IntlProvider>,
+    );
+    expect(html).not.toContain('runs a day');
+  });
+
   it('renders maxPositionSizePct guidance explaining it is independent of capital', () => {
     const html = renderToStaticMarkup(
       <IntlProvider locale="en" messages={messages}>

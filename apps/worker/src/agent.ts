@@ -59,7 +59,7 @@ import {
 } from './agent-watch-view.js';
 import { deriveHasTradingCapability, deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
-import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
+import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, msUntilNextAllowedHour, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
@@ -343,6 +343,9 @@ interface AgentConfig {
     /** 003-adaptive-reasoning: per-agent toggle for adaptive ceiling vs fixed level */
     adaptScoutReasoning?: boolean;
     adaptJudgeReasoning?: boolean;
+    /** D9: when false, scheduled ticks skip neither the context_hash gate nor the
+     *  scout — they escalate straight to the judge. Defaults to true for trading agents. */
+    skipUnchangedTicks?: boolean;
   };
 }
 
@@ -2217,6 +2220,11 @@ let currentTickId = '';
 let previousContextHash: string | null = null;
 let previousFullUserContext: string | null = null;
 let effectiveTickIntervalMs = costProfile.tickIntervalMs;
+// D9/9e: when the last tick was skipped by the session (active-hours) gate, the
+// next tick is clamped so a long-interval agent (e.g. a 24 h check-in) still
+// wakes at the start of its next allowed hour instead of being skipped for a
+// whole day. Set by runTick(), consumed once by scheduleNextTick().
+let sessionGateNextTickOverrideMs: number | null = null;
 let previousRegimePass: boolean | null = null;
 // Hoisted so both runTick() and the heartbeat interval can trigger a clean shutdown.
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -2274,7 +2282,16 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
   clearTimeout(tickTimer);
   if (!running) {
     nextTickDueAt = 0;
+    sessionGateNextTickOverrideMs = null;
     return;
+  }
+
+  // 9e: a session-gate skip asks for an earlier wake at the next allowed hour.
+  // Clamp the requested delay down to it (never up), then clear the override so
+  // it only affects the immediately following schedule.
+  if (sessionGateNextTickOverrideMs !== null) {
+    delayMs = Math.min(delayMs, sessionGateNextTickOverrideMs);
+    sessionGateNextTickOverrideMs = null;
   }
 
   // Hybrid agents still schedule regular timer ticks for housekeeping:
@@ -2794,7 +2811,12 @@ async function runActiveTick(): Promise<void> {
       previousContextHash,
       baseTickIntervalMs: costProfile.tickIntervalMs,
       currentTickIntervalMs: effectiveTickIntervalMs,
-      enabledGates: costProfile.enabledGates,
+      // D9: when skip-unchanged is disabled, the context_hash gate must never
+      // skip a scheduled tick for a non-trading agent whose context never
+      // changes. The other gates (session, billing, circuit breaker) stay as-is.
+      enabledGates: agentConfig.resolvedRuntimePolicy?.skipUnchangedTicks === false
+        ? { ...costProfile.enabledGates, contextHash: false }
+        : costProfile.enabledGates,
     });
 
     if (tickGateState.hasWakeSignal) {
@@ -2937,6 +2959,16 @@ async function runActiveTick(): Promise<void> {
           trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
           positionSide: sessionMetrics.lastPositionSide ?? undefined,
         });
+        // 9e: a session (active-hours) skip on a long-interval agent would
+        // otherwise re-check only after the full interval — e.g. a 24 h check-in
+        // landing outside the window would be skipped every day. Clamp the next
+        // tick down to the start of the next allowed hour.
+        if (skipDecision.gate === 'session') {
+          const msUntilAllowed = msUntilNextAllowedHour(new Date(), tradingHours);
+          if (msUntilAllowed !== null) {
+            sessionGateNextTickOverrideMs = msUntilAllowed;
+          }
+        }
         await sendHeartbeat('ready');
         return;
       }
@@ -3543,6 +3575,10 @@ async function runActiveTick(): Promise<void> {
       hasUncoveredPosition,
       hasUnprotectedPosition: coverageResult.hasUnprotectedPosition,
       hasStaleCoverage: coverageResult.hasStaleProtectiveWatch,
+      // D9: a non-trading agent whose context never changes still needs to reach
+      // the judge on scheduled ticks. When skip-unchanged is off, the scout must
+      // not hold the tick — escalate straight to the judge as a check-in.
+      forceJudgeOnScheduledTick: agentConfig.resolvedRuntimePolicy?.skipUnchangedTicks === false,
     });
 
     let resolvedScoutDecision: ScoutDecision;

@@ -240,6 +240,7 @@ export const AgentRuntimePolicyOverridesSchema = z.object({
     ),
   adaptScoutReasoning: z.boolean().nullable().optional(),
   adaptJudgeReasoning: z.boolean().nullable().optional(),
+  skipUnchangedTicks: z.boolean().nullable().optional(),
 }).default({});
 
 export type AgentRuntimePolicyOverrides = z.infer<typeof AgentRuntimePolicyOverridesSchema>;
@@ -279,6 +280,7 @@ export interface ResolvedAgentRuntimePolicy {
   judgeReasoning: ReasoningLevel;
   adaptScoutReasoning: boolean;
   adaptJudgeReasoning: boolean;
+  skipUnchangedTicks: boolean;
 }
 
 /**
@@ -314,6 +316,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     toolResultFullRetentionTurns: 2,
     toolResultMaxStaleChars: 250,
     maxHoldDurationMs: 27_000_000, // 450 min (5 × tick interval)
+    skipUnchangedTicks: true,
   },
   balanced: {
     costPreset: 'standard',
@@ -342,6 +345,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     toolResultFullRetentionTurns: 3,
     toolResultMaxStaleChars: 500,
     maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
+    skipUnchangedTicks: true,
   },
   bold: {
     costPreset: 'premium',
@@ -370,6 +374,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     toolResultFullRetentionTurns: 5,
     toolResultMaxStaleChars: 1_000,
     maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
+    skipUnchangedTicks: true,
   },
 };
 
@@ -424,6 +429,10 @@ export function resolveAgentRuntimePolicy(
     judgeReasoning: o.judgeReasoning ?? defaults.judgeReasoning,
     adaptScoutReasoning: o.adaptScoutReasoning ?? defaults.adaptScoutReasoning,
     adaptJudgeReasoning: o.adaptJudgeReasoning ?? defaults.adaptJudgeReasoning,
+    // D9: skip-unchanged defaults to on for trading-capable agents and off
+    // otherwise. The explicit override wins; absent the option the fallback is
+    // `true`, matching prior behaviour where every agent skipped unchanged ticks.
+    skipUnchangedTicks: o.skipUnchangedTicks ?? (options?.hasTradingCapability ?? true),
   };
 }
 
@@ -1166,6 +1175,14 @@ export const RemindersConfigSchema = z.object({
 /** Resolved operator reminder config (bounds + coordinator settings). */
 export type ReminderConfig = z.infer<typeof RemindersConfigSchema>;
 
+/** Operator defaults applied to non-trading agents. */
+export const AgentRuntimeNonTradingDefaultsSchema = z.object({
+  tickIntervalMs: z.number().int().min(60_000).default(86_400_000),          // 24 h
+}).default({});
+
+/** Resolved operator non-trading defaults. */
+export type AgentRuntimeNonTradingDefaults = z.infer<typeof AgentRuntimeNonTradingDefaultsSchema>;
+
 export const AgentRuntimeConfigSchema = z.object({
   failureBackoff: z.object({
     backoffThreshold: z.number().int().min(1).default(3),
@@ -1369,9 +1386,7 @@ export const AgentRuntimeConfigSchema = z.object({
   /** Repeating-reminder bounds and coordinator settings (operator config). */
   reminders: RemindersConfigSchema.default({}),
   /** Defaults applied to non-trading agents (operator config). */
-  nonTradingDefaults: z.object({
-    tickIntervalMs: z.number().int().min(60_000).default(86_400_000),          // 24 h
-  }).default({}),
+  nonTradingDefaults: AgentRuntimeNonTradingDefaultsSchema,
 });
 
 export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({

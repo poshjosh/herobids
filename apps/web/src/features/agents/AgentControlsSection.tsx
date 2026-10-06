@@ -24,6 +24,12 @@ interface AgentControlsSectionProps {
   tickIntervalError?: string | null;
   tickIntervalNotice?: string | null;
   effectiveTickIntervalMs?: number | null;
+  /** D9: the per-agent skip-unchanged override — `null`/`undefined` = follow skills. */
+  skipUnchangedTicks?: boolean | null;
+  /** D9: whether the selected skills have a trading capability (drives the default). */
+  hasTradingCapability?: boolean;
+  /** D9: toggle handler. `null` means "reset to the skills-derived default". */
+  onSkipUnchangedChange?: (value: boolean | null) => void;
   fieldErrors?: Record<string, string>;
   onClearFieldError?: (field: string) => void;
   onBlurField?: (field: string) => void;
@@ -64,6 +70,9 @@ export function AgentControlsSection({
   tickIntervalError = null,
   tickIntervalNotice = null,
   effectiveTickIntervalMs = null,
+  skipUnchangedTicks = null,
+  hasTradingCapability = false,
+  onSkipUnchangedChange,
   fieldErrors,
   onClearFieldError,
   onBlurField,
@@ -86,6 +95,20 @@ export function AgentControlsSection({
     value.costPreset || null,
     value.dailySpendBudgetUsd ? Number(value.dailySpendBudgetUsd) : null,
   );
+
+  // D9: the effective skip-unchanged value shown by the checkbox — the override
+  // when set, otherwise the skills-derived default (on for trading agents).
+  const effectiveSkipUnchanged = skipUnchangedTicks ?? hasTradingCapability;
+
+  // D9 cost hint: when skipping is off and the interval is under 60 min, every
+  // tick is a full judge run. runs/day = round(1440 / intervalMins).
+  const MINUTES_PER_DAY = 1440;
+  const COST_HINT_INTERVAL_CEILING_MINS = 60;
+  const skipUnchangedCostHintRuns = !effectiveSkipUnchanged
+    && parsedTickInterval.kind === 'valid'
+    && parsedTickInterval.minutes < COST_HINT_INTERVAL_CEILING_MINS
+    ? Math.round(MINUTES_PER_DAY / parsedTickInterval.minutes)
+    : null;
 
   const sectionStyle: React.CSSProperties = {
     display: 'flex',
@@ -166,6 +189,36 @@ export function AgentControlsSection({
             {explicitCadence
               ? intl.formatMessage({ id: 'agents.controls.tickInterval.slowdownCaveat' }, { cadence })
               : intl.formatMessage({ id: 'agents.controls.tickInterval.expectedCadence' }, { cadence })}
+          </div>
+        )}
+
+        {/* D9: skip-unchanged check-ins toggle. The effective value follows the
+            selected skills (on for trading agents) unless the creator overrides it. */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '10px' }}>
+          <input
+            id="skip-unchanged-ticks"
+            type="checkbox"
+            checked={effectiveSkipUnchanged}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              // Reset to null when the choice matches the skills-derived default,
+              // so an untouched/aligned setting is sent as "use default".
+              onSkipUnchangedChange?.(checked === hasTradingCapability ? null : checked);
+            }}
+            style={{ marginTop: '3px' }}
+          />
+          <label htmlFor="skip-unchanged-ticks" style={{ fontSize: '0.8125rem', cursor: 'pointer', lineHeight: '1.4' }}>
+            <span style={{ display: 'block', color: 'var(--color-text)' }}>
+              {intl.formatMessage({ id: 'agents.controls.skipUnchanged.label' })}
+            </span>
+            <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+              {intl.formatMessage({ id: 'agents.controls.skipUnchanged.help' })}
+            </span>
+          </label>
+        </div>
+        {skipUnchangedCostHintRuns != null && (
+          <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+            {intl.formatMessage({ id: 'agents.controls.skipUnchanged.costHint' }, { runs: skipUnchangedCostHintRuns })}
           </div>
         )}
       </div>

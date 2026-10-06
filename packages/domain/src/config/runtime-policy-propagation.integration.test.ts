@@ -177,6 +177,40 @@ describe('resolveAgentRuntimePolicy — trading-capability hours (D6)', () => {
   });
 });
 
+// ── D9: skip-unchanged resolution ────────────────────────────────────────────
+
+describe('resolveAgentRuntimePolicy — skip-unchanged (D9)', () => {
+  it('resolves a non-trading agent to false', () => {
+    const policy = resolveAgentRuntimePolicy('balanced', null, { hasTradingCapability: false });
+    expect(policy.skipUnchangedTicks).toBe(false);
+  });
+
+  it('resolves a trading agent to true', () => {
+    const policy = resolveAgentRuntimePolicy('balanced', null, { hasTradingCapability: true });
+    expect(policy.skipUnchangedTicks).toBe(true);
+  });
+
+  it('defaults to true when the trading-capability option is omitted', () => {
+    const policy = resolveAgentRuntimePolicy('balanced', null);
+    expect(policy.skipUnchangedTicks).toBe(true);
+  });
+
+  it('lets an explicit true override win for a non-trading agent', () => {
+    const policy = resolveAgentRuntimePolicy('balanced', { skipUnchangedTicks: true }, { hasTradingCapability: false });
+    expect(policy.skipUnchangedTicks).toBe(true);
+  });
+
+  it('lets an explicit false override win for a trading agent', () => {
+    const policy = resolveAgentRuntimePolicy('balanced', { skipUnchangedTicks: false }, { hasTradingCapability: true });
+    expect(policy.skipUnchangedTicks).toBe(false);
+  });
+
+  it('a null override falls back to the skills-derived default', () => {
+    const policy = resolveAgentRuntimePolicy('balanced', { skipUnchangedTicks: null }, { hasTradingCapability: false });
+    expect(policy.skipUnchangedTicks).toBe(false);
+  });
+});
+
 // ── Operator ceilings ───────────────────────────────────────────────────────
 
 describe('operator ceilings', () => {

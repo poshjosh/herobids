@@ -6,6 +6,10 @@ import {
   resolveModelPricing,
   resolveStyleDefaults,
   resolveStyleTickIntervalMs,
+  resolveStyleTickIntervalMins,
+  resolveDefaultSkipUnchangedTicks,
+  resolveEffectiveSkipUnchangedTicks,
+  NON_TRADING_DEFAULT_TICK_INTERVAL_MINS,
   STYLE_CONFIG,
   type AgentStyleValue,
 } from './style-mapping.js';
@@ -394,5 +398,38 @@ describe('adaptive reasoning style defaults', () => {
     const config = resolveStyleDefaults('bold');
     expect(config.adaptScoutReasoning).toBe(true);
     expect(config.adaptJudgeReasoning).toBe(true);
+  });
+});
+
+// ── D10/D9: non-trading tick default and skip-unchanged default ──────────────
+
+describe('resolveStyleTickIntervalMins (D10)', () => {
+  it('keeps the style interval for a trading agent', () => {
+    expect(resolveStyleTickIntervalMins('careful', true)).toBe('90');
+    expect(resolveStyleTickIntervalMins('balanced', true)).toBe('30');
+    expect(resolveStyleTickIntervalMins('bold', true)).toBe('10');
+  });
+
+  it('uses the 24 h (1440 min) default for a non-trading agent regardless of style', () => {
+    expect(resolveStyleTickIntervalMins('careful', false)).toBe(NON_TRADING_DEFAULT_TICK_INTERVAL_MINS);
+    expect(resolveStyleTickIntervalMins('balanced', false)).toBe('1440');
+    expect(resolveStyleTickIntervalMins('bold', false)).toBe('1440');
+  });
+});
+
+describe('skip-unchanged defaults (D9)', () => {
+  it('defaults to true for a trading agent and false otherwise', () => {
+    expect(resolveDefaultSkipUnchangedTicks(true)).toBe(true);
+    expect(resolveDefaultSkipUnchangedTicks(false)).toBe(false);
+  });
+
+  it('follows the skills-derived default when no override is set', () => {
+    expect(resolveEffectiveSkipUnchangedTicks(null, true)).toBe(true);
+    expect(resolveEffectiveSkipUnchangedTicks(undefined, false)).toBe(false);
+  });
+
+  it('lets an explicit override win over the skills default', () => {
+    expect(resolveEffectiveSkipUnchangedTicks(false, true)).toBe(false);
+    expect(resolveEffectiveSkipUnchangedTicks(true, false)).toBe(true);
   });
 });

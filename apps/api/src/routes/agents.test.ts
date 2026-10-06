@@ -3606,6 +3606,87 @@ describe('openPositionEscalationToJudgePolicy', () => {
     expect(alwaysInsert?.openPositionEscalationToJudgePolicy).toBe('always');
   });
 
+  it('stores the 24 h default interval for a non-trading create without an explicit interval (D10)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [{ id: 'agent-refetch', status: 'stopped', userId: TEST_USER_ID, modelPolicy: null, executionMode: null }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'non-trading-default', prompt: 'summarise my inbox' },
+    });
+    expect(res.statusCode).toBe(201);
+
+    const insert = insertedValues.find((v: any) => v.name === 'non-trading-default');
+    // 24 h = 86_400_000 ms (operator agentRuntime.nonTradingDefaults.tickIntervalMs).
+    expect(insert?.tickIntervalMs).toBe(86_400_000);
+  });
+
+  it('keeps an explicit interval on a non-trading create (D10)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [{ id: 'agent-refetch', status: 'stopped', userId: TEST_USER_ID, modelPolicy: null, executionMode: null }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'non-trading-explicit', prompt: 'poll a feed', tickIntervalMs: 300_000 },
+    });
+    expect(res.statusCode).toBe(201);
+
+    const insert = insertedValues.find((v: any) => v.name === 'non-trading-explicit');
+    expect(insert?.tickIntervalMs).toBe(300_000);
+  });
+
+  it('does not apply the non-trading default to a trading create — keeps the explicit interval (D10)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null, unifiedConfig: null };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      activeLinkRows: [createdAgent],
+      skillRows: [
+        { id: 'traderton/skills/crypto-trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-crypto-trading' },
+      ],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'trading-explicit',
+        prompt: 'trade BTC',
+        technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        skillIds: ['traderton/skills/crypto-trading'],
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+        executionDefaults: { mode: 'paper' },
+        tickIntervalMs: 600_000,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+
+    const insert = insertedValues.find((v: any) => v.name === 'trading-explicit');
+    expect(insert?.tickIntervalMs).toBe(600_000);
+  });
+
   it('rejects invalid policy values', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({

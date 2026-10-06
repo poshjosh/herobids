@@ -162,6 +162,44 @@ export function isWithinTradingHours(now: Date, tradingHours?: TradingHoursConfi
   return allowedHours.includes(hour);
 }
 
+const HOURS_IN_WEEK = 24 * 7;
+const MS_PER_HOUR = 3_600_000;
+
+/**
+ * Milliseconds from `now` until the start of the next UTC hour that
+ * `isWithinTradingHours` would allow. Returns `null` when the agent is always
+ * allowed (no hour/session/weekend constraint), so a caller can skip the clamp.
+ *
+ * Reuses `isWithinTradingHours` for the session/weekend/hour logic by probing
+ * each upcoming hour boundary. Scans up to a full week ahead to cover weekend
+ * pauses; returns `null` if nothing in that window is allowed (treated as
+ * "no reachable window" so the caller keeps its normal interval).
+ */
+export function msUntilNextAllowedHour(now: Date, tradingHours?: TradingHoursConfig): number | null {
+  // No constraint at all → always allowed, nothing to wait for.
+  const hasHourConstraint = (tradingHours?.allowedHoursUtc?.length ?? 0) > 0;
+  const hasSessionConstraint = (tradingHours?.tradingSessions?.length ?? 0) > 0;
+  const hasWeekendPause = Boolean(tradingHours?.weekendPause);
+  if (!tradingHours || (!hasHourConstraint && !hasSessionConstraint && !hasWeekendPause)) {
+    return null;
+  }
+
+  // Probe the start of each upcoming UTC hour. The current hour is already
+  // disallowed (callers invoke this after a session-gate skip), so start at the
+  // next hour boundary.
+  const nextHourBoundaryMs = (Math.floor(now.getTime() / MS_PER_HOUR) + 1) * MS_PER_HOUR;
+  for (let i = 0; i < HOURS_IN_WEEK; i++) {
+    const candidate = new Date(nextHourBoundaryMs + i * MS_PER_HOUR);
+    if (isWithinTradingHours(candidate, tradingHours)) {
+      return candidate.getTime() - now.getTime();
+    }
+  }
+
+  // No allowed hour within a week — treat as unreachable; caller keeps its
+  // normal interval rather than deferring indefinitely.
+  return null;
+}
+
 export function computePriceBucket(price?: number | null): string {
   if (!price || !Number.isFinite(price) || price <= 0) {
     return 'unknown';

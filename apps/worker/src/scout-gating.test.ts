@@ -358,6 +358,52 @@ describe('resolvePreScoutDecision', () => {
   });
 });
 
+describe('resolvePreScoutDecision — forced scheduled check-in (D9)', () => {
+  it('escalates an unchanged-context scheduled tick to the judge when skip-unchanged is off', () => {
+    expect(resolvePreScoutDecision({
+      tickCount: 2,
+      reminderScheduledBy: null,
+      forceJudgeOnScheduledTick: true,
+    })).toEqual({
+      decision: { disposition: 'escalate', reason: 'scheduled_check_in' },
+      source: 'forced_scheduled_check_in',
+    });
+  });
+
+  it('runs the scout normally when the forced flag is absent', () => {
+    expect(resolvePreScoutDecision({
+      tickCount: 2,
+      reminderScheduledBy: null,
+    })).toEqual({
+      decision: null,
+      source: 'scout',
+    });
+  });
+
+  it('a user message keeps priority over the forced scheduled check-in', () => {
+    expect(resolvePreScoutDecision({
+      tickCount: 2,
+      reminderScheduledBy: null,
+      userMessageReceived: true,
+      forceJudgeOnScheduledTick: true,
+    })).toEqual({
+      decision: { disposition: 'escalate', reason: 'user_message' },
+      source: 'forced_user_message',
+    });
+  });
+
+  it('a judge-scheduled reminder keeps priority over the forced scheduled check-in', () => {
+    expect(resolvePreScoutDecision({
+      tickCount: 2,
+      reminderScheduledBy: 'judge',
+      forceJudgeOnScheduledTick: true,
+    })).toEqual({
+      decision: { disposition: 'escalate', reason: 'judge_scheduled_reminder' },
+      source: 'forced_judge_reminder',
+    });
+  });
+});
+
 describe('resolveForcedPreScoutBillingOutcome', () => {
   it('skips a forced pre-scout escalation when billing is hard-limited', () => {
     expect(resolveForcedPreScoutBillingOutcome({

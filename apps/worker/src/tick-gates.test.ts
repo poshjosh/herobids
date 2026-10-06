@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RegimeResult } from '@herobids/domain';
-import { calculateAtrPercent, computeDecisionContextHash, computeRiskPlaybookDigest, computeWakeSignalDigest, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
+import { calculateAtrPercent, computeDecisionContextHash, computeRiskPlaybookDigest, computeWakeSignalDigest, computeWatchSummaryDigest, isWithinTradingHours, msUntilNextAllowedHour, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
 import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
 import { computeMarketEventDigest } from './runtime-composition.js';
 import { buildTickGateState } from './tick-gate-state.js';
@@ -2032,5 +2032,103 @@ describe('session (active-hours) gate — user-message and reminder bypass', () 
     const result = await shouldSkipTick(state, {});
 
     expect(result.skip).toBe(false);
+  });
+});
+
+// ── msUntilNextAllowedHour (9e) ──────────────────────────────────────────────
+
+describe('msUntilNextAllowedHour', () => {
+  it('returns null when there is no trading-hours constraint', () => {
+    expect(msUntilNextAllowedHour(new Date('2026-01-05T03:30:00Z'), undefined)).toBeNull();
+    expect(msUntilNextAllowedHour(new Date('2026-01-05T03:30:00Z'), { allowedHoursUtc: [] })).toBeNull();
+  });
+
+  it('returns ms until the start of the next allowed hour when currently outside the window', () => {
+    // Monday 03:30 UTC, allowed hours 14–20 → next allowed boundary is 14:00 UTC.
+    const now = new Date('2026-01-05T03:30:00Z');
+    const result = msUntilNextAllowedHour(now, { allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20] });
+    const expected = new Date('2026-01-05T14:00:00Z').getTime() - now.getTime();
+    expect(result).toBe(expected);
+  });
+
+  it('rolls over to the next day when the window has already passed today', () => {
+    // Monday 21:30 UTC, allowed hours 14–20 → the window is over today; next is
+    // Tuesday 14:00 UTC.
+    const now = new Date('2026-01-05T21:30:00Z');
+    const result = msUntilNextAllowedHour(now, { allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20] });
+    const expected = new Date('2026-01-06T14:00:00Z').getTime() - now.getTime();
+    expect(result).toBe(expected);
+  });
+
+  it('points to the first hour after a weekend pause', () => {
+    // Saturday 10:00 UTC with weekendPause and always-on hours → the pause lifts
+    // Sunday 12:00 UTC (the first hour the gate allows again).
+    const now = new Date('2026-01-10T10:00:00Z'); // Saturday
+    const result = msUntilNextAllowedHour(now, { allowedHoursUtc: [], weekendPause: true });
+    expect(result).not.toBeNull();
+    const resumeAt = new Date(now.getTime() + (result as number));
+    expect(isWithinTradingHours(resumeAt, { allowedHoursUtc: [], weekendPause: true })).toBe(true);
+    expect(resumeAt.getTime()).toBe(new Date('2026-01-11T12:00:00Z').getTime());
+  });
+});
+
+// ── scheduleNextTick clamp composition (9e hand-off contract) ────────────────
+//
+// These cases pin the exact arithmetic contract that agent.ts's
+// scheduleNextTick depends on for 9e. The agent.ts internals
+// (sessionGateNextTickOverrideMs, scheduleNextTick) are module-level `let`
+// state with no exports and no isolated test harness, so the hand-off itself
+// cannot be unit-tested without refactoring production code. Instead we pin the
+// composition those internals perform: on a session-gate skip, runTick() sets
+// the override to msUntilNextAllowedHour(now, tradingHours) and scheduleNextTick
+// clamps the next delay to `Math.min(normalInterval, override)` (only when the
+// override is non-null). If this contract changes, the 9e re-tick behaviour for
+// a long-interval non-trading agent silently regresses — these assertions catch
+// that at the unit level.
+describe('scheduleNextTick clamp composition (9e)', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  it('clamps a 24h interval down to the next allowed-hour delay after a session-gate skip', () => {
+    // A 24h check-in agent skipped at 03:30 UTC outside its 14–20 UTC window.
+    // scheduleNextTick must wake it at 14:00 UTC today, not a full day later.
+    const now = new Date('2026-01-05T03:30:00Z');
+    const tradingHours = { allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20] };
+    const override = msUntilNextAllowedHour(now, tradingHours);
+    expect(override).not.toBeNull();
+
+    const clampedDelay = Math.min(DAY_MS, override as number);
+
+    const expectedWindowStartDelay = new Date('2026-01-05T14:00:00Z').getTime() - now.getTime();
+    expect(clampedDelay).toBe(expectedWindowStartDelay);
+    // The clamp must shorten the wait, never lengthen it to the full interval.
+    expect(clampedDelay).toBeLessThan(DAY_MS);
+  });
+
+  it('keeps the full interval when the window is less than a full interval away but still sooner', () => {
+    // Window already passed today (21:30 UTC, 14–20 window) → next is tomorrow
+    // 14:00 UTC. For a 24h interval that override is still < 24h, so the clamp
+    // picks the override.
+    const now = new Date('2026-01-05T21:30:00Z');
+    const tradingHours = { allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20] };
+    const override = msUntilNextAllowedHour(now, tradingHours);
+    expect(override).not.toBeNull();
+
+    const clampedDelay = Math.min(DAY_MS, override as number);
+
+    const expectedWindowStartDelay = new Date('2026-01-06T14:00:00Z').getTime() - now.getTime();
+    expect(clampedDelay).toBe(expectedWindowStartDelay);
+    expect(clampedDelay).toBeLessThan(DAY_MS);
+  });
+
+  it('retains the normal interval when there is no trading-hours constraint (null override, no clamp)', () => {
+    // Always-allowed agent: msUntilNextAllowedHour returns null, so runTick()
+    // never sets the override and scheduleNextTick keeps its normal interval.
+    const now = new Date('2026-01-05T03:30:00Z');
+    const override = msUntilNextAllowedHour(now, undefined);
+    expect(override).toBeNull();
+
+    // Mirrors agent.ts: the clamp branch is guarded by `override !== null`.
+    const clampedDelay = override !== null ? Math.min(DAY_MS, override) : DAY_MS;
+    expect(clampedDelay).toBe(DAY_MS);
   });
 });

@@ -13,7 +13,7 @@ import { validateCreateAgentForm, validateEditAgentConnections, type ValidationC
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
-import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
+import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, resolveEffectiveSkipUnchangedTicks, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 
 const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
   careful: 'agents.style.careful.label',
@@ -393,6 +393,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       executionMode: form.executionMode,
       // Capital is optional in edit mode (blank = unlimited)
       requiresTradingSetup: false,
+      style,
+      runtimePolicyOverrides,
+      skipUnchangedTicks: resolveEffectiveSkipUnchangedTicks(runtimePolicyOverrides?.skipUnchangedTicks, requiresTradingSetup),
     }, validationConstraints);
 
     setFormErrors((prev) => {
@@ -497,6 +500,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       venueType: '',
       executionMode: form.executionMode,
       requiresTradingSetup: false,
+      style,
+      runtimePolicyOverrides,
+      skipUnchangedTicks: resolveEffectiveSkipUnchangedTicks(runtimePolicyOverrides?.skipUnchangedTicks, requiresTradingSetup),
     }, validationConstraints);
     if (!result.valid || tickIntervalError != null) {
       setFormErrors(result.errors);
@@ -674,6 +680,19 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             onBlurField={validateFieldOnBlur}
             validationConstraints={validationConstraints}
             tickIntervalError={tickIntervalError}
+            skipUnchangedTicks={runtimePolicyOverrides?.skipUnchangedTicks ?? null}
+            hasTradingCapability={requiresTradingSetup}
+            onSkipUnchangedChange={(nextValue) => {
+              setRuntimePolicyOverrides((prev) => {
+                const next = { ...(prev ?? {}) };
+                if (nextValue === null) {
+                  delete next.skipUnchangedTicks;
+                } else {
+                  next.skipUnchangedTicks = nextValue;
+                }
+                return Object.keys(next).length > 0 ? (next as RuntimePolicyOverrides) : null;
+              });
+            }}
             tickIntervalNotice={tickIntervalNotice}
             effectiveTickIntervalMs={effectiveTickIntervalMs}
             subscribedSources={form.subscribedSources}

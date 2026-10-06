@@ -111,6 +111,11 @@ export interface AgentFormBodyProps {
   tickIntervalNotice?: string | null;
   effectiveTickIntervalMs?: number | null;
 
+  // D9: skip-unchanged check-ins
+  skipUnchangedTicks?: boolean | null;
+  hasTradingCapability?: boolean;
+  onSkipUnchangedChange?: (value: boolean | null) => void;
+
   // Slots (caller injects shell-specific chrome)
   modelSlot: React.ReactNode;
   connectionSlot?: React.ReactNode;
@@ -377,6 +382,9 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               tickIntervalError={props.tickIntervalError}
               tickIntervalNotice={props.tickIntervalNotice}
               effectiveTickIntervalMs={props.effectiveTickIntervalMs}
+              skipUnchangedTicks={props.skipUnchangedTicks}
+              hasTradingCapability={props.hasTradingCapability}
+              onSkipUnchangedChange={props.onSkipUnchangedChange}
               fieldErrors={props.formErrors}
               onClearFieldError={props.onClearFieldError}
               onBlurField={handleFieldBlur}

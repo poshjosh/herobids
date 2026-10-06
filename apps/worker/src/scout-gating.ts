@@ -20,7 +20,7 @@ export function resolveForcedPreScoutBillingOutcome(params: {
 
 export interface PreScoutResolution {
   decision: ScoutDecision | null;
-  source: 'forced_first_tick' | 'forced_user_message' | 'forced_judge_reminder' | 'forced_stale_coverage' | 'forced_open_positions' | 'scout';
+  source: 'forced_first_tick' | 'forced_user_message' | 'forced_judge_reminder' | 'forced_scheduled_check_in' | 'forced_stale_coverage' | 'forced_open_positions' | 'scout';
 }
 
 export function resolvePreScoutDecision(params: {
@@ -49,6 +49,13 @@ export function resolvePreScoutDecision(params: {
    * uncovered_or_triggered policy. When undefined, falls back to hasUncoveredPosition behavior.
    */
   hasUnprotectedPosition?: boolean;
+  /**
+   * True when the agent has skip-unchanged disabled (D9). A plain scheduled tick
+   * must then skip the scout triage and escalate straight to the judge, so a
+   * non-trading agent whose context never changes still checks in. Checked after
+   * the user-message and judge-reminder forced escalations so those keep priority.
+   */
+  forceJudgeOnScheduledTick?: boolean;
 }): PreScoutResolution {
   if (params.tickCount === 1) {
     return {
@@ -70,6 +77,16 @@ export function resolvePreScoutDecision(params: {
     return {
       decision: { disposition: 'escalate', reason: 'judge_scheduled_reminder' },
       source: 'forced_judge_reminder',
+    };
+  }
+
+  // D9: skip-unchanged disabled → every scheduled tick reaches the judge
+  // (the scout cannot hold it). Lower priority than user messages and judge
+  // reminders, which carry their own, more specific reasons above.
+  if (params.forceJudgeOnScheduledTick) {
+    return {
+      decision: { disposition: 'escalate', reason: 'scheduled_check_in' },
+      source: 'forced_scheduled_check_in',
     };
   }
 

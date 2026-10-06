@@ -542,6 +542,13 @@ export function validateMaxHoldDurationInvariant(params: {
     // engine will see.
     { hasTradingCapability: hasSkillCapabilityFamily(params.skillIds, 'trading') },
   );
+  // D9: max hold only backstops skipped ticks. When skip-unchanged is off, no
+  // tick is ever skipped for being unchanged, so maxHold vs tickInterval is
+  // irrelevant — a 24 h interval on a careful-style non-trading agent is fine.
+  if (resolved.skipUnchangedTicks === false) {
+    return [];
+  }
+
   const maxHoldMs = resolved.maxHoldDurationMs;
   if (maxHoldMs === undefined || maxHoldMs === 0) {
     return [];
