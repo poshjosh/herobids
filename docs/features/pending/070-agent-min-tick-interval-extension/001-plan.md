@@ -1,5 +1,7 @@
 # Agent Minimum Tick Interval Extension
 
+> **Superseded (2026-10-06)** by [Part 2: agent-controlled tick interval](../../2026/10/06/001-agent-routine-tasks-program/002-part2-agent-controlled-tick-interval-plan.md) of the [agent routine tasks program](../../2026/10/06/001-agent-routine-tasks-program/000-outline.md), which takes precedence. No section here applies as written: the creator opt-in checkbox, the one-shot `set_next_tick_delay` tool and the delay-only semantics are replaced by a persistent, operator-bounded `set_tick_interval` that can raise or lower the interval. Ideas carried over: the `ToolContext` scheduling surface, wake precedence, and gating prompt guidance on the tool's availability.
+
 ## Summary
 
 Add an agent mode where the configured tick interval becomes a minimum rather than a fixed cadence. When enabled for an agent, the agent may request that its next scheduled tick occur later than the current effective interval. The agent must never be able to shorten the cadence below the existing schedule floor, and wake signals must still be allowed to trigger earlier ticks.

@@ -58,10 +58,13 @@ const WatchTokenParamsSchema = z.object({
     /** Identify the target position so the worker can derive a canonical positionKey. */
     targetPosition: z.object({
       venue: z.string().min(1).describe('Venue where the position is held (e.g. "hyperliquid", "jupiter")'),
-      symbol: z.string().min(1).describe('Symbol of the position'),
+      symbol: z.string().min(1).describe(
+        'Symbol of the position as shown by list_positions. For positions you opened with submit_decision, this is the instrumentId you submitted (e.g. "NEAR", "SOL/USDC").',
+      ),
       side: z.enum(['long', 'short']).describe('Direction of the position'),
       instrumentId: z.string().optional().describe(
-        'Canonical instrument ID of the position. Provide when available to disambiguate same-symbol positions.',
+        'Optional. Omit unless list_positions shows a non-null instrumentId for this position; venue, symbol and side identify it. ' +
+        'Only narrows the match when the stored position has an instrumentId. Not the instrumentId you pass to submit_decision (that is the symbol).',
       ),
     }).optional().describe(
       'Identify the open position this watch protects. The worker derives the canonical positionKey — do NOT supply a raw positionKey.',
@@ -76,7 +79,9 @@ const watchTokenTool: AgentTool<TradingToolContext> = {
   description:
     'Register a price watch for a token. When chain is "any", the tool discovers the best-matching token and pins the watch to that concrete asset — future checks will always use the pinned identity. ' +
     'The watch fires when the token\'s price crosses the given threshold in the specified direction. ' +
-    'Protective watches (stop_loss, take_profit, exit) require either a matching instrument identity or a resolvable target position — create the position first before creating a protective watch. ' +
+    'Protective watches (stop_loss, take_profit, exit) must link to an open position, so create the position first. ' +
+    'Without coverage.targetPosition, a protective watch auto-links when exactly one open position is on the venue named by chain (e.g. "hyperliquid") with the same symbol and, for stop_loss/take_profit, the side the condition implies (stop_loss below = long, above = short; take_profit the reverse). ' +
+    'Otherwise pass coverage.targetPosition with venue, symbol and side from list_positions. ' +
     'Use check_watches to evaluate all registered watches. Use list_watches to see active watches. Use remove_watch to cancel one.',
   parametersSchema: WatchTokenParamsSchema,
   parameters: convertZodToJsonSchema(WatchTokenParamsSchema),

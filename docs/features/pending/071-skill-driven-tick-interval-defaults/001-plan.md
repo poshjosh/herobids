@@ -1,5 +1,11 @@
 # Skill-Driven Tick Interval Defaults
 
+> **Partially superseded (2026-10-06)** by the [agent routine tasks program](../../2026/10/06/001-agent-routine-tasks-program/000-outline.md), which takes precedence where the two overlap. This plan still owns the creator default tick interval computed at create time; [Part 2](../../2026/10/06/001-agent-routine-tasks-program/002-part2-agent-controlled-tick-interval-plan.md) uses that value as the default the agent can reset to. No longer applies as written:
+> 1. The `[1 min, 24 h]` clamp governs creator defaults only. Values the agent sets are bounded by `agentRuntime.tickInterval` (Part 2).
+> 2. The stored `tickIntervalMs` is no longer always the effective cadence: the agent may override it (Part 2), and a creator edit clears that override.
+> 3. "Rely on wake signals (reminders…)" for non-trading agents is delivered by [Part 1](../../2026/10/06/001-agent-routine-tasks-program/001-part1-repeating-reminders-mvp-plan.md) repeating reminders.
+> 4. The `maxHoldDurationMs` comment updates should describe the creator default; Part 2 leaves `maxHoldDurationMs` unchanged when the agent changes its interval.
+
 ## Summary
 
 Replace the hardcoded `tickIntervalMins` values in `AGENT_STYLE_RUNTIME_DEFAULTS` with a computation that derives the default tick interval from the agent's selected skills. Each skill carries a `suggestedTickIntervalMs`; the average across selected skills (excluding `base`) becomes the **baseline**, which is then modulated by the agent's style (careful/balanced/bold). The existing hardcoded style values serve as a fallback.

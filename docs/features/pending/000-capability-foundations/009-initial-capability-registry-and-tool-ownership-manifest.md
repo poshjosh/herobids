@@ -1,5 +1,7 @@
 # Initial Native Capability And External Backend Registration Manifest
 
+> **Note (2026-10-06):** the [agent routine tasks program](../../2026/10/06/001-agent-routine-tasks-program/000-outline.md) adds the tools `list_reminders` and `cancel_reminder` (owner: `task-management`, `general`) and `set_tick_interval` (base skill, `general`). That program takes precedence where they overlap; add these rows when implementing this manifest.
+
 **Status:** draft
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  

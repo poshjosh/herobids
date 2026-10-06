@@ -1,5 +1,7 @@
 # Capability Gating Enforcement & Centralized Timeout
 
+> **Note (2026-10-06):** the [agent routine tasks program](../../2026/10/06/001-agent-routine-tasks-program/000-outline.md) adds the Redis-only tools `list_reminders`, `cancel_reminder` and `set_tick_interval`. Treat them like `schedule_reminder` (ungated, no external I/O). That program takes precedence where they overlap.
+
 **Status:** Draft
 **Created:** 2026-08-31
 **Area:** Agent runtime, capability policy, tool safety
