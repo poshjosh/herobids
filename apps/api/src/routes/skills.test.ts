@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { Database } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { inferDependsOn } from '@herobids/domain';
-import { skillsRoutes } from './skills.js';
+import { skillsRoutes, registerBackendApprovedSkillRefs, mapExternalToSkillView } from './skills.js';
+import type { ExternalSkillSummary } from '@herobids/domain';
 
 const TEST_USER_ID = 'user-1';
 let insertedValues: Array<Record<string, unknown>> = [];
@@ -1884,5 +1885,56 @@ describe('GET /skills sourceKind filter', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json().error).toBe('validation_error');
     });
+  });
+});
+
+describe('mapExternalToSkillView — backend-approved family surfacing', () => {
+  // The approved-ref map is module-level global state; reset it after each case
+  // so registrations here cannot leak into other tests if blocks are reordered.
+  afterEach(() => registerBackendApprovedSkillRefs([]));
+
+  function makeExternalSummary(ref: string): ExternalSkillSummary {
+    return {
+      ref,
+      skillId: 'crypto-bot-management',
+      name: 'Crypto Bot Management',
+      description: 'Manage crypto trading bots',
+      owner: 'traderton',
+      repo: 'skills',
+      installs: 42,
+    };
+  }
+
+  it('surfaces the registered family as capabilityFamilies for a backend-approved trading ref', () => {
+    registerBackendApprovedSkillRefs([
+      { refs: ['traderton/skills/crypto-bot-management'], family: 'trading' },
+    ]);
+
+    const view = mapExternalToSkillView(makeExternalSummary('traderton/skills/crypto-bot-management'));
+
+    expect(view.capabilityFamilies).toEqual(['trading']);
+    expect(view.isBackendApproved).toBe(true);
+  });
+
+  it('yields empty capabilityFamilies for a non-approved external ref', () => {
+    registerBackendApprovedSkillRefs([
+      { refs: ['traderton/skills/crypto-bot-management'], family: 'trading' },
+    ]);
+
+    const view = mapExternalToSkillView(makeExternalSummary('someone/other/skill'));
+
+    expect(view.capabilityFamilies).toEqual([]);
+    expect(view.isBackendApproved).toBe(false);
+  });
+
+  it('yields empty capabilityFamilies when an approved ref has no registered family', () => {
+    registerBackendApprovedSkillRefs([
+      { refs: ['traderton/skills/crypto-bot-management'] },
+    ]);
+
+    const view = mapExternalToSkillView(makeExternalSummary('traderton/skills/crypto-bot-management'));
+
+    expect(view.capabilityFamilies).toEqual([]);
+    expect(view.isBackendApproved).toBe(true);
   });
 });

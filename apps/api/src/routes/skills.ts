@@ -530,7 +530,13 @@ function hasContentChange(
     || JSON.stringify(currentRevision.tags) !== JSON.stringify(updates.tags ?? currentRevision.tags);
 }
 
-function mapExternalToSkillView(ext: ExternalSkillSummary): SkillView {
+export function mapExternalToSkillView(ext: ExternalSkillSummary): SkillView {
+  // Mirror the DB-row path (toSkillViews): a backend-approved external ref
+  // inherits the backend's connection family so the web's trading-vs-non-trading
+  // classification agrees with the server's. The family is stored as the value
+  // of BACKEND_APPROVED_REFS. An external-provider view has no base families, so
+  // the approved family (if any) is the whole list.
+  const family = BACKEND_APPROVED_REFS.get(ext.ref);
   return {
     id: `ext:${ext.ref}`,
     slug: `${ext.owner}/${ext.repo}@${ext.skillId}`,
@@ -558,7 +564,7 @@ function mapExternalToSkillView(ext: ExternalSkillSummary): SkillView {
     requiredTools: [],
     contextRequirements: [],
     requiredGuardrails: [],
-    capabilityFamilies: [],
+    capabilityFamilies: family ? [family] : [],
     suggestedTickIntervalMs: null,
     tags: ext.tags ?? [],
     dependsOn: [],
