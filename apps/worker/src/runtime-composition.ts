@@ -127,22 +127,43 @@ export function bufferWakeEnvelope(
 }
 
 /**
- * Drain the newest buffered wake envelope into `currentMarketWake` when it is
- * not already set (e.g. the runtime consumer group did not consume the wake).
+ * Drain the newest buffered wake envelope when `currentMarketWake` is not
+ * already set (e.g. the runtime consumer group did not consume the wake).
  *
- * Returns the updated buffer (with the drained entry removed) and the
- * reconstructed `RuntimeMarketWakeContext` (or null when there is nothing to
- * drain or the current wake is already set).
+ * The drained wake is reconstructed as either a `RuntimeMarketWakeContext`
+ * (market-source wakes) or a `RuntimeReminderContext` (`source === 'reminder'`).
+ * A reminder-source wake is deliberately NOT cast into the market-wake `source`
+ * union — reminders are returned on the `reminder` field so the caller can set
+ * `currentReminder` and the D5 session gate sees the buffered reminder.
+ *
+ * Returns the updated buffer (with the drained entry removed) and at most one of
+ * `wake` / `reminder` (both null when there is nothing to drain or the current
+ * wake is already set).
  */
 export function drainNewestWakeIntoMarketWake(
   buffer: PendingWakeSignalBufferEntry[],
   currentMarketWake: RuntimeMarketWakeContext | null,
-): { buffer: PendingWakeSignalBufferEntry[]; wake: RuntimeMarketWakeContext | null } {
+): {
+  buffer: PendingWakeSignalBufferEntry[];
+  wake: RuntimeMarketWakeContext | null;
+  reminder: RuntimeReminderContext | null;
+} {
   if (currentMarketWake !== null || buffer.length === 0) {
-    return { buffer, wake: null };
+    return { buffer, wake: null, reminder: null };
   }
   const newest = buffer[buffer.length - 1]!;
   const remaining = buffer.slice(0, -1);
+  if (newest.source === 'reminder') {
+    const ctx = newest.context as ReminderWakeContext;
+    const reminder: RuntimeReminderContext = {
+      wakeId: newest.wakeId,
+      reminderId: ctx.reminderId,
+      message: ctx.message,
+      requestedAt: newest.requestedAt,
+      scheduledBy: ctx.scheduledBy,
+    };
+    return { buffer: remaining, wake: null, reminder };
+  }
   const wake: RuntimeMarketWakeContext = {
     wakeId: newest.wakeId,
     source: newest.source as RuntimeMarketWakeContext['source'],
@@ -150,7 +171,7 @@ export function drainNewestWakeIntoMarketWake(
     requestedAt: newest.requestedAt,
     context: newest.context as RuntimeMarketWakeContext['context'],
   };
-  return { buffer: remaining, wake };
+  return { buffer: remaining, wake, reminder: null };
 }
 
 export interface RuntimeVenueSignal {

@@ -147,6 +147,36 @@ describe('runtime policy override merging', () => {
   });
 });
 
+// ── D6: style-default hours apply only to trading agents ─────────────────────
+
+describe('resolveAgentRuntimePolicy — trading-capability hours (D6)', () => {
+  it('drops style-default hours for a non-trading agent', () => {
+    const policy = resolveAgentRuntimePolicy('careful', null, { hasTradingCapability: false });
+    expect(policy.allowedHoursUtc).toEqual([]);
+    expect(policy.weekendPause).toBe(false);
+    expect(policy.tradingSessions).toBeNull();
+  });
+
+  it('keeps style-default hours for a trading agent', () => {
+    const policy = resolveAgentRuntimePolicy('careful', null, { hasTradingCapability: true });
+    expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+  });
+
+  it('keeps style-default hours when the option is omitted (unchanged behaviour)', () => {
+    const policy = resolveAgentRuntimePolicy('careful', null);
+    expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+  });
+
+  it('keeps creator-set hours for a non-trading agent', () => {
+    const policy = resolveAgentRuntimePolicy(
+      'careful',
+      { allowedHoursUtc: [8, 9, 10] },
+      { hasTradingCapability: false },
+    );
+    expect(policy.allowedHoursUtc).toEqual([8, 9, 10]);
+  });
+});
+
 // ── Operator ceilings ───────────────────────────────────────────────────────
 
 describe('operator ceilings', () => {

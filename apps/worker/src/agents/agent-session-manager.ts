@@ -10,6 +10,7 @@ import type {
   OperatorModelDefaults,
 } from '@herobids/domain';
 import { readSkillPresetId, resolveAgentRuntimePolicy } from '@herobids/domain';
+import { deriveHasTradingCapability } from '../agent-capabilities.js';
 import { buildRuntimeDescriptor } from '@herobids/db';
 import type { AgentRepository, UsageBillingRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -526,6 +527,8 @@ export class AgentSessionManager {
           resolvedRuntimePolicy: resolveAgentRuntimePolicy(
             agent.style ?? null,
             agent.runtimePolicyOverrides ?? null,
+            // D6: style-default active hours apply only to trading agents.
+            { hasTradingCapability: deriveHasTradingCapability(runtimeDescriptor.resolvedSkills) },
           ),
         };
         await this.runtimeLauncher.launch({

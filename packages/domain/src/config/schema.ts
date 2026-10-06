@@ -381,6 +381,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
 export function resolveAgentRuntimePolicy(
   style: string | undefined | null,
   overrides: AgentRuntimePolicyOverrides | undefined | null,
+  options?: { hasTradingCapability?: boolean },
 ): ResolvedAgentRuntimePolicy {
   const effectiveStyle: AgentStyleValue = (
     style === 'careful' || style === 'balanced' || style === 'bold'
@@ -389,6 +390,17 @@ export function resolveAgentRuntimePolicy(
   const defaults = AGENT_STYLE_RUNTIME_DEFAULTS[effectiveStyle];
   const o = overrides ?? {};
 
+  // D6: style-default active hours (allowedHoursUtc, weekendPause,
+  // tradingSessions) apply only to trading-capable agents. When the caller
+  // declares the agent is NOT trading-capable, these come solely from the
+  // creator's explicit overrides; absent an override, they fall back to the
+  // "always on" values ([], false, null). When the option is omitted the style
+  // defaults still apply, so existing callers are unaffected.
+  const styleHoursApply = options?.hasTradingCapability !== false;
+  const allowedHoursUtc = o.allowedHoursUtc ?? (styleHoursApply ? defaults.allowedHoursUtc : []);
+  const weekendPause = o.weekendPause ?? (styleHoursApply ? defaults.weekendPause : false);
+  const tradingSessions = o.tradingSessions ?? (styleHoursApply ? defaults.tradingSessions : null);
+
   return {
     scoutMaxTurns: o.scoutMaxTurns ?? defaults.scoutMaxTurns,
     judgeMaxTurns: o.judgeMaxTurns ?? defaults.judgeMaxTurns,
@@ -396,8 +408,8 @@ export function resolveAgentRuntimePolicy(
     judgeMaxTokens: o.judgeMaxTokens ?? defaults.judgeMaxTokens,
     lightThinkingTokens: o.lightThinkingTokens ?? defaults.lightThinkingTokens,
     deepThinkingTokens: o.deepThinkingTokens ?? defaults.deepThinkingTokens,
-    allowedHoursUtc: o.allowedHoursUtc ?? defaults.allowedHoursUtc,
-    weekendPause: o.weekendPause ?? defaults.weekendPause,
+    allowedHoursUtc,
+    weekendPause,
     maxHistoryMessages: o.maxHistoryMessages ?? defaults.maxHistoryMessages,
     maxHistoryTokens: o.maxHistoryTokens ?? defaults.maxHistoryTokens,
     maxRecentToolMessages: o.maxRecentToolMessages ?? defaults.maxRecentToolMessages,
@@ -407,7 +419,7 @@ export function resolveAgentRuntimePolicy(
     toolResultFullRetentionTurns: o.toolResultFullRetentionTurns ?? defaults.toolResultFullRetentionTurns,
     toolResultMaxStaleChars: o.toolResultMaxStaleChars ?? defaults.toolResultMaxStaleChars,
     maxHoldDurationMs: o.maxHoldDurationMs ?? defaults.maxHoldDurationMs,
-    tradingSessions: o.tradingSessions ?? defaults.tradingSessions,
+    tradingSessions,
     scoutReasoning: o.scoutReasoning ?? defaults.scoutReasoning,
     judgeReasoning: o.judgeReasoning ?? defaults.judgeReasoning,
     adaptScoutReasoning: o.adaptScoutReasoning ?? defaults.adaptScoutReasoning,

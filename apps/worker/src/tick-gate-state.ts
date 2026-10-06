@@ -72,6 +72,14 @@ export interface BuildTickGateStateParams {
   marketEventDigest?: string;
   /** True when a wake was drained from the wake-signal buffer (wake group consumed it, runtime group did not). */
   hasBufferedWake?: boolean;
+  /** True when a user message is pending for this tick but was not present in
+   * `incomingMessages` (the wake-signal poll loop drained it before the runtime
+   * group's cursor reached it). Folds into `hasUserMessage` on the gate state. */
+  hasPendingUserMessage?: boolean;
+  /** True when a reminder wake drove this tick but its `agent.wake` envelope was
+   * not present in `incomingMessages` (buffered-drain race). Folds into
+   * `hasReminderWake` on the gate state. */
+  hasBufferedReminderWake?: boolean;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -202,10 +210,28 @@ export function buildTickGateState(params: BuildTickGateStateParams): TickGateSt
   const hasWakeSignal = params.incomingMessages.some((message) => isEarlyTickTriggerType(message['type']))
     || params.hasBufferedWake === true;
 
+  // A user message (either channel) must always reach the agent, so the session
+  // (active-hours) gate must not skip the tick (D5). Derived from any incoming
+  // user-message envelope or from the drained pending-user-message flag.
+  const hasUserMessage = params.incomingMessages.some((message) => isUserMessageType(message['type']))
+    || params.hasPendingUserMessage === true;
+
+  // A reminder wake must likewise always reach the agent (D5). Derived from any
+  // incoming reminder `agent.wake` envelope or from the buffered-drain flag.
+  const hasReminderWake = params.incomingMessages.some((message) => {
+    if (message['type'] !== AGENT_WAKE_TYPE) {
+      return false;
+    }
+    const payload = message['payload'] as { source?: unknown } | undefined;
+    return payload?.source === 'reminder';
+  }) || params.hasBufferedReminderWake === true;
+
   return {
     tickNumber: params.tickNumber,
     hasOpenPositions: params.hasOpenPositions,
     hasWakeSignal,
+    hasUserMessage,
+    hasReminderWake,
     tradingHours: params.tradingHours,
     now: params.now,
     positionSide: tickSignals.positionSide ?? (params.hasOpenPositions ? params.lastKnownPositionSide ?? 'open' : 'flat'),

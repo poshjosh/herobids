@@ -596,6 +596,7 @@ export async function agentRoutes(
       tickIntervalMs: parsed.data.tickIntervalMs,
       style: parsed.data.style,
       runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
+      skillIds: parsed.data.skillIds,
     });
     if (holdInvariantIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
@@ -1205,6 +1206,7 @@ export async function agentRoutes(
       runtimePolicyOverrides: parsed.data.runtimePolicyOverrides !== undefined
         ? (parsed.data.runtimePolicyOverrides as Record<string, unknown> | null)
         : (agent.runtimePolicyOverrides as Record<string, unknown> | null),
+      skillIds: mergedSkillIds,
     });
     if (holdInvariantIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });

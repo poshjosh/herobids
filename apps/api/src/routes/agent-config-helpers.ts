@@ -468,7 +468,7 @@ export function resolveNotificationPolicy(
   };
 }
 
-export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null; maxDrawdown?: unknown; strategy?: unknown; risk?: unknown; executionDefaults?: unknown }>(agent: T): Omit<T, 'maxDrawdown'> & {
+export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null; maxDrawdown?: unknown; strategy?: unknown; risk?: unknown; executionDefaults?: unknown; skillIds?: string[] | null }>(agent: T): Omit<T, 'maxDrawdown'> & {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
@@ -494,6 +494,9 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
     resolvedRuntimePolicy: resolveAgentRuntimePolicy(
       agent.style ?? null,
       (agent.runtimePolicyOverrides ?? null) as Parameters<typeof resolveAgentRuntimePolicy>[1],
+      // D6: style-default active hours apply only to trading agents, so the
+      // decorated response reflects what the engine will actually enforce.
+      { hasTradingCapability: hasSkillCapabilityFamily(agent.skillIds, 'trading') },
     ) as unknown as Record<string, unknown> | null,
     strategy: (agent as Record<string, unknown>)['strategy'] ?? null,
   };
@@ -522,6 +525,7 @@ export function validateMaxHoldDurationInvariant(params: {
   tickIntervalMs: number | string | null | undefined;
   style: string | null | undefined;
   runtimePolicyOverrides: Record<string, unknown> | null | undefined;
+  skillIds?: string[] | null;
 }): Array<{ code: 'custom'; path: string[]; message: string }> {
   const tickMs = typeof params.tickIntervalMs === 'string'
     ? Number(params.tickIntervalMs)
@@ -533,6 +537,10 @@ export function validateMaxHoldDurationInvariant(params: {
   const resolved = resolveAgentRuntimePolicy(
     params.style ?? null,
     (params.runtimePolicyOverrides ?? null) as Parameters<typeof resolveAgentRuntimePolicy>[1],
+    // D6: a non-trading agent must not inherit the style's default hours, so
+    // its resolved maxHoldDurationMs is validated against the same policy the
+    // engine will see.
+    { hasTradingCapability: hasSkillCapabilityFamily(params.skillIds, 'trading') },
   );
   const maxHoldMs = resolved.maxHoldDurationMs;
   if (maxHoldMs === undefined || maxHoldMs === 0) {

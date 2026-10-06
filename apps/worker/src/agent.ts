@@ -2600,6 +2600,13 @@ async function runActiveTick(): Promise<void> {
       if (drained.wake) {
         runtimeState.metrics.currentMarketWake = drained.wake;
         hasBufferedWake = true;
+      } else if (drained.reminder) {
+        // D5: the market-wake consumer group won the race for a reminder wake.
+        // Route it into `currentReminder` so the session (active-hours) gate's
+        // `hasBufferedReminderWake` derivation sees it and does not skip the
+        // tick when the agent is flat and outside active hours.
+        runtimeState.metrics.currentReminder = drained.reminder;
+        hasBufferedWake = true;
       }
     }
 
@@ -2747,6 +2754,11 @@ async function runActiveTick(): Promise<void> {
       incomingMessages,
       hasOpenPositions,
       hasBufferedWake: hasBufferedWake || hasPendingUserMessage || isResumedFullEvaluation,
+      // D5: user messages and reminder wakes bypass the session (active-hours)
+      // gate. Passed separately so the gate can allow them through even when the
+      // agent is flat and outside active hours.
+      hasPendingUserMessage,
+      hasBufferedReminderWake: runtimeState.metrics.currentReminder !== null,
       lastKnownPositionSide: sessionMetrics.lastPositionSide,
       tradingHours,
       now: new Date(),

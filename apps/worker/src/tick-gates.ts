@@ -17,6 +17,14 @@ export interface TickGateState {
    * market event). The context_hash gate is bypassed so the LLM always runs to
    * handle the wake payload, even if trading context is unchanged. */
   hasWakeSignal?: boolean;
+  /** True when an inbound user message is driving this tick. A user message
+   * must always reach the agent (D5), so the session (active-hours) gate does
+   * not skip the tick when this is set. */
+  hasUserMessage?: boolean;
+  /** True when a reminder wake is driving this tick. Reminders must always
+   * reach the agent (D5), so the session (active-hours) gate does not skip the
+   * tick when this is set. */
+  hasReminderWake?: boolean;
   tradingHours?: TradingHoursConfig;
   now?: Date;
   positionSide?: string | null;
@@ -438,7 +446,16 @@ export async function shouldSkipTick(
         })()
       : { nextTickIntervalMs: state.currentTickIntervalMs ?? state.baseTickIntervalMs ?? DEFAULT_BASE_INTERVAL_MS };
 
-  if (enabledGates.session && !state.hasOpenPositions && !isWithinTradingHours(state.now ?? new Date(), state.tradingHours)) {
+  // The session (active-hours) gate never blocks a user message or a reminder
+  // wake (D5): those must always reach the agent, even outside active hours.
+  // Market wakes and plain scheduled ticks still respect the gate.
+  if (
+    enabledGates.session
+    && !state.hasUserMessage
+    && !state.hasReminderWake
+    && !state.hasOpenPositions
+    && !isWithinTradingHours(state.now ?? new Date(), state.tradingHours)
+  ) {
     return {
       skip: true,
       gate: 'session',

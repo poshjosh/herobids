@@ -90,7 +90,7 @@ reuse it or move it to `@herobids/domain` if the API needs it too.
 
 ## Work packages
 
-### WP1. Active-hours gate (D5, D6)
+### WP1. Active-hours gate (D5, D6) — DONE
 
 **1a. Failing tests first** (`apps/worker/src/tick-gates.test.ts`):
 - "does not skip a user-message tick outside active hours"
@@ -134,7 +134,7 @@ reuse it or move it to `@herobids/domain` if the API needs it too.
   creator-set hours.
 - Session-manager config includes the resolved hours.
 
-### WP2. Reminder config (D1, D7)
+### WP2. Reminder config (D1, D7) — PENDING
 
 Add to `AgentRuntimeConfigSchema` (`packages/domain/src/config/schema.ts` ~line 1142):
 
@@ -164,7 +164,7 @@ comment per key.
 
 **Tests:** defaults load; min > max is rejected.
 
-### WP3. Reminder record and schedule math
+### WP3. Reminder record and schedule math — PENDING
 
 New module `apps/worker/src/reminders/`:
 
@@ -199,7 +199,7 @@ advanceRepeatingReminder({ triggerAtMs, repeatEveryMs, nowMs }):
 - `now` exactly on a later slot → that slot counts as missed, and next is strictly
   after `now`.
 
-### WP4. Tools (D1, D2, D3)
+### WP4. Tools (D1, D2, D3) — PENDING
 
 Files: `apps/worker/src/tools/tasks.ts`, `apps/worker/src/tools/index.ts`,
 `packages/domain/src/tools.ts`
@@ -248,7 +248,7 @@ agent's tool calls run sequentially, so no lock is needed.
 - Cancel works by id and by key; an unknown target returns `found: false`; both or
   neither target is rejected.
 
-### WP5. ReminderCoordinator (D4, D5, D7)
+### WP5. ReminderCoordinator (D4, D5, D7) — PENDING
 
 File: `apps/worker/src/reminder-coordinator.ts` (constructed in
 `apps/worker/src/index.ts` ~line 829)
@@ -294,7 +294,7 @@ File: `apps/worker/src/reminder-coordinator.ts` (constructed in
 - Without the lease nothing fires.
 - Malformed records are skipped.
 
-### WP6. Wake contract and prompt
+### WP6. Wake contract and prompt — PENDING
 
 **Wake contract** (`packages/domain/src/trading/trading-protocol.ts`): add optional
 fields to `ReminderWakeContextSchema`:
@@ -343,7 +343,7 @@ the same).
 - The timing line shows the next reminder.
 - The hash is identical with and without reminders.
 
-### WP7. Task and reminder tools move into the base skill (D8)
+### WP7. Task and reminder tools move into the base skill (D8) — PENDING
 
 File: `packages/domain/src/skills.ts`
 
@@ -408,7 +408,7 @@ File: `packages/domain/src/skills.ts`
 - `add_skills('system/task-management')` reports that it's already included.
 - The visibility budget test above.
 
-### WP8. Routine guidance and docs
+### WP8. Routine guidance and docs — PENDING
 
 Append to the `BASE_SKILL` instructions. Keep the non-assertive "you can" tone from
 `docs/tech/agents/skill-authoring.md`:
@@ -440,7 +440,7 @@ Docs:
   - missed occurrences
   - reminders and user messages bypass active hours
 
-### WP9. Skip-unchanged setting and 24 h default (D9, D10)
+### WP9. Skip-unchanged setting and 24 h default (D9, D10) — PENDING
 
 **9a. Domain** (`packages/domain/src/config/schema.ts`):
 - `AgentRuntimePolicyOverridesSchema` gains
@@ -559,3 +559,11 @@ Then do a manual smoke test with `scripts/shell/run/reset-and-run.sh`:
 - Changing the `context_hash` gate's logic or `maxHoldDurationMs` values.
 - Editing a reminder in place (use key replacement).
 - Migrating existing agents' intervals (D11).
+
+## Outstanding Issues
+
+Non-critical review findings deferred during implementation (grouped by work package).
+
+### WP1
+- LOW (`apps/worker/src/runtime-composition.ts`): reminder-context reconstruction is duplicated between the drain path and `applyRuntimeMessage`. Consider extracting a `toRuntimeReminderContext(wakeId, requestedAt, ctx)` helper to keep them in sync.
+- LOW (`apps/worker/src/tick-gate-state.ts`): the `payload?.source === 'reminder'` check uses a narrow cast rather than the `AgentWakePayloadSchema`. A typed guard would be marginally safer; acceptable for a hot gate path.

@@ -142,6 +142,81 @@ describe('AgentSessionManager', () => {
     }));
   });
 
+  it('includes the style-default active hours in the resolved runtime policy for a trading agent', async () => {
+    const { manager, agentRepo, runtimeLauncher } = buildManager();
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
+    ]);
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'agent-1',
+      userId: 'user-1',
+      prompt: 'Trade BTC',
+      style: 'careful',
+      skillIds: ['traderton/skills/crypto-trading'],
+      toolPolicy: null,
+      modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
+      executionDefaults: { mode: 'paper' },
+      dailyTokenBudget: null,
+      dailyLossLimit: null,
+      maxBots: null,
+      maxSlippageBps: null,
+    });
+    (agentRepo.getRuntimeCapabilityDescriptor as ReturnType<typeof vi.fn>).mockResolvedValue({
+      resolvedSkills: [
+        { id: 'base', capabilityFamilies: [], requiredTools: [] },
+        { id: 'crypto-trading', capabilityFamilies: ['trading'], requiredTools: [] },
+      ],
+      grantedConnectionsByFamily: {},
+      defaultConnectionByFamily: {},
+      readinessByFamily: {},
+    });
+
+    await manager.reconcileStartingSessions();
+
+    const launchedConfig = (runtimeLauncher.launch as ReturnType<typeof vi.fn>).mock.calls[0]![0].agentConfig as Record<string, unknown>;
+    const resolvedRuntimePolicy = launchedConfig['resolvedRuntimePolicy'] as { allowedHoursUtc: number[] };
+    expect(resolvedRuntimePolicy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+  });
+
+  it('drops the style-default active hours for a non-trading agent', async () => {
+    const { manager, agentRepo, runtimeLauncher } = buildManager();
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
+    ]);
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'agent-1',
+      userId: 'user-1',
+      prompt: 'Do routine work',
+      style: 'careful',
+      skillIds: ['web-access'],
+      toolPolicy: null,
+      modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
+      executionDefaults: null,
+      dailyTokenBudget: null,
+      dailyLossLimit: null,
+      maxBots: null,
+      maxSlippageBps: null,
+    });
+    // Explicit descriptor with no 'trading' capability family (mirrors the
+    // trading test above) so the non-trading path is asserted directly rather
+    // than relying on the implicit default descriptor's resolvedSkills.
+    (agentRepo.getRuntimeCapabilityDescriptor as ReturnType<typeof vi.fn>).mockResolvedValue({
+      resolvedSkills: [
+        { id: 'base', capabilityFamilies: [], requiredTools: [] },
+        { id: 'web-access', capabilityFamilies: ['web'], requiredTools: [] },
+      ],
+      grantedConnectionsByFamily: {},
+      defaultConnectionByFamily: {},
+      readinessByFamily: {},
+    });
+
+    await manager.reconcileStartingSessions();
+
+    const launchedConfig = (runtimeLauncher.launch as ReturnType<typeof vi.fn>).mock.calls[0]![0].agentConfig as Record<string, unknown>;
+    const resolvedRuntimePolicy = launchedConfig['resolvedRuntimePolicy'] as { allowedHoursUtc: number[] };
+    expect(resolvedRuntimePolicy.allowedHoursUtc).toEqual([]);
+  });
+
   it('builds a trading-ready runtime descriptor when the agent has an active binding grant', async () => {
     const { manager, agentRepo, runtimeLauncher } = buildManager();
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -161,6 +236,10 @@ describe('AgentSessionManager', () => {
       maxSlippageBps: 25,
     });
     (agentRepo.getRuntimeCapabilityDescriptor as ReturnType<typeof vi.fn>).mockResolvedValue({
+      resolvedSkills: [
+        { id: 'base', capabilityFamilies: [], requiredTools: [] },
+        { id: 'crypto-bot-management', capabilityFamilies: ['trading'], requiredTools: [] },
+      ],
       grantedConnectionsByFamily: {
         trading: [
           {

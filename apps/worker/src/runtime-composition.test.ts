@@ -3398,6 +3398,64 @@ describe('runtime composition helpers', () => {
       expect(remaining).toHaveLength(0);
     });
 
+    // D5 HIGH-fix: when the market-wake consumer group wins the race for a
+    // REMINDER wake, the drain must surface it as a reminder (not a market
+    // wake) so the caller can set `currentReminder` and the session gate's
+    // `hasBufferedReminderWake` derivation sees it.
+    const reminderEnvelope = {
+      type: 'agent.wake',
+      wakeId: 'wake-rem-001',
+      source: 'reminder',
+      reason: 'Send the daily summary',
+      requestedAt: '2026-06-11T09:00:00.000Z',
+      context: { reminderId: 'rem-001', message: 'Send the daily summary', scheduledBy: 'judge' },
+    };
+
+    it('drainNewestWakeIntoMarketWake surfaces a reminder-source wake as a reminder, not a market wake', () => {
+      const buffer = [bufferWakeEnvelope(reminderEnvelope, 100)!];
+
+      const { buffer: remaining, wake, reminder } = drainNewestWakeIntoMarketWake(buffer, null);
+
+      expect(wake).toBeNull();
+      expect(reminder).not.toBeNull();
+      expect(reminder!.wakeId).toBe('wake-rem-001');
+      expect(reminder!.reminderId).toBe('rem-001');
+      expect(reminder!.message).toBe('Send the daily summary');
+      expect(reminder!.scheduledBy).toBe('judge');
+      expect(reminder!.requestedAt).toBe('2026-06-11T09:00:00.000Z');
+      expect(remaining).toHaveLength(0);
+    });
+
+    it('race-condition regression: drained reminder sets currentReminder so hasBufferedReminderWake is true', () => {
+      // The HIGH-fix chain: market-wake group consumes the reminder agent.wake →
+      // buffer holds it → drain yields a reminder → runTick sets currentReminder,
+      // which is what `hasBufferedReminderWake` is derived from.
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const buffer = [bufferWakeEnvelope(reminderEnvelope, Date.now())!];
+
+      let hasBufferedWake = false;
+      if (state.metrics.currentMarketWake === null) {
+        const drained = drainNewestWakeIntoMarketWake(buffer, null);
+        if (drained.wake) {
+          state.metrics.currentMarketWake = drained.wake;
+          hasBufferedWake = true;
+        } else if (drained.reminder) {
+          state.metrics.currentReminder = drained.reminder;
+          hasBufferedWake = true;
+        }
+      }
+
+      // The reminder was drained; currentMarketWake stays null (no 'reminder'
+      // leak into the market-wake source union).
+      expect(state.metrics.currentMarketWake).toBeNull();
+      expect(state.metrics.currentReminder).not.toBeNull();
+      expect(hasBufferedWake).toBe(true);
+
+      // This is exactly the flag agent.ts passes as `hasBufferedReminderWake`.
+      const hasBufferedReminderWake = state.metrics.currentReminder !== null;
+      expect(hasBufferedReminderWake).toBe(true);
+    });
+
     it('race-condition regression: buffered wake drains into currentMarketWake when runtime group did not consume it', () => {
       // Simulate the wake group consuming the agent.wake (so the runtime group
       // never sees it): currentMarketWake is null, but the buffer holds the wake.

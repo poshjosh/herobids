@@ -1920,3 +1920,99 @@ describe('post-consumption hash (B4.1)', () => {
     expect(second.reason).toBe('context_unchanged');
   });
 });
+
+// ── WP1 (D5): active-hours gate bypass for user messages and reminder wakes ──
+
+describe('session (active-hours) gate — user-message and reminder bypass', () => {
+  // 12:00 UTC is outside the [9, 10] active-hours window; the agent is flat.
+  const outsideHours = {
+    tradingHours: { allowedHoursUtc: [9, 10], weekendPause: false },
+    now: new Date('2026-06-08T12:00:00.000Z'),
+    hasOpenPositions: false,
+  };
+
+  it('does not skip a user-message tick outside active hours', async () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [{ type: 'user.message', payload: { message: 'hello' } }],
+      ...outsideHours,
+    });
+
+    const result = await shouldSkipTick(state, {});
+
+    expect(result.skip).toBe(false);
+  });
+
+  it('does not skip a reminder-wake tick outside active hours', async () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [{ type: 'agent.wake', payload: { source: 'reminder' } }],
+      ...outsideHours,
+    });
+
+    const result = await shouldSkipTick(state, {});
+
+    expect(result.skip).toBe(false);
+  });
+
+  it('still skips a market-wake tick outside active hours when the agent has no open positions', async () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [{ type: 'agent.wake', payload: { source: 'watch_threshold' } }],
+      ...outsideHours,
+    });
+
+    const result = await shouldSkipTick(state, {});
+
+    expect(result.skip).toBe(true);
+    expect(result.gate).toBe('session');
+  });
+
+  it('still skips a plain scheduled tick outside active hours', async () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [],
+      ...outsideHours,
+    });
+
+    const result = await shouldSkipTick(state, {});
+
+    expect(result.skip).toBe(true);
+    expect(result.gate).toBe('session');
+  });
+
+  // The buffered-drain race: the wake-signal poll loop (or the market-wake
+  // consumer group) drained the user message / reminder before the runtime
+  // group's cursor reached it, so `incomingMessages` is empty and the bypass
+  // must come from the buffered flag instead.
+
+  it('does not skip when a user message is buffered (hasPendingUserMessage) outside active hours', async () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [],
+      hasPendingUserMessage: true,
+      ...outsideHours,
+    });
+
+    expect(state.hasUserMessage).toBe(true);
+
+    const result = await shouldSkipTick(state, {});
+
+    expect(result.skip).toBe(false);
+  });
+
+  it('does not skip when a reminder wake is buffered (hasBufferedReminderWake) outside active hours', async () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [],
+      hasBufferedReminderWake: true,
+      ...outsideHours,
+    });
+
+    expect(state.hasReminderWake).toBe(true);
+
+    const result = await shouldSkipTick(state, {});
+
+    expect(result.skip).toBe(false);
+  });
+});
