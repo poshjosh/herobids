@@ -239,7 +239,7 @@ skillPresetId (enum, optional): Selects a preset skill bundle. Values:
 - "trading" → AI crypto trader: bot-management + trading skills
 - "direct-trading" → AI direct trader: trading skill only
 - "trading-assistant" → AI trading assistant: trading skill only
-- "personal-assistant" → AI personal assistant: task-management + web-access + email skills
+- "personal-assistant" → AI personal assistant: web-access + email skills
 - "custom" → Custom AI: user selects skills manually
 
 skillIds (string[], optional): Manual skill selection. Used when skillPresetId is "custom".
@@ -775,29 +775,6 @@ Instructions:
 \`,
     headings: ['Required tools', 'Instructions'],
     tags: ['skills', 'web-access', 'search', 'internet'],
-  },
-  {
-    id: 'skills/task-management',
-    title: 'Task Management Skill',
-    kind: 'reference',
-    content: \`
-Task Management skill (id: task-management) — durable task tracking and reminder scheduling.
-
-Required tools: create_task, list_tasks, resolve_task, complete_task, schedule_reminder.
-
-Capability families: none.
-
-Binding requirements: none.
-
-Instructions:
-- Use create_task to create a durable task with a title, optional notes, and optional due datetime.
-- Use list_tasks to list your current tasks and their status.
-- Use resolve_task to find a task ID by title before calling complete_task.
-- Use complete_task to mark a task as completed by its ID.
-- Use schedule_reminder to schedule a one-shot reminder at a specific datetime. The reminder will reach you at the scheduled time.
-\`,
-    headings: ['Required tools', 'Instructions'],
-    tags: ['skills', 'task-management', 'tasks', 'reminders'],
   },
   {
     id: 'skills/email',

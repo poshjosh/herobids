@@ -139,7 +139,7 @@ export async function createAgent(
   // Explicit `skillIds` always win.
   const PRESET_SKILL_SLUGS: Record<string, string[]> = {
     trading: ['system/trading', 'system/bot-management'],
-    'personal-assistant': ['system/task-management', 'system/web-access'],
+    'personal-assistant': ['system/web-access', 'system/email'],
   };
 
   let skillIdsToSelect = options.skillIds ?? [];

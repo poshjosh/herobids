@@ -71,7 +71,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
         payload: {
           name: 'Personal Assistant Agent',
           prompt: 'Remind me to pray at 07:45 Berlin time.',
-          skillIds: ['task-management', 'web-access'],
+          skillIds: ['web-access'],
         },
       });
 

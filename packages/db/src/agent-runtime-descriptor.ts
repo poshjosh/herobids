@@ -220,6 +220,17 @@ export async function resolveRuntimeCapabilityDescriptor(
       if (seenSkillIds.has(row.skillId)) {
         continue;
       }
+      // WP7 (D8) fail-soft: the `task-management` system skill was removed and
+      // its tools folded into BASE_SKILL. A stale assignment may still exist
+      // until migration 0073 runs (and defensively after). Drop it silently
+      // rather than resolving a skill that no longer exists.
+      if (row.skillId === 'task-management') {
+        console.info(
+          `[runtime-descriptor] Dropping stale 'task-management' skill assignment for agent ${agentId}; its tools are in the base skill.`,
+        );
+        seenSkillIds.add(row.skillId);
+        continue;
+      }
       resolvedSkills.push(inferSkillFromRevisionRow(row));
       seenSkillIds.add(row.skillId);
     }

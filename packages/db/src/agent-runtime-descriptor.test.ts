@@ -5,7 +5,6 @@ import {
   EMAIL_SKILL,
   FILE_MANAGEMENT_SKILL,
   PROGRAMMING_SKILL,
-  TASK_MANAGEMENT_SKILL,
   WEB_ACCESS_SKILL,
 } from '@herobids/domain';
 
@@ -140,7 +139,6 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
         selectCount++;
         return makeChain(selectCount === 1
           ? [
-              createSkillRow({ skillId: TASK_MANAGEMENT_SKILL.id }),
               createSkillRow({ skillId: WEB_ACCESS_SKILL.id }),
               createSkillRow({ skillId: EMAIL_SKILL.id }),
             ]
@@ -154,7 +152,6 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
 
     expect(descriptor.resolvedSkills.map((skill) => skill.id)).toEqual([
       'base',
-      'task-management',
       'web-access',
       'email',
     ]);
@@ -162,6 +159,29 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
     expect(resolvedTools).not.toContain('get_account_summary');
     expect(instructions).not.toContain('get_risk_limits');
     expect(instructions).not.toContain('get_account_summary');
+  });
+
+  // WP7 (D8) fail-soft: a stale `task-management` assignment (left over until
+  // migration 0073 runs) is dropped without error rather than resolved.
+  it('drops a stale task-management skill assignment without error', async () => {
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1
+          ? [
+              createSkillRow({ skillId: 'task-management' }),
+              createSkillRow({ skillId: WEB_ACCESS_SKILL.id }),
+            ]
+          : []);
+      }),
+    } as unknown as Database;
+
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'stale-task-management-1');
+    const skillIds = descriptor.resolvedSkills.map((skill) => skill.id);
+
+    expect(skillIds).toEqual(['base', 'web-access']);
+    expect(skillIds).not.toContain('task-management');
   });
 
   // Phase 4 (D21/EC-1): the built-in `trading` system skill was removed, so the

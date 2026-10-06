@@ -351,7 +351,31 @@ const addSkillsTool: AgentTool = {
         errorCode: 'validation.invalid_params',
       };
     }
-    const { skillIds: inputRefs, includeDependencies } = parsed.data;
+    const { skillIds: parsedRefs, includeDependencies } = parsed.data;
+
+    // WP7 (D8) fail-soft: the `task-management` skill was removed and its tools
+    // folded into the base skill. Treat any reference to it as a no-op success
+    // ("already included"), writing nothing. If it was the only reference, return
+    // immediately; otherwise strip it and process the remaining refs.
+    const legacyTaskManagementRefs = parsedRefs.filter(
+      (ref) => ref === 'task-management' || ref === 'system/task-management',
+    );
+    const inputRefs = parsedRefs.filter(
+      (ref) => ref !== 'task-management' && ref !== 'system/task-management',
+    );
+    const legacyTaskManagementNote = legacyTaskManagementRefs.length > 0
+      ? `Task and reminder tools are already included in the base skill, so ${legacyTaskManagementRefs.join(', ')} was not added.`
+      : undefined;
+
+    if (inputRefs.length === 0) {
+      return {
+        success: true,
+        data: {
+          added: [],
+          ...(legacyTaskManagementNote ? { note: legacyTaskManagementNote } : {}),
+        },
+      };
+    }
 
     if (!ctx.publishToInbound || typeof ctx.redis.blpop !== 'function') {
       return {
@@ -616,6 +640,7 @@ const addSkillsTool: AgentTool = {
       const allWarnings = [
         ...(platformResult?.warnings ?? []),
         ...(postInstallBrokerResult?.warnings ?? []),
+        ...(legacyTaskManagementNote ? [legacyTaskManagementNote] : []),
         ...rejectedRefs.map(r => r.reason),
         ...externalResults.filter(r => !r.ok).map(r => {
           const formatHint = !r.ref.includes('@') && r.ref.split('/').length >= 3

@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { RuntimeDescriptor } from '@herobids/domain';
 import {
+  AGENT_STYLE_RUNTIME_DEFAULTS,
+  BASE_SKILL,
+  EMAIL_SKILL,
+  PROGRAMMING_SKILL,
+  WEB_ACCESS_SKILL,
+} from '@herobids/domain';
+import {
   createRuntimeToolVisibilityController,
   DATABASE_DEPENDENT_TOOLS,
   MARKET_DATA_TOOLS,
@@ -260,5 +267,46 @@ describe('createRuntimeToolVisibilityController', () => {
     expect(visibleTools).toContain('list_watches');
     expect(visibleTools).toContain('remove_watch');
     expect(visibleTools).toContain('send_message');
+  });
+});
+
+// WP7 (D8): BASE_SKILL grew from 12 to 19 required tools (task + reminder tools
+// folded in). Confirm the careful style's tool-schema budget still fits a
+// representative non-trading agent's full tool set so no tools are silently
+// dropped by getVisibleToolNames.
+describe('tool-visibility budget for base + web-access + email + programming (WP7 D8)', () => {
+  const careful = AGENT_STYLE_RUNTIME_DEFAULTS.careful;
+  const resolvedSkills = [BASE_SKILL, WEB_ACCESS_SKILL, EMAIL_SKILL, PROGRAMMING_SKILL];
+
+  it('base is first in resolvedSkills order', () => {
+    expect(resolvedSkills[0]!.id).toBe('base');
+  });
+
+  it("the unique tool set fits within careful's maxVisibleToolSchemas", () => {
+    const uniqueTools = new Set(resolvedSkills.flatMap((skill) => skill.requiredTools));
+    // base(19) + web-access(+4 unique) + email(+1) + programming(+2) = 26.
+    expect(uniqueTools.size).toBe(26);
+    expect(uniqueTools.size).toBeLessThanOrEqual(careful.maxVisibleToolSchemas);
+  });
+
+  it('a careful agent sees every tool of base + web-access + email + programming', () => {
+    const descriptor: RuntimeDescriptor = {
+      ...makeDescriptor(resolvedSkills.map((skill) => ({ id: skill.id, tools: skill.requiredTools }))),
+      budgets: {
+        maxHistoryMessages: careful.maxHistoryMessages,
+        maxRecentToolMessages: careful.maxRecentToolMessages,
+        maxToolResultChars: careful.maxToolResultChars,
+        maxVisibleToolSchemas: careful.maxVisibleToolSchemas,
+        maxContextBlockChars: careful.maxContextBlockChars,
+      },
+    };
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+    const visible = controller.allowedTools();
+
+    for (const skill of resolvedSkills) {
+      for (const tool of skill.requiredTools) {
+        expect(visible).toContain(tool);
+      }
+    }
   });
 });

@@ -459,7 +459,7 @@ NON_TRADING_RESP=$(api POST /agents '{
   "name": "eval-test-non-trading",
   "style": "careful",
   "prompt": "You are a test agent for evaluation.",
-  "capabilityFamilies": ["task-management"]
+  "capabilityFamilies": []
 }')
 NON_TRADING_ID=$(echo "$NON_TRADING_RESP" | jq -r '.id // empty')
 if [ -n "$NON_TRADING_ID" ]; then

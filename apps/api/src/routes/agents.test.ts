@@ -125,11 +125,11 @@ function buildDb(options: {
 
   const builtinSkillRows: Array<Record<string, unknown>> = [
     {
-      id: 'task-management',
+      id: 'email',
       authorId: null,
       publicationStatus: 'published',
       priceCents: 0,
-      currentRevisionId: 'rev-task-management',
+      currentRevisionId: 'rev-email',
     },
     {
       id: 'traderton/skills/crypto-trading',
@@ -1632,7 +1632,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       payload: {
         name: 'agent',
         prompt: 'p',
-        skillIds: ['task-management'],
+        skillIds: ['email'],
         executionDefaults: { mode: 'paper' },
       },
     });
@@ -1673,12 +1673,12 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   it('does not explicitly set executionMode when trading skills are removed on PATCH', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
-      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['task-management'], modelPolicy: null, executionMode: null,
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['email'], modelPolicy: null, executionMode: null,
     };
     const { db, updateSets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
       activeLinkRows: [updatedAgent],
-      agentSkillRows: [{ skillId: 'task-management', orderIndex: 0 }],
+      agentSkillRows: [{ skillId: 'email', orderIndex: 0 }],
     });
 
     const app = Fastify();
@@ -1688,7 +1688,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/agents/agent-1',
-      payload: { skillIds: ['task-management'] },
+      payload: { skillIds: ['email'] },
     });
 
     expect(res.statusCode).toBe(200);

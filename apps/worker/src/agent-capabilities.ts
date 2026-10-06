@@ -13,9 +13,18 @@ export interface TradingTickWorkPlan {
  * Returns true when at least one resolved skill declares a 'trading' capability family.
  * Used to gate all trading-specific tick work: regime evaluation, venue intelligence,
  * performance recording, and their upstream market-data provider calls.
+ *
+ * `SkillDefinition.capabilityFamilies` is typed as a required `string[]`, but the
+ * resolved-skill entries that reach this function via `RuntimeDescriptor.resolvedSkills`
+ * are a narrower runtime shape that may omit the field entirely (the type is lying at
+ * this boundary). Guard with `Array.isArray` so a missing/non-array value yields `false`
+ * instead of throwing a TypeError — a thrown error here is silently swallowed by the
+ * session-launch try/catch and prevents the runtime from launching.
  */
 export function deriveHasTradingCapability(resolvedSkills: SkillDefinition[]): boolean {
-  return resolvedSkills.some((skill) => skill.capabilityFamilies.includes('trading'));
+  return resolvedSkills.some(
+    (skill) => Array.isArray(skill.capabilityFamilies) && skill.capabilityFamilies.includes('trading'),
+  );
 }
 
 export function deriveTradingTickWorkPlan(

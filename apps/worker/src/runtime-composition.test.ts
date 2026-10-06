@@ -34,7 +34,6 @@ import {
   BASE_SKILL,
   EMAIL_SKILL,
   EMPTY_JOB_DEFAULT_TEXT,
-  TASK_MANAGEMENT_SKILL,
   WEB_ACCESS_SKILL,
 } from '@herobids/domain';
 
@@ -208,7 +207,7 @@ describe('runtime composition helpers', () => {
     const state = createRuntimeCompositionState({
       ...baseDescriptor,
       skillPresetId: 'personal-assistant',
-      resolvedSkills: [BASE_SKILL, TASK_MANAGEMENT_SKILL, WEB_ACCESS_SKILL, EMAIL_SKILL],
+      resolvedSkills: [BASE_SKILL, WEB_ACCESS_SKILL, EMAIL_SKILL],
       grantedConnectionsByFamily: {},
       defaultConnectionByFamily: {},
       readinessByFamily: {},

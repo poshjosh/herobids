@@ -55,12 +55,12 @@ function buildDb(options: {
 
   const builtinSkillRows: Array<Record<string, unknown>> = [
     {
-      id: 'task-management',
-      slug: 'system/task-management',
+      id: 'email',
+      slug: 'system/email',
       authorId: null,
       publicationStatus: 'published',
       priceCents: 0,
-      currentRevisionId: 'rev-task-management',
+      currentRevisionId: 'rev-email',
     },
     {
       id: 'web-access',
@@ -242,12 +242,12 @@ describe('agent routes slug resolution (POST /agents)', () => {
       postMutationAgentRows: [createdAgent],
       skillRows: [
         {
-          id: 'task-management',
-          slug: 'system/task-management',
+          id: 'email',
+          slug: 'system/email',
           authorId: null,
           publicationStatus: 'published',
           priceCents: 0,
-          currentRevisionId: 'rev-task-management',
+          currentRevisionId: 'rev-email',
         },
         customSkill,
       ],
@@ -278,12 +278,12 @@ describe('agent routes slug resolution (POST /agents)', () => {
       agentRows: [],
       skillRows: [
         {
-          id: 'task-management',
-          slug: 'system/task-management',
+          id: 'email',
+          slug: 'system/email',
           authorId: null,
           publicationStatus: 'published',
           priceCents: 0,
-          currentRevisionId: 'rev-task-management',
+          currentRevisionId: 'rev-email',
         },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
@@ -319,7 +319,7 @@ describe('agent routes slug resolution (POST /agents)', () => {
       name: 'Plain ID Agent',
       status: 'stopped',
       prompt: 'test',
-      skillIds: ['task-management'],
+      skillIds: ['email'],
       toolPolicy: null,
       modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
       unifiedConfig: null,
@@ -336,12 +336,12 @@ describe('agent routes slug resolution (POST /agents)', () => {
       postMutationAgentRows: [createdAgent],
       skillRows: [
         {
-          id: 'task-management',
-          slug: 'system/task-management',
+          id: 'email',
+          slug: 'system/email',
           authorId: null,
           publicationStatus: 'published',
           priceCents: 0,
-          currentRevisionId: 'rev-task-management',
+          currentRevisionId: 'rev-email',
         },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
@@ -357,7 +357,7 @@ describe('agent routes slug resolution (POST /agents)', () => {
       payload: {
         name: 'Plain ID Agent',
         prompt: 'test',
-        skillIds: ['task-management'],
+        skillIds: ['email'],
       },
     });
 
@@ -382,7 +382,7 @@ describe('agent routes slug resolution (POST /agents)', () => {
       name: 'Mixed Ref Agent',
       status: 'stopped',
       prompt: 'test',
-      skillIds: ['task-management', 'custom-skill-uuid'],
+      skillIds: ['email', 'custom-skill-uuid'],
       toolPolicy: null,
       modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
       unifiedConfig: null,
@@ -399,12 +399,12 @@ describe('agent routes slug resolution (POST /agents)', () => {
       postMutationAgentRows: [createdAgent],
       skillRows: [
         {
-          id: 'task-management',
-          slug: 'system/task-management',
+          id: 'email',
+          slug: 'system/email',
           authorId: null,
           publicationStatus: 'published',
           priceCents: 0,
-          currentRevisionId: 'rev-task-management',
+          currentRevisionId: 'rev-email',
         },
         customSkill,
       ],
@@ -422,12 +422,12 @@ describe('agent routes slug resolution (POST /agents)', () => {
         name: 'Mixed Ref Agent',
         prompt: 'test',
         // Mix of plain ID and slug in same array
-        skillIds: ['task-management', 'alice/my-helper'],
+        skillIds: ['email', 'alice/my-helper'],
       },
     });
 
     // Slug resolution should resolve 'alice/my-helper' → 'custom-skill-uuid'
-    // while leaving 'task-management' as-is. Both should pass downstream.
+    // while leaving 'email' as-is. Both should pass downstream.
     expect(res.statusCode).toBe(201);
   });
 });
@@ -475,12 +475,12 @@ describe('agent routes slug resolution (PATCH /agents/:id)', () => {
       postMutationAgentRows: [existingAgent],
       skillRows: [
         {
-          id: 'task-management',
-          slug: 'system/task-management',
+          id: 'email',
+          slug: 'system/email',
           authorId: null,
           publicationStatus: 'published',
           priceCents: 0,
-          currentRevisionId: 'rev-task-management',
+          currentRevisionId: 'rev-email',
         },
         customSkill,
       ],
@@ -527,12 +527,12 @@ describe('agent routes slug resolution (PATCH /agents/:id)', () => {
       agentRows: [existingAgent],
       skillRows: [
         {
-          id: 'task-management',
-          slug: 'system/task-management',
+          id: 'email',
+          slug: 'system/email',
           authorId: null,
           publicationStatus: 'published',
           priceCents: 0,
-          currentRevisionId: 'rev-task-management',
+          currentRevisionId: 'rev-email',
         },
       ],
     });
@@ -585,12 +585,12 @@ describe('agent routes slug resolution (PATCH /agents/:id)', () => {
       postMutationAgentRows: [existingAgent],
       skillRows: [
         {
-          id: 'task-management',
-          slug: 'system/task-management',
+          id: 'email',
+          slug: 'system/email',
           authorId: null,
           publicationStatus: 'published',
           priceCents: 0,
-          currentRevisionId: 'rev-task-management',
+          currentRevisionId: 'rev-email',
         },
       ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
@@ -604,7 +604,7 @@ describe('agent routes slug resolution (PATCH /agents/:id)', () => {
       method: 'PATCH',
       url: '/agents/agent-1',
       payload: {
-        skillIds: ['task-management'],
+        skillIds: ['email'],
       },
     });
 

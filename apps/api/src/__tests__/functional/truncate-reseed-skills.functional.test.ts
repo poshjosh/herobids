@@ -13,7 +13,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll } from './helpers.js';
 import { sql } from 'drizzle-orm';
 import { skills } from '@herobids/db';
-import { WEB_ACCESS_SKILL, TASK_MANAGEMENT_SKILL, SYSTEM_SKILLS } from '@herobids/domain';
+import { WEB_ACCESS_SKILL, SYSTEM_SKILLS } from '@herobids/domain';
 
 describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
   let ctx: Awaited<ReturnType<typeof buildApp>>;
@@ -70,20 +70,16 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(new Set(guardrails)).toEqual(new Set(WEB_ACCESS_SKILL.requiredGuardrails));
   });
 
-  it('task-management reseeds with the correct tool surface', async () => {
-    const [skill] = await ctx.db
+  // WP7 (D8): the `task-management` system skill was removed; its task and
+  // reminder tools moved into the auto-injected base skill, so there is no
+  // longer a task-management row to reseed.
+  it('does not reseed a task-management skill', async () => {
+    const rows = await ctx.db
       .select()
       .from(skills)
       .where(sql`${skills.id} = 'task-management'`);
 
-    expect(skill).toBeDefined();
-    expect(skill!.id).toBe('task-management');
-    expect(skill!.authorId).toBeNull();
-    expect(skill!.publicationStatus).toBe('published');
-    expect(skill!.instructions).toBe(TASK_MANAGEMENT_SKILL.instructions);
-
-    const tools = skill!.requiredTools as string[];
-    expect(new Set(tools)).toEqual(new Set(TASK_MANAGEMENT_SKILL.requiredTools));
+    expect(rows).toHaveLength(0);
   });
 
   it('is idempotent — calling truncateAll twice yields the same skills', async () => {

@@ -75,7 +75,7 @@ export const BASE_SKILL: SkillDefinition = {
   id: 'base',
   slug: 'system/base',
   name: 'Base',
-  description: 'Core tools: memory, messaging, cost tracking, and schema fetching. Auto-injected into every agent.',
+  description: 'Core tools: memory, tasks, reminders, messaging, cost tracking, and schema fetching. Auto-injected into every agent.',
   instructions: `You have access to core tools.
 
 Use memory to remember information. For example, if you need find information from the past or set a reminder for the future, you can:
@@ -83,6 +83,15 @@ Use memory to remember information. For example, if you need find information fr
 - Use \`get_memory\` to retrieve a previously stored value by key.
 - Use \`list_memory_keys\` to list all stored memory keys.
 - Use \`delete_memory\` to remove one or more memory keys.
+
+You can track durable work and schedule reminders:
+- Use \`create_task\` to create a durable task with a title, optional notes, and optional due datetime.
+- Use \`list_tasks\` to list your current tasks and their status.
+- Use \`resolve_task\` to find a task ID by title before calling complete_task when you don't have the exact UUID.
+- Use \`complete_task\` to mark a task as completed by its ID.
+- Use \`schedule_reminder\` to schedule a reminder at an absolute datetime. It can repeat with \`repeatEveryMinutes\`, and scheduling with an existing \`key\` replaces that reminder. The reminder reaches you at the scheduled time with structured context; when it arrives you may need to take action based on that context.
+- Use \`list_reminders\` to see your scheduled reminders.
+- Use \`cancel_reminder\` to cancel a reminder by its id or key.
 
 You can use skills to gain additional capabilities/expertise. For example, if you have a task but are not sure how to accomplish it, you can search for, then add skills related to the task:
 - Use \`search_skills\` to find skills by keyword. It searches both the platform catalog and external skills.
@@ -95,7 +104,7 @@ You can also:
 - Use \`publish_artifact\` to publish structured outputs.
 - Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" to indicate urgency; "routine" is the default. Use contextRef to link the message to a specific context. Use \`send_email\` for email delivery.
 - Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.`,
-  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'add_skills', 'remove_skills', 'search_skills', 'read_skill'],
+  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -200,32 +209,12 @@ export const WEB_ACCESS_SKILL: SkillDefinition = {
   promptHint: "e.g. 'Research the best noise-cancelling headphones under $200 and send me a comparison'",
 };
 
-/**
- * `task-management` skill — durable task tracking and reminder scheduling.
- */
-export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
-  id: 'task-management',
-  slug: 'system/task-management',
-  name: 'Task Management',
-  description: 'Create, track, and complete durable tasks; schedule one-shot reminders.',
-  instructions: `You have access to task management tools.
-
-- Use \`create_task\` to create a durable task with a title, optional notes, and optional due datetime.
-- Use \`list_tasks\` to list your current tasks and their status.
-- Use \`resolve_task\` to find a task ID by title before calling complete_task when you don't have the exact UUID.
-- Use \`complete_task\` to mark a task as completed by its ID.
-- Use \`schedule_reminder\` to schedule a one-shot reminder at a specific datetime. The reminder will reach you at the scheduled time with structured context. Scheduling a reminder is not the reminder itself; when the reminder arrives, you may need to take action (e.g send a notification) based on the structured context.`,
-  requiredTools: ['create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder'],
-  capabilityFamilies: [],
-  bindingRequirements: {},
-  contextRequirements: ['costs', 'session_elapsed'],
-  requiredContextBlocks: ['corePlatformContext'],
-  promptRendererHints: ['core-system'],
-  requiredGuardrails: ['token-budget'],
-  suggestedTickIntervalMs: 900_000,
-  visibility: 'public',
-  promptHint: "e.g. 'Remind me next Tuesday at 9 AM to wish Jane a happy birthday'",
-};
+// WP7 (D8): the `task-management` system skill has been removed. Its task and
+// reminder tools (create_task, list_tasks, resolve_task, complete_task,
+// schedule_reminder, plus list_reminders and cancel_reminder) now live in
+// BASE_SKILL, auto-injected into every agent. Old references fail soft (API
+// create/update, add_skills, descriptor resolution) and migration 0073 drops
+// the persisted rows.
 
 /**
  * `email` skill — send emails on behalf of the user.
@@ -370,7 +359,7 @@ export const SKILL_PRESET_MAP: Record<string, string[]> = {
   trading: ['traderton/skills/crypto-trading', 'traderton/skills/crypto-bot-management'],
   'direct-trading': ['traderton/skills/crypto-trading'],
   'trading-assistant': ['traderton/skills/crypto-trading'],
-  'personal-assistant': ['task-management', 'web-access', 'email'],
+  'personal-assistant': ['web-access', 'email'],
   custom: [],       // user configures skills manually
 };
 
@@ -379,7 +368,6 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   PROGRAMMING_SKILL,
   FILE_MANAGEMENT_SKILL,
   WEB_ACCESS_SKILL,
-  TASK_MANAGEMENT_SKILL,
   EMAIL_SKILL,
   PLATFORM_DOCS_SKILL,
   BROWSER_SKILL,

@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, TASK_MANAGEMENT_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
 import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills, agentConnections, connections } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -476,7 +476,6 @@ const ALL_SKILLS_BY_ID: Record<string, SkillDefinition> = {
   'file-management': FILE_MANAGEMENT_SKILL,
   programming: PROGRAMMING_SKILL,
   'web-access': WEB_ACCESS_SKILL,
-  'task-management': TASK_MANAGEMENT_SKILL,
 };
 
 function resolveSkills(ids: string[]): SkillDefinition[] {

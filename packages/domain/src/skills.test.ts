@@ -4,6 +4,7 @@ import {
   EMAIL_SKILL,
   FILE_MANAGEMENT_SKILL,
   PROGRAMMING_SKILL,
+  SKILL_PRESET_MAP,
   SYSTEM_SKILLS,
   TOOL_OWNER_OVERRIDES,
   buildToolOwnershipMap,
@@ -129,9 +130,60 @@ describe('SYSTEM_SKILLS', () => {
       'file-management',
       'platform-docs',
       'programming',
-      'task-management',
       'web-access',
     ]);
+  });
+
+  // WP7 (D8): the `task-management` system skill was removed; its tools moved
+  // into BASE_SKILL.
+  it('does not contain the removed task-management skill', () => {
+    expect(SYSTEM_SKILLS.map((s) => s.id)).not.toContain('task-management');
+  });
+});
+
+// WP7 (D8): task and reminder tools now ship with the auto-injected base skill.
+describe('BASE_SKILL — task and reminder tools (WP7 D8)', () => {
+  const APPENDED_TOOLS = [
+    'create_task',
+    'list_tasks',
+    'resolve_task',
+    'complete_task',
+    'schedule_reminder',
+    'list_reminders',
+    'cancel_reminder',
+  ];
+
+  it.each(APPENDED_TOOLS)('requiredTools includes %s', (toolName) => {
+    expect(BASE_SKILL.requiredTools).toContain(toolName);
+  });
+
+  it('has all seven appended task/reminder tools', () => {
+    for (const tool of APPENDED_TOOLS) {
+      expect(BASE_SKILL.requiredTools).toContain(tool);
+    }
+  });
+
+  it('description mentions tasks and reminders', () => {
+    expect(BASE_SKILL.description).toContain('tasks');
+    expect(BASE_SKILL.description).toContain('reminders');
+  });
+
+  it('schedule_reminder instructions mention repeating and key', () => {
+    expect(BASE_SKILL.instructions).toContain('schedule_reminder');
+    expect(BASE_SKILL.instructions).toContain('repeatEveryMinutes');
+    expect(BASE_SKILL.instructions).toContain('key');
+  });
+
+  it('instructions mention list_reminders and cancel_reminder', () => {
+    expect(BASE_SKILL.instructions).toContain('list_reminders');
+    expect(BASE_SKILL.instructions).toContain('cancel_reminder');
+  });
+});
+
+// WP7 (D8): the personal-assistant preset no longer references task-management.
+describe('SKILL_PRESET_MAP (WP7 D8)', () => {
+  it('maps personal-assistant to web-access and email', () => {
+    expect(SKILL_PRESET_MAP['personal-assistant']).toEqual(['web-access', 'email']);
   });
 });
 
@@ -204,6 +256,12 @@ describe('inferDependsOn', () => {
 
   it('ignores tools not owned by any skill', () => {
     expect(inferDependsOn(['nonexistent_tool'], 'x')).toEqual([]);
+  });
+
+  // WP7 (D8): schedule_reminder is now a base-skill tool, so it is excluded
+  // from dependency inference (base tools are universal, not "owned").
+  it('returns [] for schedule_reminder (now a base tool)', () => {
+    expect(inferDependsOn(['schedule_reminder'], 'x')).toEqual([]);
   });
 
   it('returns a sorted array across multiple foreign skills', () => {

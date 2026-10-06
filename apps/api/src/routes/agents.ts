@@ -358,10 +358,16 @@ class ConnectionValidationError extends Error {
 
 /** Resolve skill slugs/IDs to canonical IDs. Returns resolved IDs, or null if an error response was sent. */
 async function resolveSkillSlugs(db: Database, skillIds: string[], reply: FastifyReply): Promise<string[] | null> {
+  // WP7 (D8) fail-soft: the `task-management` system skill was removed and its
+  // tools folded into the base skill. Silently drop old client references so
+  // create/update is not rejected with "Unknown skills".
+  const filteredSkillIds = skillIds.filter(
+    (ref) => ref !== 'task-management' && ref !== 'system/task-management',
+  );
   // Phase 4 T6: a skills.sh ref may not be catalogued yet — record a placeholder
   // metadata row so creation is never blocked (installed + refreshed at first
   // agent start). This translates external refs → their (ext_) skill ids.
-  const ensuredIds = await ensureExternalSkillIds(db, skillIds);
+  const ensuredIds = await ensureExternalSkillIds(db, filteredSkillIds);
   const resolved = await resolveSkillIdsBySlugOrId(db, ensuredIds);
   const unresolved = ensuredIds.filter((ref) => !resolved.has(ref));
   if (unresolved.length > 0) {

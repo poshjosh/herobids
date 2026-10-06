@@ -343,7 +343,7 @@ the same).
 - The timing line shows the next reminder.
 - The hash is identical with and without reminders.
 
-### WP7. Task and reminder tools move into the base skill (D8) — PENDING
+### WP7. Task and reminder tools move into the base skill (D8) — DONE
 
 File: `packages/domain/src/skills.ts`
 
@@ -589,3 +589,8 @@ Non-critical review findings deferred during implementation (grouped by work pac
 - LOW: the hash-invariant test is effectively tautological (same inputs both sides); the real guard is that `computeDecisionContextHash`'s input type has no reminder field. Optional to strengthen or delete.
 - LOW: `scheduledRemindersTotal` counts valid (parsed) records, not raw hash size, so the "…and N more" footer excludes malformed entries — sensible but an undocumented deviation from a literal "total count".
 - LOW: no direct test that a Redis `hgetall` rejection keeps the previous `scheduledReminders` snapshot (covered only indirectly).
+
+### WP7
+- Regression fixed during WP7 (root cause in WP1): `deriveHasTradingCapability` threw when a `RuntimeDescriptor.resolvedSkills` entry omitted `capabilityFamilies` (the runtime shape is narrower than the `SkillDefinition` type), which the session-launch try/catch swallowed and blocked `runtimeLauncher.launch`. Fixed with an `Array.isArray` guard. Bug report: `docs/bug-reports/2026/10/06/002-derive-has-trading-capability-throws-on-runtime-skill-shape.md`.
+- LOW: fail-soft logging asymmetry — only the descriptor-resolution path logs when a stale `task-management` ref is dropped; the `add_skills` (returns a user-visible note) and API `resolveSkillSlugs` (silent) paths do not. Consistent with the plan, which permits note/silent for those two.
+- LOW (pre-existing, unrelated to this feature): `apps/worker/src/runtime-composition.ts:785` uses the same unguarded `.capabilityFamilies.includes(...)` pattern; left untouched to keep the fix targeted.

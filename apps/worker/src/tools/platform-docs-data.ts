@@ -91,7 +91,7 @@ skillPresetId (enum, optional): Selects a preset skill bundle. Values:
 - "trading" → AI crypto trader: bot-management + trading skills
 - "direct-trading" → AI direct trader: trading skill only
 - "trading-assistant" → AI trading assistant: trading skill only
-- "personal-assistant" → AI personal assistant: task-management + web-access + email skills
+- "personal-assistant" → AI personal assistant: web-access + email skills
 - "custom" → Custom AI: user selects skills manually
 
 skillIds (string[], optional): Manual skill selection. Used when skillPresetId is "custom".
@@ -243,7 +243,7 @@ const SKILL_PRESET_ENTRY: DocsIndexEntry = {
   id: 'mapping/skill-presets',
   title: 'Skill Preset to Skill Mapping',
   kind: 'mapping',
-  content: "\nWhen a user selects a preset in the UI, these are the skills assigned:\n\ntrading (AI crypto trader):\n  - traderton/skills/crypto-trading\n  - traderton/skills/crypto-bot-management\n\ndirect-trading (AI direct trader):\n  - traderton/skills/crypto-trading\n\ntrading-assistant (AI trading assistant):\n  - traderton/skills/crypto-trading\n\npersonal-assistant (AI personal assistant):\n  - task-management\n  - web-access\n  - email\n\ncustom (Custom AI):\n  - No preset skills; user selects skills manually\n\nTrading presets assign external skills.sh refs (installed at the agent's first start).\n\nAvailable platform skills (all public):\n  - system/base: Core tools: memory, messaging, cost tracking, and schema fetching. Auto-injected into every agent.\n  - system/programming: Code execution tools\n  - system/file-management: Manage a per-agent workspace for intermediate files and outputs.\n  - system/web-access: Search the internet, read web pages, fetch documents, and make structured HTTP requests for research and information gathering.\n  - system/task-management: Create, track, and complete durable tasks; schedule one-shot reminders.\n  - system/email: Send emails on behalf of the user.\n  - system/platform-docs: Search and read platform documentation, form schemas, and configuration references.\n  - system/browser: Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.\n",
+  content: "\nWhen a user selects a preset in the UI, these are the skills assigned:\n\ntrading (AI crypto trader):\n  - traderton/skills/crypto-trading\n  - traderton/skills/crypto-bot-management\n\ndirect-trading (AI direct trader):\n  - traderton/skills/crypto-trading\n\ntrading-assistant (AI trading assistant):\n  - traderton/skills/crypto-trading\n\npersonal-assistant (AI personal assistant):\n  - web-access\n  - email\n\ncustom (Custom AI):\n  - No preset skills; user selects skills manually\n\nTrading presets assign external skills.sh refs (installed at the agent's first start).\n\nAvailable platform skills (all public):\n  - system/base: Core tools: memory, tasks, reminders, messaging, cost tracking, and schema fetching. Auto-injected into every agent.\n  - system/programming: Code execution tools\n  - system/file-management: Manage a per-agent workspace for intermediate files and outputs.\n  - system/web-access: Search the internet, read web pages, fetch documents, and make structured HTTP requests for research and information gathering.\n  - system/email: Send emails on behalf of the user.\n  - system/platform-docs: Search and read platform documentation, form schemas, and configuration references.\n  - system/browser: Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.\n",
   headings: ["trading","direct-trading","trading-assistant","personal-assistant","custom","Available platform skills"],
   tags: ['skills', 'presets', 'mapping', 'configuration'],
 };
@@ -1705,29 +1705,6 @@ Instructions:
 `,
     headings: ['Required tools', 'Instructions'],
     tags: ['skills', 'web-access', 'search', 'internet'],
-  },
-  {
-    id: 'skills/task-management',
-    title: 'Task Management Skill',
-    kind: 'reference',
-    content: `
-Task Management skill (id: task-management) — durable task tracking and reminder scheduling.
-
-Required tools: create_task, list_tasks, resolve_task, complete_task, schedule_reminder.
-
-Capability families: none.
-
-Binding requirements: none.
-
-Instructions:
-- Use create_task to create a durable task with a title, optional notes, and optional due datetime.
-- Use list_tasks to list your current tasks and their status.
-- Use resolve_task to find a task ID by title before calling complete_task.
-- Use complete_task to mark a task as completed by its ID.
-- Use schedule_reminder to schedule a one-shot reminder at a specific datetime. The reminder will reach you at the scheduled time.
-`,
-    headings: ['Required tools', 'Instructions'],
-    tags: ['skills', 'task-management', 'tasks', 'reminders'],
   },
   {
     id: 'skills/email',

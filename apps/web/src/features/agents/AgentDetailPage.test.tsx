@@ -159,7 +159,7 @@ function makeReadiness(family: string): CapabilityReadiness {
 const ALL_SKILLS: Skill[] = [
   makeSkill('traderton/skills/crypto-trading', ['trading']),
   makeSkill('email', ['email']),
-  makeSkill('task-management', []),
+  makeSkill('web-access', []),
 ];
 
 function renderDetail(opts: {
@@ -285,21 +285,21 @@ describe('AgentDetailPage capabilities list', () => {
   });
 
   it('shows the empty state only when the agent has zero capability families', () => {
-    const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
+    const html = renderDetail({ agentSkillIds: ['web-access'], readinessFamilies: [] });
     const labels = renderedFamilyLabels(html);
     expect(labels).toEqual([]);
     expect(html).toContain(messages['agents.detail.capabilities.emptyTitle']);
   });
 
   it('replaces the old "No capability setup required" dead-end with the new empty title and explainer', () => {
-    const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
+    const html = renderDetail({ agentSkillIds: ['web-access'], readinessFamilies: [] });
     expect(html).toContain(messages['agents.detail.capabilities.emptyTitle']);
     expect(html).toContain(messages['agents.detail.capabilities.emptyBody']);
     expect(html).not.toContain('No capability setup required');
   });
 
   it('renders the inline Add-skills and Connections setup controls in the empty state', () => {
-    const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
+    const html = renderDetail({ agentSkillIds: ['web-access'], readinessFamilies: [] });
     expect(html).toContain(messages['agents.detail.capabilities.addSkills']);
     expect(html).toContain(messages['agents.create.connections']);
     expect(html).not.toContain('>Connections<');
@@ -313,7 +313,7 @@ describe('AgentDetailPage capabilities list', () => {
   });
 
   it('offers assignable connections from the account picker in the inline setup block', () => {
-    const html = renderDetail({ agentSkillIds: ['task-management'], readinessFamilies: [] });
+    const html = renderDetail({ agentSkillIds: ['web-access'], readinessFamilies: [] });
     // The merged picker lists both a trading connection and a non-trading one.
     expect(html).toContain('My Hyperliquid (hyperliquid)');
     expect(html).toContain('My Gmail (gmail)');

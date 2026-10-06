@@ -437,7 +437,7 @@ describe('PUT /agents/:id', () => {
     let selectCount = 0;
     const updatedAgent = {
       ...stubAgent,
-      skillIds: ['task-management'],
+      skillIds: ['email'],
       executionDefaults: null,
     };
     const db = {
@@ -455,11 +455,11 @@ describe('PUT /agents/:id', () => {
         }
         if (selectCount === 4) {
           return makeChain([{
-            id: 'task-management',
+            id: 'email',
             authorId: TEST_USER_ID,
             publicationStatus: 'published',
             priceCents: 0,
-            currentRevisionId: 'task-management:v1',
+            currentRevisionId: 'email:v1',
           }]);
         }
         if (selectCount === 5) {
@@ -474,7 +474,7 @@ describe('PUT /agents/:id', () => {
         if (selectCount === 8) {
           return makeChain([updatedAgent]);
         }
-        return makeChain([{ skillId: 'task-management' }]);
+        return makeChain([{ skillId: 'email' }]);
       }),
       update: vi.fn().mockReturnValue({ set: updateSet }),
       delete: vi.fn().mockReturnValue({ where: deleteWhere }),
@@ -494,7 +494,7 @@ describe('PUT /agents/:id', () => {
       payload: {
         name: 'Updated',
         prompt: 'New prompt',
-        skillIds: ['task-management'],
+        skillIds: ['email'],
       },
     });
 

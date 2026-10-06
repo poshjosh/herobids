@@ -344,22 +344,10 @@ INSERT INTO "skills" (
     ARRAY['costs', 'session_elapsed'],
     ARRAY['token-budget'],
     ARRAY[]::text[], 900000, 'published', 'web-access:system:1', 0, false, ARRAY[]::text[], now(), now()
-  ),
-  (
-    'task-management', NULL,
-    'Task Management',
-    'Create, track, and complete durable tasks; schedule one-shot reminders.',
-    $$You have access to task management tools.
-
-- Use `create_task` to create a durable task with a title, optional notes, and optional due datetime.
-- Use `list_tasks` to list your current tasks and their status.
-- Use `complete_task` to mark a task as completed by its ID.
-- Use `schedule_reminder` to schedule a one-shot reminder at a specific datetime. The reminder will wake you at the scheduled time with structured context.$$,
-    ARRAY['create_task', 'list_tasks', 'complete_task', 'schedule_reminder'],
-    ARRAY['costs', 'session_elapsed'],
-    ARRAY['token-budget'],
-    ARRAY[]::text[], 900000, 'published', 'task-management:system:1', 0, false, ARRAY[]::text[], now(), now()
   )
+  -- WP7 (D8): the `task-management` system skill was removed; its task and
+  -- reminder tools now ship with the auto-injected base skill, so it is no
+  -- longer seeded here.
 ON CONFLICT ("id") DO UPDATE SET
   "name"                       = EXCLUDED."name",
   "description"                = EXCLUDED."description",

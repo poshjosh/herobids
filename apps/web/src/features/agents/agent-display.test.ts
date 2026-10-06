@@ -12,8 +12,8 @@ describe('skill preset map and objective preview', () => {
     expect('reminder' in SKILL_PRESET_MAP).toBe(false);
   });
 
-  it('domain SKILL_PRESET_MAP personal-assistant maps to task-management, web-access, and email', () => {
-    expect(SKILL_PRESET_MAP['personal-assistant']).toEqual(['task-management', 'web-access', 'email']);
+  it('domain SKILL_PRESET_MAP personal-assistant maps to web-access and email', () => {
+    expect(SKILL_PRESET_MAP['personal-assistant']).toEqual(['web-access', 'email']);
   });
 
   it('formats long objectives as a compact preview', () => {

@@ -693,6 +693,42 @@ describe('add_skills', () => {
       expect(data.missingDependencies).toBeUndefined();
     });
   });
+
+  // WP7 (D8) fail-soft: the `task-management` skill was removed and its tools
+  // folded into the base skill. Old references must report success ("already
+  // included") and write nothing.
+  describe('legacy task-management reference (WP7 D8)', () => {
+    it.each(['task-management', 'system/task-management'])(
+      'reports %s as already included and does not call the broker',
+      async (ref) => {
+        const publishToInbound = vi.fn(async () => undefined);
+        const ctx = makeCtx({ publishToInbound });
+
+        const result = await addSkills.execute({ skillIds: [ref] }, ctx);
+
+        expect(result.success).toBe(true);
+        const data = result.data as Record<string, unknown>;
+        expect(data.added).toEqual([]);
+        expect(String(data.note)).toContain('already included in the base skill');
+        expect(publishToInbound).not.toHaveBeenCalled();
+      },
+    );
+
+    it('strips a legacy ref but still adds the remaining skills', async () => {
+      const reply = makeBrokerReply({ skillIds: ['web-access'] });
+      const ctx = makeCtx({ redis: makeRedisWithReply(reply) });
+
+      const result = await addSkills.execute(
+        { skillIds: ['system/task-management', 'web-access'] },
+        ctx,
+      );
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      const warnings = (data.warnings as string[] | undefined) ?? [];
+      expect(warnings.some((w) => w.includes('already included in the base skill'))).toBe(true);
+    });
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

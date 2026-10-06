@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { SkillDefinition } from '@herobids/domain';
 import {
   BASE_SKILL,
-  TASK_MANAGEMENT_SKILL,
   WEB_ACCESS_SKILL,
   PROGRAMMING_SKILL,
 } from '@herobids/domain';
@@ -39,8 +38,8 @@ describe('deriveHasTradingCapability', () => {
     expect(deriveHasTradingCapability([BASE_SKILL])).toBe(false);
   });
 
-  it('returns false for a non-trading agent (task-management + base)', () => {
-    expect(deriveHasTradingCapability([BASE_SKILL, TASK_MANAGEMENT_SKILL])).toBe(false);
+  it('returns false for a non-trading agent (web-access + base)', () => {
+    expect(deriveHasTradingCapability([BASE_SKILL, WEB_ACCESS_SKILL])).toBe(false);
   });
 
   it('returns false for a web-access + programming agent', () => {
@@ -60,17 +59,46 @@ describe('deriveHasTradingCapability', () => {
   });
 
   it('returns true for an agent with both trading and non-trading skills', () => {
-    expect(deriveHasTradingCapability([BASE_SKILL, TASK_MANAGEMENT_SKILL, CRYPTO_BOT_MGMT_DEF])).toBe(true);
+    expect(deriveHasTradingCapability([BASE_SKILL, WEB_ACCESS_SKILL, CRYPTO_BOT_MGMT_DEF])).toBe(true);
   });
 
   it('returns false for an empty skill set', () => {
     expect(deriveHasTradingCapability([])).toBe(false);
   });
+
+  // Regression (session-launch failure): the resolved-skill entries that reach
+  // this function via RuntimeDescriptor.resolvedSkills are a narrower runtime
+  // shape than SkillDefinition and may omit `capabilityFamilies` entirely. The
+  // predicate must tolerate that and return false instead of throwing a
+  // TypeError (which the launch try/catch silently swallowed, so `launch` was
+  // never called). The cast reflects the real runtime shape, not the lying type.
+  it('returns false (does not throw) when a resolved skill omits capabilityFamilies at runtime', () => {
+    const runtimeShapedSkill = {
+      id: 'base',
+      name: 'base',
+      description: '',
+      requiredTools: ['send_message'],
+      isOptional: false,
+      prompt: '',
+    } as unknown as SkillDefinition;
+
+    expect(() => deriveHasTradingCapability([runtimeShapedSkill])).not.toThrow();
+    expect(deriveHasTradingCapability([runtimeShapedSkill])).toBe(false);
+  });
+
+  it('returns true when a trading skill is present alongside a skill lacking capabilityFamilies', () => {
+    const runtimeShapedSkill = {
+      id: 'base',
+      requiredTools: ['send_message'],
+    } as unknown as SkillDefinition;
+
+    expect(deriveHasTradingCapability([runtimeShapedSkill, CRYPTO_TRADING_DEF])).toBe(true);
+  });
 });
 
 describe('deriveTradingTickWorkPlan', () => {
   it('disables all trading tick work for a non-trading agent', () => {
-    expect(deriveTradingTickWorkPlan([BASE_SKILL, TASK_MANAGEMENT_SKILL], true)).toEqual({
+    expect(deriveTradingTickWorkPlan([BASE_SKILL, WEB_ACCESS_SKILL], true)).toEqual({
       hasTradingCapability: false,
       shouldEvaluateRegime: false,
       shouldFetchVolatilityPct: false,
