@@ -8,7 +8,7 @@ OpenAIdom enforces spending limits on your agent's LLM usage so you never get a 
 |---|---|---|
 | **What it is** | An early-warning threshold | A spending stop |
 | **Effect on your agent** | None — your agent keeps running normally | Your agent stops reasoning on the next tick |
-| **What you receive** | A notification (Telegram, email, or both) telling you the cap has been reached and what happens next | A notification explaining that the agent has stopped, and whether any open activity remains unmanaged |
+| **What you receive** | A notification (Telegram, email, or both) telling you the cap has been reached and what happens next | A notification explaining that the agent has stopped, and whether any pending work remains unmanaged |
 
 ## Why the soft cap does not change agent behavior
 
@@ -22,9 +22,9 @@ When spending reaches the hard cap:
 
 1. The agent stops on the next tick (no further LLM calls are made).
 2. You receive a notification explaining the stop.
-3. If the agent has open positions, the notification makes this explicit — those positions will remain unmanaged until you take action.
+3. If the agent has pending work, the notification makes this explicit — that work will remain unmanaged until you take action.
 
-The agent does **not** automatically close positions, submit orders, or change your agent's state at the hard cap. It simply stops reasoning.
+The agent does **not** automatically take further action or change its state at the hard cap. It simply stops reasoning.
 
 The hard-cap boundary is exact. For example:
 
@@ -37,14 +37,6 @@ The hard-cap boundary is exact. For example:
 - **Top up** — Purchase additional credits from the Billing page to move your balance back above the cap.
 - **Upgrade your plan** — Higher-tier plans include more included credits and higher spending limits.
 - **Let it stop** — If you are comfortable with the stop, no action is needed. Your agent will resume on its next tick once spending is back under the cap.
-
-## Open positions at the hard cap
-
-This is the most important scenario to understand.
-
-If your agent has open positions when the hard cap stops it, those positions will no longer be monitored or managed by the agent. No stop-loss checks, no take-profit evaluations, no regime reassessments.
-
-You should treat a hard-cap stop with open positions as an event that needs your attention. The notification you receive will list the open positions so you can act.
 
 ## Where caps come from
 
@@ -61,5 +53,5 @@ When a cap is reached, OpenAIdom notifies you through your configured channels (
 
 - Which cap was reached (soft or hard)
 - Current spending vs the cap
-- Whether open positions exist
+- Whether pending work exists
 - What actions you can take

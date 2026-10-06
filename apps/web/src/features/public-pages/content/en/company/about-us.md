@@ -30,7 +30,7 @@ We offer AI agents as a service. AI agents:
 
 2. **should remain in contact.** You remain in contact with any agent working for you. An example is by using messaging apps or email.
 
-3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistance.
+3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills span web browsing, personal assistance, and more.
 
 4. **are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.
 
@@ -40,4 +40,4 @@ OpenAIdom, was built from the ground up around AI agents. The agent is the produ
 
 ## How it works
 
-See: [Getting Started](/docs/help/get-started)
+See: [Getting Started](/help/get-started)

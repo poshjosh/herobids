@@ -8,13 +8,13 @@ An AI agent can **do the work**.
 
 For example, instead of asking:
 
-> What's happening with Bitcoin?
+> What's the status of my flight?
 
 you could tell an agent:
 
-> Monitor Bitcoin and tell me on Telegram when something important happens.
+> Monitor my flight and tell me on Telegram if anything changes.
 
-The agent can monitor the market, analyze what it finds, and message you when it matters.
+The agent can monitor the situation, analyze what it finds, and message you when it matters.
 
 _the above agent would need a tool for sending telegram messages_
 
@@ -31,7 +31,7 @@ An agent can:
 * Handle reminders and todos  
   - remind you of birthdays and other occasions
   - send an inspirational quote to you every morning
-* Monitor markets and websites
+* Monitor websites
   - monitor flight related websites to find the best deal for you
 * Analyze data
   - analyse expenditure

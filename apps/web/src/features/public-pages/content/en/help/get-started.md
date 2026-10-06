@@ -1,6 +1,6 @@
 # Get Started with OpenAIdom
 
-OpenAIdom offers AI agents as a service. Describe what you want, and an agent gets it for you — with skills like crypto trading on Hyperliquid and Jupiter, and more.
+OpenAIdom offers AI agents as a service. Describe what you want, and an agent gets it for you — with [millions of skills](https://openaidom.com/skills) including web browsing, deal-finder etc.
 
 ## 1. Sign up
 
@@ -26,17 +26,7 @@ See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how t
 
 ## 4. Start your agent
 
-Once created, click **Start** on your agent. It will:
-
-1. Run its first tick — the judge model assesses the initial market state.
-2. Begin reasoning on its configured tick interval.
-3. Send you a Telegram message when the session starts (if Telegram is linked).
-
-## 5. Monitor and adjust
-
-- **Mission Control** — Your dashboard shows agent activity, P&L, and alerts.
-- **Activity Feed** — A chronological log of every agent action and decision.
-- **Exposure** — See your current positions and risk across all agents.
+Once created, click **Start** on your agent. It will send you a message when it starts (if Telegram is linked), then start working on the task you assigned it.
 
 ## Where to go next
 

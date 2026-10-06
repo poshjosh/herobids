@@ -9,11 +9,11 @@ Documentation covering AI agent configuration and management on OpenAIdom.
 
 ## Authorization
 
-Authorization (`authorizationMode`) controls how your agent's decisions reach the market.
+Authorization (`authorizationMode`) controls how your agent's decisions take effect.
 
 | Mode | Behavior |
 |---|---|
 | **Direct** | The agent executes accepted decisions immediately with no human review. |
-| **Approval required** | Each proposal is sent to you for approval before any market action. You approve or reject from the web app or Telegram using `/yes <code>` and `/no <code>`. |
+| **Approval required** | Each proposal is sent to you for approval before any action is taken. You approve or reject from the web app or Telegram using `/yes <code>` and `/no <code>`. |
 
 Authorization defaults to Direct unless you set Approval required.

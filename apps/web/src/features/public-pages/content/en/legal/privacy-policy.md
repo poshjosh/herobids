@@ -45,8 +45,6 @@ To operate the platform, we share necessary data with:
 
 We do not share your data with third parties for their own marketing or analytics purposes.
 
-If you have linked a trading connection, trading-specific data (orders, fills, positions, P&L, and venue disclosures) is processed by Traderton, the trading-infrastructure provider — see [Traderton's Privacy Policy](https://staging.traderton.com/legal/privacy-policy.html) for that disclosure.
-
 ## Google API Services User Data Policy
 
 OpenAIdom's use and transfer of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements. Specifically:

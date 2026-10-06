@@ -508,7 +508,7 @@ We offer AI agents as a service. AI agents:
 
 2. **should remain in contact.** You remain in contact with any agent working for you. An example is by using messaging apps or email.
 
-3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistance.
+3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills span web browsing, personal assistance, and more.
 
 4. **are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.
 
@@ -518,7 +518,7 @@ OpenAIdom, was built from the ground up around AI agents. The agent is the produ
 
 ## How it works
 
-See: [Getting Started](/docs/help/get-started)`,
+See: [Getting Started](/help/get-started)`,
     headings: ['Vision', 'Mission', 'Core Concepts', 'AI-first, not AI-wrapped', 'How it works'],
     tags: ['about-us', 'company'],
   },
@@ -618,12 +618,6 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 
 **Tick interval** — How often the agent wakes up to reason and act. Shorter intervals mean faster reactions but higher cost.
 
-**Open position escalation** — When you have open positions, should the scout automatically escalate to the judge (the more capable model) every tick, or let the cheaper scout model handle routine checks?
-
-- **Never** — the scout inspects every tick; the judge is never called for routine position checks.
-- **On missing coverage** — escalates only when a position lacks active monitoring (e.g. no stop-loss or take-profit covering it), or when a trigger condition fires.
-- **Always** — the judge reviews every tick.
-
 See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge model.
 
 **Scout max turns / Judge max turns** — The maximum number of tool-call rounds the scout (cheaper model) or judge (more capable model) may perform in a single tick. Higher values allow deeper research but increase cost and latency.
@@ -646,7 +640,7 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 
 **Max visible tool schemas** — How many tool definitions are shown to the model per tick. Limiting this reduces prompt size and directs the model's attention.
 
-**Max context block chars** — Character limit for a single context block (e.g. a market snapshot or skill output) injected into the prompt.
+**Max context block chars** — Character limit for a single context block (e.g. a data snapshot or skill output) injected into the prompt.
 
 **Tool result full retention turns** — How many turns a tool result is kept at full length before being compressed to the stale limit.
 
@@ -684,7 +678,7 @@ OpenAIdom enforces spending limits on your agent's LLM usage so you never get a 
 |---|---|---|
 | **What it is** | An early-warning threshold | A spending stop |
 | **Effect on your agent** | None — your agent keeps running normally | Your agent stops reasoning on the next tick |
-| **What you receive** | A notification (Telegram, email, or both) telling you the cap has been reached and what happens next | A notification explaining that the agent has stopped, and whether any open activity remains unmanaged |
+| **What you receive** | A notification (Telegram, email, or both) telling you the cap has been reached and what happens next | A notification explaining that the agent has stopped, and whether any pending work remains unmanaged |
 
 ## Why the soft cap does not change agent behavior
 
@@ -698,9 +692,9 @@ When spending reaches the hard cap:
 
 1. The agent stops on the next tick (no further LLM calls are made).
 2. You receive a notification explaining the stop.
-3. If the agent has open positions, the notification makes this explicit — those positions will remain unmanaged until you take action.
+3. If the agent has pending work, the notification makes this explicit — that work will remain unmanaged until you take action.
 
-The agent does **not** automatically close positions, submit orders, or change your agent's state at the hard cap. It simply stops reasoning.
+The agent does **not** automatically take further action or change its state at the hard cap. It simply stops reasoning.
 
 The hard-cap boundary is exact. For example:
 
@@ -713,14 +707,6 @@ The hard-cap boundary is exact. For example:
 - **Top up** — Purchase additional credits from the Billing page to move your balance back above the cap.
 - **Upgrade your plan** — Higher-tier plans include more included credits and higher spending limits.
 - **Let it stop** — If you are comfortable with the stop, no action is needed. Your agent will resume on its next tick once spending is back under the cap.
-
-## Open positions at the hard cap
-
-This is the most important scenario to understand.
-
-If your agent has open positions when the hard cap stops it, those positions will no longer be monitored or managed by the agent. No stop-loss checks, no take-profit evaluations, no regime reassessments.
-
-You should treat a hard-cap stop with open positions as an event that needs your attention. The notification you receive will list the open positions so you can act.
 
 ## Where caps come from
 
@@ -737,9 +723,9 @@ When a cap is reached, OpenAIdom notifies you through your configured channels (
 
 - Which cap was reached (soft or hard)
 - Current spending vs the cap
-- Whether open positions exist
+- Whether pending work exists
 - What actions you can take`,
-    headings: ['Soft cap vs hard cap', 'Why the soft cap does not change agent behavior', 'What happens at the hard cap', 'What to do when a cap is reached', 'Open positions at the hard cap', 'Where caps come from', 'Notifications'],
+    headings: ['Soft cap vs hard cap', 'Why the soft cap does not change agent behavior', 'What happens at the hard cap', 'What to do when a cap is reached', 'Where caps come from', 'Notifications'],
     tags: ['agents', 'billing-limits', 'docs'],
   },
   {
@@ -805,11 +791,10 @@ In plain English: the agent gets disturbed less, so you get charged less.
 Not every moment deserves a premium reasoning bill.
 
 OpenAIdom keeps routine checks light and saves deeper thinking for moments like:
-- a sharp market change
-- a drawdown
-- a live position that needs attention
+- a sharp change in conditions
+- something that needs attention
 - an important new user message
-- a scanner-detected opportunity
+- a detected opportunity
 
 So the agent does not burn premium tokens to say, "nothing changed."
 
@@ -828,15 +813,15 @@ Sometimes rules do the whole job.
 
 Either way, you are not paying full price for the first draft.
 
-## Shared market watching beats duplicated work
+## Shared watching beats duplicated work
 
-Many platforms make every agent rediscover the same market from scratch.
+Many platforms make every agent rediscover the same thing from scratch.
 
 That is wasteful.
 
 OpenAIdom shares the heavy lifting:
 - shared discovery
-- shared market state
+- shared monitored state
 - shared monitoring
 - shared cached reads
 
@@ -861,11 +846,9 @@ The result: less filler, more signal, lower cost.
 A lot of platforms re-run expensive reasoning on nearly identical situations.
 
 OpenAIdom checks whether the important pieces actually changed:
-- positions
-- price movement
-- market state
-- active watches
-- portfolio condition
+- task state
+- external conditions
+- monitored signals
 
 If the meaningful picture is the same, the platform can skip the full AI pass.
 
@@ -927,7 +910,7 @@ It is built into the runtime itself.
 OpenAIdom keeps agent costs low by being ruthless about waste. That is how agents stay active longer without becoming unaffordable.
 
 [Learn about billing limits](/docs/agents/billing-limits)`,
-    headings: ['Big brain when it matters. Small brain when it doesn\'t.', 'No signal? No spend.', 'Stop waking the agent for nonsense.', 'Cheap thinking for ordinary moments. Deep thinking for real ones.', 'Filter first. Let AI in last.', 'Shared market watching beats duplicated work', 'Say less. Spend less.', 'If nothing changed, we do not pay twice', 'Retries with a leash', 'Built-in brakes when the system is having a bad day', 'Your cost level should match your mission', 'Real limits, not wishful thinking', 'The bottom line'],
+    headings: ['Big brain when it matters. Small brain when it doesn\'t.', 'No signal? No spend.', 'Stop waking the agent for nonsense.', 'Cheap thinking for ordinary moments. Deep thinking for real ones.', 'Filter first. Let AI in last.', 'Shared watching beats duplicated work', 'Say less. Spend less.', 'If nothing changed, we do not pay twice', 'Retries with a leash', 'Built-in brakes when the system is having a bad day', 'Your cost level should match your mission', 'Real limits, not wishful thinking', 'The bottom line'],
     tags: ['agents', 'docs', 'how-agent-costs-are-kept-low'],
   },
   {
@@ -945,12 +928,12 @@ Documentation covering AI agent configuration and management on OpenAIdom.
 
 ## Authorization
 
-Authorization (\`authorizationMode\`) controls how your agent's decisions reach the market.
+Authorization (\`authorizationMode\`) controls how your agent's decisions take effect.
 
 | Mode | Behavior |
 |---|---|
 | **Direct** | The agent executes accepted decisions immediately with no human review. |
-| **Approval required** | Each proposal is sent to you for approval before any market action. You approve or reject from the web app or Telegram using \`/yes <code>\` and \`/no <code>\`. |
+| **Approval required** | Each proposal is sent to you for approval before any action is taken. You approve or reject from the web app or Telegram using \`/yes <code>\` and \`/no <code>\`. |
 
 Authorization defaults to Direct unless you set Approval required.`,
     headings: ['Authorization'],
@@ -970,13 +953,13 @@ An AI agent can **do the work**.
 
 For example, instead of asking:
 
-> What's happening with Bitcoin?
+> What's the status of my flight?
 
 you could tell an agent:
 
-> Monitor Bitcoin and tell me on Telegram when something important happens.
+> Monitor my flight and tell me on Telegram if anything changes.
 
-The agent can monitor the market, analyze what it finds, and message you when it matters.
+The agent can monitor the situation, analyze what it finds, and message you when it matters.
 
 _the above agent would need a tool for sending telegram messages_
 
@@ -993,7 +976,7 @@ An agent can:
 * Handle reminders and todos  
   - remind you of birthdays and other occasions
   - send an inspirational quote to you every morning
-* Monitor markets and websites
+* Monitor websites
   - monitor flight related websites to find the best deal for you
 * Analyze data
   - analyse expenditure
@@ -1113,7 +1096,7 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., \`"DCA
 | Command | Description |
 |---|---|
 | \`/agents\` | List all your agents with their current status |
-| \`/info <agent>\` | Full agent details: status, mode, capital, risk limits, skills, session |
+| \`/info <agent>\` | Full agent details: status, mode, configuration, skills, session |
 | \`/log <agent>\` | Last 5 activity entries (decisions, messages, errors) |
 | \`/connections\` | List your active connections |
 | \`/connections <agent>\` | List connections assigned to an agent |
@@ -1157,22 +1140,22 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., \`"DCA
 /help
 /help start
 /agents
-/info Momentum
-/log Momentum
+/info Researcher
+/log Researcher
 /connections
-/connections Momentum
-/start Momentum
-/pause Momentum
-/resume Momentum
-/stop "DCA Bot"
-/restart Momentum
-/mode Momentum
-/mode Momentum live
-/connect Momentum
-/connect Momentum conn_abc123
-/connect Momentum "Hyperliquid Main"
-/disconnect Momentum conn_abc123
-/to Momentum what's the market looking like?
+/connections Researcher
+/start Researcher
+/pause Researcher
+/resume Researcher
+/stop "Deal Finder"
+/restart Researcher
+/mode Researcher
+/mode Researcher live
+/connect Researcher
+/connect Researcher conn_abc123
+/connect Researcher "Gmail Main"
+/disconnect Researcher conn_abc123
+/to Researcher what's the status so far?
 /yes 26B8D
 /no 26B8D
 \`\`\`
@@ -1218,7 +1201,7 @@ The author of an action, decision, message, or creation event. Valid types: \`ag
 
 ## Agent
 
-An AI that works on your behalf. Agents respond to you, use tools, and help achieve your goals. An agent can help you trade, respond to emails, do your taxes, handle basic legal claims etc
+An AI that works on your behalf. Agents respond to you, use tools, and help achieve your goals. An agent can use a browser like a human, respond to emails, do your taxes, handle basic legal claims etc
 
 ## Agent Guardrail
 
@@ -1234,7 +1217,7 @@ A permission granted from a connection. Think of a connection as "link to servic
 
 ## Connection
 
-A link you've established between the platform and an external service (e.g. an exchange). Connections may reference a credential for authentication. Linking a service doesn't automatically grant permission — connections and permissions are separate.
+A link you've established between the platform and an external service (e.g. an email provider). Connections may reference a credential for authentication. Linking a service doesn't automatically grant permission — connections and permissions are separate.
 
 ## Credential
 
@@ -1289,7 +1272,7 @@ Once set up, you have three options:
    - Lifecycle: \`/start\`, \`/pause\`, \`/resume\`, \`/stop\`, \`/restart\`
    - Configuration: \`/mode\`, \`/connect\`, \`/disconnect\`
    
-   Use \`/help\` in Telegram to see the full list. Use quotes if the agent name has spaces: \`/to "DCA Bot" pause trading\`. Use \`/to all\` or \`/to *\` to broadcast to every running agent at once.
+   Use \`/help\` in Telegram to see the full list. Use quotes if the agent name has spaces: \`/to "My PA" Re-send yesterdays report\`. Use \`/to all\` or \`/to *\` to broadcast to every running agent at once.
 
 3. **Plain message (single agent)** — If only one of your agents is running, just type your message normally. It will be delivered to that agent automatically.
 
@@ -1297,55 +1280,27 @@ Once set up, you have three options:
 
 OpenAIdom uses a two-stage LLM routing system to balance cost and decision quality:
 
-- **Scout** — A cheaper, faster model that runs every tick. It does triage: scanning positions, checking market conditions, and deciding whether the situation is routine or needs deeper analysis.
+- **Scout** — A cheaper, faster model that runs every tick. It does triage to decide whether the situation is routine or needs deeper analysis.
 - **Judge** — A more capable (and more expensive) model called in when the scout escalates. The judge has access to the full tool set and makes the actual decisions.
 
 ### When does escalation happen?
 
-Three triggers can force escalation, bypassing the scout:
+Two triggers can force escalation, bypassing the scout:
 
 1. **First tick** — Every agent escalates on its very first tick so the judge can assess the initial state.
 2. **Judge-scheduled reminder** — If the judge asks to be woken up at a specific time (e.g. "check back in 30 minutes"), that reminder always escalates.
-3. **Open positions** — Controlled by your agent's **open position escalation policy**. You can set this in Advanced Settings when creating or editing an agent:
-   - **Never** — The scout handles open positions on its own. Lowest cost, but the judge won't review your positions unless triggered by another rule.
-   - **On missing coverage** — Escalates only when a position lacks active protection (no stop-loss, no take-profit, no active watch). This is the default for Balanced agents.
-   - **Always** — Every tick with open positions goes straight to the judge. Highest cost, but ensures the most capable model reviews every position every time.
-
-Your [agent style](/docs/agents/agent-style) sets the default policy (Careful → Never, Balanced → On missing coverage, Bold → Always), but you can override it manually at any time.
 
 ## What are billing limits, and what happens when I hit them?
 
 OpenAIdom lets you set spending limits so you never get a surprise bill. There are two kinds:
 
 - **Soft cap** — A warning threshold. When reached, you receive a notification (Telegram, email, or both) but your agent **keeps running normally**. No behavior changes.
-- **Hard cap** — A spending stop. When reached, your agent halts on the next tick. No further LLM calls are made. You receive a notification explaining the stop, and if you have open positions, the notification lists them so you can act.
-
-The hard cap never closes your positions automatically. It simply stops reasoning. If you have open positions at the hard cap, those positions become unmanaged until you top up, raise the cap, or take manual action.
+- **Hard cap** — A spending stop. When reached, your agent halts on the next tick. No further LLM calls are made. You receive a notification explaining the stop, and if you have pending actions, the notification lists them so you can act.
 
 You can set your own caps from the **Billing** page at any time. If you do not set any caps, no spending limits are enforced.
 
-See [Agent Billing Limits](/docs/agents/billing-limits) for the full explanation.
-
-## How do agents with "Filter" mode (scanner-gated) manage or close open positions?
-
-Agents in **Filter** mode (\`scanner_gated\`) only receive decisions when the scanner wakes them — so it's natural to wonder how they handle exits if no position trigger is active.
-
-The answer: **the scanner evaluates every open position on every cycle**, even when there are no new entry opportunities. It fetches live candles for each of your agent's open positions, checks the indicators (RSI, price action, etc.), and flags any that look like they should be closed.
-
-There are two ways exits are handled:
-
-1. **Advisory mode** (default) — When the scanner detects a potential exit, it wakes the LLM with an "exit review" section showing P&L, current price, and RSI. The agent then decides whether to close (\`go_flat\`) or hold each position. This gives you full control over exit decisions through your agent's reasoning.
-
-2. **Autonomous mode** — When enabled, the scanner submits exit decisions directly without waking the LLM. This is faster (no delay waiting for the next scan cycle) and cheaper (fewer LLM calls). Recommended if you want quick exits without manual agent involvement. See [Agent Style](/docs/agents/agent-style) to understand how your agent style (Careful, Balanced, or Bold) affects exit behavior.
-
-### What about stop-losses and take-profits?
-
-These execute automatically regardless of mode. Per-trade stop-loss and take-profit levels, plus portfolio-wide drawdown limits, are **hard safety nets** that fire immediately — they don't wait for the next scanner cycle or an LLM decision. They protect your positions in real time.
-
-> **Note:** If your agent hits a hard billing cap (see [Billing Limits](/docs/agents/billing-limits)), it will stop reasoning but **will not automatically close positions**. You'll need to act manually or adjust the cap.
-
-> **Note:** If your agent hits a hard billing cap (see [Billing Limits](/docs/agents/billing-limits)), it will stop reasoning but **will not automatically close positions**. You'll need to act manually or adjust the cap.`,
-    headings: ['How do approvals work?', 'How do I talk to my agent from Telegram?', 'What is the scout-judge model, and how does escalation work?', 'When does escalation happen?', 'What are billing limits, and what happens when I hit them?', 'How do agents with "Filter" mode (scanner-gated) manage or close open positions?', 'What about stop-losses and take-profits?'],
+See [Agent Billing Limits](/docs/agents/billing-limits) for the full explanation.`,
+    headings: ['How do approvals work?', 'How do I talk to my agent from Telegram?', 'What is the scout-judge model, and how does escalation work?', 'When does escalation happen?', 'What are billing limits, and what happens when I hit them?'],
     tags: ['faqs', 'help'],
   },
   {
@@ -1354,7 +1309,7 @@ These execute automatically regardless of mode. Per-trade stop-loss and take-pro
     kind: 'markdown',
     content: `# Get Started with OpenAIdom
 
-OpenAIdom offers AI agents as a service. Describe what you want, and an agent gets it for you — with skills like crypto trading on Hyperliquid and Jupiter, and more.
+OpenAIdom offers AI agents as a service. Describe what you want, and an agent gets it for you — with [millions of skills](https://openaidom.com/skills) including web browsing, deal-finder etc.
 
 ## 1. Sign up
 
@@ -1380,17 +1335,7 @@ See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how t
 
 ## 4. Start your agent
 
-Once created, click **Start** on your agent. It will:
-
-1. Run its first tick — the judge model assesses the initial market state.
-2. Begin reasoning on its configured tick interval.
-3. Send you a Telegram message when the session starts (if Telegram is linked).
-
-## 5. Monitor and adjust
-
-- **Mission Control** — Your dashboard shows agent activity, P&L, and alerts.
-- **Activity Feed** — A chronological log of every agent action and decision.
-- **Exposure** — See your current positions and risk across all agents.
+Once created, click **Start** on your agent. It will send you a message when it starts (if Telegram is linked), then start working on the task you assigned it.
 
 ## Where to go next
 
@@ -1399,7 +1344,7 @@ Once created, click **Start** on your agent. It will:
 - [Agent Style](/docs/agents/agent-style) — Understand how agent styles control cost and behavior.
 - [Agent Billing Limits](/docs/agents/billing-limits) — Set spending caps so you never get a surprise bill.
 - [Pricing](/help/pricing) — How OpenAIdom pricing works.`,
-    headings: ['1. Sign up', '2. Link Telegram (recommended)', '3. Create your first agent', '4. Start your agent', '5. Monitor and adjust', 'Where to go next'],
+    headings: ['1. Sign up', '2. Link Telegram (recommended)', '3. Create your first agent', '4. Start your agent', 'Where to go next'],
     tags: ['get-started', 'help'],
   },
   {
@@ -1418,7 +1363,7 @@ Subscription is optional. However, you pay for agent runtime and LLM usage.
 
 ## Agent runtime
 
-Each running agent costs a flat rate per minute to cover infrastructure (server compute, market data streams, database storage).
+Each running agent costs a flat rate per minute to cover infrastructure (server compute, data streams, database storage).
 
 | | Rate |
 |---|---|
@@ -1527,8 +1472,6 @@ To operate the platform, we share necessary data with:
 
 We do not share your data with third parties for their own marketing or analytics purposes.
 
-If you have linked a trading connection, trading-specific data (orders, fills, positions, P&L, and venue disclosures) is processed by Traderton, the trading-infrastructure provider — see [Traderton's Privacy Policy](https://staging.traderton.com/legal/privacy-policy.html) for that disclosure.
-
 ## Google API Services User Data Policy
 
 OpenAIdom's use and transfer of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements. Specifically:
@@ -1586,11 +1529,8 @@ You are responsible for complying with all applicable laws and regulations in yo
 - **AI-generated outputs** — AI agents may generate inaccurate, incomplete, outdated, inconsistent, or misleading information. You should verify important information before relying on it.
 - **No professional advice** — The platform does not provide legal, medical, financial, tax, or other professional advice through its AI agents.
 - **AI Agent behavior** — AI agents may misunderstand instructions, make incorrect assumptions, or perform unintended actions. You should monitor your agents and review important actions before relying on them.
+- **Skills** - If you give your agent [skills](https://openaidom.com/skills), those skills may be subject to further policies and agreements not covered by this document. Make sure you trust whatever skill you decide to give your agents.
 - **Third-party services** — AI agent functionality may depend on third-party services, integrations, and external data sources, which may be unavailable, delayed, incomplete, or inaccurate.
-
-### Trading-specific terms
-
-If you have linked a trading connection, the trading-specific terms (trading decisions, trading risk, no investment advice, no guarantees of availability or performance, execution modes, and liability for trading losses) are governed by [Traderton's User Agreement](https://staging.traderton.com/legal/user-agreement.html), the trading-infrastructure provider.
 
 ## Limitation of liability
 

@@ -118,10 +118,8 @@ function agentTechnicalExists(agentId: string): boolean {
 
 function agentSessionStatus(agentId: string): string | null {
   try {
-    // Sessions are stored in trading_instances or sessions table — check the
-    // session status via the active session. We query the sessions table directly
-    // for any session belonging to this agent.
-    const raw = dbQuery(`SELECT status FROM trading_sessions WHERE agent_id = '${agentId}' ORDER BY created_at DESC LIMIT 1`);
+    // One row per agent runtime container (see packages/db/src/schema/agent-runtime-sessions.ts).
+    const raw = dbQuery(`SELECT status FROM agent_runtime_sessions WHERE agent_id = '${agentId}' ORDER BY started_at DESC LIMIT 1`);
     const lines = raw.split('\n');
     if (lines.length < 3) return null;
     return lines[2]?.trim() ?? null;

@@ -8,7 +8,7 @@ The author of an action, decision, message, or creation event. Valid types: `age
 
 ## Agent
 
-An AI that works on your behalf. Agents respond to you, use tools, and help achieve your goals. An agent can help you trade, respond to emails, do your taxes, handle basic legal claims etc
+An AI that works on your behalf. Agents respond to you, use tools, and help achieve your goals. An agent can use a browser like a human, respond to emails, do your taxes, handle basic legal claims etc
 
 ## Agent Guardrail
 
@@ -24,7 +24,7 @@ A permission granted from a connection. Think of a connection as "link to servic
 
 ## Connection
 
-A link you've established between the platform and an external service (e.g. an exchange). Connections may reference a credential for authentication. Linking a service doesn't automatically grant permission — connections and permissions are separate.
+A link you've established between the platform and an external service (e.g. an email provider). Connections may reference a credential for authentication. Linking a service doesn't automatically grant permission — connections and permissions are separate.
 
 ## Credential
 

@@ -61,12 +61,6 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 
 **Tick interval** — How often the agent wakes up to reason and act. Shorter intervals mean faster reactions but higher cost.
 
-**Open position escalation** — When you have open positions, should the scout automatically escalate to the judge (the more capable model) every tick, or let the cheaper scout model handle routine checks?
-
-- **Never** — the scout inspects every tick; the judge is never called for routine position checks.
-- **On missing coverage** — escalates only when a position lacks active monitoring (e.g. no stop-loss or take-profit covering it), or when a trigger condition fires.
-- **Always** — the judge reviews every tick.
-
 See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge model.
 
 **Scout max turns / Judge max turns** — The maximum number of tool-call rounds the scout (cheaper model) or judge (more capable model) may perform in a single tick. Higher values allow deeper research but increase cost and latency.
@@ -89,7 +83,7 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 
 **Max visible tool schemas** — How many tool definitions are shown to the model per tick. Limiting this reduces prompt size and directs the model's attention.
 
-**Max context block chars** — Character limit for a single context block (e.g. a market snapshot or skill output) injected into the prompt.
+**Max context block chars** — Character limit for a single context block (e.g. a data snapshot or skill output) injected into the prompt.
 
 **Tool result full retention turns** — How many turns a tool result is kept at full length before being compressed to the stale limit.
 

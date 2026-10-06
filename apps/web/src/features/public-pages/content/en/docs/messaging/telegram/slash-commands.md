@@ -18,7 +18,7 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 | Command | Description |
 |---|---|
 | `/agents` | List all your agents with their current status |
-| `/info <agent>` | Full agent details: status, mode, capital, risk limits, skills, session |
+| `/info <agent>` | Full agent details: status, mode, configuration, skills, session |
 | `/log <agent>` | Last 5 activity entries (decisions, messages, errors) |
 | `/connections` | List your active connections |
 | `/connections <agent>` | List connections assigned to an agent |
@@ -62,22 +62,22 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 /help
 /help start
 /agents
-/info Momentum
-/log Momentum
+/info Researcher
+/log Researcher
 /connections
-/connections Momentum
-/start Momentum
-/pause Momentum
-/resume Momentum
-/stop "DCA Bot"
-/restart Momentum
-/mode Momentum
-/mode Momentum live
-/connect Momentum
-/connect Momentum conn_abc123
-/connect Momentum "Hyperliquid Main"
-/disconnect Momentum conn_abc123
-/to Momentum what's the market looking like?
+/connections Researcher
+/start Researcher
+/pause Researcher
+/resume Researcher
+/stop "Deal Finder"
+/restart Researcher
+/mode Researcher
+/mode Researcher live
+/connect Researcher
+/connect Researcher conn_abc123
+/connect Researcher "Gmail Main"
+/disconnect Researcher conn_abc123
+/to Researcher what's the status so far?
 /yes 26B8D
 /no 26B8D
 ```

@@ -10,7 +10,7 @@ Subscription is optional. However, you pay for agent runtime and LLM usage.
 
 ## Agent runtime
 
-Each running agent costs a flat rate per minute to cover infrastructure (server compute, market data streams, database storage).
+Each running agent costs a flat rate per minute to cover infrastructure (server compute, data streams, database storage).
 
 | | Rate |
 |---|---|

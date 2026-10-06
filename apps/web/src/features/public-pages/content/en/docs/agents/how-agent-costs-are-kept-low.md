@@ -57,11 +57,10 @@ In plain English: the agent gets disturbed less, so you get charged less.
 Not every moment deserves a premium reasoning bill.
 
 OpenAIdom keeps routine checks light and saves deeper thinking for moments like:
-- a sharp market change
-- a drawdown
-- a live position that needs attention
+- a sharp change in conditions
+- something that needs attention
 - an important new user message
-- a scanner-detected opportunity
+- a detected opportunity
 
 So the agent does not burn premium tokens to say, "nothing changed."
 
@@ -80,15 +79,15 @@ Sometimes rules do the whole job.
 
 Either way, you are not paying full price for the first draft.
 
-## Shared market watching beats duplicated work
+## Shared watching beats duplicated work
 
-Many platforms make every agent rediscover the same market from scratch.
+Many platforms make every agent rediscover the same thing from scratch.
 
 That is wasteful.
 
 OpenAIdom shares the heavy lifting:
 - shared discovery
-- shared market state
+- shared monitored state
 - shared monitoring
 - shared cached reads
 
@@ -113,11 +112,9 @@ The result: less filler, more signal, lower cost.
 A lot of platforms re-run expensive reasoning on nearly identical situations.
 
 OpenAIdom checks whether the important pieces actually changed:
-- positions
-- price movement
-- market state
-- active watches
-- portfolio condition
+- task state
+- external conditions
+- monitored signals
 
 If the meaningful picture is the same, the platform can skip the full AI pass.
 
