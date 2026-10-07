@@ -202,3 +202,168 @@ set +a
 ```
 
 `set -a` marks all subsequent variable assignments for export. This is already used in `setup-autoscale-env.sh`, `setup-nomad.sh`, and `migrate-backend-to-s3.sh`.
+
+---
+
+## 16. `_ssh_opts.sh` resolved the wrong deploy key for production
+
+**Date:** 2026-10-07
+**Environment:** Production
+
+**Symptom:** Scripts that source `scripts/_ssh_opts.sh` and rely on its SSH
+key auto-detection (`reset.sh`, `reset-and-run.sh`, `setup-nomad.sh`, etc.)
+silently used the **staging** deploy key (`~/.ssh/herobids_deploy_key`) when
+run with `--env production`, instead of `~/.ssh/herobids_deploy_key_prod`.
+No error was raised — the staging key happened to also authenticate against
+the production server, so this went unnoticed until a script that depended on
+key *identity* (not just connectivity) was affected.
+
+**Root cause:** `resolve_ssh_key()`'s fallback order checked the generic
+`terraform.tfvars` (which has `ssh_public_key_path =
+"~/.ssh/herobids_deploy_key.pub"`, the staging key) *before*
+`${HEROBIDS_ENV}.tfvars`. Since `terraform.tfvars` exists in this repo and
+resolved successfully, the function never reached step 3
+(`production.tfvars`'s `herobids_deploy_key_prod`).
+
+**Fix:** Swapped the precedence — `resolve_ssh_key()` now checks
+`${HEROBIDS_ENV}.tfvars` first, falling back to `terraform.tfvars` only if no
+environment-specific tfvars file exists.
+
+**Files changed:** `scripts/_ssh_opts.sh`
+
+**How to verify the fix for yourself:**
+```sh
+env -u HEROBIDS_SSH_KEY bash -c '
+  source scripts/_ssh_opts.sh
+  parse_env_flag --env production
+  echo "$HEROBIDS_SSH_KEY"   # expect .../herobids_deploy_key_prod
+'
+```
+
+**See also:** `../runbooks/production-notes.md` § 2.
+
+---
+
+## 17. Reprovisioning production hit a stale/partial database — migrate failed with no readable error
+
+**Date:** 2026-10-07
+**Environment:** Production
+
+**Symptom:** `infra/hetzner/scripts/provision.sh` and
+`infra/hetzner/scripts/setup-nomad.sh --env production` completed
+successfully, but the deploy's `migrate` container exited 1 with no useful
+error — `docker logs herobids-migrate-1` and `docker compose run --rm
+migrate` both showed only drizzle-kit's progress spinner
+(`[⣷] applying migrations...`) followed by `ELIFECYCLE Command failed with
+exit code 1`, swallowing the actual Postgres error.
+
+**Root cause:** The production Postgres volume was not actually empty — it
+held 65 previously-applied migrations from an earlier deploy attempt, while
+the repo had progressed to 74 migration files. The next unapplied migration
+(`0065_add_skills_slug.sql`) backfills a new `slug` column from
+`author_id`/`users.username`, then enforces a unique index and `NOT NULL` —
+exactly the kind of migration that fails against real/stale data (orphaned
+`author_id`, slug collisions, null names) but would never fail against an
+empty database. drizzle-kit's CLI output doesn't surface the underlying SQL
+error in this spinner mode, which made this look like a code/migration bug
+rather than a data-state issue.
+
+**Fix:** Confirmed via `select id, hash, created_at from
+drizzle.__drizzle_migrations order by created_at desc` that the DB was
+mid-migration, then confirmed (with the operator) that the two existing
+accounts in that database were both operator-created test/seed accounts, not
+real users. Ran `reset-and-run.sh`, which wipes the Postgres volume and runs
+all 74 migrations fresh — they applied cleanly, confirming the migrations
+themselves were correct and the original failure was purely data-dependent.
+
+**Takeaway:** When a migration fails during a reprovision/redeploy (not a
+first-time provision), always check how far the target database's migration
+history actually got before assuming the migration file is broken. See
+`../runbooks/production-notes.md` § 6 for the diagnostic steps.
+
+**Files/docs changed:** none (no code bug) — documented in
+`production-notes.md` and this entry.
+
+---
+
+## 18. Herobids production has a hard runtime dependency on a Traderton production boundary that doesn't exist yet
+
+**Date:** 2026-10-07
+**Environment:** Production
+
+**Symptom:** After fixing lesson #17 and getting herobids production fully
+healthy (API, worker, Postgres, Redis all up, `/health` → 200), the
+remaining step of `reset-and-run.sh` — provisioning a venue connection via
+`quick-setup-remote.sh` — failed with 3 retries of `HTTP 503`.
+
+**Root cause:** `.env.production`'s `TRADERTON_BOUNDARY_URL=https://api.traderton.com`
+points at a hostname with **no DNS record at all**. Confirmed with `dig
++short api.traderton.com` (empty) and a direct `curl` (`exit=6`, "Could not
+resolve host") from both the production server and an unrelated machine.
+Cross-checking the Traderton repo's own `infra/hetzner/` showed only
+`staging.tfvars` exists — Traderton has never had a production deployment.
+The API logs confirmed the failure was a `transport_error` calling the
+external `traderton` backend, not an application-level validation error.
+
+**Why this wasn't caught earlier:** `infra/hetzner/docs/setup.md` Phase 0
+lists `https://api.traderton.com/health/ready` as one of two interchangeable
+preconditions to check ("`.../api.staging.traderton.com/...` or
+`.../api.traderton.com/...`"), which reads as if either is equally likely to
+already exist. It should instead flag that the production boundary must be
+explicitly provisioned first if it doesn't exist.
+
+**Fix:** Not a herobids bug — standing up Traderton production (server, DNS,
+boundary HMAC credentials matching herobids's `TRADERTON_BOUNDARY_*` env
+vars) is a prerequisite, tracked separately. herobids production itself does
+not require Traderton to be reachable at boot — only venue-connection
+provisioning and trading-capable agent actions do.
+
+**Files changed:** `docs/setup.md` (Phase 0 wording), new
+`runbooks/production-notes.md` § 5.
+## 19. Docs claimed production used the `10.1` range; Terraform defaults made it `10.0.0.0/16`
+
+**Date:** 2026-10-07
+**Environment:** Production
+
+**Symptom:** The production worker could not reach Nomad. From inside
+`herobids-worker-1`, a `wget` of the Nomad leader endpoint at the `10.1.x`
+control-plane address timed out, and the worker logged
+`runtime.reconcile_failed` ("This operation was aborted") every 60 seconds.
+No agent could launch.
+
+**Root cause:** `.env.production` had `NOMAD_ADDR`, `SHARED_REDIS_HOST` and
+`SHARED_POSTGRES_HOST` pointing at the `10.1.x` control-plane IP, but the
+control plane's real private IP is `10.0.0.2`. `production.tfvars` never set
+`network_ip_range` / `subnet_ip_range`, so the `variables.tf` defaults
+(`10.0.0.0/16` / `10.0.0.0/24`) applied. The docs (README network table,
+`production-notes.md`, `setup-auto-scaling.md`, the tfvars examples) all
+described an *intended* `10.1` production range that was never provisioned,
+and the operator filled in `.env.production` from those docs instead of from
+`terraform output`.
+
+**Why this wasn't caught earlier:** Nothing checked the env file against
+Terraform — `deploy.sh` and `setup-nomad.sh` uploaded `.env.<env>` as-is, so a
+wrong private IP only surfaced at runtime as a Nomad timeout.
+
+**Fix:** Keep production on `10.0.0.0/16` (renumbering would replace the
+network and strand the control plane's first-boot UFW rules). Make the state
+explicit instead of implied:
+- Set `network_ip_range` / `subnet_ip_range` explicitly in `production.tfvars`
+  (confirmed a no-op plan).
+- Add a fail-fast guard in `deploy.sh` (`check_private_ip_vars`) that refuses
+  to upload an env file whose `NOMAD_ADDR` / `SHARED_REDIS_HOST` /
+  `SHARED_POSTGRES_HOST` host doesn't match
+  `terraform output -raw control_plane_private_ip` (warn-and-continue when
+  Terraform can't be read).
+- Correct every doc to the real `10.0.0.0/16` and point readers at
+  `terraform output` for the control-plane IP.
+
+Lessons #1 and #11 discuss the `10.1` prefix generically (private-IP regex
+selection) and are left as-is.
+
+**Files changed:** `.env.production`, `production.tfvars`, `staging.tfvars`,
+`deploy.sh`, `.env.environment.example`, `README.md`,
+`runbooks/production-notes.md`, `auto-scaling/setup-auto-scaling.md`,
+`runbooks/reprovision-runbook.md`, `environment.tfvars.example`,
+`terraform.tfvars.example`. See
+`docs/bug-reports/2026/10/07/001-production-env-points-at-wrong-control-plane-private-ip.md`.

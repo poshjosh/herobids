@@ -120,6 +120,36 @@ echo " Environment: ${HEROBIDS_ENV}"
 echo " Server:      ${SERVER_IP}"
 echo ""
 
+# ─── Guard: env-file private IPs must match Terraform ──────────────────────
+# NOMAD_ADDR, SHARED_REDIS_HOST and SHARED_POSTGRES_HOST must point at the
+# control-plane private IP that Terraform actually provisioned. A stale/wrong
+# value (e.g. copied from docs) only surfaces at runtime as a Nomad timeout.
+# See docs/bug-reports/2026/10/07/001-production-env-points-at-wrong-control-plane-private-ip.md
+check_private_ip_vars() {
+  local nomad_enabled cp_ip var value host
+  # Nothing to check if we don't have a local env file to inspect.
+  [[ -n "${ENV_FILE}" && -f "${ENV_FILE}" ]] || return 0
+  nomad_enabled="$(terraform_output -raw nomad_enabled 2>/dev/null || echo "")"
+  [[ "${nomad_enabled}" == "true" ]] || return 0
+  cp_ip="$(terraform_output -raw control_plane_private_ip 2>/dev/null || echo "")"
+  if [[ -z "${cp_ip}" ]]; then
+    echo "WARNING: could not read control_plane_private_ip from Terraform; skipping private-IP check." >&2
+    return 0
+  fi
+  for var in NOMAD_ADDR SHARED_REDIS_HOST SHARED_POSTGRES_HOST; do
+    # Strip an inline "# comment", then any surrounding whitespace, so a value
+    # with trailing spaces (and no comment) doesn't produce a false mismatch.
+    value="$(grep -E "^${var}=" "${ENV_FILE}" | tail -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+    host="$(printf '%s' "${value}" | sed -E 's#^[a-z]+://##; s#[:/].*$##')"
+    if [[ -n "${host}" && "${host}" != "${cp_ip}" ]]; then
+      echo "ERROR: ${var} in ${ENV_FILE} points at ${host}, but the ${HEROBIDS_ENV} control-plane private IP is ${cp_ip}." >&2
+      echo "       Fix ${ENV_FILE} (see docs/bug-reports/2026/10/07/001-production-env-points-at-wrong-control-plane-private-ip.md)." >&2
+      exit 1
+    fi
+  done
+}
+check_private_ip_vars
+
 # ─── Step 1: Upload .env ─────────────────────────────────────────────────────
 
 echo "── Step 1/5: Upload .env ──"

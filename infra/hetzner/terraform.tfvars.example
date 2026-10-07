@@ -62,11 +62,11 @@ git_repo_url = "git@github.com:your-org/herobids.git"  # required
 
 # ── Private Network ───────────────────────────────────────
 # Each environment gets its own private network for control-plane ↔ agent node communication.
-# Staging and production MUST use non-overlapping IP ranges if they share a Hetzner project.
+# Staging and production both use 10.0.0.0/16 — they are separate Hetzner
+# networks that are never connected, so the shared range is harmless.
 
 # network_zone     = "eu-central"        # Hetzner network zone
-# network_ip_range = "10.0.0.0/16"       # Private network CIDR (staging default)
-#                                         # Production: use 10.1.0.0/16
+# network_ip_range = "10.0.0.0/16"       # Private network CIDR (default for all envs)
 # subnet_ip_range  = "10.0.0.0/24"       # Subnet within network_ip_range
 
 # ── Agent Node Pool ───────────────────────────────────────

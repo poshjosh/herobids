@@ -53,14 +53,14 @@ app_domain = "staging.openaidom.com"  # or "openaidom.com"
 # nomad_version = "1.9.7"
 
 # ── Private Network ───────────────────────────────────────
-# Staging network:    10.0.0.0/16 
-# Production network: 10.1.0.0/16
-# We use staging network as example here
+# Both staging and production use 10.0.0.0/16 (the default in variables.tf).
+# They are separate Hetzner networks that are never connected, so the shared
+# range is harmless. Read the control-plane IP with
+# `terraform output -raw control_plane_private_ip`, not from this file.
 #
 # ⚠️  MANUAL CHECK REQUIRED: Verify subnet_ip_range falls within network_ip_range.
 #     Terraform cannot fully validate CIDR containment at plan time.
 #     Example: network_ip_range = "10.0.0.0/16" + subnet_ip_range = "10.0.0.0/24" ✓
-#              network_ip_range = "10.0.0.0/16" + subnet_ip_range = "10.1.0.0/24" ✗
 
 # network_zone     = "eu-central"
 # network_ip_range = "10.0.0.0/16"

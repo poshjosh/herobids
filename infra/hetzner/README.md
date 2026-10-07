@@ -308,9 +308,11 @@ and a `/24` subnet. All control-plane and agent-node communication uses this pri
 | Environment | Network CIDR | Subnet CIDR |
 |---|---|---|
 | **Staging** | `10.0.0.0/16` | `10.0.0.0/24` |
-| **Production** | `10.1.0.0/16` | `10.1.0.0/24` |
+| **Production** | `10.0.0.0/16` | `10.0.0.0/24` |
 
-> ⚠️ If staging and production share a Hetzner project, their network CIDRs MUST NOT overlap.
+> ℹ️ Separate Hetzner networks may share a range; they are never connected, so the overlap
+> is harmless. Read the control-plane IP from `terraform output -raw control_plane_private_ip`,
+> never from this table — the Hetzner-assigned private IP (normally `.2`) is the source of truth.
 
 ### Agent Nodes
 
