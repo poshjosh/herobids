@@ -1,5 +1,8 @@
 # Herobids useful commands
 
+- production ipv4 - 167.233.213.107
+- staging ipv4 - 138.199.172.202
+
 ## local
 
 Run both herobids and the external trading service it depends
