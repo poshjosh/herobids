@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Production worker can reach Nomad again.** `.env.production` pointed `NOMAD_ADDR`/`SHARED_REDIS_HOST`/`SHARED_POSTGRES_HOST` at `10.1.0.2`, but production uses the default `10.0.0.0/16` network with the control plane at `10.0.0.2`, so the worker's Nomad calls timed out (`runtime.reconcile_failed` every tick). Corrected the env values, made `network_ip_range`/`subnet_ip_range` explicit in `production.tfvars`, and added a `deploy.sh` guard that refuses to upload an env file whose Nomad/Redis/Postgres host disagrees with `terraform output -raw control_plane_private_ip`. See `docs/bug-reports/2026/10/07/001-production-env-points-at-wrong-control-plane-private-ip.md`.
+
+### Changed
+- **Nomad agent nodes drop their public IPv6 (WP1 of private-agent-nodes).** Agent-node egress is IPv4-only (ghcr.io has no AAAA, Docker's default bridge is IPv4-only), so public IPv6 was pure cost against the shared Hetzner project's Primary IP limit (was 10/10, blocking new servers). `hcloud_server.agent` now sets `public_net { ipv4_enabled = true, ipv6_enabled = false }`, freeing one Primary IP per agent (10 → 8). Later work packages make agents fully private behind control-plane NAT. See `docs/features/2026/10/07/001-private-agent-nodes/001-plan.md`.
+
+### Docs
+- Consolidated `infra/hetzner` runbooks into one env-agnostic set with a docs index; fixed `_ssh_opts.sh` to resolve the per-environment deploy key correctly. Filed two production provisioning follow-up bugs (`docs/bug-reports/2026/10/07/002`, `003`).
+
 ## v0.6.1 - 2026-10-07
 
 ## v0.6.0 - 2026-10-06
