@@ -13,7 +13,7 @@ import { validateCreateAgentForm, validateEditAgentConnections, type ValidationC
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
-import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, resolveEffectiveSkipUnchangedTicks, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
+import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, resolveStyleTickIntervalMins, resolveEffectiveSkipUnchangedTicks, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 
 const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
   careful: 'agents.style.careful.label',
@@ -559,6 +559,13 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             style={style}
             onStyleChange={(nextStyle) => {
               const defaults = resolveStyleDefaults(nextStyle);
+              // D10: a non-trading agent keeps the 24 h default across style
+              // changes; only trading agents take the style's interval.
+              const nextTickIntervalMins = resolveStyleTickIntervalMins(
+                nextStyle,
+                selectedSkillsHaveCapabilityFamily(form.skillIds, selectableSkills, 'trading'),
+              );
+              const newTickMs = Number(nextTickIntervalMins) * 60_000;
               setTickIntervalTouched(true);
               setStyle(nextStyle);
               const tradingSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
@@ -569,7 +576,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 return {
                   ...prev,
                   costPreset: defaults.costPreset,
-                  tickIntervalMins: defaults.tickIntervalMins,
+                  tickIntervalMins: nextTickIntervalMins,
                   dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
                   subscribedSources: styleSources,
                   ...(policyManuallySetRef.current
@@ -581,10 +588,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 setRuntimePolicyOverrides((current) => applyAutoMaxHoldOverride(
                   nextStyle,
                   current,
-                  Number(defaults.tickIntervalMins) * 60_000,
+                  newTickMs,
                 ));
               } else {
-                const newTickMs = Number(defaults.tickIntervalMins) * 60_000;
                 setRuntimePolicyOverrides((current) => {
                   const effectiveMaxHold = current?.maxHoldDurationMs
                     ?? resolveStyleDefaults(nextStyle).maxHoldDurationMs;

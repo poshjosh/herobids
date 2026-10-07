@@ -368,7 +368,7 @@ const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
   appConfig.plans,
   appConfig.usageBilling?.defaultRateCardName ?? 'default',
 );
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues, tradingBackendClient, profileReconciliationSaga);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues, tradingBackendClient, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs);
 await skillsRoutes(app, db, appConfig.plans, (() => {
   const ext = appConfig.externalSkills;
   if (!ext.enabled) return null;

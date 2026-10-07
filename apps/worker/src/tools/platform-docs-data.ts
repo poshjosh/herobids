@@ -1529,7 +1529,7 @@ You are responsible for complying with all applicable laws and regulations in yo
 - **AI-generated outputs** — AI agents may generate inaccurate, incomplete, outdated, inconsistent, or misleading information. You should verify important information before relying on it.
 - **No professional advice** — The platform does not provide legal, medical, financial, tax, or other professional advice through its AI agents.
 - **AI Agent behavior** — AI agents may misunderstand instructions, make incorrect assumptions, or perform unintended actions. You should monitor your agents and review important actions before relying on them.
-- **Skills** - If you give your agent [skills](https://openaidom.com/skills), those skills may be subject to further policies and agreements not covered by this document. Make sure you trust whatever skill you decide to give your agents.
+- **Skills** - If you give your agent [skills](https://openaidom.com/skills), those skills may be subject to further policies and agreements not covered by this document. Make sure you trust whatever skill you decide to give your agents. 
 - **Third-party services** — AI agent functionality may depend on third-party services, integrations, and external data sources, which may be unavailable, delayed, incomplete, or inaccurate.
 
 ## Limitation of liability
@@ -1547,7 +1547,7 @@ We may update these terms from time to time. Material changes will be communicat
 ## Contact
 
 For questions about these terms, contact us at **[support@openaidom.com](mailto:support@openaidom.com)**.`,
-    headings: ['Service description', 'Your responsibilities', 'AI Agents', 'Account security', 'Compliance', 'Platform limitations', 'Trading-specific terms', 'Limitation of liability', 'Termination', 'Changes to these terms', 'Contact'],
+    headings: ['Service description', 'Your responsibilities', 'AI Agents', 'Account security', 'Compliance', 'Platform limitations', 'Limitation of liability', 'Termination', 'Changes to these terms', 'Contact'],
     tags: ['legal', 'user-agreement'],
   }
 ];

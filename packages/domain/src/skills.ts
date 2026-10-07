@@ -78,20 +78,25 @@ export const BASE_SKILL: SkillDefinition = {
   description: 'Core tools: memory, tasks, reminders, messaging, cost tracking, and schema fetching. Auto-injected into every agent.',
   instructions: `You have access to core tools.
 
-Use memory to remember information. For example, if you need find information from the past or set a reminder for the future, you can:
+Use memory to remember information across ticks. For example, if you need to recall something from an earlier tick, you can:
 - Use \`set_memory\` to persist a value by key across ticks.
 - Use \`get_memory\` to retrieve a previously stored value by key.
 - Use \`list_memory_keys\` to list all stored memory keys.
 - Use \`delete_memory\` to remove one or more memory keys.
 
-You can track durable work and schedule reminders:
+You can track work with tasks:
 - Use \`create_task\` to create a durable task with a title, optional notes, and optional due datetime.
 - Use \`list_tasks\` to list your current tasks and their status.
 - Use \`resolve_task\` to find a task ID by title before calling complete_task when you don't have the exact UUID.
 - Use \`complete_task\` to mark a task as completed by its ID.
-- Use \`schedule_reminder\` to schedule a reminder at an absolute datetime. It can repeat with \`repeatEveryMinutes\`, and scheduling with an existing \`key\` replaces that reminder. The reminder reaches you at the scheduled time with structured context; when it arrives you may need to take action based on that context.
-- Use \`list_reminders\` to see your scheduled reminders.
-- Use \`cancel_reminder\` to cancel a reminder by its id or key.
+
+You can schedule reminders, including for work that repeats:
+- Use \`schedule_reminder\` to schedule a reminder at an absolute datetime. The reminder reaches you at that time with structured context; when it arrives you may need to take action based on that context (e.g. send a message).
+- For work that repeats on a schedule, you can schedule it once with \`schedule_reminder\` using \`repeatEveryMinutes\` and a stable \`key\` (e.g. \`daily_report\`). The platform schedules each next occurrence for you, including across restarts. Scheduling again with the same \`key\` replaces that reminder instead of adding a second one.
+- Your scheduled reminders are listed in your context. You can also use \`list_reminders\` to check them and \`cancel_reminder\` to stop one by its id or key.
+- A routine is normally done when its reminder arrives. On other ticks, you can check your scheduled reminders before doing routine work early.
+- You can record each completed run with \`set_memory\` so you can tell whether an occurrence was handled.
+- When a reminder reports missed occurrences, you can decide whether one catch-up run is enough.
 
 You can use skills to gain additional capabilities/expertise. For example, if you have a task but are not sure how to accomplish it, you can search for, then add skills related to the task:
 - Use \`search_skills\` to find skills by keyword. It searches both the platform catalog and external skills.
@@ -103,15 +108,7 @@ You can use skills to gain additional capabilities/expertise. For example, if yo
 You can also:
 - Use \`publish_artifact\` to publish structured outputs.
 - Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" to indicate urgency; "routine" is the default. Use contextRef to link the message to a specific context. Use \`send_email\` for email delivery.
-- Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.
-
-Routine work:
-- If you have work that repeats on a schedule, you can schedule it once with \`schedule_reminder\` using \`repeatEveryMinutes\` and a stable \`key\` (e.g. \`daily_report\`). The platform schedules each next occurrence for you, including across restarts.
-- Scheduling again with the same \`key\` replaces the existing reminder instead of adding a second one.
-- Your scheduled reminders are listed in your context. You can also use \`list_reminders\` to check them and \`cancel_reminder\` to stop one.
-- A routine is normally done when its reminder arrives. On other ticks, you can check your scheduled reminders before doing routine work early.
-- You can record each completed run with \`set_memory\` so you can tell whether an occurrence was handled.
-- When a reminder reports missed occurrences, you can decide whether one catch-up run is enough.`,
+- Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.`,
   requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder'],
   capabilityFamilies: [],
   bindingRequirements: {},

@@ -324,6 +324,9 @@ export function CreateAgentFlow({
   const [skillsExpanded, setSkillsExpanded] = useState(false);
   const dailyMaxLossPctAutoRef = useRef(false);
   const maxHoldDurationManuallySetRef = useRef(false);
+  // True once the user edits the tick interval field. Until then the interval
+  // follows the skills (D10): 24 h for non-trading, the style interval for trading.
+  const tickIntervalManuallySetRef = useRef(false);
   // Phase 7 policy dropdown onChange will set this to true.
   const policyManuallySetRef = useRef(false);
   const handledOauthReturnRef = useRef(false);
@@ -883,7 +886,27 @@ export function CreateAgentFlow({
                 <SkillPicker
                   initialSkills={skills}
                   selectedSkillIds={intent.skillIds}
-                  onChange={(skillIds) => setIntent((state) => ({ ...state, skillIds }))}
+                  onChange={(skillIds) => setIntent((state) => {
+                    const next: IntentState = { ...state, skillIds };
+                    // D10: the default interval depends on trading capability. When adding
+                    // or removing a trading skill flips it, re-derive the interval (unless
+                    // the user typed one) so a trading agent doesn't keep the 24 h
+                    // non-trading pre-fill and fail the maxHold >= tick interval check.
+                    const hadTrading = selectedSkillsHaveCapabilityFamily(state.skillIds, skills, 'trading');
+                    const hasTrading = selectedSkillsHaveCapabilityFamily(skillIds, skills, 'trading');
+                    if (hadTrading === hasTrading || tickIntervalManuallySetRef.current) {
+                      return next;
+                    }
+                    next.tickIntervalMins = resolveStyleTickIntervalMins(state.style, hasTrading);
+                    if (!maxHoldDurationManuallySetRef.current) {
+                      next.runtimePolicyOverrides = applyAutoMaxHoldOverride(
+                        state.style,
+                        next.runtimePolicyOverrides,
+                        resolveTickIntervalMsFromMinutesInput(next.tickIntervalMins),
+                      );
+                    }
+                    return next;
+                  })}
                   loading={skillsLoading}
                   errorMessage={skillsError}
                 />
@@ -903,6 +926,7 @@ export function CreateAgentFlow({
                   patch.executionMode === '' ? 'test' : (patch.executionMode ?? state.executionMode);
                 const next: IntentState = { ...state, ...patch, executionMode };
                 if (patch.tickIntervalMins !== undefined) {
+                  tickIntervalManuallySetRef.current = true;
                   const newTickMs = resolveTickIntervalMsFromMinutesInput(next.tickIntervalMins);
                   const effectiveMaxHold = next.runtimePolicyOverrides?.maxHoldDurationMs
                     ?? resolveStyleDefaults(next.style).maxHoldDurationMs;

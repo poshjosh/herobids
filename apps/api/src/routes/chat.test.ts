@@ -2093,6 +2093,53 @@ describe('executeChatAction — assignedConnectionId', () => {
       actorId: expect.any(String),
     }));
   });
+
+  it('stores the operator non-trading default tick interval for a non-trading agent', async () => {
+    const db = buildSelectMock([
+      [{ planId: 'free', isAdmin: false, aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+      [],
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: null }],
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: null }],
+      [], [], [], [], [], [], [],
+    ]);
+    const mockUsageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue(null),
+      canSpendNow: vi.fn(),
+    } as unknown as UsageBillingRepository;
+    const profileSaga = {
+      executeStaged: vi.fn(async (input: {
+        preparePlannerInput: () => Promise<unknown>;
+        commitLocal: (tx: typeof db, markLocalCommitted: () => Promise<void>) => Promise<unknown>;
+      }) => {
+        await input.preparePlannerInput();
+        return input.commitLocal(db, async () => undefined);
+      }),
+    };
+    // A distinct operator value proves it is threaded through, not the schema default.
+    const operatorNonTradingTickIntervalMs = 7_200_000;
+
+    const result = await executeChatAction(
+      makeToolCall('create_agent', { skillPresetId: 'custom', selectedConnectionId: 'conn-1' }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+      mockUsageBillingRepo,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      profileSaga as never,
+      operatorNonTradingTickIntervalMs,
+    );
+
+    expect((JSON.parse(result) as Record<string, unknown>).success).toBe(true);
+    const insertedRows = (db.insert as unknown as ReturnType<typeof vi.fn>).mock.results
+      .flatMap((r) => (r.value as { values: ReturnType<typeof vi.fn> }).values.mock.calls)
+      .map((call) => call[0] as Record<string, unknown>);
+    const agentRow = insertedRows.find((row) => 'prompt' in row && 'name' in row);
+    expect(agentRow?.tickIntervalMs).toBe(operatorNonTradingTickIntervalMs);
+  });
 });
 
 // ── invokeOnboardingLlm: connection autowiring loop-level test ──────────────

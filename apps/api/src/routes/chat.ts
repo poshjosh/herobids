@@ -9,14 +9,20 @@ import { ChatUsageBillingRecorder, type AggregateChatLlmUsage } from '../billing
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig, UnifiedAgentConfig } from '@herobids/domain';
-import { normalizePersistedAiModelConfig, SKILL_PRESET_MAP, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, SKILL_PRESET_MAP, AgentRuntimeNonTradingDefaultsSchema, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
-import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode, optionalPositiveDecimalStringSchema } from './agent-config-helpers.js';
+import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode, optionalPositiveDecimalStringSchema, hasSkillCapabilityFamily } from './agent-config-helpers.js';
+
+// D10: fallback for the non-trading default tick interval when the operator
+// config is not threaded in (e.g. tests). Sourced from the schema default
+// (agentRuntime.nonTradingDefaults.tickIntervalMs) — no magic literal.
+const DEFAULT_NON_TRADING_TICK_INTERVAL_MS: number =
+  AgentRuntimeNonTradingDefaultsSchema.parse({}).tickIntervalMs;
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments, ensureExternalSkillIds } from '@herobids/db';
 import { createProviderLink } from './setup.js';
@@ -949,6 +955,7 @@ export async function executeChatAction(
   venues: AppConfig['venues'] = {},
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
+  nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
 ): Promise<string> {
   switch (toolCall.name) {
     case 'list_compatible_connections': {
@@ -1522,6 +1529,10 @@ export async function executeChatAction(
             modelPolicy: effectiveModelPolicy,
             unifiedConfig: createFields.unifiedConfig as never,
             maxBots: createFields.maxBots,
+            // D10: chat never asks for a tick interval, so a non-trading agent gets
+            // the operator 24 h default (same rule as POST /agents). Trading agents
+            // keep null → the style/cost-preset interval.
+            tickIntervalMs: hasSkillCapabilityFamily(skillIds, 'trading') ? null : nonTradingDefaultTickIntervalMs,
             runtimePolicyOverrides: createFields.runtimePolicyOverrides,
             notificationPolicy: createFields.notificationPolicy,
             wakePreferences: null,
@@ -1642,6 +1653,7 @@ export async function invokeOnboardingLlm(
   venues: AppConfig['venues'] = {},
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
+  nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
 ): Promise<LlmInvocationResult> {
   // Generate a per-invocation random tag name (4 hex chars = 65536 possibilities)
   const nonce = crypto.randomBytes(2).toString('hex');
@@ -1828,7 +1840,7 @@ export async function invokeOnboardingLlm(
       // ── Dispatch tool call with error guard ──
       let toolResult: string;
       try {
-        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues, tradertonClient, profileReconciliationSaga);
+        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues, tradertonClient, profileReconciliationSaga, nonTradingDefaultTickIntervalMs);
       } catch (err) {
         toolResult = JSON.stringify({
           error: 'tool_execution_failed',
@@ -2061,6 +2073,7 @@ export async function chatRoutes(
   venues: AppConfig['venues'] = {},
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
+  nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
 ): Promise<void> {
   /**
    * POST /chat/threads
@@ -2297,6 +2310,7 @@ export async function chatRoutes(
         venues,
         tradertonClient,
         profileReconciliationSaga,
+        nonTradingDefaultTickIntervalMs,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)
@@ -2502,6 +2516,7 @@ export async function chatRoutes(
         venues,
         tradertonClient,
         profileReconciliationSaga,
+        nonTradingDefaultTickIntervalMs,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)

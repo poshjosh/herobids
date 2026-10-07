@@ -14,7 +14,7 @@ interface RuntimePolicySectionProps {
   showTradingSessionPresets?: boolean;
 }
 
-type NumericField = Exclude<keyof RuntimePolicyOverrides, 'allowedHoursUtc' | 'weekendPause' | 'tradingSessions' | 'scoutReasoning' | 'judgeReasoning' | 'adaptScoutReasoning' | 'adaptJudgeReasoning'>;
+type NumericField = Exclude<keyof RuntimePolicyOverrides, 'allowedHoursUtc' | 'weekendPause' | 'tradingSessions' | 'scoutReasoning' | 'judgeReasoning' | 'adaptScoutReasoning' | 'adaptJudgeReasoning' | 'skipUnchangedTicks'>;
 
 const NUMERIC_FIELDS: NumericField[] = [
   'scoutMaxTurns',
