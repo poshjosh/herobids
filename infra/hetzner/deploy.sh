@@ -4,9 +4,10 @@
 # Runs the complete deploy sequence:
 #   1. setup-env.sh            — upload .env to server
 #   2. setup-autoscale-env.sh  — upload autoscale.env (infra secrets, skipped if TF_BACKEND_BUCKET unset)
-#   3. push.sh --yes           — git pull → build → compose up
-#   4. seed-admin.sh           — seed admin user (skipped if ADMIN_EMAIL/ADMIN_PASSWORD not set)
-#   5. verify                  — curl health endpoint on server
+#   3. setup-control-plane.sh  — converge Nomad advertise + UFW rules with cloud-init (skipped if Nomad disabled)
+#   4. push.sh --yes           — git pull → build → compose up
+#   5. seed-admin.sh           — seed admin user (skipped if ADMIN_EMAIL/ADMIN_PASSWORD not set)
+#   6. verify                  — curl health endpoint on server
 #
 # Usage:
 #   infra/hetzner/deploy.sh [--env <staging|production>] [--env-file <path>] [--backend-env-file <path>] [<server-ip>]
@@ -152,7 +153,7 @@ check_private_ip_vars
 
 # ─── Step 1: Upload .env ─────────────────────────────────────────────────────
 
-echo "── Step 1/5: Upload .env ──"
+echo "── Step 1/6: Upload .env ──"
 
 SETUP_ARGS=("${SCRIPTS_DIR}/setup-env.sh" "--env" "${HEROBIDS_ENV}" "${SERVER_IP}")
 if [[ -n "${ENV_FILE}" ]]; then
@@ -169,7 +170,7 @@ echo ""
 
 # ─── Step 2: Upload autoscale.env (infra secrets) ────────────────────────────
 
-echo "── Step 2/5: Upload autoscale.env ──"
+echo "── Step 2/6: Upload autoscale.env ──"
 
 # Source backend env file if provided (--backend-env-file).
 if [[ -n "${BACKEND_ENV_FILE}" ]]; then
@@ -196,9 +197,23 @@ fi
 
 echo ""
 
-# ─── Step 3: Push (git pull → build → compose up) ────────────────────────────
+# ─── Step 3: Converge control plane (Nomad advertise + UFW) ──────────────────
+# Existing control planes never receive cloud-init changes (ignore_changes =
+# [user_data]), so re-assert them on every deploy. Restarts Nomad only if needed.
 
-echo "── Step 3/5: Push (git pull → build → compose up) ──"
+echo "── Step 3/6: Converge control plane ──"
+
+if ! "${SCRIPTS_DIR}/setup-control-plane.sh" --env "${HEROBIDS_ENV}" "${SERVER_IP}"; then
+  echo "" >&2
+  echo "ERROR: setup-control-plane.sh failed. Aborting deploy." >&2
+  exit 1
+fi
+
+echo ""
+
+# ─── Step 4: Push (git pull → build → compose up) ────────────────────────────
+
+echo "── Step 4/6: Push (git pull → build → compose up) ──"
 
 # Wait for the GitHub "Build and Push Agent Image" workflow to finish, so the
 # freshly-pushed commit's agent image is available on GHCR for the Nomad client
@@ -224,9 +239,9 @@ fi
 
 echo ""
 
-# ─── Step 4: Seed admin user (skip if env vars not set) ──────────────────────
+# ─── Step 5: Seed admin user (skip if env vars not set) ──────────────────────
 
-echo "── Step 4/5: Seed admin user ──"
+echo "── Step 5/6: Seed admin user ──"
 
 if [[ -z "${ADMIN_EMAIL:-}" || -z "${ADMIN_PASSWORD:-}" ]]; then
   echo "ADMIN_EMAIL or ADMIN_PASSWORD not set — skipping admin seeding."
@@ -241,9 +256,9 @@ fi
 
 echo ""
 
-# ─── Step 5: Verify health endpoint ──────────────────────────────────────────
+# ─── Step 6: Verify health endpoint ──────────────────────────────────────────
 
-echo "── Step 5/5: Verify health endpoint ──"
+echo "── Step 6/6: Verify health endpoint ──"
 
 # Pre-flight: verify SSH connectivity before polling health
 echo ""

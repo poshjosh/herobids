@@ -299,6 +299,13 @@ are scheduled by Nomad across disposable agent nodes.
   Agents join the cluster using the server's private IP over the private network.
 - **No HA quorum**: the single-server topology is sufficient for the initial scale target
   (200-2000 agents). HA Nomad (3-5 servers) can be added later if needed.
+- **Deploy-time convergence**: existing control planes never get cloud-init changes
+  (`ignore_changes = [user_data]`), so `deploy.sh` runs `scripts/setup-control-plane.sh`
+  to re-assert the Nomad advertise config (`nomad-private-ip.service`) and UFW rules
+  on every deploy, restarting Nomad only if something changed or the live leader
+  doesn't advertise the configured IP. A Terraform error fails the step (it skips only on
+  `nomad_enabled = false`); without Terraform state, run it with the server IP and
+  `HEROBIDS_NOMAD_ENABLED=true HEROBIDS_PRIVATE_SUBNET=<cidr>`.
 
 ### Private Network
 
@@ -1241,13 +1248,14 @@ ssh root@<IP> 'cd /opt/herobids && docker compose -f docker-compose.yaml -f dock
 
 ## Full Deploy Workflow
 
-`deploy.sh` orchestrates a complete deployment in 5 steps:
+`deploy.sh` orchestrates a complete deployment in 6 steps:
 
 1. **setup-env** — upload `.env` to the server (app secrets)
 2. **setup-autoscale-env** — upload `autoscale.env` to the server (infra secrets: AWS credentials, Nomad token)
-3. **push** — `git pull` → build agent image → `docker compose up -d --build` → health check
-4. **seed-admin** — create/promote admin user (skipped if `ADMIN_EMAIL`/`ADMIN_PASSWORD` not set)
-5. **verify** — curl the API health endpoint until it responds (up to 60s)
+3. **setup-control-plane** — converge Nomad advertise (`nomad-private-ip.service`) and UFW rules with `cloud-init.yaml` (skipped if Nomad is disabled; restarts Nomad only if something changed)
+4. **push** — `git pull` → build agent image → `docker compose up -d --build` → health check
+5. **seed-admin** — create/promote admin user (skipped if `ADMIN_EMAIL`/`ADMIN_PASSWORD` not set)
+6. **verify** — curl the API health endpoint until it responds (up to 60s)
 
 If any step fails, the script stops immediately — no partial deploys.
 

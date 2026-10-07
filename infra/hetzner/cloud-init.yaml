@@ -97,6 +97,9 @@ write_files:
         }
       }
 
+  # Existing control planes never re-run this file (ignore_changes = [user_data]);
+  # scripts/converge-control-plane.sh re-applies this unit and the Nomad UFW
+  # rules on every deploy. Keep the two in sync (tests/test-converge-control-plane.sh).
   - path: /etc/systemd/system/nomad-private-ip.service
     permissions: '0644'
     content: |
@@ -111,17 +114,20 @@ write_files:
       Type=oneshot
       RemainAfterExit=yes
       Environment=PRIVATE_SUBNET="${private_subnet}"
+      # Fails (and so blocks nomad.service via Requires=) ONLY when nomad.hcl still
+      # has the placeholder and no private IP is visible. An already-patched
+      # nomad.hcl always succeeds, so a late NIC never stops Nomad from starting.
       ExecStart=/bin/sh -c 'set -eu; \
         SUBNET_PREFIX="$(echo "$PRIVATE_SUBNET" | cut -d. -f1-2)"; \
         PRIVATE_IP="$(ip -4 addr show | grep -oP "$SUBNET_PREFIX\.\d+\.\d+" | head -1 || true)"; \
-        if [ -n "$PRIVATE_IP" ] && grep -q "__PRIVATE_IP__" /etc/nomad.d/nomad.hcl 2>/dev/null; then \
-          sed -i "s/__PRIVATE_IP__/$PRIVATE_IP/g" /etc/nomad.d/nomad.hcl; \
-          echo "Patched nomad.hcl advertise to $PRIVATE_IP"; \
+        if ! grep -q "__PRIVATE_IP__" /etc/nomad.d/nomad.hcl 2>/dev/null; then \
+          echo "nomad.hcl already patched (no __PRIVATE_IP__ placeholder)"; \
         elif [ -z "$PRIVATE_IP" ]; then \
           echo "WARNING: private IP not yet available (subnet $PRIVATE_SUBNET); will retry next boot"; \
           exit 1; \
         else \
-          echo "nomad.hcl already patched (no __PRIVATE_IP__ placeholder)"; \
+          sed -i "s/__PRIVATE_IP__/$PRIVATE_IP/g" /etc/nomad.d/nomad.hcl; \
+          echo "Patched nomad.hcl advertise to $PRIVATE_IP"; \
         fi'
 
       [Install]
@@ -519,15 +525,16 @@ runcmd:
 
       # Enable and start Nomad
       # The private-network IP substitution is handled by the per-boot
-      # nomad-private-ip.service (ExecStartPre dependency), NOT by this one-shot
+      # nomad-private-ip.service (After=/Requires= dependency), NOT by this one-shot
       # runcmd step — cloud-init runcmd runs only on first boot, and the NIC is
       # not always up by then. The unit re-resolves on every boot, so a reboot
       # (or late-attached NIC) self-heals without manual sed.
       systemctl enable nomad-private-ip.service
       systemctl enable nomad
       # Re-run substitution now (best effort) so first boot usually works, then
-      # start Nomad; if the NIC is still down, nomad-private-ip will ExitStart
-      # fail and nomad.service's Requires will hold it until it's ready.
+      # start Nomad. If the NIC is still down while nomad.hcl has the placeholder,
+      # nomad-private-ip fails and systemd fails nomad.service's Requires=
+      # dependency (it does not wait); the next boot retries.
       systemctl start nomad-private-ip.service || true
       systemctl start nomad
 

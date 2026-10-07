@@ -116,6 +116,16 @@ ssh root@<ip> 'ip -4 addr show enp7s0'
   > If the placeholder persists (unit didn't run), the manual one-liner remains:
   > `ssh root@<ip> 'sed -i "s/__PRIVATE_IP__/<private_ip>/g" /etc/nomad.d/nomad.hcl && systemctl restart nomad'`
 
+> **Self-heals on deploy:** `deploy.sh` (step 5) now runs
+> `scripts/setup-control-plane.sh`, which converges the control plane with the
+> committed cloud-init: installs `nomad-private-ip.service` + a `nomad.service`
+> drop-in, rewrites a stale `{{ GetPrivateIP }}` advertise to the private IP, and
+> re-asserts the UFW rules (restarting Nomad only if something changed). This
+> matters because existing control planes never receive cloud-init changes
+> (`ignore_changes = [user_data]`). Run it on its own with
+> `scripts/setup-control-plane.sh --env <env> [<ip>]`. The manual commands here
+> and in 6a are the fallback.
+
 ---
 
 ## 5. Deploy services (upload env + build + start) — **[always]**
@@ -124,7 +134,8 @@ ssh root@<ip> 'ip -4 addr show enp7s0'
 infra/hetzner/deploy.sh --env <env> <ip> --env-file infra/hetzner/.env.<env>
 ```
 
-Steps: upload `.env` → upload autoscale env + Nomad ACL token + tfvars → `git
+Steps: upload `.env` → upload autoscale env + Nomad ACL token + tfvars →
+converge control plane (Nomad advertise + UFW, see step 4) → `git
 reset --hard origin/main` + rebuild images + `docker compose up` → seed admin
 (skipped if `ADMIN_EMAIL`/`ADMIN_PASSWORD` unset) → health check.
 
@@ -184,8 +195,10 @@ ssh root@<ip> 'docker exec herobids-worker-1 \
 Expected: the leader addr (the Nomad server's `<private-ip>:4647`), **not**
 `download timed out`. The bridge→Nomad allow rules are
 pinned in `cloud-init.yaml` (ports 4646/4647/4648 from `172.18.0.0/16`) and the
-bridge subnet is pinned in `docker-compose.yaml` (`networks.default.ipam`). If
-this check fails, re-apply:
+bridge subnet is pinned in `docker-compose.yaml` (`networks.default.ipam`).
+`deploy.sh` re-asserts these rules on every run (control-plane convergence, see
+step 4), so a missing rule self-heals on the next deploy. If this check still
+fails, re-apply by hand:
 
 ```sh
 ssh root@<ip> 'ufw allow from 172.18.0.0/16 to any port 4646 proto tcp && \

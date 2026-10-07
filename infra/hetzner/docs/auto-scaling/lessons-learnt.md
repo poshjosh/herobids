@@ -367,3 +367,44 @@ selection) and are left as-is.
 `runbooks/reprovision-runbook.md`, `environment.tfvars.example`,
 `terraform.tfvars.example`. See
 `docs/bug-reports/2026/10/07/001-production-env-points-at-wrong-control-plane-private-ip.md`.
+
+## 20. Existing control planes never receive cloud-init changes (`ignore_changes = [user_data]`)
+
+**Date:** 2026-10-07
+**Environment:** Production (staging had drifted too)
+
+**Symptom:** Production `nomad server members` showed `172.17.0.1` (docker0) and
+the agent node stayed `down`. The Docker-bridge → Nomad UFW rules had also been
+missing until they were added by hand.
+
+**Root cause:** The committed `cloud-init.yaml` was already correct
+(`__PRIVATE_IP__` + `nomad-private-ip.service`, bridge UFW rules). But the
+production control plane was created from older `user_data`, and
+`hcloud_server.default` has `lifecycle { ignore_changes = [user_data] }`, so
+Terraform never sends newer cloud-init to an existing server. Its `nomad.hcl`
+still had `{{ GetPrivateIP }}` (lesson #1) and the unit was not installed.
+Staging had been hand-patched to a literal `10.0.0.2`, also without the unit.
+
+**Fix:** Deploy-time convergence. `deploy.sh` step 3 runs
+`scripts/setup-control-plane.sh`, which uploads and runs
+`scripts/converge-control-plane.sh` on the control plane. It installs the unit
+and a `nomad.service` drop-in, rewrites `{{ GetPrivateIP }}` to `__PRIVATE_IP__`
+and lets the unit substitute the real IP, re-asserts the UFW rules, and restarts
+Nomad only if config or units changed. It never touches `/opt/nomad/data`. Keep it
+in sync with `cloud-init.yaml` (a test compares the unit content and bridge subnet).
+
+**Gotchas seen on production rollout:**
+- After the advertise change, a leader was elected at `10.0.0.2:4647`, but the
+  Raft configuration still lists the server ID at `172.17.0.1:4647`. Nomad logs
+  `failed to reconcile member ... need at least one voter` every ~10s. A single
+  voter still elects itself, so the cluster works. Fixing the stored address needs
+  `peers.json` recovery, which is an operator decision.
+- The already-joined agent client had cached `172.17.0.1:4647` and did not fall
+  back to its configured `servers`. It only became `ready` after
+  `systemctl restart nomad` on the agent node.
+
+**Files changed:** `scripts/converge-control-plane.sh`,
+`scripts/setup-control-plane.sh`, `deploy.sh`,
+`scripts/tests/test-converge-control-plane.sh`, `cloud-init.yaml` (sync comment),
+`runbooks/reprovision-runbook.md`, `README.md`. See
+`docs/bug-reports/2026/10/07/002-*` and `003-*`.

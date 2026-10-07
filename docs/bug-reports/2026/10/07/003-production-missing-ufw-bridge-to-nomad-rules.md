@@ -6,8 +6,7 @@ rules were absent, so the worker/API containers (on the Docker bridge) could not
 Nomad API. Applied manually to unblock, but it will recur on any production rebuild until the
 provisioning path is confirmed to apply them. Downgraded from HIGH because a manual rule
 application is a reliable stopgap and production is pre-launch.
-**Status:** OPEN (manually worked around on the live box; root cause in provisioning not
-yet confirmed/fixed). Discovered while fixing bug 001; out of scope of that fix.
+**Status:** FIX IMPLEMENTED. `deploy.sh` now re-asserts these rules on every deploy via control-plane convergence (shared with bug 002). Rolled out to staging and production on 2026-10-07. Not committed yet.
 **Fix location:** herobids `infra/hetzner/cloud-init.yaml` (control-plane) / provisioning
 verification. No application code.
 
@@ -74,13 +73,33 @@ match whatever the worker/API containers actually use.
 
 ## Acceptance checklist
 
-- [ ] Root cause of the missing rules on first provision is identified (logs on production).
-- [ ] A fresh production (or staging) provision ends with the three `172.18.0.0/16 → 4646/4647/4648` rules present, verified automatically or by a documented post-check.
-- [ ] The worker container can reach the Nomad API on a fresh provision with no manual UFW step.
-- [ ] The UFW rule subnet matches the actual Docker bridge subnet the worker/API use on production (cross-check with bug 002's `172.17.0.1` finding).
+- [x] Root cause of the missing rules on first provision is identified (stale `user_data` + `ignore_changes`; see "Confirmed root cause").
+- [ ] A fresh production (or staging) provision ends with the three `172.18.0.0/16 → 4646/4647/4648` rules present, verified automatically or by a documented post-check. Not verified with a fresh provision. Every `deploy.sh` run now asserts the rules, and that was verified on both existing control planes.
+- [ ] The worker container can reach the Nomad API on a fresh provision with no manual UFW step. Not verified with a fresh provision. Verified on existing production: the worker gets `"10.0.0.2:4647"` from the leader endpoint.
+- [x] The UFW rule subnet matches the actual Docker bridge subnet the worker/API use on production (cross-check with bug 002's `172.17.0.1` finding). A test asserts that `setup-control-plane.sh`, the converge default and `cloud-init.yaml` all match `docker-compose.yaml`.
 
 ## Related
 
 - `docs/bug-reports/2026/10/07/001-...` (wrong `NOMAD_ADDR`; the other half of the worker→Nomad blockage).
 - `docs/bug-reports/2026/10/07/002-...` (control-plane advertises `172.17.0.1`; related bridge-subnet question).
 - `infra/hetzner/docs/runbooks/reprovision-runbook.md` step 6a documents these rules as "the firewall trap".
+
+## Confirmed root cause (2026-10-07)
+
+This has the same cause as bug 002. The production control plane booted from stale `user_data` that predates the current `cloud-init.yaml`. `lifecycle { ignore_changes = [user_data] }` on `hcloud_server.default` means Terraform never sends newer cloud-init to it. The rules exist in the committed cloud-init but were never applied to this box.
+
+The bridge-subnet question is settled. The worker container sits on `172.18.0.7` on `herobids_default`, which is `172.18.0.0/16`, matching the pin in `docker-compose.yaml`. So the `172.18.0.0/16` rules are correct. `172.17.0.1` is the unused default `docker0` bridge. It only shows up in bug 002 because the stale `{{ GetPrivateIP }}` resolves to it.
+
+The rules are present right now, applied by hand during bug 001.
+
+## Fix (Option B, shared with bug 002)
+
+The control-plane convergence step that runs on every `deploy.sh` (see bug 002) also asserts these UFW rules idempotently:
+- `ufw allow from <private_subnet> to any port 4646|4647|4648 proto tcp`, plus `5432` and `6379` from `<private_subnet>`
+- `ufw allow from 172.18.0.0/16 to any port 4646|4647|4648 proto tcp`
+
+`ufw allow` already skips duplicate rules. The bridge subnet must stay in sync with `docker-compose.yaml` → `networks.default.ipam`. Keep a single source for it, or check them against each other.
+
+### Acceptance (replaces the provisioning-root-cause item above)
+- [x] Delete one of the `172.18.0.0/16` rules on staging, then run a deploy (or the convergence step). The rule comes back. Result: `ufw: 172.18.0.0/16 -> 4648/tcp: Rule added` / `changed: added 1 ufw rule(s)`, with no Nomad restart.
+- [x] Running the convergence when all rules are present is a no-op (`already converged` on staging and production).
