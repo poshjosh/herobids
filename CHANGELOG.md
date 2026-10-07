@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.6.1 - 2026-10-07
+
 ## v0.6.0 - 2026-10-06
 
 ### Changed
