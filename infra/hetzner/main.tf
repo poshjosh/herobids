@@ -250,6 +250,14 @@ resource "hcloud_server" "agent" {
   ssh_keys     = [hcloud_ssh_key.default.id]
   firewall_ids = var.enable_nomad ? [hcloud_firewall.agent[0].id] : []
 
+  # Agent nodes don't need public IPv6: their egress is IPv4 (ghcr.io has no AAAA
+  # and Docker's default bridge is IPv4-only). Each primary IP counts against the
+  # Hetzner project's Primary IP limit. See docs/features/2026/10/07/001-private-agent-nodes.
+  public_net {
+    ipv4_enabled = true
+    ipv6_enabled = false
+  }
+
   user_data = templatefile("${path.module}/cloud-init-nomad-client.yaml", {
     server_name              = "${var.server_name}-agent-${count.index + 1}"
     environment              = var.environment
