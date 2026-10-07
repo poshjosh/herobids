@@ -1,7 +1,7 @@
 # Herobids useful commands
 
-- production ipv4 - 167.233.213.107
-- staging ipv4 - 138.199.172.202
+- production ip - 167.233.213.107
+- staging ip - 138.199.172.202
 
 ## local
 
