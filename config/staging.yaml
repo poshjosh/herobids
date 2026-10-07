@@ -7,6 +7,107 @@
 app:
   logLevel: debug   
 
+# Remove this if you want to test trading
+# Currently production share the same with staging
+# We thus severly limit staging
+marketData:
+  dexscreener:
+    baseUrl: "https://api.dexscreener.com"
+    search:
+      requestsPerMinute: 3      # reserved for explicit token lookup / price-support paths
+      burstCapacity: 3
+      maxWaitMs: 5000
+      cacheTtlMs: 15000
+    discovery:
+      requestsPerMinute: 3      # discovery must not consume the search reserve
+      burstCapacity: 2
+      maxWaitMs: 5000
+      cacheTtlMs: 300000
+  geckoterminal:
+    baseUrl: "https://api.geckoterminal.com"
+    apiKey: ""                # override: COINGECKO_API_KEY — optional, enables Pro on-chain tier when set
+    candles:
+      requestsPerMinute: 2      # regime / active-watchlist OHLCV
+      burstCapacity: 2
+      maxWaitMs: 5000
+      cacheTtlMs: 60000
+    discovery:
+      requestsPerMinute: 6      # Raised from 10 to support paid tier; monitor CoinGecko credit consumption after rollout. 5-min discovery cache keeps upstream calls within the 100k-credit/mo Basic plan budget.
+      burstCapacity: 1
+      maxWaitMs: 5000
+      cacheTtlMs: 300000
+  hyperliquid:
+    baseUrl: "https://api.hyperliquid.xyz"
+    intelligencePath: "/info"
+    intelligence:
+      requestsPerMinute: 12
+      burstCapacity: 2
+      maxWaitMs: 2000
+      cacheTtlMs: 60000
+  bybit:
+    baseUrl: "https://api.bybit.com"
+    longShortRatioPath: "/v5/market/account-ratio"
+    intelligence:
+      requestsPerMinute: 12
+      burstCapacity: 2
+      maxWaitMs: 2000
+      cacheTtlMs: 60000
+    tickers:
+      requestsPerMinute: 3
+      burstCapacity: 1
+      maxWaitMs: 2000
+      cacheTtlMs: 30000
+  binance:
+    baseUrl: "https://api.binance.com"
+    requestsPerMinute: 20
+    # Max ms to wait for the shared rate-limit token bucket to refill.
+    # Separate from marketData.timeoutMs (HTTP timeout). After the initial
+    # 200-request burst drains the bucket, refill runs at ~3.3 tokens/s,
+    # so subsequent requests must wait ~300 ms each. 30 s gives enough
+    # headroom for agent technical-phase batches to complete.
+    maxWaitMs: 30000
+    # Scanner capacity controls — operator-owned bounds for scan-agent candle traffic.
+    # Derivation: 200 RPM binance budget, 150 reserved for regime checks → 50 for scanner.
+    # See docs/features/2026/07/16/003-scanner_gated-must-be-working/009-phase0-decision-2-capacity-boundary.md
+    scanner:
+      maxRequestsPerMinute: 5      # per-worker ceiling for scanner candle requests
+      maxConcurrentScans: 1        # per-worker max concurrent scanner agents
+      maxCandidates: 20            # max entry candidates per scan (open-position exits always preserved)
+  birdeye:
+    enabled: false
+    baseUrl: "https://public-api.birdeye.so"
+    requestsPerMinute: 6
+    apiKey: ""                # override: BIRDEYE_API_KEY — required when birdeye.enabled is true
+    cacheTtlMs: 3600000
+  coinMarketCap:
+    enabled: false
+    baseUrl: "https://pro-api.coinmarketcap.com"
+    requestsPerMinute: 3
+    apiKey: ""                # override: COINMARKETCAP_API_KEY — required when coinMarketCap.enabled is true
+    cacheTtlMs: 3600000
+  # Economic calendar for trading agents — disabled by default.
+  # Source: Forex Factory (HTML scraping via HTTP/1.1, Redis-cached across all agents).
+  economicCalendar:
+    enabled: false
+    daysForward: 1
+    minImpact: medium
+    currencies: []
+    # fetch interval is cacheTtlMs / 2
+    cacheTtlMs: 43200000   # 12 hours — shared across all agents via Redis
+    maxEventsInContext: 5
+    refreshIntervalMs: 21600000  # 6 hours — background cache refresh cadence
+    forexFactory:
+      baseUrl: "https://www.forexfactory.com"
+      requestTimeoutMs: 120000
+      requestsPerMinute: 1
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  discovery:
+    maxResults: 5                   # Default when agent does not specify a limit; agent may request 1–100 per call
+    geckoTerminalExtraPages: 0      # Set to 1 to fetch page 2 of GT trending + top pools (~35 extra tokens, 4 extra req/run)
+    antistalenessCooldownHours: 4   # Hours before a token can re-appear at top of discovery. 0 = disabled.
+    antistalenessTokenTtlHours: 24  # How long to track a seen address before pruning it
+  timeoutMs: 5000
+
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
   model: deepseek/deepseek-v4-pro-0813       # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
