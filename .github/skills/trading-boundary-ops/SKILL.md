@@ -178,7 +178,7 @@ Cleanup: remove the probe from the host and container; confirm
 ## 6. What this skill does NOT do
 
 - Deploy, reprovision, reset, or change DNS/TLS/secrets — see
-  `infra/hetzner/docs/staging-reprovision-runbook.md`.
+  `infra/hetzner/docs/runbooks/reprovision-runbook.md`.
 - Produce latency/throughput metrics — the codebase has **no** metrics system
   (no prom-client/otel/statsd/`/metrics`). Those numbers require building
   instrumentation first; do not promise them.
@@ -188,6 +188,6 @@ Cleanup: remove the probe from the host and container; confirm
 ## References
 
 - `infra/hetzner/docs/runbooks/phase1-operational-readiness.md` (the runbook this skill operationalizes)
-- `infra/hetzner/docs/staging-reprovision-runbook.md`
+- `infra/hetzner/docs/runbooks/reprovision-runbook.md`
 - `packages/domain/src/external-backend/{sign,client,contract}.ts` (signing + invoke contract)
 - `docs/features/2026/09/24/001-staging-first-external-backend-roadmap.md` (roadmap + Step 16)

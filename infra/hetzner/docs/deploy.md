@@ -1,7 +1,16 @@
 
 # Deploy
 
-For the initial one-time setup, see: infra/hetzner/docs/setup.md
+For the initial one-time setup (new server, new deploy key, DNS), see:
+`infra/hetzner/docs/setup.md`. For the full "which doc do I want" index
+(enabling Nomad, teardown/rebuild, production gotchas), see `README.md` in
+this directory.
+
+This doc covers steady-state deploys — a server already exists and is
+healthy. Examples below use `staging`; substitute `--env production` and the
+matching `.env.production`/production server IP to target production (see
+`docs/runbooks/production-notes.md` for what's genuinely different there,
+not just the environment name).
 
 ## Steps
 
@@ -28,7 +37,7 @@ ADMIN_EMAIL='admin@example.com' ADMIN_PASSWORD='test-pass' ./scripts/seed-admin.
 ```
 
 ### Run smoke test
-Follow the runbook at: the runbook at `docs/runbooks/staging-smoke-test.md`.
+Follow the runbook at: `docs/runbooks/reprovision-runbook.md` step 10.
 
 ```sh
 ./scripts/smoke-test.sh --env staging

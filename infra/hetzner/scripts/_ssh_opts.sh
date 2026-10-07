@@ -31,11 +31,17 @@ _HEROBIDS_SSH_KEY_USER_SET="${HEROBIDS_SSH_KEY:+1}"
 # resolve_ssh_key — discover the SSH private key with environment-aware fallback.
 # Precedence:
 #   1. HEROBIDS_SSH_KEY env var explicitly set by user (captured at source time)
-#   2. ssh_public_key_path from terraform.tfvars
-#   3. ssh_public_key_path from ${HEROBIDS_ENV}.tfvars (e.g., staging.tfvars)
+#   2. ssh_public_key_path from ${HEROBIDS_ENV}.tfvars (e.g., staging.tfvars, production.tfvars)
+#   3. ssh_public_key_path from terraform.tfvars (generic fallback, no env-specific file)
 # Sets global _HEROBIDS_SSH_KEY and rebuilds SSH_OPTS.
 # Safe to call multiple times — re-resolves from tfvars on each call
 # unless the user explicitly provided HEROBIDS_SSH_KEY.
+#
+# NOTE: ${HEROBIDS_ENV}.tfvars is checked BEFORE terraform.tfvars. Environments
+# commonly use different deploy keys (e.g. staging.tfvars -> herobids_deploy_key,
+# production.tfvars -> herobids_deploy_key_prod). If terraform.tfvars were checked
+# first and happened to exist (e.g. as a leftover/default), production commands
+# would silently resolve to the wrong key. See lessons-learnt.md.
 resolve_ssh_key() {
   local _HEROBIDS_SSH_KEY
   # 1. User-provided override — always wins, skip all discovery
@@ -52,23 +58,23 @@ resolve_ssh_key() {
   # Fresh discovery from tfvars based on current HEROBIDS_ENV
   _HEROBIDS_SSH_KEY=""
 
-  # 2. Try terraform.tfvars
-  local _TFVARS="${TF_DIR}/terraform.tfvars"
-  if [[ -f "${_TFVARS}" ]]; then
+  # 2. Try environment-specific tfvars first (e.g., staging.tfvars, production.tfvars)
+  local _ENV_TFVARS="${TF_DIR}/${HEROBIDS_ENV}.tfvars"
+  if [[ -f "${_ENV_TFVARS}" ]]; then
     local _PUB_KEY
-    _PUB_KEY=$(grep -o 'ssh_public_key_path\s*=\s*"[^"]*"' "${_TFVARS}" 2>/dev/null \
+    _PUB_KEY=$(grep -o 'ssh_public_key_path\s*=\s*"[^"]*"' "${_ENV_TFVARS}" 2>/dev/null \
       | cut -d'"' -f2 | sed 's|^~|'"${HOME}"'|')
     if [[ -n "${_PUB_KEY}" && -f "${_PUB_KEY}" ]]; then
       _HEROBIDS_SSH_KEY="${_PUB_KEY%.pub}"
     fi
   fi
 
-  # 3. Fallback: environment-specific tfvars (e.g., staging.tfvars)
+  # 3. Fallback: generic terraform.tfvars (only used when no env-specific tfvars exists)
   if [[ -z "${_HEROBIDS_SSH_KEY}" ]] || [[ ! -f "${_HEROBIDS_SSH_KEY}" ]]; then
-    local _ENV_TFVARS="${TF_DIR}/${HEROBIDS_ENV}.tfvars"
-    if [[ -f "${_ENV_TFVARS}" ]]; then
+    local _TFVARS="${TF_DIR}/terraform.tfvars"
+    if [[ -f "${_TFVARS}" ]]; then
       local _PUB_KEY
-      _PUB_KEY=$(grep -o 'ssh_public_key_path\s*=\s*"[^"]*"' "${_ENV_TFVARS}" 2>/dev/null \
+      _PUB_KEY=$(grep -o 'ssh_public_key_path\s*=\s*"[^"]*"' "${_TFVARS}" 2>/dev/null \
         | cut -d'"' -f2 | sed 's|^~|'"${HOME}"'|')
       if [[ -n "${_PUB_KEY}" && -f "${_PUB_KEY}" ]]; then
         _HEROBIDS_SSH_KEY="${_PUB_KEY%.pub}"
@@ -83,7 +89,7 @@ resolve_ssh_key() {
   fi
 
   if [[ -z "${_HEROBIDS_SSH_KEY}" || ! -f "${_HEROBIDS_SSH_KEY}" ]]; then
-    echo "WARNING: No SSH key found. Tried HEROBIDS_SSH_KEY, terraform.tfvars, and ${HEROBIDS_ENV}.tfvars." >&2
+    echo "WARNING: No SSH key found. Tried HEROBIDS_SSH_KEY, ${HEROBIDS_ENV}.tfvars, and terraform.tfvars." >&2
     echo "WARNING: SSH connections may fail. Set HEROBIDS_SSH_KEY or ensure ssh_public_key_path is set in a tfvars file." >&2
   fi
 

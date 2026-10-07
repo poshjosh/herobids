@@ -1,13 +1,22 @@
-# Useful Commands — Nomad Staging
+# Useful Commands — Nomad Operations
 
-Quick-reference commands for operating the Nomad staging cluster.
+Quick-reference commands for operating the Nomad cluster, for either `staging`
+or `production`. Substitute `<env>` with the one you're operating on.
+
+> Every command below omits `-i <key>` on `ssh`. Scripts that accept `--env
+> <env>` (`deploy.sh`, `reset.sh`, `reset-and-run.sh`, `setup-nomad.sh`, etc.)
+> resolve the correct deploy key automatically via `scripts/_ssh_opts.sh`. For
+> raw `ssh` commands run directly against the host (as most of this doc does),
+> use the key for your target environment: staging —
+> `~/.ssh/herobids_deploy_key`; production — `~/.ssh/herobids_deploy_key_prod`.
+> See `../runbooks/production-notes.md` if a key seems to resolve incorrectly.
 
 Server IP and agent node IPs change on recreation. Always check first:
 ```bash
 cd infra/hetzner
 
 # Ensure you're initialized with the S3 backend and on the right workspace
-terraform workspace select staging
+terraform workspace select <env>
 
 terraform output -raw server_ipv4          # control-plane public IP
 terraform output -raw control_plane_private_ip  # control-plane private IP
@@ -19,7 +28,7 @@ terraform output -json agent_node_public_ips    # agent node public IPs
 ## SSH
 
 ```bash
-# Control-plane
+# Control-plane (staging key shown — swap for herobids_deploy_key_prod on production)
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip>
 
 # Agent node
@@ -37,7 +46,8 @@ All `nomad` commands on an ACL-enabled cluster require the token. Set `NOMAD_TOK
 # Set once per SSH session
 export NOMAD_TOKEN=<your-nomad-acl-token>
 
-# Server members (should advertise 10.x.x.x, NOT 172.17.x.x)
+# Server members (should advertise the private IP — 10.0.x.x staging, 10.1.x.x production —
+# NOT 172.17.x.x, the Docker bridge)
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
   "NOMAD_TOKEN=<token> nomad server members"
 
@@ -55,14 +65,17 @@ ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
 
 ## Worker Logs
 
+The compose overlay filename differs by environment: `docker-compose.staging.yaml`
+or `docker-compose.prod.yaml`.
+
 ```bash
 # Check runtime backend and Nomad address
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
-  'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.staging.yaml logs worker 2>&1 | grep -EA2 "Runtime backend|NomadRuntimeAdapter"'
+  'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.<staging|prod>.yaml logs worker 2>&1 | grep -EA2 "Runtime backend|NomadRuntimeAdapter"'
 
 # Full worker logs (last 50 lines)
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
-  'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.staging.yaml logs --tail=50 worker'
+  'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.<staging|prod>.yaml logs --tail=50 worker'
 ```
 
 ## Cloud-init
@@ -81,9 +94,12 @@ Requires `prevent_destroy = false` on `hcloud_server.default` in `main.tf` (beca
 
 ```bash
 cd infra/hetzner
-terraform workspace select staging
-terraform apply -var-file=staging.tfvars -var="agent_node_count=1"
+terraform workspace select <env>
+terraform apply -var-file=<env>.tfvars -var="agent_node_count=1"
 ```
+
+> Production never scales below `min_agent_nodes = 1` — don't apply
+> `agent_node_count=0` to production. See `../runbooks/production-notes.md`.
 
 Wait 3–5 min for cloud-init, then verify:
 ```bash
@@ -94,19 +110,22 @@ ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> 'nomad node status'
 
 ```bash
 # Full deploy (upload .env, git pull, build, compose up, health check)
-infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.staging
+infra/hetzner/deploy.sh --env <env> <server-ip> --env-file infra/hetzner/.env.<env>
 
 # Just restart the worker
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
-  'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.staging.yaml up -d --force-recreate worker'
+  'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.<staging|prod>.yaml up -d --force-recreate worker'
 ```
 
 ## Reset + Full Provision (destructive)
 
 Wipes DB, Redis, Caddy certs. Seeds admin, provisions user/connections/agents.
+See `../runbooks/reprovision-runbook.md` for the full ordered sequence this
+fits into, and `../runbooks/production-notes.md` for why the production
+confirmation prompts matter.
 
 ```bash
-infra/hetzner/scripts/reset-and-run.sh --env staging --env-file .env.ops.staging
+infra/hetzner/scripts/reset-and-run.sh --env <env> --env-file .env.ops.<env>
 ```
 
 ## Autoscale
@@ -290,7 +309,7 @@ ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
 | Symptom | Cause | Fix |
 |---|---|---|
 | `HTTP 403` in autoscale log | Token missing or wrong in `/etc/herobids/autoscale.env` | Set `NOMAD_ACL_TOKEN` in `.env.backend` and re-run `deploy.sh --backend-env-file .env.backend` |
-| `Permission denied` in worker | `NOMAD_TOKEN` missing from `.env` file | Add token to `.env.prod` / `.env.staging` and redeploy |
+| `Permission denied` in worker | `NOMAD_TOKEN` missing from `.env` file | Add token to `.env.<env>` and redeploy |
 | Token was valid, now rejected | Bootstrap reset or cluster recreated | Re-bootstrap ACLs: `nomad acl bootstrap` and update all consumers |
 
 **After fixing:**
@@ -306,8 +325,10 @@ NOMAD_TOKEN=<token> ENABLE_SCALE_IN=true \
 
 ## Staging Validation: Intentional Drain Timeout
 
-When using the staging failure injection hooks (`staging-hooks.sh`) to validate
-drain-timeout handling for the production validation plan:
+**Staging only** — this failure-injection hook is intentionally not present
+in production (production should never have its drain path artificially
+broken). When using the staging failure injection hooks (`staging-hooks.sh`)
+to validate drain-timeout handling for the production validation plan:
 
 **Before the test:**
 

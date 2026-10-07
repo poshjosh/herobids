@@ -1,5 +1,11 @@
 # Setup Infrastructure
 
+This doc covers **first-time setup** (new server, new deploy key, new DNS
+records) — provisioning with Nomad already enabled from the start. For
+anything else (day-2 deploys, enabling Nomad on an existing server, teardown/
+rebuild, production-specific gotchas), see **`README.md`** in this directory
+for the full "which doc do I want" index.
+
 ## Phase 0 - Prerequisites
 
 - **Own the domain** (or have DNS access to it): e.g. `openaidom.com`. You'll add A (and optionally AAAA records) later.
@@ -10,7 +16,16 @@
 
 - **Get AWS S3 credentials** for Terraform state: an S3 bucket name, an AWS access key + secret, and a DynamoDB table (optional but recommended) name for state locking. Multiple repos can share the same bucket/table, if they use different state keys.
 
-- **Verify Traderton is up**: `https://api.staging.traderton.com/health/ready` or `https://api.traderton.com/health/ready` should return HTTP 200.
+- **Verify Traderton is up for the environment you're provisioning.** Check
+  the specific hostname for your target env — `https://api.staging.traderton.com/health/ready`
+  for staging, `https://api.traderton.com/health/ready` for production — do
+  not treat the other one's health as a substitute. **Do not assume the
+  production boundary exists just because staging's does.** As of 2026-10-07,
+  Traderton has no production deployment at all (no DNS record for
+  `api.traderton.com`, no `production.tfvars` in the Traderton repo). Confirm
+  with `dig +short api.traderton.com` before relying on it — an empty result
+  means it needs to be provisioned first (a prerequisite outside this repo).
+  See `infra/hetzner/docs/runbooks/production-notes.md` § 5.
 
 ## Phase 1 - Environment files
 
@@ -138,7 +153,12 @@ dig @8.8.8.8 AAAA staging.openaidom.com +short
 
 ## Phase 5 - Verify
 
-2. **Verify integration**: from a running Herobids container, `curl https://api.staging.traderton.com/health/ready` or `curl https://api.traderton.com/health/ready` → 200, and confirm an unsigned call returns `authentication.invalid_caller`.
+2. **Verify integration**: from a running Herobids container, `curl` the
+   Traderton boundary matching the environment you just set up — staging:
+   `https://api.staging.traderton.com/health/ready`; production:
+   `https://api.traderton.com/health/ready` (confirm this exists first, see
+   Phase 0 and `runbooks/production-notes.md` § 5) — expect HTTP 200, and
+   confirm an unsigned call returns `authentication.invalid_caller`.
 
 ## Phase 6 - Nomad ACL bootstrap (one-time, enable_nomad only)
 
@@ -149,183 +169,31 @@ Nomad call returns `403`/`ACL token not found` and the worker cannot launch
 agents.
 
 ```sh
-# Clears any stale token so setup-nomad.sh actually bootstraps (see Phase 7 why this matters)
 infra/hetzner/scripts/setup-nomad.sh --env <staging|production> \
   --env-file infra/hetzner/.env.<staging|production> \
   --backend-env-file infra/hetzner/.env.backend
 ```
 
 `setup-nomad.sh` bootstraps the ACL, writes the token to **both** places it
-must live, deploys, redeploys, and verifies:
+must live (`.env.backend`'s `NOMAD_ACL_TOKEN` and `.env.<env>`'s
+`NOMAD_TOKEN`), deploys, redeploys, and verifies. Full details (token file
+mapping, verification commands) are in
+`docs/runbooks/reprovision-runbook.md` step 6 — this is the same step, just
+run for the first time instead of after a teardown.
 
-| File | Variable | Written by setup-nomad.sh |
-|------|----------|---------------------------|
-| `infra/hetzner/.env.backend` | `NOMAD_ACL_TOKEN` | yes (infra / autoscale) |
-| `infra/hetzner/.env.<env>` | `NOMAD_TOKEN` | yes (worker container) |
+## Phase 7 - Teardown & re-provision
 
-Verify the cluster is healthy **and has a placeable client node**:
+This is now its own doc: **`docs/runbooks/reprovision-runbook.md`**. It covers
+the full ordered sequence (teardown → clear stale ACL token → re-provision →
+verify private NIC → deploy → re-bootstrap ACL → verify worker→Nomad
+reachability → seed/reset → start agents → smoke test) for both staging and
+production, plus every pitfall encountered doing this in practice (crash-looping
+Nomad from a stale token, the private-NIC-not-up-on-first-boot race, the
+Docker-bridge-vs-Nomad firewall trap, the agent-image-pull-denied case). Use
+that doc instead of re-deriving the sequence here.
 
-```sh
-ssh root@<server_ipv4> 'export NOMAD_TOKEN=$(cat /etc/nomad.d/acl-token); \
-  nomad server members; nomad node status'
-```
-
-Expected: `server members` shows one `alive`, `true` leader; `node status`
-shows at least one `ready` class-`agent` node. If no client node is `ready`,
-bump `agent_node_count` (see Phase 7).
-
-## Phase 7 - Teardown & re-provision (Nomad-enabled environments)
-
-This is the path that breaks silently most often. Because the Nomad ACL lives
-in on-disk state that a recreated server loses, and because the Hetzner private
-NIC may not auto-configure on first boot, naive teardown → re-provision leaves
-you with a crash-looping Nomad and a dead ACL token. Follow this order exactly.
-
-### 7.1 Teardown
-
-```sh
-infra/hetzner/scripts/destroy.sh --env <staging|production> \
-  --var-file infra/hetzner/<env>.tfvars \
-  --backend-env-file infra/hetzner/.env.backend
-```
-
-`destroy.sh` removes servers, agent nodes, the private network, firewall, and
-SSH key from the workspace state. It leaves DNS and the S3 state bucket intact.
-
-### 7.2 Clear the Nomad token (BEFORE re-provision)
-
-The ACL token you hold is now meaningless (the cluster it was minted for is
-gone). If you re-provision with a stale non-empty token, `setup-nomad.sh` skips
-bootstrap and redeploys the dead token. Clear **both** variables first:
-
-```sh
-# 1. infra variable (read by setup-nomad.sh's "already bootstrapped?" gate)
-sed -i '' 's|^NOMAD_ACL_TOKEN=.*|NOMAD_ACL_TOKEN=|' infra/hetzner/.env.backend
-
-# 2. worker variable (injected into the worker container)
-sed -i '' 's|^NOMAD_TOKEN=.*|NOMAD_TOKEN=|' infra/hetzner/.env.<env>
-```
-
-> Note: the bare `infra/hetzner/.env` seen in this directory is a **vestigial
-> duplicate of `.env.backend`** and is not read by any deploy script. It is safe
-> to ignore; if it bothers you, delete it. The two files above are the only ones
-> that matter.
-
-### 7.3 Re-provision
-
-```sh
-infra/hetzner/scripts/provision.sh --env <staging|production> \
-  --var-file infra/hetzner/<env>.tfvars \
-  --backend-env-file infra/hetzner/.env.backend
-```
-
-### 7.4 Verify the private NIC came up (the reboot trap)
-
-The Hetzner private interface (`enp7s0`) can be `DOWN`/unconfigured on first
-boot, which leaves `__PRIVATE_IP__` unsubstituted in `/etc/nomad.d/nomad.hcl`
-and Nomad in a crash loop. Check and, if necessary, fix it:
-
-```sh
-ssh root@<server_ipv4> 'ip -4 addr show enp7s0'
-```
-
-- If `enp7s0` has a private IPv4 (e.g. `10.0.0.2/32`) **and**
-  `/etc/nomad.d/nomad.hcl` shows real IPs (not `__PRIVATE_IP__`): skip to 7.5.
-- If `enp7s0` is `DOWN` / has no IPv4: reboot once
-
-  `ssh root@<server_ipv4> 'systemctl reboot'`
-
-  then re-check the interface **and** the `nomad.hcl` advertise block. The
-  reboot brings the NIC up, but it does **not** re-substitute the placeholder
-  (cloud-init's `sed` is first-boot only). If the advertise block still shows
-  `__PRIVATE_IP__`, substitute it manually:
-
-  `ssh root@<server_ipv4> 'sed -i "s/__PRIVATE_IP__/<private_ip>/g" /etc/nomad.d/nomad.hcl && systemctl restart nomad'`
-
-### 7.5 Re-bootstrap the ACL token and agent nodes
-
-```sh
-infra/hetzner/scripts/setup-nomad.sh --env <staging|production> \
-  --env-file infra/hetzner/.env.<env> \
-  --backend-env-file infra/hetzner/.env.backend
-```
-
-This mint a fresh token and writes it to `.env.backend` and `.env.<env>`.
-
-Then confirm a **client node exists** so agent jobs can be placed:
-
-```sh
-ssh root@<server_ipv4> 'export NOMAD_TOKEN=$(cat /etc/nomad.d/acl-token); nomad node status'
-```
-
-> `staging.tfvars`/`production.tfvars` set `min_agent_nodes = 0`, meaning the
-> autoscaler is allowed to drain to zero. A re-provision does **not** by itself
-> create a client node unless `agent_node_count >= 1` at apply time. If no
-> `ready` agent node appears, restore one with:
-
-```sh
-infra/hetzner/scripts/provision.sh --env <staging|production> \
-  --var-file infra/hetzner/<env>.tfvars \
-  --backend-env-file infra/hetzner/.env.backend
-# and set agent_node_count >= 1 in <env>.tfvars (or scale-out.sh)
-```
-
-### 7.6 Final verification
-
-```sh
-ssh root@<server_ipv4> 'export NOMAD_TOKEN=$(cat /etc/nomad.d/acl-token); \
-  nomad server members && nomad node status'
-```
-
-All green when: leader `alive`, ≥1 `ready` agent node, and the worker logs no
-`runtime.launch_failed` when you start an agent.
-
-### 7.7 Verify worker → Nomad reachability (the firewall trap)
-
-The worker/API containers live on the **local Docker bridge**, not the Hetzner
-private network, so their Nomad traffic is subject to UFW's routed-default-deny.
-If it is blocked, agents fail with `Critical execution failure` (worker logs
-`runtime.launch_failed: This operation was aborted`) even though Nomad itself is
-healthy. Confirm from inside the worker container:
-
-```sh
-ssh root@<server_ipv4> 'docker exec herobids-worker-1 \
-  sh -c "wget -qO- --timeout=5 http://10.0.0.2:4646/v1/status/leader"'
-```
-
-Expected: `"10.0.0.2:4647"` (the leader addr), **not** `download timed out`.
-The bridge→Nomad allow rules are pinned in `cloud-init.yaml` (ports 4646/4647/4648
-from `172.18.0.0/16`) and the bridge subnet is pinned in `docker-compose.yaml`
-(`networks.default.ipam`). If this check fails, re-apply:
-
-```sh
-ssh root@<server_ipv4> 'ufw allow from 172.18.0.0/16 to any port 4646 proto tcp && \
-  ufw allow from 172.18.0.0/16 to any port 4647 proto tcp && \
-  ufw allow from 172.18.0.0/16 to any port 4648 proto tcp'
-```
-
-> **Private-IP drift caveat:** `.env.staging` / `.env.production` hardcode
-> `NOMAD_ADDR` and `SHARED_REDIS_HOST` / `SHARED_POSTGRES_HOST` to a fixed private
-> IP (e.g. `10.0.0.2`), while `cloud-init.yaml` resolves the private IP dynamically
-> at first boot. If a re-provision ever lands a different private IP, the hardcoded
-> values will break silently. After any re-provision, confirm the values in
-> `.env.<env>` still match the actual control-plane private IP (`ip -4 addr show enp7s0`).
-
-### 7.8 Verify the agent image can be pulled on the client node
-
-Agent jobs run on Nomad client nodes (not the control plane) and pull
-`ghcr.io/poshjosh/herobids-agent:latest`. If the image is not published (the
-`.github/workflows/build-push-agent.yml` CI run has not pushed it) or the client
-node cannot authenticate, every agent launch fails with `Stale agent start
-detected` (health monitor) → "Critical execution failure", even though the job
-registers and places.
-
-```sh
-# From the control plane, reach the agent node (10.0.0.3 = agent-1 private IP):
-ssh root@<server_ipv4> 'ssh -i /root/.ssh/deploy_key root@10.0.0.3 '\''docker pull ghcr.io/poshjosh/herobids-agent:latest'\'''
-```
-
-Expected: the pull succeeds. If it fails with `denied`, the client node has not
-logged into ghcr.io — set `ghcr_username`/`ghcr_token` in `<env>.tfvars` and
-re-provision that node (cloud-init runs `docker login ghcr.io` on boot). If it
-fails with `not found`, the CI workflow hasn't pushed the image yet.
+If you're trying to **enable Nomad for the first time on a server that
+already exists without it** (rather than provisioning a brand-new server with
+Nomad already turned on, which is what Phases 0–6 above do), see
+`docs/auto-scaling/setup-auto-scaling.md` instead — it covers the
+`prevent_destroy = false` replace-in-place dance that this scenario needs.

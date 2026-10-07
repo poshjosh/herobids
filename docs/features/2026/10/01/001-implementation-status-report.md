@@ -179,6 +179,10 @@ model, generic contracts, or client migration has been built.
   precondition. The supporting scripts all exist in `infra/hetzner/scripts/`
   (`provision.sh`, `deploy.sh`, `setup-nomad.sh`, `reset-and-run.sh`,
   `smoke-test.sh`, scale-in/out, placement-failure safety net, etc.).
+  _(2026-10-07: generalized and moved to
+  `infra/hetzner/docs/runbooks/reprovision-runbook.md`, now covers both
+  staging and production — see `infra/hetzner/docs/runbooks/production-notes.md`
+  for what's genuinely different in production.)_
 
 ### Step-by-step status (corrected)
 
