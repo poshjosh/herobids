@@ -308,7 +308,7 @@ ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `HTTP 403` in autoscale log | Token missing or wrong in `/etc/herobids/autoscale.env` | Set `NOMAD_ACL_TOKEN` in `.env.backend` and re-run `deploy.sh --backend-env-file .env.backend` |
+| `HTTP 403` in autoscale log | Token missing or wrong in `/etc/herobids/autoscale.env` | Set `NOMAD_TOKEN` in `.env.<env>` and re-run `deploy.sh --env <env> --env-file .env.<env>` |
 | `Permission denied` in worker | `NOMAD_TOKEN` missing from `.env` file | Add token to `.env.<env>` and redeploy |
 | Token was valid, now rejected | Bootstrap reset or cluster recreated | Re-bootstrap ACLs: `nomad acl bootstrap` and update all consumers |
 

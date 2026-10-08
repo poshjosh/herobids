@@ -172,7 +172,7 @@ This produces `10.0` for staging and `10.1` for production, making the regex mat
 
 **Root cause:** Nomad ACL state is stored in Nomad's data directory on the server. When the server is destroyed and recreated, the data directory is fresh — no ACL bootstrap has occurred. The old token is meaningless.
 
-**Fix:** Re-run `setup-nomad.sh`, which detects the empty `NOMAD_ACL_TOKEN` (or stale token) and bootstraps a new one. If the old token is still in `.env.backend`, clear it first (`NOMAD_ACL_TOKEN=`), then re-run the script. The script saves the new token to `.env.backend` and `.env.staging`/`.env.prod` automatically.
+**Fix:** Clear the stale `NOMAD_TOKEN=` in `.env.<env>`, then re-run `setup-nomad.sh`; it bootstraps a new token and saves it back to `.env.<env>`. Tokens are per environment — never keep one in the shared `.env.backend` (it once put the staging token on production; see `docs/bug-reports/2026/10/08/003-*`).
 
 **Prevention:** Use `ignore_changes = [user_data]` on `hcloud_server.default` (now the default) to avoid unnecessary server recreation.
 

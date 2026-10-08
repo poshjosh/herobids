@@ -123,6 +123,12 @@ agentRuntime:
       lightModel: deepseek/deepseek-v4.1-flash  # suggested economy (scout) model
       heavyModel: deepseek/deepseek-v4-pro-0813    # suggested premium (judge) model
                        
+# Browser pool runs as the Nomad job infra/nomad/browser-pool.nomad.hcl, not a
+# Compose service, so the default Compose URL (http://browser-pool:3000) never
+# resolves here. Empty = resolve via Nomad service discovery at worker startup.
+browserPool:
+  url: ""
+
 platformAssessor:
   enabled: true  # disabled by default until shadow mode validated
   llm:

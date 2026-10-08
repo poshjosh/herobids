@@ -6,8 +6,8 @@
 # Nomad ACLs, redeploys with the token, and verifies health.
 #
 # This script is idempotent for ACL bootstrap — if ACLs are already
-# bootstrapped, it skips that step and uses the existing token from
-# .env.backend.
+# bootstrapped, it skips that step and uses the existing NOMAD_TOKEN from
+# the env file (the token is per environment; .env.backend is shared).
 #
 # Usage:
 #   infra/hetzner/scripts/setup-nomad.sh --env <staging|production> \
@@ -21,18 +21,18 @@
 #   - Server provisioned (provision.sh already run)
 #   - S3 backend migrated (migrate-backend-to-s3.sh already run)
 #   - .env file exists (app secrets)
-#   - .env.backend file exists (S3 credentials; NOMAD_ACL_TOKEN may be empty)
+#   - .env.backend file exists (S3 credentials only)
 #
 # What it does:
 #   1. Initial deploy (uploads .env + autoscale.env, builds, starts services)
 #   2. Waits for Nomad server to be healthy
-#   3. Bootstraps Nomad ACLs (if not already done)
-#   4. Saves the token to .env.backend and .env file
+#   3. Bootstraps Nomad ACLs (if the env file's NOMAD_TOKEN is empty)
+#   4. Saves the token to the env file as NOMAD_TOKEN
 #   5. Redeploys to push the token to the server
 #   6. Verifies authenticated Nomad access
 #
 # After running:
-#   - Nomad ACLs are enabled and the token is in .env.backend
+#   - Nomad ACLs are enabled and the token is NOMAD_TOKEN in the env file
 #   - Autoscale services have credentials via /etc/herobids/autoscale.env
 #   - Worker has NOMAD_TOKEN via .env
 #   - Day-to-day deploys use: deploy.sh --env <env> --env-file <file> --backend-env-file .env.backend
@@ -134,6 +134,11 @@ set -a
 source "${BACKEND_ENV_FILE}"
 set +a
 
+# The Nomad ACL token is per environment: it lives in the env file as
+# NOMAD_TOKEN, never in the shared .env.backend (docs/bug-reports/2026/10/08/003-*).
+NOMAD_ACL_TOKEN="$(grep -E '^NOMAD_TOKEN=' "${ENV_FILE}" | tail -1 | cut -d= -f2- \
+  | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' || true)"
+
 # ─── Resolve server IP ───────────────────────────────────────────────────────
 
 SERVER_IP=""
@@ -198,18 +203,18 @@ echo ""
 echo "── Step 3/7: Bootstrap Nomad ACLs ──"
 
 if [[ -n "${NOMAD_ACL_TOKEN:-}" ]]; then
-  echo "NOMAD_ACL_TOKEN is already set in ${BACKEND_ENV_FILE} — skipping bootstrap."
+  echo "NOMAD_TOKEN is already set in ${ENV_FILE} — skipping bootstrap."
   echo "Using existing token."
   ACL_TOKEN="${NOMAD_ACL_TOKEN}"
 else
-  echo "NOMAD_ACL_TOKEN is empty — bootstrapping ACLs..."
+  echo "NOMAD_TOKEN is empty in ${ENV_FILE} — bootstrapping ACLs..."
   echo ""
 
   BOOTSTRAP_OUTPUT="$(ssh ${SSH_OPTS} "root@${SERVER_IP}" 'nomad acl bootstrap' 2>&1)" || {
     if echo "${BOOTSTRAP_OUTPUT}" | grep -q "already been bootstrapped"; then
       echo "ACLs already bootstrapped on this cluster." >&2
-      echo "You need the existing management token. Add it to ${BACKEND_ENV_FILE}:" >&2
-      echo "  NOMAD_ACL_TOKEN=<your-existing-token>" >&2
+      echo "You need the existing management token. Add it to ${ENV_FILE}:" >&2
+      echo "  NOMAD_TOKEN=<your-existing-token>" >&2
       echo "Then re-run this script." >&2
       exit 1
     fi
@@ -235,21 +240,8 @@ else
 
   echo "── Step 4/7: Save token to config files ──"
 
-  # Append to .env.backend
-  if grep -q '^NOMAD_ACL_TOKEN=' "${BACKEND_ENV_FILE}"; then
-    # Replace existing empty or placeholder value
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sed -i '' "s|^NOMAD_ACL_TOKEN=.*|NOMAD_ACL_TOKEN=${ACL_TOKEN}|" "${BACKEND_ENV_FILE}"
-    else
-      sed -i "s|^NOMAD_ACL_TOKEN=.*|NOMAD_ACL_TOKEN=${ACL_TOKEN}|" "${BACKEND_ENV_FILE}"
-    fi
-    echo "Updated NOMAD_ACL_TOKEN in ${BACKEND_ENV_FILE}"
-  else
-    echo "NOMAD_ACL_TOKEN=${ACL_TOKEN}" >> "${BACKEND_ENV_FILE}"
-    echo "Added NOMAD_ACL_TOKEN to ${BACKEND_ENV_FILE}"
-  fi
-
-  # Add/update NOMAD_TOKEN in .env file (for the worker container)
+  # Add/update NOMAD_TOKEN in the env file (worker container + deploy.sh
+  # derive /etc/nomad.d/acl-token and autoscale.env from it).
   if grep -q '^NOMAD_TOKEN=' "${ENV_FILE}"; then
     if [[ "$(uname)" == "Darwin" ]]; then
       sed -i '' "s|^NOMAD_TOKEN=.*|NOMAD_TOKEN=${ACL_TOKEN}|" "${ENV_FILE}"
@@ -332,7 +324,7 @@ echo " Nomad Setup Complete — ${HEROBIDS_ENV}"
 echo "========================================"
 echo ""
 echo " Server:     ${SERVER_IP}"
-echo " ACL token:  ${ACL_TOKEN:0:8}... (saved to ${BACKEND_ENV_FILE})"
+echo " ACL token:  ${ACL_TOKEN:0:8}... (saved to ${ENV_FILE} as NOMAD_TOKEN)"
 echo ""
 echo " Day-to-day deploys:"
 echo "   ${INFRA_DIR}/deploy.sh --env ${HEROBIDS_ENV} --env-file ${ENV_FILE} --backend-env-file ${BACKEND_ENV_FILE}"

@@ -130,6 +130,13 @@ docker image prune -f
 # Submit standalone Nomad jobs (browser-pool, etc.) when the Nomad server is
 # running on this host. Skipped silently on Docker-only deploys.
 # nomad job run is idempotent — existing jobs are updated in place.
+# ACL-enabled clusters reject anonymous calls, so use the token that
+# setup-autoscale-env.sh deployed; without it the gate below fails and
+# the jobs are silently skipped (docs/bug-reports/2026/10/08/002-*).
+if [ -r /etc/nomad.d/acl-token ]; then
+  NOMAD_TOKEN="$(cat /etc/nomad.d/acl-token)"
+  export NOMAD_TOKEN
+fi
 if command -v nomad &>/dev/null && nomad server members &>/dev/null 2>&1; then
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Submitting Nomad infrastructure jobs..."
   for job in infra/nomad/*.nomad.hcl; do

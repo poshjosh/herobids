@@ -144,7 +144,8 @@ new_root() {
     > "${ROOT}/etc/systemd/system/nomad.service"
 }
 
-# write_hcl <advertise value> — nomad.hcl with the given advertise value.
+# write_hcl <advertise value> [acl-enabled: true|false] — nomad.hcl with the
+# given advertise value; includes cloud-init's acl block unless told not to.
 write_hcl() {
   cat > "${ROOT}/etc/nomad.d/nomad.hcl" <<HCL
 data_dir = "/opt/nomad/data"
@@ -155,6 +156,9 @@ advertise {
   serf = "$1"
 }
 HCL
+  if [[ "${2:-true}" == "true" ]]; then
+    printf '\nacl {\n  enabled = true\n}\n' >> "${ROOT}/etc/nomad.d/nomad.hcl"
+  fi
 }
 
 write_stale_hcl() { write_hcl "{{ GetPrivateIP }}"; }
@@ -411,6 +415,63 @@ assert_eq "${NOMAD_RESTARTS}" "0" "stale Raft peer: no restart"
 run_converge STUB_RAFT_FAILS=true
 assert_eq "${RUN_EXIT}" "0" "raft list-peers failure is non-fatal"
 assert_contains "${RUN_OUTPUT}" "skipped the Raft address check" "raft list-peers failure is reported"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "converge-control-plane — autoscale units load autoscale.env"
+
+new_root "autoscale-env" "${STUB_PRIVATE_IP}"
+write_hcl "${STUB_PRIVATE_IP}"
+run_converge
+# Production case: units exist but lack EnvironmentFile=.
+printf '%s\n' '[Service]' 'Type=oneshot' 'ExecStart=/opt/herobids/infra/hetzner/scripts/scale-out.sh' \
+  > "${ROOT}/etc/systemd/system/nomad-autoscale.service"
+printf '%s\n' '[Service]' 'Type=oneshot' 'EnvironmentFile=-/etc/herobids/autoscale.env' \
+  > "${ROOT}/etc/systemd/system/nomad-scale-in.service"
+run_converge
+DROPIN_DIR="${ROOT}/etc/systemd/system/nomad-autoscale.service.d"
+assert_eq "${RUN_EXIT}" "0" "missing EnvironmentFile: succeeds"
+assert_eq "$(cat "${DROPIN_DIR}/10-autoscale-env.conf" 2>/dev/null)" \
+  "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env')" "missing EnvironmentFile: installs the drop-in"
+assert_contains "${CALLS}" "systemctl daemon-reload" "missing EnvironmentFile: daemon-reloads"
+assert_eq "${NOMAD_RESTARTS}" "0" "missing EnvironmentFile: does not restart nomad"
+assert_eq "$([[ -d "${ROOT}/etc/systemd/system/nomad-scale-in.service.d" ]] && echo yes || echo no)" "no" \
+  "unit that already has EnvironmentFile: no drop-in"
+assert_eq "$([[ -d "${ROOT}/etc/systemd/system/nomad-placement-failure-watcher.service.d" ]] && echo yes || echo no)" "no" \
+  "absent unit: no drop-in"
+run_converge
+assert_contains "${RUN_OUTPUT}" "already converged" "drop-in: second run is a no-op"
+assert_not_contains "${CALLS}" "systemctl daemon-reload" "drop-in: second run does not daemon-reload"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "converge-control-plane — ACL check (bug 2026-10-08/003)"
+
+new_root "acl-on" "${STUB_PRIVATE_IP}"
+write_hcl "${STUB_PRIVATE_IP}"
+run_converge
+assert_eq "${RUN_EXIT}" "0" "acl enabled: succeeds"
+assert_not_contains "${RUN_OUTPUT}" "ACLs are NOT enabled" "acl enabled: no ACL warning"
+
+new_root "acl-off" "${STUB_PRIVATE_IP}"
+write_hcl "${STUB_PRIVATE_IP}" false
+run_converge
+HCL_BEFORE_SECOND_RUN="$(cat "${ROOT}/etc/nomad.d/nomad.hcl")"
+run_converge
+assert_eq "${RUN_EXIT}" "0" "acl missing: still succeeds (warning only)"
+assert_contains "${RUN_OUTPUT}" "WARNING: ACLs are NOT enabled" "acl missing: warns"
+assert_eq "$(cat "${ROOT}/etc/nomad.d/nomad.hcl")" "${HCL_BEFORE_SECOND_RUN}" "acl missing: does not edit nomad.hcl"
+assert_eq "${NOMAD_RESTARTS}" "0" "acl missing: does not restart nomad"
+
+new_root "acl-disabled" "${STUB_PRIVATE_IP}"
+write_hcl "${STUB_PRIVATE_IP}" false
+printf '\nacl {\n  enabled = false\n}\n' >> "${ROOT}/etc/nomad.d/nomad.hcl"
+run_converge
+assert_contains "${RUN_OUTPUT}" "WARNING: ACLs are NOT enabled" "acl enabled = false: warns"
 
 test_end || SUITE_FAILED=1
 

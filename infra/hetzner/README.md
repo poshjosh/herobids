@@ -412,18 +412,16 @@ ACL bootstrap is a one-time manual step per cluster:
    ```
    This prints a management token. Save it securely — it cannot be retrieved again.
 
-3. **Set the token as a shell environment variable** on the operator's machine:
+3. **Add `NOMAD_TOKEN` to that environment's `.env` file.** It is the single
+   per-environment source of the token: the worker reads it, and `deploy.sh` derives
+   `/etc/nomad.d/acl-token` and `autoscale.env` from it. Never put the token in the shared
+   `.env.backend` (staging and production have different tokens).
    ```bash
-   export NOMAD_ACL_TOKEN="<management-token-from-step-2>"
-   ```
-
-4. **Add `NOMAD_TOKEN` to the worker's `.env` file** so the `NomadRuntimeAdapter` can authenticate:
-   ```bash
-   # In .env.prod (or .env.staging)
+   # In .env.production (or .env.staging)
    NOMAD_TOKEN=<management-token-from-step-2>
    ```
 
-5. **Deploy** — `deploy.sh` uploads the token to the server via `setup-autoscale-env.sh`
+4. **Deploy** — `deploy.sh` uploads the token to the server via `setup-autoscale-env.sh`
    (as part of `/etc/herobids/autoscale.env`) and the worker `.env`:
    ```bash
    ./deploy.sh --env production --env-file .env.prod
@@ -435,7 +433,7 @@ ACL bootstrap is a one-time manual step per cluster:
 
 | Consumer | Token Source | Mechanism |
 |---|---|---|
-| Autoscale services (`nomad-autoscale`, `nomad-scale-in`, `nomad-placement-failure-watcher`) | `NOMAD_ACL_TOKEN` shell env var | Deployed to `/etc/herobids/autoscale.env` by `setup-autoscale-env.sh` (part of `deploy.sh`); read via `EnvironmentFile=` in systemd units |
+| Autoscale services (`nomad-autoscale`, `nomad-scale-in`, `nomad-placement-failure-watcher`) | `NOMAD_TOKEN` in `.env.<env>` (via `deploy.sh`) | Deployed to `/etc/herobids/autoscale.env` by `setup-autoscale-env.sh` (part of `deploy.sh`); read via `EnvironmentFile=` in systemd units |
 | Worker (`NomadRuntimeAdapter`) | `NOMAD_TOKEN` in `.env.prod` | Docker Compose environment variable |
 | Shell scripts (`scale-common.sh` → `nomad_api()`) | Inherited from systemd `NOMAD_TOKEN` | `X-Nomad-Token` HTTP header when `NOMAD_TOKEN` is set |
 | Nomad client nodes | Gossip protocol (no HTTP token needed) | `acl { enabled = true }` in client config |

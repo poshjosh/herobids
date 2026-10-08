@@ -15,12 +15,15 @@
 #   2. Asserts the private-subnet and Docker-bridge UFW allow rules.
 #   3. Installs nomad-private-ip.service (same unit as cloud-init.yaml) and a
 #      nomad.service drop-in (After=/Requires=) unless the main unit has both.
+#   3c. Adds an EnvironmentFile=-/etc/herobids/autoscale.env drop-in to each
+#      autoscale unit whose unit file lacks it (daemon-reload only).
 #   4. Rewrites `{{ GetPrivateIP }}` / `__PRIVATE_IP__` in nomad.hcl to the IP.
 #   5. Checks once (no waiting) whether the live leader and `nomad server
 #      members` show the configured advertise IP. Restarts Nomad if nomad.hcl
 #      or the nomad.service dependency changed OR the live check failed, then
 #      waits (bounded). A content-only update of the oneshot just daemon-reloads.
 #   6. Warns (non-fatal) if a Raft peer address differs from the advertise IP.
+#   7. Warns (non-fatal) if nomad.hcl does not enable ACLs.
 # It NEVER touches /opt/nomad/data (Raft state holds the ACL bootstrap/tokens)
 # and never restarts nomad-private-ip.service (Requires= would restart Nomad).
 #
@@ -76,6 +79,7 @@ CHANGES=()
 # process does not depend on the oneshot's script text).
 NOMAD_UNIT_CHANGED=false
 PRIVATE_IP_UNIT_CHANGED=false
+AUTOSCALE_UNITS_CHANGED=false
 HCL_CHANGED=false
 
 # ─── 1. Resolve the private IP before mutating anything ─────────────────────
@@ -193,6 +197,24 @@ if ! main_unit_has_dependency; then
   fi
 fi
 
+# ─── 3c. Autoscale units load /etc/herobids/autoscale.env ───────────────────
+# Older control planes have the autoscale units without EnvironmentFile=, so
+# they never see the S3 creds or NOMAD_TOKEN (production, 2026-10-08). These
+# are timer-driven oneshots: a daemon-reload is enough, no restart needed.
+
+AUTOSCALE_UNITS=(nomad-autoscale nomad-scale-in nomad-placement-failure-watcher)
+AUTOSCALE_ENV_DROPIN_NAME="10-autoscale-env.conf"
+for unit in "${AUTOSCALE_UNITS[@]}"; do
+  unit_file="${SYSTEMD_DIR}/${unit}.service"
+  [[ -f "${unit_file}" ]] || continue
+  grep -Eq '^EnvironmentFile=-?/etc/herobids/autoscale\.env' "${unit_file}" && continue
+  if write_if_changed "${SYSTEMD_DIR}/${unit}.service.d/${AUTOSCALE_ENV_DROPIN_NAME}" \
+    "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env')"; then
+    CHANGES+=("installed ${unit}.service autoscale.env drop-in")
+    AUTOSCALE_UNITS_CHANGED=true
+  fi
+done
+
 # ─── 4. Substitute the private IP into nomad.hcl ────────────────────────────
 
 # Generate the full new content first; only then truncate+write the target
@@ -209,7 +231,8 @@ if ! cmp -s "${HCL_NEW}" "${NOMAD_HCL}"; then
   CHANGES+=("patched nomad.hcl advertise to ${PRIVATE_IP}")
 fi
 
-if [[ "${NOMAD_UNIT_CHANGED}" == "true" || "${PRIVATE_IP_UNIT_CHANGED}" == "true" ]]; then
+if [[ "${NOMAD_UNIT_CHANGED}" == "true" || "${PRIVATE_IP_UNIT_CHANGED}" == "true" \
+  || "${AUTOSCALE_UNITS_CHANGED}" == "true" ]]; then
   systemctl daemon-reload
 fi
 systemctl is-enabled --quiet "${PRIVATE_IP_UNIT_NAME}" \
@@ -322,6 +345,24 @@ if RAFT_PEERS="$(nomad_cli operator raft list-peers 2>/dev/null)"; then
   fi
 else
   log "could not list Raft peers; skipped the Raft address check."
+fi
+
+# ─── 7. ACL check (warning only) ────────────────────────────────────────────
+# cloud-init.yaml ships `acl { enabled = true }`. Not converged automatically:
+# enabling ACLs needs a matching bootstrap + token rollout, or every client of
+# the API is locked out. See docs/bug-reports/2026/10/08/003-*.md.
+
+acl_enabled_in_hcl() {
+  awk '
+    /^[[:space:]]*acl[[:space:]]*[{]/ { inside = 1; next }
+    inside && /^[[:space:]]*[}]/ { inside = 0 }
+    inside && /^[[:space:]]*enabled[[:space:]]*=[[:space:]]*true/ { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "${NOMAD_HCL}"
+}
+
+if ! acl_enabled_in_hcl; then
+  warn "ACLs are NOT enabled in ${NOMAD_HCL} (cloud-init.yaml has acl { enabled = true }); the Nomad API accepts anonymous requests. Enable + bootstrap per docs/bug-reports/2026/10/08/003-*."
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────

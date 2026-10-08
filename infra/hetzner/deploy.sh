@@ -137,6 +137,38 @@ echo " Environment: ${HEROBIDS_ENV}"
 echo " Server:      ${SERVER_IP}"
 echo ""
 
+# Prompt here (not in setup-env.sh) so the env file is known to the token
+# handling below.
+if [[ -z "${ENV_FILE}" ]]; then
+  read -rp "Path to local .env file for ${HEROBIDS_ENV}: " ENV_FILE
+fi
+if [[ ! -f "${ENV_FILE}" ]]; then
+  echo "ERROR: env file '${ENV_FILE}' does not exist." >&2
+  exit 1
+fi
+
+# env_file_value <VAR> — last VAR=value in ENV_FILE, minus an inline
+# "# comment" and surrounding whitespace.
+env_file_value() {
+  grep -E "^$1=" "${ENV_FILE}" | tail -1 | cut -d= -f2- \
+    | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' || true
+}
+
+# ─── Nomad ACL token is per environment ─────────────────────────────────────
+# .env.backend is shared by staging and production, so a NOMAD_ACL_TOKEN in it
+# would be deployed to the wrong cluster (it put the staging token on
+# production). The env file's NOMAD_TOKEN — the worker's token — is the
+# per-environment source for /etc/nomad.d/acl-token and autoscale.env.
+# See docs/bug-reports/2026/10/08/003-*.md.
+if [[ -n "${NOMAD_ACL_TOKEN:-}" ]]; then
+  echo "NOTE: ignoring NOMAD_ACL_TOKEN from ${BACKEND_ENV_FILE}; using NOMAD_TOKEN from ${ENV_FILE}." >&2
+fi
+NOMAD_ACL_TOKEN="$(env_file_value NOMAD_TOKEN)"
+export NOMAD_ACL_TOKEN
+if [[ -z "${NOMAD_ACL_TOKEN}" ]]; then
+  echo "WARNING: NOMAD_TOKEN is empty in ${ENV_FILE}; no Nomad ACL token will be deployed." >&2
+fi
+
 # ─── Guard: env-file private IPs must match Terraform ──────────────────────
 # NOMAD_ADDR, SHARED_REDIS_HOST and SHARED_POSTGRES_HOST must point at the
 # control-plane private IP that Terraform actually provisioned. A stale/wrong
@@ -154,9 +186,7 @@ check_private_ip_vars() {
     return 0
   fi
   for var in NOMAD_ADDR SHARED_REDIS_HOST SHARED_POSTGRES_HOST; do
-    # Strip an inline "# comment", then any surrounding whitespace, so a value
-    # with trailing spaces (and no comment) doesn't produce a false mismatch.
-    value="$(grep -E "^${var}=" "${ENV_FILE}" | tail -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+    value="$(env_file_value "${var}")"
     host="$(printf '%s' "${value}" | sed -E 's#^[a-z]+://##; s#[:/].*$##')"
     if [[ -n "${host}" && "${host}" != "${cp_ip}" ]]; then
       echo "ERROR: ${var} in ${ENV_FILE} points at ${host}, but the ${HEROBIDS_ENV} control-plane private IP is ${cp_ip}." >&2
