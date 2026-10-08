@@ -1004,7 +1004,14 @@ billing:
     secretKey: ""                             # override: STRIPE_SECRET_KEY
     webhookSecret: ""                         # override: STRIPE_WEBHOOK_SECRET
     customerPortalConfigurationId: ""         # optional Stripe portal config ID
-    planPrices: {}                            # map of planId → [{stripePriceId, interval, displayLabel, amountCents}]
+    planPrices: {}                            # map of planId → [{stripePriceId, interval, displayLabel, amountCents, managedPayments}]
+                                              # managedPayments: true opts that price into Stripe Managed Payments
+                                              # (Stripe handles tax/fraud/order management) — the price's product
+                                              # must carry an eligible tax_code. See scripts/ts/create-managed-payments-product.ts
+                                              # to provision one.
+    managedPaymentsApiVersion: ""             # required once any planPrices entry sets managedPayments: true,
+                                              # e.g. "2026-02-25.preview" — do not guess this value, use what
+                                              # Stripe's Managed Payments docs specify at integration time.
   creem:
     apiKey: ""                                # override: CREEM_API_KEY
     webhookSecret: ""                         # override: CREEM_WEBHOOK_SECRET

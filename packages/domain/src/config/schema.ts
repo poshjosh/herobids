@@ -810,6 +810,13 @@ export const BillingPlanPriceSchema = z.object({
   displayLabel: z.string().min(1),
   /** Amount in cents for display (informational — Stripe is authoritative) */
   amountCents: z.number().int().min(0).optional(),
+  /**
+   * Checkout for this price should use Stripe Managed Payments (tax, fraud,
+   * and dispute handling delegated to Stripe). Requires the product behind
+   * this price to carry an eligible tax_code and the account to be enrolled —
+   * see https://docs.stripe.com/payments/managed-payments.
+   */
+  managedPayments: z.boolean().default(false),
 });
 
 export const BillingPlanProductSchema = z.object({
@@ -832,6 +839,14 @@ export const StripeConfigSchema = z.object({
   customerPortalConfigurationId: z.string().optional(),
   /** Map of internal plan IDs to their Stripe price entries */
   planPrices: z.record(z.string(), z.array(BillingPlanPriceSchema).min(1)).default({}),
+  /**
+   * Stripe API version required for Managed Payments requests (checkout session
+   * creation and product provisioning with managed_payments[enabled]). Only sent
+   * on calls that opt into Managed Payments — all other Stripe calls use the
+   * account's default pinned version. Leave unset until Managed Payments is
+   * actually enabled for a plan.
+   */
+  managedPaymentsApiVersion: z.string().optional(),
 });
 
 export const CreemConfigSchema = z.object({
@@ -1798,6 +1813,20 @@ export const AppConfigSchema = z.object({
           code: z.ZodIssueCode.custom,
           message: 'billing.stripe.webhookSecret is required when Stripe is a configured provider',
           path: ['billing', 'stripe', 'webhookSecret'],
+        });
+      }
+
+      // Managed Payments requires a pinned preview API version on checkout — fail fast
+      // rather than silently sending managed_payments[enabled] against the account's
+      // default API version, which would be rejected by Stripe at request time.
+      const hasManagedPaymentsPrice = Object.values(stripe.planPrices).some((prices) =>
+        prices.some((p) => p.managedPayments),
+      );
+      if (hasManagedPaymentsPrice && !stripe.managedPaymentsApiVersion) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'billing.stripe.managedPaymentsApiVersion is required when any billing.stripe.planPrices entry sets managedPayments: true',
+          path: ['billing', 'stripe', 'managedPaymentsApiVersion'],
         });
       }
     }

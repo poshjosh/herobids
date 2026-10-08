@@ -62,6 +62,17 @@ describe('BillingConfigSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('defaults managedPayments to false on a plan price entry', () => {
+    const result = BillingConfigSchema.parse({
+      stripe: {
+        planPrices: {
+          pro: [{ stripePriceId: 'price_123', interval: 'month', displayLabel: 'Pro' }],
+        },
+      },
+    });
+    expect(result.stripe.planPrices['pro']?.[0]?.managedPayments).toBe(false);
+  });
 });
 
 describe('AppConfigSchema billing cross-validation', () => {
@@ -133,5 +144,51 @@ describe('AppConfigSchema billing cross-validation', () => {
       const paths = result.error.issues.map((i) => i.path.join('.'));
       expect(paths).toContain('billing.enabled');
     }
+  });
+
+  it('rejects a managedPayments price with no managedPaymentsApiVersion pinned', () => {
+    const result = AppConfigSchema.safeParse({
+      ...baseConfig,
+      billing: {
+        primaryProvider: 'stripe',
+        stripe: {
+          secretKey: 'sk_test_xxx',
+          webhookSecret: 'whsec_test',
+          planPrices: {
+            pro: [{ stripePriceId: 'price_123', interval: 'month', displayLabel: 'Pro', managedPayments: true }],
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths).toContain('billing.stripe.managedPaymentsApiVersion');
+    }
+  });
+
+  it('allows a managedPayments price when managedPaymentsApiVersion is pinned', () => {
+    const result = AppConfigSchema.safeParse({
+      ...baseConfig,
+      plans: {
+        defaultPlanId: 'free',
+        plans: {
+          free: {},
+          pro: {},
+        },
+      },
+      billing: {
+        primaryProvider: 'stripe',
+        stripe: {
+          secretKey: 'sk_test_xxx',
+          webhookSecret: 'whsec_test',
+          managedPaymentsApiVersion: '2026-02-25.preview',
+          planPrices: {
+            pro: [{ stripePriceId: 'price_123', interval: 'month', displayLabel: 'Pro', managedPayments: true }],
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
   });
 });

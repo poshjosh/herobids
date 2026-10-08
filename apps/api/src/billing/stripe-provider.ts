@@ -48,6 +48,12 @@ export class StripeProvider implements PaymentProvider {
         throw new Error(`No Stripe price mapping for plan '${params.planId}'`);
       }
 
+      // Managed Payments is a per-price opt-in (the underlying product must carry
+      // an eligible tax_code) — resolve it from the matching plan price entry so
+      // checkout automatically uses it without a separate caller-supplied flag.
+      const priceEntry = this.findPriceEntry(params.planId, priceId);
+      const managedPayments = priceEntry?.managedPayments ?? false;
+
       const session = await this.client.createCheckoutSession({
         customerId: customer.externalCustomerId,
         priceId,
@@ -59,6 +65,8 @@ export class StripeProvider implements PaymentProvider {
           herobidsUserId: params.userId,
           herobidsPlanId: params.planId,
         },
+        managedPayments,
+        apiVersion: managedPayments ? this.stripeConfig.managedPaymentsApiVersion : undefined,
       });
 
       return session.url;
@@ -125,6 +133,10 @@ export class StripeProvider implements PaymentProvider {
       if (match) return match.stripePriceId;
     }
     return prices[0]!.stripePriceId;
+  }
+
+  private findPriceEntry(planId: string, priceId: string) {
+    return this.stripeConfig.planPrices[planId]?.find((p) => p.stripePriceId === priceId) ?? null;
   }
 
   private normalizeEvent(event: StripeEvent): NormalizedWebhookEvent {

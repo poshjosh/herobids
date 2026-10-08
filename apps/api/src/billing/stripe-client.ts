@@ -31,6 +31,36 @@ export class StripeClient {
     return this.post<StripeCustomer>('/customers', body);
   }
 
+  // --- Products ---
+
+  /**
+   * Create a product together with its default price in one call, via
+   * `default_price_data`. Used for one-time provisioning (e.g. the Managed
+   * Payments subscription product) — not called from request-handling routes.
+   */
+  async createProduct(params: {
+    name: string;
+    taxCode?: string;
+    defaultPriceData: {
+      currency: string;
+      unitAmount: number;
+      recurringInterval?: 'day' | 'week' | 'month' | 'year';
+    };
+    apiVersion?: string;
+  }): Promise<StripeProduct> {
+    const body = new URLSearchParams();
+    body.set('name', params.name);
+    if (params.taxCode) {
+      body.set('tax_code', params.taxCode);
+    }
+    body.set('default_price_data[currency]', params.defaultPriceData.currency);
+    body.set('default_price_data[unit_amount]', String(params.defaultPriceData.unitAmount));
+    if (params.defaultPriceData.recurringInterval) {
+      body.set('default_price_data[recurring][interval]', params.defaultPriceData.recurringInterval);
+    }
+    return this.post<StripeProduct>('/products', body, params.apiVersion);
+  }
+
   // --- Checkout Sessions ---
 
   async createCheckoutSession(params: {
@@ -40,6 +70,15 @@ export class StripeClient {
     successUrl: string;
     cancelUrl: string;
     metadata?: Record<string, string>;
+    /**
+     * Enable Stripe Managed Payments for this session — Stripe takes on indirect
+     * tax compliance, fraud prevention, and order management. Requires the price's
+     * product to carry an eligible tax_code and the account to be enrolled. Must be
+     * paired with `apiVersion` set to the Managed Payments preview version.
+     */
+    managedPayments?: boolean;
+    /** Stripe-Version header override for this call (e.g. a preview version required by managedPayments). */
+    apiVersion?: string;
   }): Promise<StripeCheckoutSession> {
     const body = new URLSearchParams();
     body.set('customer', params.customerId);
@@ -48,12 +87,15 @@ export class StripeClient {
     body.set('line_items[0][quantity]', '1');
     body.set('success_url', params.successUrl);
     body.set('cancel_url', params.cancelUrl);
+    if (params.managedPayments) {
+      body.set('managed_payments[enabled]', 'true');
+    }
     if (params.metadata) {
       for (const [k, v] of Object.entries(params.metadata)) {
         body.set(`metadata[${k}]`, v);
       }
     }
-    return this.post<StripeCheckoutSession>('/checkout/sessions', body);
+    return this.post<StripeCheckoutSession>('/checkout/sessions', body, params.apiVersion);
   }
 
   // --- Customer Portal ---
@@ -114,12 +156,12 @@ export class StripeClient {
 
   // --- Internal HTTP helpers ---
 
-  private async post<T>(path: string, body: URLSearchParams): Promise<T> {
+  private async post<T>(path: string, body: URLSearchParams, apiVersion?: string): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
         method: 'POST',
-        headers: this.headers,
+        headers: apiVersion ? { ...this.headers, 'Stripe-Version': apiVersion } : this.headers,
         body: body.toString(),
       });
     } catch (err) {
@@ -267,6 +309,13 @@ export interface StripeCheckoutSession {
   customer: string;
   subscription: string | null;
   metadata: Record<string, string>;
+}
+
+export interface StripeProduct {
+  id: string;
+  name: string;
+  default_price: string;
+  tax_code: string | null;
 }
 
 export interface StripePortalSession {

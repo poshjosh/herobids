@@ -10,6 +10,11 @@ Run both herobids and the external trading service it depends
 scripts/shell/run/reset-and-run-xstack.sh
 ```
 
+Test Stripe checkout + webhooks locally — see [stripe-local-webhook-testing.md](./stripe-local-webhook-testing.md)
+```sh
+scripts/shell/run/dev-with-stripe-webhook.sh
+```
+
 Tag release the specified version, updating changelog and package.json
 ```sh
 scripts/shell/ops/release.sh <version> --all
