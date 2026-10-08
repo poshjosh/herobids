@@ -15,6 +15,22 @@ function providerCapabilityGroup(categories: string[]): 'trading' | 'email' | 'o
 
 const CUSTOM_PROVIDER_OPTION = '__custom__';
 
+/**
+ * Temporary code-only switch (deliberately NOT operator config — pending a
+ * final decision on whether trading providers belong in the generic form at
+ * all) controlling whether callers that pass no `defaultCapability` (the
+ * Connections page "Add connection" and the create/edit agent form's
+ * connection picker) show the pre-listed Trading provider group. The current
+ * shipped behavior (hidden) is the default; flip to `true` to restore the
+ * old pre-listed dropdown entries for those two surfaces. Does not affect
+ * callers that explicitly pass `defaultCapability="trading"` (guided chat,
+ * the agent Trading capability tab, the Telegram /connect setup page) — they
+ * are unaffected either way. Does not affect custom-provider capability
+ * inference (typing a known provider id like "hyperliquid" into Custom mode
+ * already works regardless of this flag).
+ */
+const GENERIC_FORM_SHOWS_TRADING_PROVIDERS = false;
+
 interface SecretEntry {
   id: string;
   key: string;
@@ -47,6 +63,19 @@ export function canAutoApplyProviderTemplate(
   return Object.values(providerTemplates).some(
     (template) => template.length === keys.length && template.every((key, index) => key === keys[index]),
   );
+}
+
+export function deriveApiCapability(
+  isCustomProvider: boolean,
+  effectiveProvider: string,
+  selectedProvider: { categories: string[] } | undefined,
+  catalogProviders: ReadonlyArray<{ id: string; categories: string[] }>,
+): 'trading' | undefined {
+  const customProviderCatalogMatch = isCustomProvider
+    ? catalogProviders.find((p) => p.id === effectiveProvider)
+    : undefined;
+  const categories = (isCustomProvider ? customProviderCatalogMatch : selectedProvider)?.categories ?? [];
+  return providerCapabilityGroup(categories) === 'trading' ? 'trading' : undefined;
 }
 
 function createEntry(): SecretEntry {
@@ -154,11 +183,12 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
   }, [canGenerateWallet, credentialMode]);
 
   // Derive the API capability from the selected provider's categories.
-  // For custom providers we don't know the categories, so omit capability.
-  const apiCapability: 'trading' | undefined =
-    !isCustomProvider && providerCapabilityGroup(selectedProvider?.categories ?? []) === 'trading'
-      ? 'trading'
-      : undefined;
+  // For custom providers, infer trading-ness by matching the typed/lowercased
+  // label against the full (unfiltered) catalog — the same categories-based
+  // classification the dropdown path already uses. This never prompts the user;
+  // it only recognizes a known trading provider id typed into Custom mode
+  // (e.g. "hyperliquid"), exactly like picking it from a trading dropdown would.
+  const apiCapability = deriveApiCapability(isCustomProvider, effectiveProvider, selectedProvider, catalogQuery.data?.providers ?? []);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -225,7 +255,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
       <div style={{ marginBottom: '16px' }}>
         <FieldLabel>{intl.formatMessage({ id: 'setup.form.provider' })}</FieldLabel>
         <select value={effectiveProviderChoice} onChange={(e) => setProviderChoice(e.target.value)} style={inputStyle}>
-          {tradingProviders.length > 0 && (
+          {(defaultCapability === 'trading' || (defaultCapability === undefined && GENERIC_FORM_SHOWS_TRADING_PROVIDERS)) && tradingProviders.length > 0 && (
             <optgroup label={intl.formatMessage({ id: 'setup.form.group.trading' })}>
               {tradingProviders.map((provider) => (
                 <option key={provider.id} value={provider.id}>{provider.displayName}</option>

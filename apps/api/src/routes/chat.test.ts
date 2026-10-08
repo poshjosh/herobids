@@ -477,31 +477,37 @@ describe('synthesizePrompt — capital handling', () => {
 // ── executeChatAction: list_available_skills ────────────────────────────────
 
 describe('executeChatAction — list_available_skills', () => {
-  it('returns skills from the database when published skills exist', async () => {
-    const { db } = buildMockDb();
-
-    // Override the select mock to handle the skills query chain:
-    // db.select(...).from(skills).where(...).orderBy(...).limit(50)
+  function mockSkillsQuery(db: Database, rows: Array<Record<string, unknown>>) {
     db.select = vi.fn().mockImplementation((_cols?: unknown) => {
       const chain: Record<string, unknown> = {};
       chain.from = vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
           orderBy: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([
-              { id: 'trading', name: 'Trading', description: 'Trade crypto', capabilityFamilies: ['trading'] },
-              { id: 'email', name: 'Email', description: 'Send emails', capabilityFamilies: ['communication'] },
-            ]),
+            limit: vi.fn().mockResolvedValue(rows),
           }),
         }),
       });
       return chain;
     });
+  }
+
+  it('returns skills from the database when published skills exist (guided-setup trading enabled)', async () => {
+    const { db } = buildMockDb();
+
+    // Override the select mock to handle the skills query chain:
+    // db.select(...).from(skills).where(...).orderBy(...).limit(50)
+    mockSkillsQuery(db, [
+      { id: 'trading', name: 'Trading', description: 'Trade crypto', capabilityFamilies: ['trading'] },
+      { id: 'email', name: 'Email', description: 'Send emails', capabilityFamilies: ['communication'] },
+    ]);
 
     const result = await executeChatAction(
       makeToolCall('list_available_skills'),
       db,
       TEST_USER_ID,
       EMPTY_PROVIDERS_YAML,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      true, // guidedSetupTradingEnabled
     );
 
     const parsed = JSON.parse(result) as Record<string, unknown>;
@@ -511,6 +517,51 @@ describe('executeChatAction — list_available_skills', () => {
     expect((parsed.skills as Array<Record<string, unknown>>)[0]!.id).toBe('trading');
     expect((parsed.skills as Array<Record<string, unknown>>)[0]!.name).toBe('Trading');
     expect((parsed.skills as Array<Record<string, unknown>>)[0]!.capabilityFamilies).toEqual(['trading']);
+  });
+
+  it('excludes trading-capability skills by default (guided-setup trading hidden for now)', async () => {
+    const { db } = buildMockDb();
+    mockSkillsQuery(db, [
+      { id: 'trading', name: 'Trading', description: 'Trade crypto', capabilityFamilies: ['trading'] },
+      { id: 'email', name: 'Email', description: 'Send emails', capabilityFamilies: ['communication'] },
+    ]);
+
+    // No trailing flag passed — defaults to false (the parameter's own
+    // in-code default; this is a temporary code-only flag, not operator config).
+    const result = await executeChatAction(
+      makeToolCall('list_available_skills'),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    const skillList = parsed.skills as Array<Record<string, unknown>>;
+    expect(skillList).toHaveLength(1);
+    expect(skillList[0]!.id).toBe('email');
+    expect(skillList.some((skill) => skill.id === 'trading')).toBe(false);
+  });
+
+  it('excludes trading-capability skills when guided-setup trading is explicitly disabled', async () => {
+    const { db } = buildMockDb();
+    mockSkillsQuery(db, [
+      { id: 'trading', name: 'Trading', description: 'Trade crypto', capabilityFamilies: ['trading'] },
+      { id: 'email', name: 'Email', description: 'Send emails', capabilityFamilies: ['communication'] },
+    ]);
+
+    const result = await executeChatAction(
+      makeToolCall('list_available_skills'),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      false, // guidedSetupTradingEnabled
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    const skillList = parsed.skills as Array<Record<string, unknown>>;
+    expect(skillList).toHaveLength(1);
+    expect(skillList[0]!.id).toBe('email');
   });
 
   it('returns empty skills array on error', async () => {
@@ -1014,6 +1065,64 @@ describe('POST /chat/threads/:id/messages — preset classification', () => {
     const updateSet = state.updateSets[0] as Record<string, unknown>;
     const metadata = updateSet['metadata'] as { summary?: { preset?: string } };
     expect(metadata.summary?.preset).toBe('personal-assistant');
+  });
+
+  it('coerces a trading classification to custom when guided-setup trading is disabled (default)', async () => {
+    const { db, state } = buildMockDb({
+      threadRows: threadRow({ summary: { step: 'conversation' } }),
+      messageRows: [],
+    });
+    const app = Fastify({ logger: false });
+    decorateWithAuth(app);
+    // No trailing flag passed — defaults to false (the parameter's own
+    // in-code default; this is a temporary code-only flag, not operator config).
+    await chatRoutes(app, db, LLM_CONFIG, EMPTY_PROVIDERS_YAML, {} as Redis);
+    await app.ready();
+
+    mockClassifierToken('trading');
+    mockPlainResponse();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'help me trade crypto' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const updateSet = state.updateSets[0] as Record<string, unknown>;
+    const metadata = updateSet['metadata'] as { summary?: { preset?: string } };
+    expect(metadata.summary?.preset).toBe('custom');
+  });
+
+  it('preserves a trading classification when guided-setup trading is explicitly enabled', async () => {
+    const { db, state } = buildMockDb({
+      threadRows: threadRow({ summary: { step: 'conversation' } }),
+      messageRows: [],
+    });
+    const app = Fastify({ logger: false });
+    decorateWithAuth(app);
+    await chatRoutes(
+      app, db, LLM_CONFIG, EMPTY_PROVIDERS_YAML, {} as Redis,
+      undefined, undefined, undefined, undefined, undefined, {}, undefined, undefined, undefined,
+      true, // guidedSetupTradingEnabled
+    );
+    await app.ready();
+
+    mockClassifierToken('trading');
+    mockPlainResponse();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'help me trade crypto' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const updateSet = state.updateSets[0] as Record<string, unknown>;
+    const metadata = updateSet['metadata'] as { summary?: { preset?: string } };
+    expect(metadata.summary?.preset).toBe('trading');
   });
 
   it('does not re-classify when a preset is already set (sticky)', async () => {
@@ -2824,6 +2933,18 @@ describe('prompt injection defenses — buildBaseHeader Security section', () =>
     const prompt = buildCustomPrompt('user_msg_beef');
     expect(prompt).toContain('## Security');
     expect(prompt).toContain('<user_msg_beef>');
+  });
+
+  it('buildCustomPrompt omits the trading-skills escape hatch by default (guided-setup trading hidden for now)', () => {
+    const prompt = buildCustomPrompt('user_msg_beef');
+    expect(prompt).not.toContain('follow the trading agent connection flow');
+    expect(prompt).toContain('Trading skills are not offered right now');
+  });
+
+  it('buildCustomPrompt includes the trading-skills escape hatch when guided-setup trading is enabled', () => {
+    const prompt = buildCustomPrompt('user_msg_beef', true);
+    expect(prompt).toContain('follow the trading agent connection flow');
+    expect(prompt).not.toContain('Trading skills are not offered right now');
   });
 
   it('instructs to disregard content outside userMsgTag tags', () => {

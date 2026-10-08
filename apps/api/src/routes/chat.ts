@@ -143,6 +143,7 @@ When directing the user to a page on the platform, use Markdown links so they ar
 
 - [Agent creation form](/agents/new)
 - [Agents dashboard](/agents)
+- [Skills page](/skills)
 - [Connections page](/connections)
 - [Billing page](/billing)
 - [Settings page](/settings)
@@ -380,7 +381,23 @@ Include: goal/prompt, style, and selected connection only. Do NOT mention capita
 For personal-assistant email-management flows, once Gmail is linked, proceed to the next missing setup field or summarize the collected information for creation rather than switching to generic conversation.` + buildBaseReference();
 }
 
-export function buildCustomPrompt(userMsgTag: string): string {
+export function buildCustomPrompt(userMsgTag: string, tradingEnabled: boolean = false): string {
+  const tradingEscapeHatch = tradingEnabled
+    ? `
+
+If the selected skills include trading capabilities, follow the trading agent connection flow (preferredCapability: "trading") and collect capital, execution mode, and strategy preset as you would for a trading agent. List available skills with list_available_skills to discover valid skill IDs before calling create_agent.`
+    : `
+
+Trading skills are not offered right now. list_available_skills will not return any trading-capability skills, so this situation should not arise — but if the user explicitly asks for crypto/trading/market-buying-and-selling capability anyway, tell them they can add trading related skills themselves after creating the agent and continue with the non-trading skills they want instead. Never ask for capital, execution mode, strategy preset, filterTrades, or platform assessment in that case.`;
+
+  const confirmationSummaryRule = tradingEnabled
+    ? 'Include: goal/prompt, style, and selected connection only. Do NOT mention capital, execution mode, strategy, filterTrades, platform assessment, or "venue" unless the custom skills include trading capabilities.'
+    : 'Include: goal/prompt, style, and selected connection only. Do NOT mention capital, execution mode, strategy, filterTrades, platform assessment, or "venue".';
+
+  const excludeTradingRule = tradingEnabled 
+    ? "Do not ask for capital unless the selected skills include trading" 
+    : "Do NOT ask for capital, execution mode, strategy, filterTrades, platform assessment, venue or any trading related aspects";
+
   return buildBaseHeader(userMsgTag) + `
 
 ## Custom Agent Setup
@@ -390,18 +407,21 @@ You are setting up a CUSTOM agent. The user has already chosen this preset — d
 ### Conversation Flow
 1. Confirm they want a custom agent.
 2. Ask what they want their agent to do. Use list_available_skills to discover
-   available skills, then suggest relevant ones based on their goal.
+   available skills, then suggest relevant skills based on their goal. Use a numbered 
+   list for the suggested skills. The last item on that list should offer the user 
+   an escape hatch of not specifying a skill. Separately note to the user that 
+   their agents can automatically find and add the skills they need. Also note that
+   the user can add skills manually - include a clickable link to  the [Skills page](/skills).
 3. If the user doesn't express a need for specific skills, default to no skills
    (base only) — the agent can still reason and use built-in tools.
    Do NOT ask the user to choose or list skills; resolve them silently and list
    them only in the confirmation summary.
-4. Do not ask for capital unless the selected skills include trading.
+4. ${excludeTradingRule}.
 5. Apply the happy-path defaults for name, goal, and style.
 6. Once minimum required information is collected, present the fine-tune checkpoint. When the user is ready, show the confirmation summary and call create_agent.
 
 **CRITICAL for custom agents without trading skills:** Do NOT ask about or include capital, execution mode, strategy preset, filterTrades, or platform assessment. These are trading-only concepts. Only collect: goal, style, skill IDs, and any needed provider connections.
-
-If the selected skills include trading capabilities, follow the trading agent connection flow (preferredCapability: "trading") and collect capital, execution mode, and strategy preset as you would for a trading agent. List available skills with list_available_skills to discover valid skill IDs before calling create_agent.
+${tradingEscapeHatch}
 
 ## Checkpoint Trigger (Custom Agent)
 
@@ -409,7 +429,7 @@ Present the checkpoint after goal, skill selection, style (defaults to balanced)
 
 ## Confirmation Summary (Custom Agent)
 
-Include: goal/prompt, style, and selected connection only. Do NOT mention capital, execution mode, strategy, filterTrades, platform assessment, or "venue" unless the custom skills include trading capabilities.` + buildBaseReference();
+${confirmationSummaryRule}` + buildBaseReference();
 }
 
 /** @deprecated Use buildBasePrompt() directly. Kept for backward compatibility with tests. */
@@ -956,6 +976,14 @@ export async function executeChatAction(
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
   nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
+  /**
+   * Temporary code-only flag (deliberately NOT operator config — pending a
+   * final decision on guided-setup trading onboarding; do not promote to
+   * config/default.yaml until that decision is made). When false,
+   * `list_available_skills` excludes trading-capability skills so the
+   * custom-preset LLM can never discover/select them.
+   */
+  guidedSetupTradingEnabled: boolean = false,
 ): Promise<string> {
   switch (toolCall.name) {
     case 'list_compatible_connections': {
@@ -1138,7 +1166,7 @@ export async function executeChatAction(
 
     case 'list_available_skills': {
       try {
-        const availableSkills = await db
+        const rows = await db
           .select({
             id: skills.id,
             name: skills.name,
@@ -1149,6 +1177,14 @@ export async function executeChatAction(
           .where(eq(skills.publicationStatus, 'published'))
           .orderBy(asc(skills.name))
           .limit(50);
+
+        // Trading branch hidden for now (chat.guidedSetup.tradingEnabled=false):
+        // exclude trading-capability skills so the custom-preset flow can never
+        // select traderton/skills/crypto-trading (etc.) and re-derive the
+        // trading flow from skill choice.
+        const availableSkills = guidedSetupTradingEnabled
+          ? rows
+          : rows.filter((skill) => !skill.capabilityFamilies?.includes('trading'));
 
         return JSON.stringify({
           skills: availableSkills,
@@ -1654,6 +1690,16 @@ export async function invokeOnboardingLlm(
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
   nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
+  /**
+   * Temporary code-only flag (deliberately NOT operator config — pending a
+   * final decision on guided-setup trading onboarding). Threaded through to
+   * `buildCustomPrompt` (strips its trading-skills escape hatch) and
+   * `executeChatAction` (filters trading skills out of
+   * `list_available_skills`), so the custom-preset path can't re-derive the
+   * trading flow from skill selection even though `classifyPreset` already
+   * never returns `'trading'` when this is false.
+   */
+  guidedSetupTradingEnabled: boolean = false,
 ): Promise<LlmInvocationResult> {
   // Generate a per-invocation random tag name (4 hex chars = 65536 possibilities)
   const nonce = crypto.randomBytes(2).toString('hex');
@@ -1663,7 +1709,7 @@ export async function invokeOnboardingLlm(
   const preset = threadMetadata?.summary?.preset;
   const systemPrompt = preset === 'trading' ? buildTradingPrompt(userMsgTag)
     : preset === 'personal-assistant' ? buildPersonalAssistantPrompt(userMsgTag)
-    : preset === 'custom' ? buildCustomPrompt(userMsgTag)
+    : preset === 'custom' ? buildCustomPrompt(userMsgTag, guidedSetupTradingEnabled)
     : buildBasePrompt(userMsgTag);
 
   // Build the summary block from metadata
@@ -1840,7 +1886,7 @@ export async function invokeOnboardingLlm(
       // ── Dispatch tool call with error guard ──
       let toolResult: string;
       try {
-        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues, tradertonClient, profileReconciliationSaga, nonTradingDefaultTickIntervalMs);
+        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues, tradertonClient, profileReconciliationSaga, nonTradingDefaultTickIntervalMs, guidedSetupTradingEnabled);
       } catch (err) {
         toolResult = JSON.stringify({
           error: 'tool_execution_failed',
@@ -2074,6 +2120,24 @@ export async function chatRoutes(
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
   nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
+  /**
+   * Temporary code-only flag (deliberately NOT operator config — pending a
+   * final decision on whether/how guided-setup trading onboarding ships;
+   * revisit before promoting this to config/default.yaml). Callers normally
+   * leave this at its default; it exists as a parameter mainly so tests can
+   * exercise the `true` branch without a config fixture. When false, guided
+   * setup hides trading at both points it can surface:
+   *   1. `classifyPreset` never classifies a thread as `'trading'` (coerced to
+   *      `'custom'`), so `invokeOnboardingLlm` never loads `buildTradingPrompt`.
+   *   2. Threaded into `invokeOnboardingLlm` → `buildCustomPrompt` (strips its
+   *      trading-skills escape hatch) and `executeChatAction` (filters
+   *      trading-capability skills out of `list_available_skills`), so the
+   *      custom-preset path can't re-derive the trading flow from the user's
+   *      free-text intent/skill selection either.
+   * Flip the default to true to re-enable guided-setup trading onboarding
+   * end to end.
+   */
+  guidedSetupTradingEnabled: boolean = false,
 ): Promise<void> {
   /**
    * POST /chat/threads
@@ -2288,6 +2352,11 @@ export async function chatRoutes(
         } catch (err) {
           request.log.warn({ err, threadId: request.params.id }, 'Preset classification failed; defaulting to custom');
         }
+        // Trading branch is hidden for now (chat.guidedSetup.tradingEnabled=false):
+        // never route a thread into the trading prompt/flow until re-enabled.
+        if (classifiedPreset === 'trading' && !guidedSetupTradingEnabled) {
+          classifiedPreset = 'custom';
+        }
         effectiveMetadata = {
           ...(effectiveMetadata ?? {}),
           summary: { ...(effectiveMetadata?.summary ?? {}), preset: classifiedPreset },
@@ -2311,6 +2380,7 @@ export async function chatRoutes(
         tradertonClient,
         profileReconciliationSaga,
         nonTradingDefaultTickIntervalMs,
+        guidedSetupTradingEnabled,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)
@@ -2517,6 +2587,7 @@ export async function chatRoutes(
         tradertonClient,
         profileReconciliationSaga,
         nonTradingDefaultTickIntervalMs,
+        guidedSetupTradingEnabled,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)

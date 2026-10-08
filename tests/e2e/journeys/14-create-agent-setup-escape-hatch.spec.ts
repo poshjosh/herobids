@@ -107,16 +107,27 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     // ProviderSetupForm replaces the create agent modal content
     await expect(page.locator('div').filter({ hasText: /^Connect agent to external platform$/ }).first()).toBeVisible({ timeout: 5_000 });
 
-    // Fill in the setup form — provider is auto-selected (Hyperliquid) from catalog
-    await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('hyperliquid', { timeout: 5_000 });
-    await page.getByPlaceholder('e.g. My Gmail account').fill('My HL Account J14');
+    // The generic Add-connection entry point no longer pre-lists trading
+    // providers in the dropdown — it defaults to Custom provider. Trading
+    // venues (e.g. Hyperliquid) are still reachable here: the connection's
+    // display Name doubles as the provider id (lowercased), and typing a
+    // known trading provider id is inferred as a trading capability from
+    // the provider catalog, same as picking it from a dropdown would be.
+    await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('__custom__', { timeout: 5_000 });
+    await page.getByPlaceholder('e.g. My Gmail account').fill('hyperliquid');
 
-    // Credential fields render for the selected provider (Hyperliquid: apiKey, secret, walletAddress)
-    await expect(page.getByPlaceholder('0x...')).toHaveCount(2, { timeout: 5_000 });
+    // Custom mode renders freeform secret key/value rows (no structured
+    // field hints) — fill the Hyperliquid credential shape by hand.
+    await page.getByPlaceholder('Secret name').nth(0).fill('apiKey');
+    await page.getByPlaceholder('Secret value').nth(0).fill('test-api-key-j14');
 
-    await page.getByPlaceholder('0x...').first().fill('test-api-key-j14');
-    await page.locator('input[type="password"]').fill('test-secret-j14');
-    await page.getByPlaceholder('0x...').last().fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    await page.getByRole('button', { name: 'Add secret' }).click();
+    await page.getByPlaceholder('Secret name').nth(1).fill('secret');
+    await page.getByPlaceholder('Secret value').nth(1).fill('test-secret-j14');
+
+    await page.getByRole('button', { name: 'Add secret' }).click();
+    await page.getByPlaceholder('Secret name').nth(2).fill('walletAddress');
+    await page.getByPlaceholder('Secret value').nth(2).fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     // Submit
     await page.getByRole('button', { name: 'Connect AI agent' }).click();

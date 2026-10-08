@@ -17,7 +17,7 @@ import { IntlProvider } from 'react-intl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
-import { ProviderSetupForm, canAutoApplyProviderTemplate } from './ProviderSetupForm.js';
+import { ProviderSetupForm, canAutoApplyProviderTemplate, deriveApiCapability } from './ProviderSetupForm.js';
 
 const TEST_PROVIDER_CATALOG = {
   schemaVersion: 'v1' as const,
@@ -153,10 +153,10 @@ describe('ProviderSetupForm rendering', () => {
     expect(html).toContain(messages['setup.form.addSecret']);
   });
 
-  it('renders known provider options plus custom mode for general setup by default', () => {
+  it('hides trading provider options for general setup by default, keeping custom mode', () => {
     const html = renderForm();
     for (const provider of ['hyperliquid', 'bybit', 'jupiter', '1inch']) {
-      expect(html).toContain(`value="${provider}"`);
+      expect(html).not.toContain(`value="${provider}"`);
     }
     expect(html).toContain('value="__custom__"');
   });
@@ -168,10 +168,15 @@ describe('ProviderSetupForm rendering', () => {
     }
   });
 
-  it('renders email providers grouped separately from trading providers', () => {
+  it('renders the email provider group for general setup by default', () => {
     const html = renderForm();
-    expect(html).toContain(messages['setup.form.group.trading']);
     expect(html).toContain(messages['setup.form.group.email']);
+    expect(html).not.toContain(messages['setup.form.group.trading']);
+  });
+
+  it('renders the trading provider group when defaultCapability is trading', () => {
+    const html = renderForm('trading');
+    expect(html).toContain(messages['setup.form.group.trading']);
   });
 
   it('submit button is disabled on initial render because provider and label are empty', () => {
@@ -422,5 +427,34 @@ describe('ProviderSetupForm — template auto-apply predicate', () => {
         { key: 'customSecret', value: '' },
       ]),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveApiCapability (custom-mode trading inference)
+// ---------------------------------------------------------------------------
+
+describe('ProviderSetupForm — deriveApiCapability (custom-mode trading inference)', () => {
+  const catalogProviders = TEST_PROVIDER_CATALOG.providers;
+
+  it('infers trading for a custom label matching a known trading provider id', () => {
+    expect(deriveApiCapability(true, 'hyperliquid', undefined, catalogProviders)).toBe('trading');
+  });
+
+  it('infers trading for a custom label matching a swap-category provider id', () => {
+    expect(deriveApiCapability(true, 'jupiter', undefined, catalogProviders)).toBe('trading');
+  });
+
+  it('does not infer trading for a custom label matching a non-trading provider id', () => {
+    expect(deriveApiCapability(true, 'gmail', undefined, catalogProviders)).toBeUndefined();
+  });
+
+  it('does not infer trading for a custom label with no catalog match', () => {
+    expect(deriveApiCapability(true, 'mycustomtool', undefined, catalogProviders)).toBeUndefined();
+  });
+
+  it('ignores catalog matching entirely for non-custom selections, using selectedProvider directly', () => {
+    expect(deriveApiCapability(false, 'hyperliquid', { categories: ['trading'] }, catalogProviders)).toBe('trading');
+    expect(deriveApiCapability(false, 'gmail', { categories: ['messaging'] }, catalogProviders)).toBeUndefined();
   });
 });

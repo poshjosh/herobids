@@ -316,6 +316,51 @@ describe('POST /setup/provider-link', () => {
     expect(body['venueAccount']).toMatchObject({ id: 'va-new', venue: 'hyperliquid' });
   });
 
+  it('provisions a custom-mode-shaped hyperliquid submission (freeform secrets, capability=trading) identically to the catalog path', async () => {
+    // Mirrors exactly what ProviderSetupForm sends when the user types "Hyperliquid"
+    // into the Custom provider label field in custom mode: effectiveProvider resolves
+    // to the lowercased label ("hyperliquid"), deriveApiCapability matches it against
+    // the catalog and infers capability: 'trading', and secrets come from the freeform
+    // key/value entry rows rather than the structured-field UI.
+    const { client, invoke } = makeTradertonClient();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: {
+        provider: 'hyperliquid',
+        label: 'My Custom Hyperliquid',
+        credentialMode: 'manual',
+        secrets: {
+          'api-key': 'test-api-key', // freeform entry key name, canonicalized to `apiKey`
+          'secret-key': 'test-secret', // freeform entry key name, canonicalized to `secret`
+          walletAddress: '0xaAbBcCdDeEfF0011223344556677889900AaBbCc',
+        },
+        capability: 'trading',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    const call = invoke.mock.calls[0]![0];
+    expect(call.toolName).toBe('provision_venue_account');
+    expect(call.payload).toMatchObject({
+      venue: 'hyperliquid',
+      label: 'My Custom Hyperliquid',
+      secrets: expect.objectContaining({ apiKey: 'test-api-key', secret: 'test-secret' }),
+    });
+
+    // Same outcome shape as the catalog-driven hyperliquid test: only the connection
+    // is written locally, boundary-sourced venue account id flows through.
+    expect(insertedValues).toHaveLength(1);
+    expect(insertedValues[0]!['resolvedVenueAccountId']).toBe('va-new');
+    const body = res.json<Record<string, unknown>>();
+    expect(body['venueAccount']).toMatchObject({ id: 'va-new', venue: 'hyperliquid' });
+  });
+
   it('returns a mapped error and writes nothing locally when provisioning fails', async () => {
     const { client, invoke } = makeTradertonClient({
       kind: 'failure',

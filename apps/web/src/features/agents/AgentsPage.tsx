@@ -755,7 +755,6 @@ export function CreateAgentFlow({
   if (showSetup) {
     return (
       <ProviderSetupForm
-        defaultCapability="trading"
         oauthReturnTo="/agents?create=1&oauthReturn=1"
         onBeforeOAuthRedirect={() => {
           const { pendingFiles: _pendingFiles, ...serializableIntent } = intent;
