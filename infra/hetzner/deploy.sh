@@ -95,6 +95,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# ─── Source backend env file (before any terraform_output call) ──────────────
+# terraform_output inits the S3 backend for HEROBIDS_ENV, so the backend creds
+# must be loaded before the IP auto-detect and private-IP guard below.
+
+if [[ -n "${BACKEND_ENV_FILE}" ]]; then
+  if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
+    echo "ERROR: --backend-env-file '${BACKEND_ENV_FILE}' does not exist." >&2
+    exit 1
+  fi
+  echo "==> Sourcing backend env file: ${BACKEND_ENV_FILE}"
+  set -a
+  # shellcheck disable=SC1090
+  source "${BACKEND_ENV_FILE}"
+  set +a
+fi
+
 # ─── Determine server IP (if not provided explicitly) ────────────────────────
 
 if [[ -z "${SERVER_IP}" ]]; then
@@ -171,19 +187,6 @@ echo ""
 # ─── Step 2: Upload autoscale.env (infra secrets) ────────────────────────────
 
 echo "── Step 2/6: Upload autoscale.env ──"
-
-# Source backend env file if provided (--backend-env-file).
-if [[ -n "${BACKEND_ENV_FILE}" ]]; then
-  if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
-    echo "ERROR: --backend-env-file '${BACKEND_ENV_FILE}' does not exist." >&2
-    exit 1
-  fi
-  echo "==> Sourcing backend env file: ${BACKEND_ENV_FILE}"
-  set -a
-  # shellcheck disable=SC1090
-  source "${BACKEND_ENV_FILE}"
-  set +a
-fi
 
 if [[ -n "${TF_BACKEND_BUCKET:-}" ]]; then
   if ! "${SCRIPTS_DIR}/setup-autoscale-env.sh" --env "${HEROBIDS_ENV}" "${SERVER_IP}"; then

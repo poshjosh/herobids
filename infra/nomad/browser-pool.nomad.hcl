@@ -43,8 +43,11 @@ job "browser-pool" {
     }
 
     service {
-      name = "browser-pool"
-      port = "http"
+      # Nomad-native discovery: the worker resolves this via GET /v1/service/browser-pool,
+      # and agent nodes run no Consul (the default provider "consul" makes the job unplaceable).
+      provider = "nomad"
+      name     = "browser-pool"
+      port     = "http"
 
       check {
         type     = "http"

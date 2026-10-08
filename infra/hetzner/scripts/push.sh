@@ -135,7 +135,9 @@ if command -v nomad &>/dev/null && nomad server members &>/dev/null 2>&1; then
   for job in infra/nomad/*.nomad.hcl; do
     [ -f "$job" ] || continue
     echo "  → $(basename "$job")"
-    nomad job run "$job" || echo "  WARNING: $(basename "$job") failed to submit (non-fatal)"
+    # Bounded: `nomad job run` monitors the deployment and blocks forever if
+    # an allocation can't be placed.
+    timeout 180 nomad job run "$job" || echo "  WARNING: $(basename "$job") did not deploy cleanly within 180s (non-fatal); check: nomad job status $(basename "$job" .nomad.hcl)"
   done
 else
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Nomad not running — skipping infrastructure job submission."

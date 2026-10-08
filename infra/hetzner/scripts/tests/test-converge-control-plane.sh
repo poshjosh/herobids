@@ -525,7 +525,7 @@ cat > "${SETUP_BIN}/terraform" <<'STUB'
 #!/usr/bin/env bash
 echo "terraform $*" >> "${SETUP_LOG}"
 [[ "${STUB_TF_FAIL:-false}" == "true" ]] && { echo "Error: backend not initialised" >&2; exit 1; }
-[[ "$1" == "workspace" ]] && exit 0
+[[ "$1" == "init" || "$1" == "workspace" ]] && exit 0
 name="${!#}"
 var="STUB_TF_${name}"
 [[ -n "${!var+x}" ]] || { echo "Error: output ${name} not found" >&2; exit 1; }
@@ -541,11 +541,17 @@ echo "scp $*" >> "${SETUP_LOG}"
 STUB
 chmod +x "${SETUP_BIN}"/*
 
+# TF_DIR points at an empty dir so the real infra/hetzner/.env.backend is never sourced.
+SETUP_TF_DIR="${TEST_TMPDIR}/setup-tf-dir"
+mkdir -p "${SETUP_TF_DIR}"
+
 run_setup() {
   : > "${SETUP_LOG}"
   SETUP_EXIT=0
   SETUP_OUTPUT="$(env -u PRIVATE_SUBNET -u HEROBIDS_PRIVATE_SUBNET -u HEROBIDS_NOMAD_ENABLED \
+    -u TF_BACKEND_DYNAMODB_TABLE \
     PATH="${SETUP_BIN}:${PATH}" SETUP_LOG="${SETUP_LOG}" HEROBIDS_SSH_KEY="/dev/null" \
+    TF_DIR="${SETUP_TF_DIR}" TF_BACKEND_BUCKET=test-bucket TF_BACKEND_REGION=eu-central-1 \
     "$@" bash "${SETUP}" --env staging 203.0.113.10 2>&1)" || SETUP_EXIT=$?
   SETUP_CALLS="$(cat "${SETUP_LOG}")"
 }
@@ -567,6 +573,17 @@ run_setup STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24
 assert_eq "${SETUP_EXIT}" "0" "terraform path: succeeds"
 assert_contains "${SETUP_OUTPUT}" "from terraform output private_subnet_ip_range" "terraform path: prints the subnet source"
 assert_contains "${SETUP_CALLS}" "PRIVATE_SUBNET=10.0.0.0/24 " "terraform path: a stray PRIVATE_SUBNET does not override terraform"
+# Regression (bug 2026-10-08/001): outputs must come from the env's own state key,
+# not whichever backend key was last init'ed locally.
+assert_contains "${SETUP_CALLS}" "-backend-config=key=herobids/staging/terraform.tfstate" "terraform path: inits the staging state key"
+FIRST_TF_CALL="$(grep -m1 '^terraform ' "${SETUP_LOG}")"
+assert_contains "${FIRST_TF_CALL}" "terraform init " "terraform path: inits the backend before reading outputs"
+
+run_setup TF_BACKEND_BUCKET= STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24
+assert_neq "${SETUP_EXIT}" "0" "no backend creds: exits non-zero"
+assert_contains "${SETUP_OUTPUT}" "TF_BACKEND_BUCKET" "no backend creds: names the missing variable"
+assert_not_contains "${SETUP_CALLS}" "terraform" "no backend creds: never runs terraform against a stale backend"
+assert_not_contains "${SETUP_CALLS}" "ssh" "no backend creds: does not touch the server"
 
 run_setup STUB_TF_FAIL=true HEROBIDS_NOMAD_ENABLED=true HEROBIDS_PRIVATE_SUBNET=10.0.0.0/24
 assert_eq "${SETUP_EXIT}" "0" "overrides: runs without terraform state"

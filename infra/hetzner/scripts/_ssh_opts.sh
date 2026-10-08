@@ -168,14 +168,45 @@ parse_env_flag() {
   resolve_ssh_key
 }
 
-# terraform_output — workspace-aware terraform output wrapper.
+# terraform_output — environment-aware terraform output wrapper.
 # Usage: terraform_output [-raw] <output_name>
-# Runs in a subshell from TF_DIR, selects the correct workspace first.
-# Prints the output value to stdout.
-# Exits with a clear error if the workspace doesn't exist yet.
+# Runs in a subshell from TF_DIR. Each environment's state lives at its own S3
+# key (herobids/<env>/terraform.tfstate), and the key is fixed at `terraform
+# init` time — `workspace select` alone does NOT switch environments. So this
+# re-inits the backend for HEROBIDS_ENV on every call, then selects the
+# workspace. Without this, outputs come from whichever key was last init'ed on
+# this machine (e.g. env:/staging/herobids/production/... — a stale legacy
+# state). See docs/bug-reports/2026/10/08/001-*.md.
+# Backend creds come from the environment; if TF_BACKEND_BUCKET is unset,
+# ${TF_DIR}/.env.backend is sourced (inside the subshell only).
+# Prints the output value to stdout; errors go to stderr.
 terraform_output() {
   (
+    # Source before cd: TF_DIR may be relative to the caller's cwd.
+    if [[ -z "${TF_BACKEND_BUCKET:-}" && -f "${TF_DIR}/.env.backend" ]]; then
+      set -a
+      # shellcheck disable=SC1091
+      source "${TF_DIR}/.env.backend"
+      set +a
+    fi
     cd "${TF_DIR}" || { echo "ERROR: Cannot access terraform directory ${TF_DIR}" >&2; exit 1; }
+    [[ -n "${TF_BACKEND_BUCKET:-}" && -n "${TF_BACKEND_REGION:-}" ]] || {
+      echo "ERROR: TF_BACKEND_BUCKET / TF_BACKEND_REGION not set (and not found in ${TF_DIR}/.env.backend)." >&2
+      echo "Provide S3 backend credentials (e.g. --backend-env-file .env.backend)." >&2
+      exit 1
+    }
+    local init_args=(-input=false -reconfigure
+      "-backend-config=bucket=${TF_BACKEND_BUCKET}"
+      "-backend-config=key=herobids/${HEROBIDS_ENV}/terraform.tfstate"
+      "-backend-config=region=${TF_BACKEND_REGION}"
+    )
+    if [[ -n "${TF_BACKEND_DYNAMODB_TABLE:-}" ]]; then
+      init_args+=("-backend-config=dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}")
+    fi
+    terraform init "${init_args[@]}" >/dev/null || {
+      echo "ERROR: terraform init failed for backend key herobids/${HEROBIDS_ENV}/terraform.tfstate." >&2
+      exit 1
+    }
     terraform workspace select "${HEROBIDS_ENV}" >/dev/null 2>&1 || {
       echo "ERROR: Terraform workspace '${HEROBIDS_ENV}' does not exist." >&2
       echo "Run provision.sh --env ${HEROBIDS_ENV} first to create it." >&2
