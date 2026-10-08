@@ -14,7 +14,7 @@ name), see [production-notes.md](../runbooks/production-notes.md).
 
 - The control-plane server is provisioned and healthy (run the smoke test first — see `deploy.md`).
 - `<env>.tfvars` is populated (copy from `environment.tfvars.example` if not).
-- You are on the matching Terraform workspace: `terraform workspace select <env>`.
+- Manual Terraform commands below run in the env's own data dir, `TF_DATA_DIR=.terraform-envs/<env>` (from `infra/hetzner`; set up by `provision.sh`/`deploy.sh`). The shared `.terraform/` may point at the other env.
 - Your local `.env.<env>` at `infra/hetzner/.env.<env>` includes the Nomad worker config (see Step 3).
 - S3 backend is configured: you have an S3 bucket, AWS credentials, and optionally a DynamoDB table for locking. See `infra/hetzner/README.md` — "Terraform Remote Backend (S3)".
 - Nomad ACL token is available. If this is a fresh cluster, you will bootstrap ACLs after first boot (see Step 7b). If ACLs are already bootstrapped, have the token ready as a shell environment variable (`NOMAD_ACL_TOKEN`). See `infra/hetzner/README.md` — "Nomad ACL Authentication".
@@ -90,7 +90,7 @@ SHARED_POSTGRES_HOST=<control-plane-private-ip>
 
 To get the actual private IP after provisioning:
 ```bash
-cd infra/hetzner && terraform workspace select <env> && terraform output -raw control_plane_private_ip
+cd infra/hetzner && TF_DATA_DIR=.terraform-envs/<env> terraform output -raw control_plane_private_ip
 ```
 
 > **Private-IP drift caveat:** these values are hardcoded strings in
@@ -123,7 +123,7 @@ This provisions the private network, firewall, and attaches the control-plane. W
 
 ```bash
 # Get the new server IP (may have changed if server was recreated)
-cd infra/hetzner && terraform workspace select <env> && terraform output -raw server_ipv4
+cd infra/hetzner && TF_DATA_DIR=.terraform-envs/<env> terraform output -raw server_ipv4
 
 # Clear stale host key if IP was reused
 ssh-keygen -R <server-ip>
@@ -144,7 +144,7 @@ This uploads `.env.<env>` (app secrets), `autoscale.env` (backend credentials fr
 ## Step 7 — Verify Nomad server
 
 ```bash
-SERVER_IP=$(cd infra/hetzner && terraform workspace select <env> && terraform output -raw server_ipv4)
+SERVER_IP=$(cd infra/hetzner && TF_DATA_DIR=.terraform-envs/<env> terraform output -raw server_ipv4)
 
 # Server should be alive, advertising the private IP (10.x.x.x), NOT 172.17.x.x
 ssh root@${SERVER_IP} 'nomad server members'
@@ -204,7 +204,7 @@ When ready to test agent launching:
 
 ```bash
 cd infra/hetzner
-terraform workspace select <env>
+export TF_DATA_DIR=.terraform-envs/<env>
 terraform apply -var-file=<env>.tfvars -var="agent_node_count=1"
 ```
 
@@ -253,9 +253,9 @@ this setup flow:
 
 | What | Command |
 |---|---|
-| Server IP | `cd infra/hetzner && terraform workspace select <env> && terraform output -raw server_ipv4` |
-| Agent node IPs | `cd infra/hetzner && terraform output -json agent_node_public_ips` |
-| Private IP | `cd infra/hetzner && terraform output -raw control_plane_private_ip` |
+| Server IP | `cd infra/hetzner && TF_DATA_DIR=.terraform-envs/<env> terraform output -raw server_ipv4` |
+| Agent node IPs | `cd infra/hetzner && TF_DATA_DIR=.terraform-envs/<env> terraform output -json agent_node_public_ips` |
+| Private IP | `cd infra/hetzner && TF_DATA_DIR=.terraform-envs/<env> terraform output -raw control_plane_private_ip` |
 | Nomad server status | `ssh root@<ip> 'nomad server members'` |
 | Nomad node status | `ssh root@<ip> 'nomad node status'` |
 | Deploy | `infra/hetzner/deploy.sh --env <env> <ip> --env-file infra/hetzner/.env.<env>` |

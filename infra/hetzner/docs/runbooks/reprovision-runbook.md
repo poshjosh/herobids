@@ -38,8 +38,9 @@ Nomad disabled.
 > `production-notes.md` before overriding it with `HEROBIDS_SSH_KEY`.
 >
 > Replace `<ip>` with the control-plane public IP as you go (get it with
-> `terraform_output -raw server_ipv4` after step 3, or `terraform output -raw
-> server_ipv4` from `infra/hetzner` directly).
+> `terraform_output -raw server_ipv4` after step 3, or
+> `TF_DATA_DIR=.terraform-envs/<env> terraform output -raw server_ipv4` from
+> `infra/hetzner` directly. The shared `.terraform/` may point at the other env).
 
 ---
 
@@ -102,7 +103,7 @@ ssh root@<ip> 'ip -4 addr show enp7s0'
 ```
 
 - If `enp7s0` has a private IP (the subnet's `<control-plane-private-ip>/32`,
-  read it from `terraform output -raw control_plane_private_ip`)
+  read it from `TF_DATA_DIR=.terraform-envs/<env> terraform output -raw control_plane_private_ip`)
   **and** `nomad.hcl` advertise shows a real IP (not `__PRIVATE_IP__`): proceed to step 5.
 - If `enp7s0` is `DOWN`/no IP: **reboot the node** and re-check:
 
@@ -287,7 +288,7 @@ start detected`.
 infra/hetzner/scripts/smoke-test.sh --env <env> <ip>
 ```
 
-(The `<ip>` may be optional — `smoke-test.sh` auto-detects it via `terraform output` when omitted.)
+(The `<ip>` may be optional — `smoke-test.sh` auto-detects it via `terraform_output` when omitted.)
 
 Expect `Passed: 13, Failed: 0, Skipped: 3` on staging (browser/OAuth/Telegram
 skipped). Production skips the staging-hooks check instead — see
@@ -300,7 +301,7 @@ Also verify the Traderton boundary integration (from the smoke test's
 # a. agent image on GHCR
 docker manifest inspect ghcr.io/poshjosh/herobids-agent:latest
 
-# b. agent node can pull it (<agent-private-ip> from `terraform output -raw agent_node_private_ips`)
+# b. agent node can pull it (<agent-private-ip> from `TF_DATA_DIR=.terraform-envs/<env> terraform output -raw agent_node_private_ips`)
 ssh root@<ip> 'ssh -i /root/.ssh/deploy_key root@<agent-private-ip> "docker pull ghcr.io/poshjosh/herobids-agent:latest"'
 ```
 

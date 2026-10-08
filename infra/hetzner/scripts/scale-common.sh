@@ -325,18 +325,31 @@ tf_backend_configured() {
   return 0
 }
 
+# tf_use_env_data_dir — point every later terraform call (in this shell) at the
+# env's own data dir, ${TERRAFORM_DIR}/.terraform-envs/<env>, the same layout as
+# terraform_output/provision.sh/destroy.sh on the operator machine. It sits
+# under the units' ReadWritePaths and is gitignored, so push.sh's git reset
+# keeps it. Inherited TF_WORKSPACE is cleared so it cannot override the
+# selection. See docs/bug-reports/2026/10/08/005-*.md and 006-*.md.
+tf_use_env_data_dir() {
+  export TF_DATA_DIR="${TERRAFORM_DIR}/.terraform-envs/${HEROBIDS_ENV}"
+  unset TF_WORKSPACE
+}
+
 # tf_init_backend — run terraform init with S3 backend configuration.
 # Must be called before any terraform plan/apply in autoscale scripts.
 #
-# Uses -reconfigure to avoid interactive prompts. This is correct for the
-# autoscale use case: systemd services always target the same backend, and
-# -reconfigure ensures stale local .terraform state doesn't cause drift.
+# Uses -reconfigure to avoid interactive prompts. -reconfigure re-points the
+# backend key but does NOT reset the selected workspace, which init then checks
+# against the new key. That is why every tf_* helper runs in the env's own
+# data dir (tf_use_env_data_dir).
 # Operators should NOT use this function for manual Terraform sessions —
 # use provision.sh instead, which handles backend init separately.
 #
 # Uses HEROBIDS_ENV to derive the state key.
 tf_init_backend() {
   tf_ensure_env
+  tf_use_env_data_dir
 
   if ! tf_backend_configured; then
     die "S3 backend not configured. Set TF_BACKEND_BUCKET, TF_BACKEND_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY." 1
@@ -367,6 +380,7 @@ tf_init_backend() {
 # tf_select_workspace — select or create the Terraform workspace matching HEROBIDS_ENV.
 tf_select_workspace() {
   tf_ensure_env
+  tf_use_env_data_dir
 
   cd "${TERRAFORM_DIR}"
 
@@ -419,6 +433,7 @@ tf_ensure_ready() {
 # arguments — they appear in process listings and terraform logs. Use TF_VAR_*
 # environment variables for sensitive inputs instead.
 tf_apply_var() {
+  tf_use_env_data_dir
   cd "${TERRAFORM_DIR}"
 
   local -a apply_args=(-auto-approve)

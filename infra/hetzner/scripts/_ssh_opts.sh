@@ -177,6 +177,17 @@ parse_env_flag() {
 # workspace. Without this, outputs come from whichever key was last init'ed on
 # this machine (e.g. env:/staging/herobids/production/... — a stale legacy
 # state). See docs/bug-reports/2026/10/08/001-*.md.
+# Each env gets its own TF_DATA_DIR (${TF_DIR}/.terraform-envs/<env>) instead of
+# the shared ${TF_DIR}/.terraform. `init` validates the locally selected
+# workspace against the new key, so re-initing the shared dir with a selection
+# left over from the other env aborts ("Currently selected workspace
+# "production" does not exist"), and re-initing it also repointed the operator's
+# manual sessions. Same isolation as provision-staging.sh. Inherited
+# TF_WORKSPACE / TF_CLI_ARGS* are unset so they cannot override the selection
+# or inject arguments.
+# See docs/bug-reports/2026/10/08/005-*.md.
+# `workspace select` (never `new`, never output-first) is the existence check:
+# `terraform output` in a missing workspace writes an empty state object to S3.
 # Backend creds come from the environment; if TF_BACKEND_BUCKET is unset,
 # ${TF_DIR}/.env.backend is sourced (inside the subshell only).
 # Prints the output value to stdout; errors go to stderr.
@@ -203,8 +214,11 @@ terraform_output() {
     if [[ -n "${TF_BACKEND_DYNAMODB_TABLE:-}" ]]; then
       init_args+=("-backend-config=dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}")
     fi
+    # Relative to TF_DIR (we cd'ed above). Gitignored.
+    export TF_DATA_DIR=".terraform-envs/${HEROBIDS_ENV}"
+    unset TF_WORKSPACE TF_CLI_ARGS TF_CLI_ARGS_init TF_CLI_ARGS_workspace TF_CLI_ARGS_output
     terraform init "${init_args[@]}" >/dev/null || {
-      echo "ERROR: terraform init failed for backend key herobids/${HEROBIDS_ENV}/terraform.tfstate." >&2
+      echo "ERROR: terraform init failed for backend key herobids/${HEROBIDS_ENV}/terraform.tfstate (TF_DATA_DIR=${TF_DIR}/${TF_DATA_DIR})." >&2
       exit 1
     }
     terraform workspace select "${HEROBIDS_ENV}" >/dev/null 2>&1 || {

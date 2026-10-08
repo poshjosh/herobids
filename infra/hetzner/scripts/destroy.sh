@@ -63,7 +63,7 @@ source "${SCRIPT_DIR}/_ssh_opts.sh"
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
 VAR_FILE=""
-TF_CLI_ARGS=""
+VAR_FILE_ARGS=()
 AUTO_APPROVE=false
 PROD_ACK=false
 BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${TF_DIR}/.env.backend}"
@@ -159,7 +159,7 @@ if [[ -n "${VAR_FILE}" ]]; then
     echo "ERROR: --var-file '${VAR_FILE}' does not exist." >&2
     exit 1
   fi
-  TF_CLI_ARGS="-var-file=${VAR_FILE}"
+  VAR_FILE_ARGS=("-var-file=${VAR_FILE}")
   echo "==> Using var-file: ${VAR_FILE}"
 fi
 
@@ -180,6 +180,21 @@ if [[ -n "${BACKEND_ENV_FILE}" ]]; then
   source "${BACKEND_ENV_FILE}"
   set +a
 fi
+
+# ─── Terraform environment isolation ─────────────────────────────────────────
+# After sourcing the backend file, so it cannot reintroduce these either. An
+# inherited TF_WORKSPACE would also make `workspace select` below fail with a
+# misleading "does not exist".
+unset TF_WORKSPACE TF_CLI_ARGS TF_CLI_ARGS_init TF_CLI_ARGS_workspace
+unset TF_CLI_ARGS_plan TF_CLI_ARGS_destroy
+
+# One data dir per env (same as provision.sh and terraform_output), relative
+# to TF_DIR. Re-initing the shared .terraform/ while it still selected the
+# other env aborted init. See docs/bug-reports/2026/10/08/005-*.md and 006-*.md.
+export TF_DATA_DIR=".terraform-envs/${HEROBIDS_ENV}"
+# Start from "default" (always exists) so a missing workspace reaches the
+# "Nothing to destroy" check below instead of aborting init.
+rm -f "${TF_DATA_DIR}/environment"
 
 # ─── Terraform backend init ──────────────────────────────────────────────────
 
@@ -268,8 +283,7 @@ terraform init "${INIT_ARGS[@]}" >/dev/null
 
 echo ""
 echo "==> [${HEROBIDS_ENV}] Previewing resources to destroy..."
-# shellcheck disable=SC2086
-terraform plan -destroy ${TF_CLI_ARGS}
+terraform plan -destroy ${VAR_FILE_ARGS[@]+"${VAR_FILE_ARGS[@]}"}
 
 # ─── Confirmation ────────────────────────────────────────────────────────────
 
@@ -297,11 +311,9 @@ fi
 echo ""
 echo "==> [${HEROBIDS_ENV}] Running terraform destroy..."
 if [[ "${AUTO_APPROVE}" == "true" ]]; then
-  # shellcheck disable=SC2086
-  terraform destroy -auto-approve ${TF_CLI_ARGS}
+  terraform destroy -auto-approve ${VAR_FILE_ARGS[@]+"${VAR_FILE_ARGS[@]}"}
 else
-  # shellcheck disable=SC2086
-  terraform destroy ${TF_CLI_ARGS}
+  terraform destroy ${VAR_FILE_ARGS[@]+"${VAR_FILE_ARGS[@]}"}
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────

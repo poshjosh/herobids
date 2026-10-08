@@ -408,3 +408,48 @@ in sync with `cloud-init.yaml` (a test compares the unit content and bridge subn
 `scripts/tests/test-converge-control-plane.sh`, `cloud-init.yaml` (sync comment),
 `runbooks/reprovision-runbook.md`, `README.md`. See
 `docs/bug-reports/2026/10/07/002-*` and `003-*`.
+
+## 21. One shared `.terraform/` data dir across staging and production
+
+**Date:** 2026-10-08
+**Environment:** Operator machine (both envs); control plane exposed in principle
+
+**Symptom:** `deploy.sh --env staging` read stale production-keyed state (bug
+001), then, after that fix, aborted at step 3 with `Currently selected
+workspace "production" does not exist` (bug 005).
+
+**Root cause:** Every script shared `infra/hetzner/.terraform/`, which holds
+both the S3 backend key and the selected workspace.
+- The key is fixed at `terraform init`. `workspace select` only picks the
+  `env:/<ws>/` prefix under that key, so select alone never switches env.
+- `init` checks the *currently selected* workspace against the new key, so
+  re-initing the shared dir with the other env's selection aborts.
+- `provision.sh` selected/created the workspace *before* init, so it acted on
+  the last-init'ed key and created cross-keyed objects
+  (`env:/staging/herobids/production/...`).
+- The bug 001 fix only "worked" because one of those cross-keyed objects still
+  existed. Deleting it (bug 001's own follow-up) exposed bug 005. Fix + cleanup
+  were each fine alone.
+
+**Fix:** Every script runs Terraform in a per-env data dir,
+`TF_DATA_DIR=.terraform-envs/<env>` (control plane:
+`${TERRAFORM_DIR}/.terraform-envs/<env>`), inits before any workspace command,
+and unsets inherited `TF_WORKSPACE` / `TF_CLI_ARGS*`. Manual sessions use the
+same dir.
+
+**Rules that fall out of it:**
+- Init first, in the env's own data dir, then `workspace select`.
+- Read-only paths (`terraform_output`, `destroy.sh`) never `workspace new`.
+- `terraform output` against a missing workspace **writes** an empty state
+  object to S3. Never probe the backend with made-up workspace names
+  (`TF_WORKSPACE=nonexistent terraform output` created
+  `env:/nonexistent/herobids/staging/terraform.tfstate` during this
+  investigation).
+- Don't name a shell variable `TF_CLI_ARGS`; Terraform reads it from the env.
+- When a fix and a state cleanup land together, re-verify after the cleanup.
+
+**Files changed:** `scripts/_ssh_opts.sh`, `scripts/provision.sh`,
+`scripts/destroy.sh`, `scripts/scale-common.sh`, `cloud-init.yaml`,
+`scripts/setup-control-plane.sh`, tests, `README.md`, runbooks. See
+`docs/bug-reports/2026/10/08/001-*`, `005-*`, `006-*`. traderton had the same
+bug: its `docs/bug-reports/2026/10/08/001-*`.

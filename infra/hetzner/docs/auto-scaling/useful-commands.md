@@ -15,8 +15,9 @@ Server IP and agent node IPs change on recreation. Always check first:
 ```bash
 cd infra/hetzner
 
-# Ensure you're initialized with the S3 backend and on the right workspace
-terraform workspace select <env>
+# Use the env's own Terraform data dir (initialized by provision.sh / deploy.sh;
+# the shared .terraform/ may point at the other env — see README "Terraform Workspaces")
+export TF_DATA_DIR=.terraform-envs/<env>
 
 terraform output -raw server_ipv4          # control-plane public IP
 terraform output -raw control_plane_private_ip  # control-plane private IP
@@ -94,7 +95,7 @@ Requires `prevent_destroy = false` on `hcloud_server.default` in `main.tf` (beca
 
 ```bash
 cd infra/hetzner
-terraform workspace select <env>
+export TF_DATA_DIR=.terraform-envs/<env>
 terraform apply -var-file=<env>.tfvars -var="agent_node_count=1"
 ```
 
@@ -238,10 +239,12 @@ systemctl show nomad-scale-in.service -p EnvironmentFiles
 **Verify backend connectivity:**
 
 ```bash
-# Try a manual terraform init (source the env file first)
+# Try a manual terraform init (source the env file first) in the autoscaler's
+# own data dir (tf_use_env_data_dir in scale-common.sh)
 cd /opt/herobids/infra/hetzner
 source /etc/herobids/autoscale.env
-terraform init \
+export TF_DATA_DIR=/opt/herobids/infra/hetzner/.terraform-envs/${HEROBIDS_ENV}
+terraform init -input=false -reconfigure \
   -backend-config="bucket=${TF_BACKEND_BUCKET}" \
   -backend-config="key=herobids/${HEROBIDS_ENV}/terraform.tfstate" \
   -backend-config="region=${TF_BACKEND_REGION}"
@@ -260,7 +263,8 @@ aws s3 ls "s3://${TF_BACKEND_BUCKET}/herobids/" --region "${TF_BACKEND_REGION}"
 | `Missing backend environment variables` | `/etc/herobids/autoscale.env` missing or incomplete | Re-run `deploy.sh --backend-env-file .env.backend` to regenerate the env file |
 | `Error configuring S3 backend` | Invalid credentials or bucket | Verify AWS credentials; check bucket exists and region matches |
 | `Error acquiring the state lock` | Previous terraform run interrupted | `terraform force-unlock <LOCK_ID>` |
-| `Failed to select workspace` | First run on new environment | The scripts auto-create the workspace; check for underlying init error |
+| `Failed to select workspace` | First run on new environment | The autoscaler and `provision.sh` auto-create the workspace (`terraform_output` and `destroy.sh` never do); check for underlying init error |
+| `Currently selected workspace "<other-env>" does not exist` | A Terraform data dir shared between envs | Use the env's own data dir, `.terraform-envs/<env>` (all scripts do) |
 
 **After fixing:**
 

@@ -94,7 +94,7 @@ case "${NOMAD_ENABLED}" in
     echo "ERROR: Could not determine whether Nomad is enabled for ${HEROBIDS_ENV} (${NOMAD_ENABLED_SOURCE} = '${NOMAD_ENABLED}')." >&2
     if [[ -s "${TF_ERROR_FILE}" ]]; then
       echo "  terraform said:" >&2
-      sed 's/^/    /' "${TF_ERROR_FILE}" | head -5 >&2
+      sed 's/^/    /' "${TF_ERROR_FILE}" | head -12 >&2
     fi
     echo "  Fix Terraform access for workspace '${HEROBIDS_ENV}', or set" >&2
     echo "  HEROBIDS_NOMAD_ENABLED=true HEROBIDS_PRIVATE_SUBNET=<cidr> and pass <server-ip>." >&2

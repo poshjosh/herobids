@@ -1049,6 +1049,76 @@ assert_contains "${RUN_OUTPUT}" "S3 backend not configured" "tf_ensure_ready rep
 test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════
+# Per-env data dir (bugs 2026-10-08/005, 006)
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "tf_* helpers use the env's own data dir"
+
+# Models real Terraform: the selected workspace is TF_WORKSPACE, else
+# <data dir>/environment (default "default"); init rejects a selection that
+# the key's workspaces (default, staging) don't contain; select/new write it.
+DATADIR_MOCK_DIR="${TEST_TMPDIR}/datadir-mock-bin"
+mkdir -p "${DATADIR_MOCK_DIR}"
+cat > "${DATADIR_MOCK_DIR}/terraform" << 'DATADIRMOCK'
+#!/usr/bin/env bash
+data_dir="${TF_DATA_DIR:-.terraform}"
+echo "terraform[${data_dir}] $*" >> "${TF_MOCK_CALLS}"
+selected="${TF_WORKSPACE:-$(cat "${data_dir}/environment" 2>/dev/null || echo default)}"
+case "$1" in
+  init)
+    [[ "${selected}" == "default" || "${selected}" == "staging" ]] || {
+      echo "Error: Currently selected workspace \"${selected}\" does not exist" >&2; exit 1; }
+    mkdir -p "${data_dir}" ;;
+  workspace)
+    case "$2" in
+      show) echo "${selected}" ;;
+      select|new)
+        [[ -z "${TF_WORKSPACE:-}" ]] || { echo "workspace overridden by TF_WORKSPACE" >&2; exit 1; }
+        printf '%s' "$3" > "${data_dir}/environment" ;;
+    esac ;;
+  apply)
+    [[ "${selected}" == "staging" ]] || { echo "Error: apply in workspace '${selected}'" >&2; exit 1; } ;;
+esac
+exit 0
+DATADIRMOCK
+chmod +x "${DATADIR_MOCK_DIR}/terraform"
+
+# The control plane's shared .terraform/ selects "production" (e.g. a manual
+# session), and TF_WORKSPACE=production is inherited.
+DATADIR_TF_DIR="${TEST_TMPDIR}/terraform"
+rm -rf "${DATADIR_TF_DIR}/.terraform" "${DATADIR_TF_DIR}/.terraform-envs"
+mkdir -p "${DATADIR_TF_DIR}/.terraform"
+printf 'production' > "${DATADIR_TF_DIR}/.terraform/environment"
+export TF_MOCK_CALLS="${TEST_TMPDIR}/datadir-calls"
+: > "${TF_MOCK_CALLS}"
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    source "${TESTS_DIR}/source-helper.sh"
+    export PATH="${DATADIR_MOCK_DIR}:${PATH}"
+    export HEROBIDS_ENV="staging" TF_WORKSPACE="production"
+    export TF_BACKEND_BUCKET="test-bucket" TF_BACKEND_REGION="us-east-1"
+    export AWS_ACCESS_KEY_ID="AKID123" AWS_SECRET_ACCESS_KEY="SECRET123"
+    tf_ensure_ready
+    tf_apply_var "agent_node_count=2"
+  } 2>&1
+)" || RUN_EXIT=$?
+
+DATADIR_CALLS="$(cat "${TF_MOCK_CALLS}")"
+EXPECTED_DIR="${DATADIR_TF_DIR}/.terraform-envs/staging"
+assert_eq "${RUN_EXIT}" "0" "stale shared selection + inherited TF_WORKSPACE: init, select and apply succeed"
+assert_not_contains "${RUN_OUTPUT}" "does not exist" "init never sees the stale selection"
+assert_contains "${DATADIR_CALLS}" "terraform[${EXPECTED_DIR}] init " "init runs in .terraform-envs/staging"
+assert_contains "${DATADIR_CALLS}" "terraform[${EXPECTED_DIR}] apply " "apply runs in the same data dir"
+assert_eq "$(grep -cv "^terraform\[${EXPECTED_DIR}\] " "${TF_MOCK_CALLS}")" "0" "no terraform call uses another data dir"
+assert_eq "$(cat "${DATADIR_TF_DIR}/.terraform/environment")" "production" "shared .terraform/ is left untouched"
+assert_eq "$(cat "${EXPECTED_DIR}/environment")" "staging" "per-env data dir selects staging"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═════════════════════════════════════════════════════════════════════════════
 

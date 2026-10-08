@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Staging deploys no longer abort at "Converge control plane" after a production run.** `terraform_output` re-inited the shared `infra/hetzner/.terraform/` with the env's state key (bug 2026-10-08/001). `init` then rejected the workspace selection left over from the other env with `Currently selected workspace "production" does not exist`. It now uses a per-env data dir, `infra/hetzner/.terraform-envs/<env>/` (gitignored), ignores an inherited `TF_WORKSPACE`, and leaves the shared `.terraform/` used by manual sessions alone. `setup-control-plane.sh` now shows the full Terraform error. See `docs/bug-reports/2026/10/08/005-terraform-output-init-aborts-on-stale-shared-workspace-selection.md`.
+- **`provision.sh`, `destroy.sh` and the control-plane autoscaler now use per-env Terraform data dirs too.**
+  - `provision.sh` selected or created the workspace *before* init. It acted on whichever env's key was last init'ed, so it could create cross-keyed workspaces such as `env:/staging/herobids/production/...`. It now runs init → select-or-create.
+  - `destroy.sh` aborted at init after a run for the other env.
+  - Both ignore inherited `TF_WORKSPACE`/`TF_CLI_ARGS*`, and no longer keep the var-file in a variable named `TF_CLI_ARGS`, which Terraform itself reads.
+  - `scale-common.sh` (and the cloud-init boot init) use `${TERRAFORM_DIR}/.terraform-envs/<env>`. `autoscale-smoke-test.sh` checks that dir.
+  - Operator docs now use `TF_DATA_DIR=.terraform-envs/<env>` for manual `terraform` commands. New `test-provision-destroy.sh`.
+  - See `docs/bug-reports/2026/10/08/006-provision-destroy-autoscaler-share-terraform-data-dir.md`.
+
 ## v0.6.4 - 2026-10-08
 
 ### Added

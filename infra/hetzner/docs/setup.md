@@ -105,7 +105,7 @@ You should see: `Hi poshjosh/herobids! You've successfully authenticated...`
 
 - **Provision the server** `./scripts/provision.sh --env production --var-file production.tfvars`
 
-- Read the production ip by running this in the same shell as the provision script: `terraform output -raw server_ipv4`
+- Read the production ip from `infra/hetzner` (provision.sh keeps each env's Terraform data dir in `.terraform-envs/<env>`): `TF_DATA_DIR=.terraform-envs/production terraform output -raw server_ipv4`
 
 - Add the following to `~/.ssh/config`:
 

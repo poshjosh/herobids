@@ -6,7 +6,7 @@
 the autoscale smoke/trigger tests) silently read the **wrong environment's state**. Today it
 aborted the staging deploy; with no explicit IP it would have targeted a stale server
 (`78.46.192.37`) from a legacy state file.
-**Status:** FIX IMPLEMENTED. Not committed yet.
+**Status:** FIXED in `96c4d440`, but the fix was incomplete. Once the legacy objects below were deleted, it aborted the next staging deploy at the same step. Completed by `docs/bug-reports/2026/10/08/005-terraform-output-init-aborts-on-stale-shared-workspace-selection.md`.
 **Fix location:** herobids `infra/hetzner/scripts/_ssh_opts.sh` (`terraform_output`),
 `infra/hetzner/deploy.sh` (source backend env before the first Terraform read),
 `infra/hetzner/scripts/tests/test-converge-control-plane.sh`.
@@ -55,7 +55,9 @@ warned about this; traderton's `_ssh_opts.sh` was fixed the same way.
   `_ssh_opts.sh` (6 failures) and pass with the fix. `infra/hetzner/scripts/tests/run-all.sh`
   passes.
 - Live, read-only: `terraform_output` resolves staging → `138.199.172.202` / `10.0.0.0/24`,
-  production → `167.233.213.107` / `10.0.0.0/24`.
+  production → `167.233.213.107` / `10.0.0.0/24`. This only passed because the legacy
+  `env:/production/herobids/staging/...` object still existed, so the leftover local
+  `production` selection was valid under the staging key. See 005.
 
 ## Follow-up (not done; needs operator approval)
 
@@ -63,3 +65,7 @@ Two legacy cross-keyed state objects remain in the bucket and are what the bug r
 `env:/staging/herobids/production/terraform.tfstate` and
 `env:/production/herobids/staging/terraform.tfstate` (both from 2026-08-28). Archive or delete
 them once you're sure nothing references them.
+
+**Done 2026-10-08 ~15:57.** Both objects were copied to `archive/2026-10-08/env:/...` in the
+same bucket and then deleted (S3 delete markers, so earlier versions are still recoverable).
+That deletion exposed bug 005.

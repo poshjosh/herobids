@@ -28,7 +28,7 @@ not something pinned in Terraform; **confirm the actual IP after provisioning**
 rather than assuming it:
 
 ```sh
-terraform output -raw control_plane_private_ip   # authoritative
+TF_DATA_DIR=.terraform-envs/production terraform output -raw control_plane_private_ip   # authoritative (from infra/hetzner)
 ssh root@<production-ip> 'ip -4 addr show enp7s0' # cross-check on the box
 ```
 

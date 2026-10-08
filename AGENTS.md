@@ -156,6 +156,8 @@ See [Agent Mode Purity](./docs/tech/agents/runtime-boundary-and-message-contract
 
 - If your changes affect skills, read: [Skill authoring guide](./docs/tech/agents/skill-authoring.md) — conventions for writing skills and a JSON template for `POST /skills`
 
+- If your changes affect `infra/hetzner` (deploy scripts, Terraform, autoscaler), read: [Infra lessons](./infra/hetzner/docs/auto-scaling/lessons-learnt.md) and the [infra docs index](./infra/hetzner/docs/README.md). Terraform always runs in the env's own data dir, `TF_DATA_DIR=.terraform-envs/<env>`, never the shared `.terraform/` (lesson #21).
+
 ## Best Practices
 
 Before making changes:
@@ -173,6 +175,8 @@ Before making changes:
 - Do not introduce circular package dependencies.
 - LLM hidden reasoning or provider-supplied thinking content must never be persisted as conversation history, used for tool parsing, or shown to users. Strip provider-specific thinking blocks at the `@herobids/llm` boundary. Internal application state such as structured summaries, collected facts, and workflow metadata may be stored separately when needed, but it must not contain verbatim hidden reasoning or chain-of-thought. Persist only visible assistant text in conversation history.
 - Run `pnpm lint` before considering work complete — it must pass.
+- **Investigate before fixing.** Before changing code for a bug, read the related docs, search `docs/bug-reports/` by keyword (the error text, script and function names), and read `git log` for the affected files. Check whether a recent fix, cleanup, or state change interacted with this one. A fix that "worked" may have depended on state that has since changed.
+- **Never mutate shared infrastructure state while investigating.** No Terraform command that can write to the S3 backend (`apply`, `workspace new`, or `output`/`init` against a made-up workspace), no S3/DNS/server changes, unless the user approved it. If something was written by mistake, say so immediately.
 - Test names describe behavior, not implementation (`"rejects order when notional exceeds limit"`).
 - Commits should be atomic and focused. One logical change per commit.
 

@@ -14,12 +14,13 @@
 #   infra/hetzner/scripts/provision.sh --env production --var-file production.tfvars
 #
 # Environment:
-#   HEROBIDS_ENV   Deployment environment (default: production).
-#                  Terraform reads this via the environment variable in terraform.tfvars.
-#                  The --env flag is informational here and sets HEROBIDS_ENV for
-#                  subsequent script calls; it does not override terraform.tfvars.
+#   HEROBIDS_ENV   Deployment environment (default: production). Selects the S3
+#                  state key (herobids/<env>/terraform.tfstate), the Terraform
+#                  workspace and the per-env data dir (.terraform-envs/<env>).
+#                  It does not override `environment` in the tfvars file.
 #
-#   TF_CLI_ARGS    Extra arguments passed to terraform commands (e.g., -var-file).
+# Inherited TF_WORKSPACE / TF_CLI_ARGS* are cleared so they cannot redirect the
+# workspace or inject arguments. See docs/bug-reports/2026/10/08/006-*.md.
 #
 # Requires:
 #   - terraform (>= 1.0)
@@ -38,7 +39,7 @@ source "${SCRIPT_DIR}/_ssh_opts.sh"
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
 VAR_FILE=""
-TF_CLI_ARGS=""
+VAR_FILE_ARGS=()
 AUTO_APPROVE=false
 BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${TF_DIR}/.env.backend}"
 
@@ -124,7 +125,7 @@ if [[ -n "${VAR_FILE}" ]]; then
     exit 1
   fi
 
-  TF_CLI_ARGS="-var-file=${VAR_FILE}"
+  VAR_FILE_ARGS=("-var-file=${VAR_FILE}")
   echo "==> Using var-file: ${VAR_FILE}"
 fi
 
@@ -163,24 +164,19 @@ if [[ -n "${BACKEND_ENV_FILE}" ]]; then
   set +a
 fi
 
-# ─── Terraform workspace ─────────────────────────────────────────────────────
+# ─── Terraform environment isolation ─────────────────────────────────────────
+# After sourcing the backend file, so it cannot reintroduce these either.
+unset TF_WORKSPACE TF_CLI_ARGS TF_CLI_ARGS_init TF_CLI_ARGS_workspace
+unset TF_CLI_ARGS_plan TF_CLI_ARGS_apply
 
-# Check BEFORE selecting — warn if still on deprecated default workspace
-CURRENT_WS="$(terraform workspace show)"
-if [[ "${CURRENT_WS}" == "default" ]]; then
-  echo "" >&2
-  echo "⚠️  WARNING: You are on the 'default' terraform workspace." >&2
-  echo "   The default workspace is deprecated. Use --env staging|production." >&2
-  echo "" >&2
-fi
-
-echo "==> Selecting terraform workspace: ${HEROBIDS_ENV}"
-terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null || \
-  terraform workspace new "${HEROBIDS_ENV}" || {
-    echo "ERROR: Failed to select or create terraform workspace '${HEROBIDS_ENV}'." >&2
-    echo "Check that terraform is functional and the state is not corrupted." >&2
-    exit 1
-  }
+# One data dir per env (same as terraform_output in _ssh_opts.sh), relative to
+# TF_DIR. The shared .terraform/ let a staging run inherit production's backend
+# key and workspace selection. See docs/bug-reports/2026/10/08/005-*.md.
+export TF_DATA_DIR=".terraform-envs/${HEROBIDS_ENV}"
+# Start from "default", which always exists under any key. A remembered
+# selection whose workspace no longer exists would abort init before we
+# could create it.
+rm -f "${TF_DATA_DIR}/environment"
 
 # ─── Terraform init ──────────────────────────────────────────────────────────
 
@@ -223,12 +219,25 @@ fi
 
 terraform init "${INIT_ARGS[@]}"
 
+# ─── Terraform workspace ─────────────────────────────────────────────────────
+# After init: the workspace list belongs to the backend key that init just
+# configured. (Selecting before init acted on whatever key was last init'ed
+# and could create cross-keyed workspaces such as
+# env:/staging/herobids/production/... — see bug 2026-10-08/001.)
+
+echo "==> Selecting terraform workspace: ${HEROBIDS_ENV}"
+terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null || \
+  terraform workspace new "${HEROBIDS_ENV}" || {
+    echo "ERROR: Failed to select or create terraform workspace '${HEROBIDS_ENV}'." >&2
+    echo "Check that terraform is functional and the state is not corrupted." >&2
+    exit 1
+  }
+
 # ─── Terraform plan (preview) ────────────────────────────────────────────────
 
 echo ""
 echo "==> [${HEROBIDS_ENV}] Running terraform plan..."
-# shellcheck disable=SC2086
-terraform plan ${TF_CLI_ARGS}
+terraform plan ${VAR_FILE_ARGS[@]+"${VAR_FILE_ARGS[@]}"}
 
 # ─── Production confirmation ─────────────────────────────────────────────────
 
@@ -267,9 +276,7 @@ fi
 echo ""
 echo "==> [${HEROBIDS_ENV}] Running terraform apply..."
 if [[ "${AUTO_APPROVE}" == "true" ]]; then
-  # shellcheck disable=SC2086
-  terraform apply -auto-approve ${TF_CLI_ARGS}
+  terraform apply -auto-approve ${VAR_FILE_ARGS[@]+"${VAR_FILE_ARGS[@]}"}
 else
-  # shellcheck disable=SC2086
-  terraform apply ${TF_CLI_ARGS}
+  terraform apply ${VAR_FILE_ARGS[@]+"${VAR_FILE_ARGS[@]}"}
 fi

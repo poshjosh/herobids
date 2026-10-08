@@ -586,7 +586,24 @@ cat > "${SETUP_BIN}/terraform" <<'STUB'
 #!/usr/bin/env bash
 echo "terraform $*" >> "${SETUP_LOG}"
 [[ "${STUB_TF_FAIL:-false}" == "true" ]] && { echo "Error: backend not initialised" >&2; exit 1; }
-[[ "$1" == "init" || "$1" == "workspace" ]] && exit 0
+echo "terraform-data-dir ${TF_DATA_DIR:-.terraform}" >> "${SETUP_LOG}"
+# Models real Terraform: the selected workspace is TF_WORKSPACE, else
+# <data dir>/environment (default "default"); init validates it against the
+# backend key's workspaces (here: default, staging); select writes it.
+data_dir="${TF_DATA_DIR:-.terraform}"
+selected="${TF_WORKSPACE:-$(cat "${data_dir}/environment" 2>/dev/null || echo default)}"
+case "$1" in
+  init)
+    [[ "${selected}" == "default" || "${selected}" == "staging" ]] || {
+      echo "Error: Currently selected workspace \"${selected}\" does not exist" >&2; exit 1; }
+    mkdir -p "${data_dir}"; exit 0 ;;
+  workspace)
+    [[ -z "${TF_WORKSPACE:-}" ]] || { echo "The selected workspace is currently overridden using the TF_WORKSPACE environment variable." >&2; exit 1; }
+    [[ "$2" == "select" && "$3" == "staging" ]] || { echo "Error: workspace '$3' not found" >&2; exit 1; }
+    printf '%s' "$3" > "${data_dir}/environment"; exit 0 ;;
+  output)
+    [[ "${selected}" == "staging" ]] || { echo "Error: output read from workspace '${selected}'" >&2; exit 1; } ;;
+esac
 name="${!#}"
 var="STUB_TF_${name}"
 [[ -n "${!var+x}" ]] || { echo "Error: output ${name} not found" >&2; exit 1; }
@@ -639,6 +656,21 @@ assert_contains "${SETUP_CALLS}" "PRIVATE_SUBNET=10.0.0.0/24 " "terraform path: 
 assert_contains "${SETUP_CALLS}" "-backend-config=key=herobids/staging/terraform.tfstate" "terraform path: inits the staging state key"
 FIRST_TF_CALL="$(grep -m1 '^terraform ' "${SETUP_LOG}")"
 assert_contains "${FIRST_TF_CALL}" "terraform init " "terraform path: inits the backend before reading outputs"
+
+# Regression (bug 2026-10-08/005): the shared .terraform still selects
+# "production" after a production deploy (and the operator's shell may export
+# TF_WORKSPACE). A staging read must neither abort on it nor touch it.
+rm -rf "${SETUP_TF_DIR}/.terraform" "${SETUP_TF_DIR}/.terraform-envs"
+mkdir -p "${SETUP_TF_DIR}/.terraform"
+printf 'production' > "${SETUP_TF_DIR}/.terraform/environment"
+run_setup TF_WORKSPACE=production STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24
+assert_eq "${SETUP_EXIT}" "0" "stale shared workspace selection: staging read succeeds"
+assert_not_contains "${SETUP_OUTPUT}" "does not exist" "stale shared workspace selection: init does not see it"
+assert_contains "${SETUP_CALLS}" "terraform-data-dir .terraform-envs/staging" "stale shared workspace selection: uses the per-env data dir"
+assert_eq "$(grep -cvx 'terraform-data-dir .terraform-envs/staging' <(grep '^terraform-data-dir ' "${SETUP_LOG}"))" "0" \
+  "stale shared workspace selection: never uses the shared data dir"
+assert_eq "$(cat "${SETUP_TF_DIR}/.terraform/environment")" "production" "stale shared workspace selection: shared .terraform left untouched"
+assert_eq "$(cat "${SETUP_TF_DIR}/.terraform-envs/staging/environment")" "staging" "stale shared workspace selection: per-env dir selects staging"
 
 run_setup TF_BACKEND_BUCKET= STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24
 assert_neq "${SETUP_EXIT}" "0" "no backend creds: exits non-zero"

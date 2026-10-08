@@ -98,8 +98,10 @@ fix.
    resource: `terraform output -raw environment` MUST print `staging`, and
    `terraform output -raw server_ipv4` is the expected server IP. (Do not rely
    on the `terraform_output` helper in `_ssh_opts.sh` here — it defaults
-   `HEROBIDS_ENV` to `production` and does not re-initialize the backend, so it
-   can report the wrong environment.)
+   `HEROBIDS_ENV` to `production`, and when this plan was written it did not
+   re-initialize the backend, so it could report the wrong environment.
+   *Update 2026-10-08:* it now inits the env's key in a per-env data dir,
+   `.terraform-envs/<env>`; see `docs/bug-reports/2026/10/08/001`, `005`.)
 4. Enumerate resources with `terraform state list`. Note that `state list`
    reads **recorded** state only; it cannot see provider-side drift or a server
    destroyed outside Terraform. Detect drift or absence with this

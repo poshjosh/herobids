@@ -21,7 +21,7 @@ Deployment of Herobids on Hetzner Cloud VPS (CPX22, Ubuntu 24.04). Supports two 
 - **App domain**: `openaidom.com` for production, `staging.openaidom.com` for staging. Override via `app_domain` in `terraform.tfvars`.
 - **Env file**: `.env.staging` and `.env.prod` in `infra/hetzner/` (gitignored). The `--file` flag on `setup-env.sh` accepts any path.
 - **Compose overlay**: `docker-compose.{staging,prod}.yaml`. Scripts auto-select the correct overlay from `HEROBIDS_ENV`.
-- **Terraform state**: Managed via workspaces. `provision.sh --env <name>` automatically selects the correct workspace. For manual terraform commands, switch first: `terraform workspace select staging` or `terraform workspace select production`.
+- **Terraform state**: Managed via workspaces, one Terraform data dir per env (`infra/hetzner/.terraform-envs/<env>/`, gitignored). `provision.sh --env <name>` inits that env's key there and selects (or creates) the workspace. For manual terraform commands, use the same dir: `export TF_DATA_DIR=.terraform-envs/staging` (or `production`). See "Terraform Workspaces" below.
 
 ### Selecting an environment
 
@@ -46,21 +46,27 @@ Each environment has its own Terraform workspace and an isolated state key in th
 | `production` | Production server (`herobids`) | `herobids/production/terraform.tfstate` |
 | `default` | Deprecated — do not use | — |
 
-All deploy scripts automatically select the correct workspace via the `--env` flag.
+All deploy scripts automatically select the correct workspace via the `--env` flag. Every script that runs Terraform does so in a per-env data dir, `infra/hetzner/.terraform-envs/<env>/` (gitignored), and never touches the shared `infra/hetzner/.terraform/`:
+- `provision.sh` and `destroy.sh`: init the env's state key there, then select the workspace (`provision.sh` creates it if missing; `destroy.sh` never does).
+- `terraform_output` in `scripts/_ssh_opts.sh`: the same, read-only, never creates a workspace.
+- The autoscaler on the control plane (`scale-common.sh`): `${TERRAFORM_DIR}/.terraform-envs/<env>/`.
 
-**Manual terraform commands** require explicit workspace selection:
+Why: the S3 key is fixed at `terraform init` time, and `workspace select` does not change it. One shared data dir let a staging run read production's key, or abort on production's leftover workspace selection (bugs `docs/bug-reports/2026/10/08/001`, `005`, `006`).
+
+**Manual terraform commands** use the same per-env data dir. After any script has run for that env, it is already initialized and selected:
 ```bash
 cd infra/hetzner
-terraform workspace select staging    # or: production
-terraform plan                        # scoped to the selected environment
-terraform state list                  # shows only that environment's resources
+export TF_DATA_DIR=.terraform-envs/staging   # or: production
+terraform plan -var-file=staging.tfvars      # scoped to that environment
+terraform state list                         # shows only that environment's resources
+terraform output -raw server_ipv4
 ```
+If the dir does not exist yet, init it first (see **Operator init (local machine)** below).
 
-**Common workspace commands:**
+**Common workspace commands** (with `TF_DATA_DIR` set as above):
 ```bash
-terraform workspace list              # show all workspaces and which is active
+terraform workspace list              # workspaces under this env's state key
 terraform workspace show              # print the current workspace name
-terraform workspace select staging    # switch to staging
 ```
 
 **Provisioning a new environment:**
@@ -134,13 +140,14 @@ are baked into cloud-init or stored in Terraform state.
 
 **Operator init (local machine):**
 
-When running terraform manually (without `provision.sh`), pass backend config via `-backend-config`:
+When running terraform manually (without `provision.sh`), pass backend config via `-backend-config`. Use the env's own data dir (the same one `terraform_output` uses). Re-initing one shared `.terraform/` with the other env's key fails with `Currently selected workspace "production" does not exist`, because init checks the leftover selection against the new key (`docs/bug-reports/2026/10/08/005-*.md`):
 
 ```bash
 cd infra/hetzner
+export TF_DATA_DIR=.terraform-envs/staging   # one data dir per env
 
 # Initialize with S3 backend for staging
-terraform init \
+terraform init -reconfigure \
   -backend-config="bucket=your-tf-state-bucket" \
   -backend-config="key=herobids/staging/terraform.tfstate" \
   -backend-config="region=us-east-1"
@@ -853,6 +860,7 @@ When an alert is received, follow these steps:
 3. **Check Terraform state:**
    ```bash
    cd /opt/herobids/infra/hetzner
+   export TF_DATA_DIR=.terraform-envs/<env>   # the autoscaler's data dir
    terraform workspace show    # verify correct environment
    terraform state list        # verify remote state accessible
    terraform plan              # check for drift
@@ -874,7 +882,7 @@ When an alert is received, follow these steps:
    - **Manual scale-out:** If the autoscaler is down, scale manually:
      ```bash
      cd /opt/herobids/infra/hetzner
-     terraform apply -auto-approve -var "agent_node_count=<N+1>"
+     TF_DATA_DIR=.terraform-envs/<env> terraform apply -auto-approve -var "agent_node_count=<N+1>"
      echo "<N+1>" > /var/run/nomad-autoscale-node-count
      ```
    - **Reset alert state after manual fix:**
@@ -1095,11 +1103,11 @@ cp production.tfvars.example production.tfvars
 ```
 
 The `--var-file` flag is passed through to `terraform plan` and `terraform apply`.
-Ad-hoc terraform commands must also include workspace selection and `-var-file`:
+Ad-hoc terraform commands must also use the env's data dir and `-var-file`:
 
 ```bash
-terraform workspace select staging && terraform plan -var-file=staging.tfvars
-terraform workspace select staging && terraform output -var-file=staging.tfvars
+TF_DATA_DIR=.terraform-envs/staging terraform plan -var-file=staging.tfvars
+TF_DATA_DIR=.terraform-envs/staging terraform output
 ```
 
 **Approach B: Symlink (legacy, simpler for single-env workflows).**
@@ -1231,9 +1239,8 @@ All commands accept `--env staging|production` (default: `production`).
 # Stream logs from a specific server
 ./scripts/logs.sh 1.2.3.4 -- api
 
-# SSH into the server (with workspaces: select the workspace first, then read output)
-terraform workspace select staging
-ssh root@$(terraform output -raw server_ipv4)
+# SSH into the server (read the IP from the env's own Terraform data dir)
+ssh root@$(TF_DATA_DIR=.terraform-envs/staging terraform output -raw server_ipv4)
 # Or use the deploy scripts which handle this automatically:
 ./scripts/logs.sh --env staging
 

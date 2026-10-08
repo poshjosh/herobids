@@ -483,6 +483,8 @@ runcmd:
         . /etc/herobids/autoscale.env
         if [ -d /opt/herobids/infra/hetzner ]; then
           cd /opt/herobids/infra/hetzner
+          # Same per-env data dir as tf_use_env_data_dir in scale-common.sh.
+          export TF_DATA_DIR=/opt/herobids/infra/hetzner/.terraform-envs/${environment}
           TF_INIT_ARGS="-input=false -backend-config=bucket=$TF_BACKEND_BUCKET -backend-config=key=herobids/${environment}/terraform.tfstate -backend-config=region=$TF_BACKEND_REGION"
           if [ -n "$TF_BACKEND_DYNAMODB_TABLE" ]; then
             TF_INIT_ARGS="$TF_INIT_ARGS -backend-config=dynamodb_table=$TF_BACKEND_DYNAMODB_TABLE"

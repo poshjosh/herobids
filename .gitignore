@@ -65,6 +65,8 @@ drizzle/meta/.snapshot.json
 *.tfstate.*
 infra/hetzner/terraform.tfstate.d/
 .terraform/
+# Per-env TF_DATA_DIRs used by terraform_output (infra/hetzner/scripts/_ssh_opts.sh)
+infra/hetzner/.terraform-envs/
 *.tfvars
 !.tfvars.example
 

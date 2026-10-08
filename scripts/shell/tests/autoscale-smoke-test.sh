@@ -249,7 +249,7 @@ TF_OUTPUT="$(remote_with_env '
   TF_VAR_min_agent_nodes=0 TF_VAR_max_agent_nodes=99 \
   cd /opt/herobids/infra/hetzner && \
   source /etc/herobids/autoscale.env && \
-  terraform workspace show 2>&1
+  TF_DATA_DIR=.terraform-envs/${HEROBIDS_ENV} terraform workspace show 2>&1
 ')" || true
 check "Terraform workspace is ${HEROBIDS_ENV}" \
   bash -c "echo '${TF_OUTPUT}' | grep -q '${HEROBIDS_ENV}'"
