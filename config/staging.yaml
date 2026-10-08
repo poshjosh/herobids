@@ -180,6 +180,24 @@ usageBilling:
       - packId: Topup5
         externalId: price_1UOLxxCDR4lTtUGFGBrqb4Cn
         cents: 500
+      - packId: Topup20
+        externalId: price_1UOM6DCDR4lTtUGF6bQvYU7F
+        cents: 2000
+      - packId: Topup50
+        externalId: price_1UOM9QCDR4lTtUGFJCdjfsGs
+        cents: 5000
+      - packId: Topup100
+        externalId: price_1UOMAeCDR4lTtUGFybH603g3
+        cents: 10000
+      - packId: Topup200
+        externalId: price_1UOMCyCDR4lTtUGFRoSjiDsp
+        cents: 20000
+      - packId: Topup500
+        externalId: price_1UOMESCDR4lTtUGFW94Lk0L8
+        cents: 50000
+      - packId: Topup1000
+        externalId: price_1UOMFtCDR4lTtUGFWLkqt3JW
+        cents: 100000        
     creem:
       - packId: Topup5
         externalId: prod_3WCPXEgotvZ85zdrD9qnP8

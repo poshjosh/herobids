@@ -14,7 +14,7 @@
  * traderton Redis.
  */
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { ActorEventRelay } from '../../agents/actor-event-relay.js';
@@ -53,6 +53,21 @@ describe.skipIf(SKIP)('Worker: actor-event relay end-to-end', () => {
   const redis = new Redis(parseRedisUrl(REDIS_URL));
   const agentId = crypto.randomUUID();
   const streamKey = `agent:outbound:${agentId}`;
+
+  // The relay's lease and cursor keys (lease:actor-event-relay,
+  // actor-event-relay:cursor) are global, not namespaced per test run. If a
+  // previous run of this suite was interrupted before its afterAll ran (CI
+  // kill, crash, timeout), the lease can outlive that run for up to its 30s
+  // TTL and make this run's tick() a silent no-op via holdLease() — the
+  // relay behaves correctly (refusing to double-process while another
+  // worker holds the lease) but the test would then see zero stream entries
+  // for a reason unrelated to the behaviour under test. Clear both before
+  // the test starts, not just after, so stale state from an interrupted
+  // prior run can never poison this run.
+  beforeAll(async () => {
+    await redis.del('actor-event-relay:cursor').catch(() => { /* ignore */ });
+    await redis.del('lease:actor-event-relay').catch(() => { /* ignore */ });
+  });
 
   afterAll(async () => {
     await redis.del(streamKey).catch(() => { /* ignore */ });
