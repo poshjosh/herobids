@@ -176,3 +176,16 @@ UAT rows (when UI changes): N/A (no UI changes).
 Residual risks / blockers: Live cross-stack verification (V1.4 backfill --apply + V2 live DB/Redis/agent-log checks) and the traderton xstack boundary deploy were DEFERRED — no stack running and bringing one up needs operator credentials; covered by the automated gates per the plan's non-reachable fallback. Open follow-ups: D10 missed-stop reconciliation; traderton consumer-only actor-type fence for scan_consumer_notifications + lifecycle tools; preset identity on swap venues (D3); full cross-stack CI leg for Part C.
 Next allowed item: live verification once a non-destructive cross-stack is available (run the backfill CLI, then the plan's V2 checks).
 ```
+
+```text
+Date: 2026-10-09
+Item / batch: C2.3 parity-drift follow-up — reclassify drifted mirrors + tag-based pins
+Starting SHAs: herobids=e84c7c5a (main), traderton=5c87b15 (v0.1.2; sibling checkout)
+Scope completed: (a) reclassified two mirror-only entries that herobids had intentionally extended beyond traderton — `tick-gates-session-hours` (narrowed region to SESSION_LOCAL_HOURS..isWithinTradingHours so herobids-only `msUntilNextAllowedHour`/`fetchVolatilityPct`/D5 gate fields drift free) and `domain-trading-trading-protocol` (narrowed region to `WatchThresholdWakeContextSchema`..EOF so the herobids-only repeating-reminder fields drift free); the `ReminderWakeContextSchema` extension is now explicitly herobids-owned; (b) switched both protected slow-tests CI pins from hard-coded SHAs to immutable tag refs with a `# parity-pin` marker; (c) added `--bump-parity-pin <sibling-tag>` + a pre-release parity gate to both `scripts/shell/ops/release.sh`.
+Commits: (none — leaves uncommitted working-tree changes for operator review/commit)
+Focused validation: `node scripts/check-parity-drift.mjs` → `parity-drift: PASSED` against the sibling traderton checkout; `bash -n` clean on both release.sh.
+Broader validation: manifest JSON parses; both `slow-tests.yml` pin lines carry `# parity-pin` markers.
+UAT rows (when UI changes): N/A.
+Residual risks / blockers: The new tag pair is not yet the definitive C2.3 pair — herobids `v0.6.5` predates these manifest edits, so the reciprocal traderton→herobids pin must be re-bumped once a herobids release tags a commit containing the narrowed manifest. Bootstrap sequence: release herobids (tag `vX`) → run traderton `release.sh --bump-parity-pin vX` (and herobids `--bump-parity-pin <traderton-tag>` for its side) → record the final pair here.
+Next allowed item: release both repos in order, bump both pins to the resulting tags, and record the definitive pair (bootstrap noted above).
+```

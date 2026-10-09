@@ -14,6 +14,14 @@
 #   scripts/shell/ops/release.sh --all            # run all tests, no version bump
 #   scripts/shell/ops/release.sh                  # run core tests, no version bump
 #
+# Parity pin (herobids ↔ traderton mirrors):
+#   scripts/shell/ops/release.sh --bump-parity-pin v0.1.2
+#     Update the traderton ref pinned in .github/workflows/slow-tests.yml to the
+#     given tag/sha and record the new comparison pair in the C2.3 execution
+#     ledger (docs/features/2026/09/18/001-trading-extraction-completion/EXECUTION_LEDGER.md).
+#     Run this after releasing traderton, so the next herobids release/hook
+#     parity-checks against the matching traderton revision.
+#
 # Examples:
 #   scripts/shell/ops/release.sh 0.1.2
 #   scripts/shell/ops/release.sh v0.1.2 --all
@@ -45,12 +53,21 @@ header() { echo -e "\n${BOLD}${CYAN}══ $* ══${RESET}"; }
 
 VERSION=""
 RUN_ALL=false
+BUMP_PARITY_REF=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --all)
       RUN_ALL=true
       shift
+      ;;
+    --bump-parity-pin)
+      if [[ -z "${2:-}" ]]; then
+        err "--bump-parity-pin requires a traderton tag/sha argument"
+        exit 1
+      fi
+      BUMP_PARITY_REF="$2"
+      shift 2
       ;;
     --help|-h)
       sed -n '2,/^set -euo/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'
@@ -70,6 +87,50 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# ─── Parity pin bump (herobids ↔ traderton mirrors) ──────────────────────────
+
+# Standalone action: repoint the traderton ref pinned in slow-tests.yml and
+# record the new comparison pair in the C2.3 ledger. No version bump, no commit.
+PARITY_WORKFLOW="${ROOT}/.github/workflows/slow-tests.yml"
+PARITY_LEDGER="${ROOT}/docs/features/2026/09/18/001-trading-extraction-completion/EXECUTION_LEDGER.md"
+
+if [[ -n "$BUMP_PARITY_REF" ]]; then
+  header "Parity pin bump"
+
+  if [[ ! -f "$PARITY_WORKFLOW" ]]; then
+    err "Parity workflow not found: ${PARITY_WORKFLOW}"
+    exit 1
+  fi
+
+  # The traderton checkout step is identified by `repository: poshjosh/traderton`;
+  # its `ref:` line carries a `# parity-pin` comment. Repoint only that ref.
+  if ! grep -q 'repository: poshjosh/traderton' "$PARITY_WORKFLOW"; then
+    err "Expected 'repository: poshjosh/traderton' in ${PARITY_WORKFLOW}; aborting."
+    exit 1
+  fi
+
+  sed -i "" -E \
+    "s|(^[[:space:]]*ref: ).*( # parity-pin.*)$|\1${BUMP_PARITY_REF}\2|" \
+    "$PARITY_WORKFLOW"
+
+  CURRENT_PIN=$(grep -E '^[[:space:]]*ref: .*# parity-pin' "$PARITY_WORKFLOW" | sed -E 's/^[[:space:]]*ref: ([^ #]+).*/\1/')
+  ok "Pinned traderton ref → ${CURRENT_PIN}"
+
+  # Record the new pair in the C2.3 ledger (append a dated batch-record line).
+  if [[ -f "$PARITY_LEDGER" ]]; then
+    PIN_LINE="Parity pin bump: herobids \`\${{ github.sha }}\` ↔ traderton \`${CURRENT_PIN}\` ($(date +%Y-%m-%d))."
+    printf '  - %s\n' "$PIN_LINE" >> "$PARITY_LEDGER"
+    ok "Recorded new pair in EXECUTION_LEDGER.md"
+  else
+    warn "Ledger not found at ${PARITY_LEDGER}; record the new pair manually:"
+    warn "  herobids=\${{ github.sha }} ↔ traderton=${CURRENT_PIN}"
+  fi
+
+  header "Done"
+  ok "Parity pin bumped to traderton ${CURRENT_PIN}. Review and commit slow-tests.yml + ledger."
+  exit 0
+fi
 
 # ─── Pre-flight: must be on main ─────────────────────────────────────────────
 
@@ -180,6 +241,22 @@ if $RUN_ALL; then
     exit 1
   fi
   ok "Extra tests passed"
+fi
+
+# ─── Parity gate (best-effort; abort on drift) ──────────────────────────────
+
+# If a sibling traderton checkout exists next to this repo, run the parity-drift
+# checker before releasing. It SKIPs (exit 0) when the sibling is absent; it
+# FAIls when an intentional mirror has drifted (reclassify/repin per C2.3).
+header "Parity gate"
+if [[ -d "${ROOT}/../traderton" ]]; then
+  if ! node "${ROOT}/scripts/check-parity-drift.mjs"; then
+    err "Parity-drift check FAILED. Fix/reclassify mirrors, or bump the pin, before releasing."
+    exit 1
+  fi
+  ok "Parity-drift check passed"
+else
+  warn "No sibling traderton checkout at ${ROOT}/../traderton — skipping parity gate."
 fi
 
 # ─── Version bump (only if version provided) ─────────────────────────────────

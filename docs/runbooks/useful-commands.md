@@ -33,6 +33,10 @@ ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 \
   'curl https://api.staging.traderton.com/health/ready'
 ```
 
+```sh
+ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 "ls -d /opt/herobids/infra/hetzner/.terraform-envs/staging 2>&1 && echo 'exists' || echo 'not yet'"
+```
+
 - infra/hetzner/scripts/setup-env.sh --env staging --file infra/hetzner/.env.staging
 - infra/hetzner/scripts/push.sh --env staging 
 - infra/hetzner/deploy.sh --env staging 138.199.172.202 --env-file infra/hetzner/.env.staging
