@@ -110,6 +110,15 @@ against the new key.
   - After the next deploy, the timer's first run creates `.terraform-envs/<env>` on each control
     plane.
   - Until then, smoke-test step 7 reports `default`.
+  - **Regression, found 2026-10-09:** this note underestimated the gap. `release.sh 0.6.6 --all`
+    runs the extra tests *before* deploying, against staging still on v0.6.4 (no
+    `.terraform-envs/`). The v0.6.5 smoke test read `.terraform-envs/staging`, got `default`, and
+    failed step 7 ("Terraform workspace is staging"), which blocked the release.
+  - **Fix:** step 7 now reads `.terraform-envs/<env>` if it exists on the server. Otherwise it falls
+    back to the shared `.terraform/`, with a warning. It also compares the workspace line exactly
+    instead of grepping all output.
+  - Verified against live staging (still v0.6.4), read-only: 18/18 pass, with the fallback warning.
+    The new-layout branch was checked locally.
 
 ## Still open
 

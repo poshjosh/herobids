@@ -244,15 +244,24 @@ check "scale-in.sh --dry-run runs without crash" \
 
 echo -e "${BOLD}7. Terraform backend${RESET}"
 
+# The autoscaler uses ${TERRAFORM_DIR}/.terraform-envs/<env> (v0.6.5+). A server
+# still on an older release, or a new one before the autoscaler's first run,
+# only has the shared .terraform/. release.sh runs this test BEFORE deploying,
+# so read whichever dir the deployed code uses. See bug 2026-10-08/006.
 TF_OUTPUT="$(remote_with_env '
-  TF_VAR_agent_node_server_type=cx23 TF_VAR_location=fsn1 \
-  TF_VAR_min_agent_nodes=0 TF_VAR_max_agent_nodes=99 \
   cd /opt/herobids/infra/hetzner && \
   source /etc/herobids/autoscale.env && \
-  TF_DATA_DIR=.terraform-envs/${HEROBIDS_ENV} terraform workspace show 2>&1
+  if [ -d ".terraform-envs/${HEROBIDS_ENV}" ]; then d=".terraform-envs/${HEROBIDS_ENV}"; else d=".terraform"; fi && \
+  echo "DATA_DIR=${d}" && \
+  TF_DATA_DIR="${d}" terraform workspace show 2>&1
 ')" || true
-check "Terraform workspace is ${HEROBIDS_ENV}" \
-  bash -c "echo '${TF_OUTPUT}' | grep -q '${HEROBIDS_ENV}'"
+TF_DATA_DIR_USED="$(sed -n 's/^DATA_DIR=//p' <<<"${TF_OUTPUT}" | head -1)"
+TF_WORKSPACE_SHOWN="$(grep -v '^DATA_DIR=' <<<"${TF_OUTPUT}" | tail -1 | tr -d '[:space:]')"
+if [[ "${TF_DATA_DIR_USED}" == ".terraform" ]]; then
+  warn "  Server has no .terraform-envs/${HEROBIDS_ENV} yet (pre-v0.6.5 deploy, or autoscaler not run since); checked the shared .terraform/."
+fi
+check "Terraform workspace is ${HEROBIDS_ENV} (data dir: ${TF_DATA_DIR_USED:-unknown})" \
+  test "${TF_WORKSPACE_SHOWN}" = "${HEROBIDS_ENV}"
 
 # ─── 8. Staging hooks (staging only) ─────────────────────────────────────────
 
