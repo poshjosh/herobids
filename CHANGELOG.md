@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.6.5 - 2026-10-09
+
 ### Fixed
 - **Staging deploys no longer abort at "Converge control plane" after a production run.** `terraform_output` re-inited the shared `infra/hetzner/.terraform/` with the env's state key (bug 2026-10-08/001). `init` then rejected the workspace selection left over from the other env with `Currently selected workspace "production" does not exist`. It now uses a per-env data dir, `infra/hetzner/.terraform-envs/<env>/` (gitignored), ignores an inherited `TF_WORKSPACE`, and leaves the shared `.terraform/` used by manual sessions alone. `setup-control-plane.sh` now shows the full Terraform error. See `docs/bug-reports/2026/10/08/005-terraform-output-init-aborts-on-stale-shared-workspace-selection.md`.
 - **`provision.sh`, `destroy.sh` and the control-plane autoscaler now use per-env Terraform data dirs too.**
