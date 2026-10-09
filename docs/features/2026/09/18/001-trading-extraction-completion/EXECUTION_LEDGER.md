@@ -189,3 +189,4 @@ UAT rows (when UI changes): N/A.
 Residual risks / blockers: The new tag pair is not yet the definitive C2.3 pair — herobids `v0.6.5` predates these manifest edits, so the reciprocal traderton→herobids pin must be re-bumped once a herobids release tags a commit containing the narrowed manifest. Bootstrap sequence: release herobids (tag `vX`) → run traderton `release.sh --bump-parity-pin vX` (and herobids `--bump-parity-pin <traderton-tag>` for its side) → record the final pair here.
 Next allowed item: release both repos in order, bump both pins to the resulting tags, and record the definitive pair (bootstrap noted above).
 ```
+  - Parity pin bump: herobids `${{ github.sha }}` ↔ traderton `v0.1.2` (2026-10-09).

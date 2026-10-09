@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.6.6 - 2026-10-09
+
 ### Fixed
 - **Autoscale smoke test passes against control planes not yet on v0.6.5.** Step 7 read the workspace only from the new per-env Terraform data dir. `release.sh` runs it before deploying, so a server still on the old layout reported `default` and blocked the release. It now uses `.terraform-envs/<env>` when present, and otherwise falls back to the shared `.terraform/` with a warning. See `docs/bug-reports/2026/10/08/006-provision-destroy-autoscaler-share-terraform-data-dir.md`.
 
