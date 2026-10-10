@@ -46,7 +46,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 
 | ID | Repo | Status | Authorization | Prerequisites | Commits | Verification evidence | Blockers / notes |
 |---|---|---|---|---|---|---|---|
-| M-A | both | in progress | autonomous | none | A1-A4, A9, A10 done | A5, A6, A7 remain | Track A: dead copies + retired obligations |
+| M-A | both | verified | autonomous | none | `f07d87ce` | A5, A6, A7 done; manifest 20 -> 17 | Track A: dead copies + retired obligations |
 | M-B | both | ready | autonomous | M-A | | | Track B: stops at B1.2 (human brief) |
 | M-C | both | ready | autonomous | M-B | | | Track C: may stop at C3.0/O6 (secret) |
 | M-D | both | blocked | autonomous | M-A, M-B, M-C | | | Track D: D0 checkpoint (human) |
@@ -56,9 +56,9 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | A2 | herobids | verified | autonomous | none (I15 applies) | see batch record | Manifest 31 -> 28; domain build, `pnpm build`, `pnpm lint`, tsc worker/api/domain, web typecheck all clean; full `pnpm vitest run` (clean env) 351 files / 6982 tests passed; checker test 4/4; both herobids recipes PASSED | |
 | A3 | herobids | verified | autonomous | none | `7c1e0eff` | Deleted 7 dead ports; `ports/index.ts` pruned; `candle-fetcher.ts` narrowed to `PriceCandle`; manifest 28 -> 21; checker test 4/4; both herobids recipes PASSED; `pnpm build` + `pnpm lint` clean; full `pnpm vitest run` (clean env) 351 files / 6982 tests passed | `domain-ports-candle-fetcher` narrowed (asymmetric region: hb `PriceCandle`→EOF, tt `PriceCandle`→`CandleFetcher`) |
 | A4 | herobids | verified | autonomous | none | `a77d80e5` | Deleted `trading/venue-capability.ts` + orphaned `tests/fixtures/venue-capabilities.ts`; export removed from `domain/index.ts`; manifest 21 -> 20; checker test 4/4; both herobids recipes PASSED; `pnpm build` + `pnpm lint` clean; full `pnpm vitest run` (clean env) 351 files / 6982 tests passed | I6 grep: zero non-test, non-dist references |
-| A5 | herobids | ready | autonomous | A3 (the dead `ports/strategy.ts` is the only other `Decision` importer) | | | |
-| A6 | herobids | ready | autonomous | none | | | |
-| A7 | herobids | planned | autonomous | A2, A3, A5 | | | `ids` consumers: `ports/venue`, `values/instrument`, `models/decision` |
+| A5 | herobids | verified | autonomous | A3 (the dead `ports/strategy.ts` is the only other `Decision` importer) | `f07d87ce` | Deleted `models/decision.ts`; `approval-service.ts` casts to `ExternalBackendActorType`; `models/index.ts` pruned; manifest 20 -> 19 | |
+| A6 | herobids | verified | autonomous | none | `f07d87ce` | Deleted `ports/economic-calendar.ts`; local `EconomicEventView` next to renderer; `venue-intelligence.ts` + `macroEvents` use it; manifest 19 -> 18 | |
+| A7 | herobids | verified | autonomous | A2, A3, A5 | `f07d87ce` | Deleted `values/ids.ts`; `values/index.ts` pruned; manifest 18 -> 17 | `ids` consumers (`ports/venue`, `values/instrument`, `models/decision`) all deleted first |
 | A8 | - | withdrawn | - | merged into A1 | | | Human decision 2026-10-10: keep `values/money.ts` |
 | G1 | herobids | verified | autonomous | A1, A2 `verified` and merged | `c48c2757` (Bump to v0.6.7), tag `v0.6.7` | `v0.6.7` manifest has 28 entries and none of the 7 dropped ids; traderton `main` tree vs `v0.6.7` recipe PASSED; tag on origin = `c48c2757`; `release.sh 0.6.7` core tests all PASS (run 3) | Pin target for A9/A10 = `v0.6.7` |
 | A9 | traderton | verified | autonomous | G1 | `733b71fa` | Deleted `cost-profile.ts`, `values/instrument.ts`, `pagination.ts`; barrels pruned; `pnpm build` + `pnpm lint` clean; full `pnpm test` (clean env) 170 files / 2976 tests passed; pin bumped to `v0.6.7`; traderton recipe vs `v0.6.7` PASSED | `config/strategy-presets/*.yaml` NOT deleted (live) |
@@ -245,4 +245,20 @@ Decisions made: none beyond the roadmap (R1/R2 dead-copy deletes).
 Findings / new gaps: none.
 Residual risks / blockers: none.
 Next allowed milestone: A6 (herobids: delete the mirrored economic-calendar port; keep a local 7-field view type). One manifest-touching milestone at a time (I15).
+```
+
+```text
+Date: 2026-10-10
+Milestone / batch (track): M-A (Track A — dead copies and retired obligations)
+Starting SHAs: herobids=2c9e6632 (origin/main), traderton=29a88725
+Starting git status: both clean
+Sub-steps completed (in order): A5 (delete models/decision; retarget ActorType), A6 (delete economic-calendar port; local EconomicEventView), A7 (delete values/ids). G1 (v0.6.7) and A1-A4/A9/A10 were already verified.
+Commits: f07d87ce (herobids only)
+Focused validation: I6 grep — A5: zero non-test references to Decision/ActorType (only importer was the already-deleted ports/strategy.ts); A6: zero non-test references to EconomicEvent/EconomicCalendarProvider; A7: zero references (source or test) to any branded id type (OrderId/BotId/VenueAccountId/InstrumentId/DecisionId/FillId/AgentId/SkillId).
+Broader validation (I6 trial deletion): pnpm --filter @herobids/domain run build clean; pnpm build clean; pnpm lint clean; env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm vitest run -> 351 files passed (26 skipped), 6982 tests passed (332 skipped).
+Parity gates: checker test 4/4; sibling-tree recipe PASSED; herobids-side pin recipe (traderton v0.1.2) PASSED; manifest entries 20 -> 17.
+Decisions made (lightweight): A5 — retargeted ActorType to ExternalBackendActorType (the exact type of ExternalBackendSubject.actor.type, imported from @herobids/domain/external-backend) rather than ActorTypeSchema, since the value is cast into the boundary subject, not validated. A6 — named the local view type EconomicEventView and placed it next to the renderer in runtime-composition.ts (venue-intelligence.ts already imports from runtime-composition.ts, so no new import cycle).
+Findings / new gaps: none.
+Residual risks / blockers: none.
+Next allowed milestone (track): M-B (Track B — decided engineering), which stops at B1.2 for the human brief.
 ```

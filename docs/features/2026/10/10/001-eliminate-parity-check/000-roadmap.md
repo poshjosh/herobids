@@ -57,10 +57,9 @@
 
 ## Status at a glance (2026-10-10)
 
-- Manifest today: **20 entries** (35 at epic start; A1-A4, A9, A10 done). Track A takes it to
-  **17** (A5, A6, A7 remove three more); Tracks B, C, D take the rest to 0; C6 deletes the
-  checker.
-- **Ready now (autonomous):** M-A (finish Track A: A5, A6, A7), M-B, M-C. Within a track
+- Manifest today: **17 entries** (35 at epic start; Track A done). Tracks B, C, D take the
+  rest to 0; C6 deletes the checker.
+- **Ready now (autonomous):** M-B, M-C. Within a track
   the agent works through sub-steps in order without stopping (I15 still applies: one
   manifest-touching change at a time).
 - **Needs a human:** only what the agent cannot do itself: the B1.2 brief (a decision),
@@ -69,7 +68,7 @@
   asks you only if a credential or permission fails. After **every track** the agent
   stops and waits for you (step 8).
 - **Blocked:** Track D (waits on Wave E's herobids halves and the preset-assessment plan pair).
-- **Recommended next: M-A.** Finish Track A (A5, A6, A7); G1 is already tagged (`v0.6.7`).
+- **Recommended next: M-B.** Track B (decided engineering), stopping at B1.2 for the human brief.
 
 ### Summary
 
@@ -77,7 +76,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows below are its sub-steps.
 
 | ID | Repo | Milestone | State |
 |---|---|---|---|
-| **M-A** | both | Track A — dead copies and retired obligations (A1-A7, G1, A9, A10) | in progress (A5, A6, A7 remain) |
+| **M-A** | both | Track A — dead copies and retired obligations (A1-A7, G1, A9, A10) | verified 2026-10-10 (`f07d87ce`) |
 | **M-B** | both | Track B — decided engineering (B1.0-B4.x) | ready (stops at B1.2) |
 | **M-C** | both | Track C — `@traderton/contracts` package (C1.0-C5, G2, G3) | ready (may stop at C3.0/O6) |
 | **M-D** | both | Track D — blocked on other epics (D0 checkpoint, D1, D2) | blocked |
@@ -87,9 +86,9 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows below are its sub-steps.
 | A2 | herobids | Delete `values/instrument` and `pagination`; drop 3 entries | verified 2026-10-10 |
 | A3 | herobids | Delete 7 dead ports; trim and narrow `candle-fetcher` | verified 2026-10-10 (`7c1e0eff`) |
 | A4 | herobids | Delete `venue-capability` and its orphaned fixture | verified 2026-10-10 (`a77d80e5`) |
-| A5 | herobids | Delete `models/decision`; retarget `ActorType` | ready (after A3) |
-| A6 | herobids | Delete mirrored `economic-calendar` port; local view type | ready |
-| A7 | herobids | Delete `values/ids` | planned (after A2, A3, A5) |
+| A5 | herobids | Delete `models/decision`; retarget `ActorType` | verified 2026-10-10 (`f07d87ce`) |
+| A6 | herobids | Delete mirrored `economic-calendar` port; local view type | verified 2026-10-10 (`f07d87ce`) |
+| A7 | herobids | Delete `values/ids` | verified 2026-10-10 (`f07d87ce`) |
 | A8 | - | (withdrawn, merged into A1) | - |
 | **G1** | herobids | Tag herobids containing A1 and A2 | verified 2026-10-10 (`v0.6.7`) |
 | A9 | traderton | Delete `cost-profile`, `instrument`, `pagination`; bump pin | verified 2026-10-10 (`733b71fa`) |
