@@ -16,6 +16,7 @@ export {
 export {
   SWAP_VENUES,
   ORDERBOOK_VENUES,
+  venueTypeFromProvider,
   SUPPORTED_TOKEN_SAFETY_NETWORKS,
   TokenSafetyNetworkSchema,
   inferOneInchTokenSafetyNetwork,

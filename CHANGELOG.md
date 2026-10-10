@@ -8,6 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Agent-path capability check moved behind the boundary; `execution-capability` deleted.**
+  The local `validateExecutionCapability` pre-check in `PATCH /agents/:id`
+  (`routes/agents.ts`) is removed — traderton's `set_agent_trading_profile` now enforces
+  paper+swap for the agent path (`execution_capability.paper_swap_not_supported`).
+  `packages/domain/src/trading/execution-capability.ts` (and its test) deleted;
+  `venueTypeFromProvider` relocated to `config/schema.ts` (venue-type stamping, still
+  used by `agent-create-normalization.ts`, `routes/agents.ts`, `routes/bots.ts`). Removed
+  the `domain-trading-execution-capability` manifest entry and its required id. See
+  `docs/features/2026/10/10/001-eliminate-parity-check/decisions/B1.2-agent-path-capability-check.md`.
+
 - **Local capability and mode-rank pre-checks dropped; `mode-rank` deleted.**
   The `validateExecutionCapability` pre-check in `PATCH /bots/:id/config`
   (`routes/bots.ts`) and the dead agent-start block in `routes/capabilities/trading.ts`

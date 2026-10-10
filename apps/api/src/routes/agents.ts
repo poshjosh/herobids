@@ -48,7 +48,6 @@ import {
   StrategyIdentitySchema,
   TechnicalConfigSchema,
   normalizePersistedAiModelConfig,
-  validateExecutionCapability,
   venueTypeFromProvider,
   WakePreferencesSchema,
   type AgentRiskDefaultsConfig,
@@ -1259,34 +1258,9 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: [connectionRequirementIssue] });
     }
 
-    // Validate execution capability against the agent's active trading connection (if any)
-    if (executionMode.value) {
-      const [activeConn] = await db.select({ provider: connections.provider })
-        .from(agentConnections)
-        .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
-        .where(and(
-          eq(agentConnections.agentId, id),
-          eq(agentConnections.status, 'active'),
-          eq(connections.status, 'active'),
-        ))
-        .limit(1);
-      if (activeConn) {
-        const agentVenueType = venueTypeFromProvider(activeConn.provider);
-        if (agentVenueType) {
-          const capCheck = validateExecutionCapability({
-            actorType: 'agent',
-            executionMode: executionMode.value as 'paper' | 'shadow' | 'live',
-            venueType: agentVenueType,
-          });
-          if (!capCheck.ok) {
-            return reply.status(400).send({
-              error: `execution_capability.${capCheck.error.code}`,
-              message: capCheck.error.message,
-            });
-          }
-        }
-      }
-    }
+    // B1.2: the local execution-capability pre-check (paper+swap for the agent
+    // path) is DROPPED — traderton's set_agent_trading_profile now enforces it
+    // behind the boundary (execution_capability.paper_swap_not_supported).
 
     // Ensure trading-capable agents always persist a concrete execution mode.
     // If the caller omitted executionDefaults (or explicitly nulled it),

@@ -15,6 +15,18 @@ export const ORDERBOOK_VENUES = ['hyperliquid', 'bybit'] as const;
 export type SwapVenue = typeof SWAP_VENUES[number];
 export type OrderbookVenue = typeof ORDERBOOK_VENUES[number];
 
+/**
+ * Derives the venue type from a provider string.
+ * Returns undefined if the provider is not recognized.
+ * (Relocated from `trading/execution-capability.ts` when that module was deleted
+ * in B1.3 — venue-type stamping is config knowledge, not a capability check.)
+ */
+export function venueTypeFromProvider(provider: string): 'orderbook' | 'swap' | undefined {
+  if ((SWAP_VENUES as readonly string[]).includes(provider)) return 'swap';
+  if ((ORDERBOOK_VENUES as readonly string[]).includes(provider)) return 'orderbook';
+  return undefined;
+}
+
 export const SUPPORTED_TOKEN_SAFETY_NETWORKS = [
   'solana',
   'ethereum',
