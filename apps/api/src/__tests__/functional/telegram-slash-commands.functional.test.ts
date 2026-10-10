@@ -119,7 +119,7 @@ beforeEach(async () => {
   const profileSaga = makeFunctionalProfileSaga(db);
   await telegramWebhookHandler(
     app, db, redisClient, alertsConfig, authConfig,
-    undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined,
     undefined, undefined, profileSaga,
   );
   await app.ready();
