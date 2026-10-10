@@ -327,7 +327,6 @@ describe('handleGoLive', () => {
     const db = makeDb([makeAgent()]);
     mockClone.mockResolvedValue({ ok: true, agentId: 'new-id' });
     const fakePlansConfig = { plans: {} } as unknown;
-    const fakeRiskDefaults = { maxOpenPositions: 10 } as unknown;
 
     await handleGoLive({
       db,
@@ -336,14 +335,12 @@ describe('handleGoLive', () => {
       plansConfig: fakePlansConfig as any,
       userPlanId: 'pro',
       isAdmin: true,
-      agentRiskDefaults: fakeRiskDefaults as any,
     });
 
     expect(mockClone).toHaveBeenCalledWith(expect.objectContaining({
       plansConfig: fakePlansConfig,
       userPlanId: 'pro',
       isAdmin: true,
-      agentRiskDefaults: fakeRiskDefaults,
     }));
   });
 });

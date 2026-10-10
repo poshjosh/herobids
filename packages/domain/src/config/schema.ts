@@ -1727,7 +1727,6 @@ export const AppConfigSchema = z.object({
   execution: z.object({
     defaultSlippageBps: z.number().min(0).default(50),
   }),
-  agentRiskDefaults: AgentRiskDefaultsSchema,
   agentDecisionHandler: AgentDecisionHandlerConfigSchema,
   agentApprovals: AgentApprovalsConfigSchema,
   agentCostEstimates: AgentCostEstimatesSchema,
@@ -1967,7 +1966,7 @@ export type EvaluationConfig = z.infer<typeof EvaluationConfigSchema>;
 export type EvaluationThresholds = z.infer<typeof EvaluationThresholdsSchema>;
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type OpenRouterProviderControlsConfig = z.infer<typeof OpenRouterProviderControlsSchema>;
-export type AgentRiskDefaultsConfig = AppConfig['agentRiskDefaults'];
+export type AgentRiskDefaultsConfig = z.infer<typeof AgentRiskDefaultsSchema>;
 export type AgentCostEstimatesConfig = AppConfig['agentCostEstimates'];
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;

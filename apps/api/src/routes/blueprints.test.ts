@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { blueprintRoutes } from './blueprints.js';
 import type { Database } from '@herobids/db';
-import type { AgentRiskDefaultsConfig, BlueprintExecutionCapabilityResolver, PlansConfig } from '@herobids/domain';
+import type { BlueprintExecutionCapabilityResolver, PlansConfig } from '@herobids/domain';
 import { createTableAwareDb } from '../__tests__/helpers/table-aware-db-mock.js';
 import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevision, buildRevisionSkill, buildLike, buildAgentPayload, buildBotPayload, BP_ID, REV_ID, USER_ID, OTHER_USER_ID } from '../__tests__/helpers/blueprint-fixtures.js';
 import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, blueprintForkRequests, skills, skillRevisions, bots, connections } from '@herobids/db';
@@ -36,24 +36,6 @@ process.env['HEROBIDS_CONFIG_DIR'] = resolve(__dirname, '../../../..');
 
 const TEST_USER_ID = 'user-1';
 const BLUEPRINT_ID = 'bp-1';
-
-const agentRiskDefaults: AgentRiskDefaultsConfig = {
-  dailyLossLimitDefaultRatio: 0.05,
-  maxOpenPositions: 10,
-  maxPositionSizePct: 100,
-  maxPositionSize: 1_000_000,
-  stopLossPct: 10,
-  dailyMaxLossPct: 20,
-  stopLossCooldownMs: 300_000,
-  maxOrderNotionalMultiplier: 1,
-  botConfigInvalidHaltThreshold: 1,
-  botExecutionErrorHaltThreshold: 5,
-  botLlmProviderErrorHaltThreshold: 1,
-  maxDrawdown: 1_000_000_000,
-  maxDrawdownPct: 20,
-  perTradeLevelMonitorIntervalMs: 5_000,
-  maxBots: 5,
-};
 
 const executionCapabilityResolver: BlueprintExecutionCapabilityResolver = {
   resolve: vi.fn().mockResolvedValue({
@@ -197,7 +179,7 @@ describe('GET /blueprints/presets', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: '/blueprints/presets' });
     expect(res.statusCode).toBe(200);
@@ -218,7 +200,7 @@ describe('GET /presets/for-agent', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: '/presets/for-agent?strategy=momentum&style=standard' });
     expect(res.statusCode).toBe(200);
@@ -234,7 +216,7 @@ describe('GET /presets/for-agent', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: '/presets/for-agent?strategy=dca&style=standard' });
     expect(res.statusCode).toBe(400);
@@ -249,7 +231,7 @@ describe('GET /blueprints/defaults', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: '/blueprints/defaults' });
     expect(res.statusCode).toBe(200);
@@ -267,7 +249,7 @@ describe('POST /blueprints/from-preset', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -282,7 +264,7 @@ describe('POST /blueprints/from-preset', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -297,7 +279,7 @@ describe('POST /blueprints/from-preset', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -312,7 +294,7 @@ describe('POST /blueprints/from-preset', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -343,7 +325,7 @@ describe('GET /blueprints', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: '/blueprints' });
     expect(res.statusCode).toBe(200);
@@ -371,7 +353,7 @@ describe('GET /blueprints', () => {
 
       const app = Fastify();
       decorateWithAuth(app);
-      await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+      await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
       const res = await app.inject({ method: 'GET', url: '/blueprints?kind=agent' });
       expect(res.statusCode).toBe(200);
@@ -389,7 +371,7 @@ describe('GET /blueprints', () => {
 
       const app = Fastify();
       decorateWithAuth(app);
-      await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+      await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
       const res = await app.inject({ method: 'GET', url: '/blueprints?kind=bot' });
       expect(res.statusCode).toBe(200);
@@ -425,7 +407,7 @@ describe('GET /blueprints', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, restrictedPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, restrictedPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: '/blueprints' });
     expect(res.statusCode).toBe(403);
@@ -440,7 +422,7 @@ describe('GET /blueprints', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: '/blueprints' });
     expect(res.statusCode).toBe(200);
@@ -467,7 +449,7 @@ describe('POST /blueprints', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -489,7 +471,7 @@ describe('POST /blueprints', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -504,7 +486,7 @@ describe('POST /blueprints', () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -528,7 +510,7 @@ describe('POST /blueprints', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -559,7 +541,7 @@ describe('GET /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(200);
@@ -579,7 +561,7 @@ describe('GET /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(200);
@@ -595,7 +577,7 @@ describe('GET /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(404);
@@ -611,7 +593,7 @@ describe('GET /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(409);
@@ -628,7 +610,7 @@ describe('GET /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(404);
@@ -652,7 +634,7 @@ describe('DELETE /blueprints/:id', () => {
     const app = Fastify();
     decorateWithAuth(app);
     // Bot dep-check is over the boundary now — no bots bound to this blueprint.
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(204);
@@ -669,7 +651,7 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(409);
@@ -688,7 +670,7 @@ describe('DELETE /blueprints/:id', () => {
     decorateWithAuth(app);
     // The bot dependency check is HOISTED before the transaction now: the
     // boundary reports an active bot bound to this blueprint → 409.
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient({ [BP_ID]: ['bot-1'] }));
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig, makeCountBotsClient({ [BP_ID]: ['bot-1'] }));
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(409);
@@ -710,7 +692,7 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(409);
@@ -729,7 +711,7 @@ describe('DELETE /blueprints/:id', () => {
     const app = Fastify();
     decorateWithAuth(app);
     // Bot dep-check passes (no bots) → flow reaches the tx TOCTOU guard.
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(409);
@@ -747,7 +729,7 @@ describe('DELETE /blueprints/:id', () => {
     const app = Fastify();
     decorateWithAuth(app);
     // Bot dep-check passes (no bots) → flow reaches the tx TOCTOU guard.
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(404);
@@ -767,7 +749,7 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig, makeCountBotsClient());
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(204);
@@ -784,7 +766,7 @@ describe('DELETE /blueprints/:id', () => {
     const app = Fastify();
     decorateWithAuth(app);
     // No boundary client → cannot prove there are no bot instances → 503.
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(503);
@@ -799,7 +781,7 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(404);
@@ -815,7 +797,7 @@ describe('DELETE /blueprints/:id', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(403);
@@ -859,7 +841,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -879,7 +861,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -895,7 +877,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -945,7 +927,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -979,7 +961,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -998,7 +980,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1036,7 +1018,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, restrictedPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, restrictedPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1055,7 +1037,7 @@ describe('POST /blueprints/:id/fork', () => {
     const db = dbMock.build();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1071,7 +1053,7 @@ describe('POST /blueprints/:id/fork', () => {
     const db = createTableAwareDb().build();
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1111,7 +1093,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1136,7 +1118,7 @@ describe('POST /blueprints/:id/fork', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1172,7 +1154,7 @@ describe('POST /blueprints/:id/publish', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1196,7 +1178,7 @@ describe('POST /blueprints/:id/publish', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1222,7 +1204,7 @@ describe('POST /blueprints/:id/publish', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1239,7 +1221,7 @@ describe('POST /blueprints/:id/publish', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1259,7 +1241,7 @@ describe('POST /blueprints/:id/publish', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',
@@ -1277,7 +1259,7 @@ describe('POST /blueprints/:id/publish', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityResolver, testPlansConfig);
 
     const res = await app.inject({
       method: 'POST',

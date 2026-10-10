@@ -554,7 +554,6 @@ export async function buildApp() {
     testPlansConfig as any,
     undefined,
     undefined,
-    undefined,
     redisClient,
     undefined,
     stubTradertonClient,
@@ -580,7 +579,6 @@ export async function buildApp() {
     undefined,
     undefined,
     testPlansConfig as any,
-    undefined,
     profileSaga as never,
   );
 

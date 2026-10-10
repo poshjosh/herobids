@@ -73,29 +73,9 @@ execution:
 # auto-fill fallback and are NOT used for enforcement. The boundary
 # `get_operator_defaults` read is the source of truth; `set_agent_trading_profile`
 # enforces ceilings.
-# Default risk limits for agents when the user has NOT explicitly configured them.
-# These are the initial values AND the operator ceiling — agents can adjust downward at runtime.
-# See docs/tech/glossary.md for precise definitions of each term.
-agentRiskDefaults:
-  dailyLossLimitDefaultRatio: 0.05       # ratio of agent capital → default dailyLossLimit (USD). See glossary.
-  maxOpenPositions: 10                   # max concurrent non-flat positions
-  maxPositionSizePct: 100                # max position notional as % of capital (100 = full capital)
-  maxPositionSize: 1000000               # max absolute position size in base units (operator ceiling)
-  stopLossPct: 10                        # max unrealized loss per position as % of equity before forced exit
-  dailyMaxLossPct: 20                    # operator ceiling: max rolling 24h realized loss as % of equity.
-                                         # Fallback when user did not configure dailyLossLimit. See glossary.
-  stopLossCooldownMs: 300000             # 5 min cooldown after a stop-loss exit before re-entry
-  maxOrderNotionalMultiplier: 1          # max single order notional as multiple of capital (1 = full capital)
-  botConfigInvalidHaltThreshold: 1       # consecutive strategy.config_invalid errors before auto-stop
-  botExecutionErrorHaltThreshold: 5      # consecutive strategy.execution_error errors before auto-stop
-  botLlmProviderErrorHaltThreshold: 1    # consecutive strategy.llm_provider_error errors before auto-stop
-  maxDrawdown: 1000000000                # operator absolute ceiling on equity drawdown (USD).
-                                         # Non-agent flows use this directly. Agents use maxDrawdownPct below.
-  maxDrawdownPct: 20                     # operator ceiling: max peak-to-current drawdown as % of peak equity.
-                                         # Fallback when user did not configure maxDrawdownPct at instance level.
-                                         # Agent may adjust downward at runtime. See glossary.
-  perTradeLevelMonitorIntervalMs: 5000   # interval for periodic per-trade stop-loss / take-profit monitor loop
-  maxBots: 5                              # operator default for agent max concurrent bots
+# Operator risk defaults for agents are traderton-owned (ADR 011 / C2.1) and read
+# over the boundary via `get_operator_defaults` — herobids no longer keeps a local
+# `agentRiskDefaults` block. See docs/tech/glossary.md for field definitions.
 
 # Herobids-local worker knobs for the agent decision handler's failure hardening.
 # NOT traderton risk defaults — kept out of agentRiskDefaults so that block stays

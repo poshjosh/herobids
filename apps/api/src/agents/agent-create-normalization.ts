@@ -9,7 +9,6 @@ import {
   type RiskPosture,
   type StrategyIdentity,
   type ExecutionDefaults,
-  type AgentRiskDefaultsConfig,
 } from '@herobids/domain';
 import type { PlansConfig } from '@herobids/domain';
 import { resolvePlanLimitEntitlements } from '../plan-guards.js';
@@ -52,7 +51,6 @@ export interface PrepareAgentCreateFieldsParams {
   plansConfig?: PlansConfig;
   userPlanId?: string;
   isAdmin?: boolean;
-  agentRiskDefaults?: AgentRiskDefaultsConfig;
 }
 
 export interface AgentCreateFields {

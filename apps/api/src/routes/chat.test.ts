@@ -506,7 +506,7 @@ describe('executeChatAction — list_available_skills', () => {
       db,
       TEST_USER_ID,
       EMPTY_PROVIDERS_YAML,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined,
       true, // guidedSetupTradingEnabled
     );
 
@@ -554,7 +554,7 @@ describe('executeChatAction — list_available_skills', () => {
       db,
       TEST_USER_ID,
       EMPTY_PROVIDERS_YAML,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined,
       false, // guidedSetupTradingEnabled
     );
 
@@ -1104,7 +1104,7 @@ describe('POST /chat/threads/:id/messages — preset classification', () => {
     decorateWithAuth(app);
     await chatRoutes(
       app, db, LLM_CONFIG, EMPTY_PROVIDERS_YAML, {} as Redis,
-      undefined, undefined, undefined, undefined, undefined, {}, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, {}, undefined, undefined, undefined,
       true, // guidedSetupTradingEnabled
     );
     await app.ready();
@@ -1621,7 +1621,6 @@ describe('executeChatAction — create_connection', () => {
       undefined, // usageBillingRepo
       undefined, // modelDefaults
       undefined, // plansConfig
-      undefined, // agentRiskDefaults
       { hyperliquid: { walletGeneration: { enabled: true } }, jupiter: {}, '1inch': {} },
     );
 
@@ -2191,7 +2190,6 @@ describe('executeChatAction — assignedConnectionId', () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       profileSaga as never,
     );
 
@@ -2233,7 +2231,6 @@ describe('executeChatAction — assignedConnectionId', () => {
       TEST_USER_ID,
       EMPTY_PROVIDERS_YAML,
       mockUsageBillingRepo,
-      undefined,
       undefined,
       undefined,
       undefined,

@@ -9,7 +9,7 @@ import { ChatUsageBillingRecorder, type AggregateChatLlmUsage } from '../billing
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig, UnifiedAgentConfig } from '@herobids/domain';
-import { normalizePersistedAiModelConfig, SKILL_PRESET_MAP, AgentRuntimeNonTradingDefaultsSchema, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, SKILL_PRESET_MAP, AgentRuntimeNonTradingDefaultsSchema } from '@herobids/domain';
 import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
@@ -971,7 +971,6 @@ export async function executeChatAction(
   usageBillingRepo: UsageBillingRepository | undefined = undefined,
   modelDefaults: ModelDefaults | undefined = undefined,
   plansConfig: PlansConfig | undefined = undefined,
-  agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
@@ -1399,7 +1398,6 @@ export async function executeChatAction(
           plansConfig,
           userPlanId,
           isAdmin,
-          agentRiskDefaults,
         });
 
         const agentId = uuid();
@@ -1685,7 +1683,6 @@ export async function invokeOnboardingLlm(
   usageBillingRepo: UsageBillingRepository | undefined = undefined,
   modelDefaults: ModelDefaults | undefined = undefined,
   plansConfig: PlansConfig | undefined = undefined,
-  agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga: TradingProfileReconciliationSaga | undefined = undefined,
@@ -1886,7 +1883,7 @@ export async function invokeOnboardingLlm(
       // ── Dispatch tool call with error guard ──
       let toolResult: string;
       try {
-        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues, tradertonClient, profileReconciliationSaga, nonTradingDefaultTickIntervalMs, guidedSetupTradingEnabled);
+        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, venues, tradertonClient, profileReconciliationSaga, nonTradingDefaultTickIntervalMs, guidedSetupTradingEnabled);
       } catch (err) {
         toolResult = JSON.stringify({
           error: 'tool_execution_failed',
@@ -2115,7 +2112,6 @@ export async function chatRoutes(
   chatUsageBillingRecorder: ChatUsageBillingRecorder | undefined = undefined,
   modelDefaults: ModelDefaults | undefined = undefined,
   plansConfig: PlansConfig | undefined = undefined,
-  agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
   tradertonClient: ExternalBackendClient | undefined = undefined,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
@@ -2375,7 +2371,6 @@ export async function chatRoutes(
         usageBillingRepo,
         modelDefaults,
         plansConfig,
-        agentRiskDefaults,
         venues,
         tradertonClient,
         profileReconciliationSaga,
@@ -2582,7 +2577,6 @@ export async function chatRoutes(
         usageBillingRepo,
         modelDefaults,
         plansConfig,
-        agentRiskDefaults,
         venues,
         tradertonClient,
         profileReconciliationSaga,

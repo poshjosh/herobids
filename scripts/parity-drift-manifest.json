@@ -1,7 +1,6 @@
 {
   "version": 1,
   "entries": [
-    { "id": "agent-risk-defaults", "authority": "traderton", "normalization": "yaml-top-level-block-without-comments-and-blank-lines", "herobids": { "path": "config/default.yaml", "region": { "topLevelKey": "agentRiskDefaults" } }, "traderton": { "path": "config/default.yaml", "region": { "topLevelKey": "agentRiskDefaults" } } },
     { "id": "strategy-preset-economy", "authority": "mirror-only", "normalization": "line-endings", "herobids": { "path": "config/strategy-presets/economy.yaml" }, "traderton": { "path": "config/strategy-presets/economy.yaml" } },
     { "id": "strategy-preset-premium", "authority": "mirror-only", "normalization": "line-endings", "herobids": { "path": "config/strategy-presets/premium.yaml" }, "traderton": { "path": "config/strategy-presets/premium.yaml" } },
     { "id": "strategy-preset-standard", "authority": "mirror-only", "normalization": "line-endings", "herobids": { "path": "config/strategy-presets/standard.yaml" }, "traderton": { "path": "config/strategy-presets/standard.yaml" } },

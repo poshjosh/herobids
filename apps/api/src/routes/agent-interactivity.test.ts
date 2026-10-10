@@ -44,7 +44,7 @@ function agentInteractivityRoutes(
   ...args: Parameters<typeof registerAgentInteractivityRoutes>
 ): ReturnType<typeof registerAgentInteractivityRoutes> {
   return registerAgentInteractivityRoutes(
-    args[0], args[1], args[2], args[3], args[4], args[5], args[6], buildProfileSaga(args[1]) as never,
+    args[0], args[1], args[2], args[3], args[4], args[5], buildProfileSaga(args[1]) as never,
   );
 }
 

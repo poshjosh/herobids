@@ -11,7 +11,7 @@ import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
-import type { AgentRiskDefaultsConfig, AgentApprovalsConfig, AlertsConfig, AuthConfig, ModelDefaults, PlanAgentsEntitlements, PlansConfig, UnifiedAgentConfig } from '@herobids/domain';
+import type { AgentApprovalsConfig, AlertsConfig, AuthConfig, ModelDefaults, PlanAgentsEntitlements, PlansConfig, UnifiedAgentConfig } from '@herobids/domain';
 import { AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -123,13 +123,8 @@ export async function agentInteractivityRoutes(
   alertsConfig?: AlertsConfig,
   llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
-  agentRiskDefaults?: AgentRiskDefaultsConfig,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
-  // C2.1: local ceiling enforcement dropped; `agentRiskDefaults` retained for
-  // call-site signature compatibility only (still referenced by callers).
-  // TODO(C2.2): remove after call-site cleanup — retained only for positional signature compatibility.
-  void agentRiskDefaults;
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
       return { canViewOwnPrompts: true };
@@ -534,7 +529,6 @@ export async function telegramWebhookHandler(
   agentApprovalsConfig?: AgentApprovalsConfig,
   plansConfig?: PlansConfig,
   llmCatalogDeps?: LlmCatalogDeps,
-  agentRiskDefaults?: AgentRiskDefaultsConfig,
   operatorModelDefaults?: ModelDefaults,
   tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
@@ -748,7 +742,6 @@ export async function telegramWebhookHandler(
             userPlanId,
             isAdmin: userIsAdmin,
             llmCatalogDeps,
-            agentRiskDefaults,
             operatorModelDefaults,
             profileReconciliationSaga: commandProfileReconciliationSaga,
           });

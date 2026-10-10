@@ -50,7 +50,6 @@ import {
   normalizePersistedAiModelConfig,
   venueTypeFromProvider,
   WakePreferencesSchema,
-  type AgentRiskDefaultsConfig,
   type AgentCostEstimatesConfig,
   type ModelDefaults,
 } from '@herobids/domain';
@@ -347,8 +346,6 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
 }
 
 
-const DEFAULT_AGENT_RISK_DEFAULTS: AgentRiskDefaultsConfig = AgentRiskDefaultsSchema.parse({});
-
 // D10: fallback for the non-trading default tick interval when the operator
 // config is not threaded in (e.g. unit tests). Sourced from the schema default
 // (agentRuntime.nonTradingDefaults.tickIntervalMs = 24 h) — no magic literal.
@@ -421,7 +418,6 @@ export async function agentRoutes(
   db: Database,
   plansConfig?: PlansConfig,
   llmCatalogDeps?: LlmCatalogDeps,
-  agentRiskDefaults: AgentRiskDefaultsConfig = DEFAULT_AGENT_RISK_DEFAULTS,
   agentCostEstimates?: AgentCostEstimatesConfig,
   redisClient?: Redis,
   operatorModelDefaults?: ModelDefaults,
@@ -493,22 +489,22 @@ export async function agentRoutes(
 
   app.get('/agents/risk-defaults', async (request, reply) => {
     // Display-only auto-fill. Enforcement is the traderton boundary's
-    // `set_agent_trading_profile` (ADR 011 / C2.1); the local `agentRiskDefaults`
-    // block is kept ONLY as a fallback when the boundary read is unavailable.
+    // `set_agent_trading_profile` (ADR 011 / C2.1); the schema defaults are the
+    // fallback when the boundary read is unavailable.
     const costPerTickEstimates = agentCostEstimates ?? { minimal: 0.12, standard: 0.21, premium: 0.31 };
 
     // Source the 7 web-facing risk fields from the boundary when configured.
-    let risk = agentRiskDefaults;
+    let risk = AgentRiskDefaultsSchema.parse({});
     if (tradertonReadClient) {
       const read = await loadOperatorRiskDefaults(
         createTradertonReadBoundary(tradertonReadClient, { ownerId: request.userId, actor: { type: 'user', id: request.userId } }, readDeadlineMs),
       );
       if (read.ok) risk = read.data;
       else {
-        // Display-fallback: serve local defaults rather than failing. The
+        // Display-fallback: serve schema defaults rather than failing. The
         // endpoint is auto-fill, not enforcement — a boundary hiccup must not
         // break agent creation UX.
-        request.log.warn({ error: read.error }, 'risk-defaults: falling back to local defaults');
+        request.log.warn({ error: read.error }, 'risk-defaults: falling back to schema defaults');
       }
     }
 
@@ -2720,7 +2716,6 @@ export async function agentRoutes(
       userPlanId: request.userPlanId || 'free',
       isAdmin: request.isAdmin,
       llmCatalogDeps,
-      agentRiskDefaults,
       operatorModelDefaults,
       profileReconciliationSaga: stagedProfileReconciliationSaga,
     });

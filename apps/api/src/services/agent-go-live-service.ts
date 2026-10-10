@@ -12,7 +12,6 @@ import { eq, and, asc } from 'drizzle-orm';
 import type {
   AgentBlueprintRevisionPayload,
   PlansConfig,
-  AgentRiskDefaultsConfig,
   ModelDefaults,
   UnifiedAgentConfig,
 } from '@herobids/domain';
@@ -42,7 +41,6 @@ export interface GoLiveParams {
   userPlanId: string;
   isAdmin: boolean;
   llmCatalogDeps?: LlmCatalogDeps;
-  agentRiskDefaults?: AgentRiskDefaultsConfig;
   operatorModelDefaults?: ModelDefaults;
   profileReconciliationSaga?: TradingProfileReconciliationSaga;
 }
@@ -63,16 +61,9 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     userPlanId,
     isAdmin,
     llmCatalogDeps,
-    agentRiskDefaults,
     operatorModelDefaults,
     profileReconciliationSaga,
   } = params;
-
-  // C2.1: local `validateAgentRiskBounds` ceiling enforcement is dropped —
-  // traderton's `set_agent_trading_profile` is the sole authority. The
-  // `agentRiskDefaults` param is retained for call-site compatibility only.
-  // TODO(C2.2): remove after call-site cleanup — retained only for positional signature compatibility.
-  void agentRiskDefaults;
 
   // 1. Load source agent + verify ownership
   const [sourceAgent] = await db.select().from(agents)

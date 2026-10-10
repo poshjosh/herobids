@@ -277,7 +277,6 @@ await telegramWebhookHandler(
   app, db, redisClient, appConfig.alerts, appConfig.auth, appConfig.agentApprovals,
   appConfig.plans,
   { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps,
-  appConfig.agentRiskDefaults,
   appConfig.agentRuntime.llm.modelDefaults,
   tradingBackendClient,
   tradingBackendTimeoutMs,
@@ -341,7 +340,7 @@ await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClie
 await connectionsOauthRoutes(app, db, appConfig, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs);
+await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
@@ -357,8 +356,8 @@ await dashboardRoutes(app, db, appConfig.plans, tradingBackendClient, tradingBac
 // billing is disabled so the web UI can render the "not enabled" state.
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
-await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults, profileReconciliationSaga);
+await blueprintRoutes(app, db, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga);
 await analyticsRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);
@@ -367,7 +366,7 @@ const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
   appConfig.plans,
   appConfig.usageBilling?.defaultRateCardName ?? 'default',
 );
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues, tradingBackendClient, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.venues, tradingBackendClient, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs);
 await skillsRoutes(app, db, appConfig.plans, (() => {
   const ext = appConfig.externalSkills;
   if (!ext.enabled) return null;

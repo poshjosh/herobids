@@ -50,9 +50,9 @@ test('rejects a manifest with a required entry removed', () => {
 test('rejects altered required authority classifications', () => {
   try {
     for (const [id, authority] of [
-      ['agent-risk-defaults', 'mirror-only'],
-      ['strategy-preset-economy', 'traderton'],
       ['domain-agent-risk-contract', 'mirror-only'],
+      ['strategy-preset-economy', 'traderton'],
+      ['domain-config-presets', 'traderton'],
     ]) {
       const paths = fixture();
       const manifest = JSON.parse(readFileSync(paths.manifestPath, 'utf8'));

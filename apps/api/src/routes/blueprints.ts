@@ -17,6 +17,7 @@ import {
   users,
 } from '@herobids/db';
 import {
+  AgentRiskDefaultsSchema,
   applyPresetToAgent,
   BlueprintErrorCodes,
   BlueprintInstantiatePreviewRequestSchema,
@@ -35,7 +36,6 @@ import {
   normalizePersistedAiModelConfig,
 } from '@herobids/domain';
 import type {
-  AgentRiskDefaultsConfig,
   BlueprintExecutionCapabilityResolver,
   BlueprintExecutionCapabilityInput,
   AgentBlueprintRevisionPayload,
@@ -59,6 +59,7 @@ import {
 import { recomputeBlueprintPerformanceScore } from '../services/blueprint-performance-scorer.js';
 import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createTradertonReadBoundary, loadBoundaryObject } from './exports-traderton.js';
+import { loadOperatorRiskDefaults } from '../traderton-operator-defaults.js';
 
 /** Fallback read deadline when the operator boundary timeout is not supplied. */
 const BLUEPRINT_READ_TIMEOUT_MS = 10_000;
@@ -361,13 +362,29 @@ function computeForkRequestHash(params: {
 export async function blueprintRoutes(
   app: FastifyInstance,
   db: Database,
-  agentRiskDefaults: AgentRiskDefaultsConfig,
   executionCapabilityResolver: BlueprintExecutionCapabilityResolver,
   plansConfig: PlansConfig,
   tradertonClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
+  // Operator risk defaults are traderton-owned (ADR 011 / C2.1). Read them over
+  // the boundary via the cached `loadOperatorRiskDefaults`; fall back to the
+  // schema defaults only when the boundary is unavailable (blueprint
+  // instantiation is enforcement-adjacent, so a boundary hiccup must not break
+  // it — the boundary's own `set_agent_trading_profile` is the hard gate).
+  const readOperatorRiskDefaults = async (userId: string) => {
+    if (!tradertonClient) return AgentRiskDefaultsSchema.parse({});
+    const read = await loadOperatorRiskDefaults(
+      createTradertonReadBoundary(
+        tradertonClient,
+        { ownerId: userId, actor: { type: 'user', id: userId } },
+        tradertonReadTimeoutMs ?? BLUEPRINT_READ_TIMEOUT_MS,
+      ),
+    );
+    return read.ok ? read.data : AgentRiskDefaultsSchema.parse({});
+  };
+
   // Periodic score recomputation (matches skills.ts pattern)
   // c4.9d-FG: the blueprint-instantiate BOT write over the Traderton boundary.
   // Mirrors bots.ts `invokeBoundary` (the established write seam): builds the
@@ -1845,7 +1862,7 @@ export async function blueprintRoutes(
       const effectiveRisk = resolveEffectiveRisk(
         rawRisk,
         (editsRisk ?? null) as Partial<import('@herobids/domain').RiskPosture> | null,
-        agentRiskDefaults,
+        await readOperatorRiskDefaults(request.userId),
       );
 
       // Resolve execution mode
@@ -2236,7 +2253,7 @@ export async function blueprintRoutes(
         const effectiveRisk = resolveEffectiveRisk(
           rawRisk,
           (editsRisk ?? null) as Partial<import('@herobids/domain').RiskPosture> | null,
-          agentRiskDefaults,
+          await readOperatorRiskDefaults(request.userId),
         );
         // Reject if any user-provided risk value exceeds the operator ceiling
         for (const [fieldKey, fieldVal] of Object.entries(effectiveRisk)) {

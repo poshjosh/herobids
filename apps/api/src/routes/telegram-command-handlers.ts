@@ -11,7 +11,7 @@
 
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
-import type { AuthConfig, PlansConfig, AgentRiskDefaultsConfig, ModelDefaults } from '@herobids/domain';
+import type { AuthConfig, PlansConfig, ModelDefaults } from '@herobids/domain';
 import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createTradertonReadBoundary, loadAgentEvidence } from './exports-traderton.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
@@ -1097,7 +1097,6 @@ export interface HandleGoLiveOpts {
   userPlanId?: string;
   isAdmin?: boolean;
   llmCatalogDeps?: LlmCatalogDeps;
-  agentRiskDefaults?: AgentRiskDefaultsConfig;
   operatorModelDefaults?: ModelDefaults;
   profileReconciliationSaga?: TradingProfileReconciliationSaga;
 }
@@ -1111,7 +1110,6 @@ export async function handleGoLive(opts: HandleGoLiveOpts): Promise<string> {
     userPlanId = 'free',
     isAdmin = false,
     llmCatalogDeps,
-    agentRiskDefaults,
     operatorModelDefaults,
     profileReconciliationSaga,
   } = opts;
@@ -1141,7 +1139,6 @@ export async function handleGoLive(opts: HandleGoLiveOpts): Promise<string> {
       userPlanId,
       isAdmin,
       llmCatalogDeps,
-      agentRiskDefaults,
       operatorModelDefaults,
       profileReconciliationSaga,
     });

@@ -291,19 +291,6 @@ interface AgentConfig {
   usageBillingRateCardItems?: Array<{ meterKey: string; priceMicrousd: number; perUnit: number }>;
   usageBillingFallbackCacheReadPct?: number;
   usageBillingFailedRequestOutputPct?: number;
-  agentRiskDefaults?: {
-    maxOpenPositions: number;
-    maxPositionSizePct: number;
-    stopLossPct: number;
-    stopLossCooldownMs: number;
-    maxPositionSize: number;
-    maxOrderNotionalMultiplier: number;
-    dailyMaxLossPct: number;
-    maxDrawdown: number;
-    maxDrawdownPct: number;
-    botConfigInvalidHaltThreshold: number;
-    botExecutionErrorHaltThreshold: number;
-  };
   /** Provider pricing registry forwarded by the worker (config/providers.yaml) */
   providersYaml?: ProvidersYaml;
   /** 004: Explicit capability mode from UnifiedAgentConfig ('intelligence' | 'hybrid') */

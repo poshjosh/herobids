@@ -113,7 +113,7 @@ describe('handleGoLive — default parameter values', () => {
     );
   });
 
-  it('passes undefined for plansConfig, llmCatalogDeps, agentRiskDefaults, operatorModelDefaults when not provided', async () => {
+  it('passes undefined for plansConfig, llmCatalogDeps, operatorModelDefaults when not provided', async () => {
     const db = makeDb([makeAgent()]);
     mockClone.mockResolvedValue({ ok: true, agentId: 'new-id' });
 
@@ -123,7 +123,6 @@ describe('handleGoLive — default parameter values', () => {
       expect.objectContaining({
         plansConfig: undefined,
         llmCatalogDeps: undefined,
-        agentRiskDefaults: undefined,
         operatorModelDefaults: undefined,
       }),
     );
@@ -184,7 +183,6 @@ describe('handleGoLive — full dependency passthrough', () => {
 
     const fakePlans = { plans: { free: {} } } as unknown;
     const fakeLlmDeps = { catalog: 'mock' } as unknown;
-    const fakeRisk = { maxOpenPositions: 25 } as unknown;
     const fakeModels = { model: 'claude-3' } as unknown;
 
     await handleGoLive({
@@ -195,7 +193,6 @@ describe('handleGoLive — full dependency passthrough', () => {
       userPlanId: 'pro',
       isAdmin: true,
       llmCatalogDeps: fakeLlmDeps as any,
-      agentRiskDefaults: fakeRisk as any,
       operatorModelDefaults: fakeModels as any,
     });
 
@@ -207,7 +204,6 @@ describe('handleGoLive — full dependency passthrough', () => {
       userPlanId: 'pro',
       isAdmin: true,
       llmCatalogDeps: fakeLlmDeps,
-      agentRiskDefaults: fakeRisk,
       operatorModelDefaults: fakeModels,
     });
   });

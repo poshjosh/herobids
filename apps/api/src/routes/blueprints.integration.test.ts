@@ -28,7 +28,7 @@ import { refreshLikeCount } from '../services/blueprint-scoring.js';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AuthConfig, AgentRiskDefaultsConfig, PlansConfig } from '@herobids/domain';
+import type { AuthConfig, PlansConfig } from '@herobids/domain';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -41,24 +41,6 @@ const TEST_JWT_SECRET = 'test-integration-secret-at-least-32-characters!!';
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../../config');
 const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
-
-const agentRiskDefaults: AgentRiskDefaultsConfig = {
-  dailyLossLimitDefaultRatio: 0.05,
-  maxOpenPositions: 10,
-  maxPositionSizePct: 100,
-  maxPositionSize: 1_000_000,
-  stopLossPct: 10,
-  dailyMaxLossPct: 20,
-  stopLossCooldownMs: 300_000,
-  maxOrderNotionalMultiplier: 1,
-  botConfigInvalidHaltThreshold: 1,
-  botExecutionErrorHaltThreshold: 5,
-  botLlmProviderErrorHaltThreshold: 1,
-  maxDrawdown: 1_000_000_000,
-  maxDrawdownPct: 20,
-  perTradeLevelMonitorIntervalMs: 5_000,
-  maxBots: 5,
-};
 
 const executionCapabilityAdapter = new BlueprintExecutionCapabilityAdapter(providersYaml);
 
@@ -310,10 +292,9 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
     await blueprintRoutes(
       app,
       db,
-      agentRiskDefaults,
       executionCapabilityAdapter,
       testPlansConfig,
-      stubTradertonClient as unknown as Parameters<typeof blueprintRoutes>[5],
+      stubTradertonClient as unknown as Parameters<typeof blueprintRoutes>[4],
       undefined,
       stagedProfileReconciliationSaga as unknown as TradingProfileReconciliationSaga,
     );
@@ -3027,7 +3008,7 @@ describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
 
     app = Fastify({ logger: false });
     await authPlugin(app, { config: authCfg, db });
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityAdapter, testPlansConfig);
+    await blueprintRoutes(app, db, executionCapabilityAdapter, testPlansConfig);
     await app.ready();
   }, 30_000);
 

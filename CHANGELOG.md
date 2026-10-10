@@ -8,6 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Blueprint instantiation and the risk-defaults endpoint now source operator risk
+  defaults from the Traderton boundary.** `blueprint-risk-resolver.ts`
+  `resolveEffectiveRisk` reads `loadOperatorRiskDefaults` (the cached
+  `get_operator_defaults` boundary read) instead of a local
+  `agentRiskDefaults` param; `GET /agents/risk-defaults` falls back to the schema
+  defaults rather than a local YAML block. The six dead `agentRiskDefaults`
+  pass-through params were removed (`agent-create-normalization.ts`,
+  `agent-interactivity.ts`, `agent-go-live-service.ts`,
+  `telegram-command-handlers.ts`, `chat.ts`, and the `agent.ts` interface field).
+
 - **Moved the two worker decision-handler hardening thresholds out of `agentRiskDefaults`.**
   `agentDecisionNoContextThreshold` and `agentDecisionSwapInstrumentFormatThreshold`
   are herobids-local worker knobs (they tune how `AgentDecisionHandler` hardens
@@ -21,6 +31,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `docs/features/2026/10/10/001-eliminate-parity-check/plans/B4-agent-risk-defaults-boundary-cache.md`.
 
 ### Removed
+
+- **The herobids `agentRiskDefaults` YAML block.** Operator risk defaults are
+  traderton-owned (ADR 011 / C2.1) and read over the boundary via
+  `get_operator_defaults`; the local `config/default.yaml` block, the
+  `agentRiskDefaults` key in `AppConfigSchema`, and the `agent-risk-defaults`
+  manifest entry (and its required-authority pin) are removed.
+  `AgentRiskDefaultsSchema` is kept only as the boundary-response validator /
+  schema-default fallback. See
+  `docs/features/2026/10/10/001-eliminate-parity-check/plans/B4-agent-risk-defaults-boundary-cache.md`.
+
+- **`riskContract` display field removed from agent responses.** The
 
 - **`riskContract` display field removed from agent responses.** The
   `resolveAgentRiskContractForResponse` helper (and its 4 call sites in

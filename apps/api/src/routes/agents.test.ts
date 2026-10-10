@@ -333,7 +333,7 @@ vi.mock('./agents.js', async (importOriginal) => {
   return {
     ...actual,
     agentRoutes: async (...args: Parameters<typeof actual.agentRoutes>) => {
-      const stagedSaga = args[10] ?? makeStagedProfileSaga(args[1]).saga;
+      const stagedSaga = args[9] ?? makeStagedProfileSaga(args[1]).saga;
       return actual.agentRoutes(
         args[0],
         args[1],
@@ -344,7 +344,6 @@ vi.mock('./agents.js', async (importOriginal) => {
         args[6],
         args[7],
         args[8],
-        args[9],
         stagedSaga,
       );
     },
@@ -434,7 +433,7 @@ describe('agent routes C1 staged profile reconciliation', () => {
     const stagedSaga = makeStagedProfileSaga(db);
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const response = await app.inject({ method: 'POST', url: '/agents', payload: { name: 'agent', prompt: 'test' } });
 
@@ -451,7 +450,7 @@ describe('agent routes C1 staged profile reconciliation', () => {
     const stagedSaga = makeStagedProfileSaga(db);
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const response = await app.inject({ method: 'PATCH', url: '/agents/agent-1', payload: { name: 'renamed-agent' } });
 
@@ -469,7 +468,7 @@ describe('agent routes C1 staged profile reconciliation', () => {
     const stagedSaga = makeStagedProfileSaga(db);
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client, undefined, stagedSaga.saga);
 
     const response = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -489,7 +488,7 @@ describe('agent routes C1 staged profile reconciliation', () => {
     const stagedSaga = makeStagedProfileSaga(db, { compensate });
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const response = await app.inject({ method: 'POST', url: '/agents', payload: { name: 'agent', prompt: 'test' } });
 
@@ -509,7 +508,7 @@ describe('agent routes C1 staged profile reconciliation', () => {
     const stagedSaga = makeStagedProfileSaga(db, { writeRemote: remoteWrite });
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const response = await app.inject({ method: 'POST', url: '/agents', payload: { name: 'agent', prompt: 'test', connectionIds: ['connection-1'] } });
 
@@ -533,7 +532,7 @@ describe('agent routes C1 staged profile reconciliation', () => {
     const stagedSaga = makeStagedProfileSaga(db, { remoteProfiles: new Map() });
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const response = await app.inject({ method: 'PATCH', url: '/agents/agent-1', payload: { connectionIds: ['connection-1', 'connection-2'] } });
 
@@ -729,7 +728,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'GET', url: '/agents/agent-1/decisions?limit=10' });
 
@@ -765,7 +764,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'GET', url: '/agents/agent-1/decisions?limit=10' });
 
@@ -809,7 +808,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'GET', url: '/agents/agent-1/decisions?limit=10' });
 
@@ -905,7 +904,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -931,7 +930,7 @@ describe('agent routes lifecycle', () => {
     const stagedSaga = makeStagedProfileSaga(db);
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client, undefined, stagedSaga.saga);
 
     const response = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -958,7 +957,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -983,7 +982,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -1009,7 +1008,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -1041,7 +1040,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -1071,7 +1070,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -1099,7 +1098,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -1145,7 +1144,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -1179,7 +1178,7 @@ describe('agent routes lifecycle', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, client);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, client);
 
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
@@ -1223,7 +1222,7 @@ describe('agent routes lifecycle', () => {
 
     const app1 = Fastify();
     decorateWithAuth(app1);
-    await agentRoutes(app1, db1, undefined, undefined, undefined, undefined, undefined, undefined, client1);
+    await agentRoutes(app1, db1, undefined, undefined, undefined, undefined, undefined, client1);
 
     const res1 = await app1.inject({ method: 'DELETE', url: '/agents/agent-1' });
     expect(res1.statusCode).toBe(204);
@@ -1255,7 +1254,7 @@ describe('agent routes lifecycle', () => {
 
     const app2 = Fastify();
     decorateWithAuth(app2);
-    await agentRoutes(app2, db2, undefined, undefined, undefined, undefined, undefined, undefined, client2);
+    await agentRoutes(app2, db2, undefined, undefined, undefined, undefined, undefined, client2);
 
     const res2 = await app2.inject({ method: 'DELETE', url: '/agents/agent-2' });
     expect(res2.statusCode).toBe(204);
@@ -1531,7 +1530,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -1574,7 +1573,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -1600,7 +1599,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -2907,7 +2906,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -3049,7 +3048,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -3815,7 +3814,7 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'POST',
@@ -4031,7 +4030,7 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -4122,7 +4121,7 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
     const stagedSaga = makeStagedProfileSaga(db);
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
 
     const response = await app.inject({
       method: 'PATCH',
@@ -4185,7 +4184,7 @@ describe('agent routes — wakePreferences Redis sync (C3.4)', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, redis);
+    await agentRoutes(app, db, undefined, undefined, undefined, redis);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -4227,7 +4226,7 @@ describe('agent routes — wakePreferences Redis sync (C3.4)', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, redis);
+    await agentRoutes(app, db, undefined, undefined, undefined, redis);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -4263,7 +4262,7 @@ describe('agent routes — wakePreferences Redis sync (C3.4)', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, redis);
+    await agentRoutes(app, db, undefined, undefined, undefined, redis);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -4308,7 +4307,7 @@ describe('agent routes — wakePreferences Redis sync (C3.4)', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db, undefined, undefined, undefined, undefined, redis);
+    await agentRoutes(app, db, undefined, undefined, undefined, redis);
 
     const res = await app.inject({
       method: 'PATCH',
