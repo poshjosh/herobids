@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.6.8 - 2026-10-10
+
 ### Removed
 
 - **Actor-health routes and publisher removed.** `apps/api/src/routes/actor-health.ts`
