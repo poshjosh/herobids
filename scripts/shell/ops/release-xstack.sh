@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 #
 # Usage:
-#   scripts/shell/ops/release.sh <traderton-version> <herobids-version>
-#   scripts/shell/ops/release.sh 0.1.2 0.6.6
+#   scripts/shell/ops/release-xstack.sh --tv <traderton-version> --hv <herobids-version> [--cv <contracts-version>]
+#   scripts/shell/ops/release-xstack.sh --tv 0.1.2 --hv 0.6.6 --cv 0.1.1
+#
+# --cv (contracts version) is optional: when omitted, the script reads the
+# version from traderton's packages/contracts/package.json and publishes that
+# exact version (the package version is independent of the root versions).
 
 set -euo pipefail
 
@@ -13,6 +17,7 @@ HEROBIDS_DIR="${PARENT_DIR}/herobids"
 
 TRADERTON_VERSION=""
 HEROBIDS_VERSION=""
+CONTRACTS_VERSION=""
 
 
 while [[ $# -gt 0 ]]; do
@@ -33,9 +38,17 @@ while [[ $# -gt 0 ]]; do
       HEROBIDS_VERSION="$2"
       shift 2
       ;;
+    --cv)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --cv requires a contracts version (e.g. 0.1.1)" >&2
+        exit 1
+      fi
+      CONTRACTS_VERSION="$2"
+      shift 2
+      ;;
     *)
       echo "Error: Unknown argument: $1" >&2
-      echo "Usage: $0 --tv <major.minor.patch> --hv <major.minor.patch>" >&2
+      echo "Usage: $0 --tv <major.minor.patch> --hv <major.minor.patch> [--cv <major.minor.patch>]" >&2
       exit 1
       ;;
   esac
@@ -58,6 +71,23 @@ fi
 
 if [[ ! "$HEROBIDS_VERSION" =~ $VERSION_REGEX ]]; then
   echo "Error: Invalid Herobids version '$HEROBIDS_VERSION'. Expected major.minor.patch (e.g. 0.6.6)." >&2
+  exit 1
+fi
+
+# Resolve the contracts version: explicit --cv wins; otherwise read it from
+# traderton's packages/contracts/package.json (the package version is independent
+# of the root versions and is bumped in-place when a contract shape changes).
+if [[ -z "$CONTRACTS_VERSION" ]]; then
+  CONTRACTS_PKG="${TRADERTON_DIR}/packages/contracts/package.json"
+  if [[ ! -f "$CONTRACTS_PKG" ]]; then
+    echo "Error: contracts package.json not found at ${CONTRACTS_PKG}. Pass --cv explicitly." >&2
+    exit 1
+  fi
+  CONTRACTS_VERSION="$(jq -r '.version' "$CONTRACTS_PKG")"
+fi
+
+if [[ ! "$CONTRACTS_VERSION" =~ $VERSION_REGEX ]]; then
+  echo "Error: Invalid contracts version '$CONTRACTS_VERSION'. Expected major.minor.patch (e.g. 0.1.1)." >&2
   exit 1
 fi
 
@@ -93,6 +123,28 @@ run_step "Bump Herobids parity pin to Traderton v$TRADERTON_VERSION" \
   bash -c 'cd "$1" && scripts/shell/ops/release.sh --bump-parity-pin "$2"' _ \
   "$HEROBIDS_DIR" "v$TRADERTON_VERSION"
 
+# ─── Contracts package publish + herobids pin bump (C5) ──────────────────────
+# The @poshjosh/contracts package version is independent of the root versions.
+# Publish it from traderton (the sole producer), then bump herobids's exact pin
+# in the three package.json files that depend on it. The publish is idempotent
+# only in the "already published" sense — npm rejects a duplicate version, which
+# is the intended re-publish guard (C2 §4).
+
+run_step "Publish @poshjosh/contracts v$CONTRACTS_VERSION" \
+  bash -c 'cd "$1" && pnpm --filter @poshjosh/contracts run build && pnpm publish --filter @poshjosh/contracts --no-git-checks' _ \
+  "$TRADERTON_DIR"
+
+run_step "Bump herobids @poshjosh/contracts pin to v$CONTRACTS_VERSION" \
+  bash -c '
+    set -euo pipefail
+    cd "$1"
+    for pkg in packages/domain/package.json apps/api/package.json apps/worker/package.json; do
+      jq --arg v "$2" "if .dependencies[\"@poshjosh/contracts\"] then .dependencies[\"@poshjosh/contracts\"] = \$v else . end" "$pkg" > "$pkg.tmp" && mv "$pkg.tmp" "$pkg"
+    done
+    pnpm install --lockfile-only
+  ' _ \
+  "$HEROBIDS_DIR" "$CONTRACTS_VERSION"
+
 echo ""
 echo "==> Committing and pushing traderton .github/workflows/slow-tests.yml"
 cd "$TRADERTON_DIR" && git add .github/workflows/slow-tests.yml && (git diff --cached --quiet || git commit -m "Update slow-tests.yml for release v$TRADERTON_VERSION") && git push
@@ -100,6 +152,10 @@ cd "$TRADERTON_DIR" && git add .github/workflows/slow-tests.yml && (git diff --c
 echo ""
 echo "==> Committing and pushing herobids .github/workflows/slow-tests.yml"
 cd "$HEROBIDS_DIR" && git add .github/workflows/slow-tests.yml && (git diff --cached --quiet || git commit -m "Update slow-tests.yml for release v$HEROBIDS_VERSION") && git push
+
+echo ""
+echo "==> Committing and pushing herobids @poshjosh/contracts pin bump"
+cd "$HEROBIDS_DIR" && git add packages/domain/package.json apps/api/package.json apps/worker/package.json pnpm-lock.yaml && (git diff --cached --quiet || git commit -m "Bump @poshjosh/contracts to v$CONTRACTS_VERSION") && git push
 
 echo ""
 echo "==>All release steps completed successfully."
