@@ -139,3 +139,19 @@ Findings / new gaps: roadmap's status-at-a-glance says Track A takes the manifes
 Residual risks / blockers: none. Traderton CI uses herobids pin v0.6.5 (unchanged), so it is unaffected until G1.
 Next allowed milestone: first ready row after A1 in roadmap order: A2 (delete values/instrument and pagination; drop 3 entries). G1 needs A1 and A2 verified and merged.
 ```
+
+```text
+Date: 2026-10-10
+Milestone / batch: A2 (delete herobids values/instrument and pagination)
+Starting SHAs: herobids=366cf3919fa3601e6baf866cab4b2c3d553f500b (366cf391 "Fix type in default config" is a config/default.yaml-only commit made after A1), traderton=54a26c491beaf2595cd68eaaa17963cf3c74e1e6
+Starting git status: both clean
+Scope completed: deleted packages/domain/src/values/instrument.ts and pagination.ts; pruned values/index.ts and domain index.ts; removed the PaginatedResponse describe block and import from packages/domain/src/__tests__/skill-catalog-types.test.ts (it only tested the deleted type); removed entries domain-pagination, domain-values-index, domain-values-instrument and their required ids.
+Commits: caef43fe (herobids only)
+Focused validation: node --test scripts/check-parity-drift.test.mjs -> 4 pass
+Broader validation (I6 trial deletion): domain build, pnpm build, pnpm lint, tsc worker/api/domain, web typecheck clean; env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm vitest run -> 351 files passed (26 skipped), 6982 tests passed (332 skipped). DB-backed integration tier not run.
+Parity gates: sibling-tree recipe PASSED; pin recipe (traderton v0.1.2) PASSED; manifest entries 31 -> 28
+Decisions made: removed the PaginatedResponse type tests together with the type (done-state said "updated"; the tests asserted nothing else).
+Findings / new gaps: none. Grep of apps/packages/scripts/tests/.github for the deleted names is clean (only gitignored tsbuildinfo caches match).
+Residual risks / blockers: none. Traderton unaffected until A9 (its pin is still v0.6.5).
+Next allowed milestone: G1 (tag herobids containing A1 and A2); A3, A4, A6 also remain ready. One manifest-touching milestone at a time (I15).
+```
