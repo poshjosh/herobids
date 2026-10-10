@@ -914,7 +914,7 @@ plans:
       usage: # required
         includedCreditCents: 0
         softCapCents: 200  # warn when $2 left
-        hardCapCents: -100 # block when balance ≤ $0
+        hardCapCents: -100 # block when balance ≤ $hardCapCents
         topUpPackIds: 
           - Topup5
           - Topup20
@@ -949,7 +949,7 @@ plans:
       usage: # required
         includedCreditCents: 2000
         softCapCents: 500  # warn when $5 credit left
-        hardCapCents: 0    # block when balance ≤ $0
+        hardCapCents: -100 # block when balance ≤ $hardCapCents
         topUpPackIds: 
           - Topup5
           - Topup20
@@ -984,7 +984,7 @@ plans:
       usage: # required
         includedCreditCents: 5000
         softCapCents: 1000  # warn when $10 credit left
-        hardCapCents: -500  # block when $5 overdrawn
+        hardCapCents: -100 # block when balance ≤ $hardCapCents
         topUpPackIds: 
           - Topup5
           - Topup20
