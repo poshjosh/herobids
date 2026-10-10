@@ -1,5 +1,5 @@
-import type { EconomicEvent, RegimeResult } from '@herobids/domain';
-import type { RuntimePositionSnapshot, RuntimeSessionMetrics } from './runtime-composition.js';
+import type { RegimeResult } from '@herobids/domain';
+import type { RuntimePositionSnapshot, RuntimeSessionMetrics, EconomicEventView } from './runtime-composition.js';
 
 // ── Traderton read-boundary payload parsers ────────────────────────────────
 //
@@ -33,18 +33,18 @@ function toNullableNumber(value: unknown): number | null {
 
 /**
  * Narrow the `get_economic_calendar` boundary success payload (`unknown` over
- * the wire) to the `EconomicEvent[]` the macro-economic context block consumes.
- * The boundary returns `{ ok, events: EconomicEvent[], sources, fetchedAt }` —
+ * the wire) to the `EconomicEventView[]` the macro-economic context block consumes.
+ * The boundary returns `{ ok, events: EconomicEventView[], sources, fetchedAt }` —
  * a missing/malformed payload (or non-array `events`) degrades to an empty
  * array so the caller omits the macro block for that tick. The events array is
  * passed through (object entries only); event fields are not re-validated here
  * since the renderer tolerates partial events.
  */
-export function parseEconomicCalendarBoundaryPayload(data: unknown): EconomicEvent[] {
+export function parseEconomicCalendarBoundaryPayload(data: unknown): EconomicEventView[] {
   if (data && typeof data === 'object') {
     const events = (data as Record<string, unknown>)['events'];
     if (Array.isArray(events)) {
-      return events.filter((e): e is EconomicEvent => e != null && typeof e === 'object');
+      return events.filter((e): e is EconomicEventView => e != null && typeof e === 'object');
     }
   }
   return [];

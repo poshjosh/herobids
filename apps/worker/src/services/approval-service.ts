@@ -1,4 +1,5 @@
-import type { DecisionSubmitPayload, ActorType } from '@herobids/domain';
+import type { DecisionSubmitPayload } from '@herobids/domain';
+import type { ExternalBackendActorType } from '@herobids/domain/external-backend';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
@@ -126,7 +127,7 @@ export class ApprovalService {
         payload: boundaryPayload,
         subject: {
           ownerId: userId,
-          actor: { type: approval.actorType as ActorType, id: approval.actorId },
+          actor: { type: approval.actorType as ExternalBackendActorType, id: approval.actorId },
         },
         deadlineMs: this.boundaryDeadlineMs,
         idempotencyKey,

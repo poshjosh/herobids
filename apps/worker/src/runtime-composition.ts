@@ -1,4 +1,4 @@
-import type { CapabilityReadiness, HybridPricingIdentity, RegimeResult, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent, SkillDefinition } from '@herobids/domain';
+import type { CapabilityReadiness, HybridPricingIdentity, RegimeResult, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
 import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { ScoredSignal } from './market-intelligence/preset-scan-contracts.js';
@@ -323,6 +323,29 @@ export interface PendingMarketEvent {
   payload: MarketDiscoveryDetectedPayload | MarketRegimeChangedPayload;
 }
 
+/**
+ * Local view of an upcoming economic event, read tolerantly from the
+ * `get_economic_calendar` boundary payload. The renderer reads exactly these 7
+ * fields; the boundary payload is not re-validated beyond object-ness (see
+ * `parseEconomicCalendarBoundaryPayload` in `venue-intelligence.ts`).
+ */
+export interface EconomicEventView {
+  /** ISO-8601 datetime string (UTC) */
+  time: string;
+  /** Currency code (USD, EUR, GBP, etc.) */
+  currency: string;
+  /** Event name */
+  event: string;
+  /** Impact level */
+  impact: 'high' | 'medium' | 'low';
+  /** Forecast value (null if none) */
+  forecast: string | null;
+  /** Previous value (null if none) */
+  previous: string | null;
+  /** Source ids that contributed to this normalized event */
+  sources: string[];
+}
+
 export type ActivityTimelineEvent =
   | { kind: 'USER'; text: string; timestamp: number }
   | { kind: 'MEMORY'; key: string; value: string; timestamp: number }
@@ -372,7 +395,7 @@ export interface RuntimeSessionMetrics {
   /** Pending market-monitor context-only events (no agent.wake). Accumulated between ticks. */
   pendingMarketContext: PendingMarketEvent[];
   /** Upcoming economic events for context injection. Null when calendar is disabled or unavailable. */
-  macroEvents: EconomicEvent[] | null;
+  macroEvents: EconomicEventView[] | null;
   /** Timestamp (epoch ms) up to which user messages have been replied to. Null until first reply / hydration. Single coarse conversation marker. */
   answeredUpToTs: number | null;
 }

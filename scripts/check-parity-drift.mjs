@@ -5,11 +5,10 @@ export const REQUIRED_ENTRY_IDS = new Set([
   'agent-risk-defaults', 'strategy-preset-economy', 'strategy-preset-premium', 'strategy-preset-standard',
   'watch-types', 'scan-types',
   'domain-agent-risk-contract', 'domain-config-presets-loader', 'domain-config-presets', 'domain-config-strategy-parameters',
-  'domain-market-assessment', 'domain-models-decision',
-  'domain-ports-candle-fetcher', 'domain-ports-economic-calendar',
+  'domain-market-assessment',
+  'domain-ports-candle-fetcher',
   'domain-scanner-types', 'domain-trading-actor-health',
   'domain-trading-execution-capability', 'domain-trading-mode-rank', 'domain-trading-trading-protocol',
-  'domain-values-ids',
 ]);
 
 export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
@@ -24,15 +23,12 @@ export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
   'domain-config-presets': 'mirror-only',
   'domain-config-strategy-parameters': 'mirror-only',
   'domain-market-assessment': 'mirror-only',
-  'domain-models-decision': 'mirror-only',
   'domain-ports-candle-fetcher': 'mirror-only',
-  'domain-ports-economic-calendar': 'mirror-only',
   'domain-scanner-types': 'mirror-only',
   'domain-trading-actor-health': 'mirror-only',
   'domain-trading-execution-capability': 'mirror-only',
   'domain-trading-mode-rank': 'mirror-only',
   'domain-trading-trading-protocol': 'mirror-only',
-  'domain-values-ids': 'mirror-only',
 });
 
 function extractRegion(content, region) {

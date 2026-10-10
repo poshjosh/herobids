@@ -8,6 +8,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Dead `models/decision` module deleted; `ActorType` retargeted.** The `Decision`
+  interface and `ActorType` union had zero non-test references in herobids (the only
+  `Decision` importer was the already-deleted `ports/strategy.ts`). `approval-service.ts`
+  now casts the boundary subject's actor type to `ExternalBackendActorType` (the exact
+  type of `ExternalBackendSubject.actor.type`) instead of the deleted `ActorType`.
+  `models/index.ts` pruned. Removed the `domain-models-decision` manifest entry and its
+  required id. Part of the parity-drift-check elimination effort; see
+  `docs/features/2026/10/10/001-eliminate-parity-check/decisions/B-parity-ownership.md`.
+
+- **Dead `economic-calendar` port deleted; local 7-field view type added.** The
+  `EconomicEvent` / `EconomicCalendarProvider` port had no herobids importer (the
+  boundary payload is read tolerantly). A local `EconomicEventView` type (the 7 fields
+  the renderer reads: `time`, `currency`, `event`, `impact`, `forecast`, `previous`,
+  `sources`) now lives next to the renderer in `runtime-composition.ts`;
+  `venue-intelligence.ts` (`parseEconomicCalendarBoundaryPayload`) and the `macroEvents`
+  field use it. `ports/index.ts` pruned. Removed the `domain-ports-economic-calendar`
+  manifest entry and its required id. Behavior unchanged.
+
+- **Dead `values/ids` module deleted.** The branded id types (`OrderId`, `BotId`,
+  `VenueAccountId`, `InstrumentId`, `DecisionId`, `FillId`, `AgentId`, `SkillId`) had
+  zero consumers in herobids after `ports/venue`, `values/instrument` and
+  `models/decision` were deleted. `values/index.ts` pruned. Removed the
+  `domain-values-ids` manifest entry and its required id.
+
 - **Dead `venue-capability` module and its orphaned fixture deleted.**
   `packages/domain/src/trading/venue-capability.ts` (`VenueCapabilities`,
   `TimeInForce`, the `validate*` helpers) and `tests/fixtures/venue-capabilities.ts`
