@@ -335,3 +335,19 @@ are docs-only and do not touch the manifest; they should be committed (herobids 
 traderton) before Item 5. No manifest entry changes.
 Next allowed item: Item 5 — Preset assessment → traderton, data-only (S1–S9).
 ```
+
+```text
+Date: 2026-10-10
+Milestone / batch: Item 5 — Preset assessment → traderton, data-only (S1–S9)
+Starting SHAs: herobids=ed1d5abf18ff6d9b913eae8d97a3c65f5288b0a4, traderton=ac5b8a3 (pre-commit)
+Starting git status: traderton clean (herobids docs-only Item 4 closeout already committed ed1d5abf)
+Sub-steps completed (in order): S1 (data-only preset-assessment schemas + preset policy in domain), S2 (db: market_assessment_requests + agent_strategy_changes tables, drop LLM columns from market_assessment_artifacts, preset_policy on agent_trading_profiles), S3 (PresetAssessmentRepository + applyAgentPresetChange), S4 (5 worker tools: list_strategy_presets / assess_strategy_preset / change_strategy_preset / list_agent_strategy_changes / get_assessment_artifact), S5 (boundary preset-assessment ops + registry + skill-tool-map wiring), S6 (bin.ts ctx seam + shutdown), S7 (self-rescheduling review pre-check loop), S8 (config presetAssessment block), S9 (traderton-skills crypto-trading SKILL.md guidance).
+Commits: traderton 4de0b99 (37 files, +2552/-133); traderton-skills e66fd85 (SKILL.md)
+Focused validation: domain preset-assessment.test.ts 12/12; worker preset-assessment.test.ts 9/9; db preset-assessment-repository.integration.test.ts 5/5; boundary tools-from-registry.test.ts updated.
+Broader validation: pnpm --filter @traderton/boundary run build clean; pnpm lint clean; env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm test -> 169 files passed (22 skipped), 2958 tests passed (107 skipped); scripts/shell/tests/run-integration.sh -> 12 files / 63 tests passed (1 skipped); git diff --check clean.
+Parity gates: none required (no manifest entry touched; this is the traderton data-only half that Item 6's herobids side will consume before D2 drops the entries).
+Decisions made (lightweight): removed the dead `DAY_MS` constant from review-pre-check-loop.ts (loop uses config.preCheck.reviewIntervalMs directly); assessment is data-only (no LLM, no billing) per 004.
+Findings / new gaps: none. The 9 mirrored preset-assessment files in herobids are NOT yet deleted — that is Item 6 (H1–H6).
+Residual risks / blockers: none. traderton-skills is a separate repo and was committed separately.
+Next allowed item: Item 6 — Preset assessment → traderton, herobids side (H1–H6).
+```
