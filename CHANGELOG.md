@@ -6,6 +6,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Herobids consumes `@poshjosh/contracts` for the shared wire-DTO shapes.**
+  The watch (`WatchEntry`/`WatchEntrySchema`/`WatchPurposeEnum`), scan-state
+  (`CandleFetchStatus`/`SymbolFetchOutcome`/`PositionIndicatorUpdate`), wake
+  envelope (`ScannerWakeContextSchema`/`WakePrioritySchema`/`AgentWakePayloadBaseSchema`),
+  regime & volatility (`RegimeResult`/`VolatilityEvidence`/`EvidenceValue`), and
+  risk-overrides (`AgentRiskOverridesSchema`) shapes now come from the published
+  `@poshjosh/contracts@0.1.0` package instead of herobids-local mirrored copies.
+  `apps/worker/src/watch-types.ts`, `apps/worker/src/scan-types.ts`, and
+  `packages/domain/src/agent-risk-contract.ts` are deleted; the wake envelope is
+  re-composed in `trading-protocol.ts` from the package's scanner variant plus the
+  four herobids-owned wake contexts. Part of the parity-drift-check elimination
+  effort; see
+  `docs/features/2026/10/10/001-eliminate-parity-check/plans/C3-herobids-consumes-contracts.md`.
+
+### Removed
+
+- **`packages/domain/src/agent-risk-contract.ts`.** The resolution math
+  (`resolveAgentRiskContract`/`resolveAgentRiskProfile`/`validateRiskOverride`) and
+  the `riskContractOps` field in `tool-contract.ts` had no production consumers
+  (B3.2 retired the only display helper; the risk-limits tools are boundary
+  fail-closed). The `domain-agent-risk-contract` parity entry is dropped.
+
 ## v0.6.9 - 2026-10-10
 
 ### Changed
