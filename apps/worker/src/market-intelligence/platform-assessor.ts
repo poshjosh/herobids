@@ -4,15 +4,14 @@ import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
 import { marketAssessmentRuns } from '@herobids/db';
 import type { Redis } from 'ioredis';
-import type { PriceCandle, RegimeResult } from '@herobids/domain';
+import type { PriceCandle } from '@herobids/domain';
+import type { EvidenceValue, RegimeResult, VolatilityEvidence } from '@poshjosh/contracts';
 import type {
   MarketAssessmentIdentity,
   MarketAssessmentArtifact,
   PresetScorecardEntry,
   MarketAssessmentPresetRanking,
   AssessmentEvidenceSnapshot,
-  EvidenceValue,
-  VolatilityEvidence,
   LiquidityEvidence,
   BreadthEvidence,
   ScorecardInput,

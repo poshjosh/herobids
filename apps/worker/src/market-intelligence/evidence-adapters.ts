@@ -2,10 +2,10 @@ import type {
   MarketAssessmentIdentity,
   AssessmentData,
   AssessmentUnavailable,
-  VolatilityEvidence,
   ExternalBackendReadResult,
 } from '@herobids/domain';
-import { err, ok, type Result, RegimeResult, ScannerCandleTarget, VolatilityEvidenceSchema } from '@herobids/domain';
+import { err, ok, type Result, ScannerCandleTarget } from '@herobids/domain';
+import { VolatilityEvidenceSchema, type RegimeResult, type VolatilityEvidence } from '@poshjosh/contracts';
 import type {
   AssessmentEvidencePorts,
   AssessmentCandleSource,

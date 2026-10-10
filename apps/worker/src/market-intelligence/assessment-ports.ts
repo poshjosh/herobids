@@ -1,8 +1,8 @@
 import type { RegimeResult, Result } from '@herobids/domain';
+import type { VolatilityEvidence } from '@poshjosh/contracts';
 import type {
   MarketAssessmentIdentity,
   AssessmentData,
-  VolatilityEvidence,
   LiquidityEvidence,
   BreadthEvidence,
   AssessmentUnavailable,

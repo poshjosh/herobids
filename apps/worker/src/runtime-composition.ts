@@ -1,4 +1,5 @@
-import type { CapabilityReadiness, HybridPricingIdentity, RegimeResult, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
+import type { CapabilityReadiness, HybridPricingIdentity, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
+import type { RegimeResult } from '@poshjosh/contracts';
 import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { ScoredSignal } from './market-intelligence/preset-scan-contracts.js';

@@ -66,6 +66,8 @@ const IGNORED_ENV_VARS = new Set<string>([
   'DOCKER_SOCKET_PATH', // Docker socket path for admin utils, infra-provided
   'BROWSER_POOL_URL', // browser-pool endpoint injected by the runtime, not `.env`
   'SANDBOX_ALLOWED_HOSTS', // per-agent sandbox allowlist injected by the runtime
+  // ── Docker build-time secrets (read by Dockerfile RUN --mount, not app code) ──
+  'NPM_TOKEN', // GitHub PAT with read:packages, used only as a Docker build secret
 ]);
 
 function walkTsFiles(dir: string): string[] {
