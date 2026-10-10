@@ -20,11 +20,6 @@ Tag release the specified version, updating changelog and package.json
 scripts/shell/ops/release.sh <version> --all
 ```
 
-others
-
-- scripts/shell/ops/sidestep-zscaler-start.sh --domain staging.openaidom.com --ssh-target root@138.199.172.202
-- scripts/shell/ops/sidestep-zscaler-stop.sh
-
 ## staging|production
 
 ssh into remote server

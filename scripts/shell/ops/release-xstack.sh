@@ -95,11 +95,11 @@ run_step "Bump Herobids parity pin to Traderton v$TRADERTON_VERSION" \
 
 echo ""
 echo "==> Committing and pushing traderton .github/workflows/slow-tests.yml"
-cd "$TRADERTON_DIR" && git add .github/workflows/slow-tests.yml && git commit -m "Update slow-tests.yml for release v$TRADERTON_VERSION" && git push
+cd "$TRADERTON_DIR" && git add .github/workflows/slow-tests.yml && (git diff --cached --quiet || git commit -m "Update slow-tests.yml for release v$TRADERTON_VERSION") && git push
 
 echo ""
 echo "==> Committing and pushing herobids .github/workflows/slow-tests.yml"
-cd "$HEROBIDS_DIR" && git add .github/workflows/slow-tests.yml && git commit -m "Update slow-tests.yml for release v$HEROBIDS_VERSION" && git push
+cd "$HEROBIDS_DIR" && git add .github/workflows/slow-tests.yml && (git diff --cached --quiet || git commit -m "Update slow-tests.yml for release v$HEROBIDS_VERSION") && git push
 
 echo ""
 echo "==>All release steps completed successfully."

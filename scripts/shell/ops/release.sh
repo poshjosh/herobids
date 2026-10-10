@@ -17,8 +17,7 @@
 # Parity pin (herobids ↔ traderton mirrors):
 #   scripts/shell/ops/release.sh --bump-parity-pin v0.1.2
 #     Update the traderton ref pinned in .github/workflows/slow-tests.yml to the
-#     given tag/sha and record the new comparison pair in the C2.3 execution
-#     ledger (docs/features/2026/09/18/001-trading-extraction-completion/EXECUTION_LEDGER.md).
+#     given tag/sha
 #     Run this after releasing traderton, so the next herobids release/hook
 #     parity-checks against the matching traderton revision.
 #
@@ -90,10 +89,8 @@ done
 
 # ─── Parity pin bump (herobids ↔ traderton mirrors) ──────────────────────────
 
-# Standalone action: repoint the traderton ref pinned in slow-tests.yml and
-# record the new comparison pair in the C2.3 ledger. No version bump, no commit.
+# Standalone action: repoint the traderton ref pinned in slow-tests.yml. No version bump, no commit.
 PARITY_WORKFLOW="${ROOT}/.github/workflows/slow-tests.yml"
-PARITY_LEDGER="${ROOT}/docs/features/2026/09/18/001-trading-extraction-completion/EXECUTION_LEDGER.md"
 
 if [[ -n "$BUMP_PARITY_REF" ]]; then
   header "Parity pin bump"
@@ -117,18 +114,8 @@ if [[ -n "$BUMP_PARITY_REF" ]]; then
   CURRENT_PIN=$(grep -E '^[[:space:]]*ref: .*# parity-pin' "$PARITY_WORKFLOW" | sed -E 's/^[[:space:]]*ref: ([^ #]+).*/\1/')
   ok "Pinned traderton ref → ${CURRENT_PIN}"
 
-  # Record the new pair in the C2.3 ledger (append a dated batch-record line).
-  if [[ -f "$PARITY_LEDGER" ]]; then
-    PIN_LINE="Parity pin bump: herobids \`\${{ github.sha }}\` ↔ traderton \`${CURRENT_PIN}\` ($(date +%Y-%m-%d))."
-    printf '  - %s\n' "$PIN_LINE" >> "$PARITY_LEDGER"
-    ok "Recorded new pair in EXECUTION_LEDGER.md"
-  else
-    warn "Ledger not found at ${PARITY_LEDGER}; record the new pair manually:"
-    warn "  herobids=\${{ github.sha }} ↔ traderton=${CURRENT_PIN}"
-  fi
-
   header "Done"
-  ok "Parity pin bumped to traderton ${CURRENT_PIN}. Review and commit slow-tests.yml + ledger."
+  ok "Parity pin bumped to traderton ${CURRENT_PIN}. Review and commit slow-tests.yml."
   exit 0
 fi
 
