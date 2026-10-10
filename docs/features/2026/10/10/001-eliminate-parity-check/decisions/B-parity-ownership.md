@@ -266,7 +266,10 @@ document is evidence, not a substitute.
 - **R9 — Wire-DTO set.** One traderton-published package, `@traderton/contracts`, on
   GitHub Packages under the `poshjosh` org, exact-version pin in herobids, bump
   automated in `release-xstack.sh`. Entries are dropped when herobids consumes the
-  package, not before.
+  package, not before. **Clarification O9 (2026-10-10):** the package is published as
+  `@poshjosh/contracts` (not `@traderton/contracts`) because `poshjosh` is a user, not an
+  org, and GitHub Packages requires the npm scope to match the repo owner. See
+  `decisions/G2-contracts-publish-scope.md`.
 - **R10 — Blocked set.** Do not drop, narrow, or edit anything in the Track-D set before
   H5 has executed.
 - **R11 — Shrink incrementally.** The manifest shrinks entry by entry and the checker

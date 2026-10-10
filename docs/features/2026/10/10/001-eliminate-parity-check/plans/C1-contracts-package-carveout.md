@@ -1,4 +1,4 @@
-# C1 — `@traderton/contracts` package carve-out plan
+# C1 — `@poshjosh/contracts` package carve-out plan
 
 Exact export list per shape group, package layout, build graph, test strategy, starting
 version, the narrowed wake envelope, and the revised C1.1–C4 row list for Track C.
@@ -13,13 +13,13 @@ would turn traderton CI red (invariant I3).
 
 ## 1. Package layout and name
 
-`packages/contracts` in traderton, name `@traderton/contracts`, version **`0.1.0`** (the
-first publish; G2 tags `@traderton/contracts@0.1.0`, independent of the root `0.1.3`
+`packages/contracts` in traderton, name `@poshjosh/contracts`, version **`0.1.0`** (the
+first publish; G2 tags `@poshjosh/contracts@0.1.0`, independent of the root `0.1.3`
 version). Zero runtime deps; `zod@^3.25.0` only (already the workspace's pinned line).
 
 ```text
 packages/contracts/
-  package.json        # name @traderton/contracts, private:false, exports "." barrel + "./trading" + "./assessment"
+  package.json        # name @poshjosh/contracts, private:false, exports "." barrel + "./trading" + "./assessment"
   tsconfig.json       # extends ../../tsconfig.base.json; outDir dist; rootDir src
   src/
     index.ts          # export * from watch/scan/wake/regime/risk + type-only re-exports
@@ -65,7 +65,7 @@ traderton's authoritative type stays put.
 `RegimeResult` exists twice in traderton: the canonical `packages/market-data/src/types.ts:150`
 (re-exported from `@traderton/market-data`) and a structurally-identical copy in
 `packages/domain/src/market-assessment.ts:836` (verified identical 2026-10-10). The package
-carries its own `RegimeResult` + `RegimeResultSchema` **copy** (type + Zod) so `@traderton/contracts`
+carries its own `RegimeResult` + `RegimeResultSchema` **copy** (type + Zod) so `@poshjosh/contracts`
 has no runtime dependency on `@traderton/market-data`; the canonical source stays in
 `market-data`. Herobids' current import sites of `RegimeResult`/`VolatilityEvidence`/
 `EvidenceValue` (from `@herobids/domain`, i.e. its `market-assessment.ts` mirror) are:
@@ -119,7 +119,7 @@ package), matching the current asymmetric `region` on that entry.
 - Version `0.1.0` for the package; every traderton release that touches contract shapes
   publishes a new package version (the C2.0 plan details the mapping).
 - `publishConfig.registry = "https://npm.pkg.github.com"`, scoped to `@traderton`, exact-pin
-  in herobids (`"@traderton/contracts": "0.1.0"`, no `^`/`~`).
+  in herobids (`"@poshjosh/contracts": "0.1.0"`, no `^`/`~`).
 - Workspace consumers (traderton's own `worker`/`boundary`, then herobids) use `workspace:*`
   / the published version respectively.
 
@@ -134,7 +134,7 @@ package), matching the current asymmetric `region` on that entry.
 | C1.5 | traderton | Copy Regime & volatility group (`regime.ts`, `evidence.ts`) + tests | none (copy) |
 | C1.6 | traderton | Copy Risk-overrides group (`risk-overrides.ts`) + tests | none (copy) |
 | C2.0/C2.1 | traderton | Plan + implement publish workflow, dry run | none |
-| G2 | traderton | First publish `@traderton/contracts@0.1.0` | none |
+| G2 | traderton | First publish `@poshjosh/contracts@0.1.0` | none |
 | C3.0 | herobids | Plan install auth (`.npmrc`, CI, Docker); **stop if O6 needs a secret** | none |
 | C3.1 | herobids | Wire exact-pin dep + a clean `pnpm install` and Docker build | none |
 | C3.2 | herobids | Swap watch imports → package; delete `apps/worker/src/watch-types.ts` | drop `watch-types` |

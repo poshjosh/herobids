@@ -316,7 +316,7 @@ set). `ScannerCandleTarget` and `SwapExecutionIdentity` are used in hb only by
 | `AgentWakePayload` envelope + `ScannerWakeContext` | tt to hb | `agent_wake` notification | (1) or (2) |
 
 Notifications are not tool results, so runtime discovery cannot carry them. If the notification
-shapes need a single mechanism anyway, one small traderton-owned `@traderton/contracts` package
+shapes need a single mechanism anyway, one small traderton-owned `@poshjosh/contracts` package
 (Zod + types, no other dependencies) with a version pin in herobids covers the whole table and
 lets the tool-result rows ride along. Herobids currently has no `@traderton/*` dependency, so this
 introduces the first one: that cost belongs in the ratification.

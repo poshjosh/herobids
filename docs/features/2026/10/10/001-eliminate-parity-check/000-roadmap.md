@@ -4,7 +4,7 @@
 > `scripts/check-parity-drift.mjs` (and its test) and the `parity-drift` CI job from
 > **both** herobids and traderton, by resolving the duplication behind every manifest
 > entry (delete dead copies, replace logic mirrors with boundary calls, move wire shapes
-> into a traderton-published `@traderton/contracts` package, or retire the obligation),
+> into a traderton-published `@poshjosh/contracts` package, or retire the obligation),
 > **not** by weakening, narrowing-to-nothing, or hiding the check.
 >
 > **The epic is done when** the manifest has **zero entries because nothing is mirrored
@@ -78,7 +78,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows below are its sub-steps.
 |---|---|---|---|
 | **M-A** | both | Track A — dead copies and retired obligations (A1-A7, G1, A9, A10) | verified 2026-10-10 (`f07d87ce`) |
 | **M-B** | both | Track B — decided engineering (B1.0-B4.x) | ready (stops at B1.2) |
-| **M-C** | both | Track C — `@traderton/contracts` package (C1.0-C5, G2, G3) | ready (may stop at C3.0/O6) |
+| **M-C** | both | Track C — `@poshjosh/contracts` package (C1.0-C5, G2, G3) | ready (may stop at C3.0/O6) |
 | **M-D** | both | Track D — blocked on other epics (D0 checkpoint, D1, D2) | blocked |
 | **M-C6** | both | Finish line — delete the checker, manifest, tests and CI job | blocked on zero entries |
 | Z1 | herobids docs | Mirror the ratified decisions as ADR 018 | ready |
@@ -104,7 +104,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows below are its sub-steps.
 | B3.2 | herobids | Risk-contract retirement: implement | verified 2026-10-10 (`4345c55c`) |
 | B4.1 | herobids | Audit and plan `agent-risk-defaults` YAML removal | verified 2026-10-10 |
 | B4.x | herobids | Rows defined by B4.1's plan | planned (B4.2-B4.4) |
-| C1.0 | traderton | Plan the `@traderton/contracts` carve-out | ready |
+| C1.0 | traderton | Plan the `@poshjosh/contracts` carve-out | ready |
 | C1.1-C1.6 | traderton | Build the package: skeleton + 5 shape groups (additive) | planned |
 | C2.0-C2.1, **G2** | traderton | Publish workflow; first publish | planned |
 | C3.0-C3.6, **G3** | herobids | Plan; wire dependency; migrate 5 shape groups; tag | planned |
@@ -435,7 +435,7 @@ write the brief, flag it, and stop the track there; resume after ratification.
 
 ---
 
-## Track C — Wire-DTO contract package (`@traderton/contracts`) (milestone M-C)
+## Track C — Wire-DTO contract package (`@poshjosh/contracts`) (milestone M-C)
 
 **One autonomous pass** through C1.0 → C1.x → C2.0 → C2.1 → G2 → C3.0 → C3.x → G3 → C4 → C5,
 with a **possible human stop at C3.0** only if install authentication (open item O6)
@@ -461,7 +461,7 @@ traderton file earlier would turn traderton CI red (invariant I3).
 - **Prerequisites:** none. **Governing:** Brief B ratified decision 5, O4, O6; findings
   "Proposed wire-DTO contract set"; mechanics doc "Scope". **Gates:** GP-D.
 - **C1.0 plan written 2026-10-10:** `plans/C1-contracts-package-carveout.md` — package
-  `packages/contracts` / `@traderton/contracts` v0.1.0, zod-only dependency, six shape groups
+  `packages/contracts` / `@poshjosh/contracts` v0.1.0, zod-only dependency, six shape groups
   with exact export lists + transitive deps, round-trip fixture test strategy, narrowed wake
   envelope (scanner context + base fields only — herobids keeps its own 4 wake contexts),
   schemas-only (no `parseWatch` runtime helper), `RegimeResult` dual-home traced
@@ -469,7 +469,7 @@ traderton file earlier would turn traderton CI red (invariant I3).
   C1.1–C5/g2/g3 row list (§8). See also §5/§6/§9 for the helper and blocked-set boundaries.
 
 ### C1.1. Package skeleton
-- **Done-state:** `packages/contracts` in traderton (name `@traderton/contracts`), empty
+- **Done-state:** `packages/contracts` in traderton (name `@poshjosh/contracts`), empty
   barrel, build, lint and test wiring in the workspace; no content yet. No manifest-listed
   file changed, so no pin bump. **Prerequisites:** C1.0. **Gates:** floor, GP-C.
 
@@ -500,7 +500,7 @@ the C1.0 plan §2.
   plan's equivalent) succeeds. **No real publish.** **Prerequisites:** C1.1, C2.0.
   **Gates:** floor, GP-C.
 
-### G2. Release row: first publish of `@traderton/contracts`
+### G2. Release row: first publish of `@poshjosh/contracts`
 - **Who:** the agent (invariant I12), using the plan from C2.0 and the local credentials.
   **Done-state:** the package is published at its first version, and the version and
   publish time are in the ledger. This is the one step that cannot be redone with the same
@@ -517,7 +517,7 @@ the C1.0 plan §2.
   the entry in the same change as the swap, I1). **Prerequisites:** C2.0. **Gates:** GP-D.
 
 ### C3.1. Wire the dependency
-- **Done-state:** `.npmrc` scope config, an exact-version pin of `@traderton/contracts`
+- **Done-state:** `.npmrc` scope config, an exact-version pin of `@poshjosh/contracts`
   (no `^` or `~`), CI and Docker install authentication per the plan, `.env*.example`
   updated if a variable is introduced (I9); a clean-environment `pnpm install` and the
   Docker build both succeed; nothing uses the package yet. **Prerequisites:** G2, C3.0.
@@ -549,14 +549,14 @@ manifest entry (I1, I2), GP-H.
 
 ### C4. Traderton consumes the package; delete the originals
 - **Repo:** traderton. **Done-state:** traderton imports the shapes from
-  `@traderton/contracts` (workspace dependency); the in-domain and in-worker originals are
+  `@poshjosh/contracts` (workspace dependency); the in-domain and in-worker originals are
   deleted (including the unused wake-context schemas, Brief B O4); pin bumped to the G3
   tag; the GP-T recipe passes. **Prerequisites:** G3, per shape. **Gates:** floor, GP-T,
   GP-C.
 
 ### C5. Automate the package version-pin bump
 - **Repo:** herobids. **Done-state:** `scripts/shell/ops/release-xstack.sh` publishes
-  `@traderton/contracts`, then bumps herobids's pinned dependency, right after the
+  `@poshjosh/contracts`, then bumps herobids's pinned dependency, right after the
   existing parity-pin steps (`bash -n` passes; the script is **edited, not run**: running it is G-row work).
   **Prerequisites:** G2. **Governing:** mechanics doc section 2. **Gates:** floor.
 

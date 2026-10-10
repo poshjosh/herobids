@@ -1,7 +1,12 @@
 # G2 — `@traderton/contracts` publish scope mismatch (heavyweight)
 
-- **Status:** PROPOSED
+- **Status:** RESOLVED (Option A)
 - **Date:** 2026-10-10
+- **Decision (2026-10-10):** Option A — rename the package to `@poshjosh/contracts`.
+  The `@traderton` scope was only a naming choice, not a functional requirement; the
+  actual repo owner is the `poshjosh` user, so `@poshjosh/contracts` is the correct scope.
+  All code + epic docs updated; the ratified `B-parity-ownership.md` R9 wording is left
+  intact with a clarification pointer (O9).
 - **Blocks:** G2 (first publish), C3.1 (wire the dependency), C3.2–C3.6 (consume the
   package), G3, C4, C5.
 

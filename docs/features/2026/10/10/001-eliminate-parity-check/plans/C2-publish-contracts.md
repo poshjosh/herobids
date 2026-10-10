@@ -1,4 +1,4 @@
-# C2 — Publishing `@traderton/contracts`
+# C2 — Publishing `@poshjosh/contracts`
 
 Publish workflow, version mapping, publishConfig, token permissions, dry-run
 procedure, rollback policy, and how `release.sh` integrates. Written 2026-10-10
@@ -9,7 +9,7 @@ change; the actual publish is the G2 release row.
 ## 1. Registry and scope
 
 - **Registry:** GitHub Packages, org `poshjosh` (`https://npm.pkg.github.com`).
-- **Package:** `@traderton/contracts` (scoped to `@traderton`), `"access": "restricted"`.
+- **Package:** `@poshjosh/contracts` (scoped to `@traderton`), `"access": "restricted"`.
 - **Auth:** the same `GITHUB_TOKEN` / `packages: write` / `packages: read` boundary the
   org already uses for `slow-tests.yml` dual-checkout and `build-push.yml` (`packages: write`
   is already granted there). No new credential.
@@ -17,7 +17,7 @@ change; the actual publish is the G2 release row.
 ## 2. Version mapping
 
 - The package version is independent of the root `traderton` version (0.1.3).
-  First publish is `@traderton/contracts@0.1.0` (already set in
+  First publish is `@poshjosh/contracts@0.1.0` (already set in
   `packages/contracts/package.json`).
 - A **new package version is cut whenever a contract shape changes**; the version is
   bumped in `packages/contracts/package.json` in the same change as the shape edit, using
@@ -45,8 +45,8 @@ at the repository root):
   `packages/contracts/**` (additive; tag-triggering is not used because the package
   version is not tied to the root tag).
 - **Steps:** checkout → `corepack enable` → `pnpm install --frozen-lockfile` →
-  `pnpm --filter @traderton/contracts run build` → `pnpm --filter @traderton/contracts run test` →
-  `pnpm publish --filter @traderton/contracts --no-git-checks`.
+  `pnpm --filter @poshjosh/contracts run build` → `pnpm --filter @poshjosh/contracts run test` →
+  `pnpm publish --filter @poshjosh/contracts --no-git-checks`.
 - **Auth:** `registry-url: https://npm.pkg.github.com`, `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`.
 - **Permissions:** `contents: read`, `packages: write` (identical to `build-push.yml`).
 - **Idempotency guard:** `pnpm publish` fails on an existing version (npm rejects a
@@ -86,5 +86,5 @@ side (publish the package, then bump herobids' pin), which C5 covers separately.
 ## 8. Revised row list (writes back into 000-roadmap.md)
 
 - C2.0 + C2.1: plan (this doc) + `publish-package.yml` + `pnpm pack`/`--dry-run` green.
-- G2: first real publish of `@traderton/contracts@0.1.0` (agent-run, I12).
+- G2: first real publish of `@poshjosh/contracts@0.1.0` (agent-run, I12).
 - C3.0: herobids install-auth plan (`.npmrc`/CI/Docker) — **stop only if O6 needs a new secret**.
