@@ -65,8 +65,8 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | A10 | traderton | verified | autonomous | A9 | `29a88725` | Deleted `tick-gates.ts`, `tick-gate-state.ts`, `tick-gate-state.test.ts`, `tick-message-types.test.ts`, `_deferred-config/tick-gates.test.ts`; `_deferred-config/README.md` bullet removed; `pnpm build` + `pnpm lint` clean; full `pnpm test` (clean env) 168 files / 2943 tests passed | I6 grep: no remaining non-test importers |
 | B1.0 | herobids | verified | autonomous | none | `655c141a` | `plans/B1-herobids-drops-local-capability-prechecks.md` written: 4 call sites audited, traderton equivalents verified | |
 | B1.1 | herobids | verified | autonomous | B1.0 | `655c141a` | Dropped local capability/mode-rank pre-checks; deleted `mode-rank.ts` + test; manifest 17 -> 16; checker test 4/4; both recipes PASSED; full suite 350 files / 6969 tests | |
-| B1.2 | herobids (brief) | needs human | human (ratify the brief) | B1.0 | | `decisions/B1.2-agent-path-capability-check.md` written (PROPOSED) | Heavyweight brief: agent-path capability check |
-| B1.3 | herobids | planned | autonomous | B1.2 ratified | | | |
+| B1.2 | herobids (brief) | verified | human (ratify the brief) | B1.0 | traderton `425a838` | Option 2 ratified: traderton `set_agent_trading_profile` enforces paper+swap for the agent path | Heavyweight brief: agent-path capability check |
+| B1.3 | herobids | verified | autonomous | B1.2 ratified | `5c6b744` | Dropped agent-path pre-check; deleted `execution-capability.ts` + test; `venueTypeFromProvider` relocated to `config/schema.ts`; manifest 16 -> 15; checker test 4/4; both recipes PASSED; full suite 349 files / 6953 tests | |
 | B2.0 | human | verified | human | none | | Human 2026-10-10: nothing outside herobids and traderton calls the health routes. Framework setup searched both repos: only the route's own test calls them | Satisfied. B2.1 repeats the search and the I6 trial deletion |
 | B2.1 | herobids | planned | autonomous | B2.0 | | | |
 | B2.2 | traderton | planned | autonomous | B2.1 + herobids tag (G) | | | |

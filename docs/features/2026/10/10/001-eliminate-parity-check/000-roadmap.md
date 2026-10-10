@@ -95,8 +95,8 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows below are its sub-steps.
 | A10 | traderton | Delete the `tick-gates` cluster | verified 2026-10-10 (`29a88725`) |
 | B1.0 | herobids | Audit and plan: local capability and mode-rank pre-checks | verified 2026-10-10 (`655c141a`) |
 | B1.1 | herobids | Drop verified-safe pre-checks; delete `mode-rank` | verified 2026-10-10 (`655c141a`) |
-| B1.2 | herobids | **Brief:** agent-path capability check | needs human (brief written) |
-| B1.3 | herobids | Implement B1.2's outcome; delete `execution-capability` | planned |
+| B1.2 | herobids | **Brief:** agent-path capability check | verified 2026-10-10 (Option 2) |
+| B1.3 | herobids | Implement B1.2's outcome; delete `execution-capability` | verified 2026-10-10 (`5c6b744`) |
 | B2.0 | - | Confirm no consumer of the health routes | **answered** (see block) |
 | B2.1 | herobids | Remove actor-health | planned |
 | B2.2 | traderton | Remove actor-health's dead copy | planned |
