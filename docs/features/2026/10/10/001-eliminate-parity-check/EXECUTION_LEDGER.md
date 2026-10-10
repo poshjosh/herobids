@@ -81,8 +81,9 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | C2.0 | traderton | verified | autonomous | C1.0 | `plans/C2-publish-contracts.md` | Publish plan: GitHub Packages `poshjosh` org, `@poshjosh/contracts@0.1.0`, path-triggered workflow, `pnpm pack`/`--dry-run` procedure, rollback policy | GP-D: plan only |
 | C2.1 | traderton | verified | autonomous | C1.1, C2.0 | `bff260c` | `publish-package.yml` + `files: ["dist"]`; `pnpm pack` + `pnpm publish --dry-run` green (12 kB tarball, dist-only) | |
 | G2 | traderton | verified | autonomous | C2.1 | `799b802` (rename) + CI run `38068175023` | **Published `@poshjosh/contracts@0.1.0`** to GitHub Packages (Option A rename; scope matches repo owner `poshjosh`). Publish workflow `completed success`; log shows `+ @poshjosh/contracts@0.1.0` | Heavyweight (H3/H6) resolved: package scope vs repo owner |
-| C3.0 | herobids | planned | autonomous | C2.0 | | | Plan only; must settle install auth (open item O6) |
-| C3.1-C3.6 | herobids | planned | autonomous | G2, C3.0, shapes in C1.x | | | |
+| C3.0 | herobids | verified | autonomous | C2.0 | `plans/C3-herobids-consumes-contracts.md` | Install-auth plan: CI `GITHUB_TOKEN` (same-owner, no new cred); local+Docker need a `read:packages` PAT (O6 fires — verified `npm view @poshjosh/contracts` → `403 permission_denied: token does not match expected scopes`); `.npmrc` with `${NPM_TOKEN}` placeholder + `.env.example` twin; dep lives in `@herobids/domain`; per-shape file map + entry-drop order | GP-D: plan only |
+| C3.1 | herobids | blocked | autonomous | G2, C3.0 | | **Blocked (O6):** local + Docker install auth needs a new `read:packages` PAT. The local git credential token has scopes `read:user, repo, user:email, workflow` (no `read:packages`). Human must supply the token (or confirm CI-only). | Heavyweight (O6): new credential |
+| C3.2-C3.6 | herobids | planned | autonomous | C3.1, shapes in C1.x | | | |
 | G3 | herobids | planned | autonomous | C3.x | | | Tag herobids with the C3 entry removals |
 | C4 | traderton | planned | autonomous | G3 | | | |
 | C5 | herobids | planned | autonomous | G2 | | | |
