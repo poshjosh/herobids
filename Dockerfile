@@ -16,10 +16,12 @@ FROM base AS build-shared
 WORKDIR /app
 COPY . .
 # GitHub Packages auth for @poshjosh/contracts (scope-only .npmrc; token from
-# the NPM_TOKEN build secret, never baked into the image).
+# the NPM_TOKEN build secret, never baked into the image). The secret is mounted
+# as a file at /run/secrets/NPM_TOKEN; read it (not an env var) so the token is
+# never captured in an image layer.
 RUN --mount=type=secret,id=NPM_TOKEN \
     --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    sh -c 'printf "//npm.pkg.github.com/:_authToken=%s\n" "$NPM_TOKEN" >> .npmrc && pnpm install --frozen-lockfile'
+    sh -c 'printf "//npm.pkg.github.com/:_authToken=%s\n" "$(cat /run/secrets/NPM_TOKEN)" >> .npmrc && pnpm install --frozen-lockfile'
 RUN pnpm --filter @herobids/domain run build && \
     pnpm --filter @herobids/db run build && \
     pnpm --filter @herobids/documents run build && \

@@ -8,8 +8,11 @@ RUN corepack enable
 FROM base AS build
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+# GitHub Packages auth for @poshjosh/contracts (scope-only .npmrc; token from
+# the NPM_TOKEN build secret, never baked into the image).
+RUN --mount=type=secret,id=NPM_TOKEN \
+    --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    sh -c 'printf "//npm.pkg.github.com/:_authToken=%s\n" "$(cat /run/secrets/NPM_TOKEN)" >> .npmrc && pnpm install --frozen-lockfile'
 # Build domain first — the web package depends on its type definitions.
 RUN pnpm --filter @herobids/domain run build
 # VITE_API_BASE_URL defaults to /api which nginx proxies to the api service.

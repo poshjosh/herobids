@@ -10,7 +10,10 @@ RUN corepack enable
 FROM base AS runtime
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+# GitHub Packages auth for @poshjosh/contracts (scope-only .npmrc; token from
+# the NPM_TOKEN build secret, never baked into the image).
+RUN --mount=type=secret,id=NPM_TOKEN \
+    --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    sh -c 'printf "//npm.pkg.github.com/:_authToken=%s\n" "$(cat /run/secrets/NPM_TOKEN)" >> .npmrc && pnpm install --frozen-lockfile'
 WORKDIR /app/packages/db
 CMD ["pnpm", "run", "db:migrate"]

@@ -44,6 +44,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.migrate
+      secrets:
+        - NPM_TOKEN
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
     depends_on:
@@ -61,6 +63,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: api
+      secrets:
+        - NPM_TOKEN
     ports:
       - '3000:3000'
     volumes:
@@ -131,6 +135,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: worker
+      secrets:
+        - NPM_TOKEN
     volumes:
       - evaldata:/app/app-data
     env_file:
@@ -197,6 +203,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      secrets:
+        - NPM_TOKEN
     ports:
       - '5173:80'
     depends_on:
@@ -218,6 +226,12 @@ networks:
     ipam:
       config:
         - subnet: 172.18.0.0/16
+
+# Build-time secret for pulling @poshjosh/contracts from GitHub Packages. Sourced
+# from the NPM_TOKEN env var (or the shell's ~/.npmrc token) — never committed.
+secrets:
+  NPM_TOKEN:
+    environment: NPM_TOKEN
 
 volumes:
   pgdata:

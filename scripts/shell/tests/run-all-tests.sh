@@ -74,6 +74,18 @@ for arg in "$@"; do
   esac
 done
 
+# ─── NPM_TOKEN for Docker builds ─────────────────────────────────────────────
+# The migrate/api/worker/web images pull @poshjosh/contracts from GitHub Packages
+# via a build secret (compose `secrets.NPM_TOKEN` → `environment: NPM_TOKEN`).
+# Source the token from ~/.npmrc (where the human's read:packages PAT lives) if
+# it is not already exported, so `docker compose build` can pass it through.
+if [[ -z "${NPM_TOKEN:-}" ]]; then
+  NPM_TOKEN="$(grep -E '^//npm\.pkg\.github\.com/:_authToken=' "${HOME}/.npmrc" 2>/dev/null | head -1 | cut -d= -f2-)"
+  if [[ -n "$NPM_TOKEN" ]]; then
+    export NPM_TOKEN
+  fi
+fi
+
 # ─── State tracking ──────────────────────────────────────────────────────────
 
 INFRA_STARTED=false   # true if this script started postgres+redis
