@@ -47,7 +47,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | ID | Repo | Status | Authorization | Prerequisites | Commits | Verification evidence | Blockers / notes |
 |---|---|---|---|---|---|---|---|
 | M-A | both | verified | autonomous | none | `f07d87ce` | A5, A6, A7 done; manifest 20 -> 17 | Track A: dead copies + retired obligations |
-| M-B | both | in progress | autonomous | M-A | | | Track B: stops at B1.2 (human brief) |
+| M-B | both | verified | autonomous | M-A | `666d4a17`, `c4e87221`, `53857b7e` (hb); `5726fb3`, `b419f79` (tt); tag `v0.6.9` | Track B complete: B1.x-B4.x all verified | Track B: stops at B1.2 (human brief) |
 | M-C | both | ready | autonomous | M-B | | | Track C: may stop at C3.0/O6 (secret) |
 | M-D | both | blocked | autonomous | M-A, M-B, M-C | | | Track D: D0 checkpoint (human) |
 | M-C6 | both | blocked | autonomous | manifest has zero entries | | | Finish line |
@@ -73,9 +73,9 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | B3.1 | herobids | verified | autonomous | none | `43ec0a9e` | Open items 1-3 checked; tests 1-4 written and run (before-state recorded): test 1 (characterization) PASS, test 4 (no-enforcement) PASS, tests 2-3 (gap-revealing) FAIL as expected via `it.fails` | Open item 1: no `apps/web` consumer of `riskContract`. Open item 2: no other producer wires real profile data. Open item 3: `ResolvedAgentRiskContract` shape confirmed |
 | B3.2 | herobids | verified | autonomous | B3.1 | `4345c55c` | Retired `resolveAgentRiskContractForResponse`; dropped `riskContract` display field from 4 agent responses; helper + tests removed; full suite 346 files / 6932 tests | Human decision 2026-10-10: Option A (delete). No `apps/web` or external consumer |
 | B4.1 | herobids | verified | autonomous | none | `plans/B4-agent-risk-defaults-boundary-cache.md` | 9 consumers audited: 2 boundary-read-able, 1 herobids-local (worker thresholds), 6 dead params | Appends B4.2-B4.4 |
-| B4.2 | herobids | planned | autonomous | B4.1 | | | Move worker thresholds to herobids-local config block |
-| B4.3 | herobids | planned | autonomous | B4.2 | | | Re-point API readers to boundary cache; remove dead params |
-| B4.4 | herobids | planned | autonomous | B4.3 | | | Remove YAML block; drop `agent-risk-defaults` entry |
+| B4.2 | herobids | verified | autonomous | B4.1 | `666d4a17` (hb) + `5726fb3` (tt) | Moved 2 worker thresholds to `agentDecisionHandler`; removed from both `AgentRiskDefaultsSchema`; both recipes + full suites green | |
+| B4.3 | herobids | verified | autonomous | B4.2 | `c4e87221` | API readers (`blueprints.ts`, `agents.ts`) source `loadOperatorRiskDefaults`; 6 dead params removed; worker `agent.ts` field removed; full suite 346 files / 6932 tests | |
+| B4.4 | herobids | verified | autonomous | B4.3 | `c4e87221` | `agentRiskDefaults` YAML block + `AppConfigSchema` key + `agent-risk-defaults` entry removed (manifest 14 -> 13); checker test retargeted (I2); `v0.6.9` released; traderton pin bumped to `v0.6.9` | |
 | C1.0 | traderton | ready | autonomous | none | | | Plan only |
 | C1.1-C1.6 | traderton | planned | autonomous | C1.0 | | | Provisional split; C1.0 may revise |
 | C2.0 | traderton | planned | autonomous | C1.0 | | | Plan only |
@@ -101,6 +101,8 @@ Record every parity-pin change (and the state at the start of the epic).
 | 2026-10-10 (start) | traderton `slow-tests.yml` | herobids `v0.6.5` | traderton `${{ github.sha }}` | baseline (already red against current traderton tree; `v0.6.6` passes) |
 | 2026-10-10 | (none yet) herobids `v0.6.7` created | herobids tag `v0.6.7` (`c48c2757`) | traderton `main` (`54a26c49`) passes against it | G1: pin target for A9 (traderton bump not applied yet) |
 | 2026-10-10 | traderton `slow-tests.yml` | herobids `v0.6.7` | traderton `main` (`733b71fa`) | A9: pin bumped via `release.sh --bump-parity-pin v0.6.7`; traderton recipe vs `v0.6.7` PASSED |
+| 2026-10-10 | traderton `slow-tests.yml` | herobids `v0.6.8` | traderton `main` (`8df8657`) | B2.2: pin bumped via `release.sh --bump-parity-pin v0.6.8`; traderton recipe vs `v0.6.8` PASSED |
+| 2026-10-10 | traderton `slow-tests.yml` | herobids `v0.6.9` | traderton `main` (`b419f79`) | B4: pin bumped via `release.sh --bump-parity-pin v0.6.9`; traderton recipe vs `v0.6.9` PASSED |
 
 ## Per-batch record template
 
@@ -264,4 +266,22 @@ Decisions made (lightweight): A5 — retargeted ActorType to ExternalBackendActo
 Findings / new gaps: none.
 Residual risks / blockers: none.
 Next allowed milestone (track): M-B (Track B — decided engineering), which stops at B1.2 for the human brief.
+```
+
+```text
+Date: 2026-10-10
+Milestone / batch (track): M-B (Track B — decided engineering) — B4.2-B4.4 completion
+Starting SHAs: herobids=d4e6ed16 (origin/main), traderton=8df8657 (origin/main)
+Sub-steps completed (in order): B4.2 (move worker thresholds to agentDecisionHandler; symmetric 15-field agentRiskDefaults in both repos), B4.3 (re-point blueprint + risk-defaults readers to loadOperatorRiskDefaults; remove 6 dead params + worker agent.ts field), B4.4 (remove herobids agentRiskDefaults YAML block + AppConfigSchema key + agent-risk-defaults manifest entry; retarget checker test I2), release v0.6.9, traderton pin bump to v0.6.9. (B1.0-B3.2 were already verified earlier in the track.)
+Commits: herobids 666d4a17 (B4.2), c4e87221 (B4.3-B4.4), 53857b7e (functional test positional fix), f839e355 (Bump to v0.6.9); traderton 5726fb3 (B4.2), b419f79 (pin bump)
+Focused validation: checker test 4/4 (node --test scripts/check-parity-drift.test.mjs); focused api tests 463/463 (blueprints, chat, agent-interactivity, handle-go-live, execution-mode-immutability, agents*); traderton affected tests 86/86.
+Broader validation: herobids pnpm lint clean; pnpm build + domain/worker/api builds clean; env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm vitest run -> 346 files passed (26 skipped), 6932 tests passed (332 skipped); release.sh core+extra+e2e all PASS. traderton pnpm lint clean; pnpm -r run build clean; env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm vitest run -> 166 files passed (21 skipped), 2928 tests passed (102 skipped).
+Parity gates: checker test 4/4; sibling-tree recipe PASSED; herobids-side pin recipe (traderton v0.1.2) PASSED; traderton-side pin recipe (herobids v0.6.9) PASSED; manifest entry count 14 -> 13 (agent-risk-defaults removed).
+Decisions made (lightweight path, one line each):
+  - B4.2: moved the 2 thresholds to herobids-local `agentDecisionHandler` block (option 1 from the plan); removed them from BOTH repos' `AgentRiskDefaultsSchema` (symmetric change, authority traderton).
+  - B4.3: boundary-read helper `readOperatorRiskDefaults` uses `AgentRiskDefaultsSchema.parse({})` as the fail-open fallback (blueprint instantiation is enforcement-adjacent; the boundary's own `set_agent_trading_profile` is the hard gate).
+  - B4.4: retargeted checker test I2. The test flips three authority classifications: the removed `agent-risk-defaults` (traderton) was replaced by `domain-agent-risk-contract` (the surviving traderton id), kept `strategy-preset-economy` (mirror-only), and the now-free third slot uses `domain-config-presets` (mirror-only).
+Findings / new gaps: the functional tier of release.sh 0.6.9 initially failed on 4 telegram-slash-commands functional tests because `telegramWebhookHandler`'s positional args shifted after the `agentRiskDefaults` param removal; fixed in `53857b7e` (no code-behaviour change, test wiring only), then release passed end-to-end.
+Residual risks / blockers: none. Traderton keeps its `agentRiskDefaults` block (it is the sole authority; exposed over `get_operator_defaults`).
+Next allowed milestone (track): M-C (Track C — @traderton/contracts package), starting at C1.0 (plan).
 ```
