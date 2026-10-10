@@ -71,8 +71,11 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | B2.1 | herobids | verified | autonomous | B2.0 | `c755e1d1` | Deleted actor-health routes + publisher + domain type; manifest 15 -> 14; checker test 4/4; both recipes PASSED; full suite 346 files / 6932 tests | |
 | B2.2 | traderton | verified | autonomous | B2.1 + herobids tag (G) | `3b1e863` + `8df8657` | Deleted actor-health dead copy; released herobids `v0.6.8`; pin bumped to `v0.6.8`; traderton recipe PASSED | |
 | B3.1 | herobids | verified | autonomous | none | `43ec0a9e` | Open items 1-3 checked; tests 1-4 written and run (before-state recorded): test 1 (characterization) PASS, test 4 (no-enforcement) PASS, tests 2-3 (gap-revealing) FAIL as expected via `it.fails` | Open item 1: no `apps/web` consumer of `riskContract`. Open item 2: no other producer wires real profile data. Open item 3: `ResolvedAgentRiskContract` shape confirmed |
-| B3.2 | herobids | planned | autonomous | B3.1 | | | |
-| B4.1 | herobids | ready | autonomous | none | | | Audit + plan; adds rows B4.x |
+| B3.2 | herobids | verified | autonomous | B3.1 | `4345c55c` | Retired `resolveAgentRiskContractForResponse`; dropped `riskContract` display field from 4 agent responses; helper + tests removed; full suite 346 files / 6932 tests | Human decision 2026-10-10: Option A (delete). No `apps/web` or external consumer |
+| B4.1 | herobids | verified | autonomous | none | `plans/B4-agent-risk-defaults-boundary-cache.md` | 9 consumers audited: 2 boundary-read-able, 1 herobids-local (worker thresholds), 6 dead params | Appends B4.2-B4.4 |
+| B4.2 | herobids | planned | autonomous | B4.1 | | | Move worker thresholds to herobids-local config block |
+| B4.3 | herobids | planned | autonomous | B4.2 | | | Re-point API readers to boundary cache; remove dead params |
+| B4.4 | herobids | planned | autonomous | B4.3 | | | Remove YAML block; drop `agent-risk-defaults` entry |
 | C1.0 | traderton | ready | autonomous | none | | | Plan only |
 | C1.1-C1.6 | traderton | planned | autonomous | C1.0 | | | Provisional split; C1.0 may revise |
 | C2.0 | traderton | planned | autonomous | C1.0 | | | Plan only |

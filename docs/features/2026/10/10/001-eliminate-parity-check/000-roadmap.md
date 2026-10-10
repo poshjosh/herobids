@@ -101,9 +101,9 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows below are its sub-steps.
 | B2.1 | herobids | Remove actor-health | verified 2026-10-10 (`c755e1d1`) |
 | B2.2 | traderton | Remove actor-health's dead copy | verified 2026-10-10 (`3b1e863`) |
 | B3.1 | herobids | Risk-contract retirement: tests first, record before-state | verified 2026-10-10 (`43ec0a9e`) |
-| B3.2 | herobids | Risk-contract retirement: implement | planned |
-| B4.1 | herobids | Audit and plan `agent-risk-defaults` YAML removal | ready |
-| B4.x | herobids | Rows defined by B4.1's plan | planned |
+| B3.2 | herobids | Risk-contract retirement: implement | verified 2026-10-10 (`4345c55c`) |
+| B4.1 | herobids | Audit and plan `agent-risk-defaults` YAML removal | verified 2026-10-10 |
+| B4.x | herobids | Rows defined by B4.1's plan | planned (B4.2-B4.4) |
 | C1.0 | traderton | Plan the `@traderton/contracts` carve-out | ready |
 | C1.1-C1.6 | traderton | Build the package: skeleton + 5 shape groups (additive) | planned |
 | C2.0-C2.1, **G2** | traderton | Publish workflow; first publish | planned |
