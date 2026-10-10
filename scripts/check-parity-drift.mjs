@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 export const REQUIRED_ENTRY_IDS = new Set([
   'strategy-preset-economy', 'strategy-preset-premium', 'strategy-preset-standard',
-  'watch-types', 'scan-types',
+  'scan-types',
   'domain-agent-risk-contract', 'domain-config-presets-loader', 'domain-config-presets', 'domain-config-strategy-parameters',
   'domain-market-assessment',
   'domain-ports-candle-fetcher',
@@ -15,7 +15,6 @@ export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
   'strategy-preset-economy': 'mirror-only',
   'strategy-preset-premium': 'mirror-only',
   'strategy-preset-standard': 'mirror-only',
-  'watch-types': 'mirror-only',
   'scan-types': 'mirror-only',
   'domain-agent-risk-contract': 'traderton',
   'domain-config-presets-loader': 'mirror-only',

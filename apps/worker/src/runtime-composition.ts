@@ -5,7 +5,7 @@ import type { ScoredSignal } from './market-intelligence/preset-scan-contracts.j
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines, formatInterval } from './prompt-timing-context.js';
 import type { PositionIndicatorUpdate, SymbolFetchOutcome } from './scan-types.js';
-import type { WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from './watch-types.js';
+import type { WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from '@poshjosh/contracts';
 import type { CoverageEvaluationResult } from './position-coverage.js';
 import { fmtUsd } from './fmt.js';
 import type { ReminderRecord } from './reminders/reminder-record.js';

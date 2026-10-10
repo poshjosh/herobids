@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseWatch, toRuntimeActiveWatch, type WatchEntry, type WatchInstrumentIdentity } from './watch-types.js';
+import { parseWatch, toRuntimeActiveWatch } from './agent-watch-view.js';
+import type { WatchEntry, WatchInstrumentIdentity } from '@poshjosh/contracts';
 
 // ---------------------------------------------------------------------------
 // Test helpers

@@ -7,12 +7,65 @@
  * runtime watches / a tick-gate summary.
  */
 
+import { WatchEntrySchema, type WatchEntry } from '@poshjosh/contracts';
+import { createLogger } from './logger.js';
 import {
   summarizeActiveWatches,
   type RuntimeActiveWatch,
   type RuntimeActiveWatchSummary,
 } from './runtime-composition.js';
-import { parseWatch, toRuntimeActiveWatch } from './watch-types.js';
+
+const logger = createLogger('agent-watch-view');
+
+/**
+ * Parse a raw JSON string into a WatchEntry.
+ *
+ * Only structured watches (schemaVersion >= 2) are supported.
+ * Records that fail Zod validation are discarded.
+ * Returns null for any malformed or missing data.
+ */
+export function parseWatch(raw: string): WatchEntry | null {
+  try {
+    const parsed = WatchEntrySchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      // Try to extract watchId for better diagnostics
+      let watchId: string | undefined;
+      try {
+        const rawObj = JSON.parse(raw) as Record<string, unknown>;
+        watchId = typeof rawObj.watchId === 'string' ? rawObj.watchId : undefined;
+      } catch { /* swallow */ }
+      logger.warn({ watchId, raw: raw.length > 200 ? raw.slice(0, 200) + '...' : raw, errors: parsed.error.issues }, 'Malformed watch record — discarding');
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert a WatchEntry into the RuntimeActiveWatch shape used in prompt composition.
+ */
+export function toRuntimeActiveWatch(watch: WatchEntry): RuntimeActiveWatch {
+  return {
+    watchId: watch.watchId,
+    symbol: watch.symbol,
+    chain: watch.chain,
+    ...(watch.address ? { address: watch.address } : {}),
+    ...(watch.resolvedSymbol ? { resolvedSymbol: watch.resolvedSymbol } : {}),
+    ...(watch.resolvedChain ? { resolvedChain: watch.resolvedChain } : {}),
+    ...(watch.resolvedAddress ? { resolvedAddress: watch.resolvedAddress } : {}),
+    condition: watch.condition,
+    thresholdPrice: watch.thresholdPrice,
+    note: watch.note,
+    lastConditionMet: watch.lastConditionMet,
+    lastCheckedAt: watch.lastCheckedAt,
+    ...(watch.schemaVersion !== undefined ? { schemaVersion: watch.schemaVersion } : {}),
+    ...(watch.instrument ? { instrument: watch.instrument } : {}),
+    ...(watch.purpose ? { purpose: watch.purpose } : {}),
+    ...(watch.coverage ? { coverage: watch.coverage } : {}),
+  };
+}
 
 /** Parse a single serialized WatchEntry into a runtime active watch (or null). */
 export function parseRuntimeActiveWatch(raw: string): RuntimeActiveWatch | null {
