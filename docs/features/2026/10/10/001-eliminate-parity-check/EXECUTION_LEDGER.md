@@ -52,7 +52,7 @@ Initial state recorded 2026-10-10. Update the row (and add a batch record) as yo
 | A6 | herobids | ready | autonomous | none | | | |
 | A7 | herobids | planned | autonomous | A2, A3, A5 | | | `ids` consumers: `ports/venue`, `values/instrument`, `models/decision` |
 | A8 | - | withdrawn | - | merged into A1 | | | Human decision 2026-10-10: keep `values/money.ts` |
-| G1 | herobids | in progress | autonomous | A1, A2 `verified` and merged (pushed: origin/main = e2160f1c) | | | Commands: `printf 'o\n' \| scripts/shell/ops/release.sh 0.6.7` (runs `run-all-tests.sh --e2e`, parity gate, bumps package.json + CHANGELOG, commits `Bump to v0.6.7`, pushes main, tags `v0.6.7`, pushes tags). Starting SHAs: herobids=e2160f1c, traderton=54a26c49 (v0.1.3 + docs) |
+| G1 | herobids | verified | autonomous | A1, A2 `verified` and merged | `c48c2757` (Bump to v0.6.7), tag `v0.6.7` | `v0.6.7` manifest has 28 entries and none of the 7 dropped ids; traderton `main` tree vs `v0.6.7` recipe PASSED; tag on origin = `c48c2757`; `release.sh 0.6.7` core tests all PASS (run 3) | Pin target for A9/A10 = `v0.6.7` |
 | A9 | traderton | planned | autonomous | G1 | | | First traderton change: carries the pin bump |
 | A10 | traderton | planned | autonomous | A9 | | | |
 | B1.0 | herobids | ready | autonomous | none | | | Audit + short plan |
@@ -88,6 +88,7 @@ Record every parity-pin change (and the state at the start of the epic).
 |---|---|---|---|---|
 | 2026-10-10 (start) | herobids `slow-tests.yml` | traderton `v0.1.2` | herobids `${{ github.sha }}` | baseline |
 | 2026-10-10 (start) | traderton `slow-tests.yml` | herobids `v0.6.5` | traderton `${{ github.sha }}` | baseline (already red against current traderton tree; `v0.6.6` passes) |
+| 2026-10-10 | (none yet) herobids `v0.6.7` created | herobids tag `v0.6.7` (`c48c2757`) | traderton `main` (`54a26c49`) passes against it | G1: pin target for A9 (traderton bump not applied yet) |
 
 ## Per-batch record template
 
@@ -154,4 +155,17 @@ Decisions made: removed the PaginatedResponse type tests together with the type 
 Findings / new gaps: none. Grep of apps/packages/scripts/tests/.github for the deleted names is clean (only gitignored tsbuildinfo caches match).
 Residual risks / blockers: none. Traderton unaffected until A9 (its pin is still v0.6.5).
 Next allowed milestone: G1 (tag herobids containing A1 and A2); A3, A4, A6 also remain ready. One manifest-touching milestone at a time (I15).
+```
+
+```text
+Date: 2026-10-10
+Milestone / batch: G1 (herobids tag containing A1 and A2)
+Starting SHAs: herobids=e2160f1c (origin/main), traderton=54a26c49
+Commands: printf 'o\n' | scripts/shell/ops/release.sh 0.6.7 (3rd attempt, with DATABASE_URL, REDIS_URL, CREDENTIAL_ENCRYPTION_KEY unset)
+Result: commit c48c2757 "Bump to v0.6.7" pushed to origin/main; tag v0.6.7 pushed; core tests (unit, agent-bot LLM inheritance, integration, functional, transport parity, 4 API smokes, Playwright E2E) all PASS.
+Attempts: (1) functional tier failed on a flake in telegram-slash-commands.functional.test.ts (stale async /restart output read by the next test, then TRUNCATE failures; file passes 31/31 in isolation; unrelated to A1/A2). (2) unit tier failed because the agent's own repro exported DATABASE_URL/REDIS_URL/CREDENTIAL_ENCRYPTION_KEY into the persistent shell (invariant I13); unset and rerun. No code changed between attempts.
+Parity gates: v0.6.7 manifest = 28 entries; traderton main tree vs v0.6.7 recipe PASSED.
+Findings / new gaps: (a) flaky Telegram functional test (stale /restart background work); candidate follow-up row, not blocking. (b) release.sh teardown stopped the previously running local herobids-web-1/herobids-worker-1 containers. (c) release.sh committed only package.json + CHANGELOG ("only" mode); an unrelated human edit to docs/features/pending/000-dynamic-connections/001-plan.md was left uncommitted.
+Residual risks / blockers: none for the epic.
+Next allowed milestone: A9 (traderton: delete cost-profile, instrument, pagination; bump pin to v0.6.7). Herobids-only rows A3, A4, A6 remain ready.
 ```

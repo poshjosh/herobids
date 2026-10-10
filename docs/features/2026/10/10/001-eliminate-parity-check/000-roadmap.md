@@ -80,8 +80,8 @@
 | A6 | herobids | Delete mirrored `economic-calendar` port; local view type | ready |
 | A7 | herobids | Delete `values/ids` | planned (after A2, A3, A5) |
 | A8 | - | (withdrawn, merged into A1) | - |
-| **G1** | herobids | Tag herobids containing A1 and A2 | planned |
-| A9 | traderton | Delete `cost-profile`, `instrument`, `pagination`; bump pin | planned (after G1) |
+| **G1** | herobids | Tag herobids containing A1 and A2 | verified 2026-10-10 (`v0.6.7`) |
+| A9 | traderton | Delete `cost-profile`, `instrument`, `pagination`; bump pin | ready (pin target `v0.6.7`) |
 | A10 | traderton | Delete the `tick-gates` cluster | planned (after A9) |
 | B1.0 | herobids | Audit and plan: local capability and mode-rank pre-checks | ready |
 | B1.1 | herobids | Drop verified-safe pre-checks; delete `mode-rank` | planned |
