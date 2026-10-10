@@ -3,6 +3,8 @@
 **Status:** draft
 **Created:** 2026-10-10
 
+> **Implementing agent: start at [IMPLEMENTATION.md](./IMPLEMENTATION.md).** It is the single entry point — objective, rules, settled decisions, decision framework, execution order, and audit loop. This roadmap is the reference for the vision, dependency graph, waves, gates, and the cross-document review (F1–F21).
+
 ## Vision
 
 A user creates an agent with a name and a way to talk to it. After that the agent does the rest: it adds its own skills, discovers what it can connect to, sends the user a link when it needs a connection, is woken when the connection exists, and sets its own goal. The create flows (form and guided chat) shrink accordingly, and trading disappears from creation because it is one capability the agent can acquire like any other.
@@ -11,14 +13,14 @@ A user creates an agent with a name and a way to talk to it. After that the agen
 
 | ID | Document | State | Role |
 |---|---|---|---|
-| WP-A | [000-dynamic-connections/001-plan.md](../000-dynamic-connections/001-plan.md) (discovery: [000-discovery.md](../000-dynamic-connections/000-discovery.md)) | draft | Agents discover providers, request connections by link, are woken on completion |
-| WP-H | [000-harmonize-3-agent-create-or-update-code-paths/000-analysis.md](../000-harmonize-3-agent-create-or-update-code-paths/000-analysis.md) | problem statement only | One shared trading-profile derivation for all write paths |
-| WP-B | [000-post-creation-trading-provisioning/001-plan.md](../000-post-creation-trading-provisioning/001-plan.md) | draft, checks done | Trading provisioning for an agent that becomes trading-capable after creation (ask once, defaults or specifics, test mode only) |
-| WP-M | [000-multi-provider-chat-messaging/](../000-multi-provider-chat-messaging/000-README.md) (`900-implementation-plan.md`) | draft, phased | Provider-neutral chat, WhatsApp, SMS, channel address model |
-| WP-C | [000-simplified-agent-creation/001-plan.md](../000-simplified-agent-creation/001-plan.md) | draft | Simplified form and guided chat, auto-start, in-app conversation, `update_my_prompt` |
+| WP-A | [003-dynamic-connections/001-plan.md](../003-dynamic-connections/001-plan.md) (discovery: [000-discovery.md](../003-dynamic-connections/000-discovery.md)) | draft | Agents discover providers, request connections by link, are woken on completion |
+| WP-H | [004-shared-profile-derivation/001-plan.md](../004-shared-profile-derivation/001-plan.md) (analysis: [000-analysis.md](../004-shared-profile-derivation/000-analysis.md)) | draft | One shared trading-profile derivation for all write paths |
+| WP-B | [005-post-creation-trading-provisioning/001-plan.md](../005-post-creation-trading-provisioning/001-plan.md) | draft, checks done | Trading provisioning for an agent that becomes trading-capable after creation (ask once, defaults or specifics, test mode only) |
+| WP-M | [007-multi-provider-chat-messaging/](../007-multi-provider-chat-messaging/000-README.md) (`900-implementation-plan.md`) | draft, phased | Provider-neutral chat, WhatsApp, SMS, channel address model |
+| WP-C | [006-simplified-agent-creation/001-plan.md](../006-simplified-agent-creation/001-plan.md) | draft | Simplified form and guided chat, auto-start, in-app conversation, `update_my_prompt` |
 | WP-E | none yet | **missing** | Email as a conversational channel (inbound) |
-| ref | [002-blank-slate-agents/001-plan.md](../002-blank-slate-agents/001-plan.md) | partly superseded | Source of `update_my_prompt` and the first-run guidance idea; rest superseded (see findings) |
-| ref | [003-agent-chat-sessions/000-notes.md](../003-agent-chat-sessions/000-notes.md) | contemplation | Conflicts with the agent-centric model (see findings) |
+| ref | [002-blank-slate-agents/001-plan.md](../../../../pending/002-blank-slate-agents/001-plan.md) | partly superseded | Source of `update_my_prompt` and the first-run guidance idea; rest superseded (see findings) |
+| ref | [003-agent-chat-sessions/000-notes.md](../../../../pending/003-agent-chat-sessions/000-notes.md) | contemplation | Conflicts with the agent-centric model (see findings) |
 
 ## Dependency graph
 
@@ -116,7 +118,7 @@ All pending docs relevant to this epic were read against the code. Severity: HIG
 ## Open decisions (need the owner)
 
 1. ~~Email semantics~~ Decided 2026-10-10: email behaves like Telegram/WhatsApp (messages to the user's address). Inbound replies remain WP-E.
-2. ~~In-app conversation~~ Decided 2026-10-10: accepted; external channel optional but strongly recommended. Fate of the `chat_sessions` idea (F10) still open.
+2. ~~In-app conversation~~ Decided 2026-10-10: accepted; external channel optional but strongly recommended. The `chat_sessions` idea (F10) is rejected in favour of a minimal in-app conversation (WP-C D3).
 3. ~~WP-B approach~~ Decided 2026-10-10: ask once; defaults path and specifics path share one tool; test mode only; live only through go-live. Details in the WP-B plan.
-4. Whether guided chat survives after the cut-over given it becomes nearly identical to the form (WP-C R-5).
-5. Fate of the `chat_sessions` idea (F10), and Telegram deep link (lookup-first) vs `/link <code>` (WP-C R-2).
+4. ~~Whether guided chat survives after the cut-over~~ Decided 2026-10-10: keep guided chat. It is more evolvable than a form, and even if similar to the form it is not obviously so to the user. It can grow non-trading steps later — e.g. ask for an objective and have the agent add skills and connections based on it. (WP-C R-5.)
+5. ~~Fate of the `chat_sessions` idea (F10), and Telegram deep link (lookup-first) vs `/link <code>`~~ Resolved in WP-C: `chat_sessions` rejected (D3); Telegram deep link is lookup-first with `/link <code>` as fallback (R-2).

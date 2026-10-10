@@ -1,9 +1,9 @@
 # Blank-Slate Agents
 
-**Status:** Pending, partly superseded (2026-10-10 review; see [epic roadmap](../000-agent-onboarding-epic/000-roadmap.md), findings F1, F2, F11)
+**Status:** Pending, partly superseded (2026-10-10 review; see [epic roadmap](../2026/10/10/002-agent-onboarding-epic/000-roadmap.md), findings F1, F2, F11)
 
 > **Review note (2026-10-10).**
-> - Still valid and carried into [simplified agent creation](../000-simplified-agent-creation/001-plan.md): one-click/blank creation, `update_my_prompt`, prompt journaling, first-run guidance.
+> - Still valid and carried into [simplified agent creation](../2026/10/10/006-simplified-agent-creation/001-plan.md): one-click/blank creation, `update_my_prompt`, prompt journaling, first-run guidance.
 > - Superseded: `manage_my_skills` (shipped as `list_skills`/`add_skills`/`remove_skills`/`search_skills`); `isDefaultPrompt` (redundant with `isBlankAgentGoal` + `EMPTY_JOB_DEFAULT_TEXT`); non-goals "removing the full create form / Guided Setup" and "agents self-provisioning connections" (reversed by the epic).
 > - Wrong premise: the Prerequisites checklist below is not implemented in the API (see the correction there). The "Open chat" affordance assumes a web chat UI that does not exist yet.
 

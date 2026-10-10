@@ -2,7 +2,7 @@
 
 **Status:** draft
 **Created:** 2026-10-10
-**Epic:** [000-agent-onboarding-epic/000-roadmap.md](../000-agent-onboarding-epic/000-roadmap.md) (this plan is Work Package C; read the roadmap for ordering)
+**Epic:** [002-agent-onboarding-epic/000-roadmap.md](../002-agent-onboarding-epic/000-roadmap.md) (this plan is Work Package C; read the roadmap for ordering)
 
 ## Goal
 
@@ -32,7 +32,7 @@ The core API and in-app chat work in this plan (phases S1 to S2) can be built in
 | User to agent channel | Only Telegram (`POST /telegram/webhook`, routing: slash command, reply, `/to`, plain text to the single running agent). Binding is **manual**: user pastes `telegramChatId` into profile or the form. Chat id is per user with a per-agent override. | `agent-interactivity.ts` L1084, `auth.ts` ~L890, `agent-repository.ts` `getEffectiveTelegramChatId` |
 | Web chat with an agent | **Does not exist.** `POST /agents/:id/message` exists but no web UI calls it. The detail page only shows the read-only outbound message feed (`agentsApi.messages`). | `AgentDetailPage.tsx` L270 |
 | Email | Outbound only: `send_email` via a Gmail-type connection, plus platform notification email. No inbound email, no agent mailbox. | `apps/worker/src/tools/email.ts` |
-| WhatsApp | Not implemented. Planned in [multi-provider chat messaging](../000-multi-provider-chat-messaging/000-README.md). | n/a |
+| WhatsApp | Not implemented. Planned in [multi-provider chat messaging](../007-multi-provider-chat-messaging/000-README.md). | n/a |
 | Skills self-management | `list_skills`, `add_skills`, `remove_skills`, `search_skills` exist. `update_my_prompt` does not. | `apps/worker/src/tools/skills.ts` |
 
 ## Target user experience
@@ -48,7 +48,7 @@ Create agent
   [Create]
 ```
 
-On Create: the agent is created **and started**, the user lands in a conversation with it, and the agent's first turn greets the user and asks what they want to do. If the user asks for trading, the agent adds skills, and when it needs a connection it sends a link (WP-A).
+On Create: the agent is created (stopped), the user presses Start, and lands in a conversation where the agent's first turn greets the user and asks what they want to do. If the user asks for trading, the agent adds skills, and when it needs a connection it sends a link (WP-A).
 
 Returning users who already have a bound channel see only the name field (channel binding is per user, see D2).
 
@@ -56,14 +56,14 @@ Returning users who already have a bound channel see only the name field (channe
 
 | # | Decision | Recommendation | Reason |
 |---|---|---|---|
-| D1 | What "connection to WhatsApp/Telegram/email" means (**owner decision 2026-10-10**) | A channel is a place the agent sends messages **to the user** and receives the user's replies from. Telegram/WhatsApp: a **chat address binding** (`chat_addresses`, shared platform bot or number), **not** a `connections` row. Email: the same idea, messages go to the user's own email address; outbound already exists (platform notification email with per-agent override), the reply-to-agent path is new (WP-E). A Gmail-type `connection` (agent sends as the user) remains a separate, optional thing. | [020](../000-multi-provider-chat-messaging/020-taxonomy-and-registry-placement.md) fixes "all chat providers are brokered, no user connection row". Using one word for both would make the create form and `request_connection` collide. |
+| D1 | What "connection to WhatsApp/Telegram/email" means (**owner decision 2026-10-10**) | A channel is a place the agent sends messages **to the user** and receives the user's replies from. Telegram/WhatsApp: a **chat address binding** (`chat_addresses`, shared platform bot or number), **not** a `connections` row. Email: the same idea, messages go to the user's own email address; outbound already exists (platform notification email with per-agent override), the reply-to-agent path is new (WP-E). A Gmail-type `connection` (agent sends as the user) remains a separate, optional thing. | [020](../007-multi-provider-chat-messaging/020-taxonomy-and-registry-placement.md) fixes "all chat providers are brokered, no user connection row". Using one word for both would make the create form and `request_connection` collide. |
 | D2 | Channel scope | Channels are bound **per user**; agents inherit (matches today's `getEffectiveTelegramChatId`). Creating a second agent never repeats channel setup. | Keeps create to name-only for returning users. |
-| D3 | In-app chat as a channel (**accepted by owner 2026-10-10**). External channel is therefore **optional but strongly recommended**, especially Telegram or WhatsApp, because the agent can only reach the user when the app is open otherwise. | Add a minimal in-app conversation on the agent detail page (and as the post-create landing) using existing `POST /agents/:id/message` and `agent_outbound_messages`. Not the `chat_sessions` model of [003](../003-agent-chat-sessions/000-notes.md). | Without it a user with no Telegram/WhatsApp cannot talk to the agent they just made. Whole simplification fails. |
-| D4 | Auto-start on create | Create then start in one action, honouring billing and plan limits. | Stopped agents reject messages (409) and Telegram plain text routes only to a running agent. |
+| D3 | In-app chat as a channel (**accepted by owner 2026-10-10**). External channel is therefore **optional but strongly recommended**, especially Telegram or WhatsApp, because the agent can only reach the user when the app is open otherwise. | Add a minimal in-app conversation on the agent detail page (and as the post-create landing) using existing `POST /agents/:id/message` and `agent_outbound_messages`. Not the `chat_sessions` model of [003](../../../../pending/003-agent-chat-sessions/000-notes.md). | Without it a user with no Telegram/WhatsApp cannot talk to the agent they just made. Whole simplification fails. |
+| D4 | Start step (no auto-start) | Create (stopped), then the user presses Start to land in the conversation. | Keeps the cost boundary explicit (spend begins on Start) and preserves current behaviour. Stopped agents reject messages (409), so the composer is disabled until started (S2.1). Auto-start can be revisited later if the extra click proves to be friction. |
 | D5 | Name | The form keeps generating a default name client-side (as today). Guided chat already generates one server-side. Making `name` optional on `POST /agents` is **low priority** and only helps non-UI callers. Whichever side generates it, it must be unique per user. | Names are the Telegram `/to <agent>` addressing key; collisions break routing. No DB unique index exists today (verify and add if needed). |
 | D6 | Goal at creation | Not asked. If the guided chat user volunteers one, it is sent to the agent as the **first message**, not stored as the prompt. Persisting a durable goal is the agent's job via `update_my_prompt`. | Keeps Agent Mode Purity (goal is the creator's), avoids two sources of goal. |
 | D7 | API compatibility | `POST /agents` keeps accepting the full payload. Blueprint instantiate, go-live clone, tests and integrations still use it. Only the two UIs are simplified. | Removing API fields is out of scope and not needed. |
-| D8 | Telegram binding | Replace "paste your chat id" with a one-time deep link `t.me/<bot>?start=<token>` that auto-captures the chat and consents. The page waits for completion (poll or wake). | Matches [060](../000-multi-provider-chat-messaging/060-config-secrets-onboarding.md) principle "auto-capture over paste". Needs the `/start` collision handled (see Risk R-2). |
+| D8 | Telegram binding | Replace "paste your chat id" with a one-time deep link `t.me/<bot>?start=<token>` that auto-captures the chat and consents. The page waits for completion (poll or wake). | Matches [060](../007-multi-provider-chat-messaging/060-config-secrets-onboarding.md) principle "auto-capture over paste". Needs the `/start` collision handled (see Risk R-2). |
 
 ## Work breakdown
 
@@ -75,9 +75,9 @@ Returning users who already have a bound channel see only the name field (channe
 
 ### S1. API and runtime
 
-1. `POST /agents`: add `autoStart?: boolean` (default true for UI callers, false for programmatic callers to preserve current API behaviour). Response includes the final status. Optional server-side `name` is low priority (D5).
+1. `POST /agents`: no `autoStart` field. Agents are created `stopped` (current behaviour). The post-create landing shows the Start control; the conversation composer is disabled until the agent is running. Optional server-side `name` is low priority (D5).
 2. First-turn greeting: when a blank-goal agent starts, inject a short first-run guidance block into the default prompt: introduce yourself, ask what the user wants, explain you can add skills, request connections and set your own goal. Reuse `EMPTY_JOB_DEFAULT_TEXT`; do **not** add an `isDefaultPrompt` column (redundant with `isBlankAgentGoal`).
-3. `update_my_prompt` worker tool (the only unbuilt part of [blank-slate agents](../002-blank-slate-agents/001-plan.md)): register in `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG` (otherwise `assertToolCatalogMatchesRegistry` fails at worker startup), publish an inbound message handled by `agent-message-broker`, effective next tick, journal old/new value and source (`user` | `agent`).
+3. `update_my_prompt` worker tool (the only unbuilt part of [blank-slate agents](../../../../pending/002-blank-slate-agents/001-plan.md)): register in `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG` (otherwise `assertToolCatalogMatchesRegistry` fails at worker startup), publish an inbound message handled by `agent-message-broker`, effective next tick, journal old/new value and source (`user` | `agent`).
 4. Base-prompt guidance for the connection loop belongs to WP-A and is only referenced here.
 
 ### S2. In-app conversation
@@ -90,23 +90,23 @@ Returning users who already have a bound channel see only the name field (channe
 ### S3. Simplified create form (web)
 
 1. New `CreateAgentPage` form: name (optional, placeholder shows the generated name) and channel selector. No skills, goal, style, capital, execution mode, strategy, connections, Telegram id or advanced settings.
-2. Channel selector shows only channels that are `available` and configured (platform health) per [060 surfaces](../000-multi-provider-chat-messaging/060-config-secrets-onboarding.md). Phase-gated: in-app only (S3), + Telegram deep link (S5), + WhatsApp, + Email when shipped. "In app" is preselected and never blocks creation; the form shows a short recommendation to also connect Telegram or WhatsApp so the agent can reach the user outside the app.
-3. Create button calls `POST /agents` with `{ name?, autoStart: true }` and routes to the conversation.
+2. Channel selector shows only channels that are `available` and configured (platform health) per [060 surfaces](../007-multi-provider-chat-messaging/060-config-secrets-onboarding.md). Phase-gated: in-app only (S3), + Telegram deep link (S5), + WhatsApp, + Email when shipped. "In app" is preselected and never blocks creation; the form shows a short recommendation to also connect Telegram or WhatsApp so the agent can reach the user outside the app.
+3. Create button calls `POST /agents` with `{ name? }` and routes to the agent detail page (stopped), where the user presses Start to begin the conversation.
 4. Remove from the create path: `buildCreateAgentPayload` trading fields, skill preset selector, `PromptInputBlock`, create-time connection slot, OAuth draft stash (`CREATE_AGENT_OAUTH_DRAFT_KEY`). Keep these components only where `EditAgentModal` still uses them. Check shared use before deleting (lesson: never remove on grep alone; run the full web test suite).
 5. Edit form unchanged. Ensure it can still add skills/connections/capital that creation no longer asks for.
 
 ### S4. Simplified guided chat
 
-1. Rewrite the guided-chat system prompt to one purpose: get a name (optional) and a channel, then create. Remove the trading branches (`preferredCapability: "trading"`, capital, execution mode, strategy, scanner gating, authorization mode). Note they are already unreachable by default: `chat.guidedSetup.tradingEnabled` is false, so trading presets are refused and trading skills are filtered out; this step deletes the dead code and the flag.
+1. Rewrite the guided-chat system prompt to one purpose: get a name (optional) and a channel, then create. **Owner decision 2026-10-10:** the chat does not ask "what do you want your agent to do" — not all users know yet, and that question belongs to the agent post-creation. The chat asks for the name and helps set up communication (in-app, Telegram, WhatsApp, email). Remove the trading branches (`preferredCapability: "trading"`, capital, execution mode, strategy, scanner gating, authorization mode). Note they are already unreachable by default: `chat.guidedSetup.tradingEnabled` is false, so trading presets are refused and trading skills are filtered out; this step deletes the dead code and the flag.
 2. Tools: keep `create_agent` with `{ name?, firstMessage? }` only. Remove `list_compatible_connections`, `request_connection_form`, `create_connection`, `list_available_skills` from the guided chat (their replacements are the agent's own tools from WP-A).
-3. Delete the trading-profile reconciliation saga call from the guided create path. This also removes one of the three duplicated profile-derivation paths in [harmonize agent create/update code paths](../000-harmonize-3-agent-create-or-update-code-paths/000-analysis.md).
+3. Delete the trading-profile reconciliation saga call from the guided create path. This also removes one of the three duplicated profile-derivation paths in [harmonize agent create/update code paths](../004-shared-profile-derivation/000-analysis.md).
 4. Both UIs call one shared server-side `createAgent` core (name, channel, autoStart) so form and chat cannot drift.
 5. With trading gone from guided chat, `GENERIC_FORM_SHOWS_TRADING_PROVIDERS` and the `defaultCapability="trading"` call sites in create flows become unreachable from creation; they stay for the agent-triggered connection link (WP-A).
 
 ### S5. Channel upgrades (can ship independently, in this order)
 
 1. **Telegram deep-link binding.** Token minted by API (reuse setup-link token service pattern), bot handles `/start <token>` before slash-command parsing, writes the binding, UI polls binding status. Must intercept `/start <token>` ahead of `handleStart` (which treats the argument as an agent name).
-2. **WhatsApp.** Delivered by [messaging plan](../000-multi-provider-chat-messaging/900-implementation-plan.md) Phase 4 (needs Phases 1 to 3). The create form only adds an option.
+2. **WhatsApp.** Delivered by [messaging plan](../007-multi-provider-chat-messaging/900-implementation-plan.md) Phase 4 (needs Phases 1 to 3). The create form only adds an option.
 3. **Email.** Messages go to the user's own email address (outbound already exists). Replies reaching the agent need its own design (WP-E): inbound email ingestion, reply threading, sender verification. A Gmail-type `connection` (agent sends as the user) stays a separate optional grant.
 
 ## Removal list (confirm with full test suites before deleting)
@@ -139,13 +139,13 @@ Returning users who already have a bound channel see only the name field (channe
 |---|---|---|
 | R-1 | Idle blank agents cost tokens or run slots. | S0 check; skip blank-goal ticks; plan agent limits already apply. |
 | R-2 | **Planned, not existing.** Today bare `/start` replies with help and the chat id (the manual-paste flow), and `/start <agent>` starts an agent (`agent-interactivity.ts` ~L656-700, `handleStart`). A deep link `t.me/<bot>?start=<token>` would arrive as `/start <token>` and be read as an agent name. | Look the token up first (short-lived, single-use Redis key); if found, bind the chat; if not, fall through to `handleStart` unchanged. No reserved agent names needed. Fallback if rejected: the web page shows a code and the user sends `/link <code>` (no collision, two more steps). |
-| R-3 | A blank agent adds the trading skill + connection but has no usable trading profile. Verified: grant creates an all-null profile that traderton cannot run, no server-side default capital exists, and grant requires a stopped agent. | Solved by [WP-B](../000-post-creation-trading-provisioning/001-plan.md): ask once, defaults or specifics through one tool, test mode only, running-agent grant path. |
+| R-3 | A blank agent adds the trading skill + connection but has no usable trading profile. Verified: grant creates an all-null profile that traderton cannot run, no server-side default capital exists, and grant requires a stopped agent. | Solved by [WP-B](../005-post-creation-trading-provisioning/001-plan.md): ask once, defaults or specifics through one tool, test mode only, running-agent grant path. |
 | R-4 | Users lose the visible "I am creating a trading agent" affordance. | Landing and help copy shift to "talk to your agent"; trading discoverability moves into the agent's replies and the skills catalog page. |
-| R-5 | Two creation UIs that are now nearly identical. | Keep both as required, but share one core (S4.4). Revisit whether guided chat earns its keep after launch metrics. |
+| R-5 | Two creation UIs that are now nearly identical. | Keep both as required, but share one core (S4.4). **Owner decision 2026-10-10:** keep guided chat — it is more evolvable than a form, and even if similar to the form it is not obviously so to the user. It can grow non-trading steps later (e.g. ask for an objective and have the agent add skills and connections based on it). |
 
 ## Open questions
 
 1. ~~Email semantics~~ Decided: email works like Telegram/WhatsApp (messages go to the user's address). Remaining: replies by email reaching the agent need an inbound path (WP-E); until then email is outbound-only and the agent says where to reply.
 2. ~~In-app chat~~ Decided: accepted; external channel optional, strongly recommended.
 3. Should the first message in guided chat be forwarded as the agent's first user message (D6) or discarded?
-4. Auto-start default for the API (`autoStart` true only for UI callers) acceptable?
+4. ~~Auto-start default for the API~~ Decided 2026-10-10: no auto-start. Keep create → start → land in conversation; revisit only if the extra step proves to be friction.

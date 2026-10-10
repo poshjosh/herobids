@@ -2,9 +2,9 @@
 
 **Status:** draft
 **Created:** 2026-10-10
-**Epic:** [000-agent-onboarding-epic/000-roadmap.md](../000-agent-onboarding-epic/000-roadmap.md)
+**Epic:** [002-agent-onboarding-epic/000-roadmap.md](../002-agent-onboarding-epic/000-roadmap.md)
 **Source:** [000-discovery.md](./000-discovery.md) (the problem, the observed session, the owner's answers)
-**Related:** [WP-B trading provisioning](../000-post-creation-trading-provisioning/001-plan.md) (running-agent grant, generated test wallet), [WP-C simplified creation](../000-simplified-agent-creation/001-plan.md)
+**Related:** [WP-B trading provisioning](../005-post-creation-trading-provisioning/001-plan.md) (running-agent grant, generated test wallet), [WP-C simplified creation](../006-simplified-agent-creation/001-plan.md)
 
 ## Goal
 

@@ -4,8 +4,8 @@
 **Created:** 2026-10-04
 **Parent:** [000-README.md](./000-README.md)
 **Normative inputs — feature docs:**
-[009 registry manifest](../000-capability-foundations/009-initial-capability-registry-and-tool-ownership-manifest.md),
-[010 activation model](../000-capability-foundations/010-capability-activation-model.md)
+[009 registry manifest](../../../../pending/000-capability-foundations/009-initial-capability-registry-and-tool-ownership-manifest.md),
+[010 activation model](../../../../pending/000-capability-foundations/010-capability-activation-model.md)
 **Source ADRs:**
 [ADR 07/002 Capability Model & Registry](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md) §3–§6 (the `messaging → chat` tree and the Telegram-vs-Gmail asymmetry rule originate here),
 [ADR 08/008 Native Capabilities & External Backends](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md) §8 (tool-owner kinds)

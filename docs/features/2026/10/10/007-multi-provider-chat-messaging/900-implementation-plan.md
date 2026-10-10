@@ -11,7 +11,7 @@ abstraction lands **before** any second provider. Every phase ends with
 ## Phase 0 — Capability-doc amendment (no code)
 
 Align the registry with this feature before touching code.
-- Amend [009 manifest](../000-capability-foundations/009-initial-capability-registry-and-tool-ownership-manifest.md):
+- Amend [009 manifest](../../../../pending/000-capability-foundations/009-initial-capability-registry-and-tool-ownership-manifest.md):
   add `messaging / chat / sms` with transport mode **`brokered`** (decided, 020);
   note WhatsApp will flip `planned → available`.
 - Consistency check against source ADRs: the amendment must stay within

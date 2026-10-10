@@ -2,8 +2,8 @@
 
 **Status:** draft
 **Created:** 2026-10-10
-**Epic:** [000-agent-onboarding-epic/000-roadmap.md](../000-agent-onboarding-epic/000-roadmap.md)
-**Depends on:** [dynamic connections](../000-dynamic-connections/000-discovery.md) (WP-A) for the live-mode link; [harmonize create/update paths](../000-harmonize-3-agent-create-or-update-code-paths/000-analysis.md) (WP-H) for the shared profile derivation.
+**Epic:** [002-agent-onboarding-epic/000-roadmap.md](../002-agent-onboarding-epic/000-roadmap.md)
+**Depends on:** [dynamic connections](../003-dynamic-connections/000-discovery.md) (WP-A) for the live-mode link; [harmonize create/update paths](../004-shared-profile-derivation/000-analysis.md) (WP-H) for the shared profile derivation.
 
 ## Problem
 
