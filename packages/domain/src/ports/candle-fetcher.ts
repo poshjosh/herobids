@@ -6,11 +6,3 @@ export interface PriceCandle {
   close: number;
   volume: number;
 }
-
-export interface CandleFetcher {
-  fetchCandles(
-    symbol: string,
-    interval: string,
-    limit: number,
-  ): Promise<PriceCandle[]>;
-}

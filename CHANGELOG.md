@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Seven dead domain ports deleted; `candle-fetcher` narrowed to `PriceCandle`.**
+  `ports/{mark-source,sentiment,strategy,subscription,swap-venue,token-safety,venue}.ts`
+  had zero non-test references in herobids (the `packages/venues/` adapters that
+  implemented them moved to traderton). `ports/index.ts` pruned. `ports/candle-fetcher.ts`
+  now keeps only `PriceCandle` (the `CandleFetcher` interface is removed); the
+  `domain-ports-candle-fetcher` manifest entry is narrowed on both sides to the
+  `PriceCandle` region so traderton's full file still matches. Removed the seven
+  matching manifest entries (`domain-ports-mark-source`, `-sentiment`, `-strategy`,
+  `-subscription`, `-swap-venue`, `-token-safety`, `-venue`) and their required ids
+  (28 -> 21). Part of the parity-drift-check elimination effort; see
+  `docs/features/2026/10/10/001-eliminate-parity-check/decisions/B-parity-ownership.md`.
+
 ## v0.6.7 - 2026-10-10
 
 ### Fixed
