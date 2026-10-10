@@ -53,10 +53,9 @@ Handler (in the worker broker):
 1. Reject providers not in the catalog or not allowed for this agent.
 2. Create a request record in Redis (shared contract, a Zod schema in `packages/domain`): `{ requestId, token, agentId, userId, provider, mode, status: 'pending', createdAt, expiresAt }`, with a TTL from operator config (`connectionRequests.ttlSecs`, default from `loginLinkTtlSecs`). The `token` is a random bearer secret generated here, so the worker never touches session code.
 3. Add `requestId` to a pending sorted set scored by `expiresAt` (for the expiry wake).
-4. Deliver the link to the user through the platform's own delivery (same brokered path as `send_message`, so the platform picks the channel) as a rendered card: "<Agent> needs a <Provider> connection", the link, and the expiry.
-5. Reply to the tool with `{ requestId, expiresAt, deliveredVia }`.
+4. Reply to the tool with `{ requestId, link, expiresAt }` so the agent can forward the link to the user via `send_message` (the platform picks the channel).
 
-**Decision (recommended): the agent does not receive the link.** The link carries a bearer token that logs the user in, so it should not enter the LLM context, conversation history or logs. The agent gets `requestId`, knows it was delivered, and may add its own explanation as a normal message. Alternative: return the link to the agent to forward; simpler, but puts a short-lived single-use session token into LLM context. Owner to confirm.
+**Decision (owner, 2026-10-10): the agent receives the link.** The tool returns the link in its reply so the agent can forward it to the user. The link carries a short-lived single-use bearer token; the instructions tell the agent to forward it promptly and not to persist it beyond the message. The agent also gets `requestId` and `expiresAt` so it can explain the request and its expiry.
 
 `use_existing` exists because an agent must never grant itself a user's connection. When `list_providers` shows `hasActiveConnection`, the agent requests approval and the page lists the user's matching connections with a confirm button.
 
@@ -79,13 +78,13 @@ Because only linked requests wake an agent, hook the two places a user creates a
 
 Wake publishing from the API: define a small port in `packages/domain` and implement it in the API with the same Redis XADD the worker's `InstanceEventPublisher` uses (the publisher itself lives in `apps/worker`, which the API cannot import). Add `connection` to the wake `source` enum and its rendering in the agent prompt (runtime composition) and the tick gate (it must count as a wake signal so the context-hash gate does not skip it).
 
-**Expiry:** a worker-side sweeper over the pending sorted set (same style as `reminder-coordinator`, which already emits agent wakes) wakes the agent with `reason: 'expired'` and the detailed message, then the agent decides what to do (owner decision in the discovery doc). Verify the reminder coordinator can host this sweeper rather than adding a second loop.
+**Expiry:** a worker-side sweeper over the pending sorted set wakes the agent with `reason: 'expired'` and the detailed message, then the agent decides what to do. **Owner decision (2026-10-10):** the implementing agent decides where this sweeper lives — prefer hosting it in the existing `reminder-coordinator` (which already emits agent wakes and holds the single-worker lease) unless there is a concrete caveat that makes a separate loop cleaner; do not add a second loop without documenting why the reminder coordinator could not host it.
 
 Trade-off against the discovery doc's `ConnectionsRepository` idea: a repository would also catch connections the user creates elsewhere while a request is open. That is not needed for the loop (a user who already has the connection is handled by `use_existing`), it touches many call sites, and it has no home for a wake publisher in `packages/db`. Revisit only if "agent notices a connection created elsewhere" becomes a requirement.
 
 ### A6. Instructions
 
-Add to the base skill instructions a short block, parallel to the skills block: the two error codes and what each means; the sequence `list_providers`, then `request_connection`; that the link was delivered by the platform and will expire; that you will be woken on completion, decline or expiry; what to do on each (continue, ask whether to try again, or offer an alternative); never ask the user to paste secrets in chat. Keep it provider-neutral and free of trading wording.
+Add to the base skill instructions a short block, parallel to the skills block: the two error codes and what each means; the sequence `list_providers`, then `request_connection`; that the link will expire and to forward it to the user promptly without persisting it; that you will be woken on completion, decline or expiry; what to do on each (continue, ask whether to try again, or offer an alternative); never ask the user to paste secrets in chat. Keep it provider-neutral and free of trading wording.
 
 ## Work items
 
@@ -93,7 +92,7 @@ Add to the base skill instructions a short block, parallel to the skills block: 
 |---|---|---|
 | A1 | Error split in resolver and tools | tests: missing vs provisioning text and codes; agent no longer reads "initializing" |
 | A2 | Move the provider catalog to a shared package; `list_providers` tool and catalog registration | tool test incl. `hasActiveConnection`; tool catalog assertion; trading filter |
-| A3 | Request record schema in `packages/domain`; `request_connection` capability, broker handler, grant and rate limits; platform-delivered link | broker tests: unknown provider, duplicate pending, delivery path, no token in the reply |
+| A3 | Request record schema in `packages/domain`; `request_connection` capability, broker handler, grant and rate limits; link returned to the agent | broker tests: unknown provider, duplicate pending, link returned in the reply |
 | A4 | Redeem endpoint; form changes (locked provider, trading group, asker banner, Cancel, `use_existing` mode); OAuth state carries `requestId`; i18n in all locales | API tests; web tests; i18n regression test |
 | A5 | `completeConnectionRequest`; wake port and API implementation; `connection` wake source, prompt rendering and tick-gate handling; expiry sweeper | integration test: complete, decline and expire each wake the agent once; wake survives the context-hash gate |
 | A6 | Base-skill instructions | agent eval on the epic UAT (G1) |
@@ -103,7 +102,7 @@ Depends on WP-B B2 (running-agent grant) for A5 step 2 and on WP-H if the profil
 
 ## Risks and open questions
 
-1. **Bearer token in the LLM context** (A3): recommended design keeps it out; needs owner confirmation.
+1. **Bearer token in the LLM context** (A3): owner decided the agent receives the link; the token is short-lived and single-use, and instructions tell the agent to forward it promptly and not persist it.
 2. **Which channel carries the link** when the user has none bound: the in-app conversation always works (WP-C D3); the link card must render there.
 3. **Agent stopped when the user completes.** The grant still succeeds through the stopped-agent path; the wake waits in the stream until the agent starts. Verify the wake is not trimmed or dropped across a restart.
 4. **Multiple agents asking for the same provider.** One pending request per agent and provider; the form shows the asker so the user can tell them apart.
