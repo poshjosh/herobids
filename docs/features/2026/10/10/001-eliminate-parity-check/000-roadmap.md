@@ -98,9 +98,9 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows below are its sub-steps.
 | B1.2 | herobids | **Brief:** agent-path capability check | verified 2026-10-10 (Option 2) |
 | B1.3 | herobids | Implement B1.2's outcome; delete `execution-capability` | verified 2026-10-10 (`5c6b744`) |
 | B2.0 | - | Confirm no consumer of the health routes | **answered** (see block) |
-| B2.1 | herobids | Remove actor-health | planned |
-| B2.2 | traderton | Remove actor-health's dead copy | planned |
-| B3.1 | herobids | Risk-contract retirement: tests first, record before-state | ready |
+| B2.1 | herobids | Remove actor-health | verified 2026-10-10 (`c755e1d1`) |
+| B2.2 | traderton | Remove actor-health's dead copy | verified 2026-10-10 (`3b1e863`) |
+| B3.1 | herobids | Risk-contract retirement: tests first, record before-state | verified 2026-10-10 (`43ec0a9e`) |
 | B3.2 | herobids | Risk-contract retirement: implement | planned |
 | B4.1 | herobids | Audit and plan `agent-risk-defaults` YAML removal | ready |
 | B4.x | herobids | Rows defined by B4.1's plan | planned |

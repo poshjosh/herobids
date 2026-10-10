@@ -68,9 +68,9 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | B1.2 | herobids (brief) | verified | human (ratify the brief) | B1.0 | traderton `425a838` | Option 2 ratified: traderton `set_agent_trading_profile` enforces paper+swap for the agent path | Heavyweight brief: agent-path capability check |
 | B1.3 | herobids | verified | autonomous | B1.2 ratified | `5c6b744` | Dropped agent-path pre-check; deleted `execution-capability.ts` + test; `venueTypeFromProvider` relocated to `config/schema.ts`; manifest 16 -> 15; checker test 4/4; both recipes PASSED; full suite 349 files / 6953 tests | |
 | B2.0 | human | verified | human | none | | Human 2026-10-10: nothing outside herobids and traderton calls the health routes. Framework setup searched both repos: only the route's own test calls them | Satisfied. B2.1 repeats the search and the I6 trial deletion |
-| B2.1 | herobids | planned | autonomous | B2.0 | | | |
-| B2.2 | traderton | planned | autonomous | B2.1 + herobids tag (G) | | | |
-| B3.1 | herobids | ready | autonomous | none | | | GP-X: tests first, record before-state |
+| B2.1 | herobids | verified | autonomous | B2.0 | `c755e1d1` | Deleted actor-health routes + publisher + domain type; manifest 15 -> 14; checker test 4/4; both recipes PASSED; full suite 346 files / 6932 tests | |
+| B2.2 | traderton | verified | autonomous | B2.1 + herobids tag (G) | `3b1e863` + `8df8657` | Deleted actor-health dead copy; released herobids `v0.6.8`; pin bumped to `v0.6.8`; traderton recipe PASSED | |
+| B3.1 | herobids | verified | autonomous | none | `43ec0a9e` | Open items 1-3 checked; tests 1-4 written and run (before-state recorded): test 1 (characterization) PASS, test 4 (no-enforcement) PASS, tests 2-3 (gap-revealing) FAIL as expected via `it.fails` | Open item 1: no `apps/web` consumer of `riskContract`. Open item 2: no other producer wires real profile data. Open item 3: `ResolvedAgentRiskContract` shape confirmed |
 | B3.2 | herobids | planned | autonomous | B3.1 | | | |
 | B4.1 | herobids | ready | autonomous | none | | | Audit + plan; adds rows B4.x |
 | C1.0 | traderton | ready | autonomous | none | | | Plan only |
