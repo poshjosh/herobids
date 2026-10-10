@@ -30,16 +30,15 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   };
 }
 
-describe('adjust_bot_config — L3c: mode-rank gate + boundary routing', () => {
-  // The mode-escalation gate (a platform check on ctx.executionMode) stays in the
-  // tool and rejects BEFORE any side effect. Allowed adjustments now publish
-  // MANAGE_BOT to the broker (which invokes the boundary) instead of writing
-  // ctx.botRepo directly — herobids owns no bot state; ownership is enforced
-  // boundary-side.
+describe('adjust_bot_config — L3c: boundary routing (mode-rank gate moved behind the boundary)', () => {
+  // B1: the local mode-escalation gate is DROPPED — the boundary's
+  // adjust_bot_config re-enforces mode-escalation (drive-target.ts adjustConfig
+  // runs checkModeEscalation). The tool now publishes MANAGE_BOT unconditionally
+  // (herobids owns no bot state; ownership + mode-rank are enforced boundary-side).
 
-  // ── Mode escalation rejections (publish NOT called) ────────────────────
+  // ── Mode escalation is no longer rejected locally (publish IS called) ──
 
-  it('rejects paper agent adjusting bot to shadow mode — MANAGE_BOT NOT published', async () => {
+  it('publishes MANAGE_BOT for paper agent adjusting bot to shadow mode (boundary enforces mode-rank)', async () => {
     const publishToInbound = vi.fn(async () => undefined);
     const ctx = makeCtx({ executionMode: 'paper', publishToInbound });
 
@@ -48,13 +47,14 @@ describe('adjust_bot_config — L3c: mode-rank gate + boundary routing', () => {
       ctx,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('shadow');
-    expect(result.error).toContain('paper');
-    expect(publishToInbound).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(publishToInbound).toHaveBeenCalledTimes(1);
+    const [type, payload] = publishToInbound.mock.calls[0]!;
+    expect(type).toBe('agent.manage_bot');
+    expect(payload).toEqual({ action: 'adjust_config', botId: 'bot-1', config: { execution: { mode: 'shadow' } } });
   });
 
-  it('rejects paper agent adjusting bot to live mode — MANAGE_BOT NOT published', async () => {
+  it('publishes MANAGE_BOT for paper agent adjusting bot to live mode (boundary enforces mode-rank)', async () => {
     const publishToInbound = vi.fn(async () => undefined);
     const ctx = makeCtx({ executionMode: 'paper', publishToInbound });
 
@@ -63,13 +63,14 @@ describe('adjust_bot_config — L3c: mode-rank gate + boundary routing', () => {
       ctx,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('live');
-    expect(result.error).toContain('paper');
-    expect(publishToInbound).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(publishToInbound).toHaveBeenCalledTimes(1);
+    const [type, payload] = publishToInbound.mock.calls[0]!;
+    expect(type).toBe('agent.manage_bot');
+    expect(payload).toEqual({ action: 'adjust_config', botId: 'bot-1', config: { execution: { mode: 'live' } } });
   });
 
-  it('rejects shadow agent adjusting bot to live mode — MANAGE_BOT NOT published', async () => {
+  it('publishes MANAGE_BOT for shadow agent adjusting bot to live mode (boundary enforces mode-rank)', async () => {
     const publishToInbound = vi.fn(async () => undefined);
     const ctx = makeCtx({ executionMode: 'shadow', publishToInbound });
 
@@ -78,9 +79,11 @@ describe('adjust_bot_config — L3c: mode-rank gate + boundary routing', () => {
       ctx,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('live');
-    expect(publishToInbound).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(publishToInbound).toHaveBeenCalledTimes(1);
+    const [type, payload] = publishToInbound.mock.calls[0]!;
+    expect(type).toBe('agent.manage_bot');
+    expect(payload).toEqual({ action: 'adjust_config', botId: 'bot-1', config: { execution: { mode: 'live' } } });
   });
 
   // ── Allowed adjustments publish MANAGE_BOT adjust_config ────────────────

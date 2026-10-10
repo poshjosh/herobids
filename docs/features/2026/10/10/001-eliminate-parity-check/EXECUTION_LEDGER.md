@@ -47,7 +47,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | ID | Repo | Status | Authorization | Prerequisites | Commits | Verification evidence | Blockers / notes |
 |---|---|---|---|---|---|---|---|
 | M-A | both | verified | autonomous | none | `f07d87ce` | A5, A6, A7 done; manifest 20 -> 17 | Track A: dead copies + retired obligations |
-| M-B | both | ready | autonomous | M-A | | | Track B: stops at B1.2 (human brief) |
+| M-B | both | in progress | autonomous | M-A | | | Track B: stops at B1.2 (human brief) |
 | M-C | both | ready | autonomous | M-B | | | Track C: may stop at C3.0/O6 (secret) |
 | M-D | both | blocked | autonomous | M-A, M-B, M-C | | | Track D: D0 checkpoint (human) |
 | M-C6 | both | blocked | autonomous | manifest has zero entries | | | Finish line |

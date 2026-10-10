@@ -16,7 +16,6 @@
     { "id": "domain-scanner-types", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/scanner-types.ts" }, "traderton": { "path": "packages/domain/src/scanner-types.ts" } },
     { "id": "domain-trading-actor-health", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/trading/actor-health.ts" }, "traderton": { "path": "packages/domain/src/trading/actor-health.ts" } },
     { "id": "domain-trading-execution-capability", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/trading/execution-capability.ts" }, "traderton": { "path": "packages/domain/src/trading/execution-capability.ts" } },
-    { "id": "domain-trading-mode-rank", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/trading/mode-rank.ts" }, "traderton": { "path": "packages/domain/src/trading/mode-rank.ts" } },
     { "id": "domain-trading-trading-protocol", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/trading/trading-protocol.ts", "region": { "start": "export const WatchThresholdWakeContextSchema" } }, "traderton": { "path": "packages/domain/src/trading/trading-protocol.ts", "region": { "start": "export const WatchThresholdWakeContextSchema" } } }
   ]
 }

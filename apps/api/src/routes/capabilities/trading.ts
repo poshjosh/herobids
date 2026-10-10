@@ -13,7 +13,7 @@ import {
   agentRuntimeSessions,
 } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
-import { getProviderIdsForRuntimeFamily, getRuntimeFamiliesForProvider, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
+import { getProviderIdsForRuntimeFamily, getRuntimeFamiliesForProvider } from '@herobids/domain';
 import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { z } from 'zod';
 import { errorPayload } from '../../error-payload.js';
@@ -149,16 +149,6 @@ function latestAssignmentPerConnection(rows: TradingAssignmentRow[]): TradingAss
     latest.push(row);
   }
   return latest;
-}
-
-/**
- * Find the currently effective assignment for an agent (newest active assignment).
- * Returns the assignment row or undefined if no active assignment exists.
- */
-function findEffectiveAssignment(rows: TradingAssignmentRow[]): TradingAssignmentRow | undefined {
-  return rows
-    .filter((r) => r.grantStatus === 'active')
-    .sort((a, b) => b.grantedAt.getTime() - a.grantedAt.getTime())[0];
 }
 
 async function selectTradingConnectionResourceRows(db: Database, userId: string): Promise<TradingConnectionResourceRow[]> {
@@ -1275,28 +1265,9 @@ export async function tradingCapabilityRoutes(
       }
 
       if (action === 'start') {
-        // Validate execution capability before starting
-        const agentExecMode: string | undefined = undefined;
-        if (agentExecMode) {
-          const assignmentRows = await selectAgentTradingAssignmentRows(db, agentId);
-          const effectiveAssignment = findEffectiveAssignment(assignmentRows);
-          if (effectiveAssignment?.provider) {
-            const startVenueType = venueTypeFromProvider(effectiveAssignment.provider);
-            if (startVenueType) {
-              const capResult = validateExecutionCapability({
-                actorType: 'agent',
-                executionMode: agentExecMode as 'paper' | 'shadow' | 'live',
-                venueType: startVenueType,
-              });
-              if (!capResult.ok) {
-                return reply.status(400).send({
-                  error: `execution_capability.${capResult.error.code}`,
-                  message: capResult.error.message,
-                });
-              }
-            }
-          }
-        }
+        // B1: the local execution-capability pre-check here was dead code
+        // (`agentExecMode` was hard-coded `undefined`). Removed; the agent-path
+        // capability question is tracked in B1.2.
 
         const sessionId = crypto.randomUUID();
         const now = new Date();

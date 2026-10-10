@@ -14,7 +14,7 @@ import {
 import { checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import { canonicalizeExecutionMode } from './agent-config-helpers.js';
-import { INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { INSTANCE_MESSAGE_TYPES, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { ExternalBackendReadResult } from '@herobids/domain';
 import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { projectBotToBlueprintPayload } from '../services/blueprint-projection.js';
@@ -332,23 +332,9 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     // `config.venue`, so we derive the venue type from there — the boundary read
     // does not return a connectionId, and config.venue is the same value the
     // connection.provider lookup previously resolved.
-    if (newExecutionMode) {
-      const existingVenue = existingConfig['venue'];
-      const botVenueType = typeof existingVenue === 'string' ? venueTypeFromProvider(existingVenue) : undefined;
-      if (botVenueType) {
-        const capCheck = validateExecutionCapability({
-          actorType: 'bot',
-          executionMode: newExecutionMode as 'paper' | 'shadow' | 'live',
-          venueType: botVenueType,
-        });
-        if (!capCheck.ok) {
-          return reply.status(400).send({
-            error: `execution_capability.${capCheck.error.code}`,
-            message: capCheck.error.message,
-          });
-        }
-      }
-    }
+    // B1: this local pre-check is DROPPED — the boundary's adjust_bot_config
+    // re-validates the merged config (BotConfigSchema rejects paper+swap) and
+    // enforces mode-escalation. See plans/B1-herobids-drops-local-capability-prechecks.md.
 
     // Live-mode plan gate
     if (plansConfig) {

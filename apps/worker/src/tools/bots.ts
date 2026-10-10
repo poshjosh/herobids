@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES, checkModeEscalation } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult } from './external-backend-result.js';
 import { createLogger } from '../logger.js';
@@ -252,16 +252,9 @@ const adjustBotConfigTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { botId, config } = params as z.infer<typeof AdjustBotConfigParamsSchema>;
 
-    // Enforce mode-rank: agent must not escalate a bot's execution mode beyond
-    // its own. This is a platform gate on a platform-owned value (ctx.executionMode)
-    // — kept. The broker re-checks it too (defence-in-depth).
-    const requestedMode = config.execution?.mode;
-    if (requestedMode) {
-      const check = checkModeEscalation(requestedMode, ctx.executionMode);
-      if (!check.allowed) {
-        return { success: false, error: check.error, fault: false };
-      }
-    }
+    // B1: the local mode-rank pre-check is DROPPED — the boundary's
+    // adjust_bot_config re-enforces mode-escalation (drive-target.ts adjustConfig
+    // runs checkModeEscalation). See plans/B1-herobids-drops-local-capability-prechecks.md.
 
     // L3c: route the config change through the broker's rewired MANAGE_BOT path,
     // which invokes the boundary. The base-config read + deep-merge + botRepo

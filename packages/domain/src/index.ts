@@ -34,7 +34,6 @@ export {
 export * from './tools.js';
 export * from './tool-schemas.js';
 export * from './agent-risk-contract.js';
-export * from './trading/mode-rank.js';
 export * from './trading/execution-capability.js';
 export * from './trading/actor-health.js';
 export * from './agent-evaluation.js';

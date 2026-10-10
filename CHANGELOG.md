@@ -8,6 +8,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Local capability and mode-rank pre-checks dropped; `mode-rank` deleted.**
+  The `validateExecutionCapability` pre-check in `PATCH /bots/:id/config`
+  (`routes/bots.ts`) and the dead agent-start block in `routes/capabilities/trading.ts`
+  are removed — the boundary's `adjust_bot_config` re-validates the merged config
+  (`BotConfigSchema` rejects paper+swap) and enforces mode-escalation. The
+  `checkModeEscalation` pre-check in the `adjust_bot_config` tool (`tools/bots.ts`) is
+  removed for the same reason. `packages/domain/src/trading/mode-rank.ts` (and its test)
+  deleted and unexported. Removed the `domain-trading-mode-rank` manifest entry and its
+  required id. The agent-path capability check (`routes/agents.ts:1276`) is **not**
+  touched — it has no traderton equivalent and is tracked in B1.2. See
+  `docs/features/2026/10/10/001-eliminate-parity-check/plans/B1-herobids-drops-local-capability-prechecks.md`.
+
 - **Dead `models/decision` module deleted; `ActorType` retargeted.** The `Decision`
   interface and `ActorType` union had zero non-test references in herobids (the only
   `Decision` importer was the already-deleted `ports/strategy.ts`). `approval-service.ts`
