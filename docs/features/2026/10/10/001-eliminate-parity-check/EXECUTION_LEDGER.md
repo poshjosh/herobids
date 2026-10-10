@@ -52,7 +52,7 @@ Initial state recorded 2026-10-10. Update the row (and add a batch record) as yo
 | A6 | herobids | ready | autonomous | none | | | |
 | A7 | herobids | planned | autonomous | A2, A3, A5 | | | `ids` consumers: `ports/venue`, `values/instrument`, `models/decision` |
 | A8 | - | withdrawn | - | merged into A1 | | | Human decision 2026-10-10: keep `values/money.ts` |
-| G1 | herobids | planned | autonomous | A1, A2 `verified` and merged | | | Tag herobids with the manifest-entry removals, via the existing release flow |
+| G1 | herobids | in progress | autonomous | A1, A2 `verified` and merged (pushed: origin/main = e2160f1c) | | | Commands: `printf 'o\n' \| scripts/shell/ops/release.sh 0.6.7` (runs `run-all-tests.sh --e2e`, parity gate, bumps package.json + CHANGELOG, commits `Bump to v0.6.7`, pushes main, tags `v0.6.7`, pushes tags). Starting SHAs: herobids=e2160f1c, traderton=54a26c49 (v0.1.3 + docs) |
 | A9 | traderton | planned | autonomous | G1 | | | First traderton change: carries the pin bump |
 | A10 | traderton | planned | autonomous | A9 | | | |
 | B1.0 | herobids | ready | autonomous | none | | | Audit + short plan |
