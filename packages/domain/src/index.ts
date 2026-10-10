@@ -33,7 +33,6 @@ export {
 } from './trading/tool-contract.js';
 export * from './tools.js';
 export * from './tool-schemas.js';
-export * from './agent-risk-contract.js';
 export * from './agent-evaluation.js';
 export * from './llm-selection.js';
 export * from './cost-profile.js';

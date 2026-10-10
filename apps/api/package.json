@@ -18,6 +18,7 @@
     "@herobids/documents": "workspace:*",
     "@herobids/domain": "workspace:*",
     "@herobids/llm": "workspace:*",
+    "@poshjosh/contracts": "0.1.0",
     "archiver": "^8.0.0",
     "bullmq": "^5.77.0",
     "drizzle-orm": "^0.44.7",

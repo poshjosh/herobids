@@ -7,12 +7,12 @@ import {
   type DatabaseTransaction,
 } from '@herobids/db';
 import {
-  AgentRiskOverridesSchema,
   CreatorStrategySchema,
   ExecutionDefaultsSchema,
   RiskPostureSchema,
   ScanModeSchema,
 } from '@herobids/domain';
+import { AgentRiskOverridesSchema } from '@poshjosh/contracts';
 import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import type {
   TradingProfileConnection,

@@ -44,6 +44,9 @@ importers:
       '@herobids/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@poshjosh/contracts':
+        specifier: 0.1.0
+        version: 0.1.0
       archiver:
         specifier: ^8.0.0
         version: 8.0.0

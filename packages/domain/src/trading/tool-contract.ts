@@ -250,13 +250,6 @@ export interface TradingToolContext {
       error?: { code: string; message: string };
     }>;
   };
-  /** Agent risk contract operations for reading runtime risk limits. */
-  riskContractOps?: {
-    /** Read the resolved risk contract (payload-bound read fallback until B1). */
-    getContract(): Promise<import('../agent-risk-contract.js').ResolvedAgentRiskContract>;
-    /** Resolve the full 9-field risk profile (read-only view including immutable fields). */
-    getProfile?(): Promise<import('../agent-risk-contract.js').ResolvedAgentRiskProfile>;
-  };
   /** Instrument repository for find_instrument lookups. */
   instrumentRepo?: {
     search(opts: { query: string; venue?: string; limit?: number }): Promise<Array<{
