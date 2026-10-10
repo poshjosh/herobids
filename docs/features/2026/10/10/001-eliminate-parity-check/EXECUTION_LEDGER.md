@@ -53,7 +53,7 @@ Initial state recorded 2026-10-10. Update the row (and add a batch record) as yo
 | A7 | herobids | planned | autonomous | A2, A3, A5 | | | `ids` consumers: `ports/venue`, `values/instrument`, `models/decision` |
 | A8 | - | withdrawn | - | merged into A1 | | | Human decision 2026-10-10: keep `values/money.ts` |
 | G1 | herobids | verified | autonomous | A1, A2 `verified` and merged | `c48c2757` (Bump to v0.6.7), tag `v0.6.7` | `v0.6.7` manifest has 28 entries and none of the 7 dropped ids; traderton `main` tree vs `v0.6.7` recipe PASSED; tag on origin = `c48c2757`; `release.sh 0.6.7` core tests all PASS (run 3) | Pin target for A9/A10 = `v0.6.7` |
-| A9 | traderton | planned | autonomous | G1 | | | First traderton change: carries the pin bump |
+| A9 | traderton | verified | autonomous | G1 | `733b71fa` | Deleted `cost-profile.ts`, `values/instrument.ts`, `pagination.ts`; barrels pruned; `pnpm build` + `pnpm lint` clean; full `pnpm test` (clean env) 170 files / 2976 tests passed; pin bumped to `v0.6.7`; traderton recipe vs `v0.6.7` PASSED | `config/strategy-presets/*.yaml` NOT deleted (live) |
 | A10 | traderton | planned | autonomous | A9 | | | |
 | B1.0 | herobids | ready | autonomous | none | | | Audit + short plan |
 | B1.1 | herobids | planned | autonomous | B1.0 | | | |
@@ -89,6 +89,7 @@ Record every parity-pin change (and the state at the start of the epic).
 | 2026-10-10 (start) | herobids `slow-tests.yml` | traderton `v0.1.2` | herobids `${{ github.sha }}` | baseline |
 | 2026-10-10 (start) | traderton `slow-tests.yml` | herobids `v0.6.5` | traderton `${{ github.sha }}` | baseline (already red against current traderton tree; `v0.6.6` passes) |
 | 2026-10-10 | (none yet) herobids `v0.6.7` created | herobids tag `v0.6.7` (`c48c2757`) | traderton `main` (`54a26c49`) passes against it | G1: pin target for A9 (traderton bump not applied yet) |
+| 2026-10-10 | traderton `slow-tests.yml` | herobids `v0.6.7` | traderton `main` (`733b71fa`) | A9: pin bumped via `release.sh --bump-parity-pin v0.6.7`; traderton recipe vs `v0.6.7` PASSED |
 
 ## Per-batch record template
 
@@ -168,4 +169,20 @@ Parity gates: v0.6.7 manifest = 28 entries; traderton main tree vs v0.6.7 recipe
 Findings / new gaps: (a) flaky Telegram functional test (stale /restart background work); candidate follow-up row, not blocking. (b) release.sh teardown stopped the previously running local herobids-web-1/herobids-worker-1 containers. (c) release.sh committed only package.json + CHANGELOG ("only" mode); an unrelated human edit to docs/features/pending/000-dynamic-connections/001-plan.md was left uncommitted.
 Residual risks / blockers: none for the epic.
 Next allowed milestone: A9 (traderton: delete cost-profile, instrument, pagination; bump pin to v0.6.7). Herobids-only rows A3, A4, A6 remain ready.
+```
+
+```text
+Date: 2026-10-10
+Milestone / batch: A9 (traderton: delete cost-profile, instrument, pagination; bump pin)
+Starting SHAs: herobids=bcb759b2 (origin/main), traderton=54a26c49
+Starting git status: both clean
+Scope completed: deleted packages/domain/src/cost-profile.ts, values/instrument.ts, pagination.ts; pruned packages/domain/src/index.ts and values/index.ts; bumped .github/workflows/slow-tests.yml pin v0.6.5 -> v0.6.7 via release.sh --bump-parity-pin; CHANGELOG ### Removed. config/strategy-presets/*.yaml NOT touched (live).
+Commits: 733b71fa (traderton only)
+Focused validation: grep confirms no non-test importer of Instrument (domain type), PaginatedResponse, AgentCostProfile*/resolveAgentCostProfile/TickThinkingLevel/CostPreset in traderton.
+Broader validation (I6 trial deletion): pnpm build clean; pnpm lint clean; env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm test -> 170 files passed (21 skipped), 2976 tests passed (102 skipped).
+Parity gates: traderton recipe vs herobids v0.6.7 PASSED (parity-drift: PASSED).
+Decisions made: none beyond the roadmap (R3 dead-copy deletes; pin bump to G1 tag).
+Findings / new gaps: none.
+Residual risks / blockers: none. Traderton CI now pins herobids v0.6.7 (past the stale v0.6.5).
+Next allowed milestone: A10 (traderton: delete the tick-gates cluster). Herobids-only rows A3, A4, A6 remain ready.
 ```
