@@ -1,6 +1,11 @@
 # Blank-Slate Agents
 
-**Status:** Pending (depends on `docs/features/2026/08/23/001-relaxed-agent-creation-form/001-plan.md`)
+**Status:** Pending, partly superseded (2026-10-10 review; see [epic roadmap](../000-agent-onboarding-epic/000-roadmap.md), findings F1, F2, F11)
+
+> **Review note (2026-10-10).**
+> - Still valid and carried into [simplified agent creation](../000-simplified-agent-creation/001-plan.md): one-click/blank creation, `update_my_prompt`, prompt journaling, first-run guidance.
+> - Superseded: `manage_my_skills` (shipped as `list_skills`/`add_skills`/`remove_skills`/`search_skills`); `isDefaultPrompt` (redundant with `isBlankAgentGoal` + `EMPTY_JOB_DEFAULT_TEXT`); non-goals "removing the full create form / Guided Setup" and "agents self-provisioning connections" (reversed by the epic).
+> - Wrong premise: the Prerequisites checklist below is not implemented in the API (see the correction there). The "Open chat" affordance assumes a web chat UI that does not exist yet.
 
 Much has been implemented since this was written. See:
 
@@ -27,19 +32,16 @@ This feature builds on the relaxed form field requirements implemented in the pr
 1. **Role/type is a frontend concept.** An agent is defined by its current prompt + skills, not by a creation-time category. A "trading agent" is just an agent with trading skills. An agent with no skills is implicitly custom. The backend never branches on role/type.
 2. **Agents are reconfigurable mid-flight.** Prompt and skills are mutable state, not creation-time constants. Users may change them after creation, and agents may change them themselves (with the same permissions model that already lets agents manage their own bots).
 
-## Prerequisites (already implemented or in-progress)
+## Prerequisites (corrected 2026-10-10)
 
-The following are handled by the relaxed-agent-creation-form feature and are NOT part of this plan:
+The relaxed-agent-creation-form feature was **frontend only** (its plan says "API unchanged", defaults hardcoded in the frontend). The checklist previously ticked API items that are not in the code. Verified state:
 
-- [x] `name` optional in API → server auto-generates
-- [x] `prompt` optional in API → server resolves blank-slate prompt from `agentDefaults.blankPrompt`
-- [x] `executionDefaults` optional for trading agents → server resolves paper/shadow
-- [x] Model fallback to operator defaults (`agentRuntime.llm.modelDefaults`)
-- [x] Default capital for trading agents from `agentDefaults.defaultCapital`
-- [x] `agentDefaults` operator config section in `config/default.yaml`
-- [x] Frontend form validation relaxed (name, goal, capital no longer required)
-- [x] Progressive disclosure form layout
-- [x] Frontend omits empty fields from payload
+- [ ] `name` optional in API: **not done in the API** (`CreateAgentSchema.name` is required, `apps/api/src/routes/agents.ts`); the web form generates a default name itself, so the UI works with no input. Only non-UI callers are affected.
+- [x] `prompt` optional in API: done. A blank goal renders `EMPTY_JOB_DEFAULT_TEXT` at runtime (not from `agentDefaults.blankPrompt`).
+- [ ] `executionDefaults` optional for trading agents: **not done**, still required for trading-capable payloads.
+- [x] Model fallback to operator defaults (`agentRuntime.llm.modelDefaults` exists in `config/default.yaml`).
+- [ ] `agentDefaults` operator config section: **does not exist** (no `agentDefaults`, `blankPrompt` or `defaultCapital` keys).
+- [x] Frontend form validation relaxed, progressive disclosure, empty fields omitted (frontend only).
 
 ## Goals (this plan only)
 

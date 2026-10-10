@@ -11,6 +11,10 @@ release.
 - "Agent strategy ownership in the trading profile"
 
 **Prerequisites:** Traderton Wave E E1 + E3 (both halves), plus Traderton plan S1–S9.
+**Referenced by:** this plan's completion (step H5) is a Track-D dependency of the
+"Eliminate the Parity-Drift Check" epic
+(`docs/features/2026/10/10/001-eliminate-parity-check/000-roadmap.md`), which does not
+own or modify this plan's scope beyond the H5 gap-fix noted below.
 
 ## What changes for herobids
 
@@ -85,6 +89,47 @@ release.
   - `preset-transition-service.ts`, `binding-resolver.ts`, `resolve-active-preset.ts`,
     `assessment-identity-resolver.ts`
   - the matching tests, and the wiring in `index.ts` (~L1030–1130)
+  - **Gap found and fixed in place (2026-10-10) by the "Eliminate the Parity-Drift
+    Check" epic** — see its roadmap
+    (`docs/features/2026/10/10/001-eliminate-parity-check/000-roadmap.md`, Track D)
+    and evidence
+    (`docs/features/2026/10/10/001-eliminate-parity-check/investigation-findings.md`,
+    Group 5). That epic is blocked on this plan's completion (via H5) but does not
+    own or manage this plan — this list never named the following, which must be
+    deleted (or
+    explicitly re-scoped and kept, with a reason recorded here) in the same batch,
+    otherwise the corresponding `scripts/parity-drift-manifest.json` entries survive
+    this plan with no consumer left to justify them:**
+    - `packages/domain/src/market-assessment.ts` — of its ~60 exports, only
+      `RegimeResult`, `EvidenceValue`, `VolatilityEvidence` have non-assessment
+      consumers (`apps/worker/src/venue-intelligence.ts`, `tick-gates.ts`,
+      `runtime-composition.ts`; re-verified 2026-10-10). The
+      implementing agent must either (a) delete the file and move those three
+      specific exports to the wire-DTO contract package
+      (`docs/features/2026/10/10/001-eliminate-parity-check/decisions/wire-dto-package-mechanics.md`),
+      or (b) keep the file but prune every export this plan's H1-H5 steps make
+      unused. Do not leave the file as-is "because it's domain code" — most of it is
+      assessment-only and this plan already deletes the assessment feature.
+    - `packages/domain/src/review-pre-check.ts` (and its test and its export in
+      `packages/domain/src/index.ts`) — the scheduled-review pre-check this plan's H4
+      deletes from the worker (`review-scheduler.ts`, `assessment-review-runner.ts`)
+      depends on it; confirm it has no other caller before deleting, since the
+      traderton counterpart plan (S7) re-implements this logic independently rather
+      than importing herobids'.
+    - `packages/domain/src/ports/assessment-identity-resolver.ts`, `assessment-request.ts`
+      and `preset-transition.ts` — not enumerated anywhere in H5's file list
+      despite being assessment-specific ports with no other named consumer.
+  - **Also found and not in H5's delete list, but still wired at runtime as of this
+    investigation:** `apps/worker/src/market-intelligence/monitor.ts` and
+    `coordinator.ts` are instantiated in `apps/worker/src/index.ts:1066`
+    (`createMarketMonitor`) and are the producer of herobids' own watch-threshold,
+    discovery-delta, and regime-change wakes (see
+    `domain-trading-trading-protocol` in the investigation findings) — a capability
+    distinct from the LLM-driven preset assessment this plan retires. **Do not delete
+    these as part of H5** unless a separate decision is made to also retire herobids'
+    own wake-producing market monitor (out of scope for this plan). Keep them wired,
+    and keep `RegimeResult`/`VolatilityEvidence` available to them per the resolution
+    above.
 - Drop these tables (greenfield; verify empty first):
   - `market_assessment_requests` / `_runs` / `_artifacts`
   - `agent_preset_bindings`, `agent_preset_transitions`

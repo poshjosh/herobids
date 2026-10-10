@@ -149,3 +149,29 @@ Concretely:
 3. **OAuth callback and manual-form and wallet-generation (`create_connection`) all funnel through the same repository method** for the actual row write, so the wake fires identically regardless of which UI path produced the connection. This is the main win: you get one enforcement point instead of three to keep in sync.
 
 So to directly answer the question: today it's scattered (`connections.ts`, `setup.ts` x2, `connections-oauth.ts`, each with its own raw insert/update), there's no existing choke point. I'd create one — a small repository — rather than publish from each scattered site, specifically because the correlation-to-agent-request logic (point 2) needs to live somewhere shared anyway, and that's the natural place for it.
+
+**Provider Discovery**
+
+The prompt requires that the agent "needs a way to know about available providers and which to choose", but the design above only gave `request_connection` a free-form `provider` string. Without discovery the agent has to guess valid IDs, which defeats the "scoped to the catalog" answer.
+
+1. **Add a worker-side `list_providers` tool** (in `apps/worker/src/tools/connections.ts`, next to `request_connection`), added to `BASE_SKILL.requiredTools` and always visible, like `add_skills`/`search_skills`.
+   - Params: optional `capability` filter (e.g. `trading`).
+   - Returns, per provider: `provider` (the ID accepted by `request_connection`), `displayName`, `capabilities`, `authMethod` (OAuth / API key / generated wallet), and `hasActiveConnection` (true when the agent's owner already has an active compatible connection that can be reused).
+   - Source of truth is the existing provider catalog (`getProviderCatalog` in `apps/api/src/providers/registry.ts`, `ProviderCatalogResponse` in `packages/domain/src/provider-catalog.ts`). It is a read-only projection; the worker must not keep its own list. Open item: whether the worker calls the API catalog or consumes a shared domain projection.
+   - Trading providers are returned only when the agent has the trading skill (or the `capability` filter asks for it), so organic/guided-chat traffic still never sees them (consistent with `GENERIC_FORM_SHOWS_TRADING_PROVIDERS = false`).
+
+2. **`request_connection` validates against the same catalog.** An unknown `provider` returns a non-fault error listing the valid IDs, so a wrong guess is self-correcting.
+
+3. **Document it in `BASE_SKILL.instructions`**, in the same block as the failure-mode guidance: on `connection.missing`, call `list_providers` (with a capability hint if known), pick the matching provider, check `hasActiveConnection`, then call `request_connection` and send the link to the user.
+
+4. **Make the error point at discovery.** The `connection.missing` error from step A should name the missing capability and mention `list_providers`, so the agent does not need to infer the next step from instructions alone.
+
+Updated sample flow: `get_risk_limits` fails with `connection.missing` (capability `trading`) -> `list_providers({ capability: 'trading' })` -> `request_connection({ provider })` -> `send_message` with the link -> agent is woken on success, failure, or expiry.
+
+**Review corrections (2026-10-10)** — found when checking this design against the code; see the [epic roadmap](../000-agent-onboarding-epic/000-roadmap.md) F3-F6.
+
+1. **Token minting crosses a process boundary.** `setup-link-token-service.ts` is in `apps/api`; `request_connection` runs in `apps/worker`. The worker cannot import it. Define how the tool gets a link (inbound message handled by the broker, or an API call) before implementing.
+2. **Tool registration.** New tools must also be added to `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG` in `packages/domain/src/tools.ts`; otherwise `assertToolCatalogMatchesRegistry` fails at worker startup. `BASE_SKILL.requiredTools` alone is not enough.
+3. **The wake publisher is in the worker.** `InstanceEventPublisher` (`apps/worker/src/agents/instance-event-publisher.ts`) is a thin Redis XADD wrapper to `agent:outbound:{agentId}`, but connection writes happen in `apps/api` and `packages/db` cannot depend on apps. Use a domain port (e.g. `AgentWakePublisher`) injected into the repository, with an API-side Redis implementation, or move the publisher into a shared package.
+4. **`?provider=` is not fully supported today.** `ProviderSetupForm` accepts `initialProviderId`, but the Trading option group renders only when `defaultCapability === 'trading'` (or when `GENERIC_FORM_SHOWS_TRADING_PROVIDERS` is true and no capability is given). `?provider=hyperliquid` with no capability would preselect an option that is not rendered. The agent link must also render the requested trading provider.
+5. **Trading provisioning after the connection exists** is specified in [WP-B](../000-post-creation-trading-provisioning/001-plan.md): the grant currently creates an all-null profile traderton cannot run, and granting requires a stopped agent, so the link-completion path needs a running-agent grant.

@@ -1,5 +1,7 @@
 # Contemplation: Chat Sessions — Conversational Agent UX
 
+> **Review note (2026-10-10).** This model (hidden backing agents, agents list shows trading agents only, a separate "New Chat" entity) conflicts with the [agent onboarding epic](../000-agent-onboarding-epic/000-roadmap.md), where every agent is conversational and the agent itself is the primary surface (finding F10). The epic's [simplified creation plan](../000-simplified-agent-creation/001-plan.md) D3 uses a minimal in-app conversation on the agent (existing `POST /agents/:id/message` + `agent_outbound_messages`). Decide whether this contemplation is superseded before building either.
+
 **Direction change (2026-07-13):** Shifted from "chat agent" (agent-centric) to "chat session" (session-centric). The session is the durable entity the user interacts with. The agent is a hidden implementation detail that powers responses.
 
 ---

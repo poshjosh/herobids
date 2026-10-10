@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Stripe payments
+
 ## v0.6.6 - 2026-10-09
 
 ### Fixed

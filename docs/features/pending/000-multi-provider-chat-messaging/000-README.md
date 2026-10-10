@@ -4,6 +4,8 @@
 **Created:** 2026-10-04
 **Owner:** (unassigned)
 
+> **Review note (2026-10-10).** This feature is Work Package WP-M of the [agent onboarding epic](../000-agent-onboarding-epic/000-roadmap.md). Two gaps relative to the epic's product channel list (WhatsApp, Telegram, email): conversational **email** (inbound) is not covered here (WP-E), and the Telegram binding is still manual paste, while the create flow needs deep-link auto-capture (note that Telegram `/start <payload>` collides with the existing `/start <agent>` slash command). SMS (phase 5) is off the epic's critical path.
+
 ## One-line
 
 Generalise the hardcoded Telegram integration into a provider-neutral
