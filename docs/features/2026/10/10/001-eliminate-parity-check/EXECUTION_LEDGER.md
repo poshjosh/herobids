@@ -44,7 +44,7 @@ Initial state recorded 2026-10-10. Update the row (and add a batch record) as yo
 | ID | Repo | Status | Authorization | Prerequisites | Commits | Verification evidence | Blockers / notes |
 |---|---|---|---|---|---|---|---|
 | Z1 | herobids (docs) | ready | autonomous | none | | | |
-| A1 | herobids | ready | autonomous | none | | | Drops 4 entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`; money wrapper kept, human decision 2026-10-10). The `strategy-preset-*` entries are NOT touched (retracted claim) |
+| A1 | herobids | verified | autonomous | none | (uncommitted; see batch record) | Manifest 35 -> 31; checker test 4/4; both herobids recipes PASSED; `pnpm lint` clean; `git diff --check` clean | Drops 4 entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`; money wrapper kept, human decision 2026-10-10). The `strategy-preset-*` entries are NOT touched (retracted claim) |
 | A2 | herobids | ready | autonomous | none (I15 applies) | | | |
 | A3 | herobids | ready | autonomous | none | | | |
 | A4 | herobids | ready | autonomous | none | | | |
@@ -124,4 +124,18 @@ Next allowed milestone:
 
 ## Batch records
 
-None yet.
+```text
+Date: 2026-10-10
+Milestone / batch: A1 (drop four manifest entries)
+Starting SHAs: herobids=af80644290bfd52a4a99505999e2540ffc8b14dc, traderton=54a26c491beaf2595cd68eaaa17963cf3c74e1e6
+Starting git status: both clean
+Scope completed: removed tick-gates-session-hours, domain-cost-profile, domain-result, domain-values-money from scripts/parity-drift-manifest.json, REQUIRED_ENTRY_IDS and REQUIRED_ENTRY_AUTHORITIES. No source file touched; no test change needed (test names agent-risk-defaults, strategy-preset-economy, domain-agent-risk-contract).
+Commits: see below (herobids only)
+Focused validation: node --test scripts/check-parity-drift.test.mjs -> 4 pass, 0 fail
+Broader validation: pnpm lint clean; git diff --check clean. No build/full-suite run: no code, barrel or file changed (nothing deleted, so the I6 trial deletion does not apply).
+Parity gates: sibling-tree recipe PASSED; pin recipe (traderton v0.1.2) PASSED; manifest entry count 35 -> 31
+Decisions made: none beyond the roadmap (money wrapper kept per human decision 2026-10-10).
+Findings / new gaps: roadmap's status-at-a-glance says Track A takes the manifest to 17; unaffected. Stray-reference grep outside docs/ for the 4 ids: none.
+Residual risks / blockers: none. Traderton CI uses herobids pin v0.6.5 (unchanged), so it is unaffected until G1.
+Next allowed milestone: first ready row after A1 in roadmap order: A2 (delete values/instrument and pagination; drop 3 entries). G1 needs A1 and A2 verified and merged.
+```

@@ -54,7 +54,7 @@
 
 ## Status at a glance (2026-10-10)
 
-- Manifest today: **35 entries**. Track A takes it to **17** (the 14 below plus the three
+- Manifest today: **31 entries** (35 at epic start; A1 done). Track A takes it to **17** (the 14 below plus the three
   `strategy-preset-*` entries, which stay `mirror-only` until H5); Tracks B, C, D take the
   rest to 0; C6 deletes the checker.
 - **Ready now (autonomous):** Z1, A1, A3, A4, A6, B1.0, B3.1, B4.1, C1.0. A2 and A5-A7
@@ -72,7 +72,7 @@
 | ID | Repo | Milestone | State |
 |---|---|---|---|
 | Z1 | herobids docs | Mirror the ratified decisions as ADR 018 | ready |
-| A1 | herobids | Drop 4 manifest entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`) | ready |
+| A1 | herobids | Drop 4 manifest entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`) | verified 2026-10-10 |
 | A2 | herobids | Delete `values/instrument` and `pagination`; drop 3 entries | ready |
 | A3 | herobids | Delete 7 dead ports; trim and narrow `candle-fetcher` | ready |
 | A4 | herobids | Delete `venue-capability` and its orphaned fixture | ready |
