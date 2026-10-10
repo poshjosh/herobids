@@ -1,9 +1,9 @@
-# Decision framework for in-milestone decisions
+# Decision framework for in-track decisions
 
 Most decisions an executing agent hits are small implementation details inside an
 already-ratified direction. Those are **yours to make, immediately, with no brief**. A
 small number are not; those go to a human through a short brief. This page says which is
-which. Read it once before starting a milestone; consult the checklist whenever you are
+which. Read it once before starting a track; consult the checklist whenever you are
 about to pick between two options.
 
 The "who is the human": the project owner who ratified
@@ -13,11 +13,11 @@ The "who is the human": the project owner who ratified
 ## 1. Default: the lightweight path
 
 **When:** the choice is an implementation detail inside a direction that Brief B, the
-mechanics doc, an ADR, or the milestone row already settled.
+mechanics doc, an ADR, or the sub-step already settled.
 
 **How to decide, in this order of authority:**
 
-1. The milestone row's stated decisions and the rules in Brief B
+1. The sub-step's stated decisions and the rules in Brief B
    ([Mechanical rules](decisions/B-parity-ownership.md#mechanical-rules-for-executing-agents)).
 2. [AGENTS.md](../../../../../../AGENTS.md) conventions (naming, `Result`, strict types,
    config layering, `.example` twins).
@@ -38,7 +38,7 @@ but was not closed out by the suite is not yet lightweight evidence. If a grep o
 file read settles it *and* the suite agrees, it was lightweight.
 
 **Record:** one line in the commit message (`Decision: ...`) and, if it affects later
-milestones, in the milestone's ledger notes. No separate document.
+sub-steps, in the track's ledger notes. No separate document.
 
 **Examples from this epic (all lightweight):**
 
@@ -58,15 +58,15 @@ needed ratification in Brief B and what did not.
 
 - [ ] **H1. Contradicts a ratified decision or ADR**, or the premise of one. (Example, open
   now: Brief B decision 2 says traderton "was already the authoritative check", but no
-  traderton equivalent exists for the agent path at `routes/agents.ts:1276`, milestone
+  traderton equivalent exists for the agent path at `routes/agents.ts:1276`, sub-step
   B1.2.)
 - [ ] **H2. Irreversible or hard to reverse *decision***: dropping data, deleting something
   that may have a consumer you cannot see, or choosing something that cannot be undone.
-  (Carrying out a release, tag or publish that a milestone already calls for is **not**
+  (Carrying out a release, tag or publish that a sub-step already calls for is **not**
   heavyweight; invariant I12 covers it.)
 - [ ] **H3. Changes scope**: a new disposition category (disposition (6) needed
   ratification), moving a feature to the other repo, a new cross-repo dependency, adding
-  or removing a milestone's reason to exist.
+  or removing a sub-step's reason to exist.
 - [ ] **H4. Removes a documented safety behavior or an enforcement check**, even a
   duplicated one (execution-capability / mode-rank pre-checks needed ratification for
   this reason).
@@ -89,27 +89,28 @@ If none apply, it is lightweight: decide and move on.
 
 ### What to do on the heavyweight path
 
-1. **Stop that milestone**, not the epic. Mark it `blocked` in the ledger with a link to
-   the brief, and pick another ready milestone (the roadmap's "Ready now" list).
-2. **Write a short brief** at `decisions/<milestone-id>-<slug>.md`, in the same format as
+1. **Stop that sub-step**, not the track. Mark it `blocked` in the ledger with a link to
+   the brief, and continue with the next sub-step in the track (or, if the sub-step is a
+   track's named human stop such as B1.2, stop the track and flag it).
+2. **Write a short brief** at `decisions/<sub-step-id>-<slug>.md`, in the same format as
    [B-parity-ownership.md](decisions/B-parity-ownership.md):
    - **Question** and **Status** (`PROPOSED`),
    - **Evidence** (file:line, grep results, the commands you ran),
    - **Options**, each with its cost and reversibility,
    - **Recommendation** and why,
-   - **What this blocks** (milestone IDs).
+   - **What this blocks** (sub-step IDs).
 3. **Flag it explicitly to the human** in your final message for the session. Do not
    decide and proceed silently, and do not edit ratified documents beyond adding a pointer
    to your brief.
 4. After the human ratifies, record `Decision (<date>): ...` in the brief, update the
-   roadmap rows it changes, and move the ledger row back to `ready`.
+   roadmap sub-steps it changes, and move the ledger row back to `ready`.
 
 ### Not a decision: a discovered gap
 
 If you find a gap the roadmap did not account for (a new dependency, an unexpected
 consumer), that is not automatically heavy. Apply
 [invariants-and-quality-gates.md, section 3.3](invariants-and-quality-gates.md#33-when-a-milestone-is-not-done):
-record it, resolve it in place if small, otherwise split it into a new row. It becomes a
+record it, resolve it in place if small, otherwise split it into a new sub-step. It becomes a
 heavyweight decision only if resolving it hits a checklist item above.
 
 ## 3. Worked examples from this epic's history

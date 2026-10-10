@@ -271,7 +271,7 @@ document is evidence, not a substitute.
   H5 has executed.
 - **R11 — Shrink incrementally.** The manifest shrinks entry by entry and the checker
   keeps running for what remains. The checker, manifest, test and CI job are deleted
-  only when the manifest has zero entries (milestone C6).
+  only when the manifest has zero entries (milestone M-C6).
 
 ## Clarifications and open items
 
@@ -288,9 +288,9 @@ that needs a human.
   actor ensure has no equivalent. `routes/capabilities/trading.ts:1286` is dead code
   (`agentExecMode` is hard-coded `undefined`) and can simply be removed. Consequence:
   dropping `routes/agents.ts:1276` is a behavior change, not a pure de-duplication.
-  That one site is milestone B1.2 and requires a decision brief.
+  That one site is sub-step B1.2 and requires a decision brief.
 - **O2 — Money wording. RESOLVED (human, 2026-10-10): keep herobids's `values/money.ts`
-  wrapper; only the manifest entry is dropped (milestone A1). The original clarification
+  wrapper; only the manifest entry is dropped (sub-step A1). The original clarification
   follows, kept for the record.** Disposition (6)'s general text says each repo "keeps its own
   copy", while the `domain-values-money` bullet says herobids "drops its mirrored
   wrapper and takes a direct `decimal.js` dependency". Both agree that the manifest
@@ -306,7 +306,7 @@ that needs a human.
   schemas in traderton's copy "can be deleted independently". Doing so before the
   package exists would force dropping the pin on the wake envelope and leave a
   producer/consumer wire contract unprotected until the package lands, so the
-  roadmap sequences the trim inside the contracts-package milestones (C1.4 / C4). A
+  roadmap sequences the trim inside the contracts-package sub-steps (C1.4 / C4). A
   human may pull it forward at the cost of that unprotected window.
 - **O5 — Sequencing note "in any order".** The statement that the no-dependency deletes
   can run "any time, in any order" holds for herobids-only changes. Traderton-side
@@ -314,7 +314,7 @@ that needs a human.
   `../invariants-and-quality-gates.md`, section 2 and invariant I3.
 - **O6 — Package install authentication.** `wire-dto-package-mechanics.md` settles how
   CI **checkouts** authenticate (same `GITHUB_TOKEN` boundary) but is silent on how
-  Docker builds and local `pnpm install` authenticate to GitHub Packages. Milestone
+  Docker builds and local `pnpm install` authenticate to GitHub Packages. Sub-step
   C3.0 must settle it; if the answer needs a new secret or credential, that is a
   heavyweight decision.
 - **O7 — Method gap behind the retracted preset claim.** "Dead" was concluded from a grep

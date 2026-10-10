@@ -8,12 +8,12 @@
 > **not** by weakening, narrowing-to-nothing, or hiding the check.
 >
 > **The epic is done when** the manifest has **zero entries because nothing is mirrored
-> anymore**, and then the checker, manifest, test and CI job are removed (milestone **C6**).
+> anymore**, and then the checker, manifest, test and CI job are removed (milestone **M-C6**).
 
 - **Date:** 2026-10-10
 - **Status:** ACTIVE. Decision Brief B is ratified for everything except the items
   marked blocked below. Execution framework set up 2026-10-10: this file is the
-  **entrypoint**; milestones, gates, invariants and the decision process are defined
+  **entrypoint**; milestones (tracks), gates, invariants and the decision process are defined
   here and in the documents linked under "If you are an executing agent".
 - **Scope:** both repositories. Herobids is where the manifest and checker live;
   traderton-side work is tracked here and authored in traderton.
@@ -31,46 +31,57 @@
    [EXECUTION_LEDGER.md](EXECUTION_LEDGER.md).
 2. **Run `git status` and `git log` in both repos** (`herobids` and its sibling
    `traderton`). The human commits and pushes between sessions; the ledger may be behind.
-3. **Pick your milestone:** the one you were assigned; otherwise the first row of
-   "Ready now" whose prerequisites are `verified` in the ledger. Mark it `in progress` in
-   the ledger with both starting SHAs before touching code. **If no row is ready, do not
-   idle or guess:** report which rows are blocked and exactly what each is waiting for,
-   and ask the human (Track D's checkpoint row D0 is the planned instance of this).
-4. **Read the milestone block** (done-state, prerequisites, plan, governing decisions,
-   gates) and **only** the decision rows it cites. You do not need the whole decision
-   history.
+3. **Pick your milestone (a track):** the one you were assigned; otherwise the first
+   track of "Ready now" whose prerequisites are `verified` in the ledger. Mark it
+   `in progress` in the ledger with both starting SHAs before touching code, then work
+   through its sub-steps in order without stopping. **If no track is ready, do not idle
+   or guess:** report which tracks are blocked and exactly what each is waiting for, and
+   ask the human (Track D's checkpoint D0 is the planned instance of this).
+4. **Read the track's sub-step blocks** (done-state, prerequisites, plan, governing
+   decisions, gates) and **only** the decision rows they cite. You do not need the whole
+   decision history.
 5. **Implement.** Make lightweight decisions yourself; stop and write a brief only if the
    [heavyweight checklist](decision-framework.md#2-the-exception-the-heavyweight-path)
    fires.
-6. **Verify against the gates** named in the block (floor plus profile). If you find a gap
-   the roadmap did not account for, you may **not** mark the milestone done: record it,
-   resolve it if small, otherwise split it into a new row
+6. **Verify against the gates** named in each sub-step (floor plus profile). If you find
+   a gap the roadmap did not account for, you may **not** mark the sub-step done: record
+   it, resolve it if small, otherwise split it into a new sub-step
    ([section 3.3](invariants-and-quality-gates.md#33-when-a-milestone-is-not-done)).
-7. **Leave the trail:** CHANGELOG, ledger batch record, any findings added to this file.
-   Then state the next allowed milestone.
-8. **STOP.** Report what you did and what is next, and wait. **Do not start the next
-   milestone** until the human says to. You work autonomously *inside* a milestone;
-   the human is the gate *between* milestones.
+7. **Leave the trail:** CHANGELOG, ledger batch record (one per track), any findings
+   added to this file. Then state the next allowed track.
+8. **STOP at the end of the track.** Report what you did and what is next, and wait.
+   **Do not start the next track** until the human says to. You work autonomously
+   *inside* a track (across its sub-steps and repos, in the order the track defines);
+   the human is the gate *between* tracks, and at the genuine decision/checkpoint
+   boundaries named in the track (B1.2, C3.0's O6 if it needs a secret, D0).
 
 ## Status at a glance (2026-10-10)
 
-- Manifest today: **28 entries** (35 at epic start; A1, A2 done). Track A takes it to **17** (the 14 below plus the three
-  `strategy-preset-*` entries, which stay `mirror-only` until H5); Tracks B, C, D take the
-  rest to 0; C6 deletes the checker.
-- **Ready now (autonomous):** Z1, A1, A3, A4, A6, B1.0, B3.1, B4.1, C1.0. A2 and A5-A7
-  follow in order, because only one manifest-touching milestone runs at a time (I15).
+- Manifest today: **20 entries** (35 at epic start; A1-A4, A9, A10 done). Track A takes it to
+  **17** (A5, A6, A7 remove three more); Tracks B, C, D take the rest to 0; C6 deletes the
+  checker.
+- **Ready now (autonomous):** M-A (finish Track A: A5, A6, A7), M-B, M-C. Within a track
+  the agent works through sub-steps in order without stopping (I15 still applies: one
+  manifest-touching change at a time).
 - **Needs a human:** only what the agent cannot do itself: the B1.2 brief (a decision),
   and, when Tracks A-C are done, your answer at checkpoint D0 about the Wave E herobids
   halves. Tagging, releasing and publishing are done by the agent (invariant I12); it
-  asks you only if a credential or permission fails. After **every** milestone the agent
+  asks you only if a credential or permission fails. After **every track** the agent
   stops and waits for you (step 8).
 - **Blocked:** Track D (waits on Wave E's herobids halves and the preset-assessment plan pair).
-- **Recommended first milestone: A1.** It is self-contained and unblocks G1.
+- **Recommended next: M-A.** Finish Track A (A5, A6, A7); G1 is already tagged (`v0.6.7`).
 
 ### Summary
 
+A milestone is a **track** (M-*); the A/B/C/D/C6 rows below are its sub-steps.
+
 | ID | Repo | Milestone | State |
 |---|---|---|---|
+| **M-A** | both | Track A — dead copies and retired obligations (A1-A7, G1, A9, A10) | in progress (A5, A6, A7 remain) |
+| **M-B** | both | Track B — decided engineering (B1.0-B4.x) | ready (stops at B1.2) |
+| **M-C** | both | Track C — `@traderton/contracts` package (C1.0-C5, G2, G3) | ready (may stop at C3.0/O6) |
+| **M-D** | both | Track D — blocked on other epics (D0 checkpoint, D1, D2) | blocked |
+| **M-C6** | both | Finish line — delete the checker, manifest, tests and CI job | blocked on zero entries |
 | Z1 | herobids docs | Mirror the ratified decisions as ADR 018 | ready |
 | A1 | herobids | Drop 4 manifest entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`) | verified 2026-10-10 |
 | A2 | herobids | Delete `values/instrument` and `pagination`; drop 3 entries | verified 2026-10-10 |
@@ -106,28 +117,34 @@
 
 ## What a "milestone" is in this epic
 
-**Tracks are not milestones; each block below is.** A milestone is the unit of work one
-agent finishes in one autonomous pass. A row qualifies only if all of these hold:
+**A milestone is a track** (M-A, M-B, M-C, M-D, M-C6) — a coherent chunk of work the
+agent finishes in one autonomous pass, spanning both repos where the track's ordering
+requires it. The individual blocks below (A1, A2, … C5) are **sub-steps**, not
+milestones: the agent works through them in order inside their track without stopping,
+and the human gates only *between* tracks.
 
-1. **One repo.** Cross-repo work is split into a herobids milestone and a traderton
-   milestone with an explicit order, because the CI makes the order mandatory
-   (invariant I3).
-2. **One reviewable change set**, a few focused commits, with a done-state verifiable by
-   commands (a count, a grep, a test, a CI recipe), not by judgment.
-3. **One coherent reason for change** and, if it touches the manifest, at most 7 entries
-   removed for the same reason.
-4. **Sized to one session.** Rule of thumb: no more than about 15 files of real logic and
-   no new design. Anything larger is split, or **preceded by a plan milestone** whose
-   output is the written plan and revised rows.
-5. **Stops only where it must.** Release, tag and publish steps are their own rows (`G*`)
-   that the agent executes itself; a milestone never waits on a human unless the agent
-   cannot proceed (invariant I12).
-6. **Plan status stated:** either a written plan exists, the block says "none needed"
-   (follow the block), or writing the plan is itself the milestone.
+A track qualifies as a milestone when:
+
+1. **One coherent reason for change** — a track groups sub-steps that share a purpose
+   (Track A: dead copies and retired obligations; Track B: decided engineering; Track C:
+   the contracts package; Track D: blocked on other epics; C6: the finish line).
+2. **A done-state verifiable by commands** (a count, a grep, a test, a CI recipe), not by
+   judgment — each sub-step keeps its own verifiable done-state.
+3. **Stops only where it must.** The agent runs release/tag/publish sub-steps (`G*`)
+   itself (invariant I12). A track stops for the human only at a genuine decision or
+   checkpoint boundary: B1.2 (a brief), C3.0's O6 (only if it needs a new secret), and
+   D0 (the checkpoint). Everything else runs autonomously.
+4. **Plan status stated:** either a written plan exists, the sub-step says "none needed"
+   (follow the block), or writing the plan is itself a sub-step.
+
+**Internal ordering still holds** (it is enforced *within* a track, not by stopping):
+cross-repo work keeps the herobids-first order (invariant I3), and only one
+manifest-touching change runs at a time (I15). Commits stay atomic and focused
+(AGENTS.md); the track's granularity changes only the *gating*, not the *commits*.
 
 Track C was previously a handful of undefined multi-day rows; it is split here into plan
-milestones and per-shape implementation milestones. Rows marked **provisional** may be
-revised by their plan milestone; revise the row in this file when you do.
+sub-steps and per-shape implementation sub-steps. Sub-steps marked **provisional** may be
+revised by their plan sub-step; revise the sub-step in this file when you do.
 
 **ID scheme:** `Z` docs, `A` no-dependency deletes (herobids first), `B` decided
 engineering, `C` contracts package, `D` blocked on other epics, `G` release row (tag or publish).
@@ -137,9 +154,9 @@ A2 + A9, old A5 is A4, old A6 is A5, old A7 is A1 + A9, old A8 is A7, old A9 is 
 old A10 is A6, old B1-B4 are B1.x-B4.x, old C1-C3 are C1.x-C3.x, old C4 is C5, old C5 is
 C6. New: Z1, the G rows, C4 (traderton dedupe), D2.
 
-**Conventions introduced by this framework (for human review):** the milestone sizing
+**Conventions introduced by this framework (for human review):** the track-as-milestone
 rule and ID scheme above; the herobids-first split with release rows (from invariant
-I3); one manifest-touching milestone at a time (I15); this epic's own ledger; the
+I3); one manifest-touching change at a time (I15); this epic's own ledger; the
 decision framework; the "Mechanical rules" and "Clarifications" sections in Brief B.
 
 ## Governing documents
@@ -173,7 +190,10 @@ decision framework; the "Mechanical rules" and "Clarifications" sections in Brie
 
 ---
 
-## Track A — Dead copies and retired obligations
+## Track A — Dead copies and retired obligations (milestone M-A)
+
+**One autonomous pass.** Work through A5 → A6 → A7 in order without stopping (G1 is
+already tagged `v0.6.7`; A1-A4, A9, A10 are done). No human stop inside this track.
 
 Goal: shrink the manifest wherever a side is simply dead, or the obligation is retired.
 **Herobids first.** The parts herobids can do alone come first; the traderton deletions
@@ -210,7 +230,7 @@ barrels (I7); GP-H; CHANGELOG `### Removed`.
   `PaginatedResponse` (`packages/domain/src/__tests__/skill-catalog-types.test.ts`)
   updated. Entry count decreases by 3. Traderton's copies stay until A9.
 - **Prerequisites:** none (I15: do not overlap with another manifest-touching
-  milestone). **Plan:** none needed.
+  sub-step). **Plan:** none needed.
 - **Governing:** Brief B R1, R2, R4; resolved entries for instrument, pagination and
   values-index. **Gates:** floor, GP-H.
 
@@ -266,7 +286,7 @@ barrels (I7); GP-H; CHANGELOG `### Removed`.
 ### A8. (withdrawn: merged into A1)
 Decided 2026-10-10: herobids keeps the `values/money.ts` wrapper instead of replacing it
 with a direct `decimal.js` import. Its manifest entry is dropped in A1. There is no A8
-milestone; the ID is left unused so other references stay stable.
+sub-step; the ID is left unused so other references stay stable.
 
 ### G1. Release row: herobids tag containing A1 and A2
 - **Who:** the agent (invariant I12). **Done-state:** a herobids tag exists whose
@@ -299,7 +319,11 @@ milestone; the ID is left unused so other references stay stable.
 
 ---
 
-## Track B — Decided engineering work
+## Track B — Decided engineering work (milestone M-B)
+
+**One autonomous pass** through B1.0 → B1.1 → B2.1 → B2.2 → B3.1 → B3.2 → B4.1 → B4.x,
+with **one human stop at B1.2** (the agent-path capability brief). When B1.2 is reached,
+write the brief, flag it, and stop the track there; resume after ratification.
 
 ### B1.0. Audit and plan the removal of local capability and mode-rank pre-checks
 - **Repo:** herobids. **Done-state:** `plans/B1-herobids-drops-local-capability-
@@ -312,7 +336,7 @@ milestone; the ID is left unused so other references stay stable.
 - **Known at setup time:** traderton covers the bot paths (`drive-target.ts:300,330,606`,
   `tools/bots.ts:965,1185,1217`); the agent path `routes/agents.ts:1276` has **no**
   equivalent; `capabilities/trading.ts:1286` is dead code. See Brief B O1.
-- **Prerequisites:** none. **Plan:** this milestone writes it.
+- **Prerequisites:** none. **Plan:** this sub-step writes it.
 - **Governing:** Brief B ratified decision 2, R6, O1; findings Group 4. **Gates:** floor
   (docs only), GP-D.
 
@@ -341,7 +365,7 @@ milestone; the ID is left unused so other references stay stable.
   deleted (relocating `venueTypeFromProvider`, which herobids still uses for venue-type
   stamping, next to `SWAP_VENUES` / `ORDERBOOK_VENUES` in its config module); entry
   `domain-trading-execution-capability` removed (-1), or retained per the decision. If
-  the outcome adds a traderton check, that is a separate traderton milestone added to
+  the outcome adds a traderton check, that is a separate traderton sub-step added to
   this file first.
 - **Prerequisites:** B1.2 ratified. **Gates:** floor, GP-H (GP-T if traderton changes).
 
@@ -404,15 +428,19 @@ milestone; the ID is left unused so other references stay stable.
   (boundary-read-able at startup vs. herobids-local), decides where herobids-local fields
   live (lightweight, matching `docs/best-practices/configuration.md`), lists `.env*.example`
   changes (I9), and **appends implementation rows B4.2... to this file and the ledger**.
-- **Prerequisites:** none. **Plan:** this milestone writes it. **Governing:** Brief B
+- **Prerequisites:** none. **Plan:** this sub-step writes it. **Governing:** Brief B
   resolved entries (`agent-risk-defaults`); `get_operator_defaults`
-  (`apps/api/src/traderton-operator-defaults.ts`). Sequence the implementation rows after
-  B3.2. **Gates:** GP-D. The final implementation row removes the manifest entry
+  (`apps/api/src/traderton-operator-defaults.ts`). Sequence the implementation sub-steps after
+  B3.2. **Gates:** GP-D. The final implementation sub-step removes the manifest entry
   `agent-risk-defaults` (-1) and updates the checker test (I2: it names this id).
 
 ---
 
-## Track C — Wire-DTO contract package (`@traderton/contracts`)
+## Track C — Wire-DTO contract package (`@traderton/contracts`) (milestone M-C)
+
+**One autonomous pass** through C1.0 → C1.x → C2.0 → C2.1 → G2 → C3.0 → C3.x → G3 → C4 → C5,
+with a **possible human stop at C3.0** only if install authentication (open item O6)
+needs a new secret or credential. Otherwise run through without stopping.
 
 Mechanics are decided (registry, pin, CI) in
 [wire-dto-package-mechanics.md](decisions/wire-dto-package-mechanics.md). **Agents work
@@ -524,10 +552,14 @@ manifest entry (I1, I2), GP-H.
 
 ---
 
-## Track D — Blocked on other epics
+## Track D — Blocked on other epics (milestone M-D)
+
+**Starts at the D0 checkpoint** (a human stop): report the remaining entries and ask
+whether to start the Wave E herobids halves and the preset-assessment chain. D1/D2 are
+blocked on that answer and on external work.
 
 ### D0. Checkpoint: report and ask
-- **Repo:** herobids (report only). **Prerequisites:** every A, B and C milestone
+- **Repo:** herobids (report only). **Prerequisites:** every A, B and C sub-step
   `verified`. **Done-state:** the agent lists the manifest entries that remain (expected:
   the 9 Track D entries `strategy-preset-economy`, `-premium`, `-standard`,
   `domain-config-presets-loader`, `domain-config-presets`,
@@ -552,7 +584,7 @@ the very last part of the epic.
 
 ---
 
-## C6 — The finish line
+## C6 — The finish line (milestone M-C6)
 
 Both rows are blocked until the manifest has **zero entries**. Either order works (each
 repo's CI uses pinned refs); do C6.1 then C6.2 so the ledger records one pin-free end
@@ -576,7 +608,7 @@ state.
 
 ---
 
-## Coverage: every manifest entry and the milestone that removes it
+## Coverage: every manifest entry and the sub-step that removes it
 
 | Entry | Removed by | Entry | Removed by |
 |---|---|---|---|
@@ -609,17 +641,17 @@ the owning repo's own build, type checks and test suite as the judge.
 
 | Claim tested | Result |
 |---|---|
-| **Traderton:** `cost-profile`, `values/instrument`, `pagination`, `tick-gates.ts` + `tick-gate-state.ts` + their 3 test files, actor-health (domain file + test, worker publisher + test, quarantined route copy), barrels pruned | **Confirmed.** Build, lint green; vitest 166 files / 2926 tests pass (the 50 fewer tests belong to the deleted code). Remaining references are docs only: `_deferred-config/README.md` (lines 37, 41, 54), `_deferred-authoring/README.md:66`, historical docs under `docs/features/initial/` and `archive/` (including `001-parity-ledger.md`; the milestone checks whether it asserts these files). |
+| **Traderton:** `cost-profile`, `values/instrument`, `pagination`, `tick-gates.ts` + `tick-gate-state.ts` + their 3 test files, actor-health (domain file + test, worker publisher + test, quarantined route copy), barrels pruned | **Confirmed.** Build, lint green; vitest 166 files / 2926 tests pass (the 50 fewer tests belong to the deleted code). Remaining references are docs only: `_deferred-config/README.md` (lines 37, 41, 54), `_deferred-authoring/README.md:66`, historical docs under `docs/features/initial/` and `archive/` (including `001-parity-ledger.md`; the sub-step checks whether it asserts these files). |
 | **Herobids:** the 7 ports, `CandleFetcher`, `venue-capability` + fixture, `models/decision` (with `ActorType` retargeted), `values/instrument`, `pagination`, `values/ids`, actor-health (domain file + test, worker publisher + test, API route + test + registration in `apps/api/src/index.ts`), barrels pruned | **Confirmed.** Domain build, lint, `tsc` for domain/worker/api, web typecheck green; vitest 348 files / 6964 tests pass. A scan of `scripts/`, `tests/`, `apps/web`, `docker`, `infra` found only the orphaned `tests/fixtures/venue-capabilities.ts`. |
 | **Herobids, expected NOT dead:** `economic-calendar`, `values/money`, `mode-rank`, `execution-capability` | **Break set matches the roadmap exactly.** Worker: `hybrid-decision-sizing.ts`, `runtime-composition.ts`, `venue-intelligence.ts`, `tools/bots.ts`. API: `agent-create-normalization.ts`, `agent-config-helpers.ts`, `routes/bots.ts`, `routes/capabilities/trading-ledger.ts`, `routes/capabilities/trading.ts`, `routes/agents.ts` (plus cascade errors in `agent-interactivity.ts` and `chat.ts` from one collapsed type). Matches A6 and B1.x; `values/money` is kept by herobids (decision 2026-10-10). |
 | **Preset YAMLs (traderton)** | **Retracted, live.** Not re-tested; Brief B's correction stands. |
 
 **Not executed:** the DB-backed tiers (`pnpm test:functional`, `pnpm test:integration`,
 traderton's `scripts/shell/tests/run-integration.sh`) need Postgres and Redis. Scans found
-no references there, but they were not run; a milestone runs them if the environment
+no references there, but they were not run; a sub-step runs them if the environment
 allows and records it if not.
 
-**Gotchas the trials exposed** (apply in the milestones):
+**Gotchas the trials exposed** (apply in the sub-steps):
 1. Rebuild the herobids domain package (`pnpm --filter @herobids/domain run build`) before
    the per-app `tsc` runs. The apps consume it through its build output, and the
    extraction handoff brief records the same build-cache blind spot for root `pnpm lint`.
@@ -645,8 +677,8 @@ Only these, and only when it cannot proceed:
 
 ## Findings log
 
-Add a dated line here whenever a milestone uncovers a gap: the row it affected and what you
-did (resolved in place, or split into a new row).
+Add a dated line here whenever a sub-step uncovers a gap: the row it affected and what you
+did (resolved in place, or split into a new sub-step).
 
 - 2026-10-10 (framework setup): see Brief B O1 (agent-path capability check has no
   traderton equivalent), O2 (money wording), O4 (trim timing), O6 (package install auth),

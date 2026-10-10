@@ -1,10 +1,10 @@
 # Invariants and quality gates
 
-Applies to **every** milestone in [000-roadmap.md](000-roadmap.md), whichever one you
-pick. Every invariant below is already stated or demonstrated somewhere in this epic's
-history or in the repo's standing rules; the source is cited next to each. Nothing here
-overrides [AGENTS.md](../../../../../../AGENTS.md); where this file is stricter, it only adds
-epic-specific checks on top of AGENTS.md's baseline.
+Applies to **every** milestone (track) and its sub-steps in [000-roadmap.md](000-roadmap.md),
+whichever one you pick. Every invariant below is already stated or demonstrated somewhere
+in this epic's history or in the repo's standing rules; the source is cited next to each.
+Nothing here overrides [AGENTS.md](../../../../../../AGENTS.md); where this file is
+stricter, it only adds epic-specific checks on top of AGENTS.md's baseline.
 
 ## 1. Hard invariants
 
@@ -24,7 +24,7 @@ epic-specific checks on top of AGENTS.md's baseline.
 | **I12** | **You do everything you can yourself, including commits, tags, pushes, release scripts and package publishing, when a milestone calls for it, and you reach out to the human only when you cannot.** "Cannot" means: a credential or permission is missing or rejected, a branch or registry rule blocks you, a script fails and you cannot diagnose it, or the action would exceed the milestone's stated scope. Before running a release, tag or publish, write the exact commands into the ledger; after it, record the result (tag, version, SHA). Read the script's own header first and follow its documented flow (`release.sh`, `release-xstack.sh`). Local credentials (the `.env*` files, git remote auth) are expected to be sufficient; do not ask for credentials you have not tried. Never commit secrets (AGENTS.md). Still **stop after each milestone** (roadmap step 8). | operator instruction 2026-10-10; AGENTS.md (secrets); `release.sh` / `release-xstack.sh` |
 | **I13** | **Unit-tier tests run from a clean env**, otherwise they hit the DB and deadlock: `env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm vitest run <paths>`. | extraction handoff brief §5 |
 | **I14** | **Public APIs return `Result`, strict TypeScript, no `any` / `@ts-ignore`, no swallowed errors.** Applies to any code you write in a milestone. | AGENTS.md |
-| **I15** | **One manifest-touching milestone in progress at a time**, per repo. Two milestones editing `scripts/parity-drift-manifest.json` or the `REQUIRED_*` lists at once guarantees conflicts. This is a rule introduced by this framework (flagged in the roadmap); it is not from an older source. | framework rule |
+| **I15** | **One manifest-touching change in progress at a time**, per repo. Two changes editing `scripts/parity-drift-manifest.json` or the `REQUIRED_*` lists at once guarantees conflicts. A track (M-*) may contain several manifest-touching sub-steps; they run **sequentially** inside the track, never interleaved. This is a rule introduced by this framework (flagged in the roadmap); it is not from an older source. | framework rule |
 
 ## 2. The two CI directions and the cross-repo ordering protocol
 
@@ -88,7 +88,7 @@ Also run the herobids local default, which compares against the **sibling workin
 
 ## 3. Quality gates
 
-### 3.1 The floor (every milestone, per AGENTS.md)
+### 3.1 The floor (every sub-step, per AGENTS.md)
 
 1. **Focused tests** for the changed behavior (new or updated; run from a clean env, I13).
 2. **`pnpm lint`** in every repo you changed. It must pass.
@@ -108,6 +108,11 @@ Also run the herobids local default, which compares against the **sibling workin
 
 ### 3.2 Gate profiles added by this epic's nature
 
+Each profile applies **per sub-step** (a change to herobids, a change to traderton, a
+test-first change, etc.). The milestone (track) gate is the union of its sub-steps'
+profiles plus the floor; the track is `verified` only when every sub-step in it has
+passed its profile and the evidence is in the ledger.
+
 | Profile | Applies to | Extra checks |
 |---|---|---|
 | **GP-H** (herobids change) | any milestone changing herobids | I1, I2, I7 hold; manifest entry count equals the number stated in the row's done-state (`node -e "console.log(JSON.parse(require('fs').readFileSync('scripts/parity-drift-manifest.json','utf8')).entries.length)"`); `node --test scripts/check-parity-drift.test.mjs` passes; **both** herobids recipes in section 2 pass; the grep from I6 returns zero remaining references to anything you deleted, **and the I6 trial-deletion run (domain build, lint, per-app `tsc`, web typecheck, full `pnpm vitest run`) is all green, with `pnpm --filter @herobids/domain run build` run before the per-app `tsc` calls**. |
@@ -117,9 +122,9 @@ Also run the herobids local default, which compares against the **sibling workin
 | **GP-D** (docs only) | Z1 and doc-only rows | every link in the changed docs resolves; no contradiction with AGENTS.md, Brief B, or any ADR; ADR numbering continues from the highest existing number. CHANGELOG is not required for a docs-only change. |
 | **GP-F** (final removal) | C6 | before removing the dual checkout, re-grep both repos' `.github/workflows/` for any other use of `TRADERTON_ROOT`, `HEROBIDS_ROOT`, `repository: poshjosh/…` checkouts, and `check-parity-drift`. `wire-dto-package-mechanics.md` found `parity-drift` to be the only user on 2026-10-10; confirm it still is. Also remove the `--bump-parity-pin` and parity steps from `release.sh` / `release-xstack.sh`, and remove the parity-drift rule from herobids's `AGENTS.md` (traderton's `AGENTS.md` has no such rule as of 2026-10-10; confirm) using wording the human approves. |
 
-### 3.3 When a milestone is NOT done
+### 3.3 When a sub-step (or track) is NOT done
 
-An agent **may not** mark a milestone done if, mid-implementation, it discovers a gap or
+An agent **may not** mark a sub-step done if, mid-implementation, it discovers a gap or
 dependency the roadmap did not account for. Instead it must, before declaring done:
 
 1. **Write the finding down** in the roadmap (a short "Findings" note under the milestone
@@ -134,8 +139,8 @@ dependency the roadmap did not account for. Instead it must, before declaring do
 4. If the gap contradicts a ratified decision, use the heavyweight path (stop, brief,
    flag to the human).
 
-Mark `verified` only when every gate in the row's profile has passed and the evidence is
-in the ledger.
+Mark `verified` only when every gate in the sub-step's profile has passed and the evidence
+is in the ledger. Mark the track `verified` when every sub-step in it is `verified`.
 
 ### 3.4 CHANGELOG format (from this epic's own entries)
 

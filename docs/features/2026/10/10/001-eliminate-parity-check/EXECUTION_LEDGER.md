@@ -7,12 +7,14 @@ ordering. Format follows the trading-extraction epic's ledger
 
 ## Rules
 
-1. Work only on a milestone whose prerequisites are evidenced here (status `verified` on
-   every prerequisite) and whose **Authorization** column says `autonomous`.
-   **Stop after every milestone** and wait for the human; never chain into the next one.
-2. One milestone `in progress` per repo. Milestones that edit
-   `scripts/parity-drift-manifest.json` or the `REQUIRED_*` lists must not overlap
-   (invariant I15).
+1. Work only on a milestone (track) whose prerequisites are evidenced here (status
+   `verified` on every prerequisite) and whose **Authorization** column says `autonomous`.
+   **Stop after every track** and wait for the human; never chain into the next track.
+   Inside a track, work through its sub-steps in order without stopping, except at the
+   track's named human stop (B1.2, C3.0/O6 if it needs a secret, D0).
+2. One manifest-touching change `in progress` per repo. Sub-steps that edit
+   `scripts/parity-drift-manifest.json` or the `REQUIRED_*` lists run sequentially, never
+   interleaved (invariant I15).
 3. Before the first change in a batch, record the **starting SHAs of both repos**
    (`git rev-parse HEAD` in each) and the output of `git status --short` in each; run
    `git status` / `git log` before making any claim about repo state, because the human
@@ -32,7 +34,7 @@ ordering. Format follows the trading-extraction epic's ledger
 - `planned`: defined in the roadmap, prerequisites not yet met
 - `ready`: prerequisites met; authorized (`autonomous` in the Authorization column)
 - `needs human`: the human must act (a heavyweight decision, a failed credential or permission, a checkpoint answer) before it can proceed
-- `in progress`: active bounded batch
+- `in progress`: active track (or sub-step)
 - `blocked`: record blocker, owning decision or gate
 - `implemented`: code committed; broader verification remains
 - `verified`: every gate in the row's profile passed, evidence recorded
@@ -40,9 +42,15 @@ ordering. Format follows the trading-extraction epic's ledger
 ## Work items
 
 Initial state recorded 2026-10-10. Update the row (and add a batch record) as you work.
+A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 
 | ID | Repo | Status | Authorization | Prerequisites | Commits | Verification evidence | Blockers / notes |
 |---|---|---|---|---|---|---|---|
+| M-A | both | in progress | autonomous | none | A1-A4, A9, A10 done | A5, A6, A7 remain | Track A: dead copies + retired obligations |
+| M-B | both | ready | autonomous | M-A | | | Track B: stops at B1.2 (human brief) |
+| M-C | both | ready | autonomous | M-B | | | Track C: may stop at C3.0/O6 (secret) |
+| M-D | both | blocked | autonomous | M-A, M-B, M-C | | | Track D: D0 checkpoint (human) |
+| M-C6 | both | blocked | autonomous | manifest has zero entries | | | Finish line |
 | Z1 | herobids (docs) | ready | autonomous | none | | | |
 | A1 | herobids | verified | autonomous | none | `7af3f0d7` | Manifest 35 -> 31; checker test 4/4; both herobids recipes PASSED; `pnpm lint` clean; `git diff --check` clean | Drops 4 entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`; money wrapper kept, human decision 2026-10-10). The `strategy-preset-*` entries are NOT touched (retracted claim) |
 | A2 | herobids | verified | autonomous | none (I15 applies) | see batch record | Manifest 31 -> 28; domain build, `pnpm build`, `pnpm lint`, tsc worker/api/domain, web typecheck all clean; full `pnpm vitest run` (clean env) 351 files / 6982 tests passed; checker test 4/4; both herobids recipes PASSED | |
@@ -93,11 +101,15 @@ Record every parity-pin change (and the state at the start of the epic).
 
 ## Per-batch record template
 
+A batch is a **track** (M-*). Record one batch per track; list the sub-steps completed
+inside it. (Historical A1/A2/G1/A9/A10/A3/A4 batches predate the track grouping and are
+kept as-is below.)
+
 ```text
 Date:
-Milestone / batch:
+Milestone / batch (track):
 Starting SHAs: herobids=<sha>, traderton=<sha>
-Scope completed:
+Sub-steps completed (in order):
 Commits:
 Focused validation:
 Broader validation (lint, per-package tsc, build/test):
@@ -105,7 +117,7 @@ Parity gates (both herobids recipes; traderton recipe if GP-T): manifest entry c
 Decisions made (lightweight path, one line each):
 Findings / new gaps (and where recorded in the roadmap):
 Residual risks / blockers:
-Next allowed milestone:
+Next allowed milestone (track):
 ```
 
 ## Outstanding issues
