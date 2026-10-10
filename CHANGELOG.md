@@ -12,6 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Dead `values/instrument` and `pagination` modules deleted from `packages/domain`.** `Instrument` and `PaginatedResponse` had zero non-test references in herobids; a trial deletion passed the domain build, lint, per-app `tsc`, web typecheck and the full unit suite. Pruned `values/index.ts` and `packages/domain/src/index.ts`, and removed the test that only asserted the `PaginatedResponse` shape. Removed the matching manifest entries `domain-values-instrument`, `domain-pagination` and `domain-values-index` (the barrel changed) and their required ids (31 -> 28). Traderton's copies are removed later (A9). Part of the parity-drift-check elimination effort; see `docs/features/2026/10/10/001-eliminate-parity-check/decisions/B-parity-ownership.md`.
 - **Four parity-drift manifest entries retired (35 -> 31).** Removed `tick-gates-session-hours`, `domain-cost-profile`, `domain-result` and `domain-values-money` (and their ids from `REQUIRED_ENTRY_IDS` / `REQUIRED_ENTRY_AUTHORITIES`) from `scripts/parity-drift-manifest.json` / `scripts/check-parity-drift.mjs`. No source file changed: herobids keeps its own `tick-gates.ts`, `cost-profile.ts`, `result.ts` and `values/money.ts`, and traderton's copies are dead or independent (generic code, no wire exposure). Part of the parity-drift-check elimination effort; see `docs/features/2026/10/10/001-eliminate-parity-check/decisions/B-parity-ownership.md`.
 
 ## v0.6.6 - 2026-10-09

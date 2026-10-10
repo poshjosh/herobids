@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { SourceKind } from '../skills.js';
-import type { PaginatedResponse } from '../pagination.js';
 import type {
   ExternalSkillSummary,
   ExternalSkillPage,
@@ -23,41 +22,6 @@ describe('SourceKind', () => {
     const user: SourceKind = 'user';
     const external: SourceKind = 'external';
     expect([system, user, external]).toHaveLength(3);
-  });
-});
-
-describe('PaginatedResponse', () => {
-  it('is structurally valid with required fields', () => {
-    const response: PaginatedResponse<string> = {
-      items: ['a', 'b'],
-      totalCount: 10,
-      page: 1,
-      pageSize: 2,
-    };
-    expect(response.items).toHaveLength(2);
-    expect(response.totalCount).toBe(10);
-    expect(response.page).toBe(1);
-    expect(response.pageSize).toBe(2);
-  });
-
-  it('works with complex item types', () => {
-    const response: PaginatedResponse<{ id: string; name: string }> = {
-      items: [{ id: '1', name: 'test' }],
-      totalCount: 1,
-      page: 1,
-      pageSize: 10,
-    };
-    expect(response.items[0]?.id).toBe('1');
-  });
-
-  it('works with an empty items array', () => {
-    const response: PaginatedResponse<number> = {
-      items: [],
-      totalCount: 0,
-      page: 1,
-      pageSize: 10,
-    };
-    expect(response.items).toHaveLength(0);
   });
 });
 

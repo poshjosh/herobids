@@ -44,8 +44,8 @@ Initial state recorded 2026-10-10. Update the row (and add a batch record) as yo
 | ID | Repo | Status | Authorization | Prerequisites | Commits | Verification evidence | Blockers / notes |
 |---|---|---|---|---|---|---|---|
 | Z1 | herobids (docs) | ready | autonomous | none | | | |
-| A1 | herobids | verified | autonomous | none | (uncommitted; see batch record) | Manifest 35 -> 31; checker test 4/4; both herobids recipes PASSED; `pnpm lint` clean; `git diff --check` clean | Drops 4 entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`; money wrapper kept, human decision 2026-10-10). The `strategy-preset-*` entries are NOT touched (retracted claim) |
-| A2 | herobids | ready | autonomous | none (I15 applies) | | | |
+| A1 | herobids | verified | autonomous | none | `7af3f0d7` | Manifest 35 -> 31; checker test 4/4; both herobids recipes PASSED; `pnpm lint` clean; `git diff --check` clean | Drops 4 entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`; money wrapper kept, human decision 2026-10-10). The `strategy-preset-*` entries are NOT touched (retracted claim) |
+| A2 | herobids | verified | autonomous | none (I15 applies) | see batch record | Manifest 31 -> 28; domain build, `pnpm build`, `pnpm lint`, tsc worker/api/domain, web typecheck all clean; full `pnpm vitest run` (clean env) 351 files / 6982 tests passed; checker test 4/4; both herobids recipes PASSED | |
 | A3 | herobids | ready | autonomous | none | | | |
 | A4 | herobids | ready | autonomous | none | | | |
 | A5 | herobids | ready | autonomous | A3 (the dead `ports/strategy.ts` is the only other `Decision` importer) | | | |

@@ -56,6 +56,5 @@ export * from './external-skill-provider-http.js';
 // apps/worker + apps/api import. `ExternalBackendReadResult` (a pure type) lives in
 // ./trading/tool-contract.ts and IS barrel-exported for the read tools.
 export * from './text-search.js';
-export * from './pagination.js';
 export * from './infra/server-health.js';
 export * from './infra/server-health-publisher.js';
