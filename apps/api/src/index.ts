@@ -27,7 +27,6 @@ import { agentDocumentRoutes } from './routes/agent-documents.js';
 import { exportRoutes } from './routes/exports.js';
 import { agentEvaluationRoutes } from './routes/agent-evaluations.js';
 import { platformAssessmentReviewRoutes } from './routes/agent-platform-assessment-reviews.js';
-import { actorHealthRoutes } from './routes/actor-health.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
 import { toolSchemaRoutes } from './routes/tool-schemas.js';
@@ -403,7 +402,6 @@ await agentEvaluationRoutes(app, evaluationQueue, db, {
 await platformAssessmentReviewRoutes(app, manualReviewQueue, db, {
   platformAssessorEnabled: appConfig.platformAssessor?.enabled ?? false,
 });
-await actorHealthRoutes(app, db, redisClient, tradingBackendClient, tradingBackendTimeoutMs);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
 
 // ── Tool schema & discovery endpoints ─────────────────────────────────────

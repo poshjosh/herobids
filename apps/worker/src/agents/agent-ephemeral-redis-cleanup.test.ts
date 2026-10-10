@@ -14,14 +14,14 @@ function makeRedisMock() {
 const AGENT_ID = 'agent-test-1';
 
 describe('cleanupEphemeralAgentRedisState', () => {
-  it('deletes exactly the 11 ephemeral keys via pipeline', async () => {
+  it('deletes exactly the 10 ephemeral keys via pipeline', async () => {
     const redis = makeRedisMock();
 
     await cleanupEphemeralAgentRedisState(redis, AGENT_ID);
 
     expect(redis.pipeline).toHaveBeenCalledTimes(1);
     const pipeline = redis.pipeline.mock.results[0]!.value;
-    expect(pipeline.del).toHaveBeenCalledTimes(11);
+    expect(pipeline.del).toHaveBeenCalledTimes(10);
 
     const deletedKeys = pipeline.del.mock.calls.map((c: string[]) => c[0]);
     expect(deletedKeys).toContain(`agent:inbound:${AGENT_ID}`);
@@ -34,7 +34,6 @@ describe('cleanupEphemeralAgentRedisState', () => {
     expect(deletedKeys).toContain(`agent:scanner:fingerprint:${AGENT_ID}`);
     expect(deletedKeys).toContain(`agent:scanner_gated:${AGENT_ID}`);
     expect(deletedKeys).toContain(`agent:watches:summary:${AGENT_ID}`);
-    expect(deletedKeys).toContain(`herobids:actor-health:agent:${AGENT_ID}`);
   });
 
   it('does NOT delete durable product state keys', async () => {

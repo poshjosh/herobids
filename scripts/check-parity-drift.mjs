@@ -7,7 +7,7 @@ export const REQUIRED_ENTRY_IDS = new Set([
   'domain-agent-risk-contract', 'domain-config-presets-loader', 'domain-config-presets', 'domain-config-strategy-parameters',
   'domain-market-assessment',
   'domain-ports-candle-fetcher',
-  'domain-scanner-types', 'domain-trading-actor-health',
+  'domain-scanner-types',
   'domain-trading-trading-protocol',
 ]);
 
@@ -25,7 +25,6 @@ export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
   'domain-market-assessment': 'mirror-only',
   'domain-ports-candle-fetcher': 'mirror-only',
   'domain-scanner-types': 'mirror-only',
-  'domain-trading-actor-health': 'mirror-only',
   'domain-trading-trading-protocol': 'mirror-only',
 });
 

@@ -2,8 +2,6 @@
  * Server health snapshot — describes the runtime health of a server process
  * as self-reported to Redis. Consumed by the admin dashboard to display
  * per-server resource utilisation across the fleet.
- *
- * Follows the same pattern as {@link ActorHealthSnapshot} for actor-level health.
  */
 
 export const SERVER_TYPES = ['control-plane', 'agent-server', 'browser-pool', 'trading'] as const;

@@ -8,6 +8,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Actor-health routes and publisher removed.** `apps/api/src/routes/actor-health.ts`
+  (+ test + registration), `apps/worker/src/actor-health-publisher.ts` (+ test), and
+  `packages/domain/src/trading/actor-health.ts` (+ test) deleted and unexported. The
+  actor-health Redis key cleanup in `agent-ephemeral-redis-cleanup.ts` and the comment in
+  `infra/server-health.ts` updated. Removed the `domain-trading-actor-health` manifest
+  entry and its required id. (Human confirmed 2026-10-10: nothing outside herobids and
+  traderton calls the health routes.)
+
 - **Agent-path capability check moved behind the boundary; `execution-capability` deleted.**
   The local `validateExecutionCapability` pre-check in `PATCH /agents/:id`
   (`routes/agents.ts`) is removed — traderton's `set_agent_trading_profile` now enforces

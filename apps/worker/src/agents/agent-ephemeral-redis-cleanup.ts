@@ -21,7 +21,6 @@ const logger = createLogger('agent-ephemeral-redis-cleanup');
  *   agent:scanner:fingerprint:<agentId>
  *   agent:scanner_gated:<agentId>
  *   agent:watches:summary:<agentId>
- *   herobids:actor-health:agent:<agentId>
  */
 export async function cleanupEphemeralAgentRedisState(
   redis: Redis,
@@ -38,7 +37,6 @@ export async function cleanupEphemeralAgentRedisState(
     `agent:scanner:fingerprint:${agentId}`,
     `agent:scanner_gated:${agentId}`,
     `agent:watches:summary:${agentId}`,
-    `herobids:actor-health:agent:${agentId}`,
   ];
 
   try {
