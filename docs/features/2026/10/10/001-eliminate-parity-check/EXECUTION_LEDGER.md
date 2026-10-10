@@ -46,7 +46,7 @@ Initial state recorded 2026-10-10. Update the row (and add a batch record) as yo
 | Z1 | herobids (docs) | ready | autonomous | none | | | |
 | A1 | herobids | verified | autonomous | none | `7af3f0d7` | Manifest 35 -> 31; checker test 4/4; both herobids recipes PASSED; `pnpm lint` clean; `git diff --check` clean | Drops 4 entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`; money wrapper kept, human decision 2026-10-10). The `strategy-preset-*` entries are NOT touched (retracted claim) |
 | A2 | herobids | verified | autonomous | none (I15 applies) | see batch record | Manifest 31 -> 28; domain build, `pnpm build`, `pnpm lint`, tsc worker/api/domain, web typecheck all clean; full `pnpm vitest run` (clean env) 351 files / 6982 tests passed; checker test 4/4; both herobids recipes PASSED | |
-| A3 | herobids | in progress | autonomous | none | start: herobids=`62b91df7`, traderton=`29a88725` | | |
+| A3 | herobids | verified | autonomous | none | `7c1e0eff` | Deleted 7 dead ports; `ports/index.ts` pruned; `candle-fetcher.ts` narrowed to `PriceCandle`; manifest 28 -> 21; checker test 4/4; both herobids recipes PASSED; `pnpm build` + `pnpm lint` clean; full `pnpm vitest run` (clean env) 351 files / 6982 tests passed | `domain-ports-candle-fetcher` narrowed (asymmetric region: hb `PriceCandle`→EOF, tt `PriceCandle`→`CandleFetcher`) |
 | A4 | herobids | ready | autonomous | none | | | |
 | A5 | herobids | ready | autonomous | A3 (the dead `ports/strategy.ts` is the only other `Decision` importer) | | | |
 | A6 | herobids | ready | autonomous | none | | | |
@@ -201,4 +201,20 @@ Decisions made: none beyond the roadmap (R3 dead-copy deletes).
 Findings / new gaps: docs/features/initial/001-parity-ledger.md line 42 mentions "tick-gates" only as a historical Phase-8 extraction note (not an assertion of a live file); left as-is per done-state ("check ... for rows that assert these files" — none assert a live file).
 Residual risks / blockers: none.
 Next allowed milestone: A3 (herobids: delete 7 dead ports; trim and narrow candle-fetcher). A4, A6 also remain ready. One manifest-touching milestone at a time (I15).
+```
+
+```text
+Date: 2026-10-10
+Milestone / batch: A3 (herobids: delete 7 dead ports; trim and narrow candle-fetcher)
+Starting SHAs: herobids=62b91df7 (origin/main), traderton=29a88725
+Starting git status: both clean
+Scope completed: deleted packages/domain/src/ports/{mark-source,sentiment,strategy,subscription,swap-venue,token-safety,venue}.ts; pruned ports/index.ts; narrowed ports/candle-fetcher.ts to PriceCandle only (removed CandleFetcher interface); removed 7 manifest entries + their required ids; narrowed domain-ports-candle-fetcher region on both sides; CHANGELOG ### Removed.
+Commits: 7c1e0eff (herobids only)
+Focused validation: I6 grep — zero non-test, non-dist references to any of the 7 ports' exported symbols (MarkSource/SentimentProvider/MarketSnapshot/Subscription*/SwapVenuePort/SwapTokenSafetyPort/OrderbookVenuePort/VenueError/VenueProfile/OrderCommand/BalanceSnapshot/VenueOrder/VenueFill/MarketMetadata) or CandleFetcher. The only matches were in packages/venues/dist/*.d.ts, which is entirely gitignored (packages/venues has no tracked files — the adapters moved to traderton). PriceCandle remains live (market-assessment.ts, platform-assessor.ts, preset-scorecard-runner.ts, tick-gates.ts).
+Broader validation (I6 trial deletion): pnpm build clean; pnpm lint clean; env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm vitest run -> 351 files passed (26 skipped), 6982 tests passed (332 skipped).
+Parity gates: checker test 4/4; sibling-tree recipe PASSED; herobids-side pin recipe (traderton v0.1.2) PASSED; manifest entries 28 -> 21.
+Decisions made: the roadmap's suggested candle-fetcher region markers (start "export interface PriceCandle", end "export interface CandleFetcher") cannot be applied symmetrically because herobids's trimmed file no longer contains the end marker (the checker's extractRegion requires `end` to be present). Resolved with an asymmetric region: herobids extracts PriceCandle -> EOF (no end), traderton extracts PriceCandle -> "\nexport interface CandleFetcher". Both normalize to the identical PriceCandle block.
+Findings / new gaps: none.
+Residual risks / blockers: none.
+Next allowed milestone: A4 (herobids: delete venue-capability and the orphaned fixture). A6 also remains ready. One manifest-touching milestone at a time (I15).
 ```
