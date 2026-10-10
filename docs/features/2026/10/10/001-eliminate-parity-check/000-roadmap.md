@@ -460,21 +460,32 @@ traderton file earlier would turn traderton CI red (invariant I3).
   back into this file.
 - **Prerequisites:** none. **Governing:** Brief B ratified decision 5, O4, O6; findings
   "Proposed wire-DTO contract set"; mechanics doc "Scope". **Gates:** GP-D.
+- **C1.0 plan written 2026-10-10:** `plans/C1-contracts-package-carveout.md` — package
+  `packages/contracts` / `@traderton/contracts` v0.1.0, zod-only dependency, six shape groups
+  with exact export lists + transitive deps, round-trip fixture test strategy, narrowed wake
+  envelope (scanner context + base fields only — herobids keeps its own 4 wake contexts),
+  schemas-only (no `parseWatch` runtime helper), `RegimeResult` dual-home traced
+  (`market-data/types.ts` canonical vs `market-assessment.ts` mirror), and a revised
+  C1.1–C5/g2/g3 row list (§8). See also §5/§6/§9 for the helper and blocked-set boundaries.
 
-### C1.1. Package skeleton (provisional)
+### C1.1. Package skeleton
 - **Done-state:** `packages/contracts` in traderton (name `@traderton/contracts`), empty
   barrel, build, lint and test wiring in the workspace; no content yet. No manifest-listed
   file changed, so no pin bump. **Prerequisites:** C1.0. **Gates:** floor, GP-C.
 
-### C1.2 - C1.6. Shape groups, additive copies (provisional; C1.0 may revise)
-Each: add the shapes to the package with tests; originals untouched.
-- **C1.2 Watch:** `WatchEntry`, `WatchEntrySchema`, instrument identity and coverage link,
-  `WatchPurpose` enum and values.
+### C1.2 - C1.6. Shape groups, additive copies
+Each: add the shapes to the package with tests; originals untouched. Exact export lists in
+the C1.0 plan §2.
+- **C1.2 Watch:** `WatchEntry`, `WatchEntrySchema`, `WatchInstrumentIdentity`,
+  `WatchCoverageLink`, `WatchPurposeEnum`/`WatchPurpose`/`WATCH_PURPOSE_VALUES`.
 - **C1.3 Scan state:** `CandleFetchStatus`, `SymbolFetchOutcome`, `PositionIndicatorUpdate`,
-  `TechnicalScanState` field types, `HybridPricingIdentity`.
-- **C1.4 Wake envelope:** `AgentWakePayload` envelope, `WakePriority`, `ScannerWakeContext`
-  (and `ContextSnapshotPayload` if the plan includes it).
-- **C1.5 Regime and volatility:** `RegimeResult`, `VolatilityEvidence`, `EvidenceValue`.
+  `HybridPricingIdentity` (not `TechnicalScanState` itself — that stays a worker composition).
+- **C1.4 Wake envelope (narrowed):** `WakePriority`, `WakePrioritySchema`, the shared base
+  fields, `ScannerWakeContext`/`ScannerWakeContextSchema`, and the `MarketAssessmentIdentity`
+  transitive dep. `ContextSnapshotPayload` is **not** copied (herobids-local, no wire use).
+- **C1.5 Regime and volatility:** `RegimeResult`, `RegimeResultSchema`, `EvidenceValue`,
+  `EvidenceValueSchema`, `VolatilityEvidence`, `VolatilityEvidenceSchema` (copy; canonical
+  `RegimeResult` stays in `@traderton/market-data`). Not `LiquidityEvidence`/`BreadthEvidence`.
 - **C1.6 Risk overrides:** `AgentRiskOverrides`, `AgentRiskOverridesSchema`.
 - **Prerequisites:** C1.1. **Gates:** floor, GP-C.
 

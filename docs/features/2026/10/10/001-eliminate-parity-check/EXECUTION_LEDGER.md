@@ -76,8 +76,8 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | B4.2 | herobids | verified | autonomous | B4.1 | `666d4a17` (hb) + `5726fb3` (tt) | Moved 2 worker thresholds to `agentDecisionHandler`; removed from both `AgentRiskDefaultsSchema`; both recipes + full suites green | |
 | B4.3 | herobids | verified | autonomous | B4.2 | `c4e87221` | API readers (`blueprints.ts`, `agents.ts`) source `loadOperatorRiskDefaults`; 6 dead params removed; worker `agent.ts` field removed; full suite 346 files / 6932 tests | |
 | B4.4 | herobids | verified | autonomous | B4.3 | `c4e87221` | `agentRiskDefaults` YAML block + `AppConfigSchema` key + `agent-risk-defaults` entry removed (manifest 14 -> 13); checker test retargeted (I2); `v0.6.9` released; traderton pin bumped to `v0.6.9` | |
-| C1.0 | traderton | ready | autonomous | none | | | Plan only |
-| C1.1-C1.6 | traderton | planned | autonomous | C1.0 | | | Provisional split; C1.0 may revise |
+| C1.0 | traderton | verified | autonomous | none | `plans/C1-contracts-package-carveout.md` | Carve-out plan written: 6 shape groups with export lists + transitive deps, package layout (`packages/contracts`, `@traderton/contracts`), zod-only build graph, round-trip fixture test strategy, v0.1.0, narrowed wake envelope (scanner + base only), schemas-only (`parseWatch` stays out), `RegimeResult` dual-home traced, revised C1.1–C5/G2/G3 row list | GP-D: plan only |
+| C1.1-C1.6 | traderton | planned | autonomous | C1.0 | | | Provisional split; C1.0 may revise (revised row list in C1.0 plan §8) |
 | C2.0 | traderton | planned | autonomous | C1.0 | | | Plan only |
 | C2.1 | traderton | planned | autonomous | C1.1, C2.0 | | | |
 | G2 | traderton | planned | autonomous | C2.1 | | | First publish of `@traderton/contracts`; record version |
