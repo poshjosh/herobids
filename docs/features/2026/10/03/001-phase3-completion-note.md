@@ -95,3 +95,9 @@ Steps 14–16 remain (D12): remove herobids first-party trading ownership (Step
 14), trading-domain cleanup (Step 15), and the final staging proof (Step 16) that
 discharges the carried obligations above. The three branches await the operator's
 push/merge decision (CF-8).
+
+Wave E's herobids halves (E1-H, E3-H) landed 2026-10-05: herobids sends the
+creator's scan config with every profile write, drives `start_agent_actor` /
+`stop_agent_actor` from session lifecycle, and the `ActorEventRelay` republishes
+Traderton's `consumer_notifications` outbox onto the agent streams. See
+`docs/features/2026/09/18/001-trading-extraction-completion/plans/E1H-E3H-agent-wake-and-lifecycle-restore.md`.

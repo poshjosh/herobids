@@ -91,7 +91,8 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | G3 | herobids | verified | autonomous | C3.x | `bf4af71b` (tag `v0.6.10`) | Released `v0.6.10` via `release.sh 0.6.10` (commit-only scope). Full `run-all-tests.sh --e2e` green (unit + agent-bot inheritance + integration + functional + cross-stack transport parity + API smoke ×4 + E2E 17 passed/3 skipped). Parity gate PASSED. Tag pushed to origin. **Also fixed a C3.1 gap discovered during G3:** the `NPM_TOKEN` build secret was only wired into `Dockerfile` + `docker/Dockerfile.agent`; `docker/Dockerfile.migrate`, `apps/{api,web,worker}/Dockerfile` still ran `pnpm install --frozen-lockfile` without it, `.npmrc` lacked a trailing newline (so the appended auth line concatenated with the registry line), and the secret was read as `$NPM_TOKEN` (empty env) instead of the mounted file `/run/secrets/NPM_TOKEN`. Fixed all 6 Dockerfiles to read the secret file, added `secrets: NPM_TOKEN` (env-sourced) to `docker-compose.yaml` build blocks + top-level `secrets`, and `run-all-tests.sh` now exports `NPM_TOKEN` from `~/.npmrc` when unset. | Tag herobids with the C3 entry removals |
 | C4 | traderton | verified | autonomous | G3 | `ac5b8a3` | Consumed `@poshjosh/contracts` (workspace dep in domain/worker/market-data/strategy); narrowed `watch-types.ts`, `scan-types.ts`, `technical-phase.ts`, `agent-risk-contract.ts`, `trading-protocol.ts`, `market-data/types.ts` + `indicators.ts` (kept non-contract parts: `parseWatch`/`toRuntimeActiveWatch`, worker-internal scan shapes, resolution math, 4 non-contract wake contexts + session names); `strategy/scan-engine.ts` + `complete-technical-scan.ts` re-pointed `HybridPricingIdentity`; pin bumped to `v0.6.10`; full build + lint + 2936 tests green; traderton recipe vs `v0.6.10` PASSED | `domain-scanner-types`/`domain-market-assessment`/`domain-config-*`/`domain-ports-candle-fetcher` stay (I10/D2) |
 | C5 | herobids | verified | autonomous | G2 | `8eeb5220` | `release-xstack.sh` gains optional `--cv` (defaults to `packages/contracts/package.json` version); after the parity-pin steps it publishes `@poshjosh/contracts` from traderton and bumps herobids's exact pin in `packages/domain`/`apps/api`/`apps/worker` package.json + `pnpm-lock.yaml`, then commits/pushes. `bash -n` passes; script edited, not run | |
-| D0 | herobids (report) | planned | autonomous | Tracks A, B, C all `verified` | | | **Checkpoint:** stop, list the remaining manifest entries (expected: the 9 Track D entries) and ask the human whether to start the Wave E herobids halves and the preset-assessment chain |
+| D0 | herobids (report) | verified | autonomous | Tracks A, B, C all `verified` | | Checkpoint answered 2026-10-10: human said "go" for the Wave E herobids halves and the preset-assessment chain (the 2026-10-04 "gated on human go" is lifted). Remaining entries confirmed = the 9 Track D entries | |
+| E1-H/E3-H | herobids | verified | autonomous | D0 (human go) | already merged: `bf06eed7`, `94c49d6a`, `150ec905`, `02def8d9`, `76f06b01`, `f3d1879e`, `cb0e7766` (hb); `7392ae7` (tt) | Wave E herobids halves were ALREADY implemented and merged into `main` in both repos on 2026-10-05 (plan `E1H-E3H-agent-wake-and-lifecycle-restore.md`). This item's work was the documentation closeout (status flags, backlog ticks, 005/CANONICAL-STATE, CHANGELOG) + ledger record. See batch record below | |
 | D1 | external | blocked | n/a | Preset-assessment plan pair H5 | | | Not owned by this epic |
 | D2 | herobids | blocked | autonomous | D1 | | | |
 | C6 | both | blocked | autonomous | manifest has zero entries | | | The epic's finish line |
@@ -290,4 +291,47 @@ Decisions made (lightweight path, one line each):
 Findings / new gaps: the functional tier of release.sh 0.6.9 initially failed on 4 telegram-slash-commands functional tests because `telegramWebhookHandler`'s positional args shifted after the `agentRiskDefaults` param removal; fixed in `53857b7e` (no code-behaviour change, test wiring only), then release passed end-to-end.
 Residual risks / blockers: none. Traderton keeps its `agentRiskDefaults` block (it is the sole authority; exposed over `get_operator_defaults`).
 Next allowed milestone (track): M-C (Track C — @poshjosh/contracts package), starting at C1.0 (plan).
+```
+
+```text
+Date: 2026-10-10
+Milestone / batch: Item 4 — Wave E herobids halves (E1-H, E3-H)
+Starting SHAs: herobids=4e94d620 (origin/main), traderton=ac5b8a3 (origin/main)
+Starting git status: both clean
+Scope completed: DISCOVERED the Wave E herobids halves were ALREADY implemented
+and merged into `main` in both repos on 2026-10-05 (plan
+`docs/features/2026/09/18/001-trading-extraction-completion/plans/E1H-E3H-agent-wake-and-lifecycle-restore.md`;
+herobids commits bf06eed7 → cb0e7766, traderton 7392ae7). The code is complete
+and green. This item's remaining work was the documentation closeout the plan's
+"Docs on completion" section requires, plus the ledger record:
+  - traderton 000-overview.md / 002 / 003 status flags: E3-H + E1-H GATED → DONE.
+  - traderton 011-premerge-backlog.md: E3-H + E1-H checkboxes ticked.
+  - traderton 001-parity-ledger.md: two "E3-H gated" notes → DONE.
+  - traderton CANONICAL-STATE.md §2.1: "relay GATED" → "relay landed, channel end-to-end".
+  - traderton 005-consumer-boundary-contract.md: added `start_agent_actor`/`stop_agent_actor`
+    and the `set_agent_trading_profile`/`get_agent_trading_profile` scan-field contract.
+  - herobids CHANGELOG.md [Unreleased]: Wave E herobids halves entry.
+  - herobids 001-phase3-completion-note.md "Next": Wave E pointer.
+Commits: none yet (docs-only edits staged for review; see residual risks)
+Focused validation: herobids `pnpm lint` clean; worker tsc clean; focused Wave E
+tests 62/62 green (actor-event-relay 14, boundary-consumer-notification-feed 3,
+agent-actor-lifecycle 8, instance-event-publisher 17, user-event-publisher 3,
+profile-scan-config 10, agent-actor-lifecycle-hook 7). The "redis down"/"stream
+down" log lines are the lenient-publish tests asserting failures are swallowed.
+Broader validation: herobids `pnpm lint` (tsc --noEmit) exit 0. Full `pnpm test`
+not re-run this session (the code was already merged and green at 6835 passed /
+332 skipped on 2026-10-05; only docs changed here).
+Parity gates: none required (no manifest entry touched; no code changed).
+Decisions made (lightweight): none — the code was already merged; this item only
+closed out the docs and recorded the state.
+Findings / new gaps: the Wave E herobids halves were merged into `main` on
+2026-10-05 but the traderton Wave E docs still said "GATED (awaiting human go)"
+and the 011 backlog still had unchecked E1-H/E3-H boxes — a doc-closeout gap, now
+fixed. The plan's live verification (V1.4/V2) and the traderton xstack boundary
+deploy remain deferred (recorded in the plan's implementation log; no cross-stack
+was running).
+Residual risks / blockers: the docs edits are uncommitted in this session. They
+are docs-only and do not touch the manifest; they should be committed (herobids +
+traderton) before Item 5. No manifest entry changes.
+Next allowed item: Item 5 — Preset assessment → traderton, data-only (S1–S9).
 ```

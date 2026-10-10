@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Wave E herobids halves — agent-actor lifecycle + scanner wake delivery (E1-H, E3-H).**
+  Restores the actor callbacks that were stubbed when trading moved to Traderton.
+  herobids now sends the creator's scan configuration (`scanMode` +
+  `creatorStrategy`, never a resolved `active_strategy`) with every trading-profile
+  write (`profile-scan-config.ts`, wired through all 10 profile-write sites), and
+  drives Traderton's consumer-only `start_agent_actor` / `stop_agent_actor` from
+  session lifecycle (`agent-actor-lifecycle.ts` in the worker + a post-commit hook
+  on the API saga). A new `ActorEventRelay` polls Traderton's
+  `consumer_notifications` outbox over the `scan_consumer_notifications` tool and
+  republishes the existing herobids message types (scan completions, wakes, journal
+  events, bot/agent status) onto the agent's outbound stream, with a Redis-persisted
+  cursor, settle-lag and stale-wake guards. Also fixes the wake-buffer parse so a
+  published scanner wake is read from `envelope.payload` (not the flat top level).
+  See `docs/features/2026/09/18/001-trading-extraction-completion/plans/E1H-E3H-agent-wake-and-lifecycle-restore.md`.
+
 ## v0.6.10 - 2026-10-10
 
 ### Changed
