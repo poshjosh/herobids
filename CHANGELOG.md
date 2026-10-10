@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.6.10 - 2026-10-10
+
 ### Changed
 
 - **Herobids consumes `@poshjosh/contracts` for the shared wire-DTO shapes.**
