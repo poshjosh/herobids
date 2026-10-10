@@ -7,7 +7,6 @@ export const REQUIRED_ENTRY_IDS = new Set([
   'domain-market-assessment',
   'domain-ports-candle-fetcher',
   'domain-scanner-types',
-  'domain-trading-trading-protocol',
 ]);
 
 export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
@@ -21,7 +20,6 @@ export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
   'domain-market-assessment': 'mirror-only',
   'domain-ports-candle-fetcher': 'mirror-only',
   'domain-scanner-types': 'mirror-only',
-  'domain-trading-trading-protocol': 'mirror-only',
 });
 
 function extractRegion(content, region) {
