@@ -54,7 +54,7 @@ Initial state recorded 2026-10-10. Update the row (and add a batch record) as yo
 | A8 | - | withdrawn | - | merged into A1 | | | Human decision 2026-10-10: keep `values/money.ts` |
 | G1 | herobids | verified | autonomous | A1, A2 `verified` and merged | `c48c2757` (Bump to v0.6.7), tag `v0.6.7` | `v0.6.7` manifest has 28 entries and none of the 7 dropped ids; traderton `main` tree vs `v0.6.7` recipe PASSED; tag on origin = `c48c2757`; `release.sh 0.6.7` core tests all PASS (run 3) | Pin target for A9/A10 = `v0.6.7` |
 | A9 | traderton | verified | autonomous | G1 | `733b71fa` | Deleted `cost-profile.ts`, `values/instrument.ts`, `pagination.ts`; barrels pruned; `pnpm build` + `pnpm lint` clean; full `pnpm test` (clean env) 170 files / 2976 tests passed; pin bumped to `v0.6.7`; traderton recipe vs `v0.6.7` PASSED | `config/strategy-presets/*.yaml` NOT deleted (live) |
-| A10 | traderton | planned | autonomous | A9 | | | |
+| A10 | traderton | verified | autonomous | A9 | `29a88725` | Deleted `tick-gates.ts`, `tick-gate-state.ts`, `tick-gate-state.test.ts`, `tick-message-types.test.ts`, `_deferred-config/tick-gates.test.ts`; `_deferred-config/README.md` bullet removed; `pnpm build` + `pnpm lint` clean; full `pnpm test` (clean env) 168 files / 2943 tests passed | I6 grep: no remaining non-test importers |
 | B1.0 | herobids | ready | autonomous | none | | | Audit + short plan |
 | B1.1 | herobids | planned | autonomous | B1.0 | | | |
 | B1.2 | herobids (brief) | planned | human (ratify the brief) | B1.0 | | | Heavyweight brief: agent-path capability check |
@@ -185,4 +185,20 @@ Decisions made: none beyond the roadmap (R3 dead-copy deletes; pin bump to G1 ta
 Findings / new gaps: none.
 Residual risks / blockers: none. Traderton CI now pins herobids v0.6.7 (past the stale v0.6.5).
 Next allowed milestone: A10 (traderton: delete the tick-gates cluster). Herobids-only rows A3, A4, A6 remain ready.
+```
+
+```text
+Date: 2026-10-10
+Milestone / batch: A10 (traderton: delete the tick-gates cluster)
+Starting SHAs: herobids=078039a9 (origin/main), traderton=733b71fa
+Starting git status: both clean
+Scope completed: deleted packages/worker/src/tick-gates.ts, tick-gate-state.ts, tick-gate-state.test.ts, tick-message-types.test.ts, _deferred-config/tick-gates.test.ts; removed the _deferred-config/README.md bullet naming tick-gates.test.ts (and adjusted the "two remaining files" -> "one remaining file" wording); CHANGELOG ### Removed.
+Commits: 29a88725 (traderton only)
+Focused validation: I6 grep — no non-test importer of any tick-gates/tick-gate-state symbol or module (calculateAtrPercent/computeDecisionContextHash matches are unrelated: market-data indicators and engine decision-context-hash). No worker barrel exports the deleted modules.
+Broader validation (I6 trial deletion): pnpm build clean; pnpm lint clean; env -u DATABASE_URL -u REDIS_URL -u CREDENTIAL_ENCRYPTION_KEY pnpm test -> 168 files passed (21 skipped), 2943 tests passed (102 skipped). The 2-file / 33-test drop vs A9 is exactly the deleted test files.
+Parity gates: none required (no manifest entry touched; traderton-only dead-copy delete, pin already past G1).
+Decisions made: none beyond the roadmap (R3 dead-copy deletes).
+Findings / new gaps: docs/features/initial/001-parity-ledger.md line 42 mentions "tick-gates" only as a historical Phase-8 extraction note (not an assertion of a live file); left as-is per done-state ("check ... for rows that assert these files" — none assert a live file).
+Residual risks / blockers: none.
+Next allowed milestone: A3 (herobids: delete 7 dead ports; trim and narrow candle-fetcher). A4, A6 also remain ready. One manifest-touching milestone at a time (I15).
 ```

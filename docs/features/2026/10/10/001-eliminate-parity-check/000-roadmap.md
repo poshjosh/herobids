@@ -82,7 +82,7 @@
 | A8 | - | (withdrawn, merged into A1) | - |
 | **G1** | herobids | Tag herobids containing A1 and A2 | verified 2026-10-10 (`v0.6.7`) |
 | A9 | traderton | Delete `cost-profile`, `instrument`, `pagination`; bump pin | verified 2026-10-10 (`733b71fa`) |
-| A10 | traderton | Delete the `tick-gates` cluster | ready (after A9) |
+| A10 | traderton | Delete the `tick-gates` cluster | verified 2026-10-10 (`29a88725`) |
 | B1.0 | herobids | Audit and plan: local capability and mode-rank pre-checks | ready |
 | B1.1 | herobids | Drop verified-safe pre-checks; delete `mode-rank` | planned |
 | B1.2 | herobids | **Brief:** agent-path capability check | planned, needs human |
