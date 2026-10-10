@@ -66,7 +66,15 @@ export interface NormalizedWebhookEvent {
  * Webhook endpoints should respond 200 and skip processing — retries are not useful.
  */
 export class UnknownWebhookEventTypeError extends Error {
-  constructor(public readonly eventType: string) {
+  constructor(
+    public readonly eventType: string,
+    /**
+     * Optional diagnostic context (e.g. the metadata keys actually present on the
+     * payload) — lets the route-level log line show *why* normalization fell through
+     * instead of just the event type, without each provider needing its own logger.
+     */
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(`Unhandled webhook event type: '${eventType}'`);
     this.name = 'UnknownWebhookEventTypeError';
   }

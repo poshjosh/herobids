@@ -91,6 +91,64 @@ describe('BillingPage rendering', () => {
     expect(html).toContain(messages['billing.usage.emptyPeriods']);
   });
 
+  it('renders the top-up row even when no usage account exists yet (fresh user, no agent activity)', () => {
+    // Regression: usage_billing_account rows are only created lazily on first
+    // metered usage. GET /billing/usage-summary already resolves topUpPacks from
+    // the user's plan when account is null — the top-up UI must not hide behind
+    // an account-existence check or a fresh subscriber can never see it.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    queryClient.setQueryData(['billing', 'summary'], {
+      planId: 'free',
+      planLabel: 'Free',
+      billingInterval: null,
+      planLimits: null,
+      hasPaymentCustomer: false,
+      provider: 'mock',
+      subscription: null,
+      availablePlans: [],
+    });
+    queryClient.setQueryData(['billing', 'usage-summary'], {
+      account: null,
+      currentPeriod: null,
+      warnings: [],
+      topUpPacks: [{ packId: 'Topup5', cents: 500 }],
+      byMeter: {},
+    });
+    queryClient.setQueryData(['billing', 'usage-breakdown', undefined, undefined, undefined], {
+      byAgent: [],
+      byMeter: [],
+      bySkill: [],
+    });
+    queryClient.setQueryData(['billing', 'usage-events', 0, {
+      meterKey: undefined,
+      agentId: undefined,
+      sessionId: undefined,
+      periodId: undefined,
+      from: undefined,
+      to: undefined,
+    }], {
+      records: [],
+      total: 0,
+      limit: 50,
+      offset: 0,
+    });
+    queryClient.setQueryData(['billing', 'periods'], { periods: [] });
+    queryClient.setQueryData(['agents', 'list'], []);
+
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <IntlProvider locale="en" messages={messages}>
+          <BillingPage />
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(html).toContain(messages['billing.usage.buyTopUp']);
+    expect(html).toContain('$5.00');
+  });
+
   it('renders Subscribe buttons for new users with the plan display label', () => {
     const html = renderPage({
       subscription: null,

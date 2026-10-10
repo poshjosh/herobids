@@ -493,8 +493,13 @@ export function BillingPage() {
               )}
             </>
           )}
-          {/* Top-up row */}
-          {usageAccount && (
+          {/* Top-up row — intentionally does not require usageAccount to exist: a
+              usage_billing_account row is only created lazily on first metered
+              usage (see UsageBillingService.ensureAccount), so a fresh user who
+              hasn't run an agent yet would otherwise never see the top-up option
+              even though GET /billing/usage-summary already resolves topUpPacks
+              from the user's plan for exactly this case (account: null). */}
+          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && (
             <>
               <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>

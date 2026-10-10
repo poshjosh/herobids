@@ -350,6 +350,75 @@ describe('billing routes', () => {
     expect(res.json().topUpPacks).toEqual([]);
   });
 
+  it('usage-summary falls back to another configured provider when the owning provider has no top-up pack mapping', async () => {
+    // Regression: primaryProvider was switched (e.g. mock/creem -> stripe) after launch.
+    // A user with no subscription on file (or an old subscription on the retired
+    // provider) resolves topUpProvider from billingConfig.primaryProvider ('stripe'),
+    // but the operator has not (yet) configured any stripe top-up products — only
+    // mock's. Previously this returned [] and silently hid the top-up UI even though
+    // a usable pack exists on another configured provider.
+    const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'stripe',
+      fallbackProvider: 'creem',
+      stripe: { secretKey: 'sk_test_xxx' },
+      creem: { apiKey: 'creem_test_xxx', webhookSecret: 'whsec_creem' },
+    });
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      creditTopUpsEnabled: true,
+      topUpProductsByProvider: {
+        // stripe (primary/owning) intentionally absent — only the fallback
+        // provider (creem) has top-up products configured
+        creem: [
+          { packId: 'starter_500', externalId: 'creem_pack_starter_500', cents: 500 },
+        ],
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'pro',
+      plans: {
+        pro: {
+          usage: {
+            includedCreditCents: 0,
+            topUpPackIds: ['starter_500'],
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    };
+
+    vi.spyOn(BillingRepository.prototype, 'findSubscriptionByUserId').mockResolvedValue(null);
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue({
+      ...billingAccount('user-1'),
+      activePlanId: 'pro',
+    });
+    vi.spyOn(UsageBillingRepository.prototype, 'getUsageSummary').mockResolvedValue(null);
+    vi.spyOn(UsageBillingRepository.prototype, 'getByMeterBreakdown').mockResolvedValue([]);
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().topUpPacks).toEqual([
+      { packId: 'starter_500', cents: 500 },
+    ]);
+  });
+
   it('usage-summary warning thresholds track consumption of the budget between included credit and the hard cap', async () => {
     const billingConfig = BillingConfigSchema.parse({});
     const usageBillingConfig = UsageBillingConfigSchema.parse({

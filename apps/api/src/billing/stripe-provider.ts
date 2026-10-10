@@ -165,6 +165,16 @@ export class StripeProvider implements PaymentProvider {
           createdAt: new Date(event.created * 1000),
         };
       }
+      // Not a top-up checkout (e.g. a subscription-mode session, or metadata lost
+      // in transit) — subscription checkout completion is projected via the
+      // customer.subscription.* events instead, so this is expected to be unhandled.
+      // Surface what we actually saw so a *real* top-up mismatch (missing/garbled
+      // checkoutKind) is diagnosable from logs rather than silently dropped.
+      throw new UnknownWebhookEventTypeError(event.type, {
+        mode: checkout.mode,
+        metadataKeys: checkout.metadata ? Object.keys(checkout.metadata) : [],
+        checkoutKind: checkout.metadata?.['checkoutKind'],
+      });
     }
 
     const sub = event.data.object as unknown as StripeSubscription;
@@ -226,10 +236,8 @@ function mapStripeEventType(eventType: string): NormalizedWebhookEvent['type'] {
       return 'subscription.canceled';
     case 'invoice.payment_failed':
       return 'payment.failed';
-    case 'checkout.session.completed':
-      // Subscription checkout completion is projected via subscription webhook events.
-      // Top-up checkout completion is handled earlier in normalizeEvent().
-      throw new UnknownWebhookEventTypeError(eventType);
+    // 'checkout.session.completed' never reaches here — it's fully handled (both the
+    // top-up and non-top-up branches) earlier in normalizeEvent().
     default:
       throw new UnknownWebhookEventTypeError(eventType);
   }
@@ -239,4 +247,5 @@ interface StripeCheckoutWebhook {
   customer?: string;
   subscription?: string | null;
   metadata?: Record<string, string>;
+  mode?: string;
 }

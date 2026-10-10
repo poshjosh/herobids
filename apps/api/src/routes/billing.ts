@@ -27,36 +27,47 @@ import { errorPayload } from '../error-payload.js';
 /**
  * Resolve available top-up packs for a plan from operator config.
  * Pure config lookup — does not depend on a billing account existing.
+ *
+ * Mirrors the provider fallback order used by POST /billing/top-up-checkout-session
+ * (owning provider → configured fallback → any other configured provider) so a pack
+ * doesn't disappear from this listing just because the user's subscription (or the
+ * environment's primaryProvider) points at a provider that happens to have no
+ * top-up product mapping — e.g. after primaryProvider is switched post-launch and
+ * existing subscribers still carry their original provider on file.
  */
 function resolveTopUpPacks(
   planId: string,
   plansConfig: PlansConfig,
   usageBillingConfig: UsageBillingConfig | undefined,
   providerManager: ReturnType<typeof createProviderManager>,
-  targetProvider?: BillingProvider,
+  owningProvider: BillingProvider,
+  fallbackProvider?: BillingProvider,
 ) {
   const planUsage = plansConfig.plans[planId]?.usage;
   const allowedPackIds = new Set(planUsage?.topUpPackIds ?? []);
   const topUpsEnabled = (planUsage?.topUpPackIds?.length ?? 0) > 0 && Boolean(usageBillingConfig?.creditTopUpsEnabled);
   if (!topUpsEnabled || !usageBillingConfig) return [];
 
-  const providerEntries: Array<[string, Array<{ packId: string; externalId: string; cents: number }>]> = targetProvider
-    ? (() => {
-        const packs = usageBillingConfig.topUpProductsByProvider[targetProvider];
-        return packs ? [[targetProvider, packs]] : [];
-      })()
-    : Object.entries(usageBillingConfig.topUpProductsByProvider);
+  // Walk providers in the same priority order as checkout: owning, then fallback,
+  // then whatever else is configured — first provider to carry a given packId wins.
+  const orderedProviders = [owningProvider, fallbackProvider, ...Object.keys(usageBillingConfig.topUpProductsByProvider)]
+    .filter((provider, index, all): provider is BillingProvider => Boolean(provider) && all.indexOf(provider) === index);
 
-  return providerEntries.flatMap(([provider, packs]) =>
-    providerManager.getProvider(provider as BillingProvider)
-      ? packs
-          .filter((pack) => allowedPackIds.has(pack.packId))
-          .map((pack) => ({
-            packId: pack.packId,
-            cents: pack.cents,
-          }))
-      : [],
-  );
+  const resolved = new Map<string, { packId: string; cents: number }>();
+  for (const provider of orderedProviders) {
+    if (!providerManager.getProvider(provider)) continue;
+    const packs = usageBillingConfig.topUpProductsByProvider[provider] ?? [];
+    for (const pack of packs) {
+      if (!allowedPackIds.has(pack.packId) || resolved.has(pack.packId)) continue;
+      resolved.set(pack.packId, { packId: pack.packId, cents: pack.cents });
+    }
+  }
+
+  // Preserve the plan's configured pack order rather than provider-iteration order.
+  return (planUsage?.topUpPackIds ?? []).flatMap((packId) => {
+    const pack = resolved.get(packId);
+    return pack ? [pack] : [];
+  });
 }
 
 export async function billingRoutes(
@@ -449,7 +460,7 @@ export async function billingRoutes(
           return reply.status(400).send(errorPayload('billing.webhook.invalid_signature', 'Invalid signature', { provider: 'stripe' }));
         }
         if (err instanceof UnknownWebhookEventTypeError) {
-          app.log.debug({ eventType: err.eventType }, 'Ignoring unsupported Stripe event type');
+          app.log.warn({ eventType: err.eventType, ...err.details }, 'Ignoring unsupported Stripe event type');
           return reply.status(200).send({ received: true });
         }
         throw err;
@@ -484,7 +495,7 @@ export async function billingRoutes(
           return reply.status(400).send(errorPayload('billing.webhook.invalid_signature', 'Invalid signature', { provider: 'creem' }));
         }
         if (err instanceof UnknownWebhookEventTypeError) {
-          app.log.info({ eventType: err.eventType }, 'Ignoring unsupported Creem event type');
+          app.log.warn({ eventType: err.eventType, ...err.details }, 'Ignoring unsupported Creem event type');
           return reply.status(200).send({ received: true });
         }
         throw err;
@@ -519,7 +530,7 @@ export async function billingRoutes(
           );
         }
         if (err instanceof UnknownWebhookEventTypeError) {
-          app.log.info({ eventType: err.eventType }, 'Ignoring unsupported webhook event type');
+          app.log.warn({ eventType: err.eventType, ...err.details }, 'Ignoring unsupported webhook event type');
           return reply.status(200).send({ received: true });
         }
         throw err;
@@ -551,7 +562,7 @@ export async function billingRoutes(
       // exists yet (e.g. fresh local deployment with no agent activity).
       const [user] = await db.select({ planId: users.planId }).from(users).where(eq(users.id, userId)).limit(1);
       const planId = user?.planId ?? plansConfig.defaultPlanId;
-      const topUpPacks = resolveTopUpPacks(planId, plansConfig, usageBillingConfig, providerManager, topUpProvider);
+      const topUpPacks = resolveTopUpPacks(planId, plansConfig, usageBillingConfig, providerManager, topUpProvider, billingConfig.fallbackProvider);
       return reply.send({
         account: null,
         currentPeriod: null,
@@ -574,7 +585,7 @@ export async function billingRoutes(
     const hardCap = period?.hardCapMicrousd ?? null;
     const includedCredit = period?.includedCreditMicrousd ?? 0;
     const balance = period?.balanceMicrousd ?? 0;
-    const topUpPacks = resolveTopUpPacks(account.activePlanId, plansConfig, usageBillingConfig, providerManager, topUpProvider);
+    const topUpPacks = resolveTopUpPacks(account.activePlanId, plansConfig, usageBillingConfig, providerManager, topUpProvider, billingConfig.fallbackProvider);
 
     // Warnings track consumption of the budget from included credit down to the hard cap.
     // budget = 0 (free plan, $0 included, $0 hard cap) → surface 100% when at/under cap.
