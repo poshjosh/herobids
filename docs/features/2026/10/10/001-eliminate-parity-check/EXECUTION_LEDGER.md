@@ -63,9 +63,9 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | G1 | herobids | verified | autonomous | A1, A2 `verified` and merged | `c48c2757` (Bump to v0.6.7), tag `v0.6.7` | `v0.6.7` manifest has 28 entries and none of the 7 dropped ids; traderton `main` tree vs `v0.6.7` recipe PASSED; tag on origin = `c48c2757`; `release.sh 0.6.7` core tests all PASS (run 3) | Pin target for A9/A10 = `v0.6.7` |
 | A9 | traderton | verified | autonomous | G1 | `733b71fa` | Deleted `cost-profile.ts`, `values/instrument.ts`, `pagination.ts`; barrels pruned; `pnpm build` + `pnpm lint` clean; full `pnpm test` (clean env) 170 files / 2976 tests passed; pin bumped to `v0.6.7`; traderton recipe vs `v0.6.7` PASSED | `config/strategy-presets/*.yaml` NOT deleted (live) |
 | A10 | traderton | verified | autonomous | A9 | `29a88725` | Deleted `tick-gates.ts`, `tick-gate-state.ts`, `tick-gate-state.test.ts`, `tick-message-types.test.ts`, `_deferred-config/tick-gates.test.ts`; `_deferred-config/README.md` bullet removed; `pnpm build` + `pnpm lint` clean; full `pnpm test` (clean env) 168 files / 2943 tests passed | I6 grep: no remaining non-test importers |
-| B1.0 | herobids | ready | autonomous | none | | | Audit + short plan |
-| B1.1 | herobids | planned | autonomous | B1.0 | | | |
-| B1.2 | herobids (brief) | planned | human (ratify the brief) | B1.0 | | | Heavyweight brief: agent-path capability check |
+| B1.0 | herobids | verified | autonomous | none | `655c141a` | `plans/B1-herobids-drops-local-capability-prechecks.md` written: 4 call sites audited, traderton equivalents verified | |
+| B1.1 | herobids | verified | autonomous | B1.0 | `655c141a` | Dropped local capability/mode-rank pre-checks; deleted `mode-rank.ts` + test; manifest 17 -> 16; checker test 4/4; both recipes PASSED; full suite 350 files / 6969 tests | |
+| B1.2 | herobids (brief) | needs human | human (ratify the brief) | B1.0 | | `decisions/B1.2-agent-path-capability-check.md` written (PROPOSED) | Heavyweight brief: agent-path capability check |
 | B1.3 | herobids | planned | autonomous | B1.2 ratified | | | |
 | B2.0 | human | verified | human | none | | Human 2026-10-10: nothing outside herobids and traderton calls the health routes. Framework setup searched both repos: only the route's own test calls them | Satisfied. B2.1 repeats the search and the I6 trial deletion |
 | B2.1 | herobids | planned | autonomous | B2.0 | | | |
