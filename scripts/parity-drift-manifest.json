@@ -20,7 +20,6 @@
     { "id": "domain-trading-execution-capability", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/trading/execution-capability.ts" }, "traderton": { "path": "packages/domain/src/trading/execution-capability.ts" } },
     { "id": "domain-trading-mode-rank", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/trading/mode-rank.ts" }, "traderton": { "path": "packages/domain/src/trading/mode-rank.ts" } },
     { "id": "domain-trading-trading-protocol", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/trading/trading-protocol.ts", "region": { "start": "export const WatchThresholdWakeContextSchema" } }, "traderton": { "path": "packages/domain/src/trading/trading-protocol.ts", "region": { "start": "export const WatchThresholdWakeContextSchema" } } },
-    { "id": "domain-trading-venue-capability", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/trading/venue-capability.ts" }, "traderton": { "path": "packages/domain/src/trading/venue-capability.ts" } },
     { "id": "domain-values-ids", "authority": "mirror-only", "normalization": "namespace-herobids-to-traderton", "herobids": { "path": "packages/domain/src/values/ids.ts" }, "traderton": { "path": "packages/domain/src/values/ids.ts" } }
   ]
 }

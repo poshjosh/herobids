@@ -9,7 +9,7 @@ export const REQUIRED_ENTRY_IDS = new Set([
   'domain-ports-candle-fetcher', 'domain-ports-economic-calendar',
   'domain-scanner-types', 'domain-trading-actor-health',
   'domain-trading-execution-capability', 'domain-trading-mode-rank', 'domain-trading-trading-protocol',
-  'domain-trading-venue-capability', 'domain-values-ids',
+  'domain-values-ids',
 ]);
 
 export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
@@ -32,7 +32,6 @@ export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
   'domain-trading-execution-capability': 'mirror-only',
   'domain-trading-mode-rank': 'mirror-only',
   'domain-trading-trading-protocol': 'mirror-only',
-  'domain-trading-venue-capability': 'mirror-only',
   'domain-values-ids': 'mirror-only',
 });
 

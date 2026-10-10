@@ -8,6 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Dead `venue-capability` module and its orphaned fixture deleted.**
+  `packages/domain/src/trading/venue-capability.ts` (`VenueCapabilities`,
+  `TimeInForce`, the `validate*` helpers) and `tests/fixtures/venue-capabilities.ts`
+  (`FULL_CAPABILITIES`) had zero non-test references in herobids (the engine and
+  venue adapters that used them moved to traderton). The export was removed from
+  `packages/domain/src/index.ts`. Removed the `domain-trading-venue-capability`
+  manifest entry and its required id (21 -> 20). Part of the parity-drift-check
+  elimination effort; see
+  `docs/features/2026/10/10/001-eliminate-parity-check/decisions/B-parity-ownership.md`.
+
 - **Seven dead domain ports deleted; `candle-fetcher` narrowed to `PriceCandle`.**
   `ports/{mark-source,sentiment,strategy,subscription,swap-venue,token-safety,venue}.ts`
   had zero non-test references in herobids (the `packages/venues/` adapters that
