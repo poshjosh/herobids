@@ -31,6 +31,8 @@ jobs:
           context: .
           file: docker/Dockerfile.agent
           push: true
+          secrets: |
+            "NPM_TOKEN=${{ secrets.GITHUB_TOKEN }}"
           # `latest` is the runtime default for the Nomad docker task; the
           # `sha-<commit>` tag is the immutable deploy-gate reference (see
           # traderton's wait-for-build.sh pattern for a future sha-pinned deploy).

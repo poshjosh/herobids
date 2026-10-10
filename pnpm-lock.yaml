@@ -265,6 +265,9 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 2.3.0
         version: 2.3.0
+      '@poshjosh/contracts':
+        specifier: 0.1.0
+        version: 0.1.0
       decimal.js:
         specifier: ^10.5.0
         version: 10.6.0
@@ -1317,6 +1320,9 @@ packages:
     resolution: {integrity: sha512-O71yZIbAh/PxDMNGns37GHBIfrVkEVyn+AXyIa5dOTfb4/xNvRWV+Vv/NMbNCtODB/pO7vLlF2OTmMVLhmr7Ag==}
     engines: {node: '>=18'}
     hasBin: true
+
+  '@poshjosh/contracts@0.1.0':
+    resolution: {integrity: sha512-///bIYW2LcxBHeRRdUYDAUy6dMe2HQ0CoK5QpRC48nXiCRD/Uf4yaGEW0uyKYXYsgspOsqkGvirSMu8pFsytTA==, tarball: https://npm.pkg.github.com/download/@poshjosh/contracts/0.1.0/13b89de51490507fbfc210ca8a98a2ebafe73f75}
 
   '@radix-ui/number@1.1.1':
     resolution: {integrity: sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g==}
@@ -4499,6 +4505,10 @@ snapshots:
   '@playwright/test@1.60.0':
     dependencies:
       playwright: 1.60.0
+
+  '@poshjosh/contracts@0.1.0':
+    dependencies:
+      zod: 3.25.76
 
   '@radix-ui/number@1.1.1': {}
 

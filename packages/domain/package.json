@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.3.0",
+    "@poshjosh/contracts": "0.1.0",
     "decimal.js": "^10.5.0",
     "yaml": "^2.9.0",
     "zod": "^3.25.0"
