@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement, registerBackendRefFamilies, validateMaxHoldDurationInvariant } from './agent-config-helpers.js';
+import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement, registerBackendRefFamilies, validateMaxHoldDurationInvariant, resolveAgentRiskContractForResponse } from './agent-config-helpers.js';
 
 describe('resolveNotificationPolicy', () => {
   beforeEach(() => {
@@ -628,5 +628,61 @@ describe('validateMaxHoldDurationInvariant (D9)', () => {
       skillIds: ['traderton/skills/crypto-trading'],
     });
     expect(issues.length).toBeGreaterThan(0);
+  });
+});
+
+describe('resolveAgentRiskContractForResponse (B3.1)', () => {
+  const defaults = {
+    dailyLossLimitDefaultRatio: 0.05,
+    maxOpenPositions: 10,
+    maxPositionSizePct: 100,
+    maxPositionSize: 1_000_000,
+    stopLossPct: 10,
+    dailyMaxLossPct: 20,
+    stopLossCooldownMs: 300_000,
+    maxOrderNotionalMultiplier: 1,
+    botConfigInvalidHaltThreshold: 1,
+    botExecutionErrorHaltThreshold: 5,
+    botLlmProviderErrorHaltThreshold: 1,
+    agentDecisionNoContextThreshold: 10,
+    agentDecisionSwapInstrumentFormatThreshold: 5,
+    maxDrawdown: 1_000_000_000,
+    maxDrawdownPct: 20,
+    perTradeLevelMonitorIntervalMs: 5000,
+    maxBots: 5,
+  };
+
+  // Test 1 — characterization (should pass today): empty profile → operator-default
+  // ceilings only, no creator input, no overrides.
+  it('with an empty profile returns only operator-default ceilings and no creator input', () => {
+    const contract = resolveAgentRiskContractForResponse({}, defaults);
+
+    expect(contract.maxOpenPositions).toMatchObject({
+      effectiveValue: 10,
+      source: 'default',
+      mutable: true,
+      operatorCeiling: 10,
+    });
+    expect(contract.maxOpenPositions.creatorValue).toBeUndefined();
+    expect(contract.maxOpenPositions.overrideValue).toBeUndefined();
+    expect(contract.stopLossPct.effectiveValue).toBe(10);
+    expect(contract.stopLossCooldownMs.effectiveValue).toBe(300_000);
+    expect(contract.maxDrawdownPct.effectiveValue).toBe(20);
+    expect(contract.maxPositionSizePct.effectiveValue).toBe(100);
+  });
+
+  // Test 4 — no-enforcement guard (should pass both before and after): the
+  // resolved contract is a pure display value; nothing here gates a decision.
+  it('produces a display-only contract with no enforcement side effects', () => {
+    const contract = resolveAgentRiskContractForResponse(
+      { capital: '1000', riskPosture: { maxOpenPositions: 3 }, riskOverrides: { stopLossPct: 5 } },
+      defaults,
+    );
+
+    // The function is pure: it returns a value and mutates nothing external.
+    expect(contract.maxOpenPositions.effectiveValue).toBe(3);
+    expect(contract.maxOpenPositions.source).toBe('user');
+    expect(contract.stopLossPct.effectiveValue).toBe(5);
+    expect(contract.stopLossPct.source).toBe('agent_override');
   });
 });
