@@ -168,7 +168,7 @@ The prompt requires that the agent "needs a way to know about available provider
 
 Updated sample flow: `get_risk_limits` fails with `connection.missing` (capability `trading`) -> `list_providers({ capability: 'trading' })` -> `request_connection({ provider })` -> `send_message` with the link -> agent is woken on success, failure, or expiry.
 
-**Review corrections (2026-10-10)** — found when checking this design against the code; see the [epic roadmap](../000-agent-onboarding-epic/000-roadmap.md) F3-F6.
+**Review corrections (2026-10-10)** — found when checking this design against the code; see the [epic roadmap](../000-agent-onboarding-epic/000-roadmap.md) F3-F6. The implementation plan is [001-plan.md](./001-plan.md), which supersedes the design sketches above where they differ (notably the `ConnectionsRepository` choke point).
 
 1. **Token minting crosses a process boundary.** `setup-link-token-service.ts` is in `apps/api`; `request_connection` runs in `apps/worker`. The worker cannot import it. Define how the tool gets a link (inbound message handled by the broker, or an API call) before implementing.
 2. **Tool registration.** New tools must also be added to `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG` in `packages/domain/src/tools.ts`; otherwise `assertToolCatalogMatchesRegistry` fails at worker startup. `BASE_SKILL.requiredTools` alone is not enough.
