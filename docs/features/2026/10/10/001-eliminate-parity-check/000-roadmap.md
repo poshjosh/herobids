@@ -75,7 +75,7 @@
 | A1 | herobids | Drop 4 manifest entries (`tick-gates-session-hours`, `domain-cost-profile`, `domain-result`, `domain-values-money`) | verified 2026-10-10 |
 | A2 | herobids | Delete `values/instrument` and `pagination`; drop 3 entries | verified 2026-10-10 |
 | A3 | herobids | Delete 7 dead ports; trim and narrow `candle-fetcher` | verified 2026-10-10 (`7c1e0eff`) |
-| A4 | herobids | Delete `venue-capability` and its orphaned fixture | ready |
+| A4 | herobids | Delete `venue-capability` and its orphaned fixture | verified 2026-10-10 (`a77d80e5`) |
 | A5 | herobids | Delete `models/decision`; retarget `ActorType` | ready (after A3) |
 | A6 | herobids | Delete mirrored `economic-calendar` port; local view type | ready |
 | A7 | herobids | Delete `values/ids` | planned (after A2, A3, A5) |
