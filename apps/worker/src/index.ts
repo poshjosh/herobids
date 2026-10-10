@@ -586,8 +586,8 @@ const agentDecisionHandler = new AgentDecisionHandler(
   agentRepo,
   eventPublisher,
   {
-    noContext: appConfig.agentRiskDefaults.agentDecisionNoContextThreshold,
-    swapInstrumentFormat: appConfig.agentRiskDefaults.agentDecisionSwapInstrumentFormatThreshold,
+    noContext: appConfig.agentDecisionHandler.noContextThreshold,
+    swapInstrumentFormat: appConfig.agentDecisionHandler.swapInstrumentFormatThreshold,
   },
   decisionApprovalRepo,
   appConfig.agentApprovals.ttlMs,

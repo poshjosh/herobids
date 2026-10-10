@@ -89,8 +89,6 @@ agentRiskDefaults:
   botConfigInvalidHaltThreshold: 1       # consecutive strategy.config_invalid errors before auto-stop
   botExecutionErrorHaltThreshold: 5      # consecutive strategy.execution_error errors before auto-stop
   botLlmProviderErrorHaltThreshold: 1    # consecutive strategy.llm_provider_error errors before auto-stop
-  agentDecisionNoContextThreshold: 10       # consecutive no_context before hardening; only counts after first successful context fetch
-  agentDecisionSwapInstrumentFormatThreshold: 5  # consecutive swap.instrument_format before hardening
   maxDrawdown: 1000000000                # operator absolute ceiling on equity drawdown (USD).
                                          # Non-agent flows use this directly. Agents use maxDrawdownPct below.
   maxDrawdownPct: 20                     # operator ceiling: max peak-to-current drawdown as % of peak equity.
@@ -98,6 +96,13 @@ agentRiskDefaults:
                                          # Agent may adjust downward at runtime. See glossary.
   perTradeLevelMonitorIntervalMs: 5000   # interval for periodic per-trade stop-loss / take-profit monitor loop
   maxBots: 5                              # operator default for agent max concurrent bots
+
+# Herobids-local worker knobs for the agent decision handler's failure hardening.
+# NOT traderton risk defaults — kept out of agentRiskDefaults so that block stays
+# byte-identical to traderton's (parity entry agent-risk-defaults).
+agentDecisionHandler:
+  noContextThreshold: 10                  # consecutive no_context before hardening; only counts after first successful context fetch
+  swapInstrumentFormatThreshold: 5        # consecutive swap.instrument_format before hardening
 
 # Agent trade-approval workflow policy.
 # Controls pending-approval lifecycle and throughput — only relevant when

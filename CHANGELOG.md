@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Moved the two worker decision-handler hardening thresholds out of `agentRiskDefaults`.**
+  `agentDecisionNoContextThreshold` and `agentDecisionSwapInstrumentFormatThreshold`
+  are herobids-local worker knobs (they tune how `AgentDecisionHandler` hardens
+  retryable → false after consecutive `no_context` / `swap.instrument_format`
+  failures), not traderton risk defaults. They now live in a new top-level
+  `agentDecisionHandler:` config block (`noContextThreshold` /
+  `swapInstrumentFormatThreshold`) read by `apps/worker/src/index.ts`. The two
+  fields are removed from `AgentRiskDefaultsSchema` in both repos so the
+  `agent-risk-defaults` parity entry stays byte-identical (15 fields). Part of the
+  parity-drift-check elimination effort; see
+  `docs/features/2026/10/10/001-eliminate-parity-check/plans/B4-agent-risk-defaults-boundary-cache.md`.
+
 ### Removed
 
 - **`riskContract` display field removed from agent responses.** The

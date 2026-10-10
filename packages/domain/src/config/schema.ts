@@ -514,11 +514,6 @@ export const AgentRiskDefaultsSchema = z.object({
   botConfigInvalidHaltThreshold: z.number().int().min(1).default(1),
   botExecutionErrorHaltThreshold: z.number().int().min(1).default(5),
   botLlmProviderErrorHaltThreshold: z.number().int().min(1).default(1),
-  /** Consecutive no_context failures before hardening retryable → false.
-   *  Only applies after the actor has proven it CAN fetch context (first successful fetch). */
-  agentDecisionNoContextThreshold: z.number().int().min(1).default(10),
-  /** Consecutive swap.instrument_format failures before hardening retryable → false. */
-  agentDecisionSwapInstrumentFormatThreshold: z.number().int().min(1).default(5),
   maxDrawdown: z.number().min(0).default(1_000_000_000),
   /** Operator default and ceiling for peak-to-current equity drawdown (percent).
    *  Used when the creator did not set maxDrawdownPct. Agent may adjust downward at runtime. */
@@ -527,6 +522,21 @@ export const AgentRiskDefaultsSchema = z.object({
   perTradeLevelMonitorIntervalMs: z.number().min(1000).default(5000),
   /** Operator default for agent max concurrent bots. Used when the agent row has no maxBots override. */
   maxBots: z.number().int().min(1).default(5),
+}).default({});
+
+/**
+ * Herobids-local worker knobs for the agent decision handler's failure hardening.
+ * NOT traderton risk defaults — these tune how the herobids worker hardens
+ * retryable → false after consecutive `no_context` / `swap.instrument_format`
+ * failures. Kept out of `agentRiskDefaults` so that block stays byte-identical
+ * to traderton's (parity entry `agent-risk-defaults`).
+ */
+export const AgentDecisionHandlerConfigSchema = z.object({
+  /** Consecutive no_context failures before hardening retryable → false.
+   *  Only applies after the actor has proven it CAN fetch context (first successful fetch). */
+  noContextThreshold: z.number().int().min(1).default(10),
+  /** Consecutive swap.instrument_format failures before hardening retryable → false. */
+  swapInstrumentFormatThreshold: z.number().int().min(1).default(5),
 }).default({});
 
 export const AgentApprovalsConfigSchema = z.object({
@@ -1718,6 +1728,7 @@ export const AppConfigSchema = z.object({
     defaultSlippageBps: z.number().min(0).default(50),
   }),
   agentRiskDefaults: AgentRiskDefaultsSchema,
+  agentDecisionHandler: AgentDecisionHandlerConfigSchema,
   agentApprovals: AgentApprovalsConfigSchema,
   agentCostEstimates: AgentCostEstimatesSchema,
   evaluation: EvaluationConfigSchema.default({}),
