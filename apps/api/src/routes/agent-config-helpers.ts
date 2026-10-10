@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Decimal, SYSTEM_SKILLS, resolveAgentRiskContract, resolveAgentRuntimePolicy, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig, type RiskPosture } from '@herobids/domain';
+import { Decimal, SYSTEM_SKILLS, resolveAgentRuntimePolicy } from '@herobids/domain';
 import { externalSkillIdForRef } from '@herobids/db';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
@@ -611,40 +611,4 @@ export function validateDailyLossRequiresCapital(input: {
   }
 
   return issues;
-}
-
-/**
- * Resolve the agent's risk contract for API responses.
- * Shows per-field source, mutability, and effective values.
- * Reads a typed remote trading profile, which is the sole enforcement source after migration 0072.
- */
-export function resolveAgentRiskContractForResponse(
-  profile: {
-    capital?: string | number | null;
-    riskOverrides?: AgentRiskOverrides | null;
-    riskPosture?: RiskPosture | null;
-  },
-  agentRiskDefaults: AgentRiskDefaultsConfig,
-): ResolvedAgentRiskContract {
-  const ceilings: AgentRiskCeilings = {
-    maxOpenPositions: agentRiskDefaults.maxOpenPositions,
-    maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
-    stopLossPct: agentRiskDefaults.stopLossPct,
-    stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
-    maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,
-  };
-
-  const rp = profile.riskPosture ?? null;
-
-  const creatorInput: AgentRiskCreatorInput = {
-    maxOpenPositions: rp?.maxOpenPositions ?? null,
-    maxPositionSizePct: rp?.maxPositionSizePct ?? null,
-    stopLossPct: rp?.stopLossPct ?? null,
-    stopLossCooldownMs: rp?.stopLossCooldownMs ?? null,
-    maxDrawdownPct: rp?.maxDrawdownPct ?? null,
-  };
-
-  return resolveAgentRiskContract(creatorInput, ceilings, profile.riskOverrides ?? {}, {
-    hasCapital: profile.capital != null,
-  });
 }

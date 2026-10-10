@@ -542,65 +542,6 @@ describe('agent routes C1 staged profile reconciliation', () => {
   });
 });
 
-describe('agent riskContract (B3.1)', () => {
-  // Test 2 — gap-revealing (expected to FAIL today): POST /agents with a
-  // riskPosture in the request body should return a riskContract reflecting that
-  // riskPosture. Today the 4 call sites pass `{}` as profile, so the response
-  // always shows operator-default ceilings regardless of the submitted risk.
-  it.fails('POST /agents with a riskPosture returns a riskContract reflecting that riskPosture', async () => {
-    const { agentRoutes } = await import('./agents.js');
-    const { db } = buildDb({
-      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, name: 'agent', prompt: 'test', modelPolicy: null, toolPolicy: null, skillIds: [] }],
-      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
-    });
-    const stagedSaga = makeStagedProfileSaga(db);
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/agents',
-      payload: { name: 'agent', prompt: 'test', risk: { maxOpenPositions: 3 } },
-    });
-
-    expect(response.statusCode).toBe(201);
-    const body = response.json();
-    expect(body.riskContract.maxOpenPositions.effectiveValue).toBe(3);
-    expect(body.riskContract.maxOpenPositions.source).toBe('user');
-  });
-
-  // Test 3 — regression guard (expected to FAIL until the fix lands): the
-  // response riskContract should match the agent's real profile source.
-  it.fails('GET /agents/:id riskContract matches the boundary/profile source for the real configuration', async () => {
-    const { agentRoutes } = await import('./agents.js');
-    const { db } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, capital: '1000', risk: { maxOpenPositions: 3 }, executionDefaults: { mode: 'paper' } }],
-    });
-    const stagedSaga = makeStagedProfileSaga(db, {
-      remoteProfiles: new Map([['venue-1', {
-        actorId: 'agent-1',
-        venueAccountId: 'venue-1',
-        capital: '1000',
-        riskPosture: { maxOpenPositions: 3 },
-        executionDefaults: { mode: 'paper' },
-        scanMode: null,
-        creatorStrategy: null,
-      } satisfies TypedTradingProfile]]),
-    });
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
-
-    const response = await app.inject({ method: 'GET', url: '/agents/agent-1' });
-
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    expect(body.riskContract.maxOpenPositions.effectiveValue).toBe(3);
-    expect(body.riskContract.maxOpenPositions.source).toBe('user');
-  });
-});
-
 describe('agent route plan enforcement', () => {
   beforeEach(() => {
     vi.clearAllMocks();

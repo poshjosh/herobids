@@ -85,7 +85,6 @@ import {
   resolveAuthorizationMode,
   validateConnectionRequirement,
   resolveNotificationPolicy,
-  resolveAgentRiskContractForResponse,
   validateAgentModelPolicy,
   validateDailyLossRequiresCapital,
   validateMaxHoldDurationInvariant,
@@ -925,8 +924,7 @@ export async function agentRoutes(
 
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     const skillIds = await listSkillIdsForAgent(db, agentId);
-    const riskContract = resolveAgentRiskContractForResponse({}, agentRiskDefaults);
-    return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), ...enrichAgentResponse(agent!), riskContract });
+    return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), ...enrichAgentResponse(agent!) });
   });
 
   // List user's agents
@@ -1057,8 +1055,7 @@ export async function agentRoutes(
       .orderBy(desc(agentRuntimeSessions.startedAt));
 
     const skillIds = await listSkillIdsForAgent(db, id);
-    const riskContract = resolveAgentRiskContractForResponse({}, agentRiskDefaults);
-    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), riskContract, activeSession: session ?? null });
+    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), activeSession: session ?? null });
   });
 
   // GET /agents/:id/connections — returns all assigned connections across all providers
@@ -1968,8 +1965,7 @@ export async function agentRoutes(
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(db, id);
-    const riskContract = resolveAgentRiskContractForResponse({}, agentRiskDefaults);
-    return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), ...enrichAgentResponse(updated!), riskContract });
+    return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), ...enrichAgentResponse(updated!) });
   });
 
   // Delete agent
@@ -2739,11 +2735,9 @@ export async function agentRoutes(
 
     const [newAgent] = await db.select().from(agents).where(eq(agents.id, result.agentId));
     const skillIds = await listSkillIdsForAgent(db, result.agentId);
-    const riskContract = resolveAgentRiskContractForResponse({}, agentRiskDefaults);
-    return reply.status(201).send({ ...decorateAgentResponse({ ...newAgent!, skillIds }), ...enrichAgentResponse(newAgent!), riskContract });
+    return reply.status(201).send({ ...decorateAgentResponse({ ...newAgent!, skillIds }), ...enrichAgentResponse(newAgent!) });
   });
 
-  // POST /agents/:id/blueprints — create a draft blueprint from an existing agent
   app.post<{ Params: { id: string }; Body: unknown }>('/agents/:id/blueprints', async (request, reply) => {
     const parsing = z.object({
       name: z.string().min(1).optional(),

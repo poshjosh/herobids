@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **`riskContract` display field removed from agent responses.** The
+  `resolveAgentRiskContractForResponse` helper (and its 4 call sites in
+  `routes/agents.ts`) always passed an empty profile, so the field showed operator
+  defaults regardless of the agent's real configuration. It was display-only (no
+  enforcement, no `apps/web` consumer). The helper and the `riskContract` field are
+  deleted; the `domain-agent-risk-contract` manifest entry stays until C3.6 (the
+  mirrored `agent-risk-contract.ts` is untouched, I5). See
+  `docs/features/2026/10/10/001-eliminate-parity-check/decisions/agent-risk-contract-retirement.md`.
+
 ## v0.6.8 - 2026-10-10
 
 ### Removed
