@@ -94,7 +94,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | D0 | herobids (report) | verified | autonomous | Tracks A, B, C all `verified` | | Checkpoint answered 2026-10-10: human said "go" for the Wave E herobids halves and the preset-assessment chain (the 2026-10-04 "gated on human go" is lifted). Remaining entries confirmed = the 9 Track D entries | |
 | E1-H/E3-H | herobids | verified | autonomous | D0 (human go) | already merged: `bf06eed7`, `94c49d6a`, `150ec905`, `02def8d9`, `76f06b01`, `f3d1879e`, `cb0e7766` (hb); `7392ae7` (tt) | Wave E herobids halves were ALREADY implemented and merged into `main` in both repos on 2026-10-05 (plan `E1H-E3H-agent-wake-and-lifecycle-restore.md`). This item's work was the documentation closeout (status flags, backlog ticks, 005/CANONICAL-STATE, CHANGELOG) + ledger record. See batch record below | |
 | D1 | external | blocked | n/a | Preset-assessment plan pair H5 | | | Not owned by this epic |
-| D2 | herobids | in progress (Wave 2) | autonomous | D1 | `9f872449` (Wave 1); `a879e56` (tt contracts); `d98c9e0a` (hb D2-b/c); `6a7ba65d` (hb D2-d); `17ac201` (tt D2-a tool) | **Wave 1 verified** (market-assessment, 9→8). **Wave 2 in progress:** D2-b/D2-c done — `@poshjosh/contracts@0.2.0` published (scanner-identity + price-candle); herobids consumed it, deleted `scanner-types.ts` + `ports/candle-fetcher.ts`, dropped both entries (8→6). D2-d done — retired `domain-config-strategy-parameters` (6→5). D2-a traderton half done — `get_strategy_presets` full-preset read tool + `presetCatalog` port wired into the boundary (`17ac201`). **D2-a herobids half blocked on a wire-shape disposition** (see `decisions/D2-a-presets-wire-shape.md`): `PresetEntry`/`PresetEntrySchema` now cross the wire, so `presets.ts` is no longer a clean disposition-6 retire. | Wave 2 = D2-a herobids half (5 entries) remains; then release + traderton dedupe + C6 |
+| D2 | herobids | verified | autonomous | D1 | `9f872449` (Wave 1); `a879e56`/`3fbad11`/`17ac201`/`6a38ed6`/`8b55346`/`50acf91` (tt); `d98c9e0a`/`6a7ba65d`/`6abcfada` (hb, tag `v0.6.12`) | **Wave 1** (market-assessment, 9→8). **Wave 2 complete:** D2-b/D2-c (`@poshjosh/contracts@0.2.0` scanner-identity + price-candle; herobids consumed, deleted `scanner-types.ts` + `ports/candle-fetcher.ts`); D2-d (retired `domain-config-strategy-parameters`); D2-a (traderton `get_strategy_presets` full-preset tool + `presetCatalog` port; preset wire/type surface → `@poshjosh/contracts@0.3.0`; herobids boundary-seeded `presets-loader`, deleted 3 YAMLs). **Manifest 8 → 0.** herobids `v0.6.12` released (all tiers + parity gate PASSED); traderton pin bumped to `v0.6.12` (recipe PASSED). | Manifest has zero entries — C6 (finish line) is next, human-gated |
 | C6 | both | blocked | autonomous | manifest has zero entries | | | The epic's finish line |
 
 ## Pin pairs
@@ -110,6 +110,7 @@ Record every parity-pin change (and the state at the start of the epic).
 | 2026-10-10 | traderton `slow-tests.yml` | herobids `v0.6.8` | traderton `main` (`8df8657`) | B2.2: pin bumped via `release.sh --bump-parity-pin v0.6.8`; traderton recipe vs `v0.6.8` PASSED |
 | 2026-10-10 | traderton `slow-tests.yml` | herobids `v0.6.9` | traderton `main` (`b419f79`) | B4: pin bumped via `release.sh --bump-parity-pin v0.6.9`; traderton recipe vs `v0.6.9` PASSED |
 | 2026-10-10 | traderton `slow-tests.yml` | herobids `v0.6.10` | traderton `main` (`ac5b8a3`) | C4: pin bumped to `v0.6.10`; traderton recipe vs `v0.6.10` PASSED |
+| 2026-10-12 | traderton `slow-tests.yml` | herobids `v0.6.12` | traderton `main` (`50acf91`) | D2-a: pin bumped to `v0.6.12` (zero-entry manifest); traderton recipe vs `v0.6.12` PASSED |
 
 ## Per-batch record template
 
@@ -464,4 +465,54 @@ Residual risks / blockers: Wave 2 (the remaining 8 entries) is BLOCKED on the §
   heavyweight disposition (D2-a/b/c/d) and MUST NOT be started autonomously.
 Next allowed milestone: none autonomous — surface the §5 decisions to the human;
   C6 only after the manifest reaches zero entries.
+```
+
+```text
+Date: 2026-10-12
+Milestone / batch (track): M-D Wave 2 (D2-b, D2-c, D2-d, D2-a) — manifest 8 → 0
+Starting SHAs: herobids=6a7ba65d (main), traderton=a879e56 (main)
+Starting git status: both clean
+Sub-steps completed (in order):
+  D2-b/D2-c — @poshjosh/contracts@0.2.0 (scanner-identity + price-candle);
+    herobids consumed it, deleted scanner-types.ts + ports/candle-fetcher.ts,
+    dropped domain-scanner-types + domain-ports-candle-fetcher (8→6).
+  D2-d — retired domain-config-strategy-parameters (no wire exposure; repos
+    already diverge; both copies stay) (6→5).
+  D2-a — traderton get_strategy_presets full-preset read tool + presetCatalog
+    port; preset wire/type surface → @poshjosh/contracts@0.3.0 (Option 1,
+    ratified); herobids boundary-seeded presets-loader (seedPresetCatalog) +
+    traderton-presets.ts startup seeder; deleted 3 YAML files; dropped the last
+    5 entries (5→0).
+Commits: traderton a879e56 (contracts 0.2.0), 3fbad11 (contracts 0.3.0),
+  17ac201 (get_strategy_presets tool), 6a38ed6 (presets re-point), 8b55346
+  (grouped response), 50acf91 (pin bump); herobids d98c9e0a (D2-b/c), 6a7ba65d
+  (D2-d), 6abcfada (D2-a + release v0.6.12).
+Focused validation: contracts build+test green (12 tests); traderton
+  preset-assessment.test.ts 16/16; herobids presets.test.ts 31/31;
+  profile-scan-config.test.ts + agents.test.ts + blueprints.test.ts green after
+  seeding the catalog via a shared test fixture.
+Broader validation: traderton pnpm -r run build + lint + full suite 169 files /
+  2969 tests green; herobids domain build + lint + per-app tsc (domain/worker/api)
+  + full clean-env suite 325 files / 6484 tests green.
+Parity gates: herobids checker test 2/2; sibling-tree recipe PASSED; manifest
+  entry count 8 → 0. herobids release v0.6.12 (all tiers + parity gate PASSED);
+  traderton pin bumped to v0.6.12; traderton recipe vs v0.6.12 PASSED.
+Decisions made (lightweight, one line each):
+  - D2-a Option 1 (ratified): preset wire/type surface → contracts; derivation
+    stays local.
+  - get_strategy_presets returns presets grouped by tier (herobids reconstructs
+    its catalog keyed by tier).
+  - herobids presets-loader becomes boundary-seeded (seedPresetCatalog) with a
+    fail-closed throw when unseeded; API seeds it at startup via
+    traderton-presets.ts.
+  - Shared test fixture apps/api/src/__tests__/helpers/preset-catalog.ts seeds a
+    realistic 7-preset/3-tier catalog for route + domain tests.
+Findings / new gaps: the preset wire/type surface (PresetEntrySchema) crossed the
+  wire in get_strategy_presets, so domain-config-presets no longer met the
+  disposition-6 "no wire exposure" bar — surfaced as a heavyweight brief
+  (decisions/D2-a-presets-wire-shape.md), ratified Option 1.
+Residual risks / blockers: none for D2. The manifest has zero entries.
+Next allowed milestone (track): M-C6 (finish line) — delete the checker, manifest,
+  test and CI job from both repos. Human-gated per the roadmap (C6 is blocked on
+  zero entries, now satisfied; the agent stops and reports before C6).
 ```
