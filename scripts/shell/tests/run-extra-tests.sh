@@ -15,28 +15,27 @@
 # not trade in the window is a SKIP, not a FAIL; REQUIRE_TRADE=1 makes it strict).
 # See the header of scripts/ts/agent-trade-test.ts.
 #
-# Two Tier-5 tests remain DISABLED by default because they are UNSTABLE (not
+# One Tier-5 test remains DISABLED by default because it is UNSTABLE (not
 # because of a test bug):
 #
-#   preset-review-gap-closure   Tier 5
 #   scanner-provider-smoke      Tier 5
 #
-# Why: both require several agents to reach 'active' within a deadline. Under burst-start — several agents created
+# Why: it requires several agents to reach 'active' within a deadline. Under burst-start — several agents created
 # back-to-back, as these tests do — worker-side launch latency grows and blows
 # the deadline, even with a warm LLM and after widening the budgets to 90s.
-# They PASS in isolation on a warm stack (scanner-provider verified 8/8) but
-# FAIL intermittently in the full suite. Root cause is a worker launch-latency
-# issue, deliberately NOT yet fixed (touches core worker launch code):
+# It PASSES in isolation on a warm stack (verified 8/8) but FAILS intermittently
+# in the full suite. Root cause is a worker launch-latency issue, deliberately
+# NOT yet fixed (touches core worker launch code):
 #   docs/bug-reports/2026/09/05/001-agent-activation-timeout-cumulative-launch-latency.md
 #
-# To run them anyway (recommended: warm the stack first via reset-and-run.sh):
+# To run it anyway (recommended: warm the stack first via reset-and-run.sh):
 #   RUN_UNSTABLE_LLM_LATENCY_TESTS=1 scripts/shell/tests/run-extra-tests.sh --all
 #
-# They still carry their own Ollama-readiness pre-check (see below), so even
-# when enabled they self-skip on a cold/unreachable Ollama rather than fail.
+# It still carries its own Ollama-readiness pre-check (see below), so even when
+# enabled it self-skips on a cold/unreachable Ollama rather than fail.
 #
 # NEXT AGENT: once bug 2026-09-05/001 is fixed, delete the
-# RUN_UNSTABLE_LLM_LATENCY_TESTS gate in the Tier-5 block and run these
+# RUN_UNSTABLE_LLM_LATENCY_TESTS gate in the Tier-5 block and run it
 # unconditionally again.
 #
 # ── Known skips (tests that self-skip in dev) ────────────────────────────────
@@ -46,8 +45,8 @@
 #                                     Set in config/{staging,production}.yaml.
 #
 # agent-trade-test            Tier 5  Self-skips on a cold Ollama, as below; reported as SKIP (exit 77).
-# preset-review-gap-closure   Tier 5  (disabled by default — see CURRENT STATE.)
-#                                     When enabled, they also self-skip (exit 0)
+# scanner-provider-smoke      Tier 5  (disabled by default — see CURRENT STATE.)
+#                                     When enabled, it also self-skips (exit 0)
 #                                     on a cold Ollama via a readiness pre-check:
 #                                       1. /api/tags reachable
 #                                       2. light + heavy models present
@@ -279,6 +278,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 2 && echo -e "  ${BLUE}Tier 2${RESET} (redis-only)         → agent-watch-invariants.sh --smoke"
   tier_enabled 3 && echo -e "  ${BLUE}Tier 3${RESET} (api+db)             → agent-config-matrix-test.sh"
   tier_enabled 3 && echo -e "                                          → agent-config-persistence-test.sh"
+  tier_enabled 3 && echo -e "                                          → platform-assessment-review-test.sh"
   tier_enabled 3 && echo -e "                                          → billing-webhook-smoke-test.sh"
   tier_enabled 4 && echo -e "  ${BLUE}Tier 4${RESET} (full stack, no keys) → agent-document-handling-test.sh"
   tier_enabled 4 && echo -e "                                          → agent-scanner-gated-lifecycle-test.sh"
@@ -287,8 +287,6 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 4 && echo -e "                                          → agent-pause-test.sh             [restarts worker]"
   tier_enabled 5 && echo -e "  ${BLUE}Tier 5${RESET} (full stack + venue)  → agent-trade-test.sh            [trade cycle best-effort]"
   tier_enabled 5 && echo -e "                                          → bot-trade-test.sh"
-  tier_enabled 5 && echo -e "                                          → platform-preset-assessment-test.sh"
-  tier_enabled 5 && echo -e "                                          → preset-review-gap-closure-test.sh ${YELLOW}[unstable: skipped unless RUN_UNSTABLE_LLM_LATENCY_TESTS=1]${RESET}"
   tier_enabled 5 && echo -e "                                          → scanner-provider-smoke-test.sh ${YELLOW}[unstable: skipped unless RUN_UNSTABLE_LLM_LATENCY_TESTS=1]${RESET}"
   tier_enabled 6 && echo -e "  ${BLUE}Tier 6${RESET} (external infra)     → autoscale-smoke-test.sh"
   tier_enabled 6 && echo -e "                                          → autoscale-capacity-trigger-test.sh (AUTOSCALE_DESTRUCTIVE=true)"
@@ -421,13 +419,12 @@ fi
 : "${LLM_LIGHT_MODEL:=qwen3:8b}"
 : "${LLM_HEAVY_MODEL:=qwen3.6:35b-a3b-q4_K_M}"
 
-# Unstable-test gate. Two Tier-5 tests (preset-review-gap-closure,
-# scanner-provider-smoke) depend on agents reaching
-# 'active' quickly, which is currently unreliable under burst-start due to
-# worker launch latency (see docs/bug-reports/2026/09/05/001-agent-activation-
-# timeout-cumulative-launch-latency.md). They pass in isolation on a warm stack
-# but fail intermittently in the full suite. Skipped by default to keep the
-# suite green; set RUN_UNSTABLE_LLM_LATENCY_TESTS=1 to run them anyway.
+# Unstable-test gate. The scanner-provider-smoke Tier-5 test depends on agents
+# reaching 'active' quickly, which is currently unreliable under burst-start due
+# to worker launch latency (see docs/bug-reports/2026/09/05/001-agent-activation-
+# timeout-cumulative-launch-latency.md). It passes in isolation on a warm stack
+# but fails intermittently in the full suite. Skipped by default to keep the
+# suite green; set RUN_UNSTABLE_LLM_LATENCY_TESTS=1 to run it anyway.
 : "${RUN_UNSTABLE_LLM_LATENCY_TESTS:=0}"
 
 # Prevent child scripts from auto-managing the stack — we handle it centrally.
@@ -562,6 +559,9 @@ if tier_enabled 3; then
   run_script "agent-config-persistence (DB write + reject)" \
     "${TESTS_DIR}/agent-config-persistence-test.sh"
 
+  run_script "platform-assessment-review (review screen gating)" \
+    "${TESTS_DIR}/platform-assessment-review-test.sh"
+
   run_script "billing-webhook-smoke (subscription + top-up persistence)" \
     "${TESTS_DIR}/billing-webhook-smoke-test.sh"
 fi
@@ -622,28 +622,21 @@ if tier_enabled 5; then
     run_script "bot-trade-test (bot lifecycle)" \
       "${TESTS_DIR}/bot-trade-test.sh"
 
-    run_script "platform-preset-assessment (operator + agent config gating)" \
-      "${TESTS_DIR}/platform-preset-assessment-test.sh"
-
-    # ── Unstable Tier-5 tests (skipped by default) ───────────────────────
-    # These two depend on several agents reaching 'active' within a deadline,
-    # which is unreliable under burst-start (multiple agents created back-to-back).
-    # Root cause: worker launch latency, documented in
+    # ── Unstable Tier-5 test (skipped by default) ────────────────────────
+    # scanner-provider-smoke depends on several agents reaching 'active' within
+    # a deadline, which is unreliable under burst-start (multiple agents created
+    # back-to-back). Root cause: worker launch latency, documented in
     # docs/bug-reports/2026/09/05/001-agent-activation-timeout-cumulative-launch-latency.md
-    # They pass in isolation on a warm stack (scanner-provider verified 8/8) but
-    # fail intermittently here. Skipped by default; opt in with
+    # It passes in isolation on a warm stack (verified 8/8) but fails
+    # intermittently here. Skipped by default; opt in with
     # RUN_UNSTABLE_LLM_LATENCY_TESTS=1. Un-skip once bug 09/05/001 is fixed.
     if [[ "${RUN_UNSTABLE_LLM_LATENCY_TESTS}" == "1" ]]; then
-      run_script "preset-review-gap-closure (hybrid preset resolution + intelligence gating)" \
-        "${TESTS_DIR}/preset-review-gap-closure-test.sh"
-
       run_script "scanner-provider-smoke (BTC+ETH candle scan)" \
         "${TESTS_DIR}/scanner-provider-smoke-test.sh"
     else
-      warn "Skipping unstable Tier-5 tests (preset-review-gap-closure, scanner-provider-smoke)"
+      warn "Skipping unstable Tier-5 test (scanner-provider-smoke)"
       warn "  Reason: agent activation is unreliable under burst-start — bug 2026-09-05/001."
-      warn "  Run them with RUN_UNSTABLE_LLM_LATENCY_TESTS=1 (warm stack recommended: reset-and-run.sh)."
-      RESULTS+=("${YELLOW}SKIP${RESET}  preset-review-gap-closure (unstable — bug 2026-09-05/001)")
+      warn "  Run it with RUN_UNSTABLE_LLM_LATENCY_TESTS=1 (warm stack recommended: reset-and-run.sh)."
       RESULTS+=("${YELLOW}SKIP${RESET}  scanner-provider-smoke (unstable — bug 2026-09-05/001)")
     fi
   fi
