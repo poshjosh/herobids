@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 export const REQUIRED_ENTRY_IDS = new Set([
   'strategy-preset-economy', 'strategy-preset-premium', 'strategy-preset-standard',
-  'domain-config-presets-loader', 'domain-config-presets', 'domain-config-strategy-parameters',
+  'domain-config-presets-loader', 'domain-config-presets',
 ]);
 
 export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
@@ -12,7 +12,6 @@ export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
   'strategy-preset-standard': 'mirror-only',
   'domain-config-presets-loader': 'mirror-only',
   'domain-config-presets': 'mirror-only',
-  'domain-config-strategy-parameters': 'mirror-only',
 });
 
 function extractRegion(content, region) {
