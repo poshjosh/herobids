@@ -1481,6 +1481,7 @@ export async function executeChatAction(
                 executionDefaults: createFields.executionDefaults,
                 scanMode: scanConfig.scanMode,
                 creatorStrategy: scanConfig.creatorStrategy,
+                presetPolicy: scanConfig.presetPolicy,
               }] as const));
             return {
               prior: { profiles: new Map(), connections: [] },

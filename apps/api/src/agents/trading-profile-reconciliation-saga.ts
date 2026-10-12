@@ -9,6 +9,7 @@ import {
 import {
   CreatorStrategySchema,
   ExecutionDefaultsSchema,
+  PresetPolicySchema,
   RiskPostureSchema,
   ScanModeSchema,
 } from '@herobids/domain';
@@ -80,6 +81,7 @@ const AgentTradingProfileResponseSchema = z.object({
   // written before scan config existed carries neither.
   scanMode: ScanModeSchema.nullable().optional(),
   creatorStrategy: CreatorStrategySchema.nullable().optional(),
+  presetPolicy: PresetPolicySchema.nullable().optional(),
 }).passthrough();
 
 const ForwardSetMutationResponseSchema = z.object({
@@ -258,6 +260,7 @@ export class TradingProfileReconciliationSaga {
         executionDefaults: profile.executionDefaults,
         scanMode: profile.scanMode ?? null,
         creatorStrategy: profile.creatorStrategy ?? null,
+        presetPolicy: profile.presetPolicy ?? null,
       } satisfies TypedTradingProfile] as const;
     }));
     return new Map(profiles);
@@ -392,6 +395,7 @@ export class TradingProfileReconciliationSaga {
         capital: null,
         riskPosture: null,
         executionDefaults: null,
+        presetPolicy: null,
       });
     for (const action of actions) {
       if (action.state === 'applied') continue;

@@ -669,86 +669,6 @@ agentRuntime:
   # Defaults applied to non-trading agents.
   nonTradingDefaults:
     tickIntervalMs: 86400000           # 24 h — default tick interval for non-trading agents
-
-# ── Platform Assessor ──────────────────────────────────────────────────────
-# On-demand per-symbol assessment — no scheduled background generation.
-# The assessor runs only when an agent explicitly requests it via
-# get_market_preset_assessment after receiving review advice through the
-# dedicated assessment_review tick.
-platformAssessor:
-  enabled: true  # disabled by default until shadow mode validated
-  minReviewIntervalMs: 10800000  # 3h — operator floor for agent reviewIntervalMs
-  # maxReviewRequestsPerDay: 50  # optional daily cap (unset = no cap)
-  scannerCandidateLimit: 20  # top N candidates for deterministic pre-check
-  cacheFreshnessMs: 10800000  # 3h — lookup and artifact expiry
-  maxConcurrentAssessments: 1
-  maxInstrumentsPerRequest: 3  # max instruments per assessment request
-  # ── Evidence collection policies ──────────────────────────────────────
-  evidenceMaxAgeMs: 300000          # 5 min — max age for collected evidence
-  evidenceTimeoutMs: 15000          # 15s — timeout for evidence operations
-  evidencePayloadLimitBytes: 1048576 # 1 MB — max evidence payload size
-  candlePolicy:
-    defaultInterval: 15m
-    minimumCandles: 48
-    maxCandles: 200
-  atrPolicy:
-    lookbackPeriods: 14
-    volatilityLowPercentile: 25
-    volatilityHighPercentile: 75
-    volatilityExtremePercentile: 95
-    calculationVersion: "1.0.0"
-  liquidityPolicy:
-    goodSpreadBpsMax: 5
-    goodDepthUsdMin: 50000
-    adequateSpreadBpsMax: 25
-    adequateDepthUsdMin: 10000
-  # breadthPolicy:  # omitted until a valid cohort source is configured
-  #   movingAveragePeriods: ["50"]
-  #   minimumSymbols: 5
-  #   maxLookbackDays: 30
-  sourceMappings: {}  # per-venue-family overrides — defaults resolve from context
-  # ── Deterministic Review Pre-Check ────────────────────────────────────
-  # Configuration for the scanner pre-check that produces assessment review
-  # advice without LLM calls or billing. The pre-check reads persisted
-  # scanner candidate observations and applies a deterministic predicate.
-  preCheck:
-    signalRatioThreshold: 2.0          # peer preset must have >= 2× signal count to flag mismatch
-    scanMetricsLookbackMs: 86400000    # 24h lookback for scan metrics comparison
-    minSignalsForActive: 3             # minimum signals to consider a preset "active"
-    identityCooldownMs: 86400000       # 24h cooldown per (agent, identity)
-    candidateRetentionMs: 604800000    # 7d retention for persisted candidates
-    candidateMaxAgeMs: 86400000        # 24h max age for a candidate to be considered
-    maxAdvicePayloadSize: 16384        # 16 KB max advice payload
-    leaseDurationMs: 60000             # 60s review-check lease
-    billingPreflightTimeoutMs: 5000    # 5s read-only billing preflight timeout
-    policyVersion: "1.0.0"             # review predicate version
-    enablePeerComparison: true         # whether to compare peer presets for mismatch
-  # ── Platform LLM ranking configuration ────────────────────────────────
-  # The platform assessor uses its own LLM config (never an agent's config).
-  # Provider and model must exist in the loaded provider registry at startup.
-  llm:
-    provider: ollama                    # provider identifier in providers.yaml
-    model: qwen3.6:35b-a3b-q4_K_M       # model ID
-    timeoutMs: 30000                    # 30s HTTP timeout
-    maxTokens: 2000                     # max output tokens for ranking response
-    maxInputTokens: 4000                # max input tokens for prompt projection
-    # baseUrl: https://...              # optional base URL override
-    maxConcurrency: 1                   # max concurrent assessment LLM calls
-    retry:
-      maxRetries: 2
-      timeoutBackoffMs: [5000, 15000]
-      serverErrorBackoffMs: 10000
-      defaultRateLimitBackoffMs: 60000
-    scoreBands:
-      aMin: 80
-      bMin: 60
-      cMin: 40
-      dMin: 20
-    recommendationPolicy:
-      minConfidence: 0.6               # min confidence for auto-recommendation
-      minScoreForRecommendation: 40    # min score for auto-recommendation
-      minAllowedScore: 1               # score 0 = exclude from allowedPresets
-
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents
 # when market conditions match their registered watches.
@@ -1043,9 +963,6 @@ usageBilling:
     - meterKey: "agent.runtime_ms"
       priceMicrousd: 100
       perUnit: 60000
-    - meterKey: "assessment.request"
-      priceMicrousd: 200000
-      perUnit: 1
     - meterKey: "browser.session_ms"
       priceMicrousd: 200
       perUnit: 60000

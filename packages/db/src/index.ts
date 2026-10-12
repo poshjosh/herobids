@@ -54,18 +54,6 @@ export {
 export { EVALUATION_QUEUE_NAME } from './agent-evaluation-job.js';
 export type { EvaluationJobData, ResolvedNarrativeLlmConfig } from './agent-evaluation-job.js';
 export { FsEvaluationArtifactStore } from './agent-evaluation-storage-fs.js';
-export { MANUAL_REVIEW_QUEUE_NAME } from './manual-review-job.js';
-export type { ManualReviewJobData } from './manual-review-job.js';
-export {
-  createManualReviewRun,
-  markManualReviewRunning,
-  markManualReviewSucceeded,
-  markManualReviewFailed,
-  getManualReviewRun,
-  getLatestManualReviewRun,
-  hasActiveManualReviewRun,
-} from './manual-review-repository.js';
-export type { ManualReviewRunRow, ManualReviewResultSummary } from './manual-review-repository.js';
 export { isSkillSelectableForUser, resolveSkillIdsBySlugOrId, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './skill-assignment.js';
 export type { SkillAssignmentResolution } from './skill-assignment.js';
 export { upsertExternalSkill, normalizeSourceRefToSlug, deriveSourceKind, ensureExternalSkillIds, externalSkillIdForRef } from './external-skill-catalog.js';

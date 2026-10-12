@@ -1,8 +1,7 @@
-import type { CapabilityReadiness, HybridPricingIdentity, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
+import type { CapabilityReadiness, HybridPricingIdentity, SwapExecutionIdentity, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
 import type { RegimeResult } from '@poshjosh/contracts';
 import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
-import type { ScoredSignal } from './market-intelligence/preset-scan-contracts.js';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines, formatInterval } from './prompt-timing-context.js';
 import type { PositionIndicatorUpdate, SymbolFetchOutcome, WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from '@poshjosh/contracts';
@@ -11,6 +10,33 @@ import { fmtUsd } from './fmt.js';
 import type { ReminderRecord } from './reminders/reminder-record.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
+
+/**
+ * Strategy-side scan/score contract consumed by the runtime composition (the
+ * `TechnicalScanState.signals` field). Relocated here from the now-deleted
+ * `market-intelligence/preset-scan-contracts.ts` (whose remaining exports were
+ * assessment-only and deleted with H5). Declarations only.
+ */
+export interface ScoredSignal {
+  symbol: string;
+  instrumentId: string;
+  venue?: string;
+  venueType?: 'orderbook' | 'swap';
+  pricingIdentity?: HybridPricingIdentity;
+  swapExecutionIdentity?: SwapExecutionIdentity;
+  confidence: number;
+  reasons: string[];
+  intent: 'go_long' | 'go_short';
+  indicators: {
+    rsi?: number;
+    macdHistogram?: number;
+    volumeRatio?: number;
+    breakingResistance?: boolean;
+    breakingSupport?: boolean;
+    choch?: 'bullish' | 'bearish' | null;
+    priceAboveVwap?: boolean;
+  };
+}
 
 export interface RuntimeFreshness {
   state: FreshnessState;

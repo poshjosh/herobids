@@ -18,8 +18,6 @@ import { accountTools } from './account.js';
 import { instrumentTools } from './find-instrument.js';
 import { resolverTools } from './resolvers.js';
 import { emailTools } from './email.js';
-import { changeStrategyPresetTool } from './change-strategy-preset.js';
-import { assessStrategyPresetTool } from './assess-strategy-preset.js';
 import { platformDocsTools } from './platform-docs.js';
 import { skillTools } from './skills.js';
 import { readSkillTool } from './read-skill.js';
@@ -122,8 +120,6 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...platformDocsTools,
     ...skillTools,
     readSkillTool,
-    assessStrategyPresetTool,
-    changeStrategyPresetTool,
   ];
 
   for (const tool of allTools) {

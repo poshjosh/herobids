@@ -104,6 +104,7 @@ export {
   HybridModeSchema,
   ScanModeSchema,
   CreatorStrategySchema,
+  PresetPolicySchema,
   AuthorizationModeSchema,
   VwapParamsSchema,
   PriceActionParamsSchema,
@@ -115,10 +116,6 @@ export {
   AllowedPresetsPolicySchema,
   PresetTransitionPolicySchema,
   PlatformAssessmentOptInSchema,
-  PlatformAssessorConfigSchema,
-  PlatformAssessmentLlmConfigSchema,
-  PlatformAssessmentScoreBandsSchema,
-  PlatformAssessmentRecommendationPolicySchema,
   AgentApprovalsConfigSchema,
   validateReviewInterval,
 } from './schema.js';
@@ -153,11 +150,6 @@ export {
   type ExternalBackendDefinition,
   type ResolvedExternalBackend,
 } from './external-backends.js';
-export {
-  resolveAssessmentConfig,
-  type ResolvedAssessmentConfig,
-} from './assessment-config.js';
-
 export type {
   WakePreferences,
   SwapVenue,
@@ -232,14 +224,13 @@ export type {
   HybridMode,
   ScanMode,
   CreatorStrategy,
+  PresetPolicy,
   AuthorizationMode,
   AgentApprovalsConfig,
   GmailIntegrationConfig,
   AllowedPresetsPolicy,
   PresetTransitionPolicy,
   PlatformAssessmentOptIn,
-  PlatformAssessorConfig,
-  PlatformAssessmentLlmConfig,
   WakeGateConfig,
   BrowserPoolConfig,
   HttpClientConfig,

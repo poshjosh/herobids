@@ -13,20 +13,40 @@ let mockMutationState: {
   error?: unknown;
 } = {};
 
+let mockReviewResults: unknown = { changes: [] };
+
 vi.mock('@tanstack/react-query', async () => {
   const actual = await vi.importActual('@tanstack/react-query');
   return {
     ...(actual as Record<string, unknown>),
-    useMutation: vi.fn(() => ({
-      isPending: false,
-      isError: false,
-      isSuccess: false,
-      error: null,
-      mutate: vi.fn(),
-      mutateAsync: vi.fn(),
-      reset: vi.fn(),
-      ...mockMutationState,
-    })),
+    useMutation: vi.fn((opts?: { mutationFn?: unknown }) => {
+      // The evaluation trigger mutationFn takes an opts argument; the review
+      // trigger mutationFn takes none. Distinguish so the shared error state
+      // only applies to the evaluation trigger (the review trigger has no
+      // "already in progress" concept).
+      const isReviewTrigger = typeof opts?.mutationFn === 'function' && opts.mutationFn.length === 0;
+      return {
+        isPending: false,
+        isError: false,
+        isSuccess: false,
+        error: null,
+        mutate: vi.fn(),
+        mutateAsync: vi.fn(),
+        reset: vi.fn(),
+        ...(isReviewTrigger ? {} : mockMutationState),
+      };
+    }),
+    useQuery: vi.fn((opts: { queryKey?: unknown[] }) => {
+      const key = opts?.queryKey ?? [];
+      const isReviewResults = key.includes('platform-assessment-review') && key.includes('results');
+      return {
+        data: isReviewResults ? mockReviewResults : undefined,
+        isLoading: false,
+        isError: false,
+        isSuccess: isReviewResults,
+        refetch: vi.fn(),
+      };
+    }),
   };
 });
 
@@ -39,6 +59,11 @@ vi.mock('../../lib/api-client.js', () => ({
       get: vi.fn(),
       listArtifacts: vi.fn(),
       getArtifactUrl: vi.fn().mockReturnValue('/api/agents/x/evaluations/y/artifacts/z'),
+    },
+    platformAssessmentReviews: {
+      eligibility: vi.fn().mockResolvedValue({ canTrigger: true, reason: null }),
+      trigger: vi.fn(),
+      getResults: vi.fn().mockResolvedValue({ changes: [] }),
     },
     get: vi.fn(),
   },
@@ -82,6 +107,7 @@ function renderComponent(): string {
 describe('AgentEvaluations', () => {
   beforeEach(() => {
     mockMutationState = {};
+    mockReviewResults = { changes: [] };
   });
 
   it('renders the evaluations section title', () => {
@@ -170,5 +196,53 @@ describe('AgentEvaluations', () => {
 
     // Empty string is falsy, so should fall through to generic
     expect(html).toContain(messages['agents.evaluations.triggerError']);
+  });
+
+  // ── Strategy review (data-only) regression tests ──────────────────────
+
+  it('shows the agent\'s chosen preset and reason', () => {
+    mockReviewResults = {
+      changes: [
+        {
+          id: 'c1',
+          ownerId: 'owner-1',
+          actorId: 'agent-1',
+          fromStrategy: { presetKey: 'momentum' },
+          toStrategy: { presetKey: 'range' },
+          artifactId: 'a1',
+          reason: 'Range fits the choppy regime',
+          state: 'applied',
+          createdAt: '2026-10-10T00:00:00.000Z',
+          appliedAt: '2026-10-10T00:00:00.000Z',
+        },
+      ],
+    };
+
+    const html = renderComponent();
+    expect(html).toContain('Range fits the choppy regime');
+    expect(html).toContain('momentum');
+    expect(html).toContain('range');
+  });
+
+  it('shows that the agent kept its current preset', () => {
+    mockReviewResults = {
+      changes: [
+        {
+          id: 'c1',
+          ownerId: 'owner-1',
+          actorId: 'agent-1',
+          fromStrategy: { presetKey: 'momentum' },
+          toStrategy: { presetKey: 'momentum' },
+          artifactId: 'a1',
+          reason: 'Current preset still fits',
+          state: 'applied',
+          createdAt: '2026-10-10T00:00:00.000Z',
+          appliedAt: '2026-10-10T00:00:00.000Z',
+        },
+      ],
+    };
+
+    const html = renderComponent();
+    expect(html).toContain(messages['agents.strategyReview.results.agentKept'].replace('{preset}', 'momentum'));
   });
 });

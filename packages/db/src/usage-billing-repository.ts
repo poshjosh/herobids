@@ -196,7 +196,7 @@ export interface BillingAccountRow {
 }
 
 interface DefaultRateCardSeedItem {
-  meterKey: 'agent.runtime_ms' | 'assessment.request';
+  meterKey: 'agent.runtime_ms';
   priceMicrousd: number;
   perUnit: number;
 }
@@ -222,7 +222,6 @@ export interface RateCardSeedItem {
  */
 const DEFAULT_RATE_CARD_ITEMS: DefaultRateCardSeedItem[] = [
   { meterKey: 'agent.runtime_ms', priceMicrousd: 100, perUnit: 60_000 },
-  { meterKey: 'assessment.request', priceMicrousd: 200000, perUnit: 1 },
 ];
 
 // ---------------------------------------------------------------------------

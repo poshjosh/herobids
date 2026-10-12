@@ -1,15 +1,10 @@
 import Redis from 'ioredis';
 import { createLogger } from './logger.js';
 import { EvaluationRuntime } from './agent-evaluation/index.js';
-import { ManualReviewRuntime } from './manual-review-runtime.js';
-import type { ManualReviewRunnerFactory } from './manual-review-runtime.js';
-import {
-  AssessmentReviewRunner,
-} from './market-intelligence/assessment-review-runner.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { AGENT_STREAM_MAXLEN, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml, ok, err } from '@herobids/domain';
+import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import crypto from 'node:crypto';
@@ -48,15 +43,8 @@ import { DockerRuntimeDocumentMaterializer } from './agents/docker-document-mate
 import { StubRuntimeDocumentMaterializer } from './agents/stub-document-materializer.js';
 import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
-import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService, resolveActivePresetState } from './market-intelligence/index.js';
+import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
 import type { TriggeredWatch } from './market-intelligence/index.js';
-import type { ReviewScheduler } from './market-intelligence/index.js';
-import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
-import { createPresetCatalog } from './market-intelligence/preset-catalog-adapter.js';
-import { createEvidencePorts } from './market-intelligence/evidence-adapters.js';
-import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
-import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
-import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
 import { BrowserPoolHealthPublisher } from './browser-pool-health-publisher.js';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 /** Slash commands registered with the Telegram Bot API so they appear in the client command picker. */
@@ -739,27 +727,16 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     // L3d-5: trading agents no longer spin up an in-process AgentTradingActor —
     // execution routes over the Traderton boundary via agentDecisionHandler. A
     // session is simply activated here (the same shape a non-trading agent has
-    // always had): mark it active + start the platform review scheduler (gated
-    // internally on hybrid + platformAssessment.enabled + operator switch). With
-    // no async actor start to protect, activation is established synchronously.
+    // always had): mark it active. With no async actor start to protect,
+    // activation is established synchronously.
     // E1-H / L3: also (re)start the traderton agent-actor so a scanner_gated
     // agent's scan loop runs. Fire-and-forget — never gates activation. This
     // also re-fires after a worker restart (the activatedSessions guard is
     // empty), a harmless idempotent reconcile.
     void agentActorLifecycle.start(agentId, 'session_active');
-    return (async (): Promise<boolean> => {
-      const agent = await agentRepo.getAgent(agentId);
-      if (agent) {
-        // Worker startup is not the sole lifecycle hook for review schedulers
-        // (see 010-scanner-pre-check.md) — start one here for agents that opt
-        // into platform assessment and become active after boot.
-        startReviewSchedulerForAgent(agent);
-      }
-      return true;
-    })();
+    return Promise.resolve(true);
   },
   onSessionStopped: (agentId, sessionId) => {
-    stopReviewSchedulerForAgent(agentId);
     void agentActorLifecycle.stop(agentId, 'session_stopped', sessionId);
   },
   onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
@@ -872,106 +849,6 @@ const evaluationRuntime = new EvaluationRuntime(
   db,
 );
 evaluationRuntime.start();
-
-// Start manual review runtime (BullMQ consumer for user-triggered platform assessment reviews)
-const manualReviewRuntime = new ManualReviewRuntime(
-  {
-    redis: redisConnection,
-    concurrency: 2,
-    maxRuntimeMs: 120_000,
-  },
-  db,
-  // Runner factory — creates a per-agent AssessmentReviewRunner on each job.
-  // Uses the same deps construction pattern as startReviewSchedulerForAgent.
-  (async (agentId: string) => {
-    try {
-      // Load agent config
-      const [agent] = await db
-        .select({
-          id: agents.id,
-          userId: agents.userId,
-          unifiedConfig: agents.unifiedConfig,
-          strategy: agents.strategy,
-          status: agents.status,
-        })
-        .from(agents)
-        .where(eq(agents.id, agentId))
-        .limit(1);
-
-      if (!agent) {
-        return err({ code: 'review.agent_not_found', message: `Agent ${agentId} not found` });
-      }
-
-      const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
-
-      // Defense-in-depth: preset review is only meaningful for hybrid agents.
-      // If a job somehow reaches the worker for a non-hybrid agent (stale
-      // enqueue, race), reject cleanly so the run terminates instead of
-      // executing against a non-existent preset.
-      // TEST-MIRROR: review-scheduler-lifecycle-wiring.test.ts mirrors this gate in resolveManualReviewFactoryCapabilityGate()
-      if (unifiedConfig['capabilityMode'] !== 'hybrid') {
-        return err({ code: 'review.capability_mode_unsupported', message: 'Strategy review is only available for hybrid agents' });
-      }
-
-      const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
-      const agentEnabled = platformAssessment['enabled'] === true;
-      if (!agentEnabled) {
-        return err({ code: 'review.not_enabled', message: 'Platform assessment is not enabled for this agent' });
-      }
-
-      const agentReviewIntervalMs = (typeof platformAssessment['reviewIntervalMs'] === 'number')
-        ? platformAssessment['reviewIntervalMs']
-        : appConfig.platformAssessor.minReviewIntervalMs;
-
-      const resolveActivePreset = () => resolveActivePresetState(db, { id: agentId, unifiedConfig: agent.unifiedConfig, strategy: agent.strategy });
-
-      // Billing preflight
-      const checkBillingEligibility = async () => {
-        try {
-          if (!agent.userId) return ok(false);
-          const account = await usageBillingRepo.getAccountByUserId(agent.userId);
-          if (!account) return ok(false);
-          return ok(account.status === 'active');
-        } catch {
-          return ok(true);
-        }
-      };
-
-      const runner = new AssessmentReviewRunner(
-        {
-          db,
-          agentId,
-          eventPublisher,
-          resolveActivePreset,
-          checkBillingEligibility,
-          assessmentRequestPort: assessmentRequestService,
-        },
-        {
-          reviewIntervalMs: Math.max(agentReviewIntervalMs, appConfig.platformAssessor.minReviewIntervalMs),
-          minReviewIntervalMs: appConfig.platformAssessor.minReviewIntervalMs,
-          scannerCandidateLimit: appConfig.platformAssessor.scannerCandidateLimit,
-          cacheFreshnessMs: appConfig.platformAssessor.cacheFreshnessMs,
-          adviceExpiryMs: appConfig.platformAssessor.cacheFreshnessMs,
-          preCheck: appConfig.platformAssessor.preCheck ?? {
-            signalRatioThreshold: 2.0,
-            scanMetricsLookbackMs: 86_400_000,
-            minSignalsForActive: 3,
-            identityCooldownMs: 86_400_000,
-            candidateMaxAgeMs: 86_400_000,
-            policyVersion: '1.0.0',
-            enablePeerComparison: true,
-          },
-          maxAssessmentsPerReview: appConfig.platformAssessor.maxInstrumentsPerRequest,
-        },
-      );
-
-      return ok({ runner });
-    } catch (error) {
-      return err({ code: 'review.runner_factory_failed', message: (error as Error).message });
-    }
-  }) as ManualReviewRunnerFactory,
-);
-manualReviewRuntime.start();
 
 // Start alert dispatcher (polls the Traderton trade-event feed → routes →
 // delivers to Telegram). Uses Redis lease for singleton coordination across
@@ -1109,215 +986,6 @@ const marketIntelCoordinator = appConfig.marketData
 
 marketIntelCoordinator?.start();
 
-/** Per-agent review schedulers for agents opted into platform assessment. */
-const reviewSchedulers = new Map<string, ReviewScheduler>();
-
-// ── Platform Assessor ───────────────────────────────────────────────────────
-// Construct the shared PlatformAssessor and AssessmentRequestService.
-// The assessor uses platform-owned LLM configuration (never agent config).
-// Evidence ports are backed by the worker's scanner candle fetcher.
-// Liquidity and breadth remain explicitly unavailable in the first shipped slice.
-
-const providersBaseUrlMap: Record<string, string> = {};
-if (providersYaml?.providers) {
-  for (const [key, cfg] of Object.entries(providersYaml.providers)) {
-    if (cfg.baseUrl) {
-      providersBaseUrlMap[key] = cfg.baseUrl;
-    }
-  }
-}
-
-// Real evidence ports backed entirely by the SYSTEM read boundary.
-// Liquidity and breadth remain explicitly unavailable in the first shipped slice.
-// L3 Q2: regime evidence routes over the boundary (check_regime).
-// D1-b: candle evidence is DERIVED over the boundary (get_volatility +
-// score_candidate) — no raw candles fetched in-process.
-const evidencePorts = createEvidencePorts({
-  checkRegimeBoundary: systemReadBoundary,
-  readBoundary: systemReadBoundary,
-});
-
-const getPresets = createPresetCatalog();
-
-const { assessor: platformAssessor, llmConfig: platformLlmConfig } = createPlatformAssessor(
-  appConfig.platformAssessor,
-  providersBaseUrlMap,
-  db,
-  redisClient,
-  evidencePorts,
-  getPresets,
-  logger,
-  appConfig.llm.openRouterProviderControls,
-  // L3 Q2: orderbook/perp preset scoring routes over the SYSTEM read boundary.
-  systemReadBoundary,
-);
-
-const usageBillingRepo = new UsageBillingRepository(
-  db,
-  appConfig.usageBilling.defaultRateCardItems,
-  providersYaml,
-  appConfig.usageBilling.fallbackCacheReadPct,
-);
-
-const assessmentRequestService = new AssessmentRequestService(
-  db,
-  usageBillingRepo,
-  appConfig.platformAssessor,
-  platformAssessor,
-  appConfig.plans.defaultPlanId,
-);
-
-setAssessmentRequestPort(assessmentRequestService);
-
-// ── Preset Transition Service ─────────────────────────────────────────────
-// Wire the PresetTransitionPort so tools can delegate preset transitions.
-//
-// L3d-5: the preset transition persists to the DB (the source of truth); the
-// in-process AgentTradingActor reload was removed with the actor slice —
-// Traderton owns the trading runtime and reloads its own config. notifyActor
-// now only emits the visibility-only `agent.runtime.config_update` event so the
-// agent runtime's summary/prompt reflects the new preset/binding state. A Redis
-// failure here must not fail the transition.
-const presetTransitionService = new PresetTransitionService({
-  db,
-  notifyActor: async (agentId, activePresetKey, styleTier, behaviorVersion) => {
-    try {
-      await redisClient.xadd(
-        `agent:outbound:${agentId}`,
-        'MAXLEN', '~', AGENT_STREAM_MAXLEN,
-        '*',
-        'envelope',
-        JSON.stringify({
-          schemaVersion: 'v1',
-          messageId: crypto.randomUUID(),
-          correlationId: agentId,
-          initiatorType: 'system',
-          initiatorId: agentId,
-          agentId,
-          type: 'agent.runtime.config_update',
-          createdAt: new Date().toISOString(),
-          payload: {
-            reason: 'binding_changed',
-            activePresetKey,
-            styleTier,
-            behaviorVersion,
-          },
-        }),
-      );
-    } catch (err) {
-      logger.warn({ agentId, err }, 'Failed to emit runtime config update event after preset transition');
-    }
-
-    return ok(undefined);
-  },
-});
-setPresetTransitionPort(presetTransitionService);
-
-logger.info(
-  {
-    llmConfigured: platformLlmConfig !== null,
-    ...(platformLlmConfig && { provider: platformLlmConfig.provider, model: platformLlmConfig.model }),
-  },
-  'Platform assessor wired into worker composition root',
-);
-
-// ── Per-Agent Review Schedulers ──────────────────────────────────────────
-// Creates/stops a ReviewScheduler for an agent opted into platform assessment
-// (platformAssessment.enabled === true), gated on the operator-level
-// platformAssessor.enabled master switch. Both gates must be true: operator
-// *and* agent.
-//
-// Worker startup is not the sole lifecycle hook (see 010-scanner-pre-check.md):
-// startReviewSchedulerForAgent() is called both from the boot-time loop below
-// (for agents already active at boot) and from onSessionActive (for agents
-// that become active afterward — the normal case, since agents are started
-// on demand). stopReviewSchedulerForAgent() is called from onSessionStopped.
-type ReviewSchedulerAgentRow = Awaited<ReturnType<typeof agentRepo.listActiveAgents>>[number];
-
-function startReviewSchedulerForAgent(agent: ReviewSchedulerAgentRow): void {
-  // Gate: preset review is only meaningful for hybrid agents
-  // TEST-MIRROR: review-scheduler-lifecycle-wiring.test.ts mirrors this gate in resolveCapabilityModeGate()
-  if (((agent.unifiedConfig ?? {}) as Record<string, unknown>)['capabilityMode'] !== 'hybrid') return;
-
-  if (!appConfig.platformAssessor.enabled) return;
-  if (reviewSchedulers.has(agent.id)) return; // already running — idempotent
-
-  const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
-  const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
-  const agentEnabled = platformAssessment['enabled'] === true;
-  if (!agentEnabled) return;
-
-  const agentReviewIntervalMs = (typeof platformAssessment['reviewIntervalMs'] === 'number')
-    ? platformAssessment['reviewIntervalMs']
-    : appConfig.platformAssessor.minReviewIntervalMs;
-
-  const resolveActivePreset = () => resolveActivePresetState(db, { id: agent.id, unifiedConfig: agent.unifiedConfig, strategy: agent.strategy });
-
-  // Read-only billing preflight — checks if the agent has an active billing account.
-  const checkBillingEligibility = async () => {
-    try {
-      if (!agent.userId) return ok(false);
-      const account = await usageBillingRepo.getAccountByUserId(agent.userId);
-      if (!account) return ok(false);
-      return ok(account.status === 'active');
-    } catch {
-      // Fail-open: if billing check fails, allow pre-check to continue
-      return ok(true);
-    }
-  };
-
-  const scheduler = createReviewScheduler(
-    {
-      db,
-      redis: redisClient,
-      agentId: agent.id,
-      eventPublisher,
-      resolveActivePreset,
-      checkBillingEligibility,
-    },
-    agentReviewIntervalMs,
-    {
-      minReviewIntervalMs: appConfig.platformAssessor.minReviewIntervalMs,
-      scannerCandidateLimit: appConfig.platformAssessor.scannerCandidateLimit,
-      cacheFreshnessMs: appConfig.platformAssessor.cacheFreshnessMs,
-      preCheck: appConfig.platformAssessor.preCheck ?? {
-        signalRatioThreshold: 2.0,
-        scanMetricsLookbackMs: 86_400_000,
-        minSignalsForActive: 3,
-        identityCooldownMs: 86_400_000,
-        candidateMaxAgeMs: 86_400_000,
-        policyVersion: '1.0.0',
-        enablePeerComparison: true,
-      },
-    },
-  );
-  scheduler.start();
-  reviewSchedulers.set(agent.id, scheduler);
-  logger.info({ agentId: agent.id, reviewIntervalMs: Math.max(agentReviewIntervalMs, appConfig.platformAssessor.minReviewIntervalMs) }, 'Review scheduler started for agent');
-}
-
-function stopReviewSchedulerForAgent(agentId: string): void {
-  const scheduler = reviewSchedulers.get(agentId);
-  if (!scheduler) return;
-  scheduler.stop();
-  reviewSchedulers.delete(agentId);
-  logger.info({ agentId }, 'Review scheduler stopped for agent');
-}
-
-try {
-  if (!appConfig.platformAssessor.enabled) {
-    logger.info('Platform assessor is disabled at operator level — skipping review scheduler initialisation');
-  } else {
-    const activeAgents = await agentRepo.listActiveAgents();
-    for (const agent of activeAgents) {
-      startReviewSchedulerForAgent(agent);
-    }
-    logger.info({ count: reviewSchedulers.size }, 'Review schedulers initialised');
-  }
-} catch (err) {
-  logger.error({ err }, 'Failed to initialise review schedulers');
-}
-
 // ── Economic calendar acquisition (owned by Traderton — slice B6) ─────────
 // The economic-calendar fetch + refresh loop now run Traderton-side. The
 // herobids worker no longer scrapes Forex Factory or writes the shared cache;
@@ -1417,17 +1085,12 @@ process.on('SIGTERM', async () => {
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
   marketMonitor.stop();
-  // Stop per-agent review schedulers
-  for (const scheduler of reviewSchedulers.values()) {
-    scheduler.stop();
-  }
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher?.stop();
   await reminderCoordinator.stop(); // async: releases the Redis coordinator lease
   await actorEventRelay?.stop();
   await evaluationRuntime.stop();
-  await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
   await agentCleanupSubscriber?.quit();
   await approvalExecuteSubscriber?.quit();
@@ -1444,17 +1107,12 @@ process.on('SIGINT', async () => {
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
   marketMonitor.stop();
-  // Stop per-agent review schedulers
-  for (const scheduler of reviewSchedulers.values()) {
-    scheduler.stop();
-  }
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher?.stop();
   await reminderCoordinator.stop(); // async: releases the Redis coordinator lease
   await actorEventRelay?.stop();
   await evaluationRuntime.stop();
-  await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
   await agentCleanupSubscriber?.quit();
   await approvalExecuteSubscriber?.quit();

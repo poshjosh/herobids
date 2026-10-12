@@ -1473,165 +1473,6 @@ export const MarketIntelligenceConfigSchema = z.object({
   ).optional().default({}),
 });
 
-// ── Platform Assessor LLM Config ───────────────────────────────────────────
-
-/** Score band thresholds for LLM ranking output. */
-export const PlatformAssessmentScoreBandsSchema = z.object({
-  /** Score ≥ this → band 'A'. Default: 80 */
-  aMin: z.number().min(0).max(100).default(80),
-  /** Score ≥ this → band 'B'. Default: 60 */
-  bMin: z.number().min(0).max(100).default(60),
-  /** Score ≥ this → band 'C'. Default: 40 */
-  cMin: z.number().min(0).max(100).default(40),
-  /** Score ≥ this → band 'D'. Default: 20 */
-  dMin: z.number().min(0).max(100).default(20),
-  /** Score < dMin → band 'F'. */
-}).default({});
-
-/** Recommendation policy — guards against low-confidence auto-recommendations. */
-export const PlatformAssessmentRecommendationPolicySchema = z.object({
-  /** Minimum confidence (0–1) required for the rank-1 preset to become the recommended preset.
-   *  Below this threshold, recommendedPreset is set to null. Default: 0.6 */
-  minConfidence: z.number().min(0).max(1).default(0.6),
-  /** Minimum score (0–100) required for the rank-1 preset to become the recommended preset.
-   *  Below this threshold, recommendedPreset is set to null. Default: 40 */
-  minScoreForRecommendation: z.number().min(0).max(100).default(40),
-  /** Minimum score for a preset to appear in allowedPresets. Default: 1 (score 0 = excluded). */
-  minAllowedScore: z.number().min(0).max(100).default(1),
-}).default({});
-
-/** Platform-owned LLM configuration for assessment ranking.
- *  The platform assessor never falls back to an agent's LLM configuration. */
-export const PlatformAssessmentLlmConfigSchema = z.object({
-  /** LLM provider identifier (must exist in the loaded provider registry). Default: 'openrouter' */
-  provider: z.string().min(1).default('openrouter'),
-  /** Model ID. Default: 'anthropic/claude-fable-5' */
-  model: z.string().min(1).default('anthropic/claude-fable-5'),
-  /** HTTP request timeout in ms. Default: 30_000 */
-  timeoutMs: z.number().int().min(1_000).default(30_000),
-  /** Max output tokens for the LLM response. Default: 2_000 */
-  maxTokens: z.number().int().min(1).default(2_000),
-  /** Max input tokens for the prompt projection. Default: 4_000 */
-  maxInputTokens: z.number().int().min(1).default(4_000),
-  /** Base URL override (for testing or alternative endpoints). */
-  baseUrl: z.string().url().optional(),
-  /** Concurrency limit for assessment LLM calls. Default: 1 */
-  maxConcurrency: z.number().int().min(1).default(1),
-  /** Retry policy for provider calls. */
-  retry: LlmRetryConfigSchema.default({}),
-  /** Score band thresholds. */
-  scoreBands: PlatformAssessmentScoreBandsSchema.default({}),
-  /** Recommendation guard policy. */
-  recommendationPolicy: PlatformAssessmentRecommendationPolicySchema.default({}),
-}).default({});
-
-export type PlatformAssessmentLlmConfig = z.infer<typeof PlatformAssessmentLlmConfigSchema>;
-
-// ── Platform Assessor Config ───────────────────────────────────────────────
-
-export const PlatformAssessorConfigSchema = z.object({
-  /** Enable/disable the platform assessor. Default: true */
-  enabled: z.boolean().default(true),
-  /** Operator minimum floor for agent reviewIntervalMs. Default: 24 hours (86_400_000) */
-  minReviewIntervalMs: z.number().int().positive().default(86_400_000),
-  /** Optional daily cap on billed assessment requests per agent. */
-  maxReviewRequestsPerDay: z.number().int().positive().default(4),
-  /** Top N candidates the deterministic scanner pre-check considers. Default: 20 */
-  scannerCandidateLimit: z.number().int().positive().default(20),
-  /** Single resolved freshness for lookup and artifact expiry. Default: 6 hours (21_600_000) */
-  cacheFreshnessMs: z.number().int().positive().default(21_600_000),
-  /** Maximum concurrent assessments. Default: 1 */
-  maxConcurrentAssessments: z.number().int().min(1).default(1),
-  /** Maximum number of instruments accepted per assessment request.
-   *  If the caller requests more, only the first N are assessed. Default: 3 */
-  maxInstrumentsPerRequest: z.number().int().min(1).max(50).default(3),
-  // ── Platform LLM configuration ───────────────────────────────────────
-  /** Platform-owned LLM configuration for ranking. Never falls back to agent config. */
-  llm: PlatformAssessmentLlmConfigSchema.default({}),
-  // ── Evidence collection policies ──────────────────────────────────────
-  /** Max age for collected evidence before considered stale. Default: 300_000 (5 min) */
-  evidenceMaxAgeMs: z.number().int().positive().default(300_000),
-  /** Timeout for evidence collection operations. Default: 15_000 (15s) */
-  evidenceTimeoutMs: z.number().int().positive().default(15_000),
-  /** Max evidence payload size. Default: 1_048_576 (1 MB) */
-  evidencePayloadLimitBytes: z.number().int().positive().default(1_048_576),
-  /** Candle collection policy. */
-  candlePolicy: z.object({
-    defaultInterval: z.enum(['5m', '15m', '1h', '4h', '1d']).default('15m'),
-    minimumCandles: z.number().int().positive().default(48),
-    maxCandles: z.number().int().positive().default(200),
-  }).optional().default({}),
-  /** ATR / volatility calculation policy. */
-  atrPolicy: z.object({
-    lookbackPeriods: z.number().int().positive().default(14),
-    volatilityLowPercentile: z.number().min(0).max(100).default(25),
-    volatilityHighPercentile: z.number().min(0).max(100).default(75),
-    volatilityExtremePercentile: z.number().min(0).max(100).default(95),
-    calculationVersion: z.string().default('1.0.0'),
-  }).optional().default({}),
-  /** Liquidity quality classification thresholds. */
-  liquidityPolicy: z.object({
-    goodSpreadBpsMax: z.number().nonnegative().default(5),
-    goodDepthUsdMin: z.number().nonnegative().default(50_000),
-    adequateSpreadBpsMax: z.number().nonnegative().default(25),
-    adequateDepthUsdMin: z.number().nonnegative().default(10_000),
-  }).optional().default({}),
-  /** Breadth cohort configuration. Optional — unavailable until an operator configures a valid cohort. */
-  breadthPolicy: z.object({
-    movingAveragePeriods: z.array(z.enum(['50', '200'])).optional().default(['50']),
-    minimumSymbols: z.number().int().positive().default(5),
-    maxLookbackDays: z.number().int().positive().default(30),
-  }).optional(),
-  /** Per-venue-family source mappings. Operators can override defaults per venue family. */
-  sourceMappings: z.record(
-    z.string(),
-    z.object({
-      candleSource: z.enum(['geckoterminal', 'venue', 'none']),
-      liquiditySource: z.enum(['orderbook', 'pool', 'discovery_cache', 'none']),
-      breadthSource: z.enum(['geckoterminal', 'venue_cache', 'none']),
-      regimeSource: z.enum(['benchmark', 'venue', 'none']),
-    }),
-  ).optional().default({}),
-  // ── Deterministic Review Pre-Check Configuration ──────────────────────
-  /** Configuration for the deterministic scanner pre-check that produces
-   *  assessment review advice without LLM calls or billing. */
-  preCheck: z.object({
-    /** Signal count ratio threshold for preset-candidate mismatch flag.
-     *  When a peer preset has >= this ratio × the current preset's signal
-     *  count, the mismatch is flagged. Default: 2.0 */
-    signalRatioThreshold: z.number().min(1.0).default(2.0),
-    /** Lookback window for scan metrics comparison in ms. Default: 24h */
-    scanMetricsLookbackMs: z.number().int().positive().default(86_400_000),
-    /** Minimum signals a preset must generate to be considered "active"
-     *  for comparison purposes. Default: 3 */
-    minSignalsForActive: z.number().int().min(1).default(3),
-    /** Minimum cooldown between review advice for the same (agent, identity).
-     *  Default: 24h */
-    identityCooldownMs: z.number().int().positive().default(86_400_000),
-    /** How long persisted scanner candidate observations are retained
-     *  for review. Must be >= identityCooldownMs. Default: 7 days */
-    candidateRetentionMs: z.number().int().positive().default(604_800_000),
-    /** Maximum candidate stale age — candidates older than this are ignored
-     *  by the pre-check. Default: 24h */
-    candidateMaxAgeMs: z.number().int().positive().default(86_400_000),
-    /** Maximum review-advice payload size in bytes for the assessment_review
-     *  wake. Exceeding candidates are trimmed. Default: 16 KB */
-    maxAdvicePayloadSize: z.number().int().positive().default(16_384),
-    /** Review-check lease duration in ms. A lease that expires before the
-     *  check completes triggers recovery. Default: 60s */
-    leaseDurationMs: z.number().int().positive().default(60_000),
-    /** Timeout for the read-only billing preflight query in ms.
-     *  Default: 5s */
-    billingPreflightTimeoutMs: z.number().int().positive().default(5_000),
-    /** Policy version for the deterministic review predicate.
-     *  Increment when reason codes or eligibility logic change. */
-    policyVersion: z.string().default('1.0.0'),
-    /** Whether the pre-check compares peer presets for mismatch detection.
-     *  When false, only freshness/cooldown/credit checks run.
-     *  Default: true */
-    enablePeerComparison: z.boolean().default(true),
-  }).default({}),
-}).default({});
 
 export const SharedServicesConfigSchema = z.object({
   /** Redis hostname or IP reachable from agent runtimes. Default: 'redis' (Compose service name for local dev). */
@@ -1733,7 +1574,6 @@ export const AppConfigSchema = z.object({
   evaluation: EvaluationConfigSchema.default({}),
   marketData: MarketDataConfigSchema.optional(),
   marketIntelligence: MarketIntelligenceConfigSchema.default({}),
-  platformAssessor: PlatformAssessorConfigSchema.default({}),
   worker: WorkerConfigSchema.default({}),
   agentRuntime: AgentRuntimeConfigSchema,
   llm: LlmRuntimeConfigSchema.default({}),
@@ -1971,7 +1811,6 @@ export type AgentCostEstimatesConfig = AppConfig['agentCostEstimates'];
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;
 export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSchema>;
-export type PlatformAssessorConfig = z.infer<typeof PlatformAssessorConfigSchema>;
 export type AgentApprovalsConfig = z.infer<typeof AgentApprovalsConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AgentActorLifecycleConfig = z.infer<typeof AgentActorLifecycleConfigSchema>;
@@ -2586,6 +2425,28 @@ export const CreatorStrategySchema = z.union([
 ]);
 export type ScanMode = z.infer<typeof ScanModeSchema>;
 export type CreatorStrategy = z.infer<typeof CreatorStrategySchema>;
+
+/**
+ * Creator-authored preset-change policy (004 "Preset assessment becomes
+ * data-only and free"). Written by herobids from the creator's config
+ * (`unifiedConfig.platformAssessment` + `allowedPresets` + style tier) and sent
+ * to traderton with the trading profile; read-only to the agent and enforced by
+ * traderton. Mirrors traderton
+ * `packages/domain/src/config/preset-policy.ts` `PresetPolicySchema`.
+ */
+export const PresetPolicySchema = z.object({
+  /** Whether the agent may change its own preset at all. */
+  changesAllowed: z.boolean(),
+  /** Preset keys the creator permits. Empty = no restriction (all presets). */
+  allowedPresets: z.array(z.string().min(1)),
+  /** Style tier the policy applies to. */
+  styleTier: z.string().min(1),
+  /** Optional creator-lengthened minimum interval between assessments (ms). */
+  minRequestIntervalMs: z.number().int().positive().optional(),
+  /** Optional creator-lengthened cooldown between preset changes (ms). */
+  changeCooldownMs: z.number().int().positive().optional(),
+});
+export type PresetPolicy = z.infer<typeof PresetPolicySchema>;
 
 export const UnifiedAgentConfigSchema = z.object({
   technical: TechnicalConfigSchema.optional(),

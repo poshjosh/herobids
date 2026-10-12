@@ -101,3 +101,9 @@ creator's scan config with every profile write, drives `start_agent_actor` /
 `stop_agent_actor` from session lifecycle, and the `ActorEventRelay` republishes
 Traderton's `consumer_notifications` outbox onto the agent streams. See
 `docs/features/2026/09/18/001-trading-extraction-completion/plans/E1H-E3H-agent-wake-and-lifecycle-restore.md`.
+
+Preset assessment moved to Traderton (data-only and free) 2026-10-10: herobids
+deleted its local assess/change tools, the platform assessor, the review
+scheduler, and the manual-review queue; the review screen now shows the
+data-only per-preset flags plus the agent's decision and reason. See
+`docs/features/2026/10/04/002-preset-assessment-on-traderton/001-plan.md`.

@@ -325,6 +325,7 @@ export async function agentInteractivityRoutes(
             } : {}),
             scanMode: scanConfig.scanMode,
             creatorStrategy: scanConfig.creatorStrategy,
+            presetPolicy: scanConfig.presetPolicy,
           }]));
           return {
             prior: { profiles, connections: priorProfileConnections },

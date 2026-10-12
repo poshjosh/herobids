@@ -129,11 +129,6 @@ agentRuntime:
 browserPool:
   url: ""
 
-platformAssessor:
-  enabled: true  # disabled by default until shadow mode validated
-  llm:
-    provider: openrouter                # provider identifier in providers.yaml
-    model: deepseek/deepseek-v4-pro-0813     # model ID
 
 alerts:
   email:

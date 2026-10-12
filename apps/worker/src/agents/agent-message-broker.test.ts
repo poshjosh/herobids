@@ -203,14 +203,9 @@ describe('AgentMessageBroker — extractDenialReplyKey', () => {
     );
   });
 
-  it('returns agent:preset:reply:{requestMessageId} for TOOL_ASSESS_STRATEGY_PRESET', async () => {
-    vi.mocked(agentRepo.getAgent).mockResolvedValue({
-      id: 'agent-1',
-      toolPolicy: {
-        assess_strategy_preset: { capability: 'assess_strategy_preset', tier: 'brokered', enabled: false },
-      },
-    } as never);
-
+  it('rejects the legacy TOOL_ASSESS_STRATEGY_PRESET message type (tool now Traderton-owned)', async () => {
+    // The assess_strategy_preset tool is now Traderton-owned (H1); the local
+    // broker no longer routes it.
     const envelope = makeEnvelope('agent.tool.assess_strategy_preset.request', {
       requestMessageId: 'req-456',
       symbols: ['BTC'],
@@ -218,22 +213,13 @@ describe('AgentMessageBroker — extractDenialReplyKey', () => {
       agentId: 'agent-1',
       sessionId: 'session-1',
     });
-    await broker.processInbound(envelope);
+    const result = await broker.processInbound(envelope);
 
-    expect(redis.lpush).toHaveBeenCalledWith(
-      'agent:preset:reply:req-456',
-      expect.any(String),
-    );
+    expect(result.accepted).toBe(false);
+    expect(result.error).toBe('unknown_message_type');
   });
 
-  it('returns agent:preset:reply:{requestMessageId} for TOOL_CHANGE_STRATEGY_PRESET', async () => {
-    vi.mocked(agentRepo.getAgent).mockResolvedValue({
-      id: 'agent-1',
-      toolPolicy: {
-        change_strategy_preset: { capability: 'change_strategy_preset', tier: 'brokered', enabled: false },
-      },
-    } as never);
-
+  it('rejects the legacy TOOL_CHANGE_STRATEGY_PRESET message type (tool now Traderton-owned)', async () => {
     const envelope = makeEnvelope('agent.tool.change_strategy_preset.request', {
       requestMessageId: 'req-789',
       assessmentArtifactId: 'art-1',
@@ -242,12 +228,10 @@ describe('AgentMessageBroker — extractDenialReplyKey', () => {
       agentId: 'agent-1',
       sessionId: 'session-1',
     });
-    await broker.processInbound(envelope);
+    const result = await broker.processInbound(envelope);
 
-    expect(redis.lpush).toHaveBeenCalledWith(
-      'agent:preset:reply:req-789',
-      expect.any(String),
-    );
+    expect(result.accepted).toBe(false);
+    expect(result.error).toBe('unknown_message_type');
   });
 
   it('returns agent:skills:reply:{requestMessageId} for MANAGE_AGENT_SKILLS', async () => {

@@ -148,14 +148,11 @@ describe('buildAssessmentReviewMessage', () => {
     expect(msg).toContain('assess_strategy_preset');
   });
 
-  it('warns that each assessed symbol incurs a billing charge', () => {
+  it('states assessment is data-only and free', () => {
     const msg = buildAssessmentReviewMessage(makeScannerWakeContext());
-    expect(msg).toContain('Each assessed symbol incurs a billing charge');
-  });
-
-  it('states that no billing has occurred from the wake alone', () => {
-    const msg = buildAssessmentReviewMessage(makeScannerWakeContext());
-    expect(msg).toContain('no billing has occurred');
+    expect(msg).toContain('data-only and free');
+    expect(msg).not.toContain('billing charge');
+    expect(msg).not.toContain('no billing');
   });
 
   it('renders correctly with a single advice entry', () => {
@@ -191,12 +188,13 @@ describe('buildAssessmentReviewMessage', () => {
     expect(msg).not.toContain('preset_review');
   });
 
-  it('assessment_review wake message instructs the agent on the full assessment flow', () => {
+  it('assessment_review wake message instructs the agent on the data-only flow', () => {
     const msg = buildAssessmentReviewMessage(makeScannerWakeContext());
-    // The message should guide the agent through the complete flow:
-    // assess → review results → change
+    // The message should guide the agent through the data-only flow:
+    // assess → read flags → change only if clearly better, with a reason.
     expect(msg).toContain('Call `assess_strategy_preset`');
-    expect(msg).toContain('call `change_strategy_preset`');
-    expect(msg).toContain('assessmentArtifactId');
+    expect(msg).toContain('creatorAllowed');
+    expect(msg).toContain('change_strategy_preset');
+    expect(msg).toContain('give a reason');
   });
 });

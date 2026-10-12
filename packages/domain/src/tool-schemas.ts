@@ -2,89 +2,6 @@ import { z } from 'zod';
 import {
   StrategySchema,
 } from './config/schema.js';
-import {
-  TransitionModeSchema,
-  MarketAssessmentPresetRankingSchema,
-  MarketAssessmentIdentitySchema,
-} from './market-assessment.js';
-
-// ── Preset Transition Tool Parameter Schemas ──────────────────────────────
-
-export const ChangeStrategyPresetParamsSchema = z.object({
-  assessmentArtifactId: z.string().min(1).describe('Exact assessment artifact ID from assess_strategy_preset. Required for audit trail.'),
-  targetPreset: z.string().min(1),
-  mode: TransitionModeSchema,
-  reason: z.string().optional(),
-});
-
-// ── Multi-Instrument Preset Assessment ────────────────────────────────────
-
-export const AssessStrategyPresetParamsSchema = z.object({
-  symbols: z.array(z.string().min(1)).min(1).max(50)
-    .describe('Trading symbols to assess (e.g. ["BTC", "ETH", "SOL"]). All symbols share the same venueFamily and instrumentKind.'),
-  venueFamily: z.string().min(1)
-    .describe('Venue family to scope the assessment (e.g. "hyperliquid", "bybit", "jupiter"). Required.'),
-  instrumentKind: z.enum(['orderbook', 'perp', 'swap', 'dex']).optional()
-    .describe('Instrument kind shared across all requested symbols. Defaults to "orderbook" when omitted.'),
-  idempotencyKey: z.string().optional()
-    .describe('Client-provided idempotency key. Reuses cached results without new charges.'),
-});
-
-export type AssessStrategyPresetParams = z.infer<typeof AssessStrategyPresetParamsSchema>;
-
-// ── Per-Instrument Response Types ─────────────────────────────────────────
-
-export const AssessmentBillingSchema = z.object({
-  billed: z.boolean(),
-  requestId: z.string().nullable(),
-  idempotencyKey: z.string().nullable(),
-  source: z.enum(['new_run', 'cache_hit', 'fresh_reuse', 'failed', 'truncated']),
-});
-
-export const AssessmentResultEntrySchema = z.object({
-  success: z.boolean(),
-  symbol: z.string(),
-  canonicalIdentity: MarketAssessmentIdentitySchema.optional(),
-  assessment: z.object({
-    artifactId: z.string(),
-    assessedAt: z.string(),
-    expiresAt: z.string(),
-    marketSummary: z.string().nullable(),
-    regimeSummary: z.string().nullable(),
-    scanHealthSummary: z.string().nullable(),
-    rankings: z.array(MarketAssessmentPresetRankingSchema),
-    recommendedPreset: z.string().nullable(),
-    allowedPresets: z.array(z.string()),
-    freshnessNote: z.string(),
-    confidence: z.number(),
-    urgency: z.enum(['low', 'medium', 'high']),
-  }).optional(),
-  transitionReference: z.object({
-    assessmentArtifactId: z.string(),
-  }).optional(),
-  billing: AssessmentBillingSchema.optional(),
-  error: z.string().optional(),
-  errorCode: z.string().optional(),
-});
-
-export const AssessStrategyPresetResponseSchema = z.object({
-  success: z.boolean(),
-  data: z.object({
-    requestedInstrumentCount: z.number().int().min(0),
-    assessedInstrumentCount: z.number().int().min(0),
-    maxInstrumentsPerRequest: z.number().int().min(1),
-    message: z.string().optional(),
-    results: z.array(AssessmentResultEntrySchema),
-  }).optional(),
-  error: z.string().optional(),
-  errorCode: z.string().optional(),
-});
-
-export type AssessmentBilling = z.infer<typeof AssessmentBillingSchema>;
-export type AssessmentResultEntry = z.infer<typeof AssessmentResultEntrySchema>;
-export type AssessStrategyPresetResponse = z.infer<typeof AssessStrategyPresetResponseSchema>;
-
-export type ChangeStrategyPresetParams = z.infer<typeof ChangeStrategyPresetParamsSchema>;
 
 /**
  * Tool Schema Registry — maps dot-path schema names to JSON Schemas with
@@ -471,15 +388,6 @@ function buildSchemaRegistry(): Record<string, SchemaEntry> {
     example: '0.5',
     version: '1.0.0',
     description: 'Target position size for submit_decision. Decimal string format. Call get_account_summary() to compute appropriate sizing.',
-  },
-
-  // ── Preset Assessment & Transition Tool Schemas ──────────────────────────
-
-  'change_strategy_preset': {
-    schema: zodToJsonSchemaSimple(ChangeStrategyPresetParamsSchema),
-    example: { assessmentArtifactId: 'artifact-abc123', targetPreset: 'momentum', mode: 'entries_only', reason: 'Strong momentum regime detected' },
-    version: '2.0.0',
-    description: 'Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. Supports entries_only, entries_and_tighten_existing, and entries_and_full_transition modes. Records the transition event for audit.',
   },
   };
 }

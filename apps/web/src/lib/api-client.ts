@@ -7,77 +7,81 @@ import type {
   EvaluationScope,
 } from '@herobids/domain';
 
-export interface PlatformAssessmentReviewStatus {
-  requestId: string;
-  status: 'queued' | 'running' | 'succeeded' | 'failed';
-  trigger: string;
-  requestedAt: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  resultSummary: {
-    hasAdvice: boolean;
-    advisedCount: number;
-    outcomeCounts: Record<string, number>;
-    checkOutcome: string | null;
-    checkedAt: string;
-    nextEligibleAt: string;
-    checkId: string;
-    assessmentStatus?: 'not_applicable' | 'assessing' | 'completed';
-    assessedCount?: number;
-    totalAdvised?: number;
-    capacityExceeded?: boolean;
+/** A per-preset data-only assessment entry (flags + scorecard, no LLM narrative). */
+export interface PlatformAssessmentPresetEntry {
+  presetKey: string;
+  name: string;
+  signalBias: string;
+  behaviorVersion: string;
+  scorecard: {
+    presetKey: string;
+    presetBehaviorVersion: string;
+    candidatesDiscovered: number;
+    candidatesScored: number;
+    signalsGenerated: number;
+    topConfidence: number | null;
+    scanHealth: string;
+    evaluationScope: string;
+  };
+  flags: {
+    creatorAllowed: boolean;
+    evidenceFresh: boolean;
+    regimeMatch: boolean;
+    signalsVsCurrent: number | null;
+  };
+}
+
+/** A per-symbol assessment result (data-only, free). */
+export interface PlatformAssessmentReviewResult {
+  success: boolean;
+  symbol: string;
+  canonicalIdentity?: {
+    instrumentKind: string;
+    venueFamily: string;
+    styleTier: string;
+    symbol?: string;
+    network?: string;
+    address?: string;
+  };
+  evidence?: Record<string, unknown>;
+  currentStrategy?: {
+    presetKey: string | null;
+    styleTier: string;
+    behaviorVersion: string;
   } | null;
-  errorCode: string | null;
-  errorMessage: string | null;
+  presets?: PlatformAssessmentPresetEntry[];
+  artifactId?: string;
+  assessedAt?: string;
+  expiresAt?: string;
+  freshnessNote?: string;
+  nextEligibleAt?: string;
+  error?: string;
+  errorCode?: string;
 }
 
-export interface PlatformAssessmentReviewAdvice {
+/** POST trigger response: the assessment results + a request id. */
+export interface PlatformAssessmentReviewTrigger {
   requestId: string;
-  checkId: string;
-  advice: Array<{
-    symbol: string | null;
-    outcome: string;
-    activePreset: string;
-    activePresetName: string;
-    candidateRank: number | null;
-    reasons: string[];
-    reasonsDisplay: string[];
-    assessmentArtifactId: string | null;
-    assessmentRequestedAt: string | null;
-    consumedAt: string | null;
-  }>;
+  results: PlatformAssessmentReviewResult[];
 }
 
+/** A strategy-change audit row (the agent's decision + reason). */
+export interface PlatformAssessmentStrategyChange {
+  id: string;
+  ownerId: string;
+  actorId: string;
+  fromStrategy: Record<string, unknown> | null;
+  toStrategy: Record<string, unknown>;
+  artifactId: string;
+  reason: string;
+  state: string;
+  createdAt: string;
+  appliedAt: string | null;
+}
+
+/** GET results response: the agent's strategy-change history. */
 export interface PlatformAssessmentReviewResults {
-  requestId: string;
-  status: string;
-  capacityExceeded: boolean;
-  results: Array<{
-    symbol: string | null;
-    artifactId: string;
-    currentPreset: string;
-    currentPresetName: string;
-    recommendedPreset: string | null;
-    recommendedPresetName: string | null;
-    confidence: number;
-    urgency: string;
-    expiresAt: string | null;
-    rankings: Array<{
-      presetKey: string;
-      presetName: string;
-      rank: number;
-      score: number;
-      scoreBand: string;
-      pros: string[];
-      cons: string[];
-      fitNotes: string | null;
-    }>;
-    agentAction: 'awaiting' | 'acted';
-    agentActionDetail: {
-      appliedPreset: string;
-      appliedAt: string | null;
-    } | null;
-  }>;
+  changes: PlatformAssessmentStrategyChange[];
 }
 
 /** A single structured validation issue, mirroring the API's Zod issue shape. */
@@ -1276,16 +1280,13 @@ export const agents = {
   platformAssessmentReviews: {
     eligibility: (agentId: string) =>
       request<{ canTrigger: boolean; reason: string | null }>(`/agents/${agentId}/platform-assessment/reviews/eligibility`),
-    trigger: (agentId: string) =>
-      request<{ requestId: string }>(`/agents/${agentId}/platform-assessment/reviews`, {
+    trigger: (agentId: string, body: { symbols: string[]; venueFamily: string }) =>
+      request<PlatformAssessmentReviewTrigger>(`/agents/${agentId}/platform-assessment/reviews`, {
         method: 'POST',
+        body: JSON.stringify(body),
       }),
-    get: (agentId: string, requestId: string) =>
-      request<PlatformAssessmentReviewStatus>(`/agents/${agentId}/platform-assessment/reviews/${requestId}`),
-    getAdvice: (agentId: string, requestId: string) =>
-      request<PlatformAssessmentReviewAdvice>(`/agents/${agentId}/platform-assessment/reviews/${requestId}/advice`),
-    getResults: (agentId: string, requestId: string) =>
-      request<PlatformAssessmentReviewResults>(`/agents/${agentId}/platform-assessment/reviews/${requestId}/results`),
+    getResults: (agentId: string) =>
+      request<PlatformAssessmentReviewResults>(`/agents/${agentId}/platform-assessment/reviews/results`),
   },
   approvals: {
     list: (agentId: string, status?: string) => {

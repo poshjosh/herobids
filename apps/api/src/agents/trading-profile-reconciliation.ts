@@ -3,6 +3,7 @@ import {
   RiskPostureSchema,
   type CreatorStrategy,
   type ExecutionDefaults,
+  type PresetPolicy,
   type RiskPosture,
   type ScanMode,
 } from '@herobids/domain';
@@ -17,6 +18,7 @@ export interface TypedTradingProfile {
   // 004 creator inputs sent to traderton; never includes activeStrategy.
   scanMode: ScanMode | null;
   creatorStrategy: CreatorStrategy | null;
+  presetPolicy: PresetPolicy | null;
 }
 
 export type TradingProfileChanges = {
@@ -42,6 +44,7 @@ export interface TradingProfileConfiguration {
   // 004 creator inputs sent to traderton; never includes activeStrategy.
   scanMode: ScanMode | null;
   creatorStrategy: CreatorStrategy | null;
+  presetPolicy: PresetPolicy | null;
 }
 
 export interface ExecutionBinding {
@@ -73,7 +76,8 @@ function sameSnapshot(left: TradingProfileConfiguration, right: TradingProfileCo
     && JSON.stringify(left.riskPosture) === JSON.stringify(right.riskPosture)
     && JSON.stringify(left.executionDefaults) === JSON.stringify(right.executionDefaults)
     && left.scanMode === right.scanMode
-    && canonicalJson(left.creatorStrategy) === canonicalJson(right.creatorStrategy);
+    && canonicalJson(left.creatorStrategy) === canonicalJson(right.creatorStrategy)
+    && canonicalJson(left.presetPolicy) === canonicalJson(right.presetPolicy);
 }
 
 function sameBinding(left: ExecutionBinding | null, right: ExecutionBinding | null): boolean {
@@ -143,6 +147,7 @@ export function proposeTradingProfiles(input: {
             executionDefaults: null,
             scanMode: null,
             creatorStrategy: null,
+            presetPolicy: null,
           });
     // Stamp the (post-mutation) scan config onto every proposed profile — it is
     // a property of the agent, not of a per-venue overlay, so it overrides any
@@ -151,6 +156,7 @@ export function proposeTradingProfiles(input: {
       ...overlayTradingProfile(base, input.changes),
       scanMode: input.scanConfig.scanMode,
       creatorStrategy: input.scanConfig.creatorStrategy,
+      presetPolicy: input.scanConfig.presetPolicy,
     });
   }
   return proposed;

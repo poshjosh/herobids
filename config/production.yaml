@@ -27,11 +27,6 @@ browserPool:
 # Operator configuration — self-documenting reference.
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
 #
-platformAssessor:
-  enabled: true  # disabled by default until shadow mode validated
-  llm:
-    provider: openrouter                # provider identifier in providers.yaml
-    model: anthropic/claude-fable-5     # model ID
 
 alerts:
   email:

@@ -351,3 +351,72 @@ Findings / new gaps: none. The 9 mirrored preset-assessment files in herobids ar
 Residual risks / blockers: none. traderton-skills is a separate repo and was committed separately.
 Next allowed item: Item 6 — Preset assessment → traderton, herobids side (H1–H6).
 ```
+
+```text
+Date: 2026-10-10
+Milestone / batch: Item 6 — Preset assessment → traderton, herobids side (H1–H6)
+Starting SHAs: herobids=b57c52a7 (main), traderton=4de0b99 (main)
+Starting git status: herobids clean at start; traderton clean at start.
+Sub-steps completed (in order):
+  H1 — removed herobids local tools (assess/change-strategy-preset.ts + tests,
+       preset-tool-broker.integration, agent-preset-tool-wiring.test), broker
+       routes + message types + result publishers, capability grants, domain
+       schemas/names (agent-protocol.ts, tool-schemas.ts, tools.ts).
+  H2 — pushed creator preset policy end-to-end: domain PresetPolicySchema +
+       PresetPolicy type; profile-scan-config derivePresetPolicy +
+       deriveProfileScanConfig returns presetPolicy on all branches;
+       trading-profile-reconciliation TypedTradingProfile/TradingProfileConfiguration
+       + sameSnapshot canonicalJson; saga AgentTradingProfileResponseSchema +
+       readCurrentProfiles + applyForward clear-manifest; all manual profile Map
+       constructions (agents/blueprints/chat/agent-interactivity/go-live) stamp
+       presetPolicy.
+  H3 — review screen data-only: rewrote agent-platform-assessment-reviews.ts
+       (POST accepts {symbols, venueFamily}, calls traderton assess_strategy_preset
+       owner-scoped, wakes the agent with artifact ids; GET results reads
+       list_agent_strategy_changes; eligibility drops billing/credit paths);
+       rewired api index.ts (dropped manualReviewQueue + ManualReviewJobData +
+       platformAssessor.enabled gate); web api-client types + AgentEvaluations.tsx
+       (symbols/venue inputs + agent decision/reason table, "kept current preset"
+       valid) + i18n en/ar/hi.
+  H4 — scheduled review → wake delivery only (assessment-review-message.ts
+       rewritten; review-scheduler + assessment-review-runner + manual-review-runtime
+       deleted; index.ts wiring removed).
+  H5 — retired herobids assessment machinery: deleted market-intelligence
+       assessment files + domain review-pre-check/assessment-billing/ports +
+       assessment-config.ts; removed platformAssessor config block + schema +
+       rate-card (assessment.request) + env refs (.env.example, worker config.ts,
+       config/*.yaml); removed agent-evaluation preset-assessment collectors
+       (preset-assessment-evidence/summary/render-appendix + tests + wiring).
+  H6 — docs: CHANGELOG entry; CLOSEOUT.md "Tools not moved" → MOVED; phase3
+       completion note pointer.
+Commits: none yet (working tree staged for review; see residual risks).
+Focused validation: herobids domain 1127 tests pass; worker 2735 passed / 15
+  skipped; api+domain 2800 passed / 283 skipped; web 730 passed; api route test
+  6/6; AgentEvaluations web test 9/9; traderton preset-assessment 14/14 + domain
+  12/12 + boundary 229 passed / 35 skipped.
+Broader validation: herobids pnpm lint clean; worker/api/domain/db/web builds
+  clean; traderton pnpm lint clean; traderton db/domain/worker/boundary builds
+  clean.
+Parity gates: none required (no manifest entry touched in this item; the 9
+  mirrored files are dropped in Item 7 D2).
+Decisions made (lightweight): (1) H3 POST accepts {symbols, venueFamily} from the
+  review UI (user-confirmed). (2) traderton assess_strategy_preset never persisted
+  artifacts (insertArtifact/insertRequest defined but never called) — fixed
+  in-scope: added insertRun + persistAssessment/findFreshArtifact/latestCompletedRequest
+  to the boundary ops seam, wired cache-hit + cooldown + artifact persistence into
+  assessOne, and added the artifact-exists/fresh gate to change_strategy_preset.
+Findings / new gaps: traderton's assess flow had a persistence gap (artifacts were
+  never written, so get_assessment_artifact and change gate 1 would always fail);
+  fixed here (traderton commit 2204e3a). The destructive DB table drops
+  (market_assessment_* / agent_preset_* / agent_assessment_review_* / review_advice
+  / agent_scan_*) were applied on 2026-10-12 after explicit human go (staging/live
+  are disposable, platform not launched): 10 schema files + manual-review
+  job/repository deleted, schema/db barrels pruned, migration
+  `0074_supreme_human_torch.sql` generated (10 DROP TABLE ... CASCADE).
+Residual risks / blockers: (1) release coupling — traderton must be released
+  before herobids H1 is released (remove H1 in the same release traderton lists
+  the tools). (2) herobids working tree committed below.
+Commits: traderton 2204e3a (preset-assessment persistence fix); herobids (this
+  batch, see git log).
+Next allowed item: Item 7 — D2: drop the last 9 manifest entries.
+```

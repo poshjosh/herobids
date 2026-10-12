@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Preset assessment moves to Traderton — data-only and free (H1–H6).**
+  Herobids no longer executes or bills the preset assessment. The
+  `assess_strategy_preset` / `change_strategy_preset` tools are now Traderton
+  tools reached over the external-backend path; herobids's local tool executors,
+  broker routes, message types, and the platform-assessor / review-scheduler /
+  manual-review machinery are deleted. The creator's preset policy
+  (`changesAllowed`, `allowedPresets`, `styleTier`, optional intervals) is pushed
+  to the trading profile on every write. The review screen now shows the
+  data-only per-preset flags plus the agent's own decision and reason (read from
+  Traderton's `list_agent_strategy_changes`), and "no change made" is a valid
+  outcome. The `assessment.request` billing meter and the `platformAssessor`
+  operator config block are removed. See
+  `docs/features/2026/10/04/002-preset-assessment-on-traderton/001-plan.md`.
+
 ### Added
 
 - **Wave E herobids halves — agent-actor lifecycle + scanner wake delivery (E1-H, E3-H).**

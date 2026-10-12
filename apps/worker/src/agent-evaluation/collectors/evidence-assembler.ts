@@ -7,10 +7,6 @@ import {
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { ResolvedEvaluationScope, EvaluationArtifactStore } from '@herobids/domain';
 import { collectContainerLogs } from './container-logs.js';
-import {
-  collectPresetAssessmentEvidence,
-  type PresetAssessmentEvidence,
-} from './preset-assessment-evidence.js';
 import type { FillRow, JournalRow, PositionRow } from './evidence-row-mappers.js';
 
 // ── Ports ───────────────────────────────────────────────────────────────────
@@ -48,8 +44,6 @@ export interface EvidenceManifest {
   entries: EvidenceManifestEntry[];
   /** Resolved scope used for collection */
   scope: ResolvedEvaluationScope;
-  /** Best-effort preset-assessment evidence collected during assembly. */
-  presetAssessmentEvidence?: PresetAssessmentEvidence;
 }
 
 export interface EvidenceAssemblyContext {
@@ -237,22 +231,5 @@ export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<Ev
   const logsEntry = await collectContainerLogs(ctx.agentId, ctx.store, ctx.runId);
   entries.push(logsEntry);
 
-  // ── Preset-assessment evidence (best-effort) ───────────────────────────
-  let presetAssessmentEvidence: PresetAssessmentEvidence | undefined;
-  try {
-    presetAssessmentEvidence = await collectPresetAssessmentEvidence({
-      db: ctx.db,
-      agentId: ctx.agentId,
-      timeFilter: timeFilter ? { from: timeFilter.from, to: timeFilter.to } : undefined,
-    });
-    entries.push({ artifactName: 'preset-assessment-evidence', collected: true });
-  } catch (err) {
-    entries.push({
-      artifactName: 'preset-assessment-evidence',
-      collected: false,
-      error: String(err),
-    });
-  }
-
-  return { entries, scope: ctx.scope, presetAssessmentEvidence };
+  return { entries, scope: ctx.scope };
 }

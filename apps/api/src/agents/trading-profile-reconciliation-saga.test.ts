@@ -95,8 +95,8 @@ describe('TradingProfileReconciliationSaga', () => {
     ]);
 
     expect(profiles).toEqual(new Map([
-      ['venue-a', { actorId: 'agent-1', venueAccountId: 'venue-a', capital: '100', riskPosture: null, executionDefaults: { mode: 'paper' }, scanMode: null, creatorStrategy: null }],
-      ['venue-b', { actorId: 'agent-1', venueAccountId: 'venue-b', capital: '200', riskPosture: null, executionDefaults: { mode: 'paper' }, scanMode: null, creatorStrategy: null }],
+      ['venue-a', { actorId: 'agent-1', venueAccountId: 'venue-a', capital: '100', riskPosture: null, executionDefaults: { mode: 'paper' }, scanMode: null, creatorStrategy: null, presetPolicy: null }],
+      ['venue-b', { actorId: 'agent-1', venueAccountId: 'venue-b', capital: '200', riskPosture: null, executionDefaults: { mode: 'paper' }, scanMode: null, creatorStrategy: null, presetPolicy: null }],
     ]));
     expect(vi.mocked(boundary.invoke).mock.calls).toHaveLength(2);
     expect(vi.mocked(boundary.invoke).mock.calls.every(([call]) => call.subject.actor.type === 'agent')).toBe(true);

@@ -5,6 +5,7 @@ import {
   SWAP_VENUES,
   TechnicalConfigSchema,
   type CreatorStrategy,
+  type PresetPolicy,
   type ScanMode,
   type UnifiedAgentConfig,
 } from '@herobids/domain';
@@ -19,6 +20,7 @@ import { getPreset } from '@herobids/domain/config/presets-loader';
 export interface ProfileScanConfig {
   scanMode: ScanMode | null;
   creatorStrategy: CreatorStrategy | null;
+  presetPolicy: PresetPolicy | null;
 }
 
 /** Deterministic JSON with recursively sorted keys, for identity comparison. */
@@ -61,15 +63,23 @@ export function deriveProfileScanConfig(input: {
   style: string | null;
 }): ProfileScanConfig {
   const { unifiedConfig, style } = input;
+
+  const metadata = readMetadata(unifiedConfig);
+  const metaStyle = metadata?.['strategyPresetStyle'];
+  const presetStyle = typeof metaStyle === 'string' && isStyleKey(metaStyle)
+    ? metaStyle
+    : agentStyleToPresetStyle(style ?? 'balanced');
+  const presetPolicy = derivePresetPolicy(unifiedConfig, presetStyle);
+
   if (unifiedConfig?.capabilityMode !== 'hybrid') {
-    return { scanMode: null, creatorStrategy: null };
+    return { scanMode: null, creatorStrategy: null, presetPolicy };
   }
 
   const scanMode: ScanMode = unifiedConfig.hybridMode ?? 'mixed';
 
   const technical = unifiedConfig.technical;
   if (!technical) {
-    return { scanMode, creatorStrategy: null };
+    return { scanMode, creatorStrategy: null, presetPolicy };
   }
 
   // Normalise the agent's technical config BEFORE reading any field off it. An
@@ -79,31 +89,53 @@ export function deriveProfileScanConfig(input: {
   // without a strategy, which the route surfaces as a 400 — never a 500.
   const parsedTechnical = TechnicalConfigSchema.safeParse(technical);
   if (!parsedTechnical.success) {
-    return { scanMode, creatorStrategy: null };
+    return { scanMode, creatorStrategy: null, presetPolicy };
   }
   const { filters } = parsedTechnical.data;
 
   const isSwap = filters.venueType === 'swap'
     || (SWAP_VENUES as readonly string[]).includes(filters.venue);
 
-  const metadata = readMetadata(unifiedConfig);
   const presetKey = typeof metadata?.['strategyPreset'] === 'string' ? (metadata['strategyPreset'] as string) : undefined;
-  const metaStyle = metadata?.['strategyPresetStyle'];
-  const presetStyle = typeof metaStyle === 'string' && isStyleKey(metaStyle)
-    ? metaStyle
-    : agentStyleToPresetStyle(style ?? 'balanced');
 
   if (presetKey && !isSwap) {
     const presetTechnical = resolvePresetTechnical(presetKey, presetStyle);
     if (presetTechnical) {
       const fromPreset = TechnicalConfigSchema.safeParse({ ...presetTechnical, filters });
       if (fromPreset.success && canonicalJson(fromPreset.data) === canonicalJson(parsedTechnical.data)) {
-        return { scanMode, creatorStrategy: { presetKey, styleTier: presetStyle } };
+        return { scanMode, creatorStrategy: { presetKey, styleTier: presetStyle }, presetPolicy };
       }
     }
   }
 
-  return { scanMode, creatorStrategy: { customTechnical: parsedTechnical.data } };
+  return { scanMode, creatorStrategy: { customTechnical: parsedTechnical.data }, presetPolicy };
+}
+
+/**
+ * Derive the creator preset policy (004 data-only) sent with the profile. The
+ * policy is a creator-authored input: `changesAllowed` is the agent's
+ * `platformAssessment.enabled` flag, `allowedPresets` is the creator's
+ * `allowedPresets.allowed` list, and `styleTier` is the agent's resolved preset
+ * style tier. `minRequestIntervalMs` maps the creator's `reviewIntervalMs`.
+ * Returns null when no creator preset control exists (traderton then applies
+ * its own operator/default policy).
+ */
+function derivePresetPolicy(
+  unifiedConfig: UnifiedAgentConfig | null,
+  presetStyle: 'economy' | 'standard' | 'premium',
+): PresetPolicy | null {
+  const platformAssessment = unifiedConfig?.platformAssessment;
+  const allowedPresets = unifiedConfig?.allowedPresets;
+  if (!platformAssessment && !allowedPresets) return null;
+
+  return {
+    changesAllowed: platformAssessment?.enabled === true,
+    allowedPresets: allowedPresets?.allowed ?? [],
+    styleTier: presetStyle,
+    ...(typeof platformAssessment?.reviewIntervalMs === 'number'
+      ? { minRequestIntervalMs: platformAssessment.reviewIntervalMs }
+      : {}),
+  };
 }
 
 /**

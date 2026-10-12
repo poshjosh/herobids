@@ -14,8 +14,6 @@ import type {
   MarketDiscoveryDetectedPayload,
   MarketRegimeChangedPayload,
   AgentWakePayload,
-  AssessStrategyPresetResultPayload,
-  ChangeStrategyPresetResultPayload,
   ManageAgentSkillsResult,
 } from '@herobids/domain';
 import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES, AGENT_STREAM_MAXLEN } from '@herobids/domain';
@@ -98,14 +96,6 @@ export class InstanceEventPublisher {
     await this.publish(agentId, INSTANCE_MESSAGE_TYPES.JOURNAL_EVENT, payload);
   }
 
-  async emitAssessStrategyPresetResult(agentId: string, payload: AssessStrategyPresetResultPayload): Promise<void> {
-    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET_RESULT, payload as unknown as Record<string, unknown>);
-  }
-
-  async emitChangeStrategyPresetResult(agentId: string, payload: ChangeStrategyPresetResultPayload): Promise<void> {
-    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET_RESULT, payload as unknown as Record<string, unknown>);
-  }
-
   /**
    * Publish a user-facing notification to the `user:notification:{userId}` Redis pub/sub channel.
    * This is a fire-and-forget best-effort delivery; the API/WebSocket layer consumes it for
@@ -167,19 +157,6 @@ export class InstanceEventPublisher {
     } catch (err) {
       logger.warn({ actorId, err }, 'Failed to publish equity snapshot — agent drawdown visibility may be stale');
     }
-  }
-
-  /**
-   * Publish a preset tool reply to a Redis list so the agent container can
-   * BLPOP it and receive the broker's response synchronously. The reply key
-   * is derived from the requestMessageId that the tool generates before
-   * publishing the request into the inbound stream.
-   */
-  async publishPresetToolReply(requestMessageId: string, result: Record<string, unknown>): Promise<void> {
-    const replyKey = `agent:preset:reply:${requestMessageId}`;
-    await this.redis.lpush(replyKey, JSON.stringify({ result }));
-    // Expire after 60s to prevent leaking keys if the agent never reads
-    await this.redis.expire(replyKey, 60);
   }
 
   /**

@@ -28,32 +28,28 @@ function makeQueryResult(rows: unknown[]) {
 
 // ── Mocks ───────────────────────────────────────────────────────────────────
 
-const mockQueue = {
-  add: vi.fn().mockResolvedValue(undefined),
+const mockRedis = {
+  xadd: vi.fn().mockResolvedValue(undefined),
 };
 
-vi.mock('@herobids/db', async () => {
-  const actual = await vi.importActual<typeof import('@herobids/db')>('@herobids/db');
-  return {
-    ...actual,
-    createManualReviewRun: vi.fn().mockResolvedValue(undefined),
-    getManualReviewRun: vi.fn().mockResolvedValue(null),
-    hasActiveManualReviewRun: vi.fn().mockResolvedValue(false),
-  };
-});
+const mockClient = {
+  invoke: vi.fn(),
+};
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe('POST /agents/:id/platform-assessment/reviews — capability mode gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockQueue.add.mockClear();
+    mockClient.invoke.mockResolvedValue({
+      kind: 'success',
+      requestId: 'r1',
+      correlationId: 'c1',
+      payload: { data: { results: [] } },
+    });
   });
 
   it('returns 403 capability_mode_unsupported for non-hybrid agent', async () => {
-    const { createManualReviewRun, hasActiveManualReviewRun } = await import('@herobids/db');
-    (hasActiveManualReviewRun as any).mockResolvedValue(false);
-
     const agentRow = {
       id: 'agent-1',
       userId: TEST_USER_ID,
@@ -76,13 +72,14 @@ describe('POST /agents/:id/platform-assessment/reviews — capability mode gate'
     decorateWithAuth(app);
 
     const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
-    await platformAssessmentReviewRoutes(app, mockQueue as any, db as any, {
-      platformAssessorEnabled: true,
+    await platformAssessmentReviewRoutes(app, db as any, mockRedis as any, {
+      tradingBackendClient: mockClient as any,
     });
 
     const res = await app.inject({
       method: 'POST',
       url: '/agents/agent-1/platform-assessment/reviews',
+      payload: { symbols: ['BTC'], venueFamily: 'hyperliquid' },
     });
 
     expect(res.statusCode).toBe(403);
@@ -90,57 +87,10 @@ describe('POST /agents/:id/platform-assessment/reviews — capability mode gate'
       error: 'capability_mode_unsupported',
       message: 'Strategy review is only available for hybrid agents',
     });
-    expect(mockQueue.add).not.toHaveBeenCalled();
-    expect(createManualReviewRun).not.toHaveBeenCalled();
+    expect(mockClient.invoke).not.toHaveBeenCalled();
   });
 
-  it('returns 403 (capability_mode_unsupported), not 409, for non-hybrid agent even when a review is already in progress (gate ordering)', async () => {
-    const { hasActiveManualReviewRun } = await import('@herobids/db');
-    (hasActiveManualReviewRun as any).mockResolvedValue(true); // active review run in progress
-
-    const agentRow = {
-      id: 'agent-1',
-      userId: TEST_USER_ID,
-      status: 'active',
-      unifiedConfig: {
-        capabilityMode: 'intelligence',
-        platformAssessment: { enabled: true },
-      },
-    };
-
-    const db = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue(makeQueryResult([agentRow])),
-        }),
-      }),
-    };
-
-    const app = Fastify();
-    decorateWithAuth(app);
-
-    const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
-    await platformAssessmentReviewRoutes(app, mockQueue as any, db as any, {
-      platformAssessorEnabled: true,
-    });
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/agents/agent-1/platform-assessment/reviews',
-    });
-
-    // Capability-mode gate fires BEFORE resource checks — must return 403, not 409
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({
-      error: 'capability_mode_unsupported',
-      message: 'Strategy review is only available for hybrid agents',
-    });
-  });
-
-  it('proceeds past capability gate for hybrid agent (fails on another gate, not capability)', async () => {
-    const { createManualReviewRun, hasActiveManualReviewRun } = await import('@herobids/db');
-    (hasActiveManualReviewRun as any).mockResolvedValue(false);
-
+  it('calls traderton assess_strategy_preset for a hybrid agent with a running session', async () => {
     const agentRow = {
       id: 'agent-1',
       userId: TEST_USER_ID,
@@ -151,103 +101,6 @@ describe('POST /agents/:id/platform-assessment/reviews — capability mode gate'
       },
     };
 
-    // Session query returns empty (no active session)
-    const db = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn()
-            .mockReturnValueOnce(makeQueryResult([agentRow]))
-            .mockReturnValueOnce(makeQueryResult([])),
-        }),
-      }),
-    };
-
-    const app = Fastify();
-    decorateWithAuth(app);
-
-    const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
-    await platformAssessmentReviewRoutes(app, mockQueue as any, db as any, {
-      platformAssessorEnabled: true,
-    });
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/agents/agent-1/platform-assessment/reviews',
-    });
-
-    expect(res.statusCode).not.toBe(403);
-    // It should fail on no_active_session (409), not capability_mode
-    if (res.statusCode === 409) {
-      expect(res.json()).toMatchObject({ error: 'no_active_session' });
-    } else if (res.statusCode === 202) {
-      expect(res.json()).toHaveProperty('requestId');
-    } else {
-      throw new Error(`Unexpected status code: ${res.statusCode}`);
-    }
-  });
-});
-
-describe('GET /agents/:id/platform-assessment/reviews/eligibility — capability mode reason', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('reports canTrigger: false with capability-mode reason for non-hybrid agent', async () => {
-    const { hasActiveManualReviewRun } = await import('@herobids/db');
-    (hasActiveManualReviewRun as any).mockResolvedValue(false);
-
-    const agentRow = {
-      id: 'agent-1',
-      userId: TEST_USER_ID,
-      status: 'active',
-      unifiedConfig: {
-        capabilityMode: 'intelligence',
-        platformAssessment: { enabled: true },
-      },
-    };
-
-    const db = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue(makeQueryResult([agentRow])),
-        }),
-      }),
-    };
-
-    const app = Fastify();
-    decorateWithAuth(app);
-
-    const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
-    await platformAssessmentReviewRoutes(app, mockQueue as any, db as any, {
-      platformAssessorEnabled: true,
-    });
-
-    const res = await app.inject({
-      method: 'GET',
-      url: '/agents/agent-1/platform-assessment/reviews/eligibility',
-    });
-
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(body.canTrigger).toBe(false);
-    expect(body.reason).toContain('Strategy review is only available for hybrid agents');
-  });
-
-  it('omits capability-mode reason for hybrid agent', async () => {
-    const { hasActiveManualReviewRun } = await import('@herobids/db');
-    (hasActiveManualReviewRun as any).mockResolvedValue(false);
-
-    const agentRow = {
-      id: 'agent-1',
-      userId: TEST_USER_ID,
-      status: 'active',
-      unifiedConfig: {
-        capabilityMode: 'hybrid',
-        platformAssessment: { enabled: true },
-      },
-    };
-
-    // Agent query first, then session query
     const db = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
@@ -262,8 +115,133 @@ describe('GET /agents/:id/platform-assessment/reviews/eligibility — capability
     decorateWithAuth(app);
 
     const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
-    await platformAssessmentReviewRoutes(app, mockQueue as any, db as any, {
-      platformAssessorEnabled: true,
+    await platformAssessmentReviewRoutes(app, db as any, mockRedis as any, {
+      tradingBackendClient: mockClient as any,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents/agent-1/platform-assessment/reviews',
+      payload: { symbols: ['BTC'], venueFamily: 'hyperliquid' },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: 'assess_strategy_preset',
+      subject: { ownerId: TEST_USER_ID, actor: { type: 'agent', id: 'agent-1' } },
+    }));
+  });
+
+  it('returns 409 no_active_session when the agent has no running session', async () => {
+    const agentRow = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'active',
+      unifiedConfig: {
+        capabilityMode: 'hybrid',
+        platformAssessment: { enabled: true },
+      },
+    };
+
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn()
+            .mockReturnValueOnce(makeQueryResult([agentRow]))
+            .mockReturnValueOnce(makeQueryResult([])),
+        }),
+      }),
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
+    await platformAssessmentReviewRoutes(app, db as any, mockRedis as any, {
+      tradingBackendClient: mockClient as any,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents/agent-1/platform-assessment/reviews',
+      payload: { symbols: ['BTC'], venueFamily: 'hyperliquid' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: 'no_active_session' });
+  });
+});
+
+describe('GET /agents/:id/platform-assessment/reviews/eligibility — capability mode reason', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reports canTrigger: false with capability-mode reason for non-hybrid agent', async () => {
+    const agentRow = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'active',
+      unifiedConfig: {
+        capabilityMode: 'intelligence',
+        platformAssessment: { enabled: true },
+      },
+    };
+
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue(makeQueryResult([agentRow])),
+        }),
+      }),
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
+    await platformAssessmentReviewRoutes(app, db as any, mockRedis as any, {
+      tradingBackendClient: mockClient as any,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/agents/agent-1/platform-assessment/reviews/eligibility',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.canTrigger).toBe(false);
+    expect(body.reason).toContain('Strategy review is only available for hybrid agents');
+  });
+
+  it('omits capability-mode reason for hybrid agent', async () => {
+    const agentRow = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'active',
+      unifiedConfig: {
+        capabilityMode: 'hybrid',
+        platformAssessment: { enabled: true },
+      },
+    };
+
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn()
+            .mockReturnValueOnce(makeQueryResult([agentRow]))
+            .mockReturnValueOnce(makeQueryResult([{ id: 'session-1' }])),
+        }),
+      }),
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
+    await platformAssessmentReviewRoutes(app, db as any, mockRedis as any, {
+      tradingBackendClient: mockClient as any,
     });
 
     const res = await app.inject({
@@ -274,9 +252,74 @@ describe('GET /agents/:id/platform-assessment/reviews/eligibility — capability
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.canTrigger).toBe(true);
-    // For a hybrid agent, the reason (if present) MUST NOT contain the capability-mode gate message
     if (body.reason) {
       expect(body.reason).not.toContain('only available for hybrid agents');
     }
+  });
+});
+
+describe('GET /agents/:id/platform-assessment/reviews/results — data-only reads', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reads the agent strategy-change history from traderton', async () => {
+    mockClient.invoke.mockResolvedValue({
+      kind: 'success',
+      requestId: 'r1',
+      correlationId: 'c1',
+      payload: {
+        data: {
+          changes: [
+            {
+              id: 'c1',
+              ownerId: TEST_USER_ID,
+              actorId: 'agent-1',
+              fromStrategy: { presetKey: 'momentum' },
+              toStrategy: { presetKey: 'range' },
+              artifactId: 'a1',
+              reason: 'Range fits the choppy regime',
+              state: 'applied',
+              createdAt: '2026-10-10T00:00:00.000Z',
+              appliedAt: '2026-10-10T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+
+    const agentRow = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+    };
+
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue(makeQueryResult([agentRow])),
+        }),
+      }),
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
+    await platformAssessmentReviewRoutes(app, db as any, mockRedis as any, {
+      tradingBackendClient: mockClient as any,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/agents/agent-1/platform-assessment/reviews/results',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: 'list_agent_strategy_changes',
+    }));
+    const body = res.json();
+    expect(body.changes).toHaveLength(1);
+    expect(body.changes[0].reason).toBe('Range fits the choppy regime');
   });
 });

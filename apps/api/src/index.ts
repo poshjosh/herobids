@@ -3,8 +3,8 @@ import cors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME, UsageBillingRepository } from '@herobids/db';
-import type { EvaluationJobData, ManualReviewJobData } from '@herobids/db';
+import { createDatabase, EVALUATION_QUEUE_NAME, UsageBillingRepository } from '@herobids/db';
+import type { EvaluationJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
 import { reconciliationRoutes } from './routes/reconciliation.js';
@@ -248,10 +248,6 @@ const evaluationQueue = new Queue<EvaluationJobData>(EVALUATION_QUEUE_NAME, {
   connection: redisConnection,
 });
 
-const manualReviewQueue = new Queue<ManualReviewJobData>(MANUAL_REVIEW_QUEUE_NAME, {
-  connection: redisConnection,
-});
-
 // Register auth plugin (JWT verification on all non-public routes)
 await authPlugin(app, { config: appConfig.auth, db });
 
@@ -398,8 +394,9 @@ await agentEvaluationRoutes(app, evaluationQueue, db, {
   catalogCacheTtlMs: appConfig.llm.catalog.cacheTtlMs,
   openRouterProviderControls: appConfig.llm.openRouterProviderControls,
 });
-await platformAssessmentReviewRoutes(app, manualReviewQueue, db, {
-  platformAssessorEnabled: appConfig.platformAssessor?.enabled ?? false,
+await platformAssessmentReviewRoutes(app, db, redisClient, {
+  tradingBackendClient,
+  tradingBackendTimeoutMs,
 });
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
 

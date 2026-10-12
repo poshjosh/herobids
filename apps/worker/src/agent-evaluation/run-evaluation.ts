@@ -25,9 +25,7 @@ import { analyzeSecurity } from './analyzers/security.js';
 import { renderReport } from './render-report.js';
 import { generateEvaluationNarrative } from './generate-narrative.js';
 import { redact, redactJson } from './redaction.js';
-import { derivePresetAssessmentSummary, derivePresetAssessmentEvents, buildEventsArtifact } from './preset-assessment-summary.js';
-import type { PresetAssessmentSummary } from './preset-assessment-summary.js';
-import { renderPresetAssessmentAppendix } from './render-preset-assessment-appendix.js';
+
 
 /** Evidence artifact names that must pass through the JSON redaction pass before user-facing output. */
 export const EVIDENCE_ARTIFACTS_FOR_REDACTION = [
@@ -239,68 +237,6 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     });
     logger.info({ runId, entries: manifest.entries.filter((e) => e.collected).length }, 'Evidence collected');
 
-    // ── Step 1b: Derive preset-assessment artifacts (best-effort) ────────
-    let summary: PresetAssessmentSummary | undefined;
-    if (manifest.presetAssessmentEvidence) {
-      try {
-        // Read unified-agent-config.json from store (already written by evidence assembler)
-        let unifiedConfig: Record<string, unknown> | null = null;
-        try {
-          const configRaw = await store.read(runId, 'unified-agent-config.json');
-          if (configRaw) {
-            unifiedConfig = JSON.parse(new TextDecoder().decode(configRaw));
-          }
-        } catch {
-          logger.warn({ runId }, 'Could not read unified-agent-config.json for preset-assessment summary');
-        }
-
-        const generatedAt = new Date().toISOString();
-
-        summary = derivePresetAssessmentSummary({
-          evidence: manifest.presetAssessmentEvidence,
-          unifiedConfig,
-          scope: resolvedScope,
-          generatedAt,
-        });
-
-        // Write summary artifact when appendix is included
-        if (summary.includedInReport) {
-          try {
-            await store.write(
-              runId,
-              'preset-assessment-summary.json',
-              JSON.stringify(summary, null, 2),
-            );
-          } catch (err) {
-            logger.warn({ runId, err: String(err) }, 'Could not write preset-assessment-summary.json');
-          }
-        }
-
-        // Write events artifact when events exist (wrapped in self-describing envelope)
-        const events = derivePresetAssessmentEvents({
-          evidence: manifest.presetAssessmentEvidence,
-        });
-        if (events.length > 0) {
-          try {
-            const eventsArtifact = buildEventsArtifact({
-              events,
-              generatedAt,
-              scope: resolvedScope,
-            });
-            await store.write(
-              runId,
-              'preset-assessment-events.json',
-              JSON.stringify(eventsArtifact, null, 2),
-            );
-          } catch (err) {
-            logger.warn({ runId, err: String(err) }, 'Could not write preset-assessment-events.json');
-          }
-        }
-      } catch (err) {
-        logger.warn({ runId, err: String(err) }, 'Preset-assessment summary derivation failed');
-      }
-    }
-
     // ── Step 2: Run analyzers over RAW evidence ──────────────────────────
     // Security analyzer must run BEFORE redaction so it can detect secrets.
     logger.info({ runId }, 'Running security analyzer (pre-redaction)');
@@ -454,15 +390,9 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       }
     }
 
-    // Append preset-assessment appendix when included
-    const appendixText = summary ? renderPresetAssessmentAppendix(summary) : '';
-    const reportWithAppendix = appendixText
-      ? `${redactedReport}\n\n${appendixText}`
-      : redactedReport;
-
     const finalReport = narrativeText
-      ? `${reportWithAppendix}\n\n---\n\n## Commentary\n\n${narrativeText}\n`
-      : reportWithAppendix;
+      ? `${redactedReport}\n\n---\n\n## Commentary\n\n${narrativeText}\n`
+      : redactedReport;
 
     // ── Step 6: Write evaluation.json and REPORT.md ──────────────────────
     const result: EvaluationRunResult = {

@@ -1,8 +1,4 @@
 import { z } from 'zod';
-import {
-  AssessStrategyPresetParamsSchema,
-  ChangeStrategyPresetParamsSchema,
-} from './tool-schemas.js';
 // Trading-owned protocol/enums relocated to a trading-owned module for trading-layer
 // independence (source-fix request 002). Imported here for internal use (schema
 // composition + message-type map) and re-exported below so the public API surface of
@@ -392,8 +388,6 @@ export const AGENT_MESSAGE_TYPES = {
   MANAGE_BOT: 'agent.manage_bot',
   BOT_QUERY: 'agent.bot.query',
   CONFIG_UPDATE: 'agent.config.update',
-  TOOL_ASSESS_STRATEGY_PRESET: 'agent.tool.assess_strategy_preset.request',
-  TOOL_CHANGE_STRATEGY_PRESET: 'agent.tool.change_strategy_preset.request',
   MANAGE_AGENT_SKILLS: 'agent.manage_skills',
 } as const;
 
@@ -410,8 +404,6 @@ export const INSTANCE_MESSAGE_TYPES = {
   TOOL_RESULT: 'instance.tool.result',
   BOT_CONFIG_CHANGED: 'instance.bot.config_changed',
   JOURNAL_EVENT: 'instance.journal.event',
-  TOOL_ASSESS_STRATEGY_PRESET_RESULT: 'instance.tool.assess_strategy_preset.result',
-  TOOL_CHANGE_STRATEGY_PRESET_RESULT: 'instance.tool.change_strategy_preset.result',
 } as const;
 
 export const MARKET_MONITOR_MESSAGE_TYPES = {
@@ -534,60 +526,6 @@ export const JournalEventPayloadSchema = z.object({
 });
 export type JournalEventPayload = z.infer<typeof JournalEventPayloadSchema>;
 
-// --- Preset Tool Broker Payload Schemas ---
-
-/** Request payload for a brokered assess_strategy_preset call. */
-export const AssessStrategyPresetRequestPayloadSchema = AssessStrategyPresetParamsSchema.extend({
-  agentId: z.string().min(1),
-  sessionId: z.string().min(1),
-  /** ID the tool generates so the broker can reply via a dedicated Redis list key. */
-  requestMessageId: z.string().optional(),
-});
-export type AssessStrategyPresetRequestPayload = z.infer<typeof AssessStrategyPresetRequestPayloadSchema>;
-
-/** Request payload for a brokered change_strategy_preset call. */
-export const ChangeStrategyPresetRequestPayloadSchema = ChangeStrategyPresetParamsSchema.extend({
-  agentId: z.string().min(1),
-  sessionId: z.string().min(1),
-  /** ID the tool generates so the broker can reply via a dedicated Redis list key. */
-  requestMessageId: z.string().optional(),
-});
-export type ChangeStrategyPresetRequestPayload = z.infer<typeof ChangeStrategyPresetRequestPayloadSchema>;
-
-/**
- * Shape of the result returned by preset tools (assess_strategy_preset,
- * change_strategy_preset). This is the tool's native return type, not a
- * broker-level envelope. Unlike {@link ToolResultPayloadSchema} which wraps
- * any tool result for the generic instance.tool.result message, this schema
- * models the specific result contract of the preset assessment/transition tools.
- */
-export const PresetToolResultSchema = z.object({
-  success: z.boolean(),
-  data: z.unknown().optional(),
-  error: z.string().optional(),
-  errorCode: z.string().optional(),
-  retryable: z.boolean().optional(),
-  fault: z.boolean().optional(),
-});
-
-export type PresetToolResult = z.infer<typeof PresetToolResultSchema>;
-
-/** Response payload for a brokered assess_strategy_preset result. */
-export const AssessStrategyPresetResultPayloadSchema = z.object({
-  requestMessageId: z.string().min(1),
-  correlationId: z.string().min(1),
-  result: PresetToolResultSchema,
-});
-export type AssessStrategyPresetResultPayload = z.infer<typeof AssessStrategyPresetResultPayloadSchema>;
-
-/** Response payload for a brokered change_strategy_preset result. */
-export const ChangeStrategyPresetResultPayloadSchema = z.object({
-  requestMessageId: z.string().min(1),
-  correlationId: z.string().min(1),
-  result: PresetToolResultSchema,
-});
-export type ChangeStrategyPresetResultPayload = z.infer<typeof ChangeStrategyPresetResultPayloadSchema>;
-
 /** Result schema for brokered skill management (add/remove). */
 export const ManageAgentSkillsResultSchema = z.object({
   status: z.enum(['ok', 'error']),
@@ -611,8 +549,6 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.MANAGE_BOT]: ManageBotPayloadSchema,
   [AGENT_MESSAGE_TYPES.BOT_QUERY]: BotQueryPayloadSchema,
   [AGENT_MESSAGE_TYPES.CONFIG_UPDATE]: ConfigUpdatePayloadSchema,
-  [AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET]: AssessStrategyPresetRequestPayloadSchema,
-  [AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET]: ChangeStrategyPresetRequestPayloadSchema,
   [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: ManageAgentSkillsPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
@@ -626,8 +562,6 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [INSTANCE_MESSAGE_TYPES.TOOL_RESULT]: ToolResultPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.BOT_CONFIG_CHANGED]: BotConfigChangedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.JOURNAL_EVENT]: JournalEventPayloadSchema,
-  [INSTANCE_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET_RESULT]: AssessStrategyPresetResultPayloadSchema,
-  [INSTANCE_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET_RESULT]: ChangeStrategyPresetResultPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.WATCH_TRIGGERED]: MarketWatchTriggeredPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.DISCOVERY_DETECTED]: MarketDiscoveryDetectedPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED]: MarketRegimeChangedPayloadSchema,

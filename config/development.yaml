@@ -13,13 +13,6 @@
 #       lightModel: deepseek/deepseek-v4.1-flash  # suggested economy (scout) model
 #       heavyModel: deepseek/deepseek-v4-pro-0813    # suggested premium (judge) model
 
-platformAssessor:
-  enabled: true
-  minReviewIntervalMs: 300000  # 5 min — operator floor for agent reviewIntervalMs
-  cacheFreshnessMs: 300000  # 5 min — lookup and artifact expiry
-  llm:
-    baseUrl: http://host.docker.internal:11434/v1  # explicit for dev — ollama runs on host
-
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
   email:

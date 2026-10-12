@@ -34,8 +34,8 @@ export function capabilityDeniedResult(_capability: string, denial: CapabilityDe
 /**
  * Parse a broker denial reply. Returns a ToolResult if the raw reply is a
  * capability denial (`status: 'rejected'`), or undefined if it's a normal reply.
- * Used by brokered tools (assess_strategy_preset, change_strategy_preset,
- * manage_agent_skills) to handle denials from the broker's capability policy gate.
+ * Used by brokered tools (manage_agent_skills) to handle denials from the
+ * broker's capability policy gate.
  */
 export function parseBrokerDenialReply(raw: Record<string, unknown>): ToolResult | undefined {
   if (raw.status !== 'rejected') return undefined;

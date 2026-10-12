@@ -1,52 +1,150 @@
 import type { FastifyInstance } from 'fastify';
-import { Queue } from 'bullmq';
+import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
-import { eq, and, inArray, gte } from 'drizzle-orm';
+import { z } from 'zod';
+import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import {
-  agents,
-  agentRuntimeSessions,
-  createManualReviewRun,
-  getManualReviewRun,
-  hasActiveManualReviewRun,
-  reviewAdvice,
-  marketAssessmentArtifacts,
-  agentPresetBindings,
-} from '@herobids/db';
-import type { ManualReviewJobData } from '@herobids/db';
-import { ReviewPreCheckReasonDescriptions } from '@herobids/domain';
-import type { StyleKey } from '@herobids/domain';
-import { getPreset } from '@herobids/domain/config/presets-loader';
+import { agents, agentRuntimeSessions } from '@herobids/db';
+import { AGENT_STREAM_MAXLEN, MARKET_MONITOR_MESSAGE_TYPES } from '@herobids/domain';
+import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
+import { errorPayload } from '../error-payload.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+/** POST body: the symbols + venue family to assess on the agent's behalf. */
+const TriggerReviewBodySchema = z.object({
+  symbols: z.array(z.string().min(1)).min(1).max(50),
+  venueFamily: z.string().min(1),
+});
+
+/** A single per-symbol assessment result (mirrors traderton's assess_strategy_preset). */
+interface AssessResult {
+  success: boolean;
+  symbol: string;
+  canonicalIdentity?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
+  currentStrategy?: Record<string, unknown> | null;
+  presets?: Array<Record<string, unknown>>;
+  artifactId?: string;
+  assessedAt?: string;
+  expiresAt?: string;
+  freshnessNote?: string;
+  nextEligibleAt?: string;
+  error?: string;
+  errorCode?: string;
+}
+
+/** A strategy-change audit row (mirrors traderton's list_agent_strategy_changes). */
+interface StrategyChange {
+  id: string;
+  ownerId: string;
+  actorId: string;
+  fromStrategy: Record<string, unknown> | null;
+  toStrategy: Record<string, unknown>;
+  artifactId: string;
+  reason: string;
+  state: string;
+  createdAt: string;
+  appliedAt: string | null;
+}
+
 export interface PlatformAssessmentReviewRouteConfig {
-  /** Operator-level platform assessor enabled flag */
-  platformAssessorEnabled: boolean;
+  /** The traderton boundary client (owner-scoped assess + read tools). */
+  tradingBackendClient?: ExternalBackendClient;
+  /** Per-request deadline for boundary calls. */
+  tradingBackendTimeoutMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+// ── Boundary helpers ────────────────────────────────────────────────────────
+
+/** Invoke a traderton tool with the owner + agent subject. */
+async function invokeBoundary(
+  client: ExternalBackendClient | undefined,
+  toolName: string,
+  payload: Record<string, unknown>,
+  subject: ExternalBackendSubject,
+  deadlineMs: number,
+): Promise<ExternalBackendClientResult> {
+  if (!client) {
+    return { kind: 'transport_error', requestId: '', retryable: true, message: 'trading boundary not configured' };
+  }
+  return client.invoke({ toolName, payload, subject, deadlineMs });
+}
+
+/** Map a non-success boundary result to an HTTP status + error payload. */
+function boundaryError(result: ExternalBackendClientResult): { status: number; body: Record<string, unknown> } {
+  switch (result.kind) {
+    case 'failure': {
+      const toolCode = result.details?.['errorCode'];
+      const code = result.code === 'validation.invalid_payload' && typeof toolCode === 'string'
+        ? toolCode
+        : result.code;
+      return { status: 502, body: errorPayload(code, result.message) };
+    }
+    case 'transport_error':
+      return { status: 503, body: errorPayload('precondition.not_ready', 'Trading service is unavailable — the review could not be produced.') };
+    case 'in_progress':
+      return { status: 503, body: errorPayload('boundary.in_progress', 'The trading call did not complete in time. Please retry.') };
+    default:
+      return { status: 502, body: errorPayload('boundary.error', 'Unexpected boundary result') };
+  }
+}
+
+/** Narrow a success payload's `results` array into assess results. */
+function narrowAssessResults(payload: unknown): AssessResult[] {
+  if (typeof payload !== 'object' || payload === null) return [];
+  const data = (payload as Record<string, unknown>)['data'];
+  if (typeof data !== 'object' || data === null) return [];
+  const results = (data as Record<string, unknown>)['results'];
+  if (!Array.isArray(results)) return [];
+  return results as AssessResult[];
+}
+
+/** Narrow a success payload's `changes` array into strategy-change rows. */
+function narrowChanges(payload: unknown): StrategyChange[] {
+  if (typeof payload !== 'object' || payload === null) return [];
+  const data = (payload as Record<string, unknown>)['data'];
+  if (typeof data !== 'object' || data === null) return [];
+  const changes = (data as Record<string, unknown>)['changes'];
+  if (!Array.isArray(changes)) return [];
+  return changes as StrategyChange[];
 }
 
 // ── Route module ────────────────────────────────────────────────────────────
 
 /**
- * Platform assessment review API routes.
+ * Platform assessment review API routes (H3 — data-only, free).
  *
- * Provides user-triggered forced strategy review for agents:
- * - POST   /agents/:id/platform-assessment/reviews        — trigger a manual review
- * - GET    /agents/:id/platform-assessment/reviews/:requestId — poll run status
- * - GET    /agents/:id/platform-assessment/reviews/eligibility — check if eligible
+ * The manual review no longer runs a billed platform assessment. It calls
+ * traderton's `assess_strategy_preset` on the agent's behalf (owner-scoped),
+ * then wakes the agent with the artifact ids. The review screen reads the
+ * data-only artifacts + the agent's strategy-change history (decision + reason)
+ * from traderton.
+ *
+ * - POST /agents/:id/platform-assessment/reviews — assess + wake (synchronous)
+ * - GET  /agents/:id/platform-assessment/reviews/results — artifacts + changes
+ * - GET  /agents/:id/platform-assessment/reviews/eligibility — trigger gating
  */
 export async function platformAssessmentReviewRoutes(
   app: FastifyInstance,
-  queue: Queue<ManualReviewJobData>,
   db: Database,
+  redisClient: Redis,
   config: PlatformAssessmentReviewRouteConfig,
 ): Promise<void> {
-  // ── POST /agents/:id/platform-assessment/reviews — trigger ───────────
+  const deadlineMs = config.tradingBackendTimeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  app.post<{ Params: { id: string } }>(
+  // ── POST /agents/:id/platform-assessment/reviews — assess + wake ───────
+
+  app.post<{ Params: { id: string }; Body: unknown }>(
     '/agents/:id/platform-assessment/reviews',
     async (request, reply) => {
       const { id: agentId } = request.params;
+      const parsed = TriggerReviewBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+      }
 
       // Ownership check
       const [agent] = await db
@@ -59,14 +157,6 @@ export async function platformAssessmentReviewRoutes(
         .from(agents)
         .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-      // Operator-level feature gate
-      if (!config.platformAssessorEnabled) {
-        return reply.status(403).send({
-          error: 'platform_assessor_disabled',
-          message: 'Platform assessment is disabled at the operator level',
-        });
-      }
 
       // Agent-level opt-in check
       const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
@@ -86,9 +176,17 @@ export async function platformAssessmentReviewRoutes(
         });
       }
 
+      // Gate: preset review is only meaningful for hybrid agents.
+      if (unifiedConfig['capabilityMode'] !== 'hybrid') {
+        return reply.status(403).send({
+          error: 'capability_mode_unsupported',
+          message: 'Strategy review is only available for hybrid agents',
+        });
+      }
+
       // Agent must have a running session
       const [activeSession] = await db
-        .select({ id: agentRuntimeSessions.id, status: agentRuntimeSessions.status })
+        .select({ id: agentRuntimeSessions.id })
         .from(agentRuntimeSessions)
         .where(
           and(
@@ -104,49 +202,83 @@ export async function platformAssessmentReviewRoutes(
         });
       }
 
-      // Gate: preset review is only meaningful for hybrid agents.
-      // This must fire BEFORE resource checks (e.g. review_already_in_progress)
-      // so non-hybrid agents get a consistent 403 regardless of other state.
-      if (unifiedConfig['capabilityMode'] !== 'hybrid') {
-        return reply.status(403).send({
-          error: 'capability_mode_unsupported',
-          message: 'Strategy review is only available for hybrid agents',
-        });
+      // Call traderton assess_strategy_preset on the agent's behalf (owner-scoped).
+      const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'agent', id: agentId } };
+      const assessResult = await invokeBoundary(
+        config.tradingBackendClient,
+        'assess_strategy_preset',
+        { symbols: parsed.data.symbols, venueFamily: parsed.data.venueFamily },
+        subject,
+        deadlineMs,
+      );
+      if (assessResult.kind !== 'success') {
+        const err = boundaryError(assessResult);
+        return reply.status(err.status).send(err.body);
       }
 
-      // No active (in-flight) manual review run
-      const hasActive = await hasActiveManualReviewRun(db, agentId);
-      if (hasActive) {
-        return reply.status(409).send({
-          error: 'review_already_in_progress',
-          message: 'A manual review is already in progress for this agent',
-        });
+      const results = narrowAssessResults(assessResult.payload);
+
+      // Wake the agent with the artifact ids so it can act on the assessment.
+      const advice = results
+        .filter((r) => r.success && r.artifactId && r.canonicalIdentity)
+        .map((r, i) => ({
+          identity: r.canonicalIdentity,
+          candidateRank: i + 1,
+          activePreset: (r.currentStrategy as Record<string, unknown> | null)?.presetKey ?? '',
+          presetBehaviorVersion: (r.currentStrategy as Record<string, unknown> | null)?.behaviorVersion ?? '',
+          reasons: ['Manual review requested by the creator'],
+          assessmentArtifactId: r.artifactId,
+          expiresAt: r.expiresAt,
+        }));
+
+      if (advice.length > 0) {
+        const wakePayload = {
+          wakeId: crypto.randomUUID(),
+          reason: 'The creator requested a strategy review',
+          eventIds: [],
+          priority: 'normal',
+          requestedAt: new Date().toISOString(),
+          source: 'scanner',
+          context: {
+            scannerKind: 'assessment_review',
+            advice,
+            checkedAt: new Date().toISOString(),
+            nextEligibleAt: new Date(Date.now() + 86_400_000).toISOString(),
+          },
+        };
+        const envelope = {
+          schemaVersion: 'v1',
+          messageId: crypto.randomUUID(),
+          correlationId: crypto.randomUUID(),
+          initiatorType: 'system',
+          initiatorId: agentId,
+          agentId,
+          type: MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE,
+          createdAt: new Date().toISOString(),
+          payload: wakePayload,
+        };
+        await redisClient.xadd(
+          `agent:outbound:${agentId}`,
+          'MAXLEN', '~', AGENT_STREAM_MAXLEN,
+          '*',
+          'envelope',
+          JSON.stringify(envelope),
+        );
       }
 
-      // Create run row and enqueue job
-      const runId = crypto.randomUUID();
-      await createManualReviewRun(db, {
-        id: runId,
-        agentId,
-        requestedByUserId: request.userId,
+      return reply.status(202).send({
+        requestId: crypto.randomUUID(),
+        results,
       });
-
-      await queue.add(`manual-review:${agentId}`, {
-        runId,
-        agentId,
-        requestedByUserId: request.userId,
-      } satisfies ManualReviewJobData);
-
-      return reply.status(202).send({ requestId: runId });
     },
   );
 
-  // ── GET /agents/:id/platform-assessment/reviews/:requestId — status ──
+  // ── GET /agents/:id/platform-assessment/reviews/results ────────────────
 
-  app.get<{ Params: { id: string; requestId: string } }>(
-    '/agents/:id/platform-assessment/reviews/:requestId',
+  app.get<{ Params: { id: string } }>(
+    '/agents/:id/platform-assessment/reviews/results',
     async (request, reply) => {
-      const { id: agentId, requestId } = request.params;
+      const { id: agentId } = request.params;
 
       // Ownership check
       const [agent] = await db
@@ -155,29 +287,27 @@ export async function platformAssessmentReviewRoutes(
         .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      const run = await getManualReviewRun(db, requestId);
-      if (!run) return reply.status(404).send({ error: 'not_found' });
+      const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'agent', id: agentId } };
 
-      // Ensure the run belongs to the requested agent
-      if (run.agentId !== agentId) {
-        return reply.status(404).send({ error: 'not_found' });
+      // Read the agent's strategy-change history (decision + reason).
+      const changesResult = await invokeBoundary(
+        config.tradingBackendClient,
+        'list_agent_strategy_changes',
+        { actorId: agentId, limit: 50 },
+        subject,
+        deadlineMs,
+      );
+      if (changesResult.kind !== 'success') {
+        const err = boundaryError(changesResult);
+        return reply.status(err.status).send(err.body);
       }
+      const changes = narrowChanges(changesResult.payload);
 
-      return reply.send({
-        requestId: run.id,
-        status: run.status,
-        trigger: run.trigger,
-        requestedAt: run.requestedAt?.toISOString() ?? null,
-        startedAt: run.startedAt?.toISOString() ?? null,
-        completedAt: run.completedAt?.toISOString() ?? null,
-        resultSummary: run.resultSummary ?? null,
-        errorCode: run.errorCode ?? null,
-        errorMessage: run.errorMessage ?? null,
-      });
+      return reply.send({ changes });
     },
   );
 
-  // ── GET /agents/:id/platform-assessment/reviews/eligibility ──────────
+  // ── GET /agents/:id/platform-assessment/reviews/eligibility ────────────
 
   app.get<{ Params: { id: string } }>(
     '/agents/:id/platform-assessment/reviews/eligibility',
@@ -197,11 +327,6 @@ export async function platformAssessmentReviewRoutes(
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
       const reasons: string[] = [];
-
-      // Operator-level feature gate
-      if (!config.platformAssessorEnabled) {
-        reasons.push('Platform assessment is disabled at the operator level');
-      }
 
       // Agent-level opt-in
       const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
@@ -235,209 +360,11 @@ export async function platformAssessmentReviewRoutes(
         reasons.push('Strategy review is only available for hybrid agents');
       }
 
-      // No in-flight run
-      const hasActive = await hasActiveManualReviewRun(db, agentId);
-      if (hasActive) {
-        reasons.push('A manual review is already in progress');
-      }
-
       const canTrigger = reasons.length === 0;
 
       return reply.send({
         canTrigger,
         reason: canTrigger ? null : reasons.join('; '),
-      });
-    },
-  );
-
-  // ── GET /agents/:id/platform-assessment/reviews/:requestId/advice ────
-
-  app.get<{ Params: { id: string; requestId: string } }>(
-    '/agents/:id/platform-assessment/reviews/:requestId/advice',
-    async (request, reply) => {
-      const { id: agentId, requestId } = request.params;
-
-      // Ownership check
-      const [agent] = await db
-        .select({ id: agents.id, userId: agents.userId })
-        .from(agents)
-        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
-      if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-      const run = await getManualReviewRun(db, requestId);
-      if (!run) return reply.status(404).send({ error: 'not_found' });
-      if (run.agentId !== agentId) return reply.status(404).send({ error: 'not_found' });
-
-      // Only fetch advice for completed runs that have a checkId
-      if (!run.checkId || run.status !== 'succeeded') {
-        return reply.send({ requestId: run.id, advice: [] });
-      }
-
-      const rows = await db
-        .select({
-          symbol: reviewAdvice.symbol,
-          outcome: reviewAdvice.outcome,
-          activePreset: reviewAdvice.activePreset,
-          candidateRank: reviewAdvice.candidateRank,
-          reasons: reviewAdvice.supportingFacts,
-          assessmentArtifactId: reviewAdvice.assessmentArtifactId,
-          assessmentRequestedAt: reviewAdvice.assessmentRequestedAt,
-          consumedAt: reviewAdvice.consumedAt,
-          styleTier: reviewAdvice.styleTier,
-        })
-        .from(reviewAdvice)
-        .where(eq(reviewAdvice.checkId, run.checkId))
-        .orderBy(reviewAdvice.candidateRank);
-
-      const advice = rows.map((r) => {
-        const activePresetName =
-          getPreset(r.activePreset, r.styleTier as StyleKey)?.name ?? r.activePreset;
-        const reasonsDisplay = (
-          (r.reasons as Record<string, unknown> | null)?.reasons as string[] ?? []
-        ).map(
-          (code) =>
-            ReviewPreCheckReasonDescriptions[
-              code as keyof typeof ReviewPreCheckReasonDescriptions
-            ] ?? code,
-        );
-        return {
-          symbol: r.symbol,
-          outcome: r.outcome,
-          activePreset: r.activePreset,
-          activePresetName,
-          candidateRank: r.candidateRank,
-          reasons: (r.reasons as Record<string, unknown> | null)?.reasons ?? [],
-          reasonsDisplay,
-          assessmentArtifactId: r.assessmentArtifactId ?? null,
-          assessmentRequestedAt: r.assessmentRequestedAt?.toISOString() ?? null,
-          consumedAt: r.consumedAt?.toISOString() ?? null,
-        };
-      });
-
-      return reply.send({
-        requestId: run.id,
-        checkId: run.checkId,
-        advice,
-      });
-    },
-  );
-
-  // ── GET /agents/:id/platform-assessment/reviews/:requestId/results ────
-
-  app.get<{ Params: { id: string; requestId: string } }>(
-    '/agents/:id/platform-assessment/reviews/:requestId/results',
-    async (request, reply) => {
-      const { id: agentId, requestId } = request.params;
-
-      // Ownership check
-      const [agent] = await db
-        .select({ id: agents.id, userId: agents.userId })
-        .from(agents)
-        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
-      if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-      const run = await getManualReviewRun(db, requestId);
-      if (!run) return reply.status(404).send({ error: 'not_found' });
-      if (run.agentId !== agentId) return reply.status(404).send({ error: 'not_found' });
-
-      // Not ready yet
-      if (run.status !== 'succeeded' || !run.checkId) {
-        return reply.send({ requestId: run.id, status: run.status, results: [] });
-      }
-
-      // Join review_advice → market_assessment_artifacts
-      const rows = await db
-        .select({
-          symbol: reviewAdvice.symbol,
-          artifactId: marketAssessmentArtifacts.id,
-          outcome: reviewAdvice.outcome,
-          activePreset: reviewAdvice.activePreset,
-          styleTier: reviewAdvice.styleTier,
-          candidateRank: reviewAdvice.candidateRank,
-          recommendedPreset: marketAssessmentArtifacts.recommendedPreset,
-          allowedPresets: marketAssessmentArtifacts.allowedPresets,
-          confidence: marketAssessmentArtifacts.confidence,
-          urgency: marketAssessmentArtifacts.urgency,
-          expiresAt: marketAssessmentArtifacts.expiresAt,
-          presetRankings: marketAssessmentArtifacts.presetRankings,
-        })
-        .from(reviewAdvice)
-        .innerJoin(
-          marketAssessmentArtifacts,
-          eq(reviewAdvice.assessmentArtifactId, marketAssessmentArtifacts.id),
-        )
-        .where(eq(reviewAdvice.checkId, run.checkId))
-        .orderBy(reviewAdvice.candidateRank);
-
-      // Check agent action for each artifact
-      const artifactIds = rows.map((r) => r.artifactId).filter(Boolean) as string[];
-      let bindings: Array<{
-        sourceArtifactId: string | null;
-        activePresetKey: string;
-        appliedAt: Date;
-      }> = [];
-      if (artifactIds.length > 0) {
-        bindings = await db
-          .select({
-            sourceArtifactId: agentPresetBindings.sourceArtifactId,
-            activePresetKey: agentPresetBindings.activePresetKey,
-            appliedAt: agentPresetBindings.appliedAt,
-          })
-          .from(agentPresetBindings)
-          .where(
-            and(
-              eq(agentPresetBindings.agentId, agentId),
-              inArray(agentPresetBindings.sourceArtifactId, artifactIds),
-              gte(agentPresetBindings.appliedAt, run.requestedAt ?? new Date(0)),
-            ),
-          );
-      }
-
-      const results = rows.map((r) => {
-        const binding = bindings.find(
-          (b) => b.sourceArtifactId === r.artifactId && b.sourceArtifactId !== null,
-        );
-        const rankings = (r.presetRankings as Array<Record<string, unknown>> | null) ?? [];
-        return {
-          symbol: r.symbol,
-          artifactId: r.artifactId,
-          currentPreset: r.activePreset,
-          currentPresetName:
-            getPreset(r.activePreset, r.styleTier as StyleKey)?.name ?? r.activePreset,
-          recommendedPreset: r.recommendedPreset,
-          recommendedPresetName: r.recommendedPreset
-            ? (getPreset(r.recommendedPreset, r.styleTier as StyleKey)?.name ?? r.recommendedPreset)
-            : null,
-          confidence: r.confidence,
-          urgency: r.urgency,
-          expiresAt: r.expiresAt?.toISOString() ?? null,
-          rankings: rankings.map((p: Record<string, unknown>) => ({
-            presetKey: p['presetKey'],
-            presetName:
-              getPreset(p['presetKey'] as string, r.styleTier as StyleKey)?.name ??
-              (p['presetKey'] as string),
-            rank: p['rank'],
-            score: p['score'],
-            scoreBand: p['scoreBand'],
-            pros: p['pros'],
-            cons: p['cons'],
-            fitNotes: p['fitNotes'],
-          })),
-          agentAction: binding ? 'acted' : 'awaiting',
-          agentActionDetail: binding
-            ? {
-                appliedPreset: binding.activePresetKey,
-                appliedAt: binding.appliedAt?.toISOString() ?? null,
-              }
-            : null,
-        };
-      });
-
-      return reply.send({
-        requestId: run.id,
-        status: run.status,
-        capacityExceeded: (run.resultSummary as Record<string, unknown> | null)?.capacityExceeded === true,
-        results,
       });
     },
   );

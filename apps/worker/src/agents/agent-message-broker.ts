@@ -8,10 +8,7 @@ import type {
   StopRequestPayload,
   SendMessagePayload,
   ManageBotPayload,
-  AssessStrategyPresetRequestPayload,
-  ChangeStrategyPresetRequestPayload,
   ManageAgentSkillsPayload,
-  ToolContext,
   OperatorModelDefaults,
   PlansConfig,
 } from '@herobids/domain';
@@ -35,8 +32,6 @@ import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './capability-policy.js';
 import type { CapabilityGrant } from './capability-policy.js';
-import { assessStrategyPresetTool } from '../tools/assess-strategy-preset.js';
-import { changeStrategyPresetTool } from '../tools/change-strategy-preset.js';
 import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
 import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createLogger } from '../logger.js';
@@ -174,8 +169,6 @@ export class AgentMessageBroker {
       [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: 'send_message',
       [AGENT_MESSAGE_TYPES.MANAGE_BOT]: 'manage_bot',
       [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
-      [AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET]: 'assess_strategy_preset',
-      [AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET]: 'change_strategy_preset',
       [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
     };
     const capabilityName = capabilityByType[envelope.type];
@@ -351,14 +344,6 @@ export class AgentMessageBroker {
           this.onAgentConfigUpdate?.(effectiveAgentId, configPayload.config ?? null);
           break;
         }
-
-        case AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET:
-          await this.handleAssessStrategyPreset(effectiveAgentId, envelope);
-          break;
-
-        case AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET:
-          await this.handleChangeStrategyPreset(effectiveAgentId, envelope);
-          break;
 
         case AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS:
           await this.handleManageAgentSkills(
@@ -729,144 +714,6 @@ export class AgentMessageBroker {
     }
 
     throw new Error(`Unknown manage_bot action: ${(payload as { action: string }).action}`);
-  }
-
-  /**
-   * Handle a brokered assess_strategy_preset request from an agent container.
-   * Builds a minimal ToolContext and delegates to the tool's execute function.
-   * The ports are already wired in the worker process.
-   */
-  private async handleAssessStrategyPreset(agentId: string, envelope: MessageEnvelope): Promise<void> {
-    const payload = envelope.payload as AssessStrategyPresetRequestPayload;
-    try {
-      const toolCtx = this.buildPresetToolContext(agentId, envelope.correlationId ?? payload.sessionId);
-
-      const toolResult = await assessStrategyPresetTool.execute(payload, toolCtx);
-
-      const resultPayload = {
-        requestMessageId: envelope.messageId,
-        correlationId: envelope.correlationId,
-        result: toolResult,
-      };
-      await this.eventPublisher.emitAssessStrategyPresetResult(agentId, resultPayload);
-
-      // Also publish to reply list for synchronous tool response when requestMessageId is set
-      if (payload.requestMessageId) {
-        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, toolResult as unknown as Record<string, unknown>);
-      }
-    } catch (err) {
-      logger.error({ agentId, err }, 'Assess strategy preset handler failed');
-      const errorResult = {
-        success: false,
-        error: err instanceof Error ? err.message : 'Unexpected broker error',
-        errorCode: 'broker.internal_error',
-        fault: true,
-      };
-      const errorPayload = {
-        requestMessageId: envelope.messageId,
-        correlationId: envelope.correlationId,
-        result: errorResult,
-      };
-      await this.eventPublisher.emitAssessStrategyPresetResult(agentId, errorPayload);
-
-      if (payload.requestMessageId) {
-        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, errorResult as unknown as Record<string, unknown>);
-      }
-      return;
-    }
-  }
-
-  /**
-   * Handle a brokered change_strategy_preset request from an agent container.
-   * Builds a minimal ToolContext with db access and delegates to the tool's execute function.
-   * The ports are already wired in the worker process.
-   */
-  private async handleChangeStrategyPreset(agentId: string, envelope: MessageEnvelope): Promise<void> {
-    const payload = envelope.payload as ChangeStrategyPresetRequestPayload;
-    try {
-      const toolCtx = this.buildPresetToolContext(agentId, envelope.correlationId ?? payload.sessionId);
-
-      const toolResult = await changeStrategyPresetTool.execute(payload, toolCtx);
-
-      const resultPayload = {
-        requestMessageId: envelope.messageId,
-        correlationId: envelope.correlationId,
-        result: toolResult,
-      };
-      await this.eventPublisher.emitChangeStrategyPresetResult(agentId, resultPayload);
-
-      // Also publish to reply list for synchronous tool response when requestMessageId is set
-      if (payload.requestMessageId) {
-        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, toolResult as unknown as Record<string, unknown>);
-      }
-    } catch (err) {
-      logger.error({ agentId, err }, 'Change strategy preset handler failed');
-      const errorResult = {
-        success: false,
-        error: err instanceof Error ? err.message : 'Unexpected broker error',
-        errorCode: 'broker.internal_error',
-        fault: true,
-      };
-      const errorPayload = {
-        requestMessageId: envelope.messageId,
-        correlationId: envelope.correlationId,
-        result: errorResult,
-      };
-      await this.eventPublisher.emitChangeStrategyPresetResult(agentId, errorPayload);
-
-      if (payload.requestMessageId) {
-        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, errorResult as unknown as Record<string, unknown>);
-      }
-      return;
-    }
-  }
-
-  /**
-   * Build a minimal ToolContext for preset tool execution in the broker.
-   * Only provides the fields that the preset tools actually use:
-   * - agentId, agentConfigOps (getCurrentConfig, appendJournal), db
-   * All other ToolContext fields are stubbed since the preset tools don't access them.
-   */
-  private buildPresetToolContext(agentId: string, sessionId: string): ToolContext {
-    const db = this.db;
-
-    const agentConfigOps: ToolContext['agentConfigOps'] = {
-      getCurrentConfig: () => this.agentRepo.getUnifiedConfig(agentId),
-      persistConfig: async () => {},
-      // c4.9i Gap (traderton docs/001): journal_events is Traderton-owned. The
-      // preset-transition journal write was dropped — herobids no longer writes
-      // to journal_events. Kept as a no-op to satisfy the agentConfigOps
-      // contract consumed by change_strategy_preset.
-      appendJournal: async () => {
-        // intentionally no-op — see c4.9i Gap above
-      },
-      notifyActorConfigUpdate: async () => {},
-      getLlmTickCount: () => 0,
-    };
-
-    return {
-      agentId,
-      sessionId,
-      phase: 'judge',
-      executionMode: 'paper',
-      authorizationMode: 'direct',
-      redis: {
-        hset: async () => 0,
-        hget: async () => null,
-        hgetall: async () => null,
-        hdel: async () => 0,
-        publish: async () => 0,
-        blpop: async () => null,
-        smembers: async () => [],
-        sadd: async () => 0,
-        srem: async () => 0,
-        expire: async () => 0,
-      },
-      publishToInbound: async () => {},
-      agentConfigOps,
-      db: db as unknown,
-      permissionLevel: 'standard',
-    };
   }
 
   /** Look up slug values for a set of skill IDs. Returns a map of id → slug. Best-effort: returns empty map on failure. */
@@ -1276,11 +1123,6 @@ export class AgentMessageBroker {
       case AGENT_MESSAGE_TYPES.DECISION_SUBMIT: {
         const decisionId = payload.decisionId as string | undefined;
         return decisionId ? `agent:decision:reply:${decisionId}` : undefined;
-      }
-      case AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET:
-      case AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET: {
-        const requestMessageId = payload.requestMessageId as string | undefined;
-        return requestMessageId ? `agent:preset:reply:${requestMessageId}` : undefined;
       }
       case AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS: {
         const requestMessageId = payload.requestMessageId as string | undefined;

@@ -331,6 +331,7 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
             executionDefaults: livePayload.executionDefaults ?? null,
             scanMode: liveScanConfig.scanMode,
             creatorStrategy: liveScanConfig.creatorStrategy,
+            presetPolicy: liveScanConfig.presetPolicy,
           }] as const));
         return {
           prior: { profiles: new Map(), connections: [] },

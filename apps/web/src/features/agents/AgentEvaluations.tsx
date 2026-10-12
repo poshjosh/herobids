@@ -403,7 +403,9 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
   const [includeNarrative, setIncludeNarrative] = useState(true);
 
   // ── Strategy review state ──────────────────────────────────────────────
-  const [reviewRequestId, setReviewRequestId] = useState<string | null>(null);
+  const [reviewSymbols, setReviewSymbols] = useState('BTC');
+  const [reviewVenueFamily, setReviewVenueFamily] = useState('hyperliquid');
+  const [reviewTriggered, setReviewTriggered] = useState(false);
 
   // ── List query ─────────────────────────────────────────────────────────
   const listQuery = useQuery({
@@ -469,11 +471,17 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
 
   // ── Strategy review trigger ─────────────────────────────────────────
   const reviewTriggerMutation = useMutation({
-    mutationFn: () => agentsApi.platformAssessmentReviews.trigger(agentId),
-    onSuccess: (data) => {
-      setReviewRequestId(data.requestId);
+    mutationFn: () => agentsApi.platformAssessmentReviews.trigger(agentId, {
+      symbols: reviewSymbols.split(',').map((s) => s.trim()).filter(Boolean),
+      venueFamily: reviewVenueFamily,
+    }),
+    onSuccess: () => {
+      setReviewTriggered(true);
       void qc.invalidateQueries({
         queryKey: ['agents', agentId, 'platform-assessment-review', 'eligibility'],
+      });
+      void qc.invalidateQueries({
+        queryKey: ['agents', agentId, 'platform-assessment-review', 'results'],
       });
     },
     onError: (error) => {
@@ -485,35 +493,11 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
     },
   });
 
-  // ── Strategy review status polling ─────────────────────────────────
-  const reviewStatusQuery = useQuery({
-    queryKey: ['agents', agentId, 'platform-assessment-review', reviewRequestId],
-    queryFn: () => agentsApi.platformAssessmentReviews.get(agentId, reviewRequestId!),
-    enabled: !!reviewRequestId,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (!data) return 5_000;
-      const isTerminal = ['succeeded', 'failed'].includes(data.status);
-      return isTerminal ? false : 5_000;
-    },
-  });
-
-  const reviewStatus = reviewStatusQuery.data ?? null;
-
-  // ── Strategy review advice ──────────────────────────────────────────
-  const reviewAdviceQuery = useQuery({
-    queryKey: ['agents', agentId, 'platform-assessment-review', reviewRequestId, 'advice'],
-    queryFn: () => agentsApi.platformAssessmentReviews.getAdvice(agentId, reviewRequestId!),
-    enabled: !!reviewRequestId && reviewStatus?.status === 'succeeded',
-  });
-
-  const adviceData = reviewAdviceQuery.data ?? null;
-
-  // ── Strategy review results (preset rankings) ───────────────────────
+  // ── Strategy review results (data-only artifacts + agent decision) ──
   const reviewResultsQuery = useQuery({
-    queryKey: ['agents', agentId, 'platform-assessment-review', reviewRequestId, 'results'],
-    queryFn: () => agentsApi.platformAssessmentReviews.getResults(agentId, reviewRequestId!),
-    enabled: !!reviewRequestId && reviewStatus?.status === 'succeeded' && reviewStatus?.resultSummary?.assessmentStatus === 'completed',
+    queryKey: ['agents', agentId, 'platform-assessment-review', 'results'],
+    queryFn: () => agentsApi.platformAssessmentReviews.getResults(agentId),
+    refetchInterval: 10_000,
   });
 
   const resultsData = reviewResultsQuery.data ?? null;
@@ -714,28 +698,55 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
           {/* Strategy review section */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 0', borderTop: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                value={reviewSymbols}
+                onChange={(e) => setReviewSymbols(e.target.value)}
+                placeholder="BTC, ETH"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '0.8125rem',
+                  borderRadius: '4px',
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-surface-1)',
+                  color: 'var(--color-text-primary)',
+                  width: '140px',
+                }}
+              />
+              <input
+                type="text"
+                value={reviewVenueFamily}
+                onChange={(e) => setReviewVenueFamily(e.target.value)}
+                placeholder="hyperliquid"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '0.8125rem',
+                  borderRadius: '4px',
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-surface-1)',
+                  color: 'var(--color-text-primary)',
+                  width: '140px',
+                }}
+              />
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={handleReviewTrigger}
                 disabled={
                   reviewTriggerMutation.isPending ||
-                  (reviewEligibilityQuery.isSuccess && !reviewEligibilityQuery.data?.canTrigger) ||
-                  (reviewStatus !== null && ['queued', 'running'].includes(reviewStatus.status))
+                  (reviewEligibilityQuery.isSuccess && !reviewEligibilityQuery.data?.canTrigger)
                 }
               >
-                {reviewTriggerMutation.isPending || (reviewStatus !== null && ['queued', 'running'].includes(reviewStatus.status))
+                {reviewTriggerMutation.isPending
                   ? intl.formatMessage({ id: 'agents.strategyReview.running' })
                   : intl.formatMessage({ id: 'agents.strategyReview.runReview' })}
               </Button>
 
               {reviewTriggerMutation.isError && (
                 <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
-                  {reviewTriggerMutation.error instanceof ApiError && (reviewTriggerMutation.error as ApiError).status === 409
-                    ? intl.formatMessage({ id: 'agents.strategyReview.alreadyInProgress' })
-                    : reviewTriggerMutation.error instanceof ApiError
-                      ? (reviewTriggerMutation.error as ApiError).message
-                      : intl.formatMessage({ id: 'agents.strategyReview.triggerError' })}
+                  {reviewTriggerMutation.error instanceof ApiError
+                    ? (reviewTriggerMutation.error as ApiError).message
+                    : intl.formatMessage({ id: 'agents.strategyReview.triggerError' })}
                 </span>
               )}
             </div>
@@ -748,210 +759,57 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                 </span>
               )}
 
-            {/* Review result summary */}
-            {reviewStatus !== null && (
-              <div style={{
-                marginTop: '4px',
-                padding: '8px 10px',
-                borderRadius: '6px',
-                fontSize: '0.8125rem',
-                background: reviewStatus.status === 'succeeded'
-                  ? (reviewStatus.resultSummary?.hasAdvice ? 'var(--color-success-subtle)' : 'var(--color-surface-2)')
-                  : reviewStatus.status === 'failed'
-                    ? 'var(--color-danger-subtle)'
-                    : 'var(--color-surface-2)',
-              }}>
-                {reviewStatus.status === 'queued' || reviewStatus.status === 'running' ? (
-                  <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.inProgress' })}</span>
-                ) : reviewStatus.status === 'failed' ? (
-                  <span style={{ color: 'var(--color-danger)' }}>
-                    {intl.formatMessage({ id: 'agents.strategyReview.failed' }, { error: reviewStatus.errorMessage ?? intl.formatMessage({ id: 'agents.strategyReview.unknownError' }) })}
-                  </span>
-                ) : reviewStatus.status === 'succeeded' && reviewStatus.resultSummary ? (
-                  <span style={{ color: 'var(--color-text-primary)' }}>
-                    {reviewStatus.resultSummary.hasAdvice
-                      ? intl.formatMessage({ id: 'agents.strategyReview.completeWithAdvice' }, { count: reviewStatus.resultSummary.advisedCount })
-                      : intl.formatMessage({ id: 'agents.strategyReview.completeNoAdvice' })}
-                    {reviewStatus.resultSummary.checkOutcome && (
-                      <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
-                        ({reviewStatus.resultSummary.checkOutcome})
-                      </span>
-                    )}
-                  </span>
-                ) : null}
+            {/* Agent decision + reason (once the agent acts) */}
+            {resultsData && resultsData.changes.length > 0 && (
+              <div style={{ marginTop: '8px' }}>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '8px' }}>
+                  {intl.formatMessage({ id: 'agents.strategyReview.results.title' })}
+                </div>
+                {resultsData.changes.map((c, i) => {
+                  const fromPreset = (c.fromStrategy as Record<string, unknown> | null)?.presetKey;
+                  const toPreset = (c.toStrategy as Record<string, unknown>)?.presetKey;
+                  const changed = fromPreset !== toPreset;
+                  return (
+                    <div key={i} style={{
+                      marginBottom: '8px',
+                      padding: '10px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--color-border)',
+                      background: 'var(--color-surface-1)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.75rem' }}>
+                        {changed ? (
+                          <span style={{ color: 'var(--color-text-primary)' }}>
+                            {intl.formatMessage({ id: 'agents.strategyReview.results.agentChanged' }, {
+                              from: String(fromPreset ?? '—'),
+                              to: String(toPreset ?? '—'),
+                            })}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--color-text-secondary)' }}>
+                            {intl.formatMessage({ id: 'agents.strategyReview.results.agentKept' }, {
+                              preset: String(toPreset ?? fromPreset ?? '—'),
+                            })}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+                          {c.appliedAt ?? c.createdAt}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                        <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.results.reason' })}: </span>
+                        {c.reason}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* Two-phase UX: Phase A — per-instrument table (collapsed if results exist) */}
-            {reviewStatus?.status === 'succeeded' && adviceData && adviceData.advice.length > 0 && (
-              <div style={{ marginTop: '8px' }}>
-                {/* Phase C: Assessment Results (primary UX) */}
-                {resultsData && resultsData.results.length > 0 && (
-                  <div style={{ marginBottom: '12px' }}>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '8px' }}>
-                      {intl.formatMessage({ id: 'agents.strategyReview.results.title' })}
-                    </div>
-                    {resultsData.results.map((r, i) => (
-                      <div key={i} style={{
-                        marginBottom: '12px',
-                        padding: '10px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--color-border)',
-                        background: 'var(--color-surface-1)',
-                      }}>
-                        {/* Symbol header */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                            {r.symbol ?? 'Unknown'}
-                          </span>
-                          {r.urgency && r.urgency !== 'low' && (
-                            <span style={{
-                              padding: '1px 6px', borderRadius: '10px', fontSize: '0.625rem', fontWeight: 600,
-                              background: r.urgency === 'high' ? 'var(--color-danger-subtle)' : 'var(--color-warning-subtle)',
-                              color: r.urgency === 'high' ? 'var(--color-danger)' : 'var(--color-warning)',
-                            }}>
-                              {r.urgency}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Current vs Recommended */}
-                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '8px', fontSize: '0.75rem' }}>
-                          <div>
-                            <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.results.current' })}: </span>
-                            <span style={{ color: 'var(--color-text-secondary)' }}>{r.currentPresetName}</span>
-                          </div>
-                          {r.recommendedPresetName && (
-                            <div>
-                              <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.results.recommended' })}: </span>
-                              <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>{r.recommendedPresetName}</span>
-                              <span style={{ marginLeft: '4px', fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
-                                ({intl.formatMessage({ id: 'agents.strategyReview.results.confidence' })}: {(r.confidence * 100).toFixed(0)}%)
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Preset ranking table */}
-                        {r.rankings.length > 0 && (
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.6875rem', marginBottom: '8px' }}>
-                            <thead>
-                              <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                                <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.preset' })}</th>
-                                <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.score' })}</th>
-                                <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.pros' })}</th>
-                                <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.cons' })}</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {r.rankings.map((p, j) => (
-                                <tr key={j} style={{
-                                  borderBottom: '1px solid var(--color-border)',
-                                  background: p.presetKey === r.currentPreset
-                                    ? 'var(--color-info-subtle)'
-                                    : p.presetKey === r.recommendedPreset
-                                      ? 'var(--color-success-subtle)'
-                                      : 'transparent',
-                                }}>
-                                  <td style={{ padding: '2px 6px', color: 'var(--color-text-primary)', fontWeight: p.presetKey === r.recommendedPreset ? 700 : 400 }}>
-                                    {p.presetName}
-                                    {p.presetKey === r.currentPreset && (
-                                      <span style={{ marginLeft: '4px', fontSize: '0.5625rem', color: 'var(--color-text-muted)' }}>
-                                        ({intl.formatMessage({ id: 'agents.strategyReview.results.current' })})
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td style={{ padding: '2px 6px', color: 'var(--color-text-secondary)' }}>{(p.score * 100).toFixed(0)}%</td>
-                                  <td style={{ padding: '2px 6px', color: 'var(--color-text-secondary)' }}>
-                                    {p.pros.slice(0, 2).join(', ')}{p.pros.length > 2 ? '…' : ''}
-                                  </td>
-                                  <td style={{ padding: '2px 6px', color: 'var(--color-text-muted)' }}>
-                                    {p.cons.slice(0, 2).join(', ')}{p.cons.length > 2 ? '…' : ''}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
-
-                        {/* Agent action status */}
-                        <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
-                          {r.agentAction === 'acted' && r.agentActionDetail
-                            ? intl.formatMessage({ id: 'agents.strategyReview.results.agentActed' }, { preset: r.agentActionDetail.appliedPreset })
-                            : intl.formatMessage({ id: 'agents.strategyReview.results.agentNotified' })}
-                        </div>
-                      </div>
-                    ))}
-                    {resultsData.capacityExceeded && (
-                      <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                        {intl.formatMessage({ id: 'agents.strategyReview.results.capacityExceeded' })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Phase B: Assessing progress */}
-                {reviewStatus?.resultSummary?.assessmentStatus === 'assessing' && (
-                  <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
-                    {intl.formatMessage({ id: 'agents.strategyReview.assessing' }, {
-                      assessed: reviewStatus.resultSummary.assessedCount ?? 0,
-                      total: reviewStatus.resultSummary.totalAdvised ?? 0,
-                    })}
-                  </div>
-                )}
-
-                {/* Phase A: Per-instrument table (collapsed, show details) */}
-                <details open={!resultsData || resultsData.results.length === 0}>
-                  <summary style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', cursor: 'pointer', marginBottom: '4px' }}>
-                    {intl.formatMessage({ id: 'agents.strategyReview.details' })}
-                  </summary>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6875rem' }}>
-                          {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.symbol' })}
-                        </th>
-                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6875rem' }}>
-                          {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.preset' })}
-                        </th>
-                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6875rem' }}>
-                          {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.outcome' })}
-                        </th>
-                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6875rem' }}>
-                          {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.reasons' })}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {adviceData.advice.map((a, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                          <td style={{ padding: '4px 8px', color: 'var(--color-text-primary)' }}>{a.symbol ?? '—'}</td>
-                          <td style={{ padding: '4px 8px', color: 'var(--color-text-secondary)' }}>{a.activePresetName}</td>
-                          <td style={{ padding: '4px 8px' }}>
-                            <span style={{
-                              padding: '1px 6px', borderRadius: '10px', fontSize: '0.6875rem', fontWeight: 600,
-                              background: a.outcome === 'advised' ? 'var(--color-success-subtle)' : 'var(--color-surface-2)',
-                              color: a.outcome === 'advised' ? 'var(--color-success)' : 'var(--color-text-muted)',
-                            }}>
-                              {a.outcome}
-                            </span>
-                          </td>
-                          <td style={{ padding: '4px 8px' }}>
-                            {a.reasonsDisplay.length > 0
-                              ? a.reasonsDisplay.map((r, j) => (
-                                  <code key={j} style={{
-                                    display: 'inline-block', marginRight: '4px', marginBottom: '2px',
-                                    padding: '1px 5px', borderRadius: '4px', fontSize: '0.6875rem',
-                                    background: 'var(--color-surface-3)', color: 'var(--color-text-muted)',
-                                  }}>{r}</code>
-                                ))
-                              : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </details>
+            {/* No decision yet */}
+            {reviewTriggered && resultsData && resultsData.changes.length === 0 && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '8px' }}>
+                {intl.formatMessage({ id: 'agents.strategyReview.results.agentNotified' })}
               </div>
             )}
           </div>

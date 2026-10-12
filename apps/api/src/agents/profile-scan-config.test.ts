@@ -32,12 +32,12 @@ describe('deriveProfileScanConfig', () => {
       unifiedConfig: { capabilityMode: 'intelligence', authorizationMode: 'direct' } as UnifiedAgentConfig,
       style: 'balanced',
     });
-    expect(result).toEqual({ scanMode: null, creatorStrategy: null });
+    expect(result).toEqual({ scanMode: null, creatorStrategy: null, presetPolicy: null });
   });
 
   it('returns null scan config when there is no unified config', () => {
     expect(deriveProfileScanConfig({ unifiedConfig: null, style: null }))
-      .toEqual({ scanMode: null, creatorStrategy: null });
+      .toEqual({ scanMode: null, creatorStrategy: null, presetPolicy: null });
   });
 
   it('uses hybridMode as scanMode and defaults to mixed', () => {
@@ -53,7 +53,7 @@ describe('deriveProfileScanConfig', () => {
     const config = hybridConfig();
     delete (config as { technical?: unknown }).technical;
     expect(deriveProfileScanConfig({ unifiedConfig: config, style: 'balanced' }))
-      .toEqual({ scanMode: 'scanner_gated', creatorStrategy: null });
+      .toEqual({ scanMode: 'scanner_gated', creatorStrategy: null, presetPolicy: null });
   });
 
   it('returns a null creatorStrategy without throwing when an unbound agent technical has no filters', () => {
@@ -66,7 +66,7 @@ describe('deriveProfileScanConfig', () => {
       technical: unboundTechnical as unknown as UnifiedAgentConfig['technical'],
     });
     expect(deriveProfileScanConfig({ unifiedConfig: config, style: 'balanced' }))
-      .toEqual({ scanMode: 'mixed', creatorStrategy: null });
+      .toEqual({ scanMode: 'mixed', creatorStrategy: null, presetPolicy: null });
   });
 
   it('sends presetKey and styleTier when technical equals the preset resolution', () => {

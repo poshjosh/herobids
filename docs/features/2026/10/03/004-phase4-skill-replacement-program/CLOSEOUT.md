@@ -32,12 +32,23 @@ Legend: ✅ pass (verified) · evidence = commit SHA / test / script.
 
 ## 3. Tools not moved (T0.7 case 4, large)
 
+> **Update (2026-10-10):** both tools are now **moved** to Traderton as part of
+> "Preset assessment becomes data-only and free" (herobids plan
+> `docs/features/2026/10/04/002-preset-assessment-on-traderton/001-plan.md`,
+> Traderton plan `traderton/docs/features/2026/10/04/004-preset-assessment-data-only/001-plan.md`).
+> Traderton now owns `assess_strategy_preset` / `change_strategy_preset` /
+> `list_strategy_presets` (data-only, free — no billing, no LLM ranking) plus the
+> consumer-only `list_agent_strategy_changes` / `get_assessment_artifact` reads.
+> Herobids deleted its local executors, the platform assessor, the review
+> scheduler, the manual-review queue, and the `assessment.request` billing meter.
+> The table below is retained for historical context only.
+
 These tools are **invisible to agents** after Phase 4 (accepted by the operator, 2026-10-03).
 
 | Tool | Skill(s) | What it does | Why moving was large | Impact on agents (incl. agent trade test result) | Suggested next step |
 |---|---|---|---|---|---|
-| `assess_strategy_preset` | `traderton/skills/crypto-trading` | Requests a billable market assessment ranking strategy presets for symbols; returns rankings + an artifact id for a transition. | The entire billable assessment subsystem lives in herobids (`market_assessment_requests/_runs/_artifacts` tables, `PlatformAssessor`, `AssessmentRequestService`/`AssessmentRequestPort`, usage-billing reservation). Traderton has NO executor (only Zod schemas + a display helper). Moving needs new Traderton storage, a new contract, and a broker re-route. Corroborated by Traderton `011-premerge-backlog.md` c4.9h (`market_assessment_*` = PLATFORM-KEEP). | Not advertised in Traderton `tools/list` → not in the visible set (= `tools/list` ∩ registry). The `crypto-trading` SKILL.md still names it (IV-a); a call returns "not in the allowed set" — a visible error, not a safety failure (ADR 017 Consequences). **Confirmed empirically in EC-15**: the `platform-preset-assessment` shell suite PASSES with the external crypto-trading skill, and all 17 e2e journeys (incl. strategy-preset journey 16) pass — core trade decisioning (`submit_decision` etc.) and preset *persistence* via the agent config are unaffected; only the in-agent billable-assessment tool is absent. | Follow-up (F-2/F-6 family): keep in herobids (platform billing) and expose generically later, OR build a Traderton assessment executor + contract if trading-platform ownership is wanted. |
-| `change_strategy_preset` | `traderton/skills/crypto-trading` | Applies a strategy-preset switch using an assessment artifact id; validates artifact/freshness/allowed-presets; delegates to a herobids `PresetTransitionPort`. | Reads herobids `marketAssessmentArtifacts`, gates on herobids `platformAssessment.enabled`/`allowedPresets`, journals via herobids agent-config ops — all herobids-owned. Same "large" criterion as above. | Same as `assess_strategy_preset`. | Same as above. |
+| `assess_strategy_preset` | `traderton/skills/crypto-trading` | Requests a billable market assessment ranking strategy presets for symbols; returns rankings + an artifact id for a transition. | The entire billable assessment subsystem lives in herobids (`market_assessment_requests/_runs/_artifacts` tables, `PlatformAssessor`, `AssessmentRequestService`/`AssessmentRequestPort`, usage-billing reservation). Traderton has NO executor (only Zod schemas + a display helper). Moving needs new Traderton storage, a new contract, and a broker re-route. Corroborated by Traderton `011-premerge-backlog.md` c4.9h (`market_assessment_*` = PLATFORM-KEEP). | Not advertised in Traderton `tools/list` → not in the visible set (= `tools/list` ∩ registry). The `crypto-trading` SKILL.md still names it (IV-a); a call returns "not in the allowed set" — a visible error, not a safety failure (ADR 017 Consequences). **Confirmed empirically in EC-15**: the `platform-preset-assessment` shell suite PASSES with the external crypto-trading skill, and all 17 e2e journeys (incl. strategy-preset journey 16) pass — core trade decisioning (`submit_decision` etc.) and preset *persistence* via the agent config are unaffected; only the in-agent billable-assessment tool is absent. | **MOVED** — see the update note above. |
+| `change_strategy_preset` | `traderton/skills/crypto-trading` | Applies a strategy-preset switch using an assessment artifact id; validates artifact/freshness/allowed-presets; delegates to a herobids `PresetTransitionPort`. | Reads herobids `marketAssessmentArtifacts`, gates on herobids `platformAssessment.enabled`/`allowedPresets`, journals via herobids agent-config ops — all herobids-owned. Same "large" criterion as above. | Same as `assess_strategy_preset`. | **MOVED** — see the update note above. |
 
 ## 4. T0.7 outcomes (all cases)
 
@@ -47,8 +58,8 @@ Universe = the three skills' `requiredTools` minus base tools. Full table record
 |---|---|---|---|
 | 25 trading tools (get_market_overview, check_regime, get_price, get_funding_rates, search_tokens, discover_tokens, get_risk_limits, get_account_summary, get_analytics, list_positions, watch_token, list_watches, remove_watch, resolve_watch, check_watches, find_instrument, adjust_risk_limits, create_bot, stop_bot, start_bot, adjust_bot_config, list_bots, get_bot_status, resolve_bot) | — (exact-name match) | Listed in Traderton `tools/list` tagged to their skill(s); visible via intersection. No rename, no new tool. | `traderton/packages/boundary/src/mcp/skill-tool-map.ts` |
 | `submit_decision` | 3 (Traderton executes; herobids adds UX) | Traderton lists + executes; herobids keeps its dry-run/approval wrapper unchanged. | skill-tool-map.ts (crypto-trading) |
-| `assess_strategy_preset` | 4 (large) | NOT moved — stays herobids, invisible to agents. See §3. | TASKS.md §T0.7 decision |
-| `change_strategy_preset` | 4 (large) | NOT moved — stays herobids, invisible to agents. See §3. | TASKS.md §T0.7 decision |
+| `assess_strategy_preset` | 4 (large) | MOVED to Traderton (data-only, free) — see §3 update. | `docs/features/2026/10/04/002-preset-assessment-on-traderton/001-plan.md` |
+| `change_strategy_preset` | 4 (large) | MOVED to Traderton (data-only, free) — see §3 update. | `docs/features/2026/10/04/002-preset-assessment-on-traderton/001-plan.md` |
 
 No case-1 (rename) and no case-2 (new Traderton convenience tool) arose.
 

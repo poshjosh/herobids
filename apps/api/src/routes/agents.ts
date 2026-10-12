@@ -787,7 +787,7 @@ export async function agentRoutes(
       // stamp it onto — an unbound create has no profile yet, and its technical
       // config has no resolved venue/venueType to parse against.
       const scanConfig = resolvableConnections.length === 0
-        ? { scanMode: null, creatorStrategy: null }
+        ? { scanMode: null, creatorStrategy: null, presetPolicy: null }
         : deriveProfileScanConfig({
           unifiedConfig: (createFields.unifiedConfig as UnifiedAgentConfig | null) ?? null,
           style: parsed.data.style ?? null,
@@ -801,6 +801,7 @@ export async function agentRoutes(
           executionDefaults: executionDefaultsJsonb,
           scanMode: scanConfig.scanMode,
           creatorStrategy: scanConfig.creatorStrategy,
+          presetPolicy: scanConfig.presetPolicy,
         }] as const));
       return {
         prior: { profiles: new Map(), connections: [] },
@@ -2104,7 +2105,7 @@ export async function agentRoutes(
           .where(eq(connections.id, connectionId));
       }
     }
-    // 8. DELETE agents (cascades: agent_skills, agent_connections, agent_connection_audit, market_assessment_requests)
+    // 8. DELETE agents (cascades: agent_skills, agent_connections, agent_connection_audit)
     await tx.delete(agents).where(eq(agents.id, id));
         await markLocalCommitted();
       },

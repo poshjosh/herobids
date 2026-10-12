@@ -2331,6 +2331,7 @@ export async function blueprintRoutes(
                   executionDefaults: agentPayloadFinal.executionDefaults ?? null,
                   scanMode: scanConfig.scanMode,
                   creatorStrategy: scanConfig.creatorStrategy,
+                  presetPolicy: scanConfig.presetPolicy,
                 }] as const));
               return {
                 prior: { profiles: new Map(), connections: [] },
