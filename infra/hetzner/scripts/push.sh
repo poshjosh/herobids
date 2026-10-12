@@ -101,8 +101,21 @@ fi
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pulling latest code..."
 git fetch --all && git reset --hard origin/main
 
+# NPM_TOKEN — GitHub PAT with read:packages scope for @poshjosh/contracts.
+# The migrate/api/worker/web images pull @poshjosh/contracts from npm.pkg.github.com
+# via a build secret (docker-compose.yaml `secrets.NPM_TOKEN.environment`), and the
+# agent image needs the same secret for its own `--mount=type=secret,id=NPM_TOKEN`.
+# Source it from the uploaded /opt/herobids/.env (setup-env.sh) so both `docker
+# build` and `docker compose up --build` see it; never bake it into the image.
+if [[ -z "${NPM_TOKEN:-}" ]]; then
+  NPM_TOKEN="$(grep -E '^NPM_TOKEN=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+fi
+if [[ -n "${NPM_TOKEN:-}" ]]; then
+  export NPM_TOKEN
+fi
+
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Building agent image..."
-docker build --pull -f docker/Dockerfile.agent -t herobids-agent:latest .
+docker build --pull --secret "id=NPM_TOKEN,env=NPM_TOKEN" -f docker/Dockerfile.agent -t herobids-agent:latest .
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting services..."
 docker compose ${COMPOSE_FILES} up -d --build --remove-orphans

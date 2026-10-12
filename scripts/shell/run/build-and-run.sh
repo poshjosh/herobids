@@ -68,7 +68,20 @@ pnpm lint || error_exit "Failed to run pnpm lint"
 
 # 3. Build agent Docker image
 log "Step 3: Building agent Docker image..."
-docker build -f docker/Dockerfile.agent -t herobids-agent:latest . || error_exit "Failed to build agent Docker image"
+# Dockerfile.agent pulls @poshjosh/contracts from GitHub Packages via the
+# NPM_TOKEN build secret (--mount=type=secret,id=NPM_TOKEN). Source the token from
+# ~/.npmrc (where the human's read:packages PAT lives) or the already-loaded env,
+# then pass it as a one-shot build secret so it is never baked into the image.
+if [[ -z "${NPM_TOKEN:-}" ]]; then
+  NPM_TOKEN="$(grep -E '^//npm\.pkg\.github\.com/:_authToken=' "${HOME}/.npmrc" 2>/dev/null | head -1 | cut -d= -f2-)"
+fi
+if [[ -n "${NPM_TOKEN:-}" ]]; then
+  export NPM_TOKEN
+  docker build --secret "id=NPM_TOKEN,env=NPM_TOKEN" -f docker/Dockerfile.agent -t herobids-agent:latest . || error_exit "Failed to build agent Docker image"
+else
+  log "WARNING: NPM_TOKEN not set — @poshjosh/contracts install will fail. Set it in .env.ops.dev or ~/.npmrc."
+  docker build -f docker/Dockerfile.agent -t herobids-agent:latest . || error_exit "Failed to build agent Docker image"
+fi
 
 # 4. Start services with docker compose
 # EXTRA_COMPOSE_FILES (optional, space-separated `-f <file>` args) lets callers
