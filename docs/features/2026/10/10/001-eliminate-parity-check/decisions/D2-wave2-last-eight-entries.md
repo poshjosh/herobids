@@ -6,7 +6,7 @@
   `domain-ports-candle-fetcher` [residual `PriceCandle`], `domain-scanner-types`)
   whose herobids copies are **live** (not dead), when the traderton copies are also
   live and single-owner?
-- **Status:** PROPOSED (surfaced to the human 2026-10-12).
+- **Status:** PARTIALLY RATIFIED (2026-10-12) — D2-a ratified (Option 1); D2-b/c/d pending.
 
 ## Evidence
 
@@ -87,5 +87,11 @@ UX.
 
 ## Decision
 
-*(pending — the executing agent will record the human's choice per row here and continue
-Wave 2.)*
+- **D2-a — Option 1 RATIFIED (human, 2026-10-12).** Add a new traderton read tool that
+  returns the full `PresetEntry` (not the thin catalog) and re-point herobids' 4 call
+  sites (`strategy-preset-resolver.ts`, `profile-scan-config.ts:153`,
+  `blueprints.ts:461,467,503`) to it. Herobids keeps its `applyPresetToAgent` /
+  `computePresetBehaviorVersion` / `agentStyleToPresetStyle` derivation logic; only the
+  YAML data source moves to traderton. Rationale (human): simplest, no UX change to
+  create/blueprint flows, no logic moved into the contracts package.
+- **D2-b, D2-c, D2-d — pending** (human to confirm one option per row).
