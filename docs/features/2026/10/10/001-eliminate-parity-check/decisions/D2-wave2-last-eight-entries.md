@@ -6,7 +6,7 @@
   `domain-ports-candle-fetcher` [residual `PriceCandle`], `domain-scanner-types`)
   whose herobids copies are **live** (not dead), when the traderton copies are also
   live and single-owner?
-- **Status:** PARTIALLY RATIFIED (2026-10-12) — D2-a ratified (Option 1); D2-b/c/d pending.
+- **Status:** RATIFIED (2026-10-12) — all four rows decided (D2-a=1, D2-b=1, D2-c=1, D2-d=3).
 
 ## Evidence
 
@@ -94,4 +94,10 @@ UX.
   `computePresetBehaviorVersion` / `agentStyleToPresetStyle` derivation logic; only the
   YAML data source moves to traderton. Rationale (human): simplest, no UX change to
   create/blueprint flows, no logic moved into the contracts package.
-- **D2-b, D2-c, D2-d — pending** (human to confirm one option per row).
+- **D2-b — Option 1 RATIFIED (human, 2026-10-12).** Add `ScannerCandleTarget`,
+  `SwapExecutionIdentity`, `scannerTargetKey` to `@poshjosh/contracts` (wire-ish shapes).
+- **D2-c — Option 1 RATIFIED (human, 2026-10-12).** Add `PriceCandle` to
+  `@poshjosh/contracts` (plain wire shape).
+- **D2-d — Option 3 RATIFIED (human, 2026-10-12).** Keep the `strategy-parameters.ts`
+  registry herobids-local; reclassify/narrow the manifest entry to a genuinely-shared
+  sub-region (re-verified at execution time from `config/schema.ts` consumers).
