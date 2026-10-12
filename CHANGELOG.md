@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.6.11 - 2026-10-12
+
 ### Changed
 
 - **Preset assessment moves to Traderton — data-only and free (H1–H6).**
