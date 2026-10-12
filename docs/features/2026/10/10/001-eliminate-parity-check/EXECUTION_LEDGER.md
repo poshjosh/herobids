@@ -94,7 +94,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | D0 | herobids (report) | verified | autonomous | Tracks A, B, C all `verified` | | Checkpoint answered 2026-10-10: human said "go" for the Wave E herobids halves and the preset-assessment chain (the 2026-10-04 "gated on human go" is lifted). Remaining entries confirmed = the 9 Track D entries | |
 | E1-H/E3-H | herobids | verified | autonomous | D0 (human go) | already merged: `bf06eed7`, `94c49d6a`, `150ec905`, `02def8d9`, `76f06b01`, `f3d1879e`, `cb0e7766` (hb); `7392ae7` (tt) | Wave E herobids halves were ALREADY implemented and merged into `main` in both repos on 2026-10-05 (plan `E1H-E3H-agent-wake-and-lifecycle-restore.md`). This item's work was the documentation closeout (status flags, backlog ticks, 005/CANONICAL-STATE, CHANGELOG) + ledger record. See batch record below | |
 | D1 | external | blocked | n/a | Preset-assessment plan pair H5 | | | Not owned by this epic |
-| D2 | herobids | blocked | autonomous | D1 | | | |
+| D2 | herobids | planned (Wave 1 done; Wave 2 needs human) | autonomous | D1 | `9f872449` (Wave 1) | **Wave 1 verified:** deleted dead `market-assessment.ts` + test; re-pointed `tick-gates.test.ts` `RegimeResult` → `@poshjosh/contracts`; pruned barrel; dropped `domain-market-assessment` entry + `REQUIRED_*` id (I1) + retargeted drift test (I2). Manifest 9 -> 8. checker 4/4; sibling-tree + pin (`v0.1.2`) recipes PASSED; full suite 325 files / 6484 tests green; `pnpm lint` clean; `git diff --check` clean. **Wave 2 blocked on the §5 heavyweight disposition (D2-a/b/c/d) — surfaced to the human, must not self-decide** | Wave 2 = the other 8 entries (needs a human decision per `plans/D2-herobids-drops-last-manifest-entries.md` §5) |
 | C6 | both | blocked | autonomous | manifest has zero entries | | | The epic's finish line |
 
 ## Pin pairs
@@ -419,4 +419,49 @@ Residual risks / blockers: (1) release coupling — traderton must be released
 Commits: traderton 2204e3a (preset-assessment persistence fix); herobids (this
   batch, see git log).
 Next allowed item: Item 7 — D2: drop the last 9 manifest entries.
+```
+
+```text
+Date: 2026-10-12
+Milestone / batch: D2 Wave 1 (herobids-only) — delete dead market-assessment.ts
+Starting SHAs: herobids=9b5fb312 (main), traderton=3872fba9 (main, tag v0.1.4)
+Starting git status: both clean
+Sub-steps completed (in order): Re-homed the single test cross-reference
+  (tick-gates.test.ts RegimeResult → @poshjosh/contracts); deleted
+  packages/domain/src/market-assessment.ts + market-assessment.test.ts; pruned
+  the domain barrel (index.ts export *); dropped the domain-market-assessment
+  manifest entry + its REQUIRED_ENTRY_IDS/REQUIRED_ENTRY_AUTHORITIES id (I1);
+  retargeted the drift test's authority-classification fixture from
+  domain-market-assessment → domain-config-strategy-parameters (I2).
+Commits: 9f872449 (herobids only)
+Focused validation: I6 symbol-level grep — the only non-test importers of
+  market-assessment symbols were the domain barrel and market-assessment.test.ts;
+  the only test cross-reference was tick-gates.test.ts:2 (RegimeResult from
+  @herobids/domain). All Schema/type/function symbols (MarketAssessment*,
+  RegimeResult, VolatilityEvidence, EvidenceValue, PresetScorecardEntry,
+  AgentPresetTransition, ActivePresetBinding, TransitionMode, PositionActionResult,
+  AssessmentEvidenceSnapshot, AssessmentData, PlatformAssessment*, etc.) have zero
+  remaining non-test consumers — confirmed via targeted grep over apps/, packages/
+  (incl. db), scripts/, tests/.
+Broader validation: pnpm --filter @herobids/domain run build clean; pnpm lint
+  (tsc --noEmit) clean; per-app tsc (domain/worker/api) clean; full clean-env
+  vitest run 325 files / 6484 tests passed (319 skipped). NOTE: apps/web typecheck
+  still fails on a PRE-EXISTING error in AgentEvaluations.test.tsx:246
+  (`Object is possibly 'undefined'` on messages[...key].replace) — verified
+  pre-existing by stashing this change and re-running; unrelated to D2 Wave 1.
+Parity gates: checker test 4/4; herobids local default (sibling-tree) PASSED;
+  herobids-side pin recipe (traderton v0.1.2) PASSED; manifest entry count 9 -> 8.
+Decisions made (lightweight, one line each):
+  - Retargeted the drift test to domain-config-strategy-parameters (a surviving
+    mirror-only id) per I2, replacing the removed domain-market-assessment.
+  - Left the historical comment in apps/worker/src/index.ts:128 ("sole consumer was
+    the market-assessment evidence path") as-is: it describes a past deletion, not
+    a reference to the deleted file or its symbols.
+Findings / new gaps: pre-existing web typecheck failure in AgentEvaluations.test.tsx
+  (line 246) — unrelated to this epic; flagged, not in scope (would be a separate
+  fix, and the human's H3 work touched this file).
+Residual risks / blockers: Wave 2 (the remaining 8 entries) is BLOCKED on the §5
+  heavyweight disposition (D2-a/b/c/d) and MUST NOT be started autonomously.
+Next allowed milestone: none autonomous — surface the §5 decisions to the human;
+  C6 only after the manifest reaches zero entries.
 ```
