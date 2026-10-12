@@ -4,7 +4,6 @@ import { resolve } from 'node:path';
 export const REQUIRED_ENTRY_IDS = new Set([
   'strategy-preset-economy', 'strategy-preset-premium', 'strategy-preset-standard',
   'domain-config-presets-loader', 'domain-config-presets', 'domain-config-strategy-parameters',
-  'domain-market-assessment',
   'domain-ports-candle-fetcher',
   'domain-scanner-types',
 ]);
@@ -16,7 +15,6 @@ export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
   'domain-config-presets-loader': 'mirror-only',
   'domain-config-presets': 'mirror-only',
   'domain-config-strategy-parameters': 'mirror-only',
-  'domain-market-assessment': 'mirror-only',
   'domain-ports-candle-fetcher': 'mirror-only',
   'domain-scanner-types': 'mirror-only',
 });

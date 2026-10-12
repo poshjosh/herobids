@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Herobids `market-assessment.ts` (mirrored `domain-market-assessment` entry).**
+  The herobids copy of `packages/domain/src/market-assessment.ts` is dead: after
+  Track C re-pointed `RegimeResult`/`VolatilityEvidence`/`EvidenceValue` to
+  `@poshjosh/contracts` and H5 deleted the platform-assessor / review-scheduler /
+  manual-review machinery, its only non-test consumer was the domain barrel. The
+  single test cross-reference (`tick-gates.test.ts` importing `RegimeResult` from
+  `@herobids/domain`) is re-pointed to `@poshjosh/contracts`. Confirmed by a
+  symbol-level grep (zero non-test consumers) and a clean-env full suite (6484
+  tests / 325 files). Removed the `domain-market-assessment` entry from
+  `scripts/parity-drift-manifest.json` and its id from `REQUIRED_ENTRY_IDS` /
+  `REQUIRED_ENTRY_AUTHORITIES` in `scripts/check-parity-drift.mjs`; retargeted
+  the drift test. Part of the parity-drift-check elimination effort; see
+  `docs/features/2026/10/10/001-eliminate-parity-check/decisions/B-parity-ownership.md`.
+
 ## v0.6.11 - 2026-10-12
 
 ### Changed

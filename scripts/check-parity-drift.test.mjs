@@ -50,7 +50,7 @@ test('rejects a manifest with a required entry removed', () => {
 test('rejects altered required authority classifications', () => {
   try {
     for (const [id, authority] of [
-      ['domain-market-assessment', 'traderton'],
+      ['domain-config-strategy-parameters', 'traderton'],
       ['strategy-preset-economy', 'traderton'],
       ['domain-config-presets', 'traderton'],
     ]) {
