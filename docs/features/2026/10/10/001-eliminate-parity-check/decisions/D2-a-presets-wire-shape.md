@@ -9,7 +9,7 @@
   **wire shape** inside it (`PresetEntry` / `PresetEntrySchema` cross the boundary in the
   new tool's response), so it no longer cleanly meets the disposition-6 "no wire
   exposure" bar. How should that entry be resolved?
-- **Status:** PROPOSED (surfaced to the human 2026-10-12).
+- **Status:** RATIFIED (2026-10-12) — Option 1.
 
 ## Evidence
 
@@ -62,4 +62,10 @@ contracts bump and accept the fail-closed-only drift guard (matching the
 
 ## Decision
 
-*(pending — the executing agent will record the human's choice here and continue.)*
+**Option 1 RATIFIED (human, 2026-10-12).** Move the wire/type surface
+(`PresetEntrySchema`, `PresetFileSchema`, `PresetEntry`, `StyleKey`, `isStyleKey`,
+`agentStyleToPresetStyle`) to `@poshjosh/contracts` (v0.3.0); keep the derivation
+(`applyPresetToAgent`, `computePresetBehaviorVersion`, `extractBehaviorFields`,
+`AGENT_TECHNICAL_STRATEGY_TYPES`, `AgentPresetMapping`, `AgentTechnicalStrategyType`)
+local in each repo's `presets.ts`. The `domain-config-presets` entry is then dropped
+(disposition 6 for the now-in-process-only derivation).

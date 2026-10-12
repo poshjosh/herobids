@@ -1,18 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export const REQUIRED_ENTRY_IDS = new Set([
-  'strategy-preset-economy', 'strategy-preset-premium', 'strategy-preset-standard',
-  'domain-config-presets-loader', 'domain-config-presets',
-]);
+export const REQUIRED_ENTRY_IDS = new Set([]);
 
-export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({
-  'strategy-preset-economy': 'mirror-only',
-  'strategy-preset-premium': 'mirror-only',
-  'strategy-preset-standard': 'mirror-only',
-  'domain-config-presets-loader': 'mirror-only',
-  'domain-config-presets': 'mirror-only',
-});
+export const REQUIRED_ENTRY_AUTHORITIES = Object.freeze({});
 
 function extractRegion(content, region) {
   if (!region) return content;

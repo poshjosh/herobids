@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -10,6 +10,13 @@ import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevi
 import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, blueprintForkRequests, skills, skillRevisions, bots, connections } from '@herobids/db';
 import type { ExternalBackendClient, ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
+import { seedTestPresetCatalog } from '../__tests__/helpers/preset-catalog.js';
+
+// The preset catalog is boundary-seeded in production (D2-a); seed it directly
+// so the synchronous getPreset/listPresets call sites resolve in tests.
+beforeEach(() => {
+  seedTestPresetCatalog();
+});
 
 /**
  * A Traderton read boundary stub for the blueprint-delete bot dependency check.

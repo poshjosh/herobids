@@ -47,6 +47,8 @@ import { loadConfig, resolveConfiguredExternalBackend } from './config.js';
 import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, ExternalSkillProviderHttp, findExternalBackend } from '@herobids/domain';
 import { buildExternalBackendClientConfig, createExternalBackendClient, createLoggerMetricsSink } from '@herobids/domain/external-backend';
 import { createTradingProfileSaga } from './agents/create-trading-profile-saga.js';
+import { seedPresetsFromBoundary } from './traderton-presets.js';
+import { createTradertonReadBoundary } from './routes/exports-traderton.js';
 import { createFastifyLogger, createLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -223,6 +225,22 @@ const tradingBackendClient = tradingBackend.ok
 const tradingBackendTimeoutMs =
   findExternalBackend(appConfig.externalBackends, appConfig.tradingBackendId)?.endpoint.requestTimeoutMs
   ?? DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS;
+
+// D2-a: seed the preset catalog from traderton at startup. The preset definitions
+// are traderton-owned; herobids fetches them over the `get_strategy_presets` read
+// tool and seeds the domain `presets-loader` cache so the synchronous
+// create/blueprint call sites keep working. Fail-closed: a failed fetch throws
+// and prevents startup (the preset catalog is required for agent/blueprint
+// creation). Skipped when no trading backend is configured (e.g. tests).
+if (tradingBackendClient) {
+  await seedPresetsFromBoundary(
+    createTradertonReadBoundary(
+      tradingBackendClient,
+      { ownerId: 'system', actor: { type: 'system', id: 'system' } },
+      tradingBackendTimeoutMs,
+    ),
+  );
+}
 
 // The saga (with its boundary client + the L1 agent-actor lifecycle hook) is
 // built by the shared factory so the backfill CLI constructs it identically.

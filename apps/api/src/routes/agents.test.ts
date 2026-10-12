@@ -35,6 +35,7 @@ import {
 } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfilePlannerInput, TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { registerBackendRefFamilies } from './agent-config-helpers.js';
+import { seedTestPresetCatalog } from '../__tests__/helpers/preset-catalog.js';
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
 // In test, cwd is the package dir (apps/api), so we must point to the repo root.
@@ -53,6 +54,9 @@ beforeEach(() => {
     ],
     family: 'trading',
   }]);
+  // The preset catalog is boundary-seeded in production (D2-a); seed it directly
+  // so the synchronous getPreset/listPresets call sites resolve in tests.
+  seedTestPresetCatalog();
 });
 
 const mockLlmCatalogDeps: LlmCatalogDeps = {

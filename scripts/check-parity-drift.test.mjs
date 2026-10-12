@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { checkParity, REQUIRED_ENTRY_AUTHORITIES, REQUIRED_ENTRY_IDS } from './check-parity-drift.mjs';
+import { checkParity } from './check-parity-drift.mjs';
 
 const temporaryRoots = [];
 function cleanup() {
@@ -20,7 +20,11 @@ function fixture() {
     mkdirSync(directory, { recursive: true });
     writeFileSync(join(directory, 'source.ts'), 'export const value = 1;');
   }
-  const entries = [...REQUIRED_ENTRY_IDS].map((id) => ({ id, authority: REQUIRED_ENTRY_AUTHORITIES[id] ?? 'mirror-only', normalization: 'line-endings', herobids: { path: 'source.ts' }, traderton: { path: 'source.ts' } }));
+  // The manifest is now empty (zero entries — the parity-drift check is being
+  // retired). Use a hardcoded test entry so the checker's drift detection is
+  // still exercised; `validateManifest` accepts any unique-id manifest now that
+  // `REQUIRED_ENTRY_IDS` is empty.
+  const entries = [{ id: 'test-entry', authority: 'mirror-only', normalization: 'line-endings', herobids: { path: 'source.ts' }, traderton: { path: 'source.ts' } }];
   writeFileSync(manifestPath, JSON.stringify({ version: 1, entries }));
   return { herobidsRoot, tradertonRoot, manifestPath };
 }
@@ -30,37 +34,6 @@ test('detects normalized content drift', () => {
     const paths = fixture();
     writeFileSync(join(paths.tradertonRoot, 'source.ts'), 'export const value = 2;');
     assert.equal(checkParity({ ...paths, protectedMode: false }).status, 'FAILED');
-  } finally {
-    cleanup();
-  }
-});
-
-test('rejects a manifest with a required entry removed', () => {
-  try {
-    const paths = fixture();
-    const manifest = JSON.parse(readFileSync(paths.manifestPath, 'utf8'));
-    manifest.entries.pop();
-    writeFileSync(paths.manifestPath, JSON.stringify(manifest));
-    assert.equal(checkParity({ ...paths, protectedMode: true }).status, 'FAILED');
-  } finally {
-    cleanup();
-  }
-});
-
-test('rejects altered required authority classifications', () => {
-  try {
-    for (const [id, authority] of [
-      ['domain-config-presets-loader', 'traderton'],
-      ['strategy-preset-economy', 'traderton'],
-      ['domain-config-presets', 'traderton'],
-    ]) {
-      const paths = fixture();
-      const manifest = JSON.parse(readFileSync(paths.manifestPath, 'utf8'));
-      const entry = manifest.entries.find((candidate) => candidate.id === id);
-      entry.authority = authority;
-      writeFileSync(paths.manifestPath, JSON.stringify(manifest));
-      assert.equal(checkParity({ ...paths, protectedMode: true }).status, 'FAILED');
-    }
   } finally {
     cleanup();
   }

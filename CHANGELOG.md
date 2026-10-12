@@ -8,6 +8,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Herobids strategy-preset YAML files and the preset loader (mirrored
+  `strategy-preset-economy/-premium/-standard`, `domain-config-presets-loader`,
+  `domain-config-presets` entries).** Traderton is now the sole authority for the
+  strategy preset definitions. Herobids fetches the full catalog over the new
+  `get_strategy_presets` read tool at API startup and seeds the domain
+  `presets-loader` cache, so the synchronous create/blueprint call sites keep
+  working. The preset wire/type surface (`PresetEntrySchema`, `PresetEntry`,
+  `StyleKey`, `isStyleKey`, `agentStyleToPresetStyle`) moved to
+  `@poshjosh/contracts@0.3.0`; the derivation (`applyPresetToAgent`,
+  `computePresetBehaviorVersion`, `extractBehaviorFields`) stays local. The three
+  YAML files are deleted and the manifest reaches **zero entries**. Part of the
+  parity-drift-check elimination effort; see
+  `docs/features/2026/10/10/001-eliminate-parity-check/decisions/D2-a-presets-wire-shape.md`.
+
 - **Herobids `scanner-types.ts` and `ports/candle-fetcher.ts` (mirrored
   `domain-scanner-types` and `domain-ports-candle-fetcher` entries).** The
   `ScannerCandleTarget` / `SwapExecutionIdentity` / `scannerTargetKey` and

@@ -1,13 +1,33 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import {
   applyPresetToAgent,
   TechnicalConfigSchema,
   type UnifiedAgentConfig,
 } from '@herobids/domain';
-import { getPreset } from '@herobids/domain/config/presets-loader';
+import { getPreset, seedPresetCatalog } from '@herobids/domain/config/presets-loader';
 import { deriveProfileScanConfig } from './profile-scan-config.js';
 
 const ORDERBOOK_FILTERS = { venue: 'hyperliquid', venueType: 'orderbook' as const };
+
+/** Seed a minimal momentum preset so `getPreset` resolves without the boundary. */
+beforeEach(() => {
+  const momentum = {
+    name: 'Momentum — Day',
+    description: 'Day-trend following',
+    strategy: {
+      type: 'momentum',
+      decisionMode: 'mechanical',
+      params: { candleInterval: '1H', candleLimit: 24, signalBias: 'trend-following', indicators: {} },
+    },
+  };
+  seedPresetCatalog({
+    presets: {
+      economy: [{ key: 'momentum', entry: momentum }],
+      standard: [{ key: 'momentum', entry: momentum }],
+      premium: [{ key: 'momentum', entry: momentum }],
+    },
+  });
+});
 
 /** Build an agent technical config that EXACTLY matches a resolved preset. */
 function presetMatchedTechnical(presetKey: string, style: 'economy' | 'standard' | 'premium') {

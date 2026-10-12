@@ -1,65 +1,57 @@
-import { readFileSync } from 'node:fs';
-import { parse as parseYaml } from 'yaml';
-import { PresetFileSchema, type PresetEntry, type StyleKey } from './presets.js';
+import { z } from 'zod';
+import { PresetEntrySchema, type PresetEntry, type StyleKey } from './presets.js';
 
 // ---------------------------------------------------------------------------
-// Path resolution
+// Boundary-seeded preset catalog (D2-a Option 1).
 //
-// Prefer HEROBIDS_CONFIG_DIR if set; otherwise use process.cwd().
-// STYLE_FILES entries are relative to the project root.
-// ---------------------------------------------------------------------------
-
-function resolveConfigPath(relativePath: string): string {
-  const configDir = process.env['HEROBIDS_CONFIG_DIR'];
-  if (configDir) {
-    return `${configDir}/${relativePath}`;
-  }
-  return `${process.cwd()}/${relativePath}`;
-}
-
-const STYLE_FILES: Record<StyleKey, string> = {
-  economy: 'config/strategy-presets/economy.yaml',
-  standard: 'config/strategy-presets/standard.yaml',
-  premium: 'config/strategy-presets/premium.yaml',
-};
-
-// ---------------------------------------------------------------------------
-// Module-level cache — load once, serve from memory
+// Herobids no longer reads the preset YAML files directly — traderton is the
+// sole authority for the preset definitions and serves them over the
+// `get_strategy_presets` read tool. The API seeds this module-level cache at
+// startup (see `apps/api/src/traderton-presets.ts`); `getPreset` / `listPresets`
+// stay synchronous and read from the cache so the existing create/blueprint
+// call sites are unchanged.
 // ---------------------------------------------------------------------------
 
 let cache: Map<StyleKey, Record<string, PresetEntry>> | null = null;
 
 /**
- * Reset the module-level preset cache.
- * Call after preset YAML files are updated at runtime to force a reload.
+ * Seed the preset catalog from the boundary read. The payload is the
+ * `get_strategy_presets` response: `{ presets: { economy: [...], standard: [...],
+ * premium: [...] } }`, each entry `{ key, entry }`. Validates each entry against
+ * `PresetEntrySchema` (fail-closed: a malformed entry throws).
+ */
+export function seedPresetCatalog(payload: unknown): void {
+  const parsed = PresetCatalogPayloadSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error(`invalid preset catalog payload: ${parsed.error.message}`);
+  }
+  const loading = new Map<StyleKey, Record<string, PresetEntry>>();
+  for (const style of ['economy', 'standard', 'premium'] as const) {
+    const entries = parsed.data.presets[style] ?? [];
+    const record: Record<string, PresetEntry> = {};
+    for (const { key, entry } of entries) {
+      record[key] = entry;
+    }
+    loading.set(style, record);
+  }
+  cache = loading;
+}
+
+/**
+ * Reset the module-level preset cache (used by tests).
  */
 export function resetPresetCache(): void {
   cache = null;
 }
 
 /**
- * Load and validate all strategy preset YAML files.
- * Results are cached after the first call.
- *
- * @throws {ZodError} on schema validation failure
- * @throws {YAMLParseError} on invalid YAML syntax
- * @throws {NodeJS.ErrnoException} on file read errors (e.g., ENOENT)
+ * Load the preset catalog. Returns the seeded cache; throws if it has not been
+ * seeded (the API seeds it at startup before serving requests).
  */
 export function loadPresets(): Map<StyleKey, Record<string, PresetEntry>> {
-  if (cache) return cache;
-  const loading = new Map<StyleKey, Record<string, PresetEntry>>();
-  try {
-    for (const [style, relativePath] of Object.entries(STYLE_FILES)) {
-      const path = resolveConfigPath(relativePath);
-      const raw = readFileSync(path, 'utf-8');
-      const parsed = PresetFileSchema.parse(parseYaml(raw));
-      loading.set(style as StyleKey, parsed.presets);
-    }
-  } catch (error) {
-    cache = null;
-    throw error;
+  if (!cache) {
+    throw new Error('preset catalog not seeded — call seedPresetCatalog() at startup');
   }
-  cache = loading;
   return cache;
 }
 
@@ -77,3 +69,11 @@ export function listPresets(style: StyleKey): Array<{ key: string } & PresetEntr
   const presets = loadPresets().get(style) ?? {};
   return Object.entries(presets).map(([key, entry]) => ({ key, ...entry }));
 }
+
+// The wire shape of the `get_strategy_presets` response (grouped by tier).
+const PresetCatalogPayloadSchema = z.object({
+  presets: z.record(
+    z.enum(['economy', 'standard', 'premium']),
+    z.array(z.object({ key: z.string(), entry: PresetEntrySchema })),
+  ),
+});

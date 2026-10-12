@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  seedPresetCatalog,
   loadPresets,
   getPreset,
   listPresets,
@@ -14,8 +15,7 @@ import {
 } from './presets.js';
 
 // The presets-loader module uses a module-level cache. Clear it between tests so
-// each test gets a fresh load (important when we mock readFileSync).
-// We do this by re-importing the module after vi.resetModules().
+// each test gets a fresh seed.
 
 beforeEach(() => {
   vi.resetModules();
@@ -29,13 +29,92 @@ async function freshPresets() {
   return await import('./presets-loader.js');
 }
 
+/** A minimal but realistic catalog payload (the `get_strategy_presets` shape). */
+function catalogPayload(): unknown {
+  const momentum = (stopLossPct: number, positionSize: string, minConfidence: number): PresetEntry => ({
+    name: 'Momentum — Day',
+    description: 'Day-trend following',
+    strategy: {
+      type: 'momentum',
+      decisionMode: 'mechanical',
+      params: {
+        candleInterval: '1H',
+        candleLimit: 24,
+        stopLossPct,
+        positionSize,
+        signalBias: 'trend-following',
+        indicators: { confidence: { minConfidence } },
+      },
+    },
+  });
+  const dca: PresetEntry = {
+    name: 'DCA',
+    description: 'Dollar-cost averaging',
+    strategy: { type: 'dca', decisionMode: 'mechanical', params: { intervalMs: 86_400_000 } },
+  };
+  const scalper: PresetEntry = {
+    name: 'Scalper',
+    description: 'Scalping',
+    strategy: { type: 'scalper', decisionMode: 'mechanical', params: { candleInterval: '1m' } },
+  };
+  const contrarian: PresetEntry = {
+    name: 'Contrarian',
+    description: 'Contrarian',
+    strategy: { type: 'contrarian', decisionMode: 'mechanical', params: {} },
+  };
+  const range: PresetEntry = {
+    name: 'Range',
+    description: 'Range',
+    strategy: { type: 'range', decisionMode: 'mechanical', params: {} },
+  };
+  const swing: PresetEntry = {
+    name: 'Swing',
+    description: 'Swing',
+    strategy: { type: 'swing', decisionMode: 'mechanical', params: {} },
+  };
+  const momentumPosition: PresetEntry = {
+    name: 'Momentum Position',
+    description: 'Momentum position',
+    strategy: { type: 'momentum-position', decisionMode: 'mechanical', params: {} },
+  };
+  const economy = [
+    { key: 'momentum', entry: momentum(2, '2', 0.7) },
+    { key: 'dca', entry: dca },
+    { key: 'scalper', entry: scalper },
+    { key: 'contrarian', entry: contrarian },
+    { key: 'range', entry: range },
+    { key: 'swing', entry: swing },
+    { key: 'momentum-position', entry: momentumPosition },
+  ];
+  const standard = [
+    { key: 'momentum', entry: momentum(3, '5', 0.5) },
+    { key: 'dca', entry: dca },
+    { key: 'scalper', entry: scalper },
+    { key: 'contrarian', entry: contrarian },
+    { key: 'range', entry: range },
+    { key: 'swing', entry: swing },
+    { key: 'momentum-position', entry: momentumPosition },
+  ];
+  const premium = [
+    { key: 'momentum', entry: momentum(5, '10', 0.3) },
+    { key: 'dca', entry: dca },
+    { key: 'scalper', entry: scalper },
+    { key: 'contrarian', entry: contrarian },
+    { key: 'range', entry: range },
+    { key: 'swing', entry: swing },
+    { key: 'momentum-position', entry: momentumPosition },
+  ];
+  return { presets: { economy, standard, premium } };
+}
+
 // ---------------------------------------------------------------------------
-// loadPresets
+// seedPresetCatalog / loadPresets
 // ---------------------------------------------------------------------------
 
-describe('loadPresets', () => {
-  it('loads YAML files, validates, and returns typed data for all 3 styles', async () => {
-    const { loadPresets: load } = await freshPresets();
+describe('seedPresetCatalog / loadPresets', () => {
+  it('seeds and returns typed data for all 3 styles', async () => {
+    const { seedPresetCatalog: seed, loadPresets: load } = await freshPresets();
+    seed(catalogPayload());
     const presets = load();
 
     expect(presets.size).toBe(3);
@@ -43,13 +122,11 @@ describe('loadPresets', () => {
     expect(presets.has('standard')).toBe(true);
     expect(presets.has('premium')).toBe(true);
 
-    // Every style should have at least the 7 core strategies
     for (const style of ['economy', 'standard', 'premium'] as const) {
       const entries = presets.get(style);
       expect(entries, `missing ${style}`).toBeDefined();
       const keys = Object.keys(entries!);
       expect(keys.length).toBeGreaterThanOrEqual(7);
-      // Verify known strategy keys exist
       expect(keys).toContain('momentum');
       expect(keys).toContain('dca');
       expect(keys).toContain('scalper');
@@ -57,25 +134,21 @@ describe('loadPresets', () => {
   });
 
   it('returns the same cached instance on subsequent calls', async () => {
-    const { loadPresets: load } = await freshPresets();
+    const { seedPresetCatalog: seed, loadPresets: load } = await freshPresets();
+    seed(catalogPayload());
     const first = load();
     const second = load();
     expect(first).toBe(second); // same Map reference
   });
 
-  it('validates preset entries have required fields', async () => {
+  it('throws when the catalog has not been seeded', async () => {
     const { loadPresets: load } = await freshPresets();
-    const presets = load();
-    const economy = presets.get('economy')!;
-    const momentum = economy['momentum']!;
+    expect(() => load()).toThrow(/not seeded/);
+  });
 
-    expect(momentum.name).toBeTruthy();
-    expect(momentum.description).toBeTruthy();
-    expect(momentum.strategy.type).toBe('momentum');
-    // decisionMode defaults to 'mechanical' when absent from YAML
-    expect(momentum.strategy.decisionMode).toBe('mechanical');
-    expect(momentum.strategy.params).toBeDefined();
-    expect(typeof momentum.strategy.params['candleInterval']).toBe('string');
+  it('throws on a malformed catalog payload', async () => {
+    const { seedPresetCatalog: seed } = await freshPresets();
+    expect(() => seed({ presets: { economy: [{ key: 'x', entry: { bogus: true } }] } })).toThrow();
   });
 });
 
@@ -85,7 +158,8 @@ describe('loadPresets', () => {
 
 describe('getPreset', () => {
   it('returns the economy momentum preset', async () => {
-    const { getPreset: get } = await freshPresets();
+    const { seedPresetCatalog: seed, getPreset: get } = await freshPresets();
+    seed(catalogPayload());
     const preset = get('momentum', 'economy');
     expect(preset).toBeDefined();
     expect(preset!.name).toBe('Momentum — Day');
@@ -94,16 +168,17 @@ describe('getPreset', () => {
   });
 
   it('returns the premium momentum preset with different values', async () => {
-    const { getPreset: get } = await freshPresets();
+    const { seedPresetCatalog: seed, getPreset: get } = await freshPresets();
+    seed(catalogPayload());
     const preset = get('momentum', 'premium');
     expect(preset).toBeDefined();
-    // Premium has wider stops, larger positions
     expect(preset!.strategy.params['stopLossPct']).toBe(5);
     expect(preset!.strategy.params['positionSize']).toBe('10');
   });
 
   it('returns undefined for a nonexistent strategy', async () => {
-    const { getPreset: get } = await freshPresets();
+    const { seedPresetCatalog: seed, getPreset: get } = await freshPresets();
+    seed(catalogPayload());
     const preset = get('nonexistent', 'economy');
     expect(preset).toBeUndefined();
   });
@@ -115,7 +190,8 @@ describe('getPreset', () => {
 
 describe('listPresets', () => {
   it('returns expected presets for standard style', async () => {
-    const { listPresets: list } = await freshPresets();
+    const { seedPresetCatalog: seed, listPresets: list } = await freshPresets();
+    seed(catalogPayload());
     const entries = list('standard');
 
     expect(entries.length).toBeGreaterThanOrEqual(7);
@@ -140,7 +216,8 @@ describe('listPresets', () => {
   });
 
   it('returns economy presets with lower confidence thresholds', async () => {
-    const { listPresets: list } = await freshPresets();
+    const { seedPresetCatalog: seed, listPresets: list } = await freshPresets();
+    seed(catalogPayload());
     const economy = list('economy');
     const standard = list('standard');
 
@@ -489,41 +566,5 @@ describe('extractBehaviorFields', () => {
     const fields = extractBehaviorFields(preset);
     expect(fields.risk).toBeNull();
     expect(fields.execution).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Fail-fast on invalid YAML
-// ---------------------------------------------------------------------------
-
-describe('fail-fast validation', () => {
-  it('throws when YAML is missing the presets key', async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync } = await import('node:fs');
-    const { tmpdir } = await import('node:os');
-    const { join } = await import('node:path');
-
-    // Build a temp directory structure that mimics the project layout.
-    const tmpRoot = mkdtempSync(join(tmpdir(), 'herobids-preset-test-'));
-    const presetsDir = join(tmpRoot, 'config', 'strategy-presets');
-    mkdirSync(presetsDir, { recursive: true });
-
-    // Invalid YAML for economy (missing the `presets` key)
-    writeFileSync(join(presetsDir, 'economy.yaml'), 'not_presets:\n  foo: bar\n', 'utf-8');
-
-    // Valid files for the other two styles — copy from the real config
-    const realPresetsDir = join(process.cwd(), 'config', 'strategy-presets');
-    cpSync(join(realPresetsDir, 'standard.yaml'), join(presetsDir, 'standard.yaml'));
-    cpSync(join(realPresetsDir, 'premium.yaml'), join(presetsDir, 'premium.yaml'));
-
-    const prevEnv = process.env['HEROBIDS_CONFIG_DIR'];
-    process.env['HEROBIDS_CONFIG_DIR'] = tmpRoot;
-
-    try {
-      const { loadPresets: load } = await freshPresets();
-      expect(() => load()).toThrow();
-    } finally {
-      process.env['HEROBIDS_CONFIG_DIR'] = prevEnv;
-      rmSync(tmpRoot, { recursive: true, force: true });
-    }
   });
 });

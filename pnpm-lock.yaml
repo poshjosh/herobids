@@ -45,8 +45,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/llm
       '@poshjosh/contracts':
-        specifier: 0.2.0
-        version: 0.2.0
+        specifier: 0.3.0
+        version: 0.3.0
       archiver:
         specifier: ^8.0.0
         version: 8.0.0
@@ -185,8 +185,8 @@ importers:
         specifier: ^0.6.0
         version: 0.6.0
       '@poshjosh/contracts':
-        specifier: 0.2.0
-        version: 0.2.0
+        specifier: 0.3.0
+        version: 0.3.0
       bullmq:
         specifier: ^5.34.0
         version: 5.77.0
@@ -272,8 +272,8 @@ importers:
         specifier: 2.3.0
         version: 2.3.0
       '@poshjosh/contracts':
-        specifier: 0.2.0
-        version: 0.2.0
+        specifier: 0.3.0
+        version: 0.3.0
       decimal.js:
         specifier: ^10.5.0
         version: 10.6.0
@@ -1327,8 +1327,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@poshjosh/contracts@0.2.0':
-    resolution: {integrity: sha512-+5hxJbz67fSyhHhI1WUHwp2YM/pb7oOioTEGDFjCBLSmlSBpoS3TQ9ORpP3QHMlHk2A//83lT84K8KXhOFIALQ==, tarball: https://npm.pkg.github.com/download/@poshjosh/contracts/0.2.0/577afa17c08bde6544cd93ed63b2d8ca781529d4}
+  '@poshjosh/contracts@0.3.0':
+    resolution: {integrity: sha512-hY6wF1brnYSMvBHGKDecoFyAeAnuD4ChYyqGKE7Q0PpMqt+oJRVugAXyj5C49XyuVUDQiClAbSyroS3QyX+rEA==, tarball: https://npm.pkg.github.com/download/@poshjosh/contracts/0.3.0/d2d550c11901677e837dd0178f1aea9205ed1a71}
 
   '@radix-ui/number@1.1.1':
     resolution: {integrity: sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g==}
@@ -4512,7 +4512,7 @@ snapshots:
     dependencies:
       playwright: 1.60.0
 
-  '@poshjosh/contracts@0.2.0':
+  '@poshjosh/contracts@0.3.0':
     dependencies:
       zod: 3.25.76
 
