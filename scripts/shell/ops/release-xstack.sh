@@ -115,14 +115,6 @@ run_step "Release Herobids v$HEROBIDS_VERSION" \
   bash -c 'cd "$1" && scripts/shell/ops/release.sh "$2" --all' _ \
   "$HEROBIDS_DIR" "$HEROBIDS_VERSION"
 
-run_step "Bump Traderton parity pin to Herobids v$HEROBIDS_VERSION" \
-  bash -c 'cd "$1" && scripts/shell/ops/release.sh --bump-parity-pin "$2"' _ \
-  "$TRADERTON_DIR" "v$HEROBIDS_VERSION"
-
-run_step "Bump Herobids parity pin to Traderton v$TRADERTON_VERSION" \
-  bash -c 'cd "$1" && scripts/shell/ops/release.sh --bump-parity-pin "$2"' _ \
-  "$HEROBIDS_DIR" "v$TRADERTON_VERSION"
-
 # ─── Contracts package publish + herobids pin bump (C5) ──────────────────────
 # The @poshjosh/contracts package version is independent of the root versions.
 # Publish it from traderton (the sole producer), then bump herobids's exact pin
@@ -144,14 +136,6 @@ run_step "Bump herobids @poshjosh/contracts pin to v$CONTRACTS_VERSION" \
     pnpm install --lockfile-only
   ' _ \
   "$HEROBIDS_DIR" "$CONTRACTS_VERSION"
-
-echo ""
-echo "==> Committing and pushing traderton .github/workflows/slow-tests.yml"
-cd "$TRADERTON_DIR" && git add .github/workflows/slow-tests.yml && (git diff --cached --quiet || git commit -m "Update slow-tests.yml for release v$TRADERTON_VERSION") && git push
-
-echo ""
-echo "==> Committing and pushing herobids .github/workflows/slow-tests.yml"
-cd "$HEROBIDS_DIR" && git add .github/workflows/slow-tests.yml && (git diff --cached --quiet || git commit -m "Update slow-tests.yml for release v$HEROBIDS_VERSION") && git push
 
 echo ""
 echo "==> Committing and pushing herobids @poshjosh/contracts pin bump"

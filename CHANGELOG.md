@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **The parity-drift check, manifest, test and CI job.** The manifest reached
+  zero entries (nothing is mirrored anymore), so the checker
+  (`scripts/check-parity-drift.mjs`), its test, the manifest
+  (`scripts/parity-drift-manifest.json`), the `parity-drift` CI job
+  (`.github/workflows/slow-tests.yml`), the `test:slow` script, and the
+  `--bump-parity-pin` / parity-gate steps in `release.sh` / `release-xstack.sh`
+  are all removed. The parity-drift rule is removed from `AGENTS.md`. See ADR 018
+  and `docs/features/2026/10/10/001-eliminate-parity-check/000-roadmap.md`.
+
 ## v0.6.12 - 2026-10-12
 
 ### Removed

@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-19
 **Status:** Accepted
+**Superseded in part:** Decisions 2 and 3 superseded in part by ADR 018.
 
 ## Context
 

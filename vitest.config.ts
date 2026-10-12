@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
-    exclude: ['**/node_modules/**', '**/dist/**', '.ignore/**', 'tests/e2e/**', 'scripts/check-parity-drift.test.mjs'],
+    exclude: ['**/node_modules/**', '**/dist/**', '.ignore/**', 'tests/e2e/**'],
     testTimeout: 15000,
   },
   resolve: {
