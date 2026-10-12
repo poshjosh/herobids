@@ -132,8 +132,10 @@ source "${ROOT}/scripts/shell/run/boundary.sh"
 # ─── NPM_TOKEN for Docker builds ─────────────────────────────────────────────
 # The migrate/api/worker/web images pull @poshjosh/contracts from GitHub Packages
 # via a build secret (compose `secrets.NPM_TOKEN` → `environment: NPM_TOKEN`).
-# Source the token from ~/.npmrc (where the human's read:packages PAT lives) if
-# it is not already exported, so `docker compose build` can pass it through.
+# Primary source is the env file (NPM_TOKEN in .env.ops.dev, sourced with `set -a`
+# in Step 0 below). Fall back to ~/.npmrc (where the human's read:packages PAT
+# already lives for `pnpm install`) so a local dev without the env-file entry can
+# still build. Either way, `docker compose build` needs the token exported.
 if [[ -z "${NPM_TOKEN:-}" ]]; then
   NPM_TOKEN="$(grep -E '^//npm\.pkg\.github\.com/:_authToken=' "${HOME}/.npmrc" 2>/dev/null | head -1 | cut -d= -f2-)"
   if [[ -n "$NPM_TOKEN" ]]; then

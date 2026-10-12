@@ -9,6 +9,10 @@ Make using AI-powered agents as simple as describing what you want. No expertise
 - [Node.js](https://nodejs.org/) ≥ 22
 - [pnpm](https://pnpm.io/) ≥ 10
 - [Docker](https://docs.docker.com/get-docker/) with the Compose plugin
+- A GitHub PAT with `read:packages` scope, to pull `@poshjosh/contracts` from
+  GitHub Packages. Put it in `~/.npmrc` as
+  `//npm.pkg.github.com/:_authToken=<token>` (for `pnpm install`), and set
+  `NPM_TOKEN` in `.env.ops.dev` (for `docker compose build`).
 
 ---
 
