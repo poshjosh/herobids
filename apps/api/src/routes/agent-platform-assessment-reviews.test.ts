@@ -51,7 +51,7 @@ describe('POST /agents/:id/platform-assessment/reviews — capability mode gate'
       kind: 'success',
       requestId: 'r1',
       correlationId: 'c1',
-      payload: { data: { results: [] } },
+      payload: { results: [] },
     });
   });
 
@@ -141,6 +141,74 @@ describe('POST /agents/:id/platform-assessment/reviews — capability mode gate'
       subject: { ownerId: TEST_USER_ID, actor: { type: 'agent', id: 'agent-1' } },
       payload: expect.objectContaining({ venueAccountId: 'va-1' }),
     }));
+  });
+
+  it('writes an assessment_review wake when assess returns results with artifacts', async () => {
+    mockClient.invoke.mockResolvedValue({
+      kind: 'success',
+      requestId: 'r1',
+      correlationId: 'c1',
+      payload: {
+        results: [
+          {
+            success: true,
+            symbol: 'BTC',
+            canonicalIdentity: { instrumentKind: 'orderbook', venueFamily: 'hyperliquid', styleTier: 'standard', symbol: 'BTC' },
+            currentStrategy: { presetKey: 'momentum', styleTier: 'standard', behaviorVersion: 'v1' },
+            artifactId: 'assess:BTC:1',
+            assessedAt: '2026-10-12T00:00:00.000Z',
+            expiresAt: '2026-10-13T00:00:00.000Z',
+          },
+        ],
+      },
+    });
+
+    const agentRow = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'active',
+      unifiedConfig: {
+        capabilityMode: 'hybrid',
+        platformAssessment: { enabled: true },
+      },
+    };
+
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn()
+            .mockReturnValueOnce(makeQueryResult([agentRow]))
+            .mockReturnValueOnce(makeQueryResult([{ id: 'session-1' }])),
+        }),
+      }),
+    };
+
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'va-1', active: true, ready: true, isDefault: true },
+    ]);
+
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const { platformAssessmentReviewRoutes } = await import('./agent-platform-assessment-reviews.js');
+    await platformAssessmentReviewRoutes(app, db as any, mockRedis as any, {
+      tradingBackendClient: mockClient as any,
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents/agent-1/platform-assessment/reviews',
+      payload: { symbols: ['BTC'], venueFamily: 'hyperliquid' },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(mockRedis.xadd).toHaveBeenCalledWith(
+      'agent:outbound:agent-1',
+      'MAXLEN', '~', expect.any(Number),
+      '*',
+      'envelope',
+      expect.stringContaining('assessment_review'),
+    );
   });
 
   it('returns 409 no_active_session when the agent has no running session', async () => {
@@ -280,22 +348,20 @@ describe('GET /agents/:id/platform-assessment/reviews/results — data-only read
       requestId: 'r1',
       correlationId: 'c1',
       payload: {
-        data: {
-          changes: [
-            {
-              id: 'c1',
-              ownerId: TEST_USER_ID,
-              actorId: 'agent-1',
-              fromStrategy: { presetKey: 'momentum' },
-              toStrategy: { presetKey: 'range' },
-              artifactId: 'a1',
-              reason: 'Range fits the choppy regime',
-              state: 'applied',
-              createdAt: '2026-10-10T00:00:00.000Z',
-              appliedAt: '2026-10-10T00:00:00.000Z',
-            },
-          ],
-        },
+        changes: [
+          {
+            id: 'c1',
+            ownerId: TEST_USER_ID,
+            actorId: 'agent-1',
+            fromStrategy: { presetKey: 'momentum' },
+            toStrategy: { presetKey: 'range' },
+            artifactId: 'a1',
+            reason: 'Range fits the choppy regime',
+            state: 'applied',
+            createdAt: '2026-10-10T00:00:00.000Z',
+            appliedAt: '2026-10-10T00:00:00.000Z',
+          },
+        ],
       },
     });
 

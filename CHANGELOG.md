@@ -6,6 +6,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.6.14 - 2026-10-12
+
+### Fixed
+
+- **Strategy review never woke the agent (wire-shape mismatch).** The review
+  route read the `assess_strategy_preset` results from a non-existent `data`
+  wrapper (`payload['data']['results']`), but the traderton boundary returns the
+  tool's `data` directly as the payload (`payload['results']`). So `advice` was
+  always empty and the `assessment_review` wake was never written — the review
+  screen showed "The agent has not made a decision yet." indefinitely.
+  `narrowAssessResults` / `narrowChanges` now read `results` / `changes` from the
+  payload top level. See
+  `docs/bug-reports/2026/10/12/002-review-wake-never-written-wire-shape-mismatch.md`.
+
+- **Wake buffer now prefers review wakes over routine signal wakes (defensive).**
+  `drainNewestWakeIntoMarketWake` prefers the newest review scanner wake
+  (`assessment_review` / `preset_review`) over routine `signal_scoring` wakes,
+  deferring (not dropping) the rest. This is a defensive improvement, not the
+  fix for the review-wake symptom above. See
+  `docs/bug-reports/2026/10/12/001-review-wake-superseded-by-signal-wakes.md`.
+
 ## v0.6.13 - 2026-10-12
 
 ### Removed

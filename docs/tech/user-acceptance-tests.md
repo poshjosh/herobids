@@ -209,15 +209,15 @@ this visual UAT.
 
 ### 6.1a Agents — Forced Strategy Review
 
-Route: `/agents/:id` — dedicated operator control to trigger a deterministic strategy review on demand.
+Route: `/agents/:id/capabilities/trading` — dedicated operator control to trigger a deterministic strategy review on demand. (Moved from the agent detail page to the trading capability page.)
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| AG-R01 | Force-review control visibility | Open an agent detail page for an agent with periodic strategy assessment enabled | A dedicated strategy-review control is visible in the Evaluations area | — | |
-| AG-R02 | Force-review unavailable state | Open an ineligible agent detail page | The control is either hidden or disabled, and the UI does not present it as an active action | — | Final copy depends on implementation choice |
-| AG-R03 | Force-review trigger — request accepted | Click the strategy-review control for an eligible agent | The UI enters a pending state and shows that the manual review request was accepted | — | |
-| AG-R04 | Force-review terminal no-advice outcome | Trigger a review when the agent has no qualifying candidates | The request completes with a valid no-advice or no-candidate result, not a generic error | — | |
-| AG-R05 | Force-review remains separate from evaluation | Trigger a strategy review from the agent detail page | No general evaluation run is created automatically; the feature remains distinct from Run Evaluation | — | |
+| AG-R01 | Force-review control visibility | Open an agent's trading capability page for an agent with periodic strategy assessment enabled | A dedicated strategy-review control is visible on the trading capability page | — | 2026-10-12: Moved from the agent detail page (Evaluations area) to the trading capability page. NOT RUN. |
+| AG-R02 | Force-review unavailable state | Open an ineligible agent's trading capability page | The control is either hidden or disabled, and the UI does not present it as an active action | — | 2026-10-12: Moved to the trading capability page. NOT RUN. |
+| AG-R03 | Force-review trigger — request accepted | Click the strategy-review control for an eligible agent | The UI enters a pending state and shows that the manual review request was accepted | — | 2026-10-12: Moved to the trading capability page. NOT RUN. |
+| AG-R04 | Force-review terminal no-advice outcome | Trigger a review when the agent has no qualifying candidates | The request completes with a valid no-advice or no-candidate result, not a generic error | — | 2026-10-12: Moved to the trading capability page. NOT RUN. |
+| AG-R05 | Force-review remains separate from evaluation | Trigger a strategy review from the trading capability page | No general evaluation run is created automatically; the feature remains distinct from Run Evaluation | — | 2026-10-12: Moved to the trading capability page. NOT RUN. |
 
 ---
 

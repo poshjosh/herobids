@@ -3674,6 +3674,97 @@ describe('runtime composition helpers', () => {
       expect(entry!.source).toBe('scanner');
       expect(entry!.wakeId).toBe('wake-s-001');
     });
+
+    // ── Review-wake priority (bug: review wake superseded by signal wakes) ──
+
+    const assessmentReviewEnvelope = {
+      type: 'agent.wake',
+      wakeId: 'wake-review-001',
+      source: 'scanner',
+      reason: 'The creator requested a strategy review',
+      requestedAt: '2026-06-11T00:00:00.000Z',
+      context: {
+        scannerKind: 'assessment_review',
+        advice: [
+          {
+            identity: { instrumentKind: 'orderbook', venueFamily: 'hyperliquid', styleTier: 'standard', symbol: 'BTC' },
+            candidateRank: 1,
+            activePreset: 'momentum',
+            presetBehaviorVersion: 'v1',
+            reasons: ['Manual review requested by the creator'],
+            assessmentArtifactId: 'assess:BTC:1',
+          },
+        ],
+        checkedAt: '2026-06-11T00:00:00.000Z',
+        nextEligibleAt: '2026-06-12T00:00:00.000Z',
+      },
+    };
+
+    it('drains a buffered assessment_review wake ahead of a newer signal_scoring wake', () => {
+      // The review wake is OLDER (receivedAt 100) than the routine signal wake
+      // (receivedAt 200). The review wake must still win the drain.
+      const buffer = [
+        bufferWakeEnvelope(assessmentReviewEnvelope, 100)!,
+        bufferWakeEnvelope(scannerEnvelope, 200)!,
+      ];
+
+      const { buffer: remaining, wake } = drainNewestWakeIntoMarketWake(buffer, null);
+
+      expect(wake).not.toBeNull();
+      expect(wake!.wakeId).toBe('wake-review-001');
+      expect(wake!.context).toMatchObject({ scannerKind: 'assessment_review' });
+      // The signal wake is deferred, not dropped.
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.wakeId).toBe('wake-s-001');
+    });
+
+    it('drains the newest review wake when multiple review wakes are buffered', () => {
+      const olderReview = bufferWakeEnvelope(
+        { ...assessmentReviewEnvelope, wakeId: 'wake-review-older' },
+        100,
+      )!;
+      const newerReview = bufferWakeEnvelope(
+        { ...assessmentReviewEnvelope, wakeId: 'wake-review-newer' },
+        150,
+      )!;
+      const buffer = [olderReview, newerReview];
+
+      const { buffer: remaining, wake } = drainNewestWakeIntoMarketWake(buffer, null);
+
+      expect(wake!.wakeId).toBe('wake-review-newer');
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.wakeId).toBe('wake-review-older');
+    });
+
+    it('falls back to the newest wake when no review wake is buffered', () => {
+      const buffer = [
+        bufferWakeEnvelope({ ...scannerEnvelope, wakeId: 'older-signal' }, 100)!,
+        bufferWakeEnvelope(scannerEnvelope, 200)!,
+      ];
+
+      const { buffer: remaining, wake } = drainNewestWakeIntoMarketWake(buffer, null);
+
+      expect(wake!.wakeId).toBe('wake-s-001');
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.wakeId).toBe('older-signal');
+    });
+
+    it('still surfaces a reminder wake when a review wake is also buffered', () => {
+      // A reminder is not a scanner wake; the review wake should win the drain
+      // and the reminder stays queued (not dropped).
+      const buffer = [
+        bufferWakeEnvelope(reminderEnvelope, 100)!,
+        bufferWakeEnvelope(assessmentReviewEnvelope, 200)!,
+      ];
+
+      const { buffer: remaining, wake, reminder } = drainNewestWakeIntoMarketWake(buffer, null);
+
+      expect(wake).not.toBeNull();
+      expect(wake!.wakeId).toBe('wake-review-001');
+      expect(reminder).toBeNull();
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.wakeId).toBe('wake-rem-001');
+    });
   });
 
 describe('resolveAgentIdentityLine', () => {

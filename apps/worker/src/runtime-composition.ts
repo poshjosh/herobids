@@ -183,8 +183,26 @@ export function bufferWakeEnvelope(
 }
 
 /**
- * Drain the newest buffered wake envelope when `currentMarketWake` is not
- * already set (e.g. the runtime consumer group did not consume the wake).
+ * A scanner wake whose `scannerKind` is a user-initiated strategy review
+ * (`assessment_review` / `preset_review`). These must be drained ahead of the
+ * routine `signal_scoring` wakes so a continuous stream of scanner signals
+ * cannot permanently defer a creator's review request (see bug report
+ * `docs/bug-reports/2026/10/12/001-review-wake-superseded-by-signal-wakes.md`).
+ */
+function isReviewScannerWake(entry: PendingWakeSignalBufferEntry): boolean {
+  if (entry.source !== 'scanner') return false;
+  const ctx = entry.context as { scannerKind?: unknown } | null | undefined;
+  return ctx?.scannerKind === 'assessment_review' || ctx?.scannerKind === 'preset_review';
+}
+
+/**
+ * Drain the buffered wake envelope when `currentMarketWake` is not already set
+ * (e.g. the runtime consumer group did not consume the wake).
+ *
+ * Selection order (priority-aware, then newest-first within a tier):
+ *  1. The newest review scanner wake (`assessment_review` / `preset_review`) —
+ *     a user-initiated request that must not be deferred by routine signals.
+ *  2. Otherwise the newest buffered wake (the previous behaviour).
  *
  * The drained wake is reconstructed as either a `RuntimeMarketWakeContext`
  * (market-source wakes) or a `RuntimeReminderContext` (`source === 'reminder'`).
@@ -207,19 +225,30 @@ export function drainNewestWakeIntoMarketWake(
   if (currentMarketWake !== null || buffer.length === 0) {
     return { buffer, wake: null, reminder: null };
   }
-  const newest = buffer[buffer.length - 1]!;
-  const remaining = buffer.slice(0, -1);
-  if (newest.source === 'reminder') {
-    const ctx = newest.context as ReminderWakeContext;
-    const reminder = toRuntimeReminderContext(newest.wakeId, newest.requestedAt, ctx);
+
+  // Prefer the newest review wake (user-initiated) over routine signal wakes.
+  // Falls back to the newest entry when no review wake is buffered.
+  let drainIndex = buffer.length - 1;
+  for (let i = buffer.length - 1; i >= 0; i--) {
+    if (isReviewScannerWake(buffer[i]!)) {
+      drainIndex = i;
+      break;
+    }
+  }
+
+  const selected = buffer[drainIndex]!;
+  const remaining = buffer.filter((_, i) => i !== drainIndex);
+  if (selected.source === 'reminder') {
+    const ctx = selected.context as ReminderWakeContext;
+    const reminder = toRuntimeReminderContext(selected.wakeId, selected.requestedAt, ctx);
     return { buffer: remaining, wake: null, reminder };
   }
   const wake: RuntimeMarketWakeContext = {
-    wakeId: newest.wakeId,
-    source: newest.source as RuntimeMarketWakeContext['source'],
-    reason: newest.reason,
-    requestedAt: newest.requestedAt,
-    context: newest.context as RuntimeMarketWakeContext['context'],
+    wakeId: selected.wakeId,
+    source: selected.source as RuntimeMarketWakeContext['source'],
+    reason: selected.reason,
+    requestedAt: selected.requestedAt,
+    context: selected.context as RuntimeMarketWakeContext['context'],
   };
   return { buffer: remaining, wake, reminder: null };
 }

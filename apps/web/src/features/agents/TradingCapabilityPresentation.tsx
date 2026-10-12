@@ -6,6 +6,7 @@ import { Button, Card, ErrorState, LoadingRows } from '../../lib/ui.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ApprovalsPanel } from './ApprovalsPanel.js';
 import { CapabilityAttributes, CapabilityFeeds, CapabilityOverview, type CapabilityAttribute } from './CapabilityPresentation.js';
+import { StrategyReview } from './StrategyReview.js';
 
 interface TradingCapabilityPresentationProps {
   agentId: string;
@@ -103,6 +104,9 @@ export function TradingCapabilityPresentation({ agentId, connectionProvider, isA
       </Card>
       <Card>
         <CapabilityFeeds feeds={presentation?.feeds ?? []} />
+      </Card>
+      <Card>
+        <StrategyReview agentId={agentId} />
       </Card>
       <ApprovalsPanel agentId={agentId} renderProposalDetails={(approval) => <TradingApprovalDetails approval={approval} />} />
     </div>

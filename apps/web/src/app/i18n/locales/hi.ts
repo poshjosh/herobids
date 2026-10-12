@@ -827,6 +827,16 @@ export const messages: Record<string, string> = {
   'agents.strategyReview.results.agentChanged': 'Agent changed preset from {from} to {to}',
   'agents.strategyReview.results.agentKept': 'Agent kept its current preset ({preset})',
   'agents.strategyReview.results.reason': 'Reason',
+  'agents.strategyReview.assessment.title': 'Strategy Assessment',
+  'agents.strategyReview.assessment.preset': 'Preset',
+  'agents.strategyReview.assessment.evidenceFresh': 'Fresh evidence',
+  'agents.strategyReview.assessment.regimeMatch': 'Regime match',
+  'agents.strategyReview.assessment.creatorAllowed': 'Allowed',
+  'agents.strategyReview.assessment.signalsVsCurrent': 'Signals vs current',
+  'agents.strategyReview.assessment.current': 'current',
+  'agents.strategyReview.assessment.yes': 'Yes',
+  'agents.strategyReview.assessment.no': 'No',
+  'agents.strategyReview.assessment.failed': '{symbol}: assessment failed — {error}',
 
   // Landing page
   'landing.tagline': 'किफायती AI एजेंट जो काम पूरा करते हैं',

@@ -100,22 +100,29 @@ function boundaryError(result: ExternalBackendClientResult): { status: number; b
   }
 }
 
-/** Narrow a success payload's `results` array into assess results. */
+/**
+ * Narrow a success payload's `results` array into assess results.
+ *
+ * The boundary returns the tool's `data` DIRECTLY as the wire payload (no
+ * `data` wrapper) — see `mapClientResultToReadResult` in exports-traderton.ts
+ * and the dispatcher's `successResult(identity, result.data)`. So the `results`
+ * array is at the payload top level, not under a `data` key.
+ */
 function narrowAssessResults(payload: unknown): AssessResult[] {
   if (typeof payload !== 'object' || payload === null) return [];
-  const data = (payload as Record<string, unknown>)['data'];
-  if (typeof data !== 'object' || data === null) return [];
-  const results = (data as Record<string, unknown>)['results'];
+  const results = (payload as Record<string, unknown>)['results'];
   if (!Array.isArray(results)) return [];
   return results as AssessResult[];
 }
 
-/** Narrow a success payload's `changes` array into strategy-change rows. */
+/**
+ * Narrow a success payload's `changes` array into strategy-change rows.
+ * Same wire shape as {@link narrowAssessResults}: the `changes` array is at the
+ * payload top level (the boundary returns the tool's `data` directly).
+ */
 function narrowChanges(payload: unknown): StrategyChange[] {
   if (typeof payload !== 'object' || payload === null) return [];
-  const data = (payload as Record<string, unknown>)['data'];
-  if (typeof data !== 'object' || data === null) return [];
-  const changes = (data as Record<string, unknown>)['changes'];
+  const changes = (payload as Record<string, unknown>)['changes'];
   if (!Array.isArray(changes)) return [];
   return changes as StrategyChange[];
 }
