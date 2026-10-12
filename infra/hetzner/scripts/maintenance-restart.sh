@@ -241,6 +241,19 @@ if [[ "${DO_DEPLOY}" == "true" ]]; then
   git reset --hard origin/main
   ok "Code updated to $(git rev-parse --short HEAD) (was ${PREV_GIT_SHA:0:7})."
 
+  # NPM_TOKEN — GitHub PAT with read:packages scope for @poshjosh/contracts.
+  # The migrate/api/worker/web images pull @poshjosh/contracts from npm.pkg.github.com
+  # via a build secret (docker-compose.yaml `secrets.NPM_TOKEN.environment`), and the
+  # agent image needs the same secret for its own `--mount=type=secret,id=NPM_TOKEN`.
+  # Source it from the uploaded /opt/herobids/.env (setup-env.sh) so both `docker
+  # build` and `docker compose up --build` see it; never bake it into the image.
+  if [[ -z "${NPM_TOKEN:-}" ]]; then
+    NPM_TOKEN="$(grep -E '^NPM_TOKEN=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+  fi
+  if [[ -n "${NPM_TOKEN:-}" ]]; then
+    export NPM_TOKEN
+  fi
+
   # Snapshot the current agent image before rebuilding so we can roll back if
   # the new image causes the API health check to fail.
   if docker image inspect herobids-agent:latest > /dev/null 2>&1; then
@@ -249,7 +262,7 @@ if [[ "${DO_DEPLOY}" == "true" ]]; then
   fi
 
   log "  Building agent image..."
-  docker build --pull -f docker/Dockerfile.agent -t herobids-agent:latest . 2>&1 | tail -3
+  docker build --pull --secret "id=NPM_TOKEN,env=NPM_TOKEN" -f docker/Dockerfile.agent -t herobids-agent:latest . 2>&1 | tail -3
   ok "Agent image rebuilt."
 
   log "  Restarting api / worker / web..."
