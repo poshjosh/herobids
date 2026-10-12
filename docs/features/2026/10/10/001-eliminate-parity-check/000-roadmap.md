@@ -11,10 +11,8 @@
 > anymore**, and then the checker, manifest, test and CI job are removed (milestone **M-C6**).
 
 - **Date:** 2026-10-10
-- **Status:** ACTIVE. Decision Brief B is ratified for everything except the items
-  marked blocked below. Execution framework set up 2026-10-10: this file is the
-  **entrypoint**; milestones (tracks), gates, invariants and the decision process are defined
-  here and in the documents linked under "If you are an executing agent".
+- **Status:** COMPLETE (2026-10-12). The manifest reached zero entries and the
+  checker, manifest, test and CI job were removed from both repos (milestone M-C6 done).
 - **Scope:** both repositories. Herobids is where the manifest and checker live;
   traderton-side work is tracked here and authored in traderton.
 - **Precedent for this structure:**

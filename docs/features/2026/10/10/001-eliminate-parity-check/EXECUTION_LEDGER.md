@@ -95,7 +95,7 @@ A milestone is a **track** (M-*); the A/B/C/D/C6 rows are its sub-steps.
 | E1-H/E3-H | herobids | verified | autonomous | D0 (human go) | already merged: `bf06eed7`, `94c49d6a`, `150ec905`, `02def8d9`, `76f06b01`, `f3d1879e`, `cb0e7766` (hb); `7392ae7` (tt) | Wave E herobids halves were ALREADY implemented and merged into `main` in both repos on 2026-10-05 (plan `E1H-E3H-agent-wake-and-lifecycle-restore.md`). This item's work was the documentation closeout (status flags, backlog ticks, 005/CANONICAL-STATE, CHANGELOG) + ledger record. See batch record below | |
 | D1 | external | blocked | n/a | Preset-assessment plan pair H5 | | | Not owned by this epic |
 | D2 | herobids | verified | autonomous | D1 | `9f872449` (Wave 1); `a879e56`/`3fbad11`/`17ac201`/`6a38ed6`/`8b55346`/`50acf91` (tt); `d98c9e0a`/`6a7ba65d`/`6abcfada` (hb, tag `v0.6.12`) | **Wave 1** (market-assessment, 9→8). **Wave 2 complete:** D2-b/D2-c (`@poshjosh/contracts@0.2.0` scanner-identity + price-candle; herobids consumed, deleted `scanner-types.ts` + `ports/candle-fetcher.ts`); D2-d (retired `domain-config-strategy-parameters`); D2-a (traderton `get_strategy_presets` full-preset tool + `presetCatalog` port; preset wire/type surface → `@poshjosh/contracts@0.3.0`; herobids boundary-seeded `presets-loader`, deleted 3 YAMLs). **Manifest 8 → 0.** herobids `v0.6.12` released (all tiers + parity gate PASSED); traderton pin bumped to `v0.6.12` (recipe PASSED). | Manifest has zero entries — C6 (finish line) is next, human-gated |
-| C6 | both | blocked | autonomous | manifest has zero entries | | | The epic's finish line |
+| C6 | both | verified | autonomous | manifest has zero entries | `6e2b8764` (hb); `d71d742` (tt) | **C6.1 (herobids):** deleted `scripts/parity-drift-manifest.json`, `scripts/check-parity-drift.mjs`, `scripts/check-parity-drift.test.mjs`, the `parity-drift` job (`.github/workflows/slow-tests.yml`), `test:slow`, and the `--bump-parity-pin` / parity-gate steps in `release.sh` / `release-xstack.sh`; removed the parity-drift rule from `AGENTS.md`; wrote ADR 018 + marked ADR 011 Decisions 2-3 superseded in part. **C6.2 (traderton):** deleted `scripts/check-parity-drift.mjs` wrapper, the `parity-drift` job, `test:slow`, and the parity steps in `release.sh`. Both repos: `bash -n` clean, `pnpm lint` clean, full suites green (hb 6484 tests / tt 2969 tests). | **Epic complete.** The parity-drift check is eliminated from both repos. |
 
 ## Pin pairs
 
@@ -515,4 +515,45 @@ Residual risks / blockers: none for D2. The manifest has zero entries.
 Next allowed milestone (track): M-C6 (finish line) — delete the checker, manifest,
   test and CI job from both repos. Human-gated per the roadmap (C6 is blocked on
   zero entries, now satisfied; the agent stops and reports before C6).
+```
+
+```text
+Date: 2026-10-12
+Milestone / batch (track): M-C6 (finish line) — delete the checker, manifest, test and CI job
+Starting SHAs: herobids=4641ae41 (main), traderton=50acf91 (main)
+Starting git status: both clean
+Sub-steps completed (in order):
+  Z1 — ADR 018 written (ends-state + dispositions + wire-DTO package); ADR 011
+    marked "Decisions 2 and 3 superseded in part by ADR 018".
+  C6.1 (herobids) — deleted scripts/parity-drift-manifest.json,
+    scripts/check-parity-drift.mjs, scripts/check-parity-drift.test.mjs, the
+    parity-drift job (slow-tests.yml — the file had no other job), test:slow,
+    and the --bump-parity-pin / parity-gate steps in release.sh /
+    release-xstack.sh; removed the parity-drift rule from AGENTS.md (replaced
+    with a "trading authority lives in traderton" rule, per the ratified
+    wording); removed the check-parity-drift.test.mjs exclude from vitest.config.ts.
+  C6.2 (traderton) — deleted scripts/check-parity-drift.mjs (wrapper), the
+    parity-drift job (slow-tests.yml), test:slow, and the --bump-parity-pin /
+    parity-gate steps in release.sh.
+Commits: herobids 6e2b8764 (C6.1); traderton d71d742 (C6.2)
+Focused validation: bash -n clean on both release.sh + release-xstack.sh;
+  grep of scripts/apps/packages/.github for check-parity-drift/parity-drift-manifest/
+  bump-parity-pin/parity-drift in BOTH repos returns no functional references
+  (traderton publish-package.yml has one historical comment naming the epic).
+Broader validation: herobids pnpm lint clean + full clean-env suite 325 files /
+  6484 tests green; traderton pnpm lint clean + full suite 169 files / 2969
+  tests green.
+Parity gates: none required — the check is the thing being deleted (GP-F).
+Decisions made (lightweight, one line each):
+  - GP-F re-grep confirmed parity-drift was the only user of the dual checkout,
+    TRADERTON_ROOT/HEROBIDS_ROOT, and repository: poshjosh/… checkouts in both
+    repos' workflows; both slow-tests.yml files carried no other job, so both
+    files are deleted (not just the job).
+  - The historical "parity-drift epic" comment in traderton's publish-package.yml
+    was left as-is (it names the epic, not the deleted checker).
+Findings / new gaps: none.
+Residual risks / blockers: none. The parity-drift check is eliminated from both
+  repos. AGENTS.md's parity-drift rule is replaced with a "trading authority lives
+  in traderton; do not reintroduce mirrored trading files" rule (ADR 018).
+Next allowed milestone (track): none — the epic is complete.
 ```
