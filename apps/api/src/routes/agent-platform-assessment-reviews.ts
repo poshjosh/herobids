@@ -8,6 +8,8 @@ import { agents, agentRuntimeSessions } from '@herobids/db';
 import { AGENT_STREAM_MAXLEN, MARKET_MONITOR_MESSAGE_TYPES } from '@herobids/domain';
 import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
+import { loadActiveTradingProfileConnections } from '../agents/trading-profile-reconciliation-adapter.js';
+import { selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -71,6 +73,12 @@ async function invokeBoundary(
     return { kind: 'transport_error', requestId: '', retryable: true, message: 'trading boundary not configured' };
   }
   return client.invoke({ toolName, payload, subject, deadlineMs });
+}
+
+/** Resolve the agent's execution venue account (the profile key traderton needs). */
+async function resolveAgentVenueAccountId(db: Database, agentId: string): Promise<string | null> {
+  const connections = await loadActiveTradingProfileConnections(db, agentId);
+  return selectExecutionBinding(connections)?.venueAccountId ?? null;
 }
 
 /** Map a non-success boundary result to an HTTP status + error payload. */
@@ -202,12 +210,24 @@ export async function platformAssessmentReviewRoutes(
         });
       }
 
+      // Resolve the agent's execution venue account — traderton keys the
+      // preset-assessment context (profile + active strategy + preset policy)
+      // by owner + actor + venue account, so the read-only assess tool needs
+      // the account id passed in the payload (same pattern as get_risk_limits).
+      const venueAccountId = await resolveAgentVenueAccountId(db, agentId);
+      if (!venueAccountId) {
+        return reply.status(409).send({
+          error: 'no_ready_connection',
+          message: 'The agent has no ready trading connection to assess against',
+        });
+      }
+
       // Call traderton assess_strategy_preset on the agent's behalf (owner-scoped).
       const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'agent', id: agentId } };
       const assessResult = await invokeBoundary(
         config.tradingBackendClient,
         'assess_strategy_preset',
-        { symbols: parsed.data.symbols, venueFamily: parsed.data.venueFamily },
+        { symbols: parsed.data.symbols, venueFamily: parsed.data.venueFamily, venueAccountId },
         subject,
         deadlineMs,
       );
@@ -287,13 +307,21 @@ export async function platformAssessmentReviewRoutes(
         .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
+      const venueAccountId = await resolveAgentVenueAccountId(db, agentId);
+      if (!venueAccountId) {
+        return reply.status(409).send({
+          error: 'no_ready_connection',
+          message: 'The agent has no ready trading connection',
+        });
+      }
+
       const subject: ExternalBackendSubject = { ownerId: request.userId, actor: { type: 'agent', id: agentId } };
 
       // Read the agent's strategy-change history (decision + reason).
       const changesResult = await invokeBoundary(
         config.tradingBackendClient,
         'list_agent_strategy_changes',
-        { actorId: agentId, limit: 50 },
+        { actorId: agentId, limit: 50, venueAccountId },
         subject,
         deadlineMs,
       );

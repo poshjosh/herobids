@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 
+vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
+  loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
+}));
+
+import { loadActiveTradingProfileConnections } from '../agents/trading-profile-reconciliation-adapter.js';
+
 const TEST_USER_ID = 'user-1';
 
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
@@ -111,6 +117,10 @@ describe('POST /agents/:id/platform-assessment/reviews — capability mode gate'
       }),
     };
 
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'va-1', active: true, ready: true, isDefault: true },
+    ]);
+
     const app = Fastify();
     decorateWithAuth(app);
 
@@ -129,6 +139,7 @@ describe('POST /agents/:id/platform-assessment/reviews — capability mode gate'
     expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
       toolName: 'assess_strategy_preset',
       subject: { ownerId: TEST_USER_ID, actor: { type: 'agent', id: 'agent-1' } },
+      payload: expect.objectContaining({ venueAccountId: 'va-1' }),
     }));
   });
 
@@ -301,6 +312,10 @@ describe('GET /agents/:id/platform-assessment/reviews/results — data-only read
       }),
     };
 
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([
+      { connectionId: 'conn-1', venueAccountId: 'va-1', active: true, ready: true, isDefault: true },
+    ]);
+
     const app = Fastify();
     decorateWithAuth(app);
 
@@ -317,6 +332,7 @@ describe('GET /agents/:id/platform-assessment/reviews/results — data-only read
     expect(res.statusCode).toBe(200);
     expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
       toolName: 'list_agent_strategy_changes',
+      payload: expect.objectContaining({ venueAccountId: 'va-1' }),
     }));
     const body = res.json();
     expect(body.changes).toHaveLength(1);
