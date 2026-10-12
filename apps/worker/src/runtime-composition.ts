@@ -1,10 +1,10 @@
-import type { CapabilityReadiness, HybridPricingIdentity, SwapExecutionIdentity, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
+import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
 import type { RegimeResult } from '@poshjosh/contracts';
 import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines, formatInterval } from './prompt-timing-context.js';
-import type { PositionIndicatorUpdate, SymbolFetchOutcome, WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from '@poshjosh/contracts';
+import type { HybridPricingIdentity, PositionIndicatorUpdate, SwapExecutionIdentity, SymbolFetchOutcome, WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from '@poshjosh/contracts';
 import type { CoverageEvaluationResult } from './position-coverage.js';
 import { fmtUsd } from './fmt.js';
 import type { ReminderRecord } from './reminders/reminder-record.js';
@@ -268,7 +268,7 @@ export interface RuntimeMarketSnapshot {
   freshness: RuntimeFreshness;
 }
 
-export type { HybridPricingIdentity } from '@herobids/domain';
+export type { HybridPricingIdentity } from '@poshjosh/contracts';
 
 // ─── Scanner health classification ─────────────────────────────────────────
 

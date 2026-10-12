@@ -1,4 +1,3 @@
-export * from './candle-fetcher.js';
 export * from './runtime.js';
 export * from './document-store.js';
 export * from './document-text-extractor.js';

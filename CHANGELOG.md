@@ -8,6 +8,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Herobids `scanner-types.ts` and `ports/candle-fetcher.ts` (mirrored
+  `domain-scanner-types` and `domain-ports-candle-fetcher` entries).** The
+  `ScannerCandleTarget` / `SwapExecutionIdentity` / `scannerTargetKey` and
+  `PriceCandle` shapes moved to `@poshjosh/contracts@0.2.0` (D2-b, D2-c).
+  `apps/worker/src/runtime-composition.ts` and `tick-gates.ts` now import them
+  from the package; the herobids domain copies are deleted and the barrels
+  pruned. Removed both manifest entries and their `REQUIRED_ENTRY_IDS` /
+  `REQUIRED_ENTRY_AUTHORITIES` ids. Part of the parity-drift-check elimination
+  effort; see
+  `docs/features/2026/10/10/001-eliminate-parity-check/decisions/B-parity-ownership.md`.
+
 - **Herobids `market-assessment.ts` (mirrored `domain-market-assessment` entry).**
   The herobids copy of `packages/domain/src/market-assessment.ts` is dead: after
   Track C re-pointed `RegimeResult`/`VolatilityEvidence`/`EvidenceValue` to
