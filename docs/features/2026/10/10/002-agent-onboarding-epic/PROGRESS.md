@@ -11,7 +11,7 @@
 | Wave | Items | Status |
 |---|---|---|
 | Wave 1 | WP-A A1/A2/A3-design · WP-H H1–H2 · WP-M Phase 0–1 · WP-C S0 | done |
-| Wave 2 | WP-A A3–A6 · WP-B B1–B8 · WP-C S1–S2 | not started |
+| Wave 2 | WP-A A3–A6 · WP-B B1–B8 · WP-C S1–S2 | in progress |
 | Gate G1 | self-serve loop UAT | not started |
 | Wave 3 | cut-over (WP-C S3+S4) | not started |
 | Wave 4 | channels (WP-M Phase 2–4, WP-C S5.1, WP-E) | not started |
@@ -19,23 +19,37 @@
 
 ## Next unfinished item
 
-**Wave 2 → WP-A A3 implementation** (brokered connection-request contract).
+**Wave 2 → WP-A A5 (completion hook + wake + sweeper) — IN PROGRESS, uncommitted.**
+Foundation laid: `AgentWakePublisher` domain port + `connection-request-service.ts`
+(redeem-by-token, finalize, wake publish) + `GET /auth/connection-request/callback`
+redeem endpoint in `auth.ts`. Remaining: wire `completeConnectionRequest` into the
+two connection write paths (setup.ts, connections-oauth.ts), the expiry sweeper in
+`ReminderCoordinator`, and the A4 form changes (locked provider, asker banner, Cancel).
 
 ## Per-item log
 
 - **2026-10-13 — WP-A A1 DONE.** Error split `precondition.not_ready` → `connection.missing` / `connection.provisioning`. Added `SelectedVenueAccountResolution` to domain tool contract; resolver in `agent.ts` returns discriminated result; `get_risk_limits`/`get_account_summary`/`adjust_risk_limits` updated. Focused tests 23/23 pass; `pnpm lint` green. Committed `613f7ec`.
   - Note: the commit also swept in a pre-existing working-tree deletion of `docs/features/EPIC-INDEX.md` (index for the now-complete parity-drift epic). Flagged for owner awareness.
-- **2026-10-13 — WP-A A2 DONE (uncommitted).** `list_providers` registered in base skill and catalog; owner-scoped active connections and agent grants, trading filtered unless explicitly requested or skill present. Shared provider metadata and operator wallet-generation availability feed its output. Provider API tests 7/7, worker registry/domain catalog 56/56, provider tool 4/4, session manager 76/76; `pnpm lint` passed.
+- **2026-10-13 — WP-A A2 DONE.** `list_providers` registered in base skill and catalog; owner-scoped active connections and agent grants, trading filtered unless explicitly requested or skill present. Shared provider metadata and operator wallet-generation availability feed its output. (Committed in Wave 1 `919f9ec7`.)
 - **2026-10-13 — WP-A A3 design DONE.** Brokered capability + typed request/reply for both connection requests and paper trading setup; API session issuance remains API-owned. Detailed seam recorded in WP-A plan.
-- **2026-10-13 — WP-H H1–H2/H4 DONE (uncommitted).** One shared trading-profile field derivation with targeted coverage; grant/revoke, delete fan-out, go-live, blueprint, PATCH, and PUT migrated while POST and chat create remain untouched. Seven focused test surfaces passed (316 tests), `pnpm lint` and `git diff --check` passed. Read-only code review found no HIGH or MEDIUM findings. H3 remains WP-B's work.
-- **2026-10-13 — WP-M phases 0–1 DONE (uncommitted).** Planned SMS capability and manifest acceptance tests, shared `ChatChannel` port, provider-qualified inbound routing and worker Telegram delivery. Telegram's wire semantics and webhook alias remain intact. Focused routing/manifest tests 13/13, filtered Telegram webhook tests 13/13, `pnpm lint` passed; final read-only review found no findings. The initial full suite identified a stale A2 visibility count (26 vs 27); corrected it and confirmed the 19/19 focused visibility tests pass. Full suite awaits Wave 1 gate rerun.
-- **2026-10-13 — WP-C S0 DONE.** Confirmed the plan's name-collision, idle-cost and worker billing-gate constraints; the free-plan config threshold comment was already accurate. No feature code; Wave 1 suite gate pending.
-- **2026-10-13 — WAVE 1 GATE PASS.** `pnpm lint` green; `pnpm test`: 330 files passed, 24 skipped; 6508 tests passed, 319 skipped. Wave 2 unblocked; Gate G1 still blocks Wave 3.
+- **2026-10-13 — WP-A A3 DONE.** `request_connection` brokered tool shipped end to end (domain schemas, capability grant, broker handler, tool, registry/catalog/BASE_SKILL). Committed `d2667455`.
+- **2026-10-13 — WP-A A6 DONE.** Base-skill connection-request instructions block. Committed `d9d0cc1c`.
+- **2026-10-13 — WP-A A7 DONE.** `connectionRequests` config block (ttlSecs, maxPendingPerAgent) — shipped with A3.
+- **2026-10-13 — WP-H H1–H2/H4 DONE.** One shared trading-profile field derivation; grant/revoke, delete fan-out, go-live, blueprint, PATCH, PUT migrated. (Committed in Wave 1 `919f9ec7`.)
+- **2026-10-13 — WP-M phases 0–1 DONE.** Shared `ChatChannel` port, provider-qualified inbound routing, worker Telegram delivery. (Committed in Wave 1 `919f9ec7`.)
+- **2026-10-13 — WP-C S0 DONE.** Prerequisite checks confirmed; no feature code.
+- **2026-10-13 — WAVE 1 GATE PASS.** `pnpm lint` green; `pnpm test`: 330 files passed, 24 skipped; 6508 tests passed, 319 skipped.
+- **2026-10-13 — WP-B B1 DONE.** `testProvisioningDefaults` operator block in traderton + widened `loadOperatorRiskDefaults` in herobids. Committed `e33dbd4` (traderton) + `d31a48b4` (herobids).
+- **2026-10-13 — WP-B B2 DONE.** `grantConnectionToRunningAgent` + `connection` wake source. Committed `4683f773`.
+- **2026-10-13 — WP-A A5/A4 IN PROGRESS (uncommitted).** `AgentWakePublisher` port, `connection-request-service.ts`, redeem endpoint in `auth.ts`. See "Next unfinished item".
 
 ## Decisions recorded
 
-_(append dated decisions here)_
+- **B1:** new top-level `testProvisioningDefaults` key (not extending `agentRiskDefaults`); widened `loadOperatorRiskDefaults` (not a sibling loader).
+- **B2:** `allowRunning` flag threaded through prepare/revalidate (default false); shared `executeGrantSaga`; wake callback injected (constructor-injection style), best-effort.
+- **A5/A4:** redeem endpoint invalidates the bearer token (single-use) but leaves the record pending until the completion hook finalizes it; wake published via a domain `AgentWakePublisher` port with an API-side Redis XADD implementation.
 
 ## Outstanding issues
 
-_(append LOW/MEDIUM observations from code reviews here)_
+- **B1 (MEDIUM):** `defaultTestProvider` is an unconstrained free string — constrain to a wallet-generation-capable venue enum before B3/B5 consume it.
+- **B1 (LOW):** redundant `get_operator_defaults` test; `as never` casts in tests; capital string→number conversion boundary to confirm in B3.
