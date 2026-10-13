@@ -69,6 +69,7 @@ async function prepareConnectionChange(
   userId: string,
   operation: 'grant' | 'revoke',
   allowRunning = false,
+  overrides: TradingProfileChanges = {},
 ): Promise<PreparedConnectionChange> {
   const [agent] = await db.select({
     id: agents.id,
@@ -109,6 +110,7 @@ async function prepareConnectionChange(
     ...deriveTradingProfileFields({
       unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
       style: agent.style ?? null,
+      overrides,
       preserveUnspecified: true,
     }),
   };
@@ -257,10 +259,14 @@ export async function grantConnectionToRunningAgent(
   connectionId: string,
   userId: string,
   profileReconciliationSaga: TradingProfileReconciliationSaga,
-  opts?: { wake?: (agentId: string, context: RunningAgentGrantWakeContext) => Promise<void> },
+  opts?: {
+    wake?: (agentId: string, context: RunningAgentGrantWakeContext) => Promise<void>;
+    /** Explicit profile values (capital, risk, execution) provisioned with the grant. */
+    changes?: TradingProfileChanges;
+  },
 ): Promise<Result<{ granted: boolean }, AgentConfigError>> {
   try {
-    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant', true);
+    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant', true, opts?.changes);
     if (prepared.kind !== 'ready') return grantError(prepared, connectionId);
     if (prepared.existing) return ok({ granted: true });
 

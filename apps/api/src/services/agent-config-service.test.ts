@@ -244,6 +244,32 @@ describe('grantConnectionToRunningAgent', () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
+  it('provisions the profile with explicit capital and execution mode on a running-agent grant', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+    const db = buildDb([
+      [runningAgent],
+      [{ id: 'connection-new', userId: 'user-1', status: 'active', venueAccountId: 'venue-new', provider: 'hyperliquid' }],
+      [],
+      [runningAgent],
+      [{ userId: 'user-1', status: 'active' }],
+      [],
+    ]);
+    let stagedInput: TradingProfilePlannerInput | undefined;
+    const saga = buildStagedSaga(db, (input) => { stagedInput = input; });
+
+    const result = await grantConnectionToRunningAgent(db, 'agent-1', 'connection-new', 'user-1', saga, {
+      changes: { capital: '1000', executionDefaults: { mode: 'paper' } },
+    });
+
+    expect(result.ok).toBe(true);
+    const profiles = [...stagedInput!.proposed.profiles.values()];
+    expect(profiles.length).toBeGreaterThan(0);
+    for (const profile of profiles) {
+      expect(profile.capital).toBe('1000');
+      expect(profile.executionDefaults?.mode).toBe('paper');
+    }
+  });
+
   it('does not fail the grant when the wake callback throws', async () => {
     vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
     const db = buildDb([
