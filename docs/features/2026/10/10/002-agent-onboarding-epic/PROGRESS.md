@@ -19,7 +19,7 @@
 
 ## Next unfinished item
 
-**Wave 2 → WP-A A5/A4 (remaining, see [003 plan](../003-dynamic-connections/001-plan.md) implementation log).** Done: completion hook, decline endpoint, expiry sweeper, single-use redeem, web locking + Cancel-as-decline. Open: Gmail OAuth completion (requestId not in OAuth state), `use_existing` approval UI, asker name in the banner, redeem endpoint test, and verifying the runtime re-reads grants on a `connection` wake (G1 UAT).
+**Wave 2 — next unfinished item: WP-B B8 (funding info) design decision, then B6, B4/B5, S1, S2.** Done in WP-A: A3–A7 and A4/A5 (completion, decline, expiry, single-use redeem, runtime refresh on completion, Gmail OAuth completion, requesting agent name, provider lock, Cancel-as-decline). Open in WP-A: `use_existing` approval UI; a runtime end-to-end check that the agent uses a new connection on its next tick (G1 UAT). Done in WP-B: B1, B2, B3, B7. Decision needed for B8: the funding read (network, balance) belongs to Traderton, which owns the venue facts; a herobids-local tool would not be visible to agents (trading tools reach agents through the external skill and boundary discovery). Decision needed for B6: trading-skill instructions live in the external `traderton-skills` repo, not in herobids. Decision needed for B4/B5: the worker-to-platform mechanism for `set_trading_setup` (broker plus shared provisioning service vs a second transport).
 
 **Lint caveat:** root `pnpm lint` checks nothing (`files: []`); use the per-project `tsc -p apps/<app>/tsconfig.json --noEmit` checks.
 ## Per-item log
@@ -37,7 +37,10 @@
 - **2026-10-13 — WAVE 1 GATE PASS.** `pnpm lint` green; `pnpm test`: 330 files passed, 24 skipped; 6508 tests passed, 319 skipped.
 - **2026-10-13 — WP-B B1 DONE.** `testProvisioningDefaults` operator block in traderton + widened `loadOperatorRiskDefaults` in herobids. Committed `e33dbd4` (traderton) + `d31a48b4` (herobids).
 - **2026-10-13 — WP-B B2 DONE.** `grantConnectionToRunningAgent` + `connection` wake source. Committed `4683f773`.
-- **2026-10-13 — WP-A A5 DONE (API + worker), A4 PARTIAL.** Completion hook on provider-link, decline endpoint, expiry sweeper in `ReminderCoordinator`, single-use redeem, web provider lock + Cancel-as-decline. Open items listed under "Next unfinished item". Committed with this checkpoint.
+- **2026-10-13 — WP-A A5 DONE, A4 MOSTLY DONE.** Completion hook on provider-link, decline endpoint, expiry sweeper, single-use redeem, runtime descriptor refresh on completion (refresh shared via `services/agent-runtime-refresh.ts`), Gmail OAuth completion via its own cookie, requesting agent name in the banner, web provider lock + Cancel-as-decline. Remaining: `use_existing` approval UI. Commits `5f4a3fda`, `341994ab`, `40478848`, `fbfa7333`.
+- **2026-10-13 — WP-B B7 DONE.** Paper/shadow changes only explicitly; grant and revoke no longer change execution mode. Unit and functional tests updated. Commit `053beebf`.
+- **2026-10-13 — WP-B B3 DONE.** `grantConnectionToRunningAgent` accepts explicit `changes` (capital, risk, execution), so the first grant provisions a profile with mode and capital. Commit on herobids main (see git log).
+- **2026-10-13 — WP-B B8 BLOCKED on design.** See decision above.
 
 ## Decisions recorded
 
