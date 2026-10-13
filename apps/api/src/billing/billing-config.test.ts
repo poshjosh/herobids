@@ -182,7 +182,7 @@ describe('AppConfigSchema billing cross-validation', () => {
         stripe: {
           secretKey: 'sk_test_xxx',
           webhookSecret: 'whsec_test',
-          managedPaymentsApiVersion: '2026-02-25.preview',
+          managedPaymentsApiVersion: '2026-08-26.dahlia',
           planPrices: {
             pro: [{ stripePriceId: 'price_123', interval: 'month', displayLabel: 'Pro', managedPayments: true }],
           },

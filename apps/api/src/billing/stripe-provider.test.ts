@@ -15,7 +15,7 @@ function makeStripeConfig(overrides: Partial<StripeConfig> = {}): StripeConfig {
         { stripePriceId: 'price_pro_yearly', interval: 'year', displayLabel: 'Pro Yearly', managedPayments: false },
       ],
     },
-    managedPaymentsApiVersion: '2026-02-25.preview',
+    managedPaymentsApiVersion: '2026-08-26.dahlia',
     ...overrides,
   };
 }
@@ -64,7 +64,7 @@ describe('StripeProvider.createCheckoutUrl — Managed Payments', () => {
     });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect((init.headers as Record<string, string>)['Stripe-Version']).toBe('2026-02-25.preview');
+    expect((init.headers as Record<string, string>)['Stripe-Version']).toBe('2026-08-26.dahlia');
     expect(init.body as string).toContain('managed_payments%5Benabled%5D=true');
   });
 

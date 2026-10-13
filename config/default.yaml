@@ -915,7 +915,7 @@ billing:
                                               # must carry an eligible tax_code. See scripts/ts/create-managed-payments-product.ts
                                               # to provision one.
     managedPaymentsApiVersion: ""             # required once any planPrices entry sets managedPayments: true,
-                                              # e.g. "2026-02-25.preview" — do not guess this value, use what
+                                              # e.g. "2026-08-26.dahlia" — do not guess this value, use what
                                               # Stripe's Managed Payments docs specify at integration time.
   creem:
     apiKey: ""                                # override: CREEM_API_KEY

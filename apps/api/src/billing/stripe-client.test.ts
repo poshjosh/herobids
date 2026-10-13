@@ -82,13 +82,13 @@ describe('StripeClient Managed Payments requests', () => {
       successUrl: 'https://example.com/success',
       cancelUrl: 'https://example.com/cancel',
       managedPayments: true,
-      apiVersion: '2026-02-25.preview',
+      apiVersion: '2026-08-26.dahlia',
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.stripe.com/v1/checkout/sessions');
-    expect((init.headers as Record<string, string>)['Stripe-Version']).toBe('2026-02-25.preview');
+    expect((init.headers as Record<string, string>)['Stripe-Version']).toBe('2026-08-26.dahlia');
     const body = (init.body as string);
     expect(body).toContain('managed_payments%5Benabled%5D=true');
   });
@@ -117,13 +117,13 @@ describe('StripeClient Managed Payments requests', () => {
       name: 'Basic subscription',
       taxCode: 'txcd_10103100',
       defaultPriceData: { currency: 'usd', unitAmount: 1000, recurringInterval: 'month' },
-      apiVersion: '2026-02-25.preview',
+      apiVersion: '2026-08-26.dahlia',
     });
 
     expect(product.default_price).toBe('price_abc');
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.stripe.com/v1/products');
-    expect((init.headers as Record<string, string>)['Stripe-Version']).toBe('2026-02-25.preview');
+    expect((init.headers as Record<string, string>)['Stripe-Version']).toBe('2026-08-26.dahlia');
     const body = init.body as string;
     expect(body).toContain('tax_code=txcd_10103100');
     expect(body).toContain('default_price_data%5Bcurrency%5D=usd');

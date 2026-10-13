@@ -7,7 +7,7 @@
  *   - a product carrying an eligible tax_code
  *     (https://docs.stripe.com/tax/tax-codes)
  *   - the `managed_payments[enabled]` checkout param, sent with Stripe-Version
- *     2026-02-25.preview or later
+ *     2026-08-26.dahlia or later
  *
  * This script is a one-time provisioning step, run manually by an operator —
  * it is not part of request-handling code, so it talks to Stripe's REST API
@@ -26,7 +26,7 @@
  */
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
-const MANAGED_PAYMENTS_API_VERSION = '2026-02-25.preview';
+const MANAGED_PAYMENTS_API_VERSION = '2026-08-26.dahlia';
 
 interface Args {
   name: string;

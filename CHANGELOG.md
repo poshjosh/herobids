@@ -6,9 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Stripe managed payments api from version 2026-02-25.preview to 2026-08-26.dahlia
+
 ### Added
 
-- Add Stripe (managed) payment production config
+- Stripe (managed) payment production config
 
 ### Fixed
 
