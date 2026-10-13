@@ -793,6 +793,8 @@ const agentBroker = new AgentMessageBroker(
   appConfig.agentRuntime.llm.modelDefaults,
   appConfig.plans,
   sideEffectBoundary,
+  appConfig.auth.publicBaseUrl,
+  appConfig.connectionRequests,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

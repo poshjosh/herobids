@@ -779,6 +779,12 @@ auth:
   loginLinkWindowSecs: 3600              # 1 hour rolling window — override: AUTH_LOGIN_LINK_WINDOW_SECS
   loginLinkMaxSendsPerIpWindow: 10       # max sends per IP per window — override: AUTH_LOGIN_LINK_MAX_SENDS_PER_IP_WINDOW
 
+# Connection requests — short-lived, single-use links an agent mints to ask the
+# user to create or approve a provider connection (WP-A A3).
+connectionRequests:
+  ttlSecs: 1800                          # how long a pending request link stays valid (seconds)
+  maxPendingPerAgent: 3                  # max pending connection requests per agent
+
 # Plan enforcement — coarse resource limits per user plan.
 #
 # - plans...includedCreditCents is for usage.

@@ -201,6 +201,14 @@ export const ManageAgentSkillsPayloadSchema = z.object({
 });
 export type ManageAgentSkillsPayload = z.infer<typeof ManageAgentSkillsPayloadSchema>;
 
+/** Brokered connection request — agent asks the platform to mint a short-lived, single-use link. */
+export const ConnectionRequestPayloadSchema = z.object({
+  provider: z.string().min(1),
+  mode: z.enum(['create', 'use_existing']).default('create'),
+  requestMessageId: z.string().min(1),
+});
+export type ConnectionRequestPayload = z.infer<typeof ConnectionRequestPayloadSchema>;
+
 // --- Trading Instance → Agent Messages ---
 
 export const DecisionAcceptedPayloadSchema = z.object({
@@ -389,6 +397,7 @@ export const AGENT_MESSAGE_TYPES = {
   BOT_QUERY: 'agent.bot.query',
   CONFIG_UPDATE: 'agent.config.update',
   MANAGE_AGENT_SKILLS: 'agent.manage_skills',
+  REQUEST_CONNECTION: 'agent.request_connection',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -537,6 +546,40 @@ export const ManageAgentSkillsResultSchema = z.object({
 });
 export type ManageAgentSkillsResult = z.infer<typeof ManageAgentSkillsResultSchema>;
 
+/** Result schema for a brokered connection request. */
+export const ConnectionRequestResultSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('ok'),
+    requestId: z.string().min(1),
+    link: z.string().min(1),
+    expiresAt: z.string().min(1),
+  }),
+  z.object({
+    status: z.literal('error'),
+    error: z.string().min(1),
+    errorCode: z.string().min(1),
+  }),
+]);
+export type ConnectionRequestResult = z.infer<typeof ConnectionRequestResultSchema>;
+
+/**
+ * Shared contract for a pending connection request stored in Redis. The API
+ * redeem endpoint (A4) reads this record to issue a session and complete the
+ * request; the worker broker writes it (A3).
+ */
+export const ConnectionRequestRecordSchema = z.object({
+  requestId: z.string().min(1),
+  token: z.string().min(1),
+  agentId: z.string().min(1),
+  userId: z.string().min(1),
+  provider: z.string().min(1),
+  mode: z.enum(['create', 'use_existing']),
+  status: z.enum(['pending', 'completed', 'declined', 'expired']),
+  createdAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+});
+export type ConnectionRequestRecord = z.infer<typeof ConnectionRequestRecordSchema>;
+
 /** Map message type to its payload schema for validation */
 export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: DecisionSubmitPayloadSchema,
@@ -550,6 +593,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.BOT_QUERY]: BotQueryPayloadSchema,
   [AGENT_MESSAGE_TYPES.CONFIG_UPDATE]: ConfigUpdatePayloadSchema,
   [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: ManageAgentSkillsPayloadSchema,
+  [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: ConnectionRequestPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,

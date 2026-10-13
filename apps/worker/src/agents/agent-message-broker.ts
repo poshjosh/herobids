@@ -9,6 +9,8 @@ import type {
   SendMessagePayload,
   ManageBotPayload,
   ManageAgentSkillsPayload,
+  ConnectionRequestPayload,
+  ConnectionRequestResult,
   OperatorModelDefaults,
   PlansConfig,
 } from '@herobids/domain';
@@ -20,11 +22,17 @@ import {
   resolveEffectiveLlmSelection,
   renderEmail,
   ManageAgentSkillsPayloadSchema,
+  ConnectionRequestRecordSchema,
+  PROVIDER_DISCOVERY,
+  getRuntimeFamiliesForProvider,
   resolvePlanSkillEntitlements,
+  AuthConfigSchema,
+  ConnectionRequestsConfigSchema,
 } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
 import { eq, inArray } from 'drizzle-orm';
 import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
+import { randomUUID, randomBytes } from 'node:crypto';
 import type { ChatDelivery } from '../alerting/chat-delivery.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
@@ -87,7 +95,19 @@ export class AgentMessageBroker {
     // lifecycle queue + actor. When absent (unconfigured), lifecycle actions
     // fail with a typed precondition — NEVER a silent fall back to the engine.
     private readonly sideEffectBoundary?: ExternalBackendWriteBoundary,
+    private readonly publicBaseUrl?: string,
+    private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number },
   ) {}
+
+  /** Resolved public base URL for link construction (operator config default when unset). */
+  private get resolvedPublicBaseUrl(): string {
+    return this.publicBaseUrl ?? AuthConfigSchema.parse({}).publicBaseUrl;
+  }
+
+  /** Resolved connection-request limits (operator config defaults when unset). */
+  private get resolvedConnectionRequests(): { ttlSecs: number; maxPendingPerAgent: number } {
+    return this.connectionRequests ?? ConnectionRequestsConfigSchema.parse({});
+  }
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
     const cached = this.capabilityEngines.get(agentId);
@@ -170,6 +190,7 @@ export class AgentMessageBroker {
       [AGENT_MESSAGE_TYPES.MANAGE_BOT]: 'manage_bot',
       [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
       [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
+      [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: 'request_connection',
     };
     const capabilityName = capabilityByType[envelope.type];
     // Saved so recordEnd can be called in the finally block on every exit path.
@@ -350,6 +371,14 @@ export class AgentMessageBroker {
             effectiveAgentId,
             envelope,
             envelope.payload as unknown as ManageAgentSkillsPayload,
+          );
+          break;
+
+        case AGENT_MESSAGE_TYPES.REQUEST_CONNECTION:
+          await this.handleRequestConnection(
+            effectiveAgentId,
+            envelope,
+            envelope.payload as unknown as ConnectionRequestPayload,
           );
           break;
 
@@ -1007,6 +1036,168 @@ export class AgentMessageBroker {
   }
 
   /**
+   * Handle a brokered connection request (WP-A A3). Mints a short-lived,
+   * single-use link the agent can forward to the user. Writes the pending
+   * request record to Redis and replies synchronously via a Redis list.
+   */
+  private async handleRequestConnection(
+    agentId: string,
+    envelope: MessageEnvelope,
+    payload: ConnectionRequestPayload,
+  ): Promise<void> {
+    const requestMessageId = (envelope.payload as Record<string, unknown>).requestMessageId as string | undefined;
+
+    const publishReply = async (result: ConnectionRequestResult) => {
+      if (requestMessageId) {
+        await this.eventPublisher.publishConnectionRequestReply(requestMessageId, result);
+      }
+    };
+
+    const ttlSecs = this.resolvedConnectionRequests.ttlSecs;
+    const maxPendingPerAgent = this.resolvedConnectionRequests.maxPendingPerAgent;
+    const pendingKey = `connection-request:pending:${agentId}:${payload.provider}`;
+    const pendingAgentSetKey = `connection-request:pending-agent:${agentId}`;
+
+    // Release the per-provider pending lock and the per-agent pending-set
+    // membership on any downstream failure so a failed mint does not orphan
+    // state that would block future requests until TTL expiry.
+    const releasePendingState = async () => {
+      await this.redis.del(pendingKey);
+      await this.redis.srem(pendingAgentSetKey, payload.provider);
+    };
+
+    try {
+      // (a) Validate provider against the shared catalog.
+      if (!(payload.provider in PROVIDER_DISCOVERY)) {
+        const validIds = Object.keys(PROVIDER_DISCOVERY).join(', ');
+        await publishReply({
+          status: 'error',
+          error: `Unknown provider "${payload.provider}". Valid providers: ${validIds}.`,
+          errorCode: 'connection.unknown_provider',
+        });
+        return;
+      }
+
+      // (b) Reject trading-family providers for agents without trading capability.
+      // Mirrors the list_providers filter: a provider whose runtime families
+      // include 'trading' is only requestable by an agent with a trading skill.
+      const families = getRuntimeFamiliesForProvider(payload.provider);
+      if (families.includes('trading')) {
+        const descriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agentId);
+        const hasTradingCapability = (descriptor?.resolvedSkills ?? []).some(
+          (skill) => Array.isArray(skill.capabilityFamilies) && skill.capabilityFamilies.includes('trading'),
+        );
+        if (!hasTradingCapability) {
+          await publishReply({
+            status: 'error',
+            error: `Provider "${payload.provider}" requires a trading skill, which this agent does not have.`,
+            errorCode: 'connection.trading_not_allowed',
+          });
+          return;
+        }
+      }
+
+      const agent = await this.agentRepo.getAgent(agentId);
+      if (!agent) {
+        await publishReply({
+          status: 'error',
+          error: 'Agent not found',
+          errorCode: 'agent.not_found',
+        });
+        return;
+      }
+
+      // (c) Enforce maxPendingPerAgent via a per-agent pending SET.
+      const pendingCount = await this.redis.scard(pendingAgentSetKey);
+      if (pendingCount >= maxPendingPerAgent) {
+        await publishReply({
+          status: 'error',
+          error: `This agent already has ${maxPendingPerAgent} pending connection requests.`,
+          errorCode: 'connection.max_pending_reached',
+        });
+        return;
+      }
+
+      // (d) Enforce one-pending-per-agent-and-provider via SET NX EX.
+      const acquired = await this.redis.set(pendingKey, '1', 'EX', ttlSecs, 'NX');
+      if (acquired !== 'OK') {
+        await publishReply({
+          status: 'error',
+          error: `A connection request for "${payload.provider}" is already pending.`,
+          errorCode: 'connection.request_pending',
+        });
+        return;
+      }
+
+      // (e) Generate requestId + token.
+      const requestId = randomUUID();
+      const token = randomBytes(32).toString('base64url');
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + ttlSecs * 1000);
+
+      // (f) Write the request record to Redis with TTL.
+      const recordResult = ConnectionRequestRecordSchema.safeParse({
+        requestId,
+        token,
+        agentId,
+        userId: agent.userId,
+        provider: payload.provider,
+        mode: payload.mode,
+        status: 'pending',
+        createdAt: now.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+      });
+      if (!recordResult.success) {
+        await releasePendingState();
+        await publishReply({
+          status: 'error',
+          error: 'Failed to build connection request record',
+          errorCode: 'broker.internal_error',
+        });
+        return;
+      }
+      const record = recordResult.data;
+      await this.redis.set(
+        `connection-request:${requestId}`,
+        JSON.stringify(record),
+        'EX',
+        ttlSecs,
+      );
+
+      // (g) Track the provider in the per-agent pending SET (for maxPendingPerAgent).
+      await this.redis.sadd(pendingAgentSetKey, payload.provider);
+
+      // (h) Add requestId to the pending sorted set scored by expiresAt epoch ms.
+      // NOTE: the A5 completion-hook sweeper removes entries from this sorted set
+      // on completion/decline/expiry, so it does not grow unboundedly.
+      await this.redis.zadd(
+        'connection-requests:pending',
+        expiresAt.getTime(),
+        requestId,
+      );
+
+      // (i) Build the link.
+      const link = `${this.resolvedPublicBaseUrl}/auth/connection-request/callback?token=${token}`;
+
+      // (j) Reply.
+      await publishReply({
+        status: 'ok',
+        requestId,
+        link,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (err) {
+      logger.error({ agentId, err }, 'handleRequestConnection failed');
+      await releasePendingState();
+      await publishReply({
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Unexpected broker error',
+        errorCode: 'broker.internal_error',
+      });
+    }
+  }
+
+  /**
    * Dispatch billing notifications (Telegram + email) for soft-cap and hard-cap events.
    * Deduplicates via Redis so the user is only notified on status transition.
    */
@@ -1125,6 +1316,10 @@ export class AgentMessageBroker {
       case AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS: {
         const requestMessageId = payload.requestMessageId as string | undefined;
         return requestMessageId ? `agent:skills:reply:${requestMessageId}` : undefined;
+      }
+      case AGENT_MESSAGE_TYPES.REQUEST_CONNECTION: {
+        const requestMessageId = payload.requestMessageId as string | undefined;
+        return requestMessageId ? `agent:connection-request:reply:${requestMessageId}` : undefined;
       }
       // Fire-and-forget: no reply channel
       case AGENT_MESSAGE_TYPES.SEND_MESSAGE:

@@ -1788,3 +1788,55 @@ describe('AppConfigSchema — externalBackendObservability.latencyTargets', () =
     }
   });
 });
+
+describe('AppConfigSchema — connectionRequests', () => {
+  const minimalAppConfig = {
+    app: {},
+    database: { url: 'postgres://localhost/test' },
+    redis: {},
+    execution: {},
+    agentRuntime: {
+      defaultBudgets: {
+        maxHistoryMessages: 20,
+        maxHistoryTokens: 40000,
+        maxRecentToolMessages: 6,
+        maxToolResultChars: 4000,
+        maxVisibleToolSchemas: 64,
+        maxContextBlockChars: 4000,
+      },
+    },
+  };
+
+  it('defaults ttlSecs to 1800 and maxPendingPerAgent to 3 when the block is absent', () => {
+    const result = AppConfigSchema.safeParse(minimalAppConfig);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.connectionRequests).toEqual({
+        ttlSecs: 1800,
+        maxPendingPerAgent: 3,
+      });
+    }
+  });
+
+  it('accepts operator overrides for connectionRequests', () => {
+    const result = AppConfigSchema.safeParse({
+      ...minimalAppConfig,
+      connectionRequests: { ttlSecs: 900, maxPendingPerAgent: 5 },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.connectionRequests).toEqual({
+        ttlSecs: 900,
+        maxPendingPerAgent: 5,
+      });
+    }
+  });
+
+  it('rejects a ttlSecs below the 60-second minimum', () => {
+    const result = AppConfigSchema.safeParse({
+      ...minimalAppConfig,
+      connectionRequests: { ttlSecs: 30 },
+    });
+    expect(result.success).toBe(false);
+  });
+});

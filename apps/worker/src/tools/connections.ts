@@ -1,9 +1,18 @@
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import type { AgentTool, ToolContext, ToolResult } from '@herobids/domain';
-import { getRuntimeFamiliesForProvider, PROVIDER_DISCOVERY } from '@herobids/domain';
+import {
+  AGENT_MESSAGE_TYPES,
+  ConnectionRequestResultSchema,
+  getRuntimeFamiliesForProvider,
+  PROVIDER_DISCOVERY,
+} from '@herobids/domain';
 import { agents, agentConnections, connections, type Database } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
+import { parseBrokerDenialReply } from './tool-errors.js';
+import { randomUUID } from 'node:crypto';
+
+const CONNECTION_REQUEST_REPLY_TIMEOUT_S = 15;
 
 const ListProvidersParamsSchema = z.object({ capability: z.enum(['trading', 'email']).optional() });
 
@@ -75,5 +84,95 @@ export const listProvidersTool: AgentTool = {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'provider lookup failed', errorCode: 'connection.lookup_failed', fault: true };
     }
+  },
+};
+
+const RequestConnectionParamsSchema = z.object({
+  provider: z.string().min(1),
+  mode: z.enum(['create', 'use_existing']).optional().default('create'),
+});
+
+export const requestConnectionTool: AgentTool = {
+  name: 'request_connection',
+  description: 'Request a connection to a provider. Returns a short-lived link to send to the user.',
+  parametersSchema: RequestConnectionParamsSchema,
+  parameters: convertZodToJsonSchema(RequestConnectionParamsSchema),
+  category: 'write-database',
+  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const parsed = RequestConnectionParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: 'Invalid parameters: provider must be a non-empty string and mode must be "create" or "use_existing"',
+        errorCode: 'validation.invalid_payload',
+        fault: false,
+      };
+    }
+    const { provider, mode } = parsed.data;
+
+    if (!ctx.publishToInbound || typeof ctx.redis.blpop !== 'function') {
+      return {
+        success: false,
+        error: 'Broker communication not available in this context',
+        errorCode: 'connection.broker_unavailable',
+        fault: false,
+      };
+    }
+
+    const requestMessageId = randomUUID();
+
+    await ctx.publishToInbound(
+      AGENT_MESSAGE_TYPES.REQUEST_CONNECTION,
+      { provider, mode, requestMessageId } as Record<string, unknown>,
+    );
+
+    const reply = await ctx.redis.blpop(
+      `agent:connection-request:reply:${requestMessageId}`,
+      CONNECTION_REQUEST_REPLY_TIMEOUT_S,
+    );
+
+    if (!reply) {
+      return {
+        success: false,
+        retryable: true,
+        error: 'Timed out waiting for broker reply',
+        errorCode: 'broker.timeout',
+        fault: false,
+      };
+    }
+
+    const replyData = JSON.parse(reply[1]) as Record<string, unknown>;
+    const denialResult = parseBrokerDenialReply(replyData);
+    if (denialResult) return denialResult;
+
+    const parsedReply = ConnectionRequestResultSchema.safeParse(replyData);
+    if (!parsedReply.success) {
+      return {
+        success: false,
+        error: 'Received malformed reply from broker',
+        errorCode: 'broker.malformed_reply',
+        fault: false,
+      };
+    }
+
+    const result = parsedReply.data;
+
+    if (result.status === 'error') {
+      return {
+        success: false,
+        error: result.error,
+        errorCode: result.errorCode,
+        fault: false,
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        requestId: result.requestId,
+        link: result.link,
+        expiresAt: result.expiresAt,
+      },
+    };
   },
 };

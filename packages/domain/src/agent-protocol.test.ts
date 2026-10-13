@@ -10,6 +10,9 @@ import {
   SendMessagePayloadSchema,
   ManageAgentSkillsPayloadSchema,
   ManageAgentSkillsResultSchema,
+  ConnectionRequestPayloadSchema,
+  ConnectionRequestResultSchema,
+  ConnectionRequestRecordSchema,
   AGENT_MESSAGE_TYPES,
   MESSAGE_PAYLOAD_SCHEMAS,
 } from './agent-protocol.js';
@@ -787,5 +790,170 @@ describe('ManageAgentSkillsResultSchema', () => {
       status: 'ok',
     });
     expect(result.success).toBe(false);
+  });
+});
+
+// ── ConnectionRequestPayloadSchema ──────────────────────────────────────────
+
+describe('ConnectionRequestPayloadSchema', () => {
+  it('accepts a valid payload with explicit mode', () => {
+    const result = ConnectionRequestPayloadSchema.safeParse({
+      provider: 'gmail',
+      mode: 'use_existing',
+      requestMessageId: 'req-1',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe('gmail');
+      expect(result.data.mode).toBe('use_existing');
+      expect(result.data.requestMessageId).toBe('req-1');
+    }
+  });
+
+  it('defaults mode to "create" when omitted', () => {
+    const result = ConnectionRequestPayloadSchema.safeParse({
+      provider: 'hyperliquid',
+      requestMessageId: 'req-2',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.mode).toBe('create');
+    }
+  });
+
+  it('rejects an empty provider', () => {
+    const result = ConnectionRequestPayloadSchema.safeParse({
+      provider: '',
+      requestMessageId: 'req-3',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an invalid mode', () => {
+    const result = ConnectionRequestPayloadSchema.safeParse({
+      provider: 'gmail',
+      mode: 'steal',
+      requestMessageId: 'req-4',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing requestMessageId', () => {
+    const result = ConnectionRequestPayloadSchema.safeParse({ provider: 'gmail' });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── ConnectionRequestResultSchema ───────────────────────────────────────────
+
+describe('ConnectionRequestResultSchema', () => {
+  it('accepts a valid ok result', () => {
+    const result = ConnectionRequestResultSchema.safeParse({
+      status: 'ok',
+      requestId: 'req-1',
+      link: 'http://localhost:3000/auth/connection-request/callback?token=abc',
+      expiresAt: '2026-10-13T12:00:00.000Z',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.requestId).toBe('req-1');
+      expect(result.data.link).toContain('token=abc');
+    }
+  });
+
+  it('accepts a valid error result', () => {
+    const result = ConnectionRequestResultSchema.safeParse({
+      status: 'error',
+      error: 'Unknown provider',
+      errorCode: 'connection.unknown_provider',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.errorCode).toBe('connection.unknown_provider');
+    }
+  });
+
+  it('rejects an invalid status', () => {
+    const result = ConnectionRequestResultSchema.safeParse({ status: 'pending' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an ok result missing the link', () => {
+    const result = ConnectionRequestResultSchema.safeParse({
+      status: 'ok',
+      requestId: 'req-1',
+      expiresAt: '2026-10-13T12:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an error result missing the errorCode', () => {
+    const result = ConnectionRequestResultSchema.safeParse({
+      status: 'error',
+      error: 'Unknown provider',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── ConnectionRequestRecordSchema ───────────────────────────────────────────
+
+describe('ConnectionRequestRecordSchema', () => {
+  const validRecord = {
+    requestId: 'req-1',
+    token: 'token-abc',
+    agentId: 'agent-1',
+    userId: 'user-1',
+    provider: 'gmail',
+    mode: 'create',
+    status: 'pending',
+    createdAt: '2026-10-13T11:00:00.000Z',
+    expiresAt: '2026-10-13T11:30:00.000Z',
+  };
+
+  it('accepts a valid pending record', () => {
+    const result = ConnectionRequestRecordSchema.safeParse(validRecord);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.status).toBe('pending');
+      expect(result.data.token).toBe('token-abc');
+    }
+  });
+
+  it('accepts each terminal status', () => {
+    for (const status of ['completed', 'declined', 'expired'] as const) {
+      const result = ConnectionRequestRecordSchema.safeParse({ ...validRecord, status });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('rejects an invalid status', () => {
+    const result = ConnectionRequestRecordSchema.safeParse({ ...validRecord, status: 'unknown' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing token', () => {
+    const { token: _token, ...rest } = validRecord;
+    const result = ConnectionRequestRecordSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-datetime expiresAt', () => {
+    const result = ConnectionRequestRecordSchema.safeParse({ ...validRecord, expiresAt: 'soon' });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── REQUEST_CONNECTION message type + registration ──────────────────────────
+
+describe('AGENT_MESSAGE_TYPES.REQUEST_CONNECTION', () => {
+  it('equals "agent.request_connection"', () => {
+    expect(AGENT_MESSAGE_TYPES.REQUEST_CONNECTION).toBe('agent.request_connection');
+  });
+
+  it('has ConnectionRequestPayloadSchema registered in MESSAGE_PAYLOAD_SCHEMAS', () => {
+    const schema = MESSAGE_PAYLOAD_SCHEMAS['agent.request_connection'];
+    expect(schema).toBeDefined();
+    expect(schema).toBe(ConnectionRequestPayloadSchema);
   });
 });

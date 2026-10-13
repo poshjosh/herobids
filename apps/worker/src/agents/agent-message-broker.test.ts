@@ -20,6 +20,7 @@ function makeAgentRepo(overrides: Partial<AgentRepository> = {}): AgentRepositor
     getActiveSession: vi.fn(async () => ({ id: 'session-1' })),
     insertMessage: vi.fn(async () => undefined),
     markMessageProcessed: vi.fn(async () => undefined),
+    getRuntimeCapabilityDescriptor: vi.fn(async () => ({ resolvedSkills: [] })),
     ...overrides,
   } as unknown as AgentRepository;
 }
@@ -507,5 +508,220 @@ describe('AgentMessageBroker — processInbound denial Redis reply', () => {
     expect(result.error).toContain('capability_denied');
     expect(redis.lpush).not.toHaveBeenCalled();
     expect(redis.expire).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// request_connection broker handler
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('AgentMessageBroker — request_connection', () => {
+  let agentRepo: AgentRepository;
+  let redis: Redis;
+  let eventPublisher: InstanceEventPublisher;
+  let broker: AgentMessageBroker;
+
+  function makeRequestEnvelope(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return makeEnvelope('agent.request_connection', {
+      provider: 'gmail',
+      mode: 'create',
+      requestMessageId: 'req-conn-1',
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    agentRepo = makeAgentRepo();
+    vi.mocked(agentRepo.getAgent).mockResolvedValue({
+      id: 'agent-1',
+      userId: 'user-1',
+      toolPolicy: null,
+    } as never);
+
+    redis = {
+      set: vi.fn(async () => 'OK'),
+      zadd: vi.fn(async () => 1),
+      lpush: vi.fn(async () => 1),
+      expire: vi.fn(async () => 1),
+      del: vi.fn(async () => 1),
+      sadd: vi.fn(async () => 1),
+      srem: vi.fn(async () => 1),
+      scard: vi.fn(async () => 0),
+    } as unknown as Redis;
+
+    eventPublisher = {
+      publishConnectionRequestReply: vi.fn(async () => undefined),
+    } as unknown as InstanceEventPublisher;
+
+    broker = new AgentMessageBroker(
+      redis,
+      agentRepo,
+      makeDecisionHandler(),
+      makeSessionManager(),
+      eventPublisher,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'http://localhost:3000',
+      { ttlSecs: 1800, maxPendingPerAgent: 3 },
+    );
+  });
+
+  it('replies with an error listing valid ids for an unknown provider', async () => {
+    const result = await broker.processInbound(makeRequestEnvelope({ provider: 'unknown-provider' }));
+
+    expect(result.accepted).toBe(true);
+    expect(eventPublisher.publishConnectionRequestReply).toHaveBeenCalledWith(
+      'req-conn-1',
+      expect.objectContaining({
+        status: 'error',
+        errorCode: 'connection.unknown_provider',
+      }),
+    );
+    const [, reply] = (eventPublisher.publishConnectionRequestReply as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, unknown>];
+    expect(reply.error).toContain('hyperliquid');
+    expect(reply.error).toContain('gmail');
+  });
+
+  it('replies connection.request_pending when a request for the same agent+provider is already pending', async () => {
+    vi.mocked(redis.set).mockResolvedValue(null as never); // SET NX fails — key exists
+
+    const result = await broker.processInbound(makeRequestEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(eventPublisher.publishConnectionRequestReply).toHaveBeenCalledWith(
+      'req-conn-1',
+      expect.objectContaining({
+        status: 'error',
+        errorCode: 'connection.request_pending',
+      }),
+    );
+  });
+
+  it('writes the request record, pending sorted set, and returns the link on success', async () => {
+    const result = await broker.processInbound(makeRequestEnvelope());
+
+    expect(result.accepted).toBe(true);
+
+    // (b) one-pending-per-provider SET NX EX
+    expect(redis.set).toHaveBeenCalledWith(
+      'connection-request:pending:agent-1:gmail',
+      '1',
+      'EX',
+      1800,
+      'NX',
+    );
+
+    // (d) request record written with TTL
+    const recordSetCall = (redis.set as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call: unknown[]) => (call[0] as string).startsWith('connection-request:')
+        && !(call[0] as string).startsWith('connection-request:pending:'),
+    );
+    expect(recordSetCall).toBeDefined();
+    const recordKey = recordSetCall![0] as string;
+    const record = JSON.parse(recordSetCall![1] as string);
+    expect(record).toMatchObject({
+      agentId: 'agent-1',
+      userId: 'user-1',
+      provider: 'gmail',
+      mode: 'create',
+      status: 'pending',
+    });
+    expect(record.requestId).toBeDefined();
+    expect(record.token).toBeDefined();
+    expect(record.expiresAt).toBeDefined();
+    expect(recordSetCall![2]).toBe('EX');
+    expect(recordSetCall![3]).toBe(1800);
+
+    // (e) pending sorted set scored by expiresAt epoch ms
+    expect(redis.zadd).toHaveBeenCalledWith(
+      'connection-requests:pending',
+      expect.any(Number),
+      record.requestId,
+    );
+
+    // (g) reply carries requestId + link + expiresAt
+    expect(eventPublisher.publishConnectionRequestReply).toHaveBeenCalledWith(
+      'req-conn-1',
+      expect.objectContaining({
+        status: 'ok',
+        requestId: record.requestId,
+        expiresAt: record.expiresAt,
+      }),
+    );
+    const [, reply] = (eventPublisher.publishConnectionRequestReply as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, unknown>];
+    expect(reply.link).toBe(`http://localhost:3000/auth/connection-request/callback?token=${record.token}`);
+  });
+
+  it('rejects a trading-family provider when the agent lacks trading capability', async () => {
+    vi.mocked(agentRepo.getRuntimeCapabilityDescriptor).mockResolvedValue({
+      resolvedSkills: [{ id: 'base', capabilityFamilies: [] }],
+    } as never);
+
+    const result = await broker.processInbound(makeRequestEnvelope({ provider: 'hyperliquid' }));
+
+    expect(result.accepted).toBe(true);
+    expect(eventPublisher.publishConnectionRequestReply).toHaveBeenCalledWith(
+      'req-conn-1',
+      expect.objectContaining({
+        status: 'error',
+        errorCode: 'connection.trading_not_allowed',
+      }),
+    );
+    expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it('allows a trading-family provider when the agent has a trading skill', async () => {
+    vi.mocked(agentRepo.getRuntimeCapabilityDescriptor).mockResolvedValue({
+      resolvedSkills: [{ id: 'crypto-trading', capabilityFamilies: ['trading'] }],
+    } as never);
+
+    const result = await broker.processInbound(makeRequestEnvelope({ provider: 'hyperliquid' }));
+
+    expect(result.accepted).toBe(true);
+    expect(eventPublisher.publishConnectionRequestReply).toHaveBeenCalledWith(
+      'req-conn-1',
+      expect.objectContaining({ status: 'ok' }),
+    );
+  });
+
+  it('rejects when the agent already has maxPendingPerAgent pending requests', async () => {
+    vi.mocked(redis.scard).mockResolvedValue(3 as never); // maxPendingPerAgent = 3
+
+    const result = await broker.processInbound(makeRequestEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(eventPublisher.publishConnectionRequestReply).toHaveBeenCalledWith(
+      'req-conn-1',
+      expect.objectContaining({
+        status: 'error',
+        errorCode: 'connection.max_pending_reached',
+      }),
+    );
+    expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it('releases the pending lock and per-agent set membership when a downstream write fails', async () => {
+    vi.mocked(redis.zadd).mockRejectedValue(new Error('redis down'));
+
+    const result = await broker.processInbound(makeRequestEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(eventPublisher.publishConnectionRequestReply).toHaveBeenCalledWith(
+      'req-conn-1',
+      expect.objectContaining({
+        status: 'error',
+        errorCode: 'broker.internal_error',
+      }),
+    );
+    expect(redis.del).toHaveBeenCalledWith('connection-request:pending:agent-1:gmail');
+    expect(redis.srem).toHaveBeenCalledWith('connection-request:pending-agent:agent-1', 'gmail');
   });
 });

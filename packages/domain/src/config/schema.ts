@@ -663,6 +663,15 @@ export const AuthConfigSchema = z.object({
   loginLinkMaxSendsPerIpWindow: z.number().min(1).default(10),
 });
 
+/** Operator config for brokered connection requests (WP-A A3). */
+export const ConnectionRequestsConfigSchema = z.object({
+  /** How long a pending connection-request link stays valid (seconds). */
+  ttlSecs: z.number().int().min(60).default(1800),
+  /** Max pending connection requests per agent. */
+  maxPendingPerAgent: z.number().int().min(1).default(3),
+}).default({});
+export type ConnectionRequestsConfig = z.infer<typeof ConnectionRequestsConfigSchema>;
+
 export const PlanUsagePackagingSchema = z.object({
   /** Monthly included credits in cents */
   includedCreditCents: z.number().int().min(0).default(0),
@@ -1601,6 +1610,7 @@ export const AppConfigSchema = z.object({
   actorEventRelay: ActorEventRelayConfigSchema.default({}),
   auth: AuthConfigSchema.default({}),
   plans: PlansConfigSchema.default({}),
+  connectionRequests: ConnectionRequestsConfigSchema,
   billing: BillingConfigSchema.default({}),
   usageBilling: UsageBillingConfigSchema.default({}),
   externalSkills: z.object({

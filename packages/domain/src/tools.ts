@@ -147,6 +147,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'read_skill',
   'remove_skills',
   'remove_watch',
+  'request_connection',
   'resolve_bot',
   'resolve_task',
   'resolve_watch',
@@ -212,6 +213,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   adjust_risk_limits:  { category: 'write-database',      description: 'Adjust mutable risk limits. Only operator-default-derived limits can be changed.' },
   add_skills:          { category: 'write-database',      description: 'Add skills to this agent from the skill catalog. Skills become available immediately.' },
   remove_skills:       { category: 'write-database',      description: 'Remove skills from this agent. Tools from removed skills become unavailable immediately.' },
+  request_connection:  { category: 'write-database',      description: 'Request a connection to a provider. Returns a short-lived link to send to the user.' },
 
   // read-market-data
   search_tokens:       { category: 'read-market-data',    description: 'Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.' },
