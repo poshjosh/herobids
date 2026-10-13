@@ -38,7 +38,7 @@ describe('get_account_summary — Traderton boundary', () => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: '1000' } });
     const ctx = makeCtx({
       externalBackend: boundary,
-      selectedVenueAccountResolver: vi.fn(async () => 'venue-account-1'),
+      selectedVenueAccountResolver: vi.fn(async () => ({ status: 'ready', venueAccountId: 'venue-account-1' })),
     });
 
     const result = await getAccountSummary.execute({}, ctx);
@@ -52,9 +52,9 @@ describe('get_account_summary — Traderton boundary', () => {
 
   it.each([
     ['no resolver is configured', undefined],
-    ['no venue account is selected', vi.fn(async () => null)],
+    ['no connection is granted', vi.fn(async () => ({ status: 'missing' }))],
     ['the resolver throws', vi.fn(async () => { throw new Error('db down'); })],
-  ])('returns precondition.not_ready without calling the boundary when %s', async (_label, resolver) => {
+  ])('returns connection.missing without calling the boundary when %s', async (_label, resolver) => {
     const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true } });
     const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: resolver });
 
@@ -62,8 +62,24 @@ describe('get_account_summary — Traderton boundary', () => {
 
     expect(invoke).not.toHaveBeenCalled();
     expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('precondition.not_ready');
+    expect(result.errorCode).toBe('connection.missing');
     expect(result.fault).toBe(false);
+  });
+
+  it('returns connection.provisioning when a connection is granted but not resolved', async () => {
+    const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true } });
+    const ctx = makeCtx({
+      externalBackend: boundary,
+      selectedVenueAccountResolver: vi.fn(async () => ({ status: 'provisioning' })),
+    });
+
+    const result = await getAccountSummary.execute({}, ctx);
+
+    expect(invoke).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('connection.provisioning');
+    expect(result.fault).toBe(false);
+    expect(result.error).not.toMatch(/initializ/i);
   });
 
   it('maps a content-level failure (not_found) to a non-fault failure preserving code/retryable', async () => {
@@ -73,7 +89,7 @@ describe('get_account_summary — Traderton boundary', () => {
       message: 'no account',
       retryable: false,
     });
-    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => 'venue-account-1' });
+    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => ({ status: 'ready', venueAccountId: 'venue-account-1' }) });
 
     const result = await getAccountSummary.execute({}, ctx);
 
@@ -91,7 +107,7 @@ describe('get_account_summary — Traderton boundary', () => {
       message: 'boom',
       retryable: false,
     });
-    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => 'venue-account-1' });
+    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => ({ status: 'ready', venueAccountId: 'venue-account-1' }) });
 
     const result = await getAccountSummary.execute({}, ctx);
 
@@ -102,7 +118,7 @@ describe('get_account_summary — Traderton boundary', () => {
 
   it('maps transport_error to a retryable fault', async () => {
     const { boundary } = stubBoundary({ kind: 'transport_error', message: 'down', retryable: true });
-    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => 'venue-account-1' });
+    const ctx = makeCtx({ externalBackend: boundary, selectedVenueAccountResolver: async () => ({ status: 'ready', venueAccountId: 'venue-account-1' }) });
 
     const result = await getAccountSummary.execute({}, ctx);
 

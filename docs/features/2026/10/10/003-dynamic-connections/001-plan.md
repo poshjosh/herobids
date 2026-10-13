@@ -98,6 +98,10 @@ Add to the base skill instructions a short block, parallel to the skills block: 
 | A6 | Base-skill instructions | agent eval on the epic UAT (G1) |
 | A7 | Config: `connectionRequests.ttlSecs` and delivery limits in `config/default.yaml` and its schema; env twins only if an env override is added | config tests |
 
+## Implementation log
+
+- **2026-10-13 — A1 done.** Split the single `precondition.not_ready` / "selected trading account is unavailable" into two codes. Added `SelectedVenueAccountResolution` (`ready` | `missing` | `provisioning`) to `packages/domain/src/trading/tool-contract.ts` (barrel-exported). `selectedVenueAccountResolver` in `apps/worker/src/agent.ts` now returns the discriminated result (checks whether any active grant exists to distinguish `missing` from `provisioning`). `selectedAccountUnavailable(resolution)` in `risk-limits.ts` returns `connection.missing` (message points at `list_providers` → `request_connection`) or `connection.provisioning` (message says retry shortly). `get_risk_limits`, `get_account_summary`, `adjust_risk_limits` updated. Tests updated + new provisioning case asserting the text never says "initializing". Focused tests pass (23/23).
+
 Depends on WP-B B2 (running-agent grant) for A5 step 2 and on WP-H if the profile derivation is changed.
 
 ## Risks and open questions

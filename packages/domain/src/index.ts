@@ -24,6 +24,7 @@ export {
   type ToolPositionRecord,
   type ToolAnalyticsResult,
   type ExternalBackendReadResult,
+  type SelectedVenueAccountResolution,
   type TradingToolContext,
   type TradingAgentTool,
   type ToolDefinition,

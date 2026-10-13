@@ -31,10 +31,10 @@ const getAccountSummaryTool: AgentTool<TradingToolContext> = {
     // The platform attaches the selected venue account (post-LLM); Traderton
     // requires it and serves capital + the risk contract from that account's
     // profile. No ready account → typed precondition, not an empty payload.
-    const venueAccountId = await resolveSelectedVenueAccountId(ctx);
-    if (!venueAccountId) return selectedAccountUnavailable();
+    const resolution = await resolveSelectedVenueAccountId(ctx);
+    if (resolution.status !== 'ready') return selectedAccountUnavailable(resolution);
 
-    const result = await ctx.externalBackend.invoke({ toolName: 'get_account_summary', payload: { venueAccountId } });
+    const result = await ctx.externalBackend.invoke({ toolName: 'get_account_summary', payload: { venueAccountId: resolution.venueAccountId } });
     return mapReadResultToToolResult(result);
   },
 };

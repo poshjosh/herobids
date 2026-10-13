@@ -1850,7 +1850,12 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
               const grantDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
               return grantDelta !== 0 ? grantDelta : right.assignmentId.localeCompare(left.assignmentId);
             })[0];
-          return selected?.venueAccountId ?? null;
+          if (selected?.venueAccountId) return { status: 'ready', venueAccountId: selected.venueAccountId };
+          // WP-A A1: distinguish "no connection granted" from "granted but the
+          // venue account is still provisioning" so the agent gets an accurate,
+          // actionable message instead of guessing "initializing".
+          const hasGrantedConnection = rows.some((row) => row.connectionStatus === 'active');
+          return hasGrantedConnection ? { status: 'provisioning' } : { status: 'missing' };
         }
       : undefined,
     db: db ?? undefined,

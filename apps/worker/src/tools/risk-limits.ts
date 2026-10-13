@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext, SelectedVenueAccountResolution } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { mapReadResultToToolResult, mapWriteResultToToolResult } from './external-backend-result.js';
 
@@ -8,18 +8,19 @@ const ADJUST_RISK_LIMITS_DEADLINE_MS = 30_000;
 
 /**
  * Resolve the platform-selected venue account for an account-scoped boundary
- * call. Null when there is no resolver, it finds no ready account, or it fails.
+ * call. Returns a discriminated result so callers can tell "no connection
+ * granted" (`missing`) from "granted but still provisioning" (`provisioning`).
  * Profile enforcement data stays Traderton-owned and never enters an LLM tool
  * schema.
  */
-export async function resolveSelectedVenueAccountId(ctx: TradingToolContext): Promise<string | null> {
-  if (!ctx.selectedVenueAccountResolver) return null;
+export async function resolveSelectedVenueAccountId(ctx: TradingToolContext): Promise<SelectedVenueAccountResolution> {
+  if (!ctx.selectedVenueAccountResolver) return { status: 'missing' };
   try {
     return await ctx.selectedVenueAccountResolver();
   } catch {
     // Treated as "no ready account": callers return a typed precondition
     // instead of throwing past the tool boundary.
-    return null;
+    return { status: 'missing' };
   }
 }
 
@@ -27,12 +28,28 @@ export async function resolveSelectedVenueAccountId(ctx: TradingToolContext): Pr
  * Typed result for an account-scoped tool when no venue account is ready.
  * Traderton requires `venueAccountId` on these calls, so sending an empty
  * payload would only produce a `validation.invalid_payload` rejection.
+ *
+ * WP-A A1: the single generic "selected trading account is unavailable" is
+ * split into two codes so the agent can act on the real cause instead of
+ * guessing "initializing":
+ * - `connection.missing` — no active granted connection for the needed family.
+ *   The agent should call `list_providers` then `request_connection`.
+ * - `connection.provisioning` — a connection is granted but its venue account
+ *   is not resolved yet. The agent should retry shortly; no request needed.
  */
-export function selectedAccountUnavailable(): ToolResult {
+export function selectedAccountUnavailable(resolution: SelectedVenueAccountResolution): ToolResult {
+  if (resolution.status === 'provisioning') {
+    return {
+      success: false,
+      error: 'your trading connection is being set up and its account is not ready yet — retry shortly',
+      errorCode: 'connection.provisioning',
+      fault: false,
+    };
+  }
   return {
     success: false,
-    error: 'selected trading account is unavailable',
-    errorCode: 'precondition.not_ready',
+    error: 'no trading connection is set up yet — call list_providers to see what is available, then request_connection to ask the user to connect one',
+    errorCode: 'connection.missing',
     fault: false,
   };
 }
@@ -64,9 +81,9 @@ const getRiskLimitsTool: AgentTool<TradingToolContext> = {
 
     // The platform resolves the selected account. Traderton loads profile-owned
     // enforcement data from its durable profile store.
-    const venueAccountId = await resolveSelectedVenueAccountId(ctx);
-    if (!venueAccountId) return selectedAccountUnavailable();
-    const result = await ctx.externalBackend.invoke({ toolName: 'get_risk_limits', payload: { venueAccountId } });
+    const resolution = await resolveSelectedVenueAccountId(ctx);
+    if (resolution.status !== 'ready') return selectedAccountUnavailable(resolution);
+    const result = await ctx.externalBackend.invoke({ toolName: 'get_risk_limits', payload: { venueAccountId: resolution.venueAccountId } });
     return mapReadResultToToolResult(result);
   },
 };
@@ -118,12 +135,12 @@ const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
       };
     }
 
-    const venueAccountId = await resolveSelectedVenueAccountId(ctx);
-    if (!venueAccountId) return selectedAccountUnavailable();
+    const resolution = await resolveSelectedVenueAccountId(ctx);
+    if (resolution.status !== 'ready') return selectedAccountUnavailable(resolution);
 
     const result = await ctx.externalBackendWrite.invokeAndAwait({
       toolName: 'adjust_risk_limits',
-      payload: { ...overrides, venueAccountId },
+      payload: { ...overrides, venueAccountId: resolution.venueAccountId },
       deadlineMs: ADJUST_RISK_LIMITS_DEADLINE_MS,
     });
 

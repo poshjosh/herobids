@@ -123,6 +123,18 @@ export type ExternalBackendReadResult =
   | { kind: 'in_progress' }
   | { kind: 'transport_error'; message: string; retryable: true };
 
+/**
+ * Discriminated result of resolving the agent's selected venue account (WP-A A1).
+ * `missing` — no active granted connection for the needed family; the agent
+ * should call `list_providers` then `request_connection`. `provisioning` — a
+ * connection is granted but its venue account is not resolved yet; the agent
+ * should retry shortly. `ready` — a resolved venue account id is available.
+ */
+export type SelectedVenueAccountResolution =
+  | { status: 'ready'; venueAccountId: string }
+  | { status: 'missing' }
+  | { status: 'provisioning' };
+
 /** Analytics result returned by getAnalyticsByCreator. */
 export interface ToolAnalyticsResult {
   botCount: number;
@@ -276,11 +288,11 @@ export interface TradingToolContext {
    * active connection with a resolved account), which the PLATFORM attaches as
    * `venueAccountId` to account-scoped boundary calls (`get_risk_limits`,
    * `get_account_summary`, `adjust_risk_limits`). Post-LLM and read fresh; the
-   * LLM never sees or supplies it. Null when no ready account exists. Absent or
-   * null → those tools return `precondition.not_ready` without calling the
-   * boundary, which requires the field.
+   * LLM never sees or supplies it. Returns a discriminated result so the tools
+   * can distinguish "no connection granted" (`missing`) from "granted but the
+   * venue account is still provisioning" (`provisioning`) — see WP-A A1.
    */
-  selectedVenueAccountResolver?: () => Promise<string | null>;
+  selectedVenueAccountResolver?: () => Promise<SelectedVenueAccountResolution>;
   /**
    * Raw Drizzle database instance for direct table access.
    * Used by tools that need to query tables without a dedicated repository
