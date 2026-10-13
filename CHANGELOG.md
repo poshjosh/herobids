@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Add Stripe (managed) payment production config
+
 ### Fixed
 
 - **Production Nomad autoscaler ran on stale staging-era values.** The
