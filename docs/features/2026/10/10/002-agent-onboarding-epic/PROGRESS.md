@@ -48,7 +48,12 @@
 - **2026-10-13 — B8 (decided, §5 autonomous):** the funding read is owned by Traderton, since network and balance are venue facts. It is a Traderton read tool that herobids exposes through the agent's trading tool discovery. Implemented; see the B8 log entry.
 - **2026-10-13 — B6 (decided, §5 autonomous):** the trading-skill instructions are edited in the external `traderton-skills` repo (`skills/crypto-trading/SKILL.md`), since herobids holds no trading skill text. Not yet implemented.
 - **2026-10-13 — B4/B5 (decided, consistent with A3):** `set_trading_setup` uses the same broker request/reply contract as `request_connection`. The platform-side work (generated connection reuse or create, running-agent grant, profile provisioning) moves into a shared platform service callable by the broker and the API. No second worker-to-API transport. Not yet implemented.
-- **2026-10-13 — Stop point:** Wave 2 is not complete. Remaining in Wave 2: B4, B5, S1, S2, `use_existing` UI, and the Wave 2 gate. Waiting for greenlight per the epic's wave rule.
+- **2026-10-13 — B4/B5 execution plan (decided; not started).** Prerequisite: the trading-profile reconciliation code (`trading-profile-reconciliation.ts`, `-saga.ts`, `-adapter.ts`, `trading-profile-fields.ts`, `profile-scan-config.ts`, ~1,000 lines with tests) lives in `apps/api/src/agents`. The worker cannot reach the running-agent grant without it, and `set_trading_setup` needs the grant. Steps, each with its own gate:
+  1. Move those modules and tests into `packages/db/src/trading-profiles/` (packages/db already hosts the reconciliation outbox). Add `@poshjosh/contracts` to packages/db only if the saga needs it. Rewrite about 30 importers in apps/api. Gate: `tsc` for db, api and worker; api `services` and `agents` tests.
+  2. Shared platform service `setupTradingForAgent` (in packages/db), injected with the boundary client, saga, and wake. Called by the broker and the API. Gate: unit tests for reuse, create, grant and changes.
+  3. Broker message `agent.manage_trading_setup` (domain schema, `MESSAGE_PAYLOAD_SCHEMAS`), capability grant in `capability-policy.ts`, handler in `agent-message-broker.ts`, tool `set_trading_setup` in `tools/connections.ts`, and registration in `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG`. Gate: tool catalog assertion; tool tests including ceiling violation.
+  4. B5 reuse-or-create: reuse an active generated connection for the default test provider before provisioning through the boundary (`provision_venue_account`, generate mode). Plan-limit errors are returned in plain words. Gate: free-plan test.
+- **Stop point (2026-10-13):** Wave 2 is not complete. Remaining: B4/B5 (steps above), S1, S2, the `use_existing` UI, and the Wave 2 gate.
 
 ## Outstanding issues
 
