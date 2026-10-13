@@ -19,7 +19,7 @@
 
 ## Next unfinished item
 
-**Wave 2 — next unfinished item: WP-B B8 (funding info) design decision, then B6, B4/B5, S1, S2.** Done in WP-A: A3–A7 and A4/A5 (completion, decline, expiry, single-use redeem, runtime refresh on completion, Gmail OAuth completion, requesting agent name, provider lock, Cancel-as-decline). Open in WP-A: `use_existing` approval UI; a runtime end-to-end check that the agent uses a new connection on its next tick (G1 UAT). Done in WP-B: B1, B2, B3, B7. Decision needed for B8: the funding read (network, balance) belongs to Traderton, which owns the venue facts; a herobids-local tool would not be visible to agents (trading tools reach agents through the external skill and boundary discovery). Decision needed for B6: trading-skill instructions live in the external `traderton-skills` repo, not in herobids. Decision needed for B4/B5: the worker-to-platform mechanism for `set_trading_setup` (broker plus shared provisioning service vs a second transport).
+**Wave 2 — next unfinished item: WP-B B6 (trading-skill instructions), then B4/B5, S1, S2.** Done in WP-A: A3–A7 and A4/A5 (completion, decline, expiry, single-use redeem, runtime refresh on completion, Gmail OAuth completion, requesting agent name, provider lock, Cancel-as-decline). Open in WP-A: `use_existing` approval UI; a runtime end-to-end check that the agent uses a new connection on its next tick (G1 UAT). Done in WP-B: B1, B2, B3, B7. Decision needed for B6: trading-skill instructions live in the external `traderton-skills` repo, not in herobids. Decision needed for B4/B5: the worker-to-platform mechanism for `set_trading_setup` (broker plus shared provisioning service vs a second transport).
 
 **Lint caveat:** root `pnpm lint` checks nothing (`files: []`); use the per-project `tsc -p apps/<app>/tsconfig.json --noEmit` checks.
 ## Per-item log
@@ -40,14 +40,14 @@
 - **2026-10-13 — WP-A A5 DONE, A4 MOSTLY DONE.** Completion hook on provider-link, decline endpoint, expiry sweeper, single-use redeem, runtime descriptor refresh on completion (refresh shared via `services/agent-runtime-refresh.ts`), Gmail OAuth completion via its own cookie, requesting agent name in the banner, web provider lock + Cancel-as-decline. Remaining: `use_existing` approval UI. Commits `5f4a3fda`, `341994ab`, `40478848`, `fbfa7333`.
 - **2026-10-13 — WP-B B7 DONE.** Paper/shadow changes only explicitly; grant and revoke no longer change execution mode. Unit and functional tests updated. Commit `053beebf`.
 - **2026-10-13 — WP-B B3 DONE.** `grantConnectionToRunningAgent` accepts explicit `changes` (capital, risk, execution), so the first grant provisions a profile with mode and capital. Commit on herobids main (see git log).
-- **2026-10-13 — WP-B B8 BLOCKED on design.** See decision above.
+- **2026-10-13 — WP-B B8 DONE (zero-balance go-live warning deferred).** Traderton `get_funding_info` read tool, owner-scoped: funding address, venue network label, latest balance snapshot, and `fundingStatus` (funded | unfunded | unknown). Registered in the provisioning tools and in the crypto-trading `SKILL_TOOL_MAP`. herobids wrapper `get_funding_info` in the account tools, sharing a selected-account read helper with `get_account_summary`; catalog entry added. Tests: Traderton funding-info 7/7; Traderton boundary and tool suites 739 passed; herobids tool and domain suites 1857 passed; worker and boundary type checks clean. Limitations: the balance is the latest trading-actor snapshot, so a new wallet reads `unknown` until the agent trades; a live venue read is a follow-up. The zero-balance warning at go-live (UI and Telegram `/golive`) is not implemented.
 
 ## Decisions recorded
 
-- **2026-10-13 — B8 (decided, §5 autonomous):** the funding read is owned by Traderton, since network and balance are venue facts. It is a Traderton read tool that herobids exposes through the agent's trading tool discovery. A herobids-local `get_funding_info` would not be visible to agents, and duplicating the network table would break the single-source rule. Not yet implemented.
+- **2026-10-13 — B8 (decided, §5 autonomous):** the funding read is owned by Traderton, since network and balance are venue facts. It is a Traderton read tool that herobids exposes through the agent's trading tool discovery. Implemented; see the B8 log entry.
 - **2026-10-13 — B6 (decided, §5 autonomous):** the trading-skill instructions are edited in the external `traderton-skills` repo (`skills/crypto-trading/SKILL.md`), since herobids holds no trading skill text. Not yet implemented.
 - **2026-10-13 — B4/B5 (decided, consistent with A3):** `set_trading_setup` uses the same broker request/reply contract as `request_connection`. The platform-side work (generated connection reuse or create, running-agent grant, profile provisioning) moves into a shared platform service callable by the broker and the API. No second worker-to-API transport. Not yet implemented.
-- **2026-10-13 — Stop point:** Wave 2 is not complete. Remaining in Wave 2: B4, B5, B6, B8, S1, S2, `use_existing` UI, and the Wave 2 gate. Waiting for greenlight per the epic's wave rule.
+- **2026-10-13 — Stop point:** Wave 2 is not complete. Remaining in Wave 2: B4, B5, B6, S1, S2, `use_existing` UI, and the Wave 2 gate. Waiting for greenlight per the epic's wave rule.
 
 ## Outstanding issues
 
