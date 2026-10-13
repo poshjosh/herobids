@@ -1,5 +1,24 @@
 # Production Orchestration Runbook
 
+> **⚠️ STALE / SUPERSEDED — do not follow this runbook.**
+>
+> This document is historical and its values are out of date (it still lists
+> `10.1.0.0/16`, `min_agent_nodes = 2`, `max_agent_nodes = 10`, `cpx21`,
+> `enable_scale_in = false`, and other pre-2026-10 values). The current,
+> authoritative sources are:
+>
+> - `infra/hetzner/docs/runbooks/reprovision-runbook.md` — the ordered
+>   teardown → provision → setup sequence (applies to both staging and production).
+> - `infra/hetzner/docs/runbooks/production-notes.md` — the places production
+>   genuinely behaves differently from staging.
+> - `infra/hetzner/docs/auto-scaling/setup-auto-scaling.md` — enabling Nomad
+>   orchestration on an environment.
+> - `infra/hetzner/docs/auto-scaling/useful-commands.md` — day-2 command
+>   reference (SSH, Nomad status, autoscale, troubleshooting).
+> - `infra/hetzner/production.tfvars` — the authoritative production values.
+>
+> Kept here only for history; do not add new content to it.
+
 > **Feature:** 004-orchestration (Phases 1–9)
 > **Environment:** Production (`NODE_ENV=production`, `HEROBIDS_ENV=production`)
 > **Last updated:** 2026-07-08

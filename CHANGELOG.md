@@ -6,6 +6,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Production Nomad autoscaler ran on stale staging-era values.** The
+  `nomad-autoscale`, `nomad-scale-in`, and `nomad-placement-failure-watcher`
+  systemd units bake their autoscale config as `Environment=` directives at
+  first boot and are never updated afterwards (`ignore_changes = [user_data]`
+  on the control plane; `converge-control-plane.sh` only adds the
+  `EnvironmentFile=` drop-in). Production's units were frozen at 2026-08-08
+  values (`max_agent_nodes=5`, `min_agent_nodes=0`, 256 MB/slot, `cpx21`,
+  memory threshold 20%, `ENABLE_SCALE_IN=false`, drain 600s) instead of
+  `production.tfvars` (`9` / `1` / `512` / `cx23` / `40%` / `true` / `900s`).
+  Applied systemd drop-in overrides on the production control plane
+  (`20-production-overrides.conf`) with the correct values and verified via
+  `systemctl show` + dry-runs. A durable fix (converge the units on every
+  deploy) is planned in
+  `docs/features/pending/000-autoscale-unit-env-convergence/001-plan.md`.
+
+- **`005-production-runbook.md` marked STALE/SUPERSEDED.** It still listed
+  pre-2026-10 values (`10.1.0.0/16`, `min_agent_nodes=2`, `max_agent_nodes=10`,
+  `cpx21`, `enable_scale_in=false`). Added a banner pointing at
+  `reprovision-runbook.md`, `production-notes.md`, `setup-auto-scaling.md`,
+  `useful-commands.md`, and `production.tfvars` as the authoritative sources.
+
 ## v0.6.14 - 2026-10-12
 
 ### Fixed
