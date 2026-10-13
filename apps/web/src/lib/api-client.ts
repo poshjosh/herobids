@@ -1389,6 +1389,8 @@ export interface ProviderSetupResult {
   credential: { id: string; provider: string; label: string; createdAt: string };
   connection: { id: string; provider: string; label: string; status: string; credentialId: string; resolvedVenueAccountId: string | null; createdAt: string };
   wallet?: { address: string; network: string; fundingInstructionId: string; custodyMode: 'direct' };
+  /** Outcome of completing the agent connection request this link fulfilled, when one was supplied. */
+  connectionRequest?: { requestId: string; status: 'completed' | 'not_completed'; errorCode?: string };
 }
 
 export interface ProviderLinkDeleteResult {
@@ -1402,8 +1404,10 @@ export interface ProviderLinkDeleteResult {
 }
 
 export const setup = {
-  providerLink: (data: { provider: string; label: string; credentialMode?: 'manual' | 'generated'; secrets?: Record<string, string>; capability?: 'trading' }) =>
+  providerLink: (data: { provider: string; label: string; credentialMode?: 'manual' | 'generated'; secrets?: Record<string, string>; capability?: 'trading'; requestId?: string }) =>
     request<ProviderSetupResult>('/setup/provider-link', { method: 'POST', body: JSON.stringify(data) }),
+  declineConnectionRequest: (requestId: string) =>
+    request<{ status: 'declined' }>(`/setup/connection-requests/${requestId}/decline`, { method: 'POST' }),
   deleteProviderLink: (connectionId: string) =>
     request<ProviderLinkDeleteResult>(`/setup/provider-link/${connectionId}`, { method: 'DELETE' }),
 };

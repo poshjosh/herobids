@@ -105,9 +105,11 @@ interface Props {
   oauthReturnTo?: string;
   /** Called immediately before redirecting the browser into an OAuth-only provider flow. */
   onBeforeOAuthRedirect?: () => void;
+  /** An agent's open connection request this link fulfils; locks the provider and enables Cancel-as-decline. */
+  connectionRequest?: { requestId: string; provider: string };
 }
 
-export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initialProviderId, standalone, inline, oauthReturnTo, onBeforeOAuthRedirect }: Props) {
+export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initialProviderId, standalone, inline, oauthReturnTo, onBeforeOAuthRedirect, connectionRequest }: Props) {
   const intl = useIntl();
   const [providerChoice, setProviderChoice] = useState('');  // '' = not yet initialised; see defaultProviderChoice below
   const [label, setLabel] = useState('');
@@ -204,9 +206,19 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
             )
           : buildStructuredSecrets(selectedProvider?.credentials?.fields ?? [], fieldValues) } : {}),
         capability: apiCapability,
+        ...(connectionRequest ? { requestId: connectionRequest.requestId } : {}),
       }),
     onSuccess,
   });
+
+  const declineMutation = useMutation({
+    mutationFn: () => setupApi.declineConnectionRequest(connectionRequest!.requestId),
+    onSuccess: onClose,
+  });
+
+  const handleDecline = () => {
+    if (connectionRequest) declineMutation.mutate();
+  };
 
   const oauthMutation = useMutation({
     mutationFn: (providerId: string) => connectionsApi.beginOAuth(providerId, oauthReturnTo ? { returnTo: oauthReturnTo } : undefined),
@@ -252,9 +264,17 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
 
   const formContent = (
     <form onSubmit={handleSubmit}>
+      {connectionRequest && (
+        <div style={{ marginBottom: '16px', color: 'var(--color-text-secondary)' }}>
+          {intl.formatMessage({ id: 'setup.connectionRequest.banner' }, { provider: connectionRequest.provider })}
+        </div>
+      )}
+      {declineMutation.isError && (
+        <ErrorBanner message={localizeApiError(intl, declineMutation.error, 'common.errorTitle')} />
+      )}
       <div style={{ marginBottom: '16px' }}>
         <FieldLabel>{intl.formatMessage({ id: 'setup.form.provider' })}</FieldLabel>
-        <select value={effectiveProviderChoice} onChange={(e) => setProviderChoice(e.target.value)} style={inputStyle}>
+        <select value={effectiveProviderChoice} onChange={(e) => setProviderChoice(e.target.value)} style={inputStyle} disabled={connectionRequest !== undefined}>
           {(defaultCapability === 'trading' || (defaultCapability === undefined && GENERIC_FORM_SHOWS_TRADING_PROVIDERS)) && tradingProviders.length > 0 && (
             <optgroup label={intl.formatMessage({ id: 'setup.form.group.trading' })}>
               {tradingProviders.map((provider) => (
@@ -412,8 +432,8 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
 
       {!isOAuthProvider && (
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-        {!standalone && (
-          <Button variant="ghost" onClick={onClose} type="button">
+        {(!standalone || connectionRequest) && (
+          <Button variant="ghost" onClick={connectionRequest ? handleDecline : onClose} type="button">
             {intl.formatMessage({ id: 'common.cancel' })}
           </Button>
         )}

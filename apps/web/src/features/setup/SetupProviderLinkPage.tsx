@@ -120,10 +120,14 @@ export function SetupProviderLinkPage() {
     return <WalletCreatedStep wallet={setupResult.wallet} onContinue={() => setPhase('done')} />;
   }
 
+  const requestedProvider = searchParams.get('provider');
+  const connectionRequestId = searchParams.get('requestId');
   return (
     <ProviderSetupForm
       standalone
       defaultCapability="trading"
+      initialProviderId={requestedProvider ?? undefined}
+      connectionRequest={requestedProvider && connectionRequestId ? { requestId: connectionRequestId, provider: requestedProvider } : undefined}
       onClose={handleClose}
       onSuccess={handleSuccess}
     />
