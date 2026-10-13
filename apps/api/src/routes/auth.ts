@@ -16,6 +16,11 @@ import {
   consumeSetupLinkToken as consumeSetupLinkTokenImpl,
   deleteSetupLinkToken as deleteSetupLinkTokenImpl,
 } from '../services/setup-link-token-service.js';
+import {
+  readConnectionRequestByToken,
+  markConnectionRequestRedeemed,
+  isConnectionRequestRedeemed,
+} from '../services/connection-request-service.js';
 
 const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
 // Supported locales mirror apps/web/src/app/i18n/resolveLocale.ts — keep in sync.
@@ -539,6 +544,58 @@ export async function authRoutes(
 
     const callbackUrl = new URL('/setup/provider-link', config.frontendOrigin);
     callbackUrl.searchParams.set('code', exchangeCode);
+    return reply.redirect(callbackUrl.toString());
+  });
+
+  /**
+   * GET /auth/connection-request/callback — Redeems a connection-request link
+   * (minted by the worker's `request_connection` tool). Looks the bearer token
+   * up in the pending request record, checks it is pending and unexpired,
+   * issues a session, and redirects to the setup form with the provider and
+   * requestId locked. The token is deleted only after the session is issued.
+   */
+  app.get('/auth/connection-request/callback', async (request, reply) => {
+    const { token } = request.query as { token?: string };
+    if (!token) {
+      return reply.status(400).send(
+        errorPayload('auth.connection_request.missing_token', 'Missing connection-request token'),
+      );
+    }
+
+    const record = await readConnectionRequestByToken(redis, token);
+    if (!record || record.status !== 'pending' || await isConnectionRequestRedeemed(redis, record.requestId)) {
+      return reply.status(400).send(
+        errorPayload(
+          'auth.connection_request.invalid_token',
+          'This connection request has expired or was already used.',
+        ),
+      );
+    }
+    if (new Date(record.expiresAt).getTime() <= Date.now()) {
+      return reply.status(400).send(
+        errorPayload(
+          'auth.connection_request.expired',
+          'This connection request has expired.',
+        ),
+      );
+    }
+
+    // Issue session and store behind a one-time exchange code (same as the
+    // setup-link callback).
+    const sessionToken = await issueSession(config, db, record.userId);
+    const exchangeCode = crypto.randomUUID();
+    await redis.set(`auth:code:${exchangeCode}`, sessionToken, 'EX', config.exchangeCodeTtlSecs);
+
+    // Invalidate the bearer token only after the session is successfully
+    // issued (single-use). The request record stays pending until the user
+    // actually completes (or declines) the connection in the setup form — the
+    // completion hook (A5) finalizes it.
+    await markConnectionRequestRedeemed(redis, record.requestId);
+
+    const callbackUrl = new URL('/setup/provider-link', config.frontendOrigin);
+    callbackUrl.searchParams.set('code', exchangeCode);
+    callbackUrl.searchParams.set('provider', record.provider);
+    callbackUrl.searchParams.set('requestId', record.requestId);
     return reply.redirect(callbackUrl.toString());
   });
 

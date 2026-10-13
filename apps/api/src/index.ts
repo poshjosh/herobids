@@ -344,7 +344,7 @@ await capabilityRoutes(
 );
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────
-await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradingBackendClient });
+await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradingBackendClient, connectionRequests: { redis: redisClient, saga: profileReconciliationSaga } });
 await providerRoutes(app, appConfig.venues);
 
 // ── Platform primitives ───────────────────────────────────────────────────

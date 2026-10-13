@@ -96,7 +96,7 @@ export class AgentMessageBroker {
     // fail with a typed precondition — NEVER a silent fall back to the engine.
     private readonly sideEffectBoundary?: ExternalBackendWriteBoundary,
     private readonly publicBaseUrl?: string,
-    private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number },
+    private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number; expiryGraceSecs: number },
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -105,7 +105,7 @@ export class AgentMessageBroker {
   }
 
   /** Resolved connection-request limits (operator config defaults when unset). */
-  private get resolvedConnectionRequests(): { ttlSecs: number; maxPendingPerAgent: number } {
+  private get resolvedConnectionRequests(): { ttlSecs: number; maxPendingPerAgent: number; expiryGraceSecs: number } {
     return this.connectionRequests ?? ConnectionRequestsConfigSchema.parse({});
   }
 
@@ -1161,7 +1161,7 @@ export class AgentMessageBroker {
         `connection-request:${requestId}`,
         JSON.stringify(record),
         'EX',
-        ttlSecs,
+        ttlSecs + this.resolvedConnectionRequests.expiryGraceSecs,
       );
 
       // (g) Track the provider in the per-agent pending SET (for maxPendingPerAgent).

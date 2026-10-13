@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
@@ -14,6 +15,12 @@ import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
 import { getProviderWalletGenerationCapability, providerAllowsTradingSetup } from '../providers/registry.js';
 import { deleteProviderLink } from '../provider-links.js';
 import { createLogger } from '../logger.js';
+import {
+  completeConnectionRequest,
+  createRedisAgentWakePublisher,
+  declineConnectionRequest,
+} from '../services/connection-request-service.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 const logger = createLogger('setup-routes');
 
@@ -44,6 +51,8 @@ export interface SetupRouteDeps {
    * unconfigured → trading links return a typed precondition (no local write).
    */
   tradertonClient?: ExternalBackendClient;
+  /** Completes or declines agent connection requests (WP-A A4/A5). Absent → requests are not completable. */
+  connectionRequests?: { redis: Redis; saga: TradingProfileReconciliationSaga };
 }
 
 export interface CreateProviderLinkInput {
@@ -577,6 +586,21 @@ export async function setupRoutes(
         };
       }
 
+      if (parsed.data.requestId && deps.connectionRequests) {
+        const outcome = await completeConnectionRequest(
+          {
+            redis: deps.connectionRequests.redis,
+            db,
+            saga: deps.connectionRequests.saga,
+            wakePublisher: createRedisAgentWakePublisher(deps.connectionRequests.redis),
+          },
+          { requestId: parsed.data.requestId, userId: request.userId, provider: result.provider, connectionId: result.connectionId },
+        );
+        response.connectionRequest = outcome.ok
+          ? { requestId: parsed.data.requestId, status: 'completed' }
+          : { requestId: parsed.data.requestId, status: 'not_completed', errorCode: outcome.error.code };
+      }
+
       return reply.status(201).send(response);
     }
 
@@ -610,6 +634,29 @@ export async function setupRoutes(
     return reply.status(status).send(
       errorPayload(result.code, result.message, result.params),
     );
+  });
+
+  /**
+   * POST /setup/connection-requests/:requestId/decline
+   *
+   * The user cancelled an agent's connection request; wakes the agent with reason `declined`.
+   */
+  app.post<{ Params: { requestId: string } }>('/setup/connection-requests/:requestId/decline', async (request, reply) => {
+    if (!deps.connectionRequests) {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Connection requests are not available'));
+    }
+    const outcome = await declineConnectionRequest(
+      {
+        redis: deps.connectionRequests.redis,
+        wakePublisher: createRedisAgentWakePublisher(deps.connectionRequests.redis),
+      },
+      { requestId: request.params.requestId, userId: request.userId },
+    );
+    if (!outcome.ok) {
+      const status = outcome.error.code === 'connection.request_not_found' ? 404 : 409;
+      return reply.status(status).send(errorPayload(outcome.error.code, outcome.error.message));
+    }
+    return reply.send({ status: 'declined' });
   });
 
   /**

@@ -687,6 +687,8 @@ export const ConnectionRequestsConfigSchema = z.object({
   ttlSecs: z.number().int().min(60).default(1800),
   /** Max pending connection requests per agent. */
   maxPendingPerAgent: z.number().int().min(1).default(3),
+  /** Extra seconds a request record is kept after its link expires, so the expiry sweeper can wake the agent. */
+  expiryGraceSecs: z.number().int().min(0).default(300),
 }).default({});
 export type ConnectionRequestsConfig = z.infer<typeof ConnectionRequestsConfigSchema>;
 

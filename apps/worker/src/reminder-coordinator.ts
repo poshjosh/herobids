@@ -5,6 +5,7 @@ import type { InstanceEventPublisher } from './agents/instance-event-publisher.j
 import type { AgentRepository } from '@herobids/db';
 import { parseReminderRecord } from './reminders/reminder-record.js';
 import { advanceRepeatingReminder } from './reminders/reminder-schedule.js';
+import { sweepExpiredConnectionRequests } from './connection-requests/expiry-sweeper.js';
 
 const logger = createLogger('reminder-coordinator');
 
@@ -104,6 +105,8 @@ export class ReminderCoordinator {
       // Singleton coordination: only poll if we hold the lease (D7).
       if (!(await this.acquireLease())) return;
 
+      await this.sweepConnectionRequests();
+
       const activeAgents = await this.agentRepo.listActiveAgents();
       const now = Date.now();
 
@@ -112,6 +115,14 @@ export class ReminderCoordinator {
       }
     } finally {
       this.ticking = false;
+    }
+  }
+
+  private async sweepConnectionRequests(): Promise<void> {
+    try {
+      await sweepExpiredConnectionRequests(this.redis, this.eventPublisher, Date.now());
+    } catch (err) {
+      logger.error({ err }, 'Connection request expiry sweep failed');
     }
   }
 

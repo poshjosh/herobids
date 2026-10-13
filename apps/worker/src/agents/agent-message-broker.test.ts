@@ -570,7 +570,7 @@ describe('AgentMessageBroker — request_connection', () => {
       undefined,
       undefined,
       'http://localhost:3000',
-      { ttlSecs: 1800, maxPendingPerAgent: 3 },
+      { ttlSecs: 1800, maxPendingPerAgent: 3, expiryGraceSecs: 300 },
     );
   });
 
@@ -638,7 +638,7 @@ describe('AgentMessageBroker — request_connection', () => {
     expect(record.token).toBeDefined();
     expect(record.expiresAt).toBeDefined();
     expect(recordSetCall![2]).toBe('EX');
-    expect(recordSetCall![3]).toBe(1800);
+    expect(recordSetCall![3]).toBe(2100);
 
     // (e) pending sorted set scored by expiresAt epoch ms
     expect(redis.zadd).toHaveBeenCalledWith(

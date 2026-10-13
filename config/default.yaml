@@ -784,6 +784,7 @@ auth:
 connectionRequests:
   ttlSecs: 1800                          # how long a pending request link stays valid (seconds)
   maxPendingPerAgent: 3                  # max pending connection requests per agent
+  expiryGraceSecs: 300                   # seconds the request record outlives its link so the expiry wake can fire
 
 # Plan enforcement — coarse resource limits per user plan.
 #

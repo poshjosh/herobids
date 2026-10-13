@@ -1814,6 +1814,7 @@ describe('AppConfigSchema — connectionRequests', () => {
       expect(result.data.connectionRequests).toEqual({
         ttlSecs: 1800,
         maxPendingPerAgent: 3,
+        expiryGraceSecs: 300,
       });
     }
   });
@@ -1828,6 +1829,7 @@ describe('AppConfigSchema — connectionRequests', () => {
       expect(result.data.connectionRequests).toEqual({
         ttlSecs: 900,
         maxPendingPerAgent: 5,
+        expiryGraceSecs: 300,
       });
     }
   });

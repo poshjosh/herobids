@@ -176,7 +176,6 @@ export interface RunningAgentGrantWakeContext {
  * enforced.
  */
 async function executeGrantSaga(
-  db: Database,
   agentId: string,
   connectionId: string,
   userId: string,
@@ -235,7 +234,7 @@ export async function grantConnection(
     const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant', false);
     if (prepared.kind !== 'ready') return grantError(prepared, connectionId);
     if (prepared.existing) return ok({ granted: true });
-    await executeGrantSaga(db, agentId, connectionId, userId, profileReconciliationSaga, prepared, false);
+    await executeGrantSaga(agentId, connectionId, userId, profileReconciliationSaga, prepared, false);
     return ok({ granted: true });
   } catch (cause) {
     return err({
@@ -265,7 +264,7 @@ export async function grantConnectionToRunningAgent(
     if (prepared.kind !== 'ready') return grantError(prepared, connectionId);
     if (prepared.existing) return ok({ granted: true });
 
-    await executeGrantSaga(db, agentId, connectionId, userId, profileReconciliationSaga, prepared, true);
+    await executeGrantSaga(agentId, connectionId, userId, profileReconciliationSaga, prepared, true);
 
     if (opts?.wake) {
       try {

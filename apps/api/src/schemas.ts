@@ -107,6 +107,8 @@ export const SetupProviderLinkSchema = z.object({
   secrets: z.record(z.string()).optional(),
   /** Optional capability to provision alongside the connection. Currently only "trading" is supported. */
   capability: z.enum(['trading']).optional(),
+  /** Connection request this link fulfils; completes the request and wakes the requesting agent. */
+  requestId: z.string().min(1).optional(),
 }).superRefine((value, ctx) => {
   if (value.credentialMode === 'manual' && !value.secrets) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['secrets'], message: 'secrets are required for manual credentials' });
