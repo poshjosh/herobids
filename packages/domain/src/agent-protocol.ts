@@ -29,6 +29,8 @@ export {
   type RegimeChangeWakeContext,
   ScannerWakeContextSchema,
   type ScannerWakeContext,
+  ConnectionWakeContextSchema,
+  type ConnectionWakeContext,
   type AgentWakePayload,
 } from './trading/trading-protocol.js';
 

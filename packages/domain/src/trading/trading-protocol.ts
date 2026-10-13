@@ -106,12 +106,21 @@ export const RegimeChangeWakeContextSchema = z.object({
 });
 export type RegimeChangeWakeContext = z.infer<typeof RegimeChangeWakeContextSchema>;
 
+export const ConnectionWakeContextSchema = z.object({
+  requestId: z.string().min(1),
+  provider: z.string().min(1),
+  connectionId: z.string().min(1).optional(),
+  reason: z.enum(['completed', 'declined', 'expired']),
+});
+export type ConnectionWakeContext = z.infer<typeof ConnectionWakeContextSchema>;
+
 export const AgentWakePayloadSchema = z.discriminatedUnion('source', [
   AgentWakePayloadBaseSchema.extend({ source: z.literal('reminder'), context: ReminderWakeContextSchema }),
   AgentWakePayloadBaseSchema.extend({ source: z.literal('watch_threshold'), context: WatchThresholdWakeContextSchema }),
   AgentWakePayloadBaseSchema.extend({ source: z.literal('discovery_delta'), context: DiscoveryDeltaWakeContextSchema }),
   AgentWakePayloadBaseSchema.extend({ source: z.literal('regime_change'), context: RegimeChangeWakeContextSchema }),
   AgentWakePayloadBaseSchema.extend({ source: z.literal('scanner'), context: ScannerWakeContextSchema }),
+  AgentWakePayloadBaseSchema.extend({ source: z.literal('connection'), context: ConnectionWakeContextSchema }),
 ]);
 
 export type AgentWakePayload = z.infer<typeof AgentWakePayloadSchema>;

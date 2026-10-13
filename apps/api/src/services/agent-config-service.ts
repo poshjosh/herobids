@@ -43,7 +43,7 @@ export type AgentConfigError =
 type PreparedConnectionChange = {
   kind: 'ready';
   actorId: string;
-  connection: { id: string; userId: string; status: string; venueAccountId: string | null };
+  connection: { id: string; userId: string; status: string; venueAccountId: string | null; provider: string | null };
   priorConnections: TradingProfileConnection[];
   existing: boolean;
   activeGrant: { id: string } | undefined;
@@ -68,6 +68,7 @@ async function prepareConnectionChange(
   connectionId: string,
   userId: string,
   operation: 'grant' | 'revoke',
+  allowRunning = false,
 ): Promise<PreparedConnectionChange> {
   const [agent] = await db.select({
     id: agents.id,
@@ -78,13 +79,14 @@ async function prepareConnectionChange(
   }).from(agents).where(eq(agents.id, agentId));
   if (!agent) return { kind: 'agent_not_found' };
   if (agent.userId !== userId) return { kind: 'agent_not_owned' };
-  if (agent.status !== 'stopped') return { kind: 'agent_not_stopped', currentStatus: agent.status };
+  if (!allowRunning && agent.status !== 'stopped') return { kind: 'agent_not_stopped', currentStatus: agent.status };
 
   const [connection] = await db.select({
     id: connections.id,
     userId: connections.userId,
     status: connections.status,
     venueAccountId: connections.resolvedVenueAccountId,
+    provider: connections.provider,
   }).from(connections).where(eq(connections.id, connectionId));
   if (!connection) return { kind: 'connection_not_found' };
   if (connection.userId !== userId) return { kind: 'connection_not_owned' };
@@ -116,10 +118,11 @@ async function revalidateConnectionChange(
   tx: DatabaseTransaction,
   prepared: Extract<PreparedConnectionChange, { kind: 'ready' }>,
   operation: 'grant' | 'revoke',
+  allowRunning = false,
 ): Promise<void> {
   const [agent] = await tx.select({ userId: agents.userId, status: agents.status }).from(agents)
     .where(eq(agents.id, prepared.actorId));
-  if (!agent || agent.userId !== prepared.connection.userId || agent.status !== 'stopped') {
+  if (!agent || agent.userId !== prepared.connection.userId || (!allowRunning && agent.status !== 'stopped')) {
     throw new Error('agent changed before connection mutation could be committed');
   }
   const [connection] = await tx.select({ userId: connections.userId, status: connections.status }).from(connections)
@@ -159,6 +162,63 @@ function revokeError(prepared: Exclude<PreparedConnectionChange, { kind: 'ready'
 
 // ── Grant connection ──────────────────────────────────────────────────────
 
+/** Context passed to the post-grant wake callback (running-agent grants only). */
+export interface RunningAgentGrantWakeContext {
+  requestId?: string;
+  provider: string;
+  connectionId: string;
+}
+
+/**
+ * Shared grant saga over an already-prepared change. `allowRunning` skips the
+ * stopped-agent requirement (used only by the dedicated running-agent grant
+ * path); ownership, activeness and the in-transaction revalidation are always
+ * enforced.
+ */
+async function executeGrantSaga(
+  db: Database,
+  agentId: string,
+  connectionId: string,
+  userId: string,
+  profileReconciliationSaga: TradingProfileReconciliationSaga,
+  prepared: Extract<PreparedConnectionChange, { kind: 'ready' }>,
+  allowRunning: boolean,
+): Promise<void> {
+  if (prepared.existing) return;
+
+  const assignmentId = crypto.randomUUID();
+  const grantedAt = new Date();
+  await profileReconciliationSaga.executeStaged({
+    ownerId: userId,
+    actorId: agentId,
+    localMutationId: crypto.randomUUID(),
+    preparePlannerInput: async () => {
+      const profiles = await profileReconciliationSaga.readCurrentProfiles(userId, agentId, prepared.priorConnections);
+      const proposedConnections = [
+          ...prepared.priorConnections.map((connection) => ({ ...connection, isDefault: false })),
+          { connectionId, venueAccountId: prepared.connection.venueAccountId, active: true, ready: true, isDefault: true },
+      ];
+      return {
+        prior: { profiles, connections: prepared.priorConnections },
+        proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: prepared.changes, scanConfig: prepared.scanConfig }), connections: proposedConnections },
+      };
+    },
+    commitLocal: async (tx, markLocalCommitted) => {
+      await revalidateConnectionChange(tx, prepared, 'grant', allowRunning);
+      await tx.insert(agentConnections).values({
+        id: assignmentId, agentId, connectionId, status: 'active', grantedBy: userId,
+        grantedAt, createdAt: grantedAt, updatedAt: grantedAt,
+      });
+      await tx.insert(agentConnectionAudit).values({
+        id: crypto.randomUUID(), agentConnectionId: assignmentId, action: 'granted',
+        actorType: 'user', actorId: userId, createdAt: grantedAt,
+      });
+      await markLocalCommitted();
+      return { kind: 'granted' as const };
+    },
+  });
+}
+
 /**
  * Grant a connection to an agent (insert agent_connections row).
  * Idempotent: if already granted and active, returns success without changes.
@@ -172,41 +232,49 @@ export async function grantConnection(
   profileReconciliationSaga: TradingProfileReconciliationSaga,
 ): Promise<Result<{ granted: boolean }, AgentConfigError>> {
   try {
-    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant');
+    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant', false);
+    if (prepared.kind !== 'ready') return grantError(prepared, connectionId);
+    if (prepared.existing) return ok({ granted: true });
+    await executeGrantSaga(db, agentId, connectionId, userId, profileReconciliationSaga, prepared, false);
+    return ok({ granted: true });
+  } catch (cause) {
+    return err({
+      code: 'config.internal_error',
+      message: cause instanceof Error ? cause.message : 'Unexpected error granting connection',
+    });
+  }
+}
+
+/**
+ * Grant a connection to a RUNNING agent (dedicated path for `set_trading_setup`
+ * and the WP-A link completion). Skips the stopped-agent requirement but keeps
+ * ownership, activeness and the in-transaction revalidation. After a successful
+ * commit, invokes the optional `wake` callback so the caller can signal the
+ * agent to refresh its descriptor and wake it.
+ */
+export async function grantConnectionToRunningAgent(
+  db: Database,
+  agentId: string,
+  connectionId: string,
+  userId: string,
+  profileReconciliationSaga: TradingProfileReconciliationSaga,
+  opts?: { wake?: (agentId: string, context: RunningAgentGrantWakeContext) => Promise<void> },
+): Promise<Result<{ granted: boolean }, AgentConfigError>> {
+  try {
+    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant', true);
     if (prepared.kind !== 'ready') return grantError(prepared, connectionId);
     if (prepared.existing) return ok({ granted: true });
 
-    const assignmentId = crypto.randomUUID();
-    const grantedAt = new Date();
-    await profileReconciliationSaga.executeStaged({
-      ownerId: userId,
-      actorId: agentId,
-      localMutationId: crypto.randomUUID(),
-      preparePlannerInput: async () => {
-        const profiles = await profileReconciliationSaga.readCurrentProfiles(userId, agentId, prepared.priorConnections);
-        const proposedConnections = [
-            ...prepared.priorConnections.map((connection) => ({ ...connection, isDefault: false })),
-            { connectionId, venueAccountId: prepared.connection.venueAccountId, active: true, ready: true, isDefault: true },
-        ];
-        return {
-          prior: { profiles, connections: prepared.priorConnections },
-          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: prepared.changes, scanConfig: prepared.scanConfig }), connections: proposedConnections },
-        };
-      },
-      commitLocal: async (tx, markLocalCommitted) => {
-        await revalidateConnectionChange(tx, prepared, 'grant');
-        await tx.insert(agentConnections).values({
-          id: assignmentId, agentId, connectionId, status: 'active', grantedBy: userId,
-          grantedAt, createdAt: grantedAt, updatedAt: grantedAt,
-        });
-        await tx.insert(agentConnectionAudit).values({
-          id: crypto.randomUUID(), agentConnectionId: assignmentId, action: 'granted',
-          actorType: 'user', actorId: userId, createdAt: grantedAt,
-        });
-        await markLocalCommitted();
-        return { kind: 'granted' as const };
-      },
-    });
+    await executeGrantSaga(db, agentId, connectionId, userId, profileReconciliationSaga, prepared, true);
+
+    if (opts?.wake) {
+      try {
+        await opts.wake(agentId, { provider: prepared.connection.provider ?? '', connectionId });
+      } catch (wakeErr) {
+        // Wake is best-effort: a failed wake must not fail the grant.
+        // The agent still hot-reloads its descriptor on the next tick.
+      }
+    }
 
     return ok({ granted: true });
   } catch (cause) {

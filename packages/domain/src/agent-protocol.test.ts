@@ -214,6 +214,51 @@ describe('AgentWakePayloadSchema', () => {
     });
   });
 
+  describe('connection wake', () => {
+    it('accepts a valid connection wake payload with a connectionId', () => {
+      const result = AgentWakePayloadSchema.safeParse({
+        ...BASE,
+        source: 'connection',
+        context: { requestId: 'req-1', provider: 'hyperliquid', connectionId: 'conn-1', reason: 'completed' },
+      });
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      if (result.data.source === 'connection') {
+        expect(result.data.context.requestId).toBe('req-1');
+        expect(result.data.context.provider).toBe('hyperliquid');
+        expect(result.data.context.connectionId).toBe('conn-1');
+        expect(result.data.context.reason).toBe('completed');
+      }
+    });
+
+    it('accepts a connection wake without a connectionId (declined/expired)', () => {
+      const result = AgentWakePayloadSchema.safeParse({
+        ...BASE,
+        source: 'connection',
+        context: { requestId: 'req-2', provider: 'gmail', reason: 'expired' },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects a connection wake with an invalid reason', () => {
+      const result = AgentWakePayloadSchema.safeParse({
+        ...BASE,
+        source: 'connection',
+        context: { requestId: 'req-3', provider: 'gmail', reason: 'cancelled' },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a connection wake missing the requestId', () => {
+      const result = AgentWakePayloadSchema.safeParse({
+        ...BASE,
+        source: 'connection',
+        context: { provider: 'gmail', reason: 'completed' },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
   it('rejects payload with unknown source', () => {
     const result = AgentWakePayloadSchema.safeParse({
       ...BASE,

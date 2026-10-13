@@ -5,7 +5,7 @@ vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
   loadActiveTradingProfileConnections: vi.fn(),
 }));
 
-import { grantConnection, revokeConnection } from './agent-config-service.js';
+import { grantConnection, grantConnectionToRunningAgent, revokeConnection } from './agent-config-service.js';
 import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
@@ -184,6 +184,94 @@ describe('agent connection configuration reconciliation', () => {
     const result = await grantConnection(db, 'agent-1', 'connection-new', 'user-1', saga);
 
     expect(result).toMatchObject({ ok: false, error: { code: 'config.internal_error' } });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('grantConnectionToRunningAgent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const runningAgent = { ...agent, status: 'active' };
+
+  it('grants a connection to a running agent and invokes the wake callback', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+    const db = buildDb([
+      [runningAgent],
+      [{ id: 'connection-new', userId: 'user-1', status: 'active', venueAccountId: 'venue-new', provider: 'hyperliquid' }],
+      [],
+      [runningAgent],
+      [{ userId: 'user-1', status: 'active' }],
+      [],
+    ]);
+    const saga = buildStagedSaga(db);
+    const wake = vi.fn().mockResolvedValue(undefined);
+
+    const result = await grantConnectionToRunningAgent(db, 'agent-1', 'connection-new', 'user-1', saga, { wake });
+
+    expect(result.ok).toBe(true);
+    expect(wake).toHaveBeenCalledWith('agent-1', { provider: 'hyperliquid', connectionId: 'connection-new' });
+    const insertedGrant = vi.mocked(db.insert).mock.results[0]!.value.values.mock.calls[0]![0] as Record<string, unknown>;
+    expect(insertedGrant.connectionId).toBe('connection-new');
+  });
+
+  it('rejects a non-owned connection for a running agent', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+    const db = buildDb([
+      [runningAgent],
+      [{ id: 'connection-new', userId: 'other-user', status: 'active', venueAccountId: 'venue-new', provider: 'hyperliquid' }],
+    ]);
+    const saga = buildStagedSaga(db);
+
+    const result = await grantConnectionToRunningAgent(db, 'agent-1', 'connection-new', 'user-1', saga);
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'connection.not_owned' } });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-active connection for a running agent', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+    const db = buildDb([
+      [runningAgent],
+      [{ id: 'connection-new', userId: 'user-1', status: 'revoked', venueAccountId: 'venue-new', provider: 'hyperliquid' }],
+    ]);
+    const saga = buildStagedSaga(db);
+
+    const result = await grantConnectionToRunningAgent(db, 'agent-1', 'connection-new', 'user-1', saga);
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'connection.not_active' } });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it('does not fail the grant when the wake callback throws', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+    const db = buildDb([
+      [runningAgent],
+      [{ id: 'connection-new', userId: 'user-1', status: 'active', venueAccountId: 'venue-new', provider: 'hyperliquid' }],
+      [],
+      [runningAgent],
+      [{ userId: 'user-1', status: 'active' }],
+      [],
+    ]);
+    const saga = buildStagedSaga(db);
+    const wake = vi.fn().mockRejectedValue(new Error('wake failed'));
+
+    const result = await grantConnectionToRunningAgent(db, 'agent-1', 'connection-new', 'user-1', saga, { wake });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('keeps the stopped-agent requirement on the plain grantConnection path', async () => {
+    vi.mocked(loadActiveTradingProfileConnections).mockResolvedValue([]);
+    const db = buildDb([
+      [runningAgent],
+    ]);
+    const saga = buildStagedSaga(db);
+
+    const result = await grantConnection(db, 'agent-1', 'connection-new', 'user-1', saga);
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'agent.not_stopped' } });
     expect(db.insert).not.toHaveBeenCalled();
   });
 });
