@@ -44,9 +44,10 @@
 
 ## Decisions recorded
 
-- **B1:** new top-level `testProvisioningDefaults` key (not extending `agentRiskDefaults`); widened `loadOperatorRiskDefaults` (not a sibling loader).
-- **B2:** `allowRunning` flag threaded through prepare/revalidate (default false); shared `executeGrantSaga`; wake callback injected (constructor-injection style), best-effort.
-- **A5/A4:** redeem endpoint invalidates the bearer token (single-use) but leaves the record pending until the completion hook finalizes it; wake published via a domain `AgentWakePublisher` port with an API-side Redis XADD implementation.
+- **2026-10-13 — B8 (decided, §5 autonomous):** the funding read is owned by Traderton, since network and balance are venue facts. It is a Traderton read tool that herobids exposes through the agent's trading tool discovery. A herobids-local `get_funding_info` would not be visible to agents, and duplicating the network table would break the single-source rule. Not yet implemented.
+- **2026-10-13 — B6 (decided, §5 autonomous):** the trading-skill instructions are edited in the external `traderton-skills` repo (`skills/crypto-trading/SKILL.md`), since herobids holds no trading skill text. Not yet implemented.
+- **2026-10-13 — B4/B5 (decided, consistent with A3):** `set_trading_setup` uses the same broker request/reply contract as `request_connection`. The platform-side work (generated connection reuse or create, running-agent grant, profile provisioning) moves into a shared platform service callable by the broker and the API. No second worker-to-API transport. Not yet implemented.
+- **2026-10-13 — Stop point:** Wave 2 is not complete. Remaining in Wave 2: B4, B5, B6, B8, S1, S2, `use_existing` UI, and the Wave 2 gate. Waiting for greenlight per the epic's wave rule.
 
 ## Outstanding issues
 
