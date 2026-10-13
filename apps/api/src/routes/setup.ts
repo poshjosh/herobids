@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { platformCredentials, connections } from '@herobids/db';
-import type { AppConfig, PlansConfig } from '@herobids/domain';
+import type { AppConfig, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { deriveSolanaAddress } from '../providers/solana-address.js';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
@@ -52,7 +52,7 @@ export interface SetupRouteDeps {
    */
   tradertonClient?: ExternalBackendClient;
   /** Completes or declines agent connection requests (WP-A A4/A5). Absent → requests are not completable. */
-  connectionRequests?: { redis: Redis; saga: TradingProfileReconciliationSaga };
+  connectionRequests?: { redis: Redis; saga: TradingProfileReconciliationSaga; budgets: RuntimeBudgetPolicy };
 }
 
 export interface CreateProviderLinkInput {
@@ -592,6 +592,7 @@ export async function setupRoutes(
             redis: deps.connectionRequests.redis,
             db,
             saga: deps.connectionRequests.saga,
+            budgets: deps.connectionRequests.budgets,
             wakePublisher: createRedisAgentWakePublisher(deps.connectionRequests.redis),
           },
           { requestId: parsed.data.requestId, userId: request.userId, provider: result.provider, connectionId: result.connectionId },

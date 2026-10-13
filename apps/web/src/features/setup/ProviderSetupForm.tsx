@@ -106,7 +106,7 @@ interface Props {
   /** Called immediately before redirecting the browser into an OAuth-only provider flow. */
   onBeforeOAuthRedirect?: () => void;
   /** An agent's open connection request this link fulfils; locks the provider and enables Cancel-as-decline. */
-  connectionRequest?: { requestId: string; provider: string };
+  connectionRequest?: { requestId: string; provider: string; agentName: string };
 }
 
 export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initialProviderId, standalone, inline, oauthReturnTo, onBeforeOAuthRedirect, connectionRequest }: Props) {
@@ -221,7 +221,10 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
   };
 
   const oauthMutation = useMutation({
-    mutationFn: (providerId: string) => connectionsApi.beginOAuth(providerId, oauthReturnTo ? { returnTo: oauthReturnTo } : undefined),
+    mutationFn: (providerId: string) => connectionsApi.beginOAuth(providerId, {
+      ...(oauthReturnTo ? { returnTo: oauthReturnTo } : {}),
+      ...(connectionRequest ? { requestId: connectionRequest.requestId } : {}),
+    }),
     onSuccess: ({ authorizeUrl }) => {
       window.location.href = authorizeUrl;
     },
@@ -266,7 +269,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
     <form onSubmit={handleSubmit}>
       {connectionRequest && (
         <div style={{ marginBottom: '16px', color: 'var(--color-text-secondary)' }}>
-          {intl.formatMessage({ id: 'setup.connectionRequest.banner' }, { provider: connectionRequest.provider })}
+          {intl.formatMessage({ id: 'setup.connectionRequest.banner' }, { provider: connectionRequest.provider, agent: connectionRequest.agentName })}
         </div>
       )}
       {declineMutation.isError && (
@@ -450,8 +453,8 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
       )}
       {isOAuthProvider && (
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-        {!standalone && (
-          <Button variant="ghost" onClick={onClose} type="button">
+        {(!standalone || connectionRequest) && (
+          <Button variant="ghost" onClick={connectionRequest ? handleDecline : onClose} type="button">
             {intl.formatMessage({ id: 'common.cancel' })}
           </Button>
         )}

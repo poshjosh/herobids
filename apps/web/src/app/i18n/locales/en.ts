@@ -668,7 +668,7 @@ export const messages: Record<string, string> = {
   'narrative_llm_resolution_failed': 'Narrative AI configuration could not be resolved.',
 
   // Setup: unified provider-link form
-  'setup.connectionRequest.banner': 'An agent is asking you to connect {provider}.',
+  'setup.connectionRequest.banner': 'Agent {agent} is asking you to connect {provider}.',
   'setup.form.title': 'Connect agent to external platform',
   'setup.form.standaloneSubtitle': 'Connect a trading exchange, email account, or custom integration. Secrets are encrypted and never stored in plain text.',
   'setup.form.provider': 'Provider',

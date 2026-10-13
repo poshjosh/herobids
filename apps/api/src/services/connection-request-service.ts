@@ -11,10 +11,12 @@ import {
   type ConnectionRequestRecord,
   type ConnectionWakeContext,
   type Result,
+  type RuntimeBudgetPolicy,
 } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { grantConnectionToRunningAgent } from './agent-config-service.js';
+import { publishAgentRuntimeRefresh } from './agent-runtime-refresh.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('connection-request-service');
@@ -168,6 +170,7 @@ export interface ConnectionRequestDeps {
   redis: Redis;
   db: Database;
   saga: TradingProfileReconciliationSaga;
+  budgets: RuntimeBudgetPolicy;
   wakePublisher: AgentWakePublisher;
 }
 
@@ -200,6 +203,7 @@ export async function completeConnectionRequest(
   }
 
   await finalizeConnectionRequest(deps.redis, record, 'completed');
+  await publishAgentRuntimeRefresh(deps.db, deps.redis, deps.budgets, record.agentId);
   await deps.wakePublisher.emitAgentWake(record.agentId, buildConnectionWakePayload({
     requestId: record.requestId,
     provider: record.provider,

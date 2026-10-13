@@ -3,13 +3,13 @@ import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import type { Database, DatabaseTransaction } from '@herobids/db';
-import { agentConnections, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, agents } from '@herobids/db';
+import { agentConnections, connections, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy, ExternalBackendReadResult, UnifiedAgentConfig } from '@herobids/domain';
-import { AGENT_STREAM_MAXLEN, readSkillPresetId } from '@herobids/domain';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
+import { publishAgentRuntimeRefresh } from '../services/agent-runtime-refresh.js';
 import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
@@ -163,57 +163,7 @@ export async function connectionRoutes(
     if (!redisClient) {
       return;
     }
-
-    const [agentRow] = await db
-      .select({
-        id: agents.id,
-        name: agents.name,
-        prompt: agents.prompt,
-        toolPolicy: agents.toolPolicy,
-        maxBots: agents.maxBots,
-        unifiedConfig: agents.unifiedConfig,
-      })
-      .from(agents)
-      .where(eq(agents.id, agentId));
-
-    if (!agentRow) {
-      return;
-    }
-
-    const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId);
-    const runtimeDescriptor = buildRuntimeDescriptor({
-      agentId,
-      name: agentRow.name,
-      skillPresetId: readSkillPresetId(agentRow.unifiedConfig),
-      goal: agentRow.prompt,
-      executionMode: undefined,
-      toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},
-      dailyMaxLossPct: null,
-      maxDrawdownPct: null,
-      maxBots: agentRow.maxBots,
-      budgets,
-      capabilityDescriptor,
-    });
-
-    await redisClient.xadd(
-      `agent:outbound:${agentId}`,
-      'MAXLEN',
-      '~',
-      AGENT_STREAM_MAXLEN,
-      '*',
-      'envelope',
-      JSON.stringify({
-        schemaVersion: 'v1',
-        messageId: crypto.randomUUID(),
-        correlationId: agentId,
-        initiatorType: 'system',
-        initiatorId: agentId,
-        agentId,
-        type: 'agent.runtime.config_update',
-        createdAt: new Date().toISOString(),
-        payload: { reason: 'readiness_changed', runtimeDescriptor },
-      }),
-    );
+    await publishAgentRuntimeRefresh(db, redisClient, budgets, agentId);
   }
 
   // POST /connections — create a platform connection

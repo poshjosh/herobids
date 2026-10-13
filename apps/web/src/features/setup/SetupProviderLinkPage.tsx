@@ -122,12 +122,13 @@ export function SetupProviderLinkPage() {
 
   const requestedProvider = searchParams.get('provider');
   const connectionRequestId = searchParams.get('requestId');
+  const requestingAgentName = searchParams.get('agentName');
   return (
     <ProviderSetupForm
       standalone
       defaultCapability="trading"
       initialProviderId={requestedProvider ?? undefined}
-      connectionRequest={requestedProvider && connectionRequestId ? { requestId: connectionRequestId, provider: requestedProvider } : undefined}
+      connectionRequest={requestedProvider && connectionRequestId && requestingAgentName ? { requestId: connectionRequestId, provider: requestedProvider, agentName: requestingAgentName } : undefined}
       onClose={handleClose}
       onSuccess={handleSuccess}
     />

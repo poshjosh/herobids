@@ -4,9 +4,13 @@ import { ok, err } from '@herobids/domain';
 vi.mock('./agent-config-service.js', () => ({
   grantConnectionToRunningAgent: vi.fn(),
 }));
+vi.mock('./agent-runtime-refresh.js', () => ({
+  publishAgentRuntimeRefresh: vi.fn(async () => undefined),
+}));
 
 import { grantConnectionToRunningAgent } from './agent-config-service.js';
-import { completeConnectionRequest, declineConnectionRequest } from './connection-request-service.js';
+import { publishAgentRuntimeRefresh } from './agent-runtime-refresh.js';
+import { completeConnectionRequest, declineConnectionRequest, isConnectionRequestRedeemed, markConnectionRequestRedeemed, readConnectionRequestByToken } from './connection-request-service.js';
 
 const pendingRecord = {
   requestId: 'req-1',
@@ -37,7 +41,7 @@ function makeRedis(record: Record<string, unknown> = pendingRecord) {
 function makeDeps(redis: ReturnType<typeof makeRedis>) {
   const wakePublisher = { emitAgentWake: vi.fn(async () => undefined) };
   return {
-    deps: { redis, db: {} as never, saga: {} as never, wakePublisher },
+    deps: { redis, db: {} as never, saga: {} as never, budgets: {} as never, wakePublisher },
     wakePublisher,
   };
 }
@@ -58,6 +62,7 @@ describe('completeConnectionRequest', () => {
 
     expect(result.ok).toBe(true);
     expect(grantConnectionToRunningAgent).toHaveBeenCalledWith({}, 'agent-1', 'conn-1', 'user-1', {});
+    expect(publishAgentRuntimeRefresh).toHaveBeenCalledWith({}, redis, {}, 'agent-1');
     expect(wakePublisher.emitAgentWake).toHaveBeenCalledTimes(1);
     expect(wakePublisher.emitAgentWake).toHaveBeenCalledWith('agent-1', expect.objectContaining({
       source: 'connection',
@@ -105,6 +110,32 @@ describe('completeConnectionRequest', () => {
     const result = await completeConnectionRequest(deps, completeInput);
 
     expect(result).toMatchObject({ ok: false, error: { code: 'connection.request_not_pending' } });
+  });
+});
+
+describe('connection request redeem helpers', () => {
+  it('finds a pending request by its bearer token and ignores unknown tokens', async () => {
+    const store = new Map<string, string>([['connection-request:req-1', JSON.stringify(pendingRecord)]]);
+    const redis = {
+      zrange: vi.fn(async () => ['req-1']),
+      get: vi.fn(async (key: string) => store.get(key) ?? null),
+    };
+
+    expect((await readConnectionRequestByToken(redis as never, 'tok-1'))?.requestId).toBe('req-1');
+    expect(await readConnectionRequestByToken(redis as never, 'wrong-token')).toBeNull();
+  });
+
+  it('reports a link as redeemed only after it is marked', async () => {
+    const marks = new Map<string, string>();
+    const redis = {
+      ttl: vi.fn(async () => 1200),
+      set: vi.fn(async (key: string, value: string) => { marks.set(key, value); return 'OK'; }),
+      exists: vi.fn(async (key: string) => (marks.has(key) ? 1 : 0)),
+    };
+
+    expect(await isConnectionRequestRedeemed(redis as never, 'req-1')).toBe(false);
+    await markConnectionRequestRedeemed(redis as never, 'req-1');
+    expect(await isConnectionRequestRedeemed(redis as never, 'req-1')).toBe(true);
   });
 });
 

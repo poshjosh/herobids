@@ -344,14 +344,14 @@ await capabilityRoutes(
 );
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────
-await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradingBackendClient, connectionRequests: { redis: redisClient, saga: profileReconciliationSaga } });
+await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, tradertonClient: tradingBackendClient, connectionRequests: { redis: redisClient, saga: profileReconciliationSaga, budgets: appConfig.agentRuntime.defaultBudgets } });
 await providerRoutes(app, appConfig.venues);
 
 // ── Platform primitives ───────────────────────────────────────────────────
 await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans, tradingBackendClient, profileReconciliationSaga);
 
 // ── Gmail OAuth connection flow ────────────────────────────────────────────
-await connectionsOauthRoutes(app, db, appConfig, appConfig.plans);
+await connectionsOauthRoutes(app, db, appConfig, appConfig.plans, { redis: redisClient, saga: profileReconciliationSaga, budgets: appConfig.agentRuntime.defaultBudgets });
 
 // ── Agent-first platform routes ───────────────────────────────────────────
 await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs);

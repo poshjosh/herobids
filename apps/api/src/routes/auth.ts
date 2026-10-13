@@ -5,7 +5,7 @@ import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import type { AuthConfig, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { users, oauthIdentities, localIdentities, sessions, userPlans } from '@herobids/db';
+import { users, oauthIdentities, localIdentities, sessions, userPlans, agents } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
 import { errorPayload } from '../error-payload.js';
@@ -580,6 +580,13 @@ export async function authRoutes(
       );
     }
 
+    const [requestingAgent] = await db.select({ name: agents.name }).from(agents).where(eq(agents.id, record.agentId));
+    if (!requestingAgent) {
+      return reply.status(404).send(
+        errorPayload('auth.connection_request.agent_not_found', 'The agent that asked for this connection no longer exists.'),
+      );
+    }
+
     // Issue session and store behind a one-time exchange code (same as the
     // setup-link callback).
     const sessionToken = await issueSession(config, db, record.userId);
@@ -596,6 +603,7 @@ export async function authRoutes(
     callbackUrl.searchParams.set('code', exchangeCode);
     callbackUrl.searchParams.set('provider', record.provider);
     callbackUrl.searchParams.set('requestId', record.requestId);
+    callbackUrl.searchParams.set('agentName', requestingAgent.name);
     return reply.redirect(callbackUrl.toString());
   });
 

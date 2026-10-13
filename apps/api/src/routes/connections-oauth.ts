@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import type { AppConfig, PlansConfig } from '@herobids/domain';
+import type { Redis } from 'ioredis';
+import type { AppConfig, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { connections, platformCredentials, users } from '@herobids/db';
 import { eq, sql } from 'drizzle-orm';
@@ -13,6 +14,15 @@ import {
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { checkConnectionLimit, checkCredentialLimit } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
+import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
+import {
+  completeConnectionRequest,
+  createRedisAgentWakePublisher,
+  readConnectionRequest,
+} from '../services/connection-request-service.js';
+
+/** Cookie carrying a validated connection-request id through the Gmail OAuth round trip. */
+const OAUTH_CONNECTION_REQUEST_COOKIE = 'oauth_connection_request';
 
 // ── Google OAuth response types ────────────────────────────────────────────
 
@@ -64,6 +74,7 @@ export async function connectionsOauthRoutes(
   db: Database,
   config: AppConfig,
   plansConfig?: PlansConfig,
+  connectionRequests?: { redis: Redis; saga: TradingProfileReconciliationSaga; budgets: RuntimeBudgetPolicy },
 ): Promise<void> {
   const gmailConfig = config.integrations.gmail;
   const jwtSecret = config.auth.jwtSecret;
@@ -104,6 +115,23 @@ export async function connectionsOauthRoutes(
     );
   }
 
+  function setConnectionRequestCookie(reply: FastifyReply, requestId: string | undefined): void {
+    const securePart = secureCookie ? '; Secure' : '';
+    const maxAge = requestId ? 600 : 0;
+    reply.header(
+      'Set-Cookie',
+      `${OAUTH_CONNECTION_REQUEST_COOKIE}=${requestId ?? ''}; HttpOnly; SameSite=Lax; Path=/connections/oauth/gmail/callback; Max-Age=${maxAge}${securePart}`,
+    );
+  }
+
+  /** Returns the request id only when it is a pending Gmail request owned by this user. */
+  async function validatePendingGmailRequest(userId: string, requestId: string | undefined): Promise<string | undefined> {
+    if (!requestId || !connectionRequests) return undefined;
+    const record = await readConnectionRequest(connectionRequests.redis, requestId);
+    const valid = record !== null && record.userId === userId && record.status === 'pending' && record.provider === 'gmail';
+    return valid ? requestId : undefined;
+  }
+
   function sanitizeFrontendReturnTo(value: string | undefined): string {
     if (!value || !value.startsWith('/') || value.startsWith('//')) {
       return '/connections';
@@ -137,10 +165,11 @@ export async function connectionsOauthRoutes(
       );
     }
 
-    const body = (request.body ?? {}) as { returnTo?: string };
+    const body = (request.body ?? {}) as { returnTo?: string; requestId?: string };
     const { state, authorizeUrl } = buildGmailAuthorizeFlow(request.userId);
     setConnectionOAuthStateCookie(reply, state);
     setConnectionOAuthReturnToCookie(reply, sanitizeFrontendReturnTo(body.returnTo));
+    setConnectionRequestCookie(reply, await validatePendingGmailRequest(request.userId, body.requestId));
 
     return { authorizeUrl };
   });
@@ -158,6 +187,7 @@ export async function connectionsOauthRoutes(
     const { state, authorizeUrl } = buildGmailAuthorizeFlow(request.userId);
     setConnectionOAuthStateCookie(reply, state);
     setConnectionOAuthReturnToCookie(reply, sanitizeFrontendReturnTo(query.returnTo));
+    setConnectionRequestCookie(reply, undefined);
 
     return reply.redirect(authorizeUrl);
   });
@@ -403,6 +433,25 @@ export async function connectionsOauthRoutes(
           txResult.error.params,
         ),
       );
+    }
+
+    // Complete a linked agent connection request now that the connection exists.
+    const linkedRequestId = parseCookieValue(request.headers.cookie, OAUTH_CONNECTION_REQUEST_COOKIE);
+    setConnectionRequestCookie(reply, undefined);
+    if (linkedRequestId && connectionRequests) {
+      const outcome = await completeConnectionRequest(
+        {
+          redis: connectionRequests.redis,
+          db,
+          saga: connectionRequests.saga,
+          budgets: connectionRequests.budgets,
+          wakePublisher: createRedisAgentWakePublisher(connectionRequests.redis),
+        },
+        { requestId: linkedRequestId, userId: stateUserId, provider: 'gmail', connectionId },
+      );
+      if (!outcome.ok) {
+        request.log.warn({ requestId: linkedRequestId, code: outcome.error.code }, 'Gmail connection created but agent request not completed');
+      }
     }
 
     // Redirect to frontend success page
