@@ -525,6 +525,24 @@ export const AgentRiskDefaultsSchema = z.object({
 }).default({});
 
 /**
+ * Test-provisioning defaults (operator layer) — the "safe defaults" for
+ * post-creation trading provisioning (WP-B path C). Traderton is the sole
+ * authority; herobids reads them over the `get_operator_defaults` boundary tool
+ * alongside the risk defaults. Kept OUT of `agentRiskDefaults` so that block
+ * stays risk-only (17 fields) — these are provisioning knobs, not risk/halt
+ * limits. Every field has a default so a semantically-empty boundary response
+ * still parses.
+ */
+export const TestProvisioningDefaultsSchema = z.object({
+  /** Default paper-trading capital for a freshly provisioned test setup (decimal string). */
+  defaultTestCapital: z.string().regex(/^\d+(\.\d+)?$/).default('1000'),
+  /** Default provider for generated test wallets. */
+  defaultTestProvider: z.string().min(1).default('hyperliquid'),
+  /** Whether the platform may auto-create a generated-wallet test connection. */
+  generatedWalletTestSetupAllowed: z.boolean().default(true),
+}).default({});
+
+/**
  * Herobids-local worker knobs for the agent decision handler's failure hardening.
  * NOT traderton risk defaults — these tune how the herobids worker hardens
  * retryable → false after consecutive `no_context` / `swap.instrument_format`
@@ -1817,6 +1835,7 @@ export type EvaluationThresholds = z.infer<typeof EvaluationThresholdsSchema>;
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type OpenRouterProviderControlsConfig = z.infer<typeof OpenRouterProviderControlsSchema>;
 export type AgentRiskDefaultsConfig = z.infer<typeof AgentRiskDefaultsSchema>;
+export type TestProvisioningDefaultsConfig = z.infer<typeof TestProvisioningDefaultsSchema>;
 export type AgentCostEstimatesConfig = AppConfig['agentCostEstimates'];
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;

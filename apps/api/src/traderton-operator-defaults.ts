@@ -1,16 +1,24 @@
-// Boundary-sourced operator risk defaults reader with an in-process TTL cache.
+// Boundary-sourced operator defaults reader with an in-process TTL cache.
 //
 // C2.1 consumption half: traderton is the sole authority for the 17-field
-// `agentRiskDefaults` block. herobids reads it via the `get_operator_defaults`
-// boundary tool (owner-scoped, no venue) and caches the parsed result so the
-// display-only auto-fill endpoint (`GET /agents/risk-defaults`) does not hit the
-// boundary on every render. Failures are NOT cached — the next call retries.
+// `agentRiskDefaults` block AND the test-provisioning defaults (WP-B path C).
+// herobids reads both via the `get_operator_defaults` boundary tool
+// (owner-scoped, no venue) and caches the parsed result so the display-only
+// auto-fill endpoint (`GET /agents/risk-defaults`) does not hit the boundary on
+// every render. Failures are NOT cached — the next call retries.
 //
 // The shape mirrors `loadBoundaryObject` in exports-traderton.js but normalizes
-// the payload through `AgentRiskDefaultsSchema` BEFORE caching, so callers get a
-// typed `AgentRiskDefaultsConfig` (not a raw record).
+// the payload through `AgentRiskDefaultsSchema` + `TestProvisioningDefaultsSchema`
+// BEFORE caching, so callers get typed data (not a raw record). One boundary
+// call, one cache entry — the two defaults ride the same `get_operator_defaults`
+// response, so a single loader (widened return type) is the least invasive shape.
 
-import { AgentRiskDefaultsSchema, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import {
+  AgentRiskDefaultsSchema,
+  TestProvisioningDefaultsSchema,
+  type AgentRiskDefaultsConfig,
+  type TestProvisioningDefaultsConfig,
+} from '@herobids/domain';
 import {
   mapNonSuccessToError,
   type ReadBoundaryError,
@@ -20,8 +28,11 @@ import {
 /** Default TTL: operator defaults change rarely; a long cache is safe for a display fallback. */
 const DEFAULT_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
+/** The combined operator-defaults payload: risk defaults + test-provisioning defaults. */
+export type OperatorDefaults = AgentRiskDefaultsConfig & TestProvisioningDefaultsConfig;
+
 interface CacheEntry {
-  data: AgentRiskDefaultsConfig;
+  data: OperatorDefaults;
   fetchedAt: number;
 }
 
@@ -29,11 +40,13 @@ let cachedEntry: CacheEntry | null = null;
 let cachedTtlMs: number | null = null;
 
 /**
- * Read operator risk defaults over the Traderton boundary, cached with a TTL.
+ * Read operator defaults (risk + test-provisioning) over the Traderton boundary,
+ * cached with a TTL.
  *
  * - Invokes `get_operator_defaults` with an empty payload `{}`.
  * - On success, validates + normalizes the payload through
- *   `AgentRiskDefaultsSchema`. A parse failure becomes a `502` ReadBoundaryError.
+ *   `AgentRiskDefaultsSchema` and `TestProvisioningDefaultsSchema`. A parse
+ *   failure becomes a `502` ReadBoundaryError.
  * - Caches ONLY `{ ok: true }` successes keyed by TTL; failures never cache.
  *
  * The cache key is the TTL duration (not the boundary identity): a single global
@@ -47,7 +60,7 @@ let cachedTtlMs: number | null = null;
 export async function loadOperatorRiskDefaults(
   boundary: TradertonReadBoundary,
   opts?: { ttlMs?: number },
-): Promise<{ ok: true; data: AgentRiskDefaultsConfig } | { ok: false; error: ReadBoundaryError }> {
+): Promise<{ ok: true; data: OperatorDefaults } | { ok: false; error: ReadBoundaryError }> {
   const ttlMs = opts?.ttlMs ?? DEFAULT_TTL_MS;
   const now = Date.now();
 
@@ -60,12 +73,12 @@ export async function loadOperatorRiskDefaults(
     return { ok: false, error: mapNonSuccessToError(result) };
   }
 
-  const parsed = AgentRiskDefaultsSchema.safeParse(result.data);
+  const riskParsed = AgentRiskDefaultsSchema.safeParse(result.data);
   // Note: `AgentRiskDefaultsSchema` declares full per-field `.default(...)`, so a
   // semantically-empty `{}` from a misconfigured boundary parses successfully and
   // yields the schema defaults — this branch only fires on a wrongly-typed field
   // (e.g. a string where a number is expected).
-  if (!parsed.success) {
+  if (!riskParsed.success) {
     return {
       ok: false,
       error: {
@@ -76,9 +89,22 @@ export async function loadOperatorRiskDefaults(
     };
   }
 
-  cachedEntry = { data: parsed.data, fetchedAt: now };
+  const provisioningParsed = TestProvisioningDefaultsSchema.safeParse(result.data);
+  if (!provisioningParsed.success) {
+    return {
+      ok: false,
+      error: {
+        status: 502,
+        code: 'test_provisioning_defaults.invalid_response',
+        message: 'Traderton returned invalid test-provisioning defaults',
+      },
+    };
+  }
+
+  const data: OperatorDefaults = { ...riskParsed.data, ...provisioningParsed.data };
+  cachedEntry = { data, fetchedAt: now };
   cachedTtlMs = ttlMs;
-  return { ok: true, data: parsed.data };
+  return { ok: true, data };
 }
 
 /** Exposed for tests — clears the in-memory cache. */

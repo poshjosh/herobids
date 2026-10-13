@@ -91,6 +91,10 @@ Record on the profile change who set each value (`operator_default` or `user_sta
 | B8 | `get_funding_info` tool, trading-skill funding guidance, zero-balance warning at go-live | tool test; UAT: agent states funding status at setup and on every go-live request |
 | B9 | Gate G1 UAT (epic): blank agent, "help me trade", defaults path and specifics path, paper trade, funding message, go-live cloned agent | recorded in the epic folder |
 
+## Implementation log
+
+- **2026-10-13 — B1 done.** Three operator test-provisioning defaults added to traderton as a new top-level `testProvisioningDefaults` block (`defaultTestCapital: "1000"`, `defaultTestProvider: "hyperliquid"`, `generatedWalletTestSetupAllowed: true`), exposed through `get_operator_defaults` (merged into the response) and consumed in herobids by widening `loadOperatorRiskDefaults` to parse both blocks into a combined `OperatorDefaults` type. Decisions: (1) new top-level key, not extending `agentRiskDefaults` (keeps the 17-field risk block risk-only and parity-stable); (2) widened the existing loader rather than a sibling (one boundary call, one cache; existing callers only read risk fields so no caller changes). Traderton domain build + trading-profiles tests (26/26) + lint green; herobids domain build + traderton-operator-defaults tests (7/7) + lint green. Outstanding (MEDIUM): `defaultTestProvider` is an unconstrained free string — constrain to a wallet-generation-capable venue enum before B3/B5 consume it. Outstanding (LOW): redundant `get_operator_defaults` test; `as never` casts in tests; capital string→number conversion boundary to confirm in B3.
+
 ## Risks and open questions
 
 1. **Plan limits.** Checked: the free plan allows 5 active connections, 5 venue accounts and live mode (`config/default.yaml`, `plan-guards.ts`), so a generated test wallet is allowed unless the user already holds 5 active connections. Handle that edge case: the tool returns the limit error in plain words and the agent tells the user to remove one or upgrade. Reuse an existing generated connection first so most users never hit it.
