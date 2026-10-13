@@ -472,7 +472,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
   });
 
   describe('execution mode lifecycle', () => {
-    it('resolves paper mode to shadow after granting a connection (venue-backed simulation upgrade)', async () => {
+    it('keeps paper mode after granting a connection (no automatic upgrade)', async () => {
       // 1. Create agent with paper mode + venue hint, no connections
       const createRes = await ctx.app.inject({
         method: 'POST',
@@ -520,14 +520,14 @@ describe.skipIf(SKIP)('Agents functional', () => {
       });
       expect(patchRes.statusCode).toBe(200);
 
-      // 4. Verify the stored mode is now shadow (venue-backed simulation)
+      // 4. Verify the stored mode is still paper (mode changes only explicitly)
       const getRes = await ctx.app.inject({
         method: 'GET',
         url: `/agents/${agentId}`,
         headers: authHeader(),
       });
       expect(getRes.statusCode).toBe(200);
-      expect((await ctx.getProfile(agentId))?.executionDefaults?.mode).toBe('shadow');
+      expect((await ctx.getProfile(agentId))?.executionDefaults?.mode).toBe('paper');
     });
 
     it('transitions from paper to live via go-live without mode leak', async () => {

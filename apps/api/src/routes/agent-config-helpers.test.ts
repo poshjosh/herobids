@@ -337,7 +337,7 @@ describe('resolveExecutionModeForSkills', () => {
       }
     });
 
-    it('allows paper↔shadow auto-transition when executionModeProvided is false (carry-forward path unchanged)', () => {
+    it('keeps paper when connections are granted (no silent paper→shadow flip)', () => {
       const upgradeResult = resolveExecutionModeForSkills({
         skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
@@ -345,7 +345,7 @@ describe('resolveExecutionModeForSkills', () => {
         currentExecutionMode: 'paper',
         hasConnections: true,
       });
-      expect(upgradeResult.value).toBe('shadow');
+      expect(upgradeResult.value).toBe('paper');
       expect(upgradeResult.issue).toBeUndefined();
 
       const downgradeResult = resolveExecutionModeForSkills({
@@ -355,7 +355,7 @@ describe('resolveExecutionModeForSkills', () => {
         currentExecutionMode: 'shadow',
         hasConnections: false,
       });
-      expect(downgradeResult.value).toBe('paper');
+      expect(downgradeResult.value).toBe('shadow');
       expect(downgradeResult.issue).toBeUndefined();
     });
   });
@@ -402,7 +402,7 @@ describe('resolveExecutionModeForSkills', () => {
       expect(result.value).toBe('paper');
     });
 
-    it('upgrades paper to shadow when connections become available', () => {
+    it('keeps paper when connections become available', () => {
       const result = resolveExecutionModeForSkills({
         skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
@@ -410,10 +410,10 @@ describe('resolveExecutionModeForSkills', () => {
         currentExecutionMode: 'paper',
         hasConnections: true,
       });
-      expect(result.value).toBe('shadow');
+      expect(result.value).toBe('paper');
     });
 
-    it('downgrades shadow to paper when connections are removed', () => {
+    it('keeps shadow when connections are removed', () => {
       const result = resolveExecutionModeForSkills({
         skillIds: [CRYPTO_TRADING_REF],
         submittedExecutionMode: undefined,
@@ -421,7 +421,7 @@ describe('resolveExecutionModeForSkills', () => {
         currentExecutionMode: 'shadow',
         hasConnections: false,
       });
-      expect(result.value).toBe('paper');
+      expect(result.value).toBe('shadow');
     });
 
     it('keeps shadow when connections are still present', () => {

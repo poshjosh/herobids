@@ -209,18 +209,9 @@ export function resolveExecutionModeForSkills(input: {
     return { value: resolved };
   }
 
-  // Carry forward existing mode when not provided in the update.
-  // Re-evaluate paper/shadow based on connection availability so that agents
-  // created with the `test` alias dynamically upgrade/downgrade as connections
-  // are granted or revoked.
+  // Carry forward the existing mode. Paper/shadow never changes automatically with connections (WP-B B7).
   const existing = normalizeExecutionMode(input.currentExecutionMode, connectionOpts);
   if (existing != null) {
-    if (existing === 'paper' && input.hasConnections) {
-      return { value: 'shadow' };
-    }
-    if (existing === 'shadow' && !input.hasConnections) {
-      return { value: 'paper' };
-    }
     return { value: existing };
   }
 

@@ -150,9 +150,8 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       expect(goLiveRes.statusCode).toBe(201);
       const liveAgent = goLiveRes.json<Record<string, unknown>>();
 
-      // 6. Verify source agent still in shadow mode (auto-upgraded from paper on connection grant) and unchanged by go-live
-      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('shadow');
-      // Agent was auto-upgraded paper→shadow when connection was granted, which is expected
+      // 6. Verify source agent still in paper mode (mode is only changed explicitly) and unchanged by go-live
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
 
       // 7. Verify new agent in live mode, stopped, same config
       expect((await ctx.getProfile(liveAgent.id as string))?.executionDefaults?.mode).toBe('live');
@@ -211,13 +210,13 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
 
   // ─── 2. Paper↔shadow auto-transition regression ──────────────────────────
 
-  describe('paper↔shadow auto-transition regression', () => {
-    it('auto-transitions paper→shadow on connection grant and back on revoke', async () => {
+  describe('paper↔shadow explicit transitions', () => {
+    it('keeps paper on connection grant and keeps the mode on revoke (no automatic transition)', async () => {
       // 1. Create agent in paper mode with no connections
       const agent = await createPaperAgent('Auto Transition Agent');
       expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
 
-      // 2. Grant a connection → verify resolves to shadow
+      // 2. Grant a connection → mode stays paper
       const connectionId = await createConnection('hl-auto-transition');
       const grantRes = await ctx.app.inject({
         method: 'PATCH',
@@ -227,9 +226,9 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
       });
       expect(grantRes.statusCode).toBe(200);
 
-      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('shadow');
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
 
-      // 3. Revoke connection (empty connectionIds) → verify resolves back to paper
+      // 3. Revoke connection → mode stays paper
       const revokeRes = await ctx.app.inject({
         method: 'PATCH',
         url: `/agents/${agent.id}`,
@@ -242,23 +241,12 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
     });
 
     it('allows explicit paper→shadow and shadow→paper transitions via PATCH', async () => {
-      // Create agent in paper mode with a connection (so shadow is reachable)
+      // Create agent in paper mode with a connection
       const agent = await createPaperAgent('Explicit Transition Agent');
       const connectionId = await createConnection('hl-explicit-transition');
       await grantConnection(agent.id, connectionId);
 
-      // Agent auto-upgraded to shadow on connection grant
-      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('shadow');
-
-      // Explicit shadow→paper via PATCH (test↔test is allowed)
-      const toPaperRes = await ctx.app.inject({
-        method: 'PATCH',
-        url: `/agents/${agent.id}`,
-        headers: authHeader(),
-        payload: { executionDefaults: { mode: 'paper' } },
-      });
-      expect(toPaperRes.statusCode).toBe(200);
-
+      // The grant does not change the mode
       expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
 
       // Explicit paper→shadow via PATCH (test↔test is allowed)
@@ -269,8 +257,17 @@ describe.skipIf(SKIP)('Execution Mode Immutability & Go Live', () => {
         payload: { executionDefaults: { mode: 'shadow' } },
       });
       expect(toShadowRes.statusCode).toBe(200);
-
       expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('shadow');
+
+      // Explicit shadow→paper via PATCH (test↔test is allowed)
+      const toPaperRes = await ctx.app.inject({
+        method: 'PATCH',
+        url: `/agents/${agent.id}`,
+        headers: authHeader(),
+        payload: { executionDefaults: { mode: 'paper' } },
+      });
+      expect(toPaperRes.statusCode).toBe(200);
+      expect((await ctx.getProfile(agent.id))?.executionDefaults?.mode).toBe('paper');
     });
   });
 
