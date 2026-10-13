@@ -19,13 +19,9 @@
 
 ## Next unfinished item
 
-**Wave 2 → WP-A A5 (completion hook + wake + sweeper) — IN PROGRESS, uncommitted.**
-Foundation laid: `AgentWakePublisher` domain port + `connection-request-service.ts`
-(redeem-by-token, finalize, wake publish) + `GET /auth/connection-request/callback`
-redeem endpoint in `auth.ts`. Remaining: wire `completeConnectionRequest` into the
-two connection write paths (setup.ts, connections-oauth.ts), the expiry sweeper in
-`ReminderCoordinator`, and the A4 form changes (locked provider, asker banner, Cancel).
+**Wave 2 → WP-A A5/A4 (remaining, see [003 plan](../003-dynamic-connections/001-plan.md) implementation log).** Done: completion hook, decline endpoint, expiry sweeper, single-use redeem, web locking + Cancel-as-decline. Open: Gmail OAuth completion (requestId not in OAuth state), `use_existing` approval UI, asker name in the banner, redeem endpoint test, and verifying the runtime re-reads grants on a `connection` wake (G1 UAT).
 
+**Lint caveat:** root `pnpm lint` checks nothing (`files: []`); use the per-project `tsc -p apps/<app>/tsconfig.json --noEmit` checks.
 ## Per-item log
 
 - **2026-10-13 — WP-A A1 DONE.** Error split `precondition.not_ready` → `connection.missing` / `connection.provisioning`. Added `SelectedVenueAccountResolution` to domain tool contract; resolver in `agent.ts` returns discriminated result; `get_risk_limits`/`get_account_summary`/`adjust_risk_limits` updated. Focused tests 23/23 pass; `pnpm lint` green. Committed `613f7ec`.
@@ -41,7 +37,7 @@ two connection write paths (setup.ts, connections-oauth.ts), the expiry sweeper 
 - **2026-10-13 — WAVE 1 GATE PASS.** `pnpm lint` green; `pnpm test`: 330 files passed, 24 skipped; 6508 tests passed, 319 skipped.
 - **2026-10-13 — WP-B B1 DONE.** `testProvisioningDefaults` operator block in traderton + widened `loadOperatorRiskDefaults` in herobids. Committed `e33dbd4` (traderton) + `d31a48b4` (herobids).
 - **2026-10-13 — WP-B B2 DONE.** `grantConnectionToRunningAgent` + `connection` wake source. Committed `4683f773`.
-- **2026-10-13 — WP-A A5/A4 IN PROGRESS (uncommitted).** `AgentWakePublisher` port, `connection-request-service.ts`, redeem endpoint in `auth.ts`. See "Next unfinished item".
+- **2026-10-13 — WP-A A5 DONE (API + worker), A4 PARTIAL.** Completion hook on provider-link, decline endpoint, expiry sweeper in `ReminderCoordinator`, single-use redeem, web provider lock + Cancel-as-decline. Open items listed under "Next unfinished item". Committed with this checkpoint.
 
 ## Decisions recorded
 
