@@ -14,7 +14,9 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, MONOREPO_CONFIG_DIR, resolveConfiguredExternalBackend } from './config.js';
 import { AlertDispatcher, createBoundaryTradeEventFeed } from './alerting/index.js';
-import { TelegramClient, forceReply, PlatformAlertService, createEmailClient } from './alerting/index.js';
+import { TelegramClient, PlatformAlertService, createEmailClient } from './alerting/index.js';
+import { TelegramChannel } from './alerting/telegram-channel.js';
+import { ChatDelivery } from './alerting/chat-delivery.js';
 import type { EmailClientConfig } from './alerting/index.js';
 import {
   AgentMessageBroker,
@@ -570,6 +572,13 @@ const agentActorLifecycle = new AgentActorLifecycle({
   logger,
 });
 
+const workerTelegram = appConfig.alerts.telegram.botToken
+  ? new TelegramClient(appConfig.alerts.telegram.botToken)
+  : undefined;
+const chatDelivery = new ChatDelivery(agentRepo, {
+    get: (provider) => provider === 'telegram' && workerTelegram ? new TelegramChannel(workerTelegram) : undefined,
+  });
+
 const agentDecisionHandler = new AgentDecisionHandler(
   agentRepo,
   eventPublisher,
@@ -579,7 +588,7 @@ const agentDecisionHandler = new AgentDecisionHandler(
   },
   decisionApprovalRepo,
   appConfig.agentApprovals.ttlMs,
-  appConfig.alerts.telegram.botToken || undefined,
+  workerTelegram ? chatDelivery : undefined,
   sideEffectBoundary,
   30_000,
   approvalVenueAccountResolver,
@@ -604,10 +613,6 @@ const agentReconnectHandler = new AgentReconnectHandler(redisClient, agentRepo, 
 
 // Platform alert service — mandatory safety alerts to users via Telegram.
 // Uses the same bot token as the operator alert dispatcher.
-const workerTelegram = appConfig.alerts.telegram.botToken
-  ? new TelegramClient(appConfig.alerts.telegram.botToken)
-  : undefined;
-
 if (!workerTelegram && appConfig.alerts.telegram.webhookUrl) {
   logger.warn(
     'TELEGRAM_WEBHOOK_URL is set but TELEGRAM_BOT_TOKEN is not — the webhook endpoint will receive updates but the app cannot send messages or register the webhook.',
@@ -670,7 +675,7 @@ const workerEmailConfig: EmailClientConfig = {
 };
 const workerEmail = createEmailClient(workerEmailConfig);
 
-const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl);
+const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, appConfig.alerts.telegram.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl);
 
 async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: string): Promise<void> {
   if (!workerTelegram) {
@@ -697,14 +702,14 @@ async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: stri
     messageClass: 'reminder',
   });
 
-  const result = await workerTelegram.sendText(telegramChatId, text, forceReply());
+  const result = await chatDelivery.send(agentId, { body: text, replyRequested: true });
   if (!result.ok) {
     await agentRepo.markOutboundMessageFailed(outboundMessageId, result.error.message).catch(() => undefined);
     logger.warn({ agentId, error: result.error }, 'Failed to send Telegram session-started anchor');
     return;
   }
 
-  await agentRepo.markOutboundMessageSent(outboundMessageId, String(result.data.messageId), telegramChatId).catch(() => undefined);
+  await agentRepo.markOutboundMessageSent(outboundMessageId, result.data.providerMessageId, result.data.address.address).catch(() => undefined);
 }
 
 // Late-bound subscribe callback: set once agentStreamConsumer is constructed below.
@@ -744,6 +749,9 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   plansConfig: appConfig.plans,
   usageBillingConfig: appConfig.usageBilling,
   providersYaml,
+  generatedWalletProviders: Object.entries(appConfig.venues)
+    .filter(([, venue]) => venue.walletGeneration.enabled)
+    .map(([provider]) => provider),
   crashLoopGuard: appConfig.agentRuntime.crashLoopGuard,
   operatorModelDefaults: appConfig.agentRuntime.llm.modelDefaults,
 }, agentReconnectHandler, platformAlerts, redisClient);
@@ -771,7 +779,7 @@ const agentBroker = new AgentMessageBroker(
   agentDecisionHandler,
   sessionManager,
   eventPublisher,
-  workerTelegram,
+  chatDelivery,
   botRepo,
   botLiveCheckCallback,
   workerEmail,

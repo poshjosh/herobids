@@ -44,7 +44,7 @@ import type {
   UnifiedAgentConfig,
 } from '@herobids/domain';
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
-import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
+import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
 import { resolvePlanBlueprintEntitlements } from '../plan-guards.js';
 import { createAgentFromPayload } from '../services/agent-instantiation-service.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
@@ -2320,15 +2320,23 @@ export async function blueprintRoutes(
                 capabilityMode: agentPayloadFinal.capabilityMode,
                 ...(agentPayloadFinal.hybridMode ? { hybridMode: agentPayloadFinal.hybridMode } : {}),
               } as UnifiedAgentConfig;
-              const scanConfig = deriveProfileScanConfig({ unifiedConfig: instantiateUnifiedConfig, style: null });
+              const { changes, scanConfig } = deriveTradingProfileFields({
+                unifiedConfig: instantiateUnifiedConfig,
+                style: null,
+                overrides: {
+                  capital: agentPayloadFinal.capital != null ? String(agentPayloadFinal.capital) : null,
+                  riskPosture: agentPayloadFinal.risk ?? null,
+                  executionDefaults: agentPayloadFinal.executionDefaults ?? null,
+                },
+              });
               const profiles = new Map(proposedConnections
                 .filter((connection): connection is typeof connection & { venueAccountId: string } => connection.venueAccountId !== null)
                 .map((connection) => [connection.venueAccountId, {
                   actorId,
                   venueAccountId: connection.venueAccountId,
-                  capital: agentPayloadFinal.capital != null ? String(agentPayloadFinal.capital) : null,
-                  riskPosture: agentPayloadFinal.risk ?? null,
-                  executionDefaults: agentPayloadFinal.executionDefaults ?? null,
+                  capital: changes.capital ?? null,
+                  riskPosture: changes.riskPosture ?? null,
+                  executionDefaults: changes.executionDefaults ?? null,
                   scanMode: scanConfig.scanMode,
                   creatorStrategy: scanConfig.creatorStrategy,
                   presetPolicy: scanConfig.presetPolicy,

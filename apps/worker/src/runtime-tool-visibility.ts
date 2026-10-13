@@ -15,6 +15,7 @@ export const DATABASE_DEPENDENT_TOOLS = new Set([
   'get_account_summary',
   'resolve_bot',
   'list_skills',
+  'list_providers',
   'add_skills',
   'remove_skills',
   'search_skills',

@@ -15,6 +15,8 @@ import type { TradingToolContext, ToolCategory, AgentTool as TradingContractAgen
  * pre-split `ToolContext`.
  */
 export interface ToolContext extends TradingToolContext {
+  hasTradingCapability?: boolean;
+  generatedWalletProviders?: string[];
   /** Which decision phase is executing this tool call */
   phase: 'scout' | 'judge';
   /** Agent permission level — controls tool visibility and sandbox behavior. */
@@ -132,6 +134,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_files',
   'list_memory_keys',
   'list_positions',
+  'list_providers',
   'list_reminders',
   'list_skills',
   'list_tasks',
@@ -200,6 +203,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
   list_skills:         { category: 'read-database',       description: 'List skills assigned to this agent and skills available to add.' },
+  list_providers:      { category: 'read-database',       description: 'List connection providers and show which are owned or granted to this agent.' },
   search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the platform catalog and the external skill registry.' },
   // write-database
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },

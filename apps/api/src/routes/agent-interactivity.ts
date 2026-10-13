@@ -6,6 +6,7 @@ import { eq, and, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
+import type { InboundChatMessage } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
 import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
@@ -21,10 +22,11 @@ import {
 import { selectExecutionBinding } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
-import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
+import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
+import { TelegramInboundChannel } from './telegram-channel.js';
+import { ChatInboundRouter } from './chat-inbound-router.js';
 import {
-  parseSlashCommand,
   formatCommandHelp,
   formatUnknownCommandResponse,
   formatAmbiguousApprovalResponse,
@@ -68,25 +70,6 @@ const SendMessageSchema = z.object({
 
 const VerifyTelegramSchema = z.object({
   chatId: z.string().min(1),
-});
-
-const TelegramWebhookUpdateSchema = z.object({
-  message: z.object({
-    chat: z.object({
-      id: z.union([z.string(), z.number().int()]).transform((value) => String(value)),
-    }),
-    text: z.string().optional(),
-    caption: z.string().optional(),
-    document: z.object({
-      file_id: z.string(),
-      file_name: z.string().optional(),
-      mime_type: z.string().optional(),
-      file_size: z.number().int().optional(),
-    }).optional(),
-    reply_to_message: z.object({
-      message_id: z.number().int(),
-    }).optional(),
-  }).optional(),
 });
 
 const UpdateAgentSchema = z.object({
@@ -310,23 +293,29 @@ export async function agentInteractivityRoutes(
           // style, so the scan config is the agent's current one — derive it and
           // re-assert it (herobids is the source of truth) rather than trusting
           // whatever traderton returned.
-          const scanConfig = deriveProfileScanConfig({
-            unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
-            style: agent.style ?? null,
-          });
-          const proposedProfiles = new Map([...profiles].map(([venueAccountId, profile]) => [venueAccountId, {
-            ...profile,
-            ...(agentUpdates.capital !== undefined ? { capital: agentUpdates.capital } : {}),
-            ...(rawMaxDrawdownPct !== undefined ? {
-              riskPosture: { ...(profile.riskPosture ?? {}), maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null },
-            } : {}),
-            ...(executionMode.value !== null ? {
-              executionDefaults: { ...(profile.executionDefaults ?? {}), mode: executionMode.value },
-            } : {}),
-            scanMode: scanConfig.scanMode,
-            creatorStrategy: scanConfig.creatorStrategy,
-            presetPolicy: scanConfig.presetPolicy,
-          }]));
+          const proposedProfiles = new Map([...profiles].map(([venueAccountId, profile]) => {
+            const { changes, scanConfig } = deriveTradingProfileFields({
+              unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
+              style: agent.style ?? null,
+              preserveUnspecified: true,
+              overrides: {
+                capital: agentUpdates.capital,
+                riskPosture: rawMaxDrawdownPct !== undefined
+                  ? { ...(profile.riskPosture ?? {}), maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null }
+                  : undefined,
+                executionDefaults: executionMode.value !== null
+                  ? { ...(profile.executionDefaults ?? {}), mode: executionMode.value }
+                  : undefined,
+              },
+            });
+            return [venueAccountId, {
+              ...profile,
+              ...changes,
+              scanMode: scanConfig.scanMode,
+              creatorStrategy: scanConfig.creatorStrategy,
+              presetPolicy: scanConfig.presetPolicy,
+            }];
+          }));
           return {
             prior: { profiles, connections: priorProfileConnections },
             proposed: { profiles: proposedProfiles, connections: priorProfileConnections },
@@ -537,6 +526,8 @@ export async function telegramWebhookHandler(
 ): Promise<void> {
   const botToken = alertsConfig?.telegram?.botToken ?? '';
   const webhookSecret = alertsConfig?.telegram?.webhookSecret ?? '';
+  const telegramChannel = new TelegramInboundChannel(webhookSecret);
+  const chatRouter = new ChatInboundRouter();
   const resolveRateLimit = agentApprovalsConfig?.resolveRateLimitPerMinute ?? 20;
 
   const approvalRepo = new DecisionApprovalRepository(db);
@@ -557,23 +548,8 @@ export async function telegramWebhookHandler(
     return status !== 'stopped' && status !== 'crashed';
   }
 
-  function buildEnvelope(agentId: string, userId: string, messageText: string) {
-    return {
-      schemaVersion: 'v1',
-      messageId: crypto.randomUUID(),
-      correlationId: crypto.randomUUID(),
-      initiatorType: 'user',
-      initiatorId: userId,
-      agentId,
-      type: 'user.message',
-      createdAt: new Date().toISOString(),
-      payload: { message: messageText },
-    };
-  }
-
   async function deliverTelegramMessage(agentId: string, userId: string, messageText: string): Promise<void> {
-    const envelope = buildEnvelope(agentId, userId, messageText);
-    await redisClient.xadd(`agent:outbound:${agentId}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
+    await chatRouter.deliver(agentId, userId, messageText, redisClient);
   }
 
   const agentRepo = new AgentRepository(db);
@@ -632,23 +608,22 @@ export async function telegramWebhookHandler(
 
   async function processWebhookUpdate(
     chatId: string,
-    message: NonNullable<z.infer<typeof TelegramWebhookUpdateSchema>['message']>,
+    message: InboundChatMessage,
   ): Promise<void> {
     const userRows = await db.select({ userId: users.id, planId: users.planId, isAdmin: users.isAdmin })
       .from(users)
       .where(eq(users.telegramChatId, chatId))
       .limit(1);
 
-    let userId = userRows[0]?.userId;
+    const userId = userRows[0]?.userId;
     const userPlanId = userRows[0]?.planId ?? 'free';
     const userIsAdmin = userRows[0]?.isAdmin ?? false;
-
-    const trimmedText = message.text!.trim();
 
     // ── Slash-command routing ──────────────────────────────────────────
     // Detect and dispatch explicit slash commands before falling through
     // to the existing /to parser and plain-text routing.
-    const slashCmd = parseSlashCommand(trimmedText);
+    const route = chatRouter.route(message);
+    const slashCmd = route.kind === 'slash' ? route.command : null;
     if (slashCmd) {
       // /to is handled by the existing parseTelegramCommand logic below.
       if (slashCmd.command !== 'to') {
@@ -821,106 +796,16 @@ export async function telegramWebhookHandler(
       }
     }
 
-    if (message.reply_to_message) {
-      // Resolve the reply target directly from the outbound message record.
-      // The chatId + Telegram message ID pair uniquely identifies the
-      // message being replied to; we do not need to pre-resolve the user
-      // via mutable chat bindings before consulting the authoritative
-      // outbound message table.
-      const agent = await agentRepo.resolveAgentForTelegramReply(
-        String(message.reply_to_message.message_id),
-        chatId,
-      );
-      if (!agent) {
-        await sendTelegramText(chatId, "I couldn't find which agent that reply belongs to. The message may be too old.");
-        return;
-      }
-
-      // Use the userId from the agent owner record — authoritative and
-      // immune to stale chat-binding state.
-      userId = agent.userId;
-
-      if (!agentCanReceiveTelegram(agent.status)) {
-        await sendTelegramText(chatId, `Agent ${agent.agentName} is stopped and cannot receive messages right now.`);
-        return;
-      }
-
-      await deliverTelegramMessage(agent.agentId, userId, trimmedText);
-      await sendTelegramText(chatId, `Delivered to ${agent.agentName}.`);
-      return;
-    }
-
-    // Non-reply messages: require a user-level chat binding.
-    // Agent-level overrides do not grant a general command surface —
-    // the user must be explicitly bound to this chat.
-    if (!userId) {
-      return;
-    }
-
-    const userAgents = await db.select({
-      agentId: agents.id,
-      agentName: agents.name,
-      status: agents.status,
-    })
-      .from(agents)
-      .where(eq(agents.userId, userId));
-
-    const parsedCommand = parseTelegramCommand(trimmedText);
-    const commandBody = parsedCommand?.body.trim() ?? trimmedText;
-
-    if (parsedCommand?.targets.length) {
-      if (commandBody.length === 0) {
-        await sendTelegramText(chatId, 'Please include a message after the target.');
-        return;
-      }
-
-      const confirmations: string[] = [];
-      const deliveredAgentIds = new Set<string>();
-
-      for (const target of parsedCommand.targets) {
-        const isBroadcast = target === '*' || target.toLowerCase() === 'all';
-        const targetAgents = isBroadcast
-          ? userAgents.filter((row) => agentCanReceiveTelegram(row.status))
-          : userAgents.filter((row) => row.agentName.toLowerCase() === target.toLowerCase());
-
-        if (targetAgents.length === 0) {
-          confirmations.push(isBroadcast ? 'No running agents found.' : `No agent named ${target} found.`);
-          continue;
-        }
-
-        for (const targetAgent of targetAgents) {
-          if (deliveredAgentIds.has(targetAgent.agentId)) {
-            continue;
-          }
-          deliveredAgentIds.add(targetAgent.agentId);
-
-          if (!agentCanReceiveTelegram(targetAgent.status)) {
-            confirmations.push(`Agent ${targetAgent.agentName} is stopped and cannot receive messages right now.`);
-            continue;
-          }
-
-          await deliverTelegramMessage(targetAgent.agentId, userId, commandBody);
-          confirmations.push(`Delivered to ${targetAgent.agentName}.`);
-        }
-      }
-
-      await sendTelegramText(chatId, confirmations.join('\n'));
-      return;
-    }
-
-    const runningAgents = userAgents.filter((row) => agentCanReceiveTelegram(row.status));
-    if (runningAgents.length === 1) {
-      await deliverTelegramMessage(runningAgents[0]!.agentId, userId, commandBody);
-      await sendTelegramText(chatId, `Delivered to ${runningAgents[0]!.agentName}.`);
-      return;
-    }
-
-    if (runningAgents.length === 0) {
-      await sendTelegramText(chatId, 'No running agents found. Start an agent or reply to one of its Telegram messages.');
-      return;
-    }
-
-    await sendTelegramText(chatId, 'Multiple running agents found. Use /to <agent name> <message> to choose a target.');
+    await chatRouter.dispatch(message, userId, {
+      redis: redisClient,
+      resolveReply: (providerMessageId, address) => agentRepo.resolveAgentForTelegramReply(providerMessageId, address.address),
+      listAgents: (ownerId) => db.select({
+        agentId: agents.id,
+        agentName: agents.name,
+        status: agents.status,
+      }).from(agents).where(eq(agents.userId, ownerId)),
+      sendText: (address, text) => sendTelegramText(address.address, text),
+    });
   }
 
   // ── Document helpers ────────────────────────────────────────────────────
@@ -967,7 +852,7 @@ export async function telegramWebhookHandler(
    */
   async function processWebhookDocument(
     chatId: string,
-    message: NonNullable<z.infer<typeof TelegramWebhookUpdateSchema>['message']>,
+    message: InboundChatMessage,
   ): Promise<void> {
     const document = message.document!; // guaranteed present by caller
 
@@ -1029,7 +914,7 @@ export async function telegramWebhookHandler(
 
     // ── 4. Download the file from Telegram ───────────────────────────────
 
-    const fileData = await downloadTelegramFile(document.file_id);
+    const fileData = await downloadTelegramFile(document.id);
     if (!fileData) {
       await sendTelegramText(chatId, 'Failed to download the document from Telegram. Please try again.');
       return;
@@ -1037,8 +922,8 @@ export async function telegramWebhookHandler(
 
     // ── 5. Ingest through AgentDocumentService for each target agent ─────
 
-    const filename = document.file_name ?? 'document';
-    const mimeType = document.mime_type ?? 'application/octet-stream';
+    const filename = document.filename ?? 'document';
+    const mimeType = document.mimeType ?? 'application/octet-stream';
     const docService = getDocumentService();
 
     for (const targetAgent of targetAgents) {
@@ -1049,7 +934,7 @@ export async function telegramWebhookHandler(
         originalFilename: filename,
         mimeType,
         body: fileData.buffer,
-        sourceRef: document.file_id,
+        sourceRef: document.id,
         captionOrPrompt: caption ?? null,
       });
 
@@ -1080,23 +965,22 @@ export async function telegramWebhookHandler(
       return reply.status(501).send({ error: 'not_configured' });
     }
 
-    // Validate the Telegram webhook secret token
-    const secretHeader = (request.headers['x-telegram-bot-api-secret-token'] as string | undefined) ?? '';
-    if (!secretHeader || secretHeader !== webhookSecret) {
+    const webhookRequest = { headers: request.headers, body: request.body };
+    if (!telegramChannel.verify(webhookRequest).ok) {
       return reply.status(401).send({ error: 'unauthorized' });
     }
 
-    const parsed = TelegramWebhookUpdateSchema.safeParse(request.body);
-    if (!parsed.success || !parsed.data.message) {
+    const parsed = telegramChannel.parse(webhookRequest);
+    if (!parsed.ok || !parsed.data.length) {
       return reply.status(200).send({ ok: true });
     }
 
-    const message = parsed.data.message;
+    const message = parsed.data[0]!;
 
     // Handle document messages — download, ingest, and notify the agent
     if (message.document) {
       reply.status(200).send({ ok: true });
-      void processWebhookDocument(message.chat.id, message).catch((err) => {
+      void processWebhookDocument(message.from.address, message).catch((err) => {
         app.log.warn({ err }, 'Telegram webhook document processing failed');
       });
       return;
@@ -1110,7 +994,7 @@ export async function telegramWebhookHandler(
     // Acknowledge Telegram immediately — routing and delivery happen asynchronously
     // to avoid slow-DB or slow-Telegram-API latency causing Telegram retries.
     reply.status(200).send({ ok: true });
-    void processWebhookUpdate(message.chat.id, message).catch((err) => {
+    void processWebhookUpdate(message.from.address, message).catch((err) => {
       app.log.warn({ err }, 'Telegram webhook async processing failed');
     });
   });

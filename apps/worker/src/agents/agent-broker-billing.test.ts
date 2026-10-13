@@ -8,6 +8,8 @@ import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { TelegramClient } from '../alerting/telegram-client.js';
+import { TelegramChannel } from '../alerting/telegram-channel.js';
+import { ChatDelivery } from '../alerting/chat-delivery.js';
 import type { EmailClient } from '../alerting/email-client.js';
 
 // ---------------------------------------------------------------------------
@@ -100,7 +102,7 @@ function makeBroker(
       handleRuntimeSessionEnd: vi.fn(),
     } as unknown as AgentSessionManager,
     {} as unknown as InstanceEventPublisher,
-    telegram,
+    telegram ? new ChatDelivery(agentRepo as any, { get: () => new TelegramChannel(telegram) }) : undefined,
     undefined, // botRepo
     undefined, // botLiveCheck
     emailClient,

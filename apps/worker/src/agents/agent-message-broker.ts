@@ -25,7 +25,7 @@ import {
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
 import { eq, inArray } from 'drizzle-orm';
 import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
-import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
+import type { ChatDelivery } from '../alerting/chat-delivery.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
@@ -73,7 +73,7 @@ export class AgentMessageBroker {
     private readonly decisionHandler: AgentDecisionHandler,
     private readonly sessionManager: AgentSessionManager,
     private readonly eventPublisher: InstanceEventPublisher,
-    private readonly telegram?: TelegramClient,
+    private readonly chatDelivery?: ChatDelivery,
     private readonly botRepo?: ConnectionOwnershipRepository,
     private readonly botLiveCheck?: BotLiveCheckCallback,
     private readonly emailClient?: EmailClient,
@@ -471,25 +471,22 @@ export class AgentMessageBroker {
       messageClass,
     });
 
-    // Resolve effective Telegram destination (agent-level override > user-level default)
-    const telegramChatId = await this.agentRepo.getEffectiveTelegramChatId(agent.id);
-    if (!telegramChatId) {
-      logger.info({ agentId: agent.id }, 'send_message persisted but no Telegram chat ID available — skipping delivery');
-      await this.agentRepo.markOutboundMessageFailed(msgId, 'no_telegram_chat_id');
-    } else if (!this.telegram) {
-      logger.debug({ agentId: agent.id }, 'send_message persisted but Telegram not configured — skipping delivery');
-      await this.agentRepo.markOutboundMessageFailed(msgId, 'telegram_not_configured');
+    const result = this.chatDelivery
+      ? await this.chatDelivery.send(agent.id, {
+        agentName: agent.name,
+        subject: payload.subject,
+        body,
+        messageClass,
+        replyRequested: true,
+      })
+      : { ok: false as const, error: { code: 'chat.not_configured', message: 'telegram_not_configured' } };
+    if (!result.ok) {
+      if (result.error.code === 'chat.address_lookup_failed') throw new Error(result.error.message);
+      logger.warn({ agentId: agent.id, error: result.error }, 'send_message chat delivery failed');
+      await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message);
     } else {
-      const text = formatAgentMessage(agent.name, payload.subject, body);
-      const result = await this.telegram.sendText(telegramChatId, text, forceReply());
-
-      if (!result.ok) {
-        logger.warn({ agentId: agent.id, error: result.error }, 'send_message Telegram delivery failed');
-        await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message);
-      } else {
-        await this.agentRepo.markOutboundMessageSent(msgId, String(result.data.messageId), telegramChatId);
-        logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered via Telegram');
-      }
+      await this.agentRepo.markOutboundMessageSent(msgId, result.data.providerMessageId, result.data.address.address);
+      logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered via chat');
     }
 
     // Email fanout from send_message has been removed (Item 5).
@@ -1058,14 +1055,15 @@ export class AgentMessageBroker {
     let anyDelivered = false;
 
     // 4. Send Telegram notification
-    const chatId = await this.agentRepo.getEffectiveTelegramChatId(agentId);
-    if (chatId && this.telegram) {
-      const result = await this.telegram.sendText(chatId, message);
+    if (this.chatDelivery) {
+      const result = await this.chatDelivery.send(agentId, { body: message });
       if (result.ok) {
-        logger.info({ agentId, reason, chatId }, 'Billing notification sent via Telegram');
+        logger.info({ agentId, reason }, 'Billing notification sent via chat');
         anyDelivered = true;
-      } else {
-        logger.warn({ agentId, reason, error: result.error }, 'Billing notification Telegram delivery failed');
+      } else if (result.error.code === 'chat.address_lookup_failed') {
+        throw new Error(result.error.message);
+      } else if (result.error.code !== 'chat.no_address') {
+        logger.warn({ agentId, reason, error: result.error }, 'Billing notification chat delivery failed');
       }
     }
 
@@ -1278,11 +1276,6 @@ export class AgentMessageBroker {
       footerNote: 'This is an automated notification from your agent platform.',
     };
   }
-}
-
-function formatAgentMessage(agentName: string, subject: string | undefined, body: string): string {
-  const subjectLine = subject ? `<b>${escapeHtml(subject)}</b>\n` : '';
-  return `💬 <b>[${escapeHtml(agentName)}]</b>\n${subjectLine}${escapeHtml(body)}`;
 }
 
 function escapeHtml(text: string): string {

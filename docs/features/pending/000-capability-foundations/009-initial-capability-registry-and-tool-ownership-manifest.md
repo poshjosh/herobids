@@ -120,6 +120,7 @@ This supporting reference is fit for implementation use only when:
 | `messaging` | `messaging` | implicit for platform-inbox or brokered native messaging; explicit for provider actions | `email` | `yahoo` | planned | connection-backed | none |
 | `messaging` | `messaging` | implicit for platform-inbox or brokered native messaging; explicit for provider actions | `chat` | `telegram` | available | brokered | none |
 | `messaging` | `messaging` | implicit for platform-inbox or brokered native messaging; explicit for provider actions | `chat` | `whatsapp` | planned | brokered | none |
+| `messaging` | `messaging` | implicit for platform-inbox or brokered native messaging; explicit for provider actions | `chat` | `sms` | planned | brokered | none |
 | `messaging` | `messaging` | implicit for platform-inbox or brokered native messaging; explicit for provider actions | `inbox` | `platform` | available | internal | none |
 
 A provider with lifecycle `planned` must be visible as planned but is not
@@ -144,19 +145,22 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 
 | Tool | Owner | Reason |
 | --- | --- | --- |
+| `add_skills` | `core` | Agent skill assignment. |
 | `adjust_bot_config` | `external:trading` | Trading bot configuration. |
 | `adjust_risk_limits` | `external:trading` | Trading risk policy. |
 | `browse_url` | `general` | Reusable web-research expertise. |
 | `browse_interactive` | `external:automation` | Interactive browser automation — requires external stateful resource with provider lifecycle. |
+| `cancel_reminder` | `core` | Base-skill reminder management. |
 | `check_regime` | `external:trading` | Trading market-regime analysis. |
 | `check_watches` | `external:trading` | Trading price-watch evaluation. |
-| `complete_task` | `general` | Reusable task-management expertise. |
+| `complete_task` | `core` | Base-skill task management. |
 | `create_bot` | `external:trading` | Trading bot lifecycle. |
-| `create_task` | `general` | Reusable task-management expertise. |
+| `create_task` | `core` | Base-skill task management. |
 | `delete_file` | `core` | Agent workspace operation. |
 | `delete_memory` | `core` | Generic agent memory operation. |
 | `discover_tokens` | `external:trading` | Trading market discovery. |
 | `execute_code` | `general` | Reusable sandboxed programming expertise. |
+| `execute_shell` | `core` | Agent workspace operation. |
 | `find_instrument` | `external:trading` | Tradable-instrument resolution. |
 | `get_account_summary` | `external:trading` | Trading account state. |
 | `get_analytics` | `external:trading` | Trading analytics. |
@@ -167,21 +171,30 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `get_price` | `external:trading` | Trading price data. |
 | `get_risk_limits` | `external:trading` | Effective trading risk limits. |
 | `get_schema` | `core` | Shared schema introspection. |
+| `list_app_docs` | `core` | Platform documentation access. |
 | `list_bots` | `external:trading` | Trading bot lifecycle. |
 | `list_files` | `core` | Agent workspace operation. |
 | `list_memory_keys` | `core` | Generic agent memory operation. |
 | `list_positions` | `external:trading` | Trading position state. |
-| `list_tasks` | `general` | Reusable task-management expertise. |
+| `list_providers` | `core` | Platform provider discovery. |
+| `list_reminders` | `core` | Base-skill reminder management. |
+| `list_skills` | `core` | Agent skill discovery. |
+| `list_tasks` | `core` | Base-skill task management. |
 | `list_watches` | `external:trading` | Trading price-watch state. |
 | `make_http_request` | `general` | Structured HTTP client — stateless in-process fetch, no provider model. |
 | `publish_artifact` | `native:messaging` | User-facing artifact delivery. |
+| `read_app_docs` | `core` | Platform documentation access. |
 | `read_document` | `general` | Reusable document-reading expertise. |
 | `read_file` | `core` | Agent workspace operation. |
+| `read_skill` | `core` | Agent skill instruction access. |
+| `remove_skills` | `core` | Agent skill assignment. |
 | `remove_watch` | `external:trading` | Trading price-watch lifecycle. |
 | `resolve_bot` | `external:trading` | Trading bot identity resolution. |
-| `resolve_task` | `general` | Reusable task-management expertise. |
+| `resolve_task` | `core` | Base-skill task management. |
 | `resolve_watch` | `external:trading` | Trading price-watch identity resolution. |
-| `schedule_reminder` | `general` | Reusable task-management expertise. |
+| `schedule_reminder` | `core` | Base-skill reminder scheduling. |
+| `search_app_docs` | `core` | Platform documentation access. |
+| `search_skills` | `core` | Agent skill discovery. |
 | `search_tokens` | `external:trading` | Trading market discovery. |
 | `search_web` | `general` | Reusable web-research expertise. |
 | `send_email` | `native:messaging` | Provider-linked message delivery. |

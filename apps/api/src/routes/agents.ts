@@ -62,6 +62,7 @@ import { proposeTradingProfiles, selectExecutionBinding } from '../agents/tradin
 import { TradingProfileReconciliationSaga, TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
 import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.js';
 import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
+import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
 import type { UnifiedAgentConfig } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
@@ -1744,7 +1745,6 @@ export async function agentRoutes(
         ? (unifiedConfigPatch as UnifiedAgentConfig | null)
         : (agent.unifiedConfig as UnifiedAgentConfig | null)) ?? null;
       const patchedStyle = parsed.data.style !== undefined ? (parsed.data.style ?? null) : (agent.style ?? null);
-      const scanConfig = deriveProfileScanConfig({ unifiedConfig: patchedUnifiedConfig, style: patchedStyle });
       // Resolution B: seed a newly-created (first-bind) profile from the unbound
       // unifiedConfig snapshot so mode (paper→shadow via resolveExecutionModeForSkills)
       // and capital survive the create-before-bind window. Explicit request fields
@@ -1753,15 +1753,16 @@ export async function agentRoutes(
       const resolvedExecutionDefaults = executionMode.value !== null
         ? { ...(executionDefaultsUpdateJsonb ?? (currentProfile?.executionDefaults ?? {}) as Record<string, unknown>), mode: executionMode.value }
         : executionDefaultsUpdateJsonb;
-      const changes = {
-        ...(parsed.data.capital !== undefined
-          ? { capital: parsed.data.capital }
-          : unboundCapital !== undefined
-            ? { capital: unboundCapital }
-            : {}),
-        ...(riskUpdateJsonb !== undefined ? { riskPosture: riskUpdateJsonb as import('@herobids/domain').RiskPosture | null } : {}),
-        ...(resolvedExecutionDefaults !== undefined ? { executionDefaults: resolvedExecutionDefaults as import('@herobids/domain').ExecutionDefaults | null } : {}),
-      };
+      const { changes, scanConfig } = deriveTradingProfileFields({
+        unifiedConfig: patchedUnifiedConfig,
+        style: patchedStyle,
+        preserveUnspecified: true,
+        overrides: {
+          capital: parsed.data.capital !== undefined ? parsed.data.capital : unboundCapital,
+          riskPosture: riskUpdateJsonb as import('@herobids/domain').RiskPosture | null | undefined,
+          executionDefaults: resolvedExecutionDefaults as import('@herobids/domain').ExecutionDefaults | null | undefined,
+        },
+      });
       if (parsed.data.connectionIds === undefined) {
         return {
           prior: { profiles: priorProfiles, connections: preparedPatchPriorConnections },

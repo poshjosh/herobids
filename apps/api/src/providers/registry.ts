@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
 import type { AppConfig, CustomModeDefinition, ProviderCatalogResponse, ProviderDefinition, WalletGenerationCapability } from '@herobids/domain';
-import { getProviderCategories } from '@herobids/domain';
+import { getProviderCategories, PROVIDER_DISCOVERY } from '@herobids/domain';
 import type { ProviderCatalogDefinition, RegistryEntry } from './types.js';
 
 const PROVIDER_REGISTRY: RegistryEntry[] = [
   {
     id: 'hyperliquid',
-    displayName: 'Hyperliquid',
+    displayName: PROVIDER_DISCOVERY['hyperliquid']!.displayName,
     status: 'supported',
     categories: getProviderCategories('hyperliquid'),
     logoUrl: '/assets/providers/hyperliquid.svg',
@@ -79,7 +79,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
   },
   {
     id: 'bybit',
-    displayName: 'Bybit',
+    displayName: PROVIDER_DISCOVERY['bybit']!.displayName,
     status: 'supported',
     categories: getProviderCategories('bybit'),
     logoUrl: '/assets/providers/bybit.svg',
@@ -130,7 +130,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
   },
   {
     id: '1inch',
-    displayName: '1inch',
+    displayName: PROVIDER_DISCOVERY['1inch']!.displayName,
     status: 'supported',
     categories: getProviderCategories('1inch'),
     logoUrl: '/assets/providers/1inch.svg',
@@ -169,7 +169,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
   },
   {
     id: 'jupiter',
-    displayName: 'Jupiter',
+    displayName: PROVIDER_DISCOVERY['jupiter']!.displayName,
     status: 'supported',
     categories: getProviderCategories('jupiter'),
     logoUrl: '/assets/providers/jupiter.svg',
@@ -204,7 +204,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
   },
   {
     id: 'gmail',
-    displayName: 'Gmail',
+    displayName: PROVIDER_DISCOVERY['gmail']!.displayName,
     status: 'supported',
     categories: getProviderCategories('gmail'),
     logoUrl: '/assets/providers/gmail.svg',

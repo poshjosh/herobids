@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Wave 1 agent-onboarding foundations
+
 ## v0.6.15 - 2026-10-13
 
 ### Changed

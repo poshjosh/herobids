@@ -28,7 +28,7 @@ import { createAgentFromPayload } from './agent-instantiation-service.js';
 import { selectExecutionBinding, type TradingProfileConnection } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
-import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
+import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -310,9 +310,14 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     ...(livePayload.hybridMode ? { hybridMode: livePayload.hybridMode } : {}),
     ...(sourceUc['metadata'] !== undefined ? { metadata: sourceUc['metadata'] } : {}),
   } as UnifiedAgentConfig;
-  const liveScanConfig = deriveProfileScanConfig({
+  const { changes: liveFields, scanConfig: liveScanConfig } = deriveTradingProfileFields({
     unifiedConfig: liveUnifiedConfig,
     style: sourceAgent.style ?? null,
+    overrides: {
+      capital: livePayload.capital != null ? String(livePayload.capital) : null,
+      riskPosture: livePayload.risk ?? null,
+      executionDefaults: livePayload.executionDefaults ?? null,
+    },
   });
 
   try {
@@ -326,9 +331,9 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
           .map((connection) => [connection.venueAccountId, {
             actorId: newAgentId,
             venueAccountId: connection.venueAccountId,
-            capital: livePayload.capital != null ? String(livePayload.capital) : null,
-            riskPosture: livePayload.risk ?? null,
-            executionDefaults: livePayload.executionDefaults ?? null,
+            capital: liveFields.capital ?? null,
+            riskPosture: liveFields.riskPosture ?? null,
+            executionDefaults: liveFields.executionDefaults ?? null,
             scanMode: liveScanConfig.scanMode,
             creatorStrategy: liveScanConfig.creatorStrategy,
             presetPolicy: liveScanConfig.presetPolicy,

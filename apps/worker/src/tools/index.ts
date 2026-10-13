@@ -20,6 +20,7 @@ import { resolverTools } from './resolvers.js';
 import { emailTools } from './email.js';
 import { platformDocsTools } from './platform-docs.js';
 import { skillTools } from './skills.js';
+import { listProvidersTool } from './connections.js';
 import { readSkillTool } from './read-skill.js';
 import { createBrowserTools } from './browser.js';
 import { httpClientTools } from './http-client.js';
@@ -118,6 +119,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...resolverTools,
     ...emailTools,
     ...platformDocsTools,
+    listProvidersTool,
     ...skillTools,
     readSkillTool,
   ];

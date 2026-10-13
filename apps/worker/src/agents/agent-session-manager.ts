@@ -77,6 +77,7 @@ export interface AgentSessionManagerConfig {
   usageBillingConfig?: UsageBillingConfig;
   /** Provider registry — forwarded to agent containers for per-model rate card seeding */
   providersYaml?: ProvidersYaml;
+  generatedWalletProviders?: string[];
   /** Cross-session crash-loop guard config — if unset, guard is disabled */
   crashLoopGuard?: CrashLoopGuardConfig;
   /** Operator model defaults — final fallback tier for model resolution when neither agent nor user has explicit selection */
@@ -496,6 +497,7 @@ export class AgentSessionManager {
           ...(this.config.providersYaml
             ? { providersYaml: this.config.providersYaml }
             : {}),
+          generatedWalletProviders: this.config.generatedWalletProviders ?? [],
           ...(provider ? { provider } : {}),
           ...(lightModel ? { lightModel } : {}),
           ...(heavyModel ? { heavyModel } : {}),

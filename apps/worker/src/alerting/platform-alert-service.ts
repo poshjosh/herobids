@@ -1,6 +1,6 @@
 import type { AgentRepository } from '@herobids/db';
 import { renderEmail } from '@herobids/domain';
-import type { TelegramClient } from './telegram-client.js';
+import type { ChatDelivery } from './chat-delivery.js';
 import type { EmailClient } from './email-client.js';
 import { createLogger } from '../logger.js';
 
@@ -56,7 +56,7 @@ export interface PlatformAlertContext {
 export class PlatformAlertService {
   constructor(
     private readonly agentRepo: AgentRepository,
-    private readonly telegram: TelegramClient | undefined,
+    private readonly chatDelivery: ChatDelivery | undefined,
     _botToken: string | undefined,
     private readonly emailClient?: EmailClient,
     private readonly brandImageUrl?: string,
@@ -85,29 +85,22 @@ export class PlatformAlertService {
     let anyDelivered = false;
 
     // Deliver via Telegram
-    if (this.telegram) {
-      const telegramChatId = await this.agentRepo.getEffectiveTelegramChatId(ctx.agentId).catch((err: unknown) => {
-        logger.warn({ err, agentId: ctx.agentId }, 'Failed to look up effective Telegram chat ID');
-        return null;
-      });
-
-      if (telegramChatId) {
+    if (this.chatDelivery) {
         const text = formatPlatformAlert(event, ctx);
-        const result = await this.telegram.sendText(telegramChatId, text);
+        const result = await this.chatDelivery.send(ctx.agentId, { body: text });
         if (result.ok) {
           anyDelivered = true;
           if (msgId) {
-            await this.agentRepo.markOutboundMessageSent(msgId, String(result.data.messageId), telegramChatId).catch(() => undefined);
+            await this.agentRepo.markOutboundMessageSent(msgId, result.data.providerMessageId, result.data.address.address).catch(() => undefined);
           }
-        } else {
+        } else if (result.error.code === 'chat.address_lookup_failed') {
+          logger.warn({ event, agentId: ctx.agentId, error: result.error }, 'Platform alert chat address lookup failed');
+        } else if (result.error.code !== 'chat.no_address') {
           logger.warn({ event, agentId: ctx.agentId, error: result.error }, 'Platform alert Telegram delivery failed');
           if (msgId) {
             await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message).catch(() => undefined);
           }
         }
-      } else {
-        logger.info({ event, agentId: ctx.agentId }, 'Platform alert — no Telegram chat ID available, skipping Telegram delivery');
-      }
     } else {
       logger.debug({ event, agentId: ctx.agentId }, 'Platform alert — Telegram not configured, skipping Telegram delivery');
     }

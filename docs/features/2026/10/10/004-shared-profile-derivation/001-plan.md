@@ -1,6 +1,6 @@
 # Plan: Shared Trading-Profile Derivation (WP-H)
 
-**Status:** draft
+**Status:** H1/H2/H4 complete; H3 pending WP-B
 **Created:** 2026-10-10
 **Epic:** [002-agent-onboarding-epic/000-roadmap.md](../002-agent-onboarding-epic/000-roadmap.md)
 **Source:** [000-analysis.md](./000-analysis.md) (the problem statement)
@@ -96,6 +96,13 @@ WP-B's `set_trading_setup` (B3) calls `deriveTradingProfileFields` with `{ unifi
 - The reconciliation saga's write/outbox mechanics, the traderton-side profile store, and the runtime wake/relay path (already centralized).
 - Migrating `POST /agents` and `chat.ts create_agent` (deleted by WP-C).
 - Changing any profile field's *value* — this is a pure refactor; behaviour must be byte-identical.
+
+## Wave 1 implementation (2026-10-13)
+
+- H1: `deriveTradingProfileFields` assembles full profile fields with override > unified config > null precedence, and delegates scan derivation to `deriveProfileScanConfig`. Focused tests cover precedence, explicit null, sparse updates, and hybrid scan passthrough.
+- H2: grant/revoke, connection delete fan-out, go-live clone, blueprint instantiate, PATCH, and PUT use the shared function. Existing-profile paths use `preserveUnspecified` to retain omitted fields instead of resetting them from unified config; PUT still merges risk/execution against each venue's existing profile. Clone and blueprint pass all three payload-derived values as explicit overrides.
+- H4: the analysis is marked resolved for these paths. `POST /agents` and chat `create_agent` remain unchanged for WP-C to remove. H3 (`set_trading_setup` integration) remains WP-B's responsibility; no Wave 2 work was done.
+- Verification: focused tests for the new helper and all six migrated surfaces passed; `pnpm lint` passed.
 
 ## Risks
 

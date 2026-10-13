@@ -14,7 +14,7 @@ import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
 import { proposeTradingProfiles } from '../agents/trading-profile-reconciliation.js';
-import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
+import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import type { TradingProfileStagedOperation } from '../agents/trading-profile-reconciliation-saga.js';
 import {
@@ -476,13 +476,14 @@ export async function connectionRoutes(
           preparedPriorConnections = priorConnections;
           const profiles = await profileReconciliationSaga!.readCurrentProfiles(request.userId, agent.agentId, priorConnections);
           const proposedConnections = priorConnections.filter((connection) => connection.connectionId !== id);
-          const scanConfig = deriveProfileScanConfig({
+          const { changes, scanConfig } = deriveTradingProfileFields({
             unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
             style: agent.style ?? null,
+            preserveUnspecified: true,
           });
           return {
             prior: { profiles, connections: priorConnections },
-            proposed: { profiles: proposeTradingProfiles({ actorId: agent.agentId, priorProfiles: profiles, priorConnections, proposedConnections, changes: {}, scanConfig }), connections: proposedConnections },
+            proposed: { profiles: proposeTradingProfiles({ actorId: agent.agentId, priorProfiles: profiles, priorConnections, proposedConnections, changes, scanConfig }), connections: proposedConnections },
           };
         },
         commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {

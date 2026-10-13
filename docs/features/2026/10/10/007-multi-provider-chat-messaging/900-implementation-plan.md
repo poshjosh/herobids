@@ -1,6 +1,6 @@
 # Implementation Plan
 
-**Status:** draft
+**Status:** phases 0-1 implemented locally; Wave 1 gate pending
 **Created:** 2026-10-04
 **Parent:** [000-README.md](./000-README.md)
 
@@ -42,6 +42,73 @@ The pure refactor. Behaviour-identical to today; this is where the risk is.
   delegating to the Telegram adapter + router.
 - **Gate**: all existing Telegram tests pass unchanged (slash-commands, parser,
   handlers, broker, platform-alert, webhook integration). No schema change yet.
+
+### Wave 1 implementation record (2026-10-13)
+
+- Phase 0: added `messaging / chat / sms` as `planned / brokered` in the 009
+  manifest. WhatsApp remains `planned`; no new capability ID or tool. This
+  preserves the ADR 07/002 Telegram/Gmail transport asymmetry and ADR 08/008
+  native messaging ownership. The promised manifest key-set/planned-provider
+  tests do not exist in this checkout, so that specific gate is **unverified**;
+  the nearby provider-catalog test passes but does not test the manifest.
+- Phase 1: located the pure port in `packages/domain/src/ports` (shared by API
+  and worker); Telegram outbound uses `ChatDelivery` + `TelegramChannel`, while
+  the legacy webhook uses `TelegramInboundChannel` + `ChatInboundRouter`.
+  Resolution still reads the effective Telegram chat ID; sent IDs and addresses
+  still use the existing outbound columns, with delivery status persisted at
+  the existing call sites until the neutral schema phase. Agent-authored body
+  rendering is in the Telegram adapter; existing platform/approval HTML remains
+  unchanged for this behavior-preserving phase. Operator alert dispatch is
+  deferred as specified above. No new route, provider, config, environment variable, or
+  schema change. Existing test fixtures were adapted to inject the new port;
+  the behavior assertions remain in place.
+- Checks: `pnpm lint` passed; targeted Telegram inbound, broker, billing,
+  approval, safety-alert, and new port tests passed (235 tests in the two
+  focused groups, with overlapping suites). The full `pnpm test` run finished
+  with 6504 passed, 319 skipped, 1 failed: the concurrent A2
+  `runtime-tool-visibility.test.ts` budget expects 26 tools and now sees 27.
+  This is outside WP-M; Wave 1 repo test gate is **blocked** until that change
+  is reconciled. No phase 2+ or Wave 2 work was started.
+
+### WP-M review verification (2026-10-13)
+
+- Phase 0 manifest key-set and planned-provider catalog acceptance tests pass;
+  twelve previously missing known tool ownership rows were added. Planned
+  providers are absent from the active registry/catalog and cannot be selected
+  for chat dispatch. Custom-mode connections remain a separate, existing API
+  behavior outside this phase.
+- Phase 1 inbound reply resolution, target selection and stream delivery now
+  reside in `ChatInboundRouter`; Telegram slash commands and document handling
+  still use the legacy webhook. A provider-neutral reply test and existing
+  Telegram webhook tests (including 501/401/200) pass. Chat address lookup
+  failure now logs a warning without blocking email fallback.
+- Focused tests: provider catalog/manifest 9 passed, inbound webhook/router 47
+  passed, platform alerts 31 passed. `pnpm lint` passed. Full-suite gate remains
+  blocked by the previously recorded concurrent A2 test failure; no full-suite
+  rerun was performed for this review repair.
+
+### WP-M Phase 0-1 HIGH/MEDIUM review repair (2026-10-13)
+
+- The inbound router now passes the typed provider-qualified `ChatAddress` to
+  reply resolution and all confirmation sends. The Telegram webhook adapter
+  unwraps the chat ID at its existing repository/send boundary, preserving
+  legacy Telegram resolution and webhook semantics. A collision test uses the
+  same reply message ID and address on Telegram and WhatsApp and checks that
+  each resolves to its own agent stream and confirmation recipient.
+- Reconciled the seven task/reminder ownership rows with the superseding
+  base-skill `core` decision. The manifest acceptance test now checks the full
+  known-tool key set, owner syntax, registered native capability/backend
+  references, and those seven `core` assignments; the planned-provider
+  non-dispatch check remains in place.
+- Investigated `set_tick_interval`: it is named in the manifest's supersession
+  note but is absent from `KNOWN_AGENT_TOOL_NAMES` and the current worker task
+  tools. It has no ownership row until the tool exists; adding one now would
+  violate exhaustive key-set equality. No runtime changes were made.
+- Verification: router collision test 4/4 passed immediately after first edit;
+  combined manifest/router tests 13/13 passed; Telegram HTTP webhook tests
+  13/13 passed (30 unrelated tests skipped by filter); `pnpm lint` passed.
+  The prior full-suite A2 blocker remains outside this repair; no full-suite
+  rerun was performed.
 
 ## Phase 2 — Channel-neutral data model (expand + backfill + dual-read)
 

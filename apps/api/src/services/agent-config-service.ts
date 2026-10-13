@@ -10,7 +10,9 @@ import type {
   TradingProfileConnection,
 } from '../agents/trading-profile-reconciliation.js';
 import { proposeTradingProfiles } from '../agents/trading-profile-reconciliation.js';
-import { deriveProfileScanConfig, type ProfileScanConfig } from '../agents/profile-scan-config.js';
+import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
+import type { TradingProfileChanges } from '../agents/trading-profile-reconciliation.js';
+import type { ProfileScanConfig } from '../agents/profile-scan-config.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
 /**
@@ -49,6 +51,7 @@ type PreparedConnectionChange = {
   // config is a property of the agent, not of its connection set), so it is
   // computed once here from the agent's stored config and re-sent with the write.
   scanConfig: ProfileScanConfig;
+  changes: TradingProfileChanges;
 } | {
   kind: 'agent_not_found' | 'agent_not_owned' | 'connection_not_found' | 'connection_not_owned';
 } | {
@@ -101,9 +104,10 @@ async function prepareConnectionChange(
     priorConnections: await loadActiveTradingProfileConnections(db, agentId),
     existing: activeGrant !== undefined,
     activeGrant,
-    scanConfig: deriveProfileScanConfig({
+    ...deriveTradingProfileFields({
       unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
       style: agent.style ?? null,
+      preserveUnspecified: true,
     }),
   };
 }
@@ -186,7 +190,7 @@ export async function grantConnection(
         ];
         return {
           prior: { profiles, connections: prepared.priorConnections },
-          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {}, scanConfig: prepared.scanConfig }), connections: proposedConnections },
+          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: prepared.changes, scanConfig: prepared.scanConfig }), connections: proposedConnections },
         };
       },
       commitLocal: async (tx, markLocalCommitted) => {
@@ -243,7 +247,7 @@ export async function revokeConnection(
         const proposedConnections = prepared.priorConnections.filter((connection) => connection.connectionId !== connectionId);
         return {
           prior: { profiles, connections: prepared.priorConnections },
-          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: {}, scanConfig: prepared.scanConfig }), connections: proposedConnections },
+          proposed: { profiles: proposeTradingProfiles({ actorId: agentId, priorProfiles: profiles, priorConnections: prepared.priorConnections, proposedConnections, changes: prepared.changes, scanConfig: prepared.scanConfig }), connections: proposedConnections },
         };
       },
       commitLocal: async (tx, markLocalCommitted) => {

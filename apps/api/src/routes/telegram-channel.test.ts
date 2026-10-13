@@ -1,0 +1,71 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { Redis } from 'ioredis';
+import { TelegramInboundChannel } from './telegram-channel.js';
+import { ChatInboundRouter } from './chat-inbound-router.js';
+
+const adapter = new TelegramInboundChannel('secret');
+const headers = { 'x-telegram-bot-api-secret-token': 'secret' };
+
+describe('Telegram inbound channel', () => {
+  it('rejects an invalid webhook token', () => {
+    expect(adapter.verify({ headers: {}, body: {} }).ok).toBe(false);
+    expect(adapter.verify({ headers, body: {} }).ok).toBe(true);
+  });
+
+  it('normalizes chat IDs, replies, and documents without changing the webhook payload', () => {
+    const result = adapter.parse({ headers, body: {
+      message: {
+        chat: { id: 123 }, message_id: 42, text: ' /to Ada hello ',
+        reply_to_message: { message_id: 41 },
+        document: { file_id: 'file-1', file_name: 'report.txt' },
+      },
+    } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]).toMatchObject({
+      provider: 'telegram', from: { provider: 'telegram', address: '123' },
+      providerMessageId: '42', inReplyToProviderMessageId: '41',
+      document: { id: 'file-1', filename: 'report.txt' },
+    });
+  });
+
+  it('preserves slash, reply, target, and plain-text precedence', () => {
+    const router = new ChatInboundRouter();
+    const parsed = adapter.parse({ headers, body: {
+      message: { chat: { id: 123 }, text: '/help', reply_to_message: { message_id: 41 } },
+    } });
+    if (!parsed.ok) throw new Error('Unexpected parse failure');
+    const message = parsed.data[0]!;
+    expect(router.route(message).kind).toBe('slash');
+    expect(router.route({ ...message, text: '/to Ada hello' }).kind).toBe('reply');
+    expect(router.route({ ...message, inReplyToProviderMessageId: undefined, text: '/to Ada hello' }).kind).toBe('target');
+    expect(router.route({ ...message, inReplyToProviderMessageId: undefined, text: 'hello' }).kind).toBe('plain');
+  });
+
+  it('keeps colliding reply IDs and addresses isolated by provider', async () => {
+    const router = new ChatInboundRouter();
+    const parsed = adapter.parse({ headers, body: { message: { chat: { id: 123 }, text: 'hello', reply_to_message: { message_id: 41 } } } });
+    if (!parsed.ok) throw new Error('Unexpected parse failure');
+    const telegramMessage = parsed.data[0]!;
+    const whatsappMessage = { ...telegramMessage, provider: 'whatsapp' as const, from: { ...telegramMessage.from, provider: 'whatsapp' as const } };
+    const redis = { xadd: vi.fn().mockResolvedValue('1-1') } as unknown as Redis;
+    const resolveReply = vi.fn().mockImplementation(async (_messageId: string, address: typeof telegramMessage.from) => ({
+      agentId: address.provider === 'telegram' ? 'agent-telegram' : 'agent-whatsapp',
+      agentName: address.provider === 'telegram' ? 'Ada' : 'Bea',
+      status: 'running', userId: 'owner-1',
+    }));
+    const listAgents = vi.fn();
+    const sendText = vi.fn().mockResolvedValue(undefined);
+
+    await router.dispatch(telegramMessage, undefined, { redis, resolveReply, listAgents, sendText });
+    await router.dispatch(whatsappMessage, undefined, { redis, resolveReply, listAgents, sendText });
+
+    expect(resolveReply).toHaveBeenNthCalledWith(1, '41', { provider: 'telegram', address: '123' });
+    expect(resolveReply).toHaveBeenNthCalledWith(2, '41', { provider: 'whatsapp', address: '123' });
+    expect(listAgents).not.toHaveBeenCalled();
+    expect(redis.xadd).toHaveBeenCalledWith('agent:outbound:agent-telegram', 'MAXLEN', '~', expect.any(Number), '*', 'envelope', expect.stringContaining('"initiatorId":"owner-1"'));
+    expect(redis.xadd).toHaveBeenCalledWith('agent:outbound:agent-whatsapp', 'MAXLEN', '~', expect.any(Number), '*', 'envelope', expect.stringContaining('"initiatorId":"owner-1"'));
+    expect(sendText).toHaveBeenNthCalledWith(1, { provider: 'telegram', address: '123' }, 'Delivered to Ada.');
+    expect(sendText).toHaveBeenNthCalledWith(2, { provider: 'whatsapp', address: '123' }, 'Delivered to Bea.');
+  });
+});

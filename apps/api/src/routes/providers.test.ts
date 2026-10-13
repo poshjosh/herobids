@@ -1,8 +1,48 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import { providerRoutes } from './providers.js';
 import { listProviderRegistry, findProviderRegistryEntry } from '../providers/registry.js';
 import { validateProviderSecrets } from '../providers/validator.js';
+import { KNOWN_AGENT_TOOL_NAMES, PROVIDER_DISCOVERY, PROVIDER_CATEGORIES } from '@herobids/domain';
+
+const capabilityManifest = readFileSync(new URL('../../../../docs/features/pending/000-capability-foundations/009-initial-capability-registry-and-tool-ownership-manifest.md', import.meta.url), 'utf8');
+
+describe('capability manifest acceptance', () => {
+  it('assigns valid owners and registered capability or backend references to every known agent tool', () => {
+    const table = capabilityManifest.split('## Exhaustive Tool Ownership\n')[1]?.split('\n## ')[0] ?? '';
+    const rows = [...table.matchAll(/^\| `([^`]+)` \| `([^`]+)` \|/gm)];
+    expect(rows.map((match) => match[1]).sort()).toEqual([...KNOWN_AGENT_TOOL_NAMES].sort());
+
+    const nativeTable = capabilityManifest.split('## Native Capability Registry\n')[1]?.split('\n## ')[0] ?? '';
+    const backendTable = capabilityManifest.split('## External Backend Registry\n')[1]?.split('\n## ')[0] ?? '';
+    const capabilities = new Set([...nativeTable.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]));
+    const backends = new Set([...backendTable.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]));
+    for (const [, toolName, owner] of rows) {
+      expect(owner, `invalid owner for ${toolName}`).toMatch(/^(core|general|native:[^:]+|external:[^:]+)$/);
+      if (owner?.startsWith('native:')) expect(capabilities.has(owner.slice(7)), `unknown capability for ${toolName}`).toBe(true);
+      if (owner?.startsWith('external:')) expect(backends.has(owner.slice(9)), `unknown backend for ${toolName}`).toBe(true);
+    }
+    for (const toolName of ['create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder']) {
+      expect(rows.find((match) => match[1] === toolName)?.[2]).toBe('core');
+    }
+  });
+
+  it('does not advertise planned providers as dispatchable catalog entries', async () => {
+    const table = capabilityManifest.split('## Native Capability Registry\n')[1]?.split('\n## ')[0] ?? '';
+    const planned = [...table.matchAll(/^\| `[^`]+` \| `[^`]+` \|[^\n]+?\| `[^`]+` \| `([^`]+)` \| planned \|/gm)].map((match) => match[1]);
+    expect(planned).toEqual(expect.arrayContaining(['yahoo', 'whatsapp', 'sms']));
+    const app = Fastify();
+    await providerRoutes(app);
+    const response = await app.inject({ method: 'GET', url: '/providers/catalog' });
+    expect(response.statusCode).toBe(200);
+    const catalog = response.json<{ providers: Array<{ id: string }> }>();
+    for (const providerId of planned) {
+      expect(findProviderRegistryEntry(providerId)).toBeUndefined();
+      expect(catalog.providers.some((provider) => provider.id === providerId)).toBe(false);
+    }
+  });
+});
 
 describe('GET /providers/catalog', () => {
   it('returns the provider catalog with custom mode and cache headers', async () => {
@@ -80,6 +120,14 @@ describe('GET /providers/catalog', () => {
 
 describe('Provider registry/catalog/validator contract', () => {
   const registry = listProviderRegistry();
+
+  it('shares provider names and categories with agent discovery', () => {
+    expect(registry.map((entry) => entry.id).sort()).toEqual(Object.keys(PROVIDER_DISCOVERY).sort());
+    for (const entry of registry) {
+      expect(entry.displayName).toBe(PROVIDER_DISCOVERY[entry.id]?.displayName);
+      expect(entry.categories).toEqual(PROVIDER_CATEGORIES[entry.id]);
+    }
+  });
 
   it('every registry entry appears in the public catalog with its required credential fields', async () => {
     const app = Fastify();

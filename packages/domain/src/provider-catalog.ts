@@ -82,6 +82,14 @@ export const PROVIDER_CATEGORIES: Record<string, string[]> = {
   gmail: ['messaging'],
 };
 
+export const PROVIDER_DISCOVERY: Record<string, { displayName: string; authMethod: 'oauth' | 'api_key' | 'generated_wallet' }> = {
+  hyperliquid: { displayName: 'Hyperliquid', authMethod: 'generated_wallet' },
+  bybit: { displayName: 'Bybit', authMethod: 'api_key' },
+  '1inch': { displayName: '1inch', authMethod: 'generated_wallet' },
+  jupiter: { displayName: 'Jupiter', authMethod: 'generated_wallet' },
+  gmail: { displayName: 'Gmail', authMethod: 'oauth' },
+};
+
 /** Categories for a provider id, or an empty array if the provider is unknown. */
 export function getProviderCategories(providerId: string): string[] {
   return PROVIDER_CATEGORIES[providerId] ?? [];

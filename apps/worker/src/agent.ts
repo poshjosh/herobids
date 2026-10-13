@@ -293,6 +293,7 @@ interface AgentConfig {
   usageBillingFailedRequestOutputPct?: number;
   /** Provider pricing registry forwarded by the worker (config/providers.yaml) */
   providersYaml?: ProvidersYaml;
+  generatedWalletProviders?: string[];
   /** 004: Explicit capability mode from UnifiedAgentConfig ('intelligence' | 'hybrid') */
   capabilityMode?: 'intelligence' | 'hybrid';
   /** 004: Hybrid sub-mode from UnifiedAgentConfig ('mixed' | 'scanner_gated'). Only meaningful when capabilityMode === 'hybrid'. */
@@ -1804,6 +1805,8 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
   const agentConfigOps = buildAgentConfigOps();
   const toolContext: ToolContext = {
     agentId: AGENT_ID!,
+    hasTradingCapability: deriveHasTradingCapability(runtimeState.runtimeDescriptor.resolvedSkills),
+    generatedWalletProviders: agentConfig.generatedWalletProviders ?? [],
     sessionId: SESSION_ID!,
     phase,
     executionMode: 'paper',

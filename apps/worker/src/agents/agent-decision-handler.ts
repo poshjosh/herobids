@@ -3,6 +3,7 @@ import type { AgentRepository } from '@herobids/db';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
+import type { ChatDelivery } from '../alerting/chat-delivery.js';
 import { buildSubmitDecisionPayload, mapBoundaryResultToDecisionOutcome } from './decision-boundary-mapping.js';
 import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
@@ -41,7 +42,7 @@ export class AgentDecisionHandler {
     thresholds?: { noContext?: number; swapInstrumentFormat?: number },
     private readonly approvalRepo?: DecisionApprovalRepository,
     private readonly agentApprovalsTtlMs?: number,
-    private readonly telegramBotToken?: string,
+    private readonly chatDelivery?: ChatDelivery,
     // L3c: the Traderton side-effecting boundary. When present, submit_decision
     // executes over REST (invoke → poll) instead of the in-process engine. When
     // absent (unconfigured), the decision is rejected with a typed
@@ -77,10 +78,7 @@ export class AgentDecisionHandler {
     rationaleSummary: string,
     expiresAtISO: string,
   ): Promise<void> {
-    if (!this.telegramBotToken) return;
-
-    const chatId = await this.agentRepo.getEffectiveTelegramChatId(agentId);
-    if (!chatId) return;
+    if (!this.chatDelivery) return;
 
     const lines = [
       `🔔 <b>Trade approval requested by ${escapeHtmlTelegram(agentName)}</b>`,
@@ -106,27 +104,9 @@ export class AgentDecisionHandler {
 
     const text = lines.join('\n');
 
-    try {
-      const response = await fetch(
-        `https://api.telegram.org/bot${this.telegramBotToken}/sendMessage`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            parse_mode: 'HTML',
-            disable_web_page_preview: true,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = await response.text();
-        logger.warn({ chatId, status: response.status, body }, 'Telegram approval notification delivery failed');
-      }
-    } catch (err) {
-      logger.warn({ chatId, err }, 'Telegram approval notification network error');
+    const result = await this.chatDelivery.send(agentId, { body: text });
+    if (!result.ok && result.error.code !== 'chat.no_address') {
+      logger.warn({ agentId, error: result.error }, 'Chat approval notification delivery failed');
     }
   }
 
@@ -423,7 +403,7 @@ export class AgentDecisionHandler {
 
       // Deliver platform-authored notification directly via Telegram.
       // This is best-effort — failure does not block approval creation.
-      if (this.telegramBotToken && userId) {
+      if (this.chatDelivery && userId) {
         this.sendApprovalTelegramNotification(
           userId,
           effectiveAgentId,

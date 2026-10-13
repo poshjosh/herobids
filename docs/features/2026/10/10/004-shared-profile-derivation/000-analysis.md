@@ -38,6 +38,10 @@ Trading config is the input that decides whether an agent trades at all (profile
 
 A single shared function owns the derivation of trading-profile fields (including scan config) from an agent's post-mutation config + style, consumed by all create/update/clone/instantiate paths. Each entry point supplies only its post-mutation config and connection set; the shared seam produces the proposed profiles. Field additions then happen in one place, edge-case handling is uniform, and verification concentrates on one tested unit rather than N parallel call sites.
 
+### Wave 1 resolution (2026-10-13)
+
+`deriveTradingProfileFields` now owns field assembly and delegates scan config to the existing shared scan derivation. Grant/revoke, connection deletion, go-live clone, blueprint instantiate, PATCH, and PUT consume it. Existing-profile updates preserve omitted values (including PUT's per-profile overlays); full-profile paths supply their payload fields explicitly. `POST /agents` and chat `create_agent` are intentionally not migrated because WP-C removes their trading branches. The new WP-B `set_trading_setup` consumer is still pending. The original three-create-path framing above is superseded by the WP-H plan's scope correction.
+
 ### Scope / non-goals
 
 - In scope: the API-side profile-field derivation and the `proposeTradingProfiles` call shape across the listed routes/services.
