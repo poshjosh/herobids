@@ -604,6 +604,7 @@ export async function authRoutes(
     callbackUrl.searchParams.set('provider', record.provider);
     callbackUrl.searchParams.set('requestId', record.requestId);
     callbackUrl.searchParams.set('agentName', requestingAgent.name);
+    callbackUrl.searchParams.set('mode', record.mode);
     return reply.redirect(callbackUrl.toString());
   });
 

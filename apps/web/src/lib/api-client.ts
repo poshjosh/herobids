@@ -1411,6 +1411,11 @@ export interface ProviderLinkDeleteResult {
 export const setup = {
   providerLink: (data: { provider: string; label: string; credentialMode?: 'manual' | 'generated'; secrets?: Record<string, string>; capability?: 'trading'; requestId?: string }) =>
     request<ProviderSetupResult>('/setup/provider-link', { method: 'POST', body: JSON.stringify(data) }),
+  useExistingConnection: (requestId: string, connectionId: string) =>
+    request<{ status: string; agentId: string }>(`/setup/connection-requests/${requestId}/use-existing`, {
+      method: 'POST',
+      body: JSON.stringify({ connectionId }),
+    }),
   declineConnectionRequest: (requestId: string) =>
     request<{ status: 'declined' }>(`/setup/connection-requests/${requestId}/decline`, { method: 'POST' }),
   deleteProviderLink: (connectionId: string) =>

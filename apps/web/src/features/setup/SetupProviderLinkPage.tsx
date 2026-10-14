@@ -4,6 +4,7 @@ import { auth, type ProviderSetupResult } from '../../lib/api-client.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { ProviderSetupForm } from './ProviderSetupForm.js';
 import { WalletCreatedStep } from './WalletCreatedStep.js';
+import { UseExistingConnectionPanel } from './UseExistingConnectionPanel.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useIntl } from 'react-intl';
 
@@ -123,6 +124,16 @@ export function SetupProviderLinkPage() {
   const requestedProvider = searchParams.get('provider');
   const connectionRequestId = searchParams.get('requestId');
   const requestingAgentName = searchParams.get('agentName');
+  if (connectionRequestId && requestedProvider && requestingAgentName && searchParams.get('mode') === 'use_existing') {
+    return (
+      <UseExistingConnectionPanel
+        requestId={connectionRequestId}
+        provider={requestedProvider}
+        agentName={requestingAgentName}
+        onDone={() => navigate('/agents', { replace: true })}
+      />
+    );
+  }
   return (
     <ProviderSetupForm
       standalone

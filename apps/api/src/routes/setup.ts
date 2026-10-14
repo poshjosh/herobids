@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
+import { z } from 'zod';
 import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { platformCredentials, connections, createTradingProviderLink, type ProvisionedWallet } from '@herobids/db';
@@ -19,6 +20,7 @@ import {
   completeConnectionRequest,
   createRedisAgentWakePublisher,
   declineConnectionRequest,
+  readConnectionRequest,
 } from '../services/connection-request-service.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 
@@ -407,6 +409,40 @@ export async function setupRoutes(
     return reply.status(status).send(
       errorPayload(result.code, result.message, result.params),
     );
+  });
+
+  /**
+   * POST /setup/connection-requests/:requestId/use-existing
+   *
+   * The user approved binding one of their existing connections to the agent's request.
+   */
+  app.post<{ Params: { requestId: string }; Body: unknown }>('/setup/connection-requests/:requestId/use-existing', async (request, reply) => {
+    if (!deps.connectionRequests) {
+      return reply.status(503).send(errorPayload('precondition.not_ready', 'Connection requests are not available'));
+    }
+    const body = z.object({ connectionId: z.string().min(1) }).safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send(errorPayload('validation.invalid_payload', 'connectionId is required'));
+    }
+    const record = await readConnectionRequest(deps.connectionRequests.redis, request.params.requestId);
+    if (!record || record.userId !== request.userId) {
+      return reply.status(404).send(errorPayload('connection.request_not_found', 'Connection request not found'));
+    }
+    const outcome = await completeConnectionRequest(
+      {
+        redis: deps.connectionRequests.redis,
+        db,
+        saga: deps.connectionRequests.saga,
+        budgets: deps.connectionRequests.budgets,
+        wakePublisher: createRedisAgentWakePublisher(deps.connectionRequests.redis),
+      },
+      { requestId: record.requestId, userId: request.userId, provider: record.provider, connectionId: body.data.connectionId },
+    );
+    if (!outcome.ok) {
+      const status = outcome.error.code === 'connection.request_not_found' ? 404 : 409;
+      return reply.status(status).send(errorPayload(outcome.error.code, outcome.error.message));
+    }
+    return reply.send({ status: 'completed', agentId: outcome.data.agentId });
   });
 
   /**
