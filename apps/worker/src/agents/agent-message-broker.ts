@@ -1220,7 +1220,7 @@ export class AgentMessageBroker {
         if (!hasTradingCapability) {
           await publishReply({
             status: 'error',
-            error: `Provider "${payload.provider}" requires a trading skill, which this agent does not have.`,
+            error: `Provider "${payload.provider}" requires the traderton/skills/crypto-trading skill, which this agent does not have.`,
             errorCode: 'connection.trading_not_allowed',
           });
           return;

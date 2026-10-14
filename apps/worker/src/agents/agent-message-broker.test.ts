@@ -761,3 +761,84 @@ describe('AgentMessageBroker — request_connection', () => {
     expect(redis.srem).toHaveBeenCalledWith('connection-request:pending-agent:agent-1', 'gmail');
   });
 });
+
+describe('AgentMessageBroker — update_my_prompt and set_trading_setup branches', () => {
+  function makeRecordingPublisher() {
+    const publishUpdatePromptReply = vi.fn(async () => undefined);
+    const publishTradingSetupReply = vi.fn(async () => undefined);
+    return {
+      publisher: { publishUpdatePromptReply, publishTradingSetupReply } as unknown as InstanceEventPublisher,
+      publishUpdatePromptReply,
+      publishTradingSetupReply,
+    };
+  }
+
+  it('updates the agent prompt and replies ok with the new length', async () => {
+    const agentRepo = makeAgentRepo({ updateAgent: vi.fn(async () => undefined) } as never);
+    const rec = makeRecordingPublisher();
+    const broker = new AgentMessageBroker(makeRedis(), agentRepo, makeDecisionHandler(), makeSessionManager(), rec.publisher);
+
+    await broker.processInbound(makeEnvelope('agent.update_prompt', { prompt: 'Watch ETH.', requestMessageId: 'req-up-ok' }));
+
+    expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { prompt: 'Watch ETH.' });
+    expect(rec.publishUpdatePromptReply).toHaveBeenCalledWith('req-up-ok', { status: 'ok', promptLength: 10 });
+  });
+
+  it('replies with agent.not_found when the agent does not exist', async () => {
+    const agentRepo = makeAgentRepo({ getAgent: vi.fn(async () => null), updateAgent: vi.fn(async () => undefined) } as never);
+    const rec = makeRecordingPublisher();
+    const broker = new AgentMessageBroker(makeRedis(), agentRepo, makeDecisionHandler(), makeSessionManager(), rec.publisher);
+
+    await broker.processInbound(makeEnvelope('agent.update_prompt', { prompt: 'Watch ETH.', requestMessageId: 'req-up-missing' }));
+
+    expect(agentRepo.updateAgent).not.toHaveBeenCalled();
+    expect(rec.publishUpdatePromptReply).toHaveBeenCalledWith('req-up-missing', expect.objectContaining({ status: 'error', errorCode: 'agent.not_found' }));
+  });
+
+  it('replies with a retry-safe error when the prompt write fails', async () => {
+    const agentRepo = makeAgentRepo({ updateAgent: vi.fn(async () => { throw new Error('db down'); }) } as never);
+    const rec = makeRecordingPublisher();
+    const broker = new AgentMessageBroker(makeRedis(), agentRepo, makeDecisionHandler(), makeSessionManager(), rec.publisher);
+
+    await broker.processInbound(makeEnvelope('agent.update_prompt', { prompt: 'Watch ETH.', requestMessageId: 'req-up-fail' }));
+
+    expect(rec.publishUpdatePromptReply).toHaveBeenCalledWith('req-up-fail', expect.objectContaining({ status: 'error', errorCode: 'broker.internal_error' }));
+  });
+
+  it('replies trading.setup_unavailable when no trading setup dependencies are wired', async () => {
+    const rec = makeRecordingPublisher();
+    const broker = new AgentMessageBroker(makeRedis(), makeAgentRepo(), makeDecisionHandler(), makeSessionManager(), rec.publisher);
+
+    await broker.processInbound(makeEnvelope('agent.manage_trading_setup', { requestMessageId: 'req-ts-none' }));
+
+    expect(rec.publishTradingSetupReply).toHaveBeenCalledWith('req-ts-none', expect.objectContaining({ status: 'error', errorCode: 'trading.setup_unavailable' }));
+  });
+
+  it('refuses set_trading_setup for an agent without the trading capability', async () => {
+    const rec = makeRecordingPublisher();
+    const broker = new AgentMessageBroker(
+      makeRedis(),
+      makeAgentRepo({ getRuntimeCapabilityDescriptor: vi.fn(async () => ({ resolvedSkills: [] })) } as never),
+      makeDecisionHandler(),
+      makeSessionManager(),
+      rec.publisher,
+      undefined, // chatDelivery
+      undefined, // botRepo
+      undefined, // botLiveCheck
+      undefined, // emailClient
+      undefined, // onAgentConfigUpdate
+      undefined, // brandImageUrl
+      {} as never, // db
+      undefined, // operatorModelDefaults
+      undefined, // plansConfig
+      undefined, // sideEffectBoundary
+      undefined, // publicBaseUrl
+      undefined, // connectionRequests
+      { saga: {} as never, client: undefined, readBoundary: { invoke: vi.fn() } } as never, // tradingSetup
+    );
+
+    await broker.processInbound(makeEnvelope('agent.manage_trading_setup', { requestMessageId: 'req-ts-nocap' }));
+
+    expect(rec.publishTradingSetupReply).toHaveBeenCalledWith('req-ts-nocap', expect.objectContaining({ status: 'error', errorCode: 'trading.not_allowed' }));
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_JOB_DEFAULT_TEXT, formatAgentGoalLiteralBlock, isBlankAgentGoal, normalizeAgentGoal, readSkillPresetId } from './agent-goal.js';
+import { EMPTY_JOB_DEFAULT_TEXT, FIRST_TURN_GOAL_GUIDANCE, formatAgentGoalLiteralBlock, isBlankAgentGoal, normalizeAgentGoal, readSkillPresetId } from './agent-goal.js';
 
 describe('normalizeAgentGoal', () => {
   it('returns a clean goal unchanged', () => {
@@ -57,6 +57,13 @@ describe('isBlankAgentGoal', () => {
 
   it('treats a real goal as non-blank', () => {
     expect(isBlankAgentGoal('Monitor ETH')).toBe(false);
+  });
+});
+
+describe('FIRST_TURN_GOAL_GUIDANCE', () => {
+  it('names update_my_prompt as the first action and covers requests like "help me trade"', () => {
+    expect(FIRST_TURN_GOAL_GUIDANCE).toContain('update_my_prompt');
+    expect(FIRST_TURN_GOAL_GUIDANCE).toContain('help me trade');
   });
 });
 
