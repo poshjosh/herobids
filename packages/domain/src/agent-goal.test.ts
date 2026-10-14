@@ -61,9 +61,13 @@ describe('isBlankAgentGoal', () => {
 });
 
 describe('FIRST_TURN_GOAL_GUIDANCE', () => {
-  it('names update_my_prompt as the first action and covers requests like "help me trade"', () => {
+  it('tells the agent to set its goal with update_my_prompt before anything else', () => {
     expect(FIRST_TURN_GOAL_GUIDANCE).toContain('update_my_prompt');
-    expect(FIRST_TURN_GOAL_GUIDANCE).toContain('asks you to do something');
+    expect(FIRST_TURN_GOAL_GUIDANCE).toMatch(/first call update_my_prompt/);
+  });
+
+  it('carries no example requests or user-specific details', () => {
+    expect(FIRST_TURN_GOAL_GUIDANCE).not.toMatch(/\b(help me trade|trade|trading|capital|ETH|BTC|SOL)\b|\$\d/i);
   });
 });
 
