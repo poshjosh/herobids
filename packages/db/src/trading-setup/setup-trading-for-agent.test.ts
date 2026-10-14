@@ -31,10 +31,23 @@ function fakeDb(activeRows: Array<{ id: string; venueAccountId: string | null }>
   } as unknown as Database;
 }
 
+// A saga whose stored profile reports `storedCapital` for every venue account.
+function sagaWithStoredCapital(storedCapital: string | null): TradingProfileReconciliationSaga {
+  return {
+    readCurrentProfiles: vi.fn(async (_owner: string, _actor: string, connections: Array<{ venueAccountId: string | null }>) => {
+      const profiles = new Map<string, { capital: string | null }>();
+      for (const connection of connections) {
+        if (connection.venueAccountId) profiles.set(connection.venueAccountId, { capital: storedCapital });
+      }
+      return profiles;
+    }),
+  } as unknown as TradingProfileReconciliationSaga;
+}
+
 function makeDeps(overrides: Partial<SetupTradingDeps> = {}): SetupTradingDeps {
   return {
     db: fakeDb([]),
-    saga: {} as TradingProfileReconciliationSaga,
+    saga: sagaWithStoredCapital('1000'),
     logger: { error: vi.fn() },
     defaults,
     ...overrides,
@@ -48,6 +61,18 @@ describe('setupTradingForAgent', () => {
     vi.mocked(createTradingProviderLink).mockReset();
     vi.mocked(grantConnectionToRunningAgent).mockReset();
     vi.mocked(grantConnectionToRunningAgent).mockResolvedValue({ ok: true, data: { granted: true } });
+  });
+
+  it('fails instead of reporting success when the stored capital does not match the request', async () => {
+    const result = await setupTradingForAgent(
+      makeDeps({
+        db: fakeDb([{ id: 'conn-existing', venueAccountId: 'va-1' }]),
+        saga: sagaWithStoredCapital('10000'),
+      }),
+      { ...input, capital: '500' },
+    );
+
+    expect(result).toMatchObject({ kind: 'fault', code: 'trading.capital_not_applied' });
   });
 
   it('refuses when test wallet setup is disabled by the operator', async () => {

@@ -118,6 +118,18 @@ export async function setupTradingForAgent(deps: SetupTradingDeps, input: SetupT
     return { kind: 'error', ...failure };
   }
 
+  // Report the capital the platform stored, not the request: a mismatch is a failure.
+  const storedCapital = venueAccountId
+    ? await readStoredCapital(deps, input.userId, input.agentId, connectionId, venueAccountId)
+    : null;
+  if (storedCapital !== capital) {
+    return {
+      kind: 'fault',
+      code: 'trading.capital_not_applied',
+      message: `Capital ${capital} was not applied (stored ${storedCapital ?? 'nothing'}). Try again.`,
+    };
+  }
+
   return {
     kind: 'ok',
     connectionId,
@@ -126,7 +138,20 @@ export async function setupTradingForAgent(deps: SetupTradingDeps, input: SetupT
     venueAccountId,
     wallet,
     reused,
-    capital,
+    capital: storedCapital,
     mode: 'paper',
   };
+}
+
+async function readStoredCapital(
+  deps: SetupTradingDeps,
+  userId: string,
+  agentId: string,
+  connectionId: string,
+  venueAccountId: string,
+): Promise<string | null> {
+  const profiles = await deps.saga.readCurrentProfiles(userId, agentId, [
+    { connectionId, venueAccountId, active: true, ready: true, isDefault: true },
+  ]);
+  return profiles.get(venueAccountId)?.capital ?? null;
 }

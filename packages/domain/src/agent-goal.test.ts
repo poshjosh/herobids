@@ -63,7 +63,7 @@ describe('isBlankAgentGoal', () => {
 describe('FIRST_TURN_GOAL_GUIDANCE', () => {
   it('names update_my_prompt as the first action and covers requests like "help me trade"', () => {
     expect(FIRST_TURN_GOAL_GUIDANCE).toContain('update_my_prompt');
-    expect(FIRST_TURN_GOAL_GUIDANCE).toContain('help me trade');
+    expect(FIRST_TURN_GOAL_GUIDANCE).toContain('asks you to do something');
   });
 });
 

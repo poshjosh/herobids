@@ -186,8 +186,6 @@ async function executeGrantSaga(
   prepared: Extract<PreparedConnectionChange, { kind: 'ready' }>,
   allowRunning: boolean,
 ): Promise<void> {
-  if (prepared.existing) return;
-
   const assignmentId = crypto.randomUUID();
   const grantedAt = new Date();
   await profileReconciliationSaga.executeStaged({
@@ -207,14 +205,17 @@ async function executeGrantSaga(
     },
     commitLocal: async (tx, markLocalCommitted) => {
       await revalidateConnectionChange(tx, prepared, 'grant', allowRunning);
-      await tx.insert(agentConnections).values({
-        id: assignmentId, agentId, connectionId, status: 'active', grantedBy: userId,
-        grantedAt, createdAt: grantedAt, updatedAt: grantedAt,
-      });
-      await tx.insert(agentConnectionAudit).values({
-        id: crypto.randomUUID(), agentConnectionId: assignmentId, action: 'granted',
-        actorType: 'user', actorId: userId, createdAt: grantedAt,
-      });
+      // An existing active grant keeps its row; only the profile values change.
+      if (!prepared.existing) {
+        await tx.insert(agentConnections).values({
+          id: assignmentId, agentId, connectionId, status: 'active', grantedBy: userId,
+          grantedAt, createdAt: grantedAt, updatedAt: grantedAt,
+        });
+        await tx.insert(agentConnectionAudit).values({
+          id: crypto.randomUUID(), agentConnectionId: assignmentId, action: 'granted',
+          actorType: 'user', actorId: userId, createdAt: grantedAt,
+        });
+      }
       await markLocalCommitted();
       return { kind: 'granted' as const };
     },
@@ -269,7 +270,8 @@ export async function grantConnectionToRunningAgent(
   try {
     const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant', true, opts?.changes);
     if (prepared.kind !== 'ready') return grantError(prepared, connectionId);
-    if (prepared.existing) return ok({ granted: true });
+    // Already granted with nothing to change: nothing to write.
+    if (prepared.existing && !opts?.changes) return ok({ granted: true });
 
     await executeGrantSaga(agentId, connectionId, userId, profileReconciliationSaga, prepared, true);
 

@@ -45,7 +45,7 @@ export const EMPTY_JOB_DEFAULT_TEXT =
 
 /** Appended to the empty-goal text so a new agent turns its creator's first description into its goal. */
 export const FIRST_TURN_GOAL_GUIDANCE =
-  'Setting your goal is the one action you take before you have one. If your creator\'s message asks you to do something ("help me trade", "monitor ETH", or any request), call update_my_prompt first with that request restated as a goal in one paragraph, then reply to them in one sentence confirming the goal. Do not wait for a more detailed description.';
+  'If your creator\'s message asks you to do something, first call update_my_prompt with that request restated as a goal in one paragraph, then reply to them in one sentence confirming the goal.';
 
 /**
  * True when a stored prompt carries no actual user goal.
