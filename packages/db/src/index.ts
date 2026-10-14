@@ -60,3 +60,4 @@ export { isSkillSelectableForUser, resolveSkillIdsBySlugOrId, resolveSkillAssign
 export type { SkillAssignmentResolution } from './skill-assignment.js';
 export { upsertExternalSkill, normalizeSourceRefToSlug, deriveSourceKind, ensureExternalSkillIds, externalSkillIdForRef } from './external-skill-catalog.js';
 export type { ExternalSkillUpsert, ExternalSkillRow } from './external-skill-catalog.js';
+export * from './plan-guards.js';
