@@ -149,6 +149,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'remove_skills',
   'remove_watch',
   'request_connection',
+  'set_trading_setup',
   'resolve_bot',
   'resolve_task',
   'resolve_watch',
@@ -216,6 +217,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   add_skills:          { category: 'write-database',      description: 'Add skills to this agent from the skill catalog. Skills become available immediately.' },
   remove_skills:       { category: 'write-database',      description: 'Remove skills from this agent. Tools from removed skills become unavailable immediately.' },
   request_connection:  { category: 'write-database',      description: 'Request a connection to a provider. Returns a short-lived link to send to the user.' },
+  set_trading_setup:   { category: 'write-database',      description: 'Set up paper trading for this agent: a test wallet, capital, and paper mode. Live mode is never set here.' },
 
   // read-market-data
   search_tokens:       { category: 'read-market-data',    description: 'Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.' },

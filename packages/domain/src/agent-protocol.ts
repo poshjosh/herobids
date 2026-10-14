@@ -211,6 +211,32 @@ export const ConnectionRequestPayloadSchema = z.object({
 });
 export type ConnectionRequestPayload = z.infer<typeof ConnectionRequestPayloadSchema>;
 
+/** Brokered paper trading setup — agent asks the platform to provision a test wallet and grant paper mode. */
+export const ManageTradingSetupPayloadSchema = z.object({
+  capital: z.string().regex(/^\d+(\.\d+)?$/).optional(),
+  requestMessageId: z.string().min(1),
+});
+export type ManageTradingSetupPayload = z.infer<typeof ManageTradingSetupPayloadSchema>;
+
+export const TradingSetupResultSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('ok'),
+    connectionId: z.string().min(1),
+    provider: z.string().min(1),
+    network: z.string().min(1),
+    capital: z.string().min(1),
+    mode: z.literal('paper'),
+    reused: z.boolean(),
+    walletAddress: z.string().nullable(),
+  }),
+  z.object({
+    status: z.literal('error'),
+    error: z.string().min(1),
+    errorCode: z.string().min(1),
+  }),
+]);
+export type TradingSetupResult = z.infer<typeof TradingSetupResultSchema>;
+
 // --- Trading Instance → Agent Messages ---
 
 export const DecisionAcceptedPayloadSchema = z.object({
@@ -400,6 +426,7 @@ export const AGENT_MESSAGE_TYPES = {
   CONFIG_UPDATE: 'agent.config.update',
   MANAGE_AGENT_SKILLS: 'agent.manage_skills',
   REQUEST_CONNECTION: 'agent.request_connection',
+  MANAGE_TRADING_SETUP: 'agent.manage_trading_setup',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -596,6 +623,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.CONFIG_UPDATE]: ConfigUpdatePayloadSchema,
   [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: ManageAgentSkillsPayloadSchema,
   [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: ConnectionRequestPayloadSchema,
+  [AGENT_MESSAGE_TYPES.MANAGE_TRADING_SETUP]: ManageTradingSetupPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,

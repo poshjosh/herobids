@@ -63,3 +63,4 @@ export type { ExternalSkillUpsert, ExternalSkillRow } from './external-skill-cat
 export * from './plan-guards.js';
 export * from './trading-setup/trading-provider-link.js';
 export * from './trading-setup/setup-trading-for-agent.js';
+export * from './trading-setup/test-defaults.js';
