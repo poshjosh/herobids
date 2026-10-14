@@ -3,13 +3,13 @@ import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { platformCredentials, connections } from '@herobids/db';
+import { platformCredentials, connections, createTradingProviderLink, type ProvisionedWallet } from '@herobids/db';
 import type { AppConfig, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { deriveSolanaAddress } from '../providers/solana-address.js';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { canonicalizeVenueSecrets, validateVenueSecrets } from '../providers/venue-secrets.js';
-import { checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
+import { checkConnectionLimit, checkCredentialLimit } from '../plan-guards.js';
 import { SetupProviderLinkSchema } from '../schemas.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
 import { getProviderWalletGenerationCapability, providerAllowsTradingSetup } from '../providers/registry.js';
@@ -24,22 +24,13 @@ import type { TradingProfileReconciliationSaga } from '../agents/trading-profile
 
 const logger = createLogger('setup-routes');
 
+export type { ProvisionedWallet };
+
 function credentialValidationPayload(errors: ReturnType<typeof validateVenueSecrets>) {
   const primary = errors[0]!;
   return errorPayload(primary.code, primary.message, primary.params, {
     details: errors.map<ApiErrorDetail>(({ field, code, message, params }) => ({ field, code, message, params })),
   });
-}
-
-/**
- * The public wallet returned by a generated trading link. The keypair is minted
- * BEHIND the Traderton boundary (`provision_venue_account` generate mode); only
- * the public address + network cross back — never the private key. Surfaced to
- * the user so they can fund the generated address.
- */
-export interface ProvisionedWallet {
-  address: string;
-  network: string;
 }
 
 export interface SetupRouteDeps {
@@ -165,7 +156,7 @@ export async function createProviderLink(
   // and every wallet-generation provider is a trading venue, so a generated link
   // is always a trading link.)
   if (credentialMode === 'generated') {
-    return createTradingProviderLink(db, plansConfig, deps, {
+    return createTradingProviderLink(db, plansConfig, { client: deps.tradertonClient, logger }, {
       userId,
       planId,
       admin,
@@ -199,7 +190,7 @@ export async function createProviderLink(
     : null;
 
   if (isTrading) {
-    return createTradingProviderLink(db, plansConfig, deps, {
+    return createTradingProviderLink(db, plansConfig, { client: deps.tradertonClient, logger }, {
       userId,
       planId,
       admin,
@@ -291,225 +282,6 @@ export async function createProviderLink(
     venueAccountId: null,
     wallet: null,
   };
-}
-
-/**
- * How a trading provider link sources its credential/keypair:
- * - `manual`   → the user supplied validated secrets; herobids resolves the
- *                venueAccountRef locally (pre-boundary) and forwards both.
- * - `generate` → the keypair is minted BEHIND the boundary; herobids forwards
- *                only the network and reads the public wallet back from the
- *                provision result.
- */
-type TradingProvisionMode =
-  | { kind: 'manual'; secrets: Record<string, string>; venueAccountRef: string | null }
-  | { kind: 'generate'; network: string };
-
-interface CreateTradingProviderLinkInput {
-  userId: string;
-  planId: string;
-  admin: boolean;
-  provider: string;
-  label: string;
-  connectionId: string;
-  mode: TradingProvisionMode;
-  now: Date;
-}
-
-/**
- * Defensively parse the public wallet from an unknown provision-success payload.
- * Returns null unless both `address` and `network` are present as strings — the
- * private key is never part of this payload (it stays behind the boundary).
- */
-function parseProvisionedWallet(value: unknown): ProvisionedWallet | null {
-  if (typeof value !== 'object' || value === null) return null;
-  const { address, network } = value as { address?: unknown; network?: unknown };
-  if (typeof address === 'string' && typeof network === 'string') {
-    return { address, network };
-  }
-  return null;
-}
-
-/**
- * The trading half of createProviderLink (L3-P1b): provision the venue account
- * + credential over the Traderton boundary, then insert ONLY the local
- * connection. herobids performs NO local trading credential/venue-account write.
- */
-async function createTradingProviderLink(
-  db: Database,
-  plansConfig: PlansConfig | undefined,
-  deps: SetupRouteDeps,
-  input: CreateTradingProviderLinkInput,
-): Promise<CreateProviderLinkResult> {
-  const { userId, planId, admin, provider, label, connectionId, mode, now } = input;
-  const client = deps.tradertonClient;
-
-  // ── Phase 0 — pre-provision plan-limit check (venue accounts) ──────────────
-  // The venue-account count now lives behind the boundary, so this check makes
-  // a boundary HTTP call and MUST run BEFORE provisioning (never inside the
-  // Phase-2 DB transaction). On a limit/precondition failure we return before
-  // provisioning, so there is nothing to compensate. The connection-limit check
-  // stays local and is re-checked under the advisory lock in Phase 2.
-  if (plansConfig) {
-    const venueAccountCheck = await checkVenueAccountLimit(client, plansConfig, userId, planId, admin);
-    if (!venueAccountCheck.ok) {
-      // precondition.not_ready → boundary unavailable → fault (503); any other
-      // limit failure → limit (403). No provision has run yet.
-      if (venueAccountCheck.error.code === 'precondition.not_ready') {
-        return { kind: 'fault', code: venueAccountCheck.error.code, message: venueAccountCheck.error.message, params: venueAccountCheck.error.params };
-      }
-      return { kind: 'limit', error: venueAccountCheck.error };
-    }
-  }
-
-  // ── Phase 1 — provision over the boundary ──────────────────────────────────
-  // The credential + venue account are created behind the boundary; the tool
-  // returns metadata only (venueAccountId — never the credentialId or secrets).
-  // In `generate` mode the keypair is minted behind the boundary and the public
-  // wallet ({ address, network }) is returned so the user can fund it; herobids
-  // forwards only the network and never sees the private key. In `manual` mode
-  // herobids forwards the validated secrets (+ resolved venueAccountRef). The
-  // two payload shapes are mutually exclusive (generate XOR secrets).
-  // The idempotencyKey is the pre-minted connectionId so a transport retry
-  // reuses the same provisioning request (005 §Deadlines/Retries).
-  const provisionPayload = mode.kind === 'generate'
-    ? { venue: provider, label, generate: { network: mode.network } }
-    : {
-        venue: provider,
-        label,
-        secrets: mode.secrets,
-        ...(mode.venueAccountRef ? { venueAccountRef: mode.venueAccountRef } : {}),
-      };
-  const provisionResult = client
-    ? await client.invoke({
-        toolName: 'provision_venue_account',
-        payload: provisionPayload,
-        subject: { ownerId: userId, actor: { type: 'user', id: userId } },
-        deadlineMs: 30_000,
-        idempotencyKey: connectionId,
-      })
-    // No client configured → treat as a transport error (no local write).
-    : { kind: 'transport_error' as const, requestId: '', retryable: true as const, message: 'trading boundary not configured' };
-
-  if (provisionResult.kind === 'transport_error') {
-    return { kind: 'fault', code: 'precondition.not_ready', message: 'Trading service is unavailable — the connection was not created.', params: { provider } };
-  }
-  if (provisionResult.kind === 'in_progress') {
-    return { kind: 'fault', code: 'boundary.in_progress', message: 'Venue provisioning did not complete in time. Please retry.', params: { provider } };
-  }
-  if (provisionResult.kind === 'failure') {
-    // A limit/authz/validation failure from the boundary — nothing local written yet.
-    if (provisionResult.code === 'rate_limit.exceeded') {
-      return { kind: 'limit', error: { code: provisionResult.code, message: provisionResult.message, params: {} } };
-    }
-    return { kind: 'error', code: provisionResult.code, message: provisionResult.message, params: {} };
-  }
-
-  const successPayload = provisionResult.payload as { venueAccountId?: unknown; wallet?: unknown } | null;
-  const venueAccountId = typeof successPayload?.venueAccountId === 'string' ? successPayload.venueAccountId : null;
-  // In generate mode the boundary mints the keypair and returns the public
-  // wallet ({ address, network } | null). Parse it defensively from the unknown
-  // payload — the private key never crosses the boundary.
-  const wallet = parseProvisionedWallet(successPayload?.wallet);
-  if (!venueAccountId) {
-    // The boundary reported success but without the expected metadata — do not
-    // strand it silently; roll it back is impossible without an id, so log + fault.
-    logger.error({ provider, userId, payload: provisionResult.payload }, 'provision_venue_account succeeded without a venueAccountId');
-    return { kind: 'fault', code: 'setup.provider_link_failed', message: 'Failed to set up provider connection. Please try again.', params: { provider } };
-  }
-  // Observability: in generate mode the boundary is contracted to return the
-  // public minted wallet so the user can fund it. A generate success with no
-  // wallet is a boundary-contract regression — the connection still succeeds
-  // (non-fatal), but log it so the silent drop of the funding address is visible.
-  if (mode.kind === 'generate' && !wallet) {
-    logger.error({ provider, userId, venueAccountId }, 'provision_venue_account generate mode succeeded without a wallet — user has no funding address');
-  }
-
-  // ── Phase 2 — local platform half (connection only) ────────────────────────
-  // Insert ONLY the connections row: credentialId is null (the boundary owns the
-  // credential), resolvedVenueAccountId is the boundary's venueAccountId. The
-  // connection limit is re-checked here under the advisory lock so the
-  // over-limit protection is preserved end-to-end. The venue-account limit was
-  // already checked pre-provision (Phase 0) — it sources its count from the
-  // boundary and so cannot run inside this transaction.
-  try {
-    const txResult = await db.transaction(async (tx) => {
-      if (plansConfig) {
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(14, hashtext(${userId}))`);
-
-        const connectionCheck = await checkConnectionLimit(tx as unknown as Database, plansConfig, userId, planId, admin);
-        if (!connectionCheck.ok) {
-          return { kind: 'limit' as const, error: connectionCheck.error };
-        }
-      }
-
-      await tx.insert(connections).values({
-        id: connectionId,
-        userId,
-        credentialId: null,
-        provider,
-        label,
-        status: 'active',
-        resolvedVenueAccountId: venueAccountId,
-        meta: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      return { kind: 'ok' as const };
-    });
-
-    if (txResult.kind === 'limit') {
-      // Over-limit is a caller error, not a fault: compensate the boundary rows
-      // so we do not strand an orphan venue account, then return the limit.
-      await compensateProvision(client, userId, venueAccountId, provider);
-      return { kind: 'limit', error: txResult.error };
-    }
-  } catch (err) {
-    // Phase 2 failed AFTER a successful provision — compensate the boundary.
-    logger.error({ err, provider, userId, venueAccountId }, 'createProviderLink: local connection insert failed after provision — compensating');
-    await compensateProvision(client, userId, venueAccountId, provider);
-    return { kind: 'fault', code: 'setup.provider_link_failed', message: 'Failed to set up provider connection. Please try again.', params: { provider } };
-  }
-
-  return {
-    kind: 'ok',
-    credentialId: null,
-    connectionId,
-    provider,
-    label,
-    venueAccountId,
-    wallet,
-  };
-}
-
-/**
- * Roll back a successful provision when the local platform half fails. A failed
- * compensating deprovision leaves an orphan venue account behind the boundary —
- * acceptable and logged; never thrown (the caller has already decided its
- * outcome).
- */
-async function compensateProvision(
-  client: ExternalBackendClient | undefined,
-  userId: string,
-  venueAccountId: string,
-  provider: string,
-): Promise<void> {
-  if (!client) return;
-  try {
-    const result = await client.invoke({
-      toolName: 'deprovision_venue_account',
-      payload: { venueAccountId },
-      subject: { ownerId: userId, actor: { type: 'user', id: userId } },
-      deadlineMs: 30_000,
-      idempotencyKey: `deprovision:${venueAccountId}`,
-    });
-    if (result.kind !== 'success') {
-      logger.error({ provider, userId, venueAccountId, result }, 'compensating deprovision_venue_account did not succeed — orphan venue account left behind the boundary');
-    }
-  } catch (err) {
-    logger.error({ err, provider, userId, venueAccountId }, 'compensating deprovision_venue_account threw — orphan venue account left behind the boundary');
-  }
 }
 
 export async function setupRoutes(
