@@ -50,3 +50,4 @@ export * from './external-skill-provider-http.js';
 export * from './text-search.js';
 export * from './infra/server-health.js';
 export * from './infra/server-health-publisher.js';
+export * from './wallet-networks.js';

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { AppConfig, CustomModeDefinition, ProviderCatalogResponse, ProviderDefinition, WalletGenerationCapability } from '@herobids/domain';
-import { getProviderCategories, PROVIDER_DISCOVERY } from '@herobids/domain';
+import { getProviderCategories, PROVIDER_DISCOVERY, WALLET_NETWORKS } from '@herobids/domain';
 import type { ProviderCatalogDefinition, RegistryEntry } from './types.js';
 
 const PROVIDER_REGISTRY: RegistryEntry[] = [
@@ -243,7 +243,7 @@ export function getProviderWalletGenerationCapability(providerId: string, venues
     return {
       available: enabled,
       credentialModes: enabled ? ['manual', 'generated'] : ['manual'],
-      network: 'Hyperliquid',
+      network: WALLET_NETWORKS.hyperliquid,
       fundingInstructionId: 'hyperliquid-mainnet',
     };
   }
@@ -251,7 +251,7 @@ export function getProviderWalletGenerationCapability(providerId: string, venues
     return {
       available: enabled,
       credentialModes: enabled ? ['manual', 'generated'] : ['manual'],
-      network: 'Solana',
+      network: WALLET_NETWORKS.jupiter,
       fundingInstructionId: 'solana-mainnet',
     };
   }

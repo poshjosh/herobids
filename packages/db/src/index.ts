@@ -62,3 +62,4 @@ export { upsertExternalSkill, normalizeSourceRefToSlug, deriveSourceKind, ensure
 export type { ExternalSkillUpsert, ExternalSkillRow } from './external-skill-catalog.js';
 export * from './plan-guards.js';
 export * from './trading-setup/trading-provider-link.js';
+export * from './trading-setup/setup-trading-for-agent.js';
