@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { TradingProfileConnection } from './trading-profile-reconciliation.js';
 
 const apiSourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const dbTradingProfilesRoot = join(apiSourceRoot, '..', '..', '..', 'packages', 'db', 'src', 'trading-profiles');
 const profileSnapshotProperties = ['actorId', 'venueAccountId', 'capital', 'riskPosture', 'executionDefaults'];
 
 const activeBindingMutators = [
@@ -141,15 +142,23 @@ describe('trading profile workflow delegation', () => {
 
     expect(productionSources.filter(({ contents }) => hasProfileSnapshotLiteral(contents)).map(({ path }) => path).sort())
       .toEqual([
-        'agents/trading-profile-reconciliation-saga.ts',
-        'agents/trading-profile-reconciliation.ts',
         'routes/agents.ts',
         'routes/blueprints.ts',
         'routes/chat.ts',
         'services/agent-go-live-service.ts',
       ]);
-    expect(productionSources.filter(({ contents }) => hasSelectedBindingComputation(contents)).map(({ path }) => path).sort())
-      .toEqual(['agents/trading-profile-reconciliation.ts']);
+
+    const definitionSources = await Promise.all((await sourceFiles(dbTradingProfilesRoot)).map(async (path) => ({
+      path: path.slice(dbTradingProfilesRoot.length + 1),
+      contents: await readFile(path, 'utf8'),
+    })));
+    expect(definitionSources.filter(({ contents }) => hasProfileSnapshotLiteral(contents)).map(({ path }) => path).sort())
+      .toEqual([
+        'trading-profile-reconciliation-saga.ts',
+        'trading-profile-reconciliation.ts',
+      ]);
+    expect(definitionSources.filter(({ contents }) => hasSelectedBindingComputation(contents)).map(({ path }) => path).sort())
+      .toEqual(['trading-profile-reconciliation.ts']);
   });
 
   it('requires every active binding mutation site to delegate and documents revoked-only cleanup', async () => {

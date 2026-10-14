@@ -189,6 +189,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `read_skill` | `core` | Agent skill instruction access. |
 | `remove_skills` | `core` | Agent skill assignment. |
 | `request_connection` | `core` | Agent-initiated connection request link. |
+| `get_funding_info` | `external:trading` | Trading wallet funding address, network and latest observed balance. |
 | `remove_watch` | `external:trading` | Trading price-watch lifecycle. |
 | `resolve_bot` | `external:trading` | Trading bot identity resolution. |
 | `resolve_task` | `core` | Base-skill task management. |

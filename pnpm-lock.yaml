@@ -230,12 +230,18 @@ importers:
       '@herobids/domain':
         specifier: workspace:*
         version: link:../domain
+      '@poshjosh/contracts':
+        specifier: 0.3.0
+        version: 0.3.0
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(postgres@3.4.9)
       postgres:
         specifier: ^3.4.0
         version: 3.4.9
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^25.9.1
