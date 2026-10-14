@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
+import { allocateAgentName } from '../services/agent-name-service.js';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { TradingProfileReconciliationOutboxRepository, type Database, type DatabaseTransaction } from '@herobids/db';
@@ -149,7 +150,7 @@ const AgentNameSchema = z.string().min(1).max(100).refine((value) => {
 });
 
 const CreateAgentSchema = z.object({
-  name: AgentNameSchema,
+  name: AgentNameSchema.optional(),
   prompt: z.string().max(8000).optional(),
   technical: TechnicalConfigSchema.optional(),
   skillIds: z.array(z.string().min(1)).optional(),
@@ -669,8 +670,9 @@ export async function agentRoutes(
     }
 
     // ── Shared create-time normalization ──────────────────────────────────
+    const agentName = parsed.data.name ?? await allocateAgentName(db, request.userId);
     const createFields = await prepareAgentCreateFields({
-      name: parsed.data.name,
+      name: agentName,
       prompt: parsed.data.prompt ?? '',
       skillIds: parsed.data.skillIds ?? [],
       style: parsed.data.style,
