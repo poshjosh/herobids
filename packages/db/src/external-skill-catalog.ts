@@ -52,6 +52,8 @@ export interface ExternalSkillUpsert {
   description: string;
   /** Set when this upsert follows a successful install (T5). */
   lastInstalledAt?: Date | null;
+  /** Operator-declared capability families for a backend-approved ref (e.g. `trading`). Omit to leave unchanged. */
+  capabilityFamilies?: string[];
 }
 
 export interface ExternalSkillRow {
@@ -88,6 +90,7 @@ function isExternalRef(ref: string): boolean {
 export async function ensureExternalSkillIds(
   db: Database,
   skillIds: readonly string[],
+  familyByRef: ReadonlyMap<string, string> = new Map(),
 ): Promise<string[]> {
   // Resolve everything already known (by slug or id) in one query first, so an
   // already-catalogued ref (installed earlier, or seeded) is reused as-is and we
@@ -107,7 +110,13 @@ export async function ensureExternalSkillIds(
     }
     const slug = normalizeSourceRefToSlug(idOrRef);
     const lastSegment = slug.split('/').pop() ?? slug;
-    const row = await upsertExternalSkill(db, { sourceRef: slug, name: lastSegment, description: '' });
+    const family = familyByRef.get(slug) ?? familyByRef.get(idOrRef);
+    const row = await upsertExternalSkill(db, {
+      sourceRef: slug,
+      name: lastSegment,
+      description: '',
+      ...(family ? { capabilityFamilies: [family] } : {}),
+    });
     out.push(row.skillId);
   }
   return out;
@@ -143,6 +152,7 @@ export async function upsertExternalSkill(
           name: input.name,
           description: input.description,
           ...(input.lastInstalledAt !== undefined ? { lastInstalledAt: input.lastInstalledAt } : {}),
+          ...(input.capabilityFamilies !== undefined ? { capabilityFamilies: input.capabilityFamilies } : {}),
           updatedAt: now,
         })
         .where(eq(skills.id, skillId));
@@ -152,7 +162,12 @@ export async function upsertExternalSkill(
       if (revisionId) {
         await tx
           .update(skillRevisions)
-          .set({ name: input.name, description: input.description, sourceRef })
+          .set({
+            name: input.name,
+            description: input.description,
+            sourceRef,
+            ...(input.capabilityFamilies !== undefined ? { capabilityFamilies: input.capabilityFamilies } : {}),
+          })
           .where(eq(skillRevisions.id, revisionId));
       } else {
         revisionId = `${skillId}:external:1`;
@@ -186,6 +201,7 @@ export async function upsertExternalSkill(
       publishedRevisionId: revisionId,
       sourceRef,
       ...(input.lastInstalledAt !== undefined ? { lastInstalledAt: input.lastInstalledAt } : {}),
+      ...(input.capabilityFamilies !== undefined ? { capabilityFamilies: input.capabilityFamilies } : {}),
       name: input.name,
       description: input.description,
       instructions: '',
@@ -203,10 +219,36 @@ export async function upsertExternalSkill(
       description: input.description,
       instructions: '',
       sourceRef,
+      ...(input.capabilityFamilies !== undefined ? { capabilityFamilies: input.capabilityFamilies } : {}),
       publishedAt: now,
       createdAt: now,
     }).onConflictDoNothing();
 
     return { skillId, skillRevisionId: revisionId };
+  });
+}
+
+/**
+ * Set only the capability families of an already-catalogued external skill (and
+ * its current revision). Leaves name, description and install state untouched.
+ * No-op when the ref is not catalogued.
+ */
+export async function setExternalSkillCapabilityFamilies(
+  db: Database,
+  sourceRef: string,
+  capabilityFamilies: string[],
+): Promise<void> {
+  const slug = normalizeSourceRefToSlug(sourceRef);
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ id: skills.id, currentRevisionId: skills.currentRevisionId })
+      .from(skills)
+      .where(eq(skills.sourceRef, slug))
+      .limit(1);
+    if (!row) return;
+    await tx.update(skills).set({ capabilityFamilies }).where(eq(skills.id, row.id));
+    if (row.currentRevisionId) {
+      await tx.update(skillRevisions).set({ capabilityFamilies }).where(eq(skillRevisions.id, row.currentRevisionId));
+    }
   });
 }

@@ -55,7 +55,7 @@ import { fileURLToPath } from 'node:url';
 import * as os from 'node:os';
 import type { LifecycleJob } from './types.js';
 import { syncSystemSkills } from './sync-system-skills.js';
-import { ensureExternalSkillIds } from '@herobids/db';
+import { ensureExternalSkillIds, setExternalSkillCapabilityFamilies } from '@herobids/db';
 import { ServerHealthPublisher } from '@herobids/domain';
 import { parseAppVersion, checkPostgres, checkRedis, getRunningSessionCount, getRunningContainerCount } from './admin-utils.js';
 
@@ -198,6 +198,14 @@ app.log.info('System skills synced');
   ];
   if (approvedRefs.length > 0) {
     await ensureExternalSkillIds(db, approvedRefs);
+    // Persist the operator-declared family on approved refs, including rows catalogued before this existed.
+    for (const backend of appConfig.externalBackends) {
+      const family = backend.requiresConnectionFamily;
+      if (!family) continue;
+      for (const ref of backend.approvedSourceSkillRefs) {
+        await setExternalSkillCapabilityFamilies(db, ref, [family]);
+      }
+    }
     app.log.info({ count: approvedRefs.length }, 'Approved external skill refs catalogued');
   }
 }

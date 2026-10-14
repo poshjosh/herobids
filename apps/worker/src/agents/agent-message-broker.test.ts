@@ -204,6 +204,42 @@ describe('AgentMessageBroker — extractDenialReplyKey', () => {
     );
   });
 
+  it('pushes a denial reply to agent:trading-setup:reply:{requestMessageId} when set_trading_setup is denied', async () => {
+    vi.mocked(agentRepo.getAgent).mockResolvedValue({
+      id: 'agent-1',
+      toolPolicy: {
+        set_trading_setup: { capability: 'set_trading_setup', tier: 'brokered', enabled: false },
+      },
+    } as never);
+
+    const envelope = makeEnvelope('agent.manage_trading_setup', { requestMessageId: 'req-ts-1' });
+    const result = await broker.processInbound(envelope);
+
+    expect(result.accepted).toBe(false);
+    expect(redis.lpush).toHaveBeenCalledWith(
+      'agent:trading-setup:reply:req-ts-1',
+      expect.stringContaining('"status":"rejected"'),
+    );
+  });
+
+  it('pushes a denial reply to agent:update-prompt:reply:{requestMessageId} when update_my_prompt is denied', async () => {
+    vi.mocked(agentRepo.getAgent).mockResolvedValue({
+      id: 'agent-1',
+      toolPolicy: {
+        update_my_prompt: { capability: 'update_my_prompt', tier: 'brokered', enabled: false },
+      },
+    } as never);
+
+    const envelope = makeEnvelope('agent.update_prompt', { prompt: 'Watch ETH.', requestMessageId: 'req-up-1' });
+    const result = await broker.processInbound(envelope);
+
+    expect(result.accepted).toBe(false);
+    expect(redis.lpush).toHaveBeenCalledWith(
+      'agent:update-prompt:reply:req-up-1',
+      expect.stringContaining('"status":"rejected"'),
+    );
+  });
+
   it('rejects the legacy TOOL_ASSESS_STRATEGY_PRESET message type (tool now Traderton-owned)', async () => {
     // The assess_strategy_preset tool is now Traderton-owned (H1); the local
     // broker no longer routes it.

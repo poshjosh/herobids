@@ -1119,7 +1119,7 @@ export class AgentMessageBroker {
         (skill) => Array.isArray(skill.capabilityFamilies) && skill.capabilityFamilies.includes('trading'),
       );
       if (!hasTradingCapability) {
-        await publishReply({ status: 'error', error: 'Paper trading needs the traderton/skills/crypto-trading skill, which this agent does not have.', errorCode: 'trading.not_allowed' });
+        await publishReply({ status: 'error', error: 'Paper trading needs the trading traderton/skills/crypto-trading skill, which this agent does not have.', errorCode: 'trading.not_allowed' });
         return;
       }
 
@@ -1450,6 +1450,14 @@ export class AgentMessageBroker {
       case AGENT_MESSAGE_TYPES.REQUEST_CONNECTION: {
         const requestMessageId = payload.requestMessageId as string | undefined;
         return requestMessageId ? `agent:connection-request:reply:${requestMessageId}` : undefined;
+      }
+      case AGENT_MESSAGE_TYPES.MANAGE_TRADING_SETUP: {
+        const requestMessageId = payload.requestMessageId as string | undefined;
+        return requestMessageId ? `agent:trading-setup:reply:${requestMessageId}` : undefined;
+      }
+      case AGENT_MESSAGE_TYPES.UPDATE_PROMPT: {
+        const requestMessageId = payload.requestMessageId as string | undefined;
+        return requestMessageId ? `agent:update-prompt:reply:${requestMessageId}` : undefined;
       }
       // Fire-and-forget: no reply channel
       case AGENT_MESSAGE_TYPES.SEND_MESSAGE:
