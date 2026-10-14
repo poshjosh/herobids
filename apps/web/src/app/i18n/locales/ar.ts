@@ -587,6 +587,13 @@ export const messages: Record<string, string> = {
   'narrative_llm_resolution_failed': 'تعذر حل إعدادات الذكاء الاصطناعي السردي.',
 
   // Setup: unified provider-link form
+  'agentDetail.conversation.title': 'تحدث مع وكيلك',
+  'agentDetail.conversation.placeholder': 'اكتب رسالة إلى وكيلك',
+  'agentDetail.conversation.send': 'إرسال',
+  'agentDetail.conversation.empty': 'لا توجد رسائل بعد.',
+  'agentDetail.conversation.notRunning': 'ابدأ وكيلك للتحدث معه.',
+  'agentDetail.conversation.fromAgent': 'الوكيل',
+  'agentDetail.conversation.fromYou': 'أنت',
   'setup.connectionRequest.banner': 'الوكيل {agent} يطلب منك ربط {provider}.',
   'setup.form.title': 'توصيل الوكيل بالمنصة',
   'setup.form.standaloneSubtitle': 'اربط منصة تداول أو حساب بريد إلكتروني أو تكاملاً مخصصاً. تُشفَّر الأسرار ولا تُخزَّن بنص عادي.',

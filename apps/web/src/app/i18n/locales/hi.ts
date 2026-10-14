@@ -587,6 +587,13 @@ export const messages: Record<string, string> = {
   'narrative_llm_resolution_failed': 'नैरेटिव AI कॉन्फ़िगरेशन हल नहीं हो सका।',
 
   // Setup: unified provider-link form
+  'agentDetail.conversation.title': 'अपने एजेंट से बात करें',
+  'agentDetail.conversation.placeholder': 'अपने एजेंट को संदेश लिखें',
+  'agentDetail.conversation.send': 'भेजें',
+  'agentDetail.conversation.empty': 'अभी तक कोई संदेश नहीं।',
+  'agentDetail.conversation.notRunning': 'बात करने के लिए अपना एजेंट शुरू करें।',
+  'agentDetail.conversation.fromAgent': 'एजेंट',
+  'agentDetail.conversation.fromYou': 'आप',
   'setup.connectionRequest.banner': 'एजेंट {agent} आपसे {provider} कनेक्ट करने के लिए कह रहा है।',
   'setup.form.title': 'एजेंट को प्लेटफ़ॉर्म से कनेक्ट करें',
   'setup.form.standaloneSubtitle': 'ट्रेडिंग एक्सचेंज, ईमेल खाता, या कस्टम इंटीग्रेशन जोड़ें। सीक्रेट्स एन्क्रिप्टेड होते हैं और कभी सादे टेक्स्ट में संग्रहीत नहीं होते।',

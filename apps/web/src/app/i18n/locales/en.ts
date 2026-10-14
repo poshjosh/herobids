@@ -668,6 +668,13 @@ export const messages: Record<string, string> = {
   'narrative_llm_resolution_failed': 'Narrative AI configuration could not be resolved.',
 
   // Setup: unified provider-link form
+  'agentDetail.conversation.title': 'Talk to your agent',
+  'agentDetail.conversation.placeholder': 'Message your agent',
+  'agentDetail.conversation.send': 'Send',
+  'agentDetail.conversation.empty': 'No messages yet.',
+  'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
+  'agentDetail.conversation.fromAgent': 'Agent',
+  'agentDetail.conversation.fromYou': 'You',
   'setup.connectionRequest.banner': 'Agent {agent} is asking you to connect {provider}.',
   'setup.form.title': 'Connect agent to external platform',
   'setup.form.standaloneSubtitle': 'Connect a trading exchange, email account, or custom integration. Secrets are encrypted and never stored in plain text.',

@@ -1238,6 +1238,11 @@ export const agents = {
     request<unknown[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
   messages: (id: string, limit?: number, authoredBy?: 'agent' | 'platform') =>
     request<AgentOutboundMessage[]>(`/agents/${id}/messages${buildQuery({ limit, authoredBy })}`),
+  sendMessage: (id: string, message: string) =>
+    request<unknown>(`/agents/${id}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
   capabilityReadiness: agentCapabilityReadiness,
   tradingConnections: (id: string) =>
     request<{ agentId: string; family: 'trading'; connections: ConnectionSummary[] }>(`/agents/${id}/capabilities/trading/connections`),

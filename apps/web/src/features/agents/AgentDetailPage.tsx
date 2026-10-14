@@ -11,6 +11,7 @@ import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, formatSkillSelection, listSelectableSkills, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
+import { AgentConversation } from './AgentConversation.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
@@ -631,6 +632,7 @@ export function AgentDetailPage() {
               />
             )}
         </Card>
+        <AgentConversation agentId={id ?? ''} status={agent.status} />
 
         <Card>
           <details>
