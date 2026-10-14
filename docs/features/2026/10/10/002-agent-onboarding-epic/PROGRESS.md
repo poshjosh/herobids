@@ -72,7 +72,7 @@ Result: NOT PASSED. Partial.
 
 | Step | Result | Evidence |
 |---|---|---|
-| Blank agent, "help me trade" | Partial: agent created; goal stayed "Help me trade." | agent `f7b304f1-99d4-45ba-a9ac-572a93fb5ccc`; no `agent.update_prompt` message |
+| Blank agent, "help me trade" | Pass (one run; rerun before relying on it): agent called `update_my_prompt` on the first message; goal stored | agent `d43c3384-0d92-4d92-8fc8-3a0ef8572259` (`trader`); tool result `ok` at 12:46:54, promptLength 357. Earlier failing run: `f7b304f1-…` (no prompt update, before the first-turn fix) |
 | Trading skill added at runtime | Pass | `traderton/skills/crypto-trading`, `capability_families = {trading}` |
 | Connection reused and granted | Pass | connection `c48cd98d-287b-48f3-8549-1e870bb377d9` granted 07:30:09 |
 | Paper setup, defaults path | Pass (on retry) | `set_trading_setup` returned `ok`, mode `paper`, capital 10000 |
