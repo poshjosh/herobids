@@ -1119,7 +1119,7 @@ export class AgentMessageBroker {
         (skill) => Array.isArray(skill.capabilityFamilies) && skill.capabilityFamilies.includes('trading'),
       );
       if (!hasTradingCapability) {
-        await publishReply({ status: 'error', error: 'Paper trading needs the trading skill, which this agent does not have.', errorCode: 'trading.not_allowed' });
+        await publishReply({ status: 'error', error: 'Paper trading needs the traderton/skills/crypto-trading skill, which this agent does not have.', errorCode: 'trading.not_allowed' });
         return;
       }
 
