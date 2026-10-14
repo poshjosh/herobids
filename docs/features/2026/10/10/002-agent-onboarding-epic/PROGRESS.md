@@ -12,7 +12,7 @@
 |---|---|---|
 | Wave 1 | WP-A A1/A2/A3-design · WP-H H1–H2 · WP-M Phase 0–1 · WP-C S0 | done |
 | Wave 2 | WP-A A3–A6 · WP-B B1–B8 · WP-C S1–S2 | in progress |
-| Gate G1 | self-serve loop UAT | not started |
+| Gate G1 | self-serve loop UAT | in progress: partial (see G1 log below); not passed |
 | Wave 3 | cut-over (WP-C S3+S4) | not started |
 | Wave 4 | channels (WP-M Phase 2–4, WP-C S5.1, WP-E) | not started |
 | Wave 5 | cleanup (WP-M Phase 6) | not started |
@@ -65,6 +65,29 @@
 - **Decisions made this wave (§5):** (1) network labels live in `WALLET_NETWORKS` (domain). (2) `set_trading_setup` reuses any active connection on the default test provider, since no provenance column exists; paper mode never signs, so this is safe. (3) `set_trading_setup` takes `capital` only; `riskPosture` is deferred. (4) The base-tool visibility budget was raised 28 → 29 → 30 for `set_trading_setup` and `update_my_prompt`; it is pinned in `runtime-tool-visibility.test.ts`.
 - **Not verified or deferred (must be carried into G1, not claimed done):** the broker handler branches for `set_trading_setup` and `update_my_prompt` have no direct broker unit test (their tool and service paths are tested). `update_my_prompt` writes `agents.prompt`, but the journal entry from the plan is not written, and "takes effect on the next run" is unproven. The `use-existing` route has no route-level test. The web create form still requires the agent name and does not yet use the optional name or the "Configure employe" step. The DB-backed functional suites (agents, go-live) need Postgres and were not run. Traderton's `ceiling violation` test lives in the Traderton repo and was not re-run here.
 - **Greenlight requested for Wave 3** after the G1 self-serve UAT is recorded. Wave 3 has not started.
+
+## G1 log (local docker compose, 2026-10-14)
+
+Result: NOT PASSED. Partial.
+
+| Step | Result | Evidence |
+|---|---|---|
+| Blank agent, "help me trade" | Partial: agent created; goal stayed "Help me trade." | agent `f7b304f1-99d4-45ba-a9ac-572a93fb5ccc`; no `agent.update_prompt` message |
+| Trading skill added at runtime | Pass | `traderton/skills/crypto-trading`, `capability_families = {trading}` |
+| Connection reused and granted | Pass | connection `c48cd98d-287b-48f3-8549-1e870bb377d9` granted 07:30:09 |
+| Paper setup, defaults path | Pass (on retry) | `set_trading_setup` returned `ok`, mode `paper`, capital 10000 |
+| Specifics path (user states capital/risk) | Not run | |
+| Paper trade executed | Not run | |
+| Funding message (`get_funding_info`) | Not run | |
+| Go-live with a cloned agent | Not run | |
+
+Known gaps G1 depends on:
+- First-turn goal is not set from the user's first message (`update_my_prompt` not called).
+- `update_my_prompt` has no journal entry (deferred by the owner).
+- Zero-balance go-live warning not built (B8 follow-up).
+- Broker branch tests for the two new message types were missing; denial-reply tests now added (`aa43f8af`).
+
+Next, after green light: run the specifics path, a paper trade, the funding message and go-live with a cloned agent, then record each result here. Agent `9256ee48-…` is the earlier failed run and is kept as evidence.
 - **Superseded (done):** B4 step 3 plan, kept for history: Verified facts: the broker is constructed only in `apps/worker/src/index.ts`. The trading write client is created inside the `sideEffectBoundary` IIFE (around line 439), so it must be hoisted into a shared `tradingClient`. The broker has `db` and `sideEffectBoundary` but not the client. Defaults must come through the worker's read boundary (`ctx.externalBackend.invoke`, mapped to a read result) or a `loadTestProvisioningDefaults` helper. The API loader (`apps/api/src/traderton-operator-defaults.ts`) takes a `TradertonReadBoundary` and is not shared yet. Edits: protocol constant, payload and result schemas, `MESSAGE_PAYLOAD_SCHEMAS`; `KNOWN_AGENT_TOOL_NAMES`, `TOOL_CATALOG` and BASE `requiredTools`; `capability-policy` brokered grant; `publishTradingSetupReply` on the event publisher; broker switch case, optional `tradingSetup` constructor param appended last, and a `handleManageTradingSetup` method with the same trading-capability gate as `request_connection`; `set_trading_setup` tool that BLPOPs the reply; registration in the tools index; manifest row (`external:trading`); tests for the tool and broker branches.
 - After step 3: B5 (reuse is in place; add the plan-limit plain-words test), S1, S2, the `use_existing` UI, and the Wave 2 gate. Move `createTradingProviderLink`, `parseProvisionedWallet` and `compensateProvision` out of `apps/api/src/routes/setup.ts` (about lines 324–514) into `packages/db/src/trading-setup/`, so both the API route and the new `setupTradingForAgent` call the same generated-connection creation. Then B4 step 2d: `setupTradingForAgent` (operator defaults, reuse-or-create, running grant with `changes`, summary). Then step 3 (broker message, capability, `set_trading_setup` tool), B5 reuse, S1, S2, `use_existing` UI, and the Wave 2 gate.
 
