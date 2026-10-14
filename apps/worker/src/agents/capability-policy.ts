@@ -184,6 +184,12 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 3, maxConcurrent: 1, timeoutMs: 30_000 },
   },
   {
+    capability: 'update_my_prompt',
+    tier: 'brokered',
+    enabled: true,
+    limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 15_000 },
+  },
+  {
     capability: 'search_skills',
     tier: 'direct',
     enabled: true,

@@ -191,6 +191,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `request_connection` | `core` | Agent-initiated connection request link. |
 | `get_funding_info` | `external:trading` | Trading wallet funding address, network and latest observed balance. |
 | `set_trading_setup` | `external:trading` | Paper trading setup for this agent: test wallet, capital, paper mode. Brokered. |
+| `update_my_prompt` | `core` | Replace this agent's standing goal (prompt). Brokered. |
 | `remove_watch` | `external:trading` | Trading price-watch lifecycle. |
 | `resolve_bot` | `external:trading` | Trading bot identity resolution. |
 | `resolve_task` | `core` | Base-skill task management. |

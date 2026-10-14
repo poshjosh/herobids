@@ -31,7 +31,7 @@ import {
 } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
 import { setupTradingForAgent, loadTestDefaults, type OperatorDefaultsReadBoundary, type SetupTradingDeps, type TradingProfileReconciliationSaga } from '@herobids/db';
-import type { ManageTradingSetupPayload, TradingSetupResult } from '@herobids/domain';
+import type { ManageTradingSetupPayload, TradingSetupResult, UpdatePromptPayload, UpdatePromptResult } from '@herobids/domain';
 import { eq, inArray } from 'drizzle-orm';
 import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -203,6 +203,7 @@ export class AgentMessageBroker {
       [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
       [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: 'request_connection',
       [AGENT_MESSAGE_TYPES.MANAGE_TRADING_SETUP]: 'set_trading_setup',
+      [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: 'update_my_prompt',
     };
     const capabilityName = capabilityByType[envelope.type];
     // Saved so recordEnd can be called in the finally block on every exit path.
@@ -383,6 +384,14 @@ export class AgentMessageBroker {
             effectiveAgentId,
             envelope,
             envelope.payload as unknown as ManageAgentSkillsPayload,
+          );
+          break;
+
+        case AGENT_MESSAGE_TYPES.UPDATE_PROMPT:
+          await this.handleUpdatePrompt(
+            effectiveAgentId,
+            envelope,
+            envelope.payload as unknown as UpdatePromptPayload,
           );
           break;
 
@@ -1060,6 +1069,32 @@ export class AgentMessageBroker {
    * single-use link the agent can forward to the user. Writes the pending
    * request record to Redis and replies synchronously via a Redis list.
    */
+  private async handleUpdatePrompt(
+    agentId: string,
+    envelope: MessageEnvelope,
+    payload: UpdatePromptPayload,
+  ): Promise<void> {
+    const requestMessageId = (envelope.payload as Record<string, unknown>).requestMessageId as string | undefined;
+    const publishReply = async (result: UpdatePromptResult) => {
+      if (requestMessageId) {
+        await this.eventPublisher.publishUpdatePromptReply(requestMessageId, result);
+      }
+    };
+
+    try {
+      const agent = await this.agentRepo.getAgent(agentId);
+      if (!agent) {
+        await publishReply({ status: 'error', error: 'Agent not found', errorCode: 'agent.not_found' });
+        return;
+      }
+      await this.agentRepo.updateAgent(agentId, { prompt: payload.prompt });
+      await publishReply({ status: 'ok', promptLength: payload.prompt.length });
+    } catch (err) {
+      logger.error({ agentId, err }, 'handleUpdatePrompt failed');
+      await publishReply({ status: 'error', error: 'Could not update the prompt. Please try again.', errorCode: 'broker.internal_error' });
+    }
+  }
+
   private async handleManageTradingSetup(
     agentId: string,
     envelope: MessageEnvelope,

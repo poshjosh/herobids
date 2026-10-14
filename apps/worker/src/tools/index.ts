@@ -22,6 +22,7 @@ import { platformDocsTools } from './platform-docs.js';
 import { skillTools } from './skills.js';
 import { listProvidersTool, requestConnectionTool } from './connections.js';
 import { setTradingSetupTool } from './trading-setup.js';
+import { updateMyPromptTool } from './update-prompt.js';
 import { readSkillTool } from './read-skill.js';
 import { createBrowserTools } from './browser.js';
 import { httpClientTools } from './http-client.js';
@@ -123,6 +124,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     listProvidersTool,
     requestConnectionTool,
     setTradingSetupTool,
+    updateMyPromptTool,
     ...skillTools,
     readSkillTool,
   ];

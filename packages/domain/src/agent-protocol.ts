@@ -237,6 +237,19 @@ export const TradingSetupResultSchema = z.discriminatedUnion('status', [
 ]);
 export type TradingSetupResult = z.infer<typeof TradingSetupResultSchema>;
 
+/** Brokered prompt update — agent rewrites its own standing goal. */
+export const UpdatePromptPayloadSchema = z.object({
+  prompt: z.string().min(1).max(8000),
+  requestMessageId: z.string().min(1),
+});
+export type UpdatePromptPayload = z.infer<typeof UpdatePromptPayloadSchema>;
+
+export const UpdatePromptResultSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('ok'), promptLength: z.number().int().nonnegative() }),
+  z.object({ status: z.literal('error'), error: z.string().min(1), errorCode: z.string().min(1) }),
+]);
+export type UpdatePromptResult = z.infer<typeof UpdatePromptResultSchema>;
+
 // --- Trading Instance → Agent Messages ---
 
 export const DecisionAcceptedPayloadSchema = z.object({
@@ -427,6 +440,7 @@ export const AGENT_MESSAGE_TYPES = {
   MANAGE_AGENT_SKILLS: 'agent.manage_skills',
   REQUEST_CONNECTION: 'agent.request_connection',
   MANAGE_TRADING_SETUP: 'agent.manage_trading_setup',
+  UPDATE_PROMPT: 'agent.update_prompt',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -624,6 +638,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: ManageAgentSkillsPayloadSchema,
   [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: ConnectionRequestPayloadSchema,
   [AGENT_MESSAGE_TYPES.MANAGE_TRADING_SETUP]: ManageTradingSetupPayloadSchema,
+  [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: UpdatePromptPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,
