@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest';
 import type { TradingProfileConnection } from './trading-profile-reconciliation.js';
 
 const apiSourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const dbTradingProfilesRoot = join(apiSourceRoot, '..', '..', '..', 'packages', 'db', 'src', 'trading-profiles');
+const dbSourceRoot = join(apiSourceRoot, '..', '..', '..', 'packages', 'db', 'src');
+const dbTradingProfilesRoot = join(dbSourceRoot, 'trading-profiles');
+
 const profileSnapshotProperties = ['actorId', 'venueAccountId', 'capital', 'riskPosture', 'executionDefaults'];
 
 const activeBindingMutators = [
@@ -14,7 +16,7 @@ const activeBindingMutators = [
   { path: 'routes/chat.ts', reconciliationCalls: 1 },
   { path: 'routes/connections.ts', reconciliationCalls: 1 },
   { path: 'routes/blueprints.ts', reconciliationCalls: 1 },
-  { path: 'services/agent-config-service.ts', reconciliationCalls: 2 },
+  { path: 'db/agents/agent-config-service.ts', reconciliationCalls: 2 },
   { path: 'services/agent-go-live-service.ts', reconciliationCalls: 1 },
 ] as const;
 
@@ -28,7 +30,7 @@ const workflowBehaviorTests = [
   'routes/chat.test.ts',
   'routes/connections.test.ts',
   'routes/blueprints.integration.test.ts',
-  'services/agent-config-service.test.ts',
+  'db/agents/agent-config-service.test.ts',
   'services/agent-go-live-service.test.ts',
 ] as const;
 function connection(overrides: Partial<TradingProfileConnection>): TradingProfileConnection {
@@ -43,7 +45,8 @@ function connection(overrides: Partial<TradingProfileConnection>): TradingProfil
 }
 
 async function source(relativePath: string): Promise<string> {
-  return readFile(join(apiSourceRoot, relativePath), 'utf8');
+  const root = relativePath.startsWith('db/') ? dbSourceRoot : apiSourceRoot;
+  return readFile(join(root, relativePath.replace(/^db\//, '')), 'utf8');
 }
 
 async function sourceFiles(directory: string): Promise<string[]> {
@@ -163,10 +166,15 @@ describe('trading profile workflow delegation', () => {
 
   it('requires every active binding mutation site to delegate and documents revoked-only cleanup', async () => {
     const files = await sourceFiles(apiSourceRoot);
-    const productionSources = await Promise.all(files.map(async (path) => ({
+    const apiSources = await Promise.all(files.map(async (path) => ({
       path: path.slice(apiSourceRoot.length + 1),
       contents: await readFile(path, 'utf8'),
     })));
+    const dbSources = await Promise.all((await sourceFiles(dbSourceRoot)).map(async (path) => ({
+      path: `db/${path.slice(dbSourceRoot.length + 1)}`,
+      contents: await readFile(path, 'utf8'),
+    })));
+    const productionSources = [...apiSources, ...dbSources];
     const mutationFiles = productionSources
       .filter(({ contents }) => /(?:insert|update|delete)\(agentConnections\)/.test(contents))
       .map(({ path }) => path)

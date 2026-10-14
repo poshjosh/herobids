@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Database } from '@herobids/db';
+import type { Database } from '../index.js';
 
-vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
+vi.mock('../trading-profiles/trading-profile-reconciliation-adapter.js', () => ({
   loadActiveTradingProfileConnections: vi.fn(),
 }));
 
 import { grantConnection, grantConnectionToRunningAgent, revokeConnection } from './agent-config-service.js';
 import {
   loadActiveTradingProfileConnections,
-} from '../agents/trading-profile-reconciliation-adapter.js';
-import { planTradingProfileReconciliation, type TradingProfileConnection, type TypedTradingProfile } from '../agents/trading-profile-reconciliation.js';
-import type { TradingProfilePlannerInput } from '../agents/trading-profile-reconciliation-saga.js';
+} from '../trading-profiles/trading-profile-reconciliation-adapter.js';
+import { planTradingProfileReconciliation, type TradingProfileConnection, type TypedTradingProfile } from '../trading-profiles/trading-profile-reconciliation.js';
+import type { TradingProfilePlannerInput } from '../trading-profiles/trading-profile-reconciliation-saga.js';
 
 function buildDb(selectResults: Array<Record<string, unknown>[]>): Database {
   let selectIndex = 0;

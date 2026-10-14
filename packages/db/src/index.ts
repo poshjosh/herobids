@@ -19,6 +19,7 @@ export async function closeDatabase(db: Database): Promise<void> {
 
 export * from './schema/index.js';
 export * from './trading-profiles/index.js';
+export * from './agents/agent-config-service.js';
 export { TradingProfileReconciliationOutboxRepository } from './trading-profile-reconciliation-outbox-repository.js';
 export type { DatabaseTransaction, TradingProfileReconciliationOutboxRow } from './trading-profile-reconciliation-outbox-repository.js';
 export { ConnectionOwnershipRepository } from './repositories.js';
