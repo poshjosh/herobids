@@ -43,6 +43,10 @@ export function formatAgentGoalLiteralBlock(prompt: string): string {
 export const EMPTY_JOB_DEFAULT_TEXT =
   'No job has been assigned yet. Do not start any autonomous work until your creator gives you one. You remain on duty — if the user messages you, respond normally.';
 
+/** Appended to the empty-goal text so a new agent turns its creator's first description into its goal. */
+export const FIRST_TURN_GOAL_GUIDANCE =
+  'When your creator first describes what they want, call update_my_prompt with a clear goal in one paragraph, then confirm it back to them in one sentence.';
+
 /**
  * True when a stored prompt carries no actual user goal.
  *
