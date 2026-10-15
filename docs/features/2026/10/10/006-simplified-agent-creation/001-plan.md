@@ -1,6 +1,6 @@
 # Plan: Simplified Agent Creation (Form + Guided Chat)
 
-**Status:** draft
+**Status:** draft. Guided chat deferred 2026-10-15; see [Wave 3 cut-over plans](../../15/001-wave3-cutover/000-README.md).
 **Created:** 2026-10-10
 **Epic:** [002-agent-onboarding-epic/000-roadmap.md](../002-agent-onboarding-epic/000-roadmap.md) (this plan is Work Package C; read the roadmap for ordering)
 
