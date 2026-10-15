@@ -595,7 +595,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.fromAgent': 'الوكيل',
   'agentDetail.conversation.fromYou': 'أنت',
   'setup.useExisting.title': 'استخدام اتصال موجود لـ {agent}',
-  'setup.useExisting.empty': 'ليس لديك اتصالات نشطة لهذا المزود. أنشئ واحداً.',
   'setup.useExisting.confirm': 'استخدم هذا الاتصال',
   'setup.connectionRequest.banner': 'الوكيل {agent} يطلب منك ربط {provider}.',
   'setup.form.title': 'توصيل الوكيل بالمنصة',

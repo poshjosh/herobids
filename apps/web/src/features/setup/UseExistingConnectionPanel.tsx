@@ -23,27 +23,23 @@ export function UseExistingConnectionView({ agentName, options, selectedId, isSu
   return (
     <Card>
       <SectionLabel>{intl.formatMessage({ id: 'setup.useExisting.title' }, { agent: agentName })}</SectionLabel>
-      {options.length === 0 ? (
-        <p>{intl.formatMessage({ id: 'setup.useExisting.empty' })}</p>
-      ) : (
-        <ul>
-          {options.map((option) => (
-            <li key={option.id}>
-              <label>
-                <input
-                  type="radio"
-                  name="existing-connection"
-                  value={option.id}
-                  checked={selectedId === option.id}
-                  onChange={() => onSelect(option.id)}
-                />
-                {' '}
-                {option.label}
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul>
+        {options.map((option) => (
+          <li key={option.id}>
+            <label>
+              <input
+                type="radio"
+                name="existing-connection"
+                value={option.id}
+                checked={selectedId === option.id}
+                onChange={() => onSelect(option.id)}
+              />
+              {' '}
+              {option.label}
+            </label>
+          </li>
+        ))}
+      </ul>
       <Button onClick={onConfirm} disabled={selectedId === null || isSubmitting}>
         {intl.formatMessage({ id: 'setup.useExisting.confirm' })}
       </Button>
@@ -73,6 +69,8 @@ export function UseExistingConnectionPanel({ requestId, provider, agentName, onD
       onDone();
     },
   });
+
+  if (options.length === 0) return null;
 
   return (
     <UseExistingConnectionView

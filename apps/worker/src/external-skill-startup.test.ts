@@ -77,6 +77,20 @@ describe('installExternalSkillsAtStart', () => {
     expect(body).not.toContain('ORIGINAL BODY LINE');
   });
 
+  it('marks the skill unavailable with a reason when the CLI exits 0 but writes no SKILL.md', async () => {
+    const silentInstaller: ExternalSkillInstaller = {
+      install: async () => ({ ok: true, output: 'Installed nothing' }),
+    };
+    const availability = await installExternalSkillsAtStart({
+      externalSkills: [{ id: 'ext', name: 'echo', description: 'd', sourceRef: REF }],
+      workspaceRoot,
+      installer: silentInstaller,
+    });
+    const state = availability.get(REF);
+    expect(state?.available).toBe(false);
+    expect(state?.unavailableReason).toContain('was not written');
+  });
+
   it('marks the skill unavailable (never throws) when the source is unreachable', async () => {
     const availability = await installExternalSkillsAtStart({
       externalSkills: [{ id: 'ext', name: 'echo', description: 'd', sourceRef: 'example/skills/missing' }],

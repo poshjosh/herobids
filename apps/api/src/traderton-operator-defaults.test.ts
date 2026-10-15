@@ -18,9 +18,6 @@ const sampleDefaults = {
   maxPositionSize: 250_000,
   maxPositionSizePct: 50,
   dailyMaxLossPct: 12,
-  defaultTestCapital: '2500',
-  defaultTestProvider: 'hyperliquid',
-  generatedWalletTestSetupAllowed: false,
 };
 
 beforeEach(() => {
@@ -42,47 +39,20 @@ describe('loadOperatorRiskDefaults', () => {
       expect(result.data.maxOpenPositions).toBe(3);
       expect(result.data.maxPositionSize).toBe(250_000);
       expect(result.data.maxPositionSizePct).toBe(50);
-      expect(result.data.defaultTestCapital).toBe('2500');
-      expect(result.data.defaultTestProvider).toBe('hyperliquid');
-      expect(result.data.generatedWalletTestSetupAllowed).toBe(false);
     }
     expect(invoke).toHaveBeenCalledWith({ toolName: 'get_operator_defaults', payload: {} });
   });
 
-  it('fills test-provisioning defaults from the schema when the boundary omits them', async () => {
+  it('ignores extra fields the boundary returns that herobids does not consume', async () => {
     const invoke = vi.fn().mockResolvedValue({
       kind: 'success',
-      data: { maxOpenPositions: 3 },
+      data: { ...sampleDefaults, defaultTestCapital: '2500', defaultTestMode: 'paper' },
     } satisfies ExternalBackendReadResult);
     const boundary = makeStubBoundary(invoke);
 
     const result = await loadOperatorRiskDefaults(boundary);
 
     expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data.defaultTestCapital).toBe('1000');
-      expect(result.data.defaultTestProvider).toBe('hyperliquid');
-      expect(result.data.generatedWalletTestSetupAllowed).toBe(true);
-    }
-  });
-
-  it('rejects a wrongly-typed test-provisioning field with a 502', async () => {
-    const invoke = vi.fn().mockResolvedValue({
-      kind: 'success',
-      data: { ...sampleDefaults, generatedWalletTestSetupAllowed: 'yes' },
-    } satisfies ExternalBackendReadResult);
-    const boundary = makeStubBoundary(invoke);
-
-    const result = await loadOperatorRiskDefaults(boundary);
-
-    expect(result).toEqual({
-      ok: false,
-      error: {
-        status: 502,
-        code: 'test_provisioning_defaults.invalid_response',
-        message: 'Traderton returned invalid test-provisioning defaults',
-      },
-    });
   });
 
   it('maps a boundary failure to a 502 ReadBoundaryError', async () => {

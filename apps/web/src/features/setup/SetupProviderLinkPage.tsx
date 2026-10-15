@@ -124,24 +124,27 @@ export function SetupProviderLinkPage() {
   const requestedProvider = searchParams.get('provider');
   const connectionRequestId = searchParams.get('requestId');
   const requestingAgentName = searchParams.get('agentName');
-  if (connectionRequestId && requestedProvider && requestingAgentName && searchParams.get('mode') === 'use_existing') {
-    return (
-      <UseExistingConnectionPanel
-        requestId={connectionRequestId}
-        provider={requestedProvider}
-        agentName={requestingAgentName}
-        onDone={() => navigate('/agents', { replace: true })}
-      />
-    );
-  }
+  const connectionRequest = requestedProvider && connectionRequestId && requestingAgentName
+    ? { requestId: connectionRequestId, provider: requestedProvider, agentName: requestingAgentName }
+    : undefined;
   return (
-    <ProviderSetupForm
-      standalone
-      defaultCapability="trading"
-      initialProviderId={requestedProvider ?? undefined}
-      connectionRequest={requestedProvider && connectionRequestId && requestingAgentName ? { requestId: connectionRequestId, provider: requestedProvider, agentName: requestingAgentName } : undefined}
-      onClose={handleClose}
-      onSuccess={handleSuccess}
-    />
+    <>
+      {connectionRequest && (
+        <UseExistingConnectionPanel
+          requestId={connectionRequest.requestId}
+          provider={connectionRequest.provider}
+          agentName={connectionRequest.agentName}
+          onDone={() => navigate('/agents', { replace: true })}
+        />
+      )}
+      <ProviderSetupForm
+        standalone
+        defaultCapability="trading"
+        initialProviderId={requestedProvider ?? undefined}
+        connectionRequest={connectionRequest}
+        onClose={handleClose}
+        onSuccess={handleSuccess}
+      />
+    </>
   );
 }

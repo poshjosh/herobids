@@ -18,7 +18,6 @@ const pendingRecord = {
   agentId: 'agent-1',
   userId: 'user-1',
   provider: 'gmail',
-  mode: 'create',
   status: 'pending',
   createdAt: '2026-10-13T10:00:00.000Z',
   expiresAt: '2026-10-13T10:30:00.000Z',

@@ -16,7 +16,6 @@ import type {
   AgentWakePayload,
   ManageAgentSkillsResult,
   ConnectionRequestResult,
-  TradingSetupResult,
   UpdatePromptResult,
 } from '@herobids/domain';
 import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES, AGENT_STREAM_MAXLEN } from '@herobids/domain';
@@ -179,12 +178,6 @@ export class InstanceEventPublisher {
    * Publish a connection-request reply to a Redis list so the agent container
    * can BLPOP it and receive the broker's response synchronously.
    */
-  async publishTradingSetupReply(requestMessageId: string, result: TradingSetupResult): Promise<void> {
-    const replyKey = `agent:trading-setup:reply:${requestMessageId}`;
-    await this.redis.lpush(replyKey, JSON.stringify(result));
-    await this.redis.expire(replyKey, 60);
-  }
-
   async publishUpdatePromptReply(requestMessageId: string, result: UpdatePromptResult): Promise<void> {
     const replyKey = `agent:update-prompt:reply:${requestMessageId}`;
     await this.redis.lpush(replyKey, JSON.stringify(result));

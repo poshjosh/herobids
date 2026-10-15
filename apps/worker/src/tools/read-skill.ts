@@ -11,12 +11,37 @@ import { getWorkspacePaths } from './workspace.js';
 import { readInstalledSkillBody } from '../external-skill-startup.js';
 import { normalizeSourceRefToSlug } from '@herobids/db';
 import { createLogger } from '../logger.js';
+import { npxSkillsCliInstaller, runExternalSkillInstall } from './skills.js';
 
 const logger = createLogger('tool:read-skill');
 
 const ReadSkillParamsSchema = z.object({
   ref: z.string().min(1).describe('The skill ref to load, e.g. "traderton/skills/crypto-trading", as listed in the prompt.'),
 });
+
+/**
+ * Install an assigned external skill whose SKILL.md is missing from the workspace,
+ * then re-read it. Returns the body, or the reason the install did not produce one.
+ */
+async function installMissingSkill(
+  ref: string,
+  ctx: ToolContext,
+  workspaceRoot: string,
+): Promise<{ body: string } | { error: string }> {
+  const installer = ctx.externalSkillInstaller ?? npxSkillsCliInstaller;
+  let install;
+  try {
+    install = await runExternalSkillInstall(ref, workspaceRoot, installer);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'unknown install error' };
+  }
+  if (!install.ok) return { error: install.error };
+  const body = await readInstalledSkillBody(workspaceRoot, ref);
+  if (body === null) {
+    return { error: `the install reported success but SKILL.md was not written. ${install.output ?? ''}`.trim() };
+  }
+  return { body };
+}
 
 async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<ToolResult> {
   const parsed = ReadSkillParamsSchema.safeParse(params);
@@ -50,17 +75,23 @@ async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<Tool
   }
 
   const workspaceRoot = getWorkspacePaths(ctx.agentId).root;
-  const body = await readInstalledSkillBody(workspaceRoot, ref);
+  let body = await readInstalledSkillBody(workspaceRoot, ref);
   if (body === null) {
-    return {
-      success: true,
-      data: {
-        ref,
-        loaded: false,
-        available: false,
-        message: `Skill "${ref}" is not installed in this workspace (install may have failed this session). Its guidance cannot be loaded right now.`,
-      },
-    };
+    // Assigned but not installed in this workspace (for example, assigned without an
+    // install). Install it now and re-read; a failed install is reported, not hidden.
+    const installed = await installMissingSkill(ref, ctx, workspaceRoot);
+    if ('error' in installed) {
+      return {
+        success: true,
+        data: {
+          ref,
+          loaded: false,
+          available: false,
+          message: `Skill "${ref}" is not installed in this workspace and the install failed: ${installed.error}. Its guidance cannot be loaded right now.`,
+        },
+      };
+    }
+    body = installed.body;
   }
 
   session?.markLoaded(ref, body);

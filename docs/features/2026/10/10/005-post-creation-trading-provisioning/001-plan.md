@@ -25,23 +25,37 @@ A blank agent that adds the trading skill (via `add_skills`) cannot trade. In th
   - Defaults (path C): the platform provisions a test-mode setup from operator defaults.
   - Specifics (path A): the user tells the agent capital and risk, and the agent applies them.
 - Both paths use **one tool** and one server-side code path; path C is the same call with no values.
-- Neither path can enable live mode. Live stays with go-live and an explicit UI confirmation.
-- The provisioned test setup is pinned to **paper** (fully simulated), on a generated wallet that is never funded for test purposes.
+- Neither path can enable live mode. Live is started by the user (go-live in the web app or `/golive` in Telegram), never by the agent. *(Amended 2026-10-14: was "an explicit UI confirmation".)*
+- The setup pins the agent to **paper** (fully simulated). *(Amended 2026-10-14: the clause "on a generated wallet that is never funded for test purposes" is withdrawn; see the connection decisions below.)*
 - The agent tells the user the wallet is unfunded and must be funded before live, at setup and again every time the user asks to go live.
+- **2026-10-14 (owner): connection-request links carry a login token.** The link is in a private message to the user, so it keeps the `request_connection` token properties (D-A1: short-lived, single-use). The earlier idea of a separate wallet-details link is dropped: the flow below needs no such link.
+- **2026-10-14 (owner): all connections are treated the same.** No special class, label or wording for a platform-created wallet. The stored label of a connection is whatever the link page gives it, like any other.
+- **2026-10-14 (owner): the setup tool no longer creates or picks a connection.** `set_trading_setup` sets capital and paper mode on the trading connection already granted to the agent; with none it fails with `connection.missing`. The agent gets a connection through `request_connection`, never from this tool. *(Superseded later on 2026-10-14: the tool is removed; see below.)*
+- **2026-10-14 (owner): the request link page offers the three choices together.** Use an existing connection (shown only if the user has any for the provider), enter details, or create one for the user (only where the provider supports it). `request_connection` has no `mode` parameter.
+- **2026-10-14 (owner): prompts stay generic.** The base prompt says nothing about wallets or trading. Trading and wallet wording lives in the trading skill (`traderton-skills`) and the trading tools.
+- **2026-10-14 (owner): safe defaults live in Traderton, and `set_trading_setup` is removed.** When a trading profile is first created for an agent with no mode or capital supplied, Traderton writes paper mode and the operator default capital into the stored profile (creation only, never on later updates). Conditions: the values show in the user's edit form, and the user can change them (the user's own agent values, not the operator-wide defaults). Nothing marks them as defaults in the UI. To be removed from herobids: the `set_trading_setup` tool, its broker message, protocol schemas, capability, catalog and base-list entries, `setupTradingForAgent` and the herobids defaults loader. This also withdraws the agent-side way to set capital. **Not yet implemented.** Proposal, not yet confirmed: reuse Traderton's existing `execution.defaultOwnerMode` (paper, `config/default.yaml`) for the mode default.
+- **Owner-confirmed 2026-10-14 (corrects an earlier wrong finding):** the edit form already shows capital (main form) and execution mode (Advanced Settings → Capabilities); nothing is missing. An earlier read-only trace concluded the form could not show stored profile values; that was wrong or incomplete, and the real data path was not traced. No existing rule or process changes: `PATCH /agents/:id` still accepts config changes only when the agent is stopped or crashed. Traderton creates the profile row in `agent-trading-profile-repository.ts` (`applyOperation`, insert at line 204), not yet read in detail.
+- **2026-10-14 (owner): the ask-once question is dropped (option A).** After the connection is granted the agent trades in paper mode with the defaults and tells the user once what is in effect (mode and capital), and that changing them means stopping the agent, editing its settings and starting it again. There is no "research only until answered" gate and no agent-side way to set capital. Amends D-B1. **Not yet implemented.**
+- **2026-10-14 (owner): implementation approved (R1–R3, R5–R6; R4 treated as approved, done last).** Swap venues (Jupiter, 1inch) default to **shadow**, because agents cannot run paper there. The agent decides the block name: `testProvisioningDefaults` is kept (renaming touches two repos for little gain). **Agent design note:** the mode default is a new constrained key `testProvisioningDefaults.defaultTestMode` (`paper` or `shadow`), not `execution.defaultOwnerMode` as first proposed, because `defaultOwnerMode` also allows `live` and is a ceiling for the escalation guard, so reusing it could create live profiles if misconfigured.
+- **Open (2026-10-14):** none outstanding beyond the implementation items below.
 
 ## Design
 
 ### Agent-facing flow
+
+*(Superseded 2026-10-14: the ask-once step and the `set_trading_setup` call are removed; see the decisions above and the revision section below.)*
 
 1. The agent adds the trading skill. The trading skill's instructions tell it: before any trading action, ask once: "Want me to pick safe defaults (test mode with simulated money), or do you want to set capital and risk yourself?" Persist the answer in the agent's memory so it is not asked again. No trading action before it is answered; research and market reads are fine.
 2. The agent calls `set_trading_setup`.
 
 ### Tool: `set_trading_setup`
 
-- Params: `capital?`, `riskPosture?` (partial), `connectionId?`. Omitted values come from operator defaults. No `mode` param: the provisioned mode is always `paper`.
+*(Superseded 2026-10-14: the tool is to be removed; Traderton applies the defaults at profile creation.)*
+
+- Params: `capital?`. Omitted values come from operator defaults. No `mode` param: the mode set is always `paper`.
 - Server-side steps, in one saga (reuses the profile reconciliation saga and, after WP-H, the shared derivation):
-  1. Find a usable trading connection for the user (active, resolved venue account). If none, create a generated-wallet connection for the operator default test provider (hyperliquid). Reuse an existing generated one before creating another.
-  2. Grant it to the agent (new running-agent path, see below).
+  1. Find the trading connection already granted to the agent (active, resolved venue account). If none, fail with `connection.missing` (*amended 2026-10-14: the tool no longer creates or reuses connections*).
+  2. Re-grant it to the agent with the explicit `changes` (new running-agent path, see below), which applies capital and paper mode.
   3. Provision the profile via `proposeTradingProfiles` with `changes = { capital, riskPosture, executionDefaults }`. Today grant passes `changes: {}`, which is what produces the empty profile.
   4. Return a summary the agent reads to the user: mode, capital, effective risk limits, how to change them (edit form, or tell the agent), how to go live.
 - Risk values may only be at or below the operator ceilings (enforced by traderton; Agent Mode Purity: operator defaults are agent-mutable downward). Anything the user wants looser or locked is done in the edit form, which stores user-configured, immutable limits.
@@ -71,11 +85,33 @@ Go-live checks only for an active connection and plan entitlement; it never chec
 
 ### Going live
 
-Unchanged. The agent explains that live needs the user's own wallet or keys (WP-A `request_connection` link) and the go-live confirmation in the UI. `set_trading_setup` never touches mode.
+Unchanged for the agent: it never switches to live. Live is started by the user (go-live in the web app or `/golive` in Telegram), which creates a live copy with the agent's connection. `set_trading_setup` never touches mode.
 
 ### Provenance and visibility
 
 Record on the profile change who set each value (`operator_default` or `user_stated`) in the journal, and the agent states the result to the user. The detail page already shows trading config; add the source if cheap.
+
+## Revision 2026-10-14: defaults in Traderton (owner-approved direction; implementation awaiting approval)
+
+Conditions set by the owner: the default values show in the user's edit form (capital in the main form, execution mode under Advanced Settings → Capabilities, both already shown) and the user can change them (own agent only; the existing rule that config changes need a stopped or crashed agent stays); no marking of defaults in the UI.
+
+| # | Item | Gate |
+|---|---|---|
+| R1 | Traderton: when a profile row is first created and the action supplies no mode or no capital, fill mode from `execution.defaultOwnerMode` and capital from the operator default capital. Creation only, never on update or explicit clear. Decide the default on swap venues first (open question 1). Defaults must go through the same capability and ceiling checks as supplied values, and an idempotent replay of the same operation must not raise a manifest conflict (the stored manifest is compared with the replayed one). | Traderton tests: creation fills; update and clear never refill; replay of the same operation succeeds; swap-venue rule; checks still apply |
+| R2 | Herobids: remove the `set_trading_setup` stack: worker tool and its test, tool index registration, `KNOWN_AGENT_TOOL_NAMES`, `TOOL_CATALOG` and base `requiredTools` entries, the broker message, payload and result schemas, capability-policy entry, broker handler, deps and `publishTradingSetupReply`, worker `tradingSetupDeps`; `setupTradingForAgent`, `loadTestDefaults` and their exports in `packages/db`; the test-provisioning part of the domain schema and the API operator-defaults loader; fix the comment in `agent-config-service.ts`. Lower the tool-visibility budget pinned in `runtime-tool-visibility.test.ts`. Check whether the grant `changes` option is still used and remove it if not. | `tsc` for db, domain, api, worker; tool catalog assertion; visibility test; full test run |
+| R3 | `traderton-skills` crypto-trading: remove the ask-once, research-only and `set_trading_setup` lines; add the one-time disclosure of mode and capital and the stop-edit-start pointer; keep the connection, funding and go-live lines. First verify how the agent learns its mode (`get_account_summary` and `get_risk_limits` already give capital and limits). | Read-only check, then skill text review |
+| R4 | Traderton: remove `defaultTestProvider` and `generatedWalletTestSetupAllowed` (proposed, not approved) | Traderton tests and a repo-wide search |
+| R5 | Docs: amend D-B1 and D-B2 in IMPLEMENTATION, the stale WP-B sections, `PROGRESS.md` | Review |
+| R6 | Rerun G1 on the new flow: blank agent, trading skill, `request_connection`, link, wake, paper trade with the disclosure, then edit capital while stopped and restart. Record each result in the G1 table. | G1 table updated with evidence |
+
+Ordering and risks: Traderton R1 must exist before herobids R2 is used, otherwise a granted agent has a null profile and cannot trade; no deployment without approval. Traderton's working tree already holds unrelated uncommitted changes, so its commits stay separate. The live copy inherits the stored (default) capital and mode values like any explicit values, so the user should review them at go-live.
+
+**Implementation status (2026-10-14, all uncommitted):**
+- **R1 done (Traderton).** `set_agent_trading_profile` supplies `defaultTestMode` and `defaultTestCapital` when a profile row is first created without them, via `creationDefaults` applied in the repository insert branch only. The stored manifest keeps the action as supplied, so a replay compares equal. Swap venues fall back to shadow; capital is never defaulted for a live profile. Tests: domain and tool tests pass; the repository test for first-creation-only and replay is written but **not run** (needs Postgres, `DATABASE_URL` unset here). Full Traderton suite 170 files passed, 2,990 tests passed, 108 skipped.
+- **R2 done (herobids).** The `set_trading_setup` stack is removed, including the unused explicit-changes option on the running-agent grant, the herobids test-provisioning schema and the loader merge. Full herobids suite 339 files passed, 6,585 tests passed; `tsc` clean for db, domain, api, worker, web. The tool-visibility count is now 29.
+- **R3 done.** Skill text rewritten in `traderton-skills`. It points the agent to `get_account_summary` for the real mode. The agent's "Execution mode" context line was always `paper` (the runtime descriptor falls back to `'paper'`; no caller passes a real mode), so on 2026-10-14 the owner chose to remove that line (option B). Nothing else read it. The descriptor's `executionMode` field itself is left in place.
+- **R4 done (Traderton).** `defaultTestProvider` and `generatedWalletTestSetupAllowed` removed from the schema, `config/default.yaml` and tests; no remaining references in the repo.
+- **R5 in progress, R6 not started.**
 
 ## Work items
 
@@ -99,7 +135,7 @@ Record on the profile change who set each value (`operator_default` or `user_sta
 
 ## Risks and open questions
 
-1. **Plan limits.** Checked: the free plan allows 5 active connections, 5 venue accounts and live mode (`config/default.yaml`, `plan-guards.ts`), so a generated test wallet is allowed unless the user already holds 5 active connections. Handle that edge case: the tool returns the limit error in plain words and the agent tells the user to remove one or upgrade. Reuse an existing generated connection first so most users never hit it.
+1. **Plan limits (superseded 2026-10-14: the setup tool no longer creates connections; the limit now applies on the link page).** Checked: the free plan allows 5 active connections, 5 venue accounts and live mode (`config/default.yaml`, `plan-guards.ts`), so a generated test wallet is allowed unless the user already holds 5 active connections. Handle that edge case: the tool returns the limit error in plain words and the agent tells the user to remove one or upgrade. Reuse an existing generated connection first so most users never hit it.
 2. **Actor rebuild on a profile change.** Checked in traderton. Edit-form and PATCH/PUT changes require a stopped or crashed agent, and stopping an agent calls `stop_agent_actor`, so those edits never rebuild a live actor. The only way to bump a profile revision under a live actor is the new running-agent grant (B2), and only when the agent already has an actor (for example it already traded on another connection); first-time provisioning has none, because the actor is created lazily on the first venue-resolving call. In that case concurrent decisions are serialized behind one rebuild (`agent-direct-actor-ensure.test.ts`, case 4), so they are not lost. A decision already executing on the old actor is not awaited by `stop()` (it clears timers and sets `running=false`); its fills still persist, but the new actor reads positions at start and could briefly miss a fill landing right after. Mitigation: B2 only allows the running-agent grant when the agent has no live trading actor or no open decision, or make `stop()` await the in-flight cycle (traderton follow-up).
 3. **Paper pricing.** Verified, not a risk: decision prices come from a per-agent mark source, the agent's last fill for the instrument or else the worker-wide fallback (Hyperliquid public mids, then the CoinGecko oracle), with no credentials and the same in every mode (`composition/decision-intake.ts`, `create-trading-runtime.ts`). The paper executor fills at that price plus simulated slippage and fee. Only caveat: a symbol missing from both sources fails the decision, same as shadow.
 4. **Unanswered question.** If the user never answers, the agent stays research-only. Decide the reminder cadence (suggest once per session, not per tick).

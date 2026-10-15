@@ -39,7 +39,6 @@ import { AgentActorLifecycle } from './agents/agent-actor-lifecycle.js';
 import { ActorEventRelay } from './agents/actor-event-relay.js';
 import { createBoundaryConsumerNotificationFeed } from './agents/boundary-consumer-notification-feed.js';
 import { createExternalBackendReadBoundary } from './external-backend/read-adapter.js';
-import { TradingProfileReconciliationOutboxRepository, TradingProfileReconciliationSaga } from '@herobids/db';
 import { ApprovalService } from './services/approval-service.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
 import { DockerRuntimeDocumentMaterializer } from './agents/docker-document-materializer.js';
@@ -774,40 +773,6 @@ const botLiveCheckCallback = async (userId: string): Promise<void> => {
   }
 };
 
-// Trading setup deps for `set_trading_setup`: the same trading backend, with a system subject for defaults and a saga for profile writes.
-const tradingSetupDeps = (() => {
-  if (!tradingBackend.ok) return undefined;
-  const { definition, hmacSecret } = tradingBackend.data;
-  const client = createExternalBackendClient(
-    buildExternalBackendClientConfig(definition, hmacSecret, { metrics: externalBackendMetricsSink }),
-  );
-  const subject: ExternalBackendSubject = {
-    ownerId: definition.caller.consumerId,
-    actor: { type: 'system', id: 'trading-setup' },
-  };
-  const saga = new TradingProfileReconciliationSaga(
-    new TradingProfileReconciliationOutboxRepository(db),
-    {
-      invoke: (input) => client.invoke({
-        toolName: input.toolName,
-        payload: input.payload,
-        subject: input.subject,
-        requestId: input.requestId,
-        idempotencyKey: input.idempotencyKey,
-        correlationId: input.correlationId,
-        deadlineMs: definition.endpoint.requestTimeoutMs,
-      }),
-    },
-    undefined,
-  );
-  return {
-    saga,
-    client,
-    readBoundary: createExternalBackendReadBoundary(client, subject, definition.endpoint.requestTimeoutMs),
-    plansConfig: appConfig.plans,
-  };
-})();
-
 const agentBroker = new AgentMessageBroker(
   redisClient,
   agentRepo,
@@ -830,7 +795,6 @@ const agentBroker = new AgentMessageBroker(
   sideEffectBoundary,
   appConfig.auth.publicBaseUrl,
   appConfig.connectionRequests,
-  tradingSetupDeps,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

@@ -46,9 +46,9 @@ All under `docs/features/2026/10/10/`:
 
 ### 3.2 Epic-specific invariants
 
-1. **Live mode only via go-live.** No path in this epic enables live trading. `set_trading_setup` provisions **paper** only. Live stays behind `POST /agents/:id/go-live` + explicit UI confirmation.
+1. **Live mode only starts from a user action.** The user starts go-live (the web app, or `/golive` in Telegram); the agent never switches itself to live. No path in this epic enables live trading for the agent. `set_trading_setup` sets **paper** only. *(Amended 2026-10-14: was "behind `POST /agents/:id/go-live` + explicit UI confirmation"; Telegram `/golive` already exists, and `/mode` is read-only.)*
 2. **User-configured limits are immutable.** The provisioning path may only set values at or below operator ceilings; anything the user wants looser or locked goes through the edit form.
-3. **The agent never grants itself a user's connection.** `use_existing` exists precisely because an agent must not self-grant. Connection grants always flow through the user-facing link/approval.
+3. **The agent never grants itself a user's connection.** The user chooses on the link page (use an existing connection, enter details, or create one). Connection grants always flow through the user-facing link/approval.
 4. **Bearer tokens never enter LLM context.** The connection-request link carries a login token; it is short-lived and single-use, and instructions tell the agent to forward it promptly and not persist it.
 5. **One worker-to-API mechanism.** WP-A A3 and WP-B B4 both need the worker to trigger API-side actions (mint a link, create a generated connection, grant). Decide the mechanism **once** (in WP-A A3) and reuse it in WP-B — do not invent two patterns.
 6. **New tools must be registered in `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG`** (`packages/domain/src/tools.ts`), or `assertToolCatalogMatchesRegistry` fails at worker startup. `BASE_SKILL.requiredTools` alone is not enough.
@@ -64,9 +64,9 @@ These are settled. Implement them as specified; do not reopen them.
 |---|---|---|
 | D-A1 | Connection-request link | **The agent receives the link.** `request_connection` returns `{ requestId, link, expiresAt }`; the agent forwards it via `send_message`. Token is short-lived/single-use; instructions say forward promptly, don't persist. |
 | D-A2 | Expiry sweeper placement | **Implementing agent decides**, preferring to host it in the existing `reminder-coordinator` (already emits wakes + holds the single-worker lease). Do not add a second loop without documenting why the reminder coordinator couldn't host it. |
-| D-B1 | Provisioning approach | **Ask once.** If the user hasn't said, the agent asks: pick safe defaults (test mode, simulated money) or set specifics. Both paths use **one tool** (`set_trading_setup`); defaults path is the same call with no values. |
-| D-B2 | Provisioned mode | **Paper only.** Never live. Generated wallet, never funded for test. |
-| D-B3 | Running-agent grant | Add a **dedicated** running-agent grant path (used by `set_trading_setup` and WP-A link completion). All other callers keep the stopped-agent requirement. |
+| D-B1 | Provisioning approach | **Ask once.** If the user hasn't said, the agent asks: pick safe defaults (test mode, simulated money) or set specifics. Both paths use **one tool** (`set_trading_setup`); defaults path is the same call with no values. *(Amended 2026-10-14: the question is dropped and the tool is to be removed. Traderton applies the defaults at profile creation; the agent states what is in effect. See the WP-B plan.)* |
+| D-B2 | Provisioned mode | **Paper only.** Never live. *(Amended 2026-10-14: the clause "Generated wallet, never funded for test" is withdrawn. All connections are treated the same; the setup tool no longer creates one. See the WP-B plan.)* |
+| D-B3 | Running-agent grant | Add a **dedicated** running-agent grant path (used by WP-A link completion). All other callers keep the stopped-agent requirement. *(Amended 2026-10-14: `set_trading_setup`, the other user of this path, is removed.)* |
 | D-C1 | Channel vs connection | A channel (Telegram/WhatsApp/email) is a **chat-address binding**, not a `connections` row. A Gmail-type `connection` (agent sends as the user) is separate and optional. |
 | D-C2 | Channel scope | Channels bound **per user**; agents inherit. |
 | D-C3 | In-app chat | **Accepted.** Minimal in-app conversation on the agent detail page (not the `chat_sessions` model). External channel optional but strongly recommended. |
@@ -120,7 +120,7 @@ Work **wave by wave**. Within a wave, work items are parallel and independent. D
 ### Wave 2 (parallel)
 
 - **WP-A A3–A6** — `request_connection` (catalog validation), A4 `?provider=` form handling, A5 wake on resolved/expired (domain port + API Redis impl + expiry sweeper per D-A2), A6 base-prompt guidance.
-- **WP-B B1–B8** — operator defaults (traderton authority), running-agent grant, provisioning via `changes`, `set_trading_setup` tool, reuse-or-create generated connection, trading-skill instructions, remove paper/shadow flip, `get_funding_info`.
+- **WP-B B1–B8** — operator defaults (traderton authority), running-agent grant, provisioning via `changes`, `set_trading_setup` tool, reuse-or-create generated connection, trading-skill instructions, remove paper/shadow flip, `get_funding_info`. *(Amended 2026-10-14: the provisioning tool, `changes` and reuse-or-create are replaced by Traderton applying defaults when a profile is first created; see the WP-B plan.)*
 - **WP-C S1–S2** — optional name, first-turn greeting, `update_my_prompt`, in-app conversation (composer + thread + post-create landing).
 
 **Wave 2 gate:** each WP's own work-item gates pass (see the plans' "Work items" tables).

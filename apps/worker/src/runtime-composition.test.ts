@@ -29,6 +29,7 @@ import {
   type RuntimeContextProvider,
   RUNTIME_CONTEXT_PROVIDERS,
 } from './runtime-composition.js';
+import { applyRuntimeMessage, takeConnectionWakes, type PendingWakeSignalBufferEntry } from './runtime-composition.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
 import {
   BASE_SKILL,
@@ -159,7 +160,7 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Current time (UTC): 2026-06-11T06:42:39.174Z');
     expect(prompt).toContain('Nominal tick interval: 15m');
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
-    expect(prompt).toContain('Execution mode: paper');
+    expect(prompt).not.toContain('Execution mode:');
     expect(prompt).not.toContain('Workspace root: /workspace');
     expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or folder/output.txt.');
     expect(prompt).toContain('Trading Venue');
@@ -3989,5 +3990,52 @@ describe('computeAdvancedAnsweredMarker', () => {
     ];
 
     expect(computeAdvancedAnsweredMarker(state, nowTs)).toBe(t1);
+  });
+});
+
+describe('connection wake handling', () => {
+  const completionReason = 'Connection request for hyperliquid completed';
+  const connectionWakePayload = {
+    wakeId: 'w-conn-1',
+    reason: completionReason,
+    eventIds: ['req-1'],
+    priority: 'normal',
+    requestedAt: '2026-10-14T20:08:08.000Z',
+    source: 'connection',
+    context: { requestId: 'req-1', provider: 'hyperliquid', connectionId: 'conn-1', reason: 'completed' },
+  };
+
+  it('records a connection completion as a recent event without setting a market wake', () => {
+    const state = createRuntimeCompositionState(baseDescriptor, {});
+
+    const summary = applyRuntimeMessage(state, { type: 'agent.wake', payload: connectionWakePayload });
+
+    expect(summary).toBe(completionReason);
+    expect(state.metrics.currentMarketWake).toBeNull();
+    expect(state.metrics.recentEvents.map((event) => event.summary)).toContain(completionReason);
+  });
+
+  it('takes connection wakes out of the buffer so they never drain into a market wake', () => {
+    const connectionEntry: PendingWakeSignalBufferEntry = {
+      wakeId: 'w-conn-1',
+      source: 'connection',
+      reason: completionReason,
+      requestedAt: null,
+      context: null,
+      receivedAt: 1,
+    };
+    const scannerEntry: PendingWakeSignalBufferEntry = {
+      wakeId: 'w-scan-1',
+      source: 'scanner',
+      reason: 'signal',
+      requestedAt: null,
+      context: null,
+      receivedAt: 2,
+    };
+
+    const taken = takeConnectionWakes([connectionEntry, scannerEntry]);
+
+    expect(taken.connection).toEqual([connectionEntry]);
+    expect(taken.buffer).toEqual([scannerEntry]);
   });
 });

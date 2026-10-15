@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext, ExternalSkillInstaller, ExternalSkillInstallResult } from '@herobids/domain';
 import { AGENT_MESSAGE_TYPES, ManageAgentSkillsResultSchema, SYSTEM_SKILL_SLUGS } from '@herobids/domain';
-import { resolveSkillIdsBySlugOrId, upsertExternalSkill, type Database } from '@herobids/db';
+import { resolveSkillIdsBySlugOrId, upsertExternalSkill, normalizeSourceRefToSlug, findExternalSourceRefs, type Database } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
 import { parseBrokerDenialReply } from './tool-errors.js';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const logger = createLogger('tools:skills');
@@ -106,6 +106,24 @@ async function runExternalSkillRemove(name: string, cwd: string): Promise<Extern
 
 async function runExternalSkillList(cwd: string): Promise<ExternalSubprocessResult> {
   return runExternalSubprocess(['list', '--json'], cwd, EXTERNAL_LIST_TIMEOUT_MS);
+}
+
+/**
+ * Where the skills CLI must write an external ref's SKILL.md. `read_skill` and
+ * the start-up install both read this exact path, so a CLI exit 0 without this
+ * file is a silent install failure, not a success.
+ */
+export function installedSkillMdPath(workspaceRoot: string, ref: string): string {
+  return join(workspaceRoot, '.agents', 'skills', deriveSkillDirName(normalizeExternalRef(ref).ref), 'SKILL.md');
+}
+
+async function skillMdExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ── External skill frontmatter helpers ──────────────────────────────────────
@@ -335,7 +353,7 @@ async function sendBrokerSkillMutation(
 
 // ── add_skills ──────────────────────────────────────────────────────────────
 
-const addSkillsTool: AgentTool = {
+export const addSkillsTool: AgentTool = {
   name: 'add_skills',
   description:
     'Add skills to this agent by slug (e.g. system/programming) or ID. Dependencies are added automatically by default. External skills use owner/repo@skill format (e.g. tychohq/agent-skills@flights). The @ separates the repo from the skill name.',
@@ -405,11 +423,20 @@ const addSkillsTool: AgentTool = {
         }
       }
 
+      // A ref already catalogued as an external skill (non-null source_ref) must take
+      // the install path. Its catalogue row carries metadata only, so assigning it as a
+      // platform skill would leave SKILL.md uninstalled.
+      const catalogedExternal = db ? await findExternalSourceRefs(db, inputRefs) : new Set<string>();
+
       const platformIds: string[] = [];
       const externalRefs: string[] = [];
       const rejectedRefs: Array<{ ref: string; reason: string }> = [];
 
       for (const ref of inputRefs) {
+        if (catalogedExternal.has(normalizeSourceRefToSlug(ref))) {
+          externalRefs.push(ref);
+          continue;
+        }
         const id = resolved.get(ref);
         if (id) {
           platformIds.push(id);
@@ -507,7 +534,19 @@ const addSkillsTool: AgentTool = {
           for (const ref of externalRefs) {
             const result = await runExternalSkillInstall(ref, cwd, installer);
             if (result.ok) {
-              results.push({ ref, ok: true as const, output: result.output });
+              const skillMdPath = installedSkillMdPath(cwd, ref);
+              if (await skillMdExists(skillMdPath)) {
+                results.push({ ref, ok: true as const, output: result.output });
+              } else {
+                // The CLI exited 0 but wrote nothing read_skill can load. Report it
+                // as a failure with the CLI output so the cause is visible.
+                const cliOutput = (result.output ?? '').slice(0, 300);
+                results.push({
+                  ref,
+                  ok: false as const,
+                  error: `install reported success but ${skillMdPath} was not written.${cliOutput ? ` CLI output: ${cliOutput}` : ''}`,
+                });
+              }
             } else {
               results.push({ ref, ok: false as const, error: result.error });
             }

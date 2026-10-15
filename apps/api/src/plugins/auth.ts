@@ -130,6 +130,9 @@ function isPublicRoute(url: string, method: string): boolean {
   // Setup-link (connection form auto-login) — public
   if (path === '/auth/setup-link/callback') return true;
 
+  // Connection-request link — public; the route checks its own single-use bearer token
+  if (path === '/auth/connection-request/callback') return true;
+
   // Gmail OAuth callback — Google redirects here without JWT
   if (path === '/connections/oauth/gmail/callback') return true;
 

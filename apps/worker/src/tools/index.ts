@@ -21,9 +21,9 @@ import { emailTools } from './email.js';
 import { platformDocsTools } from './platform-docs.js';
 import { skillTools } from './skills.js';
 import { listProvidersTool, requestConnectionTool } from './connections.js';
-import { setTradingSetupTool } from './trading-setup.js';
 import { updateMyPromptTool } from './update-prompt.js';
 import { readSkillTool } from './read-skill.js';
+import { loadSkillTool } from './load-skill.js';
 import { createBrowserTools } from './browser.js';
 import { httpClientTools } from './http-client.js';
 import { shellTools } from './shell.js';
@@ -123,10 +123,10 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...platformDocsTools,
     listProvidersTool,
     requestConnectionTool,
-    setTradingSetupTool,
     updateMyPromptTool,
     ...skillTools,
     readSkillTool,
+    loadSkillTool,
   ];
 
   for (const tool of allTools) {

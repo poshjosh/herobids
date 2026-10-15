@@ -12,6 +12,8 @@ import { parseSkillFrontmatter, detectExternalSkillBashDependency } from './skil
 
 vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
+  // The install is only reported successful when SKILL.md exists; model that as present.
+  access: vi.fn(async () => undefined),
 }));
 
 vi.mock('node:child_process', () => ({

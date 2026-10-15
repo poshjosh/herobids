@@ -1,6 +1,6 @@
 // Phase 4 T7 — read_skill loads an installed external skill's body from the
 // workspace and marks it loaded for the session.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,11 +24,29 @@ function makeSession(available = true) {
   };
 }
 
-function makeCtx(session: ReturnType<typeof makeSession> | undefined): ToolContext {
+function makeCtx(
+  session: ReturnType<typeof makeSession> | undefined,
+  installer?: { install: ReturnType<typeof vi.fn> },
+): ToolContext {
   return {
     agentId,
     externalSkillSession: session,
+    externalSkillInstaller: installer,
   } as unknown as ToolContext;
+}
+
+/** Fake installer: optionally writes SKILL.md into the workspace, or fails. */
+function fakeInstaller(options: { writeSkill: boolean; ok?: boolean; error?: string }) {
+  const install = vi.fn(async (_ref: string, cwd: string) => {
+    if (options.ok === false) return { ok: false as const, error: options.error ?? 'install failed' };
+    if (options.writeSkill) {
+      const dir = join(cwd, '.agents', 'skills', SKILL_DIR);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, 'SKILL.md'), '---\nname: crypto-trading\ndescription: trade\n---\nINSTALLED BODY\n', 'utf-8');
+    }
+    return { ok: true as const, output: 'Installed' };
+  });
+  return { install };
 }
 
 beforeEach(async () => {
@@ -87,11 +105,45 @@ describe('read_skill', () => {
     expect(session.isLoaded(REF)).toBe(false);
   });
 
-  it('reports not-installed when the body file is absent', async () => {
+  it('reports not-installed when the body file is absent and the install fails', async () => {
     await rm(join(workspaceRoot, '.agents', 'skills', SKILL_DIR), { recursive: true, force: true });
     const session = makeSession(true);
-    const result = await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    const installer = fakeInstaller({ writeSkill: false, ok: false, error: 'network down' });
+    const result = await readSkillTool.execute({ ref: REF }, makeCtx(session, installer));
     expect(result.success).toBe(true);
-    expect((result.data as Record<string, unknown>).loaded).toBe(false);
+    const data = result.data as Record<string, unknown>;
+    expect(data.loaded).toBe(false);
+    expect(String(data.message)).toContain('network down');
+  });
+
+  it('installs a missing assigned skill on read, then loads its body', async () => {
+    await rm(join(workspaceRoot, '.agents', 'skills', SKILL_DIR), { recursive: true, force: true });
+    const session = makeSession(true);
+    const installer = fakeInstaller({ writeSkill: true });
+    const result = await readSkillTool.execute({ ref: REF }, makeCtx(session, installer));
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.loaded).toBe(true);
+    expect(String(data.instructions)).toContain('INSTALLED BODY');
+    expect(installer.install).toHaveBeenCalledTimes(1);
+    expect(session.isLoaded(REF)).toBe(true);
+  });
+
+  it('does not run the installer when the body is already present', async () => {
+    const session = makeSession(true);
+    const installer = fakeInstaller({ writeSkill: true });
+    const result = await readSkillTool.execute({ ref: REF }, makeCtx(session, installer));
+    expect((result.data as Record<string, unknown>).loaded).toBe(true);
+    expect(installer.install).not.toHaveBeenCalled();
+  });
+
+  it('reports not-written when the install exits 0 but produces no SKILL.md', async () => {
+    await rm(join(workspaceRoot, '.agents', 'skills', SKILL_DIR), { recursive: true, force: true });
+    const session = makeSession(true);
+    const installer = fakeInstaller({ writeSkill: false });
+    const result = await readSkillTool.execute({ ref: REF }, makeCtx(session, installer));
+    const data = result.data as Record<string, unknown>;
+    expect(data.loaded).toBe(false);
+    expect(String(data.message)).toContain('was not written');
   });
 });

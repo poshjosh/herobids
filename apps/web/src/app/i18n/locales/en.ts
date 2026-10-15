@@ -676,7 +676,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.fromAgent': 'Agent',
   'agentDetail.conversation.fromYou': 'You',
   'setup.useExisting.title': 'Use an existing connection for {agent}',
-  'setup.useExisting.empty': 'You have no active connections for this provider. Create one instead.',
   'setup.useExisting.confirm': 'Use this connection',
   'setup.connectionRequest.banner': 'Agent {agent} is asking you to connect {provider}.',
   'setup.form.title': 'Connect agent to external platform',

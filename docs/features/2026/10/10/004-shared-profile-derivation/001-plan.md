@@ -80,7 +80,7 @@ Migration order (cheapest, lowest-risk first, and only the paths that survive th
 
 ### H3. WP-B consumes the seam
 
-WP-B's `set_trading_setup` (B3) calls `deriveTradingProfileFields` with `{ unifiedConfig, style, capital, riskPosture, executionDefaults }` where the overrides come from the tool params + operator defaults. This is the first *new* consumer and the proof that the seam is shaped correctly for the dynamic path.
+*(Superseded 2026-10-14: `set_trading_setup` is removed; Traderton applies defaults when a profile is first created, so the first-grant path no longer passes overrides.)* WP-B's `set_trading_setup` (B3) calls `deriveTradingProfileFields` with `{ unifiedConfig, style, capital, riskPosture, executionDefaults }` where the overrides come from the tool params + operator defaults. This is the first *new* consumer and the proof that the seam is shaped correctly for the dynamic path.
 
 ## Work items
 

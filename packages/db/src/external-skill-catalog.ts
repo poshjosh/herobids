@@ -6,7 +6,7 @@
 // `sourceKind: 'external'` is DERIVED from `source_ref` being set.
 
 import crypto from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { skillRevisions, skills } from './schema/index.js';
 import { resolveSkillIdsBySlugOrId } from './skill-assignment.js';
@@ -41,6 +41,22 @@ export function deriveSourceKind(row: { sourceRef: string | null; authorId: stri
   if (row.sourceRef !== null) return 'external';
   if (row.authorId === null) return 'system';
   return 'user';
+}
+
+/**
+ * Which of the given refs already exist as external catalogue rows (non-null
+ * `source_ref`). Returns the canonical `owner/repo/skill` slugs found. add_skills
+ * uses this to send a catalogued external ref down the install path; a plain
+ * platform lookup would assign its metadata row without installing SKILL.md.
+ */
+export async function findExternalSourceRefs(db: Database, refs: string[]): Promise<Set<string>> {
+  const slugs = [...new Set(refs.map(normalizeSourceRefToSlug))];
+  if (slugs.length === 0) return new Set();
+  const rows = await db
+    .select({ sourceRef: skills.sourceRef })
+    .from(skills)
+    .where(inArray(skills.sourceRef, slugs));
+  return new Set(rows.map((row) => row.sourceRef).filter((ref): ref is string => ref !== null));
 }
 
 export interface ExternalSkillUpsert {

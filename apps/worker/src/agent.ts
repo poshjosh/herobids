@@ -48,6 +48,8 @@ import {
   computeMarketEventDigest,
   bufferWakeEnvelope,
   drainNewestWakeIntoMarketWake,
+  recordRuntimeEvent,
+  takeConnectionWakes,
   type RuntimeActiveWatch,
   type RuntimeActiveWatchSummary,
   type RuntimeCompositionState,
@@ -2605,6 +2607,13 @@ async function runActiveTick(): Promise<void> {
     // Must run AFTER the wakeSignalDigest snapshot above (so the gate still
     // sees the pending signals) and BEFORE the prompt-enrichment splice below
     // (which empties the buffer).
+    // Connection wakes are recorded as events and kept out of the market-wake drain below.
+    const connectionTake = takeConnectionWakes(pendingWakeSignalBuffer);
+    pendingWakeSignalBuffer.splice(0, pendingWakeSignalBuffer.length, ...connectionTake.buffer);
+    for (const entry of connectionTake.connection) {
+      recordRuntimeEvent(runtimeState, 'agent.wake', entry.reason);
+    }
+
     let hasBufferedWake = false;
     if (runtimeState.metrics.currentMarketWake === null) {
       const drained = drainNewestWakeIntoMarketWake(pendingWakeSignalBuffer, null);
@@ -3925,6 +3934,7 @@ async function runActiveTick(): Promise<void> {
       maxTurns: judgeLoopConfig.maxTurns,
     });
 
+    let judgeSentReply = false;
     const judgeLoopResult = await runStructuredToolLoop({
       providerConfig: {
         provider: provider,
@@ -4028,6 +4038,9 @@ async function runActiveTick(): Promise<void> {
               runtimeState.metrics.activityTimeline.shift();
             }
           }
+          if (toolCall.name === 'send_message' && !toolResultIndicatesFailure(toolResult)) {
+            judgeSentReply = true;
+          }
           // ── Conversation state: advance the answered-up-to marker ───────
           // A successful send_message marks all user messages up to this tick as
           // answered (coarse single-marker; see plan "Conversation state"). The
@@ -4077,7 +4090,7 @@ async function runActiveTick(): Promise<void> {
       phase: 'judge',
       model: costProfile.heavyModel,
       turnsUsed: judgeLoopResult.ok ? judgeLoopResult.turnsUsed : 0,
-      finishReason: !judgeLoopResult.ok ? 'error' : judgeLoopResult.terminatedByLimit ? 'turn_limit' : 'stop',
+      finishReason: !judgeLoopResult.ok ? 'error' : judgeLoopResult.terminatedByLimit ? 'turn_limit' : (hasPendingUserMessage && !judgeSentReply) ? 'stop_without_reply' : 'stop',
       errorMessage: !judgeLoopResult.ok ? judgeLoopResult.error.message : undefined,
     });
 

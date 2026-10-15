@@ -76,7 +76,7 @@ describe('request_connection', () => {
     expect(requestConnectionTool.category).toBe('write-database');
   });
 
-  it('publishes REQUEST_CONNECTION with provider, mode and requestMessageId', async () => {
+  it('publishes REQUEST_CONNECTION with provider and requestMessageId', async () => {
     const publishToInbound = vi.fn(async () => undefined);
     const ctx = makeCtx({
       publishToInbound,
@@ -90,11 +90,11 @@ describe('request_connection', () => {
       }),
     });
 
-    const result = await requestConnectionTool.execute({ provider: 'gmail', mode: 'use_existing' }, ctx);
+    const result = await requestConnectionTool.execute({ provider: 'gmail' }, ctx);
 
     expect(publishToInbound).toHaveBeenCalledWith(
       AGENT_MESSAGE_TYPES.REQUEST_CONNECTION,
-      expect.objectContaining({ provider: 'gmail', mode: 'use_existing' }),
+      expect.objectContaining({ provider: 'gmail' }),
     );
     const [, payload] = publishToInbound.mock.calls[0] as [string, Record<string, unknown>];
     expect(payload.requestMessageId).toBeDefined();
@@ -104,26 +104,6 @@ describe('request_connection', () => {
       link: 'http://localhost:3000/auth/connection-request/callback?token=abc',
       expiresAt: '2026-10-13T12:00:00.000Z',
     });
-  });
-
-  it('defaults mode to create when omitted', async () => {
-    const publishToInbound = vi.fn(async () => undefined);
-    const ctx = makeCtx({
-      publishToInbound,
-      redis: makeRedisMock({
-        blpop: vi.fn(async () => ['key', JSON.stringify({
-          status: 'ok',
-          requestId: 'req-2',
-          link: 'http://localhost:3000/auth/connection-request/callback?token=def',
-          expiresAt: '2026-10-13T12:00:00.000Z',
-        })]),
-      }),
-    });
-
-    await requestConnectionTool.execute({ provider: 'hyperliquid' }, ctx);
-
-    const [, payload] = publishToInbound.mock.calls[0] as [string, Record<string, unknown>];
-    expect(payload.mode).toBe('create');
   });
 
   it('returns a non-fault error on broker error reply', async () => {

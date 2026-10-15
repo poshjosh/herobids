@@ -140,6 +140,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_skills',
   'list_tasks',
   'list_watches',
+  'load_skill',
   'make_http_request',
   'publish_artifact',
   'read_app_docs',
@@ -149,7 +150,6 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'remove_skills',
   'remove_watch',
   'request_connection',
-  'set_trading_setup',
   'update_my_prompt',
   'resolve_bot',
   'resolve_task',
@@ -218,7 +218,6 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   add_skills:          { category: 'write-database',      description: 'Add skills to this agent from the skill catalog. Skills become available immediately.' },
   remove_skills:       { category: 'write-database',      description: 'Remove skills from this agent. Tools from removed skills become unavailable immediately.' },
   request_connection:  { category: 'write-database',      description: 'Request a connection to a provider. Returns a short-lived link to send to the user.' },
-  set_trading_setup:   { category: 'write-database',      description: 'Set up paper trading for this agent: a test wallet, capital, and paper mode. Live mode is never set here.' },
   update_my_prompt:    { category: 'write-database',      description: "Replace this agent's standing goal (prompt). Takes effect on the next run." },
 
   // read-market-data
@@ -272,6 +271,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   list_files:          { category: 'read-filesystem',     description: 'List files and directories in the agent workspace.' },
   stat_file:           { category: 'read-filesystem',     description: 'Get metadata about a file/directory: exists, type, size, modification time.' },
   read_skill:          { category: 'read-filesystem',     description: "Load an external skill's full instructions by its ref. The prompt lists external skills by name and description; read_skill loads the one you need for the rest of the session." },
+  load_skill:          { category: 'write-database',      description: 'Add an external skill and load its full instructions in one call (add_skills then read_skill). Skips the add if the skill is already assigned.' },
 
   // write-filesystem
   write_file:          { category: 'write-filesystem',    description: 'Create or overwrite a file in the agent workspace.' },

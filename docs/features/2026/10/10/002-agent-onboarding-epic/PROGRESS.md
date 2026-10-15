@@ -1,7 +1,7 @@
 # Progress Checkpoint — Agent Onboarding Epic
 
 **Epic:** [000-roadmap.md](./000-roadmap.md) · **Entry point:** [IMPLEMENTATION.md](./IMPLEMENTATION.md)
-**Last updated:** 2026-10-13
+**Last updated:** 2026-10-14
 
 > Durable checkpoint so another agent session can resume from the next unfinished item.
 > Update this file after each work item / wave / gate.
@@ -11,15 +11,19 @@
 | Wave | Items | Status |
 |---|---|---|
 | Wave 1 | WP-A A1/A2/A3-design · WP-H H1–H2 · WP-M Phase 0–1 · WP-C S0 | done |
-| Wave 2 | WP-A A3–A6 · WP-B B1–B8 · WP-C S1–S2 | in progress |
-| Gate G1 | self-serve loop UAT | in progress: partial (see G1 log below); not passed |
+| Wave 2 | WP-A A3–A7 · WP-B B1–B8 · WP-C S1–S2 | items done; gate run 2026-10-14; deferred follow-ups listed under "Not verified or deferred" |
+| Gate G1 | self-serve loop UAT | Partial PASS (see G1 log below); not passed. Remaining: link/wake loop, go-live with a cloned agent |
 | Wave 3 | cut-over (WP-C S3+S4) | not started |
 | Wave 4 | channels (WP-M Phase 2–4, WP-C S5.1, WP-E) | not started |
 | Wave 5 | cleanup (WP-M Phase 6) | not started |
 
 ## Next unfinished item
 
-**Wave 2 — next unfinished item: WP-B B4/B5 (`set_trading_setup` and generated-connection reuse), then S1, S2, the `use_existing` UI, and the Wave 2 gate.** Done in WP-A: A3–A7 and A4/A5 (completion, decline, expiry, single-use redeem, runtime refresh on completion, Gmail OAuth completion, requesting agent name, provider lock, Cancel-as-decline). Open in WP-A: `use_existing` approval UI; a runtime end-to-end check that the agent uses a new connection on its next tick (G1 UAT). Done in WP-B: B1, B2, B3, B7. Decision needed for B6: trading-skill instructions live in the external `traderton-skills` repo, not in herobids. Decision needed for B4/B5: the worker-to-platform mechanism for `set_trading_setup` (broker plus shared provisioning service vs a second transport).
+**Next unfinished item: R6, then Gate G1.** Rerun G1 on the new flow (blank agent, trading skill, `request_connection`, link, wake, paper trade with the agent stating mode and capital, then edit capital while stopped and restart), then the link/wake loop and go-live with a cloned agent. Record each result in the G1 table with evidence the same turn it is reported. G1 must pass before Wave 3 starts; Wave 3 needs owner greenlight. **R1–R5 are implemented and tested but uncommitted in three repos** (herobids, traderton, traderton-skills); Traderton R1 must ship before the herobids removal is used; no deployment without approval.
+
+**Wave 2 follow-ups still open (not blocking G1 by themselves; see "Not verified or deferred"):** route-level test for `POST /setup/connection-requests/:id/use-existing`; zero-balance go-live warning (B8); `update_my_prompt` journal entry (owner deferred); DB-backed functional suites (agents, go-live) need Postgres and have not run; Traderton `ceiling violation` test not re-run here.
+
+**Done in Wave 2 (per-item log):** WP-A A3–A7 (`request_connection`, completion, decline, expiry, single-use redeem, runtime refresh, `use_existing` approval). WP-B B1–B5, B7, B8 (B8 without the zero-balance warning). WP-B B6 is in the external `traderton-skills` repo. WP-C S1 (optional name, `update_my_prompt`, first-turn guidance) and S2 (in-app conversation).
 
 **Lint caveat:** root `pnpm lint` checks nothing (`files: []`); use the per-project `tsc -p apps/<app>/tsconfig.json --noEmit` checks.
 ## Per-item log
@@ -65,34 +69,41 @@
 - **Decisions made this wave (§5):** (1) network labels live in `WALLET_NETWORKS` (domain). (2) `set_trading_setup` reuses any active connection on the default test provider, since no provenance column exists; paper mode never signs, so this is safe. (3) `set_trading_setup` takes `capital` only; `riskPosture` is deferred. (4) The base-tool visibility budget was raised 28 → 29 → 30 for `set_trading_setup` and `update_my_prompt`; it is pinned in `runtime-tool-visibility.test.ts`.
 - **Not verified or deferred (must be carried into G1, not claimed done):** the broker handler branches for `set_trading_setup` and `update_my_prompt` have no direct broker unit test (their tool and service paths are tested). `update_my_prompt` writes `agents.prompt`, but the journal entry from the plan is not written, and "takes effect on the next run" is unproven. The `use-existing` route has no route-level test. The web create form still requires the agent name and does not yet use the optional name or the "Configure employe" step. The DB-backed functional suites (agents, go-live) need Postgres and were not run. Traderton's `ceiling violation` test lives in the Traderton repo and was not re-run here.
 - **Greenlight requested for Wave 3** after the G1 self-serve UAT is recorded. Wave 3 has not started.
+- **2026-10-14 — Connection-flow rework (owner decisions; code uncommitted).** (1) All connections are treated the same: no "test wallet" class, label or wording. (2) `set_trading_setup` no longer creates or picks a connection; it sets capital and paper mode on the trading connection already granted, else fails with `connection.missing`. (3) The `request_connection` link page offers use-existing (only if the user has any), enter details, and create (where the provider supports it); the `mode` parameter is removed from the tool, the protocol, the request record and the callback redirect. (4) Connection-request links keep the login token (private message). (5) Prompts stay generic: no wallet or trading wording in the base prompt; trading wording lives in the `traderton-skills` crypto-trading skill. (6) Live starts only from a user action (web or Telegram `/golive`), never the agent; the word "UI" is dropped from the invariant. Plans amended: WP-B and WP-A plans, IMPLEMENTATION §3.2 (1, 3) and D-B2. Verified: `tsc` clean for db, domain, api, worker, web; 18 focused test files, 363 tests passed.
+- **2026-10-14 (owner) — safe defaults live in Traderton; `set_trading_setup` is to be removed (not yet implemented).** Traderton writes paper mode and the operator default capital into the stored profile at first creation. The values must show in the user's edit form and the user can change them (own agent values only); nothing marks them as defaults. Details, the removal list and the proposal to reuse `execution.defaultOwnerMode` are in the WP-B plan.
+- **Owner-confirmed 2026-10-14 (corrects an earlier wrong finding):** the edit form already shows capital (main form) and execution mode (Advanced Settings → Capabilities). No existing rule or process changes; editing stays limited to stopped or crashed agents.
+- **2026-10-14 (owner) — ask-once question dropped (option A).** The agent trades in paper mode with the defaults after the connection is granted and tells the user once what is in effect. Not yet implemented; the implementation plan (R1–R6) is in the WP-B plan and awaits owner approval.
+- **2026-10-14 (owner) — implementation approved (R1–R3, R5–R6; R4 done last).** Swap venues default to shadow. Block name `testProvisioningDefaults` kept. The mode default is a new constrained key `defaultTestMode` (paper or shadow), not `execution.defaultOwnerMode`, which allows live.
+- **2026-10-14 — R1–R5 implemented (uncommitted).** Traderton: defaults applied when a profile row is first created (tool plus repository insert branch), swap venues fall back to shadow, no capital default for a live profile; the two dead config fields removed. Full suite 170 files, 2,990 tests passed, 108 skipped. Herobids: `set_trading_setup` stack removed (tool, broker message, schemas, capability, catalog and base-list entries, setup service, defaults loader, test-provisioning schema, the unused grant `changes` option); full suite 339 files, 6,585 tests passed; `tsc` clean for db, domain, api, worker, web. Skill text rewritten in `traderton-skills`. Details in the WP-B plan.
+- **Not verified (carry into R6, do not claim done):** (1) the Traderton repository test for first-creation-only and replay is written but was not run (no Postgres, `DATABASE_URL` unset); (2) the agent's "Execution mode" context line was always `paper`; the owner chose to remove it (option B, done 2026-10-14, full herobids suite 339 files and 6,585 tests passed); the descriptor's `executionMode` field is left in place; (3) a trading agent created through `POST /agents` with an explicit `capital: null` would now get the default capital at first profile creation; (4) the web app and API behaviour end to end on a live stack was not exercised.
 
 ## G1 log (local docker compose, 2026-10-14)
 
-Result: NOT PASSED. Partial.
+Result: Partial PASS
 
-| Step | Result | Evidence |
+| G1 step | Result | Evidence |
 |---|---|---|
-| Specifics path, capital 500 (agent `d43c3384…`, `trader`) | Pass (one run; rerun before relying on it): agent sent capital 500; Traderton stored profile `capital "500"`, `executionDefaults.mode "paper"`, `actorId` = agent, `venueAccountId` 5407bd79…, revision 1, 12:50:37. Read via one signed read-only `get_agent_trading_profile` call with the agent as the signed subject. |
-| Blank agent, "help me trade" | Pass (one run; rerun before relying on it): agent called `update_my_prompt` on the first message; goal stored | agent `d43c3384-0d92-4d92-8fc8-3a0ef8572259` (`trader`); tool result `ok` at 12:46:54, promptLength 357. Earlier failing run: `f7b304f1-…` (no prompt update, before the first-turn fix) |
-| Trading skill added at runtime | Pass | `traderton/skills/crypto-trading`, `capability_families = {trading}` |
-| Connection reused and granted | Pass | connection `c48cd98d-287b-48f3-8549-1e870bb377d9` granted 07:30:09 |
-| Paper setup, defaults path | Pass (on retry) | `set_trading_setup` returned `ok`, mode `paper`, capital 10000 |
-| Specifics path (user states capital/risk) | Not run | |
-| Paper trade executed | Not run | |
-| Funding message (`get_funding_info`) | Not run | |
-| Go-live with a cloned agent | Not run | |
+| Blank agent gets "Help me trade crypto" and replies | **Pass** | Inbound wake 20:01:08 (`trigger: wake`, reason `user_message`); reply sent 20:06:19 (`agent.message.send`) |
+| `connection.missing` on a trade tool | **Pass** | `get_account_summary` and `get_risk_limits` at 20:01:38 returned "no trading connection is set up yet" |
+| `list_providers` | **Pass** | `list_providers` (capability `trading`) at 20:03:29 returned `hyperliquid` |
+| `request_connection` returns a link | **Pass** | Request `2d6b34f7-4db9-49b6-84ef-de24d6d8f193` at 20:06:16; link sent at 20:06:19 |
+| Trading skill assigned | **Pass** | `add_skills` at 20:01:17 added `traderton/skills/crypto-trading`; `agent_skills` shows it |
+| Trading skill guidance loaded | **Not met** | `read_skill` at 20:01:25 and 20:08:34 returned "not installed in this workspace". The guidance never loaded. |
+| Link completed | **Pass** | Redis request `status: completed`; connection `8b3845d1-…` (`my-hyperliquid-wallet`, hyperliquid, active) granted 20:08:08 |
+| Agent woken after completion | **Not met** | No wake with source `connection` after 20:08:08. The next tick at 20:08:23 had reason `scheduled_check_in`. |
+| `update_my_prompt` persisted | **Partial** | Call at 20:01:35 returned `ok`, length 483; `updated_at` 20:01:35. The text is a reworded version of the seed, so not yet proven to be the agent's own goal. |
+| Trade in test mode | **Not run** | No `submit_decision`, decision or position in the log |
+| Go-live with a cloned agent | **Not run** | Out of G1 scope |
 
 Known gaps G1 depends on:
-- First-turn goal is not set from the user's first message (`update_my_prompt` not called).
 - `update_my_prompt` has no journal entry (deferred by the owner).
 - Zero-balance go-live warning not built (B8 follow-up).
 - Broker branch tests for the two new message types were missing; denial-reply tests now added (`aa43f8af`).
+- **Rerun needed after the 2026-10-14 connection-flow rework:** the rows above for the trading skill, connection grant and paper setup passed against the old `set_trading_setup`, which created and reused wallets itself. They must be rerun against the new flow (`request_connection` first, then `set_trading_setup`).
 
-Next, after green light: run the specifics path, a paper trade, the funding message and go-live with a cloned agent, then record each result here. Agent `9256ee48-…` is the earlier failed run and is kept as evidence.
 - **Superseded (done):** B4 step 3 plan, kept for history: Verified facts: the broker is constructed only in `apps/worker/src/index.ts`. The trading write client is created inside the `sideEffectBoundary` IIFE (around line 439), so it must be hoisted into a shared `tradingClient`. The broker has `db` and `sideEffectBoundary` but not the client. Defaults must come through the worker's read boundary (`ctx.externalBackend.invoke`, mapped to a read result) or a `loadTestProvisioningDefaults` helper. The API loader (`apps/api/src/traderton-operator-defaults.ts`) takes a `TradertonReadBoundary` and is not shared yet. Edits: protocol constant, payload and result schemas, `MESSAGE_PAYLOAD_SCHEMAS`; `KNOWN_AGENT_TOOL_NAMES`, `TOOL_CATALOG` and BASE `requiredTools`; `capability-policy` brokered grant; `publishTradingSetupReply` on the event publisher; broker switch case, optional `tradingSetup` constructor param appended last, and a `handleManageTradingSetup` method with the same trading-capability gate as `request_connection`; `set_trading_setup` tool that BLPOPs the reply; registration in the tools index; manifest row (`external:trading`); tests for the tool and broker branches.
 - After step 3: B5 (reuse is in place; add the plan-limit plain-words test), S1, S2, the `use_existing` UI, and the Wave 2 gate. Move `createTradingProviderLink`, `parseProvisionedWallet` and `compensateProvision` out of `apps/api/src/routes/setup.ts` (about lines 324–514) into `packages/db/src/trading-setup/`, so both the API route and the new `setupTradingForAgent` call the same generated-connection creation. Then B4 step 2d: `setupTradingForAgent` (operator defaults, reuse-or-create, running grant with `changes`, summary). Then step 3 (broker message, capability, `set_trading_setup` tool), B5 reuse, S1, S2, `use_existing` UI, and the Wave 2 gate.
 
 ## Outstanding issues
 
-- **B1 (MEDIUM):** `defaultTestProvider` is an unconstrained free string — constrain to a wallet-generation-capable venue enum before B3/B5 consume it.
 - **B1 (LOW):** redundant `get_operator_defaults` test; `as never` casts in tests; capital string→number conversion boundary to confirm in B3.

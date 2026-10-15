@@ -69,6 +69,11 @@ export async function installExternalSkillsAtStart(input: {
       if (!install.ok) {
         state = { ...state, available: false, unavailableReason: install.error };
         logger.warn({ sourceRef, error: install.error }, 'External skill install failed — skill unavailable this session');
+      } else if ((await readInstalledSkillBody(workspaceRoot, sourceRef)) === null) {
+        // Exit 0 but no SKILL.md: a silent install failure. Mark unavailable with the reason.
+        const reason = `install reported success but SKILL.md was not written under .agents/skills/. ${install.output ?? ''}`.trim().slice(0, 500);
+        state = { ...state, available: false, unavailableReason: reason };
+        logger.warn({ sourceRef, output: install.output }, 'External skill install wrote no SKILL.md — skill unavailable this session');
       } else {
         // Refresh name/description from the installed SKILL.md frontmatter.
         const { name, description } = await readInstalledFrontmatter(workspaceRoot, sourceRef, skill);

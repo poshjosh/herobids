@@ -30,8 +30,7 @@ import {
   ConnectionRequestsConfigSchema,
 } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
-import { setupTradingForAgent, loadTestDefaults, type OperatorDefaultsReadBoundary, type SetupTradingDeps, type TradingProfileReconciliationSaga } from '@herobids/db';
-import type { ManageTradingSetupPayload, TradingSetupResult, UpdatePromptPayload, UpdatePromptResult } from '@herobids/domain';
+import type { UpdatePromptPayload, UpdatePromptResult } from '@herobids/domain';
 import { eq, inArray } from 'drizzle-orm';
 import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -66,14 +65,6 @@ export type BotLiveCheckCallback = (userId: string) => Promise<void>;
  *
  * This is the platform's inbound message gateway for agent protocol messages.
  */
-/** Platform dependencies for `set_trading_setup`. Absent → the broker replies with a typed unavailable error. */
-export interface BrokerTradingSetupDeps {
-  saga: TradingProfileReconciliationSaga;
-  client: SetupTradingDeps['client'];
-  readBoundary: OperatorDefaultsReadBoundary;
-  plansConfig?: SetupTradingDeps['plansConfig'];
-}
-
 export class AgentMessageBroker {
   /** Per-agent send_message rate tracking: agentId → { count, windowStart } */
   private readonly sendMessageCounters = new Map<string, { count: number; windowStart: number }>();
@@ -107,7 +98,6 @@ export class AgentMessageBroker {
     private readonly sideEffectBoundary?: ExternalBackendWriteBoundary,
     private readonly publicBaseUrl?: string,
     private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number; expiryGraceSecs: number },
-    private readonly tradingSetup?: BrokerTradingSetupDeps,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -202,7 +192,6 @@ export class AgentMessageBroker {
       [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
       [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
       [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: 'request_connection',
-      [AGENT_MESSAGE_TYPES.MANAGE_TRADING_SETUP]: 'set_trading_setup',
       [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: 'update_my_prompt',
     };
     const capabilityName = capabilityByType[envelope.type];
@@ -392,14 +381,6 @@ export class AgentMessageBroker {
             effectiveAgentId,
             envelope,
             envelope.payload as unknown as UpdatePromptPayload,
-          );
-          break;
-
-        case AGENT_MESSAGE_TYPES.MANAGE_TRADING_SETUP:
-          await this.handleManageTradingSetup(
-            effectiveAgentId,
-            envelope,
-            envelope.payload as unknown as ManageTradingSetupPayload,
           );
           break;
 
@@ -1095,81 +1076,6 @@ export class AgentMessageBroker {
     }
   }
 
-  private async handleManageTradingSetup(
-    agentId: string,
-    envelope: MessageEnvelope,
-    payload: ManageTradingSetupPayload,
-  ): Promise<void> {
-    const requestMessageId = (envelope.payload as Record<string, unknown>).requestMessageId as string | undefined;
-    const publishReply = async (result: TradingSetupResult) => {
-      if (requestMessageId) {
-        await this.eventPublisher.publishTradingSetupReply(requestMessageId, result);
-      }
-    };
-
-    const setup = this.tradingSetup;
-    if (!this.db || !setup) {
-      await publishReply({ status: 'error', error: 'Trading setup is not available right now.', errorCode: 'trading.setup_unavailable' });
-      return;
-    }
-
-    try {
-      const descriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agentId);
-      const hasTradingCapability = (descriptor?.resolvedSkills ?? []).some(
-        (skill) => Array.isArray(skill.capabilityFamilies) && skill.capabilityFamilies.includes('trading'),
-      );
-      if (!hasTradingCapability) {
-        await publishReply({ status: 'error', error: 'Paper trading needs the trading traderton/skills/crypto-trading skill, which this agent does not have.', errorCode: 'trading.not_allowed' });
-        return;
-      }
-
-      const agent = await this.agentRepo.getAgent(agentId);
-      if (!agent) {
-        await publishReply({ status: 'error', error: 'Agent not found', errorCode: 'agent.not_found' });
-        return;
-      }
-
-      const [owner] = await this.db.select({ planId: users.planId, isAdmin: users.isAdmin }).from(users).where(eq(users.id, agent.userId));
-      if (!owner) {
-        await publishReply({ status: 'error', error: 'Agent owner not found', errorCode: 'agent.not_found' });
-        return;
-      }
-
-      const defaults = await loadTestDefaults(setup.readBoundary);
-      if (!defaults.ok) {
-        await publishReply({ status: 'error', error: defaults.error.message, errorCode: defaults.error.code });
-        return;
-      }
-
-      const result = await setupTradingForAgent(
-        { db: this.db, plansConfig: setup.plansConfig, client: setup.client, logger, saga: setup.saga, defaults: defaults.data },
-        { userId: agent.userId, agentId, userPlanId: owner.planId, isAdmin: owner.isAdmin, capital: payload.capital },
-      );
-
-      if (result.kind === 'ok') {
-        await publishReply({
-          status: 'ok',
-          connectionId: result.connectionId,
-          provider: result.provider,
-          network: result.network,
-          capital: result.capital,
-          mode: result.mode,
-          reused: result.reused,
-          walletAddress: result.wallet?.address ?? null,
-        });
-        return;
-      }
-      if (result.kind === 'limit') {
-        await publishReply({ status: 'error', error: result.error.message, errorCode: result.error.code });
-        return;
-      }
-      await publishReply({ status: 'error', error: result.message, errorCode: result.code });
-    } catch (err) {
-      logger.error({ agentId, err }, 'handleManageTradingSetup failed');
-      await publishReply({ status: 'error', error: 'Trading setup failed. Please try again.', errorCode: 'broker.internal_error' });
-    }
-  }
-
   private async handleRequestConnection(
     agentId: string,
     envelope: MessageEnvelope,
@@ -1272,7 +1178,6 @@ export class AgentMessageBroker {
         agentId,
         userId: agent.userId,
         provider: payload.provider,
-        mode: payload.mode,
         status: 'pending',
         createdAt: now.toISOString(),
         expiresAt: expiresAt.toISOString(),
@@ -1450,10 +1355,6 @@ export class AgentMessageBroker {
       case AGENT_MESSAGE_TYPES.REQUEST_CONNECTION: {
         const requestMessageId = payload.requestMessageId as string | undefined;
         return requestMessageId ? `agent:connection-request:reply:${requestMessageId}` : undefined;
-      }
-      case AGENT_MESSAGE_TYPES.MANAGE_TRADING_SETUP: {
-        const requestMessageId = payload.requestMessageId as string | undefined;
-        return requestMessageId ? `agent:trading-setup:reply:${requestMessageId}` : undefined;
       }
       case AGENT_MESSAGE_TYPES.UPDATE_PROMPT: {
         const requestMessageId = payload.requestMessageId as string | undefined;

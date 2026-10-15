@@ -58,9 +58,7 @@ export type { EvaluationJobData, ResolvedNarrativeLlmConfig } from './agent-eval
 export { FsEvaluationArtifactStore } from './agent-evaluation-storage-fs.js';
 export { isSkillSelectableForUser, resolveSkillIdsBySlugOrId, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './skill-assignment.js';
 export type { SkillAssignmentResolution } from './skill-assignment.js';
-export { upsertExternalSkill, normalizeSourceRefToSlug, deriveSourceKind, ensureExternalSkillIds, externalSkillIdForRef, setExternalSkillCapabilityFamilies } from './external-skill-catalog.js';
+export { upsertExternalSkill, normalizeSourceRefToSlug, deriveSourceKind, ensureExternalSkillIds, externalSkillIdForRef, setExternalSkillCapabilityFamilies, findExternalSourceRefs } from './external-skill-catalog.js';
 export type { ExternalSkillUpsert, ExternalSkillRow } from './external-skill-catalog.js';
 export * from './plan-guards.js';
 export * from './trading-setup/trading-provider-link.js';
-export * from './trading-setup/setup-trading-for-agent.js';
-export * from './trading-setup/test-defaults.js';

@@ -116,6 +116,20 @@ describe('add_skills with a local fixture skill source', () => {
     expect(publishToInbound).not.toHaveBeenCalled();
   });
 
+  it('reports an install as failed when the CLI exits 0 but writes no SKILL.md', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const silentInstaller = { install: async () => ({ ok: true as const, output: 'Done' }) };
+    const ctx = makeCtx({ publishToInbound, externalSkillInstaller: silentInstaller });
+
+    const result = await addSkills.execute({ skillIds: ['example/skills/echo'], includeDependencies: false }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = AddSkillsDataSchema.parse(result.data);
+    expect(data.added).not.toContain('example/skills/echo');
+    expect(data.external?.[0]?.ok).toBe(false);
+    expect(data.external?.[0]?.error).toContain('was not written');
+  });
+
   it('feeds the installed SKILL.md to the post-install Bash detection', async () => {
     const publishToInbound = vi.fn(async () => undefined);
     const ctx = makeCtx({

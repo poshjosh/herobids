@@ -178,12 +178,6 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 3, maxConcurrent: 1, timeoutMs: 30_000 },
   },
   {
-    capability: 'set_trading_setup',
-    tier: 'brokered',
-    enabled: true,
-    limits: { maxPerMinute: 3, maxConcurrent: 1, timeoutMs: 30_000 },
-  },
-  {
     capability: 'update_my_prompt',
     tier: 'brokered',
     enabled: true,

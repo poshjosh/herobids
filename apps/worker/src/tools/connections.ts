@@ -89,7 +89,6 @@ export const listProvidersTool: AgentTool = {
 
 const RequestConnectionParamsSchema = z.object({
   provider: z.string().min(1),
-  mode: z.enum(['create', 'use_existing']).optional().default('create'),
 });
 
 export const requestConnectionTool: AgentTool = {
@@ -103,12 +102,12 @@ export const requestConnectionTool: AgentTool = {
     if (!parsed.success) {
       return {
         success: false,
-        error: 'Invalid parameters: provider must be a non-empty string and mode must be "create" or "use_existing"',
+        error: 'Invalid parameters: provider must be a non-empty string',
         errorCode: 'validation.invalid_payload',
         fault: false,
       };
     }
-    const { provider, mode } = parsed.data;
+    const { provider } = parsed.data;
 
     if (!ctx.publishToInbound || typeof ctx.redis.blpop !== 'function') {
       return {
@@ -123,7 +122,7 @@ export const requestConnectionTool: AgentTool = {
 
     await ctx.publishToInbound(
       AGENT_MESSAGE_TYPES.REQUEST_CONNECTION,
-      { provider, mode, requestMessageId } as Record<string, unknown>,
+      { provider, requestMessageId } as Record<string, unknown>,
     );
 
     const reply = await ctx.redis.blpop(

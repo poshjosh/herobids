@@ -70,7 +70,6 @@ async function prepareConnectionChange(
   userId: string,
   operation: 'grant' | 'revoke',
   allowRunning = false,
-  overrides: TradingProfileChanges = {},
 ): Promise<PreparedConnectionChange> {
   const [agent] = await db.select({
     id: agents.id,
@@ -111,7 +110,6 @@ async function prepareConnectionChange(
     ...deriveTradingProfileFields({
       unifiedConfig: (agent.unifiedConfig as UnifiedAgentConfig | null) ?? null,
       style: agent.style ?? null,
-      overrides,
       preserveUnspecified: true,
     }),
   };
@@ -249,11 +247,11 @@ export async function grantConnection(
 }
 
 /**
- * Grant a connection to a RUNNING agent (dedicated path for `set_trading_setup`
- * and the WP-A link completion). Skips the stopped-agent requirement but keeps
- * ownership, activeness and the in-transaction revalidation. After a successful
- * commit, invokes the optional `wake` callback so the caller can signal the
- * agent to refresh its descriptor and wake it.
+ * Grant a connection to a RUNNING agent (dedicated path for the link completion).
+ * Skips the stopped-agent requirement but keeps ownership, activeness and the
+ * in-transaction revalidation. After a successful commit, invokes the optional
+ * `wake` callback so the caller can signal the agent to refresh its descriptor
+ * and wake it.
  */
 export async function grantConnectionToRunningAgent(
   db: Database,
@@ -263,15 +261,13 @@ export async function grantConnectionToRunningAgent(
   profileReconciliationSaga: TradingProfileReconciliationSaga,
   opts?: {
     wake?: (agentId: string, context: RunningAgentGrantWakeContext) => Promise<void>;
-    /** Explicit profile values (capital, risk, execution) provisioned with the grant. */
-    changes?: TradingProfileChanges;
   },
 ): Promise<Result<{ granted: boolean }, AgentConfigError>> {
   try {
-    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant', true, opts?.changes);
+    const prepared = await prepareConnectionChange(db, agentId, connectionId, userId, 'grant', true);
     if (prepared.kind !== 'ready') return grantError(prepared, connectionId);
-    // Already granted with nothing to change: nothing to write.
-    if (prepared.existing && !opts?.changes) return ok({ granted: true });
+    // Already granted: nothing to write.
+    if (prepared.existing) return ok({ granted: true });
 
     await executeGrantSaga(agentId, connectionId, userId, profileReconciliationSaga, prepared, true);
 

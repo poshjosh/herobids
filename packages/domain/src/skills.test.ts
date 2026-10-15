@@ -49,7 +49,7 @@ describe('BASE_SKILL', () => {
 
   it('instructions describe external skill support via read_skill (Phase 4 progressive disclosure)', () => {
     expect(BASE_SKILL.instructions).toContain('external skills');
-    expect(BASE_SKILL.instructions).toContain('twostraws/swiftui-agent-skill');
+    expect(BASE_SKILL.instructions).toContain('traderton/skills/crypto-trading');
     expect(BASE_SKILL.instructions).toContain('read_skill');
     // file-management is no longer auto-added for external skills (T6).
     expect(BASE_SKILL.requiredTools).toContain('read_skill');

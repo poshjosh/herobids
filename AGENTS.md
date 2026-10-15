@@ -180,4 +180,5 @@ Before making changes:
 - Test names describe behavior, not implementation (`"rejects order when notional exceeds limit"`).
 - Commits should be atomic and focused. One logical change per commit.
 - **Trading authority lives in traderton.** Herobids consumes typed boundary reads and the `@poshjosh/contracts` package; it does not mirror trading logic or preset definitions. The former parity-drift check (which pinned byte-identical mirrors between the two repos) was eliminated — see ADR 018 and `docs/features/2026/10/10/001-eliminate-parity-check/000-roadmap.md`. Do not reintroduce mirrored trading files.
+- **Trading logic belongs in traderton, not herobids.** Order sizing, risk limits, venue calls, strategy presets, and execution-mode decisions live in traderton. Herobids owns users, connections, agent grants, plans, and the boundary client only. If a change seems to need trading decisions in herobids, stop and ask the owner before writing it.
 

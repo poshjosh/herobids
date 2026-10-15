@@ -595,7 +595,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.fromAgent': 'एजेंट',
   'agentDetail.conversation.fromYou': 'आप',
   'setup.useExisting.title': '{agent} के लिए मौजूदा कनेक्शन उपयोग करें',
-  'setup.useExisting.empty': 'इस प्रदाता के लिए आपका कोई सक्रिय कनेक्शन नहीं है। इसके बजाय एक बनाएं।',
   'setup.useExisting.confirm': 'इस कनेक्शन का उपयोग करें',
   'setup.connectionRequest.banner': 'एजेंट {agent} आपसे {provider} कनेक्ट करने के लिए कह रहा है।',
   'setup.form.title': 'एजेंट को प्लेटफ़ॉर्म से कनेक्ट करें',

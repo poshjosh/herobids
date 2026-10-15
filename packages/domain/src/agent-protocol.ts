@@ -206,36 +206,9 @@ export type ManageAgentSkillsPayload = z.infer<typeof ManageAgentSkillsPayloadSc
 /** Brokered connection request — agent asks the platform to mint a short-lived, single-use link. */
 export const ConnectionRequestPayloadSchema = z.object({
   provider: z.string().min(1),
-  mode: z.enum(['create', 'use_existing']).default('create'),
   requestMessageId: z.string().min(1),
 });
 export type ConnectionRequestPayload = z.infer<typeof ConnectionRequestPayloadSchema>;
-
-/** Brokered paper trading setup — agent asks the platform to provision a test wallet and grant paper mode. */
-export const ManageTradingSetupPayloadSchema = z.object({
-  capital: z.string().regex(/^\d+(\.\d+)?$/).optional(),
-  requestMessageId: z.string().min(1),
-});
-export type ManageTradingSetupPayload = z.infer<typeof ManageTradingSetupPayloadSchema>;
-
-export const TradingSetupResultSchema = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('ok'),
-    connectionId: z.string().min(1),
-    provider: z.string().min(1),
-    network: z.string().min(1),
-    capital: z.string().min(1),
-    mode: z.literal('paper'),
-    reused: z.boolean(),
-    walletAddress: z.string().nullable(),
-  }),
-  z.object({
-    status: z.literal('error'),
-    error: z.string().min(1),
-    errorCode: z.string().min(1),
-  }),
-]);
-export type TradingSetupResult = z.infer<typeof TradingSetupResultSchema>;
 
 /** Brokered prompt update — agent rewrites its own standing goal. */
 export const UpdatePromptPayloadSchema = z.object({
@@ -439,7 +412,6 @@ export const AGENT_MESSAGE_TYPES = {
   CONFIG_UPDATE: 'agent.config.update',
   MANAGE_AGENT_SKILLS: 'agent.manage_skills',
   REQUEST_CONNECTION: 'agent.request_connection',
-  MANAGE_TRADING_SETUP: 'agent.manage_trading_setup',
   UPDATE_PROMPT: 'agent.update_prompt',
 } as const;
 
@@ -616,7 +588,6 @@ export const ConnectionRequestRecordSchema = z.object({
   agentId: z.string().min(1),
   userId: z.string().min(1),
   provider: z.string().min(1),
-  mode: z.enum(['create', 'use_existing']),
   status: z.enum(['pending', 'completed', 'declined', 'expired']),
   createdAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
@@ -637,7 +608,6 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.CONFIG_UPDATE]: ConfigUpdatePayloadSchema,
   [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: ManageAgentSkillsPayloadSchema,
   [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: ConnectionRequestPayloadSchema,
-  [AGENT_MESSAGE_TYPES.MANAGE_TRADING_SETUP]: ManageTradingSetupPayloadSchema,
   [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: UpdatePromptPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,

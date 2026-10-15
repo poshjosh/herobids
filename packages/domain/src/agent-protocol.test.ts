@@ -841,28 +841,15 @@ describe('ManageAgentSkillsResultSchema', () => {
 // ── ConnectionRequestPayloadSchema ──────────────────────────────────────────
 
 describe('ConnectionRequestPayloadSchema', () => {
-  it('accepts a valid payload with explicit mode', () => {
+  it('accepts a valid payload', () => {
     const result = ConnectionRequestPayloadSchema.safeParse({
       provider: 'gmail',
-      mode: 'use_existing',
       requestMessageId: 'req-1',
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.provider).toBe('gmail');
-      expect(result.data.mode).toBe('use_existing');
       expect(result.data.requestMessageId).toBe('req-1');
-    }
-  });
-
-  it('defaults mode to "create" when omitted', () => {
-    const result = ConnectionRequestPayloadSchema.safeParse({
-      provider: 'hyperliquid',
-      requestMessageId: 'req-2',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.mode).toBe('create');
     }
   });
 
@@ -870,15 +857,6 @@ describe('ConnectionRequestPayloadSchema', () => {
     const result = ConnectionRequestPayloadSchema.safeParse({
       provider: '',
       requestMessageId: 'req-3',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects an invalid mode', () => {
-    const result = ConnectionRequestPayloadSchema.safeParse({
-      provider: 'gmail',
-      mode: 'steal',
-      requestMessageId: 'req-4',
     });
     expect(result.success).toBe(false);
   });
@@ -950,7 +928,6 @@ describe('ConnectionRequestRecordSchema', () => {
     agentId: 'agent-1',
     userId: 'user-1',
     provider: 'gmail',
-    mode: 'create',
     status: 'pending',
     createdAt: '2026-10-13T11:00:00.000Z',
     expiresAt: '2026-10-13T11:30:00.000Z',

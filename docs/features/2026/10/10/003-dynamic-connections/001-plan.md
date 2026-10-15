@@ -10,7 +10,7 @@
 
 An agent that needs a connection (Gmail, a trading venue with the user's own keys, others) can find out what exists, ask the user to create or approve one through a short-lived link, and is woken when the user finishes or declines. No code in this plan changes how connections are stored; it adds the discovery, the request, the completion hook and the instructions.
 
-Scope boundary with WP-B: the generated test wallet for paper trading is created by the platform without a link (WP-B). This plan covers connections that need the user: their own wallet or API keys, OAuth (Gmail), or approval to reuse an existing connection.
+Scope boundary with WP-B: *(amended 2026-10-14: the platform no longer creates a wallet without a link; the setup tool only sets capital and paper mode on a connection obtained through this plan.)* This plan covers every connection a user must provide or approve: their own wallet or API keys, a created wallet, OAuth (Gmail), or reuse of an existing connection.
 
 ## Verified facts (code, 2026-10-10)
 
@@ -47,17 +47,17 @@ Replace the single not-ready result for a missing trading account with two codes
 
 A new brokered capability `request_connection`, following the `add_skills` pattern (policy grant, rate limit such as a few per hour, one pending request per agent and provider).
 
-Params: `provider` (validated against the catalog; unknown ids return the valid list), `mode`: `create` (default) or `use_existing`.
+Params: `provider` (validated against the catalog; unknown ids return the valid list). *(Amended 2026-10-14: the `mode` parameter is removed; the link page offers all choices.)*
 
 Handler (in the worker broker):
 1. Reject providers not in the catalog or not allowed for this agent.
-2. Create a request record in Redis (shared contract, a Zod schema in `packages/domain`): `{ requestId, token, agentId, userId, provider, mode, status: 'pending', createdAt, expiresAt }`, with a TTL from operator config (`connectionRequests.ttlSecs`, default from `loginLinkTtlSecs`). The `token` is a random bearer secret generated here, so the worker never touches session code.
+2. Create a request record in Redis (shared contract, a Zod schema in `packages/domain`): `{ requestId, token, agentId, userId, provider, status: 'pending', createdAt, expiresAt }`, with a TTL from operator config (`connectionRequests.ttlSecs`, default from `loginLinkTtlSecs`). The `token` is a random bearer secret generated here, so the worker never touches session code.
 3. Add `requestId` to a pending sorted set scored by `expiresAt` (for the expiry wake).
 4. Reply to the tool with `{ requestId, link, expiresAt }` so the agent can forward the link to the user via `send_message` (the platform picks the channel).
 
 **Decision (owner, 2026-10-10): the agent receives the link.** The tool returns the link in its reply so the agent can forward it to the user. The link carries a short-lived single-use bearer token; the instructions tell the agent to forward it promptly and not to persist it beyond the message. The agent also gets `requestId` and `expiresAt` so it can explain the request and its expiry.
 
-`use_existing` exists because an agent must never grant itself a user's connection. When `list_providers` shows `hasActiveConnection`, the agent requests approval and the page lists the user's matching connections with a confirm button.
+The link page lists the user's matching connections with a confirm button (only if they have any), next to the form (enter details, or create one where the provider supports it). An agent never grants itself a user's connection: the user chooses on the page. *(Amended 2026-10-14: was the agent-chosen `use_existing` mode.)*
 
 ### A4. Redeem endpoint and the request form (API and web)
 

@@ -181,6 +181,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `list_skills` | `core` | Agent skill discovery. |
 | `list_tasks` | `core` | Base-skill task management. |
 | `list_watches` | `external:trading` | Trading price-watch state. |
+| `load_skill` | `core` | Agent skill assignment plus instruction load (add_skills then read_skill). |
 | `make_http_request` | `general` | Structured HTTP client — stateless in-process fetch, no provider model. |
 | `publish_artifact` | `native:messaging` | User-facing artifact delivery. |
 | `read_app_docs` | `core` | Platform documentation access. |
@@ -190,7 +191,6 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `remove_skills` | `core` | Agent skill assignment. |
 | `request_connection` | `core` | Agent-initiated connection request link. |
 | `get_funding_info` | `external:trading` | Trading wallet funding address, network and latest observed balance. |
-| `set_trading_setup` | `external:trading` | Paper trading setup for this agent: test wallet, capital, paper mode. Brokered. |
 | `update_my_prompt` | `core` | Replace this agent's standing goal (prompt). Brokered. |
 | `remove_watch` | `external:trading` | Trading price-watch lifecycle. |
 | `resolve_bot` | `external:trading` | Trading bot identity resolution. |

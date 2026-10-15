@@ -253,6 +253,20 @@ export function drainNewestWakeIntoMarketWake(
   return { buffer: remaining, wake, reminder: null };
 }
 
+/**
+ * Split out buffered connection wakes so they are recorded as events and never
+ * drained into `currentMarketWake`, where a scanner-gated agent would suppress them.
+ */
+export function takeConnectionWakes(buffer: PendingWakeSignalBufferEntry[]): {
+  buffer: PendingWakeSignalBufferEntry[];
+  connection: PendingWakeSignalBufferEntry[];
+} {
+  return {
+    buffer: buffer.filter((entry) => entry.source !== 'connection'),
+    connection: buffer.filter((entry) => entry.source === 'connection'),
+  };
+}
+
 export interface RuntimeVenueSignal {
   kind: 'perps' | 'dex';
   instrument: string;
@@ -994,7 +1008,6 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         `Agent ID: ${state.runtimeDescriptor.agentId}`,
         ...(hasTradingCapability(state.runtimeDescriptor)
           ? [
-              `Execution mode: ${state.runtimeDescriptor.executionMode}`,
               `Authorization mode: ${state.runtimeDescriptor.authorizationMode}`,
             ]
           : []),
@@ -2214,6 +2227,13 @@ export function applyRuntimeMessage(
     }
 
     state.metrics.currentReminder = null;
+
+    // A connection wake is not a market wake: record the completion as an event the next tick shows.
+    if (wake.source === 'connection') {
+      state.metrics.currentMarketWake = null;
+      pushRecentEvent(state, type, reason);
+      return reason;
+    }
 
     if (wake.source === 'watch_threshold' || wake.source === 'discovery_delta' || wake.source === 'regime_change' || wake.source === 'scanner') {
       state.metrics.currentMarketWake = { wakeId, source: wake.source, reason, requestedAt, context: wake.context as WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext | ScannerWakeContext };
