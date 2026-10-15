@@ -9,6 +9,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Wave 1 agent-onboarding foundations
+- `load_skill` tool: adds an external skill and loads its instructions in one call.
+- Connection-cycle test (`scripts/ts/run-connection-cycle.ts`, `scripts/shell/tests/connection-cycle-test.sh`), run by `run-all-tests.sh --e2e`. It completes a connection without the form and checks the account and funding tool results.
+- Tool visibility diagnostics: the kept tool names at discovery, a reason for each dropped tool, and the visible set at each rejection.
+- `read_skill` reports the tools visible for a loaded skill, and names any tagged tool that was dropped.
+
+### Changed
+
+- Skill install and verification share one path (`activateExternalSkill`) for agent start, `add_skills` and `read_skill`.
+
+### Fixed
+
+- `add_skills` installs an external skill that is already in the catalogue. It was assigned without its `SKILL.md`, so `read_skill` reported it as not installed.
+- An install that exits 0 without writing `SKILL.md` is reported as failed, not added.
+- `read_skill` installs an assigned skill whose `SKILL.md` is missing from the workspace.
+- A connection completion no longer drops backend tools. A config update reruns tool discovery before the tool baseline is set.
 
 ## v0.6.15 - 2026-10-13
 

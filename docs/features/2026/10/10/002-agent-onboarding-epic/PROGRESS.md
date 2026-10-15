@@ -12,14 +12,14 @@
 |---|---|---|
 | Wave 1 | WP-A A1/A2/A3-design · WP-H H1–H2 · WP-M Phase 0–1 · WP-C S0 | done |
 | Wave 2 | WP-A A3–A7 · WP-B B1–B8 · WP-C S1–S2 | items done; gate run 2026-10-14; deferred follow-ups listed under "Not verified or deferred" |
-| Gate G1 | self-serve loop UAT | Partial PASS (see G1 log below); not passed. Remaining: link/wake loop, go-live with a cloned agent |
+| Gate G1 | self-serve loop UAT | Partial PASS (see G1 log below); rerun 2026-10-15 passes link, wake, wallet and account/funding tools (see G1 rerun below). Not passed: trade in test mode and go-live with a cloned agent not run |
 | Wave 3 | cut-over (WP-C S3+S4) | not started |
 | Wave 4 | channels (WP-M Phase 2–4, WP-C S5.1, WP-E) | not started |
 | Wave 5 | cleanup (WP-M Phase 6) | not started |
 
 ## Next unfinished item
 
-**Next unfinished item: R6, then Gate G1.** Rerun G1 on the new flow (blank agent, trading skill, `request_connection`, link, wake, paper trade with the agent stating mode and capital, then edit capital while stopped and restart), then the link/wake loop and go-live with a cloned agent. Record each result in the G1 table with evidence the same turn it is reported. G1 must pass before Wave 3 starts; Wave 3 needs owner greenlight. **R1–R5 are implemented and tested but uncommitted in three repos** (herobids, traderton, traderton-skills); Traderton R1 must ship before the herobids removal is used; no deployment without approval.
+**Next unfinished item: R6, then Gate G1.** The 2026-10-15 rerun (below) passes the link, wake, wallet and account/funding steps on the new flow; the trade and go-live steps remain. Rerun G1 on the new flow (blank agent, trading skill, `request_connection`, link, wake, paper trade with the agent stating mode and capital, then edit capital while stopped and restart), then the link/wake loop and go-live with a cloned agent. Record each result in the G1 table with evidence the same turn it is reported. G1 must pass before Wave 3 starts; Wave 3 needs owner greenlight. **R1–R5 are implemented and tested but uncommitted in three repos** (herobids, traderton, traderton-skills); Traderton R1 must ship before the herobids removal is used; no deployment without approval. Rerun G1 on the new flow (blank agent, trading skill, `request_connection`, link, wake, paper trade with the agent stating mode and capital, then edit capital while stopped and restart), then the link/wake loop and go-live with a cloned agent. Record each result in the G1 table with evidence the same turn it is reported. G1 must pass before Wave 3 starts; Wave 3 needs owner greenlight. **R1–R5 are implemented and tested but uncommitted in three repos** (herobids, traderton, traderton-skills); Traderton R1 must ship before the herobids removal is used; no deployment without approval.
 
 **Wave 2 follow-ups still open (not blocking G1 by themselves; see "Not verified or deferred"):** route-level test for `POST /setup/connection-requests/:id/use-existing`; zero-balance go-live warning (B8); `update_my_prompt` journal entry (owner deferred); DB-backed functional suites (agents, go-live) need Postgres and have not run; Traderton `ceiling violation` test not re-run here.
 
@@ -94,6 +94,27 @@ Result: Partial PASS
 | `update_my_prompt` persisted | **Partial** | Call at 20:01:35 returned `ok`, length 483; `updated_at` 20:01:35. The text is a reworded version of the seed, so not yet proven to be the agent's own goal. |
 | Trade in test mode | **Not run** | No `submit_decision`, decision or position in the log |
 | Go-live with a cloned agent | **Not run** | Out of G1 scope |
+
+## G1 rerun (local docker compose, 2026-10-15)
+
+Runs use the config-update discovery fix and the skill-activation change (uncommitted at the time of the runs). Each cycle was run with `scripts/ts/run-connection-cycle.ts`: create a user and agent, message the agent, redeem its link, complete the connection through `POST /setup/provider-link`, then send a follow-up asking for the account and funding tools. Evidence is from the database (`agent_messages`) and the agent container log.
+
+| G1 step | Result | Evidence |
+|---|---|---|
+| Blank agent receives the goal and replies | **Pass** | Agent `05f43e01` (14:06); reply sent 14:06:42 |
+| Trading skill assigned and loaded | **Pass** | Agent `b7e3bf28`: `load_skill` returned `loaded: true`, `available: true` at 13:57:16 |
+| `request_connection` returns a link | **Pass** | Agent `45325b06`: link redeemed and exchanged by the script (request `8282581e`, 14:08) |
+| Link completed | **Pass** | Request `status: completed`; wallets created: `0x8810…0ea1` (`05f43e01`), `0xB057…f647` (`45325b06`) |
+| Agent woken after completion | **Pass** | Agent `b7e3bf28`: tick at 13:57:38 with `trigger: wake`, `hasWakeSignal: true`; reply at 13:57:44 about the approved connection |
+| Account mode and capital read by the tool | **Pass** | `get_account_summary` returned `ok: true`, `executionMode: paper`, `capital: 1000` (`05f43e01` 14:06:39; `45325b06` 14:08:47) |
+| Funding address read by the tool | **Pass** | `get_funding_info` returned `ok: true`; address matches the created wallet (`05f43e01`, `45325b06`) |
+| No tool rejections | **Pass** | Zero "Tool not in active skill set" lines for `05f43e01` and `45325b06` |
+| Trade in test mode | **Not run** | No `submit_decision` run |
+| Go-live with a cloned agent | **Not run** | Out of this rerun |
+
+Automated check: `scripts/shell/tests/connection-cycle-test.sh` (run by `run-all-tests.sh --e2e`) passed as agent `7b0c0bbb` at 14:16 (`verdict: PASS`, both tool results `ok: true`, wallet present, reply present).
+
+Known gaps: the zero-balance warning is not built; `fundingStatus` stays `unknown` until the agent trades or is funded.
 
 Known gaps G1 depends on:
 - `update_my_prompt` has no journal entry (deferred by the owner).
