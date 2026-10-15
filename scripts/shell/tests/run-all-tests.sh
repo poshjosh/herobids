@@ -468,6 +468,8 @@ if [[ "${RUN_E2E}" == "true" ]]; then
     run_tier "E2E tests (Playwright)" \
       bash -c "cd '${ROOT}/tests/e2e' && BASE_URL=http://localhost:5173 pnpm test"
   fi
+  header "6b / Connection cycle (link, wake, wallet, account and funding tools)"
+  bash "${ROOT}/scripts/shell/tests/connection-cycle-test.sh"
 else
   header "6 / E2E tests (skipped)"
   warn "Pass --e2e to include Playwright end-to-end tests."
