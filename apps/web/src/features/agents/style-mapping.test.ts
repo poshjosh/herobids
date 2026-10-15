@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { deriveStyleMaxHoldDurationMs } from '@herobids/domain';
 import {
   applyAutoMaxHoldOverride,
-  deriveStyleMaxHoldDurationMs,
   formatStyleSummary,
+  reconcileMaxHoldOverride,
   resolveModelPricing,
   resolveStyleDefaults,
   resolveStyleTickIntervalMs,
@@ -201,6 +202,29 @@ describe('resolveStyleDefaults', () => {
         scoutMaxTurns: 50,
         maxHoldDurationMs: 2_700_000,
       });
+    });
+  });
+
+  describe('reconcileMaxHoldOverride', () => {
+    it('keeps a stored max hold that still covers the tick', () => {
+      expect(reconcileMaxHoldOverride('balanced', { maxHoldDurationMs: 7_200_000 }, 1_800_000)).toEqual({
+        maxHoldDurationMs: 7_200_000,
+      });
+    });
+
+    it('re-derives max hold when the tick outgrows a stored max hold', () => {
+      expect(reconcileMaxHoldOverride('balanced', { scoutMaxTurns: 50, maxHoldDurationMs: 600_000 }, 3_600_000)).toEqual({
+        scoutMaxTurns: 50,
+        maxHoldDurationMs: 10_800_000,
+      });
+    });
+
+    it('stores no max-hold override when the style default already covers the tick', () => {
+      expect(reconcileMaxHoldOverride('balanced', null, 1_800_000)).toBeNull();
+    });
+
+    it('leaves overrides unchanged when the tick is unknown', () => {
+      expect(reconcileMaxHoldOverride('balanced', { scoutMaxTurns: 50 }, null)).toEqual({ scoutMaxTurns: 50 });
     });
   });
 

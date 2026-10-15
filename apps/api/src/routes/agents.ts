@@ -65,6 +65,7 @@ import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.j
 import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
 import type { UnifiedAgentConfig } from '@herobids/domain';
+import { AgentStyleSchema, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
 import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
@@ -1212,6 +1213,29 @@ export async function agentRoutes(
         .where(and(eq(agentConnections.agentId, id), eq(agentConnections.status, 'active')))
         .limit(1);
       hasAgentConnections = !!existingActiveConn;
+    }
+
+    // Adding a trading skill moves a non-trading default tick to the style's trading tick.
+    // A tick sent in the request is never replaced.
+    const addsTradingSkill = mergedIsTradingCapable && !hasSkillCapabilityFamily(existingSkillIds, 'trading');
+    if (addsTradingSkill && parsed.data.tickIntervalMs === undefined) {
+      const scheduleStyle = AgentStyleSchema.catch('balanced').parse(parsed.data.style ?? agent.style);
+      const tradingTickIntervalMs = resolveTradingTickIntervalMs({
+        style: scheduleStyle,
+        currentTickIntervalMs: agent.tickIntervalMs,
+        nonTradingDefaultTickIntervalMs,
+      });
+      if (tradingTickIntervalMs !== agent.tickIntervalMs) {
+        parsed.data.tickIntervalMs = tradingTickIntervalMs;
+        const storedMaxHoldMs = (agent.runtimePolicyOverrides as Record<string, unknown> | null)?.['maxHoldDurationMs'];
+        const storedMaxHoldCoversTick = typeof storedMaxHoldMs === 'number' && storedMaxHoldMs >= tradingTickIntervalMs;
+        if (parsed.data.runtimePolicyOverrides === undefined && !storedMaxHoldCoversTick) {
+          parsed.data.runtimePolicyOverrides = {
+            ...((agent.runtimePolicyOverrides as Record<string, unknown> | null) ?? {}),
+            maxHoldDurationMs: deriveStyleMaxHoldDurationMs(scheduleStyle, tradingTickIntervalMs),
+          };
+        }
+      }
     }
 
     // Validate maxHoldDurationMs >= tickIntervalMs invariant (effective after PATCH merge).

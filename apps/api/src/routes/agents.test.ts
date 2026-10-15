@@ -1700,6 +1700,93 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     expect(hasExecutionMode).toBe(false);
   });
 
+  it('moves a name-only agent to the trading tick when a trading skill is added', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null,
+        executionMode: 'paper', style: 'balanced', tickIntervalMs: 86_400_000, runtimePolicyOverrides: null,
+      }],
+      activeLinkRows: [{
+        id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null,
+        modelPolicy: null, unifiedConfig: null, executionMode: 'paper', style: 'balanced', tickIntervalMs: 1_800_000,
+        runtimePolicyOverrides: { maxHoldDurationMs: 5_400_000 },
+      }],
+      agentSkillRows: [],
+    });
+
+    const stagedSaga = makeStagedProfileSaga(db);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { skillIds: ['traderton/skills/crypto-trading'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const update = updateSets.find((set: Record<string, unknown>) => 'tickIntervalMs' in set);
+    expect(update).toMatchObject({ tickIntervalMs: 1_800_000, runtimePolicyOverrides: { maxHoldDurationMs: 5_400_000 } });
+  });
+
+  it('keeps a stored max hold that still covers the derived trading tick', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null,
+        executionMode: 'paper', style: 'balanced', tickIntervalMs: 86_400_000, runtimePolicyOverrides: { maxHoldDurationMs: 7_200_000 },
+      }],
+      activeLinkRows: [{
+        id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null,
+        modelPolicy: null, unifiedConfig: null, executionMode: 'paper', style: 'balanced', tickIntervalMs: 1_800_000,
+        runtimePolicyOverrides: { maxHoldDurationMs: 7_200_000 },
+      }],
+      agentSkillRows: [],
+    });
+    const stagedSaga = makeStagedProfileSaga(db);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { skillIds: ['traderton/skills/crypto-trading'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const update = updateSets.find((set: Record<string, unknown>) => 'tickIntervalMs' in set);
+    expect(update).toMatchObject({ tickIntervalMs: 1_800_000 });
+    expect(update).not.toHaveProperty('runtimePolicyOverrides');
+  });
+
+  it('rejects an explicit 24 hour tick that the trading max hold cannot cover', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{
+        id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null,
+        executionMode: 'paper', style: 'balanced', tickIntervalMs: 86_400_000, runtimePolicyOverrides: null,
+      }],
+      activeLinkRows: [],
+      agentSkillRows: [],
+    });
+
+    const stagedSaga = makeStagedProfileSaga(db);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig(), undefined, undefined, undefined, undefined, undefined, undefined, stagedSaga.saga);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { skillIds: ['traderton/skills/crypto-trading'], tickIntervalMs: 86_400_000 },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
   it('returns 400 for an invalid payload', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({

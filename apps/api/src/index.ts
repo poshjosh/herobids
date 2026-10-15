@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { createDatabase, EVALUATION_QUEUE_NAME, UsageBillingRepository } from '@herobids/db';
+import { createDatabase, EVALUATION_QUEUE_NAME } from '@herobids/db';
 import type { EvaluationJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
@@ -19,8 +19,6 @@ import { BlueprintExecutionCapabilityAdapter } from './services/blueprint-execut
 import { agentInteractivityRoutes, telegramWebhookHandler } from './routes/agent-interactivity.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { aiRoutes } from './routes/ai.js';
-import { chatRoutes } from './routes/chat.js';
-import { ChatUsageBillingRecorder } from './billing/chat-usage-billing-recorder.js';
 import { skillsRoutes, registerBackendApprovedSkillRefs } from './routes/skills.js';
 import { datasetRoutes } from './routes/datasets.js';
 import { agentDocumentRoutes } from './routes/agent-documents.js';
@@ -382,13 +380,6 @@ await blueprintRoutes(app, db, new BlueprintExecutionCapabilityAdapter(providers
 await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga);
 await analyticsRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
-const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);
-const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
-  chatUsageBillingRepo,
-  appConfig.plans,
-  appConfig.usageBilling?.defaultRateCardName ?? 'default',
-);
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.venues, tradingBackendClient, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs);
 await skillsRoutes(app, db, appConfig.plans, (() => {
   const ext = appConfig.externalSkills;
   if (!ext.enabled) return null;

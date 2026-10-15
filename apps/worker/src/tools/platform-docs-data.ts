@@ -42,13 +42,6 @@ const UI_TERMINOLOGY_ENTRY: DocsIndexEntry = {
   content: `
 When referring to platform concepts in the chat UI, use these exact terms:
 
-Agent presets (what the user is creating):
-- "AI crypto trader" — autonomous trading agent (skillPresetId: trading)
-- "AI direct trader" — manual-style trading agent (skillPresetId: direct-trading)
-- "AI trading assistant" — advisory trading agent (skillPresetId: trading-assistant)
-- "AI personal assistant" — task, email, and research agent (skillPresetId: personal-assistant)
-- "Custom AI" — user selects skills manually (skillPresetId: custom)
-
 Risk styles (how aggressive the agent is):
 - "Careful" — lower risk, smaller positions, tighter stops
 - "Balanced" — moderate risk, default settings
@@ -70,117 +63,11 @@ Connection types:
 - "Wallet connection" — for DEX trading (Jupiter, 1inch, etc.)
 - "Email connection" — for sending email on your behalf (Gmail, Outlook)
 `,
-  headings: ['Agent presets', 'Risk styles', 'Execution modes', 'Chains', 'Connection types'],
+  headings: ['Risk styles', 'Execution modes', 'Chains', 'Connection types'],
   tags: ['terminology', 'labels', 'ui', 'display-names'],
 };
 
 // ─── Schema Entries ─────────────────────────────────────────────────────────
-
-const CREATE_AGENT_SCHEMA_ENTRY: DocsIndexEntry = {
-  id: 'schema/CreateAgentSchema',
-  title: 'Create Agent Schema',
-  kind: 'schema',
-  content: `
-Fields for creating a new agent. All fields are optional unless noted.
-
-name (string, required): The agent's display name. Must not be "all" or "*" (reserved for Telegram broadcast). Must be 1-200 characters.
-
-prompt (string, optional, max 8000 chars): The agent's goal/prompt text. Required when no technical config is provided.
-
-skillPresetId (enum, optional): Selects a preset skill bundle. Values:
-- "trading" → AI crypto trader: bot-management + trading skills
-- "direct-trading" → AI direct trader: trading skill only
-- "trading-assistant" → AI trading assistant: trading skill only
-- "personal-assistant" → AI personal assistant: web-access + email skills
-- "custom" → Custom AI: user selects skills manually
-
-skillIds (string[], optional): Manual skill selection. Used when skillPresetId is "custom".
-
-style (enum, optional): Agent risk style. Values: "careful", "balanced", "bold".
-- careful: costPreset=minimal, tickInterval=90min, dailySpend=$3/day
-- balanced: costPreset=standard, tickInterval=30min, dailySpend=$10/day
-- bold: costPreset=premium, tickInterval=10min, dailySpend=$30/day
-
-executionMode (enum, optional): "paper" | "shadow" | "live".
-- paper: simulated trading, no real money (safe to experiment)
-- shadow: venue-backed paper trading (with real market data)
-- live: real trading with real funds
-- live: real trading with real funds
-
-executionVenue (string, optional): The venue to execute trades on. Examples: "hyperliquid", "jupiter", "bybit", "1inch".
-
-capital (string, optional): Starting capital amount as a decimal string (e.g. "1000.00").
-
-dailyLossLimit (string, optional): Maximum daily realized loss as a decimal string.
-
-maxDrawdownPct (number, optional, 0-100): Maximum peak-to-current drawdown percentage.
-
-maxBots (number, optional, positive integer): Maximum number of bots this agent can create.
-
-maxSlippageBps (number, optional, ≥0): Maximum slippage in basis points.
-
-maxOpenPositions (number, optional, positive integer): Maximum concurrent open positions.
-
-maxPositionSizePct (number, optional, 0-100): Maximum position size as percentage of equity.
-
-stopLossPct (number, optional, 0-100): Default stop-loss percentage for positions.
-
-stopLossCooldownMs (number, optional, ≥0): Cooldown after stop-loss trigger in milliseconds.
-
-tickIntervalMs (number, optional, ≥1000): Agent tick interval in milliseconds.
-
-strategyPreset (enum, optional): Trading strategy. Values: "momentum", "momentum-position", "range", "swing", "scalper", "contrarian".
-
-connectionIds (string[], optional, max 20): Connection IDs to bind to this agent.
-
-capabilityMode (enum, optional): "intelligence" (LLM-only) or "hybrid" (LLM + technical strategy). hybrid requires technical config or strategy preset.
-
-authorizationMode (enum, optional): "direct" (execute immediately) or "approval_required" (requires user approval).
-
-provider (string, optional): LLM provider name (e.g. "openrouter").
-
-lightModel (string, optional): Scout/lightweight model ID.
-
-heavyModel (string, optional): Judge/heavy model ID.
-
-costPreset (enum, optional): "minimal" | "standard" | "premium". Controls cost tier.
-
-dailySpendBudgetUsd (number, optional, positive): Daily LLM spend budget in USD.
-
-dexWatchlistSymbols (string[], optional, max 25): DEX tokens to watch.
-
-notificationPolicy (object, optional, nullable): Email notification settings.
-
-platformAssessment (object, optional): Automated platform assessment settings.
-  - enabled (boolean, optional): Enable periodic assessments.
-  - reviewIntervalMs (number, optional): Assessment review interval.
-
-runtimePolicyOverrides (object, optional): Per-field runtime policy overrides for the style defaults.
-
-capabilityMode (enum, optional): "intelligence" | "hybrid".
-
-hybridMode (object, optional): Hybrid mode configuration (only valid when capabilityMode is "hybrid").
-
-openPositionEscalationToJudgePolicy (enum, optional): "never" | "uncovered_or_triggered" | "always".
-
-wakePreferences (object, optional): Scheduled wake preferences for the agent.
-
-telegramChatId (string, optional): Telegram chat ID for notifications.
-`,
-  headings: [
-    'name', 'prompt', 'skillPresetId', 'skillIds', 'style',
-    'executionMode', 'executionVenue', 'capital', 'dailyLossLimit',
-    'maxDrawdownPct', 'maxBots', 'maxSlippageBps', 'maxOpenPositions',
-    'maxPositionSizePct', 'stopLossPct', 'stopLossCooldownMs',
-    'tickIntervalMs', 'strategyPreset', 'connectionIds',
-    'capabilityMode', 'authorizationMode', 'provider', 'lightModel',
-    'heavyModel', 'costPreset', 'dailySpendBudgetUsd',
-    'dexWatchlistSymbols', 'notificationPolicy', 'platformAssessment',
-    'runtimePolicyOverrides', 'hybridMode',
-    'openPositionEscalationToJudgePolicy', 'wakePreferences', 'telegramChatId',
-  ],
-  tags: ['schema', 'agent', 'create', 'api', 'fields'],
-};
 
 const UPDATE_AGENT_SCHEMA_ENTRY: DocsIndexEntry = {
   id: 'schema/UpdateAgentSchema',
@@ -1328,14 +1215,14 @@ See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how t
 ## 3. Create your first agent
 
 1. Go to **AI Agents** in the sidebar.
-2. Click **New AI Agent**.
-3. Give it a name and a goal — describe what you want it to do and how.
-4. Choose an **agent style** (Careful, Balanced, or Bold). This controls how aggressively it spends its LLM budget. See [Agent Style](/docs/agents/agent-style) for the full breakdown.
+2. Click **Create AI agent**.
+3. Give it a name, or leave the name blank and we will pick one for you.
+4. Choose where it reaches you. For now that is **In this app**.
 5. Optionally set billing caps from the **Billing** page to prevent surprise costs.
 
 ## 4. Start your agent
 
-Once created, click **Start** on your agent. It will send you a message when it starts (if Telegram is linked), then start working on the task you assigned it.
+A new agent starts stopped. Open it, add skills under **Capabilities** (for example web browsing or deal finder), then click **Start**. Once it runs, it talks to you under **Talk to your agent** and asks you for instructions.
 
 ## Where to go next
 
@@ -1758,7 +1645,6 @@ Use these tools to answer user questions about platform capabilities, guide them
 
 export const PLATFORM_DOCS_INDEX: DocsIndexEntry[] = [
   UI_TERMINOLOGY_ENTRY,
-  CREATE_AGENT_SCHEMA_ENTRY,
   UPDATE_AGENT_SCHEMA_ENTRY,
   SKILL_PRESET_ENTRY,
   VENUE_CHAIN_ENTRY,

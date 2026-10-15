@@ -13,7 +13,6 @@ const profileSnapshotProperties = ['actorId', 'venueAccountId', 'capital', 'risk
 
 const activeBindingMutators = [
   { path: 'routes/agents.ts', reconciliationCalls: 3 },
-  { path: 'routes/chat.ts', reconciliationCalls: 1 },
   { path: 'routes/connections.ts', reconciliationCalls: 1 },
   { path: 'routes/blueprints.ts', reconciliationCalls: 1 },
   { path: 'db/agents/agent-config-service.ts', reconciliationCalls: 2 },
@@ -27,7 +26,6 @@ const revokedOnlyMutators = [
 const workflowBehaviorTests = [
   'routes/agents.test.ts',
   'routes/agent-interactivity.test.ts',
-  'routes/chat.test.ts',
   'routes/connections.test.ts',
   'routes/blueprints.integration.test.ts',
   'db/agents/agent-config-service.test.ts',
@@ -147,7 +145,6 @@ describe('trading profile workflow delegation', () => {
       .toEqual([
         'routes/agents.ts',
         'routes/blueprints.ts',
-        'routes/chat.ts',
         'services/agent-go-live-service.ts',
       ]);
 

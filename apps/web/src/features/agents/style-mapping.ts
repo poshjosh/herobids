@@ -1,43 +1,18 @@
-import type { ReasoningLevel, TradingSessionName } from '@herobids/domain';
+import {
+  AGENT_STYLE_RUNTIME_DEFAULTS,
+  NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
+  deriveStyleMaxHoldDurationMs,
+  resolveStyleTradingTickIntervalMs,
+  type ReasoningLevel,
+  type TradingSessionName,
+} from '@herobids/domain';
 
 export type { TradingSessionName };
 export type AgentStyleValue = 'careful' | 'balanced' | 'bold';
 
 const MS_PER_MINUTE = 60_000;
 
-export interface StyleDefaults {
-  costPreset: 'minimal' | 'standard' | 'premium';
-  tickIntervalMins: string;
-  dailySpendBudgetUsd: string;
-  openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
-  // Tool turn limits
-  scoutMaxTurns: number;
-  judgeMaxTurns: number;
-  // LLM token limits
-  scoutMaxTokens: number;
-  judgeMaxTokens: number;
-  lightThinkingTokens: number;
-  deepThinkingTokens: number;
-  // Trading hours
-  allowedHoursUtc: number[];
-  weekendPause: boolean;
-  // Context budgets
-  maxHistoryMessages: number;
-  maxHistoryTokens: number;
-  maxRecentToolMessages: number;
-  maxToolResultChars: number;
-  maxVisibleToolSchemas: number;
-  maxContextBlockChars: number;
-  toolResultFullRetentionTurns: number;
-  toolResultMaxStaleChars: number;
-  // Scout hold
-  maxHoldDurationMs: number;
-  // Reasoning level defaults (per-style base; agent overrides via runtime policy)
-  scoutReasoning: ReasoningLevel;
-  judgeReasoning: ReasoningLevel;
-  adaptScoutReasoning: boolean;
-  adaptJudgeReasoning: boolean;
-}
+type StyleDefaults = (typeof AGENT_STYLE_RUNTIME_DEFAULTS)[AgentStyleValue];
 
 /** Per-field overrides for runtime policy. Fields not present use the style default. */
 export type RuntimePolicyOverrides = Partial<{
@@ -66,89 +41,7 @@ export type RuntimePolicyOverrides = Partial<{
   skipUnchangedTicks: boolean | null;
 }>;
 
-export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
-  careful:  {
-    costPreset: 'minimal',
-    tickIntervalMins: '90',
-    dailySpendBudgetUsd: '3',
-    openPositionEscalationToJudgePolicy: 'never',
-    scoutMaxTurns: 499,
-    judgeMaxTurns: 9_999,
-    scoutMaxTokens: 512,
-    judgeMaxTokens: 2_048,
-    lightThinkingTokens: 1_024,
-    deepThinkingTokens: 4_096,
-    allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20],
-    weekendPause: false,
-    maxHistoryMessages: 10,
-    maxHistoryTokens: 20_000,
-    maxRecentToolMessages: 3,
-    maxToolResultChars: 2_000,
-    maxVisibleToolSchemas: 32,
-    maxContextBlockChars: 2_000,
-    toolResultFullRetentionTurns: 2,
-    toolResultMaxStaleChars: 250,
-    maxHoldDurationMs: 27_000_000, // 450 min (5 × tick interval)
-    scoutReasoning: 'none',
-    judgeReasoning: 'low',
-    adaptScoutReasoning: true,
-    adaptJudgeReasoning: true,
-  },
-  balanced: {
-    costPreset: 'standard',
-    tickIntervalMins: '30',
-    dailySpendBudgetUsd: '10',
-    openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
-    scoutMaxTurns: 499,
-    judgeMaxTurns: 9_999,
-    scoutMaxTokens: 1_024,
-    judgeMaxTokens: 4_096,
-    lightThinkingTokens: 2_048,
-    deepThinkingTokens: 10_240,
-    allowedHoursUtc: [],
-    weekendPause: false,
-    maxHistoryMessages: 20,
-    maxHistoryTokens: 40_000,
-    maxRecentToolMessages: 6,
-    maxToolResultChars: 4_000,
-    maxVisibleToolSchemas: 64,
-    maxContextBlockChars: 4_000,
-    toolResultFullRetentionTurns: 3,
-    toolResultMaxStaleChars: 500,
-    maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
-    scoutReasoning: 'none',
-    judgeReasoning: 'medium',
-    adaptScoutReasoning: true,
-    adaptJudgeReasoning: true,
-  },
-  bold:     {
-    costPreset: 'premium',
-    tickIntervalMins: '10',
-    dailySpendBudgetUsd: '30',
-    openPositionEscalationToJudgePolicy: 'always',
-    scoutMaxTurns: 499,
-    judgeMaxTurns: 9_999,
-    scoutMaxTokens: 2_048,
-    judgeMaxTokens: 8_192,
-    lightThinkingTokens: 4_096,
-    deepThinkingTokens: 20_480,
-    allowedHoursUtc: [],
-    weekendPause: false,
-    maxHistoryMessages: 40,
-    maxHistoryTokens: 80_000,
-    maxRecentToolMessages: 12,
-    maxToolResultChars: 8_000,
-    maxVisibleToolSchemas: 128,
-    maxContextBlockChars: 8_000,
-    toolResultFullRetentionTurns: 5,
-    toolResultMaxStaleChars: 1_000,
-    maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
-    scoutReasoning: 'low',
-    judgeReasoning: 'high',
-    adaptScoutReasoning: true,
-    adaptJudgeReasoning: true,
-  },
-};
+export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = AGENT_STYLE_RUNTIME_DEFAULTS;
 
 export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {
   const config = STYLE_CONFIG[style];
@@ -158,14 +51,8 @@ export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {
   return config;
 }
 
-/**
- * D10: default tick interval (in minutes) for a non-trading agent created
- * without an explicit interval — 24 h. Mirrors the operator config key
- * `agentRuntime.nonTradingDefaults.tickIntervalMs` (86_400_000 ms); the backend
- * is authoritative at create time, this is only the form's pre-fill so the UI
- * shows the same value the server will store.
- */
-export const NON_TRADING_DEFAULT_TICK_INTERVAL_MINS = '1440';
+/** D10: non-trading default tick in minutes (24 h), pre-filled by the form. */
+export const NON_TRADING_DEFAULT_TICK_INTERVAL_MINS = String(NON_TRADING_DEFAULT_TICK_INTERVAL_MS / MS_PER_MINUTE);
 
 /**
  * The tick-interval minutes to pre-fill when a style is selected. Non-trading
@@ -209,20 +96,7 @@ export function resolveStyleTickIntervalMs(style: AgentStyleValue, tickIntervalM
     return tickIntervalMsOverride;
   }
 
-  return Number(resolveStyleDefaults(style).tickIntervalMins) * MS_PER_MINUTE;
-}
-
-/** Backend ceiling for maxHoldDurationMs (RUNTIME_POLICY_CEILINGS.maxHoldDurationMs). */
-const MAX_HOLD_DURATION_CEILING_MS = 86_400_000 - 1;
-
-export function deriveStyleMaxHoldDurationMs(style: AgentStyleValue, tickIntervalMsOverride?: number | null): number {
-  const defaults = resolveStyleDefaults(style);
-  const defaultTickIntervalMs = Number(defaults.tickIntervalMins) * MS_PER_MINUTE;
-  const multiplier = defaultTickIntervalMs > 0
-    ? defaults.maxHoldDurationMs / defaultTickIntervalMs
-    : 1;
-
-  return Math.min(Math.round(resolveStyleTickIntervalMs(style, tickIntervalMsOverride) * multiplier), MAX_HOLD_DURATION_CEILING_MS);
+  return resolveStyleTradingTickIntervalMs(style);
 }
 
 export function applyAutoMaxHoldOverride(
@@ -231,7 +105,7 @@ export function applyAutoMaxHoldOverride(
   tickIntervalMsOverride?: number | null,
 ): RuntimePolicyOverrides | null {
   const defaults = resolveStyleDefaults(style);
-  const derivedMaxHoldDurationMs = deriveStyleMaxHoldDurationMs(style, tickIntervalMsOverride);
+  const derivedMaxHoldDurationMs = deriveStyleMaxHoldDurationMs(style, resolveStyleTickIntervalMs(style, tickIntervalMsOverride));
   const next: RuntimePolicyOverrides = { ...(overrides ?? {}) };
 
   if (derivedMaxHoldDurationMs === defaults.maxHoldDurationMs) {
@@ -241,6 +115,23 @@ export function applyAutoMaxHoldOverride(
   }
 
   return Object.keys(next).length > 0 ? next : null;
+}
+
+/** Keeps a stored max hold that still covers the tick; re-derives it only when it does not. */
+export function reconcileMaxHoldOverride(
+  style: AgentStyleValue,
+  overrides: RuntimePolicyOverrides | null,
+  tickIntervalMs: number | null,
+): RuntimePolicyOverrides | null {
+  if (tickIntervalMs == null) {
+    return overrides;
+  }
+  // 0 disables hold expiry, so it always covers the tick.
+  const effectiveMaxHoldMs = overrides?.maxHoldDurationMs ?? resolveStyleDefaults(style).maxHoldDurationMs;
+  if (effectiveMaxHoldMs === 0 || effectiveMaxHoldMs >= tickIntervalMs) {
+    return overrides;
+  }
+  return applyAutoMaxHoldOverride(style, overrides, tickIntervalMs);
 }
 
 /** Pricing info for the selected economy and premium models. Pass to formatStyleSummary for computed estimates. */

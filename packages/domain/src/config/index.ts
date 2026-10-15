@@ -88,6 +88,7 @@ export {
   type PermissionLevel,
   RUNTIME_POLICY_CEILINGS,
   AGENT_STYLE_RUNTIME_DEFAULTS,
+  NON_TRADING_DEFAULT_TICK_INTERVAL_MS,
   resolveAgentRuntimePolicy,
   RegimeParamsSchema,
   RsiParamsSchema,
@@ -237,5 +238,7 @@ export type {
   BrowserPoolConfig,
   HttpClientConfig,
 } from './schema.js';
+
+export { resolveStyleTradingTickIntervalMs, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs } from './agent-schedule.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';

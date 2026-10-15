@@ -330,9 +330,6 @@ export const messages: Record<string, string> = {
   'agents.summary.openCapability': '{capability} क्षमता खोलें',
   'agents.summary.configureCapability': '{capability} क्षमता कॉन्फ़िगर करें',
   'agents.create.title': 'AI एजेंट बनाएं',
-  'agents.create.switchToForm': 'फ़ॉर्म का उपयोग करें',
-  'agents.create.switchToGuided': 'निर्देशित चैट का उपयोग करें',
-  'agents.create.refresh': 'रीफ़्रेश करें',
   'agents.create.goal': 'उद्देश्य / प्रॉम्प्ट',
   'agents.create.goal.subtitle': '(AI एजेंट को क्या करना चाहिए?)',
   'agents.create.goalBoth': 'उद्देश्य / प्रॉम्प्ट',
@@ -341,6 +338,10 @@ export const messages: Record<string, string> = {
   'agents.create.goalPlaceholder.custom': 'उदा. संलग्न दस्तावेज़ का व्याकरण संबंधी त्रुटियों के लिए विश्लेषण करें',
   'agents.create.name': 'नाम',
   'agents.create.namePlaceholder': 'उदा. market-watch-01',
+  'agents.create.nameGenerated': 'खाली छोड़ने पर आपके लिए जनरेट किया जाएगा।',
+  'agents.create.channel.title': 'चैनल',
+  'agents.create.channel.inApp': 'ऐप के अंदर',
+  'agents.create.channel.help': 'ऐप के बाहर यह एजेंट आपसे संपर्क कर सके, इसके लिए Telegram या WhatsApp कनेक्ट करें।',
   'agents.create.skills': 'कौशल',
   'agents.create.skills.editLabel': 'कौशल संपादित करें',
   'agents.create.skills.addLabel': 'कौशल जोड़ें',
@@ -622,10 +623,6 @@ export const messages: Record<string, string> = {
   'setup.agentAssignment.connectionCreated': '{label} ({provider}) सफलतापूर्वक कनेक्ट हुआ।',
 
   // Guided Setup billing gate
-  'guidedSetup.billingGate.title': 'क्रेडिट आवश्यक',
-  'guidedSetup.billingGate.addCredit': 'क्रेडिट जोड़ें',
-  'guidedSetup.billingGate.useFormInstead': 'इसके बजाय मानक फ़ॉर्म का उपयोग करें',
-  'guidedSetup.billingGate.tryAgain': 'पुनः प्रयास करें',
 
   // Status labels
   'status.running': 'चल रहा है',
@@ -909,16 +906,8 @@ export const messages: Record<string, string> = {
   'billing.details.header.balance': 'शेष',
 
   // Guided Setup (loading states and error recovery)
-  'guidedSetup.checkingAccount': 'खाते की जाँच हो रही है...',
-  'guidedSetup.startingChat': 'चैट शुरू हो रही है...',
-  'guidedSetup.processingConnection': 'आपका कनेक्शन प्रोसेस हो रहा है…',
-  'guidedSetup.tryAgain': 'पुनः प्रयास करें',
-  'guidedSetup.billingGate.afterAddingCredit': 'क्रेडिट जोड़ने के बाद, जारी रखने के लिए "पुनः प्रयास करें" पर क्लिक करें।',
 
   // Guided Setup actions
-  'guidedSetup.actions.secretsWarning': 'सीक्रेट्स सीधे चैट में दर्ज न करें। उन्हें केवल इस उद्देश्य के लिए प्रदान किए गए सुरक्षित फ़ॉर्म में दर्ज करें।',
-  'guidedSetup.actions.confirmed': '✓ पुष्टि हो गई',
-  'guidedSetup.actions.formFallback': '📋 फ़ॉर्म: {form}',
 
   // Trading capability presentation (ledger redesign)
   'capability.details': 'विवरण',

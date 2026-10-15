@@ -19,14 +19,14 @@ See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how t
 ## 3. Create your first agent
 
 1. Go to **AI Agents** in the sidebar.
-2. Click **New AI Agent**.
-3. Give it a name and a goal — describe what you want it to do and how.
-4. Choose an **agent style** (Careful, Balanced, or Bold). This controls how aggressively it spends its LLM budget. See [Agent Style](/docs/agents/agent-style) for the full breakdown.
+2. Click **Create AI agent**.
+3. Give it a name, or leave the name blank and we will pick one for you.
+4. Choose where it reaches you. For now that is **In this app**.
 5. Optionally set billing caps from the **Billing** page to prevent surprise costs.
 
 ## 4. Start your agent
 
-Once created, click **Start** on your agent. It will send you a message when it starts (if Telegram is linked), then start working on the task you assigned it.
+A new agent starts stopped. Open it, add skills under **Capabilities** (for example web browsing or deal finder), then click **Start**. Once it runs, it talks to you under **Talk to your agent** and asks you for instructions.
 
 ## Where to go next
 

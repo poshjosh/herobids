@@ -526,6 +526,13 @@
       "when": 1791791422155,
       "tag": "0074_supreme_human_torch",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1792086272185,
+      "tag": "0075_drop_chat_tables",
+      "breakpoints": true
     }
   ]
 }

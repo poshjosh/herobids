@@ -43,7 +43,5 @@ export { decisionApprovals } from './decision-approvals.js';
 export { llmPricingSnapshots } from './llm-pricing-snapshots.js';
 export { agentEvaluations } from './agent-evaluations.js';
 export { agentDocuments } from './agent-documents.js';
-export { chatThreads } from './chat-threads.js';
-export { chatMessages } from './chat-messages.js';
 export { tradingProfileReconciliationOutbox } from './trading-profile-reconciliation-outbox.js';
 export type { TradingProfileOutboxAction, TradingProfileOutboxState } from './trading-profile-reconciliation-outbox.js';

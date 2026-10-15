@@ -296,11 +296,16 @@ export interface ResolvedAgentRuntimePolicy {
 }
 
 /**
- * Style → defaults mapping. Mirrors the frontend STYLE_CONFIG.
- * Includes costPreset and tick defaults for completeness, but these
- * are stored separately (not part of runtime_policy_overrides).
+ * Style → defaults mapping, read directly by the web app. Includes costPreset and
+ * tick defaults, which are stored separately (not part of runtime_policy_overrides).
  */
-export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgentRuntimePolicy & { costPreset: string; tickIntervalMins: string; dailySpendBudgetUsd: string; openPositionEscalationToJudgePolicy: string }> = {
+export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgentRuntimePolicy & {
+  costPreset: 'minimal' | 'standard' | 'premium';
+  tickIntervalMins: string;
+  dailySpendBudgetUsd: string;
+  openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
+  maxHoldDurationMs: number;
+}> = {
   careful: {
     costPreset: 'minimal',
     tickIntervalMins: '90',
@@ -1223,9 +1228,12 @@ export const RemindersConfigSchema = z.object({
 /** Resolved operator reminder config (bounds + coordinator settings). */
 export type ReminderConfig = z.infer<typeof RemindersConfigSchema>;
 
+/** Operator default tick interval for non-trading agents (24 h). */
+export const NON_TRADING_DEFAULT_TICK_INTERVAL_MS = 86_400_000;
+
 /** Operator defaults applied to non-trading agents. */
 export const AgentRuntimeNonTradingDefaultsSchema = z.object({
-  tickIntervalMs: z.number().int().min(60_000).default(86_400_000),          // 24 h
+  tickIntervalMs: z.number().int().min(60_000).default(NON_TRADING_DEFAULT_TICK_INTERVAL_MS),
 }).default({});
 
 /** Resolved operator non-trading defaults. */

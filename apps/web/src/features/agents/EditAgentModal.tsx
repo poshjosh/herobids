@@ -13,7 +13,7 @@ import { validateCreateAgentForm, validateEditAgentConnections, type ValidationC
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
-import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, resolveStyleTickIntervalMins, resolveEffectiveSkipUnchangedTicks, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
+import { applyAutoMaxHoldOverride, reconcileMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, resolveStyleTickIntervalMins, resolveEffectiveSkipUnchangedTicks, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 
 const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
   careful: 'agents.style.careful.label',
@@ -654,21 +654,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               if (patch.tickIntervalMins !== undefined) {
                 setTickIntervalTouched(true);
                 const newTickMs = resolveEditedTickIntervalMs(nextForm.tickIntervalMins, true);
-                if (!maxHoldDurationManuallySetRef.current) {
-                  setRuntimePolicyOverrides((current) => applyAutoMaxHoldOverride(
-                    style,
-                    current,
-                    newTickMs,
-                  ));
-                } else {
-                  setRuntimePolicyOverrides((current) => {
-                    const effectiveMaxHold = current?.maxHoldDurationMs
-                      ?? resolveStyleDefaults(style).maxHoldDurationMs;
-                    return newTickMs != null && effectiveMaxHold !== 0 && effectiveMaxHold < newTickMs
-                      ? applyAutoMaxHoldOverride(style, current, newTickMs)
-                      : current;
-                  });
-                }
+                setRuntimePolicyOverrides((current) => reconcileMaxHoldOverride(style, current, newTickMs));
               }
               setForm(nextForm);
             }}
@@ -716,7 +702,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   setRuntimePolicyOverrides(
                     hasManualMaxHoldOverride
                       ? overrides
-                      : applyAutoMaxHoldOverride(
+                      : reconcileMaxHoldOverride(
                           style,
                           overrides,
                           resolveEditedTickIntervalMs(form.tickIntervalMins),

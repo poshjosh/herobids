@@ -34,10 +34,10 @@ export function TryPage() {
   const navigate = useNavigate();
   const intl = useIntl();
 
-  // Redirect authenticated users to guided chat
+  // Redirect authenticated users to the create form
   useEffect(() => {
     if (isAuthenticated()) {
-      navigate('/agents/new?ui=chat', { replace: true });
+      navigate('/agents/new', { replace: true });
     }
   }, [navigate]);
 
@@ -106,7 +106,7 @@ export function TryPage() {
     async (emailToSend: string) => {
       setServerError('');
       try {
-        await auth.sendLoginLink(emailToSend, undefined, '/agents/new?ui=chat');
+        await auth.sendLoginLink(emailToSend, undefined, '/agents/new');
         return { ok: true };
       } catch (err) {
         if (err instanceof ApiError && err.status === 429) {

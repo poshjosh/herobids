@@ -56,10 +56,6 @@ describe('i18n regressions', () => {
         file: new URL('../../features/agents/AgentDetailPage.tsx', import.meta.url),
         banned: ['Edit config', 'Edit agent', 'Delete this agent? This cannot be undone.'],
       },
-      {
-        file: new URL('../../features/chat/GuidedSetupPanel.tsx', import.meta.url),
-        banned: ['Checking account', 'Starting chat', 'Processing your connection'],
-      },
     ];
 
     for (const { file, banned } of expectations) {

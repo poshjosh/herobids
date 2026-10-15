@@ -19,12 +19,11 @@ const CUSTOM_PROVIDER_OPTION = '__custom__';
  * Temporary code-only switch (deliberately NOT operator config — pending a
  * final decision on whether trading providers belong in the generic form at
  * all) controlling whether callers that pass no `defaultCapability` (the
- * Connections page "Add connection" and the create/edit agent form's
- * connection picker) show the pre-listed Trading provider group. The current
- * shipped behavior (hidden) is the default; flip to `true` to restore the
+ * Connections page "Add connection" and the edit agent form's connection
+ * picker) show the pre-listed Trading provider group. The current shipped behavior (hidden) is the default; flip to `true` to restore the
  * old pre-listed dropdown entries for those two surfaces. Does not affect
- * callers that explicitly pass `defaultCapability="trading"` (guided chat,
- * the agent Trading capability tab, the Telegram /connect setup page) — they
+ * callers that explicitly pass `defaultCapability="trading"` (the agent Trading
+ * capability tab, the Telegram /connect setup page) — they
  * are unaffected either way. Does not affect custom-provider capability
  * inference (typing a known provider id like "hyperliquid" into Custom mode
  * already works regardless of this flag).

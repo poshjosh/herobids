@@ -24,6 +24,10 @@ S1 (optional name, `update_my_prompt`, first-turn guidance) and S2 (in-app conve
 | D-5 | The channel selector offers only "In this app" until the Telegram deep link ships in Wave 4. | Owner, 2026-10-15 |
 | D-6 | When no name is given, the server generates it (`apps/api/src/services/agent-name-service.ts`). The web client stops generating names. | Recommendation: one source of names |
 | D-7 | The shared create core is deferred. The form calls `POST /agents` directly. Revisit when guided chat resumes, or in Wave 5 cleanup if blueprint and go-live still duplicate creation. | Owner, 2026-10-15 |
+| D-8 | Guided chat is removed from the web app and the API: the chat page, `routes/chat.ts` and its tests, the chat client, and the `create_agent` chat tool. The create form is the only creation path. Supersedes D-3 and D-4. Reason: the form is simple, and after creation the agent itself messages the user for instructions, which replaces guided chat. Do not ask again whether guided chat code should be deleted. | Owner, 2026-10-15 |
+| D-9 | `/try` sends authenticated users to `/agents/new`. | Owner, 2026-10-15 |
+| D-10 | The agent's post-create message asking the user for instructions is direction only. It is not built in plan 004. Schedule it separately. | Owner direction, 2026-10-15 |
+| D-11 | The `chat_threads` and `chat_messages` tables are dropped by migration `0075_drop_chat_tables`. No backfill: the product is pre-launch and environments are rebuilt. | Owner, 2026-10-15 |
 
 ## Work order
 

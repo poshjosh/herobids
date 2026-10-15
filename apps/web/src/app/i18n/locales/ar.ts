@@ -330,9 +330,6 @@ export const messages: Record<string, string> = {
   'agents.summary.openCapability': 'فتح قدرة {capability}',
   'agents.summary.configureCapability': 'تهيئة قدرة {capability}',
   'agents.create.title': 'إنشاء وكيل ذكاء اصطناعي',
-  'agents.create.switchToForm': 'استخدم النموذج',
-  'agents.create.switchToGuided': 'استخدم الدردشة الموجهة',
-  'agents.create.refresh': 'تحديث',
   'agents.create.goal': 'الهدف / الموجّه',
   'agents.create.goal.subtitle': '(ما الذي يجب أن يفعله وكيل الذكاء الاصطناعي؟)',
   'agents.create.goalBoth': 'الهدف / الموجّه',
@@ -341,6 +338,10 @@ export const messages: Record<string, string> = {
   'agents.create.goalPlaceholder.custom': 'مثلاً حلّل المستند المرفق بحثاً عن الأخطاء النحوية',
   'agents.create.name': 'الاسم',
   'agents.create.namePlaceholder': 'مثلاً market-watch-01',
+  'agents.create.nameGenerated': 'يُنشأ تلقائياً إذا تُرك فارغاً.',
+  'agents.create.channel.title': 'القناة',
+  'agents.create.channel.inApp': 'داخل التطبيق',
+  'agents.create.channel.help': 'اربط تيليغرام أو واتساب ليتمكن هذا الوكيل من التواصل معك خارج التطبيق.',
   'agents.create.skills': 'المهارات',
   'agents.create.skills.editLabel': 'تعديل المهارات',
   'agents.create.skills.addLabel': 'إضافة مهارات',
@@ -622,10 +623,6 @@ export const messages: Record<string, string> = {
   'setup.agentAssignment.connectionCreated': 'تم توصيل {label} ({provider}) بنجاح.',
 
   // Guided Setup billing gate
-  'guidedSetup.billingGate.title': 'الرصيد مطلوب',
-  'guidedSetup.billingGate.addCredit': 'إضافة رصيد',
-  'guidedSetup.billingGate.useFormInstead': 'استخدم النموذج العادي بدلاً من ذلك',
-  'guidedSetup.billingGate.tryAgain': 'حاول مرة أخرى',
 
   // Status labels
   'status.running': 'يعمل',
@@ -909,16 +906,8 @@ export const messages: Record<string, string> = {
   'billing.details.header.balance': 'الرصيد',
 
   // Guided Setup (loading states and error recovery)
-  'guidedSetup.checkingAccount': 'جارٍ التحقق من الحساب...',
-  'guidedSetup.startingChat': 'جارٍ بدء المحادثة...',
-  'guidedSetup.processingConnection': 'جارٍ معالجة اتصالك…',
-  'guidedSetup.tryAgain': 'حاول مرة أخرى',
-  'guidedSetup.billingGate.afterAddingCredit': 'بعد إضافة الرصيد، انقر على "حاول مرة أخرى" للمتابعة.',
 
   // Guided Setup actions
-  'guidedSetup.actions.secretsWarning': 'لا تدخل الأسرار مباشرة في المحادثة. أدخلها فقط في النماذج الآمنة المخصصة لذلك.',
-  'guidedSetup.actions.confirmed': '✓ تم التأكيد',
-  'guidedSetup.actions.formFallback': '📋 نموذج: {form}',
 
   // Trading capability presentation (ledger redesign)
   'capability.details': 'التفاصيل',

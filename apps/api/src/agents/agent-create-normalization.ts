@@ -311,7 +311,7 @@ export async function resolveRuntimePolicyOverrides(params: {
 /**
  * Main orchestrator that calls all create-time normalization helpers and
  * returns the complete set of normalized fields to persist when creating
- * an agent. Both POST /agents and Guided Setup should use this.
+ * an agent. POST /agents uses this.
  */
 export async function prepareAgentCreateFields(
   params: PrepareAgentCreateFieldsParams,

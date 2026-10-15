@@ -6,6 +6,7 @@
  */
 
 import type { APIRequestContext, Page } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { eq } from 'drizzle-orm';
 import { closeDatabase, createDatabase, connections } from '@herobids/db';
 
@@ -101,109 +102,19 @@ export async function getAuthenticatedUserId(page: Page, request: APIRequestCont
   return body.id;
 }
 
-/** Create an agent from the agent-first flow and return its id. */
+/**
+ * Create an agent through the create form (name only), then add any skills on
+ * the agent detail page. The goal argument is used as the agent name.
+ */
 export async function createAgent(
   page: Page,
   goal: string,
   options: { skillIds?: string[]; preset?: string } = {},
 ): Promise<string> {
   await page.goto('/agents/new');
+  await page.locator('#create-agent-name').fill(goal.slice(0, 40));
+  await page.getByRole('button', { name: /^Create AI agent$/i }).click();
 
-  // The create page defaults to form mode. If we landed in guided mode
-  // (e.g. redirected via ?ui=chat), switch to form so the form-based
-  // selectors below work.
-  const switchToForm = page.getByRole('button', { name: /^Use the form$/i });
-  const switchToGuided = page.getByRole('button', { name: /^Use guided chat$/i });
-  if (await switchToForm.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await switchToForm.click();
-  } else {
-    await switchToGuided.waitFor({ state: 'visible', timeout: 10_000 });
-  }
-
-  // Skill-first create flow (feature 009): the objective/prompt comes first,
-  // there is NO "preset"/"type" <select>, and skills are selected via the
-  // collapsible SkillPicker ("Add skills"). Fill the goal (textarea) and name
-  // (first text input, inside AgentFormBody) while the skills section is still
-  // collapsed so the name locator is unambiguous.
-  const goalField = page.locator('textarea').first();
-  await goalField.fill(goal);
-
-  const nameField = page.locator('input[type="text"]').first();
-  await nameField.fill(goal.slice(0, 40));
-
-  // Resolve which skills to select. The former `preset` option maps to concrete
-  // skills now that identity is derived from skills, not a type:
-  //   trading            → the trading starter skills
-  //   personal-assistant → the personal-assistant starter skills
-  //   custom / general   → no skills (base agent)
-  // Explicit `skillIds` always win.
-  const PRESET_SKILL_SLUGS: Record<string, string[]> = {
-    trading: ['system/trading', 'system/bot-management'],
-    'personal-assistant': ['system/web-access', 'system/email'],
-  };
-
-  let skillIdsToSelect = options.skillIds ?? [];
-  if (skillIdsToSelect.length === 0 && options.preset && PRESET_SKILL_SLUGS[options.preset]) {
-    // Resolve slugs → ids via the skills API.
-    const token = await getAuthToken(page);
-    const resp = await page.request.get('/api/skills?scope=selectable', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!resp.ok()) {
-      throw new Error(`Failed to load skills: ${resp.status()} ${await resp.text()}`);
-    }
-    const body = await resp.json() as { skills: Array<{ id: string; slug?: string; name: string }> };
-    skillIdsToSelect = PRESET_SKILL_SLUGS[options.preset]!
-      .map((slug) => body.skills.find((s) => s.slug === slug)?.id)
-      .filter((id): id is string => Boolean(id));
-  }
-
-  if (skillIdsToSelect.length > 0) {
-    // Expand the "Add skills" section so the SkillPicker checkboxes render.
-    const addSkillsToggle = page.getByRole('button', { name: /add skills|edit skills/i });
-    await addSkillsToggle.waitFor({ state: 'visible', timeout: 10_000 });
-    await addSkillsToggle.click();
-
-    const token = await getAuthToken(page);
-    const response = await page.request.get('/api/skills?scope=selectable', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok()) {
-      throw new Error(`Failed to load skills: ${response.status()} ${await response.text()}`);
-    }
-    const body = await response.json() as { skills: Array<{ id: string; slug?: string; name: string }> };
-
-    for (const skillId of skillIdsToSelect) {
-      // Phase 4: an external skills.sh skill is addressed by its ref/slug; its
-      // internal id is opaque (ext_…). Match by id OR slug.
-      const skill = body.skills.find((item) => item.id === skillId || item.slug === skillId);
-      if (!skill) {
-        throw new Error(`Could not find skill ${skillId} in the skills API response`);
-      }
-      // Each SkillPicker row renders name + slug + description, so a checkbox's
-      // accessible name is a concatenation and matching by bare name is
-      // ambiguous (e.g. "Trading" also matches "Bot Management"). Locate the row
-      // by its unique slug when available, else fall back to an exact name match.
-      if (skill.slug) {
-        await page.locator('label').filter({ hasText: skill.slug }).getByRole('checkbox').check();
-      } else {
-        await page.getByRole('checkbox', { name: skill.name, exact: true }).check();
-      }
-    }
-  }
-
-  // Wait for React effects (capabilityMode derivation) to commit after skill
-  // changes before submitting.
-  await page.waitForTimeout(300);
-
-  await page.getByRole('button', { name: /review/i }).click();
-
-  // The review-step "Create AI agent" button may be overlapped by residual
-  // layout from the tall intent form. Use force:true to bypass pointer-event
-  // interception checks from the modal overlay.
-  await page.getByRole('button', { name: /^Create AI agent$/i }).last().click({ force: true });
-
-  // Match only UUID-style agent IDs, not /agents/new.
   const agentUrlPattern = /\/agents\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
   await page.waitForURL(agentUrlPattern, { timeout: 15_000 });
 
@@ -211,8 +122,65 @@ export async function createAgent(
   if (!match?.[1]) {
     throw new Error(`Could not determine agent id from URL: ${page.url()}`);
   }
+  const agentId = match[1];
 
-  return match[1];
+  const skillRefs = options.skillIds ?? (options.preset ? PRESET_SKILL_SLUGS[options.preset] ?? [] : []);
+  if (skillRefs.length > 0) {
+    await addAgentSkills(page, agentId, skillRefs);
+  }
+
+  return agentId;
+}
+
+/** Skill slugs for the named presets the older journeys use. */
+const PRESET_SKILL_SLUGS: Record<string, string[]> = {
+  trading: ['system/trading', 'system/bot-management'],
+  'personal-assistant': ['system/web-access', 'system/email'],
+};
+
+/** Select skills on the agent detail page's Capabilities section and wait for the save. */
+async function addAgentSkills(page: Page, agentId: string, skillRefs: string[]): Promise<void> {
+  const token = await getAuthToken(page);
+  const response = await page.request.get('/api/skills?scope=selectable', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok()) {
+    throw new Error(`Failed to load skills: ${response.status()} ${await response.text()}`);
+  }
+  const body = await response.json() as { skills: Array<{ id: string; slug?: string; name: string }> };
+
+  const resolved = skillRefs.map((ref) => {
+    // External skills.sh skills are addressed by slug; their internal id is opaque.
+    const skill = body.skills.find((item) => item.id === ref || item.slug === ref);
+    if (!skill) {
+      throw new Error(`Could not find skill ${ref} in the skills API response`);
+    }
+    return skill;
+  });
+
+  await page.goto(`/agents/${agentId}`);
+  const capabilities = page.locator('section[aria-label="Capabilities"]');
+  await capabilities.locator('summary').click();
+
+  for (const skill of resolved) {
+    // Match by slug when available: a row's accessible name also includes its description.
+    const label = skill.slug ?? skill.name;
+    const checkbox = capabilities.locator('label').filter({ hasText: label }).getByRole('checkbox');
+    // The picker is server-backed, so the box only checks after the PATCH is saved.
+    await Promise.all([
+      page.waitForResponse((res) => res.request().method() === 'PATCH' && res.url().includes('/api/agents/') && res.ok()),
+      checkbox.click(),
+    ]);
+    await expect(checkbox).toBeChecked();
+  }
+
+  await expect.poll(async () => {
+    const res = await page.request.get(`/api/agents/${agentId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const agent = await res.json() as { skillIds?: string[] };
+    return resolved.every((skill) => agent.skillIds?.includes(skill.id) ?? false);
+  }, { timeout: 10_000 }).toBe(true);
 }
 
 /** Open the agent detail page directly. */

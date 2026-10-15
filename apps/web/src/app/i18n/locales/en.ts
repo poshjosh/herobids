@@ -328,11 +328,12 @@ export const messages: Record<string, string> = {
   'agents.summary.openCapability': 'Open {capability} capability',
   'agents.summary.configureCapability': 'Configure {capability} capability',
   'agents.create.title': 'Create AI agent',
-  'agents.create.switchToForm': 'Use the form',
-  'agents.create.switchToGuided': 'Use guided chat',
-  'agents.create.refresh': 'Refresh',
   'agents.create.name': 'Name',
   'agents.create.namePlaceholder': 'e.g. market-watch-01',
+  'agents.create.nameGenerated': 'Generated for you if left blank.',
+  'agents.create.channel.title': 'Channel',
+  'agents.create.channel.inApp': 'In this app',
+  'agents.create.channel.help': 'Connect Telegram or WhatsApp so this agent can reach you outside the app.',
   'agents.create.goal': 'Objective / prompt',
   'agents.create.goal.subtitle': '(What should the AI agent do?)',
   'agents.create.goalBoth': 'Objective / prompt',
@@ -703,10 +704,6 @@ export const messages: Record<string, string> = {
   'setup.agentAssignment.connectionCreated': '{label} ({provider}) connected successfully.',
 
   // Guided Setup billing gate
-  'guidedSetup.billingGate.title': 'Credit Required',
-  'guidedSetup.billingGate.addCredit': 'Add Credit',
-  'guidedSetup.billingGate.useFormInstead': 'Use standard form instead',
-  'guidedSetup.billingGate.tryAgain': 'Try Again',
 
   // Status labels
   'status.running': 'running',
@@ -914,16 +911,8 @@ export const messages: Record<string, string> = {
   'billing.details.header.balance': 'Balance',
 
   // Guided Setup (loading states and error recovery)
-  'guidedSetup.checkingAccount': 'Checking account...',
-  'guidedSetup.startingChat': 'Starting chat...',
-  'guidedSetup.processingConnection': 'Processing your connection…',
-  'guidedSetup.tryAgain': 'Try Again',
-  'guidedSetup.billingGate.afterAddingCredit': 'After adding credit, click Try Again to continue.',
 
   // Guided Setup actions
-  'guidedSetup.actions.secretsWarning': 'Do not enter secrets directly into the chat. Only enter them into secure forms provided for that purpose.',
-  'guidedSetup.actions.confirmed': '✓ Confirmed',
-  'guidedSetup.actions.formFallback': '📋 Form: {form}',
 
   // Trading capability presentation (ledger redesign)
   'capability.details': 'Details',

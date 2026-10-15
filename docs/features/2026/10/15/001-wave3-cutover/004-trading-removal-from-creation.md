@@ -30,6 +30,10 @@ Remove trading from the creation form and the guided chat's create path. Guided 
 2. Delete one slice at a time, running the affected suite after each.
 3. Run the full web and API suites before the slice is done. Grep alone is not enough.
 
+## Term list (proposed 2026-10-15, pending owner agreement)
+
+Searched in the create path and guided chat: `trading`, `capital`, `executionMode` / `execution mode`, `strategyPreset` / `strategy preset`, `venue`, `authorizationMode` / `authorization mode`, `filterTrades` / `Filter Trades`, `tradingEnabled`, `guidedSetupTradingEnabled`, `create_agent`.
+
 ## Acceptance
 
 - A grep of the create flow and guided chat finds no trading terms. Agree the term list at the start of the slice and record it in this file.

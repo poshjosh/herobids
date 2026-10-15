@@ -99,9 +99,9 @@ describe('search_app_docs', () => {
     expect(results.length).toBeGreaterThan(0);
 
     const ids = results.map((r) => r.id as string);
-    // CreateAgentSchema has "strategyPreset" — "strategies" cannot
+    // UpdateAgentSchema has "strategyPreset" — "strategies" cannot
     // substring-match that (ie vs y), so only the stem "strategy" can bridge it.
-    expect(ids).toContain('schema/CreateAgentSchema');
+    expect(ids).toContain('schema/UpdateAgentSchema');
   });
 
   it('matches "configuration" to docs containing "configure" via stemming', async () => {
@@ -116,8 +116,8 @@ describe('search_app_docs', () => {
     expect(results.length).toBeGreaterThan(0);
 
     const ids = results.map((r) => r.id as string);
-    // CreateAgentSchema has fields like "strategyPreset" — config-related
-    expect(ids).toContain('schema/CreateAgentSchema');
+    // billing-limits uses "configured" — the stem bridge from "configuration".
+    expect(ids).toContain('docs/agents/billing-limits');
   });
 
   it('filters stopwords and short tokens to avoid noise', async () => {
@@ -319,11 +319,11 @@ describe('read_app_docs', () => {
   it('returns a schema doc with content', async () => {
     const ctx = makeCtx();
 
-    const result = await readAppDocs.execute({ id: 'schema/CreateAgentSchema' }, ctx);
+    const result = await readAppDocs.execute({ id: 'schema/UpdateAgentSchema' }, ctx);
 
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
-    expect(data.id).toBe('schema/CreateAgentSchema');
+    expect(data.id).toBe('schema/UpdateAgentSchema');
     expect(data.kind).toBe('schema');
   });
 

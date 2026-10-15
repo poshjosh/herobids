@@ -188,25 +188,6 @@ textarea:not(:placeholder-shown) {
   border-left-color: var(--color-brand-dim);
 }
 
-/* ─── Guided setup panel — mobile height ───────────────────────────────────
- * Reduces vertical space on mobile so the initial messages remain visible
- * even when the on-screen keyboard opens.
- * ─────────────────────────────────────────────────────────────────────────── */
-.guided-setup-panel {
-  display: flex;
-  flex-direction: column;
-  height: min(520px, 60vh);
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-surface-1);
-}
-
-@media (max-width: 768px) {
-  .guided-setup-panel {
-    height: min(420px, 45vh);
-  }
-}
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
 }
@@ -436,64 +417,7 @@ textarea:not(:placeholder-shown) {
   }
 }
 
-/* ─── Agents page: create flow ─────────────────────────────────────────────
- * The create-agent form renders on a dedicated /agents/new page. These shared
- * styles cover the form card and the guided/form mode switch.
- * ─────────────────────────────────────────────────────────────────────────── */
-.create-flow-switch {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 8px;
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-  border-radius: 6px;
-}
-
-.create-flow-switch:hover {
-  color: var(--color-text);
-  background: var(--color-surface-2);
-}
-
-/* Refresh icon shown next to the guided/form switch while in guided mode.
- * Resets the guided chat thread (same as the old "Start over" action).
- * Text label shown on larger screens, icon-only on smaller screens. */
-.create-flow-refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-}
-
-.create-flow-refresh:hover {
-  color: var(--color-text);
-  background: var(--color-surface-2);
-}
-
-.create-flow-refresh-label {
-  display: none;
-}
-
-@media (min-width: 768px) {
-  .create-flow-refresh-label {
-    display: inline;
-  }
-
-  .create-flow-refresh {
-    padding: 4px 8px;
-  }
-}
-
-/* Content below the create flow (setup card + agent rows) is constrained to
- * the same width as the create-agent form space so the page reads as one
- * consistent column. */
+/* Agent list column width. */
 .agents-content {
   width: 100%;
   max-width: 752px;
@@ -503,46 +427,6 @@ textarea:not(:placeholder-shown) {
   .agents-content {
     max-width: 100%;
   }
-}
-
-/* Inline card used by the create-agent form (intent + review steps).
- * Mirrors the guided setup panel's visual treatment so both fill the same
- * space and look consistent. */
-.create-flow-card {
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.create-flow-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-1);
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.create-flow-card-body {
-  padding: 20px;
-}
-
-.create-flow-card-close {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  color: var(--color-text-muted);
-  font-size: 1.125rem;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 /* ─── Landing Page ─────────────────────────────────────────────────────────── */
