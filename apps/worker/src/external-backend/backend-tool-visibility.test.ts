@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { SkillDefinition } from '@herobids/domain';
 import type { DiscoveredBackendTool } from '@herobids/domain/external-backend';
-import { buildBackendToolVisibility } from './backend-tool-visibility.js';
+import { buildBackendToolVisibility, summarizeBackendToolVisibility } from './backend-tool-visibility.js';
 
 const DEFAULT_UNREACHABLE = { kind: 'unreachable' as const, message: 'HTTP 404: route not found' };
 
@@ -65,6 +65,26 @@ function tool(name: string, refs: string[]): DiscoveredBackendTool {
   return { name, description: `d:${name}`, inputSchema: { type: 'object' }, skillRefs: refs };
 }
 
+describe('summarizeBackendToolVisibility', () => {
+  it('reports visible tools and flags approved refs with dropped or unreachable tools, skipping unapproved skills', () => {
+    const { reports, notVisible } = summarizeBackendToolVisibility([
+      { skillId: 'a', sourceRef: 'x/y/a', outcome: 'tools_exposed', toolNames: ['get_price'], droppedTools: [{ name: 'ghost', reason: 'not_in_local_registry' }], taggedToolCount: 2 },
+      { skillId: 'b', sourceRef: 'x/y/b', outcome: 'backend_unreachable', toolNames: [], droppedTools: [], taggedToolCount: 0 },
+      { skillId: 'c', sourceRef: 'x/y/c', outcome: 'not_approved', toolNames: [], droppedTools: [], taggedToolCount: 0 },
+    ]);
+    expect(reports.get('x/y/a')?.toolNames).toEqual(['get_price']);
+    expect(reports.has('x/y/c')).toBe(false);
+    expect(notVisible.map((entry) => entry.sourceRef)).toEqual(['x/y/a', 'x/y/b']);
+  });
+
+  it('does not flag a skill whose tagged tools are all visible', () => {
+    const { notVisible } = summarizeBackendToolVisibility([
+      { skillId: 'a', sourceRef: 'x/y/a', outcome: 'tools_exposed', toolNames: ['get_price'], droppedTools: [], taggedToolCount: 1 },
+    ]);
+    expect(notVisible).toEqual([]);
+  });
+});
+
 describe('buildBackendToolVisibility', () => {
   it('exposes the backend tools tagged with the approved ref, intersected with the registry, and applies the family', async () => {
     const result = await buildBackendToolVisibility({
@@ -85,6 +105,34 @@ describe('buildBackendToolVisibility', () => {
     expect(ext.bindingRequirements).toEqual({ trading: { minBindings: 1, requireReady: true } });
     expect(ext.requiredContextBlocks).toContain('tradingContext');
     expect(result.outcomes[0]?.outcome).toBe('tools_exposed');
+  });
+
+  it('records each tagged tool that was not made visible, with the reason, and logs it', async () => {
+    const warn = vi.fn();
+    const info = vi.fn();
+    const result = await buildBackendToolVisibility({
+      rawConfigJson: resolvedConfigJson(),
+      resolvedSkills: [skill({ id: 'ext', sourceRef: APPROVED_REF })],
+      registryToolNames: new Set(['get_price']),
+      logger: { info, warn },
+      discoverTools: async () => [
+        tool('get_price', [APPROVED_REF]),
+        tool('ghost_tool', [APPROVED_REF]),
+        tool('other_skill_tool', ['example/skills/other']),
+      ],
+    });
+    const outcome = result.outcomes[0]!;
+    expect(outcome.toolNames).toEqual(['get_price']);
+    expect(outcome.taggedToolCount).toBe(2);
+    expect(outcome.droppedTools).toEqual([{ name: 'ghost_tool', reason: 'not_in_local_registry' }]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: 'ghost_tool', reason: 'not_in_local_registry' }),
+      expect.any(String),
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ discoveredToolCount: 3, taggedToolCount: 2, toolCount: 1 }),
+      expect.any(String),
+    );
   });
 
   it('hides tools but keeps the skill when the backend is unreachable (EC-11)', async () => {

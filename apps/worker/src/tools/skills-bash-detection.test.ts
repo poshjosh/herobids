@@ -301,16 +301,13 @@ describe('detectExternalSkillBashDependency', () => {
 describe('add_skills — auto-resolve system/programming', () => {
   beforeEach(() => {
     mockedReadFile.mockReset();
+    // Every SKILL.md read sees the Bash skill: the install verification read and the Bash detection read.
+    mockedReadFile.mockResolvedValue(`---\nallowed-tools: Bash(agent-browser:*)\n---\n# Bash Skill`);
     mockedSpawn.mockReset();
   });
 
   it('auto-resolves system/programming when external skill has Bash frontmatter', async () => {
     mockedSpawn.mockReturnValueOnce(fakeSpawnSuccess('Installed owner/repo@bash-skill\n'));
-
-    // After install succeeds, detectExternalSkillBashDependency reads SKILL.md
-    mockedReadFile.mockResolvedValueOnce(
-      `---\nallowed-tools: Bash(agent-browser:*)\n---\n# Bash Skill`,
-    );
 
     // Two broker calls: first for file-management, second for programming
     const publishToInbound = vi.fn(async () => undefined);
@@ -354,7 +351,8 @@ describe('add_skills — auto-resolve system/programming', () => {
   it('does NOT auto-resolve system/programming when external skill lacks Bash frontmatter', async () => {
     mockedSpawn.mockReturnValueOnce(fakeSpawnSuccess('Installed owner/repo@no-bash-skill\n'));
 
-    mockedReadFile.mockResolvedValueOnce(
+    // Every SKILL.md read (verification and detection) sees the non-Bash skill.
+    mockedReadFile.mockResolvedValue(
       `---\nallowed-tools: Read(file:*)\n---\n# Non-Bash Skill`,
     );
 
@@ -442,7 +440,7 @@ describe('add_skills — auto-resolve system/programming', () => {
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
     expect(data.autoResolved).toBeUndefined();
-    // readFile should NOT have been called for Bash detection
-    expect(mockedReadFile).not.toHaveBeenCalled();
+    // Only the install verification read ran; no Bash detection read followed it.
+    expect(mockedReadFile).toHaveBeenCalledTimes(1);
   });
 });

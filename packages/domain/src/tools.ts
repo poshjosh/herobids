@@ -86,6 +86,8 @@ export interface ToolContext extends TradingToolContext {
     markLoaded(sourceRef: string, body: string): void;
     /** Whether a ref's body is already loaded this session. */
     isLoaded(sourceRef: string): boolean;
+    /** Backend tools visible for a ref after the latest discovery, if known. */
+    toolReportFor?(sourceRef: string): { outcome: string; toolNames: string[]; droppedTools: Array<{ name: string; reason: string }> } | undefined;
   };
 }
 

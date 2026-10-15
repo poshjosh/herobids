@@ -43,11 +43,23 @@ export interface BuildBackendToolVisibilityInput {
   discoverTools?: (resolved: ResolvedExternalBackend) => Promise<DiscoveredBackendTool[] | null>;
 }
 
+/** Why a backend tool tagged with a skill's ref was not made visible. */
+export type DroppedToolReason = 'not_in_local_registry';
+
+export interface DroppedBackendTool {
+  name: string;
+  reason: DroppedToolReason;
+}
+
 export interface BackendSkillOutcome {
   skillId: string;
   sourceRef: string;
   outcome: 'tools_exposed' | 'no_tools' | 'backend_unreachable' | 'not_approved';
   toolNames: string[];
+  /** Tools the backend tagged with this ref that were not made visible, with the reason. */
+  droppedTools: DroppedBackendTool[];
+  /** Backend tools tagged with this ref, kept or dropped. `0` when discovery failed. */
+  taggedToolCount: number;
 }
 
 export interface BackendToolVisibilityResult {
@@ -159,7 +171,7 @@ export async function buildBackendToolVisibility(
     if (!ref) continue; // system/* skill — unchanged
 
     if (!approved.has(ref)) {
-      outcomes.push({ skillId: skill.id, sourceRef: ref, outcome: 'not_approved', toolNames: [] });
+      outcomes.push({ skillId: skill.id, sourceRef: ref, outcome: 'not_approved', toolNames: [], droppedTools: [], taggedToolCount: 0 });
       continue; // unapproved external skill — loadable text, no tools (unchanged)
     }
 
@@ -168,14 +180,22 @@ export async function buildBackendToolVisibility(
     if (discovered === null) {
       // Backend unreachable: hide tools, keep the skill loadable, no crash.
       skills[i] = { ...skill, requiredTools: [], capabilityFamilies: families, ...familyPresentation(families) };
-      outcomes.push({ skillId: skill.id, sourceRef: ref, outcome: 'backend_unreachable', toolNames: [] });
+      outcomes.push({ skillId: skill.id, sourceRef: ref, outcome: 'backend_unreachable', toolNames: [], droppedTools: [], taggedToolCount: 0 });
       logger.warn({ skillId: skill.id, sourceRef: ref }, 'Backend tool visibility: backend unreachable — approved skill tools hidden this session');
       continue;
     }
 
-    const visible = discovered
-      .filter((t) => t.skillRefs.includes(ref) && registryToolNames.has(t.name))
-      .map((t) => t.name);
+    // Every backend tool tagged with this ref is either kept or dropped, with a reason.
+    const tagged = discovered.filter((t) => t.skillRefs.includes(ref));
+    const visible: string[] = [];
+    const droppedTools: DroppedBackendTool[] = [];
+    for (const tool of tagged) {
+      if (registryToolNames.has(tool.name)) {
+        visible.push(tool.name);
+      } else {
+        droppedTools.push({ name: tool.name, reason: 'not_in_local_registry' });
+      }
+    }
 
     skills[i] = { ...skill, requiredTools: visible, capabilityFamilies: families, ...familyPresentation(families) };
     outcomes.push({
@@ -183,8 +203,27 @@ export async function buildBackendToolVisibility(
       sourceRef: ref,
       outcome: visible.length > 0 ? 'tools_exposed' : 'no_tools',
       toolNames: visible,
+      droppedTools,
+      taggedToolCount: tagged.length,
     });
-    logger.info({ skillId: skill.id, sourceRef: ref, toolCount: visible.length }, 'Backend tool visibility: approved skill tools resolved from MCP tools/list');
+    logger.info(
+      {
+        skillId: skill.id,
+        sourceRef: ref,
+        toolCount: visible.length,
+        taggedToolCount: tagged.length,
+        discoveredToolCount: discovered.length,
+        droppedTools,
+        keptTools: visible,
+      },
+      'Backend tool visibility: approved skill tools resolved from MCP tools/list',
+    );
+    for (const dropped of droppedTools) {
+      logger.warn(
+        { skillId: skill.id, sourceRef: ref, tool: dropped.name, reason: dropped.reason },
+        'Backend tool visibility: tool tagged for this skill was not made visible',
+      );
+    }
   }
 
   return { resolvedSkills: skills, outcomes };
@@ -197,6 +236,34 @@ export async function buildBackendToolVisibility(
  * trading skill did before Phase 4. For a backend with no connection family the
  * skill keeps the plain core presentation.
  */
+/** Per-ref tool visibility, kept for read_skill and the reload warning. */
+export interface ExternalSkillToolReportEntry {
+  outcome: BackendSkillOutcome['outcome'];
+  toolNames: string[];
+  droppedTools: DroppedBackendTool[];
+}
+
+/**
+ * Summarise one discovery pass: the per-ref tool report (kept for read_skill) and
+ * the approved refs whose tools are not all visible (warned at reload). Unapproved
+ * skills carry no backend tools and are left out.
+ */
+export function summarizeBackendToolVisibility(outcomes: readonly BackendSkillOutcome[]): {
+  reports: Map<string, ExternalSkillToolReportEntry>;
+  notVisible: Array<{ sourceRef: string; outcome: BackendSkillOutcome['outcome']; droppedTools: DroppedBackendTool[] }>;
+} {
+  const reports = new Map<string, ExternalSkillToolReportEntry>();
+  const notVisible: Array<{ sourceRef: string; outcome: BackendSkillOutcome['outcome']; droppedTools: DroppedBackendTool[] }> = [];
+  for (const outcome of outcomes) {
+    if (outcome.outcome === 'not_approved') continue;
+    reports.set(outcome.sourceRef, { outcome: outcome.outcome, toolNames: outcome.toolNames, droppedTools: outcome.droppedTools });
+    if (outcome.outcome !== 'tools_exposed' || outcome.droppedTools.length > 0) {
+      notVisible.push({ sourceRef: outcome.sourceRef, outcome: outcome.outcome, droppedTools: outcome.droppedTools });
+    }
+  }
+  return { reports, notVisible };
+}
+
 function familyPresentation(families: string[]): Pick<
   SkillDefinition,
   'bindingRequirements' | 'requiredContextBlocks' | 'promptRendererHints'

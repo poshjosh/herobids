@@ -23,7 +23,7 @@ function skill(partial: Partial<SkillDefinition>): SkillDefinition {
 }
 
 function emptySession(): ExternalSkillSessionState {
-  return { availability: new Map(), loadedBodies: new Map() };
+  return { availability: new Map(), loadedBodies: new Map(), toolReport: new Map() };
 }
 
 describe('renderSkillPromptBlock', () => {

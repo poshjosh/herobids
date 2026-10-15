@@ -8,12 +8,38 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { getWorkspacePaths } from './workspace.js';
-import { readInstalledSkillBody } from '../external-skill-startup.js';
+import { readInstalledSkillBody, stripFrontmatter } from '../external-skill-startup.js';
 import { normalizeSourceRefToSlug } from '@herobids/db';
 import { createLogger } from '../logger.js';
-import { npxSkillsCliInstaller, runExternalSkillInstall } from './skills.js';
+import { activateExternalSkill, npxSkillsCliInstaller } from './skills.js';
 
 const logger = createLogger('tool:read-skill');
+
+/**
+ * Which backend tools the loaded skill can call this session, and why a tagged tool
+ * is missing. Lets the agent see its real capabilities instead of guessing.
+ */
+function toolReportFields(
+  report: { outcome: string; toolNames: string[]; droppedTools: Array<{ name: string; reason: string }> } | undefined,
+): Record<string, unknown> {
+  if (!report) return {};
+  const droppedNames = report.droppedTools.map((tool) => tool.name).join(', ');
+  let toolNotice: string | undefined;
+  if (report.outcome === 'backend_unreachable') {
+    toolNotice = "This skill's backend tools are unavailable this session (backend unreachable). Its guidance is loaded, but its tools will not work until discovery succeeds.";
+  } else if (report.toolNames.length === 0) {
+    toolNotice = droppedNames
+      ? `No backend tools are visible for this skill. Not visible: ${droppedNames}.`
+      : 'No backend tools are visible for this skill yet.';
+  } else if (report.droppedTools.length > 0) {
+    toolNotice = `Some tools for this skill are not visible: ${droppedNames}.`;
+  }
+  return {
+    tools: report.toolNames,
+    droppedTools: report.droppedTools,
+    ...(toolNotice ? { toolNotice } : {}),
+  };
+}
 
 const ReadSkillParamsSchema = z.object({
   ref: z.string().min(1).describe('The skill ref to load, e.g. "traderton/skills/crypto-trading", as listed in the prompt.'),
@@ -29,18 +55,9 @@ async function installMissingSkill(
   workspaceRoot: string,
 ): Promise<{ body: string } | { error: string }> {
   const installer = ctx.externalSkillInstaller ?? npxSkillsCliInstaller;
-  let install;
-  try {
-    install = await runExternalSkillInstall(ref, workspaceRoot, installer);
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'unknown install error' };
-  }
-  if (!install.ok) return { error: install.error };
-  const body = await readInstalledSkillBody(workspaceRoot, ref);
-  if (body === null) {
-    return { error: `the install reported success but SKILL.md was not written. ${install.output ?? ''}`.trim() };
-  }
-  return { body };
+  const activation = await activateExternalSkill({ ref, workspaceRoot, installer });
+  if (activation.status === 'install_failed') return { error: activation.reason };
+  return { body: stripFrontmatter(activation.content) };
 }
 
 async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<ToolResult> {
@@ -95,6 +112,7 @@ async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<Tool
   }
 
   session?.markLoaded(ref, body);
+  const report = session?.toolReportFor?.(ref);
   logger.debug({ agentId: ctx.agentId, ref }, 'read_skill loaded skill body into session');
 
   return {
@@ -106,6 +124,7 @@ async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<Tool
       // The body is now in the system prompt for the rest of the session; also
       // returned here so the agent can act on it this tick.
       instructions: body,
+      ...toolReportFields(report),
     },
   };
 }

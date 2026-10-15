@@ -13,10 +13,9 @@ import type { Database } from '@herobids/db';
 import { upsertExternalSkill } from '@herobids/db';
 import { createLogger } from './logger.js';
 import {
+  activateExternalSkill,
   deriveSkillDirName,
   normalizeExternalRef,
-  parseSkillFrontmatter,
-  runExternalSkillInstall,
 } from './tools/skills.js';
 
 const logger = createLogger('external-skill-startup');
@@ -64,25 +63,18 @@ export async function installExternalSkillsAtStart(input: {
       description: skill.description,
     };
 
-    try {
-      const install = await runExternalSkillInstall(sourceRef, workspaceRoot, installer);
-      if (!install.ok) {
-        state = { ...state, available: false, unavailableReason: install.error };
-        logger.warn({ sourceRef, error: install.error }, 'External skill install failed — skill unavailable this session');
-      } else if ((await readInstalledSkillBody(workspaceRoot, sourceRef)) === null) {
-        // Exit 0 but no SKILL.md: a silent install failure. Mark unavailable with the reason.
-        const reason = `install reported success but SKILL.md was not written under .agents/skills/. ${install.output ?? ''}`.trim().slice(0, 500);
-        state = { ...state, available: false, unavailableReason: reason };
-        logger.warn({ sourceRef, output: install.output }, 'External skill install wrote no SKILL.md — skill unavailable this session');
-      } else {
-        // Refresh name/description from the installed SKILL.md frontmatter.
-        const { name, description } = await readInstalledFrontmatter(workspaceRoot, sourceRef, skill);
-        state = { sourceRef, available: true, name, description };
-      }
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : 'unknown install error';
-      state = { ...state, available: false, unavailableReason: reason };
-      logger.warn({ sourceRef, err }, 'External skill install threw — skill unavailable this session');
+    const activation = await activateExternalSkill({
+      ref: sourceRef,
+      workspaceRoot,
+      installer,
+      fallback: { name: skill.name, description: skill.description },
+    });
+    if (activation.status === 'ready') {
+      // Refresh name/description from the installed SKILL.md frontmatter.
+      state = { sourceRef, available: true, name: activation.name, description: activation.description };
+    } else {
+      state = { ...state, available: false, unavailableReason: activation.reason };
+      logger.warn({ sourceRef, error: activation.reason }, 'External skill install failed — skill unavailable this session');
     }
 
     result.set(sourceRef, state);
@@ -105,24 +97,7 @@ export async function installExternalSkillsAtStart(input: {
   return result;
 }
 
-async function readInstalledFrontmatter(
-  workspaceRoot: string,
-  sourceRef: string,
-  fallback: { name: string; description: string },
-): Promise<{ name: string; description: string }> {
-  const dirName = deriveSkillDirName(normalizeExternalRef(sourceRef).ref);
-  const skillMdPath = join(workspaceRoot, '.agents', 'skills', dirName, 'SKILL.md');
-  try {
-    const content = await readFile(skillMdPath, 'utf-8');
-    const frontmatter = parseSkillFrontmatter(content);
-    return {
-      name: frontmatter['name'] ?? fallback.name,
-      description: frontmatter['description'] ?? fallback.description,
-    };
-  } catch {
-    return fallback;
-  }
-}
+
 
 /**
  * Read an installed skill's SKILL.md body (frontmatter stripped) from the

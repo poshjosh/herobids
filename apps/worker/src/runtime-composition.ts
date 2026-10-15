@@ -491,6 +491,8 @@ export interface RuntimeCompositionState {
 export interface ExternalSkillSessionState {
   availability: Map<string, { available: boolean; name: string; description: string; unavailableReason?: string }>;
   loadedBodies: Map<string, string>;
+  /** Latest backend tool visibility per approved ref, replaced on each discovery pass. */
+  toolReport: Map<string, { outcome: string; toolNames: string[]; droppedTools: Array<{ name: string; reason: string }> }>;
 }
 
 export interface RuntimeCompositionContext {
@@ -1791,6 +1793,7 @@ export function createRuntimeCompositionState(
     externalSkills: {
       availability: new Map(),
       loadedBodies: new Map(),
+      toolReport: new Map(),
     },
     metrics: {
       decisionsSubmitted: 0,

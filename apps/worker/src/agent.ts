@@ -76,7 +76,11 @@ import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTracked
 import { BrowserlessAdapter } from './tools/browserless-adapter.js';
 import { createToolRegistry } from './tools/index.js';
 import { buildAgentExternalBackendPorts } from './external-backend/agent-ports.js';
-import { buildBackendToolVisibility } from './external-backend/backend-tool-visibility.js';
+import {
+  buildBackendToolVisibility,
+  summarizeBackendToolVisibility,
+  type BackendSkillOutcome,
+} from './external-backend/backend-tool-visibility.js';
 import { createBoundaryPriceService } from './traderton/hybrid-price-adapter.js';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
@@ -1754,7 +1758,22 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         { fault: false },
       );
     }
-    logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool not in active skill set — ignoring');
+    // Diagnostic: is the tool in any skill's visible set right now, and how big is the allowed set?
+    logger.warn(
+      {
+        tool: call.tool,
+        agentId: AGENT_ID,
+        allowedSetSize: allowedTools().size,
+        inSkillRequiredTools: runtimeState.runtimeDescriptor.resolvedSkills
+          .filter((skill) => skill.requiredTools.includes(call.tool))
+          .map((skill) => skill.id),
+        skillToolCounts: runtimeState.runtimeDescriptor.resolvedSkills.map((skill) => ({
+          id: skill.id,
+          requiredTools: skill.requiredTools.length,
+        })),
+      },
+      'Tool not in active skill set — ignoring',
+    );
     return rejectToolCall(`tool rejected: ${call.tool} is not available in the current skill set`, { fault: false });
   }
 
@@ -2009,7 +2028,9 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       // freshly-resolved skills so a newly-added approved skill exposes its
       // backend tools (or hides them if the backend is unreachable), exactly as
       // at startup (Phase 4 T8).
-      const refreshedSkills = await resolveBackendApprovedSkills(capabilityDescriptor.resolvedSkills);
+      const discovery = await resolveBackendApprovedSkills(capabilityDescriptor.resolvedSkills);
+      recordBackendToolReport(discovery.outcomes);
+      const refreshedSkills = discovery.skills;
 
       runtimeState.runtimeDescriptor = {
         ...runtimeState.runtimeDescriptor,
@@ -2047,6 +2068,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         runtimeState.externalSkills.loadedBodies.set(sourceRef, body);
       },
       isLoaded: (sourceRef: string) => runtimeState.externalSkills.loadedBodies.has(sourceRef),
+      toolReportFor: (sourceRef: string) => runtimeState.externalSkills.toolReport.get(sourceRef),
     },
   };
 
@@ -2522,9 +2544,9 @@ async function runActiveTick(): Promise<void> {
   // Runs before any skip/pause gating so tools come back regardless of
   // whether this particular tick dispatches to the LLM.
   if (backendDiscoveryRetry.isRetryDue(Date.now())) {
-    runtimeState.runtimeDescriptor.resolvedSkills = await resolveBackendApprovedSkills(
-      runtimeState.runtimeDescriptor.resolvedSkills,
-    );
+    const retry = await resolveBackendApprovedSkills(runtimeState.runtimeDescriptor.resolvedSkills);
+    runtimeState.runtimeDescriptor.resolvedSkills = retry.skills;
+    recordBackendToolReport(retry.outcomes);
     toolVisibility.snapshotToolBaselines();
     applyToolVisibility();
   }
@@ -2718,6 +2740,10 @@ async function runActiveTick(): Promise<void> {
     }
 
     if (incomingMessages.some((message) => message['type'] === 'agent.runtime.config_update')) {
+      // The DB skill list that replaces the descriptor carries no discovered tools.
+      const discovery = await resolveBackendApprovedSkills(runtimeState.runtimeDescriptor.resolvedSkills);
+      runtimeState.runtimeDescriptor.resolvedSkills = discovery.skills;
+      recordBackendToolReport(discovery.outcomes);
       toolVisibility.snapshotToolBaselines();
       applyToolVisibility();
     }
@@ -4139,7 +4165,12 @@ async function runActiveTick(): Promise<void> {
  * result schedules a tick-start retry instead of leaving tools hidden all
  * session.
  */
-async function resolveBackendApprovedSkills(resolvedSkills: readonly SkillDefinition[]): Promise<SkillDefinition[]> {
+interface BackendResolution {
+  skills: SkillDefinition[];
+  outcomes: BackendSkillOutcome[];
+}
+
+async function resolveBackendApprovedSkills(resolvedSkills: readonly SkillDefinition[]): Promise<BackendResolution> {
   try {
     const result = await buildBackendToolVisibility({
       rawConfigJson: EXTERNAL_BACKEND_CONFIG_RAW,
@@ -4149,11 +4180,24 @@ async function resolveBackendApprovedSkills(resolvedSkills: readonly SkillDefini
     });
     const hadUnreachableBackend = result.outcomes.some((outcome) => outcome.outcome === 'backend_unreachable');
     backendDiscoveryRetry.recordOutcome(hadUnreachableBackend, Date.now());
-    return result.resolvedSkills;
+    return { skills: result.resolvedSkills, outcomes: result.outcomes };
   } catch (err) {
     logger.warn({ err }, 'Backend tool visibility resolution failed — leaving skills unchanged');
     backendDiscoveryRetry.recordOutcome(true, Date.now());
-    return [...resolvedSkills];
+    return { skills: [...resolvedSkills], outcomes: [] };
+  }
+}
+
+/**
+ * Replace the per-session tool report with the latest discovery outcomes, so
+ * read_skill can tell the agent which tools it can call. Warns when an approved
+ * skill's tools are not all visible after discovery.
+ */
+function recordBackendToolReport(outcomes: readonly BackendSkillOutcome[]): void {
+  const { reports, notVisible } = summarizeBackendToolVisibility(outcomes);
+  runtimeState.externalSkills.toolReport = reports;
+  if (notVisible.length > 0) {
+    logger.warn({ notVisible }, 'Approved external skill tools are not all visible after discovery');
   }
 }
 
@@ -4229,9 +4273,9 @@ async function main(): Promise<void> {
   // Phase 4 T8: resolve backend-approved tool visibility over MCP tools/list
   // (after install, so an approved skill's tools reflect the installed ref) and
   // swap the result into the live runtime descriptor before the first tick.
-  runtimeState.runtimeDescriptor.resolvedSkills = await resolveBackendApprovedSkills(
-    runtimeState.runtimeDescriptor.resolvedSkills,
-  );
+  const startupDiscovery = await resolveBackendApprovedSkills(runtimeState.runtimeDescriptor.resolvedSkills);
+  runtimeState.runtimeDescriptor.resolvedSkills = startupDiscovery.skills;
+  recordBackendToolReport(startupDiscovery.outcomes);
   // Re-baseline tool visibility on the discovered tools. Without this the
   // per-tick applyToolVisibility() resets each skill's requiredTools from the
   // pre-discovery baseline (an external skill's DB revision has none), hiding

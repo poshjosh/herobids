@@ -137,6 +137,36 @@ describe('read_skill', () => {
     expect(installer.install).not.toHaveBeenCalled();
   });
 
+  it('lists the tools visible for a loaded skill and names any tagged tool that was dropped', async () => {
+    const base = makeSession(true);
+    const session = {
+      ...base,
+      toolReportFor: () => ({
+        outcome: 'tools_exposed',
+        toolNames: ['get_price'],
+        droppedTools: [{ name: 'ghost_tool', reason: 'not_in_local_registry' }],
+      }),
+    };
+    const result = await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    const data = result.data as Record<string, unknown>;
+    expect(data.loaded).toBe(true);
+    expect(data.tools).toEqual(['get_price']);
+    expect(data.droppedTools).toEqual([{ name: 'ghost_tool', reason: 'not_in_local_registry' }]);
+    expect(String(data.toolNotice)).toContain('ghost_tool');
+  });
+
+  it('says the backend is unreachable when the skill was discovered as unreachable', async () => {
+    const base = makeSession(true);
+    const session = {
+      ...base,
+      toolReportFor: () => ({ outcome: 'backend_unreachable', toolNames: [], droppedTools: [] }),
+    };
+    const result = await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    const data = result.data as Record<string, unknown>;
+    expect(data.loaded).toBe(true);
+    expect(String(data.toolNotice)).toContain('backend unreachable');
+  });
+
   it('reports not-written when the install exits 0 but produces no SKILL.md', async () => {
     await rm(join(workspaceRoot, '.agents', 'skills', SKILL_DIR), { recursive: true, force: true });
     const session = makeSession(true);

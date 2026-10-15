@@ -7,7 +7,7 @@ import { parseBrokerDenialReply } from './tool-errors.js';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { access, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const logger = createLogger('tools:skills');
@@ -117,13 +117,59 @@ export function installedSkillMdPath(workspaceRoot: string, ref: string): string
   return join(workspaceRoot, '.agents', 'skills', deriveSkillDirName(normalizeExternalRef(ref).ref), 'SKILL.md');
 }
 
-async function skillMdExists(path: string): Promise<boolean> {
+/** Outcome of installing one external skill and checking its SKILL.md is on disk. */
+export type ExternalSkillActivation =
+  | { status: 'ready'; content: string; name: string; description: string; output?: string }
+  | { status: 'install_failed'; reason: string };
+
+/**
+ * Install one external skill and confirm its SKILL.md is on disk. This is the single
+ * install-and-verify path for agent start, add_skills and read_skill, so every entry
+ * point reports the same outcome. Never throws.
+ */
+export async function activateExternalSkill(input: {
+  ref: string;
+  workspaceRoot: string;
+  installer: ExternalSkillInstaller;
+  fallback?: { name: string; description: string };
+}): Promise<ExternalSkillActivation> {
+  const { ref, workspaceRoot, installer, fallback } = input;
+  let install: ExternalSkillInstallResult;
   try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
+    install = await runExternalSkillInstall(ref, workspaceRoot, installer);
+  } catch (err) {
+    return {
+      status: 'install_failed',
+      reason: `External install unavailable: ${err instanceof Error ? err.message : 'unknown error'}`,
+    };
   }
+  if (!install.ok) return { status: 'install_failed', reason: install.error };
+
+  const skillMdPath = installedSkillMdPath(workspaceRoot, ref);
+  let content: string | null = null;
+  try {
+    content = await readFile(skillMdPath, 'utf-8');
+  } catch {
+    content = null;
+  }
+  if (typeof content !== 'string') {
+    // The CLI exited 0 but wrote nothing read_skill can load. Report it as a
+    // failure with the CLI output so the cause is visible.
+    const cliOutput = (install.output ?? '').slice(0, 300);
+    return {
+      status: 'install_failed',
+      reason: `install reported success but ${skillMdPath} was not written.${cliOutput ? ` CLI output: ${cliOutput}` : ''}`,
+    };
+  }
+
+  const frontmatter = parseSkillFrontmatter(content);
+  return {
+    status: 'ready',
+    content,
+    name: frontmatter['name'] ?? fallback?.name ?? deriveSkillDirName(normalizeExternalRef(ref).ref),
+    description: frontmatter['description'] ?? fallback?.description ?? '',
+    ...(install.output ? { output: install.output } : {}),
+  };
 }
 
 // ── External skill frontmatter helpers ──────────────────────────────────────
@@ -517,6 +563,9 @@ export const addSkillsTool: AgentTool = {
       // skill does not need the file tools. file-management stays available for
       // agents that explicitly want to browse bundled references/.
 
+      // Name and description from each successful external install, for the metadata upsert.
+      const activatedMeta = new Map<string, { name: string; description: string }>();
+
       // 4. Execute platform add + external installs in parallel
       const brokerPromise = allPlatformIds.length > 0
         ? sendBrokerSkillMutation('add', allPlatformIds, ctx)
@@ -532,23 +581,12 @@ export const addSkillsTool: AgentTool = {
           // safe to run in parallel within the same workspace directory.
           const results: Array<{ ref: string; ok: boolean; output?: string; error?: string }> = [];
           for (const ref of externalRefs) {
-            const result = await runExternalSkillInstall(ref, cwd, installer);
-            if (result.ok) {
-              const skillMdPath = installedSkillMdPath(cwd, ref);
-              if (await skillMdExists(skillMdPath)) {
-                results.push({ ref, ok: true as const, output: result.output });
-              } else {
-                // The CLI exited 0 but wrote nothing read_skill can load. Report it
-                // as a failure with the CLI output so the cause is visible.
-                const cliOutput = (result.output ?? '').slice(0, 300);
-                results.push({
-                  ref,
-                  ok: false as const,
-                  error: `install reported success but ${skillMdPath} was not written.${cliOutput ? ` CLI output: ${cliOutput}` : ''}`,
-                });
-              }
+            const activation = await activateExternalSkill({ ref, workspaceRoot: cwd, installer });
+            if (activation.status === 'ready') {
+              activatedMeta.set(ref, { name: activation.name, description: activation.description });
+              results.push({ ref, ok: true as const, output: activation.output });
             } else {
-              results.push({ ref, ok: false as const, error: result.error });
+              results.push({ ref, ok: false as const, error: activation.reason });
             }
           }
           return results;
@@ -627,18 +665,10 @@ export const addSkillsTool: AgentTool = {
       if (successfulExternal.length > 0 && ctx.db) {
         const externalSkillIds: string[] = [];
         try {
-          const { getWorkspacePaths } = await import('./workspace.js');
-          const cwd = getWorkspacePaths(ctx.agentId).root;
           for (const ref of successfulExternal) {
-            let name = deriveSkillDirName(normalizeExternalRef(ref).ref);
-            let description = '';
-            try {
-              const dirName = deriveSkillDirName(normalizeExternalRef(ref).ref);
-              const content = await readFile(join(cwd, '.agents', 'skills', dirName, 'SKILL.md'), 'utf-8');
-              const fm = parseSkillFrontmatter(content);
-              name = fm['name'] ?? name;
-              description = fm['description'] ?? '';
-            } catch { /* frontmatter optional — fall back to the ref segment */ }
+            const meta = activatedMeta.get(ref);
+            const name = meta?.name ?? deriveSkillDirName(normalizeExternalRef(ref).ref);
+            const description = meta?.description ?? '';
             const row = await upsertExternalSkill(ctx.db as Database, { sourceRef: ref, name, description, lastInstalledAt: new Date() });
             externalSkillIds.push(row.skillId);
           }
