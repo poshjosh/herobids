@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Database } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { inferDependsOn } from '@herobids/domain';
@@ -1149,6 +1150,33 @@ describe('GET /skills sourceKind filter', () => {
       // totalCount should be from local DB only, not merged with external
       expect(res.json().totalCount).toBe(3);
       expect(externalProvider.getStats).not.toHaveBeenCalled();
+    });
+
+    it('excludes installed external skills (source_ref set) from the system filter', async () => {
+      // Installed traderton skills have authorId NULL but a source_ref; they must not count as system.
+      const countChain = makeChain([{ total: 0 }]);
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 2) return countChain;
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), null);
+      selectCalls = 0;
+
+      await app.inject({ method: 'GET', url: '/skills?scope=selectable&sourceKind=system' });
+
+      const whereSpy = countChain.where as ReturnType<typeof vi.fn>;
+      expect(whereSpy).toHaveBeenCalledOnce();
+      const { sql: whereSql } = new PgDialect().sqlToQuery(whereSpy.mock.calls[0]?.[0]);
+      expect(whereSql).toMatch(/"author_id" is null/i);
+      expect(whereSql).toMatch(/"source_ref" is null/i);
     });
   });
 

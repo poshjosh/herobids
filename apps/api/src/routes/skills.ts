@@ -676,9 +676,11 @@ export async function skillsRoutes(
       )!);
     }
 
-    // sourceKind filter: restrict to system or user skills (external handled above)
+    // sourceKind filter: restrict to system or user skills (external handled above).
+    // 'system' must match deriveSourceKind: no author AND no source_ref (installed
+    // external skills are authorless but carry a source_ref).
     if (query.sourceKind === 'system') {
-      whereClauses.push(isNull(skills.authorId));
+      whereClauses.push(and(isNull(skills.authorId), isNull(skills.sourceRef))!);
     } else if (query.sourceKind === 'user') {
       whereClauses.push(sql`${skills.authorId} IS NOT NULL`);
     }

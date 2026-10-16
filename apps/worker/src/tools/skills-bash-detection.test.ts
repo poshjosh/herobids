@@ -165,6 +165,32 @@ describe('parseSkillFrontmatter', () => {
     expect(result['allowed-tools']).toBe('Bash(cmd)');
     expect(result['name']).toBe('Mixed');
   });
+
+  it('folds a >- block scalar description into a single line', () => {
+    const content = `---\nname: crypto-trading\ndescription: >-\n  Submit trade decisions and inspect\n  trading state across the venues.\nmetadata:\n  tags:\n    - crypto\n---\n# Content`;
+    const result = parseSkillFrontmatter(content);
+    expect(result['description']).toBe('Submit trade decisions and inspect trading state across the venues.');
+    expect(result['name']).toBe('crypto-trading');
+  });
+
+  it('folds a > block scalar and keeps blank lines as paragraph breaks', () => {
+    const content = `---\ndescription: >\n  First line\n  continued.\n\n  Second paragraph.\n---`;
+    const result = parseSkillFrontmatter(content);
+    expect(result['description']).toBe('First line continued.\nSecond paragraph.');
+  });
+
+  it('keeps newlines in a | literal block scalar', () => {
+    const content = `---\ndescription: |-\n  Line one\n  Line two\n---`;
+    const result = parseSkillFrontmatter(content);
+    expect(result['description']).toBe('Line one\nLine two');
+  });
+
+  it('never returns the bare block indicator as a value', () => {
+    const content = `---\ndescription: >-\n  Real text\n---`;
+    const result = parseSkillFrontmatter(content);
+    expect(result['description']).not.toBe('>-');
+    expect(result['description']).toBe('Real text');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

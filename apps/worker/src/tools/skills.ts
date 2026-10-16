@@ -176,19 +176,49 @@ export async function activateExternalSkill(input: {
 
 /**
  * Parse simple YAML frontmatter (key: value pairs between `---` delimiters).
- * Does not handle nested structures — sufficient for SKILL.md metadata.
+ * Supports single-line values and YAML block scalars (`>`, `>-`, `>+` folded;
+ * `|`, `|-`, `|+` literal). Does not handle nested structures — sufficient for
+ * SKILL.md metadata.
  */
 export function parseSkillFrontmatter(content: string): Record<string, string> {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
+  const lines = match[1]!.split(/\r?\n/);
   const result: Record<string, string> = {};
-  for (const line of match[1]!.split(/\r?\n/)) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     const colonIdx = line.indexOf(':');
-    if (colonIdx > 0) {
-      result[line.slice(0, colonIdx).trim()] = line.slice(colonIdx + 1).trim();
+    if (colonIdx <= 0) continue;
+    const key = line.slice(0, colonIdx).trim();
+    const value = line.slice(colonIdx + 1).trim();
+    if (/^[>|][+-]?$/.test(value)) {
+      const body: string[] = [];
+      while (i + 1 < lines.length && (lines[i + 1]!.trim() === '' || /^\s/.test(lines[i + 1]!))) {
+        i++;
+        body.push(lines[i]!.trim());
+      }
+      result[key] = value.startsWith('>') ? foldBlockScalar(body) : body.join('\n').trim();
+    } else {
+      result[key] = value;
     }
   }
   return result;
+}
+
+/** Folded block scalar: consecutive lines join with a space; blank lines become newlines. */
+function foldBlockScalar(lines: string[]): string {
+  const paragraphs: string[] = [];
+  let current: string[] = [];
+  for (const line of lines) {
+    if (line === '') {
+      if (current.length > 0) paragraphs.push(current.join(' '));
+      current = [];
+    } else {
+      current.push(line);
+    }
+  }
+  if (current.length > 0) paragraphs.push(current.join(' '));
+  return paragraphs.join('\n');
 }
 
 /**

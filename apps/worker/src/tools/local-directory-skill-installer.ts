@@ -8,7 +8,7 @@
 // `<workspaceRoot>/.agents/skills/<sanitized frontmatter name>/` — no agent
 // symlinks, no remote discovery. Frontmatter is read with the existing
 // line-based `parseSkillFrontmatter`, so SKILL.md must use single-line
-// `name:` / `description:` values (the T4.1 authoring rule).
+// `name:` / `description:` values or YAML block scalars (`>-`, `|`, etc.).
 
 import type { ExternalSkillInstaller, ExternalSkillInstallResult } from '@herobids/domain';
 import { cp, readFile, rm } from 'node:fs/promises';
