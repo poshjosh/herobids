@@ -17,7 +17,7 @@
 #   ADMIN_PASSWORD     Admin user password for seeding (required).
 #   AGENT_PROVIDER     LLM provider override (default: openrouter).
 #   AGENT_LIGHT_MODEL  Fast model override (default: deepseek/deepseek-v4.1-flash via OpenRouter).
-#   AGENT_HEAVY_MODEL  Capable model override (default: deepseek/anthropic/claude-haiku-5.5via OpenRouter).
+#   AGENT_HEAVY_MODEL  Capable model override (default: anthropic/claude-haiku-5.5via OpenRouter).
 #   AGENT_TICK_INTERVAL_MS  Agent reasoning loop interval in ms (default: 86400000 = 24h).
 #
 # WARNING: This destroys ALL data on the server. Do not run against a live
@@ -303,13 +303,22 @@ log_info "Uploading security-audit-prompt.md to server..."
 scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/security-audit-prompt.md" "root@${SERVER_IP}:/tmp/security-audit-prompt.md" || \
   die "Failed to upload security-audit-prompt.md to server."
 
+# Upload the skill tester prompts (create-agents.sh runs from /tmp on the server, so REPO_ROOT would resolve to /)
+log_info "Uploading skill tester prompts to server..."
+scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/external-skills-tester-prompt.md" "root@${SERVER_IP}:/tmp/external-skills-tester-prompt.md" || \
+  die "Failed to upload external-skills-tester-prompt.md to server."
+scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/system-skills-tester-prompt.md" "root@${SERVER_IP}:/tmp/system-skills-tester-prompt.md" || \
+  die "Failed to upload system-skills-tester-prompt.md to server."
+
 # Build agent env overrides
 AGENT_ENV_VARS=(
   "AGENT_PROVIDER=${AGENT_PROVIDER:-openrouter}"
   "AGENT_LIGHT_MODEL=${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4.1-flash}"
-  "AGENT_HEAVY_MODEL=${AGENT_HEAVY_MODEL:-deepseek/anthropic/claude-haiku-5.5}"
+  "AGENT_HEAVY_MODEL=${AGENT_HEAVY_MODEL:-anthropic/claude-haiku-5.5}"
   "AGENT_TICK_INTERVAL_MS=${AGENT_TICK_INTERVAL_MS:-86400000}"
   "SECURITY_AUDIT_PROMPT_FILE=/tmp/security-audit-prompt.md"
+  "EXTERNAL_TESTER_PROMPT_FILE=/tmp/external-skills-tester-prompt.md"
+  "SYSTEM_TESTER_PROMPT_FILE=/tmp/system-skills-tester-prompt.md"
 )
 
 log_info "Running create-agents.sh on server..."
@@ -339,7 +348,7 @@ log_ok "Agent created."
 # ─── Cleanup server temp files ───────────────────────────────────────────────
 
 log_info "Cleaning up server temp files..."
-ssh ${SSH_OPTS} "root@${SERVER_IP}" 'rm -f /tmp/herobids-setup.env /tmp/create-agents.sh /tmp/security-audit-prompt.md' || true
+ssh ${SSH_OPTS} "root@${SERVER_IP}" 'rm -f /tmp/herobids-setup.env /tmp/create-agents.sh /tmp/security-audit-prompt.md /tmp/external-skills-tester-prompt.md /tmp/system-skills-tester-prompt.md' || true
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Summary

@@ -5,7 +5,7 @@ app:
 
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
-  model: deepseek/anthropic/claude-haiku-5.5       # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
+  model: anthropic/claude-haiku-5.5       # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
   baseUrl: https://openrouter.ai/api/v1 # DeepSeek API base URL (OpenAI-compatible)
 
 agentRuntime:
@@ -16,7 +16,7 @@ agentRuntime:
     modelDefaults:
       provider: openrouter                    # suggested provider in forms
       lightModel: deepseek/deepseek-v4.1-flash  # suggested economy (scout) model
-      heavyModel: deepseek/anthropic/claude-haiku-5.5    # suggested premium (judge) model
+      heavyModel: anthropic/claude-haiku-5.5    # suggested premium (judge) model
 
 # Browser pool runs as the Nomad job infra/nomad/browser-pool.nomad.hcl, not a
 # Compose service, so the default Compose URL (http://browser-pool:3000) never
