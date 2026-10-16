@@ -753,6 +753,9 @@ alerts:
     webhookSecret: ""               # override: TELEGRAM_WEBHOOK_SECRET
     # webhookUrl: "https://your-public-host/telegram/webhook"  # override: TELEGRAM_WEBHOOK_URL
     channels: []                    # configured via env-specific yaml
+  operator:
+    telegramChatId: "8681143261"    # chat that receives agent platform-fault reports; empty disables them (needs TELEGRAM_BOT_TOKEN) — override: OPERATOR_ALERT_TELEGRAM_CHAT_ID
+    faultCooldownMs: 900000         # 15 min between reports for the same agent and error code
   email:
     provider: ses                   # outbound provider — override: EMAIL_PROVIDER
     fromEmail: ""                   # sender address (must be verified in SES) — override: EMAIL_FROM_EMAIL

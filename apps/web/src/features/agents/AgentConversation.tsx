@@ -6,6 +6,8 @@ import { Button, Card, SectionLabel } from '../../lib/ui.js';
 
 const RUNNING_STATUSES = ['active', 'starting', 'paused', 'unhealthy'];
 
+export const CONVERSATION_POLL_MS = 3000;
+
 const HINT_STYLE: CSSProperties = { color: 'var(--color-text-muted)', fontSize: '0.8125rem' };
 
 export function isAgentConversable(status: string): boolean {
@@ -130,6 +132,7 @@ export function AgentConversation({ agentId, agentName, status }: { agentId: str
     queryKey: ['agent-conversation', agentId],
     queryFn: () => agentsApi.messages(agentId, 50),
     enabled: agentId.length > 0,
+    refetchInterval: isAgentConversable(status) ? CONVERSATION_POLL_MS : false,
   });
   const sendMutation = useMutation({
     mutationFn: (message: string) => agentsApi.sendMessage(agentId, message),

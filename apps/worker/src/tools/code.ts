@@ -202,6 +202,7 @@ const codeExecuteTool: AgentTool = {
         success: false,
         data: { stdout, stderr, exitCode, durationMs },
         errorCode: 'execute_code.sandbox_infrastructure_error',
+        errorOwner: 'platform',
         error:
           'Sandbox infrastructure error (non-recoverable): the execute_code sandbox ' +
           'is misconfigured in this container. Do NOT retry — record this limitation ' +

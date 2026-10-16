@@ -347,29 +347,6 @@ export function AgentDetailPage() {
           </div>
         </Card>
 
-        {agent.activeSession && (
-          <Card>
-            <details>
-              <summary
-                style={{
-                  ...SECTION_TITLE_STYLE,
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-              >
-                {intl.formatMessage({ id: 'agents.detail.runtimeHealth' })}
-              </summary>
-              <div style={{ marginTop: '12px' }}>
-                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                  <KV label={intl.formatMessage({ id: 'agents.detail.session' })} value={agent.activeSession.id.slice(0, 8)} />
-                  <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.activeSession.status} />} />
-                  <KV label={intl.formatMessage({ id: 'agents.detail.lastHeartbeat' })} value={<RelativeTime timestamp={agent.activeSession.lastHeartbeatAt} />} />
-                </div>
-              </div>
-            </details>
-          </Card>
-        )}
-
         <Card>
           <details>
             <summary
@@ -520,6 +497,29 @@ export function AgentDetailPage() {
         </section>
 
         <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} />
+
+        {agent.activeSession && (
+          <Card>
+            <details>
+              <summary
+                style={{
+                  ...SECTION_TITLE_STYLE,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                {intl.formatMessage({ id: 'agents.detail.runtimeHealth' })}
+              </summary>
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                  <KV label={intl.formatMessage({ id: 'agents.detail.session' })} value={agent.activeSession.id.slice(0, 8)} />
+                  <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.activeSession.status} />} />
+                  <KV label={intl.formatMessage({ id: 'agents.detail.lastHeartbeat' })} value={<RelativeTime timestamp={agent.activeSession.lastHeartbeatAt} />} />
+                </div>
+              </div>
+            </details>
+          </Card>
+        )}
 
         <Card>
           <details>
@@ -695,7 +695,7 @@ export function AgentDetailPage() {
                       }}>
                         {a.summary && (
                           <div style={{ marginBottom: hasLocation || hasMetadata ? '10px' : '0' }}>
-                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                               {intl.formatMessage({ id: 'agents.detail.artifactSummary', defaultMessage: 'Summary' })}
                             </div>
                             <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text-primary)' }}>{a.summary}</div>
@@ -703,7 +703,7 @@ export function AgentDetailPage() {
                         )}
                         {hasLocation && (
                           <div style={{ marginBottom: hasMetadata ? '10px' : '0' }}>
-                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                               {intl.formatMessage({ id: 'agents.detail.artifactContent', defaultMessage: 'Content' })}
                             </div>
                             {a.location!.url ? (
@@ -738,7 +738,7 @@ export function AgentDetailPage() {
                         )}
                         {hasMetadata && (
                           <div>
-                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                               {intl.formatMessage({ id: 'agents.detail.artifactMetadata', defaultMessage: 'Metadata' })}
                             </div>
                             <pre style={{

@@ -5,6 +5,15 @@ import { convertZodToJsonSchema } from './registry.js';
 import { resolveGmailTokens } from '../gmail-credential-resolver.js';
 import { createGmailAdapter, type GmailApiError } from '../gmail-adapter.js';
 
+const PLATFORM_GMAIL_ERROR_CODES = new Set(['gmail.decrypt_failed', 'gmail.no_encryption_key', 'gmail.not_configured']);
+
+/** Platform setup faults are for the operator; a missing or stale connection is for the user. */
+function gmailTokenErrorOwner(code: string): 'platform' | 'user' | undefined {
+  if (PLATFORM_GMAIL_ERROR_CODES.has(code)) return 'platform';
+  if (code === 'connection.missing' || code === 'connection.not_found' || code === 'gmail.token_refresh_failed') return 'user';
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Dependency injection (set before first tool execution)
 // ---------------------------------------------------------------------------
@@ -97,6 +106,7 @@ export const sendEmailTool: AgentTool = {
         success: false,
         error: tokenResult.error.message,
         errorCode: tokenResult.error.code,
+        errorOwner: gmailTokenErrorOwner(tokenResult.error.code),
         retryable: !nonRetryableCodes.has(tokenResult.error.code),
         fault: false,
       };
@@ -192,6 +202,7 @@ export const searchEmailsTool: AgentTool = {
         success: false,
         error: tokenResult.error.message,
         errorCode: tokenResult.error.code,
+        errorOwner: gmailTokenErrorOwner(tokenResult.error.code),
         retryable: !nonRetryableCodes.has(tokenResult.error.code),
         fault: false,
       };

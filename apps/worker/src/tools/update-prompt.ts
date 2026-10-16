@@ -13,7 +13,7 @@ const UpdateMyPromptParamsSchema = z.object({
 
 export const updateMyPromptTool: AgentTool = {
   name: 'update_my_prompt',
-  description: "Replace this agent's standing goal (prompt) with the text given. Use only when the user asks to change what you are for.",
+  description: "Replace this agent's standing goal (prompt) with the text given. Use only when the user asks to change what you are for, and use their own words rather than your paraphrase.",
   parametersSchema: UpdateMyPromptParamsSchema,
   parameters: convertZodToJsonSchema(UpdateMyPromptParamsSchema),
   category: 'write-database',

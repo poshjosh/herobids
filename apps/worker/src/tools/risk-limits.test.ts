@@ -115,6 +115,7 @@ describe('get_risk_limits tool', () => {
     expect(invoke).not.toHaveBeenCalled();
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('connection.missing');
+    expect(result.errorOwner).toBe('user');
     expect(result.fault).toBe(false);
   });
 
@@ -233,6 +234,7 @@ describe('get_risk_limits tool', () => {
 
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('boundary.transport_error');
+    expect(result.errorOwner).toBe('platform');
     expect(result.retryable).toBe(true);
     expect(result.fault).toBe(true);
   });

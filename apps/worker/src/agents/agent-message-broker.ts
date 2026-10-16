@@ -13,6 +13,7 @@ import type {
   ConnectionRequestResult,
   OperatorModelDefaults,
   PlansConfig,
+  RuntimeToolResultPayload,
 } from '@herobids/domain';
 import {
   MessageEnvelopeSchema,
@@ -36,6 +37,7 @@ import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSk
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { ChatDelivery } from '../alerting/chat-delivery.js';
 import type { EmailClient } from '../alerting/email-client.js';
+import type { OperatorNotifier } from '../alerting/operator-notifier.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -98,11 +100,29 @@ export class AgentMessageBroker {
     private readonly sideEffectBoundary?: ExternalBackendWriteBoundary,
     private readonly publicBaseUrl?: string,
     private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number; expiryGraceSecs: number },
+    private readonly operatorNotifier?: OperatorNotifier,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
   private get resolvedPublicBaseUrl(): string {
     return this.publicBaseUrl ?? AuthConfigSchema.parse({}).publicBaseUrl;
+  }
+
+  /** Tell the operator about a tool failure the user cannot fix. Never throws. */
+  private async reportPlatformFault(agentId: string, payload: RuntimeToolResultPayload): Promise<void> {
+    if (!this.operatorNotifier || payload.status !== 'error' || payload.errorOwner !== 'platform') return;
+    try {
+      const agent = await this.agentRepo.getAgent(agentId);
+      await this.operatorNotifier.reportPlatformFault({
+        agentId,
+        agentName: agent?.name,
+        toolName: payload.toolName,
+        errorCode: payload.errorCode,
+        summary: payload.summary,
+      });
+    } catch (err) {
+      logger.warn({ err, agentId }, 'Failed to report platform fault');
+    }
   }
 
   /** Resolved connection-request limits (operator config defaults when unset). */
@@ -357,8 +377,11 @@ export class AgentMessageBroker {
         case AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH:
         case AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED:
         case AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL:
-        case AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT:
           // Audit-only events — persisted with payload, no business side effects.
+          break;
+
+        case AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT:
+          await this.reportPlatformFault(effectiveAgentId, envelope.payload as unknown as RuntimeToolResultPayload);
           break;
 
         case AGENT_MESSAGE_TYPES.CONFIG_UPDATE: {

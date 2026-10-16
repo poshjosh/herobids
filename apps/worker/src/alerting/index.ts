@@ -6,6 +6,8 @@ export type { AlertRouting, AlertSeverity, JournalEventRow } from './alert-polic
 export { TelegramClient, forceReply } from './telegram-client.js';
 export type { TelegramReplyMarkup } from './telegram-client.js';
 export { PlatformAlertService, PLATFORM_ALERT_EVENTS } from './platform-alert-service.js';
+export { OperatorNotifier } from './operator-notifier.js';
+export type { PlatformFaultReport } from './operator-notifier.js';
 export type { PlatformAlertContext, PlatformAlertEvent } from './platform-alert-service.js';
 export type { EmailClient, EmailMessage, EmailSendResult } from './email-client.js';
 export { createEmailClient } from './create-email-client.js';

@@ -328,8 +328,8 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 export const SECTION_TITLE_STYLE: CSSProperties = {
   fontSize: '0.8125rem',
   fontWeight: '700',
-  textTransform: 'uppercase',
-  letterSpacing: '0.06em',
+  textTransform: 'none',
+  letterSpacing: 'normal',
   color: 'var(--color-text-primary)',
 };
 

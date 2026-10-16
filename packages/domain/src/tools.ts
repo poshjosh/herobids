@@ -220,7 +220,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   add_skills:          { category: 'write-database',      description: 'Add skills to this agent from the skill catalog. Skills become available immediately.' },
   remove_skills:       { category: 'write-database',      description: 'Remove skills from this agent. Tools from removed skills become unavailable immediately.' },
   request_connection:  { category: 'write-database',      description: 'Request a connection to a provider. Returns a short-lived link to send to the user.' },
-  update_my_prompt:    { category: 'write-database',      description: "Replace this agent's standing goal (prompt). Takes effect on the next run." },
+  update_my_prompt:    { category: 'write-database',      description: "Replace this agent's standing goal (prompt), only when the user asks, in their own words. Takes effect on the next run." },
 
   // read-market-data
   search_tokens:       { category: 'read-market-data',    description: 'Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.' },

@@ -1,6 +1,6 @@
 import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
 import type { RegimeResult } from '@poshjosh/contracts';
-import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, FIRST_TURN_GOAL_GUIDANCE, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, JOB_CHANGE_GUIDANCE, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines, formatInterval } from './prompt-timing-context.js';
@@ -2535,8 +2535,8 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
 
   const identityName = state.runtimeDescriptor.name ?? state.runtimeDescriptor.agentId;
   const jobBlock = isBlankAgentGoal(state.runtimeDescriptor.goal)
-    ? `${EMPTY_JOB_DEFAULT_TEXT}\n${FIRST_TURN_GOAL_GUIDANCE}`
-    : formatAgentGoalLiteralBlock(state.runtimeDescriptor.goal);
+    ? EMPTY_JOB_DEFAULT_TEXT
+    : `${formatAgentGoalLiteralBlock(state.runtimeDescriptor.goal)}\n\n${JOB_CHANGE_GUIDANCE}`;
 
   return [
     resolveAgentIdentityLine(state.runtimeDescriptor.skillPresetId, identityName),

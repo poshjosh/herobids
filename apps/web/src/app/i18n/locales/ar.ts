@@ -481,7 +481,7 @@ export const messages: Record<string, string> = {
   'agents.detail.effectiveReady': 'جاهز فعلياً',
   'agents.detail.notAssigned': 'غير مخصص',
   'agents.detail.reasons': 'الأسباب',
-  'agents.detail.runtimeHealth': 'صحة التشغيل',
+  'agents.detail.runtimeHealth': 'صحة الوكيل',
   'agents.detail.session': 'الجلسة',
   'agents.detail.lastHeartbeat': 'آخر نبضة',
   'agents.detail.messageDelivery.both': 'تم التسليم عبر تيليغرام والبريد الإلكتروني',

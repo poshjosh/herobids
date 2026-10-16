@@ -609,6 +609,12 @@ export const AlertsConfigSchema = z.object({
     /** Telegram channel routing rules */
     channels: z.array(TelegramChannelConfigSchema).default([]),
   }).default({}),
+  operator: z.object({
+    /** Telegram chat that receives agent platform-fault reports. Empty disables reporting. Override: OPERATOR_ALERT_TELEGRAM_CHAT_ID */
+    telegramChatId: z.string().default(''),
+    /** Minimum gap between reports for the same agent and error code (ms) */
+    faultCooldownMs: z.number().int().min(0).default(900_000),
+  }).default({}),
   email: z.object({
     /** Outbound email provider. Only 'ses' is supported. Override: EMAIL_PROVIDER */
     provider: z.enum(['ses']).optional(),
@@ -1446,6 +1452,8 @@ export const AgentRuntimeConfigSchema = z.object({
 });
 
 export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({
+  /** True when the platform can forward platform faults to an operator. Derived by the worker, not configured. */
+  platformFaultReporting: z.boolean().default(false),
   llm: z.object({
     catalog: LlmCatalogConfigSchema.default({}),
     retry: LlmRetryConfigSchema.default({}),

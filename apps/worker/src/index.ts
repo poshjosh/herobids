@@ -14,7 +14,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, MONOREPO_CONFIG_DIR, resolveConfiguredExternalBackend } from './config.js';
 import { AlertDispatcher, createBoundaryTradeEventFeed } from './alerting/index.js';
-import { TelegramClient, PlatformAlertService, createEmailClient } from './alerting/index.js';
+import { TelegramClient, PlatformAlertService, OperatorNotifier, createEmailClient } from './alerting/index.js';
 import { TelegramChannel } from './alerting/telegram-channel.js';
 import { ChatDelivery } from './alerting/chat-delivery.js';
 import type { EmailClientConfig } from './alerting/index.js';
@@ -167,8 +167,12 @@ const botRepo = new ConnectionOwnershipRepository(db);
 
 // Build the agentRuntimeConfigJson once — shared between the Docker manager
 // config and any future runtime adapter config.
+const operatorFaultReportingEnabled = Boolean(
+  appConfig.alerts.operator.telegramChatId && appConfig.alerts.telegram.botToken,
+);
 const agentRuntimeConfigJson = JSON.stringify({
   ...appConfig.agentRuntime,
+  platformFaultReporting: operatorFaultReportingEnabled,
   llm: {
     retry: appConfig.llm.retry,
     scout: {
@@ -773,6 +777,10 @@ const botLiveCheckCallback = async (userId: string): Promise<void> => {
   }
 };
 
+const operatorNotifier = operatorFaultReportingEnabled && workerTelegram
+  ? new OperatorNotifier(workerTelegram, appConfig.alerts.operator.telegramChatId, appConfig.alerts.operator.faultCooldownMs)
+  : undefined;
+
 const agentBroker = new AgentMessageBroker(
   redisClient,
   agentRepo,
@@ -795,6 +803,7 @@ const agentBroker = new AgentMessageBroker(
   sideEffectBoundary,
   appConfig.auth.publicBaseUrl,
   appConfig.connectionRequests,
+  operatorNotifier,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

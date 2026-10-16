@@ -481,7 +481,7 @@ export const messages: Record<string, string> = {
   'agents.detail.effectiveReady': 'प्रभावी रूप से तैयार',
   'agents.detail.notAssigned': 'असाइन नहीं',
   'agents.detail.reasons': 'कारण',
-  'agents.detail.runtimeHealth': 'रनटाइम स्वास्थ्य',
+  'agents.detail.runtimeHealth': 'एजेंट स्वास्थ्य',
   'agents.detail.session': 'सत्र',
   'agents.detail.lastHeartbeat': 'अंतिम हार्टबीट',
   'agents.detail.messageDelivery.both': 'टेलीग्राम और ईमेल से डिलीवर हुआ',

@@ -50,6 +50,7 @@ export function selectedAccountUnavailable(resolution: SelectedVenueAccountResol
     success: false,
     error: 'no trading connection is set up yet — call list_providers to see what is available, then request_connection to ask the user to connect one',
     errorCode: 'connection.missing',
+    errorOwner: 'user',
     fault: false,
   };
 }

@@ -55,12 +55,17 @@ export type ToolCategory =
   | 'execute-trade'
   | 'execute-filesystem';
 
+/** 'platform': only an operator can fix it. 'user': the user can fix it. 'agent': the agent can adapt or retry. */
+export type ToolErrorOwner = 'platform' | 'user' | 'agent';
+
 export interface ToolResult {
   success: boolean;
   data?: unknown;
   error?: string;
   /** Machine-readable error code for non-success results. */
   errorCode?: string;
+  /** Who can resolve a failure. Defaults to 'agent' when absent. */
+  errorOwner?: ToolErrorOwner;
   /** When true, the failure is transient (rate limit, timeout) and retrying may succeed. */
   retryable?: boolean;
   /**

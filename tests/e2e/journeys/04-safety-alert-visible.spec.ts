@@ -1,7 +1,7 @@
 /**
- * Journey 4: Runtime health card visible after agent start
+ * Journey 4: Agent health card visible after agent start
  *
- * Verifies that starting an agent creates an active session and the Runtime Health
+ * Verifies that starting an agent creates an active session and the Agent Health
  * card becomes visible on the agent detail page.
  */
 
@@ -11,8 +11,8 @@ import { registerUser, createAgent } from '../helpers.js';
 const EMAIL = `j4-${Date.now()}@e2e.local`;
 const PASSWORD = 'E2ePassword4!';
 
-test.describe('Journey 4: Runtime health card visible after start', () => {
-  test('starting an agent shows the Runtime health section on the detail page', async ({ page, request }) => {
+test.describe('Journey 4: Agent health card visible after start', () => {
+  test('starting an agent shows the Agent Health section on the detail page', async ({ page, request }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J4');
 
     const agentId = await createAgent(
@@ -41,9 +41,9 @@ test.describe('Journey 4: Runtime health card visible after start', () => {
     // Navigate to agent detail page
     await page.goto(`/agents/${agentId}`);
 
-    // The Runtime health section is rendered whenever there is an active session
+    // The Agent Health section is rendered whenever there is an active session
     // (status: starting | running | unhealthy).
-    await expect(page.getByRole('heading', { name: /runtime health/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: /agent health/i })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/starting/i).first()).toBeVisible({ timeout: 10_000 });
 
     // Clean up — stop the agent so it does not linger as 'starting'

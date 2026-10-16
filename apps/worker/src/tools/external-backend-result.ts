@@ -65,6 +65,7 @@ export function mapReadResultToToolResult(result: ExternalBackendReadResult): To
         success: false,
         error: 'trading boundary is unreachable',
         errorCode: 'boundary.transport_error',
+        errorOwner: 'platform',
         retryable: true,
         fault: true,
       };
@@ -112,6 +113,7 @@ export function mapWriteResultToToolResult(result: ExternalBackendClientResult):
         success: false,
         error: 'trading boundary is unreachable',
         errorCode: 'boundary.transport_error',
+        errorOwner: 'platform',
         retryable: true,
         fault: true,
       };

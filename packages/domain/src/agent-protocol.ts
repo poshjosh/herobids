@@ -524,6 +524,8 @@ export const RuntimeToolResultPayloadSchema = z.object({
   status: z.enum(['ok', 'error']),
   correlationId: z.string().min(1),
   summary: z.string().max(500).optional(),
+  errorCode: z.string().max(120).optional(),
+  errorOwner: z.enum(['platform', 'user', 'agent']).optional(),
 });
 export type RuntimeToolResultPayload = z.infer<typeof RuntimeToolResultPayloadSchema>;
 

@@ -144,6 +144,7 @@ describe('send_email', () => {
 
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('connection.missing');
+    expect(result.errorOwner).toBe('user');
     expect(mockResolveGmailTokens).toHaveBeenCalledWith(
       expect.anything(),
       'agent-1',

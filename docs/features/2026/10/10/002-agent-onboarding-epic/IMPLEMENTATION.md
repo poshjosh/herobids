@@ -72,7 +72,7 @@ These are settled. Implement them as specified; do not reopen them.
 | D-C3 | In-app chat | **Accepted.** Minimal in-app conversation on the agent detail page (not the `chat_sessions` model). External channel optional but strongly recommended. *(Amended 2026-10-15: the conversation moves to one store shared by web and Telegram. See [two-way agent chat](../../../10/15/002-two-way-agent-chat/001-plan.md). Agent-to-agent messaging is in [pending/000-agent-to-agent-messaging](../../../../pending/000-agent-to-agent-messaging/001-plan.md).)* |
 | D-C4 | Start step | **No auto-start.** Create (stopped) → press Start → land in conversation. Revisit only if the extra click proves to be friction. |
 | D-C5 | Name | Optional; auto-generated if blank; unique per user (collision retry). |
-| D-C6 | Goal at creation | Not asked. If the user volunteers one, forward it as the agent's **first message** (not stored as prompt). Durable goal is the agent's job via `update_my_prompt`. |
+| D-C6 | Goal at creation | Not asked. If the user volunteers one, forward it as the agent's **first message** (not stored as prompt). Amended 2026-10-16: the agent does not write its own goal. The creator sets it, or asks the agent to change it with `update_my_prompt` (in their own words, after the agent asks). The first-turn rule that had a blank-goal agent restate the first request as its goal was removed. |
 | D-C7 | API compatibility | `POST /agents` keeps accepting the full payload. Only the two UIs are simplified. |
 | D-C8 | Telegram binding | One-time deep link `t.me/<bot>?start=<token>`; **lookup-first** (token lookup before `handleStart`), `/link <code>` as fallback. |
 | D-C9 | Guided chat | **Keep it.** More evolvable than a form; not obviously similar to the user. Can grow non-trading steps later (ask objective → agent adds skills/connections). *(Amended 2026-10-15: superseded. Guided chat is removed entirely, per the owner's decision D-8 in `docs/features/2026/10/15/001-wave3-cutover/000-README.md`.)* |
@@ -121,7 +121,7 @@ Work **wave by wave**. Within a wave, work items are parallel and independent. D
 
 - **WP-A A3–A6** — `request_connection` (catalog validation), A4 `?provider=` form handling, A5 wake on resolved/expired (domain port + API Redis impl + expiry sweeper per D-A2), A6 base-prompt guidance.
 - **WP-B B1–B8** — operator defaults (traderton authority), running-agent grant, provisioning via `changes`, `set_trading_setup` tool, reuse-or-create generated connection, trading-skill instructions, remove paper/shadow flip, `get_funding_info`. *(Amended 2026-10-14: the provisioning tool, `changes` and reuse-or-create are replaced by Traderton applying defaults when a profile is first created; see the WP-B plan.)*
-- **WP-C S1–S2** — optional name, first-turn greeting, `update_my_prompt`, in-app conversation (composer + thread + post-create landing).
+- **WP-C S1–S2** — optional name, first-turn greeting (no longer sets the goal, 2026-10-16), `update_my_prompt` (only when the user asks), in-app conversation (composer + thread + post-create landing).
 
 **Wave 2 gate:** each WP's own work-item gates pass (see the plans' "Work items" tables).
 

@@ -1386,6 +1386,8 @@ function emitToolResultEvent(params: {
   status: 'ok' | 'error';
   correlationId: string;
   summary?: string;
+  errorCode?: string;
+  errorOwner?: 'platform' | 'user' | 'agent';
   metadata?: Record<string, unknown>;
 }): void {
   emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT, {
@@ -1395,6 +1397,8 @@ function emitToolResultEvent(params: {
     status: params.status,
     correlationId: params.correlationId,
     summary: params.summary,
+    ...(params.errorCode ? { errorCode: params.errorCode } : {}),
+    ...(params.errorOwner ? { errorOwner: params.errorOwner } : {}),
     ...(params.metadata ? { metadata: params.metadata } : {}),
   });
 }
@@ -2126,10 +2130,14 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         toolVisibility.setToolAvailability('execute_code', false, toolCircuitBreaker.getBlockedTools(tickCount));
         setToolCapabilityDegradation(runtimeState, 'execute_code', true);
       }
+      const errorOwner = result.errorOwner ?? 'agent';
       const errorResult = JSON.stringify({
         ok: false,
         error: result.error ?? 'tool execution failed',
         errorCode: result.errorCode,
+        errorOwner,
+        // Only true when the platform can actually forward the fault to an operator.
+        ...(errorOwner === 'platform' ? { adminNotified: agentRuntimePolicy.platformFaultReporting } : {}),
         retryable: result.retryable,
         // Preserve fault classification: default to true (assume fault) unless explicitly false.
         fault: result.fault !== false,
@@ -2141,6 +2149,8 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         status: 'error',
         correlationId: toolCorrelationId,
         summary: (result.error ?? 'tool execution failed').slice(0, 500),
+        errorCode: result.errorCode?.slice(0, 120),
+        errorOwner,
       });
       return errorResult;
     }

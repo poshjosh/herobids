@@ -63,7 +63,7 @@ flowchart TD
 **Wave 2 (parallel)**
 - WP-A: A3 `request_connection` with catalog validation, A4 `?provider=` handling in the setup form, A5 wake on connection resolved or expired, A6 base-prompt guidance.
 - WP-B: design and implement provisioning of capital, execution mode and risk defaults from operator config when a blank agent becomes trading-capable (paper first, user-configured limits stay immutable).
-- WP-C S1-S2: optional name, auto-start, first-turn guidance, `update_my_prompt`, in-app conversation. These are additive and do not change the current create flows.
+- WP-C S1-S2: optional name, auto-start, first-turn greeting (the rule that set the goal was removed 2026-10-16), `update_my_prompt`, in-app conversation. These are additive and do not change the current create flows.
 
 **Gate G1: agent self-serve loop (blocks the cut-over)**
 

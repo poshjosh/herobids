@@ -41,11 +41,11 @@ export function formatAgentGoalLiteralBlock(prompt: string): string {
  * to user messages, but does not start autonomous work until given a job.
  */
 export const EMPTY_JOB_DEFAULT_TEXT =
-  'No job has been assigned yet. Do not start any autonomous work until your creator gives you one. You remain on duty — if the user messages you, respond normally.';
+  'No job has been assigned yet. Do not start any autonomous work until your creator gives you one. You remain on duty — if the user messages you, respond normally and ask what they would like you to do.';
 
-/** Appended to the empty-goal text so a new agent turns its creator's first description into its goal. */
-export const FIRST_TURN_GOAL_GUIDANCE =
-  'If your creator\'s message asks you to do something, first call update_my_prompt with that request restated as a goal in one paragraph, then reply to them in one sentence confirming the goal.';
+/** Shown with a set job so the agent knows its creator can change it, and asks before replacing or extending it. */
+export const JOB_CHANGE_GUIDANCE =
+  'Your creator set this job and can change it at any time by telling you. If a request contradicts or goes beyond it, ask whether to replace the job with the new instruction or add it to the current job. Change it with update_my_prompt only after they answer, using their own words. To add to it, send the current job followed by their addition.';
 
 /**
  * True when a stored prompt carries no actual user goal.

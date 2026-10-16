@@ -27,6 +27,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
   TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
   TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
+  OPERATOR_ALERT_TELEGRAM_CHAT_ID: { path: 'alerts.operator.telegramChatId', type: 'string' },
   // Email — outbound provider (SES)
   EMAIL_PROVIDER: { path: 'alerts.email.provider', type: 'string' },
   EMAIL_FROM_EMAIL: { path: 'alerts.email.fromEmail', type: 'string' },

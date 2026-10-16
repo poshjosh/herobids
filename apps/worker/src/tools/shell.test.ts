@@ -381,6 +381,7 @@ describe('execute_shell tool', () => {
       expect(result.retryable).toBe(false);
       expect(result.fault).toBe(false);
       expect(result.errorCode).toBe('execute_shell.sandbox_infrastructure_error');
+      expect(result.errorOwner).toBe('platform');
       expect(result.error).toContain('Sandbox infrastructure error (non-recoverable)');
       expect(result.error).toContain('mount --make-shared');
     } finally {

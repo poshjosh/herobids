@@ -11,7 +11,7 @@ Creating an agent asks for two things only: an optional name and a channel. The 
 
 ## Already done (not in this wave)
 
-S1 (optional name, `update_my_prompt`, first-turn guidance) and S2 (in-app conversation) are complete per the epic PROGRESS file.
+S1 (optional name, `update_my_prompt`, first-turn guidance) and S2 (in-app conversation) are complete per the epic PROGRESS file. Amended 2026-10-16: the first-turn rule that had a blank-goal agent set its own goal was removed by owner decision (see the epic PROGRESS file); the first-turn greeting stays.
 
 ## Decisions
 
