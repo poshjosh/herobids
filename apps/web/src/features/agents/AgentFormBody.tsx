@@ -45,6 +45,8 @@ const AGENT_STRATEGY_PRESET_KEYS = [
  */
 export const ADVANCED_FIELD_TAB: Record<string, number> = {
   // AI
+  goal: 0,
+  connectionIds: 0,
   tickIntervalMins: 0,
   dailySpendBudgetUsd: 0,
   permissionLevel: 0,
@@ -119,6 +121,10 @@ export interface AgentFormBodyProps {
   // Slots (caller injects shell-specific chrome)
   modelSlot: React.ReactNode;
   connectionSlot?: React.ReactNode;
+  /** Renders connectionSlot inside the AI tab instead of above Advanced Settings. */
+  connectionInAiTab?: boolean;
+  /** Rendered first in the AI tab (create form: objective and skills). */
+  aiLeadSlot?: React.ReactNode;
   tradingSetupSlot?: React.ReactNode;
   computeBudgetSlot?: React.ReactNode;
 
@@ -334,7 +340,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
       )}
 
       {/* Platform link — available for all agents so non-trading skills can use generic providers like Gmail */}
-      {props.connectionSlot && (
+      {!props.connectionInAiTab && props.connectionSlot && (
         <div style={fieldGap}>{props.connectionSlot}</div>
       )}
 
@@ -359,6 +365,8 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         }}
         aiConfig={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
+            {props.aiLeadSlot}
+            {props.connectionInAiTab && props.connectionSlot}
             {props.modelSlot}
             <PermissionLevelSelector
               value={props.value.permissionLevel}

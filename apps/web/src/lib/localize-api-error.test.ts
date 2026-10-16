@@ -22,6 +22,12 @@ describe('localizeApiError', () => {
     expect(localizeApiError(intl, error, 'common.errorTitle')).toBe('walletAddress is required for hyperliquid.');
   });
 
+  it('shows a reference for internal server errors', () => {
+    const error = new ApiError(500, 'internal_error', 'internal_error', undefined, undefined, 'abc-123');
+
+    expect(localizeApiError(intl, error, 'common.errorTitle')).toContain('abc-123');
+  });
+
   it('falls back to the original message when a translation key is missing', () => {
     const error = new ApiError(500, 'unknown.error', 'Server exploded');
 

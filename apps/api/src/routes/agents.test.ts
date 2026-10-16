@@ -3489,6 +3489,27 @@ describe('agent routes — prompt optionality', () => {
     expect(insert?.prompt).toBe('');
   });
 
+  it('rejects a create request that omits the name', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { prompt: 'unnamed agent' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(insertedValues).toHaveLength(0);
+  });
+
   it('creates an agent when neither prompt nor technical config is provided', async () => {
     const { agentRoutes } = await import('./agents.js');
     const createdAgent = {

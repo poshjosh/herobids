@@ -30,6 +30,7 @@ export const messages: Record<string, string> = {
   'common.loading': 'लोड हो रहा है…',
   'common.retry': 'पुनः प्रयास करें',
   'common.errorTitle': 'कुछ गलत हो गया',
+  'errors.internal': 'Something went wrong on our side. Try again. If it keeps happening, send this reference to support: {reference}',
   'common.pleaseWait': 'कृपया प्रतीक्षा करें…',
 
   // Auth

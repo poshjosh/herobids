@@ -97,6 +97,22 @@ describe('AgentConversationView', () => {
     expect(html.indexOf('Watching ETH.')).toBeLessThan(html.indexOf('Second reply.'));
   });
 
+  it('places the user\'s messages on the right and the agent\'s on the left', () => {
+    const own = { ...messages[0], id: 'm3', authoredBy: 'user', body: 'Buy more ETH.' } as unknown as AgentOutboundMessage;
+    const html = render({ messages: [own, ...messages] });
+
+    expect(html).toContain('justify-content:flex-end');
+    expect(html).toContain('justify-content:flex-start');
+  });
+
+  it('does not label the user\'s own message as a safety alert', () => {
+    const own = { ...messages[0], id: 'm3', authoredBy: 'user', body: 'Buy more ETH.' } as unknown as AgentOutboundMessage;
+    const html = render({ messages: [own] });
+
+    expect(html).toContain('Buy more ETH.');
+    expect(html).not.toContain('Safety alert');
+  });
+
   it('shows the character count against the 4000 limit', () => {
     expect(render({ draft: 'hello' })).toContain('5/4000');
   });

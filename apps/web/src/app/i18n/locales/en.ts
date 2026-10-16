@@ -90,6 +90,7 @@ export const messages: Record<string, string> = {
   'common.loading': 'Loading…',
   'common.retry': 'Retry',
   'common.errorTitle': 'Something went wrong',
+  'errors.internal': 'Something went wrong on our side. Try again. If it keeps happening, send this reference to support: {reference}',
   'common.pleaseWait': 'Please wait…',
 
   // Auth

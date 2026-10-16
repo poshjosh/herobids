@@ -148,7 +148,7 @@ export function SettingsPage() {
         subtitle={intl.formatMessage({ id: 'settings.subtitle' })}
       />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '680px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: 'var(--content-max-width)' }}>
         {/* Language preference */}
         <Card>
           <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>

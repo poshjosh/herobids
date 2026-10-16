@@ -721,8 +721,11 @@ describe('PUT /agents/:id', () => {
 // ─── POST /agents/:id/message ─────────────────────────────────────────────
 
 describe('POST /agents/:id/message', () => {
-  it('returns 202 when agent is running', async () => {
-    const db = buildAgentDb({ ...stubAgent, status: 'running' });
+  it('returns 202 and stores the user message when agent is running', async () => {
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    const db = Object.assign(buildAgentDb({ ...stubAgent, status: 'running' }), {
+      insert: vi.fn().mockReturnValue({ values: insertValues }),
+    });
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
@@ -734,6 +737,7 @@ describe('POST /agents/:id/message', () => {
       payload: { message: 'Hello agent' },
     });
     expect(res.statusCode).toBe(202);
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ agentId: AGENT_ID, authoredBy: 'user', body: 'Hello agent' }));
     expect(res.json().delivered).toBe(true);
     expect(redis.xadd).toHaveBeenCalledWith(
       `agent:outbound:${AGENT_ID}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', expect.any(String),

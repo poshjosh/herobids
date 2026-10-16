@@ -97,6 +97,7 @@ export class ApiError extends Error {
     message: string,
     public readonly params?: Record<string, unknown>,
     public readonly details?: ApiErrorDetail[],
+    public readonly correlationId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -136,15 +137,18 @@ async function requestAgainstBase<T>(baseUrl: string, path: string, init?: Reque
     let message = `HTTP ${res.status}`;
     let params: Record<string, unknown> | undefined;
     let details: ApiErrorDetail[] | undefined;
+    let correlationId: string | undefined;
     try {
       const body = await res.json() as {
         error?: string;
         message?: string;
         params?: Record<string, unknown>;
         details?: Array<{ path?: Array<string | number>; message?: string }>;
+        correlationId?: string;
       };
       code = body.error ?? code;
       params = body.params;
+      correlationId = body.correlationId;
       if (Array.isArray(body.details) && body.details.length > 0) {
         // API validation errors return structured issues — preserve path so the
         // localizer can surface `field: message`.
@@ -166,7 +170,7 @@ async function requestAgainstBase<T>(baseUrl: string, path: string, init?: Reque
     } catch {
       // non-JSON error response
     }
-    throw new ApiError(res.status, code, message, params, details);
+    throw new ApiError(res.status, code, message, params, details, correlationId);
   }
 
   // 204 No Content
@@ -1040,7 +1044,7 @@ export interface AgentOutboundMessage {
   id: string;
   agentId: string;
   sessionId: string | null;
-  authoredBy: 'agent' | 'platform';
+  authoredBy: 'agent' | 'platform' | 'user';
   subject: string | null;
   body: string;
   contextRef: string | null;

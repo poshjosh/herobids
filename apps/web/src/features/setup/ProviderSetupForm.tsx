@@ -470,7 +470,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '48px 24px' }}>
         <div style={{
-          maxWidth: '480px',
+          maxWidth: 'var(--content-max-width)',
           width: '100%',
           background: 'var(--color-surface-1)',
           borderRadius: '12px',
@@ -488,7 +488,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
   }
 
   return (
-    <Modal title={title} onClose={onClose} placement="top">
+    <Modal title={title} onClose={onClose} placement="top" maxWidth="var(--content-max-width)">
       {formContent}
     </Modal>
   );

@@ -1,8 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { allocateAgentName } from '../services/agent-name-service.js';
-import { eq, and, inArray, notInArray, desc, sql, asc, isNull } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { TradingProfileReconciliationOutboxRepository, type Database, type DatabaseTransaction } from '@herobids/db';
 import {
@@ -151,7 +150,7 @@ const AgentNameSchema = z.string().min(1).max(100).refine((value) => {
 });
 
 const CreateAgentSchema = z.object({
-  name: AgentNameSchema.optional(),
+  name: AgentNameSchema,
   prompt: z.string().max(8000).optional(),
   technical: TechnicalConfigSchema.optional(),
   skillIds: z.array(z.string().min(1)).optional(),
@@ -671,7 +670,7 @@ export async function agentRoutes(
     }
 
     // ── Shared create-time normalization ──────────────────────────────────
-    const agentName = parsed.data.name ?? await allocateAgentName(db, request.userId);
+    const agentName = parsed.data.name;
     const createFields = await prepareAgentCreateFields({
       name: agentName,
       prompt: parsed.data.prompt ?? '',
@@ -823,7 +822,7 @@ export async function agentRoutes(
         await tx.insert(agents).values({
           id: agentId,
           userId: request.userId,
-          name: parsed.data.name,
+          name: agentName,
           prompt: parsed.data.prompt ?? '',
           status: 'stopped',
           toolPolicy: createFields.toolPolicy,
@@ -2472,11 +2471,12 @@ export async function agentRoutes(
         .where(eq(agentRuntimeSessions.agentId, id))
         .orderBy(desc(agentRuntimeSessions.startedAt))
         .limit(10),
+      // User-authored rows are chat messages, not feed entries.
       db.select().from(agentOutboundMessages)
         .where(
           beforeFilter
-            ? and(eq(agentOutboundMessages.agentId, id), sql`${agentOutboundMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`)
-            : eq(agentOutboundMessages.agentId, id),
+            ? and(eq(agentOutboundMessages.agentId, id), ne(agentOutboundMessages.authoredBy, 'user'), sql`${agentOutboundMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`)
+            : and(eq(agentOutboundMessages.agentId, id), ne(agentOutboundMessages.authoredBy, 'user')),
         )
         .orderBy(desc(agentOutboundMessages.createdAt))
         .limit(limit),

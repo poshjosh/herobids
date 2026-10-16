@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCanonicalExecutionMode } from './agent-payloads.js';
+import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCanonicalExecutionMode, resolveCreateAgentConnectionIds } from './agent-payloads.js';
 
 const TECHNICAL_CONFIG = {
   filters: {
@@ -33,6 +33,291 @@ const TECHNICAL_CONFIG = {
 };
 
 describe('agent payload builders', () => {
+  it('buildCreateAgentPayload stores only the trimmed goal in prompt', () => {
+    expect(buildCreateAgentPayload({
+      name: '  market-watch-01  ',
+      goal: '  Trade BTC on breakouts  ',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['traderton/skills/crypto-trading', 'traderton/skills/crypto-bot-management'],
+      hasBotManagementSkill: true,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '  ',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    })).toMatchObject({
+      name: 'market-watch-01',
+      prompt: 'Trade BTC on breakouts',
+      skillIds: ['traderton/skills/crypto-trading', 'traderton/skills/crypto-bot-management'],
+      capabilityMode: 'intelligence',
+    });
+  });
+
+  it('buildCreateAgentPayload omits empty optional fields and preserves explicit model overrides', () => {
+    expect(buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: false, provider: 'openai', lightModel: 'gpt-4.1-mini', heavyModel: 'gpt-4.1' },
+      costPreset: 'custom',
+      dailySpendBudgetUsd: '1.25',
+      telegramChatId: '1234',
+      tickIntervalMins: '1',
+      capital: '1000',
+      dailyMaxLossPct: '250',
+      maxDrawdownPct: '15',
+      maxSlippageBps: '25',
+      maxOpenPositions: '4',
+      maxPositionSizePct: '35',
+      stopLossPct: '2.5',
+      stopLossCooldownSecs: '300',
+    })).toMatchObject({
+      name: 'agent',
+      prompt: 'goal',
+      skillIds: [],
+      provider: 'openai',
+      lightModel: 'gpt-4.1-mini',
+      heavyModel: 'gpt-4.1',
+      costPreset: 'custom',
+      dailySpendBudgetUsd: 1.25,
+      telegramChatId: '1234',
+      tickIntervalMs: 60_000,
+      capital: '1000',
+      risk: {
+        dailyMaxLossPct: 250,
+        maxDrawdownPct: 15,
+        maxOpenPositions: 4,
+        maxPositionSizePct: 35,
+        stopLossPct: 2.5,
+        stopLossCooldownMs: 300000,
+      },
+      executionDefaults: {
+        slippageBps: 25,
+      },
+      capabilityMode: 'intelligence',
+    });
+  });
+
+  it('buildCreateAgentPayload omits authorizationMode for non-trading agents', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'assistant',
+      goal: 'Read my Gmail and summarize messages.',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['email'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      connectionIds: ['gmail-conn-1'],
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      emailDelivery: 'inherit',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      authorizationMode: 'direct',
+    });
+
+    expect(payload).not.toHaveProperty('authorizationMode');
+  });
+
+  it('resolves executionDefaults.mode to shadow when executionMode is test with connections', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['traderton/skills/crypto-trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      connectionIds: ['conn-1'],
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload.executionDefaults).toEqual({ mode: 'shadow' });
+  });
+
+  it('resolves executionDefaults.mode to paper when executionMode is test without connections', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['traderton/skills/crypto-trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload.executionDefaults).toEqual({ mode: 'paper' });
+  });
+
+  it('resolves executionDefaults.mode to live when executionMode is live', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['traderton/skills/crypto-trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'live',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload.executionDefaults).toEqual({ mode: 'live' });
+  });
+
+  it('omits executionDefaults when not a trading agent (requiresTradingSetup is false)', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'assistant',
+      goal: 'Read my Gmail.',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['email'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('executionDefaults');
+  });
+
+  it('buildCreateAgentPayload includes technical config and intelligence fields in hybrid mode', () => {
+    expect(buildCreateAgentPayload({
+      name: '  technical scout  ',
+      goal: 'Trade BTC',
+      capabilityMode: 'hybrid',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: true,
+      technical: TECHNICAL_CONFIG,
+      skillIds: ['traderton/skills/crypto-trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: false, provider: 'openai', lightModel: 'gpt-4.1-mini', heavyModel: 'gpt-4.1' },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    })).toMatchObject({
+      name: 'technical scout',
+      prompt: 'Trade BTC',
+      skillIds: ['traderton/skills/crypto-trading'],
+      technical: TECHNICAL_CONFIG,
+      capabilityMode: 'hybrid',
+    });
+  });
+
+  it('resolveCreateAgentConnectionIds returns empty array when no connection is present', () => {
+    expect(resolveCreateAgentConnectionIds(null)).toEqual([]);
+  });
+
+  it('resolveCreateAgentConnectionIds returns single-element array when connection is present', () => {
+    expect(resolveCreateAgentConnectionIds({
+      id: 'conn-1',
+      provider: 'hyperliquid',
+      label: 'Main',
+      status: 'active',
+      credentialId: 'cred-1',
+      resolvedVenueAccountId: null,
+      createdAt: '2026-01-01T00:00:00Z',
+    })).toEqual(['conn-1']);
+  });
+
   it('buildUpdateAgentPayload normalizes an edited legacy prompt back to pure intent', () => {
     expect(buildUpdateAgentPayload({
       name: '  Momentum scout  ',
@@ -158,6 +443,101 @@ describe('agent payload builders', () => {
     expect(payload.lightModel).toBe('gpt-4.1-mini');
     expect(payload.heavyModel).toBe('gpt-4.1');
     expect(payload.technical).toEqual(TECHNICAL_CONFIG);
+  });
+
+  it('buildCreateAgentPayload includes connectionIds when provided', () => {
+    expect(buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['traderton/skills/crypto-trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      executionVenue: 'hyperliquid',
+      connectionIds: ['conn-1', 'conn-2'],
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    })).toMatchObject({
+      name: 'agent',
+      prompt: 'trade',
+      skillIds: ['traderton/skills/crypto-trading'],
+      executionVenue: 'hyperliquid',
+      connectionIds: ['conn-1', 'conn-2'],
+    });
+  });
+
+  it('buildCreateAgentPayload omits connectionIds when empty', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['traderton/skills/crypto-trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      connectionIds: [],
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('connectionIds');
+  });
+
+  it('buildCreateAgentPayload omits connectionIds when undefined', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['traderton/skills/crypto-trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('connectionIds');
   });
 
   it('buildUpdateAgentPayload includes connectionIds when provided', () => {
@@ -392,6 +772,34 @@ describe('agent payload builders', () => {
     });
   });
 
+  it('rejects invalid tick intervals in create payloads instead of silently dropping them', () => {
+    expect(() => buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '0',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    })).toThrow('Invalid tick interval minutes input');
+  });
+
   it('rejects invalid tick intervals in update payloads when not preserving a legacy value', () => {
     expect(() => buildUpdateAgentPayload({
       name: 'Momentum scout',
@@ -425,6 +833,65 @@ describe('agent payload builders', () => {
   });
 
   // --- openPositionEscalationToJudgePolicy ---
+
+  it('buildCreateAgentPayload includes the policy field when provided', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      openPositionEscalationToJudgePolicy: 'always',
+    });
+    expect(payload.openPositionEscalationToJudgePolicy).toBe('always');
+  });
+
+  it('buildCreateAgentPayload omits the policy field when not provided', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('openPositionEscalationToJudgePolicy');
+  });
 
   it('buildUpdateAgentPayload includes the policy field when defined', () => {
     const payload = buildUpdateAgentPayload({
@@ -490,6 +957,65 @@ describe('agent payload builders', () => {
   });
 
   // --- runtimePolicyOverrides ---
+
+  it('buildCreateAgentPayload includes runtimePolicyOverrides when provided', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      runtimePolicyOverrides: { scoutMaxTurns: 50 },
+    });
+    expect(payload.runtimePolicyOverrides).toEqual({ scoutMaxTurns: 50 });
+  });
+
+  it('buildCreateAgentPayload omits runtimePolicyOverrides when not provided', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('runtimePolicyOverrides');
+  });
 
   it('buildUpdateAgentPayload includes runtimePolicyOverrides when provided', () => {
     const payload = buildUpdateAgentPayload({
@@ -586,6 +1112,32 @@ describe('normalizeEscalationPolicy', () => {
 // emailDelivery mapping
 // ---------------------------------------------------------------------------
 
+const BASE_CREATE_INPUT = {
+  name: 'agent',
+  goal: 'do stuff',
+  capabilityMode: 'intelligence' as const,
+  hybridMode: 'mixed' as const,
+  technicalPreFilterEnabled: false,
+  technical: null,
+  skillIds: [],
+  hasBotManagementSkill: false,
+  requiresTradingSetup: false,
+  executionMode: 'test' as const,
+  modelPayload: { inherits: true },
+  costPreset: '' as const,
+  dailySpendBudgetUsd: '',
+  telegramChatId: '',
+  tickIntervalMins: '',
+  capital: '',
+  dailyMaxLossPct: '',
+  maxDrawdownPct: '',
+  maxSlippageBps: '',
+  maxOpenPositions: '',
+  maxPositionSizePct: '',
+  stopLossPct: '',
+  stopLossCooldownSecs: '',
+};
+
 const BASE_UPDATE_INPUT = {
   name: 'agent',
   prompt: 'do stuff',
@@ -644,6 +1196,64 @@ describe('resolveCanonicalExecutionMode', () => {
   });
 });
 
+describe('buildCreateAgentPayload — emailDelivery mapping', () => {
+  it('omits notificationPolicy when emailDelivery is "inherit"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, emailDelivery: 'inherit' });
+    expect(payload).not.toHaveProperty('notificationPolicy');
+  });
+
+  it('omits notificationPolicy when emailDelivery is undefined', () => {
+    const payload = buildCreateAgentPayload(BASE_CREATE_INPUT);
+    expect(payload).not.toHaveProperty('notificationPolicy');
+  });
+
+  it('sends enabled: true when emailDelivery is "allow"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, emailDelivery: 'allow' });
+    expect(payload.notificationPolicy).toEqual({
+      sendMessage: { email: { enabled: true, source: 'explicit_update' } },
+    });
+  });
+
+  it('sends enabled: false when emailDelivery is "disable"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, emailDelivery: 'disable' });
+    expect(payload.notificationPolicy).toEqual({
+      sendMessage: { email: { enabled: false, source: 'explicit_update' } },
+    });
+  });
+});
+
+describe('buildCreateAgentPayload — platformAssessment', () => {
+  // Regression: CreateAgentSchema.platformAssessment is `.optional()` (NOT
+  // `.nullable()`, unlike UpdateAgentSchema) — there's nothing to "clear" on
+  // create. Sending `platformAssessment: null` fails Zod validation with
+  // "Expected object, received null" and blocks every agent creation that
+  // doesn't opt into platform assessment. See
+  // docs/bug-reports/2026/07/21/002-create-agent-platform-assessment-null-payload.md
+  it('omits platformAssessment entirely when not enabled (must not send null)', () => {
+    const payload = buildCreateAgentPayload(BASE_CREATE_INPUT);
+    expect(payload).not.toHaveProperty('platformAssessment');
+  });
+
+  it('omits platformAssessment when platformAssessmentEnabled is explicitly false', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, platformAssessmentEnabled: false });
+    expect(payload).not.toHaveProperty('platformAssessment');
+  });
+
+  it('includes platformAssessment as an object when enabled', () => {
+    const payload = buildCreateAgentPayload({
+      ...BASE_CREATE_INPUT,
+      platformAssessmentEnabled: true,
+      platformAssessmentReviewIntervalHours: '24',
+    });
+    expect(payload.platformAssessment).toEqual({ enabled: true, reviewIntervalMs: 24 * 3_600_000 });
+  });
+
+  it('includes platformAssessment without reviewIntervalMs when hours is unset', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, platformAssessmentEnabled: true });
+    expect(payload.platformAssessment).toEqual({ enabled: true });
+  });
+});
+
 describe('buildUpdateAgentPayload — emailDelivery mapping', () => {
   it('sends notificationPolicy: null when emailDelivery is "inherit" (clears override)', () => {
     const payload = buildUpdateAgentPayload({ ...BASE_UPDATE_INPUT, emailDelivery: 'inherit' });
@@ -687,6 +1297,80 @@ describe('buildUpdateAgentPayload — sliageBps null regression', () => {
       maxSlippageBps: '50',
     });
     expect(payload.executionDefaults).toMatchObject({ slippageBps: 50 });
+  });
+});
+
+describe('buildCreateAgentPayload — sliageBps null regression', () => {
+  it('omits sliageBps from executionDefaults when maxSlippageBps is empty', () => {
+    const payload = buildCreateAgentPayload({
+      ...BASE_CREATE_INPUT,
+      requiresTradingSetup: true,
+      maxSlippageBps: '',
+    });
+    // Create path doesn't send executionDefaults at all when mode is not set
+    // (requiresTradingSetup needs connections for mode resolution).
+    // The key invariant: if executionDefaults is present, sliageBps is not null.
+    if (payload.executionDefaults) {
+      expect(payload.executionDefaults).not.toHaveProperty('slippageBps');
+    }
+  });
+
+  it('includes sliageBps in executionDefaults when maxSlippageBps is a number', () => {
+    const payload = buildCreateAgentPayload({
+      ...BASE_CREATE_INPUT,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      connectionIds: ['conn-1'],
+      maxSlippageBps: '75',
+    });
+    expect(payload.executionDefaults).toMatchObject({ mode: 'shadow', slippageBps: 75 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// blank goal
+// ---------------------------------------------------------------------------
+
+describe('buildCreateAgentPayload — blank goal', () => {
+  it('stores an empty prompt when goal is empty', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, goal: '' });
+    expect(payload.prompt).toBe('');
+  });
+
+  it('stores an empty prompt when goal is whitespace-only', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, goal: '   ' });
+    expect(payload.prompt).toBe('');
+  });
+
+  it('uses user goal when provided', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, goal: 'Trade aggressively' });
+    expect(payload.prompt).toBe('Trade aggressively');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// permissionLevel — create payload
+// ---------------------------------------------------------------------------
+
+describe('buildCreateAgentPayload — permissionLevel', () => {
+  it('includes permissionLevel when explicitly set to "restricted"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, permissionLevel: 'restricted' });
+    expect(payload.permissionLevel).toBe('restricted');
+  });
+
+  it('includes permissionLevel when explicitly set to "standard"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, permissionLevel: 'standard' });
+    expect(payload.permissionLevel).toBe('standard');
+  });
+
+  it('includes permissionLevel when explicitly set to "full"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, permissionLevel: 'full' });
+    expect(payload.permissionLevel).toBe('full');
+  });
+
+  it('defaults permissionLevel to "standard" when undefined', () => {
+    const payload = buildCreateAgentPayload(BASE_CREATE_INPUT);
+    expect(payload.permissionLevel).toBe('standard');
   });
 });
 

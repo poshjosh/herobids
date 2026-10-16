@@ -369,6 +369,9 @@ export async function agentInteractivityRoutes(
       return reply.status(409).send({ error: 'agent_not_running', message: 'Agent is not running' });
     }
 
+    // Record the user's message so the conversation still shows it after reload.
+    await new AgentRepository(db).insertOutboundMessage({ agentId: id, authoredBy: 'user', body: parsed.data.message });
+
     // Publish to agent:outbound:{agentId} — the platform→agent channel
     const envelope = {
       schemaVersion: 'v1',

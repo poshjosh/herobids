@@ -36,18 +36,33 @@ export function AgentConversationView({ agentName, messages, canSend, draft, isS
       {messages.length === 0 ? (
         <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.empty' })}</p>
       ) : (
-        <ul>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {/* API returns newest first */}
-          {[...messages].reverse().map((message) => (
-            <li key={message.id}>
-              <strong>{message.authoredBy === 'agent'
-                ? intl.formatMessage({ id: 'agentDetail.conversation.fromAgent' })
-                : intl.formatMessage({ id: 'agentDetail.conversation.fromPlatform' })}</strong>
-              {' '}
-              {message.body}
-            </li>
-          ))}
-        </ul>
+          {[...messages].reverse().map((message) => {
+            const fromUser = message.authoredBy === 'user';
+            return (
+              <div key={message.id} style={{ display: 'flex', justifyContent: fromUser ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '80%',
+                  padding: '8px 12px',
+                  borderRadius: '12px',
+                  fontSize: '0.875rem',
+                  whiteSpace: 'pre-wrap',
+                  background: fromUser ? 'var(--color-brand-subtle)' : 'var(--color-surface-2)',
+                }}>
+                  {!fromUser && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '2px' }}>
+                      {message.authoredBy === 'agent'
+                        ? intl.formatMessage({ id: 'agentDetail.conversation.fromAgent' })
+                        : intl.formatMessage({ id: 'agentDetail.conversation.fromPlatform' })}
+                    </div>
+                  )}
+                  {message.body}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
       {canSend ? null : <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.notRunning' })}</p>}
       <div

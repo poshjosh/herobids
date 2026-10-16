@@ -1,14 +1,20 @@
 import { useNavigate } from 'react-router';
-import { useQueryClient } from '@tanstack/react-query';
-import { useIntl } from 'react-intl';
-import { PageShell, PageHeader } from '../../lib/ui.js';
-import { CreateAgentForm } from './CreateAgentForm.js';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { skills as skillsApi } from '../../lib/api-client.js';
+import { PageShell } from '../../lib/ui.js';
+import { listSelectableSkills } from './agent-display.js';
+import { CreateAgentFlow } from './CreateAgentFlow.js';
 
-/** Dedicated page for creating an AI agent: optional name and channel. */
+/** Dedicated page for creating a new AI agent. */
 export function CreateAgentPage() {
-  const intl = useIntl();
   const navigate = useNavigate();
   const qc = useQueryClient();
+
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => skillsApi.list({ scope: 'selectable' }),
+  });
+  const selectableSkills = listSelectableSkills(skillsQuery.data?.skills ?? []);
 
   const handleCreated = (id: string) => {
     void qc.invalidateQueries({ queryKey: ['agents'] });
@@ -17,9 +23,11 @@ export function CreateAgentPage() {
 
   return (
     <PageShell>
-      <PageHeader title={intl.formatMessage({ id: 'agents.create.title' })} />
-      <CreateAgentForm
-        onCancel={() => navigate('/agents')}
+      <CreateAgentFlow
+        skills={selectableSkills}
+        skillsLoading={skillsQuery.isLoading}
+        skillsError={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
+        onClose={() => navigate('/agents')}
         onCreated={handleCreated}
       />
     </PageShell>

@@ -23,6 +23,9 @@ function joinWithDetail(prefix: string, suffix: string): string {
 
 export function localizeApiError(intl: IntlShape, error: unknown, fallbackId: string): string {
   if (error instanceof ApiError) {
+    if (error.code === 'internal_error') {
+      return intl.formatMessage({ id: 'errors.internal', defaultMessage: error.message }, { reference: error.correlationId ?? '' });
+    }
     try {
       const localized = intl.formatMessage(
         { id: error.code, defaultMessage: error.message },

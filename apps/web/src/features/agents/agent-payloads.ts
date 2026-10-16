@@ -1,3 +1,4 @@
+import type { ProviderSetupResult } from '../../lib/api-client.js';
 import type { CapabilityMode, HybridMode } from './CapabilitySelector.js';
 import type { TechnicalConfig } from './technical-config-helpers.js';
 import type { RuntimePolicyOverrides } from './style-mapping.js';
@@ -87,6 +88,55 @@ function buildEmailDeliveryPolicy(emailDelivery: 'inherit' | 'allow' | 'disable'
   return undefined;
 }
 
+export interface CreateAgentIntentPayloadInput {
+  name: string;
+  goal: string;
+  capabilityMode: CapabilityMode;
+  hybridMode: HybridMode;
+  technicalPreFilterEnabled: boolean;
+  technical: TechnicalConfig | null;
+  skillIds: string[];
+  hasBotManagementSkill: boolean;
+  requiresTradingSetup: boolean;
+  executionMode: 'test' | 'live';
+  executionVenue?: string;
+  connectionIds?: string[];
+  modelPayload: {
+    inherits: boolean;
+    provider?: string | null;
+    lightModel?: string | null;
+    heavyModel?: string | null;
+  };
+  costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
+  dailySpendBudgetUsd: string;
+  telegramChatId: string;
+  emailDelivery?: 'inherit' | 'allow' | 'disable';
+  tickIntervalMins: string;
+  capital: string;
+  dailyMaxLossPct: string;
+  maxDrawdownPct: string;
+  maxSlippageBps: string;
+  maxOpenPositions: string;
+  maxPositionSizePct: string;
+  stopLossPct: string;
+  stopLossCooldownSecs: string;
+  style?: string;
+  strategyPreset?: string;
+  /** When true, enable platform preset assessment for this agent. */
+  platformAssessmentEnabled?: boolean;
+  /** Review interval in hours: "12", "24", "48", "96", or empty string for unset. */
+  platformAssessmentReviewIntervalHours?: string;
+  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
+  runtimePolicyOverrides?: RuntimePolicyOverrides;
+  subscribedSources?: string[];
+  /** Product preset identifier (trading, direct-trading, trading-assistant, etc.). */
+  skillPresetId?: string;
+  /** Authorization mode: 'direct' or 'approval_required'. Only meaningful for trading agents. */
+  authorizationMode?: 'direct' | 'approval_required';
+  /** Container permission level. */
+  permissionLevel?: 'restricted' | 'standard' | 'full';
+}
+
 export interface UpdateAgentPayloadInput {
   name: string;
   prompt: string;
@@ -135,6 +185,99 @@ export interface UpdateAgentPayloadInput {
   authorizationMode?: 'direct' | 'approval_required';
   /** Container permission level. */
   permissionLevel?: 'restricted' | 'standard' | 'full';
+}
+
+export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
+  name: string;
+  prompt: string;
+  skillIds: string[];
+  connectionIds?: string[];
+  executionVenue?: string;
+  provider?: string | null;
+  lightModel?: string | null;
+  heavyModel?: string | null;
+  costPreset?: 'minimal' | 'standard' | 'premium' | 'custom';
+  dailySpendBudgetUsd?: number;
+  telegramChatId?: string;
+  risk?: Record<string, unknown>;
+  executionDefaults?: Record<string, unknown>;
+  tickIntervalMs?: number;
+  capital?: string;
+  capabilityMode?: CapabilityMode;
+  hybridMode?: HybridMode;
+  technical?: Record<string, unknown>;
+  strategyPreset?: string;
+  style?: string;
+  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
+  runtimePolicyOverrides?: RuntimePolicyOverrides | null;
+  wakePreferences?: { subscribedSources?: string[] } | null;
+  notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
+  platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number };
+  skillPresetId?: string;
+  authorizationMode?: 'direct' | 'approval_required';
+  permissionLevel?: 'restricted' | 'standard' | 'full';
+} {
+  // Build canonical risk posture (WP4 shared value object)
+  const risk: Record<string, unknown> = {};
+  if (input.dailyMaxLossPct?.trim()) risk.dailyMaxLossPct = parseFloat(input.dailyMaxLossPct);
+  if (input.maxDrawdownPct?.trim()) risk.maxDrawdownPct = parseFloat(input.maxDrawdownPct);
+  if (input.maxOpenPositions) risk.maxOpenPositions = parseInt(input.maxOpenPositions, 10);
+  if (input.maxPositionSizePct) risk.maxPositionSizePct = parseFloat(input.maxPositionSizePct);
+  if (input.stopLossPct) risk.stopLossPct = parseFloat(input.stopLossPct);
+  if (input.stopLossCooldownSecs) risk.stopLossCooldownMs = parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined;
+
+  // Build canonical execution defaults (WP4 shared value object)
+  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
+  const executionDefaults: Record<string, unknown> = {};
+  if (includeIntelligence && input.requiresTradingSetup) executionDefaults.mode = resolveCanonicalExecutionMode(input.executionMode, (input.connectionIds ?? []).length > 0);
+  if (input.maxSlippageBps) executionDefaults.slippageBps = parseInt(input.maxSlippageBps, 10);
+
+  const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
+  const includeTechnical = input.technicalPreFilterEnabled;
+  const includeAuthorizationMode = includeIntelligence && input.requiresTradingSetup;
+
+  const subscribedSources = input.subscribedSources ?? [];
+  const wakePreferences: { subscribedSources?: string[] } | undefined =
+    subscribedSources.length > 0 ? { subscribedSources } : undefined;
+  const emailDeliveryPolicy = buildEmailDeliveryPolicy(input.emailDelivery);
+  const platformAssessment = buildPlatformAssessmentPayload(input.platformAssessmentEnabled, input.platformAssessmentReviewIntervalHours);
+
+  return {
+    name: input.name.trim(),
+    prompt: includeIntelligence ? input.goal.trim() : '',
+    skillIds: includeIntelligence ? [...input.skillIds] : [],
+    ...((input.connectionIds ?? []).length > 0 ? { connectionIds: input.connectionIds } : {}),
+    ...(input.executionVenue?.trim() ? { executionVenue: input.executionVenue.trim() } : {}),
+    ...(includeIntelligence && !input.modelPayload.inherits && input.modelPayload.provider ? {
+      provider: input.modelPayload.provider,
+      ...(input.modelPayload.lightModel ? { lightModel: input.modelPayload.lightModel } : {}),
+      ...(input.modelPayload.heavyModel ? { heavyModel: input.modelPayload.heavyModel } : {}),
+    } : {}),
+    ...(input.costPreset ? { costPreset: input.costPreset } : {}),
+    ...(input.dailySpendBudgetUsd ? { dailySpendBudgetUsd: parseFloat(input.dailySpendBudgetUsd) } : {}),
+    ...(input.telegramChatId.trim() ? { telegramChatId: input.telegramChatId.trim() } : {}),
+    ...(emailDeliveryPolicy !== undefined ? { notificationPolicy: emailDeliveryPolicy } : {}),
+    ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
+    ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
+    ...(Object.keys(risk).length > 0 ? { risk } : {}),
+    ...(Object.keys(executionDefaults).length > 0 ? { executionDefaults } : {}),
+    ...(input.style ? { style: input.style } : {}),
+    ...(input.strategyPreset !== undefined ? { strategyPreset: input.strategyPreset } : {}),
+    ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
+    ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
+    ...(includeTechnical && input.technical ? { technical: { ...input.technical } } : {}),
+    ...(wakePreferences ? { wakePreferences } : {}),
+    capabilityMode: input.capabilityMode,
+    ...(input.capabilityMode === 'hybrid' ? { hybridMode: input.hybridMode } : {}),
+    ...(platformAssessment ? { platformAssessment } : {}),
+    ...(input.skillPresetId ? { skillPresetId: input.skillPresetId } : {}),
+    ...(includeAuthorizationMode && input.authorizationMode ? { authorizationMode: input.authorizationMode } : {}),
+    permissionLevel: input.permissionLevel ?? 'standard',
+  };
+}
+
+export function resolveCreateAgentConnectionIds(connection: ProviderSetupResult['connection'] | null | undefined): string[] {
+  return connection?.id ? [connection.id] : [];
 }
 
 export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {

@@ -130,12 +130,16 @@ export function SetupProviderLinkPage() {
   return (
     <>
       {connectionRequest && (
-        <UseExistingConnectionPanel
-          requestId={connectionRequest.requestId}
-          provider={connectionRequest.provider}
-          agentName={connectionRequest.agentName}
-          onDone={() => navigate('/agents', { replace: true })}
-        />
+        <div style={{ padding: '48px 24px 0' }}>
+          <div style={{ maxWidth: 'var(--content-max-width)', margin: '0 auto' }}>
+            <UseExistingConnectionPanel
+              requestId={connectionRequest.requestId}
+              provider={connectionRequest.provider}
+              agentName={connectionRequest.agentName}
+              onDone={() => navigate('/agents', { replace: true })}
+            />
+          </div>
+        </div>
       )}
       <ProviderSetupForm
         standalone

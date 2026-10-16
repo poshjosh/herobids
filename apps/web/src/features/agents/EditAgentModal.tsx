@@ -529,7 +529,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   };
 
   return (
-    <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose} closeOnBackdropClick={false} maxWidth="752px">
+    <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose} closeOnBackdropClick={false} maxWidth="var(--content-max-width)">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <form id="edit-agent-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <AgentIdentityFields

@@ -84,7 +84,6 @@ export function AgentsPage() {
           {query.isLoading && <LoadingRows count={3} />}
           {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
 
-          <div className="agents-content">
           {/* ── Summary metrics ─────────────────────────────────────── */}
           {query.isSuccess && items.length > 0 && (
             <div className="metrics-summary-row">
@@ -102,7 +101,6 @@ export function AgentsPage() {
               ))}
             </div>
           )}
-          </div>
         </>
       )}
 

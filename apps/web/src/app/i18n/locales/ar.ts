@@ -30,6 +30,7 @@ export const messages: Record<string, string> = {
   'common.loading': 'جارٍ التحميل…',
   'common.retry': 'إعادة المحاولة',
   'common.errorTitle': 'حدث خطأ ما',
+  'errors.internal': 'Something went wrong on our side. Try again. If it keeps happening, send this reference to support: {reference}',
   'common.pleaseWait': 'يرجى الانتظار…',
 
   // Auth
