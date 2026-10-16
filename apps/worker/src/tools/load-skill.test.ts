@@ -98,7 +98,7 @@ describe('load_skill', () => {
   it('rejects a platform skill slug, since load_skill is for external skills only', async () => {
     const result = await loadSkillTool.execute({ ref: 'system/programming' }, makeCtx());
     expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('validation.invalid_params');
+    expect(result.errorCode).toBe('skill.not_external');
     expect(addExecute).not.toHaveBeenCalled();
   });
 });

@@ -8,15 +8,11 @@ import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { normalizeSourceRefToSlug } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
 import { addSkillsTool } from './skills.js';
-import { readSkillTool } from './read-skill.js';
+import { readSkillTool, checkSkillRefForRead } from './read-skill.js';
 
 const LoadSkillParamsSchema = z.object({
   ref: z.string().min(1).describe('The external skill ref, e.g. "traderton/skills/crypto-trading", as listed by search_skills.'),
 });
-
-function isExternalRef(ref: string): boolean {
-  return ref.includes('/') && !ref.startsWith('system/');
-}
 
 async function executeLoadSkill(params: unknown, ctx: ToolContext): Promise<ToolResult> {
   const parsed = LoadSkillParamsSchema.safeParse(params);
@@ -24,13 +20,8 @@ async function executeLoadSkill(params: unknown, ctx: ToolContext): Promise<Tool
     return { success: false, error: 'Invalid parameters', errorCode: 'validation.invalid_params' };
   }
   const rawRef = parsed.data.ref.trim();
-  if (!isExternalRef(rawRef)) {
-    return {
-      success: false,
-      error: `"${rawRef}" is not an external skill ref. load_skill takes owner/repo/skill refs; use add_skills for platform skills such as system/programming.`,
-      errorCode: 'validation.invalid_params',
-    };
-  }
+  const refError = checkSkillRefForRead(rawRef);
+  if (refError) return refError;
   const ref = normalizeSourceRefToSlug(rawRef);
 
   const session = ctx.externalSkillSession;

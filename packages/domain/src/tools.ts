@@ -211,7 +211,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
   list_skills:         { category: 'read-database',       description: 'List skills assigned to this agent and skills available to add.' },
   list_providers:      { category: 'read-database',       description: 'List connection providers and show which are owned or granted to this agent.' },
-  search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the platform catalog and the external skill registry.' },
+  search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the system skills/platform catalog and the external skill registry.' },
   // write-database
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },

@@ -52,8 +52,22 @@ TINTEL_AGENT_PROMPT="Grow this portfolio aggressively"
 # Security audit agent (non-trading)
 SECURITY_AUDIT_NAME="security-auditor"
 SECURITY_AUDIT_TICK_INTERVAL_MS="86400000"  # 24 hours
-SECURITY_AUDIT_SKILL_IDS='["web-access","programming","file-management"]'
+SECURITY_AUDIT_SKILL_IDS='["web-access","programming","file-management","platform-docs"]'
 SECURITY_AUDIT_PROMPT_FILE="${REPO_ROOT}/docs/agents/prompts/security-audit-prompt.md"
+
+# Skill testers (non-trading, run-once: created stopped, started by run-tester-once.sh)
+# 24h tick so the agent never re-runs during a single manual run.
+TESTER_TICK_INTERVAL_MS="86400000"
+
+# external-skills-tester — loads each external skill and reports failures (uses Hyperliquid connection)
+EXTERNAL_TESTER_NAME="external-skills-tester"
+EXTERNAL_TESTER_SKILL_IDS='["email","traderton/skills/crypto-trading","traderton/skills/crypto-risk-monitoring","traderton/skills/crypto-bot-management","traderton/skills/ai4trade-trading-signals","openaidom/skills/lost-or-stolen-item-finder","openaidom/skills/flight-deal-monitoring","openaidom/skills/raw-text-to-bitwarden-csv-converter"]'
+EXTERNAL_TESTER_PROMPT_FILE="${REPO_ROOT}/docs/agents/prompts/external-skills-tester-prompt.md"
+
+# system-skills-tester — loads each system skill one after another (starts with none)
+SYSTEM_TESTER_NAME="system-skills-tester"
+SYSTEM_TESTER_SKILL_IDS='[]'
+SYSTEM_TESTER_PROMPT_FILE="${REPO_ROOT}/docs/agents/prompts/system-skills-tester-prompt.md"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -386,6 +400,7 @@ build_non_trading_agent_payload() {
   local prompt="$2"
   local skill_ids_json="$3"
   local tick_interval_ms="$4"
+  local connection_ids_json="${5:-[]}"
   jq -n \
     --arg name "$name" \
     --arg prompt "$prompt" \
@@ -395,6 +410,7 @@ build_non_trading_agent_payload() {
     --arg tickIntervalMs "$tick_interval_ms" \
     --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     --argjson skillIds "$skill_ids_json" \
+    --argjson connectionIds "$connection_ids_json" \
     '{
       name: $name,
       prompt: $prompt,
@@ -406,7 +422,7 @@ build_non_trading_agent_payload() {
       runtimePolicyOverrides: { maxHoldDurationMs: 0 },
       telegramChatId: $telegramChatId,
       capital: "1000"
-    }'
+    } + (if ($connectionIds | length) > 0 then { connectionIds: $connectionIds, executionDefaults: { mode: "shadow" } } else {} end)'
 }
 
 create_non_trading_agent() {
@@ -414,6 +430,7 @@ create_non_trading_agent() {
   local prompt="$2"
   local skill_ids_json="$3"
   local tick_interval_ms="$4"
+  local connection_ids_json="${5:-[]}"
 
   log_section "Creating agent: ${name}"
 
@@ -430,7 +447,7 @@ create_non_trading_agent() {
   fi
 
   local payload
-  payload="$(build_non_trading_agent_payload "$name" "$prompt" "$skill_ids_json" "$tick_interval_ms")"
+  payload="$(build_non_trading_agent_payload "$name" "$prompt" "$skill_ids_json" "$tick_interval_ms" "$connection_ids_json")"
 
   api_call POST /agents "$payload"
 
@@ -467,6 +484,26 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Step 4b — Create skill-tester agents (run-once, created stopped)
+# ---------------------------------------------------------------------------
+
+if [[ ! -f "$EXTERNAL_TESTER_PROMPT_FILE" ]]; then
+  log_warn "External tester prompt not found at ${EXTERNAL_TESTER_PROMPT_FILE} — skipping external-skills-tester"
+  EXTERNAL_TESTER_ID="(skipped)"
+else
+  EXTERNAL_TESTER_PROMPT="$(<"$EXTERNAL_TESTER_PROMPT_FILE")"
+  EXTERNAL_TESTER_ID="$(create_non_trading_agent "$EXTERNAL_TESTER_NAME" "$EXTERNAL_TESTER_PROMPT" "$EXTERNAL_TESTER_SKILL_IDS" "$TESTER_TICK_INTERVAL_MS" "$(jq -n --arg id "$HYPERLIQUID_CONNECTION_ID" '[$id]')")"
+fi
+
+if [[ ! -f "$SYSTEM_TESTER_PROMPT_FILE" ]]; then
+  log_warn "System tester prompt not found at ${SYSTEM_TESTER_PROMPT_FILE} — skipping system-skills-tester"
+  SYSTEM_TESTER_ID="(skipped)"
+else
+  SYSTEM_TESTER_PROMPT="$(<"$SYSTEM_TESTER_PROMPT_FILE")"
+  SYSTEM_TESTER_ID="$(create_non_trading_agent "$SYSTEM_TESTER_NAME" "$SYSTEM_TESTER_PROMPT" "$SYSTEM_TESTER_SKILL_IDS" "$TESTER_TICK_INTERVAL_MS")"
+fi
+
+# ---------------------------------------------------------------------------
 # Step 5 — Summary
 # ---------------------------------------------------------------------------
 
@@ -475,5 +512,7 @@ log_ok "thyper           → id=${THYPER_ID}  connection=Hyperliquid (${HYPERLIQ
 log_ok "t1inch           → id=${T1INCH_ID}  connection=1inch (${ONEINCH_CONNECTION_ID})"
 log_ok "tintel           → id=${TINTEL_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
 log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
+log_ok "external-skills-tester → id=${EXTERNAL_TESTER_ID}  connection=Hyperliquid (run-once)"
+log_ok "system-skills-tester → id=${SYSTEM_TESTER_ID}  (run-once)"
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."

@@ -95,6 +95,36 @@ describe('read_skill', () => {
     expect(result.errorCode).toBe('skill.not_assigned');
   });
 
+  it('rejects a system skill with skill.not_external and does not attempt an install', async () => {
+    const installer = fakeInstaller({ writeSkill: true });
+    const result = await readSkillTool.execute({ ref: 'system/programming' }, makeCtx(undefined, installer));
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('skill.not_external');
+    expect(String(result.error)).toContain('add_skills');
+    expect(installer.install).not.toHaveBeenCalled();
+  });
+
+  it('rejects a system skill that is assigned, with skill.not_external', async () => {
+    const session = makeSession(true);
+    const result = await readSkillTool.execute({ ref: 'system/email' }, makeCtx(session));
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('skill.not_external');
+  });
+
+  it('rejects an unknown system skill with skill.unknown and lists the valid slugs', async () => {
+    const result = await readSkillTool.execute({ ref: 'system/programing' }, makeCtx(undefined));
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('skill.unknown');
+    expect(String(result.error)).toContain('system/programming');
+  });
+
+  it('rejects a bare name with skill.invalid_ref', async () => {
+    const result = await readSkillTool.execute({ ref: 'programming' }, makeCtx(undefined));
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('skill.invalid_ref');
+    expect(String(result.error)).toContain('search_skills');
+  });
+
   it('reports temporarily unavailable when this session marked the install failed', async () => {
     const session = makeSession(false);
     const result = await readSkillTool.execute({ ref: REF }, makeCtx(session));

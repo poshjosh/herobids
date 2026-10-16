@@ -371,7 +371,7 @@ Update BASE_SKILL instructions to:
 
 ```text
 - Use `list_skills` to see what skills you have and what platform skills are available to add. Skills are identified by their slug (e.g. system/trading, system/programming).
-- Use `search_skills` to find skills by keyword. It searches both the platform catalog and external skills via skills.sh.
+- Use `search_skills` to find skills by keyword. It searches both the system skills/platform catalog and external skills via skills.sh.
 - Use `add_skills` to add skills by slug. Dependencies are added automatically unless you set includeDependencies to false. For external skills (e.g. twostraws/swiftui-agent-skill), the platform installs them and adds the file-management skill so you can read the installed instructions.
 - Use `remove_skills` to drop skills by slug.
 ```

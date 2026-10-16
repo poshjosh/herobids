@@ -1,19 +1,19 @@
 # Unified Skill Discoverability — Implementation Plan
 
 **Status:** Ready for implementation
-**Scope:** `search_skills` tool (local platform catalog + skills.sh discovery flow), `list_skills` response hint, BASE_SKILL instruction update, derived skill dependency surfacing in tool responses and skill views
+**Scope:** `search_skills` tool (local system skills/platform catalog + skills.sh discovery flow), `list_skills` response hint, BASE_SKILL instruction update, derived skill dependency surfacing in tool responses and skill views
 **Parent:** `docs/features/2026/08/28/002-dynamic-skill-management/001-plan.md`
 
 ---
 
 ## Problem
 
-Agents have no implicit awareness that external skills exist. The current BASE_SKILL instructions tell agents about `list_skills`, `add_skills`, and `remove_skills`, all of which operate on the internal platform catalog. External skills are only practically accessible if:
+Agents have no implicit awareness that external skills exist. The current BASE_SKILL instructions tell agents about `list_skills`, `add_skills`, and `remove_skills`, all of which operate on the internal system skills/platform catalog. External skills are only practically accessible if:
 
 1. The agent already has the "External Skills Manager" skill assigned, or
 2. The user explicitly tells the agent to use that flow.
 
-Without either, agents that need a capability outside the platform catalog fall back to ad hoc web browsing, manual repository inspection, or simply give up.
+Without either, agents that need a capability outside the system skills/platform catalog fall back to ad hoc web browsing, manual repository inspection, or simply give up.
 
 There is a second usability gap: skill dependencies are implicit. A skill may rely on tools that are primarily provided by another platform skill, but that relationship is not surfaced anywhere. The result is avoidable dead ends where an agent successfully adds instructions yet still lacks the platform tools those instructions assume.
 
@@ -43,9 +43,9 @@ No. Discovery and installation remain separate:
 
 Four changes:
 
-1. **`search_skills` tool** — a new BASE_SKILL tool that searches both the local platform catalog and the standard skills.sh discovery flow (`npx skills find ...`). It returns unified results with clear source labels.
+1. **`search_skills` tool** — a new BASE_SKILL tool that searches both the local system skills/platform catalog and the standard skills.sh discovery flow (`npx skills find ...`). It returns unified results with clear source labels.
 
-2. **`list_skills` response hint** — when `list_skills` returns results, include a hint pointing the agent toward `search_skills` when the capability it needs is not in the platform catalog.
+2. **`list_skills` response hint** — when `list_skills` returns results, include a hint pointing the agent toward `search_skills` when the capability it needs is not in the system skills/platform catalog.
 
 3. **BASE_SKILL instruction update** — add guidance that `search_skills` can discover both platform skills and external skills, while keeping installation as a separate step.
 
@@ -171,7 +171,7 @@ The system should report missing dependencies, not silently add them.
 
 ```text
 - Use `list_skills` to see what skills you have and what platform skills are available to add.
-- Use `search_skills` to find skills by keyword. It searches both the platform catalog and the standard skills.sh discovery flow.
+- Use `search_skills` to find skills by keyword. It searches both the system skills/platform catalog and the standard skills.sh discovery flow.
 - Use `add_skills` to adopt platform skills. The response may tell you about dependency skills you should also add.
 - Use `remove_skills` to drop skills you no longer need.
 - External skills are instruction bundles. Discovering them does not install them. If you need to install one, you may first need the `programming` skill so you can use `execute_code` with the documented skills.sh workflow.

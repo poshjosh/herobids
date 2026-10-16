@@ -12,8 +12,41 @@ import { readInstalledSkillBody, stripFrontmatter } from '../external-skill-star
 import { normalizeSourceRefToSlug } from '@herobids/db';
 import { createLogger } from '../logger.js';
 import { activateExternalSkill, npxSkillsCliInstaller } from './skills.js';
+import { SYSTEM_SKILL_SLUGS } from '@herobids/domain';
 
 const logger = createLogger('tool:read-skill');
+
+/**
+ * Shape and kind checks on a raw skill ref. Runs before any install or session
+ * lookup, so a system or malformed ref never reaches the skills.sh CLI.
+ * Returns an error result, or null when the ref is a plausible external ref.
+ * Shared with `load_skill`.
+ */
+export function checkSkillRefForRead(rawRef: string): ToolResult | null {
+  if (rawRef.startsWith('system/')) {
+    if (SYSTEM_SKILL_SLUGS.has(rawRef)) {
+      return {
+        success: false,
+        error: `"${rawRef}" is a system skill. read_skill only loads external skills. Use add_skills to enable it; its tools then become available directly.`,
+        errorCode: 'skill.not_external',
+      };
+    }
+    const validSlugs = [...SYSTEM_SKILL_SLUGS.keys()].join(', ');
+    return {
+      success: false,
+      error: `"${rawRef}" is not a known system skill. Valid system skills: ${validSlugs}.`,
+      errorCode: 'skill.unknown',
+    };
+  }
+  if (!rawRef.includes('/')) {
+    return {
+      success: false,
+      error: `"${rawRef}" is not a valid skill ref. System skills use slugs such as system/programming. External skills use owner/repo/skill. Use search_skills to find a skill.`,
+      errorCode: 'skill.invalid_ref',
+    };
+  }
+  return null;
+}
 
 /**
  * Which backend tools the loaded skill can call this session, and why a tagged tool
@@ -65,7 +98,10 @@ async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<Tool
   if (!parsed.success) {
     return { success: false, error: 'Invalid parameters', errorCode: 'validation.invalid_params' };
   }
-  const ref = normalizeSourceRefToSlug(parsed.data.ref.trim());
+  const rawRef = parsed.data.ref.trim();
+  const refError = checkSkillRefForRead(rawRef);
+  if (refError) return refError;
+  const ref = normalizeSourceRefToSlug(rawRef);
 
   const session = ctx.externalSkillSession;
   if (session) {
@@ -73,7 +109,7 @@ async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<Tool
     if (!assigned.has(ref)) {
       return {
         success: false,
-        error: `Skill "${ref}" is not assigned to this agent. Use list_skills to see assigned skills, or add_skills to add it.`,
+        error: `Skill "${ref}" is not assigned to this agent. Use list_skills to see assigned skills, or add_skills to add it. If it was added in this session, it may take effect on the next tick.`,
         errorCode: 'skill.not_assigned',
       };
     }

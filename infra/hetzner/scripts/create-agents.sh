@@ -62,6 +62,16 @@ if [[ ! -f "$SECURITY_AUDIT_PROMPT_FILE" ]]; then
 fi
 SECURITY_AUDIT_PROMPT="$(<"$SECURITY_AUDIT_PROMPT_FILE")"
 
+# Skill testers: non-trading, run-once (created stopped; started via scripts/shell/run/run-tester-once.sh)
+TESTER_TICK_INTERVAL_MS="${TESTER_TICK_INTERVAL_MS:-86400000}"
+EXTERNAL_TESTER_PROMPT_FILE="${EXTERNAL_TESTER_PROMPT_FILE:-${REPO_ROOT}/docs/agents/prompts/external-skills-tester-prompt.md}"
+SYSTEM_TESTER_PROMPT_FILE="${SYSTEM_TESTER_PROMPT_FILE:-${REPO_ROOT}/docs/agents/prompts/system-skills-tester-prompt.md}"
+for prompt_file in "$EXTERNAL_TESTER_PROMPT_FILE" "$SYSTEM_TESTER_PROMPT_FILE"; do
+  [[ -f "$prompt_file" ]] || die "Tester prompt not found: ${prompt_file}"
+done
+EXTERNAL_TESTER_PROMPT="$(<"$EXTERNAL_TESTER_PROMPT_FILE")"
+SYSTEM_TESTER_PROMPT="$(<"$SYSTEM_TESTER_PROMPT_FILE")"
+
 # ─── Trading agent definitions ───────────────────────────────────────────────
 
 PLATFORM_ASSESSMENT_3H='{"enabled":true,"reviewIntervalMs":10800000}'
@@ -461,9 +471,51 @@ SECURITY_AUDITOR_ID="$(create_agent "security-auditor" "$(jq -n \
       provider: $provider,
       lightModel: $lightModel,
       heavyModel: $heavyModel,
-      skillIds: ["web-access","programming","file-management","task-management"],
+      skillIds: ["web-access","programming","file-management","task-management","platform-docs"],
       tickIntervalMs: ($tickIntervalMs | tonumber),
       runtimePolicyOverrides: { maxHoldDurationMs: 0 }
+    }')")"
+
+# Testers: created stopped; a single run is started by scripts/shell/run/run-tester-once.sh
+EXTERNAL_TESTER_ID="$(create_agent "external-skills-tester" "$(jq -n \
+    --arg name "external-skills-tester" \
+    --arg prompt "$EXTERNAL_TESTER_PROMPT" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg lightModel "$AGENT_LIGHT_MODEL" \
+    --arg heavyModel "$AGENT_HEAVY_MODEL" \
+    --arg tickIntervalMs "$TESTER_TICK_INTERVAL_MS" \
+    --arg connectionId "$HYPERLIQUID_CONNECTION_ID" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      provider: $provider,
+      lightModel: $lightModel,
+      heavyModel: $heavyModel,
+      skillIds: ["email","traderton/skills/crypto-trading","traderton/skills/crypto-risk-monitoring","traderton/skills/crypto-bot-management","traderton/skills/ai4trade-trading-signals","openaidom/skills/lost-or-stolen-item-finder","openaidom/skills/flight-deal-monitoring","openaidom/skills/raw-text-to-bitwarden-csv-converter"],
+      tickIntervalMs: ($tickIntervalMs | tonumber),
+      runtimePolicyOverrides: { maxHoldDurationMs: 0 },
+      connectionIds: [$connectionId],
+      executionDefaults: { mode: "shadow" },
+      capital: "1000"
+    }')")"
+
+SYSTEM_TESTER_ID="$(create_agent "system-skills-tester" "$(jq -n \
+    --arg name "system-skills-tester" \
+    --arg prompt "$SYSTEM_TESTER_PROMPT" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg lightModel "$AGENT_LIGHT_MODEL" \
+    --arg heavyModel "$AGENT_HEAVY_MODEL" \
+    --arg tickIntervalMs "$TESTER_TICK_INTERVAL_MS" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      provider: $provider,
+      lightModel: $lightModel,
+      heavyModel: $heavyModel,
+      skillIds: [],
+      tickIntervalMs: ($tickIntervalMs | tonumber),
+      runtimePolicyOverrides: { maxHoldDurationMs: 0 },
+      capital: "1000"
     }')")"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -475,4 +527,6 @@ log_ok "thyper           → id=${THYPER_ID}  connection=Hyperliquid (${HYPERLIQ
 log_ok "t1inch           → id=${T1INCH_ID}  connection=1inch (${ONEINCH_CONNECTION_ID})"
 log_ok "tintel           → id=${TINTEL_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
 log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
+log_ok "external-skills-tester → id=${EXTERNAL_TESTER_ID}  connection=Hyperliquid (run-once)"
+log_ok "system-skills-tester → id=${SYSTEM_TESTER_ID}  (run-once)"
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."
