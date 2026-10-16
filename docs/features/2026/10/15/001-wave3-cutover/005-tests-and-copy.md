@@ -2,6 +2,8 @@
 
 **Depends on:** 002 and 004 (runs alongside each slice; the final sweep runs last).
 
+**Status (2026-10-16):** the E2E helper and journeys were updated to the current create form (name, then Advanced Settings → objective, then Review, then Create AI agent). Journey 3 checks the Activity Timeline; its "Messages to user" check was removed because that text is not in the app. Selectors use `[data-field="name"]`, `[data-field="goal"]` and the Advanced Settings summary. No `data-testid` was added, because that would change the create form. Journeys 1, 3, 4, 14, 18 and 19 pass against the running stack (`BASE_URL=http://localhost:8090`). The full E2E suite has not been rerun since these changes.
+
 ## Unit and component tests to change
 
 - `apps/web/src/features/agents/agent-payloads.test.ts`: many `buildCreateAgentPayload` cases. Remove the create-only cases; keep the edit payload cases.

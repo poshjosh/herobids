@@ -2,6 +2,8 @@
 
 **Depends on:** nothing. **Blocks:** 004.
 
+**Status (2026-10-16): superseded, not built.** The name-and-channel form described below was not built. The create form was restored to the full form: Name first, objective and other settings under Advanced Settings, then a Review step and "Create AI agent". Owner direction: the current form must not be changed. The "Build" steps below do not apply until the owner re-scopes them.
+
 ## Current state
 
 - `apps/web/src/features/agents/CreateAgentPage.tsx` wraps `CreateAgentFlow` from `AgentsPage.tsx`. The flow has goal, style, skill preset, skills, connections, capital, execution mode, strategy, Telegram id, email override, and advanced settings.

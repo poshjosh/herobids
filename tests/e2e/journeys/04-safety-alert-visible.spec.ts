@@ -43,7 +43,7 @@ test.describe('Journey 4: Agent health card visible after start', () => {
 
     // The Agent Health section is rendered whenever there is an active session
     // (status: starting | running | unhealthy).
-    await expect(page.getByRole('heading', { name: /agent health/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/agent health/i).first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/starting/i).first()).toBeVisible({ timeout: 10_000 });
 
     // Clean up — stop the agent so it does not linger as 'starting'

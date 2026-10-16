@@ -103,8 +103,9 @@ export async function getAuthenticatedUserId(page: Page, request: APIRequestCont
 }
 
 /**
- * Create an agent through the create form (name only), then add any skills on
- * the agent detail page. The goal argument is used as the agent name.
+ * Create an agent through the create form (name + objective, then Review and
+ * Create), then add any skills on the agent detail page. The goal argument is
+ * used as the objective, and its first 40 characters as the name.
  */
 export async function createAgent(
   page: Page,
@@ -112,7 +113,11 @@ export async function createAgent(
   options: { skillIds?: string[]; preset?: string } = {},
 ): Promise<string> {
   await page.goto('/agents/new');
-  await page.locator('#create-agent-name').fill(goal.slice(0, 40));
+  await page.locator('[data-field="name"] input').fill(goal.slice(0, 40));
+  // The objective lives in the collapsed Advanced Settings (AI tab).
+  await page.locator('details summary', { hasText: 'Advanced Settings' }).click();
+  await page.locator('[data-field="goal"] textarea').fill(goal);
+  await page.getByRole('button', { name: /^Review/ }).first().click();
   await page.getByRole('button', { name: /^Create AI agent$/i }).click();
 
   const agentUrlPattern = /\/agents\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;

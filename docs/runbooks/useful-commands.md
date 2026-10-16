@@ -46,3 +46,7 @@ curl -v --resolve staging.openaidom.com:443:78.46.192.37 https://staging.openaid
 ```sh
 curl -v --resolve openaidom.com:443:167.233.213.107 https://openaidom.com
 ```
+
+```sh
+BASE_URL=http://localhost:8090 pnpm exec playwright test --reporter=line 2>&1 | tail -150
+```

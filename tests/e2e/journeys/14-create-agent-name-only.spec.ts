@@ -1,8 +1,8 @@
 /**
- * Journey 14: Create an agent with a name only.
+ * Journey 14: Create an agent with a name and an objective.
  *
- * The create form takes an optional name and a channel. The new agent is
- * stopped, the app opens its page, and Start brings it up.
+ * The create form takes a name and an objective, then Review and Create. The
+ * new agent is stopped, the app opens its page, and Start brings it up.
  */
 
 import { test, expect } from '@playwright/test';
@@ -17,7 +17,10 @@ test.describe('Journey 14: create agent with a name only', () => {
     await ensureUserAiModelSettings(page);
 
     await page.goto('/agents/new');
-    await page.locator('#create-agent-name').fill('Name only agent J14');
+    await page.locator('[data-field="name"] input').fill('Name only agent J14');
+    await page.locator('details summary', { hasText: 'Advanced Settings' }).click();
+    await page.locator('[data-field="goal"] textarea').fill('Watch BTC and report daily.');
+    await page.getByRole('button', { name: /^Review/ }).first().click();
     await page.getByRole('button', { name: /^Create AI agent$/i }).click();
 
     await expect(page).toHaveURL(/\/agents\/[0-9a-f-]{36}$/, { timeout: 15_000 });
