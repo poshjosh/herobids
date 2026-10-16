@@ -40,6 +40,13 @@ import { RuntimePolicySection } from './RuntimePolicySection.js';
 
 import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
 
+/**
+ * When true, the create-agent review step shows every entry (goal, style, capability mode,
+ * trading setup, technical scan, escalation policy, etc.). When false, only name, AI models,
+ * skills and connections are shown.
+ */
+const SHOW_FULL_CREATE_REVIEW = false;
+
 type CreateStep = 'intent' | 'review';
 
 interface IntentState {
@@ -689,7 +696,7 @@ export function CreateAgentFlow({
             }}
             onGoalBlur={() => validateFieldOnBlur('goal')}
             goalPlaceholder={intl.formatMessage({ id: resolveGoalPlaceholderKey(intent.skillIds, skills) })}
-            goalLabel={<>{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth' : 'agents.create.goal' })}{' '}<span className="goal-subtitle">{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth.subtitle' : 'agents.create.goal.subtitle' })}</span></>}
+            goalLabel={intl.formatMessage({ id: 'agents.create.goal' })}
             goalError={formErrors.goal}
             pendingFiles={intent.pendingFiles}
             onPendingFilesChange={(pendingFiles) => setIntent((state) => ({ ...state, pendingFiles }))}
@@ -1386,30 +1393,22 @@ export function CreateAgentFlow({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
           <tbody>
             <ReviewRow label={intl.formatMessage({ id: 'agents.create.name' })} value={intent.name.trim()} />
-            <ReviewRow
-              label={intl.formatMessage({ id: 'agents.review.style' })}
-              value={intl.formatMessage({ id: `agents.style.${intent.style}.label` })}
-            />
-            <ReviewRow
-              label={intl.formatMessage({ id: 'agents.review.capabilityMode' })}
-              value={intl.formatMessage({ id: intent.capabilityMode === 'hybrid'
-                ? (intent.hybridMode === 'scanner_gated'
-                  ? 'agents.capability.hybrid.scannerGated.label'
-                  : 'agents.capability.hybrid.mixed.label')
-                : `agents.capability.${intent.capabilityMode}.label` })}
-            />
-          </tbody>
-        </table>
-
-        {showIntelligence && intent.goal.trim() && (
-          <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '0.875rem', lineHeight: '1.5' }}>
-            {intent.goal}
-          </div>
-        )}
-
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
-          <tbody>
-            {requiresTradingSetup && <ReviewRow label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(intent.executionMode, intl)} />}
+            {SHOW_FULL_CREATE_REVIEW && (
+              <ReviewRow
+                label={intl.formatMessage({ id: 'agents.review.style' })}
+                value={intl.formatMessage({ id: `agents.style.${intent.style}.label` })}
+              />
+            )}
+            {SHOW_FULL_CREATE_REVIEW && (
+              <ReviewRow
+                label={intl.formatMessage({ id: 'agents.review.capabilityMode' })}
+                value={intl.formatMessage({ id: intent.capabilityMode === 'hybrid'
+                  ? (intent.hybridMode === 'scanner_gated'
+                    ? 'agents.capability.hybrid.scannerGated.label'
+                    : 'agents.capability.hybrid.mixed.label')
+                  : `agents.capability.${intent.capabilityMode}.label` })}
+              />
+            )}
             {showIntelligence && (
               <ReviewRow
                 label={intl.formatMessage({ id: 'agents.review.models' })}
@@ -1423,7 +1422,7 @@ export function CreateAgentFlow({
                   : intl.formatMessage({ id: 'agents.review.models.inherit' })}
               />
             )}
-            {showIntelligence && (() => {
+            {SHOW_FULL_CREATE_REVIEW && showIntelligence && (() => {
               const overrides = intent.runtimePolicyOverrides ?? {};
               const scoutReasoning = (overrides.scoutReasoning as string | undefined) ?? (aiSettingsQuery.data?.aiModelConfig?.scoutReasoning ?? 'none');
               const judgeReasoning = (overrides.judgeReasoning as string | undefined) ?? (aiSettingsQuery.data?.aiModelConfig?.judgeReasoning ?? 'medium');
@@ -1438,33 +1437,36 @@ export function CreateAgentFlow({
               );
             })()}
             {showIntelligence && <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />}
-            {requiresTradingSetup && intent.venue && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.filters.venue' })} value={intent.venue} />}
-            {intent.pendingFiles.length > 0 && (
+            {SHOW_FULL_CREATE_REVIEW && requiresTradingSetup && <ReviewRow label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(intent.executionMode, intl)} />}
+            {SHOW_FULL_CREATE_REVIEW && requiresTradingSetup && intent.venue && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.filters.venue' })} value={intent.venue} />}
+            {SHOW_FULL_CREATE_REVIEW && intent.pendingFiles.length > 0 && (
               <ReviewRow
                 label="Documents"
                 value={intent.pendingFiles.map((file) => `${file.name} (${(file.size / 1024).toFixed(0)} KB)`).join(', ')}
               />
             )}
-            {intent.strategyPreset && intent.strategyPreset !== 'custom' && (
+            {SHOW_FULL_CREATE_REVIEW && intent.strategyPreset && intent.strategyPreset !== 'custom' && (
               <ReviewRow label="Strategy preset" value={intent.strategyPreset} />
             )}
-            {!intent.strategyPreset && intent.technicalPreFilterEnabled && (
+            {SHOW_FULL_CREATE_REVIEW && !intent.strategyPreset && intent.technicalPreFilterEnabled && (
               <ReviewRow
                 label={intl.formatMessage({ id: 'agents.technical.scan.signalBias' })}
                 value={intl.formatMessage({ id: `agents.technical.scan.signalBias.${intent.technicalConfig.signalBias === 'trend-following' ? 'trendFollowing' : 'meanReverting'}` })}
               />
             )}
-            {!intent.strategyPreset && intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })} value={`${intent.technicalConfig.candles.interval} / ${intent.technicalConfig.candles.limit}`} />}
-            {!intent.strategyPreset && intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.interval' })} value={intent.technicalConfig.scanIntervalMins} />}
-            <ReviewRow
-              label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}
-              value={requiresTradingSetup
-                ? (intent.connectionIds.length > 0
-                  ? intl.formatMessage({ id: 'agents.review.capabilitySetup.bound' })
-                  : intl.formatMessage({ id: 'agents.review.capabilitySetup.defer' }))
-                : intl.formatMessage({ id: 'agents.review.capabilitySetup.none' })}
-            />
-            {requiresTradingSetup && intent.connectionIds.length > 0 && (
+            {SHOW_FULL_CREATE_REVIEW && !intent.strategyPreset && intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })} value={`${intent.technicalConfig.candles.interval} / ${intent.technicalConfig.candles.limit}`} />}
+            {SHOW_FULL_CREATE_REVIEW && !intent.strategyPreset && intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.interval' })} value={intent.technicalConfig.scanIntervalMins} />}
+            {SHOW_FULL_CREATE_REVIEW && (
+              <ReviewRow
+                label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}
+                value={requiresTradingSetup
+                  ? (intent.connectionIds.length > 0
+                    ? intl.formatMessage({ id: 'agents.review.capabilitySetup.bound' })
+                    : intl.formatMessage({ id: 'agents.review.capabilitySetup.defer' }))
+                  : intl.formatMessage({ id: 'agents.review.capabilitySetup.none' })}
+              />
+            )}
+            {(SHOW_FULL_CREATE_REVIEW ? requiresTradingSetup : true) && intent.connectionIds.length > 0 && (
               <ReviewRow
                 label={intl.formatMessage({ id: 'agents.create.connection' })}
                 value={intent.connectionIds
@@ -1475,19 +1477,7 @@ export function CreateAgentFlow({
                   .join(', ')}
               />
             )}
-            {/* Show non-trading connections (e.g. Gmail) even without trading setup */}
-            {!requiresTradingSetup && intent.connectionIds.length > 0 && (
-              <ReviewRow
-                label={intl.formatMessage({ id: 'agents.create.connection' })}
-                value={intent.connectionIds
-                  .map((id) => {
-                    const conn = allPickerConnections.find((c) => c.connectionId === id);
-                    return conn ? `${conn.label} (${conn.provider})` : id;
-                  })
-                  .join(', ')}
-              />
-            )}
-            {requiresTradingSetup && (
+            {SHOW_FULL_CREATE_REVIEW && requiresTradingSetup && (
               <ReviewRow
                 label={intl.formatMessage({ id: 'agents.review.openPositionEscalationPolicy' })}
                 value={intl.formatMessage({ id: `agents.controls.openPositionEscalationPolicy.${intent.openPositionEscalationToJudgePolicy}` })}
@@ -1495,6 +1485,12 @@ export function CreateAgentFlow({
             )}
           </tbody>
         </table>
+
+        {SHOW_FULL_CREATE_REVIEW && showIntelligence && intent.goal.trim() && (
+          <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '0.875rem', lineHeight: '1.5' }}>
+            {intent.goal}
+          </div>
+        )}
 
         {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
