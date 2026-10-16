@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntlProvider } from 'react-intl';
 import { describe, expect, it } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
-import { buildCreateAgentRequest, CreateAgentForm, shouldShowChannelSection } from './CreateAgentForm.js';
+import { buildCreateAgentRequest, CreateAgentForm } from './CreateAgentForm.js';
 
 function renderForm(): string {
   const queryClient = new QueryClient({
@@ -20,24 +20,17 @@ function renderForm(): string {
 }
 
 describe('buildCreateAgentRequest', () => {
-  it('sends an empty body when the name is blank so the server allocates one', () => {
-    expect(buildCreateAgentRequest('')).toEqual({});
-    expect(buildCreateAgentRequest('   ')).toEqual({});
+  it('sends an empty body when the name and chat ID are blank', () => {
+    expect(buildCreateAgentRequest('', '')).toEqual({});
+    expect(buildCreateAgentRequest('   ', '   ')).toEqual({});
   });
 
   it('sends the typed name without surrounding whitespace', () => {
-    expect(buildCreateAgentRequest('  market-watch-01 ')).toEqual({ name: 'market-watch-01' });
-  });
-});
-
-describe('shouldShowChannelSection', () => {
-  it('shows the channel choice when the profile has no Telegram chat', () => {
-    expect(shouldShowChannelSection(null)).toBe(true);
-    expect(shouldShowChannelSection('')).toBe(true);
+    expect(buildCreateAgentRequest('  market-watch-01 ', '')).toEqual({ name: 'market-watch-01' });
   });
 
-  it('hides the channel choice when the profile already has a Telegram chat', () => {
-    expect(shouldShowChannelSection('123456')).toBe(false);
+  it('sends the Telegram chat ID when one is entered', () => {
+    expect(buildCreateAgentRequest('', ' 123456 ')).toEqual({ telegramChatId: '123456' });
   });
 });
 
@@ -49,10 +42,12 @@ describe('CreateAgentForm', () => {
     expect(html).toContain(messages['agents.create.nameGenerated']);
   });
 
-  it('offers only the in-app channel and never mentions trading', () => {
+  it('shows the Telegram Chat ID field with its explanation and no channel choice', () => {
     const html = renderForm();
 
-    expect(html).toContain(messages['agents.create.channel.inApp']);
+    expect(html).toContain('id="create-agent-telegram-chat-id"');
+    expect(html).toContain(messages['agents.telegramChatId.help']);
+    expect(html).not.toContain('type="radio"');
     expect(html.toLowerCase()).not.toContain('trading');
     expect(html.toLowerCase()).not.toContain('skill');
   });

@@ -1,5 +1,7 @@
 # Plan: Agent Outbound Message Attachments
 
+> **Status (2026-10-15):** Deferred. Not part of [two-way agent chat](../../2026/10/15/002-two-way-agent-chat/001-plan.md). Attachments would attach to conversation message rows once that store exists.
+
 **Status:** draft  
 **Created:** 2026-07-13  
 

@@ -1,21 +1,15 @@
 /**
- * Journey 13: AI Agents guided setup card — full UI flow.
+ * Journey 13: AI Agents setup card (removed).
  *
- * Verifies that a new user can:
- * 1. See the quick trading setup card on AI Agents.
- * 2. Open the setup form by clicking the CTA button.
- * 3. Fill in provider details and secrets, then submit.
- * 4. See the success banner with the account label and provider.
- * 5. Dismiss the banner and return to the setup card.
+ * The quick trading setup card was removed from AI Agents, so this journey is
+ * skipped until a journey covers adding trading from an agent's Capabilities.
  */
 
 import { test } from '@playwright/test';
 
 test.describe('Journey 13: AI Agents setup card UI flow', () => {
   test('new user completes guided trading setup from AI Agents', async () => {
-    // The setup card ("Connect AI agent to external platform") was removed
-    // from the AI Agents page — trading setup now happens inline during agent
-    // creation (covered by Journey 14: Create Agent inline trading setup).
-    test.skip(true, 'Setup card removed from agents page; inline flow covered by Journey 14');
+    // The setup card was removed; trading is now added from an agent's Capabilities.
+    test.skip(true, 'Setup card removed; the Capabilities trading flow has no E2E journey yet');
   });
 });

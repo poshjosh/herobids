@@ -1,19 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, auth as authApi } from '../../lib/api-client.js';
 import { Button, ErrorBanner, FieldLabel, inputStyle } from '../../lib/ui.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
-/** Empty name sends `{}` so the server allocates one. */
-export function buildCreateAgentRequest(rawName: string): { name?: string } {
+/** Blank name and chat ID are omitted so the server allocates a name. */
+export function buildCreateAgentRequest(
+  rawName: string,
+  rawTelegramChatId: string,
+): { name?: string; telegramChatId?: string } {
   const name = rawName.trim();
-  return name ? { name } : {};
-}
-
-/** The channel choice is hidden once the profile has a Telegram chat to notify. */
-export function shouldShowChannelSection(telegramChatId: string | null | undefined): boolean {
-  return !telegramChatId?.trim();
+  const telegramChatId = rawTelegramChatId.trim();
+  return {
+    ...(name ? { name } : {}),
+    ...(telegramChatId ? { telegramChatId } : {}),
+  };
 }
 
 export function CreateAgentForm({
@@ -25,14 +27,20 @@ export function CreateAgentForm({
 }) {
   const intl = useIntl();
   const [name, setName] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
 
   const meQuery = useQuery({
     queryKey: ['me'],
     queryFn: () => authApi.me(),
   });
 
+  const savedTelegramChatId = meQuery.data?.telegramChatId ?? '';
+  useEffect(() => {
+    setTelegramChatId(savedTelegramChatId);
+  }, [savedTelegramChatId]);
+
   const mutation = useMutation({
-    mutationFn: () => agentsApi.create(buildCreateAgentRequest(name)),
+    mutationFn: () => agentsApi.create(buildCreateAgentRequest(name, telegramChatId)),
     onSuccess: (agent) => onCreated(agent.id),
   });
 
@@ -61,20 +69,24 @@ export function CreateAgentForm({
         />
       </div>
 
-      {shouldShowChannelSection(meQuery.data?.telegramChatId) && (
-        <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
-          <legend style={{ marginBottom: '8px' }}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.channel.title' })}</FieldLabel>
-          </legend>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input type="radio" name="channel" value="in_app" defaultChecked />
-            {intl.formatMessage({ id: 'agents.create.channel.inApp' })}
-          </label>
-          <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
-            {intl.formatMessage({ id: 'agents.create.channel.help' })}
-          </p>
-        </fieldset>
-      )}
+      <div>
+        <FieldLabel htmlFor="create-agent-telegram-chat-id">
+          {intl.formatMessage({ id: 'agents.create.telegramChatId' })}{' '}
+          <span className="optional-hint">{intl.formatMessage({ id: 'common.optional' })}</span>
+        </FieldLabel>
+        <input
+          id="create-agent-telegram-chat-id"
+          type="text"
+          value={telegramChatId}
+          autoComplete="off"
+          placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
+          onChange={(event) => setTelegramChatId(event.target.value)}
+          style={{ ...inputStyle, width: '100%' }}
+        />
+        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+          {intl.formatMessage({ id: 'agents.telegramChatId.help' })}
+        </p>
+      </div>
 
       {mutation.isError && (
         <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />

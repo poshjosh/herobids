@@ -16,6 +16,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Redesigned the create agent form, removed the guided chat create agent flow
 - Skill install and verification share one path (`activateExternalSkill`) for agent start, `add_skills` and `read_skill`.
 
 ### Fixed

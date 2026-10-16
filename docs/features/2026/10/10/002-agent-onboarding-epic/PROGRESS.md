@@ -12,8 +12,8 @@
 |---|---|---|
 | Wave 1 | WP-A A1/A2/A3-design · WP-H H1–H2 · WP-M Phase 0–1 · WP-C S0 | done |
 | Wave 2 | WP-A A3–A7 · WP-B B1–B8 · WP-C S1–S2 | items done; gate run 2026-10-14; deferred follow-ups listed under "Not verified or deferred" |
-| Gate G1 | self-serve loop UAT | Partial PASS (see G1 log below); rerun 2026-10-15 passes link, wake, wallet and account/funding tools (see G1 rerun below). Not passed: trade in test mode and go-live with a cloned agent not run |
-| Wave 3 | cut-over (WP-C S3+S4) | not started |
+| Gate G1 | self-serve loop UAT | Waived by owner 2026-10-15: treated as passed for the cut-over; trade and go-live steps not run. Partial PASS (see G1 log below); rerun 2026-10-15 passes link, wake, wallet and account/funding tools (see G1 rerun below). Not passed: trade in test mode and go-live with a cloned agent not run |
+| Wave 3 | cut-over (WP-C S3; S4 replaced by guided chat removal) | started 2026-10-15: S3 shipped, guided chat removed, shared create core deferred. Cut-over gate status in IMPLEMENTATION §6 |
 | Wave 4 | channels (WP-M Phase 2–4, WP-C S5.1, WP-E) | not started |
 | Wave 5 | cleanup (WP-M Phase 6) | not started |
 

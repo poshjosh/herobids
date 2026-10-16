@@ -1,5 +1,7 @@
 # Agent message document handling and current Telegram integration
 
+> **Status (2026-10-15):** Deferred. Not part of [two-way agent chat](../../2026/10/15/002-two-way-agent-chat/001-plan.md). Attachments would attach to conversation message rows once that store exists.
+
 ## What Happens Today?
 
 **Short answer: Nothing.** If you send a photo, PDF, document, or any non-text attachment via Telegram to an agent, the message is **silently dropped**.

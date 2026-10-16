@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel, FieldLabel } from '../../lib/ui.js';
+import { ApiError, agents as agentsApi, skills as skillsApi, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel, SECTION_TITLE_STYLE, FieldLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { SkillPicker } from './SkillPicker.js';
 import { AgentConnectionField } from './AgentConnectionField.js';
@@ -15,7 +15,6 @@ import { AgentConversation } from './AgentConversation.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
-import { buildDeliveryDescriptors, getMessageClassBadgeVariant } from './agent-message-display.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -70,24 +69,6 @@ export function AgentDetailPage() {
   const canViewPrompts = user?.planEntitlements?.agents.canViewOwnPrompts ?? true;
 
   const agent = query.data;
-
-  const getMessageDisplayStatus = (message: AgentOutboundMessage): 'pending' | 'sent' | 'failed' => {
-    if (message.deliveryStatus === 'sent' || message.emailDeliveryStatus === 'email_sent') {
-      return 'sent';
-    }
-    if (message.deliveryStatus === 'pending') {
-      return 'pending';
-    }
-    return 'failed';
-  };
-
-  const getMessageDeliveryDetail = (message: AgentOutboundMessage): string | null => {
-    const descriptors = buildDeliveryDescriptors(message.deliveryStatus, message.emailDeliveryStatus);
-    if (descriptors.length === 0) return null;
-    return descriptors
-      .map((d) => intl.formatMessage({ id: d.id, defaultMessage: d.defaultMessage }))
-      .join(' · ');
-  };
 
   const skillsQuery = useQuery({
     queryKey: ['skills'],
@@ -266,13 +247,6 @@ export function AgentDetailPage() {
     refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
 
-  const messagesQuery = useQuery({
-    queryKey: ['agents', id, 'messages'],
-    queryFn: () => agentsApi.messages(id!, 20),
-    enabled: !!id,
-    refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
-  });
-
   const artifactsQuery = useQuery({
     queryKey: ['agents', id, 'artifacts'],
     queryFn: () => agentsApi.artifacts(id!, 10),
@@ -373,74 +347,12 @@ export function AgentDetailPage() {
           </div>
         </Card>
 
-        <Card>
-          <details>
-            <summary
-              style={{
-                fontSize: '0.6875rem',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--color-text-muted)',
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-            >
-              {intl.formatMessage({ id: 'agents.detail.messagesToUser' })}
-            </summary>
-            <div style={{ marginTop: '12px' }}>
-          {messagesQuery.isLoading && <LoadingRows count={3} />}
-          {messagesQuery.isSuccess && messagesQuery.data.length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.detail.noMessages' })}</p>
-          )}
-          {messagesQuery.isSuccess && messagesQuery.data.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {messagesQuery.data.map((msg: AgentOutboundMessage) => {
-                const displayStatus = getMessageDisplayStatus(msg);
-                const deliveryDetail = getMessageDeliveryDetail(msg);
-                const classVariant = getMessageClassBadgeVariant(msg.messageClass);
-
-                return <div key={msg.id} style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--color-surface-raised)', fontSize: '0.8125rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: msg.subject ? '4px' : '0' }}>
-                    <span style={{ display: 'flex', gap: '6px', alignItems: 'center', fontWeight: '500', color: msg.authoredBy === 'platform' ? 'var(--color-warning)' : 'var(--color-text)' }}>
-                      {msg.authoredBy === 'platform' ? intl.formatMessage({ id: 'agents.detail.messageAuthor.platform' }) : intl.formatMessage({ id: 'agents.detail.messageAuthor.agent' })}
-                      {classVariant === 'alert' && (
-                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '0.6875rem', fontWeight: '600', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning, #b45309)' }}>
-                          {intl.formatMessage({ id: 'agents.detail.messageClass.alert' })}
-                        </span>
-                      )}
-                      {classVariant === 'reminder' && (
-                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '0.6875rem', fontWeight: '600', background: 'var(--color-info-bg, #dbeafe)', color: 'var(--color-info, #1d4ed8)' }}>
-                          {intl.formatMessage({ id: 'agents.detail.messageClass.reminder' })}
-                        </span>
-                      )}
-                    </span>
-                    <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <StatusBadge status={displayStatus} />
-                      <RelativeTime timestamp={msg.createdAt} />
-                    </span>
-                  </div>
-                  {msg.subject && <div style={{ fontWeight: '600', marginBottom: '2px' }}>{msg.subject}</div>}
-                  <div style={{ color: 'var(--color-text-muted)' }}>{msg.body}</div>
-                  {deliveryDetail && <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '4px' }}>{deliveryDetail}</div>}
-                </div>
-              })}
-            </div>
-          )}
-            </div>
-          </details>
-        </Card>
-
         {agent.activeSession && (
           <Card>
             <details>
               <summary
                 style={{
-                  fontSize: '0.6875rem',
-                  fontWeight: '600',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--color-text-muted)',
+                  ...SECTION_TITLE_STYLE,
                   cursor: 'pointer',
                   userSelect: 'none',
                 }}
@@ -462,11 +374,7 @@ export function AgentDetailPage() {
           <details>
             <summary
               style={{
-                fontSize: '0.6875rem',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--color-text-muted)',
+                ...SECTION_TITLE_STYLE,
                 cursor: 'pointer',
                 userSelect: 'none',
               }}
@@ -510,11 +418,7 @@ export function AgentDetailPage() {
             <details>
               <summary
                 style={{
-                  fontSize: '0.6875rem',
-                  fontWeight: '600',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--color-text-muted)',
+                  ...SECTION_TITLE_STYLE,
                   cursor: 'pointer',
                   userSelect: 'none',
                 }}
@@ -615,34 +519,13 @@ export function AgentDetailPage() {
           </Card>
         </section>
 
-        <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.activityTimeline', defaultMessage: 'Activity Timeline' })}</SectionLabel>
-          {activityFeedQuery.isError
-            ? (
-              <ErrorState
-                message={localizeApiError(intl, activityFeedQuery.error, 'common.errorTitle')}
-                onRetry={() => void activityFeedQuery.refetch()}
-              />
-            )
-            : (
-              <AgentActivityTimeline
-                entries={(activityFeedQuery.data?.entries ?? []) as AgentActivityEntry[]}
-                isLoading={activityFeedQuery.isLoading}
-                isEmpty={activityFeedQuery.isSuccess && (activityFeedQuery.data?.entries.length ?? 0) === 0}
-              />
-            )}
-        </Card>
-        <AgentConversation agentId={id ?? ''} status={agent.status} />
+        <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} />
 
         <Card>
           <details>
             <summary
               style={{
-                fontSize: '0.6875rem',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--color-text-muted)',
+                ...SECTION_TITLE_STYLE,
                 marginBottom: '0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -751,7 +634,7 @@ export function AgentDetailPage() {
         <AgentEvaluations agentId={id!} />
 
         <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.artifacts' })}</SectionLabel>
+          <SectionLabel prominent>{intl.formatMessage({ id: 'agents.detail.artifacts' })}</SectionLabel>
           {artifactsQuery.isLoading && <LoadingRows count={3} />}
           {artifactsQuery.isSuccess && artifactsQuery.data.length === 0 && (
             <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.detail.noArtifacts' })}</p>
@@ -887,6 +770,24 @@ export function AgentDetailPage() {
               })}
             </div>
           )}
+        </Card>
+
+        <Card>
+          <SectionLabel prominent>{intl.formatMessage({ id: 'agents.detail.activityTimeline', defaultMessage: 'Activity Timeline' })}</SectionLabel>
+          {activityFeedQuery.isError
+            ? (
+              <ErrorState
+                message={localizeApiError(intl, activityFeedQuery.error, 'common.errorTitle')}
+                onRetry={() => void activityFeedQuery.refetch()}
+              />
+            )
+            : (
+              <AgentActivityTimeline
+                entries={(activityFeedQuery.data?.entries ?? []) as AgentActivityEntry[]}
+                isLoading={activityFeedQuery.isLoading}
+                isEmpty={activityFeedQuery.isSuccess && (activityFeedQuery.data?.entries.length ?? 0) === 0}
+              />
+            )}
         </Card>
       </div>
     </PageShell>

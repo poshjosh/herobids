@@ -14,6 +14,7 @@ import {
   ErrorState,
   EmptyState,
   LoadingRows,
+  SECTION_TITLE_STYLE,
 } from '../../lib/ui.js';
 import { AgentEvaluationReport } from './AgentEvaluationReport.js';
 import type {
@@ -574,11 +575,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
       <details>
         <summary
           style={{
-            fontSize: '0.6875rem',
-            fontWeight: '600',
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: 'var(--color-text-muted)',
+            ...SECTION_TITLE_STYLE,
             cursor: 'pointer',
             userSelect: 'none',
           }}

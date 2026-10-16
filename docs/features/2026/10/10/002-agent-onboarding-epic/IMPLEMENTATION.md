@@ -8,9 +8,9 @@
 
 ## 1. Strategic objective
 
-A user creates an agent with a name and a way to talk to it. After that the agent does the rest: it adds its own skills, discovers what it can connect to, sends the user a link when it needs a connection, is woken when the connection exists, and sets its own goal. The create flows (form and guided chat) shrink accordingly, and trading disappears from creation because it is one capability the agent can acquire like any other.
+A user creates an agent with a name and a way to talk to it. After that the agent does the rest: it adds its own skills, discovers what it can connect to, sends the user a link when it needs a connection, is woken when the connection exists, and sets its own goal. The create flow shrinks to a name-and-channel form (guided chat was removed), and trading disappears from creation because it is one capability the agent can acquire like any other.
 
-**Success = Gate G1 passes** (the self-serve loop UAT, §6) **and the cut-over ships** (form and guided chat contain no trading references, both call one shared create core).
+**Success = Gate G1 passes** (the self-serve loop UAT, §6) **and the cut-over ships** (the form contains no trading references and calls `POST /agents`; guided chat is removed).
 
 ---
 
@@ -23,7 +23,7 @@ All under `docs/features/2026/10/10/`:
 | WP-A | `003-dynamic-connections/` | `001-plan.md` (+ `000-discovery.md`) | Agents discover providers, request connections by link, are woken on completion |
 | WP-H | `004-shared-profile-derivation/` | `001-plan.md` (+ `000-analysis.md`) | One shared trading-profile derivation for all write paths |
 | WP-B | `005-post-creation-trading-provisioning/` | `001-plan.md` | Trading provisioning for an agent that becomes trading-capable after creation |
-| WP-C | `006-simplified-agent-creation/` | `001-plan.md` | Simplified form + guided chat, in-app conversation, `update_my_prompt` |
+| WP-C | `006-simplified-agent-creation/` | `001-plan.md` | Simplified form (guided chat removed 2026-10-15), in-app conversation, `update_my_prompt` |
 | WP-M | `007-multi-provider-chat-messaging/` | `900-implementation-plan.md` (+ `000`–`060` design docs) | Provider-neutral chat, WhatsApp, SMS, channel address model |
 | WP-E | *(none yet)* | — | Email as a conversational channel (inbound). **Design it during Wave 4** (see §6). |
 
@@ -69,14 +69,14 @@ These are settled. Implement them as specified; do not reopen them.
 | D-B3 | Running-agent grant | Add a **dedicated** running-agent grant path (used by WP-A link completion). All other callers keep the stopped-agent requirement. *(Amended 2026-10-14: `set_trading_setup`, the other user of this path, is removed.)* |
 | D-C1 | Channel vs connection | A channel (Telegram/WhatsApp/email) is a **chat-address binding**, not a `connections` row. A Gmail-type `connection` (agent sends as the user) is separate and optional. |
 | D-C2 | Channel scope | Channels bound **per user**; agents inherit. |
-| D-C3 | In-app chat | **Accepted.** Minimal in-app conversation on the agent detail page (not the `chat_sessions` model). External channel optional but strongly recommended. |
+| D-C3 | In-app chat | **Accepted.** Minimal in-app conversation on the agent detail page (not the `chat_sessions` model). External channel optional but strongly recommended. *(Amended 2026-10-15: the conversation moves to one store shared by web and Telegram. See [two-way agent chat](../../../10/15/002-two-way-agent-chat/001-plan.md). Agent-to-agent messaging is in [pending/000-agent-to-agent-messaging](../../../../pending/000-agent-to-agent-messaging/001-plan.md).)* |
 | D-C4 | Start step | **No auto-start.** Create (stopped) → press Start → land in conversation. Revisit only if the extra click proves to be friction. |
 | D-C5 | Name | Optional; auto-generated if blank; unique per user (collision retry). |
 | D-C6 | Goal at creation | Not asked. If the user volunteers one, forward it as the agent's **first message** (not stored as prompt). Durable goal is the agent's job via `update_my_prompt`. |
 | D-C7 | API compatibility | `POST /agents` keeps accepting the full payload. Only the two UIs are simplified. |
 | D-C8 | Telegram binding | One-time deep link `t.me/<bot>?start=<token>`; **lookup-first** (token lookup before `handleStart`), `/link <code>` as fallback. |
-| D-C9 | Guided chat | **Keep it.** More evolvable than a form; not obviously similar to the user. Can grow non-trading steps later (ask objective → agent adds skills/connections). |
-| D-C10 | Guided chat scope | Chat asks for **name + channel**, not "what do you want your agent to do" (that's the agent's job post-creation). |
+| D-C9 | Guided chat | **Keep it.** More evolvable than a form; not obviously similar to the user. Can grow non-trading steps later (ask objective → agent adds skills/connections). *(Amended 2026-10-15: superseded. Guided chat is removed entirely, per the owner's decision D-8 in `docs/features/2026/10/15/001-wave3-cutover/000-README.md`.)* |
+| D-C10 | Guided chat scope | Chat asks for **name + channel**, not "what do you want your agent to do" (that's the agent's job post-creation). *(Amended 2026-10-15: moot. Guided chat is removed; the form asks for name and channel.)* |
 | D-H1 | WP-H scope | Extract **one shared derivation seam** (`deriveTradingProfileFields`), consumed by the surviving paths + WP-B. Do **not** migrate `POST /agents` and `chat.ts create_agent` (WP-C deletes them). |
 | D-E1 | Email semantics | Email behaves like Telegram/WhatsApp (messages to the user's address). Inbound replies are WP-E. |
 | D-R1 | `chat_sessions` idea | **Rejected** (F10). Minimal in-app conversation instead. |
@@ -133,11 +133,15 @@ With the **old** create flows still in place, create a blank agent through the A
 
 Record the result in `002-agent-onboarding-epic/`. **This is the epic's definition of done for the core loop.** If it fails, fix and re-run before Wave 3.
 
+**Owner waiver (2026-10-15):** G1 is treated as passed for the cut-over. The trade-in-test-mode and go-live steps have not been run (see `PROGRESS.md`).
+
 ### Wave 3 — cut-over
 
-- **WP-C S3** (simplified form) + **S4** (simplified guided chat), shipping together, with landing/help copy updates. Both call one shared `createAgent` core.
+- **WP-C S3** (simplified form) shipped. It calls `POST /agents` directly.
+- **WP-C S4** (simplified guided chat) is replaced by removing guided chat entirely (owner decision, 2026-10-15). The guided chat page is unreachable and its create tool is removed. The shared `createAgent` core (plan 001) is deferred.
+- Landing/help copy and the docs index are updated.
 
-**Cut-over gate:** form and guided chat contain no trading references; `pnpm lint`, `pnpm test`, `run-all-tests.sh --e2e` pass; public content + docs index regenerated.
+**Cut-over gate (status 2026-10-15):** the form contains no trading references; guided chat is removed; `run-all-tests.sh --e2e` passed (owner run); per-project `tsc --noEmit` and unit suites passed; public content and docs index regenerated. Root `pnpm lint` checks nothing, so the per-project checks stand in for it. `pnpm test` has not been run as a single command.
 
 ### Wave 4 — channels (independent increments)
 
@@ -183,7 +187,7 @@ After **each wave** (and after Gate G1 and the cut-over):
 
 **Definition of done for the whole epic:**
 - Gate G1 UAT passes and is recorded.
-- Cut-over ships: no trading references in form/guided chat; one shared create core.
+- Cut-over ships: no trading references in the form; guided chat removed; shared create core deferred (2026-10-15).
 - `pnpm lint`, `pnpm test`, `scripts/shell/tests/run-all-tests.sh --e2e` all pass.
 - Every new env var has a committed `.example` twin; every new config key is in the schema + `default.yaml`.
 - Every decision made during implementation is recorded in the relevant plan.

@@ -23,7 +23,7 @@ const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
 import { PromptInputBlock } from './PromptInputBlock.js';
-import { AgentFormBody } from './AgentFormBody.js';
+import { AgentFormBody, AgentIdentityFields } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
 import { AgentConnectionField } from './AgentConnectionField.js';
@@ -532,6 +532,14 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose} closeOnBackdropClick={false} maxWidth="752px">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <form id="edit-agent-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <AgentIdentityFields
+            value={form}
+            onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+            formErrors={formErrors}
+            onClearFieldError={clearFieldError}
+            onBlurField={validateFieldOnBlur}
+          />
+
           {/* Prompt + files + style — unified block */}
           <div style={{ marginBottom: '8px' }}>
           <PromptInputBlock

@@ -139,6 +139,68 @@ export interface AgentFormBodyProps {
 // AgentFormBody
 // ---------------------------------------------------------------------------
 
+const fieldGap: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '6px',
+  marginBottom: '20px',
+};
+
+const errorStyle: React.CSSProperties = {
+  color: 'var(--color-danger)',
+  fontSize: '0.75rem',
+  marginTop: '2px',
+};
+
+export type AgentIdentityFieldsProps = Pick<AgentFormBodyProps, 'value' | 'onChange' | 'formErrors' | 'onClearFieldError' | 'onBlurField'>;
+
+/** Name and Telegram chat ID, rendered at the top of the edit form. */
+export function AgentIdentityFields(props: AgentIdentityFieldsProps) {
+  const intl = useIntl();
+  return (
+    <>
+      {/* Name + auto-hint */}
+      <div data-field="name" style={fieldGap}>
+        <FieldLabel>
+          {intl.formatMessage({ id: 'agents.create.name' })}
+        </FieldLabel>
+        <input
+          style={inputStyle}
+          type="text"
+          value={props.value.name}
+          onChange={(e) => {
+            props.onClearFieldError('name');
+            props.onChange({ name: e.target.value });
+          }}
+          onBlur={() => props.onBlurField('name')}
+          placeholder={intl.formatMessage({ id: 'agents.create.namePlaceholder' })}
+          maxLength={100}
+          required
+        />
+        {props.formErrors.name && (
+          <div style={errorStyle}>{props.formErrors.name}</div>
+        )}
+      </div>
+
+      {/* Telegram Chat ID */}
+      <div style={fieldGap}>
+        <FieldLabel>
+          {intl.formatMessage({ id: 'agents.create.telegramChatId' })}
+        </FieldLabel>
+        <input
+          style={inputStyle}
+          value={props.value.telegramChatId}
+          onChange={(e) => props.onChange({ telegramChatId: e.target.value })}
+          placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
+        />
+        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+          {intl.formatMessage({ id: 'agents.telegramChatId.help' })}
+        </p>
+      </div>
+    </>
+  );
+}
+
 export function AgentFormBody(props: AgentFormBodyProps) {
   const intl = useIntl();
   const [advancedExpandSeq, setAdvancedExpandSeq] = useState(0);
@@ -235,19 +297,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
 
   // ---- styles ----
 
-  const fieldGap: React.CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    marginBottom: '20px',
-  };
-
-  const errorStyle: React.CSSProperties = {
-    color: 'var(--color-danger)',
-    fontSize: '0.75rem',
-    marginTop: '2px',
-  };
-
   const helperStyle: React.CSSProperties = {
     marginTop: '2px',
     fontSize: '0.75rem',
@@ -288,43 +337,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
       {props.connectionSlot && (
         <div style={fieldGap}>{props.connectionSlot}</div>
       )}
-
-      {/* Telegram Chat ID — always visible */}
-      <div style={fieldGap}>
-        <FieldLabel>
-          {intl.formatMessage({ id: 'agents.create.telegramChatId' })}{' '}<span className="optional-hint">{intl.formatMessage({ id: 'common.optional', defaultMessage: '(Optional)' })}</span>
-        </FieldLabel>
-        <input
-          style={inputStyle}
-          value={props.value.telegramChatId}
-          onChange={(e) => props.onChange({ telegramChatId: e.target.value })}
-          placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
-        />
-      </div>
-
-      {/* Name + auto-hint */}
-      <div data-field="name" style={fieldGap}>
-        <FieldLabel>
-          {intl.formatMessage({ id: 'agents.create.name' })}{' '}<span className="optional-hint">{intl.formatMessage({ id: 'common.optional', defaultMessage: '(Optional)' })}</span>
-        </FieldLabel>
-        <input
-          style={inputStyle}
-          type="text"
-          value={props.value.name}
-          onChange={(e) => {
-            props.onClearFieldError('name');
-            props.onChange({ name: e.target.value });
-          }}
-          onBlur={() => handleFieldBlur('name')}
-          placeholder={intl.formatMessage({ id: 'agents.create.namePlaceholder' })}
-          maxLength={100}
-          required
-        />
-        {props.formErrors.name && (
-          <div style={errorStyle}>{props.formErrors.name}</div>
-        )}
-
-      </div>
 
       {/* Actions at top of Advanced Settings.
            Always visible — when collapsed these are the only buttons; when expanded

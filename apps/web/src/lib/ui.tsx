@@ -325,7 +325,15 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 // Section divider label
 // ---------------------------------------------------------------------------
 
-export function SectionLabel({ children, uppercase = true }: { children: ReactNode; uppercase?: boolean }) {
+export const SECTION_TITLE_STYLE: CSSProperties = {
+  fontSize: '0.8125rem',
+  fontWeight: '700',
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+  color: 'var(--color-text-primary)',
+};
+
+export function SectionLabel({ children, uppercase = true, prominent = false }: { children: ReactNode; uppercase?: boolean; prominent?: boolean }) {
   return (
     <div
       style={{
@@ -335,6 +343,7 @@ export function SectionLabel({ children, uppercase = true }: { children: ReactNo
         letterSpacing: '0.06em',
         color: 'var(--color-text-muted)',
         marginBottom: '12px',
+        ...(prominent ? SECTION_TITLE_STYLE : {}),
       }}
     >
       {children}

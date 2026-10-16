@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentConversationView, isAgentConversable } from './AgentConversation.js';
+import { AgentConversationView, isAgentConversable, isSendShortcut } from './AgentConversation.js';
 import type { AgentOutboundMessage } from '../../lib/api-client.js';
 
 const messages: AgentOutboundMessage[] = [{
@@ -18,19 +18,20 @@ const messages: AgentOutboundMessage[] = [{
 } as unknown as AgentOutboundMessage];
 
 const englishMessages: Record<string, string> = {
-  'agentDetail.conversation.title': 'Talk to your agent',
+  'agentDetail.conversation.title': 'Chat with {name}',
   'agentDetail.conversation.placeholder': 'Message your agent',
   'agentDetail.conversation.send': 'Send',
   'agentDetail.conversation.empty': 'No messages yet.',
   'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
   'agentDetail.conversation.fromAgent': 'Agent',
-  'agentDetail.conversation.fromYou': 'You',
+  'agentDetail.conversation.fromPlatform': 'Safety alert',
 };
 
 function render(props: Partial<Parameters<typeof AgentConversationView>[0]> = {}): string {
   return renderToStaticMarkup(
     <IntlProvider locale="en" messages={englishMessages}>
       <AgentConversationView
+        agentName="Tom"
         messages={[]}
         canSend
         draft=""
@@ -51,6 +52,17 @@ describe('isAgentConversable', () => {
   });
 });
 
+describe('isSendShortcut', () => {
+  it('sends on Enter and keeps Shift+Enter for a new line', () => {
+    expect(isSendShortcut('Enter', false, false)).toBe(true);
+    expect(isSendShortcut('Enter', true, false)).toBe(false);
+  });
+
+  it('does not send on Enter while an IME composition is open', () => {
+    expect(isSendShortcut('Enter', false, true)).toBe(false);
+  });
+});
+
 describe('AgentConversationView', () => {
   it('disables the composer and shows the not-running hint when the agent cannot receive messages', () => {
     const html = render({ canSend: false });
@@ -64,6 +76,29 @@ describe('AgentConversationView', () => {
 
     expect(html).toContain('Watching ETH.');
     expect(html).not.toContain('No messages yet.');
+  });
+
+  it('titles the card with the agent name', () => {
+    expect(render()).toContain('Chat with Tom');
+  });
+
+  it('labels platform alerts as safety alerts, never as the user', () => {
+    const alert = { ...messages[0], id: 'm2', authoredBy: 'platform', body: 'Balance low.' } as unknown as AgentOutboundMessage;
+    const html = render({ messages: [alert] });
+
+    expect(html).toContain('Safety alert');
+    expect(html).not.toContain('You');
+  });
+
+  it('shows the oldest message first', () => {
+    const newer = { ...messages[0], id: 'm2', body: 'Second reply.' } as unknown as AgentOutboundMessage;
+    const html = render({ messages: [newer, ...messages] });
+
+    expect(html.indexOf('Watching ETH.')).toBeLessThan(html.indexOf('Second reply.'));
+  });
+
+  it('shows the character count against the 4000 limit', () => {
+    expect(render({ draft: 'hello' })).toContain('5/4000');
   });
 
   it('shows the empty state when there are no messages', () => {
