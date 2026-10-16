@@ -22,7 +22,7 @@
 # Environment overrides:
 #   AGENT_PROVIDER         LLM provider (dev: ollama, non-dev: openrouter)
 #   AGENT_LIGHT_MODEL      Scout model (dev: qwen3:8b, non-dev: deepseek/deepseek-v4.1-flash)
-#   AGENT_HEAVY_MODEL      Judge model (dev: qwen3.6:35b-a3b-q4_K_M, non-dev: deepseek/deepseek-v4-pro-0813
+#   AGENT_HEAVY_MODEL      Judge model (dev: qwen3.6:35b-a3b-q4_K_M, non-dev: deepseek/anthropic/claude-haiku-5.5
 #   SCOUT_REASONING        Scout reasoning level (non-dev only, default: medium)
 #   JUDGE_REASONING        Judge reasoning level (non-dev only, default: high)
 
@@ -66,7 +66,7 @@ DEFAULT_DEV_HEAVY_MODEL="qwen3.6:35b-a3b-q4_K_M"
 # (consistent with infra/hetzner/scripts/create-agents.sh and config/staging.yaml).
 DEFAULT_NONDEV_PROVIDER="openrouter"
 DEFAULT_NONDEV_LIGHT_MODEL="deepseek/deepseek-v4.1-flash"
-DEFAULT_NONDEV_HEAVY_MODEL="deepseek/deepseek-v4-pro-0813"
+DEFAULT_NONDEV_HEAVY_MODEL="deepseek/anthropic/claude-haiku-5.5"
 DEFAULT_SCOUT_REASONING="medium"
 DEFAULT_JUDGE_REASONING="high"
 
