@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.7.2 - 2026-10-16
+
 ### Changed
 
 - Fix typo in premium model. Rename deepseek/anthropic/claude-haiku-5.5 to anthropic/claude-haiku-5.5
