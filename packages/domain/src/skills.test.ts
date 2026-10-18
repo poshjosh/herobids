@@ -337,11 +337,18 @@ describe('LONG_RUNNING_TASK_SKILL', () => {
     'list_tasks',
     'complete_task',
     'schedule_reminder',
-    'cancel_reminder',
     'send_message',
   ])('instructions use the base tool %s, which BASE_SKILL provides', (toolName) => {
     expect(LONG_RUNNING_TASK_SKILL.instructions).toContain(toolName);
     expect(BASE_SKILL.requiredTools).toContain(toolName);
+  });
+
+  it('does not instruct cancel_reminder (one-shot reminders are consumed when they fire)', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).not.toContain('cancel_reminder');
+  });
+
+  it('gives the exact continuation key convention', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('key: "ltt-<campaign>-continue"');
   });
 
   it('keeps durable progress in tasks and memory, not workspace files', () => {

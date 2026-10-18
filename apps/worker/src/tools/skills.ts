@@ -527,7 +527,7 @@ export const addSkillsTool: AgentTool = {
         }
       }
 
-      // Pre-fetch skill lists once for reuse (slug map, dependency resolution, file-management check)
+      // Pre-fetch skill lists once for reuse (slug map, dependency resolution)
       let cachedAssigned: Array<{ id: string; slug: string; name: string; description: string; dependsOn: string[] }> = [];
       let cachedAvailable: Array<{ id: string; slug: string; name: string; description: string; dependsOn: string[] }> = [];
       if (ctx.skillOps) {
@@ -549,6 +549,12 @@ export const addSkillsTool: AgentTool = {
       const missingDependencies: Array<{ skill: string; requiredBy: string }> = [];
       let allPlatformIds = [...new Set(platformIds)];
 
+      // skillOps reports `dependsOn` as slugs, but assignment and the broker work
+      // on ids. Normalise each dependency to an id (ids pass through unchanged).
+      const slugToId = new Map<string, string>();
+      for (const [skillId, slug] of idToSlug) slugToId.set(slug, skillId);
+      const toDependencyId = (dependency: string): string => slugToId.get(dependency) ?? dependency;
+
       if (includeDependencies && allPlatformIds.length > 0 && cachedAssigned.length + cachedAvailable.length > 0) {
         const assignedSet = new Set(cachedAssigned.map(s => s.id));
 
@@ -557,7 +563,8 @@ export const addSkillsTool: AgentTool = {
         for (const id of allPlatformIds) {
           const skill = [...cachedAssigned, ...cachedAvailable].find(s => s.id === id);
           if (skill) {
-            for (const depId of skill.dependsOn) {
+            for (const dependency of skill.dependsOn) {
+              const depId = toDependencyId(dependency);
               if (!assignedSet.has(depId) && !allPlatformIds.includes(depId)) {
                 depIdsToAdd.add(depId);
                 const depSlug = idToSlug.get(depId) ?? depId;
@@ -577,7 +584,8 @@ export const addSkillsTool: AgentTool = {
         for (const id of allPlatformIds) {
           const skill = [...cachedAssigned, ...cachedAvailable].find(s => s.id === id);
           if (skill) {
-            for (const depId of skill.dependsOn) {
+            for (const dependency of skill.dependsOn) {
+              const depId = toDependencyId(dependency);
               if (!assignedSet.has(depId) && !allPlatformIds.includes(depId)) {
                 const depSlug = idToSlug.get(depId) ?? depId;
                 const reqSlug = idToSlug.get(id) ?? id;

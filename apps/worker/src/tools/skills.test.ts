@@ -673,6 +673,58 @@ describe('add_skills', () => {
       ]);
     });
 
+    // The worker's skillOps reports dependsOn as slugs; the broker only accepts ids.
+    it('sends dependency ids (not slugs) to the broker when dependsOn holds slugs', async () => {
+      const publishToInbound = vi.fn(async () => undefined);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1', 'file-management'] });
+      const ctx = makeCtx({
+        publishToInbound,
+        onSkillsChanged: vi.fn(async () => ['skill-1', 'file-management']),
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          listAvailable: vi.fn(async () => [
+            { id: 'skill-1', slug: 'system/skill-1', name: 'Skill 1', description: 'Needs files', dependsOn: ['system/file-management'] },
+            { id: 'file-management', slug: 'system/file-management', name: 'File Management', description: 'Files', dependsOn: [] },
+          ]),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+      expect(payload.skillIds).toEqual(['skill-1', 'file-management']);
+      const data = result.data as Record<string, unknown>;
+      expect(data.autoResolved).toEqual([
+        { skill: 'system/file-management', requiredBy: 'system/skill-1' },
+      ]);
+    });
+
+    it('does not re-add a slug-form dependency that is already assigned', async () => {
+      const publishToInbound = vi.fn(async () => undefined);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+      const ctx = makeCtx({
+        publishToInbound,
+        onSkillsChanged: vi.fn(async () => ['skill-1', 'file-management']),
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          listAssigned: vi.fn(async () => [
+            { id: 'file-management', slug: 'system/file-management', name: 'File Management', description: 'Files', dependsOn: [] },
+          ]),
+          listAvailable: vi.fn(async () => [
+            { id: 'skill-1', slug: 'system/skill-1', name: 'Skill 1', description: 'Needs files', dependsOn: ['system/file-management'] },
+          ]),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+      expect(payload.skillIds).toEqual(['skill-1']);
+      expect((result.data as Record<string, unknown>).autoResolved).toBeUndefined();
+    });
+
     it('omits missingDependencies when skill has empty dependsOn', async () => {
       const onSkillsChanged = vi.fn(async () => ['skill-1']);
       const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });

@@ -10,6 +10,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `system/long-running-task` skill: how to split a multi-tick goal into recorded units, keep progress in durable tasks and memory, chain ticks with a reminder, and resume after a restart. The base skill now points agents to it for goals that cannot be finished in one tick.
 
+### Fixed
+
+- `add_skills` now sends dependency ids to the platform. Dependencies reported as slugs (for example `system/file-management`) were sent as-is and the whole request failed with "Unknown skillIds".
+
 ## v0.7.2 - 2026-10-16
 
 ### Changed
