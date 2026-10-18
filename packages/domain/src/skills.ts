@@ -106,6 +106,7 @@ Use skills to gain additional capabilities/expertise. For example, if you have a
 - Use \`load_skill\` to call both \`add_skills\` and \`read_skill\` for a skill, ensuring it is added and its instructions are loaded.
 - Use \`remove_skills\` to drop skills by slug.
 - When the user asks for something you have no skill for, do not stop silently. Use the skill related tools listed above before you act.
+- Some goals cannot be finished in one tick/session: they have many steps or sources, or they need ongoing monitoring. For these, use \`add_skills\` with \`system/long-running-task\` before you start work. It explains how to track progress in tasks and memory so you can continue across ticks and after a restart. Its dependencies, such as \`system/file-management\`, are added automatically.
 
 Request connections to external providers when a task or skill needs one:
 - Use \`list_providers\` to see which providers exist, what they can do, and whether the user already has an active connection you could reuse.
@@ -370,6 +371,86 @@ When following a skill's instructions, prefer whichever browser automation optio
 };
 
 /**
+ * `long-running-task` skill — continuity for goals that span many ticks.
+ * Progress lives in durable tasks and memory so an agent can resume after a
+ * restart. Workspace files are scratch only (they do not survive restarts); the
+ * file tools below exist so dependency inference pulls in `file-management`.
+ */
+export const LONG_RUNNING_TASK_SKILL: SkillDefinition = {
+  id: 'long-running-task',
+  slug: 'system/long-running-task',
+  name: 'Long-Running Task',
+  description: 'Make steady progress on goals that span many ticks/sessions: split the work into recorded units, keep progress in durable tasks and memory, and resume after a restart.',
+  instructions: `You can work on goals that cannot be finished in one tick/session: they have several steps, or they need ongoing monitoring. Your conversation memory may be incomplete or lost between ticks (a runtime restart clears it completely), so durable state is the only thing you can trust to carry your progress. Re-read durable state instead of relying on what you think you remember. Work in small, finished, recorded units.
+
+Pick a short campaign name (lowercase, no spaces) for the goal, unless the goal gives one, and use it in every key and task title below as <campaign>.
+
+STORAGE (what survives)
+- Tasks and memory are durable. Workspace files are NOT durable across restarts: use them only as scratch or cache, and be ready to re-fetch.
+- Work-unit queue = tasks. Each unit is one task titled "[<campaign>] <NN> <short description>", where NN is a zero-padded order number.
+- Campaign state = memory key \`ltt/<campaign>/index\`. Keep it small: { cycle, phase, unitsTotal, unitsDone, currentUnit, lastSummary, updatedAt }.
+- Records (one per entity you track) = one memory key each: \`ltt/<campaign>/rec/<id>\`. Do not store all records under a single key.
+- Load all records into context only in the finish step.
+- Use \`set_memory\` to write and \`get_memory\` to read these keys.
+START OF EVERY TICK (orient before acting)
+Do steps 1 and 2 first on every tick, even if the tick message tells you what to do and even if you believe you remember the state.
+1. \`get_memory\` \`ltt/<campaign>/index\`.
+2. \`list_tasks\` (pending). Task ids come only from this result, never from memory or guesswork. Copy the id exactly.
+3. If no index exists, this is a new campaign: do PLAN once, then continue with step 5.
+4. If the index phase is \`finished\` and no tasks are pending, there is nothing to do. Do not message the user, do not call \`cancel_reminder\`, and end the tick.
+5. If \`currentUnit\` is set and its task is still pending, a previous tick was interrupted. Check what was already persisted for that unit (\`get_memory\` on its record key), finish only the missing part, then close it.
+6. Otherwise take the lowest-numbered pending unit.
+
+PLAN (once per cycle)
+- Break the goal into units that each fit in one tick (roughly 10-15 tool calls). Prefer many small units over a few large ones. If the goal already lists the units, use them exactly as listed.
+- Create one task per unit, in order. Put the finishing work (re-check, report) in the last unit or in the finish step.
+- Write the index. Then call \`send_message\` with a short plan (number of units, what the first ones are).
+- Planning does not count as a unit. After planning, go straight on to the first unit in the same tick, within the per-tick limit below.
+
+DO A UNIT
+- Work on one unit only. Stay inside its scope and tool-call budget. If you find something outside the scope, create a new task for it instead of doing it now. Follow the unit's instructions literally; do not substitute something else for a step you were told to do.
+- Follow this sequence for every unit:
+  1. Update the index: set \`currentUnit\` to the unit number.
+  2. Do the unit's work.
+  3. Persist each result the moment you have it; do not hold results in your head.
+  4. \`complete_task\` with the id from \`list_tasks\`.
+  5. Update the index: increment \`unitsDone\`, set \`lastSummary\` (one line), set \`currentUnit\` to null.
+  Do step 5 after step 4, and step 4 after step 3.
+- A unit is done when there is evidence: records written, or an explicit "nothing found" with the queries or sources you actually checked.
+- If a unit cannot be completed (site down, blocked, no access): store the reason in memory under \`ltt/<campaign>/blocked/<NN>\`, then complete its task so the queue advances (steps 4 and 5). List blocked units in the final report.
+
+CONTINUE
+- Respect the per-tick unit limit given in the goal. If none is given, do up to 3 units per tick if each finishes cleanly; stop earlier if you have used most of your tick budget.
+- If pending units remain, call \`schedule_reminder\` with key \`ltt-<campaign>-continue\` for the next tick (the delay given in the goal, otherwise a few minutes ahead) before ending the tick. Scheduling again with the same key replaces the earlier reminder.
+- End every tick that leaves pending units with a continuation scheduled.
+- Once the per-tick limit is reached, stop instead of starting the next unit.
+
+FINISH A CYCLE
+- When no pending units remain, first read every stored record back with \`get_memory\`. Build the final report only from what you just read, not from memory of the conversation.
+- Send the report with \`send_message\`, and \`publish_artifact\` too if it is substantial.
+- Cancel the continuation reminder with \`cancel_reminder\`, passing only the \`key\` argument (\`ltt-<campaign>-continue\`). Omit \`reminderId\` entirely: do not send an empty string or null. If the result says \`found: false\`, it is already gone. If the call fails, retry at most once, then move on.
+- For recurring goals, schedule the next cycle with \`schedule_reminder\` (stable key, \`repeatEveryMinutes\`). At the start of the next cycle, increment \`cycle\` in the index and create a new set of tasks. Keep existing records: update and re-verify them instead of rediscovering. For non-recurring goals, do not schedule anything further.
+- Set the index phase to \`finished\` and tell the user the cycle is finished and, if recurring, when the next one starts.
+
+RULES
+- Do not redo a completed unit. After a restart or with an empty context, rebuild from the index and tasks instead of starting from scratch.
+- Do not mark progress you did not make, and do not report something as verified without evidence.
+- Keep every memory value compact (facts and short evidence excerpts, not page dumps).
+- If you are blocked on something only the user can provide, send a message saying exactly what you need, and keep working on the other units.
+- Send a brief progress message to the user every few units (done/total, notable findings), not on every tick. Do this except explicitly instructed otherwise.`,
+  requiredTools: ['write_file', 'read_file', 'list_files', 'delete_file', 'stat_file'],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: ['costs', 'session_elapsed'],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 300_000, // 5 min — units are small and chained by reminders
+  visibility: 'public',
+  promptHint: 'Describe a multi-step or ongoing goal and what counts as one unit of work (e.g., "Check various sites for latest flight deals from Lagos to Atlanta for 1 person in March 2027. Each site is a unit of work").',
+};
+
+/**
  * Preset → skill ID mapping.
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
@@ -393,6 +474,7 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   EMAIL_SKILL,
   PLATFORM_DOCS_SKILL,
   BROWSER_SKILL,
+  LONG_RUNNING_TASK_SKILL,
 ];
 
 /**

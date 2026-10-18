@@ -3,6 +3,7 @@ import {
   BASE_SKILL,
   EMAIL_SKILL,
   FILE_MANAGEMENT_SKILL,
+  LONG_RUNNING_TASK_SKILL,
   PROGRAMMING_SKILL,
   SKILL_PRESET_MAP,
   SYSTEM_SKILLS,
@@ -128,6 +129,7 @@ describe('SYSTEM_SKILLS', () => {
       'browser',
       'email',
       'file-management',
+      'long-running-task',
       'platform-docs',
       'programming',
       'web-access',
@@ -314,5 +316,51 @@ describe('PROGRAMMING_SKILL', () => {
   it('instructions mention permission level fallback to execute_code', () => {
     expect(PROGRAMMING_SKILL.instructions).toContain('permission level');
     expect(PROGRAMMING_SKILL.instructions).toContain('execute_code');
+  });
+});
+
+// ── LONG_RUNNING_TASK_SKILL — continuity across ticks ───────────────────────
+
+describe('LONG_RUNNING_TASK_SKILL', () => {
+  it('has slug "system/long-running-task" and is a registered system skill', () => {
+    expect(LONG_RUNNING_TASK_SKILL.slug).toBe('system/long-running-task');
+    expect(SYSTEM_SKILLS).toContain(LONG_RUNNING_TASK_SKILL);
+  });
+
+  it('depends on file-management through tool ownership', () => {
+    expect(inferDependsOn(LONG_RUNNING_TASK_SKILL.requiredTools, LONG_RUNNING_TASK_SKILL.id)).toEqual(['file-management']);
+  });
+
+  it.each([
+    'get_memory',
+    'set_memory',
+    'list_tasks',
+    'complete_task',
+    'schedule_reminder',
+    'cancel_reminder',
+    'send_message',
+  ])('instructions use the base tool %s, which BASE_SKILL provides', (toolName) => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain(toolName);
+    expect(BASE_SKILL.requiredTools).toContain(toolName);
+  });
+
+  it('keeps durable progress in tasks and memory, not workspace files', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('ltt/<campaign>/index');
+    expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('Workspace files are NOT durable');
+  });
+
+  it('is domain-agnostic', () => {
+    expect(LONG_RUNNING_TASK_SKILL.instructions).not.toMatch(/farm|hofnachfolge|probe|sourdough/i);
+  });
+});
+
+describe('BASE_SKILL — long-running task pointer', () => {
+  it('tells the agent to add system/long-running-task for goals that span ticks', () => {
+    expect(BASE_SKILL.instructions).toContain('system/long-running-task');
+    expect(BASE_SKILL.instructions).toContain('cannot be finished in one tick');
+  });
+
+  it('does not bake the long-running protocol into the base prompt', () => {
+    expect(BASE_SKILL.instructions).not.toContain('ltt/<campaign>');
   });
 });

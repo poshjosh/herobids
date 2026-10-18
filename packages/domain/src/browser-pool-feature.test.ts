@@ -381,9 +381,10 @@ describe('SYSTEM_SKILLS — browser skill', () => {
     expect(browserSkill).toBe(BROWSER_SKILL);
   });
 
-  it('BROWSER_SKILL is the last entry in SYSTEM_SKILLS', () => {
-    const last = SYSTEM_SKILLS[SYSTEM_SKILLS.length - 1];
-    expect(last?.id).toBe('browser');
+  it('BROWSER_SKILL stays ahead of skills appended after it', () => {
+    const ids = SYSTEM_SKILLS.map((s) => s.id);
+    expect(ids.indexOf('browser')).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf('browser')).toBeLessThan(ids.indexOf('long-running-task'));
   });
 });
 

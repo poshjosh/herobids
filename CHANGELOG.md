@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `system/long-running-task` skill: how to split a multi-tick goal into recorded units, keep progress in durable tasks and memory, chain ticks with a reminder, and resume after a restart. The base skill now points agents to it for goals that cannot be finished in one tick.
+
 ## v0.7.2 - 2026-10-16
 
 ### Changed
