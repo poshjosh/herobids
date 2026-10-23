@@ -42,7 +42,7 @@ Not a blocker for Wave 3 work (owner, 2026-10-15). Decide whether to require WP-
 
 ## Done when
 
-- The form contains no trading references.
+- ~~The form contains no trading references.~~ **Amended 2026-10-23 (owner):** trading fields stay in the create form for now (execution mode, venue, trading guardrails, and the trading auto-select in the connection picker). Trading setup will later be shown in a form hosted by Traderton, similar to a payment provider's hosted payment form. The connection picker stays generic. See [004](004-trading-removal-from-creation.md).
 - The form calls `POST /agents`.
 - The guided chat page is unreachable, and its create tool is removed.
 - `pnpm test`, the per-project `tsc --noEmit` checks, and `scripts/shell/tests/run-all-tests.sh --e2e` pass. Root `pnpm lint` checks nothing, so use the per-project checks.

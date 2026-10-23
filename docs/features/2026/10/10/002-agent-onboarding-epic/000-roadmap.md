@@ -112,7 +112,7 @@ All pending docs relevant to this epic were read against the code. Severity: HIG
 ## Gates and definition of done
 
 - **G1** (before cut-over): the self-serve loop UAT described above passes on the old flows, in test mode, including link expiry handled by the agent.
-- **Cut-over done**: form and guided chat contain no trading references; both call one shared create core; `pnpm lint`, `pnpm test`, `scripts/shell/tests/run-all-tests.sh --e2e` pass; public content and docs index regenerated.
+- **Cut-over done** *(amended 2026-10-23: the "no trading references" check is dropped; trading fields stay in the form until the Traderton-hosted trading form exists)*: guided chat is removed; the create form calls `POST /agents`; `pnpm lint`, `pnpm test`, `scripts/shell/tests/run-all-tests.sh --e2e` pass; public content and docs index regenerated.
 - **Channels done**: each channel passes its own round-trip test, has `.example` twins, i18n keys, and appears in the create form only when `available` and healthy.
 
 ## Open decisions (need the owner)

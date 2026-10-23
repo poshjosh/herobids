@@ -10,7 +10,7 @@
 
 A user creates an agent with a name and a way to talk to it. After that the agent does the rest: it adds its own skills, discovers what it can connect to, sends the user a link when it needs a connection, is woken when the connection exists, and sets its own goal. The create flow shrinks to a name-and-channel form (guided chat was removed), and trading disappears from creation because it is one capability the agent can acquire like any other.
 
-**Success = Gate G1 passes** (the self-serve loop UAT, §6) **and the cut-over ships** (the form contains no trading references and calls `POST /agents`; guided chat is removed).
+**Success = Gate G1 passes** (the self-serve loop UAT, §6) **and the cut-over ships** (the form calls `POST /agents`; guided chat is removed). *(Amended 2026-10-23: "the form contains no trading references" is dropped. Trading fields stay in the form for now; trading setup will later be shown in a Traderton-hosted form, like a payment provider's hosted form.)*
 
 ---
 
@@ -70,7 +70,7 @@ These are settled. Implement them as specified; do not reopen them.
 | D-C1 | Channel vs connection | A channel (Telegram/WhatsApp/email) is a **chat-address binding**, not a `connections` row. A Gmail-type `connection` (agent sends as the user) is separate and optional. |
 | D-C2 | Channel scope | Channels bound **per user**; agents inherit. |
 | D-C3 | In-app chat | **Accepted.** Minimal in-app conversation on the agent detail page (not the `chat_sessions` model). External channel optional but strongly recommended. *(Amended 2026-10-15: the conversation moves to one store shared by web and Telegram. See [two-way agent chat](../../../10/15/002-two-way-agent-chat/001-plan.md). Agent-to-agent messaging is in [pending/000-agent-to-agent-messaging](../../../../pending/000-agent-to-agent-messaging/001-plan.md).)* |
-| D-C4 | Start step | **No auto-start.** Create (stopped) → press Start → land in conversation. Revisit only if the extra click proves to be friction. |
+| D-C4 | Start step | **Auto-start (amended 2026-10-23).** New agents start on creation and land in the conversation. The original "No auto-start" decision is superseded by owner decision (commit `b5ea3952`). |
 | D-C5 | Name | Optional; auto-generated if blank; unique per user (collision retry). |
 | D-C6 | Goal at creation | Not asked. If the user volunteers one, forward it as the agent's **first message** (not stored as prompt). Amended 2026-10-16: the agent does not write its own goal. The creator sets it, or asks the agent to change it with `update_my_prompt` (in their own words, after the agent asks). The first-turn rule that had a blank-goal agent restate the first request as its goal was removed. |
 | D-C7 | API compatibility | `POST /agents` keeps accepting the full payload. Only the two UIs are simplified. |
@@ -187,7 +187,7 @@ After **each wave** (and after Gate G1 and the cut-over):
 
 **Definition of done for the whole epic:**
 - Gate G1 UAT passes and is recorded.
-- Cut-over ships: no trading references in the form; guided chat removed; shared create core deferred (2026-10-15).
+- Cut-over ships: guided chat removed; shared create core deferred (2026-10-15). *(Amended 2026-10-23: no trading-reference check. Trading fields stay in the form until the Traderton-hosted trading form exists.)*
 - `pnpm lint`, `pnpm test`, `scripts/shell/tests/run-all-tests.sh --e2e` all pass.
 - Every new env var has a committed `.example` twin; every new config key is in the schema + `default.yaml`.
 - Every decision made during implementation is recorded in the relevant plan.

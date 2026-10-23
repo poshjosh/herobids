@@ -13,7 +13,7 @@
 | Wave 1 | WP-A A1/A2/A3-design · WP-H H1–H2 · WP-M Phase 0–1 · WP-C S0 | done |
 | Wave 2 | WP-A A3–A7 · WP-B B1–B8 · WP-C S1–S2 | items done; gate run 2026-10-14; deferred follow-ups listed under "Not verified or deferred" |
 | Gate G1 | self-serve loop UAT | Waived by owner 2026-10-15: treated as passed for the cut-over; trade and go-live steps not run. Partial PASS (see G1 log below); rerun 2026-10-15 passes link, wake, wallet and account/funding tools (see G1 rerun below). Not passed: trade in test mode and go-live with a cloned agent not run |
-| Wave 3 | cut-over (WP-C S3; S4 replaced by guided chat removal) | started 2026-10-15: S3 shipped, guided chat removed, shared create core deferred. Cut-over gate status in IMPLEMENTATION §6 |
+| Wave 3 | cut-over (WP-C S3; S4 replaced by guided chat removal) | **Done 2026-10-23 (owner).** Form calls `POST /agents`; guided chat removed; shared create core deferred; trading fields stay in the form until the Traderton-hosted form exists. Tests run by owner after each tag since 0.7.2. |
 | Wave 4 | channels (WP-M Phase 2–4, WP-C S5.1, WP-E) | not started |
 | Wave 5 | cleanup (WP-M Phase 6) | not started |
 
@@ -126,6 +126,14 @@ Known gaps G1 depends on:
 
 - **Superseded (done):** B4 step 3 plan, kept for history: Verified facts: the broker is constructed only in `apps/worker/src/index.ts`. The trading write client is created inside the `sideEffectBoundary` IIFE (around line 439), so it must be hoisted into a shared `tradingClient`. The broker has `db` and `sideEffectBoundary` but not the client. Defaults must come through the worker's read boundary (`ctx.externalBackend.invoke`, mapped to a read result) or a `loadTestProvisioningDefaults` helper. The API loader (`apps/api/src/traderton-operator-defaults.ts`) takes a `TradertonReadBoundary` and is not shared yet. Edits: protocol constant, payload and result schemas, `MESSAGE_PAYLOAD_SCHEMAS`; `KNOWN_AGENT_TOOL_NAMES`, `TOOL_CATALOG` and BASE `requiredTools`; `capability-policy` brokered grant; `publishTradingSetupReply` on the event publisher; broker switch case, optional `tradingSetup` constructor param appended last, and a `handleManageTradingSetup` method with the same trading-capability gate as `request_connection`; `set_trading_setup` tool that BLPOPs the reply; registration in the tools index; manifest row (`external:trading`); tests for the tool and broker branches.
 - After step 3: B5 (reuse is in place; add the plan-limit plain-words test), S1, S2, the `use_existing` UI, and the Wave 2 gate. Move `createTradingProviderLink`, `parseProvisionedWallet` and `compensateProvision` out of `apps/api/src/routes/setup.ts` (about lines 324–514) into `packages/db/src/trading-setup/`, so both the API route and the new `setupTradingForAgent` call the same generated-connection creation. Then B4 step 2d: `setupTradingForAgent` (operator defaults, reuse-or-create, running grant with `changes`, summary). Then step 3 (broker message, capability, `set_trading_setup` tool), B5 reuse, S1, S2, `use_existing` UI, and the Wave 2 gate.
+
+## Owner waiver and decisions (2026-10-23)
+
+- **Gate G1 waiver (owner):** all outstanding G1 items are waived for Wave 3 and beyond. Agents are actively trading on staging. Go-live has not been tested and is accepted as an open risk.
+- **D-C4 amended (owner):** auto-start is kept. New agents start on creation (commit `b5ea3952`).
+- **Working tree:** owner confirms no uncommitted herobids changes.
+- **Cut-over gate amended (owner, 2026-10-23):** trading fields (execution mode, venue, trading guardrails, trading auto-select in the connection picker) stay in the create form for now. The connection picker stays generic. Future: trading setup is shown in a form hosted by Traderton, like a payment provider's hosted form. The "no trading references in the form" criterion is removed from IMPLEMENTATION, the roadmap, and the wave 3 README. Plan [004](../../15/001-wave3-cutover/004-trading-removal-from-creation.md) is deferred.
+- **Next:** Wave 3 cut-over (WP-C S3 form change, per [006 plan](./../006-simplified-agent-creation/001-plan.md)), then Wave 4.
 
 ## Outstanding issues
 

@@ -1,5 +1,14 @@
 # 004 Trading removal from creation (narrow)
 
+> **Status: DEFERRED / SUPERSEDED (owner, 2026-10-23).** Do not implement the removals below for the cut-over.
+>
+> - Trading fields stay in the create form for now: execution mode, venue, trading guardrails, and the trading auto-select and grouping in the connection picker.
+> - The connection picker stays generic (connections are not only trading).
+> - Future direction: trading setup is shown in a form hosted by Traderton, the way a payment provider hosts a payment form. Herobids will hand off to that form instead of rendering trading fields itself.
+> - Guided chat removal (003) is unchanged.
+> - The cut-over "done" criterion "no trading references in the form" no longer applies. Use "the create form calls `POST /agents`, and guided chat is removed" instead.
+> - The term list and removal list below are kept for history only.
+
 **Depends on:** 002 merged.
 
 ## Scope (owner decision D-1)
