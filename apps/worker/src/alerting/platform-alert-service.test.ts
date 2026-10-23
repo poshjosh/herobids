@@ -86,6 +86,7 @@ describe('PlatformAlertService', () => {
       const call = agentRepo.insertOutboundMessage.mock.calls[0]![0];
       expect(call.agentId).toBe('agent-abc-12345678');
       expect(call.authoredBy).toBe('platform');
+      expect(call.messageClass).toBe('alert');
       expect(call.subject).toBe('Runtime Unhealthy');
       expect(call.body).toContain('heartbeat loss');
       expect(call.body).toContain('300 seconds ago');

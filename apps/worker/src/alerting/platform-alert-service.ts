@@ -74,6 +74,7 @@ export class PlatformAlertService {
       agentId: ctx.agentId,
       sessionId: ctx.sessionId,
       authoredBy: 'platform',
+      messageClass: 'alert',
       subject: eventSubject(event),
       body: ctx.message + (ctx.detail ? `\n\n${ctx.detail}` : ''),
       contextRef: ctx.sessionId,

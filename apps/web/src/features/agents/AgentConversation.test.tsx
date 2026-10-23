@@ -28,6 +28,7 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.introClose': 'Close',
   'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
   'agentDetail.conversation.fromPlatform': 'Safety alert',
+  'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',
 };
 
 function render(props: Partial<Parameters<typeof AgentConversationView>[0]> = {}): string {
@@ -85,12 +86,30 @@ describe('AgentConversationView', () => {
     expect(render()).toContain('Chat with Tom');
   });
 
-  it('labels platform alerts as safety alerts, never as the user', () => {
-    const alert = { ...messages[0], id: 'm2', authoredBy: 'platform', body: 'Balance low.' } as unknown as AgentOutboundMessage;
+  it('labels platform safety alerts as safety alerts, never as the user', () => {
+    const alert = { ...messages[0], id: 'm2', authoredBy: 'platform', messageClass: 'alert', body: 'Balance low.' } as unknown as AgentOutboundMessage;
     const html = render({ messages: [alert] });
 
     expect(html).toContain('Safety alert');
     expect(html).not.toContain('You');
+  });
+
+  it('labels untagged legacy platform messages as safety alerts', () => {
+    const legacy = { ...messages[0], id: 'm2', authoredBy: 'platform', messageClass: null, body: 'Balance low.' } as unknown as AgentOutboundMessage;
+    expect(render({ messages: [legacy] })).toContain('Safety alert');
+  });
+
+  it('does not label platform reminders as safety alerts', () => {
+    const reminder = { ...messages[0], id: 'm2', authoredBy: 'platform', messageClass: 'reminder', subject: 'Session started', body: 'nimble-falcon is now ready for your instructions.' } as unknown as AgentOutboundMessage;
+    const html = render({ messages: [reminder] });
+
+    expect(html).toContain('OpenAIdom');
+    expect(html).not.toContain('Safety alert');
+  });
+
+  it('wraps long unbroken links inside the message bubble', () => {
+    const link = { ...messages[0], id: 'm4', body: 'https://staging.openaidom.com/auth/connection-request/callback?token=EkMhFj6xNZG1X0rrvNEHtFURDK7GDD8NhJpiRcB102I' } as unknown as AgentOutboundMessage;
+    expect(render({ messages: [link] })).toContain('overflow-wrap:anywhere');
   });
 
   it('shows the oldest message first', () => {

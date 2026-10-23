@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useIntl } from 'react-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type AgentOutboundMessage } from '../../lib/api-client.js';
@@ -9,6 +9,11 @@ const RUNNING_STATUSES = ['active', 'starting', 'paused', 'unhealthy'];
 export const CONVERSATION_POLL_MS = 3000;
 
 const HINT_STYLE: CSSProperties = { color: 'var(--color-text-muted)', fontSize: '0.8125rem' };
+
+// Untagged platform messages predate messageClass and were all safety alerts.
+function isSafetyAlert(message: AgentOutboundMessage): boolean {
+  return message.messageClass === null || message.messageClass === undefined || message.messageClass === 'alert';
+}
 
 const NOTICE_STYLE: CSSProperties = {
   display: 'flex',
@@ -68,6 +73,15 @@ export function AgentConversationView({
 }: AgentConversationViewProps) {
   const intl = useIntl();
   const trimmed = draft.trim();
+  const listRef = useRef<HTMLDivElement>(null);
+  // API returns newest first, so messages[0] is the latest; keep the list pinned to it.
+  const newestId = messages[0]?.id;
+  useEffect(() => {
+    const list = listRef.current;
+    if (list) {
+      list.scrollTop = list.scrollHeight;
+    }
+  }, [messages.length, newestId]);
   return (
     <Card>
       <div style={{ border: canSend || isStarting ? '1.5px solid var(--color-brand)' : undefined, borderRadius: '10px', padding: '2px' }}>
@@ -105,7 +119,7 @@ export function AgentConversationView({
       {messages.length === 0 ? (
         <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.empty' })}</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div ref={listRef} style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto', overflowX: 'hidden' }}>
           {/* API returns newest first */}
           {[...messages].reverse().map((message) => {
             const fromUser = message.authoredBy === 'user';
@@ -117,13 +131,14 @@ export function AgentConversationView({
                   borderRadius: '12px',
                   fontSize: '0.875rem',
                   whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
                   background: fromUser ? 'var(--color-brand-subtle)' : 'var(--color-surface-2)',
                 }}>
                   {!fromUser && (
                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '2px' }}>
                       {message.authoredBy === 'agent'
                         ? agentName
-                        : intl.formatMessage({ id: 'agentDetail.conversation.fromPlatform' })}
+                        : intl.formatMessage({ id: isSafetyAlert(message) ? 'agentDetail.conversation.fromPlatform' : 'agentDetail.conversation.fromOpenAIdom' })}
                     </div>
                   )}
                   {message.body}
