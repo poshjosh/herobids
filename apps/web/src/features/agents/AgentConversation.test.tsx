@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentConversationView, isAgentConversable, isSendShortcut } from './AgentConversation.js';
+import { AgentConversationView, formatMessageTime, isAgentConversable, isSendShortcut } from './AgentConversation.js';
 import type { AgentOutboundMessage } from '../../lib/api-client.js';
 
 const messages: AgentOutboundMessage[] = [{
@@ -11,6 +11,7 @@ const messages: AgentOutboundMessage[] = [{
   authoredBy: 'agent',
   subject: null,
   body: 'Watching ETH.',
+  createdAt: '2026-10-23T09:30:00.000Z',
   contextRef: null,
   messageClass: 'routine',
   deliveryStatus: 'sent',
@@ -26,7 +27,6 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.intro': 'Tell your agent what to do by chatting with it on Telegram (if configured) or directly here, just like you would a human employee or personal assistant.',
   'agentDetail.conversation.introClose': 'Close',
   'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
-  'agentDetail.conversation.fromAgent': 'Agent',
   'agentDetail.conversation.fromPlatform': 'Safety alert',
 };
 
@@ -132,5 +132,14 @@ describe('AgentConversationView', () => {
 
   it('shows the empty state when there are no messages', () => {
     expect(render({ messages: [] })).toContain('No messages yet.');
+  });
+
+  it('shows only the time for messages from today and the date for older ones', () => {
+    const format = { formatDate: (value: Date, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en', options).format(value) };
+    const now = new Date(2026, 9, 23, 18, 0, 0);
+    const today = new Date(2026, 9, 23, 9, 30, 0).toISOString();
+    const older = new Date(2026, 9, 20, 9, 30, 0).toISOString();
+    expect(formatMessageTime(format, today, now)).not.toContain('2026');
+    expect(formatMessageTime(format, older, now)).toContain('2026');
   });
 });

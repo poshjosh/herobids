@@ -115,4 +115,42 @@ describe('agent wake scheduler decisions', () => {
     expect(decision.wakePending).toBe(false);
     expect(decision.wakeTriggered).toBe(false);
   });
+
+  it('reschedules immediately with no cooldown when a user message is pending', () => {
+    expect(getWakeRescheduleDelay({
+      running: true,
+      tickInFlight: false,
+      nextTickDueAt: 1_000_000,
+      now: 1_000_000 - 5_000,
+      effectiveTickIntervalMs: 60_000,
+      wakeMinIntervalMs: 15_000,
+      userMessagePending: true,
+    })).toBe(0);
+  });
+
+  it('keeps the cooldown for market wakes without a user message', () => {
+    expect(getWakeRescheduleDelay({
+      running: true,
+      tickInFlight: false,
+      nextTickDueAt: 1_000_000 + 60_000,
+      now: 1_000_000,
+      effectiveTickIntervalMs: 60_000,
+      wakeMinIntervalMs: 15_000,
+    })).toBe(15_000);
+  });
+
+  it('runs a pending user message at tick end without waiting for the cooldown', () => {
+    const decision = resolveNextTickDelay({
+      requestedDelayMs: 60_000,
+      wakePending: true,
+      tickInFlight: false,
+      now: 1_000_000,
+      lastWakeTickAt: 1_000_000 - 1_000,
+      wakeMinIntervalMs: 15_000,
+      userMessagePending: true,
+    });
+    expect(decision.actualDelayMs).toBe(0);
+    expect(decision.wakeTriggered).toBe(true);
+    expect(decision.wakePending).toBe(false);
+  });
 });

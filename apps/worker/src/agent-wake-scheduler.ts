@@ -5,11 +5,17 @@ export interface WakeRescheduleDecisionInput {
   now: number;
   effectiveTickIntervalMs: number;
   wakeMinIntervalMs: number;
+  /** A user message is waiting: run as soon as the current tick (if any) ends, skipping the cooldown. */
+  userMessagePending?: boolean;
 }
 
 export function getWakeRescheduleDelay(input: WakeRescheduleDecisionInput): number | null {
   if (!input.running || input.tickInFlight) {
     return null;
+  }
+
+  if (input.userMessagePending) {
+    return 0;
   }
 
   const remainingDelayMs = input.nextTickDueAt > 0
@@ -27,6 +33,8 @@ export interface NextTickDelayDecisionInput {
   now: number;
   lastWakeTickAt: number;
   wakeMinIntervalMs: number;
+  /** A user message is waiting: skip the wake cooldown. */
+  userMessagePending?: boolean;
 }
 
 export interface NextTickDelayDecision {
@@ -43,7 +51,12 @@ export function resolveNextTickDelay(input: NextTickDelayDecisionInput): NextTic
   let nextLastWakeTickAt = input.lastWakeTickAt;
   let wakeTriggered = false;
 
-  if (input.wakePending && !input.tickInFlight) {
+  if (input.wakePending && !input.tickInFlight && input.userMessagePending) {
+    actualDelayMs = 0;
+    nextLastWakeTickAt = input.now;
+    wakeTriggered = true;
+    nextWakePending = false;
+  } else if (input.wakePending && !input.tickInFlight) {
     const timeSinceLastWake = input.now - input.lastWakeTickAt;
     if (timeSinceLastWake >= input.wakeMinIntervalMs) {
       actualDelayMs = Math.min(actualDelayMs, input.wakeMinIntervalMs);

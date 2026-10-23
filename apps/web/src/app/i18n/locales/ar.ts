@@ -587,7 +587,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.starting': 'جارٍ بدء وكيلك… سيكون جاهزًا للدردشة بعد لحظات.',
   'agentDetail.conversation.intro': 'أخبر وكيلك بما تريد عبر الدردشة معه على Telegram (إذا كان مُعدًّا) أو مباشرةً هنا، تمامًا كما تتحدث مع موظف أو مساعد شخصي.',
   'agentDetail.conversation.introClose': 'إغلاق',
-  'agentDetail.conversation.fromAgent': 'الوكيل',
   'agentDetail.conversation.fromPlatform': 'تنبيه أمان',
   'setup.useExisting.title': 'استخدام اتصال موجود لـ {agent}',
   'setup.useExisting.confirm': 'استخدم هذا الاتصال',

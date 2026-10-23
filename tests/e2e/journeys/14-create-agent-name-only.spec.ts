@@ -12,7 +12,7 @@ const EMAIL = `j14-${Date.now()}@e2e.local`;
 const PASSWORD = 'E2ePassword14!';
 
 test.describe('Journey 14: create agent with a name only', () => {
-  test('a named agent is created stopped and can be started', async ({ page }) => {
+  test('a named agent is created and starts automatically', async ({ page }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J14');
     await ensureUserAiModelSettings(page);
 
@@ -21,14 +21,12 @@ test.describe('Journey 14: create agent with a name only', () => {
     await page.locator('details summary', { hasText: 'Advanced Settings' }).click();
     await page.locator('[data-field="goal"] textarea').fill('Watch BTC and report daily.');
     await page.getByRole('button', { name: /^Review/ }).first().click();
-    await page.getByRole('button', { name: /^Create AI agent$/i }).click();
+    await page.getByRole('button', { name: /^Create$/ }).click();
 
     await expect(page).toHaveURL(/\/agents\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Name only agent J14' })).toBeVisible({ timeout: 10_000 });
 
-    const startButton = page.getByRole('button', { name: /^Start$/ });
-    await expect(startButton).toBeVisible({ timeout: 10_000 });
-    await startButton.click();
+    // Creating an agent auto-starts it, so Stop is shown instead of Start.
     await expect(page.getByRole('button', { name: /^Stop$/ })).toBeVisible({ timeout: 15_000 });
   });
 });

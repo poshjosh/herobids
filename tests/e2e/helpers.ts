@@ -118,7 +118,7 @@ export async function createAgent(
   await page.locator('details summary', { hasText: 'Advanced Settings' }).click();
   await page.locator('[data-field="goal"] textarea').fill(goal);
   await page.getByRole('button', { name: /^Review/ }).first().click();
-  await page.getByRole('button', { name: /^Create AI agent$/i }).click();
+  await page.getByRole('button', { name: /^Create$/ }).click();
 
   const agentUrlPattern = /\/agents\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
   await page.waitForURL(agentUrlPattern, { timeout: 15_000 });
@@ -162,6 +162,22 @@ async function addAgentSkills(page: Page, agentId: string, skillRefs: string[]):
     }
     return skill;
   });
+
+  // Creating an agent auto-starts it, and config PATCHes are rejected (409
+  // agent_not_editable) unless the agent is stopped. Stop it before editing skills.
+  const stopResponse = await page.request.post(`/api/agents/${agentId}/stop`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!stopResponse.ok()) {
+    throw new Error(`Failed to stop agent ${agentId}: ${stopResponse.status()} ${await stopResponse.text()}`);
+  }
+  await expect.poll(async () => {
+    const res = await page.request.get(`/api/agents/${agentId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const agent = await res.json() as { status?: string };
+    return agent.status;
+  }, { timeout: 30_000 }).toBe('stopped');
 
   await page.goto(`/agents/${agentId}`);
   const capabilities = page.locator('section[aria-label="Capabilities"]');

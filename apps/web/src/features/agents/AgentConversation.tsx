@@ -22,6 +22,23 @@ const NOTICE_STYLE: CSSProperties = {
   lineHeight: '1.5',
 };
 
+/** Time only for messages from today; date and time for older ones. */
+export function isSameLocalDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+export function formatMessageTime(
+  format: { formatDate: (value: Date, options: Intl.DateTimeFormatOptions) => string },
+  iso: string,
+  now: Date = new Date(),
+): string {
+  const when = new Date(iso);
+  const options: Intl.DateTimeFormatOptions = isSameLocalDay(when, now)
+    ? { timeStyle: 'short' }
+    : { dateStyle: 'medium', timeStyle: 'short' };
+  return format.formatDate(when, options);
+}
+
 export const CONVERSATION_INTRO_STORAGE_PREFIX = 'agent-chat-intro-dismissed:';
 
 export function isAgentConversable(status: string): boolean {
@@ -105,11 +122,18 @@ export function AgentConversationView({
                   {!fromUser && (
                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '2px' }}>
                       {message.authoredBy === 'agent'
-                        ? intl.formatMessage({ id: 'agentDetail.conversation.fromAgent' })
+                        ? agentName
                         : intl.formatMessage({ id: 'agentDetail.conversation.fromPlatform' })}
                     </div>
                   )}
                   {message.body}
+                  <time
+                    dateTime={message.createdAt}
+                    title={intl.formatDate(message.createdAt, { dateStyle: 'full', timeStyle: 'medium' })}
+                    style={{ display: 'block', fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px', textAlign: fromUser ? 'end' : 'start' }}
+                  >
+                    {formatMessageTime(intl, message.createdAt)}
+                  </time>
                 </div>
               </div>
             );

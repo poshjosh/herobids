@@ -696,7 +696,7 @@ async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: stri
     return;
   }
 
-  const text = `${agent.name} is now running. Reply to this message to send it instructions.`;
+  const text = `${agent.name} is now ready for your instructions. Reply to this message to instruct it what to do.`;
   const outboundMessageId = await agentRepo.insertOutboundMessage({
     agentId,
     sessionId,

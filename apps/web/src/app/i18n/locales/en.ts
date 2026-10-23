@@ -668,7 +668,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.starting': 'Starting your agent… it will be ready to chat in a moment.',
   'agentDetail.conversation.intro': 'Tell your agent what to do by chatting with it on Telegram (if configured) or directly here, just like you would a human employee or personal assistant.',
   'agentDetail.conversation.introClose': 'Close',
-  'agentDetail.conversation.fromAgent': 'Agent',
   'agentDetail.conversation.fromPlatform': 'Safety alert',
   'setup.useExisting.title': 'Use an existing connection for {agent}',
   'setup.useExisting.confirm': 'Use this connection',

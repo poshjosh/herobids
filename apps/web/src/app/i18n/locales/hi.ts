@@ -587,7 +587,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.starting': 'आपका एजेंट शुरू हो रहा है… कुछ ही क्षणों में चैट के लिए तैयार होगा।',
   'agentDetail.conversation.intro': 'अपने एजेंट को बताएं कि क्या करना है, Telegram (यदि कॉन्फ़िगर है) पर या सीधे यहां चैट करके, ठीक वैसे ही जैसे आप किसी कर्मचारी या निजी सहायक से बात करते हैं।',
   'agentDetail.conversation.introClose': 'बंद करें',
-  'agentDetail.conversation.fromAgent': 'एजेंट',
   'agentDetail.conversation.fromPlatform': 'सुरक्षा चेतावनी',
   'setup.useExisting.title': '{agent} के लिए मौजूदा कनेक्शन उपयोग करें',
   'setup.useExisting.confirm': 'इस कनेक्शन का उपयोग करें',

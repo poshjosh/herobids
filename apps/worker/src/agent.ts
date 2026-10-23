@@ -1556,6 +1556,7 @@ function requestWakeDrivenTick(reason: string): void {
     now: Date.now(),
     effectiveTickIntervalMs,
     wakeMinIntervalMs: WAKE_MIN_INTERVAL_MS,
+    userMessagePending: pendingUserMessage,
   });
 
   if (nextDelayMs !== null) {
@@ -2342,6 +2343,7 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
     now: Date.now(),
     lastWakeTickAt,
     wakeMinIntervalMs: WAKE_MIN_INTERVAL_MS,
+    userMessagePending: pendingUserMessage,
   });
   const actualDelay = delayDecision.actualDelayMs;
   wakePending = delayDecision.wakePending;
@@ -4129,6 +4131,18 @@ async function runActiveTick(): Promise<void> {
       finishReason: !judgeLoopResult.ok ? 'error' : judgeLoopResult.terminatedByLimit ? 'turn_limit' : (hasPendingUserMessage && !judgeSentReply) ? 'stop_without_reply' : 'stop',
       errorMessage: !judgeLoopResult.ok ? judgeLoopResult.error.message : undefined,
     });
+
+    if (judgeLoopResult.ok && hasPendingUserMessage && !judgeSentReply) {
+      // Plain-text output is not delivered; log it so the gap stays visible.
+      logger.warn({
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        tickId,
+        finishReason: 'stop_without_reply',
+        responseLength: judgeLoopResult.assistantResponse.length,
+        responsePreview: judgeLoopResult.assistantResponse.slice(0, 200),
+      }, 'User message received but no send_message reply was made');
+    }
 
     if (!judgeLoopResult.ok) {
       await handleRuntimeFailure('llm', judgeLoopResult.error);
