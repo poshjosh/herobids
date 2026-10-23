@@ -2,7 +2,12 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { AppConfigSchema, findExternalBackendProtocolViolations, resolveExternalBackend } from '@herobids/domain';
+import {
+  AppConfigSchema,
+  findExternalBackendProtocolViolations,
+  findLocalhostAuthViolations,
+  resolveExternalBackend,
+} from '@herobids/domain';
 import type { AppConfig, ResolvedExternalBackend, Result } from '@herobids/domain';
 
 // Resolve monorepo root relative to this file (works for both src/ and dist/ execution)
@@ -152,6 +157,15 @@ export function loadConfig(configDir?: string): AppConfig {
   const protocolViolations = findExternalBackendProtocolViolations(config.externalBackends, env);
   if (protocolViolations.length > 0) {
     throw new Error(`Invalid externalBackends config: ${protocolViolations.join('; ')}`);
+  }
+
+  // Staging and production must not build login or connection links on localhost.
+  const localAuthViolations = findLocalhostAuthViolations(
+    { publicBaseUrl: config.auth.publicBaseUrl, frontendOrigin: config.auth.frontendOrigin },
+    env,
+  );
+  if (localAuthViolations.length > 0) {
+    throw new Error(`Invalid auth config: ${localAuthViolations.join('; ')}`);
   }
 
   if (env === 'production' && config.billing.primaryProvider === 'mock') {

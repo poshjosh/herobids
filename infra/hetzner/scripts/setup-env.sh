@@ -105,6 +105,22 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
+# ─── Validate auth URLs (staging and production must not use localhost) ─────
+
+if [[ "${HEROBIDS_ENV}" == "staging" || "${HEROBIDS_ENV}" == "production" ]]; then
+  for key in AUTH_PUBLIC_BASE_URL AUTH_FRONTEND_ORIGIN; do
+    value="$(grep -E "^${key}=" "${ENV_FILE}" | tail -n 1 | cut -d= -f2- | sed -e "s/[[:space:]\"']//g" || true)"
+    if [[ -z "${value}" ]]; then
+      echo "ERROR: ${key} is missing or empty in ${ENV_FILE}." >&2
+      exit 1
+    fi
+    if [[ "${value}" =~ ^https?://(localhost|127\.[0-9.]+|0\.0\.0\.0|\[::1\]|[^/]*\.localhost)([:/]|$) ]]; then
+      echo "ERROR: ${key}=${value} points to localhost in ${ENV_FILE}." >&2
+      exit 1
+    fi
+  done
+fi
+
 # ─── Upload ──────────────────────────────────────────────────────────────────
 
 echo "==> [${HEROBIDS_ENV}] Ensuring target directory exists on ${SERVER_IP}..."

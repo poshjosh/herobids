@@ -132,10 +132,18 @@ billing:
     webhookSecret: whsec_test_secret
 `);
     process.env['NODE_ENV'] = 'production';
+    process.env['AUTH_PUBLIC_BASE_URL'] = 'https://openaidom.com';
 
     const config = loadConfig(tmpDir);
 
     expect(config.database.url).toBe('postgres://prod-host/herobids');
+  });
+
+  it('rejects a localhost auth.publicBaseUrl in production', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+    process.env['NODE_ENV'] = 'production';
+
+    expect(() => loadConfig(tmpDir)).toThrow(/auth\.publicBaseUrl is "http:\/\/localhost:3000" in a (production|staging) environment/);
   });
 
   it('applies DATABASE_URL env override', () => {
@@ -350,10 +358,27 @@ marketData:
   it('ignores missing NODE_ENV overlay file gracefully', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
     process.env['NODE_ENV'] = 'staging';
+    process.env['AUTH_PUBLIC_BASE_URL'] = 'https://staging.openaidom.com';
 
     const config = loadConfig(tmpDir);
 
     expect(config.database.url).toBe('postgres://localhost/test');
+  });
+
+  it('rejects a localhost auth.publicBaseUrl in staging', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+    process.env['NODE_ENV'] = 'staging';
+
+    expect(() => loadConfig(tmpDir)).toThrow(/auth\.publicBaseUrl is "http:\/\/localhost:3000" in a (production|staging) environment/);
+  });
+
+  it('allows a localhost auth.publicBaseUrl in development', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+    process.env['NODE_ENV'] = 'development';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.auth.publicBaseUrl).toBe('http://localhost:3000');
   });
 
   it('rejects invalid boolean env values instead of silently coercing to false', () => {

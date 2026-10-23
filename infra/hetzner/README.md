@@ -1163,7 +1163,8 @@ ad-hoc terraform commands) automatically pick up the active `terraform.tfvars`.
 ### Environment variable notes
 
 - Database and Redis URLs default to docker-compose values and do not need to be in `.env` unless using external services.
-- `AUTH_PUBLIC_BASE_URL`, `AUTH_FRONTEND_ORIGIN`, and `VITE_API_ORIGIN` are set per environment in the compose overlay (`docker-compose.prod.yaml` / `docker-compose.staging.yaml`). Each overlay uses the correct domain for its environment — no manual editing needed.
+- `AUTH_PUBLIC_BASE_URL` and `AUTH_FRONTEND_ORIGIN` are set per environment in the environment `.env` file (`infra/hetzner/.env.staging` / `.env.production`), pushed to the server by `setup-env.sh`. Compose passes them through with `${VAR:-}`; the overlays do not hardcode them. Staging and production refuse to start if either still resolves to localhost.
+- `VITE_API_ORIGIN` is a web build arg set in the compose overlay (`docker-compose.prod.yaml` / `docker-compose.staging.yaml`).
 - Staging should use separate secrets from production: different JWT secret, OAuth client IDs, Telegram bot tokens, LLM API keys, and billing credentials.
 - **Production billing guard**: The API and worker will refuse to start if `NODE_ENV=production` and `billing.primaryProvider` is still `'mock'`. Set `BILLING_PRIMARY_PROVIDER=creem` (or `stripe`) in `.env.prod`. See `apps/api/src/config.ts` and `apps/worker/src/config.ts` for the guard implementation.
 

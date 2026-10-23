@@ -43,6 +43,7 @@ function blockScalar(block: string | undefined, key: string): string | undefined
 
 const stagingCompose = readText('docker-compose.staging.yaml');
 const prodCompose = readText('docker-compose.prod.yaml');
+const baseCompose = readText('docker-compose.yaml');
 const stagingYaml = readText('config/staging.yaml');
 const prodYaml = readText('config/production.yaml');
 const defaultYaml = readText('config/default.yaml');
@@ -181,25 +182,22 @@ describe('staging/production environment invariants', () => {
     }
   });
 
-  // ── 7. Auth origin consistency ─────────────────────────────────────────
+  // ── 7. Auth origins come from the environment .env, not compose overlays ─
 
-  describe('auth origin consistency in compose overlays', () => {
-    it('staging auth origins point to staging domain', () => {
-      expect(stagingCompose).toMatch(
-        /AUTH_PUBLIC_BASE_URL:\s*https:\/\/staging\.openaidom\.com/,
-      );
-      expect(stagingCompose).toMatch(
-        /AUTH_FRONTEND_ORIGIN:\s*https:\/\/staging\.openaidom\.com/,
-      );
+  describe('auth origins are sourced from .env, not compose overlays', () => {
+    it('staging overlay does not hardcode AUTH_PUBLIC_BASE_URL or AUTH_FRONTEND_ORIGIN', () => {
+      expect(stagingCompose).not.toMatch(/AUTH_PUBLIC_BASE_URL:/);
+      expect(stagingCompose).not.toMatch(/AUTH_FRONTEND_ORIGIN:/);
     });
 
-    it('production auth origins point to production domain', () => {
-      expect(prodCompose).toMatch(
-        /AUTH_PUBLIC_BASE_URL:\s*https:\/\/openaidom\.com/,
-      );
-      expect(prodCompose).toMatch(
-        /AUTH_FRONTEND_ORIGIN:\s*https:\/\/openaidom\.com/,
-      );
+    it('production overlay does not hardcode AUTH_PUBLIC_BASE_URL or AUTH_FRONTEND_ORIGIN', () => {
+      expect(prodCompose).not.toMatch(/AUTH_PUBLIC_BASE_URL:/);
+      expect(prodCompose).not.toMatch(/AUTH_FRONTEND_ORIGIN:/);
+    });
+
+    it('base compose passes AUTH_PUBLIC_BASE_URL and AUTH_FRONTEND_ORIGIN through from .env', () => {
+      expect(baseCompose).toMatch(/AUTH_PUBLIC_BASE_URL:\s*\$\{AUTH_PUBLIC_BASE_URL:-\}/);
+      expect(baseCompose).toMatch(/AUTH_FRONTEND_ORIGIN:\s*\$\{AUTH_FRONTEND_ORIGIN:-\}/);
     });
   });
 
@@ -222,21 +220,21 @@ describe('staging/production environment invariants', () => {
   // ── 8. Cross-file domain consistency ───────────────────────────────────
 
   describe('cross-file domain consistency', () => {
-    it('staging Caddyfile domain matches staging compose auth origin', () => {
+    it('staging Caddyfile domain matches staging compose VITE_API_ORIGIN', () => {
       const caddyMatch = stagingCaddy.match(/(staging\.openaidom\.com)/);
-      const authMatch = stagingCompose.match(
-        /AUTH_PUBLIC_BASE_URL:\s*https:\/\/([\w.-]+)/,
+      const apiOriginMatch = stagingCompose.match(
+        /VITE_API_ORIGIN:\s*https:\/\/([\w.-]+)/,
       );
       expect(caddyMatch?.[1]).toBeTruthy();
-      expect(caddyMatch![1]).toBe(authMatch?.[1]);
+      expect(caddyMatch![1]).toBe(apiOriginMatch?.[1]);
     });
 
-    it('production Caddyfile domain matches production compose auth origin', () => {
+    it('production Caddyfile domain matches production compose VITE_API_ORIGIN', () => {
       const caddyDomains = prodCaddy.match(/[\w.-]*openaidom\.com/g) ?? [];
-      const authMatch = prodCompose.match(
-        /AUTH_PUBLIC_BASE_URL:\s*https:\/\/([\w.-]+)/,
+      const apiOriginMatch = prodCompose.match(
+        /VITE_API_ORIGIN:\s*https:\/\/([\w.-]+)/,
       );
-      expect(caddyDomains).toContain(authMatch?.[1]);
+      expect(caddyDomains).toContain(apiOriginMatch?.[1]);
     });
   });
 

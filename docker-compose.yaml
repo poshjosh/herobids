@@ -83,8 +83,9 @@ services:
       # PORT must stay in sync with the healthcheck below and app.port in config/default.yaml.
       # Changing app.port without updating PORT here will leave the container permanently unhealthy.
       PORT: '3000'
-      AUTH_PUBLIC_BASE_URL: http://localhost:3000
-      AUTH_FRONTEND_ORIGIN: http://localhost:5173
+      # Empty when unset in .env; config/default.yaml supplies the localhost dev default.
+      AUTH_PUBLIC_BASE_URL: ${AUTH_PUBLIC_BASE_URL:-}
+      AUTH_FRONTEND_ORIGIN: ${AUTH_FRONTEND_ORIGIN:-}
     healthcheck:
       # Uses $${PORT:-3000} (double-$ so Compose does NOT expand it at parse time;
       # the container shell resolves ${PORT:-3000} at runtime against the PORT env
@@ -154,6 +155,8 @@ services:
       # docker build -f docker/Dockerfile.agent -t herobids-agent:latest .
       # For local dev without Docker-in-Docker, override: AGENT_RUNTIME_MODE=stub docker compose up
       AGENT_RUNTIME_MODE: docker
+      # Builds connection-request links; empty falls back to config/default.yaml.
+      AUTH_PUBLIC_BASE_URL: ${AUTH_PUBLIC_BASE_URL:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

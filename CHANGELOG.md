@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Request connection link. Now uses correct host
+
 ## v0.7.3 - 2026-10-18
 
 ### Added

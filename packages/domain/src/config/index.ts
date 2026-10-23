@@ -152,6 +152,7 @@ export {
   type ExternalBackendDefinition,
   type ResolvedExternalBackend,
 } from './external-backends.js';
+export { findLocalhostAuthViolations, LOCAL_AUTH_URL_ENVIRONMENTS, type AuthUrlKey } from './auth-urls.js';
 export type {
   WakePreferences,
   SwapVenue,

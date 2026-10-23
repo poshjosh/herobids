@@ -26,8 +26,6 @@ services:
   api:
     environment:
       NODE_ENV: staging
-      AUTH_PUBLIC_BASE_URL: https://staging.openaidom.com
-      AUTH_FRONTEND_ORIGIN: https://staging.openaidom.com
 
   worker:
     environment:

@@ -204,6 +204,42 @@ describe('loadConfig external backend registry', () => {
     expect(JSON.stringify(config)).not.toContain('must-not-land-in-config');
   });
 
+  it('rejects a localhost auth.publicBaseUrl when NODE_ENV is staging', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml());
+    process.env['NODE_ENV'] = 'staging';
+
+    expect(() => loadConfig(tmpDir)).toThrow(/auth\.publicBaseUrl is "http:\/\/localhost:3000" in a staging environment/);
+  });
+
+  it('rejects a localhost auth.frontendOrigin when NODE_ENV is production', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml());
+    process.env['NODE_ENV'] = 'production';
+    process.env['AUTH_PUBLIC_BASE_URL'] = 'https://openaidom.com';
+
+    expect(() => loadConfig(tmpDir)).toThrow(/auth\.frontendOrigin is "http:\/\/localhost:5173" in a production environment/);
+  });
+
+  it('accepts real auth hosts when NODE_ENV is staging', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml());
+    process.env['NODE_ENV'] = 'staging';
+    process.env['AUTH_PUBLIC_BASE_URL'] = 'https://staging.openaidom.com';
+    process.env['AUTH_FRONTEND_ORIGIN'] = 'https://staging.openaidom.com';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.auth.publicBaseUrl).toBe('https://staging.openaidom.com');
+    expect(config.auth.frontendOrigin).toBe('https://staging.openaidom.com');
+  });
+
+  it('allows localhost auth URLs in development', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml());
+    process.env['NODE_ENV'] = 'development';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.auth.publicBaseUrl).toBe('http://localhost:3000');
+  });
+
   it('rejects protocol mcp when NODE_ENV is staging', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + backendYaml('      protocol: mcp\n      mcpPath: /mcp\n'));
     process.env['NODE_ENV'] = 'staging';
