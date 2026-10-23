@@ -1,6 +1,6 @@
 {
   "name": "herobids",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "private": true,
   "description": "AI first trading",
   "type": "module",
