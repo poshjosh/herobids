@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Creating an agent automatically starts it.
+
 ### Fixed
 
 - Request connection link. Now uses correct host

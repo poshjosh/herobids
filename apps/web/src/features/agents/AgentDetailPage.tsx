@@ -390,6 +390,8 @@ export function AgentDetailPage() {
           </details>
         </Card>
 
+        <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} />
+
         <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
           <Card>
             <details>
@@ -495,8 +497,6 @@ export function AgentDetailPage() {
             </details>
           </Card>
         </section>
-
-        <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} />
 
         {agent.activeSession && (
           <Card>

@@ -23,7 +23,7 @@ const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
   bold: 'agents.style.bold.label',
 };
 
-const CARD_TITLE_STYLE: CSSProperties = { fontSize: '1.375rem', fontWeight: 700, color: 'var(--color-text-primary)' };
+const CARD_TITLE_STYLE: CSSProperties = { fontSize: '1.0625rem', fontWeight: 600, color: 'var(--color-text-primary)' };
 
 /** Narrows a loose string (API/DOM boundary) to a canonical ReasoningLevel, or null if invalid. */
 function toReasoningLevel(value: string | null | undefined): ReasoningLevel | null {
@@ -557,6 +557,14 @@ export function CreateAgentFlow({
             console.warn('Document upload failed:', file.name, err);
           }
         }
+      }
+
+      // Auto-start: the agent exists even if start fails (e.g. incomplete model config),
+      // so the detail page keeps the Start action rather than failing the create.
+      try {
+        await agentsApi.start(agent.id);
+      } catch (err) {
+        console.warn('Agent created but auto-start failed:', err);
       }
 
       return agent;

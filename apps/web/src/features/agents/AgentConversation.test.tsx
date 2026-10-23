@@ -22,6 +22,9 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.placeholder': 'Message your agent',
   'agentDetail.conversation.send': 'Send',
   'agentDetail.conversation.empty': 'No messages yet.',
+  'agentDetail.conversation.starting': 'Starting your agent… it will be ready to chat in a moment.',
+  'agentDetail.conversation.intro': 'Tell your agent what to do by chatting with it on Telegram (if configured) or directly here, just like you would a human employee or personal assistant.',
+  'agentDetail.conversation.introClose': 'Close',
   'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
   'agentDetail.conversation.fromAgent': 'Agent',
   'agentDetail.conversation.fromPlatform': 'Safety alert',
@@ -115,6 +118,16 @@ describe('AgentConversationView', () => {
 
   it('shows the character count against the 4000 limit', () => {
     expect(render({ draft: 'hello' })).toContain('5/4000');
+  });
+
+  it('shows the starting notice while the agent is starting', () => {
+    expect(render({ isStarting: true, canSend: false })).toContain('Starting your agent');
+  });
+
+  it('shows the post-start intro only when the agent can receive messages and it has not been dismissed', () => {
+    expect(render({ canSend: true, showIntro: true })).toContain('just like you would a human employee');
+    expect(render({ canSend: false, showIntro: true })).not.toContain('just like you would a human employee');
+    expect(render({ canSend: true, showIntro: false })).not.toContain('just like you would a human employee');
   });
 
   it('shows the empty state when there are no messages', () => {
