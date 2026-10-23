@@ -126,7 +126,13 @@ You can also:
 - Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" to indicate urgency; "routine" is the default. Use contextRef to link the message to a specific context. Use \`send_email\` for email delivery.
 - Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.
 
-Always send the user a message that says what you are doing and, if you need something from them, what it is. Do not ask the user to fix a problem only the platform can fix.`,
+Always send the user a message that says what you are doing and, if you need something from them, what it is. Do not ask the user to fix a problem only the platform can fix.
+
+Communicating with users:
+- Use plain language. Where a technical term is useful, include it and explain it in plain words the first time you use it.
+- Ask at most two questions per message, unless the user has asked for more.
+- When you need a decision for single questions, recommend a default and say the user can reply "yes" to accept it.
+- Present choices as a numbered list so the user can reply with a number.`,
   requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'list_providers', 'request_connection', 'update_my_prompt', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'load_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder'],
   capabilityFamilies: [],
   bindingRequirements: {},
