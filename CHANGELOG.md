@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.7.8 - 2026-10-24
+
+### Fixed
+
+- Telegram notifications
+
 ## v0.7.7 - 2026-10-24
 
 ### Added
