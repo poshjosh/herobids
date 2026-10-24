@@ -753,20 +753,23 @@ messaging:
       typingRefreshIntervalMs: 4000 # how often the "typing…" action is re-sent while an agent replies (Telegram shows it ~5s)
       typingMaxWindowMs: 180000     # max time typing is refreshed after a user message; sized to llm.timeoutMs
   notifications:
-    enabled: false                  # master switch for out-of-band agent notifications; off = no change in behaviour
+    enabled: true                   # master switch for out-of-band agent notifications; off = no change in behaviour
     eventClasses: [agent.reply, agent.question]  # classes that notify; any other class never notifies
+    # Run this from repo root to generate both vapidPublicKey and vapidPrivateKey: 
+    # pnpm --filter worker exec web-push generate-vapid-keys
+    # Alternatively, `npx web-push generate-vapid-keys` works if you have web-push installed globally
     webPush:
-      enabled: false                # needs the VAPID key pair below
-      vapidSubject: ""              # mailto: or https: contact URI sent to push services
-      vapidPublicKey: ""            # public VAPID key, served to logged-in clients
+      enabled: true                 # needs the VAPID key pair below
+      vapidSubject: "mailto:openaidom.admin@gmail.com" # mailto: or https: contact URI sent to push services
+      vapidPublicKey: "BAUTbKvROjRmHY4-AYTi3z7B3IPtsvO7zZqAfjZkIYKHXyosoK6AJKWXMtigsbK3xXZg1fyYT54kn1hfaVDJIfg" # public VAPID key, served to logged-in clients
       vapidPrivateKey: ""           # secret; override: VAPID_PRIVATE_KEY (env only, never set a value here)
       ttlSeconds: 86400             # how long a push service may hold an undelivered push (24h)
       urgency: normal               # very-low | low | normal | high
     email:
-      enabled: false                # email fallback when push cannot reach the user; needs alerts.email (SES) configured
+      enabled: true                 # email fallback when push cannot reach the user; needs alerts.email (SES) configured
       eventClasses: [agent.question]  # classes that may fall back to email; each must also be in eventClasses above
       maxPerUserPerDay: 10          # fallback emails per user in a rolling 24h window
-      userDefaultEnabled: false     # false = users opt in to email fallback; true = on unless the user opts out
+      userDefaultEnabled: true      # false = users opt in to email fallback; true = on unless the user opts out
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:

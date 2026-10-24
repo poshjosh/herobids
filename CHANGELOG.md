@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.7.7 - 2026-10-24
+
 ### Added
 
 - Telegram "typing…" indicator while an agent works on a reply. It stops when the reply is sent.
