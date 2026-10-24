@@ -709,44 +709,70 @@ export class AgentRepository {
   /**
    * Neutral chat_addresses row governing one agent's scope on one provider: the agent-level
    * row if one exists, otherwise the user-level row. Blank addresses are unset and ignored.
-   * Returns null only when no row applies, which is the only case that may use legacy data.
-   * The owner join (chat_addresses.userId = agents.userId) keeps other users' rows out.
+   * Also returns the agent's legacy agents.telegram_chat_id (trimmed, null when blank) so the
+   * caller can rank it between the two neutral rows. The left join keeps the agent row even
+   * when no chat_addresses row exists. The owner join (chat_addresses.userId = agents.userId)
+   * keeps other users' rows out.
    */
   private async getNeutralChatAddressScope(
     agentId: string,
     provider: ChatProvider,
-  ): Promise<{ address: string; isActive: boolean } | null> {
+  ): Promise<{
+    row: { address: string; isActive: boolean; isAgentLevel: boolean } | null;
+    agentLegacyChatId: string | null;
+  }> {
     const rows = await this.db
       .select({
+        agentTelegramChatId: agents.telegramChatId,
         rowAgentId: chatAddresses.agentId,
         address: chatAddresses.address,
         isActive: sql<boolean>`${chatAddresses.status} = ${'active'}`,
       })
       .from(agents)
-      .innerJoin(chatAddresses, and(
+      .leftJoin(chatAddresses, and(
         eq(chatAddresses.userId, agents.userId),
         eq(chatAddresses.provider, provider),
         or(isNull(chatAddresses.agentId), eq(chatAddresses.agentId, agents.id)),
       ))
       .where(eq(agents.id, agentId));
 
-    const populatedRows = rows.filter((row) => row.address.trim() !== '');
+    const populatedRows = rows.filter((row) => row.address !== null && row.address.trim() !== '');
     const scopeRow = populatedRows.find((row) => row.rowAgentId === agentId)
       ?? populatedRows.find((row) => row.rowAgentId === null);
-    return scopeRow ? { address: scopeRow.address.trim(), isActive: scopeRow.isActive } : null;
+    const agentLegacyChatId = rows[0]?.agentTelegramChatId?.trim() || null;
+    return {
+      row: scopeRow?.address
+        ? {
+          address: scopeRow.address.trim(),
+          isActive: scopeRow.isActive,
+          isAgentLevel: scopeRow.rowAgentId === agentId,
+        }
+        : null,
+      agentLegacyChatId,
+    };
   }
 
   /**
    * Resolve the effective chat address for an agent's outbound messages on one provider.
-   * Precedence: agent-level chat_addresses row > user-level row. Blank addresses are unset.
-   * Fails closed: a chosen row that is not active (revoked or pending_optin) yields null
+   * Telegram precedence: agent-level neutral row > agent legacy agents.telegram_chat_id >
+   * user-level neutral row > user legacy users.telegram_chat_id. Blank addresses are unset.
+   * Fails closed: a chosen neutral row that is not active (revoked or pending_optin) yields null
    * and never falls back to another row or to the legacy Telegram columns.
-   * Telegram uses the legacy telegram_chat_id columns only when no neutral row exists.
+   * Other providers use neutral rows only.
    */
   async getEffectiveChatAddress(agentId: string, provider: ChatProvider): Promise<ChatAddress | null> {
-    const scope = await this.getNeutralChatAddressScope(agentId, provider);
-    if (scope) {
-      return scope.isActive ? { provider, address: scope.address as ChatAddressValue } : null;
+    const { row, agentLegacyChatId } = await this.getNeutralChatAddressScope(agentId, provider);
+    if (row?.isAgentLevel) {
+      return row.isActive ? { provider, address: row.address as ChatAddressValue } : null;
+    }
+
+    // The agent's own legacy chat ID overrides the owner's neutral default.
+    if (provider === 'telegram' && agentLegacyChatId) {
+      return { provider, address: agentLegacyChatId as ChatAddressValue };
+    }
+
+    if (row) {
+      return row.isActive ? { provider, address: row.address as ChatAddressValue } : null;
     }
 
     if (provider !== 'telegram') return null;
@@ -907,7 +933,7 @@ export class AgentRepository {
         .limit(1);
       const outboundOwner = outboundRows[0];
       if (outboundOwner) {
-        const outboundScope = await this.getNeutralChatAddressScope(outboundOwner.agentId, provider);
+        const { row: outboundScope } = await this.getNeutralChatAddressScope(outboundOwner.agentId, provider);
         if (outboundScope && !outboundScope.isActive) return null;
         return outboundOwner;
       }
