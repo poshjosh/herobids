@@ -3,9 +3,9 @@
 **Status:** draft
 **Created:** 2026-10-04
 **Parent:** [000-README.md](./000-README.md)
-**Normative inputs:** [configuration best practices](../../../best-practices/configuration.md)
+**Normative inputs:** [configuration best practices](../../../../../best-practices/configuration.md)
 **Source ADRs:**
-[ADR 09/014 Capability-Agnostic Frontend Presentation](../../../tech/architecture/adrs/2026/09/014-capability-agnostic-frontend-presentation.md) (generic surfaces + capability-scoped detail; i18n keys with English fallback; UI maps semantic emphasis, not raw values)
+[ADR 09/014 Capability-Agnostic Frontend Presentation](../../../../../tech/architecture/adrs/2026/09/014-capability-agnostic-frontend-presentation.md) (generic surfaces + capability-scoped detail; i18n keys with English fallback; UI maps semantic emphasis, not raw values)
 
 Two config layers must not mix (operator vs instance). Chat providers follow the
 same split trading and email already use.
@@ -96,7 +96,7 @@ message-delivery labels, `agents.approvals.telegramHint`) must generalise to
 per-provider keys rather than hardcode Telegram. This touches
 `apps/web` locales in every supported language — budget for it (080-i18n-style
 work), it is not just backend. Per
-[ADR 09/014](../../../tech/architecture/adrs/2026/09/014-capability-agnostic-frontend-presentation.md),
+[ADR 09/014](../../../../../tech/architecture/adrs/2026/09/014-capability-agnostic-frontend-presentation.md),
 the generic agent surfaces should show provider-agnostic readiness and reach
 provider detail through capability→provider; labels carry stable i18n keys with
 an English fallback, and the frontend maps semantic emphasis (e.g. a `revoked`

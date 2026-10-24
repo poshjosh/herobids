@@ -4,8 +4,8 @@
 **Created:** 2026-10-04
 **Parent:** [000-README.md](./000-README.md)
 **Source ADRs:**
-[ADR 06/002 Redis Streams Agent Transport](../../../tech/architecture/adrs/2026/06/002-redis-streams-agent-transport.md) (the `agent:outbound:{agentId}` stream the router delivers onto; at-least-once + dedup-by-`messageId` + transport-neutral envelope),
-[ADR 06/001 Actor-Neutral Agent Protocol](../../../tech/architecture/adrs/2026/06/001-actor-neutral-agent-protocol.md) (the `user.message` envelope is actor-neutral — a chat inbound is just another actor source)
+[ADR 06/002 Redis Streams Agent Transport](../../../../../tech/architecture/adrs/2026/06/002-redis-streams-agent-transport.md) (the `agent:outbound:{agentId}` stream the router delivers onto; at-least-once + dedup-by-`messageId` + transport-neutral envelope),
+[ADR 06/001 Actor-Neutral Agent Protocol](../../../../../tech/architecture/adrs/2026/06/001-actor-neutral-agent-protocol.md) (the `user.message` envelope is actor-neutral — a chat inbound is just another actor source)
 
 Inbound is the heart of the reply-only requirement: a user message must reach
 the right agent. The existing Telegram webhook already does this well; the work

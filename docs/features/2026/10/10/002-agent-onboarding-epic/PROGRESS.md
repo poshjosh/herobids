@@ -129,6 +129,8 @@ Known gaps G1 depends on:
 
 ## Owner waiver and decisions (2026-10-23)
 
+- **Wave 1 gate status (owner, 2026-10-24).** Wave 1 is passed. The "blocked" note in the [WP-M plan, Phase 1 record](../007-multi-provider-chat-messaging/900-implementation-plan.md) came from an earlier run and is superseded by "WAVE 1 GATE PASS" (2026-10-13, line 41 above).
+
 - **Gate G1 waiver (owner):** all outstanding G1 items are waived for Wave 3 and beyond. Agents are actively trading on staging. Go-live has not been tested and is accepted as an open risk.
 - **D-C4 amended (owner):** auto-start is kept. New agents start on creation (commit `b5ea3952`).
 - **Working tree:** owner confirms no uncommitted herobids changes.

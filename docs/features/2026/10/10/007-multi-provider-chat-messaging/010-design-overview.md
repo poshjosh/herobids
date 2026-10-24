@@ -8,9 +8,9 @@
 [010 activation model](../../../../pending/000-capability-foundations/010-capability-activation-model.md),
 [013 native vs external](../../../../pending/000-capability-foundations/013-native-capabilities-and-external-backends.md)
 **Source ADRs:**
-[ADR 07/002 Capability Model & Registry](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md) (superseded for taxonomy but still the origin of the `messaging → chat` tree and the Telegram/Gmail asymmetry rule),
-[ADR 08/008 Native Capabilities & External Backends](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md) (owner kinds `core`/`general`/`native:*`/`external:*`; messaging stays native),
-[ADR 06/002 Redis Streams Agent Transport](../../../tech/architecture/adrs/2026/06/002-redis-streams-agent-transport.md) (the inbound delivery path reused by the router)
+[ADR 07/002 Capability Model & Registry](../../../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md) (superseded for taxonomy but still the origin of the `messaging → chat` tree and the Telegram/Gmail asymmetry rule),
+[ADR 08/008 Native Capabilities & External Backends](../../../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md) (owner kinds `core`/`general`/`native:*`/`external:*`; messaging stays native),
+[ADR 06/002 Redis Streams Agent Transport](../../../../../tech/architecture/adrs/2026/06/002-redis-streams-agent-transport.md) (the inbound delivery path reused by the router)
 
 ## Goal
 

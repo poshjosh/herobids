@@ -114,8 +114,12 @@ not per-user provisioning.
 
 ## Items to confirm before each adapter ships
 
-1. **WhatsApp**: Meta's current pricing for in-window/service messages
-   (free vs. charged post-Oct-2026); whether to go direct-with-Meta or via a BSP.
+1. **WhatsApp**: Meta's current pricing for in-window/service messages.
+   Per secondary sources (2026-10-23), from 1 Oct 2026 the first 1,000 service
+   messages per business number per month are free and each further one is
+   charged at the per-country utility/authentication rate. Confirm on Meta's rate
+   card before launch. Also decide whether to go direct-with-Meta or via a BSP,
+   and the billing model for users (see 900, Phase 4).
 2. **SMS**: whether agent replies could ever be classed as marketing (raises
    consent bar); the A2P 10DLC brand/campaign fees and approval timeline for the
    business entity. (Transport mode is settled: **brokered, one shared A2P

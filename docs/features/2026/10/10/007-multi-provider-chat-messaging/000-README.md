@@ -4,6 +4,8 @@
 **Created:** 2026-10-04
 **Owner:** (unassigned)
 
+> **Agents:** start with [AGENT-ENTRYPOINT.md](./AGENT-ENTRYPOINT.md). It gives the reading order, the current state, and the next task.
+>
 > **Review note (2026-10-10).** This feature is Work Package WP-M of the [agent onboarding epic](../002-agent-onboarding-epic/000-roadmap.md). Two gaps relative to the epic's product channel list (WhatsApp, Telegram, email): conversational **email** (inbound) is not covered here (WP-E), and the Telegram binding is still manual paste, while the create flow needs deep-link auto-capture (note that Telegram `/start <payload>` collides with the existing `/start <agent>` slash command). SMS (phase 5) is off the epic's critical path.
 
 ## One-line
@@ -61,13 +63,18 @@ WhatsApp templates and SMS marketing-consent complexity for the core path.
 | `040-data-model-and-migration.md` | Data model & migration | De-Telegram-ifying the schema: channel-neutral identity, addresses, outbound-message correlation |
 | `050-inbound-routing.md` | Inbound routing | Provider-neutral webhook ingress, reply→agent correlation without `force_reply` |
 | `060-config-secrets-onboarding.md` | Config, secrets, onboarding | `messaging.chat.*` config, env twins, opt-in/consent, chat-address binding UX |
-| `900-implementation-plan.md` | Implementation plan | Phased, verifiable task breakdown with phase gates |
+| `070-typing-indicator.md` | Typing indicator | Telegram "typing…" while an agent works; `sendTyping` on `ChatChannel` (Phase T) |
+| `080-web-push-notifications.md` | Web Push & PWA | `NotificationChannel` port, push subscriptions, installable app, email fallback (Phase W, E) |
+| `085-billing-and-metering.md` | Billing & metering | Paid-message billing: `messaging.chat.billing` config, usage ledger (WhatsApp, Phase 4) |
+| `900-implementation-plan.md` | Implementation plan | Status table, phased task breakdown with phase gates, decision log. **Start here.** |
 
 ## Non-goals
 
 1. Extracting messaging into an external backend.
-2. Agent-*initiated* outbound after a closed session window (templates, SMS
-   marketing). Email covers that.
+2. Agent-*initiated* outbound **chat** after a closed session window (templates,
+   SMS marketing). Email covers that. *(Amended 2026-10-24: agent-initiated
+   **notifications** are allowed on Web Push and email. Chat replies stay
+   reply-only. See [080](./080-web-push-notifications.md).)*
 3. Rich provider-specific features beyond text + the existing document-ingest
    path (no stickers, reactions, voice, buttons in this feature).
 4. Replacing the platform inbox or the email provider path.
@@ -87,20 +94,20 @@ WhatsApp templates and SMS marketing-consent complexity for the core path.
 
 ### Architecture ADRs (`docs/tech/architecture/adrs/2026/`)
 
-- [07/002 Capability Model & Registry](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md)
+- [07/002 Capability Model & Registry](../../../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md)
   — origin of the `messaging → chat` tree (§3) and the Telegram-vs-Gmail
   brokered/connection asymmetry rule (§6, Follow-Up Rule 5). Superseded for the
   native/external split but still the taxonomy source.
-- [08/008 Native Capabilities & External Backends](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md)
+- [08/008 Native Capabilities & External Backends](../../../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md)
   — native vs external; messaging is the native example (§6); tool-owner kinds
   `core`/`general`/`native:*`/`external:*` (§8).
-- [09/014 Capability-Agnostic Frontend Presentation](../../../tech/architecture/adrs/2026/09/014-capability-agnostic-frontend-presentation.md)
+- [09/014 Capability-Agnostic Frontend Presentation](../../../../../tech/architecture/adrs/2026/09/014-capability-agnostic-frontend-presentation.md)
   — generic surfaces, capability-scoped detail, i18n-key + English-fallback,
   semantic-emphasis rendering. Governs the config/UI/i18n work (060).
-- [06/002 Redis Streams Agent Transport](../../../tech/architecture/adrs/2026/06/002-redis-streams-agent-transport.md)
+- [06/002 Redis Streams Agent Transport](../../../../../tech/architecture/adrs/2026/06/002-redis-streams-agent-transport.md)
   — the `agent:outbound:{agentId}` delivery path the inbound router reuses;
   at-least-once + dedup-by-`messageId` + transport-neutral envelope (050).
-- [06/001 Actor-Neutral Agent Protocol](../../../tech/architecture/adrs/2026/06/001-actor-neutral-agent-protocol.md)
+- [06/001 Actor-Neutral Agent Protocol](../../../../../tech/architecture/adrs/2026/06/001-actor-neutral-agent-protocol.md)
   — the actor-neutral `user.message` envelope; a chat inbound is just another
   actor source (050).
 

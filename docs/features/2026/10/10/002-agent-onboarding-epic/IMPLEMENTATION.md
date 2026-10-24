@@ -24,7 +24,7 @@ All under `docs/features/2026/10/10/`:
 | WP-H | `004-shared-profile-derivation/` | `001-plan.md` (+ `000-analysis.md`) | One shared trading-profile derivation for all write paths |
 | WP-B | `005-post-creation-trading-provisioning/` | `001-plan.md` | Trading provisioning for an agent that becomes trading-capable after creation |
 | WP-C | `006-simplified-agent-creation/` | `001-plan.md` | Simplified form (guided chat removed 2026-10-15), in-app conversation, `update_my_prompt` |
-| WP-M | `007-multi-provider-chat-messaging/` | `900-implementation-plan.md` (+ `000`–`060` design docs) | Provider-neutral chat, WhatsApp, SMS, channel address model |
+| WP-M | `007-multi-provider-chat-messaging/` | `AGENT-ENTRYPOINT.md` (start here), then `900-implementation-plan.md` (+ `000`–`085` design docs) | Provider-neutral chat, Web Push, typing, billing (WhatsApp paused), channel address model |
 | WP-E | *(none yet)* | — | Email as a conversational channel (inbound). **Design it during Wave 4** (see §6). |
 
 ---

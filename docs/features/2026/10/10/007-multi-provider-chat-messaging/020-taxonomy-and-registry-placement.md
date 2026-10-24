@@ -7,8 +7,8 @@
 [009 registry manifest](../../../../pending/000-capability-foundations/009-initial-capability-registry-and-tool-ownership-manifest.md),
 [010 activation model](../../../../pending/000-capability-foundations/010-capability-activation-model.md)
 **Source ADRs:**
-[ADR 07/002 Capability Model & Registry](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md) §3–§6 (the `messaging → chat` tree and the Telegram-vs-Gmail asymmetry rule originate here),
-[ADR 08/008 Native Capabilities & External Backends](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md) §8 (tool-owner kinds)
+[ADR 07/002 Capability Model & Registry](../../../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md) §3–§6 (the `messaging → chat` tree and the Telegram-vs-Gmail asymmetry rule originate here),
+[ADR 08/008 Native Capabilities & External Backends](../../../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md) §8 (tool-owner kinds)
 
 This feature must fit the **existing** taxonomy, not extend it. The capability
 registry (009) already names chat providers. The job is to make the
@@ -69,7 +69,7 @@ within 012/013's fixed taxonomy decisions.
 > **This is not a new idea introduced by this feature.** The brokered-vs-
 > connection-backed distinction and the right to list a provider under
 > `messaging/chat` before it has connection semantics are established by
-> [ADR 07/002](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md):
+> [ADR 07/002](../../../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md):
 > §6 states the implementation asymmetry is real (Gmail is connection-backed;
 > Telegram is a brokered transport + chat id; platform inbox is internal), and
 > Follow-Up Rule 5 explicitly says **Telegram must not be forced into Gmail's

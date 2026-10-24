@@ -3,6 +3,8 @@
 - production ip - 167.233.213.107
 - staging ip - 138.199.172.202
 
+infra/hetzner/scripts/reset-and-run.sh --env production 167.233.213.107 --env-file .env.ops.production
+
 ## local
 
 Run both herobids and the external trading service it depends
@@ -49,4 +51,10 @@ curl -v --resolve openaidom.com:443:167.233.213.107 https://openaidom.com
 
 ```sh
 BASE_URL=http://localhost:8090 pnpm exec playwright test --reporter=line 2>&1 | tail -150
+```
+
+```sh
+infra/hetzner/scripts/logs.sh --env production 167.233.213.107 api
+ssh -i ~/.ssh/herobids_deploy_key root@167.233.213.107 'docker inspect --format "{{json .State.Health}}" herobids-api-1'
+ssh -i ~/.ssh/herobids_deploy_key root@167.233.213.107 'docker exec herobids-api-1 node -e "fetch(\"http://127.0.0.1:3000/health\").then(r=>console.log(r.status)).catch(console.error)"'
 ```

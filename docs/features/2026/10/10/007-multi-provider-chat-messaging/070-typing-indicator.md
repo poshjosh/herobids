@@ -1,8 +1,13 @@
 # Plan: Telegram "typing…" indicator while an agent processes a user message
 
-Status: pending
+Status: planned (moved from `pending/000-telegram-typing-indicator` on 2026-10-24 into WP-M, Phase T)
 Owner: (unassigned)
 Related discussion: perceived-latency reduction for Telegram agent replies
+
+> **Decisions (owner, 2026-10-24):**
+> - Typing is a method on the shared `ChatChannel` port (`sendTyping`, optional). Telegram is the only implementation in this slice. Other providers add it later.
+> - Web-chat typing (via SSE) is a later slice, not part of this one.
+> - Trigger, timer, and config are unchanged from the design below.
 
 ## Problem
 
