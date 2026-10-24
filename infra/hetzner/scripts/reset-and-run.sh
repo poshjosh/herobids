@@ -208,6 +208,36 @@ for cmd in jq; do
 done
 log_ok "Remote dependencies verified"
 
+# ─── Pre-flight: verify server auth URLs (staging and production) ────────────
+# The API refuses to start in staging/production if these are missing or point
+# at localhost. Check the server's .env before the wipe, not after it.
+
+if [[ "${HEROBIDS_ENV}" == "staging" || "${HEROBIDS_ENV}" == "production" ]]; then
+  log_section "Pre-flight: server auth URLs"
+
+  REMOTE_AUTH_LINES="$(ssh ${SSH_OPTS} "root@${SERVER_IP}" "grep -E '^AUTH_(PUBLIC_BASE_URL|FRONTEND_ORIGIN)=' /opt/herobids/.env 2>/dev/null || true")"
+  AUTH_MISSING=0
+
+  for key in AUTH_PUBLIC_BASE_URL AUTH_FRONTEND_ORIGIN; do
+    value="$(grep -E "^${key}=" <<< "${REMOTE_AUTH_LINES}" | tail -n 1 | cut -d= -f2- | tr -d "[:space:]\"'" || true)"
+    if [[ -z "${value}" ]]; then
+      log_error "${key} is missing or empty in /opt/herobids/.env on ${SERVER_IP}."
+      AUTH_MISSING=1
+    elif [[ "${value}" =~ ^https?://(localhost|127\.[0-9.]+|0\.0\.0\.0|\[::1\]|[^/]*\.localhost)([:/]|$) ]]; then
+      log_error "${key}=${value} points to localhost on the server."
+      AUTH_MISSING=1
+    else
+      log_ok "${key} is set"
+    fi
+  done
+
+  if [[ "${AUTH_MISSING}" -eq 1 ]]; then
+    die "Server auth URLs are not valid. Nothing has been wiped.
+  Fix: infra/hetzner/scripts/setup-env.sh --env ${HEROBIDS_ENV} --file infra/hetzner/.env.${HEROBIDS_ENV}
+  Then re-run this script."
+  fi
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Step 1 — Reset (wipe everything + seed admin)
 # ═══════════════════════════════════════════════════════════════════════════════
