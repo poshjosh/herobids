@@ -188,6 +188,23 @@ Tasks: [entrypoint §4 P3.1–P3.4](./AGENT-ENTRYPOINT.md).
 - **Gate**: Telegram works through *both* the new neutral route and the legacy
   route; config loads from both old and new keys.
 
+### Phase 3 gate record (2026-10-24)
+
+- Route: `POST` and `GET /messaging/chat/:provider/webhook`; `POST /telegram/webhook` is an alias with unchanged behaviour.
+- Auth bypass limited to `^/messaging/chat/[a-z0-9-]+/webhook$`, with negative tests.
+- Wiring: every Telegram config read in apps/api and apps/worker goes through `resolveTelegramChatConfig`.
+- `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert`: 9 files passed, 1 skipped; 175 passed, 31 skipped.
+- `tsc --noEmit` for `apps/api` and `apps/worker`: exit 0.
+- `pnpm test`: 342 files passed, 26 skipped; 6554 passed, 340 skipped. No failures.
+
+### Outstanding Issues (Phase 3)
+
+- Secret compare in `apps/api/src/routes/telegram-channel.ts` is not constant-time (pre-existing). Changing it needs owner approval (secret verification is not pre-approved).
+- `messaging.chat.telegram.*` has no env mapping (YAML only). Confirm this is intended.
+- Per-field fallback can mix `messaging.chat` and `alerts.telegram` sources. Consider resolving the whole block from one source.
+- GET verify returns 405 for a registered provider with no verify handshake. Decide the status when WhatsApp lands.
+- Worker warning text still names the env variables in one place. Align wording.
+
 ## Phase 4 — WhatsApp adapter (first new provider) — **PAUSED (2026-10-24)**
 
 **Status:** paused. Meta's billing is unclear (see the decision log). The Meta

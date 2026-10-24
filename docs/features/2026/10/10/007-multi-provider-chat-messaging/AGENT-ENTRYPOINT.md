@@ -45,10 +45,10 @@ This is the only record of task state. Work from the top. The first unchecked it
 - `[x]` **P2.4** Custom backfill migration (Phase 2)
 - `[x]` **P2.5** Dual-write (Phase 2)
 - `[x]` **P2.6** Tests and Phase 2 gate
-- `[ ]` **P3.1** Neutral webhook route (Phase 3)
-- `[ ]` **P3.2** Auth bypass for the new route (Phase 3)
+- `[x]` **P3.1** Neutral webhook route (Phase 3)
+- `[x]` **P3.2** Auth bypass for the new route (Phase 3)
 - `[x]` **P3.3** `messaging.chat.*` config (Phase 3)
-- `[ ]` **P3.4** Tests and Phase 3 gate
+- `[x]` **P3.4** Tests and Phase 3 gate
 - `[ ]` **T** Telegram typing indicator ([070](./070-typing-indicator.md))
 - `[ ]` **W** Web Push and installable PWA ([080](./080-web-push-notifications.md))
 - `[ ]` **E** Email notification fallback ([080](./080-web-push-notifications.md))
