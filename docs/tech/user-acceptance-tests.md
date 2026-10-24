@@ -415,3 +415,36 @@ the legal-page trading-clause removal implemented by
 | TW-07 | Privacy Policy — trading clauses removed, Traderton link | Open `/legal/privacy-policy` | Trading data/venues/records clauses gone; working link to Traderton's privacy policy | ✅ (content) / 🔒 (link) | 2026-10-06: Content fully verified correct (all removed/reworded clauses). The link to `https://traderton.com/legal/privacy-policy.html` currently 404s on the live staging host — expected, not a defect: traderton's legal-pages commits are on an unpushed local branch, staging deploys from `main` via CI. Re-verify the link returns 200 once that branch is merged/pushed and deployed |
 | TW-08 | User Agreement — trading clauses removed, Traderton link | Open `/legal/user-agreement` | Trading Agents/decisions/risk/Trading sections, no-advice/no-guarantees, Test/Live definitions all gone; working link to Traderton's user agreement | ✅ (content) / 🔒 (link) | 2026-10-06: Content fully verified correct, including the new "Trading-specific terms" section naming all six migrated concepts. Same link-not-yet-deployed situation as TW-07 — re-verify once traderton's branch ships |
 | TW-09 | ar/hi mirrors reworded, RTL intact | Switch to Arabic and Hindi locales; open about-us, faqs, get-started | Reworded content renders; RTL layout intact for Arabic | ✅ | 2026-10-06: Confirmed both locales; `dir="rtl"`/`lang="ar"` correct for Arabic, `dir="ltr"` for Hindi; no stale "trading bots"/preset wording in either |
+
+## 19. Messaging — typing, reply correlation, Web Push, email fallback
+
+Verifies the messaging changes in `docs/features/2026/10/10/007-multi-provider-chat-messaging/`
+(T, W, E). Web Push and email need configuration: `messaging.notifications.enabled`,
+`messaging.notifications.webPush.*` (with `VAPID_PRIVATE_KEY` set for the worker), and
+`messaging.notifications.email.*` (SES). See [081](../features/2026/10/10/007-multi-provider-chat-messaging/081-web-push-implementation-plan.md)
+and [082](../features/2026/10/10/007-multi-provider-chat-messaging/082-email-fallback-implementation-plan.md).
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| MSG-01 | Typing indicator while agent works | Link Telegram chat; send a message to the agent; watch the chat | "typing…" appears within a few seconds of the message | — | Plan 070 (T) |
+| MSG-02 | Typing stops when reply is sent | Continue MSG-01 until the reply arrives | "typing…" disappears when the reply appears; does not reappear afterwards | — | Plan 070 (T), stop signal |
+| MSG-03 | Quoted reply goes to the right agent | Quote an agent message in Telegram and reply | Reply is delivered to the agent that sent the quoted message; confirmation shown | — | Reply correlation |
+| MSG-04 | Plain message with one running agent | With exactly one agent running, send a message with no quote | Message delivered to that agent | — | Reply correlation rule 3 |
+| MSG-05 | Plain message with several running agents | With two or more agents running, send a message with no quote | Reply says "Multiple running agents found. Use /to …"; nothing delivered | — | Reply correlation rule 4 |
+| MSG-06 | `/to` routes to named agent | Send `/to <agent name> <message>` | Message delivered to that agent only | — | Reply correlation rule 2 |
+| MSG-07 | `/to` with unknown agent | Send `/to unknown hello` | "No agent named unknown found." | — | |
+| WP-01 | Notifications option appears | Open an agent page (or Settings) while Web Push is enabled | Notifications opt-in control is shown; hidden when feature is off | — | Plan 081 W8 |
+| WP-02 | Permission asked only on click | Load the page; do not click | No browser permission prompt on load | — | Plan 081 D2 |
+| WP-03 | Enable notifications | Click the opt-in button and allow the browser prompt | Button shows enabled state; a `push_subscriptions` row exists for the user | — | Manual check M1 |
+| WP-04 | Push notification content | Trigger an agent reply while the browser is closed or in the background | Notification shows the agent name and "You have a new message"; no message text | — | Manual check M1 |
+| WP-05 | Clicking notification opens the agent | Click the notification | Opens `/agents/<id>` in the app | — | Manual check M1 |
+| WP-06 | Install as app | Chromium menu: install the app; check DevTools > Manifest | Manifest has no errors; app installs and opens in its own window | — | Manual check M2 |
+| WP-07 | Android Chrome push | Install the app on Android; trigger a reply with the app closed | Notification arrives; tapping opens the agent | — | Manual check M3 |
+| WP-08 | iOS Safari push | iOS 16.4+: Add to Home Screen; open from the icon; enable notifications; lock screen; trigger reply | Notification arrives; tapping opens the agent | — | Manual check M4 |
+| WP-09 | Turn off notifications | Click the opt-in button to turn off | Subscription revoked (`revoked_at` set); no further push arrives | — | Manual check M5 |
+| EM-01 | Email when push cannot reach user | With no push subscription, trigger an agent question | Email received naming the agent and linking to the conversation; no message text | — | Plan 082 E-D1; manual check M-E1 |
+| EM-02 | Email cap | Trigger more than 10 agent questions in 24 hours with no push subscription | No more than 10 fallback emails sent in 24 hours | — | Plan 082 cap; manual check M-E2 |
+| EM-03 | Email toggle shows effective state | Open Settings with no saved choice | Email fallback toggle is ON while `userDefaultEnabled` is true | — | Toggle fix |
+| EM-04 | Turn email fallback off | Set the Settings toggle to OFF; trigger an agent question with no push subscription | No email sent for that question | — | Manual check M-E3 |
+| EM-05 | Email link opens conversation | Click the link in the email | Opens `/agents/<id>` after sign-in | — | Manual check M-E4 |
+| OPT-01 | Opt-out blocks sends on every account | Mark a chat address as revoked for one user (DB or admin); send from another account that uses the same address | Messages to that address are not sent for any account; the send reports the suppressed status | — | Decision: platform-wide opt-out (060) |

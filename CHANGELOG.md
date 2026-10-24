@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Telegram "typing…" indicator while an agent works on a reply. It stops when the reply is sent.
+- Provider-neutral chat messaging: `POST` and `GET /messaging/chat/:provider/webhook`. `POST /telegram/webhook` still works.
+- Chat addresses per user and agent, with a backfill from existing Telegram chat IDs.
+- Web Push notifications for agent replies and questions, with an installable web app (PWA). Enabled by configuration.
+- Email fallback for agent questions when push cannot reach the user. Users can turn it off in Settings. Capped at 10 emails per user per day by default.
+- `messaging.chat.*` and `messaging.notifications.*` configuration. Existing `alerts.telegram.*` keys still work.
+- Reply correlation: replies are matched to the agent that sent the message. Multiple running agents prompt the user to use `/to <agent>`.
+
+### Changed
+
+- Opt-outs (revoked or pending chat addresses) block replies and sends for that address on every account.
+- Telegram webhook secret is compared in constant time.
+
 ## v0.7.6 - 2026-10-23
 
 ### Added
