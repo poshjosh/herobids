@@ -70,7 +70,7 @@ export function EmailFallbackToggle() {
 
   return (
     <EmailFallbackToggleView
-      enabled={meQuery.data?.notificationPreferences?.notifications?.emailFallback?.enabled === true}
+      enabled={meQuery.data?.emailFallbackEnabled === true}
       busy={!meQuery.isSuccess || saveMutation.isPending}
       saved={saveMutation.isSuccess}
       errorMessage={saveMutation.isError ? localizeApiError(intl, saveMutation.error, 'common.errorTitle') : null}

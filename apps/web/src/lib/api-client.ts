@@ -218,6 +218,8 @@ export interface MeResponse {
   preferredLocale: string | null;
   telegramChatId: string | null;
   notificationPreferences: UserNotificationPreferences | null;
+  /** Effective email fallback choice: the stored value, or the operator default when none is stored. */
+  emailFallbackEnabled?: boolean;
   createdAt: string;
 }
 

@@ -311,7 +311,7 @@ await telegramWebhookHandler(
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
 const authMailer = createAuthMailer(appConfig.alerts, appConfig.alerts.email.brandImageUrl);
-await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans, authMailer);
+await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans, authMailer, appConfig.messaging.notifications.email.userDefaultEnabled);
 
 // ── Capability routes (primary public surface) ────────────────────────────
 // The AGENT trading-evidence endpoints (state/activity/outcomes/positions)

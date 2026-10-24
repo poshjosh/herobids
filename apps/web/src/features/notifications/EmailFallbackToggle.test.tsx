@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { IntlProvider } from 'react-intl';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { messages } from '../../app/i18n/locales/en.js';
 import { messages as arMessages } from '../../app/i18n/locales/ar.js';
 import { messages as hiMessages } from '../../app/i18n/locales/hi.js';
-import { EmailFallbackToggleView, type EmailFallbackToggleViewProps } from './EmailFallbackToggle.js';
+import { EmailFallbackToggle, EmailFallbackToggleView, type EmailFallbackToggleViewProps } from './EmailFallbackToggle.js';
 
 function render(props: Partial<EmailFallbackToggleViewProps> = {}): string {
   return renderToStaticMarkup(
@@ -52,6 +53,32 @@ describe('EmailFallbackToggleView', () => {
     const html = render();
     expect(messages['settings.emailFallback.description']).toMatch(/never includes the message text/);
     expect(html).toContain(messages['settings.emailFallback.label']);
+  });
+});
+
+function renderContainer(me: { emailFallbackEnabled?: boolean; notificationPreferences: null }): string {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  qc.setQueryData(['me'], me);
+  return renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <IntlProvider locale="en" messages={messages} defaultLocale="en">
+        <EmailFallbackToggle />
+      </IntlProvider>
+    </QueryClientProvider>,
+  );
+}
+
+describe('EmailFallbackToggle', () => {
+  it('shows the toggle ticked when the server reports fallback enabled with no stored choice', () => {
+    const html = renderContainer({ emailFallbackEnabled: true, notificationPreferences: null });
+    expect(html).toContain('checked=""');
+  });
+
+  it('shows the toggle unticked when the server reports fallback disabled', () => {
+    const html = renderContainer({ emailFallbackEnabled: false, notificationPreferences: null });
+    expect(html).not.toContain('checked');
   });
 });
 

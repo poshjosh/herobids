@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
-import type { AuthConfig, PlansConfig } from '@herobids/domain';
+import { isEmailFallbackAllowed, type AuthConfig, type PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { users, oauthIdentities, localIdentities, sessions, userPlans, agents } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
@@ -170,6 +170,7 @@ export async function authRoutes(
   defaultPlanId = 'free',
   plansConfig?: PlansConfig,
   authMailer?: AuthMailer,
+  emailFallbackUserDefaultEnabled = false,
 ) {
   function profilePlanEntitlements(planId: string, isAdmin: boolean) {
     if (!plansConfig) {
@@ -909,6 +910,7 @@ export async function authRoutes(
       preferredLocale: user.preferredLocale ?? null,
       telegramChatId: user.telegramChatId ?? null,
       notificationPreferences: user.notificationPreferences ?? null,
+      emailFallbackEnabled: isEmailFallbackAllowed(user.notificationPreferences, emailFallbackUserDefaultEnabled),
       createdAt: user.createdAt.toISOString(),
     });
   });
@@ -992,6 +994,7 @@ export async function authRoutes(
       preferredLocale: updated.preferredLocale ?? null,
       telegramChatId: updated.telegramChatId ?? null,
       notificationPreferences: updated.notificationPreferences ?? null,
+      emailFallbackEnabled: isEmailFallbackAllowed(updated.notificationPreferences, emailFallbackUserDefaultEnabled),
       createdAt: updated.createdAt.toISOString(),
     });
   });

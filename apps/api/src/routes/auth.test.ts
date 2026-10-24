@@ -50,6 +50,31 @@ async function makeToken(userId: string, sessionId: string, secret = TEST_JWT_SE
     .sign(key);
 }
 
+/** Fake db that returns one user row with the given stored notificationPreferences. */
+function makeMeDb(notificationPreferences: unknown, updateSpy?: ReturnType<typeof vi.fn>) {
+  const mockUser = {
+    id: 'user-1',
+    displayName: 'Test User',
+    email: 'test@example.com',
+    avatarUrl: null,
+    planId: 'free',
+    isAdmin: false,
+    preferredLocale: null,
+    telegramChatId: null,
+    notificationPreferences,
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01'),
+  };
+  return {
+    update: updateSpy ?? vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([mockUser]) }),
+      }),
+    }),
+  };
+}
+
 // --- tests ---
 
 describe('auth routes', () => {
@@ -113,6 +138,38 @@ describe('auth routes', () => {
       const res = await app.inject({ method: 'GET', url: '/auth/me' });
       expect(res.statusCode).toBe(200);
       expect(res.json<{ notificationPreferences: unknown }>().notificationPreferences).toBeNull();
+    });
+
+    it('reports emailFallbackEnabled true when the operator default is on and no choice is stored', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), makeMeDb(null) as unknown as import('@herobids/db').Database, {} as any, 'free', undefined, undefined, true);
+
+      const res = await app.inject({ method: 'GET', url: '/auth/me' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ emailFallbackEnabled: boolean }>().emailFallbackEnabled).toBe(true);
+    });
+
+    it('reports emailFallbackEnabled false when the user stored an opt-out, even if the operator default is on', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      const db = makeMeDb({ notifications: { emailFallback: { enabled: false } } });
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any, 'free', undefined, undefined, true);
+
+      const res = await app.inject({ method: 'GET', url: '/auth/me' });
+      expect(res.json<{ emailFallbackEnabled: boolean }>().emailFallbackEnabled).toBe(false);
+    });
+
+    it('reports emailFallbackEnabled false when the operator default is off and no choice is stored', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), makeMeDb(null) as unknown as import('@herobids/db').Database, {} as any, 'free', undefined, undefined, false);
+
+      const res = await app.inject({ method: 'GET', url: '/auth/me' });
+      expect(res.json<{ emailFallbackEnabled: boolean }>().emailFallbackEnabled).toBe(false);
     });
 
     it('returns user profile when authenticated', async () => {
@@ -186,6 +243,23 @@ describe('auth routes', () => {
   });
 
   describe('PATCH /auth/me', () => {
+    it('returns emailFallbackEnabled from the saved row so the web cache keeps the toggle state', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      const db = makeMeDb({ notifications: { emailFallback: { enabled: true } } });
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any, 'free', undefined, undefined, false);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { notificationPreferences: { notifications: { emailFallback: { enabled: true } } } },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ emailFallbackEnabled: boolean }>().emailFallbackEnabled).toBe(true);
+    });
+
     it('updates preferredLocale and telegramChatId when payload is valid', async () => {
       const { authRoutes } = await import('./auth.js');
       const updatedUser = {
