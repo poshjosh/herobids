@@ -169,6 +169,14 @@ Tasks: [entrypoint §4 P2.1–P2.6](./AGENT-ENTRYPOINT.md).
   legacy-column and `chat_addresses` data. Backfill verified in a migration
   test. No column drops.
 
+### Phase 2 gate record (2026-10-24)
+
+- Integration: backfill (`chat-addresses-backfill.integration.test.ts`, 7 tests) and three-state resolver (`chat-address-resolution.integration.test.ts`, 14 tests) passed against a throwaway Postgres 17 container, now removed. They skip without a local `DATABASE_URL`.
+- `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert`: 8 files passed, 1 skipped; 171 passed, 31 skipped.
+- `pnpm exec vitest run packages/db`: 16 files passed, 6 skipped; 261 passed, 42 skipped.
+- `tsc --noEmit` for `packages/db`, `apps/api`, `apps/worker`: exit 0. Root `pnpm lint`: exit 0.
+- `pnpm test`: 340 files passed, 26 skipped; 6524 passed, 340 skipped. No failures.
+
 ## Phase 3 — Provider-neutral inbound ingress + config block
 
 Tasks: [entrypoint §4 P3.1–P3.4](./AGENT-ENTRYPOINT.md).
