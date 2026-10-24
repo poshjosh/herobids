@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { createDatabase, EVALUATION_QUEUE_NAME } from '@herobids/db';
+import { createDatabase, EVALUATION_QUEUE_NAME, PushSubscriptionRepository } from '@herobids/db';
 import type { EvaluationJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
@@ -39,6 +39,7 @@ import { capabilityRoutes } from './routes/capabilities/index.js';
 import { registerBackendRefFamilies } from './routes/agent-config-helpers.js';
 import { setupRoutes } from './routes/setup.js';
 import { providerRoutes } from './routes/providers.js';
+import { pushRoutes, resolvePushPublicConfig } from './routes/push.js';
 import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig, resolveConfiguredExternalBackend } from './config.js';
@@ -381,6 +382,7 @@ await dashboardRoutes(app, db, appConfig.plans, tradingBackendClient, tradingBac
 // billing is disabled so the web UI can render the "not enabled" state.
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
+await pushRoutes(app, { store: new PushSubscriptionRepository(db), publicConfig: resolvePushPublicConfig(appConfig.messaging.notifications) });
 await blueprintRoutes(app, db, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
 await agentInteractivityRoutes(app, db, redisClient, telegramChat, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga);
 await analyticsRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);

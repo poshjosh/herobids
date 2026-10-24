@@ -29,6 +29,7 @@ export const NOTIFICATION_ERROR_CODES = {
   classDisabled: 'notification.class_disabled',
   subscriptionGone: 'notification.subscription_gone',
   providerFailed: 'notification.provider_failed',
+  endpointOwned: 'notification.endpoint_owned',
 } as const;
 
 type NotificationsConfig = Pick<z.infer<typeof MessagingNotificationsSchema>, 'enabled' | 'eventClasses'>;

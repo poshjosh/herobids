@@ -8,6 +8,7 @@ import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from './ModelSelectionFields.js';
+import { PushOptIn } from '../notifications/PushOptIn.js';
 import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, type AiModelSelectionState } from './ai-model-settings.js';
 
 const LOCALE_DISPLAY_NAMES: Record<SupportedLocale, string> = {
@@ -450,6 +451,8 @@ export function SettingsPage() {
             </div>
           </form>
         </Card>
+
+        <PushOptIn />
       </div>
     </PageShell>
   );

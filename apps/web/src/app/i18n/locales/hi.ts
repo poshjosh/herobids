@@ -960,4 +960,23 @@ export const messages: Record<string, string> = {
   'capability.trading.executionMode.live': 'लाइव',
   'capability.trading.authorization.direct': 'प्रत्यक्ष',
   'capability.trading.authorization.approval_required': 'अनुमोदन आवश्यक',
+
+  // Web Push opt-in (081 W8)
+  'push.optIn.title': 'सूचनाएँ',
+  'push.optIn.ready': 'जब कोई एजेंट जवाब दे या आपसे प्रश्न पूछे, तब सूचना पाएँ। सूचनाओं में संदेश का पाठ कभी शामिल नहीं होता।',
+  'push.optIn.enable': 'सूचनाएँ चालू करें',
+  'push.optIn.working': 'प्रक्रिया जारी है…',
+  'push.optIn.subscribed': 'इस ब्राउज़र के लिए सूचनाएँ चालू हैं। सूचना पर टैप करने से एजेंट खुलता है।',
+  'push.optIn.disable': 'सूचनाएँ बंद करें',
+  'push.optIn.permissionDenied': 'इस साइट के लिए सूचनाएँ अवरुद्ध हैं। अपने ब्राउज़र सेटिंग्स में अनुमति दें, फिर दोबारा कोशिश करें।',
+  'push.optIn.needsInstall.intro': 'iPhone और iPad पर सूचनाएँ केवल होम स्क्रीन पर जोड़े गए OpenAIdom ऐप से काम करती हैं (iOS 16.4 या उसके बाद)।',
+  'push.optIn.needsInstall.step1': 'Safari में शेयर बटन दबाएँ।',
+  'push.optIn.needsInstall.step2': 'होम स्क्रीन पर जोड़ें दबाएँ।',
+  'push.optIn.needsInstall.step3': 'होम स्क्रीन आइकन से OpenAIdom खोलें, फिर वहाँ सूचनाएँ चालू करें।',
+  'push.optIn.unsupported': 'यह ब्राउज़र OpenAIdom की सूचनाएँ नहीं दिखा सकता।',
+  'push.optIn.installHint': 'सूचनाओं के लिए ब्राउज़र मेनू से OpenAIdom इंस्टॉल करें (जैसे "ऐप इंस्टॉल करें" या "होम स्क्रीन पर जोड़ें")।',
+  'push.optIn.error': 'सूचनाएँ चालू नहीं हो सकीं। दोबारा कोशिश करें।',
+  'push.optIn.endpointOwned': 'यह ब्राउज़र पहले से किसी दूसरे OpenAIdom खाते से जुड़ा है। यहाँ सूचनाएँ बंद करने के लिए उस खाते से साइन इन करें।',
+  'push.optIn.clearAndRetry': 'इस ब्राउज़र की सूचना सदस्यता हटाएँ, फिर दोबारा कोशिश करें।',
+  'push.optIn.revokeFailed': 'सूचनाएँ बंद नहीं हो सकीं। दोबारा कोशिश करें।',
 };

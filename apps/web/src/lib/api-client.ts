@@ -339,6 +339,30 @@ export const ai = {
   }),
 };
 
+export interface PushConfigResponse {
+  enabled: boolean;
+  vapidPublicKey: string | null;
+}
+
+export interface PushSubscriptionBody {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export interface PushSubscriptionCreated {
+  subscription: { id: string; createdAt: string };
+}
+
+/** Web Push opt-in (081 W6). The server never returns the endpoint or its keys. */
+export const push = {
+  config: () => request<PushConfigResponse>('/push/config'),
+  subscribe: (data: PushSubscriptionBody) => request<PushSubscriptionCreated>('/push/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  revoke: (id: string) => request<void>(`/push/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+};
+
 // ---------------------------------------------------------------------------
 // Agent Activity (canonical observability contract)
 // ---------------------------------------------------------------------------

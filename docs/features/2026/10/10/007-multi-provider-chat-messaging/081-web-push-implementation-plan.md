@@ -168,4 +168,4 @@ W5, W6, W8 ──► W9 (manual) ──► W10
 
 ## Outstanding Issues
 
-None yet.
+- **Push endpoint host allowlist (W6), owner to confirm.** The server only posts to `fcm.googleapis.com`, `updates.push.services.mozilla.com`, `web.push.apple.com`, hosts ending in `.push.apple.com`, and hosts ending in `.notify.windows.com` (https, default port, no credentials). The list is in `packages/domain/src/notifications/push-service-hosts.ts`. Confirm it covers every browser the owner supports before W6 is accepted.

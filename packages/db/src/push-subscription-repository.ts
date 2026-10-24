@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
+import { err, NOTIFICATION_ERROR_CODES, ok, type DomainError, type Result } from '@herobids/domain';
 import type { Database } from './index.js';
 import { pushSubscriptions } from './schema/index.js';
 
@@ -48,10 +49,10 @@ export class PushSubscriptionRepository {
   constructor(private readonly db: Database) {}
 
   /**
-   * Store a subscription. A repeat subscribe for the same endpoint refreshes the keys and owner,
-   * clears any revocation, and resets the failure state.
+   * Store a subscription. A repeat subscribe by the same user refreshes the keys, clears any revocation,
+   * and resets the failure state. An endpoint owned by another user is never reassigned (081 W6).
    */
-  async upsertForUser(input: UpsertPushSubscriptionInput): Promise<PushSubscriptionRecord> {
+  async upsertForUser(input: UpsertPushSubscriptionInput): Promise<Result<PushSubscriptionRecord, DomainError>> {
     const rows = await this.db
       .insert(pushSubscriptions)
       .values({
@@ -65,7 +66,6 @@ export class PushSubscriptionRepository {
       .onConflictDoUpdate({
         target: pushSubscriptions.endpoint,
         set: {
-          userId: input.userId,
           p256dh: input.p256dh,
           auth: input.auth,
           userAgent: input.userAgent,
@@ -73,11 +73,26 @@ export class PushSubscriptionRepository {
           lastFailureAt: null,
           lastFailureCode: null,
         },
+        setWhere: eq(pushSubscriptions.userId, input.userId),
       })
       .returning();
     const row = rows[0];
-    if (!row) throw new Error('push_subscription.upsert_returned_no_row');
-    return toPushSubscriptionRecord(row);
+    if (!row) {
+      return err({ code: NOTIFICATION_ERROR_CODES.endpointOwned, message: 'endpoint_owned' });
+    }
+    return ok(toPushSubscriptionRecord(row));
+  }
+
+  /** Revokes a row only when the user owns it. Returns false for unknown ids and for other users' ids alike. */
+  async revokeForUser(userId: string, id: string, at: Date = new Date()): Promise<boolean> {
+    const [owned] = await this.db
+      .select({ id: pushSubscriptions.id })
+      .from(pushSubscriptions)
+      .where(and(eq(pushSubscriptions.id, id), eq(pushSubscriptions.userId, userId)))
+      .limit(1);
+    if (!owned) return false;
+    await this.revoke(id, at);
+    return true;
   }
 
   async listActiveForUser(userId: string): Promise<PushSubscriptionRecord[]> {

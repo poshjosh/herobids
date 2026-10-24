@@ -960,4 +960,23 @@ export const messages: Record<string, string> = {
   'capability.trading.executionMode.live': 'حي',
   'capability.trading.authorization.direct': 'مباشر',
   'capability.trading.authorization.approval_required': 'يتطلب موافقة',
+
+  // Web Push opt-in (081 W8)
+  'push.optIn.title': 'الإشعارات',
+  'push.optIn.ready': 'احصل على إشعار عندما يرد وكيل أو يطرح عليك سؤالاً. لا تتضمن الإشعارات نص الرسائل أبداً.',
+  'push.optIn.enable': 'تفعيل الإشعارات',
+  'push.optIn.working': 'جارٍ العمل…',
+  'push.optIn.subscribed': 'الإشعارات مفعلة لهذا المتصفح. عند النقر على إشعار يُفتح الوكيل.',
+  'push.optIn.disable': 'إيقاف الإشعارات',
+  'push.optIn.permissionDenied': 'الإشعارات محظورة لهذا الموقع. اسمح بها في إعدادات المتصفح ثم حاول مرة أخرى.',
+  'push.optIn.needsInstall.intro': 'على iPhone وiPad تعمل الإشعارات فقط من تطبيق OpenAIdom المضاف إلى الشاشة الرئيسية (iOS 16.4 أو أحدث).',
+  'push.optIn.needsInstall.step1': 'في Safari، اضغط زر المشاركة.',
+  'push.optIn.needsInstall.step2': 'اضغط «إضافة إلى الشاشة الرئيسية».',
+  'push.optIn.needsInstall.step3': 'افتح OpenAIdom من أيقونة الشاشة الرئيسية، ثم فعّل الإشعارات هناك.',
+  'push.optIn.unsupported': 'لا يستطيع هذا المتصفح عرض إشعارات OpenAIdom.',
+  'push.optIn.installHint': 'للحصول على الإشعارات، ثبّت OpenAIdom من قائمة المتصفح (مثل «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»).',
+  'push.optIn.error': 'تعذر تفعيل الإشعارات. حاول مرة أخرى.',
+  'push.optIn.endpointOwned': 'هذا المتصفح مرتبط بحساب OpenAIdom آخر. سجّل الدخول إلى ذلك الحساب لإيقاف الإشعارات هنا.',
+  'push.optIn.clearAndRetry': 'امسح اشتراك الإشعارات في هذا المتصفح، ثم حاول مرة أخرى.',
+  'push.optIn.revokeFailed': 'تعذر إيقاف الإشعارات. حاول مرة أخرى.',
 };

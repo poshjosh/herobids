@@ -965,4 +965,23 @@ export const messages: Record<string, string> = {
   'capability.trading.executionMode.live': 'Live',
   'capability.trading.authorization.direct': 'Direct',
   'capability.trading.authorization.approval_required': 'Approval required',
+
+  // Web Push opt-in (081 W8)
+  'push.optIn.title': 'Notifications',
+  'push.optIn.ready': 'Get a notification when an agent replies or asks you a question. Notifications never include message text.',
+  'push.optIn.enable': 'Turn on notifications',
+  'push.optIn.working': 'Working…',
+  'push.optIn.subscribed': 'Notifications are on for this browser. Tapping one opens the agent.',
+  'push.optIn.disable': 'Turn off notifications',
+  'push.optIn.permissionDenied': 'Notifications are blocked for this site. Allow them in your browser settings, then try again.',
+  'push.optIn.needsInstall.intro': 'On iPhone and iPad, notifications work only from OpenAIdom added to your Home Screen (iOS 16.4 or later).',
+  'push.optIn.needsInstall.step1': 'In Safari, tap the Share button.',
+  'push.optIn.needsInstall.step2': 'Tap Add to Home Screen.',
+  'push.optIn.needsInstall.step3': 'Open OpenAIdom from the Home Screen icon, then turn on notifications there.',
+  'push.optIn.unsupported': 'This browser cannot show notifications for OpenAIdom.',
+  'push.optIn.installHint': 'For notifications, install OpenAIdom from your browser menu (for example, Install app or Add to Home screen).',
+  'push.optIn.error': 'Notifications could not be turned on. Try again.',
+  'push.optIn.endpointOwned': 'This browser is already linked to another OpenAIdom account. Sign in to that account to turn off notifications here.',
+  'push.optIn.clearAndRetry': 'Clear this browser\'s notification subscription, then try again',
+  'push.optIn.revokeFailed': 'Notifications could not be turned off. Try again.',
 };

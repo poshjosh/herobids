@@ -13,6 +13,7 @@ describe.skipIf(SKIP)('PushSubscriptionRepository (integration)', () => {
   let repo: PushSubscriptionRepository;
 
   const userId = `user_${crypto.randomUUID().slice(0, 8)}`;
+  const otherUserId = `user_${crypto.randomUUID().slice(0, 8)}`;
   const endpoint = `https://push.example.test/send/${crypto.randomUUID()}`;
 
   beforeAll(async () => {
@@ -29,6 +30,13 @@ describe.skipIf(SKIP)('PushSubscriptionRepository (integration)', () => {
       email: `${userId}@example.com`,
       planId: 'free',
     });
+    await db.insert(users).values({
+      id: otherUserId,
+      displayName: 'Other Push User',
+      username: `push_${otherUserId}`,
+      email: `${otherUserId}@example.com`,
+      planId: 'free',
+    });
   });
 
   afterAll(async () => {
@@ -40,9 +48,12 @@ describe.skipIf(SKIP)('PushSubscriptionRepository (integration)', () => {
     const first = await repo.upsertForUser({ userId, endpoint, p256dh: 'key-1', auth: 'auth-1', userAgent: 'UA-1' });
     const second = await repo.upsertForUser({ userId, endpoint, p256dh: 'key-2', auth: 'auth-2', userAgent: 'UA-2' });
 
-    expect(second.id).toBe(first.id);
-    expect(second.p256dh).toBe('key-2');
-    expect(second.auth).toBe('auth-2');
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(second.data.id).toBe(first.data.id);
+    expect(second.data.p256dh).toBe('key-2');
+    expect(second.data.auth).toBe('auth-2');
 
     const active = await repo.listActiveForUser(userId);
     expect(active.filter((row) => row.endpoint === endpoint)).toHaveLength(1);
@@ -76,11 +87,36 @@ describe.skipIf(SKIP)('PushSubscriptionRepository (integration)', () => {
   });
 
   it('reactivates a revoked endpoint when the browser subscribes again', async () => {
-    const resubscribed = await repo.upsertForUser({ userId, endpoint, p256dh: 'key-3', auth: 'auth-3', userAgent: 'UA-3' });
+    const result = await repo.upsertForUser({ userId, endpoint, p256dh: 'key-3', auth: 'auth-3', userAgent: 'UA-3' });
 
-    expect(resubscribed.revokedAt).toBeNull();
-    expect(resubscribed.lastFailureCode).toBeNull();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.revokedAt).toBeNull();
+    expect(result.data.lastFailureCode).toBeNull();
     const active = await repo.listActiveForUser(userId);
-    expect(active.some((r) => r.id === resubscribed.id)).toBe(true);
+    expect(active.some((r) => r.id === result.data.id)).toBe(true);
+  });
+
+  it('rejects an endpoint owned by another user and never reassigns it', async () => {
+    const result = await repo.upsertForUser({ userId: otherUserId, endpoint, p256dh: 'key-x', auth: 'auth-x', userAgent: null });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('notification.endpoint_owned');
+    expect(await repo.listActiveForUser(otherUserId)).toEqual([]);
+    const owner = await repo.listActiveForUser(userId);
+    expect(owner.some((r) => r.endpoint === endpoint)).toBe(true);
+  });
+
+  it('revokes only rows the caller owns', async () => {
+    const row = (await repo.listActiveForUser(userId)).find((r) => r.endpoint === endpoint);
+    expect(row).toBeDefined();
+    if (!row) return;
+
+    expect(await repo.revokeForUser(otherUserId, row.id)).toBe(false);
+    expect((await repo.listActiveForUser(userId)).some((r) => r.id === row.id)).toBe(true);
+
+    expect(await repo.revokeForUser(userId, row.id)).toBe(true);
+    expect((await repo.listActiveForUser(userId)).some((r) => r.id === row.id)).toBe(false);
   });
 });

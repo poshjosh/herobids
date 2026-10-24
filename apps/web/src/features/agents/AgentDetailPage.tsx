@@ -13,6 +13,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentConversation } from './AgentConversation.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
+import { PushOptIn } from '../notifications/PushOptIn.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
 
@@ -389,6 +390,8 @@ export function AgentDetailPage() {
             </div>
           </details>
         </Card>
+
+        <PushOptIn />
 
         <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} />
 

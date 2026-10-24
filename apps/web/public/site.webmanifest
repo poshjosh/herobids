@@ -1,4 +1,7 @@
 {
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
   "name": "OpenAIdom",
   "short_name": "OpenAIdom",
   "icons": [
