@@ -263,6 +263,10 @@ Only after dual-read has been live and verified across environments.
 | 2026-10-24 | Typing indicator is `sendTyping` on `ChatChannel`; Telegram only for now | Owner | [070](./070-typing-indicator.md) |
 | 2026-10-24 | Agent-initiated notifications allowed on push and email; chat stays reply-only | Owner | [000-README](./000-README.md) non-goal 2 |
 | 2026-10-24 | Next order: Phases 2–3, T, W, E, U, then agent-to-agent | Owner | Status table |
+| 2026-10-24 | Chat address routing fails closed: only `status='active'` routes or sends; a non-active neutral row in scope blocks the legacy Telegram fallback | Agent (per 060 "Honour revocation") | [060](./060-config-secrets-onboarding.md), commit c59861f5 |
+| 2026-10-24 | Inbound correlation checks the outbound `provider_message_id` first, then the unique active address, then the legacy Telegram pair | Agent (per 050 strategy 2) | [050](./050-inbound-routing.md), commit c59861f5 |
+| 2026-10-24 | Approval resolutions keep writing `telegram_yes`/`telegram_no` and record `resolution_provider`; `chat_yes`/`chat_no` writes wait for readers | Agent (per 040 §3 option a) | [040](./040-data-model-and-migration.md) §3, commit 0a020968 |
+| 2026-10-24 | P3.1 (new public route) and P3.2 (auth bypass) held for owner approval; P3.3 config done | Agent (stop trigger, AGENT-ENTRYPOINT §0) | AGENT-ENTRYPOINT §3 |
 | 2026-10-24 | Approval resolution source generalised to `chat_yes` / `chat_no` with a provider field (`resolution_provider`), not per-provider values (040 §3 option a); `agent_documents.source` widened to add `whatsapp` / `sms` | Owner | [040](./040-data-model-and-migration.md) §3 |
 
 ## Risk notes
