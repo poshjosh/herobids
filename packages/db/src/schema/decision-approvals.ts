@@ -37,7 +37,7 @@ export const decisionApprovals = pgTable('decision_approvals', {
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   /** web | chat_yes | chat_no | api. Legacy telegram_yes | telegram_no still valid for existing rows. */
   resolutionSource: text('resolution_source'),
-  /** Chat provider for chat_yes | chat_no: telegram | whatsapp | sms. Null otherwise. */
+  /** Chat provider that resolved the approval: telegram | whatsapp | sms. Set for telegram_yes | telegram_no and chat_yes | chat_no. Null for web and api. */
   resolutionProvider: text('resolution_provider'),
   lastResolutionAttemptAt: timestamp('last_resolution_attempt_at', { withTimezone: true }),
   lastResolutionErrorCode: text('last_resolution_error_code'),

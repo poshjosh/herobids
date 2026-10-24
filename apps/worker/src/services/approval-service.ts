@@ -49,6 +49,7 @@ export class ApprovalService {
     resolutionSource: string,
     _effectiveAgentId: string,
     effectiveBotId: string,
+    resolutionProvider?: string | null,
   ): Promise<ApprovalResolutionResult> {
     const approval = await this.deps.approvalRepo.findById(approvalId);
     if (!approval) {
@@ -93,6 +94,7 @@ export class ApprovalService {
     await this.deps.approvalRepo.updateStatus(approvalId, 'approved', {
       resolvedByUserId: userId,
       resolutionSource,
+      resolutionProvider: resolutionProvider ?? null,
     });
 
     // Build the boundary payload from the stored approval fields, reusing the

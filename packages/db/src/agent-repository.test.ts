@@ -740,6 +740,24 @@ function buildUnifiedConfigDb(raw: Record<string, unknown> | null) {
   };
 }
 
+describe('AgentRepository.markOutboundMessageSent', () => {
+  it('writes the legacy telegram pair and the neutral delivery columns in the same update', async () => {
+    const { db, setFn } = buildUpdateDb();
+    const repo = new AgentRepository(db as never);
+
+    await repo.markOutboundMessageSent('msg-001', '42', '111111');
+
+    expect(setFn).toHaveBeenCalledWith({
+      deliveryStatus: 'sent',
+      telegramMessageId: '42',
+      telegramChatId: '111111',
+      deliveryProvider: 'telegram',
+      deliveryAddress: '111111',
+      providerMessageId: '42',
+    });
+  });
+});
+
 describe('AgentRepository.getUnifiedConfig (capabilityMode/hybridMode defaults)', () => {
   it('returns hybridMode: "mixed" when config has capabilityMode: "hybrid" but no hybridMode', async () => {
     const db = buildUnifiedConfigDb({ capabilityMode: 'hybrid', technical: { venue: 'hyperliquid' } });

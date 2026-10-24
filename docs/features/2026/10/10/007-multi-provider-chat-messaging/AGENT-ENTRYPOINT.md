@@ -43,7 +43,7 @@ This is the only record of task state. Work from the top. The first unchecked it
 - `[x]` **P2.2** Generated expand migration (Phase 2)
 - `[x]` **P2.3** Repository and resolver (Phase 2)
 - `[x]` **P2.4** Custom backfill migration (Phase 2)
-- `[ ]` **P2.5** Dual-write (Phase 2)
+- `[x]` **P2.5** Dual-write (Phase 2)
 - `[ ]` **P2.6** Tests and Phase 2 gate
 - `[ ]` **P3.1** Neutral webhook route (Phase 3)
 - `[ ]` **P3.2** Auth bypass for the new route (Phase 3)

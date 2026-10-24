@@ -253,3 +253,44 @@ describe('ApprovalService.executeApproval', () => {
     expect(res).toEqual({ kind: 'not_found' });
   });
 });
+
+describe('ApprovalService.executeApproval resolution provider', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('records the chat provider with the legacy telegram source on the pending → approved transition', async () => {
+    const { boundary } = makeBoundary({
+      kind: 'success',
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+      payload: { planId: 'plan-1' },
+    });
+    const { deps, approvalRepo } = buildDeps({ approval: makeApprovalRow(), boundary });
+    const svc = new ApprovalService(deps);
+
+    await svc.executeApproval('appr-1', 'user-1', 'telegram_yes', 'agent-1', 'bot-1', 'telegram');
+
+    expect(approvalRepo.updateStatus).toHaveBeenCalledWith('appr-1', 'approved', {
+      resolvedByUserId: 'user-1',
+      resolutionSource: 'telegram_yes',
+      resolutionProvider: 'telegram',
+    });
+  });
+
+  it('leaves the resolution provider empty when the approval was resolved on the web', async () => {
+    const { boundary } = makeBoundary({
+      kind: 'success',
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+      payload: { planId: 'plan-1' },
+    });
+    const { deps, approvalRepo } = buildDeps({ approval: makeApprovalRow(), boundary });
+    const svc = new ApprovalService(deps);
+
+    await svc.executeApproval('appr-1', 'user-1', 'web', 'agent-1', 'bot-1');
+
+    expect(approvalRepo.updateStatus).toHaveBeenCalledWith('appr-1', 'approved', expect.objectContaining({
+      resolutionSource: 'web',
+      resolutionProvider: null,
+    }));
+  });
+});

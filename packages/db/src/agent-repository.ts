@@ -634,6 +634,9 @@ export class AgentRepository {
       deliveryStatus: 'sent',
       telegramMessageId,
       telegramChatId,
+      deliveryProvider: 'telegram',
+      deliveryAddress: telegramChatId,
+      providerMessageId: telegramMessageId,
     }).where(eq(agentOutboundMessages.id, id));
   }
 

@@ -1179,13 +1179,14 @@ approvalExecuteSubscriber.on('pmessage', async (_pattern: string, channel: strin
   if (!approvalId) return;
   logger.info({ approvalId }, 'Received approval:execute signal');
   try {
-    const payload = JSON.parse(message) as { userId: string; resolutionSource: string; effectiveAgentId: string; effectiveBotId: string };
+    const payload = JSON.parse(message) as { userId: string; resolutionSource: string; resolutionProvider?: string | null; effectiveAgentId: string; effectiveBotId: string };
     const result = await approvalService.executeApproval(
       approvalId,
       payload.userId,
       payload.resolutionSource,
       payload.effectiveAgentId,
       payload.effectiveBotId,
+      payload.resolutionProvider,
     );
     logger.info({ approvalId, result: result.kind, status: 'status' in result ? result.status : undefined }, 'Approval execution complete');
   } catch (err) {

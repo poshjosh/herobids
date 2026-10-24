@@ -12,6 +12,7 @@ import Fastify from 'fastify';
 import { telegramWebhookHandler } from '../../routes/agent-interactivity.js';
 import { ok, err } from '@herobids/domain';
 import type { Database } from '@herobids/db';
+import { users } from '@herobids/db';
 import type { Redis } from 'ioredis';
 
 // ── Service mocks ─────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ function buildMockRedis() {
   return {
     incr: vi.fn().mockResolvedValue(1),
     expire: vi.fn().mockResolvedValue(1),
+    publish: vi.fn().mockResolvedValue(1),
     xadd: vi.fn().mockResolvedValue('1-1'),
     hgetall: vi.fn().mockResolvedValue(null),
     get: vi.fn().mockResolvedValue(null),
@@ -799,5 +801,73 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
     const result = await handleMode(db, TEST_USER_ID, ['MyAgent', 'paper']);
     expect(result).toContain('Execution mode cannot be changed after creation');
     expect(result).toContain('/golive');
+  });
+});
+
+describe('Telegram Slash Commands — Approval resolution provider', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+  });
+
+  const PENDING_APPROVAL = {
+    id: 'appr-1',
+    agentId: AGENT_ID,
+    userId: TEST_USER_ID,
+    status: 'pending',
+    expiresAt: new Date(Date.now() + 60_000),
+  };
+
+  /** Chat user lookup returns the bound user; approval queries return one pending approval. */
+  function buildApprovalResolutionDb() {
+    const returning = vi.fn().mockResolvedValue([{ id: PENDING_APPROVAL.id }]);
+    const where = vi.fn().mockReturnValue({ returning });
+    const set = vi.fn().mockReturnValue({ where });
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn((table: unknown) => makeChain(table === users
+          ? [{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]
+          : [PENDING_APPROVAL])),
+      })),
+      update: vi.fn(() => ({ set })),
+    };
+    return { db: db as never, set };
+  }
+
+  it('/yes publishes the telegram resolution provider alongside the legacy telegram_yes source', async () => {
+    const { db } = buildApprovalResolutionDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await sendWebhook(app, '/yes');
+    expect(res.statusCode).toBe(200);
+    await flushPromises();
+
+    expect(redis.publish).toHaveBeenCalledWith(
+      `approval:execute:${PENDING_APPROVAL.id}`,
+      expect.stringContaining('"resolutionSource":"telegram_yes"'),
+    );
+    expect(redis.publish).toHaveBeenCalledWith(
+      `approval:execute:${PENDING_APPROVAL.id}`,
+      expect.stringContaining('"resolutionProvider":"telegram"'),
+    );
+  });
+
+  it('/no records the telegram resolution provider alongside the legacy telegram_no source', async () => {
+    const { db, set } = buildApprovalResolutionDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await sendWebhook(app, '/no');
+    expect(res.statusCode).toBe(200);
+    await flushPromises();
+
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'rejected',
+      resolutionSource: 'telegram_no',
+      resolutionProvider: 'telegram',
+    }));
   });
 });

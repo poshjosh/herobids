@@ -270,3 +270,23 @@ Only after dual-read has been live and verified across environments.
    verification are long-lead items. Start them when the owner resumes Phase 4
    or 5, not earlier. Phase 4 is paused and Phase 5 is deferred (2026-10-24).
 
+
+## Outstanding Issues
+
+Non-blocking review findings (MEDIUM/LOW), grouped by task.
+
+### P2.5 Dual-write
+
+- `markOutboundMessageSent` hardcodes `deliveryProvider: 'telegram'`. Correct today; pass the provider through when the first non-Telegram send path is added (Phase 4/5).
+- `rejectApproval` in `approval-service.ts` has no callers and does not accept `resolutionProvider`. Remove it or extend it when it gets a caller.
+- `resolutionProvider` from Redis is an unvalidated string. Constrain it to `telegram | whatsapp | sms` at the subscriber boundary (Zod).
+- Add a worker subscriber test for an old `approval:execute` payload without `resolutionProvider` (must resolve to null).
+- Use a union type for `resolutionProvider` in `decision-approval-repository.ts`.
+- Integration test asserts the Redis payload with `stringContaining`; parse it and assert fields. Restore the `fetch` spy in `afterEach`.
+
+### P2.3 Repository and resolver
+
+- Revoked or pending rows in one tenant block inbound replies for the same provider address in other tenants (fail-closed, not owner-scoped). Decide whether to scope the block to the owner.
+- Legacy Telegram pair lookup in `resolveAgentForChatReply` is not gated by scope status (no status exists on legacy columns).
+- Inbound addresses are trimmed, stored addresses are not. Trim on write or match with `trim()` in SQL.
+- `as ChatAddressValue` casts remain (pre-existing branded-type pattern). Add a validating domain constructor.

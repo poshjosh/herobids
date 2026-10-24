@@ -30,6 +30,7 @@ export interface InsertDecisionApproval {
 export interface ResolutionInfo {
   resolvedByUserId: string;
   resolutionSource: string;
+  resolutionProvider?: string | null;
 }
 
 export type DecisionApprovalRow = typeof decisionApprovals.$inferSelect;
@@ -131,6 +132,7 @@ export class DecisionApprovalRepository {
         status,
         resolvedByUserId: resolutionInfo.resolvedByUserId,
         resolutionSource: resolutionInfo.resolutionSource,
+        resolutionProvider: resolutionInfo.resolutionProvider ?? null,
         resolvedAt: now,
         updatedAt: now,
       })

@@ -571,12 +571,15 @@ export async function telegramWebhookHandler(
     action: 'approve' | 'reject',
     agentId: string,
   ): Promise<void> {
+    // Legacy telegram_yes/telegram_no stay for existing readers; resolutionProvider carries the channel.
     const resolutionSource = action === 'approve' ? 'telegram_yes' : 'telegram_no';
+    const resolutionProvider = 'telegram';
 
     if (action === 'reject') {
       const updated = await approvalRepo.updateStatus(approvalId, 'rejected', {
         resolvedByUserId: userId,
         resolutionSource,
+        resolutionProvider,
       });
       if (updated === 0) {
         await sendTelegramText(chatId, formatApprovalCodeNotFound());
@@ -595,6 +598,7 @@ export async function telegramWebhookHandler(
       const message = JSON.stringify({
         userId,
         resolutionSource,
+        resolutionProvider,
         effectiveAgentId: agentId,
         effectiveBotId: agentId,
       });
