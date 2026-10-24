@@ -15,15 +15,15 @@
     "@herobids/documents": "workspace:*",
     "@herobids/domain": "workspace:*",
     "@herobids/llm": "workspace:*",
-    "@poshjosh/contracts": "0.3.0",
     "@mozilla/readability": "^0.6.0",
+    "@poshjosh/contracts": "0.3.0",
     "bullmq": "^5.34.0",
     "drizzle-orm": "^0.44.0",
     "ioredis": "^5.6.0",
     "linkedom": "^0.18.12",
-
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
+    "web-push": "^3.6.7",
     "yaml": "^2.9.0",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.25.2"
@@ -31,6 +31,7 @@
   "devDependencies": {
     "@modelcontextprotocol/server": "2.3.0",
     "@types/node": "^25.9.1",
+    "@types/web-push": "^3.6.4",
     "tsx": "^4.19.0"
   }
 }

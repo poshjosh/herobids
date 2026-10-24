@@ -24,6 +24,8 @@ export { TradingProfileReconciliationOutboxRepository } from './trading-profile-
 export type { DatabaseTransaction, TradingProfileReconciliationOutboxRow } from './trading-profile-reconciliation-outbox-repository.js';
 export { ConnectionOwnershipRepository } from './repositories.js';
 export { AlertDeliveryRepository } from './alert-delivery-repository.js';
+export { PushSubscriptionRepository, toPushSubscriptionRecord } from './push-subscription-repository.js';
+export type { PushSubscriptionRecord, UpsertPushSubscriptionInput } from './push-subscription-repository.js';
 export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repository.js';
 export { BillingRepository } from './billing-repository.js';
 export type { UpsertSubscription, BillingCustomerRow, BillingSubscriptionRow } from './billing-repository.js';

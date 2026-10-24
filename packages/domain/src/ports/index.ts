@@ -9,3 +9,4 @@ export * from './chat-channel.js';
 export * from './agent-wake-publisher.js';
 
 export * from './browser-pool.js';
+export * from './notification-channel.js';

@@ -33,6 +33,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
   TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
   OPERATOR_ALERT_TELEGRAM_CHAT_ID: { path: 'alerts.operator.telegramChatId', type: 'string' },
+  // Web Push (081 D1): the one secret in messaging.notifications, env-only.
+  VAPID_PRIVATE_KEY: { path: 'messaging.notifications.webPush.vapidPrivateKey', type: 'string' },
   // Email — outbound provider (SES)
   EMAIL_PROVIDER: { path: 'alerts.email.provider', type: 'string' },
   EMAIL_FROM_EMAIL: { path: 'alerts.email.fromEmail', type: 'string' },

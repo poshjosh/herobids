@@ -9,6 +9,7 @@ import {
   validateStrategyParams,
 } from './strategy-parameters.js';
 import { ExternalBackendRegistrySchema, findExternalBackend } from './external-backends.js';
+import { NOTIFICATION_CLASSES } from '../notifications/payload.js';
 
 export const SWAP_VENUES = ['jupiter', '1inch'] as const;
 export const ORDERBOOK_VENUES = ['hyperliquid', 'bybit'] as const;
@@ -608,10 +609,35 @@ export const MessagingChatTelegramSchema = z.object({
   typingMaxWindowMs: z.number().int().positive().default(180000),
 }).default({});
 
+export const MessagingNotificationsSchema = z.object({
+  /** Master switch for out-of-band notifications. Off by default. */
+  enabled: z.boolean().default(false),
+  /** Event classes that notify. Classes not listed never notify. */
+  eventClasses: z.array(z.enum(NOTIFICATION_CLASSES)).default(['agent.reply', 'agent.question']),
+  webPush: z.object({
+    /** Turns on the Web Push adapter. Needs the VAPID key pair below. */
+    enabled: z.boolean().default(false),
+    /** Contact URI (mailto: or https:) sent to push services. */
+    vapidSubject: z.string().default('').refine(
+      (value) => value.trim() === '' || value.startsWith('mailto:') || value.startsWith('https://'),
+      { message: 'vapidSubject must start with mailto: or https:// when set' },
+    ),
+    /** Public VAPID key. Served to logged-in clients so they can subscribe. */
+    vapidPublicKey: z.string().default(''),
+    /** Secret. Env-only (VAPID_PRIVATE_KEY); the YAML value stays blank. */
+    vapidPrivateKey: z.string().default(''),
+    /** How long a push service may hold an undelivered notification (seconds). */
+    ttlSeconds: z.number().int().positive().default(86400),
+    /** Push service delivery priority. */
+    urgency: z.enum(['very-low', 'low', 'normal', 'high']).default('normal'),
+  }).default({}),
+}).default({});
+
 export const MessagingConfigSchema = z.object({
   chat: z.object({
     telegram: MessagingChatTelegramSchema,
   }).default({}),
+  notifications: MessagingNotificationsSchema,
 }).default({});
 
 export const AlertsConfigSchema = z.object({

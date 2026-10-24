@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 import { createLogger } from './logger.js';
 import { EvaluationRuntime } from './agent-evaluation/index.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
-import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
+import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
 
@@ -17,6 +17,8 @@ import { AlertDispatcher, createBoundaryTradeEventFeed } from './alerting/index.
 import { TelegramClient, PlatformAlertService, OperatorNotifier, createEmailClient } from './alerting/index.js';
 import { TelegramChannel } from './alerting/telegram-channel.js';
 import { ChatDelivery } from './alerting/chat-delivery.js';
+import { WebPushChannel } from './notifications/web-push-channel.js';
+import { createWebPushSender } from './notifications/web-push-sender.js';
 import { resolveWorkerTelegramChat } from './alerting/telegram-chat-wiring.js';
 import type { EmailClientConfig } from './alerting/index.js';
 import {
@@ -783,6 +785,29 @@ const operatorNotifier = operatorFaultReportingEnabled && workerTelegram
   ? new OperatorNotifier(workerTelegram, appConfig.alerts.operator.telegramChatId, appConfig.alerts.operator.faultCooldownMs)
   : undefined;
 
+// Web Push (081 W5): on only when messaging.notifications and webPush are both enabled with complete VAPID settings.
+const pushSubscriptionRepo = new PushSubscriptionRepository(db);
+const notificationsConfig = appConfig.messaging.notifications;
+const webPushConfig = notificationsConfig.webPush;
+const webPushKeysComplete = webPushConfig.vapidSubject !== '' && webPushConfig.vapidPublicKey !== '' && webPushConfig.vapidPrivateKey !== '';
+if (notificationsConfig.enabled && webPushConfig.enabled && !webPushKeysComplete) {
+  logger.warn('messaging.notifications.webPush is enabled but vapidSubject, vapidPublicKey, or VAPID_PRIVATE_KEY is missing; web push is off');
+}
+const agentNotifications = notificationsConfig.enabled && webPushConfig.enabled && webPushKeysComplete
+  ? {
+    channel: new WebPushChannel(
+      createWebPushSender({
+        subject: webPushConfig.vapidSubject,
+        publicKey: webPushConfig.vapidPublicKey,
+        privateKey: webPushConfig.vapidPrivateKey,
+      }),
+      pushSubscriptionRepo,
+      { ttlSeconds: webPushConfig.ttlSeconds, urgency: webPushConfig.urgency },
+    ),
+    subscriptions: pushSubscriptionRepo,
+    config: notificationsConfig,
+  }
+  : undefined;
 const agentBroker = new AgentMessageBroker(
   redisClient,
   agentRepo,
@@ -806,6 +831,7 @@ const agentBroker = new AgentMessageBroker(
   appConfig.auth.publicBaseUrl,
   appConfig.connectionRequests,
   operatorNotifier,
+  agentNotifications,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

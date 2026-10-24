@@ -29,8 +29,11 @@ import {
   resolvePlanSkillEntitlements,
   AuthConfigSchema,
   ConnectionRequestsConfigSchema,
+  buildNotificationPayload,
+  shouldNotify,
 } from '@herobids/domain';
-import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
+import type { AppConfig, NotificationChannel, NotificationClass } from '@herobids/domain';
+import type { AgentRepository, ConnectionOwnershipRepository, Database, PushSubscriptionRepository } from '@herobids/db';
 import type { UpdatePromptPayload, UpdatePromptResult } from '@herobids/domain';
 import { eq, inArray } from 'drizzle-orm';
 import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
@@ -60,6 +63,13 @@ const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
  * Called before creating a bot with execution.mode = 'live'.
  */
 export type BotLiveCheckCallback = (userId: string) => Promise<void>;
+
+/** Out-of-band notifications for agent messages (081 W5). Absent means no notifications. */
+export interface AgentMessageNotifications {
+  channel: NotificationChannel;
+  subscriptions: Pick<PushSubscriptionRepository, 'listActiveForUser'>;
+  config: AppConfig['messaging']['notifications'];
+}
 
 /**
  * AgentMessageBroker — validates envelopes, enforces capability grants,
@@ -101,6 +111,7 @@ export class AgentMessageBroker {
     private readonly publicBaseUrl?: string,
     private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number; expiryGraceSecs: number },
     private readonly operatorNotifier?: OperatorNotifier,
+    private readonly notifications?: AgentMessageNotifications,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -533,13 +544,15 @@ export class AgentMessageBroker {
       messageClass,
     });
 
+    // Chat is reply-only, so every send_message asks for a reply.
+    const replyRequested = true;
     const result = this.chatDelivery
       ? await this.chatDelivery.send(agent.id, {
         agentName: agent.name,
         subject: payload.subject,
         body,
         messageClass,
-        replyRequested: true,
+        replyRequested,
       })
       : { ok: false as const, error: { code: 'chat.not_configured', message: 'telegram_not_configured' } };
     if (!result.ok) {
@@ -551,8 +564,50 @@ export class AgentMessageBroker {
       logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered via chat');
     }
 
+    await this.notifyAgentMessage(agent, replyRequested ? 'agent.question' : 'agent.reply');
+
     // Email fanout from send_message has been removed (Item 5).
     // Agents should use the dedicated send_email tool for email delivery.
+  }
+
+  /**
+   * Push each active subscription of the agent's owner (081 W5). Push is an independent channel:
+   * it runs whatever the chat outcome, and it never throws.
+   */
+  private async notifyAgentMessage(
+    agent: { id: string; name: string; userId: string },
+    eventClass: NotificationClass,
+  ): Promise<void> {
+    const notifications = this.notifications;
+    if (!notifications || !shouldNotify(eventClass, notifications.config).ok) return;
+    try {
+      const subscriptions = await notifications.subscriptions.listActiveForUser(agent.userId);
+      const payload = buildNotificationPayload({ agentId: agent.id, agentName: agent.name, eventClass });
+      for (const subscription of subscriptions) {
+        try {
+          const result = await notifications.channel.notify(
+            {
+              userId: subscription.userId,
+              subscriptionId: subscription.id,
+              endpoint: subscription.endpoint,
+              p256dh: subscription.p256dh,
+              auth: subscription.auth,
+            },
+            payload,
+          );
+          if (!result.ok) {
+            logger.warn({ agentId: agent.id, subscriptionId: subscription.id, code: result.error.code }, 'Agent notification not delivered');
+          }
+        } catch (error) {
+          logger.warn(
+            { agentId: agent.id, subscriptionId: subscription.id, error: error instanceof Error ? error.name : 'NonError' },
+            'Agent notification dispatch failed',
+          );
+        }
+      }
+    } catch (error) {
+      logger.warn({ agentId: agent.id, error: error instanceof Error ? error.message : String(error) }, 'Agent notification dispatch failed');
+    }
   }
 
   /**

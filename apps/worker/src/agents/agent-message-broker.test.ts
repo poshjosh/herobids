@@ -4,7 +4,9 @@ import type { AgentRepository } from '@herobids/db';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
-import { AgentMessageBroker } from './agent-message-broker.js';
+import { AgentMessageBroker, type AgentMessageNotifications } from './agent-message-broker.js';
+import { ChatDelivery } from '../alerting/chat-delivery.js';
+import type { AppConfig } from '@herobids/domain';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -781,5 +783,213 @@ describe('AgentMessageBroker — update_my_prompt branches', () => {
     await broker.processInbound(makeEnvelope('agent.update_prompt', { prompt: 'Watch ETH.', requestMessageId: 'req-up-fail' }));
 
     expect(rec.publishUpdatePromptReply).toHaveBeenCalledWith('req-up-fail', expect.objectContaining({ status: 'error', errorCode: 'broker.internal_error' }));
+  });
+});
+
+// ── send_message push notifications (081 W5) ───────────────────────────────
+
+const SENDING_AGENT = { id: 'agent-1', name: 'Research Bot', userId: 'user-1', toolPolicy: null };
+
+function makeSubscription(id: string) {
+  return {
+    id,
+    userId: 'user-1',
+    endpoint: `https://push.example.test/send/${id}`,
+    p256dh: `p256dh-${id}`,
+    auth: `auth-${id}`,
+    userAgent: null,
+    createdAt: new Date(0),
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastFailureCode: null,
+    revokedAt: null,
+  };
+}
+
+function makeNotificationsConfig(overrides: Partial<AppConfig['messaging']['notifications']> = {}): AppConfig['messaging']['notifications'] {
+  return {
+    enabled: true,
+    eventClasses: ['agent.reply', 'agent.question'],
+    webPush: {
+      enabled: true,
+      vapidSubject: 'mailto:ops@example.test',
+      vapidPublicKey: 'public',
+      vapidPrivateKey: 'private',
+      ttlSeconds: 86400,
+      urgency: 'normal',
+    },
+    ...overrides,
+  };
+}
+
+function makeSendBroker(options: { chatOk: boolean; notifications?: AgentMessageNotifications }) {
+  const agentRepo = makeAgentRepo({
+    getAgent: vi.fn().mockResolvedValue(SENDING_AGENT),
+    getActiveSession: vi.fn().mockResolvedValue({ id: 'session-1', status: 'running' }),
+    insertOutboundMessage: vi.fn(async () => 'out-1'),
+    markOutboundMessageSent: vi.fn(async () => undefined),
+    markOutboundMessageFailed: vi.fn(async () => undefined),
+  });
+  const delivery = new ChatDelivery(
+    { getEffectiveChatAddress: vi.fn(), isChatAddressSuppressed: vi.fn() },
+    { get: () => undefined },
+    { set: vi.fn() },
+  );
+  const chatResult = options.chatOk
+    ? { ok: true, data: { providerMessageId: 'tg-1', address: { provider: 'telegram', address: '123' } } }
+    : { ok: false, error: { code: 'chat.no_address', message: 'no_telegram_chat_id' } };
+  const chatSend = vi.spyOn(delivery, 'send').mockImplementation(vi.fn().mockResolvedValue(chatResult));
+  const broker = new AgentMessageBroker(
+    makeRedis(),
+    agentRepo,
+    makeDecisionHandler(),
+    makeSessionManager(),
+    makeEventPublisher(),
+    delivery,
+    undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined, undefined, undefined,
+    options.notifications,
+  );
+  return { broker, agentRepo, chatSend };
+}
+
+describe('AgentMessageBroker — send_message push notifications', () => {
+  it('sends one push per active subscription and keeps the Telegram send unchanged', async () => {
+    const notify = vi.fn().mockResolvedValue({ ok: true, data: { subscriptionId: 'x' } });
+    const listActiveForUser = vi.fn().mockResolvedValue([makeSubscription('sub-1'), makeSubscription('sub-2')]);
+    const { broker, agentRepo, chatSend } = makeSendBroker({
+      chatOk: true,
+      notifications: { channel: { notify }, subscriptions: { listActiveForUser }, config: makeNotificationsConfig() },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(chatSend).toHaveBeenCalledWith('agent-1', expect.objectContaining({ replyRequested: true }));
+    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
+    expect(listActiveForUser).toHaveBeenCalledWith('user-1');
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenNthCalledWith(
+      1,
+      { userId: 'user-1', subscriptionId: 'sub-1', endpoint: 'https://push.example.test/send/sub-1', p256dh: 'p256dh-sub-1', auth: 'auth-sub-1' },
+      expect.objectContaining({ agentId: 'agent-1', agentName: 'Research Bot', eventClass: 'agent.question', body: 'You have a new message' }),
+    );
+  });
+
+  it('sends no push when the feature is off', async () => {
+    const notify = vi.fn();
+    const listActiveForUser = vi.fn();
+    const { broker, agentRepo } = makeSendBroker({
+      chatOk: true,
+      notifications: { channel: { notify }, subscriptions: { listActiveForUser }, config: makeNotificationsConfig({ enabled: false }) },
+    });
+
+    await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalled();
+    expect(listActiveForUser).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('sends no push when agent.question is not an enabled event class', async () => {
+    const notify = vi.fn();
+    const { broker, agentRepo } = makeSendBroker({
+      chatOk: true,
+      notifications: {
+        channel: { notify },
+        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1')]) },
+        config: makeNotificationsConfig({ eventClasses: ['task.completed'] }),
+      },
+    });
+
+    await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('keeps the chat result when the push channel throws', async () => {
+    const notify = vi.fn().mockRejectedValue(new Error('push service unreachable'));
+    const { broker, agentRepo } = makeSendBroker({
+      chatOk: true,
+      notifications: {
+        channel: { notify },
+        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1')]) },
+        config: makeNotificationsConfig(),
+      },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
+    expect(agentRepo.markOutboundMessageFailed).not.toHaveBeenCalled();
+  });
+
+  it('still pushes the second subscription when the first throws', async () => {
+    const notify = vi.fn()
+      .mockRejectedValueOnce(new Error('push service unreachable'))
+      .mockResolvedValueOnce({ ok: true, data: { subscriptionId: 'sub-2' } });
+    const { broker } = makeSendBroker({
+      chatOk: true,
+      notifications: {
+        channel: { notify },
+        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1'), makeSubscription('sub-2')]) },
+        config: makeNotificationsConfig(),
+      },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenNthCalledWith(
+      2,
+      { userId: 'user-1', subscriptionId: 'sub-2', endpoint: 'https://push.example.test/send/sub-2', p256dh: 'p256dh-sub-2', auth: 'auth-sub-2' },
+      expect.anything(),
+    );
+  });
+
+  it('keeps the chat result when a push returns a failure result', async () => {
+    const notify = vi.fn().mockResolvedValue({ ok: false, error: { code: 'notification.provider_failed', message: 'provider_failed' } });
+    const { broker, agentRepo } = makeSendBroker({
+      chatOk: true,
+      notifications: {
+        channel: { notify },
+        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1')]) },
+        config: makeNotificationsConfig(),
+      },
+    });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
+  });
+
+  it('still pushes when the Telegram send fails, because push is an independent channel', async () => {
+    const notify = vi.fn().mockResolvedValue({ ok: true, data: { subscriptionId: 'sub-1' } });
+    const { broker, agentRepo } = makeSendBroker({
+      chatOk: false,
+      notifications: {
+        channel: { notify },
+        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1')]) },
+        config: makeNotificationsConfig(),
+      },
+    });
+
+    await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(agentRepo.markOutboundMessageFailed).toHaveBeenCalledWith('out-1', 'no_telegram_chat_id');
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves send_message unchanged when no notifications are wired', async () => {
+    const { broker, agentRepo } = makeSendBroker({ chatOk: true });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
   });
 });

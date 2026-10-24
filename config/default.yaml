@@ -752,6 +752,16 @@ messaging:
       # webhookUrl: "https://your-public-host/telegram/webhook"  # unset → alerts.telegram.webhookUrl (env: TELEGRAM_WEBHOOK_URL)
       typingRefreshIntervalMs: 4000 # how often the "typing…" action is re-sent while an agent replies (Telegram shows it ~5s)
       typingMaxWindowMs: 180000     # max time typing is refreshed after a user message; sized to llm.timeoutMs
+  notifications:
+    enabled: false                  # master switch for out-of-band agent notifications; off = no change in behaviour
+    eventClasses: [agent.reply, agent.question]  # classes that notify; any other class never notifies
+    webPush:
+      enabled: false                # needs the VAPID key pair below
+      vapidSubject: ""              # mailto: or https: contact URI sent to push services
+      vapidPublicKey: ""            # public VAPID key, served to logged-in clients
+      vapidPrivateKey: ""           # secret; override: VAPID_PRIVATE_KEY (env only, never set a value here)
+      ttlSeconds: 86400             # how long a push service may hold an undelivered push (24h)
+      urgency: normal               # very-low | low | normal | high
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
