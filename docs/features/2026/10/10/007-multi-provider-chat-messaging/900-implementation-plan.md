@@ -336,6 +336,8 @@ Only after dual-read has been live and verified across environments.
 
 Non-blocking review findings (MEDIUM/LOW), grouped by task.
 
+- Chat address migration (retire the legacy Telegram columns): [095-chat-address-migration-plan.md](./095-chat-address-migration-plan.md), Draft, awaiting owner approval.
+
 ### P2.5 Dual-write
 
 - `markOutboundMessageSent` hardcodes `deliveryProvider: 'telegram'`. Correct today; pass the provider through when the first non-Telegram send path is added (Phase 4/5).
