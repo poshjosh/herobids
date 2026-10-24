@@ -12,6 +12,40 @@ describe('Telegram inbound channel', () => {
     expect(adapter.verify({ headers, body: {} }).ok).toBe(true);
   });
 
+  it('accepts the correct webhook secret', () => {
+    expect(adapter.verify({ headers, body: {} }).ok).toBe(true);
+  });
+
+  it('rejects a wrong webhook secret of equal length', () => {
+    expect(adapter.verify({ headers: { 'x-telegram-bot-api-secret-token': 'secrex' }, body: {} }).ok).toBe(false);
+  });
+
+  it('rejects a wrong webhook secret of different length', () => {
+    expect(adapter.verify({ headers: { 'x-telegram-bot-api-secret-token': 'secret-longer' }, body: {} }).ok).toBe(false);
+    expect(adapter.verify({ headers: { 'x-telegram-bot-api-secret-token': 'sec' }, body: {} }).ok).toBe(false);
+  });
+
+  it('rejects every request when the configured webhook secret is empty', () => {
+    const emptyAdapter = new TelegramInboundChannel('');
+    expect(emptyAdapter.verify({ headers: { 'x-telegram-bot-api-secret-token': '' }, body: {} }).ok).toBe(false);
+    expect(emptyAdapter.verify({ headers: { 'x-telegram-bot-api-secret-token': 'anything' }, body: {} }).ok).toBe(false);
+  });
+
+  it('rejects an empty webhook secret header', () => {
+    expect(adapter.verify({ headers: { 'x-telegram-bot-api-secret-token': '' }, body: {} }).ok).toBe(false);
+  });
+
+  it('rejects a repeated webhook secret header sent as an array', () => {
+    expect(adapter.verify({ headers: { 'x-telegram-bot-api-secret-token': ['secret', 'secret'] }, body: {} }).ok).toBe(false);
+  });
+
+  it('rejects a missing webhook secret header', () => {
+    expect(adapter.verify({ headers: {}, body: {} })).toEqual({
+      ok: false,
+      error: { code: 'chat.unauthorized', message: 'Invalid Telegram webhook token' },
+    });
+  });
+
   it('normalizes chat IDs, replies, and documents without changing the webhook payload', () => {
     const result = adapter.parse({ headers, body: {
       message: {

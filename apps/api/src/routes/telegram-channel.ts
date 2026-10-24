@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { err, ok, type ChatInboundAdapter, type ChatWebhookRequest, type InboundChatMessage } from '@herobids/domain';
 
@@ -24,9 +25,17 @@ export class TelegramInboundChannel implements ChatInboundAdapter {
 
   verify(request: ChatWebhookRequest) {
     const token = request.headers['x-telegram-bot-api-secret-token'];
-    return token && token === this.webhookSecret
+    return typeof token === 'string' && this.secretMatches(token)
       ? ok(undefined)
       : err({ code: 'chat.unauthorized', message: 'Invalid Telegram webhook token' });
+  }
+
+  private secretMatches(token: string): boolean {
+    if (!token || !this.webhookSecret) return false;
+    const provided = Buffer.from(token, 'utf8');
+    const expected = Buffer.from(this.webhookSecret, 'utf8');
+    // timingSafeEqual throws on unequal lengths, so the length check comes first.
+    return provided.length === expected.length && timingSafeEqual(provided, expected);
   }
 
   parse(request: ChatWebhookRequest) {

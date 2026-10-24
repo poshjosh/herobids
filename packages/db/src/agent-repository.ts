@@ -754,6 +754,22 @@ export class AgentRepository {
     return legacyChatId ? { provider, address: legacyChatId as ChatAddressValue } : null;
   }
 
+  /**
+   * True when any chat_addresses row for this provider and address is not active, for any user or
+   * agent. An opt-out is platform-wide for the address, so outbound sends to it must be refused.
+   */
+  async isChatAddressSuppressed(provider: ChatProvider, address: string): Promise<boolean> {
+    const rows = await this.db.select({ id: chatAddresses.id })
+      .from(chatAddresses)
+      .where(and(
+        eq(chatAddresses.provider, provider),
+        sql`trim(${chatAddresses.address}) = ${address.trim()}`,
+        ne(chatAddresses.status, 'active'),
+      ))
+      .limit(1);
+    return rows.length > 0;
+  }
+
   /** Look up the verified account email for the user that owns the given agent. */
   async getUserEmailByAgentId(agentId: string): Promise<string | null> {
     const rows = await this.db

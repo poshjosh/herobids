@@ -725,6 +725,42 @@ describe('AgentRepository.resolveAgentForChatReply', () => {
 });
 
 // ---------------------------------------------------------------------------
+// isChatAddressSuppressed
+// ---------------------------------------------------------------------------
+
+describe('AgentRepository.isChatAddressSuppressed', () => {
+  it('returns true when another tenant holds a revoked or pending_optin row for the address', async () => {
+    const db = buildSequencedDb([[{ id: 'row-revoked' }], [{ id: 'row-pending' }]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.isChatAddressSuppressed('telegram', '123')).resolves.toBe(true);
+    await expect(repo.isChatAddressSuppressed('telegram', '123')).resolves.toBe(true);
+  });
+
+  it('returns false when every row for the address is active', async () => {
+    const db = buildSequencedDb([[]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.isChatAddressSuppressed('telegram', '123')).resolves.toBe(false);
+  });
+
+  it('returns false when no row exists for the address', async () => {
+    const db = buildSequencedDb([[]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.isChatAddressSuppressed('whatsapp', '+15555550100')).resolves.toBe(false);
+  });
+
+  it('matches any non-active status across all users, on the trimmed address and provider only', async () => {
+    const { db, whereConditions } = buildRecordingDb([[]]);
+    const repo = new AgentRepository(db as never);
+    await repo.isChatAddressSuppressed('telegram', '  123  ');
+    const { sql: whereSql, params } = renderWhere(whereConditions[0]);
+    expect(whereSql).toContain('"chat_addresses"."status" <> $3');
+    expect(params).toEqual(['telegram', '123', 'active']);
+    expect(whereSql).not.toContain('user_id');
+    expect(whereSql).not.toContain('agent_id');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // getUnifiedConfig — capabilityMode / hybridMode defaulting (004)
 // ---------------------------------------------------------------------------
 

@@ -59,7 +59,8 @@ function makeAgentRepo(agentOverrides: Record<string, unknown> = {}) {
     markMessageProcessed: vi.fn().mockResolvedValue(undefined),
     getAgent: vi.fn().mockResolvedValue(agent),
     getActiveSession: vi.fn().mockResolvedValue({ id: 'sess-001', status: 'running' }),
-    getEffectiveTelegramChatId: vi.fn().mockResolvedValue(null),
+    getEffectiveChatAddress: vi.fn().mockResolvedValue(null),
+    isChatAddressSuppressed: vi.fn().mockResolvedValue(false),
     getUserEmailByAgentId: vi.fn().mockResolvedValue(null),
     getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue({ grantedConnectionsByFamily: {}, defaultConnectionByFamily: {} }),
   };
@@ -117,7 +118,7 @@ describe('AgentMessageBroker billing notifications', () => {
   describe('Soft cap (billing.soft_limit_reached)', () => {
     it('emits Telegram notification with warning message', async () => {
       const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       const { client: telegram, sendTextSpy } = makeTelegramClient();
       const broker = makeBroker(agentRepo, redis, telegram);
@@ -135,7 +136,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('does NOT call telegram when no chat ID is available', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue(null);
+      agentRepo.getEffectiveChatAddress.mockResolvedValue(null);
       const redis = makeRedis();
       const { client: telegram, sendTextSpy } = makeTelegramClient();
       const broker = makeBroker(agentRepo, redis, telegram);
@@ -149,7 +150,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('does NOT call telegram when telegram client is not configured', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       const broker = makeBroker(agentRepo, redis, undefined);
 
@@ -165,7 +166,7 @@ describe('AgentMessageBroker billing notifications', () => {
   describe('Hard cap (billing.limit_exceeded)', () => {
     it('emits Telegram notification with hard-stop message', async () => {
       const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       const { client: telegram, sendTextSpy } = makeTelegramClient();
       const broker = makeBroker(agentRepo, redis, telegram);
@@ -183,7 +184,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('includes open positions in the hard-stop message', async () => {
       const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       const { client: telegram, sendTextSpy } = makeTelegramClient();
       const broker = makeBroker(agentRepo, redis, telegram);
@@ -249,7 +250,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('sends both Telegram and email when both are configured', async () => {
       const agentRepo = makeAgentRepo({ name: 'DualBot' });
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       agentRepo.getUserEmailByAgentId.mockResolvedValue('user@example.com');
       const redis = makeRedis();
       const { client: telegram, sendTextSpy } = makeTelegramClient();
@@ -268,7 +269,7 @@ describe('AgentMessageBroker billing notifications', () => {
   describe('Insufficient funds (billing.insufficient_funds)', () => {
     it('emits Telegram notification with insufficient credit message', async () => {
       const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       const { client: telegram, sendTextSpy } = makeTelegramClient();
       const broker = makeBroker(agentRepo, redis, telegram);
@@ -303,7 +304,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('dedup key maps to no_available_credit status', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       redis.get.mockResolvedValue(null);
       const { client: telegram } = makeTelegramClient();
@@ -325,7 +326,7 @@ describe('AgentMessageBroker billing notifications', () => {
   describe('Account suspended (billing.account_suspended)', () => {
     it('emits Telegram notification with account suspended message', async () => {
       const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       const { client: telegram, sendTextSpy } = makeTelegramClient();
       const broker = makeBroker(agentRepo, redis, telegram);
@@ -360,7 +361,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('dedup key maps to suspended status', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       redis.get.mockResolvedValue(null);
       const { client: telegram } = makeTelegramClient();
@@ -382,7 +383,7 @@ describe('AgentMessageBroker billing notifications', () => {
   describe('Deduplication', () => {
     it('suppresses second hard-limit tick for same agent', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       // First call: no cached status → should notify
       redis.get.mockResolvedValueOnce(null);
@@ -407,7 +408,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('resends on status transition from soft to hard', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       // First call: no cached status → should notify soft
       redis.get.mockResolvedValueOnce(null);
@@ -435,7 +436,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('caches dedup key with 24h TTL after notification', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       redis.get.mockResolvedValue(null);
       const { client: telegram } = makeTelegramClient();
@@ -457,7 +458,7 @@ describe('AgentMessageBroker billing notifications', () => {
   describe('Non-billing TICK_SKIPPED', () => {
     it('does NOT trigger notification for non-billing reason', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       const { client: telegram, sendTextSpy } = makeTelegramClient();
       const { client: emailClient, sendSpy } = makeEmailClient();
@@ -508,7 +509,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('handles Telegram delivery failure gracefully', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       redis.get.mockResolvedValue(null);
       const { client: telegram, sendTextSpy } = makeTelegramClient();
@@ -542,7 +543,7 @@ describe('AgentMessageBroker billing notifications', () => {
 
     it('survives redis.set failure and still marks message processed', async () => {
       const agentRepo = makeAgentRepo();
-      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      agentRepo.getEffectiveChatAddress.mockResolvedValue({ provider: 'telegram', address: '111111' });
       const redis = makeRedis();
       redis.get.mockResolvedValue(null);
       redis.set.mockRejectedValue(new Error('Redis connection lost'));

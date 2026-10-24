@@ -19,7 +19,8 @@ vi.mock('../logger.js', () => ({ createLogger: () => ({ warn: logWarn, info: vi.
 function makeAgentRepo(overrides: Record<string, unknown> = {}) {
   return {
     insertOutboundMessage: vi.fn().mockResolvedValue('msg-001'),
-    getEffectiveTelegramChatId: vi.fn().mockResolvedValue(null),
+    getEffectiveChatAddress: vi.fn().mockResolvedValue(null),
+    isChatAddressSuppressed: vi.fn().mockResolvedValue(false),
     getUserEmailByAgentId: vi.fn().mockResolvedValue(null),
     markOutboundMessageSent: vi.fn().mockResolvedValue(undefined),
     markOutboundMessageFailed: vi.fn().mockResolvedValue(undefined),
@@ -106,7 +107,7 @@ describe('PlatformAlertService', () => {
     it('survives persistence failure and continues delivery', async () => {
       const { service, agentRepo } = makeService({
         insertOutboundMessage: vi.fn().mockRejectedValue(new Error('DB down')),
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
       const telegram = makeTelegramClient();
       const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
@@ -126,7 +127,7 @@ describe('PlatformAlertService', () => {
   describe('Telegram delivery', () => {
     it('sends a formatted Telegram message when chat ID is available', async () => {
       const { service, agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
       const telegram = makeTelegramClient();
       const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
@@ -143,7 +144,7 @@ describe('PlatformAlertService', () => {
 
     it('marks outbound message as sent on Telegram success', async () => {
       const { agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
       const telegram = makeTelegramClient();
       const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
@@ -155,7 +156,7 @@ describe('PlatformAlertService', () => {
 
     it('marks outbound message as failed on Telegram failure', async () => {
       const { agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
       const telegram = makeTelegramClient({
         sendText: vi.fn().mockResolvedValue({ ok: false, error: { code: 'tg.error', message: 'Network error' } }),
@@ -169,7 +170,7 @@ describe('PlatformAlertService', () => {
 
     it('skips Telegram when no chat ID is available', async () => {
       const { service, agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue(null),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue(null),
       });
       const telegram = makeTelegramClient();
       const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
@@ -181,7 +182,7 @@ describe('PlatformAlertService', () => {
 
     it('logs chat address lookup failure and still delivers the email fallback', async () => {
       const { service, agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockRejectedValue(new Error('DB error')),
+        getEffectiveChatAddress: vi.fn().mockRejectedValue(new Error('DB error')),
         getUserEmailByAgentId: vi.fn().mockResolvedValue('user@example.com'),
       });
       const telegram = makeTelegramClient();
@@ -210,7 +211,7 @@ describe('PlatformAlertService', () => {
 
     it('uses agent ID snippet when agent name is not available', async () => {
       const { agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
       const telegram = makeTelegramClient();
       const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
@@ -341,7 +342,7 @@ describe('PlatformAlertService', () => {
   describe('dual-channel delivery', () => {
     it('delivers via both Telegram and email when both are configured', async () => {
       const { agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
         getUserEmailByAgentId: vi.fn().mockResolvedValue('user@example.com'),
       });
       const telegram = makeTelegramClient();
@@ -356,7 +357,7 @@ describe('PlatformAlertService', () => {
 
     it('still delivers via email when Telegram fails', async () => {
       const { agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
         getUserEmailByAgentId: vi.fn().mockResolvedValue('user@example.com'),
       });
       const telegram = makeTelegramClient({
@@ -375,7 +376,7 @@ describe('PlatformAlertService', () => {
 
     it('still delivers via Telegram when email fails', async () => {
       const { agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
         getUserEmailByAgentId: vi.fn().mockResolvedValue('user@example.com'),
       });
       const telegram = makeTelegramClient();
@@ -411,7 +412,7 @@ describe('PlatformAlertService', () => {
       [PLATFORM_ALERT_EVENTS.EXECUTION_CRITICAL_FAILURE, 'Critical Execution Failure'],
     ] as const)('maps %s → "%s"', async (event, expectedSubject) => {
       const { agentRepo } = makeService({
-        getEffectiveTelegramChatId: vi.fn().mockResolvedValue('111111'),
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
       const telegram = makeTelegramClient();
       const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
