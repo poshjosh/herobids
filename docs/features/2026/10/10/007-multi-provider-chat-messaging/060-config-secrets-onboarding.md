@@ -80,6 +80,14 @@ Design principles:
    `verified_at` — required for SMS TCPA audit (030) and WhatsApp opt-in policy.
 3. **Honour revocation.** SMS STOP (and WhatsApp block) set status `revoked`;
    the delivery layer must refuse revoked addresses.
+   **Decision (2026-10-24, owner approved):** this is platform-wide per provider and
+   address, because the platform number is shared. A non-active row (`revoked` or
+   `pending_optin`) blocks inbound replies and outbound sends for every user on that
+   address. Routing fails closed: a non-active row in an agent's scope blocks the legacy
+   Telegram fallback, and the legacy column is never used to bypass a revocation.
+   Why: consent rules (STOP, block) bind the sender, not the tenant. See
+   [900](./900-implementation-plan.md) decision log and the public
+   [reply correlation](../../../../../../apps/web/src/features/public-pages/content/en/docs/messaging/reply-correlation.md) page.
 
 ## Surfaces that must stay consistent (006 §Deliverables)
 

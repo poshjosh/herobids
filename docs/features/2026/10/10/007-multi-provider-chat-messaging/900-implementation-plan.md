@@ -199,6 +199,10 @@ Tasks: [entrypoint §4 P3.1–P3.4](./AGENT-ENTRYPOINT.md).
 
 ### Outstanding Issues (Phase 3)
 
+- Reply correlation: the router routes a plain message to the user's only running agent (user-wide, not per address). The approved rule said "unique address". Owner to confirm the wording, and whether the router should also check the address. The public doc describes the current behaviour.
+- Cross-tenant suppression also blocks on `pending_optin` rows (any non-active status), per the approved rule A. Confirm this is wanted.
+- The Telegram suppression check reads the stored address with `trim()` in SQL; keep this when writers for `chat_addresses` are added.
+
 - Secret compare in `apps/api/src/routes/telegram-channel.ts` is not constant-time (pre-existing). Changing it needs owner approval (secret verification is not pre-approved).
 - `messaging.chat.telegram.*` has no env mapping (YAML only). Confirm this is intended.
 - Per-field fallback can mix `messaging.chat` and `alerts.telegram` sources. Consider resolving the whole block from one source.
@@ -284,6 +288,11 @@ Only after dual-read has been live and verified across environments.
 | 2026-10-24 | Inbound correlation checks the outbound `provider_message_id` first, then the unique active address, then the legacy Telegram pair | Agent (per 050 strategy 2) | [050](./050-inbound-routing.md), commit c59861f5 |
 | 2026-10-24 | Approval resolutions keep writing `telegram_yes`/`telegram_no` and record `resolution_provider`; `chat_yes`/`chat_no` writes wait for readers | Agent (per 040 §3 option a) | [040](./040-data-model-and-migration.md) §3, commit 0a020968 |
 | 2026-10-24 | P3.1 (new public route) and P3.2 (auth bypass) held for owner approval; P3.3 config done | Agent (stop trigger, AGENT-ENTRYPOINT §0) | AGENT-ENTRYPOINT §3 |
+| 2026-10-24 | Opt-out is platform-wide per provider and address: a non-active `chat_addresses` row blocks inbound replies and outbound sends for every user on that address. Owner approved rule A with the outbound fix | Owner | [060](./060-config-secrets-onboarding.md) "Honour revocation"; [Reply correlation](../../../../../../apps/web/src/features/public-pages/content/en/docs/messaging/reply-correlation.md) |
+| 2026-10-24 | Reply correlation order kept: quoted message, then explicit `/to` prefix, then single running agent, otherwise ask. The owner's original "unique address" wording is replaced by "only one running agent" because the router already works this way | Owner (order); Agent (wording, pending confirmation) | [050](./050-inbound-routing.md); see Outstanding Issues |
+| 2026-10-24 | Telegram webhook secret compared in constant time (owner approved) | Owner | commit d553c64e |
+| 2026-10-24 | `GET /messaging/chat/:provider/webhook` returns 405 for a registered provider without a verify handshake; kept until WhatsApp needs one | Owner | AGENT-ENTRYPOINT §3 |
+| 2026-10-24 | `messaging.chat.*` is YAML-only with no env mapping (intended) | Owner | Phase 3 |
 | 2026-10-24 | Approval resolution source generalised to `chat_yes` / `chat_no` with a provider field (`resolution_provider`), not per-provider values (040 §3 option a); `agent_documents.source` widened to add `whatsapp` / `sms` | Owner | [040](./040-data-model-and-migration.md) §3 |
 
 ## Risk notes

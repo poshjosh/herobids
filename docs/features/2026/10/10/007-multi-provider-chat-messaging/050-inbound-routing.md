@@ -66,6 +66,13 @@ handler and generalised to operate on `InboundChatMessage`:
 
 Each adapter owns its scheme; the router never sees provider headers.
 
+> **Decision (2026-10-24, owner approved):** the correlation order is kept:
+> quoted message, then explicit `/to` prefix, then the single running agent,
+> otherwise ask the user. The router implements "single running agent" per user,
+> not per address. The public explanation is in
+> [reply correlation](../../../../../../apps/web/src/features/public-pages/content/en/docs/messaging/reply-correlation.md).
+> Wording is an open item in [900](./900-implementation-plan.md).
+
 ## The hard part: reply→agent correlation without `force_reply`
 
 Telegram threads replies natively: an outbound send uses `force_reply()`, so the

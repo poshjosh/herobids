@@ -30,3 +30,7 @@ OpenAIdom agent messages sent to Telegram now arrive with reply mode already arm
 
 - `Agent <name> is stopped and cannot receive messages right now.`
   The reply was valid, but the agent is not in a state that can consume new user input.
+
+## See also
+
+- [Reply Correlation](/docs/messaging/reply-correlation) — How replies are matched to the right agent across channels.
