@@ -1,6 +1,6 @@
 # Plan: Telegram "typing…" indicator while an agent processes a user message
 
-Status: planned (moved from `pending/000-telegram-typing-indicator` on 2026-10-24 into WP-M, Phase T)
+Status: implemented (task T, commit 25f895fe, rework in the same series). Moved from `pending/000-telegram-typing-indicator` into WP-M, Phase T. Gate record: [900](./900-implementation-plan.md) "T gate record". Deviations from this design are listed there.
 Owner: (unassigned)
 Related discussion: perceived-latency reduction for Telegram agent replies
 

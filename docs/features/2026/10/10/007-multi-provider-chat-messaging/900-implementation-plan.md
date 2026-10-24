@@ -199,8 +199,8 @@ Tasks: [entrypoint §4 P3.1–P3.4](./AGENT-ENTRYPOINT.md).
 
 ### Outstanding Issues (Phase 3)
 
-- Reply correlation: the router routes a plain message to the user's only running agent (user-wide, not per address). The approved rule said "unique address". Owner to confirm the wording, and whether the router should also check the address. The public doc describes the current behaviour.
-- Cross-tenant suppression also blocks on `pending_optin` rows (any non-active status), per the approved rule A. Confirm this is wanted.
+- Reply correlation: resolved 2026-10-24 (owner: keep current code; see decision log).
+- Cross-tenant suppression: resolved 2026-10-24 (owner: option A, including pending_optin).
 - The Telegram suppression check reads the stored address with `trim()` in SQL; keep this when writers for `chat_addresses` are added.
 
 - Secret compare in `apps/api/src/routes/telegram-channel.ts` is not constant-time (pre-existing). Changing it needs owner approval (secret verification is not pre-approved).
@@ -307,6 +307,8 @@ Only after dual-read has been live and verified across environments.
 | 2026-10-24 | Telegram webhook secret compared in constant time (owner approved) | Owner | commit d553c64e |
 | 2026-10-24 | `GET /messaging/chat/:provider/webhook` returns 405 for a registered provider without a verify handshake; kept until WhatsApp needs one | Owner | AGENT-ENTRYPOINT §3 |
 | 2026-10-24 | `messaging.chat.*` is YAML-only with no env mapping (intended) | Owner | Phase 3 |
+| 2026-10-24 | Reply correlation: keep the current code. A plain message goes to the user's only running agent; with several running, the user is asked to use `/to`. The number-based rule is deferred to the shared-number channels (WhatsApp, SMS) | Owner | [050](./050-inbound-routing.md); [reply correlation](../../../../../../apps/web/src/features/public-pages/content/en/docs/messaging/reply-correlation.md) |
+| 2026-10-24 | Cross-tenant opt-out: option A. A non-active address (revoked or pending_optin) blocks inbound and outbound for all users on that provider and address. Includes pending_optin | Owner | [060](./060-config-secrets-onboarding.md) "Honour revocation" |
 | 2026-10-24 | Approval resolution source generalised to `chat_yes` / `chat_no` with a provider field (`resolution_provider`), not per-provider values (040 §3 option a); `agent_documents.source` widened to add `whatsapp` / `sms` | Owner | [040](./040-data-model-and-migration.md) §3 |
 
 ## Risk notes
