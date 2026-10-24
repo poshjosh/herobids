@@ -61,8 +61,10 @@ describe('PushOptInView', () => {
   it('explains a duplicate endpoint and offers only the explicit clear-and-retry button on 409', () => {
     const html = render({ state: 'error', errorCode: 'notification.endpoint_owned' });
     expect(html).toContain(messages['push.optIn.endpointOwned']);
+    const clearAndRetry = messages['push.optIn.clearAndRetry'];
+    if (clearAndRetry === undefined) throw new Error('push.optIn.clearAndRetry message is missing');
     // React escapes the apostrophe in the label as &#x27;.
-    expect(html).toContain(messages['push.optIn.clearAndRetry'].replace(/'/g, '&#x27;'));
+    expect(html).toContain(clearAndRetry.replace(/'/g, '&#x27;'));
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).not.toContain(messages['push.optIn.enable']);
   });

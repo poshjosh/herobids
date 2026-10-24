@@ -49,8 +49,8 @@ All items are **Open**. The recommended default applies if the owner does not ob
 | --- | --- | --- |
 | E-D1 | **Fallback trigger.** 080 says "every push failed in the last window". What is the window? | Per event, with no time window. Email is sent only when the user has no active subscription, or when every push attempt for this event failed. This is simpler, testable, and needs no scheduler. |
 | E-D2 | **Which event classes are emailed?** | `["agent.question"]` only. `agent.reply` is delivered by chat and push. Add `task.completed` if W4 adds it (081 D4). Set in `messaging.notifications.email.eventClasses`. |
-| E-D3 | **Telegram-only users** (no push subscription). Does email fallback apply? | Yes. This is 080's literal rule. Telegram delivery does not suppress email. |
-| E-D4 | **Email opt-out.** Is email fallback on by default? | On by default for users with an account email, with an opt-out at `users.notificationPreferences.notifications.emailFallback.enabled` (JSONB, instance config). Do not reuse the legacy `sendMessage.email` key. |
+| E-D3 | **Telegram-only users** (no push subscription). Does email fallback apply? | Yes, under the same opt-in rule as E-D4 (`userDefaultEnabled`). This is 080's literal rule. Telegram delivery does not suppress email. |
+| E-D4 | **Email default.** Is email fallback on by default? | Opt-in by default. The instance default is `messaging.notifications.email.userDefaultEnabled: false`, which applies to users with no explicit choice. A user's choice at `users.notificationPreferences.notifications.emailFallback.enabled` (JSONB, instance config) overrides the default in either direction. Setting `userDefaultEnabled: true` makes email on by default with per-user opt-out. Do not reuse the legacy `sendMessage.email` key. |
 | E-D5 | **Per-user cap.** How many fallback emails per user per day? | `maxPerUserPerDay: 10`, counted from the delivery ledger (E4). This number is a proposal, not from any existing doc. |
 | E-D6 | **Existing email paths** (billing dual send, platform alerts, `send_email`). Are they in scope? | Out of scope. 082 governs only the new `NotificationChannel` flow. Owner to confirm, since 080's "never both" rule would otherwise cover them. |
 | E-D7 | **Email content.** | `renderEmail` with subject "New message from <agent name>" and a fixed body with no message text. The link is `auth.publicBaseUrl` + `/agents/<id>`. |
@@ -63,7 +63,7 @@ Tasks are ordered. Test files named "new" are proposed; confirm the name when yo
 ### Phase E-A: config, pure policy, transport adapter
 
 **E1. Email config keys.**
-- Description: add `messaging.notifications.email` to `MessagingConfigSchema`: `enabled` (false), `eventClasses` (E-D2), `maxPerUserPerDay` (positive int, E-D5). Transport stays under `alerts.email`. Do not duplicate `fromEmail` or SES keys. Defaults go in `config/default.yaml` under `messaging:`. No new env var, so no `.env.example` change. (If W1 has added `messaging.notifications`, extend it; do not create a second block.)
+- Description: add `messaging.notifications.email` to `MessagingConfigSchema`: `enabled` (false), `eventClasses` (E-D2), `maxPerUserPerDay` (positive int, E-D5), `userDefaultEnabled` (false; the opt-in default for users with no explicit choice, E-D4). Transport stays under `alerts.email`. Do not duplicate `fromEmail` or SES keys. Defaults go in `config/default.yaml` under `messaging:`. No new env var, so no `.env.example` change. (If W1 has added `messaging.notifications`, extend it; do not create a second block.)
 - Files: `packages/domain/src/config/schema.ts`, `config/default.yaml`; new `packages/domain/src/config/notifications-email-config.test.ts`.
 - Test: defaults parse with email off; a non-positive `maxPerUserPerDay` is rejected; `alerts.email` parses unchanged.
 - Gate: config tests green. Depends on W1.
@@ -83,13 +83,13 @@ Tasks are ordered. Test files named "new" are proposed; confirm the name when yo
 ### Phase E-B: ledger and dispatch
 
 **E4. Delivery ledger.**
-- Description: new table `notification_deliveries`: `id`, `user_id`, `agent_id`, `event_key` (unique with `channel`), `channel` (`web_push | email`), `status` (`sent | failed | skipped`), `reason`, `created_at`. Methods: `recordIfAbsent(eventKey, channel)` (insert-or-skip), `countEmailSince(userId, since)`, `updateStatus`. The unique key is the duplicate guard across retries and replicas.
+- Description: new table `notification_deliveries`: `id`, `user_id`, `agent_id`, `event_key` (unique with `channel`), `channel` (`web_push | email`), `status` (`sent | failed | skipped`), `reason`, `created_at`. Methods: `recordIfAbsent(eventKey, channel)` (insert-or-skip), `countEmailSince(userId, since)`, `reserveEmailIfUnderCap(...)` (duplicate check, cap check, and insert in one transaction under a per-user `pg_advisory_xact_lock(hashtext(userId))`, so concurrent decisions cannot both take the last slot), `updateStatus`. The unique key is the duplicate guard across retries and replicas.
 - Files: new `packages/db/src/schema/notification-deliveries.ts`, `packages/db/src/schema/index.ts`, new migration (next number after W3's), new `packages/db/src/notification-delivery-repository.ts`.
 - Test: new `packages/db/src/notification-delivery-repository.test.ts`. Integration test for the unique key and the daily count, skipped without `DATABASE_URL`. Unit test for the mapping.
 - Gate: `cd packages/db && pnpm db:generate` produces one new migration; no existing migration is edited. Depends on W3.
 
 **E5. Dispatcher.**
-- Description: `NotificationDispatcher.dispatch(event)` runs in this order: (1) if the class is not on the push list, return. (2) Send push to each active subscription via `WebPushChannel` (W4). (3) Build push outcomes. (4) Call `decideFallback` (E2). (5) If `route` is `email`, call `recordIfAbsent(eventKey, 'email')` first; if the row already exists, stop. Otherwise send via `EmailNotificationChannel` and update the status. Returns a `Result`. Failures are logged, not thrown.
+- Description: `NotificationDispatcher.dispatch(event)` runs in this order: (1) if the class is not on the push list, return. (2) Send push to each active subscription via `WebPushChannel` (W4). (3) Build push outcomes. (4) Call `decideFallback` (E2). (5) If `route` is `email`, call `reserveEmailIfUnderCap` first; if the row already exists or the cap is reached inside the transaction, stop. With no email client, return `notification.email_disabled` before any database read. Otherwise send via `EmailNotificationChannel` and update the status. Returns a `Result`. Failures are logged, not thrown.
 - Files: new `apps/worker/src/notifications/notification-dispatcher.ts`; new `apps/worker/src/notifications/notification-dispatcher.test.ts`.
 - Test: matrix covering (a) no subscription sends email once; (b) push success sends no email; (c) all pushes failed sends email once; (d) a repeat event key sends nothing; (e) email failure is recorded as `failed` and is not retried in this task; (f) the daily cap blocks email.
 - Gate: tests green. Depends on W4, E2, E3, E4.
@@ -158,4 +158,4 @@ W8 + E-D4 ──► E7 ──► E8
 
 ## Outstanding Issues
 
-None yet.
+- Opt-in default conflicts with the seamless-communication goal; owner to confirm or flip the default.

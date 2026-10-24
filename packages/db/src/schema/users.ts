@@ -31,6 +31,10 @@ export const users = pgTable('users', {
         enabledAt?: string;
       };
     };
+    /** Email fallback for agent notifications (082 E7). Absent means the operator default applies. */
+    notifications?: {
+      emailFallback?: { enabled: boolean };
+    };
   }>(),
   /** Whether this user has admin/operator access */
   isAdmin: boolean('is_admin').notNull().default(false),

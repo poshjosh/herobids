@@ -9,6 +9,7 @@ import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from './ModelSelectionFields.js';
 import { PushOptIn } from '../notifications/PushOptIn.js';
+import { EmailFallbackToggle } from '../notifications/EmailFallbackToggle.js';
 import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, type AiModelSelectionState } from './ai-model-settings.js';
 
 const LOCALE_DISPLAY_NAMES: Record<SupportedLocale, string> = {
@@ -453,6 +454,8 @@ export function SettingsPage() {
         </Card>
 
         <PushOptIn />
+
+        <EmailFallbackToggle />
       </div>
     </PageShell>
   );

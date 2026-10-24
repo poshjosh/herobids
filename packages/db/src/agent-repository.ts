@@ -781,6 +781,16 @@ export class AgentRepository {
     return rows[0]?.email ?? null;
   }
 
+  /** Stored notification preferences for a user (users.notificationPreferences). Null when unset. */
+  async getUserNotificationPreferences(userId: string): Promise<(typeof users.$inferSelect)['notificationPreferences']> {
+    const rows = await this.db
+      .select({ preferences: users.notificationPreferences })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return rows[0]?.preferences ?? null;
+  }
+
   /**
    * Resolve whether email fanout is effectively enabled for an agent's send_message calls.
    * Precedence: agent-level explicit override → user-level explicit default → system default (true).

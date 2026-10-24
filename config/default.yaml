@@ -762,6 +762,11 @@ messaging:
       vapidPrivateKey: ""           # secret; override: VAPID_PRIVATE_KEY (env only, never set a value here)
       ttlSeconds: 86400             # how long a push service may hold an undelivered push (24h)
       urgency: normal               # very-low | low | normal | high
+    email:
+      enabled: false                # email fallback when push cannot reach the user; needs alerts.email (SES) configured
+      eventClasses: [agent.question]  # classes that may fall back to email; each must also be in eventClasses above
+      maxPerUserPerDay: 10          # fallback emails per user in a rolling 24h window
+      userDefaultEnabled: false     # false = users opt in to email fallback; true = on unless the user opts out
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:

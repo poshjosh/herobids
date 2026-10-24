@@ -10,7 +10,7 @@ import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
 import { errorPayload } from '../error-payload.js';
 import { resolvePlanEntitlements } from '../plan-guards.js';
-import { resolveNotificationPreferences } from './user-config-helpers.js';
+import { resolveNotificationPreferences, type StoredNotificationPreferences } from './user-config-helpers.js';
 import type { AuthMailer } from '../auth-mailer.js';
 import {
   consumeSetupLinkToken as consumeSetupLinkTokenImpl,
@@ -35,6 +35,9 @@ function isSupportedLocale(value: unknown): value is SupportedLocale {
 const NotificationPreferencesInputSchema = z.object({
   sendMessage: z.object({
     email: z.object({ enabled: z.boolean() }).optional(),
+  }).optional(),
+  notifications: z.object({
+    emailFallback: z.object({ enabled: z.boolean() }).optional(),
   }).optional(),
 });
 
@@ -912,7 +915,7 @@ export async function authRoutes(
 
   /**
    * PATCH /auth/me — Update mutable user profile fields.
-   * Currently supports: preferredLocale, telegramChatId, and notificationPreferences.
+   * Currently supports: preferredLocale, telegramChatId, and notificationPreferences (sendMessage.email and notifications.emailFallback).
    */
   app.patch('/auth/me', async (request, reply) => {
     const userId = request.userId;
@@ -924,11 +927,7 @@ export async function authRoutes(
     const updates: {
       preferredLocale?: SupportedLocale | null;
       telegramChatId?: string | null;
-      notificationPreferences?: {
-        sendMessage?: {
-          email?: { enabled: boolean; source: 'explicit_update'; enabledAt?: string };
-        };
-      } | null;
+      notificationPreferences?: StoredNotificationPreferences;
       updatedAt: Date;
     } = {
       updatedAt: new Date(),

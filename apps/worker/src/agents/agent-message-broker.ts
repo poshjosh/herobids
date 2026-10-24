@@ -29,12 +29,11 @@ import {
   resolvePlanSkillEntitlements,
   AuthConfigSchema,
   ConnectionRequestsConfigSchema,
-  buildNotificationPayload,
-  shouldNotify,
 } from '@herobids/domain';
-import type { AppConfig, NotificationChannel, NotificationClass } from '@herobids/domain';
-import type { AgentRepository, ConnectionOwnershipRepository, Database, PushSubscriptionRepository } from '@herobids/db';
-import type { UpdatePromptPayload, UpdatePromptResult } from '@herobids/domain';
+import type { NotificationClass } from '@herobids/domain';
+import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
+import type { NotificationDispatchEvent, NotificationDispatchOutcome } from '../notifications/notification-dispatcher.js';
+import type { UpdatePromptPayload, UpdatePromptResult, Result, DomainError } from '@herobids/domain';
 import { eq, inArray } from 'drizzle-orm';
 import { agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -64,11 +63,9 @@ const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
  */
 export type BotLiveCheckCallback = (userId: string) => Promise<void>;
 
-/** Out-of-band notifications for agent messages (081 W5). Absent means no notifications. */
-export interface AgentMessageNotifications {
-  channel: NotificationChannel;
-  subscriptions: Pick<PushSubscriptionRepository, 'listActiveForUser'>;
-  config: AppConfig['messaging']['notifications'];
+/** Out-of-band notifications for agent messages (081 W5, 082 E6). Absent means no notifications. */
+export interface AgentMessageNotifier {
+  dispatch(event: NotificationDispatchEvent): Promise<Result<NotificationDispatchOutcome, DomainError>>;
 }
 
 /**
@@ -111,7 +108,7 @@ export class AgentMessageBroker {
     private readonly publicBaseUrl?: string,
     private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number; expiryGraceSecs: number },
     private readonly operatorNotifier?: OperatorNotifier,
-    private readonly notifications?: AgentMessageNotifications,
+    private readonly notifications?: AgentMessageNotifier,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -564,49 +561,36 @@ export class AgentMessageBroker {
       logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered via chat');
     }
 
-    await this.notifyAgentMessage(agent, replyRequested ? 'agent.question' : 'agent.reply');
+    await this.notifyAgentMessage(agent, msgId, replyRequested ? 'agent.question' : 'agent.reply');
 
     // Email fanout from send_message has been removed (Item 5).
     // Agents should use the dedicated send_email tool for email delivery.
   }
 
   /**
-   * Push each active subscription of the agent's owner (081 W5). Push is an independent channel:
-   * it runs whatever the chat outcome, and it never throws.
+   * Hands the agent message to the notification dispatcher (081 W5, 082 E6). Notifications are an independent
+   * channel: this runs whatever the chat outcome, and it never throws or changes the chat result.
    */
   private async notifyAgentMessage(
     agent: { id: string; name: string; userId: string },
+    msgId: string,
     eventClass: NotificationClass,
   ): Promise<void> {
     const notifications = this.notifications;
-    if (!notifications || !shouldNotify(eventClass, notifications.config).ok) return;
+    if (!notifications) return;
     try {
-      const subscriptions = await notifications.subscriptions.listActiveForUser(agent.userId);
-      const payload = buildNotificationPayload({ agentId: agent.id, agentName: agent.name, eventClass });
-      for (const subscription of subscriptions) {
-        try {
-          const result = await notifications.channel.notify(
-            {
-              userId: subscription.userId,
-              subscriptionId: subscription.id,
-              endpoint: subscription.endpoint,
-              p256dh: subscription.p256dh,
-              auth: subscription.auth,
-            },
-            payload,
-          );
-          if (!result.ok) {
-            logger.warn({ agentId: agent.id, subscriptionId: subscription.id, code: result.error.code }, 'Agent notification not delivered');
-          }
-        } catch (error) {
-          logger.warn(
-            { agentId: agent.id, subscriptionId: subscription.id, error: error instanceof Error ? error.name : 'NonError' },
-            'Agent notification dispatch failed',
-          );
-        }
+      const result = await notifications.dispatch({
+        userId: agent.userId,
+        agentId: agent.id,
+        agentName: agent.name,
+        eventKey: `${agent.id}:${msgId}`,
+        eventClass,
+      });
+      if (!result.ok) {
+        logger.warn({ agentId: agent.id, code: result.error.code }, 'Agent notification dispatch returned an error');
       }
     } catch (error) {
-      logger.warn({ agentId: agent.id, error: error instanceof Error ? error.message : String(error) }, 'Agent notification dispatch failed');
+      logger.warn({ agentId: agent.id, error: error instanceof Error ? error.name : 'NonError' }, 'Agent notification dispatch failed');
     }
   }
 

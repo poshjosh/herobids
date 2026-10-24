@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 import { createLogger } from './logger.js';
 import { EvaluationRuntime } from './agent-evaluation/index.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
-import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, users, agents } from '@herobids/db';
+import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, NotificationDeliveryRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
 
@@ -19,6 +19,8 @@ import { TelegramChannel } from './alerting/telegram-channel.js';
 import { ChatDelivery } from './alerting/chat-delivery.js';
 import { WebPushChannel } from './notifications/web-push-channel.js';
 import { createWebPushSender } from './notifications/web-push-sender.js';
+import { EmailNotificationChannel } from './notifications/email-notification-channel.js';
+import { NotificationDispatcher } from './notifications/notification-dispatcher.js';
 import { resolveWorkerTelegramChat } from './alerting/telegram-chat-wiring.js';
 import type { EmailClientConfig } from './alerting/index.js';
 import {
@@ -785,7 +787,8 @@ const operatorNotifier = operatorFaultReportingEnabled && workerTelegram
   ? new OperatorNotifier(workerTelegram, appConfig.alerts.operator.telegramChatId, appConfig.alerts.operator.faultCooldownMs)
   : undefined;
 
-// Web Push (081 W5): on only when messaging.notifications and webPush are both enabled with complete VAPID settings.
+// Agent notifications (081 W5, 082 E6). Off unless messaging.notifications is enabled. The dispatcher picks one route
+// per message: Web Push when configured, email fallback only when push cannot reach the user.
 const pushSubscriptionRepo = new PushSubscriptionRepository(db);
 const notificationsConfig = appConfig.messaging.notifications;
 const webPushConfig = notificationsConfig.webPush;
@@ -793,20 +796,35 @@ const webPushKeysComplete = webPushConfig.vapidSubject !== '' && webPushConfig.v
 if (notificationsConfig.enabled && webPushConfig.enabled && !webPushKeysComplete) {
   logger.warn('messaging.notifications.webPush is enabled but vapidSubject, vapidPublicKey, or VAPID_PRIVATE_KEY is missing; web push is off');
 }
-const agentNotifications = notificationsConfig.enabled && webPushConfig.enabled && webPushKeysComplete
-  ? {
-    channel: new WebPushChannel(
-      createWebPushSender({
-        subject: webPushConfig.vapidSubject,
-        publicKey: webPushConfig.vapidPublicKey,
-        privateKey: webPushConfig.vapidPrivateKey,
-      }),
-      pushSubscriptionRepo,
-      { ttlSeconds: webPushConfig.ttlSeconds, urgency: webPushConfig.urgency },
-    ),
-    subscriptions: pushSubscriptionRepo,
+const agentWebPushChannel = notificationsConfig.enabled && webPushConfig.enabled && webPushKeysComplete
+  ? new WebPushChannel(
+    createWebPushSender({
+      subject: webPushConfig.vapidSubject,
+      publicKey: webPushConfig.vapidPublicKey,
+      privateKey: webPushConfig.vapidPrivateKey,
+    }),
+    pushSubscriptionRepo,
+    { ttlSeconds: webPushConfig.ttlSeconds, urgency: webPushConfig.urgency },
+  )
+  : undefined;
+// Without a configured email client, email fallback cannot send. Say so at startup instead of failing silently.
+const emailFallbackReady = notificationsConfig.enabled && notificationsConfig.email.enabled && workerEmail !== undefined;
+if (notificationsConfig.enabled && notificationsConfig.email.enabled && !workerEmail) {
+  logger.warn('messaging.notifications.email is enabled but no email client is configured (alerts.email); email fallback is off');
+}
+const agentNotificationDispatcher = notificationsConfig.enabled && (agentWebPushChannel !== undefined || emailFallbackReady)
+  ? new NotificationDispatcher({
     config: notificationsConfig,
-  }
+    webPush: agentWebPushChannel ? { channel: agentWebPushChannel, subscriptions: pushSubscriptionRepo } : undefined,
+    email: emailFallbackReady
+      ? new EmailNotificationChannel(workerEmail, agentRepo, {
+        publicBaseUrl: appConfig.auth.publicBaseUrl,
+        brandImageUrl: appConfig.alerts.email.brandImageUrl,
+      })
+      : undefined,
+    deliveries: new NotificationDeliveryRepository(db),
+    preferences: agentRepo,
+  })
   : undefined;
 const agentBroker = new AgentMessageBroker(
   redisClient,
@@ -831,7 +849,7 @@ const agentBroker = new AgentMessageBroker(
   appConfig.auth.publicBaseUrl,
   appConfig.connectionRequests,
   operatorNotifier,
-  agentNotifications,
+  agentNotificationDispatcher,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

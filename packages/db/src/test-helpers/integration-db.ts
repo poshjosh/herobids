@@ -4,12 +4,12 @@ import * as schema from '../schema/index.js';
 
 /**
  * Opens a real Postgres connection for integration tests.
- * Requires DATABASE_URL env var to be set.
+ * Requires DATABASE_URL env var to be set. Pass `max` above 1 when a test needs real concurrent connections.
  * Call client.end() in afterAll to release the connection.
  */
-export function openTestDb() {
+export function openTestDb(options: { max?: number } = {}) {
   const url = process.env['DATABASE_URL']!;
-  const client = postgres(url, { max: 1 });
+  const client = postgres(url, { max: options.max ?? 1 });
   const db = drizzle(client, { schema });
   return { db, client };
 }

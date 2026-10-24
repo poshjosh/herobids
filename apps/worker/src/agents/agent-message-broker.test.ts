@@ -4,8 +4,9 @@ import type { AgentRepository } from '@herobids/db';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
-import { AgentMessageBroker, type AgentMessageNotifications } from './agent-message-broker.js';
+import { AgentMessageBroker, type AgentMessageNotifier } from './agent-message-broker.js';
 import { ChatDelivery } from '../alerting/chat-delivery.js';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.js';
 import type { AppConfig } from '@herobids/domain';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -786,7 +787,8 @@ describe('AgentMessageBroker — update_my_prompt branches', () => {
   });
 });
 
-// ── send_message push notifications (081 W5) ───────────────────────────────
+// ── send_message notifications (081 W5, 082 E6) ────────────────────────────
+// The broker is tested with the real NotificationDispatcher and fake channels, so these cases check the seam.
 
 const SENDING_AGENT = { id: 'agent-1', name: 'Research Bot', userId: 'user-1', toolPolicy: null };
 
@@ -818,11 +820,37 @@ function makeNotificationsConfig(overrides: Partial<AppConfig['messaging']['noti
       ttlSeconds: 86400,
       urgency: 'normal',
     },
+    email: {
+      enabled: false,
+      eventClasses: ['agent.question'],
+      maxPerUserPerDay: 10,
+      userDefaultEnabled: false,
+    },
     ...overrides,
   };
 }
 
-function makeSendBroker(options: { chatOk: boolean; notifications?: AgentMessageNotifications }) {
+function makeNotifier(options: {
+  config?: Partial<AppConfig['messaging']['notifications']>;
+  subscriptions?: ReturnType<typeof makeSubscription>[];
+  notify?: ReturnType<typeof vi.fn>;
+} = {}) {
+  const notify = options.notify ?? vi.fn().mockResolvedValue({ ok: true, data: { subscriptionId: 'x' } });
+  const listActiveForUser = vi.fn().mockResolvedValue(options.subscriptions ?? [makeSubscription('sub-1')]);
+  const dispatcher = new NotificationDispatcher({
+    config: makeNotificationsConfig(options.config),
+    webPush: { channel: { notify }, subscriptions: { listActiveForUser } },
+    deliveries: {
+      recordIfAbsent: vi.fn(async () => 'row-1'),
+      countEmailSince: vi.fn(async () => 0),
+      updateStatus: vi.fn(async () => undefined),
+    },
+    preferences: { getUserNotificationPreferences: vi.fn(async () => null) },
+  });
+  return { dispatcher, notify, listActiveForUser };
+}
+
+function makeSendBroker(options: { chatOk: boolean; notifications?: AgentMessageNotifier }) {
   const agentRepo = makeAgentRepo({
     getAgent: vi.fn().mockResolvedValue(SENDING_AGENT),
     getActiveSession: vi.fn().mockResolvedValue({ id: 'session-1', status: 'running' }),
@@ -855,12 +883,10 @@ function makeSendBroker(options: { chatOk: boolean; notifications?: AgentMessage
 
 describe('AgentMessageBroker — send_message push notifications', () => {
   it('sends one push per active subscription and keeps the Telegram send unchanged', async () => {
-    const notify = vi.fn().mockResolvedValue({ ok: true, data: { subscriptionId: 'x' } });
-    const listActiveForUser = vi.fn().mockResolvedValue([makeSubscription('sub-1'), makeSubscription('sub-2')]);
-    const { broker, agentRepo, chatSend } = makeSendBroker({
-      chatOk: true,
-      notifications: { channel: { notify }, subscriptions: { listActiveForUser }, config: makeNotificationsConfig() },
+    const { dispatcher, notify, listActiveForUser } = makeNotifier({
+      subscriptions: [makeSubscription('sub-1'), makeSubscription('sub-2')],
     });
+    const { broker, agentRepo, chatSend } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
@@ -876,13 +902,25 @@ describe('AgentMessageBroker — send_message push notifications', () => {
     );
   });
 
-  it('sends no push when the feature is off', async () => {
-    const notify = vi.fn();
-    const listActiveForUser = vi.fn();
-    const { broker, agentRepo } = makeSendBroker({
-      chatOk: true,
-      notifications: { channel: { notify }, subscriptions: { listActiveForUser }, config: makeNotificationsConfig({ enabled: false }) },
+  it('keys each notification event by the agent and the outbound message', async () => {
+    const { dispatcher } = makeNotifier();
+    const dispatch = vi.spyOn(dispatcher, 'dispatch');
+    const { broker } = makeSendBroker({ chatOk: true, notifications: dispatcher });
+
+    await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(dispatch).toHaveBeenCalledWith({
+      userId: 'user-1',
+      agentId: 'agent-1',
+      agentName: 'Research Bot',
+      eventKey: 'agent-1:out-1',
+      eventClass: 'agent.question',
     });
+  });
+
+  it('sends no push when the feature is off', async () => {
+    const { dispatcher, notify, listActiveForUser } = makeNotifier({ config: { enabled: false } });
+    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     await broker.processInbound(makeSendMessageEnvelope());
 
@@ -892,15 +930,8 @@ describe('AgentMessageBroker — send_message push notifications', () => {
   });
 
   it('sends no push when agent.question is not an enabled event class', async () => {
-    const notify = vi.fn();
-    const { broker, agentRepo } = makeSendBroker({
-      chatOk: true,
-      notifications: {
-        channel: { notify },
-        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1')]) },
-        config: makeNotificationsConfig({ eventClasses: ['task.completed'] }),
-      },
-    });
+    const { dispatcher, notify } = makeNotifier({ config: { eventClasses: ['task.completed'] } });
+    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     await broker.processInbound(makeSendMessageEnvelope());
 
@@ -909,15 +940,10 @@ describe('AgentMessageBroker — send_message push notifications', () => {
   });
 
   it('keeps the chat result when the push channel throws', async () => {
-    const notify = vi.fn().mockRejectedValue(new Error('push service unreachable'));
-    const { broker, agentRepo } = makeSendBroker({
-      chatOk: true,
-      notifications: {
-        channel: { notify },
-        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1')]) },
-        config: makeNotificationsConfig(),
-      },
+    const { dispatcher } = makeNotifier({
+      notify: vi.fn().mockRejectedValue(new Error('push service unreachable')),
     });
+    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
@@ -930,14 +956,11 @@ describe('AgentMessageBroker — send_message push notifications', () => {
     const notify = vi.fn()
       .mockRejectedValueOnce(new Error('push service unreachable'))
       .mockResolvedValueOnce({ ok: true, data: { subscriptionId: 'sub-2' } });
-    const { broker } = makeSendBroker({
-      chatOk: true,
-      notifications: {
-        channel: { notify },
-        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1'), makeSubscription('sub-2')]) },
-        config: makeNotificationsConfig(),
-      },
+    const { dispatcher } = makeNotifier({
+      notify,
+      subscriptions: [makeSubscription('sub-1'), makeSubscription('sub-2')],
     });
+    const { broker } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
@@ -951,15 +974,10 @@ describe('AgentMessageBroker — send_message push notifications', () => {
   });
 
   it('keeps the chat result when a push returns a failure result', async () => {
-    const notify = vi.fn().mockResolvedValue({ ok: false, error: { code: 'notification.provider_failed', message: 'provider_failed' } });
-    const { broker, agentRepo } = makeSendBroker({
-      chatOk: true,
-      notifications: {
-        channel: { notify },
-        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1')]) },
-        config: makeNotificationsConfig(),
-      },
+    const { dispatcher } = makeNotifier({
+      notify: vi.fn().mockResolvedValue({ ok: false, error: { code: 'notification.provider_failed', message: 'provider_failed' } }),
     });
+    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
@@ -968,20 +986,23 @@ describe('AgentMessageBroker — send_message push notifications', () => {
   });
 
   it('still pushes when the Telegram send fails, because push is an independent channel', async () => {
-    const notify = vi.fn().mockResolvedValue({ ok: true, data: { subscriptionId: 'sub-1' } });
-    const { broker, agentRepo } = makeSendBroker({
-      chatOk: false,
-      notifications: {
-        channel: { notify },
-        subscriptions: { listActiveForUser: vi.fn().mockResolvedValue([makeSubscription('sub-1')]) },
-        config: makeNotificationsConfig(),
-      },
-    });
+    const { dispatcher, notify } = makeNotifier();
+    const { broker, agentRepo } = makeSendBroker({ chatOk: false, notifications: dispatcher });
 
     await broker.processInbound(makeSendMessageEnvelope());
 
     expect(agentRepo.markOutboundMessageFailed).toHaveBeenCalledWith('out-1', 'no_telegram_chat_id');
     expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the chat result when the notifier throws', async () => {
+    const notifier: AgentMessageNotifier = { dispatch: vi.fn().mockRejectedValue(new Error('dispatcher unavailable')) };
+    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: notifier });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
   });
 
   it('leaves send_message unchanged when no notifications are wired', async () => {

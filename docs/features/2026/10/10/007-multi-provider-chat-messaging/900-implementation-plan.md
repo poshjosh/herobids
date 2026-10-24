@@ -223,6 +223,13 @@ Tasks: [entrypoint §4 P3.1–P3.4](./AGENT-ENTRYPOINT.md).
 - The worker `TelegramChannel.sendTyping` was removed (no caller). Add it when a worker-side typing path exists.
 - The API keeps its own Telegram `sendChatAction` sender (the API cannot import worker code). Consolidate later into a shared package.
 
+### W and E implementation status (2026-10-24)
+
+- W1–W8 implemented and committed (d009df58, f46fc4ea). W9 manual checks M1–M5 and the W gate are OPEN; AGENT-ENTRYPOINT W is not ticked.
+- E1–E7 implemented and committed (this commit). E8 manual checks M-E1–M-E5 are OPEN; E is not ticked.
+- Automated gates: `pnpm test` 362 files passed, 28 skipped; 6816 passed, 352 skipped. DB integration: 33 passed against Postgres 17.
+- Owner to confirm: E-D3/E-D4 opt-in default (`userDefaultEnabled: false`), email-only delivery when push is off and email is on, and the PATCH /auth/me contract extension (AGENT-ENTRYPOINT §0 item 3).
+
 ## Phase 4 — WhatsApp adapter (first new provider) — **PAUSED (2026-10-24)**
 
 **Status:** paused. Meta's billing is unclear (see the decision log). The Meta

@@ -441,6 +441,178 @@ describe('auth routes', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json<{ error: string }>().error).toBe('auth.profile.invalid_notification_preferences');
     });
+
+    it('saves the email fallback choice under notifications.emailFallback', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const storedPrefs = { notifications: { emailFallback: { enabled: true } } };
+      const updatedUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        isAdmin: false,
+        preferredLocale: null,
+        telegramChatId: null,
+        notificationPreferences: storedPrefs,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-10-24'),
+      };
+      let selectCallCount = 0;
+      const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: setMock }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockImplementation(() => {
+                selectCallCount++;
+                return Promise.resolve(selectCallCount === 1 ? [{ notificationPreferences: null }] : [updatedUser]);
+              }),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { notificationPreferences: { notifications: { emailFallback: { enabled: true } } } },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ notificationPreferences: typeof storedPrefs }>().notificationPreferences).toEqual(storedPrefs);
+      const setArgs = setMock.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(setArgs?.['notificationPreferences']).toEqual(storedPrefs);
+    });
+
+    it('keeps the legacy sendMessage choice when only the email fallback changes', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const currentPrefs = {
+        sendMessage: { email: { enabled: true, source: 'explicit_update', enabledAt: '2026-07-10T00:00:00.000Z' } },
+      };
+      const updatedUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        isAdmin: false,
+        preferredLocale: null,
+        telegramChatId: null,
+        notificationPreferences: currentPrefs,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-10-24'),
+      };
+      let selectCallCount = 0;
+      const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: setMock }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockImplementation(() => {
+                selectCallCount++;
+                return Promise.resolve(selectCallCount === 1 ? [{ notificationPreferences: currentPrefs }] : [updatedUser]);
+              }),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { notificationPreferences: { notifications: { emailFallback: { enabled: false } } } },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const setArgs = setMock.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(setArgs?.['notificationPreferences']).toEqual({
+        sendMessage: currentPrefs.sendMessage,
+        notifications: { emailFallback: { enabled: false } },
+      });
+    });
+
+    it('keeps other stored notification keys when only the email fallback changes', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const currentPrefs = {
+        notifications: {
+          emailFallback: { enabled: true },
+          digestHour: { hour: 9 },
+        },
+      };
+      const updatedUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        isAdmin: false,
+        preferredLocale: null,
+        telegramChatId: null,
+        notificationPreferences: currentPrefs,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-10-24'),
+      };
+      let selectCallCount = 0;
+      const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: setMock }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockImplementation(() => {
+                selectCallCount++;
+                return Promise.resolve(selectCallCount === 1 ? [{ notificationPreferences: currentPrefs }] : [updatedUser]);
+              }),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { notificationPreferences: { notifications: { emailFallback: { enabled: false } } } },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const setArgs = setMock.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(setArgs?.['notificationPreferences']).toEqual({
+        notifications: { emailFallback: { enabled: false }, digestHour: { hour: 9 } },
+      });
+    });
+
+    it('returns 400 when the email fallback value is not a boolean', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const db = {
+        update: vi.fn(),
+        select: vi.fn(),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { notificationPreferences: { notifications: { emailFallback: { enabled: 'yes' } } } },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.profile.invalid_notification_preferences');
+      expect(db.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /auth/logout', () => {

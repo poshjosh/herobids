@@ -631,6 +631,17 @@ export const MessagingNotificationsSchema = z.object({
     /** Push service delivery priority. */
     urgency: z.enum(['very-low', 'low', 'normal', 'high']).default('normal'),
   }).default({}),
+  /** Email fallback (082 E1). Transport is alerts.email; this block only sets the rules. */
+  email: z.object({
+    /** Turns email fallback on. Needs a configured email transport (alerts.email). */
+    enabled: z.boolean().default(false),
+    /** Classes that may fall back to email. Must also be listed in eventClasses above. */
+    eventClasses: z.array(z.enum(NOTIFICATION_CLASSES)).default(['agent.question']),
+    /** Fallback emails allowed per user in a rolling 24-hour window. */
+    maxPerUserPerDay: z.number().int().positive().default(10),
+    /** Fallback for users with no explicit choice. false = opt-in; true = on, users may opt out. */
+    userDefaultEnabled: z.boolean().default(false),
+  }).default({}),
 }).default({});
 
 export const MessagingConfigSchema = z.object({
