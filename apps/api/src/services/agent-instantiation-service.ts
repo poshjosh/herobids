@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { Database } from '@herobids/db';
-import { agents, agentSkills } from '@herobids/db';
+import { agents, agentSkills, setTelegramChatAddress } from '@herobids/db';
 import type { AgentBlueprintRevisionPayload, RiskPosture } from '@herobids/domain';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ export function buildUnifiedConfigFromPayload(
  * @param riskOverride  Optional risk JSONB override (e.g. after operator ceiling resolution)
  */
 export async function createAgentFromPayload(
-  tx: Pick<Database, 'insert'>,
+  tx: Pick<Database, 'insert' | 'update'>,
   payload: AgentBlueprintRevisionPayload,
   skillRefs: SkillRef[],
   context: AgentFromPayloadContext,
@@ -125,6 +125,10 @@ export async function createAgentFromPayload(
     unifiedConfig: unifiedConfig,
     telegramChatId,
   } as typeof agents.$inferInsert);
+
+  if (telegramChatId !== null) {
+    await setTelegramChatAddress(tx, { userId: context.userId, agentId }, telegramChatId);
+  }
 
   // Insert agent_skills rows
   if (skillRefs.length > 0) {

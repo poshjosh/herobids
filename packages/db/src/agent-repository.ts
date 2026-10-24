@@ -206,6 +206,59 @@ export interface InsertAgentOutboundMessage {
   messageClass?: string;
 }
 
+export interface TelegramChatAddressScope {
+  userId: string;
+  /** null = user-level default; set = that agent's override */
+  agentId: string | null;
+}
+
+/**
+ * Writes the neutral Telegram chat_addresses row for one scope. Callers run it next to the legacy
+ * users/agents.telegram_chat_id write, in the same transaction.
+ * - Non-blank: upserts an active row. A row already holding this address is left untouched, so a
+ *   revoked or pending_optin row is not reactivated by saving the same address again.
+ * - Blank/null: clears the address on the active row only, so the resolver falls through to the
+ *   other scopes. Rows are never deleted, and a non-active row (an opt-out) is never modified.
+ */
+export async function setTelegramChatAddress(
+  executor: Pick<Database, 'insert' | 'update'>,
+  scope: TelegramChatAddressScope,
+  chatId: string | null,
+): Promise<void> {
+  const address = chatId?.trim() ?? '';
+  const now = new Date();
+
+  if (!address) {
+    await executor.update(chatAddresses)
+      .set({ address: '', updatedAt: now })
+      .where(and(
+        eq(chatAddresses.userId, scope.userId),
+        scope.agentId === null ? isNull(chatAddresses.agentId) : eq(chatAddresses.agentId, scope.agentId),
+        eq(chatAddresses.provider, 'telegram'),
+        eq(chatAddresses.status, 'active'),
+      ));
+    return;
+  }
+
+  await executor.insert(chatAddresses)
+    .values({
+      id: crypto.randomUUID(),
+      userId: scope.userId,
+      agentId: scope.agentId,
+      provider: 'telegram',
+      address,
+      status: 'active',
+      verifiedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [chatAddresses.userId, chatAddresses.agentId, chatAddresses.provider],
+      set: { address, status: 'active', verifiedAt: now, updatedAt: now },
+      where: sql`trim(${chatAddresses.address}) <> ${address}`,
+    });
+}
+
 /**
  * Repository for agent-related persistence.
  */
@@ -236,6 +289,9 @@ export class AgentRepository {
       maxBots: input.maxBots ?? null,
       openPositionEscalationToJudgePolicy: input.openPositionEscalationToJudgePolicy ?? undefined,
     });
+    if (input.telegramChatId !== undefined) {
+      await setTelegramChatAddress(this.db, { userId: input.userId, agentId: id }, input.telegramChatId);
+    }
     return id;
   }
 

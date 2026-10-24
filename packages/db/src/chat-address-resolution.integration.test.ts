@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { AgentRepository } from './agent-repository.js';
+import { eq } from 'drizzle-orm';
+import { AgentRepository, setTelegramChatAddress, type TelegramChatAddressScope } from './agent-repository.js';
 import * as schema from './schema/index.js';
 import {
   createScratchDatabase,
@@ -144,6 +145,84 @@ describe.skipIf(!BASE_URL)('chat address resolution by data state (integration)'
       await addOutbound({ id: 'out-1', legacy: { messageId: '42', chatId: '777001' } });
       await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toBeNull();
       await expect(repo.resolveAgentForChatReply('telegram', '777001', '42')).resolves.toBeNull();
+    });
+  });
+
+  describe('when the user changes the Telegram chat ID in Settings', () => {
+    // Mirrors PATCH /auth/me (apps/api/src/routes/auth.ts): the legacy users.telegram_chat_id column is
+    // written, then the user-level neutral address is written with agentId null.
+    it('resolves the new Telegram chat ID after the user changes it', async () => {
+      await seedUser({ userChatId: '555001', agentChatId: null });
+      await addChatAddress(null, '555001');
+      await expect(repo.getEffectiveChatAddress('agent-2', 'telegram')).resolves.toEqual({ provider: 'telegram', address: '555001' });
+
+      const db = drizzle(scratch.sql, { schema });
+      await db.update(schema.users).set({ telegramChatId: '555002' }).where(eq(schema.users.id, 'user-1'));
+      await setTelegramChatAddress(db, { userId: 'user-1', agentId: null }, '555002');
+
+      await expect(repo.getEffectiveChatAddress('agent-2', 'telegram')).resolves.toEqual({ provider: 'telegram', address: '555002' });
+    });
+
+    it('saving the same Telegram chat ID again keeps the existing address active', async () => {
+      await seedUser({ userChatId: '555001', agentChatId: null });
+      await addChatAddress(null, '555001');
+
+      await setTelegramChatAddress(drizzle(scratch.sql, { schema }), { userId: 'user-1', agentId: null }, '555001');
+
+      await expect(repo.getEffectiveChatAddress('agent-2', 'telegram')).resolves.toEqual({ provider: 'telegram', address: '555001' });
+      const [row] = await scratch.sql<{ status: string }[]>`SELECT status FROM chat_addresses WHERE id = 'addr-user-555001'`;
+      expect(row?.status).toBe('active');
+    });
+  });
+
+  describe('when a Telegram chat ID is saved through the shared chat address write', () => {
+    function writeTelegramChatAddress(scope: TelegramChatAddressScope, chatId: string | null) {
+      return setTelegramChatAddress(drizzle(scratch.sql, { schema }), scope, chatId);
+    }
+
+    async function chatAddressStatus(agentId: string | null): Promise<{ address: string; status: string } | undefined> {
+      const rows = await scratch.sql<{ address: string; status: string }[]>`SELECT address, status FROM chat_addresses
+        WHERE user_id = 'user-1' AND provider = 'telegram'
+          AND agent_id IS NOT DISTINCT FROM ${agentId}`;
+      return rows[0];
+    }
+
+    it('agent chat ID change propagates to the agent scope and its replies', async () => {
+      await seedUser({ userChatId: null, agentChatId: null });
+      await writeTelegramChatAddress({ userId: 'user-1', agentId: 'agent-1' }, '777001');
+      await writeTelegramChatAddress({ userId: 'user-1', agentId: 'agent-1' }, ' 777002 ');
+
+      await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toEqual({ provider: 'telegram', address: '777002' });
+      await expect(repo.resolveAgentForChatReply('telegram', '777002')).resolves.toEqual(agentOne);
+      await expect(repo.resolveAgentForChatReply('telegram', '777001')).resolves.toBeNull();
+    });
+
+    it('clearing an active chat ID falls through to the other scopes', async () => {
+      await seedUser({ userChatId: null, agentChatId: null });
+      await addChatAddress(null, '555001');
+      await writeTelegramChatAddress({ userId: 'user-1', agentId: 'agent-1' }, '777001');
+      await writeTelegramChatAddress({ userId: 'user-1', agentId: 'agent-1' }, '  ');
+
+      await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toEqual({ provider: 'telegram', address: '555001' });
+      await expect(chatAddressStatus('agent-1')).resolves.toEqual({ address: '', status: 'active' });
+    });
+
+    it('clearing the user chat ID does not reactivate a revoked row', async () => {
+      await seedUser({ userChatId: null, agentChatId: null });
+      await addChatAddress(null, '555001', 'revoked');
+      await writeTelegramChatAddress({ userId: 'user-1', agentId: null }, null);
+
+      await expect(chatAddressStatus(null)).resolves.toEqual({ address: '555001', status: 'revoked' });
+      await expect(repo.getEffectiveChatAddress('agent-2', 'telegram')).resolves.toBeNull();
+    });
+
+    it('a revoked row for the same address stays blocked after the user saves it again', async () => {
+      await seedUser({ userChatId: null, agentChatId: null });
+      await addChatAddress(null, '555001', 'revoked');
+      await writeTelegramChatAddress({ userId: 'user-1', agentId: null }, '555001');
+
+      await expect(chatAddressStatus(null)).resolves.toEqual({ address: '555001', status: 'revoked' });
+      await expect(repo.getEffectiveChatAddress('agent-2', 'telegram')).resolves.toBeNull();
     });
   });
 });

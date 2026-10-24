@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Database } from '@herobids/db';
+import { agents, agentSkills, chatAddresses, type Database } from '@herobids/db';
 import type { AgentBlueprintRevisionPayload } from '@herobids/domain';
 import {
   buildUnifiedConfigFromPayload,
@@ -22,40 +22,38 @@ import {
 interface InsertTracker {
   agentRows: Record<string, unknown>[];
   skillRows: Record<string, unknown>[];
+  chatAddressRows: Record<string, unknown>[];
 }
 
 function makeInsertTracker(): InsertTracker {
-  return { agentRows: [], skillRows: [] };
+  return { agentRows: [], skillRows: [], chatAddressRows: [] };
 }
 
 /**
  * Build a mock Database (or transaction) for createAgentFromPayload.
  *
- * The function calls `tx.insert(agents).values(...)` and optionally
- * `tx.insert(agentSkills).values(...)`. We intercept both and record
- * what was inserted.
+ * The function calls `tx.insert(agents).values(...)`, optionally `tx.insert(agentSkills).values(...)`,
+ * and, when a Telegram chat ID is set, `tx.insert(chatAddresses).values(...).onConflictDoUpdate(...)`.
+ * We intercept each and record what was inserted.
  */
 function buildMockTx(tracker: InsertTracker): Database {
-  let insertCallCount = 0;
   return {
-    insert: vi.fn().mockImplementation(() => {
-      const callIndex = insertCallCount++;
-      return {
-        values: vi.fn().mockImplementation((v: Record<string, unknown> | Record<string, unknown>[]) => {
-          // First insert call = agents, second = agentSkills
-          if (callIndex === 0) {
-            tracker.agentRows.push(v as Record<string, unknown>);
-          } else {
-            if (Array.isArray(v)) {
-              tracker.skillRows.push(...v);
-            } else {
-              tracker.skillRows.push(v);
-            }
-          }
-          return Promise.resolve();
-        }),
-      };
-    }),
+    insert: vi.fn().mockImplementation((table: unknown) => ({
+      values: vi.fn().mockImplementation((v: Record<string, unknown> | Record<string, unknown>[]) => {
+        if (table === chatAddresses) {
+          tracker.chatAddressRows.push(v as Record<string, unknown>);
+          return { onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) };
+        }
+        if (table === agents) {
+          tracker.agentRows.push(v as Record<string, unknown>);
+        } else if (Array.isArray(v)) {
+          tracker.skillRows.push(...v);
+        } else {
+          tracker.skillRows.push(v);
+        }
+        return Promise.resolve();
+      }),
+    })),
   } as unknown as Database;
 }
 
@@ -454,6 +452,13 @@ describe('createAgentFromPayload', () => {
     await createAgentFromPayload(tx, makePayload(), [], context);
 
     expect(tracker.agentRows[0]!.telegramChatId).toBe('chat-999');
+    expect(tracker.chatAddressRows).toEqual([expect.objectContaining({
+      userId: 'user-1',
+      agentId: tracker.agentRows[0]!.id,
+      provider: 'telegram',
+      address: 'chat-999',
+      status: 'active',
+    })]);
   });
 
   it('persists toolPolicy, modelPolicy, runtimePolicyOverrides, and wakePreferences from payload', async () => {

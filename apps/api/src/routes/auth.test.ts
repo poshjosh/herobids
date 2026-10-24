@@ -67,6 +67,7 @@ function makeMeDb(notificationPreferences: unknown, updateSpy?: ReturnType<typeo
   };
   return {
     update: updateSpy ?? vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+    insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }) }),
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([mockUser]) }),
@@ -278,6 +279,9 @@ describe('auth routes', () => {
         update: vi.fn().mockReturnValue({
           set: vi.fn().mockReturnValue({ where: updateWhere }),
         }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }),
+        }),
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
@@ -301,6 +305,35 @@ describe('auth routes', () => {
       expect(res.json<{ preferredLocale: string | null }>().preferredLocale).toBe('hi');
     });
 
+    it('writes the trimmed telegramChatId to the user-level neutral chat address on PATCH', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const updatedUser = {
+        id: 'user-1', displayName: 'Test User', email: 'test@example.com', avatarUrl: null, planId: 'free',
+        preferredLocale: null, telegramChatId: '123456', createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-02'),
+      };
+      const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+      const insertValues = vi.fn().mockReturnValue({ onConflictDoUpdate });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+        insert: vi.fn().mockReturnValue({ values: insertValues }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([updatedUser]) }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as unknown as Parameters<typeof authRoutes>[3]);
+
+      const res = await app.inject({ method: 'PATCH', url: '/auth/me', payload: { telegramChatId: ' 123456 ' } });
+
+      expect(res.statusCode).toBe(200);
+      expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({
+        userId: 'user-1', agentId: null, provider: 'telegram', address: '123456', status: 'active',
+      }));
+    });
+
     it('normalizes whitespace-padded telegramChatId on PATCH', async () => {
       const { authRoutes } = await import('./auth.js');
       const updatedUser = {
@@ -318,6 +351,7 @@ describe('auth routes', () => {
       const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
       const db = {
         update: vi.fn().mockReturnValue({ set: updateSet }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }) }),
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
@@ -357,6 +391,7 @@ describe('auth routes', () => {
       const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
       const db = {
         update: vi.fn().mockReturnValue({ set: updateSet }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }) }),
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({

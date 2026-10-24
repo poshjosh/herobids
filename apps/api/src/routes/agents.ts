@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import { TradingProfileReconciliationOutboxRepository, type Database, type DatabaseTransaction } from '@herobids/db';
+import { TradingProfileReconciliationOutboxRepository, setTelegramChatAddress, type Database, type DatabaseTransaction } from '@herobids/db';
 import {
   agents,
   agentArtifacts,
@@ -841,6 +841,9 @@ export async function agentRoutes(
           createdAt: now,
           updatedAt: now,
         } as never);
+        if (parsed.data.telegramChatId !== undefined) {
+          await setTelegramChatAddress(tx, { userId: request.userId, agentId }, parsed.data.telegramChatId);
+        }
 
         let proposedConnections: Array<{
           connectionId: string;
@@ -1957,6 +1960,9 @@ export async function agentRoutes(
           modelPolicy: effectiveModelPolicy,
           updatedAt: new Date(),
         } as never).where(eq(agents.id, id));
+        if (rawTelegramChatId !== undefined) {
+          await setTelegramChatAddress(tx, { userId: request.userId, agentId: id }, rawTelegramChatId);
+        }
         await markLocalCommitted();
         return { kind: 'ok' as const };
       },

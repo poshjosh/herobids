@@ -5,7 +5,7 @@ import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import { isEmailFallbackAllowed, type AuthConfig, type PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { users, oauthIdentities, localIdentities, sessions, userPlans, agents } from '@herobids/db';
+import { users, oauthIdentities, localIdentities, sessions, userPlans, agents, setTelegramChatAddress } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
 import { errorPayload } from '../error-payload.js';
@@ -979,6 +979,9 @@ export async function authRoutes(
     }
 
     await db.update(users).set(updates).where(eq(users.id, userId));
+    if (updates.telegramChatId !== undefined) {
+      await setTelegramChatAddress(db, { userId, agentId: null }, updates.telegramChatId);
+    }
 
     const [updated] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     if (!updated) return reply.status(404).send(errorPayload('auth.user_not_found', 'User not found'));
