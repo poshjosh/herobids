@@ -53,6 +53,8 @@ export {
   TokenSafetyTradeGuardSchema,
   CanonicalTokenEntrySchema,
   AlertsConfigSchema,
+  MessagingConfigSchema,
+  MessagingChatTelegramSchema,
   AuthConfigSchema,
   PlansConfigSchema,
   ConnectionRequestsConfigSchema,
@@ -243,3 +245,8 @@ export type {
 export { resolveStyleTradingTickIntervalMs, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs } from './agent-schedule.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';
+
+export {
+  resolveTelegramChatConfig,
+  type ResolvedTelegramChatConfig,
+} from './messaging-chat.js';

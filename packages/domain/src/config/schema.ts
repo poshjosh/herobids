@@ -588,6 +588,23 @@ export const ActorEventRelayConfigSchema = z.object({
   settleLagMs: z.number().int().positive().default(5000),
 });
 
+// Provider-keyed chat transport config (060). Blank or unset values fall back to the
+// legacy alerts.telegram.* keys; see resolveTelegramChatConfig.
+export const MessagingChatTelegramSchema = z.object({
+  /** Telegram bot token. Blank falls back to alerts.telegram.botToken. */
+  botToken: z.string().default(''),
+  /** Shared secret Telegram sends with webhook requests. Blank falls back to alerts.telegram.webhookSecret. */
+  webhookSecret: z.string().default(''),
+  /** Public HTTPS webhook endpoint. Unset falls back to alerts.telegram.webhookUrl. */
+  webhookUrl: z.string().url().optional(),
+}).default({});
+
+export const MessagingConfigSchema = z.object({
+  chat: z.object({
+    telegram: MessagingChatTelegramSchema,
+  }).default({}),
+}).default({});
+
 export const AlertsConfigSchema = z.object({
   /** Master switch for alert dispatching */
   enabled: z.boolean().default(false),
@@ -1623,6 +1640,7 @@ export const AppConfigSchema = z.object({
    * when the named entry's secret is missing; the sites then stay disabled.
    */
   tradingBackendId: z.string().min(1).optional(),
+  messaging: MessagingConfigSchema.default({}),
   alerts: AlertsConfigSchema.default({}),
   agentActorLifecycle: AgentActorLifecycleConfigSchema.default({}),
   actorEventRelay: ActorEventRelayConfigSchema.default({}),
