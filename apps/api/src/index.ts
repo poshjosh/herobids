@@ -42,7 +42,7 @@ import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig, resolveConfiguredExternalBackend } from './config.js';
-import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, ExternalSkillProviderHttp, findExternalBackend } from '@herobids/domain';
+import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, ExternalSkillProviderHttp, findExternalBackend, resolveTelegramChatConfig } from '@herobids/domain';
 import { buildExternalBackendClientConfig, createExternalBackendClient, createLoggerMetricsSink } from '@herobids/domain/external-backend';
 import { createTradingProfileSaga } from './agents/create-trading-profile-saga.js';
 import { seedPresetsFromBoundary } from './traderton-presets.js';
@@ -293,8 +293,9 @@ registerGlobalErrorHandler(app);
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // Telegram webhook — public (unauthenticated), token-validated
+const telegramChat = resolveTelegramChatConfig(appConfig);
 await telegramWebhookHandler(
-  app, db, redisClient, appConfig.alerts, appConfig.auth, appConfig.agentApprovals,
+  app, db, redisClient, telegramChat, appConfig.auth, appConfig.agentApprovals,
   appConfig.plans,
   { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps,
   appConfig.agentRuntime.llm.modelDefaults,
@@ -377,7 +378,7 @@ await dashboardRoutes(app, db, appConfig.plans, tradingBackendClient, tradingBac
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga);
+await agentInteractivityRoutes(app, db, redisClient, telegramChat, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga);
 await analyticsRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 await skillsRoutes(app, db, appConfig.plans, (() => {

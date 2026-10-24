@@ -145,6 +145,8 @@ function isPublicRoute(url: string, method: string): boolean {
 
   // Telegram webhook — verified by secret-token header inside the handler, not by JWT
   if (path === '/telegram/webhook') return true;
+  // Neutral chat webhook (POST and GET verify) — provider adapter verifies, not JWT
+  if (/^\/messaging\/chat\/[a-z0-9-]+\/webhook$/.test(path)) return true;
 
   // WebSocket event stream — browsers cannot send Authorization headers on WS upgrade
   // requests; the handler validates the JWT via ?token= query param internally.

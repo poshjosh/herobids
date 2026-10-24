@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { telegramWebhookHandler } from '../../routes/agent-interactivity.js';
-import { ok, err } from '@herobids/domain';
+import { ok, err, type ResolvedTelegramChatConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { users } from '@herobids/db';
 import type { Redis } from 'ioredis';
@@ -76,23 +76,11 @@ function buildMockRedis() {
   } as unknown as Redis;
 }
 
-function buildAlertsConfig() {
+function buildTelegramChatConfig(): ResolvedTelegramChatConfig {
   return {
-    enabled: false,
-    dispatchIntervalMs: 10_000,
-    defaultCooldownMs: 0,
-    maxBatchSize: 10,
-    maxRetries: 3,
-    telegram: {
-      botToken: 'test-bot-token',
-      webhookSecret: 'webhook-secret',
-      channels: [],
-    },
-    email: {
-      apiKey: '',
-      fromEmail: '',
-      timeoutMs: 10_000,
-    },
+    botToken: 'test-bot-token',
+    webhookSecret: 'webhook-secret',
+    webhookUrl: undefined,
   };
 }
 
@@ -187,7 +175,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/agents');
     expect(res.statusCode).toBe(200);
@@ -209,7 +197,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/help');
     expect(res.statusCode).toBe(200);
@@ -232,7 +220,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/help start');
     expect(res.statusCode).toBe(200);
@@ -253,7 +241,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/help /start');
     expect(res.statusCode).toBe(200);
@@ -279,7 +267,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/agents');
     expect(res.statusCode).toBe(200);
@@ -301,7 +289,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/agents');
     expect(res.statusCode).toBe(200);
@@ -325,7 +313,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/info ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -356,7 +344,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/start ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -383,7 +371,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/start ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -411,7 +399,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/stop ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -435,7 +423,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/mode ${AGENT_NAME} live`);
     expect(res.statusCode).toBe(200);
@@ -459,7 +447,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/connect ${AGENT_NAME} conn-1`);
     expect(res.statusCode).toBe(200);
@@ -484,7 +472,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/disconnect ${AGENT_NAME} conn-1`);
     expect(res.statusCode).toBe(200);
@@ -508,7 +496,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/foobar');
     expect(res.statusCode).toBe(200);
@@ -531,7 +519,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/start');
     expect(res.statusCode).toBe(200);
@@ -567,7 +555,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
       loginLinkResendCooldownSecs: 60,
       publicBaseUrl: 'https://herobids.com',
     };
-    await telegramWebhookHandler(app, db, redis as unknown as Redis, buildAlertsConfig(), authConfig);
+    await telegramWebhookHandler(app, db, redis as unknown as Redis, buildTelegramChatConfig(), authConfig);
 
     const res = await sendWebhook(app, `/connect ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -603,7 +591,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
       loginLinkResendCooldownSecs: 60,
       publicBaseUrl: 'https://herobids.com',
     };
-    await telegramWebhookHandler(app, db, redis as unknown as Redis, buildAlertsConfig(), authConfig);
+    await telegramWebhookHandler(app, db, redis as unknown as Redis, buildTelegramChatConfig(), authConfig);
 
     const res = await sendWebhook(app, `/connect ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -631,7 +619,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/mode ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -659,7 +647,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/golive ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -694,7 +682,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/golive ${AGENT_NAME}`);
     expect(res.statusCode).toBe(200);
@@ -715,7 +703,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, `/golive NonExistent`);
     expect(res.statusCode).toBe(200);
@@ -838,7 +826,7 @@ describe('Telegram Slash Commands — Approval resolution provider', () => {
     const { db } = buildApprovalResolutionDb();
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/yes');
     expect(res.statusCode).toBe(200);
@@ -858,7 +846,7 @@ describe('Telegram Slash Commands — Approval resolution provider', () => {
     const { db, set } = buildApprovalResolutionDb();
     const redis = buildMockRedis();
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await sendWebhook(app, '/no');
     expect(res.statusCode).toBe(200);

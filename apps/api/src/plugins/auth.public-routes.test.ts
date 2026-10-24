@@ -27,6 +27,8 @@ async function buildApp() {
   await authPlugin(app, { config, db: unusedDb });
   app.get('/auth/connection-request/callback', async () => ({ reached: 'handler' }));
   app.get('/agents', async () => ({ reached: 'handler' }));
+  app.post('/messaging/chat/:provider/webhook', async () => ({ reached: 'handler' }));
+  app.get('/messaging/chat/:provider/webhook', async () => ({ reached: 'handler' }));
   await app.ready();
   return app;
 }
@@ -38,6 +40,38 @@ describe('authPlugin public routes', () => {
 
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toEqual({ reached: 'handler' });
+    await app.close();
+  });
+
+  it('lets a chat provider webhook reach its handler without a session token', async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: 'POST', url: '/messaging/chat/telegram/webhook', payload: {} });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ reached: 'handler' });
+    await app.close();
+  });
+
+  it('lets a chat provider verify request reach its handler without a session token', async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: 'GET', url: '/messaging/chat/whatsapp/webhook?hub.challenge=1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ reached: 'handler' });
+    await app.close();
+  });
+
+  it.each([
+    '/messaging/chat/telegram/webhook/extra',
+    '/messaging/chat/telegram/webhook/',
+    '/messaging/chat/telegram/webhookX',
+    '/messaging/chat/tele%2Fgram/webhook',
+    '/messaging/chat/Telegram/webhook',
+  ])('keeps %s behind the session check', async (url) => {
+    const app = await buildApp();
+    const res = await app.inject({ method: 'POST', url, payload: {} });
+
+    expect(res.statusCode).toBe(401);
     await app.close();
   });
 

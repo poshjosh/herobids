@@ -3,7 +3,8 @@ import Fastify from 'fastify';
 import { agentInteractivityRoutes as registerAgentInteractivityRoutes, telegramWebhookHandler } from './agent-interactivity.js';
 import { registerBackendRefFamilies } from './agent-config-helpers.js';
 import type { Database } from '@herobids/db';
-import type { AlertsConfig } from '@herobids/domain';
+import type { ResolvedTelegramChatConfig } from '@herobids/domain';
+import { AlertsConfigSchema, MessagingConfigSchema, resolveTelegramChatConfig } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { Redis } from 'ioredis';
 
@@ -118,24 +119,12 @@ function buildMockRedis(overrides: Partial<Record<string, unknown>> = {}) {
   } as unknown as Redis;
 }
 
-function buildAlertsConfig(telegramOverrides: Partial<AlertsConfig['telegram']> = {}): AlertsConfig {
+function buildTelegramChatConfig(telegramOverrides: Partial<ResolvedTelegramChatConfig> = {}): ResolvedTelegramChatConfig {
   return {
-    enabled: false,
-    dispatchIntervalMs: 10_000,
-    defaultCooldownMs: 0,
-    maxBatchSize: 10,
-    maxRetries: 3,
-    telegram: {
-      botToken: 'test-token',
-      webhookSecret: 'telegram-secret',
-      channels: [],
-      ...telegramOverrides,
-    },
-    email: {
-      apiKey: '',
-      fromEmail: '',
-      timeoutMs: 10_000,
-    },
+    botToken: 'test-token',
+    webhookSecret: 'telegram-secret',
+    webhookUrl: undefined,
+    ...telegramOverrides,
   };
 }
 
@@ -985,7 +974,7 @@ describe('GET /agents/telegram-bot', () => {
     const app = Fastify();
     decorateWithAuth(app);
     // No alertsConfig → no botToken
-    await agentInteractivityRoutes(app, db, redis, buildAlertsConfig({ botToken: '' }));
+    await agentInteractivityRoutes(app, db, redis, buildTelegramChatConfig({ botToken: '' }));
 
     const res = await app.inject({ method: 'GET', url: '/agents/telegram-bot' });
     expect(res.statusCode).toBe(501);
@@ -1001,7 +990,7 @@ describe('POST /agents/verify-telegram', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis, buildAlertsConfig({ botToken: '' }));
+    await agentInteractivityRoutes(app, db, redis, buildTelegramChatConfig({ botToken: '' }));
 
     const res = await app.inject({
       method: 'POST',
@@ -1022,7 +1011,7 @@ describe('POST /agents/verify-telegram', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis, buildAlertsConfig());
+    await agentInteractivityRoutes(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1037,7 +1026,7 @@ describe('POST /agents/verify-telegram', () => {
 describe('POST /telegram/webhook', () => {
   it('returns 501 when Telegram webhook auth is not fully configured', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildAlertsConfig({ webhookSecret: '' }));
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig({ webhookSecret: '' }));
 
     const res = await app.inject({
       method: 'POST',
@@ -1051,7 +1040,7 @@ describe('POST /telegram/webhook', () => {
 
   it('returns 401 when the webhook secret header is missing or wrong', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildAlertsConfig());
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
 
     const missing = await app.inject({
       method: 'POST',
@@ -1071,7 +1060,7 @@ describe('POST /telegram/webhook', () => {
 
   it('returns 200 when the webhook secret header matches', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildAlertsConfig());
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1097,7 +1086,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1154,7 +1143,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1202,7 +1191,7 @@ describe('POST /telegram/webhook', () => {
         }),
       } as unknown as Database;
       const app = Fastify();
-      await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+      await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
       const res = await app.inject({
         method: 'POST',
@@ -1235,7 +1224,7 @@ describe('POST /telegram/webhook', () => {
       select: vi.fn().mockImplementation(() => makeChain([])),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1270,7 +1259,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1312,7 +1301,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1349,7 +1338,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1387,7 +1376,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1423,7 +1412,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1463,7 +1452,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig(), undefined);
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig(), undefined);
 
     const res = await app.inject({
       method: 'POST',
@@ -1487,3 +1476,173 @@ describe('POST /telegram/webhook', () => {
 });
 
 
+
+// ─── Neutral chat webhook and messaging.chat.telegram config ─────────────
+
+const TELEGRAM_WEBHOOK_ROUTES = [
+  ['Telegram alias', '/telegram/webhook'],
+  ['neutral chat route', '/messaging/chat/telegram/webhook'],
+] as const;
+
+describe.each(TELEGRAM_WEBHOOK_ROUTES)('Telegram webhook through the %s', (_label, url) => {
+  it('returns 401 when the secret header is missing or wrong', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+
+    const missing = await app.inject({ method: 'POST', url, payload: {} });
+    const wrong = await app.inject({
+      method: 'POST',
+      url,
+      headers: { 'x-telegram-bot-api-secret-token': 'wrong-secret' },
+      payload: {},
+    });
+
+    expect(missing.statusCode).toBe(401);
+    expect(wrong.statusCode).toBe(401);
+  });
+
+  it('returns 501 when the Telegram webhook secret is not configured', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig({ webhookSecret: '' }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(501);
+    expect(res.json()).toEqual({ error: 'not_configured' });
+  });
+
+  it('acknowledges a valid update with 200 and delivers a reply to the owning agent', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        return makeChain(selectCount === 1
+          ? [{ userId: TEST_USER_ID }]
+          : [{ agentId: AGENT_ID, agentName: 'My Agent', status: 'active', userId: TEST_USER_ID }]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: 'chat-1' },
+          text: 'Adjust the watchlist',
+          reply_to_message: { message_id: 777 },
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://api.telegram.org/bottest-token/sendMessage',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    fetchSpy.mockRestore();
+  });
+});
+
+describe('POST /messaging/chat/:provider/webhook', () => {
+  it('returns 404 for a provider with no registered adapter', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/messaging/chat/whatsapp/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not_found' });
+  });
+
+  it('returns 405 for the GET verify request on a provider without a verify handshake', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+
+    const telegram = await app.inject({ method: 'GET', url: '/messaging/chat/telegram/webhook' });
+    const unknown = await app.inject({ method: 'GET', url: '/messaging/chat/whatsapp/webhook' });
+
+    expect(telegram.statusCode).toBe(405);
+    expect(unknown.statusCode).toBe(404);
+  });
+});
+
+describe('messaging.chat.telegram config drives the Telegram webhook', () => {
+  function resolvedFrom(alertsTelegram: Record<string, unknown>, chatTelegram: Record<string, unknown>) {
+    return resolveTelegramChatConfig({
+      alerts: AlertsConfigSchema.parse({ telegram: alertsTelegram }),
+      messaging: MessagingConfigSchema.parse({ chat: { telegram: chatTelegram } }),
+    });
+  }
+
+  it.each(TELEGRAM_WEBHOOK_ROUTES)('accepts the secret set only under messaging.chat.telegram on the %s', async (_label, url) => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), resolvedFrom({}, { botToken: 'chat-token', webhookSecret: 'chat-secret' }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: { 'x-telegram-bot-api-secret-token': 'chat-secret' },
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  it.each(TELEGRAM_WEBHOOK_ROUTES)('rejects a wrong secret when only messaging.chat.telegram is set on the %s', async (_label, url) => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), resolvedFrom({}, { botToken: 'chat-token', webhookSecret: 'chat-secret' }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: { 'x-telegram-bot-api-secret-token': 'wrong-secret' },
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('checks the messaging.chat.telegram secret rather than the legacy alerts.telegram secret when both are set', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(
+      app,
+      buildAgentDb(null),
+      buildMockRedis(),
+      resolvedFrom({ botToken: 'legacy-token', webhookSecret: 'legacy-secret' }, { webhookSecret: 'chat-secret' }),
+    );
+
+    const legacy = await app.inject({
+      method: 'POST',
+      url: '/messaging/chat/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'legacy-secret' },
+      payload: {},
+    });
+    const chat = await app.inject({
+      method: 'POST',
+      url: '/messaging/chat/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'chat-secret' },
+      payload: {},
+    });
+
+    expect(legacy.statusCode).toBe(401);
+    expect(chat.statusCode).toBe(200);
+  });
+});

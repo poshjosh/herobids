@@ -106,19 +106,13 @@ beforeEach(async () => {
 
   const app = Fastify({ logger: false });
   const authConfig = makeAuthConfig();
-  const alertsConfig = {
-    enabled: true, dispatchIntervalMs: 10_000, defaultCooldownMs: 0,
-    maxBatchSize: 10, maxRetries: 3,
-    telegram: { enabled: true, botToken: mockBotToken, webhookSecret: mockWebhookSecret, chatId: '' },
-    email: { enabled: false, from: '', smtp: { host: '', port: 587, secure: true, user: '', pass: '' }, brandColor: '' },
-    safety: { maxBalanceDriftPct: 20, maxPnlDriftPct: 50, staleHeartbeatMs: 300_000, maxSilenceMs: 900_000 },
-  };
+  const telegramChatConfig = { botToken: mockBotToken, webhookSecret: mockWebhookSecret, webhookUrl: undefined };
 
   // Wire the functional trading-profile saga so /connect, /disconnect, /info,
   // and /mode exercise the real profile-backed grant/revoke + read paths.
   const profileSaga = makeFunctionalProfileSaga(db);
   await telegramWebhookHandler(
-    app, db, redisClient, alertsConfig, authConfig,
+    app, db, redisClient, telegramChatConfig, authConfig,
     undefined, undefined, undefined, undefined,
     undefined, undefined, profileSaga,
   );

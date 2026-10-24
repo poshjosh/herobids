@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { z } from 'zod';
@@ -12,7 +12,7 @@ import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
-import type { AgentApprovalsConfig, AlertsConfig, AuthConfig, ModelDefaults, PlanAgentsEntitlements, PlansConfig, UnifiedAgentConfig } from '@herobids/domain';
+import type { AgentApprovalsConfig, AuthConfig, ChatInboundAdapter, ChatWebhookRequest, ModelDefaults, PlanAgentsEntitlements, PlansConfig, ResolvedTelegramChatConfig, UnifiedAgentConfig } from '@herobids/domain';
 import { AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -103,7 +103,7 @@ export async function agentInteractivityRoutes(
   app: FastifyInstance,
   db: Database,
   redisClient: Redis,
-  alertsConfig?: AlertsConfig,
+  telegram?: ResolvedTelegramChatConfig,
   llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
@@ -132,7 +132,7 @@ export async function agentInteractivityRoutes(
     return rows.map((row) => row.skillId);
   }
 
-  const telegramToken = alertsConfig?.telegram?.botToken ?? '';
+  const telegramToken = telegram?.botToken ?? '';
 
   // PUT /agents/:id — full replacement update (agent must be stopped or crashed)
   app.put<{ Params: { id: string }; Body: unknown }>('/agents/:id', async (request, reply) => {
@@ -517,7 +517,7 @@ export async function telegramWebhookHandler(
   app: FastifyInstance,
   db: Database,
   redisClient: Redis,
-  alertsConfig?: AlertsConfig,
+  telegram?: ResolvedTelegramChatConfig,
   authConfig?: AuthConfig,
   agentApprovalsConfig?: AgentApprovalsConfig,
   plansConfig?: PlansConfig,
@@ -527,8 +527,8 @@ export async function telegramWebhookHandler(
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
 ): Promise<void> {
-  const botToken = alertsConfig?.telegram?.botToken ?? '';
-  const webhookSecret = alertsConfig?.telegram?.webhookSecret ?? '';
+  const botToken = telegram?.botToken ?? '';
+  const webhookSecret = telegram?.webhookSecret ?? '';
   const telegramChannel = new TelegramInboundChannel(webhookSecret);
   const chatRouter = new ChatInboundRouter();
   const resolveRateLimit = agentApprovalsConfig?.resolveRateLimitPerMinute ?? 20;
@@ -967,17 +967,36 @@ export async function telegramWebhookHandler(
     }
   }
 
-  app.post<{ Body: unknown }>('/telegram/webhook', async (request, reply) => {
-    if (!botToken || !webhookSecret) {
+  interface ChatWebhookChannel {
+    adapter: ChatInboundAdapter;
+    configured: boolean;
+    processText: (message: InboundChatMessage) => Promise<void>;
+    processDocument: (message: InboundChatMessage) => Promise<void>;
+  }
+
+  const chatWebhookChannels = new Map<string, ChatWebhookChannel>([
+    ['telegram', {
+      adapter: telegramChannel,
+      configured: Boolean(botToken && webhookSecret),
+      processText: (message) => processWebhookUpdate(message.from.address, message),
+      processDocument: (message) => processWebhookDocument(message.from.address, message),
+    }],
+  ]);
+
+  async function handleChatWebhook(provider: string, webhookRequest: ChatWebhookRequest, reply: FastifyReply) {
+    const channel = chatWebhookChannels.get(provider);
+    if (!channel) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    if (!channel.configured) {
       return reply.status(501).send({ error: 'not_configured' });
     }
 
-    const webhookRequest = { headers: request.headers, body: request.body };
-    if (!telegramChannel.verify(webhookRequest).ok) {
+    if (!channel.adapter.verify(webhookRequest).ok) {
       return reply.status(401).send({ error: 'unauthorized' });
     }
 
-    const parsed = telegramChannel.parse(webhookRequest);
+    const parsed = channel.adapter.parse(webhookRequest);
     if (!parsed.ok || !parsed.data.length) {
       return reply.status(200).send({ ok: true });
     }
@@ -987,8 +1006,8 @@ export async function telegramWebhookHandler(
     // Handle document messages — download, ingest, and notify the agent
     if (message.document) {
       reply.status(200).send({ ok: true });
-      void processWebhookDocument(message.from.address, message).catch((err) => {
-        app.log.warn({ err }, 'Telegram webhook document processing failed');
+      void channel.processDocument(message).catch((err) => {
+        app.log.warn({ err, provider }, 'Chat webhook document processing failed');
       });
       return;
     }
@@ -998,11 +1017,26 @@ export async function telegramWebhookHandler(
       return reply.status(200).send({ ok: true });
     }
 
-    // Acknowledge Telegram immediately — routing and delivery happen asynchronously
-    // to avoid slow-DB or slow-Telegram-API latency causing Telegram retries.
+    // Acknowledge the provider immediately — routing and delivery happen asynchronously
+    // to avoid slow-DB or slow-API latency causing provider retries.
     reply.status(200).send({ ok: true });
-    void processWebhookUpdate(message.from.address, message).catch((err) => {
-      app.log.warn({ err }, 'Telegram webhook async processing failed');
+    void channel.processText(message).catch((err) => {
+      app.log.warn({ err, provider }, 'Chat webhook async processing failed');
     });
+  }
+
+  app.post<{ Params: { provider: string }; Body: unknown }>('/messaging/chat/:provider/webhook', async (request, reply) =>
+    handleChatWebhook(request.params.provider, { headers: request.headers, body: request.body }, reply));
+
+  // Verify handshake for providers that need one (none registered yet); unknown providers are 404.
+  app.get<{ Params: { provider: string } }>('/messaging/chat/:provider/webhook', async (request, reply) => {
+    if (!chatWebhookChannels.has(request.params.provider)) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    return reply.status(405).send({ error: 'method_not_allowed' });
   });
+
+  // Telegram alias of the neutral route; behaviour is identical.
+  app.post<{ Body: unknown }>('/telegram/webhook', async (request, reply) =>
+    handleChatWebhook('telegram', { headers: request.headers, body: request.body }, reply));
 }

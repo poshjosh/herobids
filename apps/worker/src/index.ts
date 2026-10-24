@@ -17,6 +17,7 @@ import { AlertDispatcher, createBoundaryTradeEventFeed } from './alerting/index.
 import { TelegramClient, PlatformAlertService, OperatorNotifier, createEmailClient } from './alerting/index.js';
 import { TelegramChannel } from './alerting/telegram-channel.js';
 import { ChatDelivery } from './alerting/chat-delivery.js';
+import { resolveWorkerTelegramChat } from './alerting/telegram-chat-wiring.js';
 import type { EmailClientConfig } from './alerting/index.js';
 import {
   AgentMessageBroker,
@@ -167,8 +168,9 @@ const botRepo = new ConnectionOwnershipRepository(db);
 
 // Build the agentRuntimeConfigJson once — shared between the Docker manager
 // config and any future runtime adapter config.
+const { telegram: telegramChat, alerts: alertsWithTelegramChat } = resolveWorkerTelegramChat(appConfig);
 const operatorFaultReportingEnabled = Boolean(
-  appConfig.alerts.operator.telegramChatId && appConfig.alerts.telegram.botToken,
+  appConfig.alerts.operator.telegramChatId && telegramChat.botToken,
 );
 const agentRuntimeConfigJson = JSON.stringify({
   ...appConfig.agentRuntime,
@@ -576,8 +578,8 @@ const agentActorLifecycle = new AgentActorLifecycle({
   logger,
 });
 
-const workerTelegram = appConfig.alerts.telegram.botToken
-  ? new TelegramClient(appConfig.alerts.telegram.botToken)
+const workerTelegram = telegramChat.botToken
+  ? new TelegramClient(telegramChat.botToken)
   : undefined;
 const chatDelivery = new ChatDelivery(agentRepo, {
     get: (provider) => provider === 'telegram' && workerTelegram ? new TelegramChannel(workerTelegram) : undefined,
@@ -617,31 +619,31 @@ const agentReconnectHandler = new AgentReconnectHandler(redisClient, agentRepo, 
 
 // Platform alert service — mandatory safety alerts to users via Telegram.
 // Uses the same bot token as the operator alert dispatcher.
-if (!workerTelegram && appConfig.alerts.telegram.webhookUrl) {
+if (!workerTelegram && telegramChat.webhookUrl) {
   logger.warn(
     'TELEGRAM_WEBHOOK_URL is set but TELEGRAM_BOT_TOKEN is not — the webhook endpoint will receive updates but the app cannot send messages or register the webhook.',
   );
 }
 
-if (workerTelegram && !appConfig.alerts.telegram.webhookUrl) {
+if (workerTelegram && !telegramChat.webhookUrl) {
   logger.warn(
     'TELEGRAM_BOT_TOKEN is set but TELEGRAM_WEBHOOK_URL is not — inbound Telegram messages (user replies) will NOT reach the app. ' +
     'Set TELEGRAM_WEBHOOK_URL and TELEGRAM_WEBHOOK_SECRET to enable two-way messaging.',
   );
 }
 
-if (workerTelegram && appConfig.alerts.telegram.webhookUrl) {
-  if (!appConfig.alerts.telegram.webhookSecret) {
-    logger.warn('alerts.telegram.webhookUrl is configured without alerts.telegram.webhookSecret; skipping Telegram webhook registration');
+if (workerTelegram && telegramChat.webhookUrl) {
+  if (!telegramChat.webhookSecret) {
+    logger.warn('messaging.chat.telegram.webhookUrl is configured without messaging.chat.telegram.webhookSecret; skipping Telegram webhook registration');
   } else {
     const webhookResult = await workerTelegram.setWebhook(
-      appConfig.alerts.telegram.webhookUrl,
-      appConfig.alerts.telegram.webhookSecret,
+      telegramChat.webhookUrl,
+      telegramChat.webhookSecret,
     );
     if (!webhookResult.ok) {
       logger.warn({ error: webhookResult.error }, 'Failed to register Telegram webhook');
     } else {
-      logger.info({ url: appConfig.alerts.telegram.webhookUrl }, 'Registered Telegram webhook');
+      logger.info({ url: telegramChat.webhookUrl }, 'Registered Telegram webhook');
     }
   }
 }
@@ -679,7 +681,7 @@ const workerEmailConfig: EmailClientConfig = {
 };
 const workerEmail = createEmailClient(workerEmailConfig);
 
-const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, appConfig.alerts.telegram.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl);
+const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, telegramChat.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl);
 
 async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: string): Promise<void> {
   if (!workerTelegram) {
@@ -876,7 +878,7 @@ evaluationRuntime.start();
 // return matching how the dispatcher already warns-and-returns for a missing
 // Telegram token and how `systemReadBoundary` is undefined-when-absent.
 const alertDispatcher = alertDispatcherFeed
-  ? new AlertDispatcher(appConfig.alerts, alertDispatcherFeed, alertDeliveryRepo, logger, redisClient, workerId)
+  ? new AlertDispatcher(alertsWithTelegramChat, alertDispatcherFeed, alertDeliveryRepo, logger, redisClient, workerId)
   : undefined;
 if (alertDispatcher) {
   await alertDispatcher.start();
