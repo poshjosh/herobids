@@ -35,8 +35,10 @@ export const decisionApprovals = pgTable('decision_approvals', {
   planId: text('plan_id'),
   resolvedByUserId: text('resolved_by_user_id'),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-  /** web | telegram_yes | telegram_no | api */
+  /** web | chat_yes | chat_no | api. Legacy telegram_yes | telegram_no still valid for existing rows. */
   resolutionSource: text('resolution_source'),
+  /** Chat provider for chat_yes | chat_no: telegram | whatsapp | sms. Null otherwise. */
+  resolutionProvider: text('resolution_provider'),
   lastResolutionAttemptAt: timestamp('last_resolution_attempt_at', { withTimezone: true }),
   lastResolutionErrorCode: text('last_resolution_error_code'),
   lastResolutionErrorMessage: text('last_resolution_error_message'),

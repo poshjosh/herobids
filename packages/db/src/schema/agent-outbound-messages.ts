@@ -28,12 +28,18 @@ export const agentOutboundMessages = pgTable('agent_outbound_messages', {
   messageClass: text('message_class'),
   /** Telegram delivery status: pending | sent | failed */
   deliveryStatus: text('delivery_status').notNull().default('pending'),
-  /** Telegram message_id returned on successful send */
+  /** Telegram message_id returned on successful send. Legacy: superseded by providerMessageId. */
   telegramMessageId: text('telegram_message_id'),
-  /** Telegram chat ID the message was sent to */
+  /** Telegram chat ID the message was sent to. Legacy: superseded by deliveryAddress. */
   telegramChatId: text('telegram_chat_id'),
-  /** Error detail if Telegram delivery failed */
+  /** Error detail if delivery failed */
   deliveryError: text('delivery_error'),
+  /** Provider that delivered the message: telegram | whatsapp | sms | email */
+  deliveryProvider: text('delivery_provider'),
+  /** ChatAddress.address the message was sent to */
+  deliveryAddress: text('delivery_address'),
+  /** Provider-assigned message id returned on successful send (reply correlation key) */
+  providerMessageId: text('provider_message_id'),
   // LEGACY: Email delivery metadata columns. Email fanout from send_message
   // has been removed (2026-07-17). These columns are retained for historical
   // audit data but are no longer written by the runtime.
@@ -48,4 +54,6 @@ export const agentOutboundMessages = pgTable('agent_outbound_messages', {
   index('idx_agent_outbound_messages_authored_by').on(t.authoredBy),
   index('idx_agent_outbound_messages_created_at').on(t.createdAt),
   index('idx_agent_outbound_messages_session_id').on(t.sessionId),
+  // Reply correlation: (delivery_provider, delivery_address, provider_message_id).
+  index('idx_agent_outbound_messages_delivery').on(t.deliveryProvider, t.deliveryAddress, t.providerMessageId),
 ]);

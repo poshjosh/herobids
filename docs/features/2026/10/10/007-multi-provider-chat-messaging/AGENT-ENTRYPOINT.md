@@ -38,7 +38,7 @@ This is the only record of task state. Work from the top. The first unchecked it
 
 - `[x]` **Phase 0**: capability manifest amendment. Evidence: `messaging / chat / sms` planned row; manifest tests in [providers.test.ts](../../../../../../apps/api/src/routes/providers.test.ts).
 - `[x]` **Phase 1**: port and Telegram behind it. Evidence: `ChatDelivery`, `ChatInboundRouter`, `chat-channel.ts`. Wave 1 gate passed (see [PROGRESS](../002-agent-onboarding-epic/PROGRESS.md)).
-- `[ ]` **P0** Baseline: the Telegram test files pass before you change anything (section 4)
+- `[x]` **P0** Baseline: the Telegram test files pass before you change anything (section 4)
 - `[ ]` **P2.1** Schema (Phase 2)
 - `[ ]` **P2.2** Generated expand migration (Phase 2)
 - `[ ]` **P2.3** Repository and resolver (Phase 2)

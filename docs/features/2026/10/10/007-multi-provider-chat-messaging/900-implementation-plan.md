@@ -149,6 +149,11 @@ The pure refactor. Behaviour-identical to today; this is where the risk is.
   The prior full-suite A2 blocker remains outside this repair; no full-suite
   rerun was performed.
 
+### P0 baseline record (2026-10-24)
+
+- Command: `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert`
+- Result: 8 test files passed, 1 skipped (`telegram-slash-commands.functional.test.ts`, 31 tests skipped by design); 169 tests passed, 31 skipped.
+
 ## Phase 2 — Channel-neutral data model (expand + backfill + dual-read)
 
 Tasks: [entrypoint §4 P2.1–P2.6](./AGENT-ENTRYPOINT.md).
@@ -250,6 +255,7 @@ Only after dual-read has been live and verified across environments.
 | 2026-10-24 | Typing indicator is `sendTyping` on `ChatChannel`; Telegram only for now | Owner | [070](./070-typing-indicator.md) |
 | 2026-10-24 | Agent-initiated notifications allowed on push and email; chat stays reply-only | Owner | [000-README](./000-README.md) non-goal 2 |
 | 2026-10-24 | Next order: Phases 2–3, T, W, E, U, then agent-to-agent | Owner | Status table |
+| 2026-10-24 | Approval resolution source generalised to `chat_yes` / `chat_no` with a provider field (`resolution_provider`), not per-provider values (040 §3 option a); `agent_documents.source` widened to add `whatsapp` / `sms` | Owner | [040](./040-data-model-and-migration.md) §3 |
 
 ## Risk notes
 
@@ -263,3 +269,4 @@ Only after dual-read has been live and verified across environments.
 4. **External prerequisites gate launch, not code**: A2P registration and Meta
    verification are long-lead items. Start them when the owner resumes Phase 4
    or 5, not earlier. Phase 4 is paused and Phase 5 is deferred (2026-10-24).
+
