@@ -7,6 +7,7 @@ import { WalletCreatedStep } from './WalletCreatedStep.js';
 import { UseExistingConnectionPanel } from './UseExistingConnectionPanel.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useIntl } from 'react-intl';
+import { connectionReturnPath } from './connection-return-path.js';
 
 type PagePhase = 'exchange' | 'form' | 'wallet' | 'done' | 'error';
 
@@ -19,6 +20,7 @@ export function SetupProviderLinkPage() {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [setupResult, setSetupResult] = useState<ProviderSetupResult | null>(null);
   const ran = useRef(false);
+  const returnPath = connectionReturnPath(searchParams.get('agentId'));
 
   useEffect(() => {
     if (ran.current) return;
@@ -49,7 +51,7 @@ export function SetupProviderLinkPage() {
   };
 
   const handleClose = () => {
-    navigate('/agents', { replace: true });
+    navigate(returnPath, { replace: true });
   };
 
   if (phase === 'error') {
@@ -99,7 +101,7 @@ export function SetupProviderLinkPage() {
             Return to Telegram and use /connections to see your new connection, then /connect &lt;agent&gt; &lt;id&gt; to assign it.
           </div>
           <button
-            onClick={() => navigate('/agents', { replace: true })}
+            onClick={() => navigate(returnPath, { replace: true })}
             style={{
               background: 'var(--color-brand)',
               color: '#fff',
@@ -136,7 +138,7 @@ export function SetupProviderLinkPage() {
               requestId={connectionRequest.requestId}
               provider={connectionRequest.provider}
               agentName={connectionRequest.agentName}
-              onDone={() => navigate('/agents', { replace: true })}
+              onDone={() => navigate(returnPath, { replace: true })}
             />
           </div>
         </div>

@@ -1,0 +1,20 @@
+import { describe, expect, it } from 'vitest';
+import { connectionReturnPath } from './connection-return-path.js';
+
+describe('connectionReturnPath', () => {
+  it('returns the requesting agent page when agentId is present', () => {
+    expect(connectionReturnPath('agent-123')).toBe('/agents/agent-123');
+  });
+
+  it('falls back to the agents list when agentId is absent', () => {
+    expect(connectionReturnPath(null)).toBe('/agents');
+  });
+
+  it('falls back to the agents list when agentId is empty', () => {
+    expect(connectionReturnPath('')).toBe('/agents');
+  });
+
+  it('encodes characters that would change the path', () => {
+    expect(connectionReturnPath('a/b?c')).toBe('/agents/a%2Fb%3Fc');
+  });
+});

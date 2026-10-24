@@ -608,6 +608,7 @@ export async function authRoutes(
     callbackUrl.searchParams.set('provider', record.provider);
     callbackUrl.searchParams.set('requestId', record.requestId);
     callbackUrl.searchParams.set('agentName', requestingAgent.name);
+    callbackUrl.searchParams.set('agentId', record.agentId);
     return reply.redirect(callbackUrl.toString());
   });
 
