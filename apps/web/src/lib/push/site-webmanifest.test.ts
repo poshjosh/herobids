@@ -21,6 +21,9 @@ describe('site.webmanifest', () => {
     expect(manifest['background_color']).toBe('#ffffff');
     const icons = manifest['icons'];
     expect(Array.isArray(icons)).toBe(true);
-    expect(icons).toHaveLength(2);
+    expect(icons).toHaveLength(4);
+    const purposes = (icons as Array<{ purpose: string }>).map((icon) => icon.purpose);
+    expect(purposes).toContain('any');
+    expect(purposes).toContain('maskable');
   });
 });
