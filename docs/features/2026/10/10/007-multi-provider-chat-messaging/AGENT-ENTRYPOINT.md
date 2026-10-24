@@ -49,7 +49,7 @@ This is the only record of task state. Work from the top. The first unchecked it
 - `[x]` **P3.2** Auth bypass for the new route (Phase 3)
 - `[x]` **P3.3** `messaging.chat.*` config (Phase 3)
 - `[x]` **P3.4** Tests and Phase 3 gate
-- `[ ]` **T** Telegram typing indicator ([070](./070-typing-indicator.md))
+- `[x]` **T** Telegram typing indicator ([070](./070-typing-indicator.md))
 - `[ ]` **W** Web Push and installable PWA ([080](./080-web-push-notifications.md))
 - `[ ]` **E** Email notification fallback ([080](./080-web-push-notifications.md))
 - `[ ]` **U** Messaging as a user capability (no design doc yet; section 4)

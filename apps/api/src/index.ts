@@ -302,6 +302,10 @@ await telegramWebhookHandler(
   tradingBackendClient,
   tradingBackendTimeoutMs,
   profileReconciliationSaga,
+  {
+    refreshIntervalMs: appConfig.messaging.chat.telegram.typingRefreshIntervalMs,
+    maxWindowMs: appConfig.messaging.chat.telegram.typingMaxWindowMs,
+  },
 );
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)

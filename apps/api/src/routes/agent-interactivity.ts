@@ -26,6 +26,7 @@ import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js'
 import { parseTelegramCommand } from './telegram-command-parser.js';
 import { TelegramInboundChannel } from './telegram-channel.js';
 import { ChatInboundRouter } from './chat-inbound-router.js';
+import { ChatTypingIndicator, createTelegramTypingSender, type ChatTypingSenders, type ChatTypingTiming } from './chat-typing-indicator.js';
 import {
   formatCommandHelp,
   formatUnknownCommandResponse,
@@ -526,6 +527,7 @@ export async function telegramWebhookHandler(
   tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
+  typingTiming?: ChatTypingTiming,
 ): Promise<void> {
   const botToken = telegram?.botToken ?? '';
   const webhookSecret = telegram?.webhookSecret ?? '';
@@ -534,6 +536,10 @@ export async function telegramWebhookHandler(
   const resolveRateLimit = agentApprovalsConfig?.resolveRateLimitPerMinute ?? 20;
 
   const approvalRepo = new DecisionApprovalRepository(db);
+
+  const typingSenders: ChatTypingSenders = new Map([['telegram', createTelegramTypingSender(botToken)]]);
+  const typing = typingTiming && botToken ? new ChatTypingIndicator(typingSenders, typingTiming, redisClient, app.log) : undefined;
+  if (typing) app.addHook('onClose', async () => { typing.dispose(); });
 
   async function sendTelegramText(chatId: string, text: string): Promise<void> {
     await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -812,6 +818,7 @@ export async function telegramWebhookHandler(
         status: agents.status,
       }).from(agents).where(eq(agents.userId, ownerId)),
       sendText: (address, text) => sendTelegramText(address.address, text),
+      startTyping: (address) => typing?.start(address),
     });
   }
 

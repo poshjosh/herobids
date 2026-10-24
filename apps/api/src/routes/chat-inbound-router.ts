@@ -16,6 +16,8 @@ interface ChatInboundDependencies {
   resolveReply: (providerMessageId: string, address: ChatAddress) => Promise<(RoutableAgent & { userId: string }) | null>;
   listAgents: (userId: string) => Promise<RoutableAgent[]>;
   sendText: (address: ChatAddress, text: string) => Promise<void>;
+  /** Called once an agent has been delivered a message; sent after the acknowledgement because sending a message clears typing. */
+  startTyping?: (address: ChatAddress) => void;
 }
 
 function canReceive(status: string): boolean {
@@ -61,6 +63,7 @@ export class ChatInboundRouter {
       }
       await this.deliver(agent.agentId, agent.userId, message.text!.trim(), deps.redis);
       await deps.sendText(address, `Delivered to ${agent.agentName}.`);
+      deps.startTyping?.(address);
       return;
     }
 
@@ -74,6 +77,7 @@ export class ChatInboundRouter {
       }
       const confirmations: string[] = [];
       const deliveredAgentIds = new Set<string>();
+      let anyDelivered = false;
       for (const target of route.command.targets) {
         const isBroadcast = target === '*' || target.toLowerCase() === 'all';
         const targetAgents = isBroadcast
@@ -91,10 +95,12 @@ export class ChatInboundRouter {
             continue;
           }
           await this.deliver(agent.agentId, userId, body, deps.redis);
+          anyDelivered = true;
           confirmations.push(`Delivered to ${agent.agentName}.`);
         }
       }
       await deps.sendText(address, confirmations.join('\n'));
+      if (anyDelivered) deps.startTyping?.(address);
       return;
     }
 
@@ -102,6 +108,7 @@ export class ChatInboundRouter {
     if (runningAgents.length === 1) {
       await this.deliver(runningAgents[0]!.agentId, userId, body, deps.redis);
       await deps.sendText(address, `Delivered to ${runningAgents[0]!.agentName}.`);
+      deps.startTyping?.(address);
     } else if (runningAgents.length === 0) {
       await deps.sendText(address, 'No running agents found. Start an agent or reply to one of its Telegram messages.');
     } else {

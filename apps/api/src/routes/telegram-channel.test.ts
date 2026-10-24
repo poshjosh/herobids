@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Redis } from 'ioredis';
+import { Redis as RedisClient } from 'ioredis';
 import { TelegramInboundChannel } from './telegram-channel.js';
 import { ChatInboundRouter } from './chat-inbound-router.js';
 
@@ -101,5 +102,72 @@ describe('Telegram inbound channel', () => {
     expect(redis.xadd).toHaveBeenCalledWith('agent:outbound:agent-whatsapp', 'MAXLEN', '~', expect.any(Number), '*', 'envelope', expect.stringContaining('"initiatorId":"owner-1"'));
     expect(sendText).toHaveBeenNthCalledWith(1, { provider: 'telegram', address: '123' }, 'Delivered to Ada.');
     expect(sendText).toHaveBeenNthCalledWith(2, { provider: 'whatsapp', address: '123' }, 'Delivered to Bea.');
+  });
+});
+
+describe('ChatInboundRouter typing', () => {
+  const runningAgent = { agentId: 'agent-1', agentName: 'Ada', status: 'running', userId: 'owner-1' };
+
+  function messageWithText(text: string, inReplyTo?: number) {
+    const parsed = adapter.parse({ headers, body: {
+      message: { chat: { id: 123 }, text, ...(inReplyTo ? { reply_to_message: { message_id: inReplyTo } } : {}) },
+    } });
+    if (!parsed.ok) throw new Error('Unexpected parse failure');
+    return parsed.data[0]!;
+  }
+
+  function dependencies(overrides: { listAgents?: () => Promise<unknown>; resolveReply?: () => Promise<unknown> } = {}) {
+    const redis = new RedisClient({ lazyConnect: true });
+    const xadd = vi.spyOn(redis, 'xadd').mockResolvedValue('1-1');
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const startTyping = vi.fn();
+    return {
+      xadd,
+      sendText,
+      startTyping,
+      deps: {
+        redis,
+        resolveReply: vi.fn(overrides.resolveReply ?? (async () => null)),
+        listAgents: vi.fn(overrides.listAgents ?? (async () => [runningAgent])),
+        sendText,
+        startTyping,
+      },
+    };
+  }
+
+  it('starts typing after the acknowledgement when a plain message reaches the only running agent', async () => {
+    const { xadd, sendText, startTyping, deps } = dependencies();
+
+    await new ChatInboundRouter().dispatch(messageWithText('hello'), 'owner-1', deps);
+
+    expect(xadd).toHaveBeenCalledTimes(1);
+    expect(startTyping).toHaveBeenCalledWith({ provider: 'telegram', address: '123' });
+    expect(startTyping.mock.invocationCallOrder[0]).toBeGreaterThan(sendText.mock.invocationCallOrder[0]!);
+  });
+
+  it('starts typing for a targeted agent after the delivery confirmation', async () => {
+    const { sendText, startTyping, deps } = dependencies();
+
+    await new ChatInboundRouter().dispatch(messageWithText('/to Ada hello'), 'owner-1', deps);
+
+    expect(startTyping).toHaveBeenCalledTimes(1);
+    expect(startTyping.mock.invocationCallOrder[0]).toBeGreaterThan(sendText.mock.invocationCallOrder[0]!);
+  });
+
+  it('starts typing for a reply that is delivered to its agent', async () => {
+    const { startTyping, deps } = dependencies({ resolveReply: async () => runningAgent });
+
+    await new ChatInboundRouter().dispatch(messageWithText('hello', 41), undefined, deps);
+
+    expect(startTyping).toHaveBeenCalledWith({ provider: 'telegram', address: '123' });
+  });
+
+  it('does not start typing when the only target agent is stopped', async () => {
+    const { xadd, startTyping, deps } = dependencies({ listAgents: async () => [{ ...runningAgent, status: 'stopped' }] });
+
+    await new ChatInboundRouter().dispatch(messageWithText('/to Ada hello'), 'owner-1', deps);
+
+    expect(xadd).not.toHaveBeenCalled();
+    expect(startTyping).not.toHaveBeenCalled();
   });
 });

@@ -103,7 +103,7 @@ function makeBroker(
       handleRuntimeSessionEnd: vi.fn(),
     } as unknown as AgentSessionManager,
     {} as unknown as InstanceEventPublisher,
-    telegram ? new ChatDelivery(agentRepo as any, { get: () => new TelegramChannel(telegram) }) : undefined,
+    telegram ? new ChatDelivery(agentRepo as any, { get: () => new TelegramChannel(telegram) }, { set: vi.fn() }) : undefined,
     undefined, // botRepo
     undefined, // botLiveCheck
     emailClient,

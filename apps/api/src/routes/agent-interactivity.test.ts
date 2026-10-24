@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { agentInteractivityRoutes as registerAgentInteractivityRoutes, telegramWebhookHandler } from './agent-interactivity.js';
+import { ChatTypingIndicator } from './chat-typing-indicator.js';
 import { registerBackendRefFamilies } from './agent-config-helpers.js';
 import type { Database } from '@herobids/db';
 import type { ResolvedTelegramChatConfig } from '@herobids/domain';
@@ -1644,5 +1645,38 @@ describe('messaging.chat.telegram config drives the Telegram webhook', () => {
 
     expect(legacy.statusCode).toBe(401);
     expect(chat.statusCode).toBe(200);
+  });
+});
+
+describe('telegramWebhookHandler typing indicator lifecycle', () => {
+  it('disposes the typing indicator when the app closes', async () => {
+    const dispose = vi.spyOn(ChatTypingIndicator.prototype, 'dispose');
+    const app = Fastify();
+    await telegramWebhookHandler(
+      app,
+      buildAgentDb(null),
+      buildMockRedis(),
+      buildTelegramChatConfig(),
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      { refreshIntervalMs: 4000, maxWindowMs: 10000 },
+    );
+    await app.ready();
+
+    await app.close();
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    dispose.mockRestore();
+  });
+
+  it('does not dispose anything on close when typing is not configured', async () => {
+    const dispose = vi.spyOn(ChatTypingIndicator.prototype, 'dispose');
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+    await app.ready();
+
+    await app.close();
+
+    expect(dispose).not.toHaveBeenCalled();
+    dispose.mockRestore();
   });
 });

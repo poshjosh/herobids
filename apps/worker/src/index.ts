@@ -583,7 +583,7 @@ const workerTelegram = telegramChat.botToken
   : undefined;
 const chatDelivery = new ChatDelivery(agentRepo, {
     get: (provider) => provider === 'telegram' && workerTelegram ? new TelegramChannel(workerTelegram) : undefined,
-  });
+  }, redisClient);
 
 const agentDecisionHandler = new AgentDecisionHandler(
   agentRepo,

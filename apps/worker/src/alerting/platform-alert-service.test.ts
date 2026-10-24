@@ -36,7 +36,7 @@ function makeTelegramClient(overrides: Record<string, unknown> = {}): TelegramCl
 }
 
 function chatDelivery(agentRepo: ReturnType<typeof makeAgentRepo>, telegram: TelegramClient): ChatDelivery {
-  return new ChatDelivery(agentRepo as any, { get: () => new TelegramChannel(telegram) });
+  return new ChatDelivery(agentRepo as any, { get: () => new TelegramChannel(telegram) }, { set: vi.fn() });
 }
 
 function makeEmailClient(overrides: Record<string, unknown> = {}): EmailClient {

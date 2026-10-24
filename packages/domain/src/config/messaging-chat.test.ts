@@ -120,4 +120,26 @@ describe('messaging.chat.telegram schema', () => {
       messaging: { chat: { telegram: { webhookUrl: 'not a url' } } },
     })).toThrow();
   });
+
+  it('defaults the typing refresh to 4s and the typing window to the 180s LLM timeout', () => {
+    const telegram = parseWith({}).messaging.chat.telegram;
+
+    expect(telegram.typingRefreshIntervalMs).toBe(4000);
+    expect(telegram.typingMaxWindowMs).toBe(180000);
+  });
+
+  it('rejects a non-positive typing refresh interval or window', () => {
+    expect(() => parseWith({ messaging: { chat: { telegram: { typingRefreshIntervalMs: 0 } } } })).toThrow();
+    expect(() => parseWith({ messaging: { chat: { telegram: { typingMaxWindowMs: -1 } } } })).toThrow();
+  });
+
+  it('rejects a typing refresh interval below the 1s floor', () => {
+    expect(() => parseWith({ messaging: { chat: { telegram: { typingRefreshIntervalMs: 999 } } } })).toThrow();
+    expect(parseWith({ messaging: { chat: { telegram: { typingRefreshIntervalMs: 1000 } } } }).messaging.chat.telegram.typingRefreshIntervalMs).toBe(1000);
+  });
+
+  it('rejects a typing refresh interval above the 9s ceiling', () => {
+    expect(() => parseWith({ messaging: { chat: { telegram: { typingRefreshIntervalMs: 9001 } } } })).toThrow();
+    expect(parseWith({ messaging: { chat: { telegram: { typingRefreshIntervalMs: 9000 } } } }).messaging.chat.telegram.typingRefreshIntervalMs).toBe(9000);
+  });
 });

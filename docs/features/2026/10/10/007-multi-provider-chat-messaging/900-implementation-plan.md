@@ -209,6 +209,20 @@ Tasks: [entrypoint §4 P3.1–P3.4](./AGENT-ENTRYPOINT.md).
 - GET verify returns 405 for a registered provider with no verify handshake. Decide the status when WhatsApp lands.
 - Worker warning text still names the env variables in one place. Align wording.
 
+### T gate record (2026-10-24)
+
+- Typing starts after the acknowledgement on the reply, `/to` and single-agent paths. It refreshes every `messaging.chat.telegram.typingRefreshIntervalMs` (1000 to 9000 ms) until the window (`typingMaxWindowMs`) ends.
+- The worker writes `chat:typing:stop:telegram:<address>` (TTL 10 s) after each successful Telegram send. The API stops typing when it sees that key. Telegram clears typing on any bot message, so this matches Telegram.
+- `pnpm test`: 369 files (343 passed, 26 skipped); 6600 passed, 340 skipped. Type checks for domain, api, worker: exit 0.
+
+### Outstanding Issues (T)
+
+- Known race: a stop key from a reply to an earlier message can end a new typing session if it lands after the new message's DEL. Fixing it needs correlation IDs.
+- If the DEL on a new session fails, a stale stop key can end the session at its first tick (logged).
+- Document attachments do not start typing (070 marks it optional).
+- The worker `TelegramChannel.sendTyping` was removed (no caller). Add it when a worker-side typing path exists.
+- The API keeps its own Telegram `sendChatAction` sender (the API cannot import worker code). Consolidate later into a shared package.
+
 ## Phase 4 — WhatsApp adapter (first new provider) — **PAUSED (2026-10-24)**
 
 **Status:** paused. Meta's billing is unclear (see the decision log). The Meta

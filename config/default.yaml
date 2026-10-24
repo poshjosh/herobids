@@ -750,6 +750,8 @@ messaging:
       botToken: ""                  # blank → alerts.telegram.botToken (env: TELEGRAM_BOT_TOKEN)
       webhookSecret: ""             # blank → alerts.telegram.webhookSecret (env: TELEGRAM_WEBHOOK_SECRET)
       # webhookUrl: "https://your-public-host/telegram/webhook"  # unset → alerts.telegram.webhookUrl (env: TELEGRAM_WEBHOOK_URL)
+      typingRefreshIntervalMs: 4000 # how often the "typing…" action is re-sent while an agent replies (Telegram shows it ~5s)
+      typingMaxWindowMs: 180000     # max time typing is refreshed after a user message; sized to llm.timeoutMs
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:

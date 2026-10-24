@@ -1,5 +1,9 @@
-import { err, type ChatChannelRegistry, type ChatOutboundBody, type ChatSendResult, type Result, type DomainError, type ChatAddress } from '@herobids/domain';
+import { err, CHAT_TYPING_STOP_TTL_SECONDS, chatTypingStopKey, type ChatChannelRegistry, type ChatOutboundBody, type ChatSendResult, type Result, type DomainError, type ChatAddress } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
+import type { Redis } from 'ioredis';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('chat-delivery');
 
 export interface ChatDeliveryResult extends ChatSendResult {
   address: ChatAddress;
@@ -13,6 +17,7 @@ export class ChatDelivery {
   constructor(
     private readonly agentRepo: Pick<AgentRepository, 'getEffectiveChatAddress' | 'isChatAddressSuppressed'>,
     private readonly channels: ChatChannelRegistry,
+    private readonly redis: Pick<Redis, 'set'>,
   ) {}
 
   async send(agentId: string, body: ChatOutboundBody): Promise<Result<ChatDeliveryResult, DomainError>> {
@@ -36,6 +41,20 @@ export class ChatDelivery {
 
     const result = await channel.sendText(address, body);
     if (!result.ok) return result;
+    this.markTypingStopped(address);
     return { ok: true, data: { ...result.data, address } };
+  }
+
+  // Fire-and-forget: the stop signal is best-effort and must not delay or fail the reply.
+  private markTypingStopped(address: ChatAddress): void {
+    void this.writeTypingStop(address);
+  }
+
+  private async writeTypingStop(address: ChatAddress): Promise<void> {
+    try {
+      await this.redis.set(chatTypingStopKey(address), '1', 'EX', CHAT_TYPING_STOP_TTL_SECONDS);
+    } catch (error) {
+      logger.warn({ provider: address.provider, error: error instanceof Error ? error.message : String(error) }, 'Failed to write typing stop signal');
+    }
   }
 }

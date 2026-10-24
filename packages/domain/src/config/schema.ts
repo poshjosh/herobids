@@ -590,6 +590,11 @@ export const ActorEventRelayConfigSchema = z.object({
 
 // Provider-keyed chat transport config (060). Blank or unset values fall back to the
 // legacy alerts.telegram.* keys; see resolveTelegramChatConfig.
+/** Floor for typingRefreshIntervalMs; faster refreshes would hammer the Telegram Bot API. */
+const TYPING_REFRESH_INTERVAL_MIN_MS = 1000;
+/** Ceiling for typingRefreshIntervalMs; must stay below CHAT_TYPING_STOP_TTL_SECONDS (10s) so the stop signal outlives a refresh. */
+const TYPING_REFRESH_INTERVAL_MAX_MS = 9000;
+
 export const MessagingChatTelegramSchema = z.object({
   /** Telegram bot token. Blank falls back to alerts.telegram.botToken. */
   botToken: z.string().default(''),
@@ -597,6 +602,10 @@ export const MessagingChatTelegramSchema = z.object({
   webhookSecret: z.string().default(''),
   /** Public HTTPS webhook endpoint. Unset falls back to alerts.telegram.webhookUrl. */
   webhookUrl: z.string().url().optional(),
+  /** Interval between typing-indicator refreshes while an agent works on a user message (ms). Telegram's typing status lasts about 5s. */
+  typingRefreshIntervalMs: z.number().int().min(TYPING_REFRESH_INTERVAL_MIN_MS).max(TYPING_REFRESH_INTERVAL_MAX_MS).default(4000),
+  /** Upper bound on how long typing refreshes continue after a user message (ms). Sized against llm.timeoutMs (180s). */
+  typingMaxWindowMs: z.number().int().positive().default(180000),
 }).default({});
 
 export const MessagingConfigSchema = z.object({
