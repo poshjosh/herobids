@@ -41,7 +41,7 @@ This is the only record of task state. Work from the top. The first unchecked it
 - `[x]` **P0** Baseline: the Telegram test files pass before you change anything (section 4)
 - `[x]` **P2.1** Schema (Phase 2)
 - `[x]` **P2.2** Generated expand migration (Phase 2)
-- `[ ]` **P2.3** Repository and resolver (Phase 2)
+- `[x]` **P2.3** Repository and resolver (Phase 2)
 - `[ ]` **P2.4** Custom backfill migration (Phase 2)
 - `[ ]` **P2.5** Dual-write (Phase 2)
 - `[ ]` **P2.6** Tests and Phase 2 gate

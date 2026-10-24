@@ -321,6 +321,221 @@ describe('AgentRepository.getEffectiveTelegramChatId', () => {
 });
 
 // ---------------------------------------------------------------------------
+// getEffectiveChatAddress
+// ---------------------------------------------------------------------------
+
+/** Each db.select() call resolves with the next queued result set. */
+function buildSequencedDb(results: Array<Array<Record<string, unknown>>>) {
+  const queue = [...results];
+  return {
+    select: vi.fn(() => {
+      const rows = queue.shift() ?? [];
+      const chain = {
+        from: vi.fn(() => chain),
+        innerJoin: vi.fn(() => chain),
+        leftJoin: vi.fn(() => chain),
+        where: vi.fn(() => Object.assign(Promise.resolve(rows), {
+          limit: vi.fn().mockResolvedValue(rows),
+        })),
+      };
+      return chain;
+    }),
+  };
+}
+
+/** Like buildSequencedDb, but also records select fields, join and where conditions so SQL filters can be asserted. */
+function buildRecordingDb(results: Array<Array<Record<string, unknown>>>) {
+  const queue = [...results];
+  const selectFields: Array<Record<string, unknown>> = [];
+  const joinConditions: unknown[] = [];
+  const whereConditions: unknown[] = [];
+  const db = {
+    select: vi.fn((fields: Record<string, unknown>) => {
+      selectFields.push(fields);
+      const rows = queue.shift() ?? [];
+      const chain = {
+        from: vi.fn(() => chain),
+        innerJoin: vi.fn((_table: unknown, condition: unknown) => {
+          joinConditions.push(condition);
+          return chain;
+        }),
+        leftJoin: vi.fn((_table: unknown, condition: unknown) => {
+          joinConditions.push(condition);
+          return chain;
+        }),
+        where: vi.fn((condition: unknown) => {
+          whereConditions.push(condition);
+          return Object.assign(Promise.resolve(rows), {
+            limit: vi.fn().mockResolvedValue(rows),
+          });
+        }),
+      };
+      return chain;
+    }),
+  };
+  return { db, joinConditions, whereConditions, selectFields };
+}
+
+describe('AgentRepository.getEffectiveChatAddress', () => {
+  it('reads neutral rows with an exact active status predicate and no status filter in the join', async () => {
+    const { db, joinConditions, selectFields } = buildRecordingDb([[]]);
+    const repo = new AgentRepository(db as never);
+    await repo.getEffectiveChatAddress('agent-1', 'telegram');
+    const activePredicate = renderWhere(selectFields[0]?.isActive);
+    expect(activePredicate.sql).toBe('"chat_addresses"."status" = $1');
+    expect(activePredicate.params).toEqual(['active']);
+    expect(renderWhere(joinConditions[0]).params).not.toContain('active');
+  });
+
+  it('scopes neutral rows to the agent owner via chat_addresses.userId = agents.userId', async () => {
+    const { db, joinConditions } = buildRecordingDb([[]]);
+    const repo = new AgentRepository(db as never);
+    await repo.getEffectiveChatAddress('agent-1', 'telegram');
+    expect(renderWhere(joinConditions[0]).sql).toContain('"chat_addresses"."user_id" = "agents"."user_id"');
+  });
+
+  it('blocks a revoked agent-level row instead of falling through to the user-level row', async () => {
+    const db = buildSequencedDb([[
+      { rowAgentId: 'agent-1', address: '111111', isActive: false },
+      { rowAgentId: null, address: '222222', isActive: true },
+    ]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toBeNull();
+  });
+
+  it('does not fall back to the legacy telegram chat ID when the agent-level row is revoked', async () => {
+    const db = buildSequencedDb([
+      [{ rowAgentId: 'agent-1', address: '111111', isActive: false }],
+      [{ agentTelegramChatId: '999999', userTelegramChatId: null }],
+    ]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toBeNull();
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fall back to the legacy telegram chat ID when the user-level row is revoked', async () => {
+    const db = buildSequencedDb([
+      [{ rowAgentId: null, address: '222222', isActive: false }],
+      [{ agentTelegramChatId: '999999', userTelegramChatId: null }],
+    ]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toBeNull();
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null for a non-telegram provider when the only chat_addresses row is revoked', async () => {
+    const db = buildSequencedDb([[{ rowAgentId: null, address: '+15555550100', isActive: false }]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'whatsapp')).resolves.toBeNull();
+  });
+
+  it('never returns a pending_optin row and reads only the exact active predicate', async () => {
+    const { db, selectFields } = buildRecordingDb([[{ rowAgentId: null, address: '+15555550100', isActive: false }]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'sms')).resolves.toBeNull();
+    const activePredicate = renderWhere(selectFields[0]?.isActive);
+    expect(activePredicate.params).toEqual(['active']);
+    expect(activePredicate.params).not.toContain('pending_optin');
+  });
+
+  it('returns the chat_addresses address when only neutral data exists', async () => {
+    const db = buildSequencedDb([[{ rowAgentId: null, address: '333333', isActive: true }]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toEqual({
+      provider: 'telegram',
+      address: '333333',
+    });
+  });
+
+  it('returns the agent-level chat_addresses override over the user-level default', async () => {
+    const db = buildSequencedDb([[
+      { rowAgentId: null, address: '222222', isActive: true },
+      { rowAgentId: 'agent-1', address: '111111', isActive: true },
+    ]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toEqual({
+      provider: 'telegram',
+      address: '111111',
+    });
+  });
+
+  it('prefers the neutral address over a different legacy telegram chat ID', async () => {
+    const db = buildSequencedDb([
+      [{ rowAgentId: null, address: '222222', isActive: true }],
+      [{ agentTelegramChatId: '111111', userTelegramChatId: '999999' }],
+    ]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toEqual({
+      provider: 'telegram',
+      address: '222222',
+    });
+  });
+
+  it('returns the legacy agent-level telegram chat ID when no neutral row exists', async () => {
+    const db = buildSequencedDb([
+      [],
+      [{ agentTelegramChatId: '111111', userTelegramChatId: '222222' }],
+    ]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toEqual({
+      provider: 'telegram',
+      address: '111111',
+    });
+  });
+
+  it('returns the legacy user-level telegram chat ID when only the user has one', async () => {
+    const db = buildSequencedDb([
+      [],
+      [{ agentTelegramChatId: null, userTelegramChatId: '222222' }],
+    ]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toEqual({
+      provider: 'telegram',
+      address: '222222',
+    });
+  });
+
+  it('treats a whitespace-only neutral address as unset and uses the legacy chat ID', async () => {
+    const db = buildSequencedDb([
+      [{ rowAgentId: 'agent-1', address: '   ', isActive: true }],
+      [{ agentTelegramChatId: null, userTelegramChatId: '222222' }],
+    ]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toEqual({
+      provider: 'telegram',
+      address: '222222',
+    });
+  });
+
+  it('returns null for telegram when neither neutral nor legacy data exists', async () => {
+    const db = buildSequencedDb([
+      [],
+      [{ agentTelegramChatId: null, userTelegramChatId: null }],
+    ]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'telegram')).resolves.toBeNull();
+  });
+
+  it('returns null for a non-telegram provider without a chat_addresses row, ignoring legacy columns', async () => {
+    const db = buildSequencedDb([
+      [],
+      [{ agentTelegramChatId: '111111', userTelegramChatId: '222222' }],
+    ]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'sms')).resolves.toBeNull();
+  });
+
+  it('returns the neutral address for a non-telegram provider', async () => {
+    const db = buildSequencedDb([[{ rowAgentId: null, address: '+15555550100', isActive: true }]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveChatAddress('agent-1', 'sms')).resolves.toEqual({
+      provider: 'sms',
+      address: '+15555550100',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resolveAgentForTelegramReply
 // ---------------------------------------------------------------------------
 
@@ -364,6 +579,148 @@ describe('AgentRepository.resolveAgentForTelegramReply', () => {
     const db = buildReplyDb([]);
     const repo = new AgentRepository(db as never);
     await expect(repo.resolveAgentForTelegramReply('888', 'chat-b')).resolves.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveAgentForChatReply
+// ---------------------------------------------------------------------------
+
+describe('AgentRepository.resolveAgentForChatReply', () => {
+  const agentOne = { agentId: 'agent-1', agentName: 'Momo', status: 'active', userId: 'user-1' };
+  const agentTwo = { agentId: 'agent-2', agentName: 'Kofi', status: 'active', userId: 'user-1' };
+  // Rows from the chat_addresses lookup carry whether that address row is active.
+  const activeAddressOne = { ...agentOne, isAddressActive: true };
+  const activeAddressTwo = { ...agentTwo, isAddressActive: true };
+  const activeScope = { rowAgentId: 'agent-1', address: '111111', isActive: true };
+  const blockedScope = { rowAgentId: 'agent-1', address: '111111', isActive: false };
+
+  it('resolves the agent from a neutral agent-level address without a message ID', async () => {
+    const db = buildSequencedDb([[activeAddressOne]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a')).resolves.toEqual(agentOne);
+  });
+
+  it('returns null for a user-level address when no message ID is given', async () => {
+    const db = buildSequencedDb([[]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a')).resolves.toBeNull();
+  });
+
+  it('resolves the agent from neutral outbound delivery columns when only neutral data exists', async () => {
+    const db = buildSequencedDb([[agentOne], [activeScope]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('whatsapp', '+15555550100', 'wamid-1')).resolves.toEqual(agentOne);
+  });
+
+  it('resolves the agent from the legacy telegram pair when only legacy data exists', async () => {
+    const db = buildSequencedDb([[], [], [agentOne]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toEqual(agentOne);
+  });
+
+  it('does not use legacy telegram columns for a non-telegram provider', async () => {
+    const db = buildSequencedDb([[], [], [agentOne]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('sms', '+15555550100', '999')).resolves.toBeNull();
+  });
+
+  it('prefers the message ID match over an agent-level address', async () => {
+    const db = buildSequencedDb([[agentOne], []]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toEqual(agentOne);
+  });
+
+  it('prefers the agent-level address over the legacy telegram pair', async () => {
+    const db = buildSequencedDb([[], [activeAddressTwo]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toEqual(agentTwo);
+  });
+
+  it('prefers the neutral outbound delivery match over the legacy telegram pair', async () => {
+    const db = buildSequencedDb([[agentOne], []]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toEqual(agentOne);
+  });
+
+  it('does not resolve an agent from a revoked or pending_optin address and reads only the exact active predicate', async () => {
+    const { db, selectFields } = buildRecordingDb([[{ ...agentOne, isAddressActive: false }]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a')).resolves.toBeNull();
+    const activePredicate = renderWhere(selectFields[0]?.isAddressActive);
+    expect(activePredicate.params).toEqual(['active']);
+    expect(activePredicate.params).not.toContain('pending_optin');
+  });
+
+  it('a revoked agent-level row blocks the legacy telegram fallback for an inbound reply', async () => {
+    const db = buildSequencedDb([[], [{ ...agentOne, isAddressActive: false }], [agentOne]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
+    expect(db.select).toHaveBeenCalledTimes(2);
+  });
+
+  it('a revoked user-level row blocks the legacy telegram fallback for an inbound reply', async () => {
+    const revokedUserLevel = { agentId: null, agentName: null, status: null, userId: null, isAddressActive: false };
+    // Queue: outbound lookup (no match), address lookup (revoked user-level row), legacy pair (would match).
+    const db = buildSequencedDb([[], [revokedUserLevel], [agentOne]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
+    expect(db.select).toHaveBeenCalledTimes(2);
+  });
+
+  it('an active user-level row never resolves an agent', async () => {
+    const activeUserLevel = { agentId: null, agentName: null, status: null, userId: null, isAddressActive: true };
+    const db = buildSequencedDb([[activeUserLevel]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a')).resolves.toBeNull();
+  });
+
+  it('scopes the chat_addresses lookup to the agent owner via chat_addresses.userId = agents.userId', async () => {
+    const { db, joinConditions } = buildRecordingDb([[activeAddressOne]]);
+    const repo = new AgentRepository(db as never);
+    await repo.resolveAgentForChatReply('telegram', 'chat-a');
+    expect(renderWhere(joinConditions[0]).sql).toContain('"chat_addresses"."user_id" = "agents"."user_id"');
+  });
+
+  it('a blocked outbound-agent scope returns null even when a providerMessageId matches', async () => {
+    const db = buildSequencedDb([[agentOne], [blockedScope]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
+    expect(db.select).toHaveBeenCalledTimes(2);
+  });
+
+  it('a pending_optin outbound-agent scope also returns null when a providerMessageId matches', async () => {
+    const db = buildSequencedDb([[agentOne], [{ rowAgentId: null, address: '222222', isActive: false }]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
+  });
+
+  it('does not guess when an address is shared by several agent overrides and no message ID is given', async () => {
+    const db = buildSequencedDb([[activeAddressOne, activeAddressTwo]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a')).resolves.toBeNull();
+  });
+
+  it('trims the inbound address before matching', async () => {
+    const { db, whereConditions } = buildRecordingDb([[activeAddressOne]]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', '  chat-a  ')).resolves.toEqual(agentOne);
+    const { params } = renderWhere(whereConditions[0]);
+    expect(params).toContain('chat-a');
+    expect(params).not.toContain('  chat-a  ');
+  });
+
+  it('treats a blank inbound address as no address', async () => {
+    const db = buildSequencedDb([]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', '   ', '999')).resolves.toBeNull();
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it('returns null when no neutral or legacy data matches the reply', async () => {
+    const db = buildSequencedDb([[], [], []]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
   });
 });
 
