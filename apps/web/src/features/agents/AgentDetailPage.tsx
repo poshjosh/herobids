@@ -30,6 +30,17 @@ export function AgentDetailPage() {
 
   // Auto-open edit modal when returning from OAuth (detected via edit=1 URL param)
   const handledEditParamRef = useRef(false);
+
+  // Set when returning from an approved connection request; read once so stripping the param does not reset the conversation.
+  const [connectionRequestId] = useState(() => new URLSearchParams(location.search).get('connected'));
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('connected')) return;
+    params.delete('connected');
+    const search = params.toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
   useEffect(() => {
     if (handledEditParamRef.current) return;
     const params = new URLSearchParams(location.search);
@@ -390,7 +401,7 @@ export function AgentDetailPage() {
           </details>
         </Card>
 
-        <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} />
+        <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} connectionRequestId={connectionRequestId} />
 
         <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
           <Card>

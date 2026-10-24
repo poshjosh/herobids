@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   AgentWakePayloadSchema,
+  TickCompletedPayloadSchema,
+  TickStartedPayloadSchema,
   ReminderWakeContextSchema,
   WatchThresholdWakeContextSchema,
   DiscoveryDeltaWakeContextSchema,
@@ -979,3 +981,26 @@ describe('AGENT_MESSAGE_TYPES.REQUEST_CONNECTION', () => {
     expect(schema).toBe(ConnectionRequestPayloadSchema);
   });
 });
+
+describe('tick turn events', () => {
+  it('accepts a tick start that names the user messages and connection requests it handles', () => {
+    const parsed = TickStartedPayloadSchema.safeParse({
+      tickId: 'tick-1',
+      trigger: 'wake',
+      hasWakeSignal: true,
+      userMessageIds: ['msg-1'],
+      connectionRequestIds: ['req-1'],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('still accepts a tick start from a runtime that does not report handled ids', () => {
+    expect(TickStartedPayloadSchema.safeParse({ tickId: 'tick-1', trigger: 'scheduled', hasWakeSignal: false }).success).toBe(true);
+  });
+
+  it('accepts only the defined outcomes for a tick completion', () => {
+    expect(TickCompletedPayloadSchema.safeParse({ tickId: 'tick-1', outcome: 'replied' }).success).toBe(true);
+    expect(TickCompletedPayloadSchema.safeParse({ tickId: 'tick-1', outcome: 'maybe' }).success).toBe(false);
+  });
+});
+

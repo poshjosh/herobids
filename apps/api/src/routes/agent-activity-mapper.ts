@@ -94,6 +94,8 @@ export interface RawArtifact {
 export const SUPPRESSED_PROTOCOL_MESSAGE_TYPES = [
   'agent.heartbeat',
   'agent.runtime.heartbeat',
+  // Tick start already appears in the feed; completion only drives the conversation turn state.
+  'agent.tick.completed',
 ] as const;
 
 export function isSuppressedProtocolMessageType(type: string): boolean {

@@ -67,6 +67,7 @@ import type { UnifiedAgentConfig } from '@herobids/domain';
 import { AgentStyleSchema, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
+import { CONVERSATION_TURN_EVENT_WINDOW, deriveSubjectTurnState, TURN_EVENT_TYPES } from '../services/agent-conversation-turn.js';
 import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
 import { cloneAgentAsLive } from '../services/agent-go-live-service.js';
 import { buildBlueprintDetail } from './blueprints.js';
@@ -2439,6 +2440,40 @@ export async function agentRoutes(
       .limit(limit);
 
     return reply.send(await query);
+  });
+
+  // ─── GET /agents/:id/conversation-turn ────────────────────────────────────
+  // Where the agent is with the latest user message and, when given, one connection request.
+  app.get<{ Params: { id: string }; Querystring: { connectionRequestId?: string } }>('/agents/:id/conversation-turn', async (request, reply) => {
+    const { id } = request.params;
+    const connectionRequestId = request.query.connectionRequestId?.trim().slice(0, 200) || null;
+
+    const [agent] = await db.select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const [latestUserMessage] = await db.select({ id: agentOutboundMessages.id })
+      .from(agentOutboundMessages)
+      .where(and(eq(agentOutboundMessages.agentId, id), eq(agentOutboundMessages.authoredBy, 'user')))
+      .orderBy(desc(agentOutboundMessages.createdAt))
+      .limit(1);
+
+    const events = await db.select({
+      type: agentMessages.type,
+      payload: agentMessages.payload,
+      createdAt: agentMessages.createdAt,
+    })
+      .from(agentMessages)
+      .where(and(eq(agentMessages.agentId, id), inArray(agentMessages.type, [...TURN_EVENT_TYPES])))
+      .orderBy(desc(agentMessages.createdAt))
+      .limit(CONVERSATION_TURN_EVENT_WINDOW);
+
+    const now = new Date();
+    return reply.send({
+      message: deriveSubjectTurnState({ subjectId: latestUserMessage?.id ?? null, handledKey: 'userMessageIds', events, now }),
+      connection: deriveSubjectTurnState({ subjectId: connectionRequestId, handledKey: 'connectionRequestIds', events, now }),
+    });
   });
 
   // ─── GET /agents/:id/activity-feed ────────────────────────────────────────

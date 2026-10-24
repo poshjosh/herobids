@@ -1069,6 +1069,14 @@ export interface AgentArtifact {
   createdAt: string;
 }
 
+/** Where a user message or connection request stands in the agent's runtime. */
+export type ConversationTurnState = 'queued' | 'working' | 'replied' | 'no_reply' | 'skipped' | 'failed' | 'stale';
+
+export interface AgentConversationTurn {
+  message: ConversationTurnState | null;
+  connection: ConversationTurnState | null;
+}
+
 export interface AgentOutboundMessage {
   id: string;
   agentId: string;
@@ -1271,6 +1279,8 @@ export const agents = {
     request<unknown[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
   messages: (id: string, limit?: number, authoredBy?: 'agent' | 'platform') =>
     request<AgentOutboundMessage[]>(`/agents/${id}/messages${buildQuery({ limit, authoredBy })}`),
+  conversationTurn: (id: string, connectionRequestId?: string) =>
+    request<AgentConversationTurn>(`/agents/${id}/conversation-turn${buildQuery({ connectionRequestId })}`),
   sendMessage: (id: string, message: string) =>
     request<unknown>(`/agents/${id}/message`, {
       method: 'POST',

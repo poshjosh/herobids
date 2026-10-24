@@ -370,13 +370,16 @@ export async function agentInteractivityRoutes(
       return reply.status(409).send({ error: 'agent_not_running', message: 'Agent is not running' });
     }
 
+    // The envelope messageId doubles as the stored row id so the runtime's tick events can name this message.
+    const envelopeMessageId = crypto.randomUUID();
+
     // Record the user's message so the conversation still shows it after reload.
-    await new AgentRepository(db).insertOutboundMessage({ agentId: id, authoredBy: 'user', body: parsed.data.message });
+    await new AgentRepository(db).insertOutboundMessage({ id: envelopeMessageId, agentId: id, authoredBy: 'user', body: parsed.data.message });
 
     // Publish to agent:outbound:{agentId} — the platform→agent channel
     const envelope = {
       schemaVersion: 'v1',
-      messageId: crypto.randomUUID(),
+      messageId: envelopeMessageId,
       correlationId: crypto.randomUUID(),
       initiatorType: 'user',
       initiatorId: request.userId,

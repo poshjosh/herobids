@@ -17,4 +17,12 @@ describe('connectionReturnPath', () => {
   it('encodes characters that would change the path', () => {
     expect(connectionReturnPath('a/b?c')).toBe('/agents/a%2Fb%3Fc');
   });
+
+  it('carries the approved request id so the agent page can follow the resumption', () => {
+    expect(connectionReturnPath('agent-123', { connectedRequestId: 'req-1' })).toBe('/agents/agent-123?connected=req-1');
+  });
+
+  it('does not carry a request id for a closed or declined connection', () => {
+    expect(connectionReturnPath('agent-123', { connectedRequestId: null })).toBe('/agents/agent-123');
+  });
 });

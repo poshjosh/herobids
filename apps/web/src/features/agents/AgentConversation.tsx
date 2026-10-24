@@ -7,6 +7,8 @@ import { Button, Card, SectionLabel } from '../../lib/ui.js';
 const RUNNING_STATUSES = ['active', 'starting', 'paused', 'unhealthy'];
 
 export const CONVERSATION_POLL_MS = 3000;
+export const STILL_STARTING_AFTER_MS = 15_000;
+export const STARTING_STUCK_AFTER_MS = 120_000;
 
 const HINT_STYLE: CSSProperties = { color: 'var(--color-text-muted)', fontSize: '0.8125rem' };
 
@@ -14,6 +16,17 @@ const HINT_STYLE: CSSProperties = { color: 'var(--color-text-muted)', fontSize: 
 function isSafetyAlert(message: AgentOutboundMessage): boolean {
   return message.messageClass === null || message.messageClass === undefined || message.messageClass === 'alert';
 }
+
+const SPINNER_STYLE: CSSProperties = {
+  display: 'inline-block',
+  flexShrink: 0,
+  width: '14px',
+  height: '14px',
+  border: '2px solid var(--color-surface-3)',
+  borderTopColor: 'var(--color-brand)',
+  borderRadius: '50%',
+  animation: 'spin 0.7s linear infinite',
+};
 
 const NOTICE_STYLE: CSSProperties = {
   display: 'flex',
@@ -55,6 +68,28 @@ export function isSendShortcut(key: string, shiftKey: boolean, isComposing: bool
   return key === 'Enter' && !shiftKey && !isComposing;
 }
 
+export function startingPhase(elapsedMs: number): 'starting' | 'slow' | 'stuck' {
+  if (elapsedMs >= STARTING_STUCK_AFTER_MS) return 'stuck';
+  if (elapsedMs >= STILL_STARTING_AFTER_MS) return 'slow';
+  return 'starting';
+}
+
+/** Seconds since the agent entered `starting`; resets each time it starts again. */
+function useStartingElapsed(isStarting: boolean): number {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isStarting) {
+      setElapsed(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setElapsed(0);
+    const timer = setInterval(() => setElapsed(Date.now() - startedAt), 1000);
+    return () => clearInterval(timer);
+  }, [isStarting]);
+  return elapsed;
+}
+
 export interface AgentConversationViewProps {
   agentName: string;
   messages: AgentOutboundMessage[];
@@ -66,14 +101,24 @@ export interface AgentConversationViewProps {
   isSending: boolean;
   onDraftChange: (value: string) => void;
   onSend: () => void;
+  /** The agent is working on a message; shows a typing indicator in the thread. */
+  isAwaitingReply?: boolean;
+  /** Explains a return from an approved connection request while the agent resumes. */
+  connectionBanner?: boolean;
+  onRetry?: () => void;
 }
 
 export function AgentConversationView({
   agentName, messages, canSend, isStarting = false, showIntro = false, onDismissIntro, draft, isSending, onDraftChange, onSend,
+  isAwaitingReply = false, connectionBanner = false, onRetry,
 }: AgentConversationViewProps) {
   const intl = useIntl();
   const trimmed = draft.trim();
   const listRef = useRef<HTMLDivElement>(null);
+  const elapsed = useStartingElapsed(isStarting);
+  const phase = startingPhase(elapsed);
+  // Messages can be queued while the agent starts; the agent picks them up once it is ready.
+  const canCompose = canSend || isStarting;
   // API returns newest first, so messages[0] is the latest; keep the list pinned to it.
   const newestId = messages[0]?.id;
   useEffect(() => {
@@ -81,15 +126,34 @@ export function AgentConversationView({
     if (list) {
       list.scrollTop = list.scrollHeight;
     }
-  }, [messages.length, newestId]);
+  }, [messages.length, newestId, isAwaitingReply]);
   return (
     <Card>
-      <div style={{ border: canSend || isStarting ? '1.5px solid var(--color-brand)' : undefined, borderRadius: '10px', padding: '2px' }}>
+      <div style={{ border: canCompose ? '1.5px solid var(--color-brand)' : undefined, borderRadius: '10px', padding: '2px' }}>
       <SectionLabel prominent>{intl.formatMessage({ id: 'agentDetail.conversation.title' }, { name: agentName })}</SectionLabel>
-      {isStarting && (
+      {connectionBanner && (
         <p role="status" style={{ ...NOTICE_STYLE, margin: '0 0 12px' }}>
-          <span>{intl.formatMessage({ id: 'agentDetail.conversation.starting' })}</span>
+          <span>{intl.formatMessage({ id: 'agentDetail.conversation.connectionApproved' }, { name: agentName })}</span>
         </p>
+      )}
+      {isStarting && (
+        <div role="status" style={{ ...NOTICE_STYLE, margin: '0 0 12px' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span aria-hidden="true" style={SPINNER_STYLE} />
+            <span>
+              {intl.formatMessage({
+                id: phase === 'stuck'
+                  ? 'agentDetail.conversation.startingStuck'
+                  : phase === 'slow' ? 'agentDetail.conversation.startingSlow' : 'agentDetail.conversation.starting',
+              })}
+            </span>
+          </span>
+          {phase === 'stuck' && onRetry && (
+            <Button variant="ghost" size="sm" onClick={onRetry}>
+              {intl.formatMessage({ id: 'agentDetail.conversation.retry' })}
+            </Button>
+          )}
+        </div>
       )}
       {showIntro && canSend && (
         <div role="note" style={{ ...NOTICE_STYLE, margin: '0 0 12px', alignItems: 'flex-start' }}>
@@ -116,7 +180,7 @@ export function AgentConversationView({
           )}
         </div>
       )}
-      {messages.length === 0 ? (
+      {messages.length === 0 && !isAwaitingReply ? (
         <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.empty' })}</p>
       ) : (
         <div ref={listRef} style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto', overflowX: 'hidden' }}>
@@ -153,28 +217,50 @@ export function AgentConversationView({
               </div>
             );
           })}
+          {isAwaitingReply && (
+            <div role="status" aria-live="polite" style={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                borderRadius: '12px',
+                fontSize: '0.875rem',
+                color: 'var(--color-text-muted)',
+                background: 'var(--color-surface-2)',
+              }}>
+                <span aria-hidden="true" style={{ display: 'inline-flex', gap: '3px' }}>
+                  {[0, 1, 2].map((dot) => (
+                    <span key={dot} style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', animation: `pulse 1.2s ease-in-out ${dot * 0.2}s infinite` }} />
+                  ))}
+                </span>
+                <span>{intl.formatMessage({ id: 'agentDetail.conversation.thinking' }, { name: agentName })}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
-      {canSend ? null : <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.notRunning' })}</p>}
+      {isStarting ? <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.queuedHint' })}</p> : null}
+      {canSend || isStarting ? null : <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.notRunning' })}</p>}
       <div
         style={{
           border: '1.5px solid var(--input-border-color)',
           borderRadius: '10px',
           background: 'var(--color-surface-3)',
           overflow: 'hidden',
-          opacity: canSend ? 1 : 0.6,
+          opacity: canCompose ? 1 : 0.6,
         }}
       >
         <textarea
           aria-label={intl.formatMessage({ id: 'agentDetail.conversation.placeholder' })}
           placeholder={intl.formatMessage({ id: 'agentDetail.conversation.placeholder' })}
           value={draft}
-          disabled={!canSend || isSending}
+          disabled={!canCompose || isSending}
           maxLength={4000}
           rows={3}
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={(event) => {
-            if (isSendShortcut(event.key, event.shiftKey, event.nativeEvent.isComposing) && canSend && !isSending && trimmed.length > 0) {
+            if (isSendShortcut(event.key, event.shiftKey, event.nativeEvent.isComposing) && canCompose && !isSending && trimmed.length > 0) {
               event.preventDefault();
               onSend();
             }
@@ -205,7 +291,7 @@ export function AgentConversationView({
           }}
         >
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{draft.length}/4000</span>
-          <Button onClick={onSend} disabled={!canSend || isSending || trimmed.length === 0}>
+          <Button onClick={onSend} disabled={!canCompose || isSending || trimmed.length === 0}>
             {intl.formatMessage({ id: 'agentDetail.conversation.send' })}
           </Button>
         </div>
@@ -215,7 +301,13 @@ export function AgentConversationView({
   );
 }
 
-export function AgentConversation({ agentId, agentName, status }: { agentId: string; agentName: string; status: string }) {
+export function AgentConversation({ agentId, agentName, status, connectionRequestId = null }: {
+  agentId: string;
+  agentName: string;
+  status: string;
+  /** Set when returning from an approved connection request; the agent is resuming for it. */
+  connectionRequestId?: string | null;
+}) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState('');
   const introKey = `${CONVERSATION_INTRO_STORAGE_PREFIX}${agentId}`;
@@ -226,26 +318,52 @@ export function AgentConversation({ agentId, agentName, status }: { agentId: str
       return false;
     }
   });
+  const conversable = isAgentConversable(status);
   const messagesQuery = useQuery({
     queryKey: ['agent-conversation', agentId],
     queryFn: () => agentsApi.messages(agentId, 50),
     enabled: agentId.length > 0,
-    refetchInterval: isAgentConversable(status) ? CONVERSATION_POLL_MS : false,
+    refetchInterval: conversable ? CONVERSATION_POLL_MS : false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
+  // Server-derived from the runtime's tick events, so it reflects when the agent actually picks the request up.
+  const turnQuery = useQuery({
+    queryKey: ['agent-conversation-turn', agentId, connectionRequestId],
+    queryFn: () => agentsApi.conversationTurn(agentId, connectionRequestId ?? undefined),
+    enabled: agentId.length > 0,
+    refetchInterval: conversable ? CONVERSATION_POLL_MS : false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
   const sendMutation = useMutation({
     mutationFn: (message: string) => agentsApi.sendMessage(agentId, message),
     onSuccess: async () => {
       setDraft('');
-      await queryClient.invalidateQueries({ queryKey: ['agent-conversation', agentId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['agent-conversation', agentId] }),
+        queryClient.invalidateQueries({ queryKey: ['agent-conversation-turn', agentId] }),
+      ]);
     },
   });
+
+  const turn = conversable ? turnQuery.data : undefined;
+  const awaitingReply = turn?.message === 'working' || turn?.connection === 'working';
+  const connectionPending = connectionRequestId !== null && (turn?.connection === 'queued' || turn?.connection === 'working');
 
   return (
     <AgentConversationView
       agentName={agentName}
       messages={messagesQuery.data ?? []}
-      canSend={isAgentConversable(status)}
+      canSend={conversable}
       isStarting={status === 'starting'}
+      isAwaitingReply={awaitingReply}
+      connectionBanner={connectionPending}
+      onRetry={() => {
+        void queryClient.invalidateQueries({ queryKey: ['agents', agentId] });
+        void queryClient.invalidateQueries({ queryKey: ['agent-conversation', agentId] });
+        void queryClient.invalidateQueries({ queryKey: ['agent-conversation-turn', agentId] });
+      }}
       showIntro={!introDismissed}
       onDismissIntro={() => {
         try {

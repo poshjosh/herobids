@@ -195,6 +195,8 @@ export interface InsertAgentArtifact {
 // --- Agent Outbound Message ---
 
 export interface InsertAgentOutboundMessage {
+  /** Optional row id; the user-message path reuses the envelope messageId so runtime events can reference it. */
+  id?: string;
   agentId: string;
   sessionId?: string;
   /** 'agent' | 'platform' */
@@ -670,7 +672,7 @@ export class AgentRepository {
   // --- Agent Outbound Messages ---
 
   async insertOutboundMessage(input: InsertAgentOutboundMessage): Promise<string> {
-    const id = crypto.randomUUID();
+    const id = input.id ?? crypto.randomUUID();
     await this.db.insert(agentOutboundMessages).values({
       id,
       agentId: input.agentId,

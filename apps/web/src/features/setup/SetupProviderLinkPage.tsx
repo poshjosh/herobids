@@ -20,7 +20,9 @@ export function SetupProviderLinkPage() {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [setupResult, setSetupResult] = useState<ProviderSetupResult | null>(null);
   const ran = useRef(false);
-  const returnPath = connectionReturnPath(searchParams.get('agentId'));
+  const agentId = searchParams.get('agentId');
+  const returnPath = connectionReturnPath(agentId);
+  const approvedReturnPath = connectionReturnPath(agentId, { connectedRequestId: searchParams.get('requestId') });
 
   useEffect(() => {
     if (ran.current) return;
@@ -101,7 +103,7 @@ export function SetupProviderLinkPage() {
             Return to Telegram and use /connections to see your new connection, then /connect &lt;agent&gt; &lt;id&gt; to assign it.
           </div>
           <button
-            onClick={() => navigate(returnPath, { replace: true })}
+            onClick={() => navigate(approvedReturnPath, { replace: true })}
             style={{
               background: 'var(--color-brand)',
               color: '#fff',
@@ -138,7 +140,7 @@ export function SetupProviderLinkPage() {
               requestId={connectionRequest.requestId}
               provider={connectionRequest.provider}
               agentName={connectionRequest.agentName}
-              onDone={() => navigate(returnPath, { replace: true })}
+              onDone={() => navigate(approvedReturnPath, { replace: true })}
             />
           </div>
         </div>

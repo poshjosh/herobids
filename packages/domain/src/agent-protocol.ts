@@ -447,6 +447,7 @@ export const MARKET_MONITOR_MESSAGE_TYPES = {
 export const AGENT_RUNTIME_ACTIVITY_TYPES = {
   TICK_STARTED: 'agent.tick.started',
   TICK_SKIPPED: 'agent.tick.skipped',
+  TICK_COMPLETED: 'agent.tick.completed',
   SCOUT_HELD: 'agent.scout.held',
   SCOUT_ESCALATED: 'agent.scout.escalated',
   LLM_DISPATCH: 'agent.llm.dispatch',
@@ -462,8 +463,18 @@ export const TickStartedPayloadSchema = z.object({
   trigger: z.string().min(1),
   positionSide: z.string().optional(),
   hasWakeSignal: z.boolean(),
+  /** Envelope ids of the user messages this tick handles. */
+  userMessageIds: z.array(z.string().min(1)).optional(),
+  /** Request ids of the connection wakes this tick handles. */
+  connectionRequestIds: z.array(z.string().min(1)).optional(),
 });
 export type TickStartedPayload = z.infer<typeof TickStartedPayloadSchema>;
+
+export const TickCompletedPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  outcome: z.enum(['replied', 'no_reply', 'failed']),
+});
+export type TickCompletedPayload = z.infer<typeof TickCompletedPayloadSchema>;
 
 export const TickSkippedPayloadSchema = z.object({
   tickId: z.string().min(1),
@@ -629,6 +640,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE]: AgentWakePayloadSchema,
   [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED]: TickStartedPayloadSchema,
   [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED]: TickSkippedPayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_COMPLETED]: TickCompletedPayloadSchema,
   [AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD]: ScoutHeldPayloadSchema,
   [AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_ESCALATED]: ScoutEscalatedPayloadSchema,
   [AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH]: LlmDispatchPayloadSchema,

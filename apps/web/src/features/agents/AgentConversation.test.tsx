@@ -1,7 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentConversationView, formatMessageTime, isAgentConversable, isSendShortcut } from './AgentConversation.js';
+import {
+  AgentConversationView,
+  formatMessageTime,
+  isAgentConversable,
+  isSendShortcut,
+  startingPhase,
+} from './AgentConversation.js';
 import type { AgentOutboundMessage } from '../../lib/api-client.js';
 
 const messages: AgentOutboundMessage[] = [{
@@ -23,7 +29,13 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.placeholder': 'Message your agent',
   'agentDetail.conversation.send': 'Send',
   'agentDetail.conversation.empty': 'No messages yet.',
-  'agentDetail.conversation.starting': 'Starting your agent… it will be ready to chat in a moment.',
+  'agentDetail.conversation.starting': 'Starting your agent…',
+  'agentDetail.conversation.startingSlow': 'Still starting… this usually takes under a minute.',
+  'agentDetail.conversation.startingStuck': 'This is taking longer than expected.',
+  'agentDetail.conversation.retry': 'Retry',
+  'agentDetail.conversation.queuedHint': 'Your message will be delivered as soon as your agent is ready.',
+  'agentDetail.conversation.thinking': '{name} is thinking…',
+  'agentDetail.conversation.connectionApproved': 'Connection approved. {name} is picking up where you left off…',
   'agentDetail.conversation.intro': 'Tell your agent what to do by chatting with it on Telegram (if configured) or directly here, just like you would a human employee or personal assistant.',
   'agentDetail.conversation.introClose': 'Close',
   'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
@@ -64,6 +76,21 @@ describe('isSendShortcut', () => {
 
   it('does not send on Enter while an IME composition is open', () => {
     expect(isSendShortcut('Enter', false, true)).toBe(false);
+  });
+});
+
+describe('startingPhase', () => {
+  it('shows the plain starting message for the first 15 seconds', () => {
+    expect(startingPhase(0)).toBe('starting');
+    expect(startingPhase(14_999)).toBe('starting');
+  });
+
+  it('switches to the slow message at 15 seconds', () => {
+    expect(startingPhase(15_000)).toBe('slow');
+  });
+
+  it('offers a retry once the agent has been starting for two minutes', () => {
+    expect(startingPhase(120_000)).toBe('stuck');
   });
 });
 
@@ -141,6 +168,25 @@ describe('AgentConversationView', () => {
 
   it('shows the starting notice while the agent is starting', () => {
     expect(render({ isStarting: true, canSend: false })).toContain('Starting your agent');
+  });
+
+  it('keeps the composer enabled and says the message will be delivered once the agent is ready', () => {
+    const html = render({ isStarting: true, canSend: false, draft: 'Watch BTC' });
+
+    expect(html).toContain('Your message will be delivered as soon as your agent is ready.');
+    expect(html).not.toContain('disabled');
+  });
+
+  it('shows a typing indicator naming the agent while it works on a message', () => {
+    expect(render({ isAwaitingReply: true })).toContain('Tom is thinking…');
+  });
+
+  it('does not show a typing indicator when no reply is awaited', () => {
+    expect(render()).not.toContain('is thinking');
+  });
+
+  it('explains the return from an approved connection while the agent resumes', () => {
+    expect(render({ connectionBanner: true })).toContain('Connection approved. Tom is picking up where you left off…');
   });
 
   it('shows the post-start intro only when the agent can receive messages and it has not been dismissed', () => {

@@ -2247,6 +2247,8 @@ let running = true;
 let tickInFlight = false;
 /** Correlation ID for activity events within the current tick — set at the start of each tick. */
 let currentTickId = '';
+/** The tick in flight, set once it starts; runTrackedActiveTick reads it to emit agent.tick.completed. */
+let activeTick: { tickId: string; replied: boolean } | null = null;
 let previousContextHash: string | null = null;
 let previousFullUserContext: string | null = null;
 let effectiveTickIntervalMs = costProfile.tickIntervalMs;
@@ -2518,7 +2520,7 @@ async function runTick(): Promise<void> {
         logger.info({ heldMessages: heldPausedMessages.size }, 'Agent resumed — running full evaluation with messages held during pause');
         resumedPendingFullEvaluation = true;
       }
-      await runActiveTick();
+      await runTrackedActiveTick();
     },
     isSessionExpired: () => sandboxEnforcer.isExpired(SESSION_ID!),
     shutdownExpired: () => shutdown('wall_clock_expired'),
@@ -2543,6 +2545,24 @@ async function runTick(): Promise<void> {
     onHeldOverflow: (droppedOverflow) => logger.warn({ droppedOverflow, heldSize: heldPausedMessages.size }, 'Held-message queue overflow while paused — dropped oldest non-priority messages'),
     onPausedReadError: (err) => logger.warn({ err }, 'Failed to read outbound messages while paused'),
   });
+}
+
+/** Runs one active tick and emits agent.tick.completed for the tick it started, including on failure. */
+async function runTrackedActiveTick(): Promise<void> {
+  let failed = false;
+  try {
+    await runActiveTick();
+  } catch (err) {
+    failed = true;
+    throw err;
+  } finally {
+    const tick: { tickId: string; replied: boolean } | null = activeTick;
+    if (tick) {
+      const outcome = failed ? 'failed' : tick.replied ? 'replied' : 'no_reply';
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_COMPLETED, { tickId: tick.tickId, outcome });
+    }
+    activeTick = null;
+  }
 }
 
 async function runActiveTick(): Promise<void> {
@@ -2865,12 +2885,23 @@ async function runActiveTick(): Promise<void> {
       logger.info({ tickCount }, 'Processing market wake signal');
     }
 
+    // Lets the platform match this tick to the user messages and connection wakes it handles.
+    const userMessageIds = incomingMessages
+      .filter((message) => isUserMessageType(message['type']))
+      .map((message) => message['messageId'])
+      .filter((messageId): messageId is string => typeof messageId === 'string');
+    const connectionRequestIds = connectionTake.connection
+      .map((entry) => (entry.context as { requestId?: unknown } | null)?.requestId)
+      .filter((requestId): requestId is string => typeof requestId === 'string');
     emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED, {
       tickId,
       trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
       positionSide: sessionMetrics.lastPositionSide ?? undefined,
       hasWakeSignal: tickGateState.hasWakeSignal,
+      userMessageIds,
+      connectionRequestIds,
     });
+    activeTick = { tickId, replied: false };
 
     let skipDecision: TickSkipDecision;
     // B2 RE-POINT 1: when the Traderton read boundary is configured, the regime
@@ -4078,6 +4109,7 @@ async function runActiveTick(): Promise<void> {
           }
           if (toolCall.name === 'send_message' && !toolResultIndicatesFailure(toolResult)) {
             judgeSentReply = true;
+            if (activeTick) activeTick.replied = true;
           }
           // ── Conversation state: advance the answered-up-to marker ───────
           // A successful send_message marks all user messages up to this tick as
