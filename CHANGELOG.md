@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Web chat typing indicator ("<agent> is thinking…") while the agent works on a message. It follows the runtime's tick events, so it stops when the agent replies, skips the tick, or fails.
+- Notification prompt after creating an agent, shown only if this browser is not subscribed and the user has not switched notifications off. Dismiss with ✕.
+- Notification choice saved in user settings (`notifications.push`). Settings keeps it in sync when notifications are turned on or off.
+- Tick turn events (`agent.tick.completed`, and user message and connection request ids on `agent.tick.started`), and `GET /agents/:id/conversation-turn`.
+- Connection-approved banner with a spinner on the agent page while the agent resumes the request.
+- Agent page shows a starting spinner, elapsed-time messages, and a retry action when the agent stays in `starting`. Messages can be typed and queued while the agent starts.
+- Typing diagnostics: info logs when a Telegram typing indicator starts and when a typing action is sent.
+
+### Changed
+
+- Conversation chat is edge to edge on mobile, and message bubbles use 90% of the width there.
+- Push opt-in copy now reads "Get a notification when your agent replies or asks you a question."
+- User messages are stored with their envelope message id, so runtime events can reference them.
+
+### Fixed
+
+- Billing warnings no longer end the web typing indicator. A tick that logs a soft-limit warning and then runs the LLM is treated as having run.
+
 ## v0.7.9 - 2026-10-25
 
 ## v0.7.8 - 2026-10-24

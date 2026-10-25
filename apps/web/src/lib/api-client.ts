@@ -203,6 +203,7 @@ export interface UserNotificationPreferences {
   };
   notifications?: {
     emailFallback?: { enabled: boolean };
+    push?: { enabled: boolean; decidedAt: string };
   };
 }
 
@@ -281,7 +282,7 @@ export const auth = {
       body: JSON.stringify({ email, ...(username ? { username } : {}), ...(next ? { next } : {}) }),
     }),
   me: () => request<MeResponse>('/auth/me'),
-  updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } }; notifications?: { emailFallback?: { enabled: boolean } } } | null }) =>
+  updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } }; notifications?: { emailFallback?: { enabled: boolean }; push?: { enabled: boolean } } } | null }) =>
     request<MeResponse>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 };

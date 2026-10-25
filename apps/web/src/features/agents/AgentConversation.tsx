@@ -128,13 +128,16 @@ export function AgentConversationView({
     }
   }, [messages.length, newestId, isAwaitingReply]);
   return (
-    <Card>
+    <Card className="agent-conversation-card">
       <div style={{ border: canCompose ? '1.5px solid var(--color-brand)' : undefined, borderRadius: '10px', padding: '2px' }}>
       <SectionLabel prominent>{intl.formatMessage({ id: 'agentDetail.conversation.title' }, { name: agentName })}</SectionLabel>
       {connectionBanner && (
-        <p role="status" style={{ ...NOTICE_STYLE, margin: '0 0 12px' }}>
-          <span>{intl.formatMessage({ id: 'agentDetail.conversation.connectionApproved' }, { name: agentName })}</span>
-        </p>
+        <div role="status" style={{ ...NOTICE_STYLE, margin: '0 0 12px' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span aria-hidden="true" style={SPINNER_STYLE} />
+            <span>{intl.formatMessage({ id: 'agentDetail.conversation.connectionApproved' }, { name: agentName })}</span>
+          </span>
+        </div>
       )}
       {isStarting && (
         <div role="status" style={{ ...NOTICE_STYLE, margin: '0 0 12px' }}>
@@ -189,8 +192,7 @@ export function AgentConversationView({
             const fromUser = message.authoredBy === 'user';
             return (
               <div key={message.id} style={{ display: 'flex', justifyContent: fromUser ? 'flex-end' : 'flex-start' }}>
-                <div style={{
-                  maxWidth: '80%',
+                <div className="agent-message-bubble" style={{
                   padding: '8px 12px',
                   borderRadius: '12px',
                   fontSize: '0.875rem',

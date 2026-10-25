@@ -974,7 +974,7 @@ export const messages: Record<string, string> = {
 
   // Web Push opt-in (081 W8)
   'push.optIn.title': 'الإشعارات',
-  'push.optIn.ready': 'احصل على إشعار عندما يرد وكيل أو يطرح عليك سؤالاً. لا تتضمن الإشعارات نص الرسائل أبداً.',
+  'push.optIn.ready': 'احصل على إشعار عندما يرد وكيلك أو يطرح عليك سؤالاً.',
   'push.optIn.enable': 'تفعيل الإشعارات',
   'push.optIn.working': 'جارٍ العمل…',
   'push.optIn.subscribed': 'الإشعارات مفعلة لهذا المتصفح. عند النقر على إشعار يُفتح الوكيل.',

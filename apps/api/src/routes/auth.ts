@@ -38,6 +38,7 @@ const NotificationPreferencesInputSchema = z.object({
   }).optional(),
   notifications: z.object({
     emailFallback: z.object({ enabled: z.boolean() }).optional(),
+    push: z.object({ enabled: z.boolean() }).optional(),
   }).optional(),
 });
 

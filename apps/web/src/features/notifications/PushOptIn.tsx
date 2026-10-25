@@ -103,7 +103,8 @@ export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onC
 }
 
 /** Opt-in for Web Push on this device. Renders nothing when the server has the feature off. */
-export function PushOptIn() {
+/** onChange reports the saved-by-user choice: true after a successful subscribe, false after turning off. */
+export function PushOptIn({ onChange }: { onChange?: (enabled: boolean) => void } = {}) {
   const config = useQuery({
     queryKey: ['push', 'config'],
     queryFn: () => push.config(),
@@ -144,6 +145,7 @@ export function PushOptIn() {
 
   async function enableAndReport(): Promise<void> {
     const outcome: PushEnableOutcome = await enablePush(createBrowserPushDeps());
+    if (outcome.kind === 'subscribed') onChange?.(true);
     if (outcome.kind === 'failed') setErrorCode(outcome.code);
     if (outcome.kind === 'unavailable') setErrorCode(PUSH_ERROR_CODES.unavailable);
   }
@@ -158,7 +160,10 @@ export function PushOptIn() {
       busy={busy}
       errorCode={errorCode}
       onEnable={() => void runAction(enableAndReport, PUSH_ERROR_CODES.subscribeFailed)}
-      onDisable={() => void runAction(() => disablePush(createBrowserPushDeps()), PUSH_ERROR_CODES.revokeFailed)}
+      onDisable={() => void runAction(async () => {
+        await disablePush(createBrowserPushDeps());
+        onChange?.(false);
+      }, PUSH_ERROR_CODES.revokeFailed)}
       onClearAndRetry={() => void runAction(async () => {
         await clearBrowserSubscription(createBrowserPushDeps());
         await enableAndReport();

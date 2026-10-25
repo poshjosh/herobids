@@ -12,6 +12,7 @@ import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, f
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentConversation } from './AgentConversation.js';
+import { NotificationSetupPrompt } from '../notifications/NotificationSetupPrompt.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
@@ -400,6 +401,8 @@ export function AgentDetailPage() {
             </div>
           </details>
         </Card>
+
+        <NotificationSetupPrompt justCreated={Boolean((location.state as { justCreated?: boolean } | null)?.justCreated)} />
 
         <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} connectionRequestId={connectionRequestId} />
 

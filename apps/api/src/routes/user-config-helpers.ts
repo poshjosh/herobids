@@ -4,6 +4,8 @@ export type StoredNotificationPreferences = {
   };
   notifications?: {
     emailFallback?: { enabled: boolean };
+    /** The user's answer to the post-creation notification prompt; decidedAt is set once and never changes. */
+    push?: { enabled: boolean; decidedAt: string };
   };
 } | null;
 
@@ -13,6 +15,7 @@ type NotificationPreferencesInput = {
   };
   notifications?: {
     emailFallback?: { enabled: boolean };
+    push?: { enabled: boolean };
   };
 } | null;
 
@@ -27,7 +30,8 @@ export function resolveNotificationPreferences(
 ): StoredNotificationPreferences {
   const emailInput = input.sendMessage?.email;
   const emailFallbackInput = input.notifications?.emailFallback;
-  if (!emailInput && !emailFallbackInput) {
+  const pushInput = input.notifications?.push;
+  if (!emailInput && !emailFallbackInput && !pushInput) {
     return current ?? null;
   }
 
@@ -54,6 +58,16 @@ export function resolveNotificationPreferences(
     next.notifications = {
       ...current?.notifications,
       emailFallback: { ...current?.notifications?.emailFallback, enabled: emailFallbackInput.enabled },
+    };
+  }
+
+  if (pushInput) {
+    next.notifications = {
+      ...next.notifications,
+      push: {
+        enabled: pushInput.enabled,
+        decidedAt: current?.notifications?.push?.decidedAt ?? new Date().toISOString(),
+      },
     };
   }
 

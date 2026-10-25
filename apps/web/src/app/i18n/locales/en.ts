@@ -979,7 +979,7 @@ export const messages: Record<string, string> = {
 
   // Web Push opt-in (081 W8)
   'push.optIn.title': 'Notifications',
-  'push.optIn.ready': 'Get a notification when an agent replies or asks you a question. Notifications never include message text.',
+  'push.optIn.ready': 'Get a notification when your agent replies or asks you a question.',
   'push.optIn.enable': 'Turn on notifications',
   'push.optIn.working': 'Working…',
   'push.optIn.subscribed': 'Notifications are on for this browser. Tapping one opens the agent.',

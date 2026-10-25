@@ -311,9 +311,27 @@ textarea:not(:placeholder-shown) {
   max-width: 1200px;
 }
 
+.agent-message-bubble {
+  max-width: 80%;
+}
+
 @media (max-width: 768px) {
   .page-shell-responsive {
     padding: 16px;
+  }
+
+  /* Edge to edge within the page shell's 16px padding. Card sets padding, border and radius inline, hence !important. */
+  .agent-conversation-card {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding: 12px !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-radius: 0 !important;
+  }
+
+  .agent-message-bubble {
+    max-width: 90%;
   }
 
   /* ─── Brand Logo Responsive ──────────────────────────────────────────────────

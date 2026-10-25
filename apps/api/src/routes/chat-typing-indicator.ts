@@ -15,6 +15,7 @@ export interface ChatTypingStopStore {
 }
 
 export interface ChatTypingLogger {
+  info?(context: Record<string, unknown>, message: string): void;
   warn(context: Record<string, unknown>, message: string): void;
 }
 
@@ -47,8 +48,9 @@ export class ChatTypingIndicator {
   ) {}
 
   start(address: ChatAddress): void {
-    if (this.disposed) return;
     const sender = this.senders.get(address.provider);
+    this.logger?.info?.({ provider: address.provider, disposed: this.disposed, hasSender: Boolean(sender?.sendTyping) }, 'Typing indicator start requested');
+    if (this.disposed) return;
     if (!sender?.sendTyping) return;
 
     const key = `${address.provider}:${address.address}`;
@@ -133,6 +135,7 @@ export class ChatTypingIndicator {
     try {
       const result = await sendTyping(address);
       if (!result.ok) this.logger?.warn({ provider: address.provider, code: result.error.code }, 'Typing indicator failed');
+      else this.logger?.info?.({ provider: address.provider }, 'Typing action sent');
     } catch (error) {
       this.logger?.warn({ provider: address.provider, error: error instanceof Error ? error.message : String(error) }, 'Typing indicator failed');
     }

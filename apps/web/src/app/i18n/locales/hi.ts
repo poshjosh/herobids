@@ -974,7 +974,7 @@ export const messages: Record<string, string> = {
 
   // Web Push opt-in (081 W8)
   'push.optIn.title': 'सूचनाएँ',
-  'push.optIn.ready': 'जब कोई एजेंट जवाब दे या आपसे प्रश्न पूछे, तब सूचना पाएँ। सूचनाओं में संदेश का पाठ कभी शामिल नहीं होता।',
+  'push.optIn.ready': 'जब आपका एजेंट जवाब दे या आपसे प्रश्न पूछे, तब सूचना पाएँ।',
   'push.optIn.enable': 'सूचनाएँ चालू करें',
   'push.optIn.working': 'प्रक्रिया जारी है…',
   'push.optIn.subscribed': 'इस ब्राउज़र के लिए सूचनाएँ चालू हैं। सूचना पर टैप करने से एजेंट खुलता है।',

@@ -113,6 +113,14 @@ export function SettingsPage() {
     },
   });
 
+  const pushChoiceMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      authApi.updateMe({ notificationPreferences: { notifications: { push: { enabled } } } }),
+    onSuccess: (updated) => {
+      qc.setQueryData(['me'], updated);
+    },
+  });
+
   const localeMutation = useMutation({
     mutationKey: ['locale'],
     mutationFn: (nextLocale: SupportedLocale) => authApi.updateMe({ preferredLocale: nextLocale }),
@@ -453,7 +461,7 @@ export function SettingsPage() {
           </form>
         </Card>
 
-        <PushOptIn />
+        <PushOptIn onChange={(enabled) => pushChoiceMutation.mutate(enabled)} />
 
         <EmailFallbackToggle />
       </div>
