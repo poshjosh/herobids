@@ -292,6 +292,8 @@ const agentRuntimeLauncher = await (async () => {
     // Pass shared-service cluster addresses so agent containers on
     // remote Nomad nodes can reach Redis/Postgres via private IPs.
     sharedServices: appConfig.sharedServices,
+    apiBaseUrl: appConfig.sharedServices.apiBaseUrl,
+    agentPlatformTimeoutMs: appConfig.agentCreation.platformApiTimeoutMs,
     ...(appConfig.externalSkills.enabled
       ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
       : {}),

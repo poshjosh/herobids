@@ -81,6 +81,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   SHARED_POSTGRES_USER: { path: 'sharedServices.postgresUser', type: 'string' },
   SHARED_POSTGRES_PASSWORD: { path: 'sharedServices.postgresPassword', type: 'string' },
   SHARED_POSTGRES_DATABASE: { path: 'sharedServices.postgresDatabase', type: 'string' },
+  SHARED_API_BASE_URL: { path: 'sharedServices.apiBaseUrl', type: 'string' },
   // Nomad
   NOMAD_TOKEN: { path: 'nomad.token', type: 'string' },
   NOMAD_ADDR: { path: 'nomad.addr', type: 'string' },

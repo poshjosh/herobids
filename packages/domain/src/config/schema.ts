@@ -329,7 +329,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     maxHistoryTokens: 20_000,
     maxRecentToolMessages: 3,
     maxToolResultChars: 2_000,
-    maxVisibleToolSchemas: 32,
+    // Raised from 32: base plus the common system skills now expose 35 tools, including the 5 agent-platform tools.
+    maxVisibleToolSchemas: 40,
     maxContextBlockChars: 2_000,
     toolResultFullRetentionTurns: 2,
     toolResultMaxStaleChars: 250,
@@ -560,6 +561,8 @@ export const AgentCreationConfigSchema = z.object({
   creatorMessageRatePerMinute: z.number().int().min(0).default(10),
   /** Max number of generations below a user-created agent. */
   maxAgentDepth: z.number().int().min(0).default(6),
+  /** Timeout in ms for each agent-container call to the platform API (create, allowance, creator actions). */
+  platformApiTimeoutMs: z.number().int().min(100).default(10_000),
 }).default({});
 
 export const TelegramChannelConfigSchema = z.object({
@@ -1591,6 +1594,8 @@ export const SharedServicesConfigSchema = z.object({
   postgresPassword: z.string().default('herobids'),
   /** Postgres database name for agent runtime connections. */
   postgresDatabase: z.string().default('herobids'),
+  /** Platform API base URL as reached from agent containers. Default: 'http://api:3000' (Compose service name). Override: SHARED_API_BASE_URL */
+  apiBaseUrl: z.string().url().default('http://api:3000'),
 });
 
 /** Shared-service connectivity config for agent runtimes. */

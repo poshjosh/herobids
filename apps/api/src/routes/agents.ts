@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { requireDirectChildOfActingAgent, requireUserCaller } from '../plugins/auth.js';
+import { requireDirectChildOfActingAgent, requireSelfAgentOrUser, requireUserCaller } from '../plugins/auth.js';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { TradingProfileReconciliationOutboxRepository, setTelegramChatAddress, type Database, type DatabaseTransaction } from '@herobids/db';
@@ -2545,6 +2545,32 @@ export async function agentRoutes(
       .limit(1);
 
     return reply.send({ ...agent, runtimeStatus: session?.status ?? null });
+  });
+
+  // The agent's own child allowance. An agent key may read only its own agent (requireSelfAgentOrUser);
+  // a user reads an agent they own. Counts every direct child, whatever its status.
+  app.get<{ Params: { id: string } }>('/agents/:id/child-allowance', {
+    config: { agentAccess: 'self' },
+    preHandler: requireSelfAgentOrUser,
+  }, async (request, reply) => {
+    const { id } = request.params;
+    const [agent] = await db.select({ id: agents.id, childAgentLimit: agents.childAgentLimit })
+      .from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    const [countRow] = await db.select({ childCount: sql<number>`count(*)::int` })
+      .from(agents)
+      .where(eq(agents.parentAgentId, id));
+    const childCount = countRow?.childCount ?? 0;
+    return reply.send({
+      id: agent.id,
+      childAgentLimit: agent.childAgentLimit,
+      childCount,
+      remainingChildAllowance: Math.max(0, agent.childAgentLimit - childCount),
+    });
   });
 
   // Get agent outbound messages (agent-authored + platform safety alerts).

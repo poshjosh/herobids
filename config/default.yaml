@@ -26,6 +26,7 @@ sharedServices:
   postgresUser: herobids
   postgresPassword: herobids
   postgresDatabase: herobids
+  apiBaseUrl: http://api:3000   # platform API as reached from agent containers; override: SHARED_API_BASE_URL (remote Nomad nodes need the API's private address)
 
 venues:
   hyperliquid:
@@ -97,6 +98,7 @@ agentCreation:
   agentCreateRatePerMinute: 10       # token bucket capacity and refill per minute for create_agent attempts, per user across the tree
   creatorMessageRatePerMinute: 10    # token bucket per creator-child pair, both directions
   maxAgentDepth: 6                   # max generations below a user-created agent
+  platformApiTimeoutMs: 10000        # timeout per agent-container call to the platform API (create, allowance, creator actions)
 
 # Per-tick LLM cost estimates by usage tier (USD). Derived from eval data
 # (.ignore/eval/2026/06/) — includes both input and output token costs for

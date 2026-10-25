@@ -77,6 +77,11 @@ export interface ToolContext extends TradingToolContext {
    * in the prompt for the rest of the session. Absent in contexts with no
    * external-skill support (tests, onboarding chat).
    */
+  /**
+   * Platform API client for create_agent and the creator tools. Absent when the container
+   * has no per-runtime API key or API base URL, in which case those tools are never visible.
+   */
+  agentPlatform?: import('./ports/agent-platform.js').AgentPlatformPort;
   externalSkillSession?: {
     /** Canonical refs of the agent's assigned external skills. */
     assignedRefs(): string[];
@@ -114,6 +119,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'check_regime',
   'check_watches',
   'complete_task',
+  'create_agent',
   'create_bot',
   'create_task',
   'delete_file',
@@ -123,6 +129,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'execute_shell',
   'find_instrument',
   'get_account_summary',
+  'get_child_agent_status',
   'get_analytics',
   'get_bot_status',
   'get_funding_info',
@@ -142,12 +149,14 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_skills',
   'list_tasks',
   'list_watches',
+  'message_child_agent',
   'load_skill',
   'make_http_request',
   'publish_artifact',
   'read_app_docs',
   'read_document',
   'read_file',
+  'pause_child_agent',
   'read_skill',
   'remove_skills',
   'remove_watch',
@@ -167,6 +176,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'start_bot',
   'stat_file',
   'stop_bot',
+  'stop_child_agent',
   'submit_decision',
   'watch_token',
   'write_file',
@@ -200,6 +210,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   create_bot:          { category: 'execute-trade',       description: 'Create and start a new trading bot with its own strategy and risk parameters.' },
 
   // read-database
+  get_child_agent_status: { category: 'read-database', description: 'Read the status, runtime state and child allowance of one of your direct child agents. Only works for children you created.' },
   get_analytics:       { category: 'read-database',       description: 'Get trading analytics: total trades, win rate, P&L, fees, per-bot/agent-direct breakdown.' },
   list_positions:      { category: 'read-database',       description: 'List open positions owned by this agent (bot-created + direct).' },
   list_bots:           { category: 'read-database',       description: 'List bots created by this agent, optionally filtered by creation date.' },
@@ -213,6 +224,9 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   list_providers:      { category: 'read-database',       description: 'List connection providers and show which are owned or granted to this agent.' },
   search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the system skills/platform catalog and the external skill registry.' },
   // write-database
+  create_agent:        { category: 'write-database',     description: 'Create a child agent with its own name, prompt, and skills or connections you grant from your own. The child starts stopped; the user starts it. Only available while you have child allowance.' },
+  pause_child_agent:   { category: 'write-database',     description: 'Pause one of your direct child agents. Only works for children you created.' },
+  stop_child_agent:    { category: 'write-database',     description: 'Stop one of your direct child agents. Only works for children you created.' },
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },
   adjust_bot_config:   { category: 'write-database',      description: 'Update configuration for a specific bot. Changes merged and take effect next tick.' },
@@ -264,6 +278,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   check_watches:       { category: 'write-memory',        description: 'Evaluate all active price watches against current prices. Optionally auto-remove triggered.' },
 
   // write-messaging
+  message_child_agent: { category: 'write-messaging',    description: 'Send a message to one of your direct child agents. Subject to a per-pair rate limit shared with replies.' },
   send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system. For user-directed communication only — use send_email for email delivery.' },
   send_email:          { category: 'write-messaging',     description: 'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId.' },
   publish_artifact:    { category: 'write-messaging',     description: 'Publish an artifact (analysis result, chart, report) for user review.' },

@@ -4,6 +4,7 @@ import { messagingTools } from './messaging.js';
 import { memoryTools } from './memory.js';
 import { tradingTools } from './trading.js';
 import { botManagementTools } from './bots.js';
+import { agentCreationTools } from './agent-creation.js';
 import { analyticsTools } from './analytics.js';
 import { codeTools } from './code.js';
 import { filesystemTools } from './filesystem.js';
@@ -103,6 +104,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...memoryTools,
     ...tradingTools,
     ...botManagementTools,
+    ...agentCreationTools,
     ...analyticsTools,
     ...codeTools,
     ...shellTools,

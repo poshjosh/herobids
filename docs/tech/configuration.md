@@ -114,6 +114,7 @@ Any config path can be overridden via env var. Convention: uppercase, underscore
 | `AUTH_JWT_SECRET` | `auth.jwtSecret` |
 | `GOOGLE_CLIENT_ID` | `auth.googleClientId` |
 | `NODE_ENV` | Selects which per-env YAML to merge |
+| `SHARED_API_BASE_URL` | `sharedServices.apiBaseUrl`. Platform API URL that agent containers call (default `http://api:3000`). Remote Nomad nodes need the API's private address. |
 
 For the full list, check the inline comments in `config/default.yaml` — every field that supports env override is annotated with `# override: VAR_NAME`.
 

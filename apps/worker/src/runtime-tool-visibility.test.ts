@@ -284,8 +284,8 @@ describe('tool-visibility budget for base + web-access + email + programming (WP
 
   it("the unique tool set fits within careful's maxVisibleToolSchemas", () => {
     const uniqueTools = new Set(resolvedSkills.flatMap((skill) => skill.requiredTools));
-    // base(23: +update_my_prompt, +load_skill) + web-access(+4 unique) + email(+1) + programming(+2) = 30.
-    expect(uniqueTools.size).toBe(30);
+    // base(28: 23 + create_agent, get_child_agent_status, pause/stop/message_child_agent) + web-access(+4 unique) + email(+1) + programming(+2) = 35.
+    expect(uniqueTools.size).toBe(35);
     expect(uniqueTools.size).toBeLessThanOrEqual(careful.maxVisibleToolSchemas);
   });
 

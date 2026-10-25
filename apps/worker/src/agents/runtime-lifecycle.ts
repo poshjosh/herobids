@@ -41,6 +41,10 @@ export interface AgentEnvConfig {
   externalBackendConfigJson?: string;
   /** Browser pool URL forwarded to agent containers when browser pool is enabled. */
   browserPoolUrl?: string;
+  /** Platform API base URL the agent calls for create_agent and creator tools (sharedServices.apiBaseUrl). */
+  apiBaseUrl?: string;
+  /** Timeout in ms for agent-container calls to the platform API (agentCreation.platformApiTimeoutMs). */
+  agentPlatformTimeoutMs?: number;
   /** Browserless API key forwarded to agent containers when browser pool is enabled. */
   browserPoolApiKey?: string;
   /**
@@ -111,6 +115,8 @@ export function buildAgentEnv(
 
   // Per-runtime key for calling the platform API as this agent. Only the hash is persisted.
   if (agentApiKey) envOut['AGENT_API_KEY'] = agentApiKey;
+  if (config.apiBaseUrl) envOut['API_BASE_URL'] = config.apiBaseUrl;
+  if (config.agentPlatformTimeoutMs != null) envOut['AGENT_PLATFORM_TIMEOUT_MS'] = String(config.agentPlatformTimeoutMs);
 
   // Forward NODE_ENV so agent containers inherit the worker's environment
   // classification (development → pretty logs + debug level, etc.).

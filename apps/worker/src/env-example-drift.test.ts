@@ -53,6 +53,9 @@ const IGNORED_ENV_VARS = new Set<string>([
   'AGENT_ID', // per-agent identifier injected into the container
   'AGENT_RUNTIME_CONFIG_JSON', // per-agent runtime config JSON injected by the worker
   'AGENT_WORKSPACE_ROOT', // in-container workspace path, injected by the runtime
+  'AGENT_API_KEY', // per-runtime platform API key injected by the worker; only its hash is stored
+  'API_BASE_URL', // platform API URL the agent container calls, derived from sharedServices.apiBaseUrl
+  'AGENT_PLATFORM_TIMEOUT_MS', // platform API call timeout injected from agentCreation.platformApiTimeoutMs
   'EXTERNAL_BACKEND_CONFIG_JSON', // per-agent resolved external backend (incl. HMAC secret) JSON injected by the worker
   'EXTERNAL_SKILLS_CONFIG_JSON', // per-agent external-skills config JSON injected by the worker
   'TRADING_HOURS_JSON', // per-agent trading-hours JSON injected by the worker

@@ -22,6 +22,9 @@ import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoni
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';
+import { createAgentPlatformClientFromEnv } from './agents/agent-platform-client.js';
+import { CREATE_AGENT_TOOL_NAME, CREATOR_TOOL_NAMES, isCreateAgentExposed, isCreatorToolExposed } from './tools/agent-creation.js';
+import type { AgentAllowance } from '@herobids/domain';
 import { buildIncrementalContext, estimateTokens } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
@@ -729,6 +732,33 @@ function recordToolSuccess(tool: string): void {
 
 applyToolVisibility();
 
+// create_agent and the creator tools stay hidden until the first allowance read succeeds.
+setAgentPlatformToolAvailability(null);
+
+/** Sets create_agent and the creator tools from the agent's allowance. A null allowance hides them all. */
+function setAgentPlatformToolAvailability(allowance: AgentAllowance | null): void {
+  const circuitBlockedTools = toolCircuitBreaker.getBlockedTools(tickCount);
+  toolVisibility.setToolAvailability(CREATE_AGENT_TOOL_NAME, isCreateAgentExposed(allowance), circuitBlockedTools);
+  const creatorToolsVisible = isCreatorToolExposed(allowance);
+  for (const toolName of CREATOR_TOOL_NAMES) {
+    toolVisibility.setToolAvailability(toolName, creatorToolsVisible, circuitBlockedTools);
+  }
+}
+
+/** Reads this agent's child allowance and applies tool exposure for the tick. A failed read hides the tools (fail closed). */
+async function refreshAgentPlatformToolExposure(): Promise<void> {
+  let allowance: AgentAllowance | null = null;
+  if (agentPlatformClient) {
+    const result = await agentPlatformClient.getOwnAllowance();
+    if (result.ok) {
+      allowance = result.data;
+    } else {
+      logger.warn({ code: result.error.code }, 'Child allowance unavailable — create_agent and creator tools hidden this tick');
+    }
+  }
+  setAgentPlatformToolAvailability(allowance);
+}
+
 // The runtime-authorised tool set is derived from the active runtime descriptor.
 // It is re-evaluated on each tick so refresh messages can tighten or expand access.
 function allowedTools(): Set<string> {
@@ -935,6 +965,10 @@ const { read: externalBackendRead, write: externalBackendWrite } = buildAgentExt
   agentId: AGENT_ID!,
   logger,
 });
+// Platform API client for create_agent and the creator tools. Undefined when the container has no
+// API key or base URL, and those tools then stay hidden.
+const agentPlatformClient = createAgentPlatformClientFromEnv(process.env, logger);
+
 // Fail-fast startup guard (B7): in-process market-data has been removed, so the
 // Traderton read boundary is the SOLE source of market data. A trading agent
 // without a boundary cannot function — crash at startup rather than silently
@@ -1840,6 +1874,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     permissionLevel: agentPermissionLevel,
     externalBackend: externalBackendRead,
     externalBackendWrite,
+    agentPlatform: agentPlatformClient,
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),
@@ -2569,6 +2604,9 @@ async function runActiveTick(): Promise<void> {
   tickCount++;
   refreshToolCircuits();
   logger.info({ tickCount }, 'Agent tick starting');
+
+  // Exposure of create_agent and the creator tools follows this agent's current allowance.
+  await refreshAgentPlatformToolExposure();
 
   // docs/features/2026/10/05/001-backend-tool-discovery-retry: a prior
   // discovery that left an approved skill backend_unreachable retries here,
