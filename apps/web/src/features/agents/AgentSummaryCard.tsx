@@ -4,7 +4,7 @@ import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, type Agent } from '../../lib/api-client.js';
 import { getRuntimeFamiliesForProvider } from '@herobids/domain';
 import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
-import { extractAgentObjective, formatCapabilityFamily, formatObjectivePreview, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
+import { canPauseAgent, canStopAgent, extractAgentObjective, formatCapabilityFamily, formatObjectivePreview, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 import type { CreatorLabel } from './agent-tree.js';
 
 // ── Shared icon button style ───────────────────────────────────────────────
@@ -34,6 +34,8 @@ export interface AgentHierarchyMeta {
   allowanceLabel: string | null;
   /** Set for child agents. Opens the message form rendered by the tree row. */
   onMessage?: () => void;
+  /** Set when the tree row renders Pause and Stop itself, so the card omits its own icons. */
+  rowLifecycleActions?: boolean;
 }
 
 interface AgentSummaryCardProps {
@@ -95,9 +97,10 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
   // ── Status-derived action visibility ───────────────────────────────────
 
   const canStart = agent.status === 'stopped' || agent.status === 'crashed';
-  const canPause = agent.status === 'active' || agent.status === 'starting';
+  const canPause = canPauseAgent(agent.status);
   const canResume = agent.status === 'paused';
-  const canStop = ['active', 'paused', 'unhealthy', 'crashed'].includes(agent.status);
+  const canStop = canStopAgent(agent.status);
+  const showCardPauseStop = !hierarchy?.rowLifecycleActions;
   const anyActionPending = startMutation.isPending || pauseMutation.isPending || resumeMutation.isPending || stopMutation.isPending;
 
   // ── Handlers ───────────────────────────────────────────────────────────
@@ -155,7 +158,7 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
         )}
 
         {/* Pause */}
-        {canPause && (
+        {canPause && showCardPauseStop && (
           <button
             type="button"
             style={ICON_BUTTON_STYLE}
@@ -187,7 +190,7 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
         )}
 
         {/* Stop */}
-        {canStop && (
+        {canStop && showCardPauseStop && (
           <button
             type="button"
             style={{ ...ICON_BUTTON_STYLE, color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}

@@ -12,6 +12,14 @@ export const CAPABILITY_FAMILY_LABELS: Record<string, string> = {
   email: 'Email',
 };
 
+export function canPauseAgent(status: string): boolean {
+  return status === 'active' || status === 'starting';
+}
+
+export function canStopAgent(status: string): boolean {
+  return ['active', 'paused', 'unhealthy', 'crashed'].includes(status);
+}
+
 function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallback: string): string {
   if (!intl) {
     return fallback;

@@ -477,6 +477,8 @@ export const messages: Record<string, string> = {
   'agents.tree.message': 'رسالة',
   'agents.tree.messagePlaceholder': 'أرسل رسالة إلى {name}',
   'agents.tree.send': 'إرسال',
+  'agents.tree.pause': 'Pause',
+  'agents.tree.stop': 'Stop',
   'agents.allowance.title': 'الوكلاء الفرعيون',
   'agents.allowance.description': 'عدد الوكلاء الذين يمكن لهذا الوكيل إنشاؤهم. يمكنك أنت فقط تغيير هذا الحد. تسمح خطتك بما يصل إلى {ceiling}.',
   'agents.allowance.current': 'الوكلاء الفرعيون الحاليون: {childCount}',

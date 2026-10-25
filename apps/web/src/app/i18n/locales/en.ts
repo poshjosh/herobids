@@ -508,6 +508,8 @@ export const messages: Record<string, string> = {
   'agents.tree.message': 'Message',
   'agents.tree.messagePlaceholder': 'Message {name}',
   'agents.tree.send': 'Send',
+  'agents.tree.pause': 'Pause',
+  'agents.tree.stop': 'Stop',
   'agents.allowance.title': 'Child agents',
   'agents.allowance.description': 'How many agents this agent may create. Only you can change this. Your plan allows up to {ceiling}.',
   'agents.allowance.current': 'Current child agents: {childCount}',

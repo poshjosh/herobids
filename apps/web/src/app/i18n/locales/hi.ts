@@ -477,6 +477,8 @@ export const messages: Record<string, string> = {
   'agents.tree.message': 'संदेश',
   'agents.tree.messagePlaceholder': '{name} को संदेश भेजें',
   'agents.tree.send': 'भेजें',
+  'agents.tree.pause': 'Pause',
+  'agents.tree.stop': 'Stop',
   'agents.allowance.title': 'चाइल्ड एजेंट',
   'agents.allowance.description': 'यह एजेंट कितने एजेंट बना सकता है। इसे केवल आप बदल सकते हैं। आपकी योजना में अधिकतम {ceiling} तक अनुमति है।',
   'agents.allowance.current': 'वर्तमान चाइल्ड एजेंट: {childCount}',

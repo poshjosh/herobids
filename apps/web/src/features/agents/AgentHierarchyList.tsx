@@ -3,6 +3,7 @@ import { useIntl } from 'react-intl';
 import type { Agent } from '../../lib/api-client.js';
 import { EmptyState } from '../../lib/ui.js';
 import { AgentSummaryCard, type AgentHierarchyMeta } from './AgentSummaryCard.js';
+import { ChildAgentLifecycleActions } from './ChildAgentLifecycleActions.js';
 import { ChildAgentMessageForm } from './ChildAgentMessageForm.js';
 import { buildAgentTree, filterAgentTree, isExpandedByDefault, type AgentTreeNode } from './agent-tree.js';
 
@@ -55,6 +56,7 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
       onMessage: isChildAgent
         ? () => setOpenMessageAgentId((current) => (current === id ? null : id))
         : undefined,
+      rowLifecycleActions: isChildAgent,
     };
 
     return (
@@ -73,6 +75,7 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
           )}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <AgentSummaryCard agent={node.agent} hierarchy={hierarchy} />
+            {isChildAgent && <ChildAgentLifecycleActions agent={node.agent} />}
             {openMessageAgentId === id && <ChildAgentMessageForm agentId={id} agentName={node.agent.name} />}
           </div>
         </div>
