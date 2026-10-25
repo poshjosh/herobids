@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, timestamp, jsonb, integer, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, varchar, timestamp, jsonb, integer, index, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { UnifiedAgentConfig, AgentRuntimePolicyOverrides, WakePreferences, StrategyIdentity } from '@herobids/domain';
 import { users } from './users.js';
 
@@ -58,9 +58,21 @@ export const agents = pgTable('agents', {
   /** Blueprint attribution — both null (not from blueprint) or both non-null (from blueprint revision) */
   blueprintId: text('blueprint_id'),
   blueprintRevisionId: text('blueprint_revision_id'),
+  /** Who created this agent. Values: user | agent | system. Typed in code only; no DB enum/CHECK, so the migration stays additive. */
+  creatorType: text('creator_type', { enum: ['user', 'agent', 'system'] }).notNull().default('user'),
+  /** Creating agent id when creatorType = 'agent'; user id when 'user'; null for 'system'. */
+  creatorId: text('creator_id'),
+  /** Parent agent for child agents. NO ACTION: the delete transaction re-parents children explicitly before deleting. */
+  parentAgentId: text('parent_agent_id').references((): AnyPgColumn => agents.id, { onDelete: 'no action' }),
+  /** Generations below a user-created agent: 0 for user-created, parent depth + 1 for children. */
+  depth: integer('depth').notNull().default(0),
+  /** How many child agents this agent may create. User-set; starts at 0. */
+  childAgentLimit: integer('child_agent_limit').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_agents_user_id').on(t.userId),
   index('idx_agents_status').on(t.status),
+  index('idx_agents_parent_agent_id').on(t.parentAgentId),
+  index('idx_agents_user_creator_type').on(t.userId, t.creatorType),
 ]);
