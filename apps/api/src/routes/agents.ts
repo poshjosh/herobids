@@ -154,6 +154,145 @@ type OwnerBotRow = {
   venueAccountId?: string | null;
 };
 
+type DeletionScope = 'subtree' | 'agent';
+type ProfileConnections = Awaited<ReturnType<typeof loadActiveTradingProfileConnections>>;
+
+/** One agent in a deletion subtree. `level` is its distance from the root (root = 0). */
+type DeletionAgent = {
+  id: string;
+  status: string;
+  parentAgentId: string | null;
+  depth: number;
+  level: number;
+};
+
+const DeleteAgentQuerySchema = z.object({
+  scope: z.enum(['subtree', 'agent']).optional(),
+});
+
+/**
+ * Walks `parentAgentId` down from `rootId` for one owner, one level per query. The visited
+ * set guards against a corrupt cycle. Returns null when the owner has no such agent.
+ */
+async function loadDeletionSubtree(
+  conn: Database | DatabaseTransaction,
+  ownerId: string,
+  rootId: string,
+): Promise<{ root: DeletionAgent; members: DeletionAgent[] } | null> {
+  const [rootRow] = await conn.select({
+    id: agents.id,
+    status: agents.status,
+    parentAgentId: agents.parentAgentId,
+    depth: agents.depth,
+  }).from(agents).where(and(eq(agents.id, rootId), eq(agents.userId, ownerId)));
+  if (!rootRow) return null;
+
+  const root: DeletionAgent = { ...rootRow, level: 0 };
+  const members: DeletionAgent[] = [root];
+  const seen = new Set<string>([root.id]);
+  let frontier = [root.id];
+  let level = 0;
+  while (frontier.length > 0) {
+    level += 1;
+    const children = await conn.select({
+      id: agents.id,
+      status: agents.status,
+      parentAgentId: agents.parentAgentId,
+      depth: agents.depth,
+    }).from(agents).where(and(eq(agents.userId, ownerId), inArray(agents.parentAgentId, frontier)));
+    frontier = [];
+    for (const child of children) {
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      members.push({ ...child, level });
+      frontier.push(child.id);
+    }
+  }
+  return { root, members };
+}
+
+/** Strict descendants of `agentId` within an already-loaded subtree. */
+function collectDescendantIds(subtree: DeletionAgent[], agentId: string): string[] {
+  const descendants: string[] = [];
+  const seen = new Set<string>([agentId]);
+  let frontier = [agentId];
+  while (frontier.length > 0) {
+    const next: string[] = [];
+    for (const member of subtree) {
+      if (member.parentAgentId === null || !frontier.includes(member.parentAgentId)) continue;
+      if (seen.has(member.id)) continue;
+      seen.add(member.id);
+      descendants.push(member.id);
+      next.push(member.id);
+    }
+    frontier = next;
+  }
+  return descendants;
+}
+
+/**
+ * Lifts the direct children of `rootId` to top level before the root is deleted (the FK is
+ * ON DELETE NO ACTION). Each child's descendants lose the child's old depth.
+ */
+async function detachChildrenOfDeletedAgent(
+  tx: DatabaseTransaction,
+  subtree: DeletionAgent[],
+  rootId: string,
+): Promise<void> {
+  for (const child of subtree.filter((member) => member.parentAgentId === rootId)) {
+    await tx.update(agents).set({ parentAgentId: null, depth: 0 }).where(eq(agents.id, child.id));
+    const descendantIds = collectDescendantIds(subtree, child.id);
+    if (descendantIds.length > 0) {
+      await tx.update(agents).set({ depth: sql`${agents.depth} - ${child.depth}` }).where(inArray(agents.id, descendantIds));
+    }
+  }
+}
+
+/**
+ * Deletes the platform rows of `agentIds` inside the caller's transaction, in FK-safe order.
+ * A connection is revoked only when every agent link to it belongs to `agentIds`.
+ */
+async function purgeAgentRows(tx: DatabaseTransaction, agentIds: string[]): Promise<void> {
+  await tx.delete(agentOutboundMessages).where(inArray(agentOutboundMessages.agentId, agentIds));
+  await tx.delete(agentArtifacts).where(inArray(agentArtifacts.agentId, agentIds));
+  // NULL billing_usage_events.sessionId refs before deleting runtime sessions
+  // (billing_usage_events has ON DELETE NO ACTION on the session_id FK).
+  const sessionRows = await tx.select({ id: agentRuntimeSessions.id })
+    .from(agentRuntimeSessions)
+    .where(inArray(agentRuntimeSessions.agentId, agentIds));
+  const sessionIds = sessionRows.map((row) => row.id);
+  if (sessionIds.length > 0) {
+    await tx.update(billingUsageEvents)
+      .set({ sessionId: null, agentId: null })
+      .where(inArray(billingUsageEvents.sessionId, sessionIds));
+  }
+  await tx.delete(agentRuntimeSessions).where(inArray(agentRuntimeSessions.agentId, agentIds));
+  // Catches events with a null sessionId.
+  await tx
+    .update(billingUsageEvents)
+    .set({ sessionId: null, agentId: null })
+    .where(and(inArray(billingUsageEvents.agentId, agentIds), isNull(billingUsageEvents.sessionId)));
+  // Connections are user-owned and persist after agent deletion; only the linkage is cleaned up.
+  // Venue-account/credential teardown is boundary-owned — no local venue_accounts write here.
+  const linkRows = await tx
+    .select({ connectionId: agentConnections.connectionId })
+    .from(agentConnections)
+    .where(inArray(agentConnections.agentId, agentIds));
+  for (const connectionId of new Set(linkRows.map((row) => row.connectionId))) {
+    const allUsersOfConn = await tx
+      .select({ agentId: agentConnections.agentId })
+      .from(agentConnections)
+      .where(eq(agentConnections.connectionId, connectionId));
+    if (allUsersOfConn.every((row) => agentIds.includes(row.agentId))) {
+      await tx.update(connections)
+        .set({ status: 'revoked' })
+        .where(eq(connections.id, connectionId));
+    }
+  }
+  // Deletes the agents last: agent_skills, agent_connections and agent_connection_audit cascade.
+  await tx.delete(agents).where(inArray(agents.id, agentIds));
+}
+
 // --- Request Schemas ---
 const AgentNameSchema = z.string().min(1).max(100).refine((value) => {
   const normalized = value.trim().toLowerCase();
@@ -500,6 +639,67 @@ export async function agentRoutes(
       deadlineMs: readDeadlineMs,
     });
   };
+
+  // Tears down one agent's bots over the boundary, reused by both delete scopes. Fails
+  // closed: a non-success result tells the caller which step stopped, and the caller then
+  // removes no platform rows. The bot list is re-read per call, so a retry resumes cleanly.
+  type BotTeardown =
+    | { ok: true; botsRemoved: number }
+    | { ok: false; status: number; body: ReturnType<typeof errorPayload> };
+  const tearDownAgentBots = async (ownerId: string, agentId: string): Promise<BotTeardown> => {
+    const unavailable = (step: string): BotTeardown => ({
+      ok: false,
+      status: boundaryUnconfiguredError.status,
+      body: errorPayload(
+        boundaryUnconfiguredError.code,
+        'Trading service is unavailable — the agent could not be deleted.',
+        undefined,
+        { step, agentId },
+      ),
+    });
+    // 0. The local `bots` table is gone; Traderton owns bots, so the boundary is required.
+    //    Agents' bots are not guaranteed stopped (the worker health-monitor stops them
+    //    asynchronously), so each running bot is stopped before it is deleted.
+    if (!tradertonReadClient) return unavailable('boundary_unconfigured');
+    const listed = await loadAgentEvidence<OwnerBotRow>(
+      userBoundary(ownerId),
+      'list_owner_bots',
+      {},
+      'bots',
+      (r) => r as OwnerBotRow,
+    );
+    if (!listed.ok) {
+      return {
+        ok: false,
+        status: listed.error.status,
+        body: errorPayload(listed.error.code, listed.error.message, undefined, { step: 'list_bots', agentId }),
+      };
+    }
+    const agentOwnedBots = listed.rows.filter((b) => b.creatorType === 'agent' && b.creatorId === agentId);
+    let botsRemoved = 0;
+    for (const bot of agentOwnedBots) {
+      if (bot.status === 'running') {
+        const stopResult = await invokeBotWrite('stop_bot', { botId: bot.id }, ownerId);
+        // Cannot stop → cannot safely delete. Fail closed.
+        if (stopResult.kind !== 'success') return unavailable('stop_bot');
+      }
+      const deleteResult = await invokeBotWrite('delete_bot', { botId: bot.id }, ownerId);
+      // A transport/absent boundary, or a `bot.running` 409 racing a just-issued stop, means
+      // the cascade cannot complete. Abort rather than orphan the bot.
+      if (deleteResult.kind !== 'success') return unavailable('delete_bot');
+      botsRemoved += 1;
+    }
+    return { ok: true, botsRemoved };
+  };
+
+  const profileDeletionInput = (ownerId: string, agentId: string, priorProfileConnections: ProfileConnections) =>
+    async () => {
+      const profiles = await stagedProfileReconciliationSaga.readCurrentProfiles(ownerId, agentId, priorProfileConnections);
+      return {
+        prior: { profiles, connections: priorProfileConnections },
+        proposed: { profiles: new Map(), connections: [] },
+      };
+    };
 
   function resolveSkillPlanPolicy(planId: string, isAdmin: boolean) {
     if (!plansConfig) {
@@ -2054,34 +2254,159 @@ export async function agentRoutes(
     return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), ...enrichAgentResponse(updated!) });
   });
 
-  // Delete agent
-  app.delete<{ Params: { id: string } }>('/agents/:id', { preHandler: requireUserCaller }, async (request, reply) => {
+  // Delete agent. User-only and owner-only. Scope 'subtree' removes the agent and all of its
+  // descendants; scope 'agent' lifts the direct children to top level and keeps their bots.
+  // Default: 'subtree' when the agent has children, otherwise 'agent'.
+  app.delete<{ Params: { id: string }; Querystring: { scope?: string } }>('/agents/:id', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id } = request.params;
-    const [agent] = await db.select().from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) {
+    const query = DeleteAgentQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.status(400).send({ error: 'validation_error', details: query.error.issues });
+    }
+    const ownerId = request.userId;
+    const walk = await loadDeletionSubtree(db, ownerId, id);
+    if (!walk) {
       return reply.status(404).send({ error: 'not_found' });
     }
+    const { root, members } = walk;
+    const hasChildren = members.some((member) => member.level === 1);
+    const scope: DeletionScope = query.data.scope ?? (hasChildren ? 'subtree' : 'agent');
 
-    // Only allow delete when stopped
-    if (agent.status !== 'stopped') {
-      return reply.status(409).send(
-        errorPayload('agent_not_stopped', 'Agent must be stopped before deletion', { status: agent.status }),
-      );
+    // Every agent in the subtree must be stopped. This is never auto-stopped: stopping is
+    // asynchronous in the worker health monitor. A lone agent keeps its original 409 body.
+    const nonStopped = members.filter((member) => member.status !== 'stopped');
+    if (nonStopped.length > 0) {
+      if (members.length === 1) {
+        return reply.status(409).send(
+          errorPayload('agent_not_stopped', 'Agent must be stopped before deletion', { status: root.status }),
+        );
+      }
+      return reply.status(409).send(errorPayload(
+        'agent_subtree_not_stopped',
+        'Every agent in the subtree must be stopped before deletion',
+        undefined,
+        { nonStoppedAgents: nonStopped.map((member) => ({ id: member.id, status: member.status })) },
+      ));
     }
 
-    // 0. Tear down the agent's owned bots over the Traderton boundary BEFORE any
-    //    platform-table deletes. Traderton owns bots now (the local `bots` table
-    //    is gone from this cascade), so the delete now REQUIRES the boundary — if
-    //    it is absent/transport-unavailable we FAIL CLOSED (503) and leave the
-    //    agent + its bots intact rather than orphaning bots behind a deleted
-    //    agent. An agent's bots are NOT guaranteed stopped at delete time (the
-    //    worker health-monitor stops them asynchronously), so stop each running
-    //    bot before deleting it.
+    // 1. Bots over the boundary, per agent, deepest first. Any failure returns 503 with the
+    //    step reached and removes no platform rows. A retry re-lists bots and resumes.
+    const memberIds = members.map((member) => member.id);
+    const deletedIds = scope === 'subtree' ? memberIds : [id];
+    const teardownOrder = scope === 'subtree' ? [...members].sort((a, b) => b.level - a.level) : [root];
+    const priorConnections = new Map<string, ProfileConnections>();
+    let botsRemoved = 0;
+    for (const target of teardownOrder) {
+      const torn = await tearDownAgentBots(ownerId, target.id);
+      if (!torn.ok) {
+        return reply.status(torn.status).send(torn.body);
+      }
+      botsRemoved += torn.botsRemoved;
+
+      // Subtree scope: reconcile each agent's trading profiles now. executeStaged commits one
+      // local transaction per call, so the platform rows are removed afterwards in one transaction.
+      if (scope === 'subtree') {
+        const prior = await loadActiveTradingProfileConnections(db, target.id);
+        priorConnections.set(target.id, prior);
+        try {
+          await stagedProfileReconciliationSaga.executeStaged({
+            ownerId,
+            actorId: target.id,
+            localMutationId: crypto.randomUUID(),
+            preparePlannerInput: profileDeletionInput(ownerId, target.id, prior),
+            commitLocal: async (_tx, markLocalCommitted) => {
+              await markLocalCommitted();
+            },
+          });
+        } catch (err) {
+          request.log.warn({ err, agentId: target.id }, 'agent subtree delete: profile reconciliation failed');
+          return reply.status(boundaryUnconfiguredError.status).send(errorPayload(
+            boundaryUnconfiguredError.code,
+            'Trading service is unavailable — the agent could not be deleted.',
+            undefined,
+            { step: 'profile_reconciliation', agentId: target.id },
+          ));
+        }
+      }
+    }
+
+    // Re-validates under the transaction: the subtree must be unchanged and still stopped, and
+    // each agent's trading-profile connections must match what was reconciled above.
+    const assertSubtreeUnchanged = async (tx: DatabaseTransaction): Promise<DeletionAgent[]> => {
+      const current = await loadDeletionSubtree(tx, ownerId, id);
+      if (
+        !current
+        || current.members.length !== members.length
+        || current.members.some((member) => !memberIds.includes(member.id) || member.status !== 'stopped')
+      ) {
+        throw new Error('agent subtree changed before deletion could be committed');
+      }
+      for (const [agentId, prior] of priorConnections) {
+        const currentConnections = await loadActiveTradingProfileConnections(tx, agentId);
+        if (JSON.stringify(currentConnections) !== JSON.stringify(prior)) {
+          throw new Error('agent connections changed before deletion could be committed');
+        }
+      }
+      return current.members;
+    };
+
+    // 2. Platform rows. Subtree: one transaction, reached only after every teardown succeeded.
+    //    Agent: the existing staged path, with the child lift in the same transaction.
+    if (scope === 'subtree') {
+      await db.transaction(async (tx) => {
+        await assertSubtreeUnchanged(tx);
+        await purgeAgentRows(tx, memberIds);
+      });
+    } else {
+      const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
+      await stagedProfileReconciliationSaga.executeStaged({
+        ownerId,
+        actorId: id,
+        localMutationId: crypto.randomUUID(),
+        preparePlannerInput: profileDeletionInput(ownerId, id, priorProfileConnections),
+        commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {
+          const current = await assertSubtreeUnchanged(tx);
+          // Re-parent before the delete: the parent FK is ON DELETE NO ACTION.
+          await detachChildrenOfDeletedAgent(tx, current, id);
+          await purgeAgentRows(tx, [id]);
+          await markLocalCommitted();
+        },
+      });
+    }
+
+    // Signal the worker to stop and remove the Docker container for each deleted agent.
+    // Best-effort — the 204 response does not guarantee the worker received or
+    // processed this signal. The worker's periodic reconciliation is the safety net
+    // for missed deliveries (Redis pub/sub has no delivery guarantees).
+    if (redisClient) {
+      for (const agentId of deletedIds) {
+        redisClient.publish(`agent:cleanup:${agentId}`, JSON.stringify({ agentId })).catch((err: unknown) => {
+          app.log.warn({ err, agentId }, 'Failed to publish agent cleanup signal to Redis');
+        });
+      }
+    }
+
+    // A lone agent keeps the original empty 204. Any delete that touched children returns counts.
+    if (members.length === 1) {
+      return reply.status(204).send();
+    }
+    return reply.send({ scope, agentCount: deletedIds.length, botCount: botsRemoved });
+  });
+
+  // Counts for the delete confirmation dialog. Same owner and user-only guards as DELETE.
+  app.get<{ Params: { id: string } }>('/agents/:id/delete-preview', { preHandler: requireUserCaller }, async (request, reply) => {
+    const { id } = request.params;
+    const walk = await loadDeletionSubtree(db, request.userId, id);
+    if (!walk) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
     if (!tradertonReadClient) {
-      return reply.status(boundaryUnconfiguredError.status).send(
-        errorPayload(boundaryUnconfiguredError.code, 'Trading service is unavailable — the agent could not be deleted.'),
-      );
+      return reply.status(boundaryUnconfiguredError.status).send(errorPayload(
+        boundaryUnconfiguredError.code,
+        'Trading service is unavailable — the agent could not be deleted.',
+        undefined,
+        { step: 'boundary_unconfigured' },
+      ));
     }
     const listed = await loadAgentEvidence<OwnerBotRow>(
       userBoundary(request.userId),
@@ -2093,124 +2418,26 @@ export async function agentRoutes(
     if (!listed.ok) {
       return reply.status(listed.error.status).send(errorPayload(listed.error.code, listed.error.message));
     }
-    const agentOwnedBots = listed.rows.filter(
-      (b) => b.creatorType === 'agent' && b.creatorId === id,
-    );
-    for (const bot of agentOwnedBots) {
-      if (bot.status === 'running') {
-        const stopResult = await invokeBotWrite('stop_bot', { botId: bot.id }, request.userId);
-        if (stopResult.kind !== 'success') {
-          // Cannot stop → cannot safely delete. Fail closed.
-          return reply.status(boundaryUnconfiguredError.status).send(
-            errorPayload(boundaryUnconfiguredError.code, 'Trading service is unavailable — the agent could not be deleted.'),
-          );
-        }
-      }
-      const deleteResult = await invokeBotWrite('delete_bot', { botId: bot.id }, request.userId);
-      if (deleteResult.kind !== 'success') {
-        // A transport/absent boundary — OR a `bot.running` 409 racing a just-issued
-        // stop — means the cascade cannot complete. This is a DELETE mutation, so
-        // ABORT the agent delete (fail closed) rather than orphan the bot.
-        return reply.status(boundaryUnconfiguredError.status).send(
-          errorPayload(boundaryUnconfiguredError.code, 'Trading service is unavailable — the agent could not be deleted.'),
-        );
-      }
-    }
+    const ownerBots = listed.rows;
+    const countBots = (agentIds: string[]): number =>
+      ownerBots.filter((bot) => bot.creatorType === 'agent' && bot.creatorId != null && agentIds.includes(bot.creatorId)).length;
 
-    const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
-    await stagedProfileReconciliationSaga.executeStaged({
-      ownerId: request.userId,
-      actorId: id,
-      localMutationId: crypto.randomUUID(),
-      preparePlannerInput: async () => {
-        const profiles = await stagedProfileReconciliationSaga.readCurrentProfiles(request.userId, id, priorProfileConnections);
-        return {
-          prior: { profiles, connections: priorProfileConnections },
-          proposed: { profiles: new Map(), connections: [] },
-        };
-      },
-      commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {
-        const [currentAgent] = await tx.select().from(agents)
-          .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-        if (!currentAgent || currentAgent.status !== 'stopped') throw new Error('agent changed before deletion could be committed');
-        const currentProfileConnections = await loadActiveTradingProfileConnections(tx, id);
-        if (JSON.stringify(currentProfileConnections) !== JSON.stringify(priorProfileConnections)) {
-          throw new Error('agent connections changed before deletion could be committed');
-        }
-
-    // Agent deletion cleanup — execution order resolves all FK chains.
-    // See docs/features/2026/06/20/003-agent-deletion-cleanup/001-plan.md.
-    // 1-2. DELETE agent-scoped child rows (no FK to agent_runtime_sessions)
-    await tx.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
-    await tx.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
-    // 3. NULL billing_usage_events.sessionId refs before deleting runtime sessions
-    //    (billing_usage_events has ON DELETE NO ACTION on session_id FK).
-    //    Must select session IDs first since we delete them in step 4.
-    const { sessionIds } = await tx
-      .select({ sessionIds: agentRuntimeSessions.id })
-      .from(agentRuntimeSessions)
-      .where(eq(agentRuntimeSessions.agentId, id))
-      .then((rows) => ({ sessionIds: rows.map((r) => r.sessionIds) }));
-    if (sessionIds.length > 0) {
-      await tx
-        .update(billingUsageEvents)
-        .set({ sessionId: null, agentId: null })
-        .where(inArray(billingUsageEvents.sessionId, sessionIds));
-      // Also handle skill_usage_events which has ON DELETE SET NULL (nullify before delete)
-      // to avoid any race with concurrent usage recording.
-    }
-    // 4. DELETE agent_runtime_sessions (agent-scoped, must come after billing nullification)
-    await tx.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
-    // 5. NULL remaining billing_usage_events refs by agentId (catches events with null sessionId)
-    await tx
-      .update(billingUsageEvents)
-      .set({ sessionId: null, agentId: null })
-      .where(and(eq(billingUsageEvents.agentId, id), isNull(billingUsageEvents.sessionId)));
-    // 6. Agent-owned bots were torn down over the Traderton boundary at step 0
-    //    (fail-closed) — Traderton owns bots, so there is no local `bots` delete.
-    // 7. Clean up orphaned connections: for each connection linked exclusively to this
-    //    agent (no other agent holds an agent_connection to it), revoke the connection.
-    //    Connections are user-owned and persist after agent deletion; only the linkage
-    //    is cleaned up here. Venue-account/credential teardown is boundary-owned (via
-    //    the separate provider-link path) — no local venue_accounts write happens here.
-    const myConnRows = await tx
-      .select({ connectionId: agentConnections.connectionId })
-      .from(agentConnections)
-      .where(eq(agentConnections.agentId, id));
-    const uniqueConnectionIds = [...new Set(myConnRows.map((r) => r.connectionId))];
-    for (const connectionId of uniqueConnectionIds) {
-      // Count all agent_connections for this connection across all agents.
-      // If exactly one exists (this agent's row, not yet cascade-deleted), the connection
-      // is orphaned once this agent is gone.
-      const allUsersOfConn = await tx
-        .select({ connectionId: agentConnections.connectionId })
-        .from(agentConnections)
-        .where(eq(agentConnections.connectionId, connectionId));
-      if (allUsersOfConn.length === 1) {
-        // The update is a no-op if the connection row is already gone, so no
-        // separate existence read is needed here.
-        await tx.update(connections)
-          .set({ status: 'revoked' })
-          .where(eq(connections.id, connectionId));
-      }
-    }
-    // 8. DELETE agents (cascades: agent_skills, agent_connections, agent_connection_audit)
-    await tx.delete(agents).where(eq(agents.id, id));
-        await markLocalCommitted();
-      },
+    const { members } = walk;
+    const agentOnly = { agentCount: 1, botCount: countBots([id]) };
+    const subtreeOnly = members.some((member) => member.level === 1)
+      ? { agentCount: members.length, botCount: countBots(members.map((member) => member.id)) }
+      : null;
+    const defaults = subtreeOnly ?? agentOnly;
+    return reply.send({
+      availableScopes: subtreeOnly ? ['subtree', 'agent'] : ['agent'],
+      defaultScope: subtreeOnly ? 'subtree' : 'agent',
+      agentCount: defaults.agentCount,
+      botCount: defaults.botCount,
+      nonStoppedAgents: members
+        .filter((member) => member.status !== 'stopped')
+        .map((member) => ({ id: member.id, status: member.status })),
+      scopes: subtreeOnly ? { subtree: subtreeOnly, agent: agentOnly } : { agent: agentOnly },
     });
-
-    // Signal the worker to stop and remove the Docker container for this agent.
-    // Best-effort — the 204 response does not guarantee the worker received or
-    // processed this signal. The worker's periodic reconciliation is the safety net
-    // for missed deliveries (Redis pub/sub has no delivery guarantees).
-    if (redisClient) {
-      redisClient.publish(`agent:cleanup:${id}`, JSON.stringify({ agentId: id })).catch((err: unknown) => {
-        app.log.warn({ err, agentId: id }, 'Failed to publish agent cleanup signal to Redis');
-      });
-    }
-
-    return reply.status(204).send();
   });
 
   // --- Lifecycle ---

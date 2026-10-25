@@ -7,7 +7,7 @@
   "scripts": {
     "build": "pnpm --filter @herobids/scripts run build-docs-index && pnpm -r run build",
     "test": "vitest run",
-    "test:integration": "vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork packages/db/src/journal-pg.integration.test.ts packages/db/src/alert-delivery-repository.integration.test.ts apps/api/src/plugins/auth.integration.test.ts apps/api/src/plugins/agent-api-key.integration.test.ts apps/api/src/routes/agent-key-route-guards.integration.test.ts apps/api/src/routes/auth-oauth.integration.test.ts apps/api/src/routes/agent-child-limit.integration.test.ts apps/api/src/routes/agent-creator-actions.integration.test.ts",
+    "test:integration": "vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork packages/db/src/journal-pg.integration.test.ts packages/db/src/alert-delivery-repository.integration.test.ts apps/api/src/plugins/auth.integration.test.ts apps/api/src/plugins/agent-api-key.integration.test.ts apps/api/src/routes/agent-key-route-guards.integration.test.ts apps/api/src/routes/auth-oauth.integration.test.ts apps/api/src/routes/agent-child-limit.integration.test.ts apps/api/src/routes/agent-creator-actions.integration.test.ts apps/api/src/routes/agent-delete-subtree.integration.test.ts",
     "test:venues": "vitest run --config vitest.integration.config.ts",
     "test:functional": "vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork apps/api/src/__tests__/functional apps/worker/src/__tests__/integration",
     "test:rate-limit-lab": "pnpm --filter @herobids/rate-limit-lab run test",
