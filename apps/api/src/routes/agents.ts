@@ -49,6 +49,7 @@ import {
   StrategyIdentitySchema,
   TechnicalConfigSchema,
   normalizePersistedAiModelConfig,
+  resolveChildAgentLimitCeiling,
   venueTypeFromProvider,
   WakePreferencesSchema,
   type AgentCostEstimatesConfig,
@@ -315,6 +316,10 @@ function mergeTechnicalConfig(
 const PauseAgentSchema = z.object({
   reason: z.string().min(1).max(500).optional(),
 }).optional();
+
+const SetChildAgentLimitSchema = z.object({
+  childAgentLimit: z.number().int().min(0),
+});
 
 /** Extract preset fields from unifiedConfig.metadata, if present. */
 function extractPresetMeta(unifiedConfig: unknown): { strategyPreset: string | null; strategyPresetName: string | null; skillPresetId: string | null } {
@@ -2227,6 +2232,39 @@ export async function agentRoutes(
     }
 
     return reply.send({ status: result.data.status });
+  });
+
+  // Set how many child agents this agent may create (001-agent-creating-agents §3, §6). User-only.
+  // Lowering below the current child count keeps existing children, so the count is not read here.
+  app.put<{ Params: { id: string } }>('/agents/:id/child-limit', { preHandler: requireUserCaller }, async (request, reply) => {
+    const { id } = request.params;
+    const parsed = SetChildAgentLimitSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    // Without a plan config there is no ceiling to grant against, so fail closed at 0.
+    const ceiling = plansConfig
+      ? resolveChildAgentLimitCeiling(resolvePlanLimitEntitlements(plansConfig, request.userPlanId || 'free', request.isAdmin))
+      : 0;
+    if (parsed.data.childAgentLimit > ceiling) {
+      return reply.status(400).send(errorPayload(
+        'agent.child_limit.exceeds_ceiling',
+        `childAgentLimit (${parsed.data.childAgentLimit}) exceeds your plan ceiling of ${ceiling}.`,
+        { ceiling, requested: parsed.data.childAgentLimit },
+      ));
+    }
+
+    // Ownership is part of the single UPDATE, so another user's agent matches no row and returns 404.
+    const [updated] = await db.update(agents)
+      .set({ childAgentLimit: parsed.data.childAgentLimit, updatedAt: new Date() })
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)))
+      .returning({ childAgentLimit: agents.childAgentLimit });
+    if (!updated) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    return reply.send({ childAgentLimit: updated.childAgentLimit });
   });
 
   // Resume agent
