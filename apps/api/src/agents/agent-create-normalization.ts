@@ -34,7 +34,6 @@ export interface PrepareAgentCreateFieldsParams {
   authorizationMode?: string | null;
   tickIntervalMs?: number | null;
   runtimePolicyOverrides?: Record<string, unknown> | null;
-  telegramChatId?: string | null;
   notificationPolicy?: Record<string, unknown> | null;
   wakePreferences?: unknown | null;
   openPositionEscalationToJudgePolicy?: string;

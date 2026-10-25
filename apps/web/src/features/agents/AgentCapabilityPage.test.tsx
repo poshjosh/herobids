@@ -48,7 +48,7 @@ function makeAgent(): Agent {
     risk: null,
     strategy: null,
     executionDefaults: null,
-    telegramChatId: null,
+    chatAddresses: [],
     executionMode: null,
     dailyLossLimit: null,
     maxDrawdownPct: null,

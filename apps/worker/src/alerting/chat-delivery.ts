@@ -27,7 +27,7 @@ export class ChatDelivery {
     } catch (error) {
       return lookupFailed(error);
     }
-    if (!address) return err({ code: 'chat.no_address', message: 'no_telegram_chat_id' });
+    if (!address) return err({ code: 'chat.no_address', message: 'no_chat_address' });
     const channel = this.channels.get('telegram');
     if (!channel) return err({ code: 'chat.not_configured', message: 'telegram_not_configured' });
 

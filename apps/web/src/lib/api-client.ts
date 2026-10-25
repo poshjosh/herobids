@@ -207,6 +207,22 @@ export interface UserNotificationPreferences {
   };
 }
 
+export type ChatProvider = 'telegram' | 'whatsapp' | 'sms';
+
+/** One entry of a `chatAddresses` response. */
+export interface ChatAddressEntry {
+  provider: ChatProvider;
+  address: string;
+  scope: 'user' | 'agent';
+  status: string;
+}
+
+/** One entry of a `chatAddresses` request body. A null address clears that provider's address. */
+export interface ChatAddressInput {
+  provider: ChatProvider;
+  address: string | null;
+}
+
 export interface MeResponse {
   id: string;
   username: string;
@@ -217,7 +233,8 @@ export interface MeResponse {
   isAdmin: boolean;
   planEntitlements: PlanEntitlements | null;
   preferredLocale: string | null;
-  telegramChatId: string | null;
+  /** The user's own chat addresses (scope 'user'). */
+  chatAddresses: ChatAddressEntry[];
   notificationPreferences: UserNotificationPreferences | null;
   /** Effective email fallback choice: the stored value, or the operator default when none is stored. */
   emailFallbackEnabled?: boolean;
@@ -284,7 +301,7 @@ export const auth = {
       body: JSON.stringify({ email, ...(username ? { username } : {}), ...(next ? { next } : {}) }),
     }),
   me: () => request<MeResponse>('/auth/me'),
-  updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } }; notifications?: { emailFallback?: { enabled: boolean }; push?: { enabled: boolean } } } | null }) =>
+  updateMe: (data: { preferredLocale?: string | null; chatAddresses?: ChatAddressInput[]; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } }; notifications?: { emailFallback?: { enabled: boolean }; push?: { enabled: boolean } } } | null }) =>
     request<MeResponse>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 };
@@ -1007,7 +1024,8 @@ export interface Agent {
   strategy?: Record<string, unknown> | null;
   /** WP4 canonical: shared ExecutionDefaults JSONB. */
   executionDefaults?: Record<string, unknown> | null;
-  telegramChatId: string | null;
+  /** The agent's own chat address overrides (scope 'agent'). */
+  chatAddresses: ChatAddressEntry[];
   /** Derived from executionDefaults.mode in API response. Prefer reading executionDefaults directly. */
   executionMode: string | null;
   /** @deprecated Use risk JSONB (risk.dailyMaxLossPct) instead. */
@@ -1105,8 +1123,6 @@ export interface AgentOutboundMessage {
     | 'email_skipped_no_verified_recipient'
     | 'email_failed_provider'
     | null;
-  telegramMessageId: string | null;
-  telegramChatId: string | null;
   deliveryError: string | null;
   emailMessageId: string | null;
   emailDeliveryError: string | null;
@@ -1220,7 +1236,7 @@ export const agents = {
     costPreset?: 'minimal' | 'standard' | 'premium' | 'custom' | null;
     dailySpendBudgetUsd?: number | null;
     executionMode?: string | null;
-    telegramChatId?: string | null;
+    chatAddresses?: ChatAddressInput[];
     risk?: Record<string, unknown> | null;
     executionDefaults?: Record<string, unknown> | null;
     tickIntervalMs?: number | null;
@@ -1251,7 +1267,7 @@ export const agents = {
     heavyModel?: string | null;
     costPreset?: 'minimal' | 'standard' | 'premium' | 'custom' | null;
     dailySpendBudgetUsd?: number | null;
-    telegramChatId?: string | null;
+    chatAddresses?: ChatAddressInput[];
     executionMode?: string | null;
     risk?: Record<string, unknown> | null;
     executionDefaults?: Record<string, unknown> | null;

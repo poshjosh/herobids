@@ -4,9 +4,9 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { requireDirectChildOfActingAgent, requireUserCaller } from '../plugins/auth.js';
 import { consumeTokenBucketToken } from '../services/token-bucket.js';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, isNull } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
+import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, chatAddresses, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import type { InboundChatMessage } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
@@ -25,6 +25,7 @@ import { selectExecutionBinding } from '../agents/trading-profile-reconciliation
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
 import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
+import { withAgentChatAddresses } from '../agents/chat-addresses.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
 import { TelegramInboundChannel } from './telegram-channel.js';
 import { ChatInboundRouter } from './chat-inbound-router.js';
@@ -87,7 +88,6 @@ const UpdateAgentSchema = z.object({
   costPreset: CostPresetSchema.nullable().optional(),
   dailySpendBudgetUsd: z.number().positive().nullable().optional(),
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
-  telegramChatId: z.string().nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxDrawdownPct: z.number().min(0).max(100).nullable().optional(),
@@ -346,7 +346,8 @@ export async function agentInteractivityRoutes(
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(id);
-    return reply.send(decorateAgentResponse({ ...updated!, skillIds }));
+    const [updatedOut] = await withAgentChatAddresses(db, request.userId, [decorateAgentResponse({ ...updated!, skillIds })]);
+    return reply.send(updatedOut);
   });
 
   // POST /agents/:id/message — deliver a message to a running agent.
@@ -663,18 +664,37 @@ export async function telegramWebhookHandler(
     await sendTelegramText(chatId, 'Approval submitted for execution.');
   }
 
+  /**
+   * The user whose user-level active Telegram address is this chat. A suppressed address binds
+   * nobody. A suppression lookup error propagates, so the update is not processed (fail closed).
+   */
+  async function findUserByTelegramChatId(
+    chatId: string,
+  ): Promise<{ userId: string; planId: string; isAdmin: boolean } | null> {
+    if (await agentRepo.isChatAddressSuppressed('telegram', chatId)) return null;
+    const rows = await db.select({ userId: users.id, planId: users.planId, isAdmin: users.isAdmin })
+      .from(chatAddresses)
+      .innerJoin(users, eq(chatAddresses.userId, users.id))
+      .where(and(
+        eq(chatAddresses.provider, 'telegram'),
+        eq(chatAddresses.address, chatId),
+        isNull(chatAddresses.agentId),
+        eq(chatAddresses.status, 'active'),
+      ))
+      .orderBy(asc(chatAddresses.createdAt), asc(chatAddresses.id))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async function processWebhookUpdate(
     chatId: string,
     message: InboundChatMessage,
   ): Promise<void> {
-    const userRows = await db.select({ userId: users.id, planId: users.planId, isAdmin: users.isAdmin })
-      .from(users)
-      .where(eq(users.telegramChatId, chatId))
-      .limit(1);
+    const boundUser = await findUserByTelegramChatId(chatId);
 
-    const userId = userRows[0]?.userId;
-    const userPlanId = userRows[0]?.planId ?? 'free';
-    const userIsAdmin = userRows[0]?.isAdmin ?? false;
+    const userId = boundUser?.userId;
+    const userPlanId = boundUser?.planId ?? 'free';
+    const userIsAdmin = boundUser?.isAdmin ?? false;
 
     // ── Slash-command routing ──────────────────────────────────────────
     // Detect and dispatch explicit slash commands before falling through
@@ -855,7 +875,7 @@ export async function telegramWebhookHandler(
 
     await chatRouter.dispatch(message, userId, {
       redis: redisClient,
-      resolveReply: (providerMessageId, address) => agentRepo.resolveAgentForTelegramReply(providerMessageId, address.address),
+      resolveReply: (providerMessageId, address) => agentRepo.resolveAgentForChatReply(address.provider, address.address, providerMessageId),
       listAgents: (ownerId) => db.select({
         agentId: agents.id,
         agentName: agents.name,
@@ -916,12 +936,7 @@ export async function telegramWebhookHandler(
 
     // ── 1. Resolve user ──────────────────────────────────────────────────
 
-    const userRows = await db.select({ userId: users.id })
-      .from(users)
-      .where(eq(users.telegramChatId, chatId))
-      .limit(1);
-
-    const userId = userRows[0]?.userId;
+    const userId = (await findUserByTelegramChatId(chatId))?.userId;
     if (!userId) return; // no chat binding — silent drop
 
     // ── 2. Find running agents for this user ─────────────────────────────

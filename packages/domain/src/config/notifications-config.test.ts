@@ -72,13 +72,11 @@ describe('messaging.notifications schema', () => {
     expect(() => parseWith({ messaging: { notifications: { eventClasses: ['agent.silent'] } } })).toThrow();
   });
 
-  it('leaves messaging.chat.telegram and alerts.telegram parsing unchanged', () => {
+  it('leaves messaging.chat.telegram parsing unchanged', () => {
     const config = parseWith({
-      alerts: { telegram: { botToken: 'legacy-token' } },
       messaging: { chat: { telegram: { botToken: 'new-token' } } },
     });
 
-    expect(config.alerts.telegram.botToken).toBe('legacy-token');
     expect(config.messaging.chat.telegram.botToken).toBe('new-token');
     expect(config.messaging.chat.telegram.typingRefreshIntervalMs).toBe(4000);
   });

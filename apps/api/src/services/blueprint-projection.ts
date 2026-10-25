@@ -4,7 +4,7 @@ import type { AgentBlueprintRevisionPayload, BotBlueprintRevisionPayload } from 
  * Project an agent row into an AgentBlueprintRevisionPayload.
  *
  * Strips ALL instance-only fields per the 007 field classification manifest:
- *   - id, userId, status, pauseState, telegramChatId, notificationPolicy,
+ *   - id, userId, status, pauseState, chat addresses, notificationPolicy,
  *     riskOverrides, blueprintId, blueprintRevisionId, createdAt, updatedAt
  *   - agent_connections (private bindings)
  *   - runtime-derived state

@@ -146,7 +146,7 @@ export const messages: Record<string, string> = {
   'auth.exchange.invalid_code': 'Invalid or expired exchange code.',
   'auth.unauthenticated': 'You need to sign in first.',
   'auth.user_not_found': 'User not found.',
-  'auth.profile.invalid_telegram_chat_id': 'Telegram chat ID must be a string or null.',
+  'auth.profile.invalid_chat_addresses': 'Chat addresses must list each provider at most once, with an address that is a string or null.',
   'auth.profile.invalid_preferred_locale': 'Language must be one of: {supportedLocales}.',
   'auth.logout.missing_authorization': 'Missing authorization.',
   'auth.logout.malformed_token': 'Malformed token.',

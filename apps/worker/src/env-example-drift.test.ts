@@ -204,10 +204,10 @@ describe('config/default.yaml has a value for every ENV_OVERRIDES target (self-d
   // too, and inventing a value would encode a behaviour choice. They are set only
   // per deployment via the env override. Verified against
   // packages/domain/src/config/schema.ts:
-  //   - alerts.telegram.webhookUrl      → z.string().url().optional()       (schema.ts:525)
+  //   - messaging.chat.telegram.webhookUrl → z.string().url().optional()
   //   - alerts.email.ses.configurationSetName → z.string().optional()       (schema.ts:551)
   const OPTIONAL_NO_DEFAULT_PATHS = new Set<string>([
-    'alerts.telegram.webhookUrl',
+    'messaging.chat.telegram.webhookUrl',
     'alerts.email.ses.configurationSetName',
   ]);
   const yaml = readFileSync(DEFAULT_YAML, 'utf8');

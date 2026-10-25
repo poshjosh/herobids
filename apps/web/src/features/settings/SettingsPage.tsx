@@ -7,6 +7,7 @@ import { PageShell, PageHeader, Card, Button, FieldLabel, ErrorBanner } from '..
 import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { chatAddressFor, chatAddressInput } from '../../lib/chat-addresses.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from './ModelSelectionFields.js';
 import { PushOptIn } from '../notifications/PushOptIn.js';
 import { EmailFallbackToggle } from '../notifications/EmailFallbackToggle.js';
@@ -49,9 +50,9 @@ export function SettingsPage() {
     queryFn: () => aiApi.settings(),
   });
 
-  const [telegramChatId, setTelegramChatId] = useState<string>('');
+  const [telegramAddress, setTelegramAddress] = useState<string>('');
   const [saved, setSaved] = useState(false);
-  const savedTelegramChatId = meQuery.data?.telegramChatId ?? '';
+  const savedTelegramAddress = chatAddressFor(meQuery.data?.chatAddresses, 'telegram');
   const savedEmailEnabled = meQuery.data?.notificationPreferences?.sendMessage?.email?.enabled ?? true;
   const [emailEnabled, setEmailEnabled] = useState<boolean>(true);
   const [emailDeliverySaved, setEmailDeliverySaved] = useState(false);
@@ -63,8 +64,8 @@ export function SettingsPage() {
   // Only react to changes in the saved Telegram value. Locale-only profile
   // updates also refresh the ['me'] query and should not overwrite the input.
   useEffect(() => {
-    setTelegramChatId(savedTelegramChatId);
-  }, [savedTelegramChatId]);
+    setTelegramAddress(savedTelegramAddress);
+  }, [savedTelegramAddress]);
 
   useEffect(() => {
     setEmailEnabled(savedEmailEnabled);
@@ -95,7 +96,7 @@ export function SettingsPage() {
   }, [availableModelsQuery.data?.providers, aiSettingsQuery.isSuccess, modelSettings.provider, modelTouched, savedModelSettings]);
 
   const telegramMutation = useMutation({
-    mutationFn: (chatId: string) => authApi.updateMe({ telegramChatId: chatId.trim() || null }),
+    mutationFn: (chatId: string) => authApi.updateMe({ chatAddresses: [chatAddressInput('telegram', chatId)] }),
     onSuccess: (updated) => {
       qc.setQueryData(['me'], updated);
       setSaved(true);
@@ -354,7 +355,7 @@ export function SettingsPage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              telegramMutation.mutate(telegramChatId);
+              telegramMutation.mutate(telegramAddress);
             }}
             style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
           >
@@ -371,24 +372,24 @@ export function SettingsPage() {
               <FieldLabel>{intl.formatMessage({ id: 'settings.telegram.chatId.label' })}</FieldLabel>
               <input
                 style={inputStyle}
-                value={telegramChatId}
-                onChange={(e) => setTelegramChatId(e.target.value)}
+                value={telegramAddress}
+                onChange={(e) => setTelegramAddress(e.target.value)}
                 placeholder={intl.formatMessage({ id: 'settings.telegram.chatId.placeholder' })}
               />
             </div>
 
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Button variant="primary" type="submit" disabled={telegramMutation.isPending || telegramChatId.trim() === savedTelegramChatId}>
+              <Button variant="primary" type="submit" disabled={telegramMutation.isPending || telegramAddress.trim() === savedTelegramAddress}>
                 {telegramMutation.isPending
                   ? intl.formatMessage({ id: 'common.pleaseWait' })
                   : intl.formatMessage({ id: 'settings.save' })}
               </Button>
-              {telegramChatId && (
+              {telegramAddress && (
                 <Button
                   variant="secondary"
                   type="button"
                   onClick={() => {
-                    setTelegramChatId('');
+                    setTelegramAddress('');
                     telegramMutation.mutate('');
                   }}
                   disabled={telegramMutation.isPending}

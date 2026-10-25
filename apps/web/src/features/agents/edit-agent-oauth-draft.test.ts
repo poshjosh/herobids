@@ -42,7 +42,7 @@ function makeFormState(overrides: Partial<AgentFormState> = {}): AgentFormState 
     connectionIds: ['conn-1'],
     executionMode: 'test',
     capital: '1500',
-    telegramChatId: '',
+    telegramAddress: '',
     emailDelivery: 'inherit',
     costPreset: 'standard',
     dailySpendBudgetUsd: '0.5',

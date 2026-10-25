@@ -1,6 +1,7 @@
 import type { Result, DomainError } from '../result.js';
 
-export type ChatProvider = 'telegram' | 'whatsapp' | 'sms';
+export const CHAT_PROVIDERS = ['telegram', 'whatsapp', 'sms'] as const;
+export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 export type ChatAddressValue = string & { readonly __chatAddress: unique symbol };
 
 export interface ChatAddress {

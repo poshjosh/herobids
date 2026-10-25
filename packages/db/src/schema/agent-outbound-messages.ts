@@ -28,10 +28,6 @@ export const agentOutboundMessages = pgTable('agent_outbound_messages', {
   messageClass: text('message_class'),
   /** Telegram delivery status: pending | sent | failed */
   deliveryStatus: text('delivery_status').notNull().default('pending'),
-  /** Telegram message_id returned on successful send. Legacy: superseded by providerMessageId. */
-  telegramMessageId: text('telegram_message_id'),
-  /** Telegram chat ID the message was sent to. Legacy: superseded by deliveryAddress. */
-  telegramChatId: text('telegram_chat_id'),
   /** Error detail if delivery failed */
   deliveryError: text('delivery_error'),
   /** Provider that delivered the message: telegram | whatsapp | sms | email */

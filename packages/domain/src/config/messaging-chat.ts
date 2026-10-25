@@ -6,22 +6,18 @@ export interface ResolvedTelegramChatConfig {
   webhookUrl: string | undefined;
 }
 
-function firstNonBlank(...values: (string | undefined)[]): string | undefined {
-  return values.find((value) => value !== undefined && value.trim() !== '');
+function nonBlank(value: string | undefined): string | undefined {
+  return value !== undefined && value.trim() !== '' ? value : undefined;
 }
 
-/**
- * messaging.chat.telegram.* wins when set; otherwise the legacy alerts.telegram.*
- * value is used (dual-read alias, 060); otherwise the schema default.
- */
+/** Telegram transport settings, read from messaging.chat.telegram.* only. */
 export function resolveTelegramChatConfig(
-  config: Pick<AppConfig, 'alerts' | 'messaging'>,
+  config: Pick<AppConfig, 'messaging'>,
 ): ResolvedTelegramChatConfig {
   const chat = config.messaging.chat.telegram;
-  const legacy = config.alerts.telegram;
   return {
-    botToken: firstNonBlank(chat.botToken, legacy.botToken) ?? '',
-    webhookSecret: firstNonBlank(chat.webhookSecret, legacy.webhookSecret) ?? '',
-    webhookUrl: firstNonBlank(chat.webhookUrl, legacy.webhookUrl),
+    botToken: nonBlank(chat.botToken) ?? '',
+    webhookSecret: nonBlank(chat.webhookSecret) ?? '',
+    webhookUrl: nonBlank(chat.webhookUrl),
   };
 }

@@ -750,15 +750,14 @@ actorEventRelay:
   maxEventAgeMs: 600000             # drop agent_wake/scan_completed older than this (10 min)
   settleLagMs: 5000                 # only process rows older than this so commits settle first
 
-# Chat messaging transports, keyed by provider (060). A blank or unset key falls back to the
-# matching legacy alerts.telegram.* key (dual-read alias for one release; env TELEGRAM_* still
-# writes the alerts.telegram.* path).
+# Chat messaging transports, keyed by provider (060). The legacy alerts.telegram.* alias was
+# removed (DEC-12); env TELEGRAM_* writes the messaging.chat.telegram.* paths below.
 messaging:
   chat:
     telegram:
-      botToken: ""                  # blank → alerts.telegram.botToken (env: TELEGRAM_BOT_TOKEN)
-      webhookSecret: ""             # blank → alerts.telegram.webhookSecret (env: TELEGRAM_WEBHOOK_SECRET)
-      # webhookUrl: "https://your-public-host/telegram/webhook"  # unset → alerts.telegram.webhookUrl (env: TELEGRAM_WEBHOOK_URL)
+      botToken: ""                  # override: TELEGRAM_BOT_TOKEN
+      webhookSecret: ""             # override: TELEGRAM_WEBHOOK_SECRET
+      # webhookUrl: "https://your-public-host/telegram/webhook"  # override: TELEGRAM_WEBHOOK_URL
       typingRefreshIntervalMs: 4000 # how often the "typing…" action is re-sent while an agent replies (Telegram shows it ~5s)
       typingMaxWindowMs: 180000     # max time typing is refreshed after a user message; sized to llm.timeoutMs
   notifications:
@@ -788,10 +787,7 @@ alerts:
   maxBatchSize: 20                  # max events per dispatch cycle
   maxRetries: 3                     # delivery attempts before permanent failure
   telegram:
-    botToken: ""                    # override: TELEGRAM_BOT_TOKEN
-    webhookSecret: ""               # override: TELEGRAM_WEBHOOK_SECRET
-    # webhookUrl: "https://your-public-host/telegram/webhook"  # override: TELEGRAM_WEBHOOK_URL
-    channels: []                    # configured via env-specific yaml
+    channels: []                    # configured via env-specific yaml; the bot token is messaging.chat.telegram.botToken
   operator:
     telegramChatId: "8681143261"    # chat that receives agent platform-fault reports; empty disables them (needs TELEGRAM_BOT_TOKEN) — override: OPERATOR_ALERT_TELEGRAM_CHAT_ID
     faultCooldownMs: 900000         # 15 min between reports for the same agent and error code

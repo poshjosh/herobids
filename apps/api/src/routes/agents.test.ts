@@ -8,6 +8,7 @@ import {
   agentRuntimeSessions,
   agentSkills,
   bots,
+  chatAddresses,
   decisions,
   skillEntitlements,
   skillRevisions,
@@ -120,6 +121,8 @@ function buildDb(options: {
   capabilityGrantRows?: Array<Record<string, unknown>>;
   venueAccountRows?: Array<Record<string, unknown>>;
   userRows?: Array<Record<string, unknown>>;
+  /** Rows returned for chat_addresses reads (`agentId`, `provider`, `address`, `status`). */
+  chatAddressRows?: Array<Record<string, unknown>>;
 } = {}) {
   const insertedValues: Array<Record<string, unknown>> = [];
   const updateSets: Array<Record<string, unknown>> = [];
@@ -173,6 +176,7 @@ function buildDb(options: {
   const agentConnectionRows = options.agentConnectionRows ?? options.capabilityGrantRows ?? [];
   const venueAccountRows = options.venueAccountRows ?? [];
   const userRows = options.userRows ?? [];
+  const chatAddressRows = options.chatAddressRows ?? [];
 
   let agentsSelectCount = 0;
 
@@ -215,6 +219,9 @@ function buildDb(options: {
     }
     if (table === users) {
       return userRows;
+    }
+    if (table === chatAddresses) {
+      return chatAddressRows;
     }
     return [];
   };
@@ -2772,8 +2779,8 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
     expect(res.statusCode).toBe(200);
     // The stale session must not leak into the response — regression for bug 005.
     expect(res.json().activeSession).toBeNull();
-    // Two SELECTs: agent lookup + skill assignment lookup.
-    expect(db.select).toHaveBeenCalledTimes(2);
+    // Three SELECTs: agent lookup + skill assignment lookup + chat addresses lookup.
+    expect(db.select).toHaveBeenCalledTimes(3);
   });
 
   it('returns the activeSession for an active agent that has an unhealthy session', async () => {
@@ -2797,8 +2804,8 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
     expect(res.statusCode).toBe(200);
     expect(res.json().activeSession).toMatchObject({ id: 'session-42', status: 'unhealthy' });
     expect(res.json()).toMatchObject({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
-    // Three SELECTs: agent lookup + session lookup + skill assignment lookup.
-    expect(db.select).toHaveBeenCalledTimes(3);
+    // Four SELECTs: agent lookup + session lookup + skill assignment lookup + chat addresses lookup.
+    expect(db.select).toHaveBeenCalledTimes(4);
   });
 
   it('returns 404 when the agent is not found', async () => {
@@ -3011,15 +3018,15 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(res.json()).toEqual(expect.objectContaining({ capital: '750', dailyLlmTokenBudget: null }));
   });
 
-  it('normalizes telegramChatId on PATCH', async () => {
+  it('writes a chatAddresses entry to the agent scope on PATCH, trimmed, and removes telegramChatId from the row update', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
-      telegramChatId: '123456',
     };
-    const { db, updateSets } = buildDb({
+    const { db, updateSets, insertedValues } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: '750', risk: null, executionDefaults: null }],
       activeLinkRows: [updatedAgent],
+      chatAddressRows: [{ agentId: 'agent-1', provider: 'telegram', address: '123456', status: 'active' }],
     });
 
     const app = Fastify();
@@ -3029,21 +3036,26 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/agents/agent-1',
-      payload: { telegramChatId: ' 123456 ' },
+      payload: { chatAddresses: [{ provider: 'telegram', address: ' 123456 ' }] },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSets).toContainEqual(expect.objectContaining({ telegramChatId: '123456' }));
-    expect(res.json()).toEqual(expect.objectContaining({ telegramChatId: '123456' }));
+    expect(insertedValues).toContainEqual(expect.objectContaining({
+      userId: TEST_USER_ID, agentId: 'agent-1', provider: 'telegram', address: '123456', status: 'active',
+    }));
+    expect(updateSets.every((update) => !('telegramChatId' in update) && !('chatAddresses' in update))).toBe(true);
+    expect(res.json()).toEqual(expect.objectContaining({
+      chatAddresses: [{ provider: 'telegram', address: '123456', scope: 'agent', status: 'active' }],
+    }));
+    expect(res.json()).not.toHaveProperty('telegramChatId');
   });
 
-  it('normalizes blank telegramChatId to null on PATCH', async () => {
+  it('clears the agent override by deleting its active row when the PATCH address is blank', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
-      telegramChatId: null,
     };
-    const { db, updateSets } = buildDb({
+    const { db, insertedValues } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: '750', risk: { maxOpenPositions: 3, maxPositionSizePct: 55, stopLossPct: 4, stopLossCooldownMs: 180000 }, executionDefaults: null }],
       activeLinkRows: [updatedAgent],
     });
@@ -3055,23 +3067,60 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/agents/agent-1',
-      payload: { telegramChatId: '   ' },
+      payload: { chatAddresses: [{ provider: 'telegram', address: '   ' }] },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSets).toContainEqual(expect.objectContaining({ telegramChatId: null }));
-    expect(res.json()).toEqual(expect.objectContaining({ telegramChatId: null }));
+    expect(db.delete).toHaveBeenCalledWith(chatAddresses);
+    expect(insertedValues.filter((row) => row['provider'] === 'telegram')).toEqual([]);
+    expect(res.json()).toEqual(expect.objectContaining({ chatAddresses: [] }));
   });
 
-  it('normalizes telegramChatId on POST create', async () => {
+  it('leaves the agent address alone on PATCH when chatAddresses is absent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: '750', risk: null, executionDefaults: null }],
+      activeLinkRows: [{ id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'PATCH', url: '/agents/agent-1', payload: { name: 'renamed' } });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.delete).not.toHaveBeenCalledWith(chatAddresses);
+  });
+
+  it('rejects the removed telegramChatId field name and unknown providers on PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: '750', risk: null, executionDefaults: null }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { chatAddresses: [{ provider: 'pigeon', address: '1' }] },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('writes chatAddresses to the new agent scope on POST create, trimmed', async () => {
     const { agentRoutes } = await import('./agents.js');
     const createdAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
-      telegramChatId: '123456',
     };
     const { db, insertedValues } = buildDb({
       agentRows: [createdAgent],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+      chatAddressRows: [{ agentId: 'agent-1', provider: 'telegram', address: '123456', status: 'active' }],
     });
 
     const app = Fastify();
@@ -3084,22 +3133,24 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       payload: {
         name: 'test-agent',
         prompt: 'test',
-        telegramChatId: ' 123456 ',
+        chatAddresses: [{ provider: 'telegram', address: ' 123456 ' }],
       },
     });
 
     expect(res.statusCode).toBe(201);
-    expect(insertedValues).toContainEqual(expect.objectContaining({ telegramChatId: '123456' }));
+    expect(insertedValues).toContainEqual(expect.objectContaining({
+      userId: TEST_USER_ID, provider: 'telegram', address: '123456', status: 'active',
+    }));
+    expect(insertedValues.every((row) => !('telegramChatId' in row))).toBe(true);
+    expect(res.json()).toEqual(expect.objectContaining({
+      chatAddresses: [{ provider: 'telegram', address: '123456', scope: 'agent', status: 'active' }],
+    }));
   });
 
-  it('normalizes blank telegramChatId to null on POST create', async () => {
+  it('writes no chat address row on POST create when chatAddresses is absent', async () => {
     const { agentRoutes } = await import('./agents.js');
-    const createdAgent = {
-      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
-      telegramChatId: null,
-    };
     const { db, insertedValues } = buildDb({
-      agentRows: [createdAgent],
+      agentRows: [{ id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null }],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
@@ -3107,18 +3158,48 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     decorateWithAuth(app);
     await agentRoutes(app, db);
 
-    const res = await app.inject({
-      method: 'POST',
-      url: '/agents',
-      payload: {
-        name: 'test-agent',
-        prompt: 'test',
-        telegramChatId: '   ',
-      },
-    });
+    const res = await app.inject({ method: 'POST', url: '/agents', payload: { name: 'test-agent', prompt: 'test' } });
 
     expect(res.statusCode).toBe(201);
-    expect(insertedValues).toContainEqual(expect.objectContaining({ telegramChatId: null }));
+    expect(insertedValues.filter((row) => row['provider'] === 'telegram')).toEqual([]);
+    expect(res.json()).toEqual(expect.objectContaining({ chatAddresses: [] }));
+  });
+
+  it('lists chatAddresses for two agents from one chat_addresses query', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const base = { userId: TEST_USER_ID, status: 'stopped', prompt: 'p', modelPolicy: null, pauseState: null };
+    const { db } = buildDb({
+      agentRows: [
+        { ...base, id: 'agent-1', name: 'one' },
+        { ...base, id: 'agent-2', name: 'two' },
+      ],
+      chatAddressRows: [
+        { agentId: null, provider: 'telegram', address: '5550001', status: 'active' },
+        { agentId: 'agent-1', provider: 'telegram', address: '6600002', status: 'active' },
+      ],
+    });
+    const chatSelects = vi.fn();
+    const baseFrom = db.select().from as (table: unknown) => unknown;
+    db.select = vi.fn().mockReturnValue({
+      from: vi.fn().mockImplementation((table: unknown) => {
+        if (table === chatAddresses) chatSelects();
+        return baseFrom(table);
+      }),
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/agents' });
+
+    expect(res.statusCode).toBe(200);
+    const list = res.json<Array<{ id: string; chatAddresses: unknown[] }>>();
+    expect(list.map((agent) => agent.chatAddresses)).toEqual([
+      [{ provider: 'telegram', address: '6600002', scope: 'agent', status: 'active' }],
+      [],
+    ]);
+    expect(chatSelects).toHaveBeenCalledTimes(1);
   });
 
   it('persists explicit risk limit overrides on PATCH', async () => {

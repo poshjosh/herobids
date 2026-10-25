@@ -33,7 +33,7 @@ function makeInsertTracker(): InsertTracker {
  * Build a mock Database (or transaction) for createAgentFromPayload.
  *
  * The function calls `tx.insert(agents).values(...)`, optionally `tx.insert(agentSkills).values(...)`,
- * and, when a Telegram chat ID is set, `tx.insert(chatAddresses).values(...).onConflictDoUpdate(...)`.
+ * and, when chat addresses are given, `tx.insert(chatAddresses).values(...).onConflictDoUpdate(...)`.
  * We intercept each and record what was inserted.
  */
 function buildMockTx(tracker: InsertTracker): Database {
@@ -444,17 +444,17 @@ describe('createAgentFromPayload', () => {
     expect(tracker.agentRows[0]).not.toHaveProperty('risk');
   });
 
-  it('sets telegramChatId from context when provided', async () => {
+  it('writes the chat addresses from context to the new agent scope only', async () => {
     const tracker = makeInsertTracker();
     const tx = buildMockTx(tracker);
 
     const context: AgentFromPayloadContext = {
       userId: 'user-1',
-      telegramChatId: 'chat-999',
+      chatAddresses: [{ provider: 'telegram', address: 'chat-999' }],
     };
     await createAgentFromPayload(tx, makePayload(), [], context);
 
-    expect(tracker.agentRows[0]!.telegramChatId).toBe('chat-999');
+    expect(tracker.agentRows[0]).not.toHaveProperty('telegramChatId');
     expect(tracker.chatAddressRows).toEqual([expect.objectContaining({
       userId: 'user-1',
       agentId: tracker.agentRows[0]!.id,
@@ -484,12 +484,12 @@ describe('createAgentFromPayload', () => {
     expect(agent.wakePreferences).toEqual({ wakeOnNewPosition: true });
   });
 
-  it('sets telegramChatId to null when not provided', async () => {
+  it('writes no chat address row when none are given', async () => {
     const tracker = makeInsertTracker();
     const tx = buildMockTx(tracker);
 
     await createAgentFromPayload(tx, makePayload(), [], { userId: 'user-1' });
 
-    expect(tracker.agentRows[0]!.telegramChatId).toBeNull();
+    expect(tracker.chatAddressRows).toEqual([]);
   });
 });

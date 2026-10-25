@@ -19,7 +19,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     costPreset: null,
     dailySpendBudgetUsd: null,
     dailyLlmTokenBudget: null,
-    telegramChatId: null,
+    chatAddresses: [],
     executionDefaults: { mode: 'paper' },
     risk: null,
     maxBots: null,
@@ -48,6 +48,27 @@ describe('agentToFormState — maxDrawdownPct hydration', () => {
     const agent = makeAgent({ risk: null });
     const form = agentToFormState(agent);
     expect(form.maxDrawdownPct).toBe('');
+  });
+});
+
+describe('agentToFormState — chatAddresses hydration', () => {
+  it('reads the agent override from chatAddresses', () => {
+    const agent = makeAgent({ chatAddresses: [{ provider: 'telegram', address: '777001', scope: 'agent', status: 'active' }] });
+    expect(agentToFormState(agent).telegramAddress).toBe('777001');
+  });
+
+  it('is blank when the agent has no chat address', () => {
+    expect(agentToFormState(makeAgent({ chatAddresses: [] })).telegramAddress).toBe('');
+  });
+
+  it('ignores addresses of other providers and inactive rows', () => {
+    const agent = makeAgent({
+      chatAddresses: [
+        { provider: 'sms', address: '+15555550100', scope: 'agent', status: 'active' },
+        { provider: 'telegram', address: '111', scope: 'agent', status: 'revoked' },
+      ],
+    });
+    expect(agentToFormState(agent).telegramAddress).toBe('');
   });
 });
 
@@ -198,7 +219,7 @@ const BASE_INTENT = {
   connectionIds: [],
   executionMode: 'test' as const,
   capital: '',
-  telegramChatId: '',
+  telegramAddress: '',
   emailDelivery: 'inherit' as const,
   costPreset: '' as const,
   dailySpendBudgetUsd: '',

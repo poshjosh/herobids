@@ -18,7 +18,7 @@ const BASE_FORM_STATE: AgentFormState = {
   connectionIds: [],
   executionMode: '',
   capital: '',
-  telegramChatId: '',
+  telegramAddress: '',
   emailDelivery: 'inherit',
   costPreset: '',
   dailySpendBudgetUsd: '',

@@ -25,25 +25,7 @@ function parseWith(extra: Record<string, unknown>) {
 }
 
 describe('resolveTelegramChatConfig', () => {
-  it('reads legacy alerts.telegram keys when messaging.chat is absent', () => {
-    const config = parseWith({
-      alerts: {
-        telegram: {
-          botToken: 'legacy-token',
-          webhookSecret: 'legacy-secret',
-          webhookUrl: 'https://example.com/telegram/webhook',
-        },
-      },
-    });
-
-    expect(resolveTelegramChatConfig(config)).toEqual({
-      botToken: 'legacy-token',
-      webhookSecret: 'legacy-secret',
-      webhookUrl: 'https://example.com/telegram/webhook',
-    });
-  });
-
-  it('reads messaging.chat.telegram keys when alerts.telegram is absent', () => {
+  it('reads messaging.chat.telegram keys', () => {
     const config = parseWith({
       messaging: {
         chat: {
@@ -63,47 +45,20 @@ describe('resolveTelegramChatConfig', () => {
     });
   });
 
-  it('prefers messaging.chat.telegram over alerts.telegram when both are set', () => {
-    const config = parseWith({
-      alerts: {
-        telegram: {
-          botToken: 'legacy-token',
-          webhookSecret: 'legacy-secret',
-          webhookUrl: 'https://legacy.example.com/telegram/webhook',
-        },
-      },
-      messaging: {
-        chat: {
-          telegram: {
-            botToken: 'new-token',
-            webhookSecret: 'new-secret',
-            webhookUrl: 'https://new.example.com/messaging/telegram',
-          },
-        },
-      },
-    });
-
-    expect(resolveTelegramChatConfig(config)).toEqual({
-      botToken: 'new-token',
-      webhookSecret: 'new-secret',
-      webhookUrl: 'https://new.example.com/messaging/telegram',
-    });
-  });
-
-  it('falls back per key when the new key is blank', () => {
+  it('ignores a blank bot token and no longer falls back to alerts.telegram', () => {
     const config = parseWith({
       alerts: { telegram: { botToken: 'legacy-token', webhookSecret: 'legacy-secret' } },
       messaging: { chat: { telegram: { botToken: '   ', webhookSecret: 'new-secret' } } },
     });
 
     expect(resolveTelegramChatConfig(config)).toEqual({
-      botToken: 'legacy-token',
+      botToken: '',
       webhookSecret: 'new-secret',
       webhookUrl: undefined,
     });
   });
 
-  it('returns blank credentials and no webhook URL when neither key is set', () => {
+  it('returns blank credentials and no webhook URL when nothing is set', () => {
     const config = parseWith({});
 
     expect(resolveTelegramChatConfig(config)).toEqual({
@@ -111,6 +66,16 @@ describe('resolveTelegramChatConfig', () => {
       webhookSecret: '',
       webhookUrl: undefined,
     });
+  });
+});
+
+describe('alerts.telegram schema', () => {
+  it('no longer carries a bot token, webhook secret or webhook URL', () => {
+    const { telegram } = parseWith({
+      alerts: { telegram: { botToken: 'legacy-token', webhookSecret: 'legacy-secret', webhookUrl: 'https://example.com/hook' } },
+    }).alerts;
+
+    expect(telegram).toEqual({ channels: [] });
   });
 });
 

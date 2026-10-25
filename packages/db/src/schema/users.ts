@@ -18,8 +18,6 @@ export const users = pgTable('users', {
   planId: text('plan_id').notNull().default('free'),
   /** Preferred UI locale selected by the user */
   preferredLocale: text('preferred_locale'),
-  /** Telegram chat ID for direct user messaging (optional, user-provided) */
-  telegramChatId: text('telegram_chat_id'),
   /** AI model preference chain: { primary, fallback1, fallback2 } each { provider, model } */
   aiModelConfig: jsonb('ai_model_config').$type<Record<string, unknown>>(),
   /** Account-level email delivery preferences for agent messages */

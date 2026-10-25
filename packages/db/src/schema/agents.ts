@@ -27,8 +27,6 @@ export const agents = pgTable('agents', {
   toolPolicy: jsonb('tool_policy').$type<Record<string, unknown>>(),
   /** Model/LLM configuration policy */
   modelPolicy: jsonb('model_policy').$type<Record<string, unknown>>(),
-  /** Telegram chat ID for send_message and platform safety alert delivery */
-  telegramChatId: text('telegram_chat_id'),
   /**
    * Notification delivery policy — controls delivery preferences for agent notifications.
    * Note: email fanout from send_message has been removed (2026-07-17).

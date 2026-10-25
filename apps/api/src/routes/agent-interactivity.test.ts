@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import { agentInteractivityRoutes as registerAgentInteractivityRoutes, telegramWebhookHandler } from './agent-interactivity.js';
 import { ChatTypingIndicator } from './chat-typing-indicator.js';
 import { registerBackendRefFamilies } from './agent-config-helpers.js';
-import type { Database } from '@herobids/db';
+import { chatSuppressions, type Database } from '@herobids/db';
 import type { ResolvedTelegramChatConfig } from '@herobids/domain';
 import { AlertsConfigSchema, MessagingConfigSchema, resolveTelegramChatConfig } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
@@ -69,7 +69,7 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'innerJoin', 'where', 'orderBy', 'limit', 'offset']) {
+  for (const m of ['from', 'innerJoin', 'leftJoin', 'where', 'orderBy', 'limit', 'offset']) {
     chain[m] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (
@@ -77,6 +77,18 @@ function makeChain(value: unknown[]) {
     reject?: (v: unknown) => unknown,
   ) => Promise.resolve(value).then(resolve, reject);
   return chain;
+}
+
+/**
+ * db.select() for webhook tests that queue rows by select order. Reads of chat_suppressions return no
+ * rows and are not counted, so the queued order describes the other lookups only.
+ */
+function selectSkippingSuppressions(impl: () => unknown) {
+  return vi.fn().mockImplementation(() => ({
+    from: vi.fn((table: unknown) => (
+      table === chatSuppressions ? makeChain([]) : (impl() as { from: (t: unknown) => unknown }).from(table)
+    )),
+  }));
 }
 
 const stubAgent = {
@@ -88,7 +100,6 @@ const stubAgent = {
   status: 'stopped',
   toolPolicy: null,
   modelPolicy: null,
-  telegramChatId: null,
   executionMode: null,
   dailyTokenBudget: null,
   dailyLossLimit: null,
@@ -1079,7 +1090,7 @@ describe('POST /telegram/webhook', () => {
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain(selectCount === 1
           ? [{ userId: TEST_USER_ID }]
@@ -1132,7 +1143,7 @@ describe('POST /telegram/webhook', () => {
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) {
           // User-level chat binding lookup — no match (the chat is only bound at agent level).
@@ -1183,7 +1194,7 @@ describe('POST /telegram/webhook', () => {
       const redis = buildMockRedis();
       let selectCount = 0;
       const db = {
-        select: vi.fn().mockImplementation(() => {
+        select: selectSkippingSuppressions(() => {
           selectCount += 1;
           if (selectCount === 1) {
             return makeChain(rows[0] ? [rows[0]] : []);
@@ -1215,6 +1226,89 @@ describe('POST /telegram/webhook', () => {
     const bodies = fetchSpy.mock.calls.map((call) => String((call[1] as RequestInit | undefined)?.body ?? ''));
     expect(bodies.some((body) => body.includes("I couldn't find which agent that reply belongs to."))).toBe(true);
     expect(bodies.some((body) => body.includes('Agent My Agent is stopped and cannot receive messages right now.'))).toBe(true);
+    fetchSpy.mockRestore();
+  });
+
+  /** db whose chat_suppressions reads return `suppressed` and every other read returns `otherRows`. */
+  function buildSuppressionDb(suppressed: unknown[], otherRows: unknown[]) {
+    return {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn((table: unknown) => makeChain(table === chatSuppressions ? suppressed : otherRows)),
+      })),
+    } as unknown as Database;
+  }
+
+  it('does not bind a suppressed chat to a user: a plain message is neither routed nor answered', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    const db = buildSuppressionDb(
+      [{ address: '12345' }],
+      [{ userId: TEST_USER_ID, planId: 'free', isAdmin: false, agentId: AGENT_ID, agentName: 'My Agent', status: 'running' }],
+    );
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: { message: { chat: { id: '12345' }, text: 'Hello agent' } },
+    });
+    await flushPromises();
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not route a reply from a suppressed address to the agent that sent the message', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    const db = buildSuppressionDb(
+      [{ address: '12345' }],
+      [{ userId: TEST_USER_ID, planId: 'free', isAdmin: false, agentId: AGENT_ID, agentName: 'My Agent', status: 'running' }],
+    );
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+
+    await app.inject({
+      method: 'POST',
+      url: '/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: { message: { chat: { id: '12345' }, text: 'Ping', reply_to_message: { message_id: 777 } } },
+    });
+    await flushPromises();
+
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain("I couldn't find which agent that reply belongs to.");
+    fetchSpy.mockRestore();
+  });
+
+  it('fails closed when the suppression lookup errors: nothing is routed', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    const db = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn((table: unknown) => {
+          if (table === chatSuppressions) throw new Error('db down');
+          return makeChain([{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]);
+        }),
+      })),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: { message: { chat: { id: '12345' }, text: 'Hello agent' } },
+    });
+    await flushPromises();
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 
@@ -1251,7 +1345,7 @@ describe('POST /telegram/webhook', () => {
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) {
           return makeChain([{ userId: TEST_USER_ID }]);
@@ -1290,7 +1384,7 @@ describe('POST /telegram/webhook', () => {
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) {
           return makeChain([{ userId: TEST_USER_ID }]);
@@ -1330,7 +1424,7 @@ describe('POST /telegram/webhook', () => {
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) {
           return makeChain([{ userId: TEST_USER_ID }]);
@@ -1365,7 +1459,7 @@ describe('POST /telegram/webhook', () => {
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) {
           return makeChain([{ userId: TEST_USER_ID }]);
@@ -1403,7 +1497,7 @@ describe('POST /telegram/webhook', () => {
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) {
           return makeChain([{ userId: TEST_USER_ID }]);
@@ -1439,7 +1533,7 @@ describe('POST /telegram/webhook', () => {
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) {
           return makeChain([{ userId: TEST_USER_ID }]);
@@ -1522,7 +1616,7 @@ describe.each(TELEGRAM_WEBHOOK_ROUTES)('Telegram webhook through the %s', (_labe
     const redis = buildMockRedis();
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain(selectCount === 1
           ? [{ userId: TEST_USER_ID }]
@@ -1621,13 +1715,13 @@ describe('messaging.chat.telegram config drives the Telegram webhook', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('checks the messaging.chat.telegram secret rather than the legacy alerts.telegram secret when both are set', async () => {
+  it('ignores a legacy alerts.telegram secret and checks the messaging.chat.telegram secret', async () => {
     const app = Fastify();
     await telegramWebhookHandler(
       app,
       buildAgentDb(null),
       buildMockRedis(),
-      resolvedFrom({ botToken: 'legacy-token', webhookSecret: 'legacy-secret' }, { webhookSecret: 'chat-secret' }),
+      resolvedFrom({ botToken: 'legacy-token', webhookSecret: 'legacy-secret' }, { botToken: 'chat-token', webhookSecret: 'chat-secret' }),
     );
 
     const legacy = await app.inject({
@@ -1645,6 +1739,25 @@ describe('messaging.chat.telegram config drives the Telegram webhook', () => {
 
     expect(legacy.statusCode).toBe(401);
     expect(chat.statusCode).toBe(200);
+  });
+
+  it('is not configured when only the legacy alerts.telegram keys are set', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(
+      app,
+      buildAgentDb(null),
+      buildMockRedis(),
+      resolvedFrom({ botToken: 'legacy-token', webhookSecret: 'legacy-secret' }, {}),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/messaging/chat/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'legacy-secret' },
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(501);
   });
 });
 

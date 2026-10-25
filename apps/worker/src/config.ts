@@ -29,9 +29,9 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   ONEINCH_API_KEY: { path: 'venues.1inch.apiKey', type: 'string' },
   // Alerts
   ALERTS_ENABLED: { path: 'alerts.enabled', type: 'boolean' },
-  TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
-  TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
-  TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
+  TELEGRAM_BOT_TOKEN: { path: 'messaging.chat.telegram.botToken', type: 'string' },
+  TELEGRAM_WEBHOOK_SECRET: { path: 'messaging.chat.telegram.webhookSecret', type: 'string' },
+  TELEGRAM_WEBHOOK_URL: { path: 'messaging.chat.telegram.webhookUrl', type: 'string' },
   OPERATOR_ALERT_TELEGRAM_CHAT_ID: { path: 'alerts.operator.telegramChatId', type: 'string' },
   // Web Push (081 D1): the one secret in messaging.notifications, env-only.
   VAPID_PRIVATE_KEY: { path: 'messaging.notifications.webPush.vapidPrivateKey', type: 'string' },

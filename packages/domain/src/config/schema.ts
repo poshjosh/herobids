@@ -602,19 +602,18 @@ export const ActorEventRelayConfigSchema = z.object({
   settleLagMs: z.number().int().positive().default(5000),
 });
 
-// Provider-keyed chat transport config (060). Blank or unset values fall back to the
-// legacy alerts.telegram.* keys; see resolveTelegramChatConfig.
+// Provider-keyed chat transport config (060). The legacy alerts.telegram.* alias was removed in C1 (DEC-12).
 /** Floor for typingRefreshIntervalMs; faster refreshes would hammer the Telegram Bot API. */
 const TYPING_REFRESH_INTERVAL_MIN_MS = 1000;
 /** Ceiling for typingRefreshIntervalMs; must stay below CHAT_TYPING_STOP_TTL_SECONDS (10s) so the stop signal outlives a refresh. */
 const TYPING_REFRESH_INTERVAL_MAX_MS = 9000;
 
 export const MessagingChatTelegramSchema = z.object({
-  /** Telegram bot token. Blank falls back to alerts.telegram.botToken. */
+  /** Telegram bot token. Override: TELEGRAM_BOT_TOKEN */
   botToken: z.string().default(''),
-  /** Shared secret Telegram sends with webhook requests. Blank falls back to alerts.telegram.webhookSecret. */
+  /** Shared secret Telegram sends with webhook requests. Override: TELEGRAM_WEBHOOK_SECRET */
   webhookSecret: z.string().default(''),
-  /** Public HTTPS webhook endpoint. Unset falls back to alerts.telegram.webhookUrl. */
+  /** Public HTTPS webhook endpoint. Override: TELEGRAM_WEBHOOK_URL */
   webhookUrl: z.string().url().optional(),
   /** Interval between typing-indicator refreshes while an agent works on a user message (ms). Telegram's typing status lasts about 5s. */
   typingRefreshIntervalMs: z.number().int().min(TYPING_REFRESH_INTERVAL_MIN_MS).max(TYPING_REFRESH_INTERVAL_MAX_MS).default(4000),
@@ -676,13 +675,7 @@ export const AlertsConfigSchema = z.object({
   /** Max delivery attempts before marking permanently failed */
   maxRetries: z.number().min(1).default(3),
   telegram: z.object({
-    /** Bot token resolved from TELEGRAM_BOT_TOKEN env var */
-    botToken: z.string().default(''),
-    /** Shared secret token Telegram includes in webhook requests */
-    webhookSecret: z.string().default(''),
-    /** Public HTTPS webhook endpoint registered with Telegram */
-    webhookUrl: z.string().url().optional(),
-    /** Telegram channel routing rules */
+    /** Telegram channel routing rules (the bot token is messaging.chat.telegram.botToken) */
     channels: z.array(TelegramChannelConfigSchema).default([]),
   }).default({}),
   operator: z.object({

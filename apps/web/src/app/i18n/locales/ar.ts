@@ -86,7 +86,7 @@ export const messages: Record<string, string> = {
   'auth.exchange.invalid_code': 'رمز التبادل غير صالح أو منتهي الصلاحية.',
   'auth.unauthenticated': 'تحتاج إلى تسجيل الدخول أولاً.',
   'auth.user_not_found': 'المستخدم غير موجود.',
-  'auth.profile.invalid_telegram_chat_id': 'يجب أن يكون معرّف دردشة Telegram سلسلة نصية أو null.',
+  'auth.profile.invalid_chat_addresses': 'يجب أن تسرد عناوين الدردشة كل مزوّد مرة واحدة على الأكثر، وأن يكون كل عنوان سلسلة نصية أو null.',
   'auth.profile.invalid_preferred_locale': 'يجب أن تكون اللغة إحدى القيم التالية: {supportedLocales}.',
   'auth.logout.missing_authorization': 'ترويسة التفويض مفقودة.',
   'auth.logout.malformed_token': 'الرمز غير صالح البنية.',

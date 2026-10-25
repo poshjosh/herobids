@@ -8,6 +8,7 @@ import { Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolvePromptTemplate, resolveGoalPlaceholderKey, selectedSkillsHaveCapabilityFamily } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { chatAddressFor } from '../../lib/chat-addresses.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
@@ -64,7 +65,7 @@ interface IntentState {
   provider: string;
   lightModel: string;
   heavyModel: string;
-  telegramChatId: string;
+  telegramAddress: string;
   connectionIds: string[];
   /** Per-agent email delivery override. */
   emailDelivery: 'inherit' | 'allow' | 'disable';
@@ -168,7 +169,7 @@ export function CreateAgentFlow({
     provider: '',
     lightModel: '',
     heavyModel: '',
-    telegramChatId: '',
+    telegramAddress: '',
     connectionIds: [],
     emailDelivery: 'inherit' as const,
     venue: '',
@@ -352,11 +353,11 @@ export function CreateAgentFlow({
     if (telegramTouched) {
       return;
     }
-    const chatId = meQuery.data?.telegramChatId;
-    if (chatId !== undefined) {
-      setIntent((state) => ({ ...state, telegramChatId: chatId ?? '' }));
+    const chatAddresses = meQuery.data?.chatAddresses;
+    if (chatAddresses !== undefined) {
+      setIntent((state) => ({ ...state, telegramAddress: chatAddressFor(chatAddresses, 'telegram') }));
     }
-  }, [meQuery.data?.telegramChatId, telegramTouched]);
+  }, [meQuery.data?.chatAddresses, telegramTouched]);
 
   // Sync capabilityMode from technicalPreFilterEnabled toggle + trading skill presence
   useEffect(() => {
@@ -526,7 +527,7 @@ export function CreateAgentFlow({
         modelPayload,
         costPreset: intent.costPreset,
         dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
-        telegramChatId: intent.telegramChatId,
+        telegramAddress: intent.telegramAddress,
         emailDelivery: intent.emailDelivery,
         tickIntervalMins: intent.tickIntervalMins,
         capital: intent.capital,
@@ -684,7 +685,7 @@ export function CreateAgentFlow({
               setIntent((state) => ({
                 ...state,
                 name: patch.name ?? state.name,
-                telegramChatId: patch.telegramChatId ?? state.telegramChatId,
+                telegramAddress: patch.telegramAddress ?? state.telegramAddress,
               }));
             }}
             formErrors={formErrors}

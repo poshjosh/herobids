@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireDirectChildOfActingAgent, requireSelfAgentOrUser, requireUserCaller } from '../plugins/auth.js';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import { TradingProfileReconciliationOutboxRepository, recordAgentAuditEvent, setTelegramChatAddress, type Database, type DatabaseTransaction } from '@herobids/db';
+import { TradingProfileReconciliationOutboxRepository, recordAgentAuditEvent, type Database, type DatabaseTransaction } from '@herobids/db';
 import {
   agents,
   agentArtifacts,
@@ -66,6 +66,7 @@ import {
   type AgentCreatePolicyInput,
 } from '../agents/agent-create-policy.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
+import { ChatAddressesInputSchema, applyChatAddresses, withAgentChatAddresses } from '../agents/chat-addresses.js';
 import {
   createAgentOutcomeForRule,
   recordCreateAgentAttempt,
@@ -330,7 +331,7 @@ const CreateAgentSchema = z.object({
   costPreset: CostPresetSchema.optional(),
   dailySpendBudgetUsd: z.number().positive().optional(),
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).optional(),
-  telegramChatId: z.string().optional(),
+  chatAddresses: ChatAddressesInputSchema.optional(),
   notificationPolicy: z.object({
     sendMessage: z.object({
       email: z.object({
@@ -416,7 +417,7 @@ const UpdateAgentSchema = z.object({
   costPreset: CostPresetSchema.nullable().optional(),
   dailySpendBudgetUsd: z.number().positive().nullable().optional(),
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
-  telegramChatId: z.string().nullable().optional(),
+  chatAddresses: ChatAddressesInputSchema.optional(),
   notificationPolicy: z.object({
     sendMessage: z.object({
       email: z.object({
@@ -1124,7 +1125,6 @@ export async function agentRoutes(
           status: 'stopped',
           toolPolicy: createFields.toolPolicy,
           modelPolicy: effectiveModelPolicy,
-          telegramChatId: parsed.data.telegramChatId?.trim() || null,
           notificationPolicy: createFields.notificationPolicy,
           maxBots: createFields.maxBots,
           tickIntervalMs: resolvedTickIntervalMs,
@@ -1158,8 +1158,8 @@ export async function agentRoutes(
             detail: { depth: lineage.depth },
           });
         }
-        if (parsed.data.telegramChatId !== undefined) {
-          await setTelegramChatAddress(tx, { userId: request.userId, agentId }, parsed.data.telegramChatId);
+        if (parsed.data.chatAddresses !== undefined) {
+          await applyChatAddresses(tx, { userId: request.userId, agentId }, parsed.data.chatAddresses);
         }
 
         let proposedConnections: Array<{
@@ -1249,7 +1249,8 @@ export async function agentRoutes(
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     const skillIds = await listSkillIdsForAgent(db, agentId);
     setCreateAgentOutcome(request, 'success');
-    return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), ...enrichAgentResponse(agent!) });
+    const [createdOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent!, skillIds }), ...enrichAgentResponse(agent!) }]);
+    return reply.status(201).send(createdOut);
   });
 
   // List user's agents
@@ -1258,13 +1259,14 @@ export async function agentRoutes(
       .where(eq(agents.userId, request.userId))
       .orderBy(agents.createdAt);
     const skillIdsByAgentId = await listSkillIdsByAgentId(db, rows.map((row) => row.id));
-    return reply.send(rows.map((agent) => ({
+    // One query returns the chat addresses for every listed agent.
+    return reply.send(await withAgentChatAddresses(db, request.userId, rows.map((agent) => ({
       ...decorateAgentResponse({
         ...agent,
         skillIds: skillIdsByAgentId.get(agent.id) ?? [],
       }),
       ...enrichAgentResponse(agent),
-    })));
+    }))));
   });
 
   // ─── GET /agents/outcomes ──────────────────────────────────────────────────
@@ -1380,7 +1382,8 @@ export async function agentRoutes(
       .orderBy(desc(agentRuntimeSessions.startedAt));
 
     const skillIds = await listSkillIdsForAgent(db, id);
-    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), activeSession: session ?? null });
+    const [agentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), activeSession: session ?? null }]);
+    return reply.send(agentOut);
   });
 
   // GET /agents/:id/connections — returns all assigned connections across all providers
@@ -1655,7 +1658,7 @@ export async function agentRoutes(
       risk: _risk,
       executionDefaults: _executionDefaults,
       notificationPolicy: notificationPolicyInput,
-      telegramChatId: rawTelegramChatId,
+      chatAddresses: chatAddressesUpdate,
       maxBots: rawMaxBots,
       technical: technicalUpdate,
       strategyPreset: strategyPresetUpdate,
@@ -2272,7 +2275,6 @@ export async function agentRoutes(
         }
         await tx.update(agents).set({
           ...agentUpdates,
-          ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
           ...(rawPermissionLevel !== undefined ? { permissionLevel: rawPermissionLevel ?? 'standard' } : {}),
           ...resolvedMaxBotsPatch,
           ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
@@ -2282,8 +2284,8 @@ export async function agentRoutes(
           modelPolicy: effectiveModelPolicy,
           updatedAt: new Date(),
         } as never).where(eq(agents.id, id));
-        if (rawTelegramChatId !== undefined) {
-          await setTelegramChatAddress(tx, { userId: request.userId, agentId: id }, rawTelegramChatId);
+        if (chatAddressesUpdate !== undefined) {
+          await applyChatAddresses(tx, { userId: request.userId, agentId: id }, chatAddressesUpdate);
         }
         await markLocalCommitted();
         return { kind: 'ok' as const };
@@ -2316,7 +2318,8 @@ export async function agentRoutes(
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(db, id);
-    return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), ...enrichAgentResponse(updated!) });
+    const [updatedOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...updated!, skillIds }), ...enrichAgentResponse(updated!) }]);
+    return reply.send(updatedOut);
   });
 
   // Delete agent. User-only and owner-only. Scope 'subtree' removes the agent and all of its
@@ -3323,7 +3326,8 @@ export async function agentRoutes(
 
     const [newAgent] = await db.select().from(agents).where(eq(agents.id, result.agentId));
     const skillIds = await listSkillIdsForAgent(db, result.agentId);
-    return reply.status(201).send({ ...decorateAgentResponse({ ...newAgent!, skillIds }), ...enrichAgentResponse(newAgent!) });
+    const [newAgentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...newAgent!, skillIds }), ...enrichAgentResponse(newAgent!) }]);
+    return reply.status(201).send(newAgentOut);
   });
 
   app.post<{ Params: { id: string }; Body: unknown }>('/agents/:id/blueprints', async (request, reply) => {

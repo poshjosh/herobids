@@ -1870,6 +1870,7 @@ describe('AppConfigSchema — agentCreation', () => {
         agentCreateRatePerMinute: 10,
         creatorMessageRatePerMinute: 10,
         maxAgentDepth: 6,
+        platformApiTimeoutMs: 10000,
       });
     }
   });
@@ -1885,6 +1886,7 @@ describe('AppConfigSchema — agentCreation', () => {
         agentCreateRatePerMinute: 0,
         creatorMessageRatePerMinute: 4,
         maxAgentDepth: 2,
+        platformApiTimeoutMs: 10000,
       });
     }
   });

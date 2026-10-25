@@ -6,7 +6,7 @@
  * showed a misleading "Telegram chat ID saved." success banner.
  *
  * Fix: add a second condition:
- *   disabled={isPending || telegramChatId.trim() === (savedChatId ?? '')}
+ *   disabled={isPending || telegramAddress.trim() === (savedChatId ?? '')}
  *
  * These tests validate the boolean logic of that disable predicate.
  */

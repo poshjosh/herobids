@@ -43,7 +43,6 @@ function makeAgentRow(overrides: Partial<Record<string, unknown>> = {}) {
     pauseState: null,
     toolPolicy: null,
     modelPolicy: null,
-    telegramChatId: null,
     notificationPolicy: null,
     maxBots: null,
     tickIntervalMs: null,

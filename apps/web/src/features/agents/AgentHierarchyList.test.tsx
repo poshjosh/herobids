@@ -36,7 +36,7 @@ function makeAgent(overrides: Partial<Agent> & Pick<Agent, 'id' | 'name'>): Agen
     costPreset: null,
     dailySpendBudgetUsd: null,
     dailyLlmTokenBudget: null,
-    telegramChatId: null,
+    chatAddresses: [],
     executionMode: null,
     dailyLossLimit: null,
     maxDrawdownPct: null,

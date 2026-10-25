@@ -50,6 +50,14 @@ async function makeToken(userId: string, sessionId: string, secret = TEST_JWT_SE
     .sign(key);
 }
 
+/** where() result for the /auth/me reads: the user row (limit) and the chat address rows (orderBy). */
+function meWhere(userRows: unknown[], chatRows: unknown[] = []) {
+  return vi.fn().mockReturnValue({
+    limit: vi.fn().mockResolvedValue(userRows),
+    orderBy: vi.fn().mockResolvedValue(chatRows),
+  });
+}
+
 /** Fake db that returns one user row with the given stored notificationPreferences. */
 function makeMeDb(notificationPreferences: unknown, updateSpy?: ReturnType<typeof vi.fn>) {
   const mockUser = {
@@ -60,7 +68,6 @@ function makeMeDb(notificationPreferences: unknown, updateSpy?: ReturnType<typeo
     planId: 'free',
     isAdmin: false,
     preferredLocale: null,
-    telegramChatId: null,
     notificationPreferences,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
@@ -70,7 +77,7 @@ function makeMeDb(notificationPreferences: unknown, updateSpy?: ReturnType<typeo
     insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }) }),
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([mockUser]) }),
+        where: meWhere([mockUser]),
       }),
     }),
   };
@@ -83,7 +90,7 @@ describe('auth routes', () => {
     it('returns 401 when userId is not set (no auth)', async () => {
       const { authRoutes } = await import('./auth.js');
       const db = {
-        select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) }),
+        select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: meWhere([]) }) }),
       };
       const app = Fastify();
       // Don't decorate — userId stays empty
@@ -98,7 +105,7 @@ describe('auth routes', () => {
     it('returns 404 when user is not in DB', async () => {
       const { authRoutes } = await import('./auth.js');
       const db = {
-        select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) }),
+        select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: meWhere([]) }) }),
       };
       const app = Fastify();
       decorateWithAuth(app);
@@ -118,7 +125,6 @@ describe('auth routes', () => {
         planId: 'free',
         isAdmin: false,
         preferredLocale: null,
-        telegramChatId: null,
         notificationPreferences: null,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-01-01'),
@@ -126,9 +132,7 @@ describe('auth routes', () => {
       const db = {
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([mockUser]),
-            }),
+            where: meWhere([mockUser]),
           }),
         }),
       };
@@ -214,16 +218,13 @@ describe('auth routes', () => {
         planId: 'free',
         isAdmin: false,
         preferredLocale: 'ar',
-        telegramChatId: null,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-01-01'),
       };
       const db = {
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([mockUser]),
-            }),
+            where: meWhere([mockUser]),
           }),
         }),
       };
@@ -241,6 +242,49 @@ describe('auth routes', () => {
       expect(body.preferredLocale).toBe('ar');
       expect(body.planEntitlements.skills.autoPublishNonDraftSkills).toBe(true);
       expect(body.planEntitlements.limits.childAgentLimitCeiling).toBe(Math.max(0, body.planEntitlements.limits.maxAgents - 1));
+    });
+  });
+
+  describe('GET /auth/me chatAddresses', () => {
+    it('returns the user-level chat addresses instead of telegramChatId', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const mockUser = {
+        id: 'user-1', displayName: 'Test User', email: 'test@example.com', avatarUrl: null, planId: 'free', isAdmin: false,
+        preferredLocale: null, notificationPreferences: null, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'),
+      };
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: meWhere([mockUser], [{ agentId: null, provider: 'telegram', address: '5550001', status: 'active' }]),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({ method: 'GET', url: '/auth/me' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json<Record<string, unknown>>();
+      expect(body['chatAddresses']).toEqual([{ provider: 'telegram', address: '5550001', scope: 'user', status: 'active' }]);
+      expect(body).not.toHaveProperty('telegramChatId');
+    });
+
+    it('returns an empty list when the user has no address', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const mockUser = {
+        id: 'user-1', displayName: 'Test User', email: 'test@example.com', avatarUrl: null, planId: 'free', isAdmin: false,
+        preferredLocale: null, notificationPreferences: null, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'),
+      };
+      const db = { select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: meWhere([mockUser], []) }) }) };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({ method: 'GET', url: '/auth/me' });
+
+      expect(res.json<{ chatAddresses: unknown }>().chatAddresses).toEqual([]);
     });
   });
 
@@ -262,35 +306,31 @@ describe('auth routes', () => {
       expect(res.json<{ emailFallbackEnabled: boolean }>().emailFallbackEnabled).toBe(true);
     });
 
-    it('updates preferredLocale and telegramChatId when payload is valid', async () => {
-      const { authRoutes } = await import('./auth.js');
-      const updatedUser = {
-        id: 'user-1',
-        displayName: 'Test User',
-        email: 'test@example.com',
-        avatarUrl: null,
-        planId: 'free',
-        preferredLocale: 'hi',
-        telegramChatId: '123456',
-        createdAt: new Date('2026-01-01'),
-        updatedAt: new Date('2026-01-02'),
-      };
+    /** Fake db for PATCH /auth/me with chatAddresses: the profile update, then a transaction that writes addresses. */
+    function makeChatPatchDb(updatedUser: Record<string, unknown>, chatRows: unknown[] = []) {
       const updateWhere = vi.fn().mockResolvedValue(undefined);
-      const db = {
-        update: vi.fn().mockReturnValue({
-          set: vi.fn().mockReturnValue({ where: updateWhere }),
-        }),
-        insert: vi.fn().mockReturnValue({
-          values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }),
-        }),
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([updatedUser]),
-            }),
-          }),
-        }),
+      const insertValues = vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) });
+      const deleteWhere = vi.fn().mockResolvedValue(undefined);
+      const tx = {
+        insert: vi.fn().mockReturnValue({ values: insertValues }),
+        delete: vi.fn().mockReturnValue({ where: deleteWhere }),
       };
+      const db = {
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: updateWhere }) }),
+        transaction: vi.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
+        select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: meWhere([updatedUser], chatRows) }) }),
+      };
+      return { db, updateWhere, insertValues, deleteWhere, tx };
+    }
+
+    const patchedUser = {
+      id: 'user-1', displayName: 'Test User', email: 'test@example.com', avatarUrl: null, planId: 'free',
+      preferredLocale: null, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-02'),
+    };
+
+    it('updates preferredLocale and chatAddresses when payload is valid', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const { db, updateWhere } = makeChatPatchDb({ ...patchedUser, preferredLocale: 'hi' });
       const app = Fastify();
       decorateWithAuth(app, 'user-1', 'free');
       await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
@@ -298,7 +338,7 @@ describe('auth routes', () => {
       const res = await app.inject({
         method: 'PATCH',
         url: '/auth/me',
-        payload: { preferredLocale: 'hi', telegramChatId: '123456' },
+        payload: { preferredLocale: 'hi', chatAddresses: [{ provider: 'telegram', address: '123456' }] },
       });
 
       expect(res.statusCode).toBe(200);
@@ -306,28 +346,18 @@ describe('auth routes', () => {
       expect(res.json<{ preferredLocale: string | null }>().preferredLocale).toBe('hi');
     });
 
-    it('writes the trimmed telegramChatId to the user-level neutral chat address on PATCH', async () => {
+    it('writes the trimmed address to the user-level chat address on PATCH', async () => {
       const { authRoutes } = await import('./auth.js');
-      const updatedUser = {
-        id: 'user-1', displayName: 'Test User', email: 'test@example.com', avatarUrl: null, planId: 'free',
-        preferredLocale: null, telegramChatId: '123456', createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-02'),
-      };
-      const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-      const insertValues = vi.fn().mockReturnValue({ onConflictDoUpdate });
-      const db = {
-        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
-        insert: vi.fn().mockReturnValue({ values: insertValues }),
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([updatedUser]) }),
-          }),
-        }),
-      };
+      const { db, insertValues } = makeChatPatchDb(patchedUser);
       const app = Fastify();
       decorateWithAuth(app, 'user-1', 'free');
       await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as unknown as Parameters<typeof authRoutes>[3]);
 
-      const res = await app.inject({ method: 'PATCH', url: '/auth/me', payload: { telegramChatId: ' 123456 ' } });
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { chatAddresses: [{ provider: 'telegram', address: ' 123456 ' }] },
+      });
 
       expect(res.statusCode).toBe(200);
       expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({
@@ -335,32 +365,9 @@ describe('auth routes', () => {
       }));
     });
 
-    it('normalizes whitespace-padded telegramChatId on PATCH', async () => {
+    it('returns the saved user-level chatAddresses in the PATCH response', async () => {
       const { authRoutes } = await import('./auth.js');
-      const updatedUser = {
-        id: 'user-1',
-        displayName: 'Test User',
-        email: 'test@example.com',
-        avatarUrl: null,
-        planId: 'free',
-        preferredLocale: null,
-        telegramChatId: '123456',
-        createdAt: new Date('2026-01-01'),
-        updatedAt: new Date('2026-01-02'),
-      };
-      const updateWhere = vi.fn().mockResolvedValue(undefined);
-      const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
-      const db = {
-        update: vi.fn().mockReturnValue({ set: updateSet }),
-        insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }) }),
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([updatedUser]),
-            }),
-          }),
-        }),
-      };
+      const { db } = makeChatPatchDb(patchedUser, [{ agentId: null, provider: 'telegram', address: '123456', status: 'active' }]);
       const app = Fastify();
       decorateWithAuth(app, 'user-1', 'free');
       await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
@@ -368,39 +375,18 @@ describe('auth routes', () => {
       const res = await app.inject({
         method: 'PATCH',
         url: '/auth/me',
-        payload: { telegramChatId: ' 123456 ' },
+        payload: { chatAddresses: [{ provider: 'telegram', address: ' 123456 ' }] },
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json<{ telegramChatId: string | null }>().telegramChatId).toBe('123456');
+      const body = res.json<{ chatAddresses: unknown; telegramChatId?: unknown }>();
+      expect(body.chatAddresses).toEqual([{ provider: 'telegram', address: '123456', scope: 'user', status: 'active' }]);
+      expect(body).not.toHaveProperty('telegramChatId');
     });
 
-    it('normalizes blank telegramChatId to null on PATCH', async () => {
+    it.each([null, '   '])('deletes the user-level address, with no row left, for a blank address %j', async (blank) => {
       const { authRoutes } = await import('./auth.js');
-      const updatedUser = {
-        id: 'user-1',
-        displayName: 'Test User',
-        email: 'test@example.com',
-        avatarUrl: null,
-        planId: 'free',
-        preferredLocale: null,
-        telegramChatId: null,
-        createdAt: new Date('2026-01-01'),
-        updatedAt: new Date('2026-01-02'),
-      };
-      const updateWhere = vi.fn().mockResolvedValue(undefined);
-      const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
-      const db = {
-        update: vi.fn().mockReturnValue({ set: updateSet }),
-        insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }) }),
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([updatedUser]),
-            }),
-          }),
-        }),
-      };
+      const { db, tx, deleteWhere, insertValues } = makeChatPatchDb(patchedUser, []);
       const app = Fastify();
       decorateWithAuth(app, 'user-1', 'free');
       await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
@@ -408,11 +394,49 @@ describe('auth routes', () => {
       const res = await app.inject({
         method: 'PATCH',
         url: '/auth/me',
-        payload: { telegramChatId: '   ' },
+        payload: { chatAddresses: [{ provider: 'telegram', address: blank }] },
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json<{ telegramChatId: string | null }>().telegramChatId).toBeNull();
+      expect(tx.delete).toHaveBeenCalledTimes(1);
+      expect(deleteWhere).toHaveBeenCalledTimes(1);
+      expect(insertValues).not.toHaveBeenCalled();
+      expect(res.json<{ chatAddresses: unknown }>().chatAddresses).toEqual([]);
+    });
+
+    it('leaves addresses alone when chatAddresses is not in the body', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const { db, tx } = makeChatPatchDb(patchedUser);
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({ method: 'PATCH', url: '/auth/me', payload: { preferredLocale: 'hi' } });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.transaction).not.toHaveBeenCalled();
+      expect(tx.insert).not.toHaveBeenCalled();
+      expect(tx.delete).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an unknown provider', [{ provider: 'carrier-pigeon', address: '1' }]],
+      ['a non-string address', [{ provider: 'telegram', address: 5 }]],
+      ['the same provider twice', [{ provider: 'telegram', address: '1' }, { provider: 'telegram', address: '2' }]],
+      ['a non-array value', 'telegram'],
+    ])('rejects chatAddresses with %s and writes nothing', async (_label, chatAddresses) => {
+      const { authRoutes } = await import('./auth.js');
+      const { db, updateWhere } = makeChatPatchDb(patchedUser);
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({ method: 'PATCH', url: '/auth/me', payload: { chatAddresses } });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.profile.invalid_chat_addresses');
+      expect(updateWhere).not.toHaveBeenCalled();
+      expect(db.transaction).not.toHaveBeenCalled();
     });
 
     it('returns a stable code when preferredLocale is invalid', async () => {
@@ -449,7 +473,6 @@ describe('auth routes', () => {
         planId: 'free',
         isAdmin: false,
         preferredLocale: null,
-        telegramChatId: null,
         notificationPreferences: storedPrefs,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-07-10'),
@@ -469,6 +492,7 @@ describe('auth routes', () => {
                 // Second call: post-update fetch returns updated user
                 return Promise.resolve([updatedUser]);
               }),
+              orderBy: vi.fn().mockResolvedValue([]),
             }),
           }),
         })),
@@ -499,7 +523,6 @@ describe('auth routes', () => {
         planId: 'free',
         isAdmin: false,
         preferredLocale: null,
-        telegramChatId: null,
         notificationPreferences: null,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-07-10'),
@@ -509,9 +532,7 @@ describe('auth routes', () => {
         update: vi.fn().mockReturnValue({ set: setMock }),
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([updatedUser]),
-            }),
+            where: meWhere([updatedUser]),
           }),
         }),
       };
@@ -563,7 +584,6 @@ describe('auth routes', () => {
         planId: 'free',
         isAdmin: false,
         preferredLocale: null,
-        telegramChatId: null,
         notificationPreferences: storedPrefs,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-10-24'),
@@ -579,6 +599,7 @@ describe('auth routes', () => {
                 selectCallCount++;
                 return Promise.resolve(selectCallCount === 1 ? [{ notificationPreferences: null }] : [updatedUser]);
               }),
+              orderBy: vi.fn().mockResolvedValue([]),
             }),
           }),
         }),
@@ -612,7 +633,6 @@ describe('auth routes', () => {
         planId: 'free',
         isAdmin: false,
         preferredLocale: null,
-        telegramChatId: null,
         notificationPreferences: currentPrefs,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-10-24'),
@@ -628,6 +648,7 @@ describe('auth routes', () => {
                 selectCallCount++;
                 return Promise.resolve(selectCallCount === 1 ? [{ notificationPreferences: currentPrefs }] : [updatedUser]);
               }),
+              orderBy: vi.fn().mockResolvedValue([]),
             }),
           }),
         }),
@@ -666,7 +687,6 @@ describe('auth routes', () => {
         planId: 'free',
         isAdmin: false,
         preferredLocale: null,
-        telegramChatId: null,
         notificationPreferences: currentPrefs,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-10-24'),
@@ -682,6 +702,7 @@ describe('auth routes', () => {
                 selectCallCount++;
                 return Promise.resolve(selectCallCount === 1 ? [{ notificationPreferences: currentPrefs }] : [updatedUser]);
               }),
+              orderBy: vi.fn().mockResolvedValue([]),
             }),
           }),
         }),
@@ -1057,7 +1078,7 @@ describe('auth routes', () => {
     // Regression: bug 003 — user INSERT omitted nullable preference fields,
     // causing PostgreSQL to substitute DEFAULT. Both columns lack a DEFAULT, so the
     // insert threw a constraint violation and returned HTTP 500 for every registration.
-    it('includes preferredLocale: null, telegramChatId: null and aiModelConfig: null in the user INSERT', async () => {
+    it('includes preferredLocale: null and aiModelConfig: null in the user INSERT and no legacy chat id column', async () => {
       const { authRoutes } = await import('./auth.js');
       let capturedUserInsert: Record<string, unknown> | undefined;
       const db = buildRegisterDb((vals) => { capturedUserInsert = vals; });
@@ -1076,7 +1097,7 @@ describe('auth routes', () => {
       // Both nullable columns must be explicitly set to null — not omitted —
       // so Drizzle does not emit DEFAULT in the INSERT statement.
       expect(capturedUserInsert!['preferredLocale']).toBeNull();
-      expect(capturedUserInsert!['telegramChatId']).toBeNull();
+      expect(capturedUserInsert).not.toHaveProperty('telegramChatId');
       expect(capturedUserInsert!['aiModelConfig']).toBeNull();
     });
 

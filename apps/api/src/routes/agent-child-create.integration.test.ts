@@ -367,7 +367,7 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
 
-    it('an agent caller sending toolPolicy, telegramChatId or executionDefaults gets 400 with agent.create.field_not_allowed', async () => {
+    it('an agent caller sending toolPolicy, chatAddresses or executionDefaults gets 400 with agent.create.field_not_allowed', async () => {
       const userId = await seedUser(db);
       const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
       const app = await appWith({});
@@ -376,14 +376,14 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
         name: 'Child',
         prompt: 'Help.',
         toolPolicy: { allow: ['*'] },
-        telegramChatId: '12345',
+        chatAddresses: [{ provider: 'telegram', address: '12345' }],
         executionDefaults: { mode: 'live' },
       });
 
       expect(res.statusCode).toBe(400);
       expect(res.json<{ error: string; params: { fields: string[] } }>()).toMatchObject({
         error: 'agent.create.field_not_allowed',
-        params: { fields: ['toolPolicy', 'telegramChatId', 'executionDefaults'] },
+        params: { fields: ['toolPolicy', 'chatAddresses', 'executionDefaults'] },
       });
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
@@ -436,7 +436,7 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
 
       expect(res.statusCode).toBe(201);
       const [child] = await childrenOf(db, parent.agentId);
-      expect(child).toMatchObject({ name: 'Child', prompt: 'Help.', telegramChatId: null, permissionLevel: 'standard' });
+      expect(child).toMatchObject({ name: 'Child', prompt: 'Help.', permissionLevel: 'standard' });
     });
   });
 

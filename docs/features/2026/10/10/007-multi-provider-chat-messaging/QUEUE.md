@@ -7,7 +7,7 @@ Scope: the messaging MVP and the agent-to-agent MVP (DEC-40 to DEC-46). Deferred
 | # | ID | Item | Depends on | Status | Spec |
 | --- | --- | --- | --- | --- | --- |
 | 1 | C0 | Baseline: `pnpm test` counts recorded | none | done (2026-10-25) | [C0](./tasks/C0-baseline.md) |
-| 2 | C1 | Cutover to `chat_addresses` and `chat_suppressions`; drop the four legacy columns (DEC-01 to DEC-12) | C0 | ready | [C1](./tasks/C1-cutover.md) |
+| 2 | C1 | Cutover to `chat_addresses` and `chat_suppressions`; drop the four legacy columns (DEC-01 to DEC-12) | C0 | done (2026-10-25) | [C1](./tasks/C1-cutover.md) |
 | 3 | CH2W | Two-way agent chat (002): conversation store, write path, owner view (DEC-31, DEC-32) | C1 | ready | [CH2W](./tasks/CH2W-two-way-chat.md) |
 | 4 | A2A-A | Same-user check: both agents belong to the same user. No grant table, no screen (DEC-40) | none (may run early) | ready | [A2A-A](./tasks/A2A-A-same-user-check.md) |
 | 5 | A2A-B | MVP peer messaging: send path, peer wake, per-user rate limit, owner view, stop switch (DEC-40 to DEC-43) | A2A-A, CH2W | blocked until dependencies are ticked | [A2A-B](./tasks/A2A-B-peer-send.md) |
@@ -42,6 +42,23 @@ Scope: the messaging MVP and the agent-to-agent MVP (DEC-40 to DEC-46). Deferred
 Non-blocking issues from code reviews, grouped by item.
 
 ### C0
-- (medium) `pnpm test` baseline has 2 known failures in `packages/domain/src/config/schema.test.ts` (stale `agentCreation` expectations, missing `platformApiTimeoutMs`). Later gates compare against the baseline; fix before final verification.
+- (medium, fixed in C1) `pnpm test` baseline had 2 known failures in `packages/domain/src/config/schema.test.ts` (stale `agentCreation` expectations, missing `platformApiTimeoutMs`). Fixed by adding `platformApiTimeoutMs: 10000` to the two expected objects.
 - (low) C0 added a new "C0 baseline record" section in 900 instead of editing "P0 baseline record".
 - (low) 095 Q4 still says to use the M0 re-run as baseline; mark resolved by DEC-25 / C0.
+
+### C1
+- (low) The literal acceptance grep still matches the web i18n label keys (`agents.create.telegramChatId`, `.placeholder`, `agents.telegramChatId.help`), the operator alert key `alerts.operator.telegramChatId`, and the 0077 backfill test. See the C1 PROGRESS entry. Decide whether to rename the keys.
+- (low) `markOutboundMessageSent` still records `telegram` as the provider. CH2W retires the table.
+- (low) `packages/db` integration files race when run in parallel (shared `users` truncate). Use `--fileParallelism=false` as `test:integration` does.
+- (owner) Staging and production teardown and re-provisioning, and the YAML move of `alerts.telegram.{botToken,webhookSecret,webhookUrl}` to `messaging.chat.telegram.*`. Steps are in the C1 PROGRESS entry.
+
+### C1
+- (medium, I4) `agent-interactivity.ts` `sendTelegramText`/`processWebhookUpdate`: a suppressed chat still gets replies (help, "bind first"). Check suppression at the top of `processWebhookUpdate` and drop silently; add a test. Latent until a revoke writer exists.
+- (medium, I2) `agent-repository.ts` `markOutboundMessageSent` hardcodes `deliveryProvider: 'telegram'`. Add a `provider` parameter; update callers in `agent-message-broker.ts`, `platform-alert-service.ts`, `worker/src/index.ts`.
+- (medium, DEC-08) Phone providers (whatsapp, sms) are not E.164-validated or canonicalised; `15555550100` and `+15555550100` differ. Validate in `ChatAddressInputSchema` and `normalizeChatAddress` before any phone provider ships.
+- (low) `apps/web/src/features/agents/agent-payloads.ts` return type still declares `telegramAddress?`; should be `chatAddresses?`.
+- (low) `auth.ts` PATCH `/auth/me`: user update and address write are separate transactions.
+- (low) `auth.ts` ~343 and ~674: indentation of `aiModelConfig: null,`.
+- (low) Owner hand-off: environments setting `alerts.telegram.*` must move to `messaging.chat.telegram.*` (silently ignored otherwise).
+- (low) `listChatAddressesForOutput` reports a suppressed address as `active`.
+- (info) Acceptance grep still matches i18n keys and `alerts.operator.telegramChatId` (by design; coordinator signs off).

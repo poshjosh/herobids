@@ -45,6 +45,7 @@ export { llmPricingSnapshots } from './llm-pricing-snapshots.js';
 export { agentEvaluations } from './agent-evaluations.js';
 export { agentDocuments } from './agent-documents.js';
 export { chatAddresses } from './chat-addresses.js';
+export { chatSuppressions } from './chat-suppressions.js';
 export { pushSubscriptions } from './push-subscriptions.js';
 export { notificationDeliveries } from './notification-deliveries.js';
 export { tradingProfileReconciliationOutbox } from './trading-profile-reconciliation-outbox.js';

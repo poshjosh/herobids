@@ -195,8 +195,8 @@ export function AgentIdentityFields(props: AgentIdentityFieldsProps) {
         </FieldLabel>
         <input
           style={inputStyle}
-          value={props.value.telegramChatId}
-          onChange={(e) => props.onChange({ telegramChatId: e.target.value })}
+          value={props.value.telegramAddress}
+          onChange={(e) => props.onChange({ telegramAddress: e.target.value })}
           placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
         />
         <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>

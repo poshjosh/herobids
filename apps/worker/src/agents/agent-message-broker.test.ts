@@ -865,7 +865,7 @@ function makeSendBroker(options: { chatOk: boolean; notifications?: AgentMessage
   );
   const chatResult = options.chatOk
     ? { ok: true, data: { providerMessageId: 'tg-1', address: { provider: 'telegram', address: '123' } } }
-    : { ok: false, error: { code: 'chat.no_address', message: 'no_telegram_chat_id' } };
+    : { ok: false, error: { code: 'chat.no_address', message: 'no_chat_address' } };
   const chatSend = vi.spyOn(delivery, 'send').mockImplementation(vi.fn().mockResolvedValue(chatResult));
   const broker = new AgentMessageBroker(
     makeRedis(),
@@ -991,7 +991,7 @@ describe('AgentMessageBroker — send_message push notifications', () => {
 
     await broker.processInbound(makeSendMessageEnvelope());
 
-    expect(agentRepo.markOutboundMessageFailed).toHaveBeenCalledWith('out-1', 'no_telegram_chat_id');
+    expect(agentRepo.markOutboundMessageFailed).toHaveBeenCalledWith('out-1', 'no_chat_address');
     expect(notify).toHaveBeenCalledTimes(1);
   });
 

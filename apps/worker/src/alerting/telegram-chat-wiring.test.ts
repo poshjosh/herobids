@@ -10,30 +10,30 @@ function configWith(alertsTelegram: Record<string, unknown>, chatTelegram: Recor
 }
 
 describe('resolveWorkerTelegramChat', () => {
-  it('uses the bot token set only under messaging.chat.telegram for the alert dispatcher', () => {
+  it('uses the bot token set under messaging.chat.telegram for the alert dispatcher', () => {
     const wired = resolveWorkerTelegramChat(configWith({}, { botToken: 'chat-token' }));
 
     expect(wired.telegram.botToken).toBe('chat-token');
     expect(wired.alerts.telegram.botToken).toBe('chat-token');
   });
 
-  it('passes the messaging.chat.telegram webhook secret and URL to the dispatcher config', () => {
+  it('resolves the messaging.chat.telegram webhook secret and URL for the transport', () => {
     const webhookUrl = 'https://example.test/telegram/webhook';
     const wired = resolveWorkerTelegramChat(configWith({}, { webhookSecret: 'chat-secret', webhookUrl }));
 
-    expect(wired.alerts.telegram.webhookSecret).toBe('chat-secret');
-    expect(wired.alerts.telegram.webhookUrl).toBe(webhookUrl);
+    expect(wired.telegram.webhookSecret).toBe('chat-secret');
+    expect(wired.telegram.webhookUrl).toBe(webhookUrl);
   });
 
-  it('falls back to the legacy alerts.telegram bot token when messaging.chat.telegram is blank', () => {
+  it('does not fall back to a legacy alerts.telegram bot token when messaging.chat.telegram is blank', () => {
     const wired = resolveWorkerTelegramChat(configWith({ botToken: 'legacy-token' }, { botToken: '  ' }));
 
-    expect(wired.telegram.botToken).toBe('legacy-token');
-    expect(wired.alerts.telegram.botToken).toBe('legacy-token');
+    expect(wired.telegram.botToken).toBe('');
+    expect(wired.alerts.telegram.botToken).toBe('');
   });
 
   it('keeps the non-token alerts settings unchanged', () => {
-    const config = configWith({ botToken: 'legacy-token', channels: [] }, { botToken: 'chat-token' });
+    const config = configWith({ channels: [] }, { botToken: 'chat-token' });
     const wired = resolveWorkerTelegramChat(config);
 
     expect(wired.alerts.enabled).toBe(config.alerts.enabled);

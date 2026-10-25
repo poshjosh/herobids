@@ -16,6 +16,7 @@ import {
   agentSkills,
   chatAddresses,
   connections,
+  setChatAddress,
   TradingProfileReconciliationOutboxRepository,
   type DatabaseTransaction,
 } from '@herobids/db';
@@ -2732,10 +2733,8 @@ describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
   // ── Test 9: author's telegram address is pre-filled on instantiate ─────
 
   it('instantiate pre-fills the telegram chat address when the installer is the blueprint author', async () => {
-    // Give the author a telegram chat ID
-    await db.update(users)
-      .set({ telegramChatId: '123456789' })
-      .where(eq(users.id, TEST_USER_ID));
+    // Give the author a telegram chat address
+    await setChatAddress(db, { userId: TEST_USER_ID, agentId: null }, 'telegram', '123456789');
 
     const payload = makeAgentPayload();
     const { bpId, revId } = await seedBlueprint({}, payload, TEST_USER_ID);
@@ -2754,14 +2753,7 @@ describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json();
 
-    // The legacy agents.telegram_chat_id column is still written...
-    const [agent] = await db
-      .select({ telegramChatId: agents.telegramChatId })
-      .from(agents)
-      .where(eq(agents.id, body.actorId));
-    expect(agent!.telegramChatId).toBe('123456789');
-
-    // ...and the address is also written as an active agent-scoped chat_addresses row.
+    // The address is written as an active agent-scoped chat_addresses row.
     const addresses = await db
       .select({ userId: chatAddresses.userId, address: chatAddresses.address, status: chatAddresses.status })
       .from(chatAddresses)
@@ -2774,10 +2766,8 @@ describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
   it('instantiate does NOT pre-fill a telegram chat address when the installer is a different user', async () => {
     const OTHER_USER_ID = 'other-user-bp-int';
 
-    // Give the author a telegram chat ID
-    await db.update(users)
-      .set({ telegramChatId: '999999999' })
-      .where(eq(users.id, TEST_USER_ID));
+    // Give the author a telegram chat address
+    await setChatAddress(db, { userId: TEST_USER_ID, agentId: null }, 'telegram', '999999999');
 
     // Create a different user
     await db.insert(users).values({
@@ -2790,10 +2780,8 @@ describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
       updatedAt: new Date(),
     });
 
-    // Give the other user a different telegram chat ID
-    await db.update(users)
-      .set({ telegramChatId: '111111111' })
-      .where(eq(users.id, OTHER_USER_ID));
+    // Give the other user a different telegram chat address
+    await setChatAddress(db, { userId: OTHER_USER_ID, agentId: null }, 'telegram', '111111111');
 
     const payload = makeAgentPayload();
     const { bpId, revId } = await seedBlueprint({}, payload, TEST_USER_ID);
@@ -2812,14 +2800,8 @@ describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json();
 
-    const [agent] = await db
-      .select({ telegramChatId: agents.telegramChatId })
-      .from(agents)
-      .where(eq(agents.id, body.actorId));
-
     // The installer's own telegram address is not copied in: the author's value
     // ('999999999') never reaches the agent, and no agent-scoped chat address exists.
-    expect(agent!.telegramChatId).toBeNull();
     const addresses = await db
       .select({ address: chatAddresses.address })
       .from(chatAddresses)

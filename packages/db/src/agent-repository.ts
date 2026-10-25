@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, desc, inArray, asc, ne, isNull, or, sql } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, asc, ne, isNull, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
 import {
   agentArtifacts,
@@ -9,6 +9,7 @@ import {
   agentSkills,
   agents,
   chatAddresses,
+  chatSuppressions,
   skillUsageEvents,
   users,
 } from './schema/index.js';
@@ -110,7 +111,6 @@ export interface InsertAgent {
   prompt: string;
   toolPolicy?: Record<string, unknown>;
   modelPolicy?: Record<string, unknown>;
-  telegramChatId?: string;
   notificationPolicy?: {
     sendMessage?: {
       email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt?: string };
@@ -127,7 +127,6 @@ export interface UpdateAgent {
   pauseState?: { reason: string; requestedBy: string; pausedAt: string } | null;
   toolPolicy?: Record<string, unknown>;
   modelPolicy?: Record<string, unknown>;
-  telegramChatId?: string;
   notificationPolicy?: {
     sendMessage?: {
       email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt?: string };
@@ -209,47 +208,108 @@ export interface InsertAgentOutboundMessage {
   messageClass?: string;
 }
 
-export interface TelegramChatAddressScope {
+export interface ChatAddressScope {
   userId: string;
   /** null = user-level default; set = that agent's override */
   agentId: string | null;
 }
 
-/**
- * Writes the neutral Telegram chat_addresses row for one scope. Callers run it next to the legacy
- * users/agents.telegram_chat_id write, in the same transaction.
- * - Non-blank: upserts an active row. A row already holding this address is left untouched, so a
- *   revoked or pending_optin row is not reactivated by saving the same address again.
- * - Blank/null: clears the address on the active row only, so the resolver falls through to the
- *   other scopes. Rows are never deleted, and a non-active row (an opt-out) is never modified.
- */
-export async function setTelegramChatAddress(
-  executor: Pick<Database, 'insert' | 'update'>,
-  scope: TelegramChatAddressScope,
-  chatId: string | null,
-): Promise<void> {
-  const address = chatId?.trim() ?? '';
-  const now = new Date();
+const PHONE_BASED_PROVIDERS: ReadonlySet<ChatProvider> = new Set<ChatProvider>(['whatsapp', 'sms']);
 
-  if (!address) {
-    await executor.update(chatAddresses)
-      .set({ address: '', updatedAt: now })
-      .where(and(
-        eq(chatAddresses.userId, scope.userId),
-        scope.agentId === null ? isNull(chatAddresses.agentId) : eq(chatAddresses.agentId, scope.agentId),
-        eq(chatAddresses.provider, 'telegram'),
-        eq(chatAddresses.status, 'active'),
-      ));
+/**
+ * Canonical stored form of an address: trimmed. Phone-based providers also drop formatting
+ * characters (spaces, dots, dashes, parentheses) so equal numbers compare equal. Lookups and
+ * writes both go through this, so queries compare normalised values only.
+ */
+export function normalizeChatAddress(provider: ChatProvider, address: string): string {
+  const trimmed = address.trim();
+  return PHONE_BASED_PROVIDERS.has(provider) ? trimmed.replace(/[\s().-]/g, '') : trimmed;
+}
+
+function chatAddressScopeFilter(scope: ChatAddressScope, provider: ChatProvider) {
+  return and(
+    eq(chatAddresses.userId, scope.userId),
+    scope.agentId === null ? isNull(chatAddresses.agentId) : eq(chatAddresses.agentId, scope.agentId),
+    eq(chatAddresses.provider, provider),
+  );
+}
+
+export interface ChatAddressOutput {
+  provider: ChatProvider;
+  address: string;
+  scope: 'user' | 'agent';
+  status: string;
+}
+
+/**
+ * API output for chat addresses, in one query: the user-level rows and the rows of every listed
+ * agent. `byAgent` holds each listed agent's own override rows (scope 'agent'); `user` holds the
+ * user-level rows (scope 'user'). Rows are limited to userId, so another user's agent id returns
+ * nothing.
+ */
+export async function listChatAddressesForOutput(
+  executor: Pick<Database, 'select'>,
+  userId: string,
+  agentIds: readonly string[],
+): Promise<{ user: ChatAddressOutput[]; byAgent: Map<string, ChatAddressOutput[]> }> {
+  const rows = await executor.select({
+    agentId: chatAddresses.agentId,
+    provider: chatAddresses.provider,
+    address: chatAddresses.address,
+    status: chatAddresses.status,
+  })
+    .from(chatAddresses)
+    .where(and(
+      eq(chatAddresses.userId, userId),
+      agentIds.length > 0
+        ? or(isNull(chatAddresses.agentId), inArray(chatAddresses.agentId, [...agentIds]))
+        : isNull(chatAddresses.agentId),
+    ))
+    .orderBy(asc(chatAddresses.provider));
+
+  const user: ChatAddressOutput[] = [];
+  const byAgent = new Map<string, ChatAddressOutput[]>();
+  for (const row of rows) {
+    const provider = row.provider as ChatProvider;
+    if (row.agentId === null) {
+      user.push({ provider, address: row.address, scope: 'user', status: row.status });
+      continue;
+    }
+    const list = byAgent.get(row.agentId) ?? [];
+    list.push({ provider, address: row.address, scope: 'agent', status: row.status });
+    byAgent.set(row.agentId, list);
+  }
+  return { user, byAgent };
+}
+
+/**
+ * Writes the chat_addresses row for one scope and provider.
+ * - Null or blank address: deletes the active row, so the scope inherits (no row means no address).
+ * - Otherwise: upserts the active row. A suppression row is never read or changed here, so saving
+ *   a new address never lifts the block on another one.
+ */
+export async function setChatAddress(
+  executor: Pick<Database, 'insert' | 'delete'>,
+  scope: ChatAddressScope,
+  provider: ChatProvider,
+  address: string | null,
+): Promise<void> {
+  const normalized = address === null ? '' : normalizeChatAddress(provider, address);
+
+  if (!normalized) {
+    await executor.delete(chatAddresses)
+      .where(and(chatAddressScopeFilter(scope, provider), eq(chatAddresses.status, 'active')));
     return;
   }
 
+  const now = new Date();
   await executor.insert(chatAddresses)
     .values({
       id: crypto.randomUUID(),
       userId: scope.userId,
       agentId: scope.agentId,
-      provider: 'telegram',
-      address,
+      provider,
+      address: normalized,
       status: 'active',
       verifiedAt: now,
       createdAt: now,
@@ -257,9 +317,34 @@ export async function setTelegramChatAddress(
     })
     .onConflictDoUpdate({
       target: [chatAddresses.userId, chatAddresses.agentId, chatAddresses.provider],
-      set: { address, status: 'active', verifiedAt: now, updatedAt: now },
-      where: sql`trim(${chatAddresses.address}) <> ${address}`,
+      set: { address: normalized, status: 'active', verifiedAt: now, updatedAt: now },
+      where: sql`${chatAddresses.address} <> ${normalized} or ${chatAddresses.status} <> 'active'`,
     });
+}
+
+/**
+ * Revokes the scope's active address: deletes the row and writes the platform-wide suppression
+ * row for that address. Run it in one transaction. Returns the revoked address, or null when the
+ * scope had no active row (nothing is written then).
+ */
+export async function revokeChatAddress(
+  executor: Pick<Database, 'insert' | 'delete'>,
+  scope: ChatAddressScope,
+  provider: ChatProvider,
+): Promise<string | null> {
+  const removed = await executor.delete(chatAddresses)
+    .where(and(chatAddressScopeFilter(scope, provider), eq(chatAddresses.status, 'active')))
+    .returning({ address: chatAddresses.address });
+  const address = removed[0]?.address;
+  if (address === undefined) return null;
+
+  await executor.insert(chatSuppressions)
+    .values({ provider, address: normalizeChatAddress(provider, address), status: 'revoked' })
+    .onConflictDoUpdate({
+      target: [chatSuppressions.provider, chatSuppressions.address],
+      set: { status: 'revoked' },
+    });
+  return address;
 }
 
 /**
@@ -287,14 +372,10 @@ export class AgentRepository {
       status: 'stopped',
       toolPolicy: input.toolPolicy ?? null,
       modelPolicy: input.modelPolicy ?? null,
-      telegramChatId: input.telegramChatId ?? null,
       notificationPolicy: input.notificationPolicy ?? null,
       maxBots: input.maxBots ?? null,
       openPositionEscalationToJudgePolicy: input.openPositionEscalationToJudgePolicy ?? undefined,
     });
-    if (input.telegramChatId !== undefined) {
-      await setTelegramChatAddress(this.db, { userId: input.userId, agentId: id }, input.telegramChatId);
-    }
     return id;
   }
 
@@ -688,14 +769,12 @@ export class AgentRepository {
     return id;
   }
 
-  async markOutboundMessageSent(id: string, telegramMessageId: string, telegramChatId: string): Promise<void> {
+  async markOutboundMessageSent(id: string, providerMessageId: string, address: string): Promise<void> {
     await this.db.update(agentOutboundMessages).set({
       deliveryStatus: 'sent',
-      telegramMessageId,
-      telegramChatId,
       deliveryProvider: 'telegram',
-      deliveryAddress: telegramChatId,
-      providerMessageId: telegramMessageId,
+      deliveryAddress: address,
+      providerMessageId,
     }).where(eq(agentOutboundMessages.id, id));
   }
 
@@ -741,115 +820,58 @@ export class AgentRepository {
     return this.db.select().from(agents).where(eq(agents.status, 'active'));
   }
 
-  // --- Agent Telegram ---
+  // --- Agent chat addresses ---
 
   /**
-   * Resolve the effective Telegram chat ID for an agent's outbound messages.
-   * Priority: agent-level teleChatId (if configured) > user-level telegramChatId.
-   * Returns null when neither the agent nor its owner has a chat ID set.
+   * chat_addresses row governing one agent's scope on one provider: the agent-level row if one
+   * exists, otherwise the owner's user-level row. No row means no address. The join on
+   * chat_addresses.userId = agents.userId keeps other users' rows out.
    */
-  async getEffectiveTelegramChatId(agentId: string): Promise<string | null> {
-    const rows = await this.db
-      .select({
-        agentTelegramChatId: agents.telegramChatId,
-        userTelegramChatId: users.telegramChatId,
-      })
-      .from(agents)
-      .innerJoin(users, eq(agents.userId, users.id))
-      .where(eq(agents.id, agentId))
-      .limit(1);
-    // Treat empty/whitespace chat IDs as "not set" so a blank stored value
-    // does not produce a broken delivery destination.
-    const agentChatId = rows[0]?.agentTelegramChatId?.trim();
-    const userChatId = rows[0]?.userTelegramChatId?.trim();
-    return (agentChatId || null) ?? (userChatId || null);
-  }
-
-  /**
-   * Neutral chat_addresses row governing one agent's scope on one provider: the agent-level
-   * row if one exists, otherwise the user-level row. Blank addresses are unset and ignored.
-   * Also returns the agent's legacy agents.telegram_chat_id (trimmed, null when blank) so the
-   * caller can rank it between the two neutral rows. The left join keeps the agent row even
-   * when no chat_addresses row exists. The owner join (chat_addresses.userId = agents.userId)
-   * keeps other users' rows out.
-   */
-  private async getNeutralChatAddressScope(
+  private async getChatAddressScope(
     agentId: string,
     provider: ChatProvider,
-  ): Promise<{
-    row: { address: string; isActive: boolean; isAgentLevel: boolean } | null;
-    agentLegacyChatId: string | null;
-  }> {
+  ): Promise<{ address: string; isActive: boolean; isAgentLevel: boolean } | null> {
     const rows = await this.db
       .select({
-        agentTelegramChatId: agents.telegramChatId,
         rowAgentId: chatAddresses.agentId,
         address: chatAddresses.address,
         isActive: sql<boolean>`${chatAddresses.status} = ${'active'}`,
       })
       .from(agents)
-      .leftJoin(chatAddresses, and(
+      .innerJoin(chatAddresses, and(
         eq(chatAddresses.userId, agents.userId),
         eq(chatAddresses.provider, provider),
         or(isNull(chatAddresses.agentId), eq(chatAddresses.agentId, agents.id)),
       ))
       .where(eq(agents.id, agentId));
 
-    const populatedRows = rows.filter((row) => row.address !== null && row.address.trim() !== '');
-    const scopeRow = populatedRows.find((row) => row.rowAgentId === agentId)
-      ?? populatedRows.find((row) => row.rowAgentId === null);
-    const agentLegacyChatId = rows[0]?.agentTelegramChatId?.trim() || null;
-    return {
-      row: scopeRow?.address
-        ? {
-          address: scopeRow.address.trim(),
-          isActive: scopeRow.isActive,
-          isAgentLevel: scopeRow.rowAgentId === agentId,
-        }
-        : null,
-      agentLegacyChatId,
-    };
+    const scopeRow = rows.find((row) => row.rowAgentId === agentId)
+      ?? rows.find((row) => row.rowAgentId === null);
+    return scopeRow
+      ? { address: scopeRow.address, isActive: scopeRow.isActive, isAgentLevel: scopeRow.rowAgentId === agentId }
+      : null;
   }
 
   /**
-   * Resolve the effective chat address for an agent's outbound messages on one provider.
-   * Telegram precedence: agent-level neutral row > agent legacy agents.telegram_chat_id >
-   * user-level neutral row > user legacy users.telegram_chat_id. Blank addresses are unset.
-   * Fails closed: a chosen neutral row that is not active (revoked or pending_optin) yields null
-   * and never falls back to another row or to the legacy Telegram columns.
-   * Other providers use neutral rows only.
+   * Resolve the effective chat address for an agent's outbound messages on one provider:
+   * agent-level row > user-level row. Fails closed: a chosen row that is not active yields null
+   * and never falls back to another row.
    */
   async getEffectiveChatAddress(agentId: string, provider: ChatProvider): Promise<ChatAddress | null> {
-    const { row, agentLegacyChatId } = await this.getNeutralChatAddressScope(agentId, provider);
-    if (row?.isAgentLevel) {
-      return row.isActive ? { provider, address: row.address as ChatAddressValue } : null;
-    }
-
-    // The agent's own legacy chat ID overrides the owner's neutral default.
-    if (provider === 'telegram' && agentLegacyChatId) {
-      return { provider, address: agentLegacyChatId as ChatAddressValue };
-    }
-
-    if (row) {
-      return row.isActive ? { provider, address: row.address as ChatAddressValue } : null;
-    }
-
-    if (provider !== 'telegram') return null;
-    const legacyChatId = await this.getEffectiveTelegramChatId(agentId);
-    return legacyChatId ? { provider, address: legacyChatId as ChatAddressValue } : null;
+    const row = await this.getChatAddressScope(agentId, provider);
+    return row?.isActive ? { provider, address: row.address as ChatAddressValue } : null;
   }
 
   /**
-   * True when any chat_addresses row for this provider and address is not active, for any user or
-   * agent. An opt-out is platform-wide for the address, so outbound sends to it must be refused.
+   * True when a chat_suppressions row exists for this provider and address. An opt-out is
+   * platform-wide for the address, so outbound sends and inbound routing for it must be refused.
    */
   async isChatAddressSuppressed(provider: ChatProvider, address: string): Promise<boolean> {
-    const rows = await this.db.select({ id: chatAddresses.id })
-      .from(chatAddresses)
+    const rows = await this.db.select({ address: chatSuppressions.address })
+      .from(chatSuppressions)
       .where(and(
-        eq(chatAddresses.provider, provider),
-        sql`trim(${chatAddresses.address}) = ${address.trim()}`,
-        ne(chatAddresses.status, 'active'),
+        eq(chatSuppressions.provider, provider),
+        eq(chatSuppressions.address, normalizeChatAddress(provider, address)),
       ))
       .limit(1);
     return rows.length > 0;
@@ -914,54 +936,15 @@ export class AgentRepository {
   }
 
   /**
-   * Resolve the agent that owns a given Telegram reply.
-   *
-   * Telegram message IDs are scoped per chat, not globally.  When a user has
-   * multiple Telegram destinations (user-level default + agent-level overrides)
-   * we must filter by `chatId` so a reply in chat A does not accidentally
-   * resolve to an outbound message sent to chat B that happens to have the
-   * same Telegram message ID.
-   *
-   * The reply is resolved directly from the outbound message record — no
-   * pre-resolution of the user via mutable chat bindings is needed.  The
-   * returned `userId` (from the agent's owner) is used by the caller for
-   * subsequent authorization and delivery routing.
-   *
-   * Returns `{ agentId, agentName, status, userId }` or `null` when no
-   * matching message is found.
-   */
-  async resolveAgentForTelegramReply(
-    telegramMessageId: string,
-    chatId: string,
-  ): Promise<{ agentId: string; agentName: string; status: string; userId: string } | null> {
-    const rows = await this.db.select({
-      agentId: agents.id,
-      agentName: agents.name,
-      status: agents.status,
-      userId: agents.userId,
-    })
-      .from(agentOutboundMessages)
-      .innerJoin(agents, eq(agentOutboundMessages.agentId, agents.id))
-      .where(and(
-        eq(agentOutboundMessages.telegramMessageId, telegramMessageId),
-        eq(agentOutboundMessages.telegramChatId, chatId),
-      ))
-      .limit(1);
-    return rows[0] ?? null;
-  }
-
-  /**
    * Resolve the agent that owns an inbound chat reply, for any provider.
    *
-   * The address is trimmed the same way outbound addresses are; a blank address resolves nothing.
-   * With a providerMessageId: the outbound message it identifies (delivery columns, then the
-   * legacy Telegram pair for telegram) is checked first. That agent's neutral scope for the
-   * provider must not be revoked or pending_optin, otherwise null is returned with no fallback.
-   * Then the chat_addresses rows for the address, user-level rows included: any non-active row
-   * yields null with no fallback; a single active row naming an agent resolves it. A user-level
-   * address names no agent. Without a providerMessageId, an address shared by several agents is
-   * not guessed. With one, an ambiguous telegram address falls through to the legacy Telegram
-   * pair, which is keyed on that message ID and the chat ID, so it is a specific correlation.
+   * The address is normalised like stored addresses; a blank address resolves nothing. A
+   * suppressed address resolves nothing. With a providerMessageId, the outbound message it
+   * identifies (delivery columns) is checked first. That agent's scope for the provider must be
+   * active, otherwise null is returned with no fallback. Then the chat_addresses rows for the
+   * address, user-level rows included: any non-active row yields null; a single active row naming
+   * an agent resolves it. A user-level address names no agent, and an address shared by several
+   * agents is not guessed.
    *
    * Returns `{ agentId, agentName, status, userId }` or `null`.
    */
@@ -970,8 +953,9 @@ export class AgentRepository {
     address: string,
     providerMessageId?: string,
   ): Promise<{ agentId: string; agentName: string; status: string; userId: string } | null> {
-    const normalizedAddress = address.trim();
+    const normalizedAddress = normalizeChatAddress(provider, address);
     if (!normalizedAddress) return null;
+    if (await this.isChatAddressSuppressed(provider, normalizedAddress)) return null;
 
     const agentOwner = {
       agentId: agents.id,
@@ -992,7 +976,7 @@ export class AgentRepository {
         .limit(1);
       const outboundOwner = outboundRows[0];
       if (outboundOwner) {
-        const { row: outboundScope } = await this.getNeutralChatAddressScope(outboundOwner.agentId, provider);
+        const outboundScope = await this.getChatAddressScope(outboundOwner.agentId, provider);
         if (outboundScope && !outboundScope.isActive) return null;
         return outboundOwner;
       }
@@ -1019,10 +1003,6 @@ export class AgentRepository {
       return [{ agentId: row.agentId, agentName: row.agentName, status: row.status, userId: row.userId }];
     });
     const [onlyAgentRow] = agentRows;
-    if (agentRows.length === 1 && onlyAgentRow) return onlyAgentRow;
-
-    // The legacy lookup keys on the message ID, so it cannot run without one.
-    if (!providerMessageId || provider !== 'telegram') return null;
-    return this.resolveAgentForTelegramReply(providerMessageId, normalizedAddress);
+    return agentRows.length === 1 && onlyAgentRow ? onlyAgentRow : null;
   }
 }

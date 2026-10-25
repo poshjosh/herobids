@@ -109,7 +109,7 @@ runtimePolicyOverrides (object, optional): Update runtime policy overrides.
 wakePreferences (object, optional): Update wake schedule.
 notificationPolicy (object, optional): Update notification settings.
 dexWatchlistSymbols (string[], optional): Update DEX watchlist.
-telegramChatId (string, optional): Update Telegram chat ID.
+chatAddresses (array, optional): Set or clear this agent's own chat addresses. Each entry is { provider: 'telegram' | 'whatsapp' | 'sms', address: string | null }; a null address clears that provider's override so the agent inherits the owner's address. Responses return chatAddresses as [{ provider, address, scope, status }].
 hybridMode (object, optional): Update hybrid mode config.
 `,
   headings: [

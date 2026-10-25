@@ -1,9 +1,9 @@
 import type { Logger } from 'pino';
 import type Redis from 'ioredis';
-import type { AlertsConfig } from '@herobids/domain';
 import type { AlertDeliveryRepository } from '@herobids/db';
 import { evaluateAlertPolicy, type JournalEventRow } from './alert-policy.js';
 import type { TradeEventFeed } from './trade-event-feed.js';
+import type { AlertDispatcherConfig } from './telegram-chat-wiring.js';
 import { TelegramClient } from './telegram-client.js';
 
 const DISPATCH_LEASE_KEY = 'lease:alert-dispatcher';
@@ -27,7 +27,7 @@ export class AlertDispatcher {
   private tickDrain: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly config: AlertsConfig,
+    private readonly config: AlertDispatcherConfig,
     private readonly feed: TradeEventFeed,
     private readonly deliveryRepo: AlertDeliveryRepository,
     private readonly logger: Logger,

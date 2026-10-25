@@ -5,9 +5,10 @@ import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import { isEmailFallbackAllowed, resolveChildAgentLimitCeiling, type AuthConfig, type PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { users, oauthIdentities, localIdentities, sessions, userPlans, agents, setTelegramChatAddress } from '@herobids/db';
+import { users, oauthIdentities, localIdentities, sessions, userPlans, agents } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
+import { ChatAddressesInputSchema, applyChatAddresses, listUserChatAddresses, type ChatAddressesInput } from '../agents/chat-addresses.js';
 import { errorPayload } from '../error-payload.js';
 import { resolvePlanEntitlements } from '../plan-guards.js';
 import { resolveNotificationPreferences, type StoredNotificationPreferences } from './user-config-helpers.js';
@@ -308,7 +309,6 @@ export async function authRoutes(
           avatarUrl: null,
           planId: defaultPlanId,
           preferredLocale: null,
-          telegramChatId: null,
           aiModelConfig: null,
           createdAt: now,
           updatedAt: now,
@@ -340,8 +340,7 @@ export async function authRoutes(
             avatarUrl: null,
             planId: defaultPlanId,
             preferredLocale: null,
-            telegramChatId: null,
-            aiModelConfig: null,
+              aiModelConfig: null,
             createdAt: now,
             updatedAt: now,
           });
@@ -672,8 +671,7 @@ export async function authRoutes(
             avatarUrl: null,
             planId: defaultPlanId,
             preferredLocale: null,
-            telegramChatId: null,
-            aiModelConfig: null,
+              aiModelConfig: null,
             createdAt: now,
             updatedAt: now,
           });
@@ -916,7 +914,7 @@ export async function authRoutes(
       isAdmin: user.isAdmin,
       planEntitlements: profilePlanEntitlements(user.planId, user.isAdmin),
       preferredLocale: user.preferredLocale ?? null,
-      telegramChatId: user.telegramChatId ?? null,
+      chatAddresses: await listUserChatAddresses(db, user.id),
       notificationPreferences: user.notificationPreferences ?? null,
       emailFallbackEnabled: isEmailFallbackAllowed(user.notificationPreferences, emailFallbackUserDefaultEnabled),
       createdAt: user.createdAt.toISOString(),
@@ -925,7 +923,7 @@ export async function authRoutes(
 
   /**
    * PATCH /auth/me — Update mutable user profile fields.
-   * Currently supports: preferredLocale, telegramChatId, and notificationPreferences (sendMessage.email and notifications.emailFallback).
+   * Currently supports: preferredLocale, chatAddresses, and notificationPreferences (sendMessage.email and notifications.emailFallback).
    */
   app.patch('/auth/me', async (request, reply) => {
     const userId = request.userId;
@@ -936,7 +934,6 @@ export async function authRoutes(
     const body = (request.body ?? {}) as Record<string, unknown>;
     const updates: {
       preferredLocale?: SupportedLocale | null;
-      telegramChatId?: string | null;
       notificationPreferences?: StoredNotificationPreferences;
       updatedAt: Date;
     } = {
@@ -957,16 +954,16 @@ export async function authRoutes(
       updates.preferredLocale = (val as SupportedLocale | null) ?? null;
     }
 
-    if ('telegramChatId' in body) {
-      const val = body['telegramChatId'];
-      if (val !== null && typeof val !== 'string') {
+    let chatAddressesUpdate: ChatAddressesInput | undefined;
+    if ('chatAddresses' in body) {
+      const parsedChatAddresses = ChatAddressesInputSchema.safeParse(body['chatAddresses']);
+      if (!parsedChatAddresses.success) {
         return reply.status(400).send(
-          errorPayload('auth.profile.invalid_telegram_chat_id', 'telegramChatId must be a string or null'),
+          errorPayload('auth.profile.invalid_chat_addresses', 'chatAddresses must be a list of { provider, address } entries, one per provider'),
         );
       }
-      // Normalise whitespace and blank strings to null so a stray space
-      // cannot produce a broken Telegram delivery destination.
-      updates.telegramChatId = typeof val === 'string' ? (val.trim() || null) : null;
+      // A null or blank address clears the user-level address for that provider.
+      chatAddressesUpdate = parsedChatAddresses.data;
     }
 
     if ('notificationPreferences' in body) {
@@ -987,8 +984,9 @@ export async function authRoutes(
     }
 
     await db.update(users).set(updates).where(eq(users.id, userId));
-    if (updates.telegramChatId !== undefined) {
-      await setTelegramChatAddress(db, { userId, agentId: null }, updates.telegramChatId);
+    if (chatAddressesUpdate !== undefined) {
+      const entries = chatAddressesUpdate;
+      await db.transaction((tx) => applyChatAddresses(tx, { userId, agentId: null }, entries));
     }
 
     const [updated] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -1003,7 +1001,7 @@ export async function authRoutes(
       planId: updated.planId,
       planEntitlements: profilePlanEntitlements(updated.planId, updated.isAdmin),
       preferredLocale: updated.preferredLocale ?? null,
-      telegramChatId: updated.telegramChatId ?? null,
+      chatAddresses: await listUserChatAddresses(db, userId),
       notificationPreferences: updated.notificationPreferences ?? null,
       emailFallbackEnabled: isEmailFallbackAllowed(updated.notificationPreferences, emailFallbackUserDefaultEnabled),
       createdAt: updated.createdAt.toISOString(),
@@ -1098,7 +1096,6 @@ async function findOrCreateUser(db: Database, googleUser: GoogleUserInfo, defaul
           avatarUrl: googleUser.picture ?? null,
           planId: defaultPlanId,
           preferredLocale: null,
-          telegramChatId: null,
           aiModelConfig: null,
           createdAt: now,
           updatedAt: now,

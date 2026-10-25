@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { Database, DatabaseTransaction } from '@herobids/db';
+import { listChatAddressesForOutput } from '@herobids/db';
 import {
   agents,
   agentConnections,
@@ -26,6 +27,7 @@ import {
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
+import { chatAddressesToInput } from '../agents/chat-addresses.js';
 import { selectExecutionBinding, type TradingProfileConnection } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
@@ -254,6 +256,9 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
       || currentConnections.some((connection) => !activeConnections.some((prepared) => prepared.connectionId === connection.connectionId))) {
       throw new Error('source agent connections changed before go-live could be committed');
     }
+    const sourceChatAddresses = chatAddressesToInput(
+      (await listChatAddressesForOutput(tx, userId, [sourceAgentId])).byAgent.get(sourceAgentId) ?? [],
+    );
     const result = await createAgentFromPayload(
       tx,
       livePayload,
@@ -262,7 +267,7 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
         userId,
         agentId: newAgentId,
         // No blueprint attribution for Go Live
-        telegramChatId: sourceAgent.telegramChatId,
+        chatAddresses: sourceChatAddresses,
       },
     );
 

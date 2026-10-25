@@ -62,7 +62,6 @@ const AGENT_ROW = {
   prompt: 'test',
   toolPolicy: null,
   modelPolicy: null,
-  telegramChatId: null,
   executionMode: null,
   dailyTokenBudget: null,
   dailyLossLimit: null,

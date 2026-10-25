@@ -1,7 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { AgentRepository } from './agent-repository.js';
-import * as schema from './schema/index.js';
 import {
   createScratchDatabase,
   localDatabaseUrl,
@@ -11,21 +8,19 @@ import {
 
 // Runs only against a local Postgres (DATABASE_URL on localhost). It creates and drops its own
 // database, so no existing data is read or changed. Skipped otherwise.
+// Historical: it exercises migration 0077 on a database stopped at 0076, before the C1 cutover drops the legacy columns.
 const BASE_URL = localDatabaseUrl();
 const PRE_BACKFILL = '0076_absent_starhawk.sql';
 const BACKFILL = '0077_chat_addresses_backfill.sql';
 
 describe.skipIf(!BASE_URL)('chat_addresses backfill (0077, integration)', () => {
   let scratch: ScratchDatabase;
-  let repo: AgentRepository;
-  let effectiveBeforeBackfill: Record<string, unknown>;
 
   const runBackfill = () => scratch.sql.unsafe(readMigration(BACKFILL)).simple();
 
   beforeAll(async () => {
     scratch = await createScratchDatabase(BASE_URL!, PRE_BACKFILL);
     const sql = scratch.sql;
-    repo = new AgentRepository(drizzle(sql, { schema }));
 
     await sql`INSERT INTO users (id, username, display_name, email, telegram_chat_id) VALUES
       ('user-padded', 'padded', 'Padded', 'padded@example.test', '  5550001  '),
@@ -42,14 +37,6 @@ describe.skipIf(!BASE_URL)('chat_addresses backfill (0077, integration)', () => 
         ('out-telegram', 'agent-override', 'agent', 'hi', '4242', '6600002', NULL, NULL, NULL),
         ('out-plain', 'agent-inherits', 'agent', 'hi', NULL, NULL, NULL, NULL, NULL),
         ('out-neutral', 'agent-override', 'agent', 'hi', '9', '6600002', 'whatsapp', '+15555550100', NULL)`;
-
-    // Parity baseline: what the legacy fallback resolves before any backfill runs.
-    effectiveBeforeBackfill = {
-      override: await repo.getEffectiveChatAddress('agent-override', 'telegram'),
-      inherits: await repo.getEffectiveChatAddress('agent-inherits', 'telegram'),
-      blank: await repo.getEffectiveChatAddress('agent-blank', 'telegram'),
-      other: await repo.getEffectiveChatAddress('agent-other', 'telegram'),
-    };
 
     await runBackfill();
   }, 120_000);
@@ -102,13 +89,6 @@ describe.skipIf(!BASE_URL)('chat_addresses backfill (0077, integration)', () => 
       { id: 'agent-other', telegram_chat_id: null },
       { id: 'agent-override', telegram_chat_id: '  6600002 ' },
     ]);
-  });
-
-  it('resolves the same effective addresses from the backfilled rows as from the legacy columns', async () => {
-    await expect(repo.getEffectiveChatAddress('agent-override', 'telegram')).resolves.toEqual(effectiveBeforeBackfill['override']);
-    await expect(repo.getEffectiveChatAddress('agent-inherits', 'telegram')).resolves.toEqual(effectiveBeforeBackfill['inherits']);
-    await expect(repo.getEffectiveChatAddress('agent-blank', 'telegram')).resolves.toEqual(effectiveBeforeBackfill['blank']);
-    await expect(repo.getEffectiveChatAddress('agent-other', 'telegram')).resolves.toEqual(effectiveBeforeBackfill['other']);
   });
 
   it('rejects a second Telegram address for the same user and agent scope', async () => {

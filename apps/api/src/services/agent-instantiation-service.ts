@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
-import { agents, agentSkills, recordAgentAuditEvent, setTelegramChatAddress, type DatabaseTransaction } from '@herobids/db';
+import { agents, agentSkills, recordAgentAuditEvent, type DatabaseTransaction } from '@herobids/db';
+import { applyChatAddresses, type ChatAddressesInput } from '../agents/chat-addresses.js';
 import type { AgentBlueprintRevisionPayload, RiskPosture } from '@herobids/domain';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -12,8 +13,8 @@ export interface AgentFromPayloadContext {
   /** Blueprint attribution — omitted for non-blueprint callers (e.g. Go Live). */
   blueprintId?: string;
   blueprintRevisionId?: string;
-  /** Telegram chat ID pre-fill. */
-  telegramChatId?: string | null;
+  /** Chat address pre-fill for the new agent's own scope. */
+  chatAddresses?: ChatAddressesInput;
   /** Default name when payload.name is absent. */
   fallbackName?: string;
 }
@@ -100,8 +101,6 @@ export async function createAgentFromPayload(
 ): Promise<AgentFromPayloadResult> {
   const agentId = context.agentId ?? crypto.randomUUID();
 
-  const telegramChatId: string | null = context.telegramChatId ?? null;
-
   const unifiedConfig = buildUnifiedConfigFromPayload(payload, riskOverride);
 
   await tx.insert(agents).values({
@@ -122,11 +121,10 @@ export async function createAgentFromPayload(
     runtimePolicyOverrides: payload.runtimePolicyOverrides ?? null,
     wakePreferences: payload.wakePreferences ?? null,
     unifiedConfig: unifiedConfig,
-    telegramChatId,
   } as typeof agents.$inferInsert);
 
-  if (telegramChatId !== null) {
-    await setTelegramChatAddress(tx, { userId: context.userId, agentId }, telegramChatId);
+  if (context.chatAddresses && context.chatAddresses.length > 0) {
+    await applyChatAddresses(tx, { userId: context.userId, agentId }, context.chatAddresses);
   }
 
   await recordAgentAuditEvent(tx, {

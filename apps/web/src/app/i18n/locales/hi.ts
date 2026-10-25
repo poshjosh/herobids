@@ -86,7 +86,7 @@ export const messages: Record<string, string> = {
   'auth.exchange.invalid_code': 'एक्सचेंज कोड अमान्य है या समाप्त हो चुका है।',
   'auth.unauthenticated': 'पहले साइन-इन करें।',
   'auth.user_not_found': 'उपयोगकर्ता नहीं मिला।',
-  'auth.profile.invalid_telegram_chat_id': 'Telegram चैट आईडी स्ट्रिंग या null होनी चाहिए।',
+  'auth.profile.invalid_chat_addresses': 'चैट पते में हर प्रदाता अधिकतम एक बार होना चाहिए, और हर पता स्ट्रिंग या null होना चाहिए।',
   'auth.profile.invalid_preferred_locale': 'भाषा इनमें से एक होनी चाहिए: {supportedLocales}.',
   'auth.logout.missing_authorization': 'प्राधिकरण हेडर नहीं मिला।',
   'auth.logout.malformed_token': 'टोकन गलत प्रारूप में है।',

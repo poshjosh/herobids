@@ -20,7 +20,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import crypto from 'node:crypto';
 import Fastify from 'fastify';
 import { sql, eq, and } from 'drizzle-orm';
-import { createDatabase, users, agents, connections, agentConnections, skills, agentRuntimeSessions, agentMessages } from '@herobids/db';
+import { createDatabase, setChatAddress, users, agents, connections, agentConnections, skills, agentRuntimeSessions, agentMessages } from '@herobids/db';
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import { telegramWebhookHandler } from '../../routes/agent-interactivity.js';
@@ -101,7 +101,7 @@ beforeEach(async () => {
   await db.execute(sql`
     TRUNCATE agent_outbound_messages, agent_messages,
       agent_runtime_sessions, agent_skills, agent_connections,
-      connections, agents, skills, users CASCADE
+      connections, agents, skills, users, chat_addresses, chat_suppressions CASCADE
   `);
 
   const app = Fastify({ logger: false });
@@ -128,10 +128,11 @@ async function seedUser(chatId: string, extra: Partial<typeof users.$inferInsert
   const uid = crypto.randomUUID();
   const [u] = await ctx.db.insert(users).values({
     id: uid, email: `tg-${chatId}@t.local`, displayName: `TG${chatId}`,
-    username: `tguser-${chatId}-${uid.slice(0, 6)}`, telegramChatId: chatId,
+    username: `tguser-${chatId}-${uid.slice(0, 6)}`,
     aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
     ...extra,
   }).returning();
+  await setChatAddress(ctx.db, { userId: uid, agentId: null }, 'telegram', chatId);
   return u!;
 }
 

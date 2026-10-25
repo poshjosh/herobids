@@ -12,7 +12,7 @@ import Fastify from 'fastify';
 import { telegramWebhookHandler } from '../../routes/agent-interactivity.js';
 import { ok, err, type ResolvedTelegramChatConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { users } from '@herobids/db';
+import { chatAddresses, chatSuppressions } from '@herobids/db';
 import type { Redis } from 'ioredis';
 
 // ── Service mocks ─────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ function flushPromises() {
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'innerJoin', 'where', 'orderBy', 'limit', 'offset']) {
+  for (const m of ['from', 'innerJoin', 'leftJoin', 'where', 'orderBy', 'limit', 'offset']) {
     chain[m] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (
@@ -61,6 +61,18 @@ function makeChain(value: unknown[]) {
     reject?: (v: unknown) => unknown,
   ) => Promise.resolve(value).then(resolve, reject);
   return chain;
+}
+
+/**
+ * db.select() for webhook tests that queue rows by select order. Reads of chat_suppressions return no
+ * rows and are not counted, so the queued order describes the other lookups only.
+ */
+function selectSkippingSuppressions(impl: () => unknown) {
+  return vi.fn().mockImplementation(() => ({
+    from: vi.fn((table: unknown) => (
+      table === chatSuppressions ? makeChain([]) : (impl() as { from: (t: unknown) => unknown }).from(table)
+    )),
+  }));
 }
 
 function buildMockRedis() {
@@ -137,7 +149,6 @@ function stubAgent(overrides: Partial<Record<string, unknown>> = {}) {
     status: 'stopped',
     toolPolicy: null,
     modelPolicy: null,
-    telegramChatId: null,
     executionMode: null,
     dailyTokenBudget: null,
     dailyLossLimit: null,
@@ -167,7 +178,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     // User lookup returns empty → no userId bound
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain([]); // always empty
       }),
@@ -190,7 +201,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/help returns command list', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain([]);
       }),
@@ -213,7 +224,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/help start returns detailed start help', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain([]);
       }),
@@ -234,7 +245,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/help /start (leading slash) returns same as /help start (M5)', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain([]);
       }),
@@ -257,7 +268,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/agents returns agent list', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) {
           return makeChain([{ userId: TEST_USER_ID }]);
@@ -281,7 +292,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/agents returns helpful message when user has no agents', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([]); // empty agent list
@@ -304,7 +315,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/info <agent> returns detail block', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([stubAgent({ status: 'active', executionDefaults: { mode: 'paper' } })]);
@@ -335,7 +346,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([stubAgent({ status: 'stopped' })]);
@@ -363,7 +374,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([stubAgent({ status: 'active' })]);
@@ -390,7 +401,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([stubAgent({ status: 'active' })]);
@@ -415,7 +426,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/mode <agent> live rejects with immutability message', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([stubAgent({ status: 'stopped' })]);
@@ -439,7 +450,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/connect <agent> <id> rejects non-stopped agent', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([stubAgent({ status: 'active' })]);
@@ -464,7 +475,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/disconnect <agent> <id> rejects non-stopped agent', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([stubAgent({ status: 'active' })]);
@@ -489,7 +500,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('unknown command returns help with unrecognized message', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain([]);
       }),
@@ -512,7 +523,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('bare /start returns onboarding/help', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain([]);
       }),
@@ -535,7 +546,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/connect <agent> with no connections offers setup link when authConfig provided', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         if (selectCount === 2) return makeChain([stubAgent({ status: 'stopped' })]);
@@ -569,7 +580,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/connect <agent> with active connections lists them and still offers setup for a new one', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         if (selectCount === 2) return makeChain([stubAgent({ status: 'stopped' })]);
@@ -611,7 +622,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/mode <agent> (read-only) shows current execution mode', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
         return makeChain([stubAgent({ status: 'active', executionDefaults: { mode: 'paper' } })]);
@@ -639,7 +650,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]);
         return makeChain([stubAgent({ status: 'stopped', executionDefaults: { mode: 'paper' } })]);
@@ -674,7 +685,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]);
         return makeChain([stubAgent({ status: 'active', executionDefaults: { mode: 'live' } })]);
@@ -695,7 +706,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
   it('/golive returns not-found for unknown agent', async () => {
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]);
         return makeChain([]); // agent not found
@@ -726,7 +737,7 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([stubAgent({ status: 'stopped' })]);
         return makeChain([]);
@@ -743,7 +754,7 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain([stubAgent({ status: 'active' })]);
       }),
@@ -761,7 +772,7 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         return makeChain([stubAgent({ status: 'active' })]);
       }),
@@ -779,7 +790,7 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
 
     let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => {
+      select: selectSkippingSuppressions(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([stubAgent({ status: 'stopped' })]);
         return makeChain([{ skillId: 'traderton/skills/crypto-trading' }]);
@@ -806,16 +817,17 @@ describe('Telegram Slash Commands — Approval resolution provider', () => {
     expiresAt: new Date(Date.now() + 60_000),
   };
 
-  /** Chat user lookup returns the bound user; approval queries return one pending approval. */
+  /** The chat address lookup returns the bound user; approval queries return one pending approval. */
   function buildApprovalResolutionDb() {
     const returning = vi.fn().mockResolvedValue([{ id: PENDING_APPROVAL.id }]);
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
     const db = {
       select: vi.fn(() => ({
-        from: vi.fn((table: unknown) => makeChain(table === users
-          ? [{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]
-          : [PENDING_APPROVAL])),
+        from: vi.fn((table: unknown) => makeChain(
+          table === chatSuppressions ? []
+            : table === chatAddresses ? [{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]
+              : [PENDING_APPROVAL])),
       })),
       update: vi.fn(() => ({ set })),
     };

@@ -288,7 +288,6 @@ interface AgentConfig {
   stopLossCooldownMs?: number;
   tickIntervalMs?: number;
   capital?: string;
-  telegramChatId?: string;
   runtimeDescriptor?: RuntimeDescriptor;
   userModelDefaults?: UserModelDefaults | null;
   operatorModelDefaults?: OperatorModelDefaults | null;

@@ -114,7 +114,6 @@ function makeSourceAgent(overrides: Record<string, unknown> = {}) {
     blueprintId: 'bp-1',
     blueprintRevisionId: 'rev-1',
     notificationPolicy: { sendMessage: { email: { enabled: true } } },
-    telegramChatId: 'chat-123',
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
     ...overrides,
@@ -262,7 +261,13 @@ function makeParams(db: Database, overrides: Partial<GoLiveParams> = {}): GoLive
 }
 
 /** Set up all mocks for a successful happy-path call. */
-function setupHappyPath(sourceAgent = makeSourceAgent(), connections = makeActiveConnections()) {
+const SOURCE_CHAT_ADDRESS_ROWS = [{ agentId: 'agent-src', provider: 'telegram', address: 'chat-123', status: 'active' }];
+
+function setupHappyPath(
+  sourceAgent = makeSourceAgent(),
+  connections = makeActiveConnections(),
+  sourceChatAddresses: unknown[] = SOURCE_CHAT_ADDRESS_ROWS,
+) {
   const skillRows = [{ skillId: 'skill-a' }, { skillId: 'skill-b' }];
   const tracker = makeInsertTracker();
 
@@ -273,6 +278,7 @@ function setupHappyPath(sourceAgent = makeSourceAgent(), connections = makeActiv
     skillRows,
     [sourceAgent],
     connections,
+    sourceChatAddresses,
   ];
 
   const db = buildMockDb(selectResults, tracker);
@@ -687,9 +693,9 @@ describe('cloneAgentAsLive', () => {
     expect(createAgentFromPayload).toHaveBeenCalledTimes(1);
   });
 
-  // ── Telegramchatid carry-over ────────────────────────────────────────────
+  // ── Chat address carry-over ──────────────────────────────────────────────
 
-  it('passes source telegramChatId to createAgentFromPayload context', async () => {
+  it("passes the source agent's own chat addresses to createAgentFromPayload context", async () => {
     const { db } = setupHappyPath();
     const result = await cloneAgentAsLive(makeParams(db));
 
@@ -697,7 +703,17 @@ describe('cloneAgentAsLive', () => {
 
     const createCall = vi.mocked(createAgentFromPayload).mock.calls[0]!;
     const context = createCall[3] as Record<string, unknown>;
-    expect(context.telegramChatId).toBe('chat-123');
+    expect(context.chatAddresses).toEqual([{ provider: 'telegram', address: 'chat-123' }]);
+  });
+
+  it('passes no chat addresses when the source agent has none', async () => {
+    const { db } = setupHappyPath(makeSourceAgent(), makeActiveConnections(), []);
+    const result = await cloneAgentAsLive(makeParams(db));
+
+    expect(result.ok).toBe(true);
+
+    const context = vi.mocked(createAgentFromPayload).mock.calls[0]![3] as Record<string, unknown>;
+    expect(context.chatAddresses).toEqual([]);
   });
 
   // ── Multiple connections ─────────────────────────────────────────────────

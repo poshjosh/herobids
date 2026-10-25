@@ -50,6 +50,7 @@ import { checkAgentLimit, resolvePlanBlueprintEntitlements } from '../plan-guard
 import { AgentCreatePolicyError } from '../agents/agent-create-policy.js';
 import { errorPayload } from '../error-payload.js';
 import { createAgentFromPayload } from '../services/agent-instantiation-service.js';
+import { chatAddressesToInput, listUserChatAddresses } from '../agents/chat-addresses.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { computeInstantiateRequestHash, deriveInstantiateActorId } from '../services/blueprint-idempotency.js';
 import { resolveEffectiveRisk } from '../services/blueprint-risk-resolver.js';
@@ -2281,16 +2282,10 @@ export async function blueprintRoutes(
           }
           const agentPayloadFinal = finalPayload as AgentBlueprintRevisionPayload;
 
-          // Same-user pre-fill: copy telegramChatId when installer is the blueprint author
-          let telegramChatId: string | null = null;
-          if (bp.authorId === request.userId) {
-            const [userRow] = await tx
-              .select({ telegramChatId: users.telegramChatId })
-              .from(users)
-              .where(eq(users.id, request.userId))
-              .limit(1);
-            telegramChatId = userRow?.telegramChatId ?? null;
-          }
+          // Same-user pre-fill: copy the installer's chat addresses when installer is the blueprint author
+          const chatAddresses = bp.authorId === request.userId
+            ? chatAddressesToInput(await listUserChatAddresses(tx, request.userId))
+            : [];
 
           const skillRefs = await getRevisionSkillRefs(tx as unknown as Database, revision.id);
           const connectionIds = parsed.data.bindings?.kind === 'agent'
@@ -2369,7 +2364,7 @@ export async function blueprintRoutes(
                   agentId: actorId,
                   blueprintId: bp.id,
                   blueprintRevisionId: revision.id,
-                  telegramChatId,
+                  chatAddresses,
                   fallbackName: bp.name,
                 },
                 agentPayloadFinal.risk,

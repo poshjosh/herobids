@@ -1,6 +1,7 @@
 import type { CapabilityMode, HybridMode } from './CapabilitySelector.js';
 import type { TechnicalConfigFormState } from './technical-config-helpers.js';
 import type { Agent } from '../../lib/api-client.js';
+import { chatAddressFor } from '../../lib/chat-addresses.js';
 import { extractAgentObjective } from './agent-display.js';
 import { formatTickIntervalMinutesForInput } from './tick-interval.js';
 import { defaultTechnicalConfigFormState, technicalConfigToFormState } from './technical-config-helpers.js';
@@ -32,7 +33,7 @@ export interface AgentFormState {
   capital: string;
 
   // Notifications
-  telegramChatId: string;
+  telegramAddress: string;
   /** Tri-state email delivery override: inherit account default, always allow, or always disable. */
   emailDelivery: 'inherit' | 'allow' | 'disable';
 
@@ -137,7 +138,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
     connectionIds: [],
     executionMode,
     capital: agent.capital ?? '',
-    telegramChatId: agent.telegramChatId ?? '',
+    telegramAddress: chatAddressFor(agent.chatAddresses, 'telegram'),
     emailDelivery: agent.notificationPolicy?.sendMessage?.email != null
       ? (agent.notificationPolicy.sendMessage.email.enabled ? 'allow' : 'disable')
       : 'inherit',
@@ -199,7 +200,7 @@ export function intentToFormState(intent: {
   connectionIds?: string[];
   executionMode: 'test' | 'live' | '';
   capital: string;
-  telegramChatId: string;
+  telegramAddress: string;
   emailDelivery: 'inherit' | 'allow' | 'disable';
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
@@ -231,7 +232,7 @@ export function intentToFormState(intent: {
     connectionIds,
     executionMode,
     capital,
-    telegramChatId,
+    telegramAddress,
     emailDelivery,
     costPreset,
     dailySpendBudgetUsd,
@@ -263,7 +264,7 @@ export function intentToFormState(intent: {
     connectionIds,
     executionMode,
     capital,
-    telegramChatId,
+    telegramAddress,
     emailDelivery,
     costPreset,
     dailySpendBudgetUsd,
