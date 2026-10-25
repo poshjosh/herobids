@@ -24,20 +24,21 @@ function parseWith(extra: Record<string, unknown>) {
 }
 
 describe('messaging.conversations schema', () => {
-  it('defaults to a 4000 character user message and 50/200 thread pages', () => {
+  it('defaults to a 4000 character user message, 50/200 thread pages and a 60 second stuck-queued age', () => {
     expect(parseWith({}).messaging.conversations).toEqual({
       userMessageMaxChars: 4000,
       threadDefaultPageSize: 50,
       threadMaxPageSize: 200,
+      staleQueuedAfterSeconds: 60,
     });
   });
 
   it('accepts operator overrides', () => {
     const conversations = parseWith({
-      messaging: { conversations: { userMessageMaxChars: 1000, threadDefaultPageSize: 10, threadMaxPageSize: 20 } },
+      messaging: { conversations: { userMessageMaxChars: 1000, threadDefaultPageSize: 10, threadMaxPageSize: 20, staleQueuedAfterSeconds: 5 } },
     }).messaging.conversations;
 
-    expect(conversations).toEqual({ userMessageMaxChars: 1000, threadDefaultPageSize: 10, threadMaxPageSize: 20 });
+    expect(conversations).toEqual({ userMessageMaxChars: 1000, threadDefaultPageSize: 10, threadMaxPageSize: 20, staleQueuedAfterSeconds: 5 });
   });
 
   it('rejects a default page size above the maximum', () => {
@@ -48,5 +49,6 @@ describe('messaging.conversations schema', () => {
 
   it('rejects non-positive limits', () => {
     expect(() => parseWith({ messaging: { conversations: { userMessageMaxChars: 0 } } })).toThrow();
+    expect(() => parseWith({ messaging: { conversations: { staleQueuedAfterSeconds: 0 } } })).toThrow();
   });
 });

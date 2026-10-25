@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { sql, eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
@@ -10,10 +10,11 @@ import {
   agents,
   agentRuntimeSessions,
   agentOutboundMessages,
+  conversationMessages,
   generateAgentApiKey,
 } from '@herobids/db';
 import type { AuthConfig, PlansConfig } from '@herobids/domain';
-import { AgentCreationConfigSchema } from '@herobids/domain';
+import { AgentCreationConfigSchema, userAgentConversationId } from '@herobids/domain';
 import {
   ExternalBackendClient,
   type ExternalBackendClientResult,
@@ -264,6 +265,7 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await Promise.all(apps.splice(0).map((app) => app.close()));
     if (streamKeys.length > 0) await redis.del(...streamKeys.splice(0));
   });
@@ -411,6 +413,9 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
     expect(res.statusCode).toBe(202);
     const [stored] = await db.select().from(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, tree.child.agentId));
     expect(stored).toMatchObject({ authoredBy: `agent:${tree.creator.agentId}`, body: 'Status update?' });
+    const [conversationRow] = await db.select().from(conversationMessages).where(eq(conversationMessages.conversationId, userAgentConversationId(tree.child.agentId)));
+    expect(conversationRow).toMatchObject({ id: stored?.id, senderType: 'agent', senderId: tree.creator.agentId, body: 'Status update?', deliveryStatus: 'sent' });
+    expect(res.json()).toMatchObject({ delivered: true, message: { id: stored?.id, senderType: 'agent', senderId: tree.creator.agentId } });
     const entries = await redis.xrange(`agent:outbound:${tree.child.agentId}`, '-', '+');
     expect(entries).toHaveLength(1);
     const envelope = JSON.parse(entries[0]![1][1]!) as Record<string, unknown>;
@@ -421,6 +426,34 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
       type: 'agent.user.message',
       payload: { message: 'Status update?' },
     });
+  });
+
+  it('a creator key retries a failed message under its own authorship: same id, one more publish, one row', async () => {
+    const tree = await seedCreatorTree(db);
+    const app = await appWith();
+    streamKeys.push(`agent:outbound:${tree.child.agentId}`);
+    const clientMessageId = crypto.randomUUID();
+    const send = () => agentKeyRequest(app, 'POST', `/agents/${tree.child.agentId}/message`, tree.creator.rawKey, { message: 'Status update?', clientMessageId });
+    const xadd = vi.spyOn(redis, 'xadd').mockRejectedValueOnce(new Error('redis unavailable') as never);
+
+    const failed = await send();
+
+    expect(failed.statusCode).toBe(503);
+    const [afterFailure] = await db.select().from(conversationMessages).where(eq(conversationMessages.id, clientMessageId));
+    expect(afterFailure).toMatchObject({ senderType: 'agent', senderId: tree.creator.agentId, deliveryStatus: 'failed' });
+    expect(await redis.xlen(`agent:outbound:${tree.child.agentId}`)).toBe(0);
+
+    const retry = await send();
+    const repeat = await send();
+
+    expect(retry.statusCode).toBe(202);
+    expect(retry.json()).toMatchObject({ delivered: true, message: { id: clientMessageId, senderType: 'agent', senderId: tree.creator.agentId, deliveryStatus: 'sent' } });
+    expect(repeat.statusCode).toBe(202);
+    expect(xadd).toHaveBeenCalledTimes(2);
+    const entries = await redis.xrange(`agent:outbound:${tree.child.agentId}`, '-', '+');
+    expect(entries).toHaveLength(1);
+    expect(JSON.parse(entries[0]![1][1]!)).toMatchObject({ messageId: clientMessageId, type: 'agent.user.message', initiatorId: tree.creator.agentId });
+    expect(await db.select().from(conversationMessages).where(eq(conversationMessages.id, clientMessageId))).toHaveLength(1);
   });
 
   it('a creator key is refused with 429 once the creator-child pair bucket is empty', async () => {

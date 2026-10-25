@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useIntl } from 'react-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, type AgentOutboundMessage } from '../../lib/api-client.js';
+import { agents as agentsApi, type AgentConversationMessage } from '../../lib/api-client.js';
 import { Button, Card, SectionLabel } from '../../lib/ui.js';
 import { Linkify } from '../../lib/linkify.js';
+import { buildThread, mergeMessages, type PendingSend } from './conversation-thread.js';
 
 const RUNNING_STATUSES = ['active', 'starting', 'paused', 'unhealthy'];
 
@@ -11,10 +12,13 @@ export const CONVERSATION_POLL_MS = 3000;
 export const STILL_STARTING_AFTER_MS = 15_000;
 export const STARTING_STUCK_AFTER_MS = 120_000;
 
+/** Used until the first page of the thread reports the server's configured limit. */
+export const DEFAULT_MESSAGE_MAX_CHARS = 4000;
+
 const HINT_STYLE: CSSProperties = { color: 'var(--color-text-muted)', fontSize: '0.8125rem' };
 
 // Untagged platform messages predate messageClass and were all safety alerts.
-function isSafetyAlert(message: AgentOutboundMessage): boolean {
+function isSafetyAlert(message: AgentConversationMessage): boolean {
   return message.messageClass === null || message.messageClass === undefined || message.messageClass === 'alert';
 }
 
@@ -91,17 +95,36 @@ function useStartingElapsed(isStarting: boolean): number {
   return elapsed;
 }
 
+export type BubbleAuthor = 'user' | 'agent' | 'parent' | 'platform';
+
+/** Who a bubble is from. An agent row written by another agent (a creator messaging its child) is not this agent. */
+export function bubbleAuthor(message: Pick<AgentConversationMessage, 'senderType' | 'senderId'>, agentId: string): BubbleAuthor {
+  if (message.senderType === 'user') return 'user';
+  if (message.senderType === 'platform') return 'platform';
+  return message.senderId === null || message.senderId === agentId ? 'agent' : 'parent';
+}
+
 export interface AgentConversationViewProps {
+  agentId?: string;
   agentName: string;
-  messages: AgentOutboundMessage[];
+  /** Oldest first. */
+  messages: AgentConversationMessage[];
   canSend: boolean;
   isStarting?: boolean;
   showIntro?: boolean;
   onDismissIntro?: () => void;
   draft: string;
-  isSending: boolean;
+  maxChars?: number;
   onDraftChange: (value: string) => void;
   onSend: () => void;
+  /** Resends a message that was not delivered, under the same id. */
+  onRetryMessage?: (messageId: string) => void;
+  /** The thread could not be loaded and nothing is shown yet. */
+  loadFailed?: boolean;
+  /** Loading an older page failed; the Show earlier button retries it. */
+  loadEarlierFailed?: boolean;
+  onLoadEarlier?: () => void;
+  isLoadingEarlier?: boolean;
   /** The agent is working on a message; shows a typing indicator in the thread. */
   isAwaitingReply?: boolean;
   /** Explains a return from an approved connection request while the agent resumes. */
@@ -110,7 +133,8 @@ export interface AgentConversationViewProps {
 }
 
 export function AgentConversationView({
-  agentName, messages, canSend, isStarting = false, showIntro = false, onDismissIntro, draft, isSending, onDraftChange, onSend,
+  agentId = '', agentName, messages, canSend, isStarting = false, showIntro = false, onDismissIntro, draft, maxChars = DEFAULT_MESSAGE_MAX_CHARS,
+  onDraftChange, onSend, onRetryMessage, loadFailed = false, loadEarlierFailed = false, onLoadEarlier, isLoadingEarlier = false,
   isAwaitingReply = false, connectionBanner = false, onRetry,
 }: AgentConversationViewProps) {
   const intl = useIntl();
@@ -120,14 +144,14 @@ export function AgentConversationView({
   const phase = startingPhase(elapsed);
   // Messages can be queued while the agent starts; the agent picks them up once it is ready.
   const canCompose = canSend || isStarting;
-  // API returns newest first, so messages[0] is the latest; keep the list pinned to it.
-  const newestId = messages[0]?.id;
+  // Pin the list to the newest message. Loading earlier messages leaves the newest unchanged, so it does not jump.
+  const newestId = messages[messages.length - 1]?.id;
   useEffect(() => {
     const list = listRef.current;
     if (list) {
       list.scrollTop = list.scrollHeight;
     }
-  }, [messages.length, newestId, isAwaitingReply]);
+  }, [newestId, isAwaitingReply]);
   return (
     <Card className="agent-conversation-card">
       <div style={{ border: canCompose ? '1.5px solid var(--color-brand)' : undefined, borderRadius: '10px', padding: '2px' }}>
@@ -184,15 +208,39 @@ export function AgentConversationView({
           )}
         </div>
       )}
-      {messages.length === 0 && !isAwaitingReply ? (
+      {loadFailed && messages.length === 0 ? (
+        <p role="alert" style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.loadError' })}</p>
+      ) : messages.length === 0 && !isAwaitingReply ? (
         <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.empty' })}</p>
       ) : (
         <div ref={listRef} style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto', overflowX: 'hidden' }}>
-          {/* API returns newest first */}
-          {[...messages].reverse().map((message) => {
-            const fromUser = message.authoredBy === 'user';
+          {onLoadEarlier && (
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              {loadEarlierFailed && !isLoadingEarlier && (
+                <span role="alert" style={{ ...HINT_STYLE, alignSelf: 'center', marginRight: '8px' }}>
+                  {intl.formatMessage({ id: 'agentDetail.conversation.loadError' })}
+                </span>
+              )}
+              <Button variant="ghost" size="sm" onClick={onLoadEarlier} disabled={isLoadingEarlier}>
+                {intl.formatMessage({ id: 'agentDetail.conversation.loadEarlier' })}
+              </Button>
+            </div>
+          )}
+          {messages.map((message) => {
+            const author = bubbleAuthor(message, agentId);
+            const fromUser = author === 'user';
+            // A queued row the server marks stuck was never published (the sender's retry re-publishes it): offer Retry, not a spinner.
+            const stuck = message.deliveryStatus === 'queued' && message.stuck === true;
+            // A refused message is final (the server will not republish it), so it shows "Not sent" without Retry.
+            const canRetry = message.deliveryStatus === 'failed' || stuck;
+            const notDelivered = fromUser && (canRetry || message.deliveryStatus === 'refused');
+            const sending = fromUser && message.deliveryStatus === 'queued' && !stuck;
             return (
-              <div key={message.id} style={{ display: 'flex', justifyContent: fromUser ? 'flex-end' : 'flex-start' }}>
+              <div
+                key={message.id}
+                data-author={author}
+                style={{ display: 'flex', justifyContent: fromUser ? 'flex-end' : author === 'platform' ? 'center' : 'flex-start' }}
+              >
                 <div className="agent-message-bubble" style={{
                   padding: '8px 12px',
                   borderRadius: '12px',
@@ -200,12 +248,15 @@ export function AgentConversationView({
                   whiteSpace: 'pre-wrap',
                   overflowWrap: 'anywhere',
                   background: fromUser ? 'var(--color-brand-subtle)' : 'var(--color-surface-2)',
+                  opacity: sending ? 0.7 : 1,
                 }}>
                   {!fromUser && (
                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '2px' }}>
-                      {message.authoredBy === 'agent'
+                      {author === 'agent'
                         ? agentName
-                        : intl.formatMessage({ id: isSafetyAlert(message) ? 'agentDetail.conversation.fromPlatform' : 'agentDetail.conversation.fromOpenAIdom' })}
+                        : author === 'parent'
+                          ? intl.formatMessage({ id: 'agentDetail.conversation.fromParentAgent' })
+                          : intl.formatMessage({ id: isSafetyAlert(message) ? 'agentDetail.conversation.fromPlatform' : 'agentDetail.conversation.fromOpenAIdom' })}
                     </div>
                   )}
                   <Linkify text={message.body} />
@@ -216,6 +267,21 @@ export function AgentConversationView({
                   >
                     {formatMessageTime(intl, message.createdAt)}
                   </time>
+                  {sending && (
+                    <div role="status" style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textAlign: 'end' }}>
+                      {intl.formatMessage({ id: 'agentDetail.conversation.sending' })}
+                    </div>
+                  )}
+                  {notDelivered && (
+                    <div role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', fontSize: '0.75rem', color: 'var(--color-danger, #c0392b)' }}>
+                      <span>{intl.formatMessage({ id: 'agentDetail.conversation.notSent' })}</span>
+                      {onRetryMessage && canRetry && (
+                        <Button variant="ghost" size="sm" onClick={() => onRetryMessage(message.id)}>
+                          {intl.formatMessage({ id: 'agentDetail.conversation.retry' })}
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -258,12 +324,12 @@ export function AgentConversationView({
           aria-label={intl.formatMessage({ id: 'agentDetail.conversation.placeholder' })}
           placeholder={intl.formatMessage({ id: 'agentDetail.conversation.placeholder' })}
           value={draft}
-          disabled={!canCompose || isSending}
-          maxLength={4000}
+          disabled={!canCompose}
+          maxLength={maxChars}
           rows={3}
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={(event) => {
-            if (isSendShortcut(event.key, event.shiftKey, event.nativeEvent.isComposing) && canCompose && !isSending && trimmed.length > 0) {
+            if (isSendShortcut(event.key, event.shiftKey, event.nativeEvent.isComposing) && canCompose && trimmed.length > 0) {
               event.preventDefault();
               onSend();
             }
@@ -293,8 +359,8 @@ export function AgentConversationView({
             borderTop: '1px solid var(--color-border-subtle)',
           }}
         >
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{draft.length}/4000</span>
-          <Button onClick={onSend} disabled={!canCompose || isSending || trimmed.length === 0}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{draft.length}/{maxChars}</span>
+          <Button onClick={onSend} disabled={!canCompose || trimmed.length === 0}>
             {intl.formatMessage({ id: 'agentDetail.conversation.send' })}
           </Button>
         </div>
@@ -313,6 +379,10 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
 }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState('');
+  // Every row fetched so far. The newest page is polled and slides forward, so rows are kept here, not re-derived.
+  const [history, setHistory] = useState<AgentConversationMessage[]>([]);
+  const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
+  const [pending, setPending] = useState<PendingSend[]>([]);
   const introKey = `${CONVERSATION_INTRO_STORAGE_PREFIX}${agentId}`;
   const [introDismissed, setIntroDismissed] = useState(() => {
     try {
@@ -322,13 +392,28 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
     }
   });
   const conversable = isAgentConversable(status);
-  const messagesQuery = useQuery({
+  const threadQuery = useQuery({
     queryKey: ['agent-conversation', agentId],
-    queryFn: () => agentsApi.messages(agentId, 50),
+    queryFn: () => agentsApi.conversation(agentId),
     enabled: agentId.length > 0,
+    // Polls only while the agent runs. react-query pauses interval refetches while the tab is hidden.
     refetchInterval: conversable ? CONVERSATION_POLL_MS : false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
+  });
+  const latestPage = threadQuery.data;
+  useEffect(() => {
+    if (latestPage) setHistory((previous) => mergeMessages(previous, latestPage.messages));
+  }, [latestPage]);
+  // Before any older page is loaded the next older page starts at the newest page's cursor.
+  const earlierCursor = olderCursor === undefined ? (latestPage?.nextCursor ?? null) : olderCursor;
+  const earlierMutation = useMutation({
+    mutationFn: (before: string) => agentsApi.conversation(agentId, { before }),
+    onSuccess: (page) => {
+      setHistory((previous) => mergeMessages(previous, page.messages));
+      setOlderCursor(page.nextCursor);
+    },
+    // On failure the cursor is unchanged, so the same button retries the same page; the view shows `isError`.
   });
   // Server-derived from the runtime's tick events, so it reflects when the agent actually picks the request up.
   const turnQuery = useQuery({
@@ -340,28 +425,51 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
     refetchOnWindowFocus: true,
   });
   const sendMutation = useMutation({
-    mutationFn: (message: string) => agentsApi.sendMessage(agentId, message),
-    onSuccess: async () => {
-      setDraft('');
+    mutationFn: ({ id, body }: { id: string; body: string }) => agentsApi.sendMessage(agentId, body, id),
+    onSuccess: async (result, { id }) => {
+      // Show the stored row at once; the next poll confirms it.
+      setHistory((previous) => mergeMessages(previous, [result.message]));
+      setPending((previous) => previous.filter((entry) => entry.id !== id));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['agent-conversation', agentId] }),
         queryClient.invalidateQueries({ queryKey: ['agent-conversation-turn', agentId] }),
       ]);
     },
+    onError: (_error, { id }) => {
+      setPending((previous) => previous.map((entry) => (entry.id === id ? { ...entry, status: 'failed' } : entry)));
+      // A failed publish leaves a failed row on the server; fetch it so a reload shows the same state.
+      void queryClient.invalidateQueries({ queryKey: ['agent-conversation', agentId] });
+    },
   });
+
+  const submit = (id: string, body: string) => {
+    setPending((previous) => (
+      previous.some((entry) => entry.id === id)
+        ? previous.map((entry) => (entry.id === id ? { ...entry, status: 'sending' } : entry))
+        : [...previous, { id, body, createdAt: new Date().toISOString(), status: 'sending' }]
+    ));
+    sendMutation.mutate({ id, body });
+  };
 
   const turn = conversable ? turnQuery.data : undefined;
   const awaitingReply = turn?.message === 'working' || turn?.connection === 'working';
   const connectionPending = connectionRequestId !== null && (turn?.connection === 'queued' || turn?.connection === 'working');
+  const thread = buildThread(history, pending);
 
   return (
     <AgentConversationView
+      agentId={agentId}
       agentName={agentName}
-      messages={messagesQuery.data ?? []}
+      messages={thread}
+      maxChars={latestPage?.maxMessageChars ?? DEFAULT_MESSAGE_MAX_CHARS}
       canSend={conversable}
       isStarting={status === 'starting'}
       isAwaitingReply={awaitingReply}
       connectionBanner={connectionPending}
+      loadFailed={threadQuery.isError}
+      onLoadEarlier={earlierCursor === null ? undefined : () => earlierMutation.mutate(earlierCursor)}
+      isLoadingEarlier={earlierMutation.isPending}
+      loadEarlierFailed={earlierMutation.isError}
       onRetry={() => {
         void queryClient.invalidateQueries({ queryKey: ['agents', agentId] });
         void queryClient.invalidateQueries({ queryKey: ['agent-conversation', agentId] });
@@ -377,11 +485,16 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
         setIntroDismissed(true);
       }}
       draft={draft}
-      isSending={sendMutation.isPending}
       onDraftChange={setDraft}
       onSend={() => {
-        const message = draft.trim();
-        if (message.length > 0) sendMutation.mutate(message);
+        const body = draft.trim();
+        if (body.length === 0) return;
+        setDraft('');
+        submit(crypto.randomUUID(), body);
+      }}
+      onRetryMessage={(messageId) => {
+        const original = thread.find((message) => message.id === messageId);
+        if (original) submit(messageId, original.body);
       }}
     />
   );

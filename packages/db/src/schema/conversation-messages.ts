@@ -30,6 +30,8 @@ export const conversationMessages = pgTable('conversation_messages', {
   /** Id returned by the channel when it sent the message */
   providerMessageId: text('provider_message_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** When the row last entered `queued`: set to created_at on insert, restamped by a retry claim. Ages a stuck queued row. */
+  queuedAt: timestamp('queued_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_conversation_messages_conversation_created').on(t.conversationId, t.createdAt),
 ]);

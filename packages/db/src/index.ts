@@ -26,7 +26,7 @@ export { ConnectionOwnershipRepository } from './repositories.js';
 export { AlertDeliveryRepository } from './alert-delivery-repository.js';
 export { PushSubscriptionRepository, toPushSubscriptionRecord } from './push-subscription-repository.js';
 export type { PushSubscriptionRecord, UpsertPushSubscriptionInput } from './push-subscription-repository.js';
-export { ConversationRepository, toConversationMessage } from './conversation-repository.js';
+export { ConversationRepository, deleteUserAgentConversations, toConversationMessage } from './conversation-repository.js';
 export { NotificationDeliveryRepository, EMAIL_CAP_COUNTED_STATUSES } from './notification-delivery-repository.js';
 export type { RecordNotificationDeliveryInput } from './notification-delivery-repository.js';
 export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repository.js';

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import {
   CONVERSATION_DELIVERY_FROM,
   CONVERSATION_ERROR_CODES,
@@ -9,11 +9,15 @@ import {
   type ConversationStore,
   type ListUserAgentThreadInput,
   type MarkConversationDeliveryInput,
+  type FindConversationMessageInput,
+  type RequeueUndeliveredMessageInput,
   type RecordUserAgentMessageInput,
   type RecordedConversationMessage,
   type Result,
+  userAgentConversationId,
 } from '@herobids/domain';
 import type { Database } from './index.js';
+import type { DatabaseTransaction } from './trading-profile-reconciliation-outbox-repository.js';
 import { conversationMessages, conversationParticipants, conversations } from './schema/index.js';
 
 type MessageRow = typeof conversationMessages.$inferSelect;
@@ -33,6 +37,7 @@ export function toConversationMessage(row: MessageRow): ConversationMessage {
     deliveryDetail: row.deliveryDetail,
     providerMessageId: row.providerMessageId,
     createdAt: row.createdAt,
+    queuedAt: row.queuedAt,
   };
 }
 
@@ -50,6 +55,7 @@ function storeFailed(error: unknown): Result<never, ConversationError> {
 
 /** Thrown inside the write transaction so Postgres rolls back everything it wrote, then mapped to a refusal. */
 class OwnerMismatchRollback extends Error {}
+class MessageIdConflictRollback extends Error {}
 
 /** Postgres adapter for the conversation store port. Only ConversationService calls it. */
 export class ConversationRepository implements ConversationStore {
@@ -93,7 +99,7 @@ export class ConversationRepository implements ConversationStore {
 
         const [inserted] = await tx
           .insert(conversationMessages)
-          .values({ ...message, conversationId })
+          .values({ ...message, conversationId, queuedAt: message.createdAt })
           .onConflictDoNothing({ target: conversationMessages.id })
           .returning();
         if (inserted) {
@@ -119,13 +125,17 @@ export class ConversationRepository implements ConversationStore {
           || existing.senderType !== message.senderType
           || existing.senderId !== message.senderId
         ) {
-          return refusal(CONVERSATION_ERROR_CODES.messageIdConflict, 'conversation_message_id_conflict');
+          // Throw, not return: a first write may have created the conversation above, and a returned refusal would commit it empty.
+          throw new MessageIdConflictRollback();
         }
         return ok({ message: toConversationMessage(existing), created: false });
       });
     } catch (error) {
       if (error instanceof OwnerMismatchRollback) {
         return refusal(CONVERSATION_ERROR_CODES.ownerMismatch, 'conversation_owner_mismatch');
+      }
+      if (error instanceof MessageIdConflictRollback) {
+        return refusal(CONVERSATION_ERROR_CODES.messageIdConflict, 'conversation_message_id_conflict');
       }
       return storeFailed(error);
     }
@@ -165,6 +175,52 @@ export class ConversationRepository implements ConversationStore {
     }
   }
 
+  async requeueUndeliveredMessage(input: RequeueUndeliveredMessageInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    try {
+      // One conditional update claims the retry, and it restamps queued_at, so concurrent retries publish once:
+      // the loser re-evaluates the WHERE after the winner commits and no longer sees a failed or stale row.
+      // The sender and owner checks keep a guessed id from re-queuing another user's or agent's row.
+      const [claimed] = await this.db
+        .update(conversationMessages)
+        .set({ deliveryStatus: 'queued', deliveryDetail: null, queuedAt: input.now })
+        .where(and(
+          eq(conversationMessages.id, input.messageId),
+          eq(conversationMessages.conversationId, input.conversationId),
+          eq(conversationMessages.senderType, input.senderType),
+          eq(conversationMessages.senderId, input.senderId),
+          or(
+            eq(conversationMessages.deliveryStatus, 'failed'),
+            and(eq(conversationMessages.deliveryStatus, 'queued'), lte(conversationMessages.queuedAt, input.staleBefore)),
+          ),
+          sql`exists (select 1 from ${conversations} where ${conversations.id} = ${conversationMessages.conversationId} and ${conversations.ownerUserId} = ${input.ownerUserId})`,
+        ))
+        .returning();
+      return ok(claimed ? toConversationMessage(claimed) : null);
+    } catch (error) {
+      return storeFailed(error);
+    }
+  }
+
+  async findMessage(input: FindConversationMessageInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    try {
+      const [row] = await this.db
+        .select({ message: conversationMessages })
+        .from(conversationMessages)
+        .innerJoin(conversations, eq(conversations.id, conversationMessages.conversationId))
+        .where(and(
+          eq(conversationMessages.id, input.messageId),
+          eq(conversationMessages.conversationId, input.conversationId),
+          eq(conversationMessages.senderType, input.senderType),
+          input.senderId === null ? isNull(conversationMessages.senderId) : eq(conversationMessages.senderId, input.senderId),
+          eq(conversations.ownerUserId, input.ownerUserId),
+        ))
+        .limit(1);
+      return ok(row ? toConversationMessage(row.message) : null);
+    } catch (error) {
+      return storeFailed(error);
+    }
+  }
+
   async listUserAgentThread(input: ListUserAgentThreadInput): Promise<Result<ConversationMessage[], ConversationError>> {
     try {
       const rows = await this.db
@@ -186,4 +242,13 @@ export class ConversationRepository implements ConversationStore {
       return storeFailed(error);
     }
   }
+}
+
+/**
+ * Deletes the user-agent conversations of `agentIds`; participants and messages follow by cascade.
+ * Participants carry no foreign key to agents, so agent deletion must call this in the same transaction.
+ */
+export async function deleteUserAgentConversations(executor: Database | DatabaseTransaction, agentIds: string[]): Promise<void> {
+  if (agentIds.length === 0) return;
+  await executor.delete(conversations).where(inArray(conversations.id, agentIds.map(userAgentConversationId)));
 }

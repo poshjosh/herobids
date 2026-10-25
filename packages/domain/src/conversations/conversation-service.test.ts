@@ -5,7 +5,7 @@ import { CONVERSATION_ERROR_CODES, userAgentConversationId, type ConversationMes
 import { ConversationService } from './conversation-service.js';
 
 const NOW = new Date('2026-10-25T10:00:00.000Z');
-const LIMITS = { userMessageMaxChars: 10, threadDefaultPageSize: 5, threadMaxPageSize: 8 };
+const LIMITS = { userMessageMaxChars: 10, threadDefaultPageSize: 5, threadMaxPageSize: 8, staleQueuedAfterSeconds: 60 };
 
 function storedMessage(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
   return {
@@ -21,6 +21,7 @@ function storedMessage(overrides: Partial<ConversationMessage> = {}): Conversati
     deliveryDetail: null,
     providerMessageId: null,
     createdAt: NOW,
+    queuedAt: NOW,
     ...overrides,
   };
 }
@@ -30,6 +31,8 @@ function setup() {
     recordUserAgentMessage: vi.fn(async (input: RecordUserAgentMessageInput) =>
       ok({ message: storedMessage({ ...input.message, conversationId: input.conversationId, deliveryDetail: null, providerMessageId: null }), created: true })),
     markDelivery: vi.fn(async () => ok(storedMessage({ deliveryStatus: 'sent' }))),
+    requeueUndeliveredMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage())),
+    findMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage())),
     listUserAgentThread: vi.fn(async () => ok([storedMessage()])),
   } satisfies ConversationStore;
   let counter = 0;
@@ -274,5 +277,115 @@ describe('ConversationService.listThread', () => {
 
     expect(result.ok).toBe(false);
     expect(store.listUserAgentThread).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationService.retryUndeliveredMessage', () => {
+  const USER = { type: 'user' } as const;
+
+  it('asks the store to requeue the user\'s message in the derived conversation, with the claim and stale times', async () => {
+    const { store, service } = setup();
+
+    const result = await service.retryUndeliveredMessage({ ownerUserId: 'u1', agentId: 'a1', messageId: 'm1', sender: USER });
+
+    expect(result.ok).toBe(true);
+    expect(store.requeueUndeliveredMessage).toHaveBeenCalledWith({
+      messageId: 'm1',
+      conversationId: userAgentConversationId('a1'),
+      ownerUserId: 'u1',
+      senderType: 'user',
+      senderId: 'u1',
+      now: NOW,
+      staleBefore: new Date(NOW.getTime() - LIMITS.staleQueuedAfterSeconds * 1000),
+    });
+  });
+
+  it('claims a creator agent\'s message under the agent\'s authorship', async () => {
+    const { store, service } = setup();
+
+    await service.retryUndeliveredMessage({ ownerUserId: 'u1', agentId: 'child', messageId: 'm1', sender: { type: 'agent', agentId: 'creator' } });
+
+    expect(store.requeueUndeliveredMessage).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: userAgentConversationId('child'),
+      ownerUserId: 'u1',
+      senderType: 'agent',
+      senderId: 'creator',
+    }));
+  });
+
+  it('returns null when nothing was claimable, so the caller does not publish', async () => {
+    const { store, service } = setup();
+    store.requeueUndeliveredMessage.mockResolvedValueOnce(ok(null));
+
+    const result = await service.retryUndeliveredMessage({ ownerUserId: 'u1', agentId: 'a1', messageId: 'm1', sender: USER });
+
+    expect(result).toEqual(ok(null));
+  });
+
+  it('refuses a blank message id or identity before touching the store', async () => {
+    const { store, service } = setup();
+
+    const blankId = await service.retryUndeliveredMessage({ ownerUserId: 'u1', agentId: 'a1', messageId: ' ', sender: USER });
+    const blankOwner = await service.retryUndeliveredMessage({ ownerUserId: '', agentId: 'a1', messageId: 'm1', sender: USER });
+
+    expect(blankId.ok).toBe(false);
+    expect(blankOwner.ok).toBe(false);
+    expect(store.requeueUndeliveredMessage).not.toHaveBeenCalled();
+  });
+
+  it('passes a store failure through', async () => {
+    const { store, service } = setup();
+    store.requeueUndeliveredMessage.mockResolvedValueOnce(err({ code: CONVERSATION_ERROR_CODES.storeFailed, message: 'conversation_store_failed' }));
+
+    const result = await service.retryUndeliveredMessage({ ownerUserId: 'u1', agentId: 'a1', messageId: 'm1', sender: USER });
+
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('ConversationService.findMessage', () => {
+  it('looks the message up under the sender\'s authorship in the derived conversation', async () => {
+    const { store, service } = setup();
+
+    await service.findMessage({ ownerUserId: 'u1', agentId: 'a1', messageId: 'm1', sender: { type: 'user' } });
+    await service.findMessage({ ownerUserId: 'u1', agentId: 'a1', messageId: 'm2', sender: { type: 'agent', agentId: 'creator' } });
+
+    expect(store.findMessage).toHaveBeenNthCalledWith(1, {
+      messageId: 'm1', conversationId: userAgentConversationId('a1'), ownerUserId: 'u1', senderType: 'user', senderId: 'u1',
+    });
+    expect(store.findMessage).toHaveBeenNthCalledWith(2, {
+      messageId: 'm2', conversationId: userAgentConversationId('a1'), ownerUserId: 'u1', senderType: 'agent', senderId: 'creator',
+    });
+  });
+
+  it('refuses a blank message id before touching the store', async () => {
+    const { store, service } = setup();
+
+    const result = await service.findMessage({ ownerUserId: 'u1', agentId: 'a1', messageId: ' ', sender: { type: 'user' } });
+
+    expect(result.ok).toBe(false);
+    expect(store.findMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationService.needsRepublish', () => {
+  const { service } = setup();
+  const staleAt = new Date(NOW.getTime() - LIMITS.staleQueuedAfterSeconds * 1000);
+
+  it('is true for a failed message', () => {
+    expect(service.needsRepublish({ deliveryStatus: 'failed', queuedAt: NOW })).toBe(true);
+  });
+
+  it('is true for a queued message at or past the stale age, false for a fresh one', () => {
+    expect(service.needsRepublish({ deliveryStatus: 'queued', queuedAt: staleAt })).toBe(true);
+    expect(service.needsRepublish({ deliveryStatus: 'queued', queuedAt: new Date(staleAt.getTime() + 1) })).toBe(false);
+  });
+
+  it.each(['sent', 'not_applicable', 'refused'] as const)('is false for %s however old', (deliveryStatus) => {
+    expect(service.needsRepublish({ deliveryStatus, queuedAt: new Date(0) })).toBe(false);
+  });
+
+  it('isStuckQueued is false for a failed message', () => {
+    expect(service.isStuckQueued({ deliveryStatus: 'failed', queuedAt: new Date(0) })).toBe(false);
   });
 });

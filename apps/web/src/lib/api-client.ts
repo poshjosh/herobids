@@ -1105,28 +1105,36 @@ export interface AgentConversationTurn {
   connection: ConversationTurnState | null;
 }
 
-export interface AgentOutboundMessage {
+export type ConversationDeliveryStatus = 'queued' | 'sent' | 'failed' | 'not_applicable' | 'refused';
+
+/** One row of the user-agent thread (GET /agents/:id/conversation). */
+export interface AgentConversationMessage {
   id: string;
-  agentId: string;
-  sessionId: string | null;
-  authoredBy: 'agent' | 'platform' | 'user';
+  senderType: 'user' | 'agent' | 'platform';
+  /** The user or agent id; null for platform messages. */
+  senderId: string | null;
+  channel: 'web' | 'telegram' | 'internal';
   subject: string | null;
   body: string;
-  contextRef: string | null;
-  messageClass: 'routine' | 'alert' | 'reminder' | null;
-  deliveryStatus: 'pending' | 'sent' | 'failed';
-  emailDeliveryStatus:
-    | 'feed_only'
-    | 'email_sent'
-    | 'email_skipped_policy'
-    | 'email_skipped_not_configured'
-    | 'email_skipped_no_verified_recipient'
-    | 'email_failed_provider'
-    | null;
-  deliveryError: string | null;
-  emailMessageId: string | null;
-  emailDeliveryError: string | null;
+  messageClass: string | null;
+  deliveryStatus: ConversationDeliveryStatus;
   createdAt: string;
+  /** A `queued` row old enough that its publish is presumed lost; sending the same id again re-publishes it. */
+  stuck?: boolean;
+}
+
+export interface AgentConversationPage {
+  /** Oldest first. */
+  messages: AgentConversationMessage[];
+  /** Pass as `before` for the next older page; null at the start of the thread. */
+  nextCursor: string | null;
+  /** Longest message the server accepts, from operator config. */
+  maxMessageChars: number;
+}
+
+export interface AgentSendMessageResult {
+  delivered: boolean;
+  message: AgentConversationMessage;
 }
 
 export interface AgentCompiledPrompt {
@@ -1335,14 +1343,15 @@ export const agents = {
   sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
   decisions: (id: string, limit?: number) =>
     request<unknown[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
-  messages: (id: string, limit?: number, authoredBy?: 'agent' | 'platform') =>
-    request<AgentOutboundMessage[]>(`/agents/${id}/messages${buildQuery({ limit, authoredBy })}`),
+  conversation: (id: string, options: { limit?: number; before?: string } = {}) =>
+    request<AgentConversationPage>(`/agents/${id}/conversation${buildQuery({ limit: options.limit, before: options.before })}`),
   conversationTurn: (id: string, connectionRequestId?: string) =>
     request<AgentConversationTurn>(`/agents/${id}/conversation-turn${buildQuery({ connectionRequestId })}`),
-  sendMessage: (id: string, message: string) =>
-    request<unknown>(`/agents/${id}/message`, {
+  /** `clientMessageId` makes a retry of the same message idempotent on the server. */
+  sendMessage: (id: string, message: string, clientMessageId?: string) =>
+    request<AgentSendMessageResult>(`/agents/${id}/message`, {
       method: 'POST',
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(clientMessageId ? { message, clientMessageId } : { message }),
     }),
   capabilityReadiness: agentCapabilityReadiness,
   tradingConnections: (id: string) =>

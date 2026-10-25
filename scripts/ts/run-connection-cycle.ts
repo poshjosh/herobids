@@ -41,7 +41,8 @@ interface ApiResult {
   headers: Headers;
 }
 
-interface OutboundMessage {
+interface ThreadMessage {
+  senderType: 'user' | 'agent' | 'platform';
   createdAt: string;
   body: string;
 }
@@ -74,10 +75,12 @@ function fail(step: string, detail: unknown): never {
   throw new Error(`${step} failed: ${JSON.stringify(detail).slice(0, 400)}`);
 }
 
-async function listMessages(agentId: string, token: string): Promise<OutboundMessage[]> {
-  const res = await call('GET', `/agents/${agentId}/messages?limit=50`, { token });
-  if (res.status !== 200 || !Array.isArray(res.body)) fail('list messages', res);
-  return res.body as OutboundMessage[];
+/** The agent's and platform's messages in the conversation, newest first (the user's own are not replies). */
+async function listMessages(agentId: string, token: string): Promise<ThreadMessage[]> {
+  const res = await call('GET', `/agents/${agentId}/conversation?limit=50`, { token });
+  const thread = (res.body as { messages?: unknown } | null)?.messages;
+  if (res.status !== 200 || !Array.isArray(thread)) fail('list messages', res);
+  return (thread as ThreadMessage[]).filter((message) => message.senderType !== 'user').reverse();
 }
 
 async function pollUntil<T>(timeoutMs: number, check: () => Promise<T | undefined>): Promise<T | undefined> {

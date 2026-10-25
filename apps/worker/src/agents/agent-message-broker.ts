@@ -48,6 +48,7 @@ import type { CapabilityGrant } from './capability-policy.js';
 import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
 import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createLogger } from '../logger.js';
+import { isUndeliverableChatError, type OutboundConversationMirror } from './outbound-conversation-mirror.js';
 
 const logger = createLogger('agent-message-broker');
 
@@ -109,6 +110,7 @@ export class AgentMessageBroker {
     private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number; expiryGraceSecs: number },
     private readonly operatorNotifier?: OperatorNotifier,
     private readonly notifications?: AgentMessageNotifier,
+    private readonly conversationMirror?: OutboundConversationMirror,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -553,14 +555,22 @@ export class AgentMessageBroker {
         replyRequested,
       })
       : { ok: false as const, error: { code: 'chat.not_configured', message: 'telegram_not_configured' } };
+    let mirrorOutcome: 'not_applicable' | undefined;
     if (!result.ok) {
-      if (result.error.code === 'chat.address_lookup_failed') throw new Error(result.error.message);
+      if (result.error.code === 'chat.address_lookup_failed') {
+        // Not mirrored: the delivery outcome is unknown and the redelivery inserts a new row that is mirrored
+        // with its real outcome. Mirroring here would pin the thread row to `not_applicable`.
+        throw new Error(result.error.message);
+      }
       logger.warn({ agentId: agent.id, error: result.error }, 'send_message chat delivery failed');
       await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message);
+      // No address or no chat configured is not a failed delivery in the thread: the thread itself is the delivery.
+      if (isUndeliverableChatError(result.error.code)) mirrorOutcome = 'not_applicable';
     } else {
       await this.agentRepo.markOutboundMessageSent(msgId, result.data.providerMessageId, result.data.address.address);
       logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered via chat');
     }
+    await this.conversationMirror?.mirror(msgId, mirrorOutcome);
 
     await this.notifyAgentMessage(agent, msgId, replyRequested ? 'agent.question' : 'agent.reply');
 

@@ -850,7 +850,7 @@ function makeNotifier(options: {
   return { dispatcher, notify, listActiveForUser };
 }
 
-function makeSendBroker(options: { chatOk: boolean; notifications?: AgentMessageNotifier }) {
+function makeSendBroker(options: { chatOk: boolean; chatErrorCode?: string; notifications?: AgentMessageNotifier; mirror?: { mirror: ReturnType<typeof vi.fn> } }) {
   const agentRepo = makeAgentRepo({
     getAgent: vi.fn().mockResolvedValue(SENDING_AGENT),
     getActiveSession: vi.fn().mockResolvedValue({ id: 'session-1', status: 'running' }),
@@ -865,7 +865,7 @@ function makeSendBroker(options: { chatOk: boolean; notifications?: AgentMessage
   );
   const chatResult = options.chatOk
     ? { ok: true, data: { providerMessageId: 'tg-1', address: { provider: 'telegram', address: '123' } } }
-    : { ok: false, error: { code: 'chat.no_address', message: 'no_chat_address' } };
+    : { ok: false, error: { code: options.chatErrorCode ?? 'chat.no_address', message: 'no_chat_address' } };
   const chatSend = vi.spyOn(delivery, 'send').mockImplementation(vi.fn().mockResolvedValue(chatResult));
   const broker = new AgentMessageBroker(
     makeRedis(),
@@ -877,6 +877,7 @@ function makeSendBroker(options: { chatOk: boolean; notifications?: AgentMessage
     undefined, undefined, undefined, undefined, undefined, undefined,
     undefined, undefined, undefined, undefined, undefined, undefined,
     options.notifications,
+    options.mirror as never,
   );
   return { broker, agentRepo, chatSend };
 }
@@ -1012,5 +1013,54 @@ describe('AgentMessageBroker — send_message push notifications', () => {
 
     expect(result.accepted).toBe(true);
     expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
+  });
+
+  it('mirrors the stored message into the conversation once its delivery outcome is recorded', async () => {
+    const order: string[] = [];
+    const mirror = { mirror: vi.fn(async () => { order.push('mirror'); }) };
+    const { broker, agentRepo } = makeSendBroker({ chatOk: true, mirror });
+    agentRepo.markOutboundMessageSent.mockImplementation(async () => { order.push('marked'); });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(mirror.mirror).toHaveBeenCalledWith('out-1', undefined);
+    expect(order).toEqual(['marked', 'mirror']);
+  });
+
+  it('mirrors a message with no chat address as not applicable, not failed', async () => {
+    const mirror = { mirror: vi.fn(async () => undefined) };
+    const { broker } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.no_address', mirror });
+
+    await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(mirror.mirror).toHaveBeenCalledWith('out-1', 'not_applicable');
+  });
+
+  it('mirrors a message with chat not configured as not applicable', async () => {
+    const mirror = { mirror: vi.fn(async () => undefined) };
+    const { broker } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.not_configured', mirror });
+
+    await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(mirror.mirror).toHaveBeenCalledWith('out-1', 'not_applicable');
+  });
+
+  it('mirrors a real delivery failure without the not-applicable outcome', async () => {
+    const mirror = { mirror: vi.fn(async () => undefined) };
+    const { broker } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.send_failed', mirror });
+
+    await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(mirror.mirror).toHaveBeenCalledWith('out-1', undefined);
+  });
+
+  it('does not mirror when the chat address lookup fails, so the redelivery can record the real outcome', async () => {
+    const mirror = { mirror: vi.fn(async () => undefined) };
+    const { broker } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.address_lookup_failed', mirror });
+
+    await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(mirror.mirror).not.toHaveBeenCalled();
   });
 });

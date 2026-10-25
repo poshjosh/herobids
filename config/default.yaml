@@ -782,6 +782,7 @@ messaging:
     userMessageMaxChars: 4000       # longest message a user may send to an agent (characters)
     threadDefaultPageSize: 50       # rows in a thread read when the caller names no limit
     threadMaxPageSize: 200          # largest page a thread read may return
+    staleQueuedAfterSeconds: 60     # a queued message older than this is presumed never published; the sender's retry re-publishes it
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:

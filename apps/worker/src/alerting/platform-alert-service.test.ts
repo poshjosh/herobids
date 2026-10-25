@@ -93,6 +93,26 @@ describe('PlatformAlertService', () => {
       expect(call.body).toContain('300 seconds ago');
     });
 
+    it('mirrors the stored alert into the conversation after the chat send', async () => {
+      const mirror = { mirror: vi.fn().mockResolvedValue(undefined) };
+      const agentRepo = makeAgentRepo();
+      const service = new PlatformAlertService(agentRepo as any, undefined, undefined, undefined, undefined, mirror as any);
+
+      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext());
+
+      expect(mirror.mirror).toHaveBeenCalledWith('msg-001');
+    });
+
+    it('does not mirror when the alert could not be stored', async () => {
+      const mirror = { mirror: vi.fn().mockResolvedValue(undefined) };
+      const agentRepo = makeAgentRepo({ insertOutboundMessage: vi.fn().mockRejectedValue(new Error('DB down')) });
+      const service = new PlatformAlertService(agentRepo as any, undefined, undefined, undefined, undefined, mirror as any);
+
+      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext());
+
+      expect(mirror.mirror).not.toHaveBeenCalled();
+    });
+
     it('persists message body without detail when detail is undefined', async () => {
       const { service, agentRepo } = makeService();
       const ctx = makeContext({ detail: undefined });

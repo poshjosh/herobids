@@ -51,7 +51,7 @@ Keys and indexes:
 
 An agent-to-agent conversation has two rows with `participant_type = agent`. The recipient of a peer message is the participant that is not the sender. No recipient column is added to messages.
 
-### 2.3 `conversation_messages` (002 section 4.2, with two changes)
+### 2.3 `conversation_messages` (002 section 4.2, with two changes and one proposed column)
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
@@ -67,6 +67,7 @@ An agent-to-agent conversation has two rows with `participant_type = agent`. The
 | `delivery_detail` | text | yes | Failure text. For `refused`, a dot-string reason code such as `peer.rate_limited` or `peer.paused` |
 | `provider_message_id` | text | yes | Set when a channel returns one |
 | `created_at` | timestamptz | no | |
+| `queued_at` | timestamptz | no | Default `now()`. **Proposed, pending owner confirmation (DEC-50).** When the row last entered `queued`: equals `created_at` on insert, restamped when a retry claims a `failed` or stale `queued` row. Ages a stuck `queued` row against `messaging.conversations.staleQueuedAfterSeconds`. Added by migration 0085; existing rows get the migration time |
 
 Keys and indexes:
 

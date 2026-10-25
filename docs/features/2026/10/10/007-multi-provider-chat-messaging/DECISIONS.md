@@ -4,7 +4,7 @@ The only approvals an agent may rely on. Each row has a scope. Work outside the 
 
 The 900 decision log is historical. New decisions go here. 900 links here.
 
-Status values: `approved`, `superseded`, `open` (needs owner decision, do not rely on it).
+Status values: `approved`, `superseded`, `open` (needs owner decision, do not rely on it), `proposed — pending owner confirmation` (recorded by an implementer, only the owner approves, do not rely on it).
 
 ## Approved on 2026-10-25 by the owner
 
@@ -58,6 +58,14 @@ Status values: `approved`, `superseded`, `open` (needs owner decision, do not re
 | DEC-46 | Owner decision 2026-10-25: queue order for the A2A MVP is C0, C1, CH2W, then A2A-A (same-user check), then A2A-B (MVP send path). The owner chose to keep the design clean and wait for CH2W | Queue | approved |
 | DEC-47 | Owner decision 2026-10-25: the schema note for the MVP is approved: `conversations` (adds `peer_key`, `last_message_at`), `conversation_participants`, and `conversation_messages` (adds `channel = internal` and `delivery_status = refused`), plus one column `users.peer_messaging_paused`. Peer threads are one per agent pair. Rate limit stays in Redis. See the schema note | CH2W, A2A-B | approved |
 | DEC-48 | Owner decision 2026-10-25: the implementer chooses the write path for the stop switch (DEC-43), between (a) a new endpoint and (b) an additive field on `PATCH /auth/me`. Both options are approved. Criteria, in order: (1) fewer new public routes; (2) follow the existing user-settings pattern (DEC-38); (3) additive only, nothing removed or renamed; (4) unset or unreadable means switch off for sends and refusal of the change, fail closed. The implementer records the chosen option, its reason, and the route contract in PROGRESS.md, and adds a DEC-49 row for the contract | A2A-B | approved (delegated to implementer) |
+
+## Proposed by an implementer, pending owner confirmation
+
+DEC-49 is reserved by DEC-48 for the stop-switch route contract, so this row is DEC-50.
+
+| ID | Decision | Scope | Status |
+| --- | --- | --- | --- |
+| DEC-50 | Schema note section 7 requires a decision for any new column. CH2W slice 2 added `conversation_messages.queued_at` (timestamptz, not null, default `now()`, migration `0085_redundant_hammerhead`), outside the schema note approved in DEC-47. It records when a row last entered `queued`: equal to `created_at` on insert, restamped by a retry claim. Why: a `queued` row whose process died before publishing must be re-publishable after `messaging.conversations.staleQueuedAfterSeconds` (default 60). If age were measured from `created_at`, a retried old message would look stale again at once and a racing second retry would claim it too. Restamping on the claim keeps the retried message fresh, so exactly one racer wins the atomic claim. Existing rows get the migration time (`now()` at migration), which is harmless: only `queued` rows are ever aged and none is expected to be in flight at migration. Accepted risk: stale-ness is compared against the clock of the API instance that stamps and the one that reads, so skew between API instances larger than `staleQueuedAfterSeconds` could make a fresh message claimable early (a duplicate publish, which the runtime does not de-duplicate) or a stuck one late. With a 60 s default and NTP-synced hosts the risk is low. Alternative if the owner declines: drop the column, age from `created_at`, and accept that a retried old message is immediately re-claimable | CH2W (slice 2 onward) | proposed — pending owner confirmation |
 
 ## Open
 

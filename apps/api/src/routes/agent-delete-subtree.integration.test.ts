@@ -12,9 +12,13 @@ import {
   agentRuntimeSessions,
   generateAgentApiKey,
   agentAuditEvents,
+  ConversationRepository,
+  conversationMessages,
+  conversationParticipants,
+  conversations,
 } from '@herobids/db';
 import type { AuthConfig, PlansConfig } from '@herobids/domain';
-import { AgentCreationConfigSchema } from '@herobids/domain';
+import { AgentCreationConfigSchema, ConversationService } from '@herobids/domain';
 import {
   ExternalBackendClient,
   type ExternalBackendClientResult,

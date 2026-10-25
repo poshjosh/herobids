@@ -1,6 +1,6 @@
 # Plan: Two-way agent chat
 
-**Status:** approved 2026-10-25 (DEC-31, DEC-32). P0 and P1 done 2026-10-25 (CH2W slice 1); P2 to P4 not started. Runs after the address cutover (C1). The answers to section 9 are in the decision register.
+**Status:** approved 2026-10-25 (DEC-31, DEC-32). P0 and P1 done 2026-10-25 (CH2W slice 1); P2 done in code 2026-10-25 (slice 2; the e2e gate is deferred to the owner); P3 and P4 not started. Runs after the address cutover (C1). The answers to section 9 are in the decision register.
 **Owner:** Chinomso Ikwuagwu
 **Related:** [agent-onboarding epic IMPLEMENTATION](../../../10/10/002-agent-onboarding-epic/IMPLEMENTATION.md) (§4 D-C3, D-R1; §6 WP-C S2, WP-M Phase 2–3), [PROGRESS](../../../10/10/002-agent-onboarding-epic/PROGRESS.md) (S2 entry), [next plan: agent-to-agent messaging](../../../../pending/000-agent-to-agent-messaging/001-plan.md), superseded: [chat sessions notes](superseded/003-agent-chat-sessions/000-notes.md).
 
@@ -160,6 +160,7 @@ Recorded 2026-10-25 (CH2W slice 1) from the code at commit `2062b0eb` (C1). Path
 
 ### 10.1 Findings that differ from section 1
 
+0. **P2 outcome (slice 2).** The "Messages to user" section was already gone from the web before P2 (one "Chat with {name}" card); P2 moved that card to `GET /agents/:id/conversation` and removed the web's old read and type. `GET /agents/:id/messages` stays on the server until P3. The agent-delete cleanup in 10.6 item 2 landed in P2 (`purgeAgentRows` deletes the agents' conversations). `conversation-turn` and the activity feed still read `agent_outbound_messages` until P3, so the POST also writes the old row and a worker mirror copies agent and platform rows into the conversation (both to be deleted in P3).
 1. **User messages are already stored.** `POST /agents/:id/message` inserts an `agent_outbound_messages` row (`authored_by` = `user`, or `agent:{actingAgentId}` for a creator agent) before it publishes, and the row id is the envelope `messageId` (`apps/api/src/routes/agent-interactivity.ts`, around lines 405 to 423). The "never stores them" claim in section 1 is stale. Reload does not lose web messages today. What is missing is the unified store, correct authorship labels, and Telegram inbound.
 2. **Telegram inbound is not recorded.** `ChatInboundRouter` (`apps/api/src/routes/chat-inbound-router.ts`, line 46) publishes to `agent:outbound:{id}` and writes no row.
 3. **R2 is confirmed as a non-gap for replies, and a gap for plain output.** The agent reaches the user only through the `send_message` tool. The broker writes the row before the channel send (`agent-message-broker.ts`, `handleSendMessage`), so an in-app reply always reaches the thread, even when Telegram delivery fails. Plain-text output is never delivered; the worker logs `User message received but no send_message reply was made` (`apps/worker/src/agent.ts`, around line 4213). No P1 change is needed. Surfacing that case in the thread is an optional follow-up, not part of this plan.

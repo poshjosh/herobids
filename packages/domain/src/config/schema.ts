@@ -664,6 +664,8 @@ export const MessagingConversationsSchema = z.object({
   threadDefaultPageSize: z.number().int().positive().default(50),
   /** Largest page a thread read may return. */
   threadMaxPageSize: z.number().int().positive().default(200),
+  /** A `queued` message older than this is presumed never published (process died, status write failed); a same-id retry re-publishes it. */
+  staleQueuedAfterSeconds: z.number().int().positive().default(60),
 }).default({}).refine(
   (value) => value.threadDefaultPageSize <= value.threadMaxPageSize,
   { message: 'threadDefaultPageSize must not exceed threadMaxPageSize', path: ['threadDefaultPageSize'] },

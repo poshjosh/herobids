@@ -16,6 +16,17 @@ import { createDocumentTextExtractor } from '@herobids/documents/document-text-e
 import { resolve } from 'node:path';
 import type { AgentApprovalsConfig, AgentCreationConfig, AuthConfig, ChatInboundAdapter, ChatWebhookRequest, ModelDefaults, PlanAgentsEntitlements, PlansConfig, ResolvedTelegramChatConfig, UnifiedAgentConfig } from '@herobids/domain';
 import { AgentCreationConfigSchema, AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import type { ConversationMessage, MessageSender } from '@herobids/domain';
+import {
+  ConversationQuerySchema,
+  buildSendMessageSchema,
+  conversationErrorResponse,
+  createConversationRouteDeps,
+  decodeConversationCursor,
+  encodeConversationCursor,
+  toConversationResponse,
+  type ConversationRouteDeps,
+} from './conversation-http.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import {
@@ -68,10 +79,6 @@ import {
 
 // --- Schemas ---
 
-const SendMessageSchema = z.object({
-  message: z.string().min(1).max(4000),
-});
-
 const VerifyTelegramSchema = z.object({
   chatId: z.string().min(1),
 });
@@ -111,7 +118,10 @@ export async function agentInteractivityRoutes(
   plansConfig?: PlansConfig,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
   agentCreation: AgentCreationConfig = AgentCreationConfigSchema.parse({}),
+  conversations: ConversationRouteDeps = createConversationRouteDeps(db),
 ): Promise<void> {
+  const SendMessageSchema = buildSendMessageSchema(conversations.limits.userMessageMaxChars);
+
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
       return { canViewOwnPrompts: true };
@@ -363,8 +373,32 @@ export async function agentInteractivityRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    if (!request.actingAgentId) {
-      // Rate limit: 10 messages per user per minute
+    const [agent] = await db.select({ id: agents.id, userId: agents.userId, status: agents.status })
+      .from(agents).where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const { message: body, clientMessageId } = parsed.data;
+    const actingAgentId = request.actingAgentId ?? null;
+    const sender: MessageSender = actingAgentId !== null ? { type: 'agent', agentId: actingAgentId } : { type: 'user' };
+    const respondWith = (message: ConversationMessage) =>
+      toConversationResponse(message, conversations.service.isStuckQueued(message));
+
+    // A repeat of a message that needs no publish (sent, in flight, refused) returns the stored row before the
+    // running-state gate and the rate limits: the retry must not be refused because the agent has since stopped,
+    // and an idempotent repeat is not a new publish.
+    if (clientMessageId) {
+      const existing = await conversations.service.findMessage({ ownerUserId: request.userId, agentId: id, messageId: clientMessageId, sender });
+      if (!existing.ok) {
+        const failure = conversationErrorResponse(existing.error);
+        return reply.status(failure.status).send(failure.body);
+      }
+      if (existing.data && !conversations.service.needsRepublish(existing.data)) {
+        return reply.status(202).send({ delivered: true, message: respondWith(existing.data) });
+      }
+    }
+
+    if (actingAgentId === null) {
+      // Rate limit: 10 new publishes per user per minute
       const rateLimitKey = `ratelimit:agent:message:${request.userId}`;
       const count = await redisClient.incr(rateLimitKey);
       if (count === 1) await redisClient.expire(rateLimitKey, 60);
@@ -372,10 +406,6 @@ export async function agentInteractivityRoutes(
         return reply.status(429).send({ error: 'rate_limited', message: 'Maximum 10 messages per minute' });
       }
     }
-
-    const [agent] = await db.select({ id: agents.id, userId: agents.userId, status: agents.status })
-      .from(agents).where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
 
     if (agent.status === 'stopped' || agent.status === 'crashed') {
       return reply.status(409).send({ error: 'agent_not_running', message: 'Agent is not running' });
@@ -397,42 +427,149 @@ export async function agentInteractivityRoutes(
       }
     }
 
-    // The envelope messageId doubles as the stored row id so the runtime's tick events can name this message.
-    const envelopeMessageId = crypto.randomUUID();
+    const isCreatorMessage = actingAgentId !== null;
 
-    // A creator agent's message is stored under its own authorship, never as the user's.
-    const sender: { authoredBy: string; initiatorType: 'agent' | 'user'; initiatorId: string; type: string } = request.actingAgentId
-      ? { authoredBy: `agent:${request.actingAgentId}`, initiatorType: 'agent', initiatorId: request.actingAgentId, type: 'agent.user.message' }
-      : { authoredBy: 'user', initiatorType: 'user', initiatorId: request.userId, type: 'user.message' };
+    // The conversation row is written first (002 D6). Its id is the envelope messageId, so a repeated
+    // clientMessageId is recognised and the runtime's tick events can name this message. A creator
+    // agent's message is stored under its own authorship, never as the user's.
+    const recorded = actingAgentId !== null
+      ? await conversations.service.recordAgentMessage({
+        ...(clientMessageId ? { id: clientMessageId } : {}),
+        ownerUserId: request.userId,
+        agentId: id,
+        senderAgentId: actingAgentId,
+        channel: 'web',
+        body,
+      })
+      : await conversations.service.recordUserMessage({
+        ...(clientMessageId ? { id: clientMessageId } : {}),
+        ownerUserId: request.userId,
+        agentId: id,
+        channel: 'web',
+        body,
+      });
+    if (!recorded.ok) {
+      if (recorded.error.code === 'conversation.store_failed') {
+        request.log.error({ err: recorded.error }, 'conversation store failed on message send');
+      }
+      const failure = conversationErrorResponse(recorded.error);
+      return reply.status(failure.status).send(failure.body);
+    }
 
-    // Record the message so the conversation still shows it after reload.
-    await new AgentRepository(db).insertOutboundMessage({ id: envelopeMessageId, agentId: id, authoredBy: sender.authoredBy, body: parsed.data.message });
+    let stored = recorded.data.message;
+    let shouldPublish = recorded.data.created;
+    // A retry of a failed (or stuck queued) send reuses its id (002 D5, D6): one retry wins the claim and publishes
+    // again. A creator agent's message is claimed under its own authorship, like the user's.
+    if (!shouldPublish && conversations.service.needsRepublish(stored)) {
+      const claimed = await conversations.service.retryUndeliveredMessage({ ownerUserId: request.userId, agentId: id, messageId: stored.id, sender });
+      if (!claimed.ok) {
+        const failure = conversationErrorResponse(claimed.error);
+        return reply.status(failure.status).send(failure.body);
+      }
+      if (claimed.data) {
+        stored = claimed.data;
+        shouldPublish = true;
+      }
+    }
+    // Any other repeat is a retry of a message already published (or being published): return the row, send nothing.
+    if (!shouldPublish) {
+      return reply.status(202).send({ delivered: true, message: respondWith(stored) });
+    }
+
+    // Transitional (CH2W P2 to P3): the old readers (conversation-turn, activity feed, GET /agents/:id/messages)
+    // still read agent_outbound_messages. P3 moves them and removes this write. It runs on every publish, not only
+    // on the first: the insert is idempotent on the id, so a retry recreates a row whose first write failed.
+    try {
+      await new AgentRepository(db).insertOutboundMessage({
+        id: stored.id,
+        agentId: id,
+        authoredBy: actingAgentId !== null ? `agent:${actingAgentId}` : 'user',
+        body,
+      });
+    } catch (error) {
+      request.log.warn({ err: error instanceof Error ? error.name : 'NonError' }, 'legacy outbound message write failed');
+    }
 
     // Publish to agent:outbound:{agentId} — the platform→agent channel
     const envelope = {
       schemaVersion: 'v1',
-      messageId: envelopeMessageId,
+      messageId: stored.id,
       correlationId: crypto.randomUUID(),
-      initiatorType: sender.initiatorType,
-      initiatorId: sender.initiatorId,
+      initiatorType: actingAgentId !== null ? 'agent' : 'user',
+      initiatorId: actingAgentId ?? request.userId,
       agentId: id,
-      type: sender.type,
+      type: isCreatorMessage ? 'agent.user.message' : 'user.message',
       createdAt: new Date().toISOString(),
-      payload: { message: parsed.data.message },
+      payload: { message: body },
     };
-    await redisClient.xadd(`agent:outbound:${id}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
+    try {
+      await redisClient.xadd(`agent:outbound:${id}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
+    } catch (error) {
+      request.log.error({ err: error instanceof Error ? error.name : 'NonError' }, 'message publish failed');
+      // The row stays as failed so the user can retry the same id.
+      const marked = await conversations.service.markDelivery({ messageId: stored.id, status: 'failed', detail: 'publish_failed' });
+      if (!marked.ok) request.log.warn({ code: marked.error.code }, 'could not mark message as failed');
+      return reply.status(503).send({
+        error: 'message_delivery_unavailable',
+        message: 'Message delivery is temporarily unavailable. Retry the same message shortly.',
+        messageId: stored.id,
+      });
+    }
+    const sent = await conversations.service.markDelivery({ messageId: stored.id, status: 'sent' });
+    if (!sent.ok) request.log.warn({ code: sent.error.code }, 'could not mark message as sent');
 
-    if (request.actingAgentId) {
+    if (actingAgentId !== null) {
       await recordAgentAuditEvent(db, {
         userId: request.userId,
         actorType: 'agent',
-        actorId: request.actingAgentId,
+        actorId: actingAgentId,
         action: 'agent.creator_messaged_child',
         targetId: id,
       });
     }
 
-    return reply.status(202).send({ delivered: true });
+    return reply.status(202).send({ delivered: true, message: respondWith(sent.ok ? sent.data : stored) });
+  });
+
+  // GET /agents/:id/conversation — the user-agent thread, oldest first. The cursor is opaque: the
+  // (createdAt, id) of the oldest returned row; pass it as `before` for the next older page.
+  app.get<{ Params: { id: string }; Querystring: unknown }>('/agents/:id/conversation', async (request, reply) => {
+    const { id } = request.params;
+    const query = ConversationQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.status(400).send({ error: 'validation_error', details: query.error.issues });
+    }
+    const cursor = query.data.before === undefined ? null : decodeConversationCursor(query.data.before);
+    if (query.data.before !== undefined && !cursor) {
+      return reply.status(400).send({ error: 'validation_error', message: 'invalid_cursor' });
+    }
+
+    const [agent] = await db.select({ id: agents.id })
+      .from(agents).where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const requested = query.data.limit ?? conversations.limits.threadDefaultPageSize;
+    const pageSize = Math.min(requested, conversations.limits.threadMaxPageSize);
+    const thread = await conversations.service.listThread({
+      ownerUserId: request.userId,
+      agentId: id,
+      limit: pageSize,
+      ...(cursor ? { before: cursor.before, beforeId: cursor.beforeId } : {}),
+    });
+    if (!thread.ok) {
+      if (thread.error.code === 'conversation.store_failed') {
+        request.log.error({ err: thread.error }, 'conversation store failed on thread read');
+      }
+      const failure = conversationErrorResponse(thread.error);
+      return reply.status(failure.status).send(failure.body);
+    }
+    const oldest = thread.data[0];
+    return reply.send({
+      messages: thread.data.map((message) => toConversationResponse(message, conversations.service.isStuckQueued(message))),
+      // A full page may have older rows behind it; a short page is the start of the thread.
+      nextCursor: oldest && thread.data.length >= pageSize ? encodeConversationCursor(oldest) : null,
+      maxMessageChars: conversations.limits.userMessageMaxChars,
+    });
   });
 
   // GET /agents/:id/memory — agent memory entries

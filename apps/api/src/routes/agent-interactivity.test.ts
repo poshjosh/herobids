@@ -8,6 +8,7 @@ import type { ResolvedTelegramChatConfig } from '@herobids/domain';
 import { AlertsConfigSchema, MessagingConfigSchema, resolveTelegramChatConfig } from '@herobids/domain';
 import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { Redis } from 'ioredis';
+import { buildInMemoryConversationDeps } from '../__tests__/helpers/in-memory-conversation-store.js';
 
 vi.mock('../agents/trading-profile-reconciliation-adapter.js', () => ({
   loadActiveTradingProfileConnections: vi.fn().mockResolvedValue([]),
@@ -46,7 +47,7 @@ function agentInteractivityRoutes(
   ...args: Parameters<typeof registerAgentInteractivityRoutes>
 ): ReturnType<typeof registerAgentInteractivityRoutes> {
   return registerAgentInteractivityRoutes(
-    args[0], args[1], args[2], args[3], args[4], args[5], buildProfileSaga(args[1]) as never,
+    args[0], args[1], args[2], args[3], args[4], args[5], buildProfileSaga(args[1]) as never, args[7], args[8],
   );
 }
 
@@ -721,36 +722,253 @@ describe('PUT /agents/:id', () => {
 
 // ─── POST /agents/:id/message ─────────────────────────────────────────────
 
+const CLIENT_ID = '0b7d4f3e-6f0e-4c52-9a7e-3a1f5d2c9b11';
+
+async function buildMessageApp(options: { agent?: Record<string, unknown> | null; redis?: Redis; userId?: string } = {}) {
+  // `insertValues` is the legacy outbound-row insert: `.values(row).onConflictDoNothing(...)`, awaited at the end.
+  const insertValues = vi.fn();
+  const db = Object.assign(buildAgentDb(options.agent === undefined ? { ...stubAgent, status: 'running' } : options.agent), {
+    insert: vi.fn().mockReturnValue({
+      values: (row: unknown) => ({ onConflictDoNothing: () => Promise.resolve(insertValues(row)) }),
+    }),
+  });
+  const redis = options.redis ?? buildMockRedis();
+  const conversations = buildInMemoryConversationDeps();
+  const app = Fastify();
+  decorateWithAuth(app, options.userId);
+  await agentInteractivityRoutes(app, db, redis, undefined, undefined, undefined, undefined, undefined, conversations);
+  return { app, db, redis, conversations, insertValues };
+}
+
 describe('POST /agents/:id/message', () => {
-  it('returns 202 and stores the user message when agent is running', async () => {
-    const insertValues = vi.fn().mockResolvedValue(undefined);
-    const db = Object.assign(buildAgentDb({ ...stubAgent, status: 'running' }), {
-      insert: vi.fn().mockReturnValue({ values: insertValues }),
-    });
-    const redis = buildMockRedis();
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis);
+  it('records the user message first, publishes it under the same id, and returns 202 with the sent row', async () => {
+    const { app, redis, conversations, insertValues } = await buildMessageApp();
 
     const res = await app.inject({
       method: 'POST',
       url: `/agents/${AGENT_ID}/message`,
-      payload: { message: 'Hello agent' },
+      payload: { message: 'Hello agent', clientMessageId: CLIENT_ID },
     });
+
     expect(res.statusCode).toBe(202);
-    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ agentId: AGENT_ID, authoredBy: 'user', body: 'Hello agent' }));
     expect(res.json().delivered).toBe(true);
+    expect(res.json().message).toMatchObject({ id: CLIENT_ID, senderType: 'user', senderId: TEST_USER_ID, channel: 'web', body: 'Hello agent', deliveryStatus: 'sent' });
+    expect(conversations.store.messages).toHaveLength(1);
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    const envelope = JSON.parse(vi.mocked(redis.xadd).mock.calls[0]?.[6] as string) as Record<string, unknown>;
+    expect(envelope).toMatchObject({ messageId: CLIENT_ID, type: 'user.message', initiatorType: 'user', initiatorId: TEST_USER_ID, payload: { message: 'Hello agent' } });
     expect(redis.xadd).toHaveBeenCalledWith(
       `agent:outbound:${AGENT_ID}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', expect.any(String),
     );
+    // Transitional write for readers still on the old table.
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ id: CLIENT_ID, agentId: AGENT_ID, authoredBy: 'user', body: 'Hello agent' }));
+  });
+
+  it('generates the message id when the client sends none', async () => {
+    const { app, conversations } = await buildMessageApp();
+
+    const res = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Hi' } });
+
+    expect(res.statusCode).toBe(202);
+    expect(res.json().message.id).toBe(conversations.store.messages[0]?.id);
+  });
+
+  it('returns the stored row for a repeated client message id without publishing again', async () => {
+    const { app, redis, conversations, insertValues } = await buildMessageApp();
+    const send = () => app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Once', clientMessageId: CLIENT_ID } });
+
+    const first = await send();
+    const second = await send();
+
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(202);
+    expect(second.json().message).toMatchObject({ id: CLIENT_ID, body: 'Once' });
+    expect(conversations.store.messages).toHaveLength(1);
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 503 and keeps the row as failed when publishing fails, then publishes on a retry of the same id', async () => {
+    const xadd = vi.fn().mockRejectedValueOnce(new Error('redis down')).mockResolvedValue('1-1');
+    const { app, conversations } = await buildMessageApp({ redis: buildMockRedis({ xadd }) });
+    const send = () => app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Try me', clientMessageId: CLIENT_ID } });
+
+    const failed = await send();
+
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json()).toMatchObject({ error: 'message_delivery_unavailable', messageId: CLIENT_ID });
+    expect(conversations.store.messages[0]).toMatchObject({ id: CLIENT_ID, deliveryStatus: 'failed', deliveryDetail: 'publish_failed' });
+
+    const retry = await send();
+
+    expect(retry.statusCode).toBe(202);
+    expect(retry.json().message).toMatchObject({ id: CLIENT_ID, deliveryStatus: 'sent' });
+    expect(conversations.store.messages).toHaveLength(1);
+    expect(xadd).toHaveBeenCalledTimes(2);
+  });
+
+  it('recreates the legacy outbound row on a retry when its first write failed', async () => {
+    const xadd = vi.fn().mockRejectedValueOnce(new Error('redis down')).mockResolvedValue('1-1');
+    const { app, insertValues } = await buildMessageApp({ redis: buildMockRedis({ xadd }) });
+    insertValues.mockImplementationOnce(() => { throw new Error('db down'); });
+    const send = () => app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Retry me', clientMessageId: CLIENT_ID } });
+
+    const failed = await send();
+    const retry = await send();
+
+    expect(failed.statusCode).toBe(503);
+    expect(retry.statusCode).toBe(202);
+    expect(insertValues).toHaveBeenCalledTimes(2);
+    expect(insertValues).toHaveBeenLastCalledWith(expect.objectContaining({ id: CLIENT_ID, authoredBy: 'user', body: 'Retry me' }));
+  });
+
+  it('re-publishes a message that was stuck queued (process died before publishing) on a same-id retry, once', async () => {
+    const { app, redis, conversations } = await buildMessageApp();
+    await conversations.service.recordUserMessage({ id: CLIENT_ID, ownerUserId: TEST_USER_ID, agentId: AGENT_ID, channel: 'web', body: 'Stuck' });
+    const send = () => app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Stuck', clientMessageId: CLIENT_ID } });
+
+    const tooSoon = await send();
+
+    expect(tooSoon.statusCode).toBe(202);
+    expect(tooSoon.json().message).toMatchObject({ id: CLIENT_ID, deliveryStatus: 'queued', stuck: false });
+    expect(redis.xadd).not.toHaveBeenCalled();
+
+    conversations.advanceClock((conversations.limits.staleQueuedAfterSeconds + 1) * 1000);
+    const retried = await send();
+    const again = await send();
+
+    expect(retried.statusCode).toBe(202);
+    expect(retried.json().message).toMatchObject({ id: CLIENT_ID, deliveryStatus: 'sent' });
+    expect(again.statusCode).toBe(202);
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    expect(conversations.store.messages).toHaveLength(1);
+  });
+
+  it('does not publish twice when a stale queued retry loses the claim to another request', async () => {
+    const { app, redis, conversations } = await buildMessageApp();
+    await conversations.service.recordUserMessage({ id: CLIENT_ID, ownerUserId: TEST_USER_ID, agentId: AGENT_ID, channel: 'web', body: 'Stuck' });
+    conversations.advanceClock((conversations.limits.staleQueuedAfterSeconds + 1) * 1000);
+    const send = () => app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Stuck', clientMessageId: CLIENT_ID } });
+
+    const responses = await Promise.all([send(), send(), send()]);
+
+    expect(responses.map((res) => res.statusCode)).toEqual([202, 202, 202]);
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks a stale queued row as stuck in the thread so the web can offer Retry', async () => {
+    const { app, conversations } = await buildMessageApp();
+    await conversations.service.recordUserMessage({ id: CLIENT_ID, ownerUserId: TEST_USER_ID, agentId: AGENT_ID, channel: 'web', body: 'Stuck' });
+    const stuckFlags = async () => (await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation` })).json().messages.map((m: { stuck: boolean }) => m.stuck);
+
+    expect(await stuckFlags()).toEqual([false]);
+
+    conversations.advanceClock((conversations.limits.staleQueuedAfterSeconds + 1) * 1000);
+
+    expect(await stuckFlags()).toEqual([true]);
+  });
+
+  it('returns the stored row of an already delivered message even though the agent has since stopped', async () => {
+    const { app, redis, conversations } = await buildMessageApp({ agent: stubAgent });
+    await conversations.service.recordUserMessage({ id: CLIENT_ID, ownerUserId: TEST_USER_ID, agentId: AGENT_ID, channel: 'web', body: 'Done' });
+    await conversations.service.markDelivery({ messageId: CLIENT_ID, status: 'sent' });
+
+    const repeat = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Done', clientMessageId: CLIENT_ID } });
+
+    expect(repeat.statusCode).toBe(202);
+    expect(repeat.json()).toMatchObject({ delivered: true, message: { id: CLIENT_ID, deliveryStatus: 'sent' } });
+    expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a retry of a failed message with 409 when the agent is stopped, and keeps the row failed', async () => {
+    const { app, redis, conversations } = await buildMessageApp({ agent: stubAgent });
+    await conversations.service.recordUserMessage({ id: CLIENT_ID, ownerUserId: TEST_USER_ID, agentId: AGENT_ID, channel: 'web', body: 'Failed' });
+    await conversations.service.markDelivery({ messageId: CLIENT_ID, status: 'failed', detail: 'publish_failed' });
+
+    const res = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Failed', clientMessageId: CLIENT_ID } });
+
+    expect(res.statusCode).toBe(409);
+    expect(conversations.store.messages[0]?.deliveryStatus).toBe('failed');
+    expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it('does not spend rate limit tokens on an idempotent repeat of a delivered message', async () => {
+    const incr = vi.fn().mockResolvedValue(1);
+    const { app } = await buildMessageApp({ redis: buildMockRedis({ incr }) });
+    const send = () => app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Once', clientMessageId: CLIENT_ID } });
+
+    await send();
+    await send();
+    await send();
+
+    expect(incr).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 503 and publishes nothing when the conversation store fails', async () => {
+    const { app, redis, conversations } = await buildMessageApp();
+    conversations.store.failWith = 'conversation.store_failed';
+
+    const res = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Hello' } });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('conversation_unavailable');
+    expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for another user\'s agent and writes nothing', async () => {
+    const { app, redis, conversations } = await buildMessageApp({ agent: null });
+
+    const res = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Hello', clientMessageId: CLIENT_ID } });
+
+    expect(res.statusCode).toBe(404);
+    expect(conversations.store.messages).toHaveLength(0);
+    expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it('refuses a client message id that already belongs to another sender with 409, and publishes nothing', async () => {
+    const { app, redis, conversations } = await buildMessageApp();
+    await conversations.service.recordAgentMessage({ id: CLIENT_ID, ownerUserId: TEST_USER_ID, agentId: AGENT_ID, channel: 'web', body: 'from the agent' });
+
+    const res = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'forged', clientMessageId: CLIENT_ID } });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('message_id_conflict');
+    expect(redis.xadd).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['not a uuid', 'abc'],
+    ['too long', `${CLIENT_ID}-${'x'.repeat(200)}`],
+    ['empty', ''],
+    ['a thread id lookalike', 'user_agent:agent-1'],
+  ])('rejects a client message id that is %s', async (_label, clientMessageId) => {
+    const { app, conversations } = await buildMessageApp();
+
+    const res = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Hello', clientMessageId } });
+
+    expect(res.statusCode).toBe(400);
+    expect(conversations.store.messages).toHaveLength(0);
+  });
+
+  it('rejects a message over the configured length', async () => {
+    const { app } = await buildMessageApp();
+
+    const res = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'x'.repeat(4001) } });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a whitespace-only message', async () => {
+    const { app, conversations } = await buildMessageApp();
+
+    const res = await app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: '   ' } });
+
+    expect(res.statusCode).toBe(400);
+    expect(conversations.store.messages).toHaveLength(0);
   });
 
   it('returns 409 when agent is stopped', async () => {
-    const db = buildAgentDb(stubAgent);
-    const redis = buildMockRedis();
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis);
+    const { app, conversations } = await buildMessageApp({ agent: stubAgent });
 
     const res = await app.inject({
       method: 'POST',
@@ -759,14 +977,11 @@ describe('POST /agents/:id/message', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('agent_not_running');
+    expect(conversations.store.messages).toHaveLength(0);
   });
 
   it('returns 429 when rate limit exceeded', async () => {
-    const db = buildAgentDb({ ...stubAgent, status: 'running' });
-    const redis = buildMockRedis({ incr: vi.fn().mockResolvedValue(11) });
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis);
+    const { app, conversations } = await buildMessageApp({ redis: buildMockRedis({ incr: vi.fn().mockResolvedValue(11) }) });
 
     const res = await app.inject({
       method: 'POST',
@@ -775,14 +990,11 @@ describe('POST /agents/:id/message', () => {
     });
     expect(res.statusCode).toBe(429);
     expect(res.json().error).toBe('rate_limited');
+    expect(conversations.store.messages).toHaveLength(0);
   });
 
   it('returns 400 when message is missing', async () => {
-    const db = buildAgentDb({ ...stubAgent, status: 'running' });
-    const redis = buildMockRedis();
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis);
+    const { app } = await buildMessageApp();
 
     const res = await app.inject({
       method: 'POST',
@@ -790,6 +1002,73 @@ describe('POST /agents/:id/message', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+// ─── GET /agents/:id/conversation ─────────────────────────────────────────
+
+describe('GET /agents/:id/conversation', () => {
+  async function seeded(count: number, options: Parameters<typeof buildMessageApp>[0] = {}) {
+    const built = await buildMessageApp(options);
+    for (let index = 1; index <= count; index += 1) {
+      await built.conversations.service.recordUserMessage({ ownerUserId: TEST_USER_ID, agentId: AGENT_ID, channel: 'web', body: `m${index}` });
+    }
+    return built;
+  }
+
+  it('returns the thread oldest first with explicit fields only', async () => {
+    const { app } = await seeded(2);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation` });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { messages: Array<Record<string, unknown>>; nextCursor: string | null };
+    expect(body.messages.map((message) => message['body'])).toEqual(['m1', 'm2']);
+    expect(Object.keys(body.messages[0] ?? {}).sort()).toEqual([
+      'body', 'channel', 'createdAt', 'deliveryStatus', 'id', 'messageClass', 'senderId', 'senderType', 'stuck', 'subject',
+    ]);
+    expect(body.nextCursor).toBeNull();
+    expect((res.json() as { maxMessageChars: number }).maxMessageChars).toBe(4000);
+  });
+
+  it('pages older rows with the (createdAt, id) cursor and no gaps or repeats', async () => {
+    const { app } = await seeded(5);
+
+    const first = (await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation?limit=2` })).json() as { messages: Array<{ body: string }>; nextCursor: string | null };
+    const second = (await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation?limit=2&before=${first.nextCursor}` })).json() as { messages: Array<{ body: string }>; nextCursor: string | null };
+    const third = (await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation?limit=2&before=${second.nextCursor}` })).json() as { messages: Array<{ body: string }>; nextCursor: string | null };
+
+    expect(first.messages.map((message) => message.body)).toEqual(['m4', 'm5']);
+    expect(second.messages.map((message) => message.body)).toEqual(['m2', 'm3']);
+    expect(third.messages.map((message) => message.body)).toEqual(['m1']);
+    expect(third.nextCursor).toBeNull();
+  });
+
+  it('rejects a malformed cursor and a bad limit with 400', async () => {
+    const { app } = await seeded(1);
+
+    const badCursor = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation?before=not-a-cursor` });
+    const badLimit = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation?limit=0` });
+
+    expect(badCursor.statusCode).toBe(400);
+    expect(badLimit.statusCode).toBe(400);
+  });
+
+  it('returns 404 for another user\'s agent without reading the thread', async () => {
+    const { app } = await seeded(1, { agent: null });
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation` });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 503 when the store fails', async () => {
+    const { app, conversations } = await seeded(1);
+    conversations.store.listUserAgentThread = async () => ({ ok: false, error: { code: 'conversation.store_failed', message: 'conversation_store_failed' } });
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/conversation` });
+
+    expect(res.statusCode).toBe(503);
   });
 });
 

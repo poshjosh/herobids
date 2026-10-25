@@ -1,0 +1,1 @@
+ALTER TABLE "conversation_messages" ADD COLUMN "queued_at" timestamp with time zone DEFAULT now() NOT NULL;

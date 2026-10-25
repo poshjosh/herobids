@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireDirectChildOfActingAgent, requireSelfAgentOrUser, requireUserCaller } from '../plugins/auth.js';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import { TradingProfileReconciliationOutboxRepository, recordAgentAuditEvent, type Database, type DatabaseTransaction } from '@herobids/db';
+import { TradingProfileReconciliationOutboxRepository, deleteUserAgentConversations, recordAgentAuditEvent, type Database, type DatabaseTransaction } from '@herobids/db';
 import {
   agents,
   agentArtifacts,
@@ -271,6 +271,8 @@ async function detachChildrenOfDeletedAgent(
  */
 async function purgeAgentRows(tx: DatabaseTransaction, agentIds: string[]): Promise<void> {
   await tx.delete(agentOutboundMessages).where(inArray(agentOutboundMessages.agentId, agentIds));
+  // Conversation participants have no foreign key to agents, so the agents' conversations are removed here.
+  await deleteUserAgentConversations(tx, agentIds);
   await tx.delete(agentArtifacts).where(inArray(agentArtifacts.agentId, agentIds));
   // NULL billing_usage_events.sessionId refs before deleting runtime sessions
   // (billing_usage_events has ON DELETE NO ACTION on the session_id FK).

@@ -3,6 +3,7 @@ import { renderEmail } from '@herobids/domain';
 import type { ChatDelivery } from './chat-delivery.js';
 import type { EmailClient } from './email-client.js';
 import { createLogger } from '../logger.js';
+import type { OutboundConversationMirror } from '../agents/outbound-conversation-mirror.js';
 
 const logger = createLogger('platform-alert-service');
 
@@ -60,6 +61,7 @@ export class PlatformAlertService {
     _botToken: string | undefined,
     private readonly emailClient?: EmailClient,
     private readonly brandImageUrl?: string,
+    private readonly conversationMirror?: OutboundConversationMirror,
   ) {}
 
   /**
@@ -105,6 +107,8 @@ export class PlatformAlertService {
     } else {
       logger.debug({ event, agentId: ctx.agentId }, 'Platform alert — Telegram not configured, skipping Telegram delivery');
     }
+
+    if (msgId) await this.conversationMirror?.mirror(msgId);
 
     // Deliver via Email
     if (this.emailClient) {

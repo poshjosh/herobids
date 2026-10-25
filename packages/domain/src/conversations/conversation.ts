@@ -15,7 +15,7 @@ export type ConversationDeliveryStatus = (typeof CONVERSATION_DELIVERY_STATUSES)
 
 /**
  * Delivery state machine. Only a `queued` row may be marked, and only to one of these targets.
- * `sent`, `failed` and `refused` are final; nothing returns to `queued`.
+ * `sent`, `failed` and `refused` are final for `markDelivery`; only a retry claim (requeueUndeliveredMessage) returns a row to `queued`.
  */
 export const CONVERSATION_DELIVERY_FROM = 'queued' satisfies ConversationDeliveryStatus;
 export const CONVERSATION_DELIVERY_TARGETS = ['sent', 'failed', 'refused'] as const satisfies readonly ConversationDeliveryStatus[];
@@ -47,6 +47,8 @@ export interface ConversationMessage {
   deliveryDetail: string | null;
   providerMessageId: string | null;
   createdAt: Date;
+  /** When the row last entered `queued`: its creation, or the last retry claim. Ages a stuck `queued` row. */
+  queuedAt: Date;
 }
 
 export interface RecordedConversationMessage {
@@ -60,6 +62,8 @@ export interface ConversationLimits {
   userMessageMaxChars: number;
   threadDefaultPageSize: number;
   threadMaxPageSize: number;
+  /** A `queued` row older than this (seconds) is presumed never published and may be re-published by a retry. */
+  staleQueuedAfterSeconds: number;
 }
 
 /** One user-agent conversation per agent. The id is derived, so concurrent first writes cannot create two. */

@@ -64,8 +64,25 @@ Non-blocking issues from code reviews, grouped by item.
 - (info) Acceptance grep still matches i18n keys and `alerts.operator.telegramChatId` (by design; coordinator signs off).
 
 ### CH2W (slice 1: P0+P1)
-- (medium) `conversation-repository.ts` `recordUserAgentMessage`: a first write whose message id belongs to another conversation commits an empty conversation + participants. Throw a rollback sentinel (like owner mismatch) and add a test.
+- (medium, fixed in slice 2) `conversation-repository.ts` `recordUserAgentMessage`: a first write whose message id belongs to another conversation committed an empty conversation + participants. Now throws a rollback sentinel (like owner mismatch); integration test added and checked by mutation.
 - (medium, owner, tier 3) Telegram reply lookup needs an index on (`channel`, `provider_message_id`) before `agent_outbound_messages` is retired (P3 migration). Also decide dropping `session_id` and `context_ref` (no columns in the schema note). Recommendation in PROGRESS.md.
-- (low) Port doc: `markDelivery` is internal-only; repeated mark returns `invalid_delivery_transition`, so delivery workers must treat "already sent" as success.
-- (low) P2 route must validate message id format/length and encode the (createdAt, id) cursor; the route must 404 for another user's agent.
+- (low, fixed in slice 2) Port and service docs now say `markDelivery` is for delivery workers only and that a repeated mark returns `invalid_delivery_transition`, which a retrying worker treats as "already marked".
+- (low, fixed in slice 2) P2 route validates the message id (UUID) with Zod, encodes the (createdAt, id) cursor, and answers 404 for another user's agent.
 - (low) No DB CHECK constraints on enum columns (matches repo convention); agent/platform bodies are uncapped; body length counts UTF-16 units; idempotent retry does not compare body.
+
+### CH2W (slice 2: P2 Web)
+- (medium, owner, tier 3) Confirm `conversation_messages.queued_at` (migration 0085, DEC-50, `proposed — pending owner confirmation`). It is a column outside the approved schema note (DEC-47); schema note section 7 requires a decision. Not approved by the implementer. Accepted risk: clock skew across API instances vs `staleQueuedAfterSeconds`. See PROGRESS slice 2.
+- (medium, transitional, P3) Two bridges keep the old readers and the web chat working until P3 moves the writers; P3 must delete both. (1) `POST /agents/:id/message` still inserts the same id into `agent_outbound_messages` (readers: `conversation-turn`, the activity feed, the old `GET /agents/:id/messages`). (2) `OutboundConversationMirror` (worker) copies agent and platform rows into the conversation after delivery, called from the broker `send_message` path, `PlatformAlertService.fireAlert` and the session-started anchor. Mirrored rows use the mirror time as `created_at`, and `channel` follows the old `delivery_provider` (`web` when none). `chat.no_address` and `chat.not_configured` are mirrored as `not_applicable`, not `failed`.
+- (low) The runtime does not de-duplicate `platform->agent` envelopes by `messageId` (see PROGRESS, review fixes). A stuck-queued re-publish is at-least-once: if the first publish reached Redis but the `sent` mark failed, the agent can see the message twice.
+- (medium, P3) Telegram inbound is still not recorded in the conversation, so Telegram user messages do not appear in the web thread until P3.
+- (low) The web falls back to 4000 characters until the first page reports `maxMessageChars` (the operator limit). The server enforces the configured limit.
+- (low) Platform docs (`get-started` help, worker `platform-docs-data.ts`) still say "Talk to your agent"; P4 platform docs review.
+- (low) The web retry for a failed message cannot be component-tested (no DOM test tooling in `apps/web`); the pending/retry logic is in the pure `conversation-thread.ts` and is unit tested.
+- (info) The plan's e2e gate (`run-all-tests.sh --e2e`) is deferred to the owner (ENTRYPOINT section 7).
+
+### CH2W (slice 2: P2 web)
+- (owner, tier 3) DEC-50 (`conversation_messages.queued_at`) is proposed, not approved. Also add to its accepted risk: if `xadd` succeeds but `markDelivery('sent')` fails, a stale-queued retry republishes (duplicate delivery).
+- (owner) P2 closes only after the plan's e2e gate (`run-all-tests.sh --e2e`) is run by the owner; deferred per ENTRYPOINT.
+- (medium) Broker `chat.address_lookup_failed` after redelivery exhaustion leaves the legacy row `pending` and no thread row; confirm consumer retry is finite and mirror once on the final attempt.
+- (medium) Session anchor (`worker/src/index.ts` ~733) swallows `markOutboundMessageSent` failure; mirror then records `not_applicable`. Log the error or pass `'sent'` to the mirror.
+- (low) Mirrored rows use mirror-time `createdAt`; Retry shows on a stopped agent (API returns 409); reused `clientMessageId` with different body silently returns the stored row; unused `AgentRepository.deleteAgent` bypasses conversation cleanup; plan 001 status wording "P2 done in code" needs owner confirmation; Retry/Sending/Show earlier states need a visual pass.

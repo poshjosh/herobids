@@ -39,6 +39,10 @@ export interface RecordAgentMessageInput {
   body: string;
   messageClass?: string | null;
   deliveryStatus?: ConversationDeliveryStatus;
+  /** Failure text or reason of an already-final delivery. */
+  deliveryDetail?: string | null;
+  /** Id the channel returned for an already-sent message. */
+  providerMessageId?: string | null;
 }
 
 export interface RecordPlatformMessageInput {
@@ -50,6 +54,10 @@ export interface RecordPlatformMessageInput {
   body: string;
   messageClass?: string | null;
   deliveryStatus?: ConversationDeliveryStatus;
+  /** Failure text or reason of an already-final delivery. */
+  deliveryDetail?: string | null;
+  /** Id the channel returned for an already-sent message. */
+  providerMessageId?: string | null;
 }
 
 export interface MarkDeliveryInput {
@@ -57,6 +65,16 @@ export interface MarkDeliveryInput {
   status: ConversationDeliveryStatus;
   detail?: string | null;
   providerMessageId?: string | null;
+}
+
+/** Who wrote the message being retried: the owner, or the creator agent that wrote to its child. */
+export type MessageSender = { type: 'user' } | { type: 'agent'; agentId: string };
+
+export interface MessageLookupInput {
+  ownerUserId: string;
+  agentId: string;
+  messageId: string;
+  sender: MessageSender;
 }
 
 export interface ListThreadInput {
@@ -150,6 +168,8 @@ export class ConversationService {
         body: input.body,
         messageClass: input.messageClass ?? null,
         deliveryStatus: input.deliveryStatus ?? 'queued',
+        ...(input.deliveryDetail !== undefined ? { deliveryDetail: input.deliveryDetail } : {}),
+        ...(input.providerMessageId !== undefined ? { providerMessageId: input.providerMessageId } : {}),
         createdAt: this.now(),
       },
     });
@@ -175,11 +195,17 @@ export class ConversationService {
         body: input.body,
         messageClass: input.messageClass ?? null,
         deliveryStatus: input.deliveryStatus ?? 'queued',
+        ...(input.deliveryDetail !== undefined ? { deliveryDetail: input.deliveryDetail } : {}),
+        ...(input.providerMessageId !== undefined ? { providerMessageId: input.providerMessageId } : {}),
         createdAt: this.now(),
       },
     });
   }
 
+  /**
+   * Delivery workers only. A repeated mark returns `conversation.invalid_delivery_transition`; a worker that
+   * retries after a crash must treat that code as "already marked", not as a failure.
+   */
   async markDelivery(input: MarkDeliveryInput): Promise<Result<ConversationMessage, ConversationError>> {
     if (input.messageId.trim() === '') {
       return invalid(CONVERSATION_ERROR_CODES.invalidMessage, 'message_id_required');
@@ -194,6 +220,49 @@ export class ConversationService {
       status: input.status,
       detail: input.detail ?? null,
       providerMessageId: input.providerMessageId ?? null,
+    });
+  }
+
+  /**
+   * True when a retry may publish the message again: it failed, or it has been `queued` for longer than
+   * `staleQueuedAfterSeconds` (the process died before publishing, or the status write failed).
+   */
+  needsRepublish(message: Pick<ConversationMessage, 'deliveryStatus' | 'queuedAt'>): boolean {
+    return message.deliveryStatus === 'failed' || this.isStuckQueued(message);
+  }
+
+  isStuckQueued(message: Pick<ConversationMessage, 'deliveryStatus' | 'queuedAt'>): boolean {
+    return message.deliveryStatus === 'queued' && message.queuedAt.getTime() <= this.staleBefore().getTime();
+  }
+
+  /** The sender's own message by id; null when absent. Another sender's or owner's row reads as absent. */
+  async findMessage(input: MessageLookupInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.agentId) ?? this.checkOptionalId(input.messageId);
+    if (checked) return checked;
+    return this.store.findMessage({
+      messageId: input.messageId,
+      conversationId: userAgentConversationId(input.agentId),
+      ownerUserId: input.ownerUserId,
+      ...this.senderOf(input),
+    });
+  }
+
+  /**
+   * Moves the sender's own failed (or stuck `queued`) message back to `queued` so the caller can publish it
+   * again. Null when there is nothing to retry (the message is in another state, or another retry claimed it
+   * first); the caller must not publish.
+   */
+  async retryUndeliveredMessage(input: MessageLookupInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.agentId) ?? this.checkOptionalId(input.messageId);
+    if (checked) return checked;
+    const now = this.now();
+    return this.store.requeueUndeliveredMessage({
+      messageId: input.messageId,
+      conversationId: userAgentConversationId(input.agentId),
+      ownerUserId: input.ownerUserId,
+      ...this.senderOf(input),
+      now,
+      staleBefore: this.staleBefore(now),
     });
   }
 
@@ -221,6 +290,16 @@ export class ConversationService {
       before: input.before ?? null,
       beforeId: input.beforeId ?? null,
     });
+  }
+
+  private staleBefore(now: Date = this.now()): Date {
+    return new Date(now.getTime() - this.limits.staleQueuedAfterSeconds * 1000);
+  }
+
+  private senderOf(input: MessageLookupInput): { senderType: 'user' | 'agent'; senderId: string } {
+    return input.sender.type === 'user'
+      ? { senderType: 'user', senderId: input.ownerUserId }
+      : { senderType: 'agent', senderId: input.sender.agentId };
   }
 
   private checkBody(body: string, maxChars: number | null): Result<never, ConversationError> | null {

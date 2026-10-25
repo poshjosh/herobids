@@ -859,3 +859,16 @@ describe('AgentRepository.updateUnifiedConfig (hybridMode write-path stamping)',
     }));
   });
 });
+describe('AgentRepository.insertOutboundMessage', () => {
+  it('is idempotent on a supplied id: the insert does nothing on a conflict', async () => {
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+    const repository = new AgentRepository({ insert: vi.fn().mockReturnValue({ values }) } as never, mockProvidersYaml);
+
+    const id = await repository.insertOutboundMessage({ id: 'msg-1', agentId: 'agent-1', authoredBy: 'user', body: 'Hello' });
+
+    expect(id).toBe('msg-1');
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg-1', agentId: 'agent-1', deliveryStatus: 'pending' }));
+    expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
+  });
+});

@@ -54,6 +54,7 @@ export {
   CanonicalTokenEntrySchema,
   AlertsConfigSchema,
   MessagingConfigSchema,
+  MessagingConversationsSchema,
   MessagingChatTelegramSchema,
   AuthConfigSchema,
   PlansConfigSchema,

@@ -405,7 +405,7 @@ export function AgentDetailPage() {
 
         <NotificationSetupPrompt justCreated={Boolean((location.state as { justCreated?: boolean } | null)?.justCreated)} />
 
-        <AgentConversation agentId={id ?? ''} agentName={agent.name} status={agent.status} connectionRequestId={connectionRequestId} />
+        <AgentConversation key={id} agentId={id ?? ''} agentName={agent.name} status={agent.status} connectionRequestId={connectionRequestId} />
 
         <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
           <Card>

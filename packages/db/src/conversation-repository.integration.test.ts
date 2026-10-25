@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { CONVERSATION_ERROR_CODES, ConversationService, userAgentConversationId } from '@herobids/domain';
-import { ConversationRepository } from './conversation-repository.js';
+import { ConversationRepository, deleteUserAgentConversations } from './conversation-repository.js';
 import * as schema from './schema/index.js';
 import {
   createScratchDatabase,
@@ -14,7 +14,7 @@ import { truncate } from './test-helpers/integration-db.js';
 // Runs only against a local Postgres (DATABASE_URL on localhost), in a database it creates and drops.
 const BASE_URL = localDatabaseUrl();
 const ALL_MIGRATIONS = '9999_all.sql';
-const LIMITS = { userMessageMaxChars: 4000, threadDefaultPageSize: 50, threadMaxPageSize: 200 };
+const LIMITS = { userMessageMaxChars: 4000, threadDefaultPageSize: 50, threadMaxPageSize: 200, staleQueuedAfterSeconds: 60 };
 
 describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
   let scratch: ScratchDatabase;
@@ -61,7 +61,7 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
   const user = (agentId = 'agent-1', body = 'hello', id?: string) =>
     service().recordUserMessage({ ownerUserId: 'user-1', agentId, channel: 'web', body, ...(id ? { id } : {}) });
 
-  describe('migration 0084', () => {
+  describe('migrations 0084 and 0085', () => {
     it('creates the three tables with the columns of the schema note', async () => {
       const columns = await scratch.sql<{ table_name: string; column_name: string; is_nullable: string }[]>`
         SELECT table_name, column_name, is_nullable FROM information_schema.columns
@@ -73,7 +73,7 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
       expect(byTable('conversation_participants')).toEqual(['conversation_id', 'participant_type', 'participant_id']);
       expect(byTable('conversation_messages')).toEqual([
         'id', 'conversation_id', 'sender_type', 'sender_id?', 'channel', 'subject?', 'body', 'message_class?',
-        'delivery_status', 'delivery_detail?', 'provider_message_id?', 'created_at',
+        'delivery_status', 'delivery_detail?', 'provider_message_id?', 'created_at', 'queued_at',
       ]);
     });
 
@@ -194,6 +194,20 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
 
       expect(clash).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.messageIdConflict } });
       expect(JSON.stringify(clash)).not.toContain('secret');
+    });
+
+    it('rolls back a first write refused for its message id, leaving no empty conversation or participants', async () => {
+      await user('agent-1', 'secret', 'shared-id');
+
+      const clash = await user('agent-2', 'other text', 'shared-id');
+
+      expect(clash).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.messageIdConflict } });
+      const [rows] = await scratch.sql<{ conversations: number; participants: number; messages: number }[]>`
+        SELECT
+          (SELECT count(*)::int FROM conversations WHERE id = ${userAgentConversationId('agent-2')}) AS conversations,
+          (SELECT count(*)::int FROM conversation_participants WHERE conversation_id = ${userAgentConversationId('agent-2')}) AS participants,
+          (SELECT count(*)::int FROM conversation_messages) AS messages`;
+      expect(rows).toEqual({ conversations: 0, participants: 0, messages: 1 });
     });
 
     it('refuses an id reused by a different sender in the same conversation', async () => {
@@ -395,6 +409,176 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
       const result = await service().markDelivery({ messageId: 'missing', status: 'sent' });
 
       expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.messageNotFound } });
+    });
+  });
+
+  describe('retryUndeliveredMessage', () => {
+    const USER = { type: 'user' } as const;
+    const failed = async (id = 'client-1') => {
+      await user('agent-1', 'hello', id);
+      await service().markDelivery({ messageId: id, status: 'failed', detail: 'publish_failed' });
+    };
+    const retry = (id = 'client-1', ownerUserId = 'user-1', agentId = 'agent-1', sender: Parameters<ConversationService['retryUndeliveredMessage']>[0]['sender'] = USER) =>
+      service().retryUndeliveredMessage({ ownerUserId, agentId, messageId: id, sender });
+    // Moves the clock past the stale age so a queued row counts as stuck.
+    const ageQueuedRows = () => { clock += (LIMITS.staleQueuedAfterSeconds + 1) * 1000; };
+
+    it('moves a failed message back to queued, clears the failure text and restamps queued_at', async () => {
+      await failed();
+      const createdAt = Date.parse('2026-10-25T10:00:00.001Z');
+
+      const result = await retry();
+
+      expect(result).toMatchObject({ ok: true, data: { id: 'client-1', deliveryStatus: 'queued', deliveryDetail: null } });
+      expect(result.ok && result.data && result.data.queuedAt.getTime()).toBeGreaterThan(createdAt);
+      expect(result.ok && result.data && result.data.createdAt.getTime()).toBe(createdAt);
+    });
+
+    it('lets exactly one of several concurrent retries claim the message', async () => {
+      await failed();
+
+      const results = await Promise.all(Array.from({ length: 6 }, () => retry()));
+
+      const claimed = results.filter((result) => result.ok && result.data !== null);
+      expect(claimed).toHaveLength(1);
+      expect(results.every((result) => result.ok)).toBe(true);
+    });
+
+    it('returns null for a message that is not failed', async () => {
+      await user('agent-1', 'hello', 'client-1');
+      await service().markDelivery({ messageId: 'client-1', status: 'sent' });
+      ageQueuedRows();
+
+      expect(await retry()).toEqual({ ok: true, data: null });
+      const [row] = await scratch.sql`SELECT delivery_status FROM conversation_messages WHERE id = 'client-1'`;
+      expect(row?.delivery_status).toBe('sent');
+    });
+
+    it('does not requeue another user\'s message, another conversation\'s message, or an agent message as the user', async () => {
+      await failed();
+      await service().recordAgentMessage({ id: 'agent-msg', ownerUserId: 'user-1', agentId: 'agent-1', channel: 'web', body: 'reply', deliveryStatus: 'queued' });
+      await service().markDelivery({ messageId: 'agent-msg', status: 'failed', detail: 'x' });
+
+      expect(await retry('client-1', 'user-2', 'agent-3')).toEqual({ ok: true, data: null });
+      expect(await retry('client-1', 'user-1', 'agent-2')).toEqual({ ok: true, data: null });
+      expect(await retry('agent-msg')).toEqual({ ok: true, data: null });
+      const rows = await scratch.sql`SELECT id, delivery_status FROM conversation_messages ORDER BY id`;
+      expect(rows.map((row) => [row.id, row.delivery_status])).toEqual([['agent-msg', 'failed'], ['client-1', 'failed']]);
+    });
+
+    describe('a creator agent\'s message', () => {
+      const CREATOR = { type: 'agent', agentId: 'agent-2' } as const;
+      const creatorFailed = async () => {
+        await service().recordAgentMessage({ id: 'creator-msg', ownerUserId: 'user-1', agentId: 'agent-1', senderAgentId: 'agent-2', channel: 'web', body: 'do it' });
+        await service().markDelivery({ messageId: 'creator-msg', status: 'failed', detail: 'publish_failed' });
+      };
+
+      it('is requeued for its own author', async () => {
+        await creatorFailed();
+
+        const result = await retry('creator-msg', 'user-1', 'agent-1', CREATOR);
+
+        expect(result).toMatchObject({ ok: true, data: { id: 'creator-msg', senderType: 'agent', senderId: 'agent-2', deliveryStatus: 'queued', deliveryDetail: null } });
+      });
+
+      it('is not requeued for the user, another agent, or another owner', async () => {
+        await creatorFailed();
+
+        expect(await retry('creator-msg')).toEqual({ ok: true, data: null });
+        expect(await retry('creator-msg', 'user-1', 'agent-1', { type: 'agent', agentId: 'agent-3' })).toEqual({ ok: true, data: null });
+        expect(await retry('creator-msg', 'user-2', 'agent-1', CREATOR)).toEqual({ ok: true, data: null });
+        const [row] = await scratch.sql`SELECT delivery_status FROM conversation_messages WHERE id = 'creator-msg'`;
+        expect(row?.delivery_status).toBe('failed');
+      });
+    });
+
+    describe('a stuck queued message', () => {
+      it('is not claimable while younger than the stale age', async () => {
+        await user('agent-1', 'hello', 'client-1');
+
+        expect(await retry()).toEqual({ ok: true, data: null });
+      });
+
+      it('is claimable once older than the stale age, and the claim restamps queued_at', async () => {
+        await user('agent-1', 'hello', 'client-1');
+        ageQueuedRows();
+
+        const claimed = await retry();
+        const again = await retry();
+
+        expect(claimed).toMatchObject({ ok: true, data: { id: 'client-1', deliveryStatus: 'queued' } });
+        expect(again).toEqual({ ok: true, data: null });
+      });
+
+      it('lets exactly one of several concurrent retries claim it', async () => {
+        await user('agent-1', 'hello', 'client-1');
+        ageQueuedRows();
+
+        const results = await Promise.all(Array.from({ length: 6 }, () => retry()));
+
+        expect(results.filter((result) => result.ok && result.data !== null)).toHaveLength(1);
+      });
+
+      it('can be marked sent after the claim', async () => {
+        await user('agent-1', 'hello', 'client-1');
+        ageQueuedRows();
+        await retry();
+
+        const sent = await service().markDelivery({ messageId: 'client-1', status: 'sent' });
+
+        expect(sent).toMatchObject({ ok: true, data: { deliveryStatus: 'sent' } });
+      });
+
+      it('is not claimable by another user or as a different sender', async () => {
+        await user('agent-1', 'hello', 'client-1');
+        ageQueuedRows();
+
+        expect(await retry('client-1', 'user-2', 'agent-3')).toEqual({ ok: true, data: null });
+        expect(await retry('client-1', 'user-1', 'agent-1', { type: 'agent', agentId: 'agent-2' })).toEqual({ ok: true, data: null });
+      });
+    });
+  });
+
+  describe('findMessage', () => {
+    it('returns the sender\'s own message and nothing for another sender, owner or conversation', async () => {
+      await user('agent-1', 'hello', 'client-1');
+
+      const own = await service().findMessage({ ownerUserId: 'user-1', agentId: 'agent-1', messageId: 'client-1', sender: { type: 'user' } });
+      const asAgent = await service().findMessage({ ownerUserId: 'user-1', agentId: 'agent-1', messageId: 'client-1', sender: { type: 'agent', agentId: 'agent-2' } });
+      const otherOwner = await service().findMessage({ ownerUserId: 'user-2', agentId: 'agent-1', messageId: 'client-1', sender: { type: 'user' } });
+      const otherThread = await service().findMessage({ ownerUserId: 'user-1', agentId: 'agent-2', messageId: 'client-1', sender: { type: 'user' } });
+      const missing = await service().findMessage({ ownerUserId: 'user-1', agentId: 'agent-1', messageId: 'nope', sender: { type: 'user' } });
+
+      expect(own).toMatchObject({ ok: true, data: { id: 'client-1', senderType: 'user', deliveryStatus: 'queued' } });
+      expect(asAgent).toEqual({ ok: true, data: null });
+      expect(otherOwner).toEqual({ ok: true, data: null });
+      expect(otherThread).toEqual({ ok: true, data: null });
+      expect(missing).toEqual({ ok: true, data: null });
+    });
+  });
+
+  describe('deleteUserAgentConversations', () => {
+    it('removes the agents\' conversations with their participants and messages, and leaves others', async () => {
+      await user('agent-1', 'one');
+      await user('agent-2', 'two');
+      await user('agent-1', 'one again');
+
+      await deleteUserAgentConversations(drizzle(pool, { schema }), ['agent-1']);
+
+      const [counts] = await scratch.sql<{ conversations: number; participants: number; messages: number }[]>`
+        SELECT (SELECT count(*)::int FROM conversations) AS conversations,
+               (SELECT count(*)::int FROM conversation_participants) AS participants,
+               (SELECT count(*)::int FROM conversation_messages) AS messages`;
+      expect(counts).toEqual({ conversations: 1, participants: 2, messages: 1 });
+    });
+
+    it('does nothing for an empty list', async () => {
+      await user('agent-1', 'one');
+
+      await deleteUserAgentConversations(drizzle(pool, { schema }), []);
+
+      const [count] = await scratch.sql`SELECT count(*)::int AS n FROM conversations`;
+      expect(count?.n).toBe(1);
     });
   });
 

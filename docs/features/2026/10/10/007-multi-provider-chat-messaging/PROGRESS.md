@@ -237,4 +237,115 @@ Neither blocks P1 or P2. Both block retirement of `agent_outbound_messages` in P
 - Web type maps old `pending` to `queued` (P2).
 - Existing Outstanding Issues items for CH2W (markOutboundMessageSent provider hard-code) disappear when the table is retired in P3.
 
-Next ready item: CH2W P2 (slice 2). A2A-A can run at any time.
+Next ready item: CH2W P3 (slice 3, see the slice 2 entry below). A2A-A can run at any time.
+
+## 2026-10-25: CH2W slice 2 (plan phase P2, Web). CH2W is not finished and is not ticked
+
+Scope: plan phase P2 of [002 two-way agent chat](../../15/002-two-way-agent-chat/001-plan.md), plus the slice 1 review items in the QUEUE Outstanding Issues. P3 (channels, retire `agent_outbound_messages`, remove `GET /agents/:id/messages`) and P4 are not started. Nothing is staged or committed.
+
+### What was built
+
+- **`POST /agents/:id/message`** (`apps/api/src/routes/agent-interactivity.ts`): validates with Zod (message length from `messaging.conversations.userMessageMaxChars`; optional `clientMessageId` must be a UUID), keeps the 10/min user limit, the 404 for another user's agent, the 409 when stopped, and the creator-pair bucket. It then records the row first through `ConversationService` (user: `recordUserMessage`; creator agent: `recordAgentMessage` with `senderAgentId`), publishes the envelope under the same id, and marks the row `sent`. Responses: 202 `{ delivered: true, message }`; 400 validation; 409 `message_id_conflict` when the id belongs to another sender or thread; 503 `conversation_unavailable` when the store fails (nothing is published); 503 `message_delivery_unavailable` when the Redis publish fails (row marked `failed`, `publish_failed`). A repeated id returns the stored row and publishes nothing.
+- **`GET /agents/:id/conversation?limit&before`**: thread oldest first, `{ messages, nextCursor, maxMessageChars }`. The cursor is opaque base64url of (`createdAt`, `id`) of the oldest row; a malformed one is 400. 404 for another user's agent. Rows expose explicit fields only (no `deliveryDetail`, `providerMessageId`, `conversationId`). Helpers in `apps/api/src/routes/conversation-http.ts`.
+- **Retry of a failed send** (002 D5, D6): one new transition, `failed` to `queued`, for the user's own message (`ConversationStore.requeueFailedUserMessage`, `ConversationService.retryFailedUserMessage`, one conditional UPDATE, so one of several concurrent retries publishes).
+- **Agent delete**: `deleteUserAgentConversations(tx, agentIds)` (`packages/db/src/conversation-repository.ts`) is called from `purgeAgentRows`, so a single-agent and a subtree delete remove the conversation, participants and messages in the same transaction.
+- **Web**: `AgentConversation.tsx` reads `agentsApi.conversation` (polled every 3 s while the agent runs; react-query pauses it in a hidden tab), keeps fetched rows in a merged history, sends with a client UUID, shows the user's message at once as "Sending…", marks failures "Not sent" with Retry (same id), "Show earlier messages" through the cursor, and a load-error line. Authorship: user right, this agent left with its name, another agent (a creator) left as "Parent agent", platform centred with the existing safety-alert or OpenAIdom badge. Pure logic in `conversation-thread.ts`. `AgentOutboundMessage` and `agents.messages()` are removed from the web; `scripts/ts/run-connection-cycle.ts` reads the new endpoint (not run). The collapsed "Messages to user" section was already absent from the web at the start of P2 (grep of `apps/web/src`); nothing to remove there.
+- **Slice 1 review fixes**: (1) `recordUserAgentMessage` throws a rollback sentinel on a message id conflict, so a first write refused for its id leaves no empty conversation (integration test added; mutation-checked: with the old `return` it fails with 1 conversation left). (2) Port and service docs: `markDelivery` is for delivery workers, a repeated mark is `invalid_delivery_transition` and means "already marked". (3) The P2 route items (id validation, cursor, 404) are done.
+- **i18n**: five keys in en, ar, hi (`fromParentAgent`, `sending`, `notSent`, `loadEarlier`, `loadError`); the existing `retry` key is reused. ar and hi have real short translations (the repo's ar and hi catalogs are translated, and `catalog-consistency` needs equal keys); P4 translation review still applies.
+- **Config**: no new keys. `MessagingConversationsSchema` is now exported from `@herobids/domain`; the API and worker pass `appConfig.messaging.conversations`.
+
+### Files changed
+
+- API: `routes/agent-interactivity.ts`, `routes/conversation-http.ts` (new), `routes/agents.ts`, `index.ts`; tests `routes/agent-interactivity.test.ts`, `routes/conversation-http.test.ts` (new), `__tests__/helpers/in-memory-conversation-store.ts` (new), `__tests__/functional/agent-interactivity.functional.test.ts`, `routes/agent-creator-actions.integration.test.ts`, `routes/agent-delete-subtree.integration.test.ts`.
+- DB and domain: `packages/db/src/conversation-repository.ts` (sentinel, requeue, delete helper), `conversation-repository.integration.test.ts`, `index.ts`, `agent-repository.ts` (`getOutboundMessage`); `packages/domain/src/ports/conversation-store.ts`, `conversations/conversation-service.ts` and its test, `config/index.ts` (export).
+- Worker: `agents/outbound-conversation-mirror.ts` and test (new), `agents/agent-message-broker.ts` and test, `alerting/platform-alert-service.ts` and test, `index.ts`.
+- Web: `features/agents/{AgentConversation.tsx,AgentConversation.test.tsx,AgentDetailPage.tsx,conversation-thread.ts,conversation-thread.test.ts}`, `lib/api-client.ts`, `app/i18n/locales/{en,ar,hi}.ts`.
+- Other: `scripts/ts/run-connection-cycle.ts`; docs: this entry, QUEUE Outstanding Issues, plan status line and appendix item 0.
+
+### Commands and results
+
+| Command | Result |
+| --- | --- |
+| `npx tsc -p <p>/tsconfig.json --noEmit` for `packages/domain`, `packages/db`, `apps/api`, `apps/worker`, `apps/web` (domain and db rebuilt first), `pnpm lint` | all clean |
+| Disposable containers: `docker run -d --name herobids-ch2w2-pg -e POSTGRES_PASSWORD=ch2w -p 55432:5432 postgres:17-alpine` and `docker run -d --name herobids-ch2w2-redis -p 56379:6379 redis:7-alpine`; `db:migrate` against the first (all migrations applied) | the running `herobids-postgres-1` and `herobids-redis-1` were not used or touched |
+| `DATABASE_URL=… pnpm exec vitest run --fileParallelism=false packages/db/src/conversation-repository.integration.test.ts packages/domain/src/conversations` | 2 files, 78 tests passed (integration 43, was 36; service 35, +4 retry tests) |
+| `DATABASE_URL=… REDIS_URL=… vitest run src/__tests__/functional/agent-interactivity.functional.test.ts` (apps/api) | 28 tests passed (POST idempotency, 503 on publish failure and retry of the same id, 404 for another user's agent, 409 id clash without leak, malformed id 400, GET pagination and 404/401/400, agent delete cleanup) |
+| `pnpm test:integration` (DB and Redis env set) | 9 files, 106 tests passed (includes the creator message and subtree delete conversation assertions) |
+| `pnpm test:functional` (DB and Redis env set) | 16 files, 196 tests passed |
+| `pnpm exec vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork packages/db` (DB env set) | 27 files passed, 1 skipped; 362 tests passed, 9 skipped |
+| I1 gate `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert` | 9 files passed, 1 skipped; 200 tests passed, 31 skipped (was 196; +4 mirror seam tests) |
+| `docker rm -f herobids-ch2w2-pg herobids-ch2w2-redis` | removed (0 `ch2w` containers left) |
+| `pnpm test` (no `DATABASE_URL`, as in C1) | exit 0. 420 files: 0 failed, 383 passed, 37 skipped. 7616 tests: 0 failed, 7094 passed, 522 skipped |
+
+Comparison with the C1 final run (414 files, 378 passed, 36 skipped; 7469 tests, 7001 passed, 468 skipped): 0 failed in both. +6 files (slice 1: service test, config test, repository integration (skipped without a DB); slice 2: `conversation-http.test.ts`, `outbound-conversation-mirror.test.ts`, `conversation-thread.test.ts`), +93 passed, +54 skipped (the DB-gated tests of the new integration file and the new functional cases). No existing test was removed; the existing message-route unit tests were rewritten for the new behaviour.
+
+E2E: not run (ENTRYPOINT section 7). The plan's gate "E2E journey" and `run-all-tests.sh --e2e` before P2 closes are **deferred for the owner**; P2 is not closed.
+
+### Tier-2 decisions
+
+1. **Message id format: UUID.** `clientMessageId` must be a UUID (Zod `uuid()`). It is the smallest accepted shape and it cannot collide with derived ids such as `user_agent:{id}`. Creator agents send none (the server generates one).
+2. **Both 503 cases.** A store failure (before any publish) and a Redis publish failure are both 503, with different error codes; only the publish failure leaves a `failed` row.
+3. **Retry reuses the id, through one `failed` to `queued` transition.** The 002 D6 text ("the row stays so the user can retry the same ID") needs a way back from `failed`; slice 1 made `failed` final for `markDelivery`. I added a separate, narrow, atomic method (`requeueUndeliveredMessage`, see Review fixes) that only re-queues the sender's own message in its own conversation, and left `markDelivery` strict. Any other repeat of an id returns the row and publishes nothing (D5).
+4. **Transitional bridges instead of a one-sided chat.** The broker, alert service and session anchor still write `agent_outbound_messages` (P3). Without a bridge the web thread would show only the user's messages, which is a regression from today. So: (a) the POST also writes the old row under the same id (the old readers `conversation-turn` and the activity feed keep working), and (b) `OutboundConversationMirror` copies agent and platform rows into the conversation once their delivery outcome is known, with an optional trailing constructor argument on the broker and alert service, so no existing call site changes. It never throws and uses no provider literal (the channel comes from the old row's provider when it is a conversation channel, else `web`). Both bridges are listed in the QUEUE Outstanding Issues for P3 to delete.
+5. **`conversation-turn` and the activity feed stay on the old table** until P3 (the plan lists them for P3 or P2 for `conversation-turn`; moving it would need a new store query while the old row still exists, so it moves with the bridge removal).
+6. **`maxMessageChars` in the GET response** so the web does not hard-code the operator limit (I7). The web keeps 4000 only as the fallback before the first page loads.
+7. **Web layout.** The view takes oldest-first messages (the old API was newest first) and an optimistic `PendingSend` list; the composer is no longer blocked while a send is in flight. Older pages are merged into a local history because the polled newest page slides forward and would otherwise drop rows.
+8. **Creator messages** appear in the child's thread as an agent row whose sender is the creator, labelled "Parent agent" (the old UI labelled them like platform messages).
+9. **Agent delete** uses an exported helper taking the transaction, called from `purgeAgentRows`, rather than raw table access in the route; the derived conversation id is the only key. Peer threads are A2A-B's.
+10. **Response shape.** `delivered: true` stays (the worker's `messageChildAgent` parses it) and `message` is added.
+
+### Review fixes (slice 2, still unstaged)
+
+1. **HIGH, creator retry.** `requeueFailedUserMessage` is now `requeueUndeliveredMessage` and takes the sender (`user` or the creator `agent` id); the route claims under the same authorship it recorded with, so a retry of a failed creator message (same `clientMessageId`) publishes again instead of returning 202 `delivered:true` with nothing sent. Chosen over rejecting `clientMessageId` for agent keys because the store, route and web already treat the id as the retry key, and the fix is one parameter. The claim also checks the conversation owner.
+2. **MEDIUM, stuck `queued`.** New operator setting `messaging.conversations.staleQueuedAfterSeconds` (Zod default 60, in `config/default.yaml`, validated positive). A `queued` message of the sender older than that is claimable by the same atomic update as a `failed` one. Age needs a stamp that a claim can refresh (a retried old message must not look stale again at once and be claimed by a racing second retry), so migration `0085_redundant_hammerhead` adds `conversation_messages.queued_at` (not null, default now; set to `created_at` on insert, set to the claim time on requeue). Existing rows get the migration time. The GET and POST responses carry `stuck` (queued and past the age, computed on the server clock); the web shows "Not sent" with Retry for a stuck row instead of "Sending..." forever, and the Retry resends under the same id.
+3. **MEDIUM, mirror outcomes.** `OutboundConversationMirror.mirror(id, outcome?)`: the broker (`send_message`) and the session anchor pass `'not_applicable'` for `chat.no_address` and `chat.not_configured` (`isUndeliverableChatError`), so those are no longer recorded as `failed`. The row is now recorded with its final status in one insert (new optional `deliveryDetail` and `providerMessageId` on `recordAgentMessage` and `recordPlatformMessage`), so there is no `queued` window and no `markDelivery` call. A failed record, and an unexpected error, are logged at error level. The misleading "no delivery attempt" comment is rewritten. `PlatformAlertService` needed no change: it never marks those two outcomes `failed`.
+4. **MEDIUM, retry of a delivered message.** The route looks the row up by id (own sender, own conversation and owner) before the rate limit and the `agent_not_running` gate, and returns it when it needs no publish (sent, in flight, refused). A repeat of a delivered message therefore works after the agent stops; a retry that must publish (failed or stuck) still gets 409 on a stopped agent. The 404 for another user's agent now comes before the rate limit. In `buildThread`, a stored status other than `queued` or `failed` is never overridden by a local pending state, so a failed local attempt cannot hide a server `sent`.
+5. **MEDIUM, real DB tests.** Disposable containers (below). New cases: repository integration (creator requeue, stale claim, restamp, one winner under six concurrent claims, `findMessage` scoping), functional (recent queued is not re-published, stuck queued re-published once under three racing retries, repeat after stop returns the row, failed retry on a stopped agent is 409; the existing retry-after-503 case stays), creator integration (503, retry under creator authorship, one envelope, one row). Unit tests: service, route (in-memory store with an advanceable clock), mirror, broker, web.
+6. **LOW.** (a) Rate limit: only a request that may publish spends the per-user token (an idempotent repeat returns before it). (b) The earlier-page mutation in `AgentConversation.tsx` shows "Could not load the conversation." beside the button when it fails (a bare `onError` would change nothing: `mutate` does not throw; the state comes from `isError`). (c) **Does the runtime de-duplicate by envelope `messageId`? No.** `readOutboundMessages` (`outbound-message-reader.ts`) drains the group and `agent.ts` passes every envelope on; `messageId` is only echoed in `TICK_STARTED.userMessageIds`. (The broker de-duplicates agent to platform envelopes by `messageId`, not this direction.) So the stuck-queued re-publish is at-least-once: if the first `xadd` succeeded and only the `sent` mark failed, the agent can see the message twice. Accepted for now; a runtime de-dupe is listed in QUEUE.
+
+| Command (review fixes) | Result |
+|---|---|
+| `docker run` Postgres 17 (`herobids-ch2w2b-pg`, 55432) and Redis 7 (`herobids-ch2w2b-redis`, 56379); `db:migrate` | all migrations applied (0085 included); the running `herobids-postgres-1` and `herobids-redis-1` were not touched |
+| `vitest run --fileParallelism=false packages/db/src/conversation-repository.integration.test.ts` | 51 tests passed (was 43) |
+| `vitest run ... apps/api/src/__tests__/functional/agent-interactivity.functional.test.ts apps/api/src/routes/agent-creator-actions.integration.test.ts` | 2 files, 49 tests passed (32 functional, 17 integration) |
+| `pnpm exec vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork packages/db` | 27 files passed, 1 skipped; 370 passed, 9 skipped |
+| `pnpm test:functional` | 16 files, 200 tests passed |
+| `pnpm test:integration` | 9 files, 107 tests passed |
+| `docker rm -f herobids-ch2w2b-pg herobids-ch2w2b-redis` | removed (0 `ch2w` containers left) |
+| `tsc --build` domain and db; `tsc --noEmit` api, worker, web; `pnpm lint` | clean |
+| `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert` (I1 gate) | 9 files passed, 1 skipped; 202 passed, 31 skipped |
+| `pnpm test` (no `DATABASE_URL`) | exit 0. 420 files: 0 failed, 383 passed, 37 skipped. 7656 tests: 0 failed, 7121 passed, 535 skipped (was 7094 passed, 522 skipped; the new DB-gated cases are the extra skips) |
+
+E2E scripts were not run.
+
+### Re-review fixes (slice 2, still unstaged)
+
+1. **HIGH (docs), `queued_at` has no decision.** Added the column to the schema note section 2.3 (marked proposed) and a DEC-50 row in DECISIONS.md under "Proposed by an implementer", status `proposed — pending owner confirmation` (not approved; DEC-49 stays reserved for the stop-switch contract per DEC-48). The row has the reasoning (claim restamps the age so a retried old message is not instantly stale and one racer wins), the migration-time value of existing rows, and the accepted clock-skew risk vs `staleQueuedAfterSeconds`. Tier-3 note added below and in QUEUE Outstanding Issues.
+2. **MEDIUM, `chat.address_lookup_failed` mirror.** The broker no longer mirrors before throwing (chosen over letting the mirror upgrade a `not_applicable` row: simplest, and the redelivery inserts a new old-table row that is mirrored with its real outcome). Test in `agent-message-broker.test.ts`. The alert service has the same lookup-failure branch but does not throw and is not redelivered, so it is unchanged.
+3. **MEDIUM, legacy write retry.** The legacy `agent_outbound_messages` insert in `POST /agents/:id/message` now runs on every publish, not only when the row was just created. `AgentRepository.insertOutboundMessage` is `ON CONFLICT (id) DO NOTHING` so a repeat is a no-op. Tests: route test (first legacy write fails, publish fails, retry recreates the row) and a repository test for the conflict clause. The test db mock in `buildMessageApp` now models `.values().onConflictDoNothing()`.
+4. **LOW, Retry for `refused`.** `AgentConversation.tsx` shows Retry only for `failed` and stuck `queued` (a republish is possible); a `refused` message shows "Not sent" without Retry. Component test added.
+
+| Command (re-review fixes) | Result |
+|---|---|
+| `tsc --build` domain and db; `tsc --noEmit` api, worker, web; `pnpm lint` | clean |
+| Disposable Postgres 17 and Redis 7 (`herobids-ch2w2c-*`, ports 55432 and 56379), `db:migrate`; removed afterwards (0 `ch2w` containers left) | the running `herobids-*` containers were not touched |
+| Targeted: broker, route, mirror, web agents, `agent-repository.test.ts`, conversation repository integration, agent-interactivity functional, creator and subtree integration | all passed |
+| `packages/db` (single fork, DB env) | 27 files passed, 1 skipped; 371 passed, 9 skipped |
+| `pnpm test:functional` / `pnpm test:integration` (DB env) | 16 files, 200 passed / 9 files, 107 passed |
+| I1 gate `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert` | 10 files passed; 234 passed (DB env set) |
+| `pnpm test` (no `DATABASE_URL`) | exit 0. 420 files: 0 failed, 383 passed, 37 skipped. 7660 tests: 0 failed, 7125 passed, 535 skipped |
+
+Files: `apps/api/src/routes/agent-interactivity.ts` and test, `apps/worker/src/agents/agent-message-broker.ts` and test, `packages/db/src/agent-repository.ts` and test, `apps/web/src/features/agents/AgentConversation.tsx` and test, schema note, DECISIONS, PROGRESS, QUEUE. CH2W is not ticked.
+
+### Tier-3 questions for the owner
+
+**New (tier 3, owner): confirm `conversation_messages.queued_at` (DEC-50, `proposed — pending owner confirmation`).** Migration 0085 added the column outside the approved schema note, which requires a decision for any new column (note section 7). It is recorded in the schema note section 2.3 and DECISIONS as proposed, not approved. It lets a retry claim restamp the age so a retried old message is not instantly stale and only one racer wins. Existing rows get the migration time. Accepted risk: clock skew across API instances larger than `staleQueuedAfterSeconds` (60 s) could allow an early or late claim. If declined, the alternative is to age from `created_at` and drop the column.
+
+None other new block P2 or P3. The two from slice 1 still block retirement of `agent_outbound_messages` in P3: (1) the (`channel`, `provider_message_id`) index for Telegram reply correlation (recommend option a), (2) dropping `session_id` and `context_ref` (recommend option a). One more to confirm, low risk: the bridges in decision 4 are an addition beyond the plan text for P2; the alternative is to ship P2 with agent replies missing from the web thread until P3, which I did not choose because it regresses today's chat.
+
+### Owner hand-offs and gates still open
+
+- E2E journey and `scripts/shell/tests/run-all-tests.sh --e2e` before P2 closes (deferred, ENTRYPOINT section 7).
+- Owner review after P2 (plan section 5).
+
+Next ready item: CH2W P3 (slice 3), blocked only on the two slice 1 tier-3 answers for the table retirement; the Telegram inbound/outbound and broker moves can start before. A2A-A can run at any time.

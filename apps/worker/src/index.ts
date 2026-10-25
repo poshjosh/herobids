@@ -2,9 +2,10 @@ import Redis from 'ioredis';
 import { createLogger } from './logger.js';
 import { EvaluationRuntime } from './agent-evaluation/index.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
-import { createDatabase, AlertDeliveryRepository, AgentRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, NotificationDeliveryRepository, users, agents } from '@herobids/db';
+import { createDatabase, AlertDeliveryRepository, AgentRepository, ConversationRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, NotificationDeliveryRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
+import { ConversationService, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
+import { OutboundConversationMirror, isUndeliverableChatError } from './agents/outbound-conversation-mirror.js';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import crypto from 'node:crypto';
@@ -687,7 +688,14 @@ const workerEmailConfig: EmailClientConfig = {
 };
 const workerEmail = createEmailClient(workerEmailConfig);
 
-const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, telegramChat.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl);
+// Transitional (CH2W P2 to P3): copies agent and platform messages into the conversation the web chat reads.
+const outboundConversationMirror = new OutboundConversationMirror(agentRepo, new ConversationService({
+  store: new ConversationRepository(db),
+  limits: appConfig.messaging.conversations,
+  newId: () => crypto.randomUUID(),
+  now: () => new Date(),
+}));
+const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, telegramChat.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl, outboundConversationMirror);
 
 async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: string): Promise<void> {
   if (!workerTelegram) {
@@ -717,11 +725,13 @@ async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: stri
   const result = await chatDelivery.send(agentId, { body: text, replyRequested: true });
   if (!result.ok) {
     await agentRepo.markOutboundMessageFailed(outboundMessageId, result.error.message).catch(() => undefined);
+    await outboundConversationMirror.mirror(outboundMessageId, isUndeliverableChatError(result.error.code) ? 'not_applicable' : undefined);
     logger.warn({ agentId, error: result.error }, 'Failed to send Telegram session-started anchor');
     return;
   }
 
   await agentRepo.markOutboundMessageSent(outboundMessageId, result.data.providerMessageId, result.data.address.address).catch(() => undefined);
+  await outboundConversationMirror.mirror(outboundMessageId);
 }
 
 // Late-bound subscribe callback: set once agentStreamConsumer is constructed below.
@@ -852,6 +862,7 @@ const agentBroker = new AgentMessageBroker(
   appConfig.connectionRequests,
   operatorNotifier,
   agentNotificationDispatcher,
+  outboundConversationMirror,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

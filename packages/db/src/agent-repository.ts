@@ -765,8 +765,13 @@ export class AgentRepository {
       contextRef: input.contextRef ?? null,
       messageClass: input.messageClass ?? null,
       deliveryStatus: 'pending',
-    });
+    }).onConflictDoNothing({ target: agentOutboundMessages.id });
     return id;
+  }
+
+  async getOutboundMessage(id: string) {
+    const rows = await this.db.select().from(agentOutboundMessages).where(eq(agentOutboundMessages.id, id)).limit(1);
+    return rows[0] ?? null;
   }
 
   async markOutboundMessageSent(id: string, providerMessageId: string, address: string): Promise<void> {
