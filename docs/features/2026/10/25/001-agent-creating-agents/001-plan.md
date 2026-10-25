@@ -1,6 +1,6 @@
 # Agent-Created Agents — Plan
 
-Status: Draft (revision 3)
+Status: Draft (revision 4)
 Date: 2026-10-25
 
 ## 1. Goal
@@ -74,7 +74,8 @@ Agent runtimes do not call the platform API. They read and write Postgres and Re
 - The shared services own all rules in §5 and §7. Nothing else may write `agents.parent_agent_id`, `depth`, `child_agent_limit` or `creator_*`. This is the single write path.
 - The API routes for user-only actions (setting `childAgentLimit`, resuming, starting, editing a child, deleting) stay user-authenticated as today. The agent runtime never calls them.
 - Open risk: the agent runtime holds `DATABASE_URL`, so a raw SQL write is possible in principle. Mitigation: code review rule and a test that the runtime's tool layer exposes no generic write path. Full database-role isolation for agent runtimes is a separate task.
-- Child agents start with `childAgentLimit = 0`, and do not inherit skills, tool policy or permission level. They start from defaults.
+- Child agents start with `childAgentLimit = 0`. Nothing is inherited automatically.
+- At creation, the parent agent may grant the child a chosen subset of its own skills and connections. Rules: the parent can grant only what it currently holds; the child's plan entitlements still apply; the child's permission level cannot exceed the parent's; the grant is recorded like any other user-created grant.
 - Children are created with `status = 'stopped'`. The user starts them. Creator agents cannot start children.
 
 The signed agent-runtime token and API guard were prototyped and reverted; they are not part of this plan.
