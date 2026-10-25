@@ -1,6 +1,6 @@
 # Agent-Created Agents — Plan
 
-Status: Draft (revision 4)
+Status: Draft (revision 5)
 Date: 2026-10-25
 
 ## 1. Goal
@@ -13,7 +13,8 @@ In scope:
 
 - Lineage fields on the `agents` table (creator, parent, depth).
 - A per-agent creation allowance, set by the user only.
-- An agent-facing `create_agent` tool, exposed by allowance.
+- An agent-facing `create_agent` tool, exposed by allowance, calling the existing API routes.
+- A per-agent API key, so the API can identify agent callers.
 - A creator's limited access to its direct children.
 - Subtree deletion with explicit preconditions and a defined partial-failure state.
 - Hierarchical agents page and user controls.
@@ -53,32 +54,41 @@ Indexes: `(parent_agent_id)`, `(user_id, creator_type)`.
 
 ## 5. Enforcement Rules
 
-`create_agent` by agent A (owned by user U) runs these checks in this order:
+Rules are enforced inside the existing API routes, not in a new service or package (revision 5).
 
-1. **Rate:** consume one token from U's bucket. Each attempt consumes a token, including attempts rejected by later rules. The bucket is shared across U's whole tree and lives in Redis. If Redis is unavailable, the attempt fails closed (rejected with a retryable error). No creation proceeds without the limiter.
+- Creation: `POST /agents` in [agents.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/routes/agents.ts). The existing validation, plan checks and insert stay as they are. When the request comes from an agent, the route also applies the creator rules below.
+- Creator actions: the existing `POST /agents/:id/pause` and `POST /agents/:id/stop` routes, with the same creator-child check.
+
+`POST /agents` by agent A (owned by user U) succeeds only if all hold:
+
+1. **Rate:** U's token bucket has a token available. Each attempt consumes one token, successful or not. The bucket is shared across U's whole tree and lives in Redis. If Redis is unavailable, the request fails closed with a retryable error.
 2. **Allowance:** count of A's existing children < `A.childAgentLimit`.
 3. **Depth:** `A.depth + 1 <= maxAgentDepth`.
-4. **Plan total:** U's total agents (including children) < plan `maxAgents`.
+4. **Plan total:** U's total agents (including children) < plan `maxAgents`, under a per-user advisory lock taken in the same transaction as the insert. The user-facing path takes the same lock, so both count consistently.
 
-Checks 2 to 4 and the insert run in one database transaction. The transaction takes a per-user advisory lock (`pg_advisory_xact_lock` keyed on user id) before counting, and a row lock on the parent. Two siblings under different parents therefore cannot both pass the plan-total check. The same user-level lock is taken by the existing user-facing create path, so both paths count consistently.
+Failures return an error naming the rule that failed. Creation is atomic: the checks and the insert run in one transaction, with the parent row locked so concurrent calls cannot exceed the allowance.
 
-Failures return a tool error naming the rule that failed.
-
-Admin bypass: the existing plan guards skip plan checks for admins. Plan total and ceiling keep that behavior for admins. Rate and depth apply to admins as a safety backstop. The allowance is user-set and always applies.
+Admin bypass: plan total bypasses for admins, as today. Rate and depth still apply to admins. The allowance is user-set and always applies.
 
 ## 6. Permissions and Caller Identity
 
-Agent runtimes do not call the platform API. They read and write Postgres and Redis directly through worker repositories and ports. The API therefore cannot see agent calls, and this plan does not add an HTTP caller identity for them (revision 3, decided 2026-10-25).
+Agent reasoning and tools run inside each agent's container ([agent.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/agent.ts)). The container calls the platform API over HTTP, using the existing routes.
 
-- Agent-facing creator actions (`create_agent`, message, pause, stop) run in the worker tool layer and call shared domain services directly. The worker supplies `actingAgentId` from the runtime session (`AGENT_ID`), never from tool input.
-- The shared services own all rules in §5 and §7. Nothing else may write `agents.parent_agent_id`, `depth`, `child_agent_limit` or `creator_*`. This is the single write path.
-- The API routes for user-only actions (setting `childAgentLimit`, resuming, starting, editing a child, deleting) stay user-authenticated as today. The agent runtime never calls them.
-- Open risk: the agent runtime holds `DATABASE_URL`, so a raw SQL write is possible in principle. Mitigation: code review rule and a test that the runtime's tool layer exposes no generic write path. Full database-role isolation for agent runtimes is a separate task.
+**Per-agent API key (option 1, decided):**
+
+- When the worker starts an agent runtime, it generates a random key, stores only its hash in the database (linked to agent id, user id and runtime session id), and injects the key into the container.
+- The API resolves the key by hash on each request. The key yields the agent and user identity; the request is marked as coming from that agent.
+- The key is valid only while its runtime session is active. It is revoked when the runtime stops or crashes.
+- The key can call agent routes only. User-only routes (setting `childAgentLimit`, resuming, starting, editing a child, deleting) reject any key-authenticated request with 403.
+- Keys are never logged. Key use is audited.
+
+**Credential boundary:** the agent container still has `DATABASE_URL` and `REDIS_URL` today. The API key does not remove that. Removing direct database access from the container is a separate task and is needed for the full benefit of this design.
+
+**Rules that stay the same:**
+
 - Child agents start with `childAgentLimit = 0`. Nothing is inherited automatically.
-- At creation, the parent agent may grant the child a chosen subset of its own skills and connections. Rules: the parent can grant only what it currently holds; the child's plan entitlements still apply; the child's permission level cannot exceed the parent's; the grant is recorded like any other user-created grant.
+- At creation, the parent may grant the child a chosen subset of its own skills and connections. The parent can grant only what it holds; the child's plan entitlements still apply; the child's permission level cannot exceed the parent's; the grant is recorded like any user-created grant.
 - Children are created with `status = 'stopped'`. The user starts them. Creator agents cannot start children.
-
-The signed agent-runtime token and API guard were prototyped and reverted; they are not part of this plan.
 
 ## 7. Creator Access to Direct Children
 
@@ -97,15 +107,15 @@ Loop guard: messages between creator and child share one token bucket per pair (
 
 ## 8. Agent-Facing Tools
 
-`create_agent` (new, `apps/worker/src/tools/agent-creation.ts`) follows the `AgentTool` shape used in `bots.ts` and is registered in `tools/registry.ts`. It calls the shared create service from §5 with `actingAgentId` from the runtime session (§6).
+`create_agent` is added to the tool set in [agents/](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/tools) following the `AgentTool` shape in `bots.ts`. It calls `POST /agents` over HTTP with the agent's API key (§6).
 
-- Input: name, prompt, and the subset of creation fields the platform allows for agents. No creator, parent or depth fields.
+- Input: name, prompt, and the subset of creation fields the platform allows for agents, including the skills and connections the parent chooses to grant (§6). No creator, parent or depth fields: the API derives those from the key.
 - Output: new agent id, depth, and remaining child allowance.
 - Exposed only when `childAgentLimit > 0` and children count < `childAgentLimit`. No skill is required.
 
-Creator-access tools (§7) are exposed when the agent has at least one direct child.
+Creator-action tools (pause, stop, message) call the existing agent routes the same way and are exposed when the agent has at least one direct child.
 
-Child count > limit (after the user lowers the limit): `create_agent` is hidden, and existing children keep their access.
+If the API is down, slow or refuses the request, the tool returns a clear retryable error and the agent continues. Creation is treated as a deliberate action: it is allowed to be slow or refused.
 
 ## 9. Deletion
 
@@ -175,7 +185,7 @@ Children keep `creatorType` and `creatorId` as history. No bots are torn down, b
 - Concurrency (allowance): parallel `create_agent` calls at the allowance boundary create no more than the allowance.
 - Concurrency (plan total): parallel creations under different parents of the same user cannot exceed `maxAgents`.
 - Admin: plan total and ceiling are bypassed; depth and rate still apply.
-- Caller identity: the create and creator-action tools cannot set creator or parent from tool input. User-only API routes reject nothing new because agents never call them.
+- API key: a valid agent key identifies the agent and user; a revoked key (runtime stopped) is rejected; a key on a user-only route returns 403; creator and parent cannot be set from request input.
 - Ceiling: setting `childAgentLimit` above the plan ceiling is rejected.
 - Depth: an agent at depth `maxAgentDepth` cannot create children.
 - Creator access: direct children can be read, messaged, paused and stopped; grandchildren, memory and tools-as-child are refused.
@@ -190,10 +200,10 @@ Children keep `creatorType` and `creatorId` as history. No bots are torn down, b
 
 1. Migration and model fields (additive; no behavior change).
 2. Operator configs (`config/default.yaml`, validated in `packages/domain/src/config/schema.ts`) and plan entitlement `childAgentLimitCeiling` (`packages/domain/src/plan-entitlements.ts`, plans in `config/default.yaml`). Unset means `maxAgents - 1`, floored at 0, so no explicit values are needed for creation to stay off.
-3. Agent-scoped caller identity and route guards (§6).
+3. Per-agent API key: generation at runtime start, hash storage, revocation at stop, route guard (§6).
 4. Hierarchical agents page and deletion options (useful before creation is enabled).
 5. User API and UI to set `childAgentLimit`.
-6. `create_agent` tool and creator access to children.
+6. `create_agent` tool and creator-action tools calling the existing routes (§8).
 7. Enable on staging with a low plan ceiling; verify with §12.
 8. Enable in production after staging review.
 
