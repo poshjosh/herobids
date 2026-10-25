@@ -21,12 +21,13 @@ declare module 'fastify' {
      * Opts a route in to agent-key callers. Routes without it refuse agent keys (default-deny).
      * 'self' means the route may be called by an agent key only for its own agent (see requireSelfAgentOrUser).
      * 'child-create' means an agent key may create a child agent; the route derives the lineage from the key.
+     * 'creator' means an agent key may act on its direct children only (see requireDirectChildOfActingAgent).
      */
     agentAccess?: AgentAccessLevel;
   }
 }
 
-export type AgentAccessLevel = 'self' | 'child-create';
+export type AgentAccessLevel = 'self' | 'child-create' | 'creator';
 
 /** Runtime statuses whose API keys are revoked. */
 const INACTIVE_RUNTIME_STATUSES = ['stopped', 'crashed'];
@@ -190,6 +191,30 @@ export async function requireSelfAgentOrUser(request: FastifyRequest, reply: Fas
   if (params?.id !== request.actingAgentId) {
     return reply.status(403).send({ error: 'Agent keys may only act on their own agent' });
   }
+}
+
+/**
+ * Route preHandler for routes opened to agent keys with agentAccess 'creator': an agent key may only
+ * address an agent whose parent is the acting agent. Any other target, including a grandchild or an
+ * unrelated agent, gets 403. User callers pass through.
+ */
+export function requireDirectChildOfActingAgent(db: Database) {
+  return async function requireDirectChild(request: FastifyRequest, reply: FastifyReply) {
+    const actingAgentId = request.actingAgentId;
+    if (!actingAgentId) return;
+    const params = request.params as { id?: unknown } | undefined;
+    if (typeof params?.id !== 'string') {
+      return reply.status(403).send({ error: 'Agent keys may only act on their direct children' });
+    }
+    const [target] = await db
+      .select({ parentAgentId: agents.parentAgentId })
+      .from(agents)
+      .where(eq(agents.id, params.id))
+      .limit(1);
+    if (target?.parentAgentId !== actingAgentId) {
+      return reply.status(403).send({ error: 'Agent keys may only act on their direct children' });
+    }
+  };
 }
 
 /** Routes that do not require authentication */

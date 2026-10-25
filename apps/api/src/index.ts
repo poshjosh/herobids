@@ -384,7 +384,7 @@ await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.
 await sessionRoutes(app, db);
 await pushRoutes(app, { store: new PushSubscriptionRepository(db), publicConfig: resolvePushPublicConfig(appConfig.messaging.notifications) });
 await blueprintRoutes(app, db, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
-await agentInteractivityRoutes(app, db, redisClient, telegramChat, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga);
+await agentInteractivityRoutes(app, db, redisClient, telegramChat, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga, appConfig.agentCreation);
 await analyticsRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 await skillsRoutes(app, db, appConfig.plans, (() => {

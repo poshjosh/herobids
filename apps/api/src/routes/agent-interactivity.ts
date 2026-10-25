@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { requireUserCaller } from '../plugins/auth.js';
+import { requireDirectChildOfActingAgent, requireUserCaller } from '../plugins/auth.js';
+import { consumeTokenBucketToken } from '../services/token-bucket.js';
 import { eq, and, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
@@ -13,8 +14,8 @@ import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
-import type { AgentApprovalsConfig, AuthConfig, ChatInboundAdapter, ChatWebhookRequest, ModelDefaults, PlanAgentsEntitlements, PlansConfig, ResolvedTelegramChatConfig, UnifiedAgentConfig } from '@herobids/domain';
-import { AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import type { AgentApprovalsConfig, AgentCreationConfig, AuthConfig, ChatInboundAdapter, ChatWebhookRequest, ModelDefaults, PlanAgentsEntitlements, PlansConfig, ResolvedTelegramChatConfig, UnifiedAgentConfig } from '@herobids/domain';
+import { AgentCreationConfigSchema, AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import {
@@ -109,6 +110,7 @@ export async function agentInteractivityRoutes(
   llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
+  agentCreation: AgentCreationConfig = AgentCreationConfigSchema.parse({}),
 ): Promise<void> {
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
@@ -347,20 +349,27 @@ export async function agentInteractivityRoutes(
     return reply.send(decorateAgentResponse({ ...updated!, skillIds }));
   });
 
-  // POST /agents/:id/message — deliver user message to running agent (rate-limited 10/min)
-  app.post<{ Params: { id: string }; Body: unknown }>('/agents/:id/message', async (request, reply) => {
+  // POST /agents/:id/message — deliver a message to a running agent.
+  // A user is rate-limited to 10/min across their agents. A creator agent key may message a direct child,
+  // limited per creator-child pair (creatorMessageRatePerMinute, 001-agent-creating-agents §7).
+  app.post<{ Params: { id: string }; Body: unknown }>('/agents/:id/message', {
+    config: { agentAccess: 'creator' },
+    preHandler: requireDirectChildOfActingAgent(db),
+  }, async (request, reply) => {
     const { id } = request.params;
     const parsed = SendMessageSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    // Rate limit: 10 messages per user per minute
-    const rateLimitKey = `ratelimit:agent:message:${request.userId}`;
-    const count = await redisClient.incr(rateLimitKey);
-    if (count === 1) await redisClient.expire(rateLimitKey, 60);
-    if (count > 10) {
-      return reply.status(429).send({ error: 'rate_limited', message: 'Maximum 10 messages per minute' });
+    if (!request.actingAgentId) {
+      // Rate limit: 10 messages per user per minute
+      const rateLimitKey = `ratelimit:agent:message:${request.userId}`;
+      const count = await redisClient.incr(rateLimitKey);
+      if (count === 1) await redisClient.expire(rateLimitKey, 60);
+      if (count > 10) {
+        return reply.status(429).send({ error: 'rate_limited', message: 'Maximum 10 messages per minute' });
+      }
     }
 
     const [agent] = await db.select({ id: agents.id, userId: agents.userId, status: agents.status })
@@ -371,21 +380,42 @@ export async function agentInteractivityRoutes(
       return reply.status(409).send({ error: 'agent_not_running', message: 'Agent is not running' });
     }
 
+    // Checked after the running-state gate so a message that cannot be delivered does not spend a token.
+    if (request.actingAgentId) {
+      const pairBucket = await consumeTokenBucketToken(redisClient, {
+        key: `ratelimit:creator-message:${request.actingAgentId}:${id}`,
+        capacity: agentCreation.creatorMessageRatePerMinute,
+        refillPerMinute: agentCreation.creatorMessageRatePerMinute,
+      });
+      if (!pairBucket.ok) {
+        request.log.warn({ err: pairBucket.error }, 'creator message rate limiter unavailable');
+        return reply.status(503).send({ error: 'rate_limiter_unavailable', message: 'Message delivery is temporarily unavailable. Retry shortly.' });
+      }
+      if (!pairBucket.data) {
+        return reply.status(429).send({ error: 'rate_limited', message: 'Creator message limit reached for this agent. Retry later.' });
+      }
+    }
+
     // The envelope messageId doubles as the stored row id so the runtime's tick events can name this message.
     const envelopeMessageId = crypto.randomUUID();
 
-    // Record the user's message so the conversation still shows it after reload.
-    await new AgentRepository(db).insertOutboundMessage({ id: envelopeMessageId, agentId: id, authoredBy: 'user', body: parsed.data.message });
+    // A creator agent's message is stored under its own authorship, never as the user's.
+    const sender: { authoredBy: string; initiatorType: 'agent' | 'user'; initiatorId: string; type: string } = request.actingAgentId
+      ? { authoredBy: `agent:${request.actingAgentId}`, initiatorType: 'agent', initiatorId: request.actingAgentId, type: 'agent.user.message' }
+      : { authoredBy: 'user', initiatorType: 'user', initiatorId: request.userId, type: 'user.message' };
+
+    // Record the message so the conversation still shows it after reload.
+    await new AgentRepository(db).insertOutboundMessage({ id: envelopeMessageId, agentId: id, authoredBy: sender.authoredBy, body: parsed.data.message });
 
     // Publish to agent:outbound:{agentId} — the platform→agent channel
     const envelope = {
       schemaVersion: 'v1',
       messageId: envelopeMessageId,
       correlationId: crypto.randomUUID(),
-      initiatorType: 'user',
-      initiatorId: request.userId,
+      initiatorType: sender.initiatorType,
+      initiatorId: sender.initiatorId,
       agentId: id,
-      type: 'user.message',
+      type: sender.type,
       createdAt: new Date().toISOString(),
       payload: { message: parsed.data.message },
     };

@@ -195,6 +195,7 @@ export async function pauseAgent(
   agentId: string,
   userId: string,
   reason?: string,
+  requestedBy: string = 'user',
 ): Promise<Result<{ status: string }, AgentLifecycleError>> {
   try {
     const result = await db.transaction(async (tx) => {
@@ -218,7 +219,7 @@ export async function pauseAgent(
           status: 'paused',
           pauseState: {
             reason: reason || 'user_requested',
-            requestedBy: 'user',
+            requestedBy,
             pausedAt: new Date().toISOString(),
           },
           updatedAt: new Date(),

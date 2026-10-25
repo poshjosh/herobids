@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { requireUserCaller } from '../plugins/auth.js';
+import { requireDirectChildOfActingAgent, requireUserCaller } from '../plugins/auth.js';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { TradingProfileReconciliationOutboxRepository, setTelegramChatAddress, type Database, type DatabaseTransaction } from '@herobids/db';
@@ -2215,15 +2215,19 @@ export async function agentRoutes(
 
   // --- Lifecycle ---
 
-  // Pause agent
-  app.post<{ Params: { id: string } }>('/agents/:id/pause', async (request, reply) => {
+  // Pause agent. A creator agent key may pause its direct children; pauseState records who asked.
+  app.post<{ Params: { id: string } }>('/agents/:id/pause', {
+    config: { agentAccess: 'creator' },
+    preHandler: requireDirectChildOfActingAgent(db),
+  }, async (request, reply) => {
     const { id } = request.params;
     const parsed = PauseAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const result = await pauseAgent(db, id, request.userId, parsed.data?.reason);
+    const requestedBy = request.actingAgentId ? `agent:${request.actingAgentId}` : 'user';
+    const result = await pauseAgent(db, id, request.userId, parsed.data?.reason, requestedBy);
     if (!result.ok) {
       if (result.error.code === 'agent.not_found') {
         return reply.status(404).send({ error: 'not_found' });
@@ -2493,7 +2497,10 @@ export async function agentRoutes(
   // Stop agent (active/paused/starting → stopped).
   // Marks the agent and its active sessions as stopped. The worker's health monitor
   // cleans up any in-memory runtime handles on the next check cycle.
-  app.post<{ Params: { id: string } }>('/agents/:id/stop', async (request, reply) => {
+  app.post<{ Params: { id: string } }>('/agents/:id/stop', {
+    config: { agentAccess: 'creator' },
+    preHandler: requireDirectChildOfActingAgent(db),
+  }, async (request, reply) => {
     const { id } = request.params;
 
     const result = await stopAgent(db, id, request.userId, tradertonReadClient, tradertonReadTimeoutMs);
@@ -2505,6 +2512,39 @@ export async function agentRoutes(
     }
 
     return reply.send({ status: result.data.status });
+  });
+
+  // Status of an agent a creator agent may read (direct children only). Selects an explicit column
+  // list so the prompt, config, skills and API key hash never leave the server.
+  app.get<{ Params: { id: string } }>('/agents/:id/status', {
+    config: { agentAccess: 'creator' },
+    preHandler: requireDirectChildOfActingAgent(db),
+  }, async (request, reply) => {
+    const { id } = request.params;
+    const [agent] = await db.select({
+      id: agents.id,
+      name: agents.name,
+      status: agents.status,
+      depth: agents.depth,
+      parentAgentId: agents.parentAgentId,
+      childAgentLimit: agents.childAgentLimit,
+    }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    // Same rule as GET /agents/:id: a stopped or crashed agent has no live session.
+    const isTerminalState = agent.status === 'stopped' || agent.status === 'crashed';
+    const [session] = isTerminalState ? [] : await db.select({ status: agentRuntimeSessions.status }).from(agentRuntimeSessions)
+      .where(and(
+        eq(agentRuntimeSessions.agentId, id),
+        inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
+      ))
+      .orderBy(desc(agentRuntimeSessions.startedAt))
+      .limit(1);
+
+    return reply.send({ ...agent, runtimeStatus: session?.status ?? null });
   });
 
   // Get agent outbound messages (agent-authored + platform safety alerts).
