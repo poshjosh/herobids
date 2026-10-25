@@ -209,7 +209,7 @@ pnpm lint
 pnpm test
 ```
 
-**Baselines to compare against.** The owner's numbers are `pnpm test`: 362 files passed, 28 skipped; 6829 passed, 358 skipped. The most recent record in 900 (2026-10-24, W and E) says 362 files passed, 28 skipped; 6816 passed, 352 skipped. The two differ on test counts. M0 records the real figure before any change, and every later gate compares to it.
+**Baselines to compare against.** Use the C0 baseline record in [900](./900-implementation-plan.md) ("C0 baseline record (2026-10-25)"). It supersedes the earlier figures. Every later gate compares to it.
 
 ## 7. Risks
 

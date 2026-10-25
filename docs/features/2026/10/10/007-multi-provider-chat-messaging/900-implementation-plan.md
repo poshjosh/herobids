@@ -149,6 +149,15 @@ The pure refactor. Behaviour-identical to today; this is where the risk is.
   The prior full-suite A2 blocker remains outside this repair; no full-suite
   rerun was performed.
 
+### C0 baseline record (2026-10-25)
+
+Authoritative baseline for every later gate (DEC-25). Measured on `f0f5c2ad` with a clean working tree, before any cutover change.
+
+- `pnpm test`: 413 files (1 failed, 376 passed, 36 skipped); 7457 tests (2 failed, 6991 passed, 464 skipped).
+- The 2 failures are pre-existing and unrelated to messaging: `packages/domain/src/config/schema.test.ts`, `AppConfigSchema — agentCreation` ("defaults the agent-creation limits to 10 / 10 / 6" and "accepts zero and positive operator overrides"). The tests' expected objects lack `platformApiTimeoutMs`, which commit `4089b51f` added to the schema with a default. The tests are stale. Later gates treat these 2 as the known baseline failures until they are fixed.
+- Type checks: `npx tsc -p apps/api/tsconfig.json --noEmit`, `apps/worker`, `packages/db`: all exit 0.
+- Earlier figures (362 files passed, 28 skipped; 6816 or 6829 passed) are superseded. They counted differently and are not comparable.
+
 ### P0 baseline record (2026-10-24)
 
 - Command: `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert`

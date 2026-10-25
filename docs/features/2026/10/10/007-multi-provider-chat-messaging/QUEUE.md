@@ -6,7 +6,7 @@ Scope: the messaging MVP and the agent-to-agent MVP (DEC-40 to DEC-46). Deferred
 
 | # | ID | Item | Depends on | Status | Spec |
 | --- | --- | --- | --- | --- | --- |
-| 1 | C0 | Baseline: `pnpm test` counts recorded | none | ready | [C0](./tasks/C0-baseline.md) |
+| 1 | C0 | Baseline: `pnpm test` counts recorded | none | done (2026-10-25) | [C0](./tasks/C0-baseline.md) |
 | 2 | C1 | Cutover to `chat_addresses` and `chat_suppressions`; drop the four legacy columns (DEC-01 to DEC-12) | C0 | ready | [C1](./tasks/C1-cutover.md) |
 | 3 | CH2W | Two-way agent chat (002): conversation store, write path, owner view (DEC-31, DEC-32) | C1 | ready | [CH2W](./tasks/CH2W-two-way-chat.md) |
 | 4 | A2A-A | Same-user check: both agents belong to the same user. No grant table, no screen (DEC-40) | none (may run early) | ready | [A2A-A](./tasks/A2A-A-same-user-check.md) |
@@ -36,3 +36,12 @@ Scope: the messaging MVP and the agent-to-agent MVP (DEC-40 to DEC-46). Deferred
 - A2A-A can run at any time. It has no dependencies.
 - CH2W cannot start until C1 is ticked. A2A-B cannot start until CH2W and A2A-A are ticked.
 - The chat-binding gap (C2 deferred) is accepted for the MVP. It does not block agent-to-agent messaging.
+
+## Outstanding Issues
+
+Non-blocking issues from code reviews, grouped by item.
+
+### C0
+- (medium) `pnpm test` baseline has 2 known failures in `packages/domain/src/config/schema.test.ts` (stale `agentCreation` expectations, missing `platformApiTimeoutMs`). Later gates compare against the baseline; fix before final verification.
+- (low) C0 added a new "C0 baseline record" section in 900 instead of editing "P0 baseline record".
+- (low) 095 Q4 still says to use the M0 re-run as baseline; mark resolved by DEC-25 / C0.
