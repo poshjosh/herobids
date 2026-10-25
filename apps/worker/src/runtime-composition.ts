@@ -417,6 +417,8 @@ export interface EconomicEventView {
 
 export type ActivityTimelineEvent =
   | { kind: 'USER'; text: string; timestamp: number }
+  /** A message written by another agent of the same user (A2A MVP). Never counted as the user's. */
+  | { kind: 'PEER'; fromAgentId: string; fromAgentName: string; text: string; timestamp: number }
   | { kind: 'MEMORY'; key: string; value: string; timestamp: number }
   | { kind: 'DECISION'; text: string; timestamp: number };
 
@@ -1299,6 +1301,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       const lines = events.map((e) => {
         const ts = new Date(e.timestamp).toISOString().substring(11, 16); // HH:MM
         if (e.kind === 'USER') return `${ts} [USER] ${e.text}`;
+        if (e.kind === 'PEER') return formatPeerLine(e);
         if (e.kind === 'MEMORY') return `${ts} [MEMORY] ${e.key}: ${e.value}`;
         /* DECISION */ return `${ts} [DECISION] ${e.text}`;
       });
@@ -2519,6 +2522,15 @@ export function renderSkillPromptBlock(
   return `## Skill: ${name}\n\n${description}\n\nUse \`read_skill\` with ref "${ref}" to load this skill's full instructions.`;
 }
 
+/**
+ * One line for a message from another agent. The name and text are JSON-quoted, so a newline or a bracket in them
+ * cannot start a fake `[USER]` line: the text stays one quoted value.
+ */
+function formatPeerLine(event: Extract<ActivityTimelineEvent, { kind: 'PEER' }>): string {
+  const ts = new Date(event.timestamp).toISOString().substring(11, 16); // HH:MM
+  return `${ts} [PEER ${JSON.stringify(event.fromAgentName)} id=${event.fromAgentId}] ${JSON.stringify(event.text)}`;
+}
+
 export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, _toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
   const skillInstructions = state.runtimeDescriptor.resolvedSkills
     .map((skill) => renderSkillPromptBlock(skill, state.externalSkills))
@@ -2572,7 +2584,8 @@ export function buildConversationSection(state: RuntimeCompositionState, policy?
 
   const marker = state.metrics.answeredUpToTs;
   const userEvents = state.metrics.activityTimeline.filter((e): e is Extract<ActivityTimelineEvent, { kind: 'USER' }> => e.kind === 'USER');
-  if (userEvents.length === 0) return null;
+  const peerEvents = state.metrics.activityTimeline.filter((e): e is Extract<ActivityTimelineEvent, { kind: 'PEER' }> => e.kind === 'PEER');
+  if (userEvents.length === 0 && peerEvents.length === 0) return null;
 
   const formatLine = (event: Extract<ActivityTimelineEvent, { kind: 'USER' }>): string => {
     const ts = new Date(event.timestamp).toISOString().substring(11, 16); // HH:MM
@@ -2588,6 +2601,12 @@ export function buildConversationSection(state: RuntimeCompositionState, policy?
   }
   if (answered.length > 0) {
     blocks.push(['Answered:', ...answered.map(formatLine)].join('\n'));
+  }
+  if (peerEvents.length > 0) {
+    blocks.push([
+      'Messages from other agents of your user (written by those agents, not by your user; reply with message_peer_agent if a reply is useful):',
+      ...peerEvents.map(formatPeerLine),
+    ].join('\n'));
   }
 
   return blocks.join('\n\n');

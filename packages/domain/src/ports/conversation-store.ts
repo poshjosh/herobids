@@ -6,6 +6,7 @@ import type {
   ConversationError,
   ConversationMessage,
   ConversationSenderType,
+  PeerThreadSummary,
   RecordedConversationMessage,
   UserAgentChannel,
 } from '../conversations/conversation.js';
@@ -30,6 +31,23 @@ export interface RecordUserAgentMessageInput {
   ownerUserId: string;
   agentId: string;
   message: NewConversationMessage;
+}
+
+export interface RecordPeerConversationMessageInput {
+  /** `peerConversationId(agentIds)`. */
+  conversationId: string;
+  /** `peerKey(agentIds)`. */
+  peerKey: string;
+  ownerUserId: string;
+  /** The two agents of the pair, in any order. */
+  agentIds: [string, string];
+  message: NewConversationMessage;
+}
+
+export interface ListPeerConversationsInput {
+  ownerUserId: string;
+  agentId: string;
+  limit: number;
 }
 
 export interface MarkConversationDeliveryInput {
@@ -91,6 +109,17 @@ export interface ConversationStore {
    */
   recordUserAgentMessage(input: RecordUserAgentMessageInput): Promise<Result<RecordedConversationMessage, ConversationError>>;
   /**
+   * Creates the agent-agent conversation (one per pair, by `peer_key`) and its two agent participants on first
+   * use, then inserts the message and moves `last_message_at`. Same id and owner rules as `recordUserAgentMessage`.
+   * The caller must verify that both agents belong to `ownerUserId`.
+   */
+  recordPeerMessage(input: RecordPeerConversationMessageInput): Promise<Result<RecordedConversationMessage, ConversationError>>;
+  /**
+   * The owner's peer threads that include `agentId`, newest message first, in two queries (the conversations, then
+   * the participants of all of them), whatever the page size.
+   */
+  listPeerThreads(input: ListPeerConversationsInput): Promise<Result<PeerThreadSummary[], ConversationError>>;
+  /**
    * Moves a `queued` message to `sent`, `failed` or `refused` in one conditional update; supplied fields are
    * merged, omitted ones are kept. A message in any other state is refused with
    * `conversation.invalid_delivery_transition`; an unknown id with `conversation.message_not_found`.
@@ -108,6 +137,9 @@ export interface ConversationStore {
   requeueUndeliveredMessage(input: RequeueUndeliveredMessageInput): Promise<Result<ConversationMessage | null, ConversationError>>;
   /** The sender's own message by id in the owner's conversation; null when there is none (another sender's or owner's rows are not read). */
   findMessage(input: FindConversationMessageInput): Promise<Result<ConversationMessage | null, ConversationError>>;
-  /** Newest `limit` rows before the (created_at, id) cursor, in ascending order, in one query. Empty when the owner has no such thread. */
+  /**
+   * Newest `limit` rows before the (created_at, id) cursor, in ascending order, in one query. Empty when the owner has
+   * no such thread. Reads any conversation by id, so it serves peer threads too.
+   */
   listUserAgentThread(input: ListUserAgentThreadInput): Promise<Result<ConversationMessage[], ConversationError>>;
 }

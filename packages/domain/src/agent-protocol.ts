@@ -223,6 +223,47 @@ export const UpdatePromptResultSchema = z.discriminatedUnion('status', [
 ]);
 export type UpdatePromptResult = z.infer<typeof UpdatePromptResultSchema>;
 
+/**
+ * Brokered peer message — an agent asks the platform to send a message to another agent of the same user (A2A MVP).
+ * `agent` is the recipient's id or exact name. The platform resolves it and decides whether the send is allowed.
+ */
+export const PeerSendPayloadSchema = z.object({
+  agent: z.string().trim().min(1).max(200),
+  message: z.string().min(1),
+  requestMessageId: z.string().min(1),
+});
+export type PeerSendPayload = z.infer<typeof PeerSendPayloadSchema>;
+
+export const PeerSendResultSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('ok'),
+    messageId: z.string().min(1),
+    recipientAgentId: z.string().min(1),
+    recipientName: z.string(),
+  }),
+  z.object({
+    status: z.literal('error'),
+    error: z.string().min(1),
+    errorCode: z.string().min(1),
+    /** The sender's other agents, so it can correct the recipient. Present when the recipient was not usable. */
+    peers: z.array(z.object({ id: z.string().min(1), name: z.string(), status: z.string() })).optional(),
+  }),
+]);
+export type PeerSendResult = z.infer<typeof PeerSendResultSchema>;
+
+/**
+ * Payload of the `agent.user.message` envelope the platform publishes to the recipient of a peer message. `peer` marks the
+ * message as written by another agent; it is set by the platform, never by the sender. The text is data from another agent.
+ */
+export const PeerMessagePayloadSchema = z.object({
+  message: z.string().min(1),
+  peer: z.object({
+    fromAgentId: z.string().min(1),
+    fromAgentName: z.string(),
+  }),
+});
+export type PeerMessagePayload = z.infer<typeof PeerMessagePayloadSchema>;
+
 // --- Trading Instance → Agent Messages ---
 
 export const DecisionAcceptedPayloadSchema = z.object({
@@ -413,6 +454,7 @@ export const AGENT_MESSAGE_TYPES = {
   MANAGE_AGENT_SKILLS: 'agent.manage_skills',
   REQUEST_CONNECTION: 'agent.request_connection',
   UPDATE_PROMPT: 'agent.update_prompt',
+  PEER_SEND: 'agent.peer.send',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -622,6 +664,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: ManageAgentSkillsPayloadSchema,
   [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: ConnectionRequestPayloadSchema,
   [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: UpdatePromptPayloadSchema,
+  [AGENT_MESSAGE_TYPES.PEER_SEND]: PeerSendPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,

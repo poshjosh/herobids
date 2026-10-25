@@ -122,6 +122,13 @@ export function SettingsPage() {
     },
   });
 
+  const peerPauseMutation = useMutation({
+    mutationFn: (paused: boolean) => authApi.updateMe({ peerMessagingPaused: paused }),
+    onSuccess: (updated) => {
+      qc.setQueryData(['me'], updated);
+    },
+  });
+
   const localeMutation = useMutation({
     mutationKey: ['locale'],
     mutationFn: (nextLocale: SupportedLocale) => authApi.updateMe({ preferredLocale: nextLocale }),
@@ -460,6 +467,33 @@ export function SettingsPage() {
               </Button>
             </div>
           </form>
+        </Card>
+
+        <Card>
+          <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
+            {intl.formatMessage({ id: 'settings.peerMessaging.title' })}
+          </h3>
+          {peerPauseMutation.isError && (
+            <ErrorBanner message={localizeApiError(intl, peerPauseMutation.error, 'common.errorTitle')} />
+          )}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            <input
+              type="checkbox"
+              id="peer-messaging-paused-toggle"
+              checked={meQuery.data?.peerMessagingPaused === true}
+              disabled={!meQuery.isSuccess || peerPauseMutation.isPending}
+              onChange={(e) => peerPauseMutation.mutate(e.target.checked)}
+              style={{ marginTop: '2px', flexShrink: 0 }}
+            />
+            <div>
+              <label htmlFor="peer-messaging-paused-toggle" style={{ fontSize: '0.875rem', color: 'var(--color-text)', cursor: 'pointer' }}>
+                {intl.formatMessage({ id: 'settings.peerMessaging.label' })}
+              </label>
+              <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                {intl.formatMessage({ id: 'settings.peerMessaging.help' })}
+              </p>
+            </div>
+          </div>
         </Card>
 
         <PushOptIn onChange={(enabled) => pushChoiceMutation.mutate(enabled)} />

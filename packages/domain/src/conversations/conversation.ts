@@ -80,3 +80,21 @@ export interface ConversationLimits {
 export function userAgentConversationId(agentId: string): string {
   return `user_agent:${agentId}`;
 }
+
+/** The two agent ids of a peer thread, sorted and joined with `:`. One thread per pair, whichever agent writes first. */
+export function peerKey(agentA: string, agentB: string): string {
+  return [agentA, agentB].sort().join(':');
+}
+
+/** One agent-agent conversation per agent pair. The id is derived, so concurrent first writes cannot create two. */
+export function peerConversationId(agentA: string, agentB: string): string {
+  return `agent_agent:${peerKey(agentA, agentB)}`;
+}
+
+/** One row of the owner's list of peer threads for an agent. */
+export interface PeerThreadSummary {
+  conversationId: string;
+  /** The participant of the thread that is not the agent the list was asked for. */
+  peerAgentId: string;
+  lastMessageAt: Date | null;
+}

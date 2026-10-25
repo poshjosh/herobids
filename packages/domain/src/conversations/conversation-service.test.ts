@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { err, ok } from '../result.js';
-import type { ConversationStore, RecordUserAgentMessageInput } from '../ports/conversation-store.js';
-import { CONVERSATION_ERROR_CODES, userAgentConversationId, type ConversationMessage } from './conversation.js';
+import type { ConversationStore, RecordPeerConversationMessageInput, RecordUserAgentMessageInput } from '../ports/conversation-store.js';
+import { CONVERSATION_ERROR_CODES, peerConversationId, peerKey, userAgentConversationId, type ConversationMessage, type PeerThreadSummary } from './conversation.js';
 import { ConversationService } from './conversation-service.js';
 
 const NOW = new Date('2026-10-25T10:00:00.000Z');
@@ -30,6 +30,9 @@ function setup() {
   const store = {
     recordUserAgentMessage: vi.fn(async (input: RecordUserAgentMessageInput) =>
       ok({ message: storedMessage({ ...input.message, conversationId: input.conversationId, deliveryDetail: null, providerMessageId: null }), created: true })),
+    recordPeerMessage: vi.fn(async (input: RecordPeerConversationMessageInput) =>
+      ok({ message: storedMessage({ ...input.message, conversationId: input.conversationId, deliveryDetail: input.message.deliveryDetail ?? null, providerMessageId: null }), created: true })),
+    listPeerThreads: vi.fn(async () => ok<PeerThreadSummary[]>([])),
     markDelivery: vi.fn(async () => ok(storedMessage({ deliveryStatus: 'sent' }))),
     requeueUndeliveredMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage())),
     findMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage())),
@@ -405,5 +408,109 @@ describe('ConversationService.needsRepublish', () => {
 
   it('isStuckQueued is false for a failed message', () => {
     expect(service.isStuckQueued({ deliveryStatus: 'failed', queuedAt: new Date(0) })).toBe(false);
+  });
+});
+
+describe('peer conversation ids', () => {
+  it('names one thread per pair, whichever agent writes first', () => {
+    expect(peerKey('b', 'a')).toBe('a:b');
+    expect(peerConversationId('b', 'a')).toBe(peerConversationId('a', 'b'));
+    expect(peerConversationId('a', 'b')).not.toBe(userAgentConversationId('a'));
+  });
+});
+
+describe('ConversationService.recordPeerMessage', () => {
+  it('stores the message as sent by the sending agent on the internal channel, in the pair thread', async () => {
+    const { store, service } = setup();
+
+    const result = await service.recordPeerMessage({ id: 'env-1', ownerUserId: 'u1', fromAgentId: 'b', toAgentId: 'a', body: 'hello' });
+
+    expect(result.ok).toBe(true);
+    expect(store.recordPeerMessage).toHaveBeenCalledWith({
+      conversationId: 'agent_agent:a:b',
+      peerKey: 'a:b',
+      ownerUserId: 'u1',
+      agentIds: ['b', 'a'],
+      message: {
+        id: 'env-1',
+        senderType: 'agent',
+        senderId: 'b',
+        channel: 'internal',
+        subject: null,
+        body: 'hello',
+        messageClass: null,
+        deliveryStatus: 'queued',
+        createdAt: NOW,
+      },
+    });
+  });
+
+  it('records a refused message with its reason code', async () => {
+    const { store, service } = setup();
+
+    await service.recordPeerMessage({ ownerUserId: 'u1', fromAgentId: 'a', toAgentId: 'b', body: 'hello', deliveryStatus: 'refused', deliveryDetail: 'peer.rate_limited' });
+
+    const message = store.recordPeerMessage.mock.calls[0]?.[0].message;
+    expect(message).toMatchObject({ id: 'generated-1', deliveryStatus: 'refused', deliveryDetail: 'peer.rate_limited' });
+  });
+
+  it('refuses a message to oneself, an empty body, a blank id and a status a new peer row cannot have', async () => {
+    const { store, service } = setup();
+    const base = { ownerUserId: 'u1', fromAgentId: 'a', toAgentId: 'b', body: 'hello' };
+
+    const results = await Promise.all([
+      service.recordPeerMessage({ ...base, toAgentId: 'a' }),
+      service.recordPeerMessage({ ...base, body: '  ' }),
+      service.recordPeerMessage({ ...base, id: ' ' }),
+      service.recordPeerMessage({ ...base, deliveryStatus: 'sent' as 'queued' }),
+      service.recordPeerMessage({ ...base, ownerUserId: '' }),
+    ]);
+
+    for (const result of results) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe(CONVERSATION_ERROR_CODES.invalidMessage);
+    }
+    expect(store.recordPeerMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationService peer thread reads', () => {
+  it('lists the peer threads of an agent in one store call, capped at the maximum page size', async () => {
+    const { store, service } = setup();
+
+    await service.listPeerThreads({ ownerUserId: 'u1', agentId: 'a', limit: 500 });
+    await service.listPeerThreads({ ownerUserId: 'u1', agentId: 'a' });
+
+    expect(store.listPeerThreads).toHaveBeenNthCalledWith(1, { ownerUserId: 'u1', agentId: 'a', limit: LIMITS.threadMaxPageSize });
+    expect(store.listPeerThreads).toHaveBeenNthCalledWith(2, { ownerUserId: 'u1', agentId: 'a', limit: LIMITS.threadDefaultPageSize });
+  });
+
+  it('refuses a non-positive limit', async () => {
+    const { store, service } = setup();
+
+    const result = await service.listPeerThreads({ ownerUserId: 'u1', agentId: 'a', limit: 0 });
+
+    expect(result.ok).toBe(false);
+    expect(store.listPeerThreads).not.toHaveBeenCalled();
+  });
+
+  it('reads the thread of a pair from the same conversation whichever agent asks', async () => {
+    const { store, service } = setup();
+
+    await service.listPeerThread({ ownerUserId: 'u1', agentId: 'b', peerAgentId: 'a', limit: 3 });
+    await service.listPeerThread({ ownerUserId: 'u1', agentId: 'a', peerAgentId: 'b' });
+
+    expect(store.listUserAgentThread).toHaveBeenNthCalledWith(1, { conversationId: 'agent_agent:a:b', ownerUserId: 'u1', limit: 3, before: null, beforeId: null });
+    expect(store.listUserAgentThread).toHaveBeenNthCalledWith(2, { conversationId: 'agent_agent:a:b', ownerUserId: 'u1', limit: LIMITS.threadDefaultPageSize, before: null, beforeId: null });
+  });
+
+  it('refuses a cursor with only one half', async () => {
+    const { store, service } = setup();
+
+    const result = await service.listPeerThread({ ownerUserId: 'u1', agentId: 'a', peerAgentId: 'b', before: NOW });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe(CONVERSATION_ERROR_CODES.invalidCursor);
+    expect(store.listUserAgentThread).not.toHaveBeenCalled();
   });
 });

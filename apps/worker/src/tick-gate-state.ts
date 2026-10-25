@@ -1,3 +1,5 @@
+import { PeerMessagePayloadSchema } from '@herobids/domain';
+import type { ActivityTimelineEvent } from './runtime-composition.js';
 import type { InstrumentHashEntry, TickGateState } from './tick-gates.js';
 import { computePriceBucket, computePnlBucket } from './tick-gates.js';
 
@@ -45,6 +47,30 @@ export function extractUserMessageText(message: Record<string, unknown>): string
     return (message['content'] as string).trim();
   }
   return '';
+}
+
+/**
+ * The sending agent of a peer message, or null for any other user-message envelope. A peer message is an
+ * `agent.user.message` whose initiator is an agent and whose payload carries `peer` (set by the platform when it
+ * publishes the message). A creator agent's message to its child has no `peer`, so it is not tagged.
+ */
+export function extractPeerOrigin(message: Record<string, unknown>): { agentId: string; agentName: string } | null {
+  if (message['type'] !== AGENT_USER_MESSAGE_TYPE || message['initiatorType'] !== 'agent') return null;
+  const payload = PeerMessagePayloadSchema.safeParse(message['payload']);
+  return payload.success ? { agentId: payload.data.peer.fromAgentId, agentName: payload.data.peer.fromAgentName } : null;
+}
+
+/**
+ * The activity-timeline entry for a user-message envelope, or null when it has no text. A message written by another
+ * agent becomes a `PEER` entry, so it is never shown, or counted as answered, as the user's.
+ */
+export function timelineEventForUserMessage(message: Record<string, unknown>, timestamp: number): ActivityTimelineEvent | null {
+  const text = extractUserMessageText(message);
+  if (text.length === 0) return null;
+  const peer = extractPeerOrigin(message);
+  return peer
+    ? { kind: 'PEER', fromAgentId: peer.agentId, fromAgentName: peer.agentName, text, timestamp }
+    : { kind: 'USER', text, timestamp };
 }
 
 export interface BuildTickGateStateParams {

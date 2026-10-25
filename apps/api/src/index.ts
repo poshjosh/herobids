@@ -17,6 +17,7 @@ import { sessionRoutes } from './routes/sessions.js';
 import { blueprintRoutes } from './routes/blueprints.js';
 import { BlueprintExecutionCapabilityAdapter } from './services/blueprint-execution-capability-adapter.js';
 import { agentInteractivityRoutes, telegramWebhookHandler } from './routes/agent-interactivity.js';
+import { peerThreadRoutes } from './routes/peer-threads.js';
 import { createConversationRouteDeps } from './routes/conversation-http.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { aiRoutes } from './routes/ai.js';
@@ -389,6 +390,7 @@ await sessionRoutes(app, db);
 await pushRoutes(app, { store: new PushSubscriptionRepository(db), publicConfig: resolvePushPublicConfig(appConfig.messaging.notifications) });
 await blueprintRoutes(app, db, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
 await agentInteractivityRoutes(app, db, redisClient, telegramChat, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga, appConfig.agentCreation, conversationDeps);
+await peerThreadRoutes(app, db, conversationDeps);
 await analyticsRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 await skillsRoutes(app, db, appConfig.plans, (() => {

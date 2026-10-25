@@ -29,8 +29,9 @@ import {
   resolvePlanSkillEntitlements,
   AuthConfigSchema,
   ConnectionRequestsConfigSchema,
+  PeerSendPayloadSchema,
 } from '@herobids/domain';
-import type { ConversationService, NotificationClass } from '@herobids/domain';
+import type { ConversationService, NotificationClass, PeerMessagingService, PeerSendResult } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
 import type { NotificationDispatchEvent, NotificationDispatchOutcome } from '../notifications/notification-dispatcher.js';
 import type { UpdatePromptPayload, UpdatePromptResult, Result, DomainError } from '@herobids/domain';
@@ -111,6 +112,7 @@ export class AgentMessageBroker {
     private readonly operatorNotifier?: OperatorNotifier,
     private readonly notifications?: AgentMessageNotifier,
     private readonly conversations?: Pick<ConversationService, 'recordAgentMessage' | 'markDelivery'>,
+    private readonly peerMessaging?: Pick<PeerMessagingService, 'send'>,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -223,6 +225,7 @@ export class AgentMessageBroker {
       [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
       [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: 'request_connection',
       [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: 'update_my_prompt',
+      [AGENT_MESSAGE_TYPES.PEER_SEND]: 'message_peer_agent',
     };
     const capabilityName = capabilityByType[envelope.type];
     // Saved so recordEnd can be called in the finally block on every exit path.
@@ -424,6 +427,10 @@ export class AgentMessageBroker {
             envelope,
             envelope.payload as unknown as ConnectionRequestPayload,
           );
+          break;
+
+        case AGENT_MESSAGE_TYPES.PEER_SEND:
+          await this.handlePeerSend(effectiveAgentId, envelope);
           break;
 
         default:
@@ -1152,6 +1159,46 @@ export class AgentMessageBroker {
     }
   }
 
+  /**
+   * Handle a brokered peer message (A2A MVP). The sender is the envelope's agent; the recipient is whatever the payload names,
+   * resolved and checked by PeerMessagingService (same user, stop switch, rate limit). The message text is data and is only
+   * stored and forwarded. Always replies, so the tool does not wait for its timeout; a missing service refuses (fail closed).
+   * The envelope id becomes the thread row id, so a redelivered envelope does not send twice.
+   */
+  private async handlePeerSend(agentId: string, envelope: MessageEnvelope): Promise<void> {
+    // Already validated against this schema at the top of processInbound; parsed again so the handler needs no cast.
+    const parsed = PeerSendPayloadSchema.safeParse(envelope.payload);
+    if (!parsed.success) throw new Error('invalid_payload');
+    const payload = parsed.data;
+    const publishReply = async (result: PeerSendResult) => {
+      await this.eventPublisher.publishPeerSendReply(payload.requestMessageId, result);
+    };
+
+    if (!this.peerMessaging) {
+      await publishReply({ status: 'error', error: 'Agent-to-agent messaging is not available.', errorCode: 'peer.unavailable' });
+      return;
+    }
+    try {
+      const sent = await this.peerMessaging.send({
+        fromAgentId: agentId,
+        recipient: payload.agent,
+        body: payload.message,
+        messageId: envelope.messageId,
+      });
+      await publishReply(sent.ok
+        ? { status: 'ok', messageId: sent.data.messageId, recipientAgentId: sent.data.recipientAgentId, recipientName: sent.data.recipientName }
+        : {
+          status: 'error',
+          error: sent.error.message,
+          errorCode: sent.error.code,
+          ...(sent.error.context?.peers ? { peers: sent.error.context.peers } : {}),
+        });
+    } catch (err) {
+      logger.error({ agentId, err }, 'handlePeerSend failed');
+      await publishReply({ status: 'error', error: 'Could not send the message. Please try again.', errorCode: 'peer.unavailable' });
+    }
+  }
+
   private async handleRequestConnection(
     agentId: string,
     envelope: MessageEnvelope,
@@ -1435,6 +1482,10 @@ export class AgentMessageBroker {
       case AGENT_MESSAGE_TYPES.UPDATE_PROMPT: {
         const requestMessageId = payload.requestMessageId as string | undefined;
         return requestMessageId ? `agent:update-prompt:reply:${requestMessageId}` : undefined;
+      }
+      case AGENT_MESSAGE_TYPES.PEER_SEND: {
+        const requestMessageId = payload.requestMessageId as string | undefined;
+        return requestMessageId ? `agent:peer-send:reply:${requestMessageId}` : undefined;
       }
       // Fire-and-forget: no reply channel
       case AGENT_MESSAGE_TYPES.SEND_MESSAGE:

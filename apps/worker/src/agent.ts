@@ -72,7 +72,7 @@ import { classifyRuntimeError } from './runtime-errors.js';
 import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure, SessionCircuitBreaker, BackendDiscoveryRetryTracker } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
-import { buildTickGateState, isUserMessageType, extractUserMessageText } from './tick-gate-state.js';
+import { buildTickGateState, isUserMessageType, timelineEventForUserMessage } from './tick-gate-state.js';
 import { createPauseStateTracker, HeldMessageQueue, PAUSED_TICK_GATE, PAUSED_TICK_REASON, resolvePausedTickDelay, resolvePausedWakeAction, runPauseGatedTick } from './runtime-pause.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, parseEconomicCalendarBoundaryPayload, type RegimeBoundaryFreshness } from './venue-intelligence.js';
@@ -2795,12 +2795,10 @@ async function runActiveTick(): Promise<void> {
       const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
       for (const message of incomingMessages) {
         if (isUserMessageType(message['type'])) {
-          // The user.message envelope carries the text at payload.message, not a
-          // top-level `content` field. extractUserMessageText reads the correct
-          // field (with a `content` fallback) so the LLM sees the actual text.
-          const text = extractUserMessageText(message);
-          if (text.length === 0) continue; // skip empty user messages
-          runtimeState.metrics.activityTimeline.push({ kind: 'USER', text, timestamp: Date.now() });
+          // The user.message envelope carries its text at payload.message (not a top-level `content`); empty messages are skipped.
+          // A message written by another agent is tagged as a peer's, so it is never shown as the user's.
+          const event = timelineEventForUserMessage(message, Date.now());
+          if (event) runtimeState.metrics.activityTimeline.push(event);
         }
       }
       while (runtimeState.metrics.activityTimeline.length > maxEvents) {

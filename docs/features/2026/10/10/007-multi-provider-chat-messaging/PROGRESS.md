@@ -460,3 +460,87 @@ Left as documented outstanding, not changed (QUEUE, CH2W slice 3): silent drop f
 | `env -u DATABASE_URL -u REDIS_URL pnpm test` | 422 files: 384 passed, 38 skipped, 0 failed. 7709 tests: 7158 passed, 551 skipped, 0 failed (C0/CH2W3 baseline 7701 + 8 new) |
 
 - **Next ready item:** A2A-B.
+
+## 2026-10-25: A2A-B MVP peer messaging (done)
+
+Agent to agent messaging between agents of one user: send path, wake, per-user rate limit, owner view, stop switch. Specs: [A2A-B](./tasks/A2A-B-peer-send.md), DEC-40 to DEC-43, DEC-47 to DEC-49. Left unstaged, not committed.
+
+### What was built
+
+- **Send path.** A brokered tool `message_peer_agent` (`agent` = recipient id or exact name, `message`) publishes `agent.peer.send` to the broker. The broker takes the sender from the session-checked envelope and calls `PeerMessagingService` (domain, pure, ports in `peer-messaging-service.ts`). Checks in order: empty, too long (`agentRuntime.peer.messageMaxChars`), sender and recipient lookup, self-send (`peer.self_send`), `canPeerSend` (a lookup rejection is caught and refuses with `peer.unavailable`), stop switch, recipient running, rate limit. Then the row is recorded through `ConversationService.recordPeerMessage` (`sender_type = agent`, `sender_id` = sender, `channel = internal`, `queued`), published, and marked `sent`. A publish failure marks it `failed` and returns `peer.delivery_failed`. The row id is the envelope id, so a redelivered envelope sends once. No HTTP route.
+- **Wake (tier 2).** The existing user-message wake in `tick-gate-state.ts` already covers peer input (`isEarlyTickTriggerType`, `isUserMessageType`, the context-hash bypass, the pause hold and the judge escalation all key on `agent.user.message`), so no wake type was added. The platform publishes an `agent.user.message` envelope with `initiatorType = agent` and `payload.peer = { fromAgentId, fromAgentName }` to `agent:outbound:<recipient>`. The receiving runtime tags it: `extractPeerOrigin` and `timelineEventForUserMessage` record a `PEER` timeline event, never `USER`, so a reply to the user does not mark it answered. The prompt shows it in its own block with the name and text JSON-quoted. A creator agent's message to its child has no `peer` and is unchanged.
+- **Rate limit (DEC-42).** `RedisPeerRateLimiter`: a sliding window (sorted set, Redis server clock, one Lua script) per user across their agents. The value is `agentRuntime.peer.rateLimitPerMinute` (Zod, default 10, `config/default.yaml`). A refused attempt adds nothing; a paused send or a send to a recipient that is not running takes no slot. Over the limit: `peer.rate_limited`, recorded as `refused` with the code in `delivery_detail`.
+- **Stop switch (DEC-43, DEC-48).** Option (b): additive field `peerMessagingPaused` on `PATCH /auth/me` (strict boolean), returned by `GET /auth/me`. Recorded as DEC-49. Settings has the toggle. Paused: the send is refused (`peer.paused`), recorded as `refused`, and no wake is published. Unreadable or missing user reads as paused.
+- **Owner view (DEC-43, I10).** `GET /agents/:id/peer-threads` (two store reads, one batched name read) and `GET /agents/:id/peer-threads/:peerAgentId` (same cursor as the conversation route; a refused message carries `refusalReason`). Owner only; an agent key is 403. The agent page has a read-only "Agent-to-agent messages" card, hidden when there are no threads, with an "Agent to agent" label. Proposed as DEC-53.
+- **Agent deletion.** `deleteUserAgentConversations` also deletes the peer threads that include a deleted agent (participants have no foreign key to agents).
+- **Docs.** [peer-messaging-tools.md](../../../../tech/agents/tools/peer-messaging-tools.md), public page `docs/messaging/agent-to-agent` (and its entry in the platform docs index), [configuration.md](../../../../tech/configuration.md), tool manifest row, base skill text, `TOOL_CATALOG`, CHANGELOG.
+
+### Files changed
+
+- **Domain:** `agent-protocol.ts` (`agent.peer.send`, payload and result schemas, `PeerMessagePayloadSchema`), `config/schema.ts` (`agentRuntime.peer`), `conversations/conversation.ts` (`peerKey`, `peerConversationId`, `PeerThreadSummary`), `conversations/conversation-service.ts` (`recordPeerMessage`, `listPeerThreads`, `listPeerThread`), new `conversations/peer-messaging-service.ts`, `ports/conversation-store.ts`, `skills.ts`, `tools.ts`, `index.ts`.
+- **DB:** `conversation-repository.ts` (peer write through one shared transaction path, `listPeerThreads`, peer cleanup on agent delete), `agent-repository.ts` (`isPeerMessagingPaused`, `listAgentSummaries`). No migration: the schema already existed (0084).
+- **Worker:** new `agents/peer-rate-limiter.ts`, `agents/peer-wake-publisher.ts`, `tools/peer-messaging.ts`; `agents/agent-message-broker.ts` (`handlePeerSend`), `agents/capability-policy.ts`, `agents/instance-event-publisher.ts`, `tools/index.ts`, `tick-gate-state.ts`, `runtime-composition.ts`, `agent.ts`, `index.ts`, `tools/platform-docs-data.ts` (my entry only, hand-merged).
+- **API:** `routes/auth.ts`, new `routes/peer-threads.ts`, `routes/conversation-http.ts`, `index.ts`.
+- **Web:** `lib/api-client.ts`, `SettingsPage.tsx`, new `PeerThreads.tsx` and `peer-thread.ts`, `AgentDetailPage.tsx`, i18n en, ar and hi (21 keys), public docs page and registry.
+- **Tests:** see the evidence table.
+
+### Tier 2 decisions
+
+1. **One tool, recipient by id or name.** An agent does not know ids. A name that matches none or several agents, or an id that is not the user's, is refused with `peer.not_allowed` and the sender's other agents (id, name, status) in the result, so it can retry. Another user's agents are never listed. `canPeerSend` still runs on the resolved id.
+2. **Brokered protocol, not an HTTP route**, so there is no new public route for the send path (I8). Pattern: `update_my_prompt`.
+3. **Which refusals are recorded.** Only after both agents are known to be the user's (a thread can exist). Not recorded: empty, too long, self-send, unknown or other-user recipient, a failed agent lookup.
+4. **Recipient `stopped` or `crashed` is refused** (`peer.recipient_not_running`), as `POST /agents/:id/message` does for users.
+5. **Tool in the base skill**, so every agent sees it (one more tool schema; the visibility budget test moved 35 to 36).
+6. **Refusal check order**: stop switch, recipient running, rate limit, so a paused or undeliverable send spends no slot.
+7. **Platform docs index.** `scripts/ts/build-docs-index.ts` was not run, because it regenerated the file from stale markdown and from a stale hardcoded schema, which reverted the CH2W P4 hand edits and the C1 `chatAddresses` text. The new entry and the index line were merged by hand. See Open questions.
+8. `ConversationStore` has `recordPeerMessage` and `listPeerThreads`; thread reads reuse `listUserAgentThread`, which reads any conversation by id under the owner check.
+9. No new migration and no new dependency.
+
+### Open questions for the owner (tier 3; none blocks)
+
+1. **DEC-53** (two owner read routes) and **DEC-54** (the tool, `agentRuntime.peer.messageMaxChars`, the recorded-refusal rules, the stopped-recipient refusal) are in DECISIONS as proposed. The routes and the config key are not listed in the approved decisions (I7, I8). Options and a recommendation are in the rows.
+2. **DEC-48 criterion 4 wording.** "unset or unreadable means switch off for sends and refusal of the change, fail closed" was read as: an unreadable or missing switch refuses sends, and an invalid change request (anything but a boolean) is refused. If "switch off" meant "peer messaging allowed", say so.
+3. **Messages already in the recipient's stream when the owner turns the switch on** are still delivered (the switch stops new sends and new wakes). A runtime-side check would need the container to read the user's setting (a platform API call or a Redis flag); not built. The window is the time a message sits unread in the stream.
+4. **Platform docs drift.** The markdown sources under `public-pages/content/en/docs/messaging/` and the hardcoded schema in `build-docs-index.ts` are older than the generated `platform-docs-data.ts` (CH2W P4 and C1 edited the generated file by hand). A regeneration would revert those edits. Someone should port them to the sources before the next regeneration.
+5. **Agent-key hardening.** `PeerSendPayloadSchema.message` has no maximum in the protocol (the limit is applied by the service, from config, before anything is stored in the thread). The broker's audit row (`agent_messages`) stores the raw envelope first, like every other brokered payload.
+
+### Commands and results
+
+All against a disposable Postgres 17 (`a2ab-pg`, port 55433) and Redis 7 (`a2ab-redis`, port 56380), migrated with `db:migrate`, removed afterwards. The running `herobids-*` containers were not touched. No e2e, no deploy.
+
+| Command | Result |
+|---|---|
+| `tsc -p` domain, db, api, worker, web `--noEmit` (after `tsc --build packages/domain packages/db`); `pnpm lint` | exit 0 |
+| I1 gate `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert` (no DB env) | 10 files passed, 2 skipped; 234 passed, 36 skipped, 0 failed |
+| I1 gate with DB env (single fork, plus `thread-delivery`) | 13 files, 280 tests. Two runs had 1 or 2 failures in `telegram-conversation.functional.test.ts` (reply correlation and `/log`), then 18 of 20 isolated reruns of that file passed. See the flake note below |
+| `packages/db`, single fork, DB env | 27 files passed, 1 skipped; 392 passed, 6 skipped (includes `conversation-repository.integration.test.ts`: 69) |
+| `pnpm test:functional` (DB env) | 19 files, 245 passed (includes the new `peer-messaging.functional.test.ts`: 19) |
+| `pnpm test:integration` (DB env) | 9 files, 109 passed (includes `agent-key-route-guards`, +2 peer routes) |
+| `apps/worker/.../peer-messaging.integration.test.ts` (DB and Redis) | 17 passed |
+| `env -u DATABASE_URL -u REDIS_URL pnpm test` | 431 files: 391 passed, 40 skipped, 0 failed. 7864 tests: 7260 passed, 604 skipped, 0 failed (A2A-A baseline 7709) |
+| Mutation checks | Ignoring the stop switch failed 5 unit and 3 integration tests; bypassing `canPeerSend` failed 3 and 1; ignoring the limiter failed 1 and 4. Files restored |
+
+**Flake note.** The two failing Telegram tests seed an address with the app clock and a message with the database clock (`defaultNow()`), and the reply lookup requires the address row not to be newer than the message (CH2W slice 3 review fix 1). Against a Dockerised database the two clocks differ by a few milliseconds, so the order is not stable. Neither the reply lookup nor `/log` is touched by A2A-B, and `pnpm test:functional` passed in full. The slice 3 entry recorded the same host to Docker skew for the db integration tests. Not changed here.
+
+### Acceptance evidence (spec tests, by name)
+
+- Same-user send is recorded with `sender_type = agent`: `peer-messaging-service.test.ts` "records a same-user message as sent by the sending agent, wakes the recipient and marks it sent"; `conversation-service.test.ts` "stores the message as sent by the sending agent on the internal channel, in the pair thread"; db "records a message as sent by the sending agent in one agent_agent thread..." and "is never recorded as a user message"; worker integration "delivers a same-user message: recorded as the sending agent...".
+- Cross-user send is refused through `canPeerSend`: unit "refuses another user's agent through canPeerSend, records nothing and wakes nobody"; integration "refuses another user's agent through canPeerSend..."; mutation check above.
+- Over the limit is refused and the refusal recorded: unit "refuses with peer.rate_limited and records the refusal..."; integration "refuses the send over the limit, records it as refused with its reason...".
+- The limit comes from config: `agent-runtime-peer-config.test.ts` (default, override, `default.yaml`); integration "takes the limit from config: the same traffic is allowed under a higher value"; unit "takes the maximum message length from config".
+- Stop switch on refuses and starts no wake, off restores: unit "refuses with peer.paused, records the refusal and starts no wake while the switch is on" and "restores sends when the switch is turned off"; integration "refuses sends and starts no wake while on; turning it off restores sends"; functional "stop switch on /auth/me" (7 cases, including strict boolean).
+- A peer message is shown in the owner's thread view: functional "shows a peer message in the owner's thread view, from either agent, oldest first, as sent by the agent" and "lists the agent's threads, newest first, marked agent-to-agent..."; I10: db "lists the agent's threads newest first ... in two queries whatever the page size".
+- Fail closed (I4): unit "fail closed" (6 cases, including `canPeerSend` lookup failure), integration "fails closed when the stop switch cannot be read".
+- Trading (I5): integration "treats the message text as data: it is stored and forwarded verbatim and changes nothing else" (agent rows unchanged); no trading code touched.
+- Telegram and conversation tests (I1): see the gate rows.
+- Type checks for api and worker, `pnpm test` against the A2A-A baseline: see the table.
+
+### Owner hand-offs and gates still open
+
+- The CH2W e2e gate and phase reviews (unchanged from the CH2W entry). No e2e was run for A2A-B.
+- Confirm DEC-53 and DEC-54 (or reject), and answer open questions 2 and 3.
+- Manual check suggestion: with two running agents of one user, ask one to message the other; confirm the thread card on both agent pages; turn on the Settings switch and confirm a refused row with "paused" and no wake.
+- Staging and production need no migration for A2A-B.
+
+- **Next ready item:** none. The MVP queue (C0, C1, CH2W, A2A-A, A2A-B) is complete; the deferred items stay deferred (DEC-45).
+

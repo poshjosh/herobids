@@ -389,6 +389,23 @@ export class AgentRepository {
     return normalizePersistedAiModelConfig(raw, providerConfig);
   }
 
+  /** One user's agents as id, name and status, in one query (no JSONB columns). Used to resolve a peer message's recipient. */
+  async listAgentSummaries(userId: string): Promise<Array<{ id: string; name: string; status: string }>> {
+    return this.db.select({ id: agents.id, name: agents.name, status: agents.status })
+      .from(agents)
+      .where(eq(agents.userId, userId))
+      .orderBy(agents.name, agents.id);
+  }
+
+  /** The owner's peer-messaging stop switch (DEC-43). A user that does not exist reads as paused (fail closed). */
+  async isPeerMessagingPaused(userId: string): Promise<boolean> {
+    const rows = await this.db.select({ paused: users.peerMessagingPaused })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return rows[0]?.paused ?? true;
+  }
+
   async getAgentsByUser(userId: string) {
     return this.db.select().from(agents).where(eq(agents.userId, userId)).orderBy(desc(agents.createdAt));
   }

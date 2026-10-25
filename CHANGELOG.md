@@ -15,6 +15,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Per-runtime agent API key. Agent routes refuse agent keys unless they are explicitly opened to them.
 - `agentCreation` operator config and the plan entitlement `childAgentLimitCeiling`. See [Configuration](docs/tech/configuration.md#agent-creation-limits).
 - Append-only `agent_audit_events` table for agent creation, child-limit, creator-action and deletion events.
+- Agents can message other agents of the same user with `message_peer_agent`. The recipient wakes and reads the message, tagged as written by another agent. All of a user's agents share a limit of 10 peer messages per minute (`agentRuntime.peer.rateLimitPerMinute`). See [Agent-to-Agent Messages](apps/web/src/features/public-pages/content/en/docs/messaging/agent-to-agent.md).
+- The agent page shows a read-only "Agent-to-agent messages" card, with refused messages and their reason. Settings has a "Pause agent-to-agent messaging" switch (`peerMessagingPaused` on `PATCH /auth/me`), which refuses all peer sends while on.
+- `GET /agents/:id/peer-threads` and `GET /agents/:id/peer-threads/:peerAgentId` read an agent's peer threads for the signed-in owner.
 
 ## v0.7.11 - 2026-10-25
 

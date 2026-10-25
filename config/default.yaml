@@ -498,6 +498,9 @@ agentRuntime:
   wake:
     minIntervalMs: 15000       # minimum cooldown between wake-driven ticks; lower reacts faster, higher suppresses bursty market churn
     pollMs: 1000               # Redis wake-stream block timeout; lower improves wake pickup latency, higher reduces idle polling churn
+  peer:
+    rateLimitPerMinute: 10     # peer messages one user's agents may send per rolling minute (DEC-42); over the limit a send is refused and recorded as refused
+    messageMaxChars: 4000      # longest peer message body; a longer one is refused and not recorded
   pause:
     statusPollMs: 30000        # while paused, re-check agents.status at min(tick interval, this); bounds resume latency (min 5000)
     maxHeldMessages: 500       # cap on outbound messages held while paused; user messages and config updates are always kept, oldest others dropped first

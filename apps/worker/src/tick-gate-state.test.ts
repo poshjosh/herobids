@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTickGateState } from './tick-gate-state.js';
+import { buildTickGateState, extractPeerOrigin, isEarlyTickTriggerType, isUserMessageType, timelineEventForUserMessage } from './tick-gate-state.js';
 import { computeDecisionContextHash } from './tick-gates.js';
 
 describe('buildTickGateState', () => {
@@ -424,5 +424,70 @@ describe('buildTickGateState', () => {
     });
 
     expect(state.hasWakeSignal).toBe(true);
+  });
+});
+
+describe('peer messages in the user-message wake', () => {
+  const peerEnvelope = {
+    type: 'agent.user.message',
+    initiatorType: 'agent',
+    initiatorId: 'agent-2',
+    payload: { message: 'ping', peer: { fromAgentId: 'agent-2', fromAgentName: 'Kofi' } },
+  };
+
+  it('wakes the agent early and counts as a user message, so no new wake type is needed', () => {
+    expect(isEarlyTickTriggerType(peerEnvelope.type)).toBe(true);
+    expect(isUserMessageType(peerEnvelope.type)).toBe(true);
+  });
+
+  it('bypasses the context-hash gate like any user message', () => {
+    const state = buildTickGateState({
+      tickNumber: 2,
+      incomingMessages: [peerEnvelope],
+      hasOpenPositions: false,
+      baseTickIntervalMs: 900_000,
+      currentTickIntervalMs: 900_000,
+      enabledGates: { contextHash: true },
+    });
+
+    expect(state.hasUserMessage).toBe(true);
+  });
+
+  it('reads the sending agent from the peer payload', () => {
+    expect(extractPeerOrigin(peerEnvelope)).toEqual({ agentId: 'agent-2', agentName: 'Kofi' });
+  });
+
+  it.each([
+    ['a user message', { type: 'user.message', initiatorType: 'user', payload: { message: 'hi' } }],
+    ['a creator agent\'s message to its child', { type: 'agent.user.message', initiatorType: 'agent', payload: { message: 'hi' } }],
+    ['a payload that claims a peer but whose initiator is the user', { ...peerEnvelope, initiatorType: 'user' }],
+    ['a peer payload with no sender id', { ...peerEnvelope, payload: { message: 'ping', peer: { fromAgentName: 'Kofi' } } }],
+    ['an unrelated envelope', { type: 'agent.wake' }],
+  ])('does not tag %s as peer-originated', (_label, envelope) => {
+    expect(extractPeerOrigin(envelope)).toBeNull();
+  });
+});
+
+describe('timelineEventForUserMessage', () => {
+  it('records a user message as USER', () => {
+    expect(timelineEventForUserMessage({ type: 'user.message', initiatorType: 'user', payload: { message: ' hi ' } }, 5)).toEqual({ kind: 'USER', text: 'hi', timestamp: 5 });
+  });
+
+  it('records a peer message as PEER with the sending agent, not as USER', () => {
+    const event = timelineEventForUserMessage({
+      type: 'agent.user.message',
+      initiatorType: 'agent',
+      payload: { message: 'ping', peer: { fromAgentId: 'agent-2', fromAgentName: 'Kofi' } },
+    }, 5);
+
+    expect(event).toEqual({ kind: 'PEER', fromAgentId: 'agent-2', fromAgentName: 'Kofi', text: 'ping', timestamp: 5 });
+  });
+
+  it('records a creator agent\'s message to its child as USER (it has no peer tag)', () => {
+    expect(timelineEventForUserMessage({ type: 'agent.user.message', initiatorType: 'agent', payload: { message: 'do it' } }, 5)).toMatchObject({ kind: 'USER' });
+  });
+
+  it('skips a message with no text', () => {
+    expect(timelineEventForUserMessage({ type: 'user.message', payload: { message: '  ' } }, 5)).toBeNull();
   });
 });

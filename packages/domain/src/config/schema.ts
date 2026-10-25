@@ -1415,6 +1415,13 @@ export const AgentRuntimeConfigSchema = z.object({
       }).optional(),
     }).optional().default({}),
   }).optional().default({}),
+  /** Agent-to-agent messaging (A2A MVP, DEC-42). One limit only: a per-user rate limit. */
+  peer: z.object({
+    /** Peer messages one user's agents may send in any rolling one-minute window. Over the limit, a send is refused and recorded as refused. */
+    rateLimitPerMinute: z.number().int().min(1).default(10),
+    /** Longest peer message body, in characters. */
+    messageMaxChars: z.number().int().min(1).default(4000),
+  }).default({}),
   /** Cross-session crash-loop guard — persist crash counters in Redis and block
    *  relaunch when an agent has crashed too many times within the sliding window. */
   crashLoopGuard: z.object({

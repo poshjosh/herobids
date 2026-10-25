@@ -184,6 +184,13 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 15_000 },
   },
   {
+    // The one peer limit is per user, in operator config (agentRuntime.peer.rateLimitPerMinute, DEC-42), so none here.
+    capability: 'message_peer_agent',
+    tier: 'brokered',
+    enabled: true,
+    limits: { maxConcurrent: 1, timeoutMs: 15_000 },
+  },
+  {
     capability: 'search_skills',
     tier: 'direct',
     enabled: true,

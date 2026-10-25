@@ -15,6 +15,8 @@ import type { AuthConfig } from '@herobids/domain';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { agentRoutes } from './agents.js';
 import { agentInteractivityRoutes } from './agent-interactivity.js';
+import { createConversationRouteDeps } from './conversation-http.js';
+import { peerThreadRoutes } from './peer-threads.js';
 import { sessionRoutes } from './sessions.js';
 
 const SKIP = !process.env['DATABASE_URL'];
@@ -124,6 +126,8 @@ const AGENT_KEY_DENIED_ROUTES: DeniedRoute[] = [
   { name: 'POST /agents/:id/go-live', method: 'POST', url: (f) => `/agents/${f.agentId}/go-live`, payload: {} },
   { name: 'POST /agents/:id/blueprints', method: 'POST', url: (f) => `/agents/${f.agentId}/blueprints`, payload: {} },
   { name: 'POST /agents/:id/message', method: 'POST', url: (f) => `/agents/${f.agentId}/message`, payload: { content: 'hi' } },
+  { name: 'GET /agents/:id/peer-threads', method: 'GET', url: (f) => `/agents/${f.agentId}/peer-threads` },
+  { name: 'GET /agents/:id/peer-threads/:peerAgentId', method: 'GET', url: (f) => `/agents/${f.agentId}/peer-threads/other-agent` },
 ];
 
 describe.skipIf(SKIP)('agent key route guards (integration)', () => {
@@ -140,6 +144,7 @@ describe.skipIf(SKIP)('agent key route guards (integration)', () => {
     await authPlugin(app, { config: makeAuthConfig(), db });
     await agentRoutes(app, db);
     await agentInteractivityRoutes(app, db, redis);
+    await peerThreadRoutes(app, db, createConversationRouteDeps(db));
     await sessionRoutes(app, db);
     await app.ready();
   }, 30_000);

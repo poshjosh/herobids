@@ -917,13 +917,15 @@ export async function authRoutes(
       chatAddresses: await listUserChatAddresses(db, user.id),
       notificationPreferences: user.notificationPreferences ?? null,
       emailFallbackEnabled: isEmailFallbackAllowed(user.notificationPreferences, emailFallbackUserDefaultEnabled),
+      peerMessagingPaused: user.peerMessagingPaused,
       createdAt: user.createdAt.toISOString(),
     });
   });
 
   /**
    * PATCH /auth/me — Update mutable user profile fields.
-   * Currently supports: preferredLocale, chatAddresses, and notificationPreferences (sendMessage.email and notifications.emailFallback).
+   * Currently supports: preferredLocale, chatAddresses, notificationPreferences (sendMessage.email and notifications.emailFallback),
+   * and peerMessagingPaused (the owner's stop switch for agent-to-agent messaging; a strict boolean, anything else is refused).
    */
   app.patch('/auth/me', async (request, reply) => {
     const userId = request.userId;
@@ -935,6 +937,7 @@ export async function authRoutes(
     const updates: {
       preferredLocale?: SupportedLocale | null;
       notificationPreferences?: StoredNotificationPreferences;
+      peerMessagingPaused?: boolean;
       updatedAt: Date;
     } = {
       updatedAt: new Date(),
@@ -952,6 +955,17 @@ export async function authRoutes(
         );
       }
       updates.preferredLocale = (val as SupportedLocale | null) ?? null;
+    }
+
+    if ('peerMessagingPaused' in body) {
+      const val = body['peerMessagingPaused'];
+      // Strict: a value that is not exactly true or false is refused, never coerced, so the switch cannot be flipped by accident.
+      if (typeof val !== 'boolean') {
+        return reply.status(400).send(
+          errorPayload('auth.profile.invalid_peer_messaging_paused', 'peerMessagingPaused must be true or false'),
+        );
+      }
+      updates.peerMessagingPaused = val;
     }
 
     let chatAddressesUpdate: ChatAddressesInput | undefined;
@@ -1004,6 +1018,7 @@ export async function authRoutes(
       chatAddresses: await listUserChatAddresses(db, userId),
       notificationPreferences: updated.notificationPreferences ?? null,
       emailFallbackEnabled: isEmailFallbackAllowed(updated.notificationPreferences, emailFallbackUserDefaultEnabled),
+      peerMessagingPaused: updated.peerMessagingPaused,
       createdAt: updated.createdAt.toISOString(),
     });
   });

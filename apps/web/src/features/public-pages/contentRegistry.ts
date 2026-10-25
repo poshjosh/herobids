@@ -78,6 +78,7 @@ export const PUBLIC_PAGE_REGISTRY: Record<string, SectionMeta> = {
           'messaging/telegram/reply-threading': { title: 'Telegram Reply Threading' },
           'messaging/telegram/slash-commands': { title: 'Telegram Slash Commands' },
           'messaging/email/how-agents-send-email': { title: 'How Agents Send Email' },
+          'messaging/agent-to-agent': { title: 'Agent-to-Agent Messages' },
         },
       },
       reference: {

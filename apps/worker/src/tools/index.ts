@@ -23,6 +23,7 @@ import { platformDocsTools } from './platform-docs.js';
 import { skillTools } from './skills.js';
 import { listProvidersTool, requestConnectionTool } from './connections.js';
 import { updateMyPromptTool } from './update-prompt.js';
+import { messagePeerAgentTool } from './peer-messaging.js';
 import { readSkillTool } from './read-skill.js';
 import { loadSkillTool } from './load-skill.js';
 import { createBrowserTools } from './browser.js';
@@ -126,6 +127,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     listProvidersTool,
     requestConnectionTool,
     updateMyPromptTool,
+    messagePeerAgentTool,
     ...skillTools,
     readSkillTool,
     loadSkillTool,

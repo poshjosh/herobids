@@ -5,12 +5,15 @@ import {
   CONVERSATION_DELIVERY_STATUSES,
   CONVERSATION_DELIVERY_TARGETS,
   CONVERSATION_ERROR_CODES,
+  peerConversationId,
+  peerKey,
   userAgentConversationId,
   type ConversationDeliveryTarget,
   type ConversationDeliveryStatus,
   type ConversationError,
   type ConversationLimits,
   type ConversationMessage,
+  type PeerThreadSummary,
   type RecordedConversationMessage,
   type UserAgentChannel,
 } from './conversation.js';
@@ -55,6 +58,29 @@ export interface RecordPlatformMessageInput {
   deliveryDetail?: string | null;
   /** Id the channel returned for an already-sent message. */
   providerMessageId?: string | null;
+}
+
+export interface RecordPeerMessageInput {
+  /** The envelope message id. A repeat of the same id is a retry and returns the stored row. */
+  id?: string;
+  ownerUserId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  body: string;
+  /** `queued` (default) for a message about to be published, `refused` for one that will not be. */
+  deliveryStatus?: Extract<ConversationDeliveryStatus, 'queued' | 'refused'>;
+  /** Reason code of a refused message, such as `peer.rate_limited`. */
+  deliveryDetail?: string | null;
+}
+
+export interface ListPeerThreadsInput {
+  ownerUserId: string;
+  agentId: string;
+  limit?: number;
+}
+
+export interface ListPeerThreadInput extends ListThreadInput {
+  peerAgentId: string;
 }
 
 export interface MarkDeliveryInput {
@@ -202,6 +228,59 @@ export class ConversationService {
   }
 
   /**
+   * Records a peer message under its sender's authorship (`sender_type = agent`, channel `internal`) in the
+   * agent pair's thread. Trusts the caller to have verified that both agents belong to `ownerUserId`
+   * (see `canPeerSend`) and that this is not a send to oneself.
+   */
+  async recordPeerMessage(input: RecordPeerMessageInput): Promise<Result<RecordedConversationMessage, ConversationError>> {
+    const checked = this.checkBody(input.body, null)
+      ?? this.checkIdentity(input.ownerUserId, input.fromAgentId)
+      ?? this.checkIdentity(input.ownerUserId, input.toAgentId)
+      ?? this.checkPeerStatus(input.deliveryStatus)
+      ?? this.checkOptionalId(input.id);
+    if (checked) return checked;
+    if (input.fromAgentId === input.toAgentId) {
+      return invalid(CONVERSATION_ERROR_CODES.invalidMessage, 'peer_self_message');
+    }
+    return this.store.recordPeerMessage({
+      conversationId: peerConversationId(input.fromAgentId, input.toAgentId),
+      peerKey: peerKey(input.fromAgentId, input.toAgentId),
+      ownerUserId: input.ownerUserId,
+      agentIds: [input.fromAgentId, input.toAgentId],
+      message: {
+        id: input.id ?? this.newId(),
+        senderType: 'agent',
+        senderId: input.fromAgentId,
+        channel: 'internal',
+        subject: null,
+        body: input.body,
+        messageClass: null,
+        deliveryStatus: input.deliveryStatus ?? 'queued',
+        ...(input.deliveryDetail !== undefined ? { deliveryDetail: input.deliveryDetail } : {}),
+        createdAt: this.now(),
+      },
+    });
+  }
+
+  /** The owner's peer threads of one agent, newest first. One batched read, whatever the number of threads. */
+  async listPeerThreads(input: ListPeerThreadsInput): Promise<Result<PeerThreadSummary[], ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.agentId) ?? this.checkLimit(input.limit);
+    if (checked) return checked;
+    return this.store.listPeerThreads({
+      ownerUserId: input.ownerUserId,
+      agentId: input.agentId,
+      limit: Math.min(input.limit ?? this.limits.threadDefaultPageSize, this.limits.threadMaxPageSize),
+    });
+  }
+
+  /** The messages of the owner's thread between two agents, oldest first. A thread that does not exist reads as empty. */
+  async listPeerThread(input: ListPeerThreadInput): Promise<Result<ConversationMessage[], ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.peerAgentId);
+    if (checked) return checked;
+    return this.listThreadBy(input, peerConversationId(input.agentId, input.peerAgentId));
+  }
+
+  /**
    * Delivery workers only. A repeated mark returns `conversation.invalid_delivery_transition`; a worker that
    * retries after a crash must treat that code as "already marked", not as a failure.
    */
@@ -272,12 +351,13 @@ export class ConversationService {
 
   /** Newest `limit` rows before the cursor, oldest first. A thread that does not exist reads as empty. */
   async listThread(input: ListThreadInput): Promise<Result<ConversationMessage[], ConversationError>> {
-    const checked = this.checkIdentity(input.ownerUserId, input.agentId);
+    return this.listThreadBy(input, userAgentConversationId(input.agentId));
+  }
+
+  private async listThreadBy(input: ListThreadInput, conversationId: string): Promise<Result<ConversationMessage[], ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.agentId) ?? this.checkLimit(input.limit);
     if (checked) return checked;
     const requested = input.limit ?? this.limits.threadDefaultPageSize;
-    if (!Number.isInteger(requested) || requested < 1) {
-      return invalid(CONVERSATION_ERROR_CODES.invalidMessage, 'invalid_limit');
-    }
     const hasBefore = input.before !== undefined;
     const hasBeforeId = input.beforeId !== undefined;
     if (
@@ -288,7 +368,7 @@ export class ConversationService {
       return invalid(CONVERSATION_ERROR_CODES.invalidCursor, 'invalid_cursor');
     }
     return this.store.listUserAgentThread({
-      conversationId: userAgentConversationId(input.agentId),
+      conversationId,
       ownerUserId: input.ownerUserId,
       limit: Math.min(requested, this.limits.threadMaxPageSize),
       before: input.before ?? null,
@@ -326,6 +406,21 @@ export class ConversationService {
   private checkChannel(channel: string): Result<never, ConversationError> | null {
     if (!(CONVERSATION_CHANNELS as readonly string[]).includes(channel) || channel === 'internal') {
       return invalid(CONVERSATION_ERROR_CODES.invalidMessage, 'invalid_channel');
+    }
+    return null;
+  }
+
+  private checkLimit(limit: number | undefined): Result<never, ConversationError> | null {
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+      return invalid(CONVERSATION_ERROR_CODES.invalidMessage, 'invalid_limit');
+    }
+    return null;
+  }
+
+  // A peer row is written either about to be published (`queued`) or already refused.
+  private checkPeerStatus(status: string | undefined): Result<never, ConversationError> | null {
+    if (status !== undefined && status !== 'queued' && status !== 'refused') {
+      return invalid(CONVERSATION_ERROR_CODES.invalidMessage, 'invalid_delivery_status');
     }
     return null;
   }

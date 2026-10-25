@@ -38,7 +38,7 @@ Key sections:
 - `simulation` — paper/shadow fee and slippage parameters
 - `risk` — global drawdown cap, open position limits
 - `agentRiskDefaults` — operator ceilings for agent risk parameters
-- `agentRuntime` — agent container policy (tool limits, sandbox, LLM budgets)
+- `agentRuntime` — agent container policy (tool limits, sandbox, LLM budgets), and `agentRuntime.peer` for agent-to-agent messages (see [Agent-to-agent messaging limits](#agent-to-agent-messaging-limits))
 - `agentCreation` — rate limits, depth and API timeout for agent-created agents (see [Agent creation limits](#agent-creation-limits))
 - `sharedServices` — shared Postgres and Redis hosts, and `apiBaseUrl`, the platform API URL that agent containers call
 - `llm` — LLM provider, model, timeout, tick interval
@@ -101,6 +101,17 @@ Agents can create child agents only when a user sets a child allowance on the ag
 | `agentCreation.platformApiTimeoutMs` | `10000` | Timeout for each agent-container call to the platform API (create, allowance read, creator actions). Minimum `100`. |
 
 The plan entitlement `childAgentLimitCeiling` sets the highest child allowance a user may set on an agent. It is set per plan under `plans.<plan>.entitlements.limits`, next to `maxAgents`. When unset, the ceiling is `max(0, maxAgents - 1)`, so no explicit value is needed to keep creation off. Child agents start with an allowance of `0`.
+
+## Agent-to-agent messaging limits
+
+Agents of one user can message each other with `message_peer_agent` (see [peer messaging tools](agents/tools/peer-messaging-tools.md)). The MVP has one limit, set under `agentRuntime.peer` in `config/default.yaml` and validated in `packages/domain/src/config/schema.ts`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `agentRuntime.peer.rateLimitPerMinute` | `10` | Peer messages one user's agents may send in any rolling minute, across all their agents. Over the limit, a send is refused with `peer.rate_limited` and recorded as refused. Minimum `1`. |
+| `agentRuntime.peer.messageMaxChars` | `4000` | Longest peer message body. A longer one is refused with `peer.message_too_long` and not recorded. Minimum `1`. |
+
+The owner's stop switch is not operator config. It is a per-user setting (`users.peer_messaging_paused`, set on `PATCH /auth/me` as `peerMessagingPaused`).
 
 ---
 

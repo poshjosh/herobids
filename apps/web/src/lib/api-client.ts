@@ -238,6 +238,8 @@ export interface MeResponse {
   notificationPreferences: UserNotificationPreferences | null;
   /** Effective email fallback choice: the stored value, or the operator default when none is stored. */
   emailFallbackEnabled?: boolean;
+  /** Owner stop switch: when true every agent-to-agent send is refused. */
+  peerMessagingPaused: boolean;
   createdAt: string;
 }
 
@@ -301,7 +303,7 @@ export const auth = {
       body: JSON.stringify({ email, ...(username ? { username } : {}), ...(next ? { next } : {}) }),
     }),
   me: () => request<MeResponse>('/auth/me'),
-  updateMe: (data: { preferredLocale?: string | null; chatAddresses?: ChatAddressInput[]; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } }; notifications?: { emailFallback?: { enabled: boolean }; push?: { enabled: boolean } } } | null }) =>
+  updateMe: (data: { preferredLocale?: string | null; peerMessagingPaused?: boolean; chatAddresses?: ChatAddressInput[]; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } }; notifications?: { emailFallback?: { enabled: boolean }; push?: { enabled: boolean } } } | null }) =>
     request<MeResponse>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 };
@@ -1132,6 +1134,45 @@ export interface AgentConversationPage {
   maxMessageChars: number;
 }
 
+/** One agent-to-agent thread of an agent (GET /agents/:id/peer-threads), newest first. */
+export interface PeerThreadSummary {
+  kind: 'agent_agent';
+  peerAgentId: string;
+  /** Null when the peer agent no longer exists. */
+  peerAgentName: string | null;
+  lastMessageAt: string | null;
+}
+
+export interface PeerThreadsResponse {
+  threads: PeerThreadSummary[];
+}
+
+/** One agent-to-agent message; `senderId` is the sending agent (the viewed agent or its peer). */
+export interface PeerMessage {
+  id: string;
+  senderType: 'agent';
+  senderId: string | null;
+  channel: 'internal';
+  subject: string | null;
+  body: string;
+  messageClass: string | null;
+  deliveryStatus: ConversationDeliveryStatus;
+  createdAt: string;
+  stuck: boolean;
+  /** Dot-string code (for example `peer.paused`) when `deliveryStatus` is `refused`. */
+  refusalReason: string | null;
+}
+
+export interface PeerThreadPage {
+  kind: 'agent_agent';
+  peerAgentId: string;
+  peerAgentName: string;
+  /** Oldest first. */
+  messages: PeerMessage[];
+  /** Pass as `before` for the next older page; null at the start of the thread. */
+  nextCursor: string | null;
+}
+
 export interface AgentSendMessageResult {
   delivered: boolean;
   message: AgentConversationMessage;
@@ -1345,6 +1386,10 @@ export const agents = {
     request<unknown[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
   conversation: (id: string, options: { limit?: number; before?: string } = {}) =>
     request<AgentConversationPage>(`/agents/${id}/conversation${buildQuery({ limit: options.limit, before: options.before })}`),
+  peerThreads: (id: string, limit?: number) =>
+    request<PeerThreadsResponse>(`/agents/${id}/peer-threads${buildQuery({ limit })}`),
+  peerThread: (id: string, peerAgentId: string, options: { limit?: number; before?: string } = {}) =>
+    request<PeerThreadPage>(`/agents/${id}/peer-threads/${encodeURIComponent(peerAgentId)}${buildQuery({ limit: options.limit, before: options.before })}`),
   conversationTurn: (id: string, connectionRequestId?: string) =>
     request<AgentConversationTurn>(`/agents/${id}/conversation-turn${buildQuery({ connectionRequestId })}`),
   /** `clientMessageId` makes a retry of the same message idempotent on the server. */

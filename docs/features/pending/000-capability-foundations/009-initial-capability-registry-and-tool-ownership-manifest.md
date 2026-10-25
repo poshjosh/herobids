@@ -212,6 +212,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `pause_child_agent` | `core` | Pauses a direct child agent. |
 | `stop_child_agent` | `core` | Stops a direct child agent. |
 | `message_child_agent` | `core` | Sends a message to a direct child agent. |
+| `message_peer_agent` | `core` | Sends a message to another agent of the same user (agent-to-agent MVP). Brokered. |
 | `submit_decision` | `external:trading` | Trading decision execution. |
 | `watch_token` | `external:trading` | Trading price-watch creation. |
 | `write_file` | `core` | Agent workspace operation. |

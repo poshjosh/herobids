@@ -16,10 +16,37 @@ import type { ConversationRouteDeps } from '../../routes/conversation-http.js';
  */
 export class InMemoryConversationStore implements ConversationStore {
   readonly owners = new Map<string, string>();
+  /** Agent participants of peer conversations, by conversation id. */
+  readonly peerAgents = new Map<string, [string, string]>();
   readonly messages: ConversationMessage[] = [];
   failWith: string | null = null;
 
   async recordUserAgentMessage(input: Parameters<ConversationStore['recordUserAgentMessage']>[0]) {
+    return this.record(input);
+  }
+
+  async recordPeerMessage(input: Parameters<ConversationStore['recordPeerMessage']>[0]) {
+    const recorded = await this.record(input);
+    if (recorded.ok && !this.peerAgents.has(input.conversationId)) this.peerAgents.set(input.conversationId, input.agentIds);
+    return recorded;
+  }
+
+  async listPeerThreads(input: Parameters<ConversationStore['listPeerThreads']>[0]) {
+    if (this.failWith) return err({ code: this.failWith, message: 'conversation_store_failed' });
+    const threads = [...this.peerAgents.entries()]
+      .filter(([conversationId, agentIds]) => this.owners.get(conversationId) === input.ownerUserId && agentIds.includes(input.agentId))
+      .map(([conversationId, agentIds]) => ({
+        conversationId,
+        peerAgentId: agentIds.find((agentId) => agentId !== input.agentId) ?? input.agentId,
+        lastMessageAt: this.messages
+          .filter((message) => message.conversationId === conversationId)
+          .reduce<Date | null>((latest, message) => (latest === null || message.createdAt > latest ? message.createdAt : latest), null),
+      }))
+      .sort((a, b) => (b.lastMessageAt?.getTime() ?? 0) - (a.lastMessageAt?.getTime() ?? 0));
+    return ok(threads.slice(0, input.limit));
+  }
+
+  private record(input: { conversationId: string; ownerUserId: string; message: Parameters<ConversationStore['recordUserAgentMessage']>[0]['message'] }) {
     if (this.failWith) return err({ code: this.failWith, message: 'conversation_store_failed' });
     const owner = this.owners.get(input.conversationId);
     if (owner !== undefined && owner !== input.ownerUserId) {

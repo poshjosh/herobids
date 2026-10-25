@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, lte, or, sql, desc } from 'drizzle-orm';
 import {
   CONVERSATION_DELIVERY_FROM,
   CONVERSATION_ERROR_CODES,
@@ -7,10 +7,13 @@ import {
   type ConversationError,
   type ConversationMessage,
   type ConversationStore,
+  type ListPeerConversationsInput,
   type ListUserAgentThreadInput,
   type MarkConversationDeliveryInput,
   type FindConversationMessageInput,
   type RequeueUndeliveredMessageInput,
+  type PeerThreadSummary,
+  type RecordPeerConversationMessageInput,
   type RecordUserAgentMessageInput,
   type RecordedConversationMessage,
   type Result,
@@ -53,6 +56,15 @@ function storeFailed(error: unknown): Result<never, ConversationError> {
   });
 }
 
+interface ConversationWrite {
+  conversationId: string;
+  kind: 'user_agent' | 'agent_agent';
+  peerKey: string | null;
+  ownerUserId: string;
+  participants: Array<{ participantType: 'user' | 'agent'; participantId: string }>;
+  message: RecordUserAgentMessageInput['message'];
+}
+
 /** Thrown inside the write transaction so Postgres rolls back everything it wrote, then mapped to a refusal. */
 class OwnerMismatchRollback extends Error {}
 class MessageIdConflictRollback extends Error {}
@@ -63,6 +75,68 @@ export class ConversationRepository implements ConversationStore {
 
   async recordUserAgentMessage(input: RecordUserAgentMessageInput): Promise<Result<RecordedConversationMessage, ConversationError>> {
     const { conversationId, ownerUserId, agentId, message } = input;
+    return this.recordInConversation({
+      conversationId,
+      kind: 'user_agent',
+      peerKey: null,
+      ownerUserId,
+      participants: [
+        { participantType: 'user', participantId: ownerUserId },
+        { participantType: 'agent', participantId: agentId },
+      ],
+      message,
+    });
+  }
+
+  async recordPeerMessage(input: RecordPeerConversationMessageInput): Promise<Result<RecordedConversationMessage, ConversationError>> {
+    return this.recordInConversation({
+      conversationId: input.conversationId,
+      kind: 'agent_agent',
+      peerKey: input.peerKey,
+      ownerUserId: input.ownerUserId,
+      participants: input.agentIds.map((participantId) => ({ participantType: 'agent', participantId })),
+      message: input.message,
+    });
+  }
+
+  async listPeerThreads(input: ListPeerConversationsInput): Promise<Result<PeerThreadSummary[], ConversationError>> {
+    try {
+      // Query 1: the owner's peer conversations that include the agent, newest first. Query 2: the participants of all of them.
+      const threads = await this.db
+        .select({ id: conversations.id, lastMessageAt: conversations.lastMessageAt })
+        .from(conversations)
+        .innerJoin(conversationParticipants, and(
+          eq(conversationParticipants.conversationId, conversations.id),
+          eq(conversationParticipants.participantType, 'agent'),
+          eq(conversationParticipants.participantId, input.agentId),
+        ))
+        .where(and(eq(conversations.ownerUserId, input.ownerUserId), eq(conversations.kind, 'agent_agent')))
+        .orderBy(sql`${conversations.lastMessageAt} desc nulls last`, desc(conversations.id))
+        .limit(input.limit);
+      if (threads.length === 0) return ok([]);
+
+      const participants = await this.db
+        .select({ conversationId: conversationParticipants.conversationId, participantId: conversationParticipants.participantId })
+        .from(conversationParticipants)
+        .where(and(
+          inArray(conversationParticipants.conversationId, threads.map((thread) => thread.id)),
+          eq(conversationParticipants.participantType, 'agent'),
+        ));
+      const peerByConversation = new Map<string, string>();
+      for (const participant of participants) {
+        if (participant.participantId !== input.agentId) peerByConversation.set(participant.conversationId, participant.participantId);
+      }
+      return ok(threads.flatMap((thread) => {
+        const peerAgentId = peerByConversation.get(thread.id);
+        return peerAgentId === undefined ? [] : [{ conversationId: thread.id, peerAgentId, lastMessageAt: thread.lastMessageAt }];
+      }));
+    } catch (error) {
+      return storeFailed(error);
+    }
+  }
+
+  private async recordInConversation(target: ConversationWrite): Promise<Result<RecordedConversationMessage, ConversationError>> {
+    const { conversationId, ownerUserId, message } = target;
     try {
       return await this.db.transaction(async (tx) => {
         const findConversation = async () => {
@@ -79,17 +153,17 @@ export class ConversationRepository implements ConversationStore {
         if (!conversation) {
           const [created] = await tx.insert(conversations).values({
             id: conversationId,
-            kind: 'user_agent',
+            kind: target.kind,
+            peerKey: target.peerKey,
             ownerUserId,
             createdAt: message.createdAt,
           }).onConflictDoNothing().returning({ id: conversations.id });
           // Only the writer that created the conversation adds its participants. A losing writer may be a
           // different owner, and must not leave participant rows behind in someone else's thread.
           if (created) {
-            await tx.insert(conversationParticipants).values([
-              { conversationId, participantType: 'user', participantId: ownerUserId },
-              { conversationId, participantType: 'agent', participantId: agentId },
-            ]).onConflictDoNothing();
+            await tx.insert(conversationParticipants).values(
+              target.participants.map((participant) => ({ conversationId, ...participant })),
+            ).onConflictDoNothing();
           }
           conversation = await findConversation();
           if (!conversation) throw new Error('conversation_missing_after_create');
@@ -246,10 +320,21 @@ export class ConversationRepository implements ConversationStore {
 }
 
 /**
- * Deletes the user-agent conversations of `agentIds`; participants and messages follow by cascade.
- * Participants carry no foreign key to agents, so agent deletion must call this in the same transaction.
+ * Deletes the user-agent conversations of `agentIds` and every peer conversation that includes one of them;
+ * participants and messages follow by cascade. Participants carry no foreign key to agents, so agent deletion
+ * must call this in the same transaction.
  */
 export async function deleteUserAgentConversations(executor: Database | DatabaseTransaction, agentIds: string[]): Promise<void> {
   if (agentIds.length === 0) return;
   await executor.delete(conversations).where(inArray(conversations.id, agentIds.map(userAgentConversationId)));
+  await executor.delete(conversations).where(and(
+    eq(conversations.kind, 'agent_agent'),
+    inArray(
+      conversations.id,
+      executor
+        .select({ id: conversationParticipants.conversationId })
+        .from(conversationParticipants)
+        .where(and(eq(conversationParticipants.participantType, 'agent'), inArray(conversationParticipants.participantId, agentIds))),
+    ),
+  ));
 }

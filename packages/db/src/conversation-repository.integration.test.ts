@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { CONVERSATION_ERROR_CODES, ConversationService, userAgentConversationId } from '@herobids/domain';
+import { CONVERSATION_ERROR_CODES, ConversationService, peerConversationId, userAgentConversationId } from '@herobids/domain';
+import { AgentRepository } from './agent-repository.js';
 import { ConversationRepository, deleteUserAgentConversations } from './conversation-repository.js';
 import * as schema from './schema/index.js';
 import {
@@ -700,6 +701,195 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
       const page = await small.listThread({ ownerUserId: 'user-1', agentId: 'agent-1', limit: 100 });
 
       expect(bodies(page)).toEqual(['m3', 'm4']);
+    });
+  });
+  describe('peer messages (A2A-B)', () => {
+    const peer = (from: string, to: string, body = 'hello', extra: Record<string, unknown> = {}) =>
+      service().recordPeerMessage({ ownerUserId: 'user-1', fromAgentId: from, toAgentId: to, body, ...extra });
+    const peerBodies = (messages: { ok: boolean; data?: unknown }) => ((messages as { data: Array<{ body: string }> }).data).map((m) => m.body);
+
+    beforeEach(async () => {
+      await scratch.sql`INSERT INTO agents (id, user_id, name, prompt, status) VALUES
+        ('agent-4', 'user-1', 'Dozer', 'p', 'active'),
+        ('agent-5', 'user-1', 'Zuri', 'p', 'stopped')`;
+    });
+
+    it('records a message as sent by the sending agent in one agent_agent thread with two agent participants', async () => {
+      const recorded = await peer('agent-2', 'agent-1', 'from kofi');
+
+      expect(recorded).toMatchObject({ ok: true, data: { created: true, message: { senderType: 'agent', senderId: 'agent-2', channel: 'internal', deliveryStatus: 'queued', body: 'from kofi' } } });
+      const [thread] = await scratch.sql<{ id: string; kind: string; owner_user_id: string; peer_key: string; last_message_at: Date | null }[]>`
+        SELECT id, kind, owner_user_id, peer_key, last_message_at FROM conversations`;
+      expect(thread).toMatchObject({ id: peerConversationId('agent-1', 'agent-2'), kind: 'agent_agent', owner_user_id: 'user-1', peer_key: 'agent-1:agent-2' });
+      expect(thread?.last_message_at).not.toBeNull();
+      const participants = await scratch.sql`SELECT participant_type, participant_id FROM conversation_participants ORDER BY participant_id`;
+      expect(participants.map((p) => `${p.participant_type}:${p.participant_id}`)).toEqual(['agent:agent-1', 'agent:agent-2']);
+    });
+
+    it('is never recorded as a user message', async () => {
+      await peer('agent-1', 'agent-2');
+
+      const rows = await scratch.sql`SELECT sender_type FROM conversation_messages`;
+      expect(rows.map((r) => r.sender_type)).toEqual(['agent']);
+    });
+
+    it('keeps one thread per pair when both agents write first at the same time', async () => {
+      const results = await Promise.all([
+        peer('agent-1', 'agent-2', 'a'), peer('agent-2', 'agent-1', 'b'),
+        peer('agent-1', 'agent-2', 'c'), peer('agent-2', 'agent-1', 'd'),
+        peer('agent-1', 'agent-2', 'e'), peer('agent-2', 'agent-1', 'f'),
+      ].map((p) => p));
+
+      expect(results.every((r) => r.ok)).toBe(true);
+      expect(await scratch.sql`SELECT id FROM conversations WHERE kind = 'agent_agent'`).toHaveLength(1);
+      expect(await scratch.sql`SELECT 1 FROM conversation_participants`).toHaveLength(2);
+      expect(await scratch.sql`SELECT 1 FROM conversation_messages`).toHaveLength(6);
+    });
+
+    it('stores a refused message with its reason code, in the same thread', async () => {
+      await peer('agent-1', 'agent-2', 'sent');
+      const refused = await peer('agent-1', 'agent-2', 'too many', { id: 'refused-1', deliveryStatus: 'refused', deliveryDetail: 'peer.rate_limited' });
+
+      expect(refused).toMatchObject({ ok: true, data: { message: { deliveryStatus: 'refused', deliveryDetail: 'peer.rate_limited' } } });
+      const thread = await service().listPeerThread({ ownerUserId: 'user-1', agentId: 'agent-1', peerAgentId: 'agent-2' });
+      expect(thread).toMatchObject({ ok: true });
+      expect((thread as { data: Array<{ deliveryStatus: string }> }).data.map((m) => m.deliveryStatus)).toEqual(['queued', 'refused']);
+    });
+
+    it('returns the stored row for a repeated id and refuses an id used in another thread', async () => {
+      await peer('agent-1', 'agent-2', 'once', { id: 'env-1' });
+
+      const again = await peer('agent-1', 'agent-2', 'once', { id: 'env-1' });
+      const elsewhere = await peer('agent-1', 'agent-4', 'once', { id: 'env-1' });
+
+      expect(again).toMatchObject({ ok: true, data: { created: false } });
+      expect(elsewhere).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.messageIdConflict } });
+      expect(await scratch.sql`SELECT 1 FROM conversation_messages`).toHaveLength(1);
+      expect(await scratch.sql`SELECT 1 FROM conversations`).toHaveLength(1);
+    });
+
+    it('refuses a write into another owner\'s thread and leaves nothing behind', async () => {
+      await peer('agent-1', 'agent-2', 'mine');
+
+      const foreign = await service().recordPeerMessage({ ownerUserId: 'user-2', fromAgentId: 'agent-1', toAgentId: 'agent-2', body: 'intruder' });
+
+      expect(foreign).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.ownerMismatch } });
+      expect(await scratch.sql`SELECT body FROM conversation_messages`).toHaveLength(1);
+    });
+
+    it('marks a queued peer message sent and keeps it on the internal channel', async () => {
+      await peer('agent-1', 'agent-2', 'hello', { id: 'env-1' });
+
+      const marked = await service().markDelivery({ messageId: 'env-1', status: 'sent' });
+
+      expect(marked).toMatchObject({ ok: true, data: { deliveryStatus: 'sent', channel: 'internal' } });
+    });
+
+    describe('listPeerThreads', () => {
+      it('lists the agent\'s threads newest first with the peer of each, in two queries whatever the page size', async () => {
+        await peer('agent-1', 'agent-2', 'first');
+        await peer('agent-4', 'agent-1', 'second');
+        await peer('agent-1', 'agent-5', 'third');
+        await peer('agent-2', 'agent-1', 'fourth, back to the first thread');
+        let queries = 0;
+        const counting = new ConversationRepository(drizzle(pool, { schema, logger: { logQuery: () => { queries += 1; } } }));
+        const countingService = new ConversationService({ store: counting, limits: LIMITS, newId: () => `c-${++nextId}`, now: () => new Date(++clock) });
+
+        const threads = await countingService.listPeerThreads({ ownerUserId: 'user-1', agentId: 'agent-1' });
+
+        expect(queries).toBe(2);
+        expect(threads).toMatchObject({ ok: true });
+        expect((threads as { data: Array<{ peerAgentId: string }> }).data.map((t) => t.peerAgentId)).toEqual(['agent-2', 'agent-5', 'agent-4']);
+
+        queries = 0;
+        await countingService.listPeerThreads({ ownerUserId: 'user-1', agentId: 'agent-4' });
+        expect(queries).toBe(2);
+      });
+
+      it('lists only the owner\'s threads that include the agent, and applies the limit', async () => {
+        await peer('agent-1', 'agent-2');
+        await peer('agent-1', 'agent-4');
+        await peer('agent-2', 'agent-4');
+        await user('agent-1', 'a user thread is not a peer thread');
+
+        const all = await service().listPeerThreads({ ownerUserId: 'user-1', agentId: 'agent-1' });
+        const limited = await service().listPeerThreads({ ownerUserId: 'user-1', agentId: 'agent-1', limit: 1 });
+        const stranger = await service().listPeerThreads({ ownerUserId: 'user-2', agentId: 'agent-1' });
+
+        expect((all as { data: unknown[] }).data).toHaveLength(2);
+        expect((limited as { data: unknown[] }).data).toHaveLength(1);
+        expect((stranger as { data: unknown[] }).data).toEqual([]);
+      });
+
+      it('returns an empty list for an agent with no peer threads', async () => {
+        expect(await service().listPeerThreads({ ownerUserId: 'user-1', agentId: 'agent-1' })).toEqual({ ok: true, data: [] });
+      });
+    });
+
+    describe('listPeerThread', () => {
+      it('reads the same messages from either side, oldest first, and pages by cursor', async () => {
+        await peer('agent-1', 'agent-2', 'm1');
+        await peer('agent-2', 'agent-1', 'm2');
+        await peer('agent-1', 'agent-2', 'm3');
+
+        const fromOne = await service().listPeerThread({ ownerUserId: 'user-1', agentId: 'agent-1', peerAgentId: 'agent-2' });
+        const fromTwo = await service().listPeerThread({ ownerUserId: 'user-1', agentId: 'agent-2', peerAgentId: 'agent-1' });
+        const page = await service().listPeerThread({ ownerUserId: 'user-1', agentId: 'agent-1', peerAgentId: 'agent-2', limit: 2 });
+        const oldest = (page as { data: Array<{ createdAt: Date; id: string }> }).data[0]!;
+        const older = await service().listPeerThread({ ownerUserId: 'user-1', agentId: 'agent-1', peerAgentId: 'agent-2', limit: 2, before: oldest.createdAt, beforeId: oldest.id });
+
+        expect(peerBodies(fromOne)).toEqual(['m1', 'm2', 'm3']);
+        expect(peerBodies(fromTwo)).toEqual(['m1', 'm2', 'm3']);
+        expect(peerBodies(page)).toEqual(['m2', 'm3']);
+        expect(peerBodies(older)).toEqual(['m1']);
+      });
+
+      it('does not show another owner\'s thread, or the user thread of the same agent', async () => {
+        await peer('agent-1', 'agent-2', 'private');
+        await user('agent-1', 'user thread');
+
+        expect(peerBodies(await service().listPeerThread({ ownerUserId: 'user-2', agentId: 'agent-1', peerAgentId: 'agent-2' }))).toEqual([]);
+        expect(peerBodies(await service().listPeerThread({ ownerUserId: 'user-1', agentId: 'agent-1', peerAgentId: 'agent-2' }))).toEqual(['private']);
+      });
+    });
+
+    it('removes the peer threads of a deleted agent, and only those', async () => {
+      await peer('agent-1', 'agent-2', 'gone');
+      await peer('agent-1', 'agent-4', 'gone too');
+      await peer('agent-2', 'agent-4', 'stays');
+      await user('agent-1', 'user thread');
+
+      await deleteUserAgentConversations(drizzle(pool, { schema }), ['agent-1']);
+
+      const left = await scratch.sql<{ id: string }[]>`SELECT id FROM conversations ORDER BY id`;
+      expect(left.map((c) => c.id)).toEqual([peerConversationId('agent-2', 'agent-4')]);
+      expect(await scratch.sql`SELECT 1 FROM conversation_messages`).toHaveLength(1);
+      expect(await scratch.sql`SELECT 1 FROM conversation_participants`).toHaveLength(2);
+    });
+  });
+
+  describe('AgentRepository peer reads (A2A-B)', () => {
+    let agents: AgentRepository;
+    beforeEach(() => { agents = new AgentRepository(drizzle(pool, { schema })); });
+
+    it('reads the stop switch: off by default, on after the owner turns it on, on for an unknown user (fail closed)', async () => {
+      expect(await agents.isPeerMessagingPaused('user-1')).toBe(false);
+
+      await scratch.sql`UPDATE users SET peer_messaging_paused = true WHERE id = 'user-1'`;
+
+      expect(await agents.isPeerMessagingPaused('user-1')).toBe(true);
+      expect(await agents.isPeerMessagingPaused('user-2')).toBe(false);
+      expect(await agents.isPeerMessagingPaused('nobody')).toBe(true);
+    });
+
+    it('lists one user\'s agents as id, name and status, and no other user\'s', async () => {
+      const summaries = await agents.listAgentSummaries('user-1');
+
+      expect(summaries).toEqual([
+        { id: 'agent-2', name: 'Kofi', status: 'active' },
+        { id: 'agent-1', name: 'Momo', status: 'active' },
+      ]);
+      expect(Object.keys(summaries[0]!).sort()).toEqual(['id', 'name', 'status']);
     });
   });
 });

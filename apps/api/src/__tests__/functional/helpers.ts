@@ -16,6 +16,8 @@ import { connectionRoutes } from '../../routes/connections.js';
 import { capabilityRoutes } from '../../routes/capabilities/index.js';
 import { eventsRoutes } from '../../routes/events.js';
 import { agentInteractivityRoutes, telegramWebhookHandler } from '../../routes/agent-interactivity.js';
+import { createConversationRouteDeps } from '../../routes/conversation-http.js';
+import { peerThreadRoutes } from '../../routes/peer-threads.js';
 import { analyticsRoutes } from '../../routes/analytics.js';
 import { aiRoutes } from '../../routes/ai.js';
 import { skillsRoutes } from '../../routes/skills.js';
@@ -581,6 +583,7 @@ export async function buildApp() {
     testPlansConfig as any,
     profileSaga as never,
   );
+  await peerThreadRoutes(app, db, createConversationRouteDeps(db));
 
   await analyticsRoutes(app, db, stubTradertonClient, 10_000);
 

@@ -4,7 +4,7 @@ import { EvaluationRuntime } from './agent-evaluation/index.js';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { createDatabase, AlertDeliveryRepository, AgentRepository, ConversationRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, NotificationDeliveryRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { ConversationService, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
+import { ConversationService, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, PeerMessagingService, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
 import { markThreadDelivery } from './thread-delivery.js';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
@@ -42,6 +42,8 @@ import { buildExternalBackendClientConfig, createExternalBackendClient, createLo
 import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createExternalBackendWriteBoundary } from './external-backend/write-adapter.js';
 import { AgentActorLifecycle } from './agents/agent-actor-lifecycle.js';
+import { RedisPeerRateLimiter } from './agents/peer-rate-limiter.js';
+import { RedisPeerWakePublisher } from './agents/peer-wake-publisher.js';
 import { ActorEventRelay } from './agents/actor-event-relay.js';
 import { createBoundaryConsumerNotificationFeed } from './agents/boundary-consumer-notification-feed.js';
 import { createExternalBackendReadBoundary } from './external-backend/read-adapter.js';
@@ -695,6 +697,16 @@ const conversations = new ConversationService({
   newId: () => crypto.randomUUID(),
   now: () => new Date(),
 });
+// Peer messages between one user's agents (A2A MVP): the rate limit and message size come from operator config, the stop switch from the users table.
+const peerMessaging = new PeerMessagingService({
+  agents: agentRepo,
+  settings: agentRepo,
+  limiter: new RedisPeerRateLimiter(redisClient, appConfig.agentRuntime.peer.rateLimitPerMinute),
+  conversations,
+  wake: new RedisPeerWakePublisher(redisClient),
+  config: { messageMaxChars: appConfig.agentRuntime.peer.messageMaxChars },
+  log: createLogger('peer-messaging'),
+});
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, telegramChat.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl, conversations);
 
 async function sendSessionStartedTelegramAnchor(agentId: string): Promise<void> {
@@ -862,6 +874,7 @@ const agentBroker = new AgentMessageBroker(
   operatorNotifier,
   agentNotificationDispatcher,
   conversations,
+  peerMessaging,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

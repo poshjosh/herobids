@@ -16,6 +16,7 @@ import type {
   AgentWakePayload,
   ManageAgentSkillsResult,
   ConnectionRequestResult,
+  PeerSendResult,
   UpdatePromptResult,
 } from '@herobids/domain';
 import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES, AGENT_STREAM_MAXLEN } from '@herobids/domain';
@@ -180,6 +181,12 @@ export class InstanceEventPublisher {
    */
   async publishUpdatePromptReply(requestMessageId: string, result: UpdatePromptResult): Promise<void> {
     const replyKey = `agent:update-prompt:reply:${requestMessageId}`;
+    await this.redis.lpush(replyKey, JSON.stringify(result));
+    await this.redis.expire(replyKey, 60);
+  }
+
+  async publishPeerSendReply(requestMessageId: string, result: PeerSendResult): Promise<void> {
+    const replyKey = `agent:peer-send:reply:${requestMessageId}`;
     await this.redis.lpush(replyKey, JSON.stringify(result));
     await this.redis.expire(replyKey, 60);
   }

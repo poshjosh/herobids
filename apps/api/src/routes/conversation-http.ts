@@ -86,6 +86,17 @@ export function toConversationResponse(message: ConversationMessage, stuck: bool
   };
 }
 
+/**
+ * A message of an agent-to-agent thread. `senderId` is the sending agent. A refused message carries its reason code
+ * (`peer.paused`, `peer.rate_limited`, ...) so the owner can see why it did not reach the recipient.
+ */
+export function toPeerMessageResponse(message: ConversationMessage) {
+  return {
+    ...toConversationResponse(message, false),
+    refusalReason: message.deliveryStatus === 'refused' ? message.deliveryDetail : null,
+  };
+}
+
 export interface ConversationHttpError {
   status: number;
   body: { error: string; message?: string };

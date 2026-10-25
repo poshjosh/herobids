@@ -150,6 +150,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_tasks',
   'list_watches',
   'message_child_agent',
+  'message_peer_agent',
   'load_skill',
   'make_http_request',
   'publish_artifact',
@@ -279,6 +280,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
 
   // write-messaging
   message_child_agent: { category: 'write-messaging',    description: 'Send a message to one of your direct child agents. Subject to a per-pair rate limit shared with replies.' },
+  message_peer_agent:  { category: 'write-messaging',    description: 'Send a message to another agent of the same user. The recipient wakes and reads it. Subject to a per-user rate limit and the user\'s pause switch.' },
   send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system. For user-directed communication only — use send_email for email delivery.' },
   send_email:          { category: 'write-messaging',     description: 'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId.' },
   publish_artifact:    { category: 'write-messaging',     description: 'Publish an artifact (analysis result, chart, report) for user review.' },
