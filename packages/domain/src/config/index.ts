@@ -121,6 +121,7 @@ export {
   PresetTransitionPolicySchema,
   PlatformAssessmentOptInSchema,
   AgentApprovalsConfigSchema,
+  AgentCreationConfigSchema,
   validateReviewInterval,
 } from './schema.js';
 
@@ -233,6 +234,7 @@ export type {
   PresetPolicy,
   AuthorizationMode,
   AgentApprovalsConfig,
+  AgentCreationConfig,
   GmailIntegrationConfig,
   AllowedPresetsPolicy,
   PresetTransitionPolicy,

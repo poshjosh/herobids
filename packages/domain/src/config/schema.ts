@@ -552,6 +552,16 @@ export const AgentApprovalsConfigSchema = z.object({
   resolveRateLimitPerMinute: z.number().int().min(1).default(20),
 }).default({});
 
+/** Operator limits for agent-created agents (001-agent-creating-agents §3). */
+export const AgentCreationConfigSchema = z.object({
+  /** Token bucket capacity and refill per minute for create_agent attempts, per user across the whole tree. */
+  agentCreateRatePerMinute: z.number().int().min(0).default(10),
+  /** Token bucket capacity and refill per minute for messages per creator-child pair, in either direction. */
+  creatorMessageRatePerMinute: z.number().int().min(0).default(10),
+  /** Max number of generations below a user-created agent. */
+  maxAgentDepth: z.number().int().min(0).default(6),
+}).default({});
+
 export const TelegramChannelConfigSchema = z.object({
   /** Telegram chat ID (numeric string or @channel) */
   chatId: z.string().min(1),
@@ -786,6 +796,8 @@ export const PlanLimitsEntitlementsSchema = z.object({
   maxVenueAccounts: z.number().min(1).default(5),
   maxConcurrentBacktests: z.number().min(0).default(3),
   liveEnabled: z.boolean().default(false),
+  /** Highest childAgentLimit any agent may be set to. Unset → derived as max(0, maxAgents - 1) by resolveChildAgentLimitCeiling. */
+  childAgentLimitCeiling: z.number().int().min(0).optional(),
 });
 
 export const PlanEntitlementsSchema = z.object({
@@ -1660,6 +1672,7 @@ export const AppConfigSchema = z.object({
   }),
   agentDecisionHandler: AgentDecisionHandlerConfigSchema,
   agentApprovals: AgentApprovalsConfigSchema,
+  agentCreation: AgentCreationConfigSchema,
   agentCostEstimates: AgentCostEstimatesSchema,
   evaluation: EvaluationConfigSchema.default({}),
   marketData: MarketDataConfigSchema.optional(),
@@ -1904,6 +1917,7 @@ export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;
 export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSchema>;
 export type AgentApprovalsConfig = z.infer<typeof AgentApprovalsConfigSchema>;
+export type AgentCreationConfig = z.infer<typeof AgentCreationConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AgentActorLifecycleConfig = z.infer<typeof AgentActorLifecycleConfigSchema>;
 export type ActorEventRelayConfig = z.infer<typeof ActorEventRelayConfigSchema>;

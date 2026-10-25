@@ -105,6 +105,11 @@ export function resolvePlanLimitEntitlements(config: PlansConfig, planId: string
   return resolvePlanEntitlements(config, { planId, isAdmin }).entitlements.limits;
 }
 
+/** Effective childAgentLimit ceiling: the explicit plan value, else maxAgents - 1 floored at 0. */
+export function resolveChildAgentLimitCeiling(limits: Pick<PlanLimitsEntitlements, 'maxAgents' | 'childAgentLimitCeiling'>): number {
+  return limits.childAgentLimitCeiling ?? Math.max(0, limits.maxAgents - 1);
+}
+
 export function resolvePlanBlueprintEntitlements(config: PlansConfig, planId: string, isAdmin = false): PlanBlueprintsEntitlements {
   return resolvePlanEntitlements(config, { planId, isAdmin }).entitlements.blueprints;
 }

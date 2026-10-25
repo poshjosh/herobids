@@ -91,6 +91,13 @@ agentApprovals:
   ttlMs: 86400000                    # 24h — max lifetime of a pending approval before expiry
   resolveRateLimitPerMinute: 20      # max approval-resolution checks per minute per worker
 
+# Agent-created agents (001-agent-creating-agents §3). Plan-level childAgentLimitCeiling is
+# separate and unset by default (derived as maxAgents - 1, floored at 0).
+agentCreation:
+  agentCreateRatePerMinute: 10       # token bucket capacity and refill per minute for create_agent attempts, per user across the tree
+  creatorMessageRatePerMinute: 10    # token bucket per creator-child pair, both directions
+  maxAgentDepth: 6                   # max generations below a user-created agent
+
 # Per-tick LLM cost estimates by usage tier (USD). Derived from eval data
 # (.ignore/eval/2026/06/) — includes both input and output token costs for
 # typical flash+pro scout/judge usage at each tier's expected escalation rate.

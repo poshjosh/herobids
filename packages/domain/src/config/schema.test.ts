@@ -22,6 +22,7 @@ import {
   BotRiskSchema,
   ExecutionDefaultsSchema,
   AppConfigSchema,
+  PlanLimitsEntitlementsSchema,
   type AgentStyleValue,
   type ReasoningLevel,
 } from './schema.js';
@@ -1840,5 +1841,86 @@ describe('AppConfigSchema — connectionRequests', () => {
       connectionRequests: { ttlSecs: 30 },
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('AppConfigSchema — agentCreation', () => {
+  const minimalAppConfig = {
+    app: {},
+    database: { url: 'postgres://localhost/test' },
+    redis: {},
+    execution: {},
+    agentRuntime: {
+      defaultBudgets: {
+        maxHistoryMessages: 20,
+        maxHistoryTokens: 40000,
+        maxRecentToolMessages: 6,
+        maxToolResultChars: 4000,
+        maxVisibleToolSchemas: 64,
+        maxContextBlockChars: 4000,
+      },
+    },
+  };
+
+  it('defaults the agent-creation limits to 10 / 10 / 6 when the block is absent', () => {
+    const result = AppConfigSchema.safeParse(minimalAppConfig);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.agentCreation).toEqual({
+        agentCreateRatePerMinute: 10,
+        creatorMessageRatePerMinute: 10,
+        maxAgentDepth: 6,
+      });
+    }
+  });
+
+  it('accepts zero and positive operator overrides', () => {
+    const result = AppConfigSchema.safeParse({
+      ...minimalAppConfig,
+      agentCreation: { agentCreateRatePerMinute: 0, creatorMessageRatePerMinute: 4, maxAgentDepth: 2 },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.agentCreation).toEqual({
+        agentCreateRatePerMinute: 0,
+        creatorMessageRatePerMinute: 4,
+        maxAgentDepth: 2,
+      });
+    }
+  });
+
+  it.each(['agentCreateRatePerMinute', 'creatorMessageRatePerMinute', 'maxAgentDepth'])(
+    'rejects a negative %s',
+    (key) => {
+      const result = AppConfigSchema.safeParse({
+        ...minimalAppConfig,
+        agentCreation: { [key]: -1 },
+      });
+      expect(result.success).toBe(false);
+    },
+  );
+
+  it('rejects a non-integer maxAgentDepth', () => {
+    const result = AppConfigSchema.safeParse({
+      ...minimalAppConfig,
+      agentCreation: { maxAgentDepth: 1.5 },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('PlanLimitsEntitlementsSchema — childAgentLimitCeiling', () => {
+  it('leaves childAgentLimitCeiling unset when omitted', () => {
+    const parsed = PlanLimitsEntitlementsSchema.parse({ maxAgents: 10 });
+    expect(parsed.childAgentLimitCeiling).toBeUndefined();
+  });
+
+  it('accepts an explicit non-negative integer', () => {
+    const parsed = PlanLimitsEntitlementsSchema.parse({ maxAgents: 10, childAgentLimitCeiling: 4 });
+    expect(parsed.childAgentLimitCeiling).toBe(4);
+  });
+
+  it('rejects a negative childAgentLimitCeiling', () => {
+    expect(PlanLimitsEntitlementsSchema.safeParse({ childAgentLimitCeiling: -1 }).success).toBe(false);
   });
 });

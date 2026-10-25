@@ -8,6 +8,7 @@ import {
   resolvePlanBlueprintEntitlements,
   resolvePlanForCheck,
   checkLiveEnabled,
+  resolveChildAgentLimitCeiling,
 } from './plan-entitlements.js';
 
 // ---------------------------------------------------------------------------
@@ -360,5 +361,27 @@ describe('checkLiveEnabled', () => {
     const result = checkLiveEnabled(config, 'anything', true);
 
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('resolveChildAgentLimitCeiling', () => {
+  it('derives maxAgents - 1 when childAgentLimitCeiling is unset', () => {
+    expect(resolveChildAgentLimitCeiling({ maxAgents: 10 })).toBe(9);
+  });
+
+  it('uses the explicit childAgentLimitCeiling when set', () => {
+    expect(resolveChildAgentLimitCeiling({ maxAgents: 10, childAgentLimitCeiling: 3 })).toBe(3);
+  });
+
+  it('honours an explicit zero ceiling', () => {
+    expect(resolveChildAgentLimitCeiling({ maxAgents: 10, childAgentLimitCeiling: 0 })).toBe(0);
+  });
+
+  it('floors the derived ceiling at zero when maxAgents is 0', () => {
+    expect(resolveChildAgentLimitCeiling({ maxAgents: 0 })).toBe(0);
+  });
+
+  it('floors the derived ceiling at zero when maxAgents is 1', () => {
+    expect(resolveChildAgentLimitCeiling({ maxAgents: 1 })).toBe(0);
   });
 });
