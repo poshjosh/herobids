@@ -14,6 +14,8 @@ import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentConversation } from './AgentConversation.js';
 import { NotificationSetupPrompt } from '../notifications/NotificationSetupPrompt.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
+import { AgentDeleteDialog } from './AgentDeleteDialog.js';
+import { ChildAgentAllowanceCard } from './ChildAgentAllowanceCard.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
 
@@ -26,6 +28,7 @@ export function AgentDetailPage() {
   const { user } = useSession();
 
   const [isEditing, setIsEditing] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [activePromptTab, setActivePromptTab] = useState<'judgeSystem' | 'scoutSystem' | 'userContext' | 'judgeUserContext' | 'hybridSystem'>('judgeSystem');
   const [expandedArtifactId, setExpandedArtifactId] = useState<string | null>(null);
 
@@ -204,14 +207,6 @@ export function AgentDetailPage() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: () => agentsApi.delete(id!),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['agents'] });
-      navigate('/agents');
-    },
-  });
-
   const handleDownloadArtifact = useCallback(async (artifactId: string, artifactType: string) => {
     const url = agentsApi.getArtifactDownloadUrl(id!, artifactId);
     try {
@@ -282,7 +277,8 @@ export function AgentDetailPage() {
   const operatorContextItems: string[] = [
     selectedSkills.length > 0 ? `Skills: ${formatSkillSelection(selectedSkills, intl)}` : null,
   ].filter((item): item is string => item !== null);
-  const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error ?? deleteMutation.error;
+  const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error;
+  const childAgentLimitCeiling = user?.planEntitlements?.limits.childAgentLimitCeiling ?? 0;
   const canStop = ['active', 'starting', 'paused', 'unhealthy', 'crashed'].includes(agent.status);
   const runtimeAlert = agent.status === 'crashed'
     ? intl.formatMessage({ id: 'agents.detail.runtimeAlert.crashed' })
@@ -324,19 +320,22 @@ export function AgentDetailPage() {
             {(agent.status === 'stopped' || agent.status === 'crashed') && (
               <Button
                 variant="danger"
-                onClick={() => {
-                  if (confirm(intl.formatMessage({ id: 'agents.detail.deleteConfirm' }))) {
-                    deleteMutation.mutate();
-                  }
-                }}
-                disabled={deleteMutation.isPending}
+                onClick={() => setIsDeleteDialogOpen(true)}
               >
-                {deleteMutation.isPending ? intl.formatMessage({ id: 'agents.detail.deleting' }) : intl.formatMessage({ id: 'common.delete' })}
+                {intl.formatMessage({ id: 'common.delete' })}
               </Button>
             )}
           </div>
         }
       />
+
+      {isDeleteDialogOpen && (
+        <AgentDeleteDialog
+          agentId={id!}
+          onClose={() => setIsDeleteDialogOpen(false)}
+          onDeleted={() => navigate('/agents')}
+        />
+      )}
 
       {isEditing && (
         <EditAgentModal
@@ -358,6 +357,8 @@ export function AgentDetailPage() {
             <KV label={intl.formatMessage({ id: 'common.updated' })} value={<RelativeTime timestamp={agent.updatedAt} />} />
           </div>
         </Card>
+
+        <ChildAgentAllowanceCard agent={agent} ceiling={childAgentLimitCeiling} />
 
         <Card>
           <details>

@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
-import { isEmailFallbackAllowed, type AuthConfig, type PlansConfig } from '@herobids/domain';
+import { isEmailFallbackAllowed, resolveChildAgentLimitCeiling, type AuthConfig, type PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { users, oauthIdentities, localIdentities, sessions, userPlans, agents, setTelegramChatAddress } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
@@ -173,11 +173,17 @@ export async function authRoutes(
   authMailer?: AuthMailer,
   emailFallbackUserDefaultEnabled = false,
 ) {
+  // The child-agent ceiling is resolved here (explicit plan value, else maxAgents - 1) so the web
+  // never re-derives it from maxAgents.
   function profilePlanEntitlements(planId: string, isAdmin: boolean) {
     if (!plansConfig) {
       return null;
     }
-    return resolvePlanEntitlements(plansConfig, { planId, isAdmin }).entitlements;
+    const { entitlements } = resolvePlanEntitlements(plansConfig, { planId, isAdmin });
+    return {
+      ...entitlements,
+      limits: { ...entitlements.limits, childAgentLimitCeiling: resolveChildAgentLimitCeiling(entitlements.limits) },
+    };
   }
 
   // ── Login-link helpers ──────────────────────────────────────────────────

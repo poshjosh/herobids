@@ -246,6 +246,8 @@ export interface PlanLimitsEntitlements {
   maxVenueAccounts: number;
   maxConcurrentBacktests: number;
   liveEnabled: boolean;
+  /** Resolved plan ceiling for an agent's childAgentLimit (0 = agents cannot create children). */
+  childAgentLimitCeiling?: number;
 }
 
 export interface PlanBlueprintsEntitlements {
@@ -1053,6 +1055,13 @@ export interface Agent {
   skillPresetId?: string | null;
   /** Permission level: 'restricted' | 'standard' | 'full'. Controls agent container capabilities. */
   permissionLevel?: string | null;
+  /** Lineage (001-agent-creating-agents): parent is set for child agents; null for top-level. */
+  parentAgentId?: string | null;
+  depth?: number;
+  creatorType?: 'user' | 'agent' | 'system';
+  creatorId?: string | null;
+  /** Maximum direct child agents this agent may create; set by the user only. */
+  childAgentLimit?: number;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
@@ -1170,6 +1179,30 @@ function agentCapabilityReadiness(
     : request<{ agentId: string; capabilities: CapabilityReadiness[] }>(`/agents/${id}/capabilities/readiness`);
 }
 
+export type AgentDeleteScope = 'subtree' | 'agent';
+
+export interface AgentDeleteResult {
+  scope: AgentDeleteScope;
+  agentCount: number;
+  botCount: number;
+}
+
+export interface AgentDeletePreview {
+  availableScopes: AgentDeleteScope[];
+  defaultScope: AgentDeleteScope;
+  agentCount: number;
+  botCount: number;
+  nonStoppedAgents: Array<{ id: string; status: string }>;
+  scopes: Partial<Record<AgentDeleteScope, { agentCount: number; botCount: number }>>;
+}
+
+export interface AgentChildAllowance {
+  id: string;
+  childAgentLimit: number;
+  childCount: number;
+  remainingChildAllowance: number;
+}
+
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
@@ -1238,7 +1271,15 @@ export const agents = {
     authorizationMode?: 'direct' | 'approval_required' | null;
   }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
+  delete: (id: string, scope?: AgentDeleteScope) =>
+    request<AgentDeleteResult>(`/agents/${id}${buildQuery({ scope })}`, { method: 'DELETE' }),
+  deletePreview: (id: string) => request<AgentDeletePreview>(`/agents/${id}/delete-preview`),
+  childAllowance: (id: string) => request<AgentChildAllowance>(`/agents/${id}/child-allowance`),
+  setChildLimit: (id: string, childAgentLimit: number) =>
+    request<{ childAgentLimit: number }>(`/agents/${id}/child-limit`, {
+      method: 'PUT',
+      body: JSON.stringify({ childAgentLimit }),
+    }),
   listDocuments: (agentId: string) =>
     request<AgentDocument[]>(`/agents/${agentId}/documents`),
   uploadDocument: (agentId: string, file: File) => {

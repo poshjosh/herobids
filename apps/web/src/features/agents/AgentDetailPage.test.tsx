@@ -41,7 +41,7 @@ vi.mock('../../lib/api-client.js', () => ({
 
 vi.mock('../../app/providers/SessionProvider.js', () => ({
   useSession: () => ({
-    user: { isAdmin: false, planEntitlements: { agents: { canViewOwnPrompts: true } } },
+    user: { isAdmin: false, planEntitlements: { agents: { canViewOwnPrompts: true }, limits: { childAgentLimitCeiling: 0 } } },
     loading: false,
     authenticated: true,
     login: vi.fn(),

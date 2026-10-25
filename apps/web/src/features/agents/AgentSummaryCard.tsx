@@ -5,6 +5,7 @@ import { agents as agentsApi, skills as skillsApi, type Agent } from '../../lib/
 import { getRuntimeFamiliesForProvider } from '@herobids/domain';
 import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 import { extractAgentObjective, formatCapabilityFamily, formatObjectivePreview, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
+import type { CreatorLabel } from './agent-tree.js';
 
 // ── Shared icon button style ───────────────────────────────────────────────
 
@@ -24,12 +25,24 @@ const ICON_BUTTON_STYLE: React.CSSProperties = {
 };
 
 
+/** Tree-only details. Omitted for the flat list, which renders exactly as before. */
+export interface AgentHierarchyMeta {
+  /** Shown as "Depth N" when set. */
+  depth: number | null;
+  creatorLabel: CreatorLabel | null;
+  /** Pre-formatted allowance text, e.g. "2 of 5 children used". */
+  allowanceLabel: string | null;
+  /** Set for child agents. Opens the message form rendered by the tree row. */
+  onMessage?: () => void;
+}
+
 interface AgentSummaryCardProps {
   agent: Agent;
   onOpen?: () => void;
+  hierarchy?: AgentHierarchyMeta;
 }
 
-export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
+export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardProps) {
   const navigate = useNavigate();
   const intl = useIntl();
   const qc = useQueryClient();
@@ -50,6 +63,7 @@ export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
     })),
   );
   const openAgent = onOpen ?? (() => navigate(`/agents/${agent.id}`));
+  const onMessage = hierarchy?.onMessage;
 
   // ── Lifecycle mutations (same as agent detail page) ────────────────────
 
@@ -156,6 +170,22 @@ export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
           </button>
         )}
 
+        {/* Message (child agents only) */}
+        {onMessage && (
+          <button
+            type="button"
+            style={ICON_BUTTON_STYLE}
+            title={intl.formatMessage({ id: 'agents.tree.message' })}
+            aria-label={intl.formatMessage({ id: 'agents.tree.message' })}
+            disabled={anyActionPending}
+            onClick={(e) => handleAction(e, onMessage)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+        )}
+
         {/* Stop */}
         {canStop && (
           <button
@@ -177,12 +207,31 @@ export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
             <span style={{ fontWeight: '600', fontSize: '0.9375rem', color: 'var(--color-text-primary)' }}>{agent.name}</span>
             <StatusBadge status={agent.status} />
+            {hierarchy?.depth != null && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                {intl.formatMessage({ id: 'agents.tree.depth' }, { depth: hierarchy.depth })}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
             {formatObjectivePreview(objective, 40)}
           </div>
         </div>
       </div>
+
+      {hierarchy?.creatorLabel && (
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          {hierarchy.creatorLabel.kind === 'agent'
+            ? intl.formatMessage({ id: 'agents.tree.createdBy' }, { name: hierarchy.creatorLabel.name })
+            : intl.formatMessage({ id: 'agents.tree.createdByDeleted' })}
+        </div>
+      )}
+
+      {hierarchy?.allowanceLabel && (
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          {hierarchy.allowanceLabel}
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>

@@ -240,6 +240,7 @@ describe('auth routes', () => {
       expect(body.planId).toBe('free');
       expect(body.preferredLocale).toBe('ar');
       expect(body.planEntitlements.skills.autoPublishNonDraftSkills).toBe(true);
+      expect(body.planEntitlements.limits.childAgentLimitCeiling).toBe(Math.max(0, body.planEntitlements.limits.maxAgents - 1));
     });
   });
 

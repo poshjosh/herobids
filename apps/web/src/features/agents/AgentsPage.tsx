@@ -3,16 +3,17 @@ import { useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, LoadingRows, ErrorState, Button, MetricCard } from '../../lib/ui.js';
+import { PageShell, PageHeader, LoadingRows, ErrorState, Button, MetricCard, inputStyle } from '../../lib/ui.js';
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
 import type { BlueprintSummary } from '../../lib/api-client.js';
-import { AgentSummaryCard } from './AgentSummaryCard.js';
+import { AgentHierarchyList } from './AgentHierarchyList.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 
 export function AgentsPage() {
   const [agentTab, setAgentTab] = useState<'my-agents' | 'marketplace'>('my-agents');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedBlueprint, setSelectedBlueprint] = useState<BlueprintSummary | null>(null);
   const intl = useIntl();
   const navigate = useNavigate();
@@ -96,9 +97,15 @@ export function AgentsPage() {
 
           {query.isSuccess && items.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {items.map((agent) => (
-                <AgentSummaryCard key={agent.id} agent={agent} />
-              ))}
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={intl.formatMessage({ id: 'agents.tree.search' })}
+                aria-label={intl.formatMessage({ id: 'agents.tree.search' })}
+                style={{ ...inputStyle, maxWidth: '360px' }}
+              />
+              <AgentHierarchyList agents={items} searchQuery={searchQuery} />
             </div>
           )}
         </>
