@@ -25,7 +25,7 @@ import {
   syncAgentSkillAssignments,
   ensureExternalSkillIds,
 } from '@herobids/db';
-import type { PlansConfig } from '@herobids/domain';
+import { AgentCreationConfigSchema, type AgentCreationConfig, type PlansConfig } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
 import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import {
@@ -55,6 +55,15 @@ import {
   type ModelDefaults,
 } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
+import {
+  AGENT_CHILD_CREATE_FIELDS,
+  AgentCreatePolicyError,
+  consumeAgentCreateToken,
+  disallowedAgentCreateFields,
+  enforceAgentCreatePolicy,
+  preflightAgentCreatePolicy,
+  type AgentCreatePolicyInput,
+} from '../agents/agent-create-policy.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
 import {
   loadActiveTradingProfileConnections,
@@ -432,6 +441,8 @@ export async function agentRoutes(
   // D10: operator default tick interval for non-trading agents created without
   // an explicit interval. Threaded from appConfig.agentRuntime.nonTradingDefaults.
   nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
+  // Agent-created agents (001-agent-creating-agents §3): rate, depth and the child-create ceiling.
+  agentCreation: AgentCreationConfig = AgentCreationConfigSchema.parse({}),
 ): Promise<void> {
   const approvalRepo = new DecisionApprovalRepository(db);
   const stagedProfileReconciliationSaga = profileReconciliationSaga ?? new TradingProfileReconciliationSaga(
@@ -528,8 +539,25 @@ export async function agentRoutes(
 
   // --- CRUD ---
 
-  // Create agent
-  app.post('/agents', async (request, reply) => {
+  // Create agent. Agent keys may create a child agent: the lineage comes from the key, never the body.
+  app.post('/agents', { config: { agentAccess: 'child-create' } }, async (request, reply) => {
+    const parentAgentId = request.actingAgentId;
+    // Every agent-key attempt takes a token, including attempts rejected below.
+    if (parentAgentId) {
+      const rateError = await consumeAgentCreateToken(redisClient, request.log, request.userId, agentCreation.agentCreateRatePerMinute);
+      if (rateError) return reply.status(rateError.status).send(rateError.body);
+
+      // Refused, not stripped: an agent asking for a field it may not set learns so from the response.
+      const disallowed = disallowedAgentCreateFields(request.body);
+      if (disallowed.length > 0) {
+        return reply.status(400).send(errorPayload(
+          'agent.create.field_not_allowed',
+          `Agent callers may only set ${AGENT_CHILD_CREATE_FIELDS.join(', ')}. Not allowed: ${disallowed.join(', ')}.`,
+          { fields: disallowed },
+        ));
+      }
+    }
+
     const parsed = CreateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
@@ -549,8 +577,10 @@ export async function agentRoutes(
       parsed.data.skillIds = resolvedIds;
     }
 
-    // Plan enforcement
-    if (plansConfig) {
+    // Fast-fail for user creations before any profile-boundary write. The same plan check runs again
+    // under the user's lock inside the creation transaction, which is the authoritative one.
+    // Agent callers skip this: their plan bypass follows the owner's admin flag, read in the transaction.
+    if (plansConfig && !parentAgentId) {
       const planCheck = await checkAgentLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
       if (!planCheck.ok) {
         return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
@@ -815,17 +845,35 @@ export async function agentRoutes(
       };
     };
 
+    const agentCreatePolicyInput: AgentCreatePolicyInput = {
+      caller: { userId: request.userId, planId: request.userPlanId || 'free', isAdmin: request.isAdmin, parentAgentId },
+      plansConfig,
+      maxAgentDepth: agentCreation.maxAgentDepth,
+      skillIds: parsed.data.skillIds ?? [],
+      connectionIds,
+      permissionLevel: parsed.data.permissionLevel,
+    };
+
     try {
+      // Agent callers: refuse before any profile-boundary write. The authoritative check runs under the lock in commitLocal.
+      if (parentAgentId) await preflightAgentCreatePolicy(db, agentCreatePolicyInput);
       await stagedProfileReconciliationSaga.executeStaged({
       ownerId: request.userId,
       actorId: agentId,
       localMutationId: crypto.randomUUID(),
       preparePlannerInput: prepareCreateProfilePlan,
       commitLocal: async (tx: DatabaseTransaction, markLocalCommitted): Promise<{ kind: 'ok' }> => {
+        // Plan, allowance, depth, grant and permission checks run under the user's lock, in the same transaction as the insert.
+        const lineage = await enforceAgentCreatePolicy(tx, agentCreatePolicyInput);
         await tx.insert(agents).values({
           id: agentId,
           userId: request.userId,
           name: agentName,
+          creatorType: lineage.creatorType,
+          creatorId: lineage.creatorId,
+          parentAgentId: lineage.parentAgentId,
+          depth: lineage.depth,
+          childAgentLimit: 0,
           prompt: parsed.data.prompt ?? '',
           status: 'stopped',
           toolPolicy: createFields.toolPolicy,
@@ -835,7 +883,7 @@ export async function agentRoutes(
           maxBots: createFields.maxBots,
           tickIntervalMs: resolvedTickIntervalMs,
           style: parsed.data.style ?? null,
-          permissionLevel: parsed.data.permissionLevel ?? 'standard',
+          permissionLevel: lineage.permissionLevel,
           runtimePolicyOverrides: createFields.runtimePolicyOverrides,
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
           ...(createFields.unifiedConfig ? { unifiedConfig: createFields.unifiedConfig } : {}),
@@ -920,6 +968,7 @@ export async function agentRoutes(
       },
       });
     } catch (error) {
+      if (error instanceof AgentCreatePolicyError) return reply.status(error.status).send(error.body);
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
       if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       if (error instanceof TradingProfileScanValidationError) return reply.status(400).send({ error: 'validation_error', message: error.message });

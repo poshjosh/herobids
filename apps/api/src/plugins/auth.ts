@@ -20,12 +20,13 @@ declare module 'fastify' {
     /**
      * Opts a route in to agent-key callers. Routes without it refuse agent keys (default-deny).
      * 'self' means the route may be called by an agent key only for its own agent (see requireSelfAgentOrUser).
+     * 'child-create' means an agent key may create a child agent; the route derives the lineage from the key.
      */
     agentAccess?: AgentAccessLevel;
   }
 }
 
-export type AgentAccessLevel = 'self';
+export type AgentAccessLevel = 'self' | 'child-create';
 
 /** Runtime statuses whose API keys are revoked. */
 const INACTIVE_RUNTIME_STATUSES = ['stopped', 'crashed'];

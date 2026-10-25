@@ -366,7 +366,7 @@ await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClie
 await connectionsOauthRoutes(app, db, appConfig, appConfig.plans, { redis: redisClient, saga: profileReconciliationSaga, budgets: appConfig.agentRuntime.defaultBudgets });
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs);
+await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs, appConfig.agentCreation);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate

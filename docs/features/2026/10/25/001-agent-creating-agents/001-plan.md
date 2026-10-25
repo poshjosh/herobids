@@ -72,6 +72,14 @@ Failures return an error naming the rule that failed. Creation is atomic: the ch
 
 Admin bypass: plan total bypasses for admins, as today. Rate and depth still apply to admins. The allowance is user-set and always applies.
 
+Agent callers and admin: `request.isAdmin` is `false` for agent keys (auth plugin). For an agent-created child, the plan-total bypass therefore follows the owner's `users.isAdmin`, read in the creation transaction. That is the only use of the owner's admin flag for agent callers. No other rule changes for admin owners.
+
+Agent callers, fields: the body is an allowlist of `name`, `prompt`, `skillIds`, `connectionIds`. Any other present field, unknown keys included, returns 400 `agent.create.field_not_allowed` listing the fields. Nothing is stripped silently. Every other field is server-set for the child: `toolPolicy`, `telegramChatId`, `executionDefaults`, `capital`, `runtimePolicyOverrides`, `risk`, `dailySpendBudgetUsd`, `notificationPolicy` and the model fields take their defaults, and `permissionLevel` is the lower of the parent's level and `standard`.
+
+Agent callers, preflight: before any profile-boundary write, the same allowance, depth, plan total, grant and permission rules run read-only (no locks). A refusal there makes no boundary call, so a refused child never writes to the boundary and needs no compensation. The authoritative check is still the one under the user's lock inside the insert transaction in `commitLocal`.
+
+Grant-read window (accepted): the parent's skill and connection grants are read in the insert transaction without a lock on the grant rows. A grant revoked from the parent while a creation runs can race with it. The only lock is the parent row lock, which serialises creations from the same parent and is not extended to revocations.
+
 ## 6. Permissions and Caller Identity
 
 Agent reasoning and tools run inside each agent's container ([agent.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/agent.ts)). The container calls the platform API over HTTP, using the existing routes.
@@ -110,7 +118,7 @@ Loop guard: messages between creator and child share one token bucket per pair (
 
 `create_agent` is added to the tool set in [agents/](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/tools) following the `AgentTool` shape in `bots.ts`. It calls `POST /agents` over HTTP with the agent's API key (§6).
 
-- Input: name, prompt, and the subset of creation fields the platform allows for agents, including the skills and connections the parent chooses to grant (§6). No creator, parent or depth fields: the API derives those from the key.
+- Input: exactly `name`, `prompt`, `skillIds` and `connectionIds` (the allowlist in §5). The skills and connections are those the parent chooses to grant (§6). Any other field, including creator, parent, depth and permission, is refused with `agent.create.field_not_allowed`. The API derives lineage from the key.
 - Output: new agent id, depth, and remaining child allowance.
 - Exposed only when `childAgentLimit > 0` and children count < `childAgentLimit`. No skill is required.
 

@@ -109,7 +109,6 @@ const AGENT_KEY_DENIED_ROUTES: DeniedRoute[] = [
   { name: 'POST /agents/:id/resume', method: 'POST', url: (f) => `/agents/${f.agentId}/resume` },
   { name: 'POST /agents/:id/start', method: 'POST', url: (f) => `/agents/${f.agentId}/start` },
   { name: 'PUT /agents/:id (agent-interactivity)', method: 'PUT', url: (f) => `/agents/${f.agentId}`, payload: {} },
-  { name: 'POST /agents', method: 'POST', url: () => '/agents', payload: { name: 'child', prompt: 'p' } },
   {
     name: 'POST /agents/:id/approvals/:approvalId/approve',
     method: 'POST',

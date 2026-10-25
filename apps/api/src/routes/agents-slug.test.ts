@@ -157,6 +157,8 @@ function buildDb(options: {
       }),
     }),
     transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(db)),
+    // Advisory lock taken at the start of every creation transaction (lockUserAgentCreation).
+    execute: vi.fn().mockResolvedValue([]),
     delete: vi.fn().mockImplementation(() => ({
       where: vi.fn().mockResolvedValue(undefined),
     })),

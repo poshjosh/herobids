@@ -1,8 +1,9 @@
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from './index.js';
+import type { DatabaseTransaction } from './trading-profile-reconciliation-outbox-repository.js';
 import { platformCredentials, agents, connections } from './schema/index.js';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { ok, err } from '@herobids/domain';
 import { resolvePlanForCheck, type PlanCheckResult } from '@herobids/domain';
 
@@ -91,8 +92,16 @@ export async function checkCredentialLimit(db: Database, config: PlansConfig, us
   return ok(undefined);
 }
 
-/** Check if user can create a new agent */
-export async function checkAgentLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
+/**
+ * Serialises agent-count checks and inserts per user. Take it first, inside the transaction that
+ * inserts the agent, so the count and the insert are one unit under concurrent creations.
+ */
+export async function lockUserAgentCreation(tx: DatabaseTransaction, userId: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(14, hashtext(${userId}))`);
+}
+
+/** Check if user can create a new agent. Pass the transaction that inserts the agent so the count is under the lock. */
+export async function checkAgentLimit(db: Database | DatabaseTransaction, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
   const resolved = resolvePlanForCheck(config, planId, isAdmin);
   if (resolved.isAdminBypass) return ok(undefined);
   const limits = resolved.entitlements.limits;
