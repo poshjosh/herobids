@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.7.10 - 2026-10-25
+
 ### Added
 
 - Web chat typing indicator ("<agent> is thinking…") while the agent works on a message. It follows the runtime's tick events, so it stops when the agent replies, skips the tick, or fails.
