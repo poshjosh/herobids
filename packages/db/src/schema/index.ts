@@ -39,6 +39,7 @@ export { datasets } from './datasets.js';
 export { connections } from './connections.js';
 export { agentConnections } from './agent-connections.js';
 export { agentConnectionAudit } from './agent-connection-audit.js';
+export { agentAuditEvents } from './agent-audit-events.js';
 export { decisionApprovals } from './decision-approvals.js';
 export { llmPricingSnapshots } from './llm-pricing-snapshots.js';
 export { agentEvaluations } from './agent-evaluations.js';

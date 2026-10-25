@@ -6,7 +6,7 @@ import { requireDirectChildOfActingAgent, requireUserCaller } from '../plugins/a
 import { consumeTokenBucketToken } from '../services/token-bucket.js';
 import { eq, and, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
+import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import type { InboundChatMessage } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
@@ -420,6 +420,16 @@ export async function agentInteractivityRoutes(
       payload: { message: parsed.data.message },
     };
     await redisClient.xadd(`agent:outbound:${id}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
+
+    if (request.actingAgentId) {
+      await recordAgentAuditEvent(db, {
+        userId: request.userId,
+        actorType: 'agent',
+        actorId: request.actingAgentId,
+        action: 'agent.creator_messaged_child',
+        targetId: id,
+      });
+    }
 
     return reply.status(202).send({ delivered: true });
   });

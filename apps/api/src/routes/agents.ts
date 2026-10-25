@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireDirectChildOfActingAgent, requireSelfAgentOrUser, requireUserCaller } from '../plugins/auth.js';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import { TradingProfileReconciliationOutboxRepository, setTelegramChatAddress, type Database, type DatabaseTransaction } from '@herobids/db';
+import { TradingProfileReconciliationOutboxRepository, recordAgentAuditEvent, setTelegramChatAddress, type Database, type DatabaseTransaction } from '@herobids/db';
 import {
   agents,
   agentArtifacts,
@@ -66,6 +66,12 @@ import {
   type AgentCreatePolicyInput,
 } from '../agents/agent-create-policy.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
+import {
+  createAgentOutcomeForRule,
+  recordCreateAgentAttempt,
+  setCreateAgentOutcome,
+  takeCreateAgentOutcome,
+} from '../agents/agent-create-metrics.js';
 import {
   loadActiveTradingProfileConnections,
 } from '../agents/trading-profile-reconciliation-adapter.js';
@@ -745,16 +751,27 @@ export async function agentRoutes(
   // --- CRUD ---
 
   // Create agent. Agent keys may create a child agent: the lineage comes from the key, never the body.
-  app.post('/agents', { config: { agentAccess: 'child-create' } }, async (request, reply) => {
+  app.post('/agents', {
+    config: { agentAccess: 'child-create' },
+    // One metrics line per attempt, whichever branch below answered it.
+    onResponse: (request, _reply, done) => {
+      recordCreateAgentAttempt(request.log, takeCreateAgentOutcome(request));
+      done();
+    },
+  }, async (request, reply) => {
     const parentAgentId = request.actingAgentId;
     // Every agent-key attempt takes a token, including attempts rejected below.
     if (parentAgentId) {
       const rateError = await consumeAgentCreateToken(redisClient, request.log, request.userId, agentCreation.agentCreateRatePerMinute);
-      if (rateError) return reply.status(rateError.status).send(rateError.body);
+      if (rateError) {
+        setCreateAgentOutcome(request, createAgentOutcomeForRule(rateError.rule));
+        return reply.status(rateError.status).send(rateError.body);
+      }
 
       // Refused, not stripped: an agent asking for a field it may not set learns so from the response.
       const disallowed = disallowedAgentCreateFields(request.body);
       if (disallowed.length > 0) {
+        setCreateAgentOutcome(request, 'field_refused');
         return reply.status(400).send(errorPayload(
           'agent.create.field_not_allowed',
           `Agent callers may only set ${AGENT_CHILD_CREATE_FIELDS.join(', ')}. Not allowed: ${disallowed.join(', ')}.`,
@@ -788,6 +805,7 @@ export async function agentRoutes(
     if (plansConfig && !parentAgentId) {
       const planCheck = await checkAgentLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
       if (!planCheck.ok) {
+        setCreateAgentOutcome(request, 'plan_total');
         return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }
     }
@@ -1097,6 +1115,17 @@ export async function agentRoutes(
           createdAt: now,
           updatedAt: now,
         } as never);
+        // Same transaction as the insert: a refused creation rolls back and leaves no event.
+        if (parentAgentId) {
+          await recordAgentAuditEvent(tx, {
+            userId: request.userId,
+            actorType: 'agent',
+            actorId: parentAgentId,
+            action: 'agent.child_created',
+            targetId: agentId,
+            detail: { parentAgentId, depth: lineage.depth },
+          });
+        }
         if (parsed.data.telegramChatId !== undefined) {
           await setTelegramChatAddress(tx, { userId: request.userId, agentId }, parsed.data.telegramChatId);
         }
@@ -1173,7 +1202,10 @@ export async function agentRoutes(
       },
       });
     } catch (error) {
-      if (error instanceof AgentCreatePolicyError) return reply.status(error.status).send(error.body);
+      if (error instanceof AgentCreatePolicyError) {
+        setCreateAgentOutcome(request, createAgentOutcomeForRule(error.rule));
+        return reply.status(error.status).send(error.body);
+      }
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
       if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       if (error instanceof TradingProfileScanValidationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
@@ -1184,6 +1216,7 @@ export async function agentRoutes(
 
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     const skillIds = await listSkillIdsForAgent(db, agentId);
+    setCreateAgentOutcome(request, 'success');
     return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), ...enrichAgentResponse(agent!) });
   });
 
@@ -2352,10 +2385,19 @@ export async function agentRoutes(
 
     // 2. Platform rows. Subtree: one transaction, reached only after every teardown succeeded.
     //    Agent: the existing staged path, with the child lift in the same transaction.
+    const auditDeletion = (tx: DatabaseTransaction): Promise<void> => recordAgentAuditEvent(tx, {
+      userId: ownerId,
+      actorType: 'user',
+      actorId: ownerId,
+      action: 'agent.deleted',
+      targetId: id,
+      detail: { scope, agentCount: deletedIds.length, botCount: botsRemoved },
+    });
     if (scope === 'subtree') {
       await db.transaction(async (tx) => {
         await assertSubtreeUnchanged(tx);
         await purgeAgentRows(tx, memberIds);
+        await auditDeletion(tx);
       });
     } else {
       const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
@@ -2369,6 +2411,7 @@ export async function agentRoutes(
           // Re-parent before the delete: the parent FK is ON DELETE NO ACTION.
           await detachChildrenOfDeletedAgent(tx, current, id);
           await purgeAgentRows(tx, [id]);
+          await auditDeletion(tx);
           await markLocalCommitted();
         },
       });
@@ -2462,6 +2505,17 @@ export async function agentRoutes(
       return reply.status(500).send({ error: result.error.code, message: result.error.message });
     }
 
+    // Creator actions only. User pause and stop stay unaudited in this step.
+    if (request.actingAgentId) {
+      await recordAgentAuditEvent(db, {
+        userId: request.userId,
+        actorType: 'agent',
+        actorId: request.actingAgentId,
+        action: 'agent.creator_paused_child',
+        targetId: id,
+      });
+    }
+
     return reply.send({ status: result.data.status });
   });
 
@@ -2487,10 +2541,24 @@ export async function agentRoutes(
     }
 
     // Ownership is part of the single UPDATE, so another user's agent matches no row and returns 404.
-    const [updated] = await db.update(agents)
-      .set({ childAgentLimit: parsed.data.childAgentLimit, updatedAt: new Date() })
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)))
-      .returning({ childAgentLimit: agents.childAgentLimit });
+    // The audit row shares the transaction: no row updated means no event.
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(agents)
+        .set({ childAgentLimit: parsed.data.childAgentLimit, updatedAt: new Date() })
+        .where(and(eq(agents.id, id), eq(agents.userId, request.userId)))
+        .returning({ childAgentLimit: agents.childAgentLimit });
+      if (row) {
+        await recordAgentAuditEvent(tx, {
+          userId: request.userId,
+          actorType: 'user',
+          actorId: request.userId,
+          action: 'agent.child_limit_set',
+          targetId: id,
+          detail: { childAgentLimit: row.childAgentLimit },
+        });
+      }
+      return row;
+    });
     if (!updated) {
       return reply.status(404).send({ error: 'not_found' });
     }
@@ -2736,6 +2804,17 @@ export async function agentRoutes(
         return reply.status(404).send({ error: 'not_found' });
       }
       return reply.status(500).send({ error: result.error.code, message: result.error.message });
+    }
+
+    // Creator actions only. User pause and stop stay unaudited in this step.
+    if (request.actingAgentId) {
+      await recordAgentAuditEvent(db, {
+        userId: request.userId,
+        actorType: 'agent',
+        actorId: request.actingAgentId,
+        action: 'agent.creator_stopped_child',
+        targetId: id,
+      });
     }
 
     return reply.send({ status: result.data.status });

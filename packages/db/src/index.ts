@@ -68,3 +68,5 @@ export { upsertExternalSkill, normalizeSourceRefToSlug, deriveSourceKind, ensure
 export type { ExternalSkillUpsert, ExternalSkillRow } from './external-skill-catalog.js';
 export * from './plan-guards.js';
 export * from './trading-setup/trading-provider-link.js';
+export { recordAgentAuditEvent, AGENT_AUDIT_ACTIONS } from './agent-audit.js';
+export type { AgentAuditAction, AgentAuditActorType, AgentAuditDetail, AgentAuditEventInput } from './agent-audit.js';

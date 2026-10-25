@@ -575,6 +575,13 @@
       "when": 1792943048436,
       "tag": "0081_broad_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1792947701435,
+      "tag": "0082_wakeful_mantis",
+      "breakpoints": true
     }
   ]
 }
