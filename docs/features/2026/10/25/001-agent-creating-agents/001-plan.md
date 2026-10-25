@@ -1,6 +1,6 @@
 # Agent-Created Agents — Plan
 
-Status: Draft (revision 2)
+Status: Draft (revision 3)
 Date: 2026-10-25
 
 ## 1. Goal
@@ -13,7 +13,6 @@ In scope:
 
 - Lineage fields on the `agents` table (creator, parent, depth).
 - A per-agent creation allowance, set by the user only.
-- An agent-scoped caller identity for the API, so the API knows when an agent is calling.
 - An agent-facing `create_agent` tool, exposed by allowance.
 - A creator's limited access to its direct children.
 - Subtree deletion with explicit preconditions and a defined partial-failure state.
@@ -69,14 +68,16 @@ Admin bypass: the existing plan guards skip plan checks for admins. Plan total a
 
 ## 6. Permissions and Caller Identity
 
-Today the API knows only the user (`userId`, `isAdmin`) and cannot tell an agent call from a user call. This plan adds that identity:
+Agent runtimes do not call the platform API. They read and write Postgres and Redis directly through worker repositories and ports. The API therefore cannot see agent calls, and this plan does not add an HTTP caller identity for them (revision 3, decided 2026-10-25).
 
-- The worker attaches an agent-scoped credential to every platform API call it makes for an agent. It is short-lived and bound to the agent's runtime session, the agent id and the user id.
-- The API verifies it and sets `actingAgentId` on the request. Creator id and parent id are derived from this value only.
-- Tool input schemas never include creator, parent or depth fields.
-- Any route that needs a user (setting `childAgentLimit`, resuming a child, deleting) rejects requests that carry `actingAgentId` with 403.
+- Agent-facing creator actions (`create_agent`, message, pause, stop) run in the worker tool layer and call shared domain services directly. The worker supplies `actingAgentId` from the runtime session (`AGENT_ID`), never from tool input.
+- The shared services own all rules in §5 and §7. Nothing else may write `agents.parent_agent_id`, `depth`, `child_agent_limit` or `creator_*`. This is the single write path.
+- The API routes for user-only actions (setting `childAgentLimit`, resuming, starting, editing a child, deleting) stay user-authenticated as today. The agent runtime never calls them.
+- Open risk: the agent runtime holds `DATABASE_URL`, so a raw SQL write is possible in principle. Mitigation: code review rule and a test that the runtime's tool layer exposes no generic write path. Full database-role isolation for agent runtimes is a separate task.
 - Child agents start with `childAgentLimit = 0`, and do not inherit skills, tool policy or permission level. They start from defaults.
 - Children are created with `status = 'stopped'`. The user starts them. Creator agents cannot start children.
+
+The signed agent-runtime token and API guard were prototyped and reverted; they are not part of this plan.
 
 ## 7. Creator Access to Direct Children
 
@@ -95,7 +96,7 @@ Loop guard: messages between creator and child share one token bucket per pair (
 
 ## 8. Agent-Facing Tools
 
-`create_agent` (new, `apps/worker/src/tools/agent-creation.ts`) follows the `AgentTool` shape used in `bots.ts` and is registered in `tools/registry.ts`. It calls the platform API through the worker's client with the agent-scoped credential from §6. No such agent-scoped client exists yet; it is part of this work.
+`create_agent` (new, `apps/worker/src/tools/agent-creation.ts`) follows the `AgentTool` shape used in `bots.ts` and is registered in `tools/registry.ts`. It calls the shared create service from §5 with `actingAgentId` from the runtime session (§6).
 
 - Input: name, prompt, and the subset of creation fields the platform allows for agents. No creator, parent or depth fields.
 - Output: new agent id, depth, and remaining child allowance.
@@ -173,7 +174,7 @@ Children keep `creatorType` and `creatorId` as history. No bots are torn down, b
 - Concurrency (allowance): parallel `create_agent` calls at the allowance boundary create no more than the allowance.
 - Concurrency (plan total): parallel creations under different parents of the same user cannot exceed `maxAgents`.
 - Admin: plan total and ceiling are bypassed; depth and rate still apply.
-- Caller identity: an agent-scoped call cannot set `childAgentLimit`, resume, start, or delete (403). Creator and parent cannot be set from tool input.
+- Caller identity: the create and creator-action tools cannot set creator or parent from tool input. User-only API routes reject nothing new because agents never call them.
 - Ceiling: setting `childAgentLimit` above the plan ceiling is rejected.
 - Depth: an agent at depth `maxAgentDepth` cannot create children.
 - Creator access: direct children can be read, messaged, paused and stopped; grandchildren, memory and tools-as-child are refused.
