@@ -20,7 +20,11 @@ test.describe('Journey 12: locale switch', () => {
     }
 
     await page.goto('/settings');
+    const saveLocale = page.waitForResponse((res) =>
+      res.url().includes('/api/auth/me') && res.request().method() === 'PATCH' && res.ok(),
+    );
     await page.getByLabel(/display language/i).selectOption('hi');
+    await saveLocale;
 
     await expect(page.getByRole('heading', { name: 'सेटिंग्स' })).toBeVisible({ timeout: 5_000 });
     await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('hi');
