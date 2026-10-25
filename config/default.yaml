@@ -848,11 +848,11 @@ plans:
           canViewMarketplaceBlueprints: true
           canLikeMarketplaceBlueprints: true
         limits:
-          maxAgents: 1
-          maxBots: 3
+          maxAgents: 10
+          maxBots: 10
           maxConnections: 5
           maxCredentials: 5
-          maxBindings: 5
+          maxBindings: 50
           maxVenueAccounts: 5
           maxConcurrentBacktests: 0
           liveEnabled: true
@@ -883,11 +883,11 @@ plans:
           canViewMarketplaceBlueprints: true
           canLikeMarketplaceBlueprints: true
         limits:
-          maxAgents: 3
-          maxBots: 9
+          maxAgents: 30
+          maxBots: 30
           maxConnections: 15
           maxCredentials: 15
-          maxBindings: 15
+          maxBindings: 150
           maxVenueAccounts: 15
           maxConcurrentBacktests: 3
           liveEnabled: true
@@ -918,11 +918,11 @@ plans:
           canViewMarketplaceBlueprints: true
           canLikeMarketplaceBlueprints: true
         limits:
-          maxAgents: 9
-          maxBots: 27
+          maxAgents: 90
+          maxBots: 90
           maxConnections: 45
           maxCredentials: 45
-          maxBindings: 45
+          maxBindings: 450
           maxVenueAccounts: 45
           maxConcurrentBacktests: 9
           liveEnabled: true
