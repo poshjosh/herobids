@@ -589,6 +589,13 @@
       "when": 1792958765665,
       "tag": "0083_lying_zaran",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1792960834112,
+      "tag": "0084_long_agent_zero",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,9 @@ export { agentRuntimeSessions } from './agent-runtime-sessions.js';
 export { agentMessages } from './agent-messages.js';
 export { agentArtifacts } from './agent-artifacts.js';
 export { agentOutboundMessages } from './agent-outbound-messages.js';
+export { conversations } from './conversations.js';
+export { conversationParticipants } from './conversation-participants.js';
+export { conversationMessages } from './conversation-messages.js';
 export { datasets } from './datasets.js';
 // Platform primitives — capability model
 export { connections } from './connections.js';

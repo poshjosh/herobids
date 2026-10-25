@@ -656,11 +656,25 @@ export const MessagingNotificationsSchema = z.object({
   }).default({}),
 }).default({});
 
+/** Conversation store limits (002 two-way chat). */
+export const MessagingConversationsSchema = z.object({
+  /** Longest message a user may send, in characters. */
+  userMessageMaxChars: z.number().int().positive().default(4000),
+  /** Rows returned by a thread read when the caller names no limit. */
+  threadDefaultPageSize: z.number().int().positive().default(50),
+  /** Largest page a thread read may return. */
+  threadMaxPageSize: z.number().int().positive().default(200),
+}).default({}).refine(
+  (value) => value.threadDefaultPageSize <= value.threadMaxPageSize,
+  { message: 'threadDefaultPageSize must not exceed threadMaxPageSize', path: ['threadDefaultPageSize'] },
+);
+
 export const MessagingConfigSchema = z.object({
   chat: z.object({
     telegram: MessagingChatTelegramSchema,
   }).default({}),
   notifications: MessagingNotificationsSchema,
+  conversations: MessagingConversationsSchema,
 }).default({});
 
 export const AlertsConfigSchema = z.object({

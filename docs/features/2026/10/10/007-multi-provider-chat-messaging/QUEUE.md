@@ -62,3 +62,10 @@ Non-blocking issues from code reviews, grouped by item.
 - (low) Owner hand-off: environments setting `alerts.telegram.*` must move to `messaging.chat.telegram.*` (silently ignored otherwise).
 - (low) `listChatAddressesForOutput` reports a suppressed address as `active`.
 - (info) Acceptance grep still matches i18n keys and `alerts.operator.telegramChatId` (by design; coordinator signs off).
+
+### CH2W (slice 1: P0+P1)
+- (medium) `conversation-repository.ts` `recordUserAgentMessage`: a first write whose message id belongs to another conversation commits an empty conversation + participants. Throw a rollback sentinel (like owner mismatch) and add a test.
+- (medium, owner, tier 3) Telegram reply lookup needs an index on (`channel`, `provider_message_id`) before `agent_outbound_messages` is retired (P3 migration). Also decide dropping `session_id` and `context_ref` (no columns in the schema note). Recommendation in PROGRESS.md.
+- (low) Port doc: `markDelivery` is internal-only; repeated mark returns `invalid_delivery_transition`, so delivery workers must treat "already sent" as success.
+- (low) P2 route must validate message id format/length and encode the (createdAt, id) cursor; the route must 404 for another user's agent.
+- (low) No DB CHECK constraints on enum columns (matches repo convention); agent/platform bodies are uncapped; body length counts UTF-16 units; idempotent retry does not compare body.

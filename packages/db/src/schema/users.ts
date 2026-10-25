@@ -36,6 +36,8 @@ export const users = pgTable('users', {
   }>(),
   /** Whether this user has admin/operator access */
   isAdmin: boolean('is_admin').notNull().default(false),
+  /** Owner's stop switch for peer messaging (DEC-43). When true, peer sends are refused and peer wakes do not start. */
+  peerMessagingPaused: boolean('peer_messaging_paused').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

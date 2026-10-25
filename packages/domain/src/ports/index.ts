@@ -11,3 +11,4 @@ export * from './agent-platform.js';
 
 export * from './browser-pool.js';
 export * from './notification-channel.js';
+export * from './conversation-store.js';

@@ -1,0 +1,502 @@
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { CONVERSATION_ERROR_CODES, ConversationService, userAgentConversationId } from '@herobids/domain';
+import { ConversationRepository } from './conversation-repository.js';
+import * as schema from './schema/index.js';
+import {
+  createScratchDatabase,
+  localDatabaseUrl,
+  type ScratchDatabase,
+} from './test-helpers/scratch-database.js';
+import { truncate } from './test-helpers/integration-db.js';
+
+// Runs only against a local Postgres (DATABASE_URL on localhost), in a database it creates and drops.
+const BASE_URL = localDatabaseUrl();
+const ALL_MIGRATIONS = '9999_all.sql';
+const LIMITS = { userMessageMaxChars: 4000, threadDefaultPageSize: 50, threadMaxPageSize: 200 };
+
+describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
+  let scratch: ScratchDatabase;
+  let pool: postgres.Sql;
+  let connect: () => postgres.Sql;
+  let repo: ConversationRepository;
+  let clock: number;
+  let nextId: number;
+
+  // Same database, several connections, so concurrent writes really overlap.
+  const service = () => new ConversationService({
+    store: repo,
+    limits: LIMITS,
+    newId: () => `generated-${++nextId}`,
+    now: () => new Date(++clock),
+  });
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabase(BASE_URL!, ALL_MIGRATIONS);
+    const { host, port, user, pass, database } = scratch.sql.options;
+    connect = () => postgres({ host: host[0], port: port[0], user, pass: pass ?? undefined, database }, { max: 1 });
+    pool = postgres({ host: host[0], port: port[0], user, pass: pass ?? undefined, database }, { max: 8 });
+    repo = new ConversationRepository(drizzle(pool, { schema }));
+  }, 120_000);
+
+  afterAll(async () => {
+    await pool?.end();
+    await scratch?.drop();
+  });
+
+  beforeEach(async () => {
+    clock = Date.parse('2026-10-25T10:00:00.000Z');
+    nextId = 0;
+    await truncate(scratch.sql, 'conversations', 'agents', 'users');
+    await scratch.sql`INSERT INTO users (id, username, display_name, email) VALUES
+      ('user-1', 'owner', 'Owner', 'owner@example.test'),
+      ('user-2', 'other', 'Other', 'other@example.test')`;
+    await scratch.sql`INSERT INTO agents (id, user_id, name, prompt, status) VALUES
+      ('agent-1', 'user-1', 'Momo', 'p', 'active'),
+      ('agent-2', 'user-1', 'Kofi', 'p', 'active'),
+      ('agent-3', 'user-2', 'Ama', 'p', 'active')`;
+  });
+
+  const user = (agentId = 'agent-1', body = 'hello', id?: string) =>
+    service().recordUserMessage({ ownerUserId: 'user-1', agentId, channel: 'web', body, ...(id ? { id } : {}) });
+
+  describe('migration 0084', () => {
+    it('creates the three tables with the columns of the schema note', async () => {
+      const columns = await scratch.sql<{ table_name: string; column_name: string; is_nullable: string }[]>`
+        SELECT table_name, column_name, is_nullable FROM information_schema.columns
+        WHERE table_name IN ('conversations', 'conversation_participants', 'conversation_messages')
+        ORDER BY table_name, ordinal_position`;
+      const byTable = (table: string) => columns.filter((c) => c.table_name === table).map((c) => `${c.column_name}${c.is_nullable === 'YES' ? '?' : ''}`);
+
+      expect(byTable('conversations')).toEqual(['id', 'kind', 'owner_user_id', 'peer_key?', 'last_message_at?', 'created_at']);
+      expect(byTable('conversation_participants')).toEqual(['conversation_id', 'participant_type', 'participant_id']);
+      expect(byTable('conversation_messages')).toEqual([
+        'id', 'conversation_id', 'sender_type', 'sender_id?', 'channel', 'subject?', 'body', 'message_class?',
+        'delivery_status', 'delivery_detail?', 'provider_message_id?', 'created_at',
+      ]);
+    });
+
+    it('adds users.peer_messaging_paused as a non-null boolean defaulting to false', async () => {
+      const [column] = await scratch.sql<{ data_type: string; is_nullable: string; column_default: string }[]>`
+        SELECT data_type, is_nullable, column_default FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'peer_messaging_paused'`;
+      const [row] = await scratch.sql<{ peer_messaging_paused: boolean }[]>`
+        SELECT peer_messaging_paused FROM users WHERE id = 'user-1'`;
+
+      expect(column).toEqual({ data_type: 'boolean', is_nullable: 'NO', column_default: 'false' });
+      expect(row?.peer_messaging_paused).toBe(false);
+    });
+
+    it('creates the indexes of the schema note', async () => {
+      const indexes = await scratch.sql<{ indexname: string; indexdef: string }[]>`
+        SELECT indexname, indexdef FROM pg_indexes
+        WHERE tablename IN ('conversations', 'conversation_participants', 'conversation_messages')`;
+      const defs = new Map(indexes.map((i) => [i.indexname, i.indexdef]));
+
+      expect(defs.get('idx_conversation_messages_conversation_created')).toContain('(conversation_id, created_at)');
+      expect(defs.get('idx_conversation_participants_participant')).toContain('(participant_type, participant_id)');
+      expect(defs.get('idx_conversations_owner_last_message')).toContain('(owner_user_id, last_message_at DESC');
+      expect(defs.get('uq_conversations_peer_key')).toMatch(/UNIQUE INDEX .*\(peer_key\) WHERE .*kind.*agent_agent/);
+    });
+
+    it('allows one agent_agent thread per peer key and any number of user_agent threads', async () => {
+      const insert = (id: string, kind: string, peerKey: string | null) => scratch.sql`
+        INSERT INTO conversations (id, kind, owner_user_id, peer_key) VALUES (${id}, ${kind}, 'user-1', ${peerKey})`;
+
+      await insert('p1', 'agent_agent', 'agent-1:agent-2');
+      await expect(insert('p2', 'agent_agent', 'agent-1:agent-2')).rejects.toThrow(/uq_conversations_peer_key/);
+      await insert('p3', 'agent_agent', 'agent-1:agent-3');
+      await insert('u1', 'user_agent', null);
+      await insert('u2', 'user_agent', null);
+    });
+
+    it('cascades from the conversation to its participants and messages, and from the owner to the conversation', async () => {
+      await user('agent-1', 'one');
+      await user('agent-2', 'two');
+
+      await scratch.sql`DELETE FROM conversations WHERE id = ${userAgentConversationId('agent-1')}`;
+      const afterConversation = await scratch.sql`SELECT
+        (SELECT count(*)::int FROM conversation_messages) AS messages,
+        (SELECT count(*)::int FROM conversation_participants) AS participants`;
+      // agents do not cascade from users, so clear them first
+      await truncate(scratch.sql, 'agents');
+      await scratch.sql`DELETE FROM users WHERE id = 'user-1'`;
+      const afterOwner = await scratch.sql`SELECT (SELECT count(*)::int FROM conversations) AS conversations,
+        (SELECT count(*)::int FROM conversation_messages) AS messages`;
+
+      expect(afterConversation[0]).toEqual({ messages: 1, participants: 2 });
+      expect(afterOwner[0]).toEqual({ conversations: 0, messages: 0 });
+    });
+  });
+
+  describe('recordUserAgentMessage', () => {
+    it('creates the conversation with the owner and the agent as participants on the first message', async () => {
+      const result = await user('agent-1', 'hello');
+
+      expect(result).toMatchObject({ ok: true, data: { created: true, message: { body: 'hello', senderType: 'user', senderId: 'user-1', deliveryStatus: 'queued', channel: 'web' } } });
+      const conversations = await scratch.sql`SELECT id, kind, owner_user_id, peer_key, last_message_at FROM conversations`;
+      const participants = await scratch.sql`SELECT participant_type, participant_id FROM conversation_participants ORDER BY participant_type`;
+      expect(conversations).toHaveLength(1);
+      expect(conversations[0]).toMatchObject({ id: 'user_agent:agent-1', kind: 'user_agent', owner_user_id: 'user-1', peer_key: null });
+      expect(participants.map((p) => `${p.participant_type}:${p.participant_id}`)).toEqual(['agent:agent-1', 'user:user-1']);
+    });
+
+    it('reuses the conversation for later messages and moves last_message_at to the newest message', async () => {
+      const first = await user('agent-1', 'one');
+      const second = await service().recordAgentMessage({ ownerUserId: 'user-1', agentId: 'agent-1', channel: 'web', body: 'two' });
+
+      expect(first.ok && second.ok).toBe(true);
+      const [conversationCount] = await scratch.sql`SELECT count(*)::int AS n FROM conversations`;
+      const [participantCount] = await scratch.sql`SELECT count(*)::int AS n FROM conversation_participants`;
+      const [conversation] = await scratch.sql<{ last_message_at: Date }[]>`SELECT last_message_at FROM conversations`;
+      expect(conversationCount?.n).toBe(1);
+      expect(participantCount?.n).toBe(2);
+      expect(conversation?.last_message_at.getTime()).toBe(second.ok ? second.data.message.createdAt.getTime() : 0);
+    });
+
+    it('never moves last_message_at backwards when an older message arrives late', async () => {
+      await user('agent-1', 'newer');
+      const [before] = await scratch.sql<{ last_message_at: Date }[]>`SELECT last_message_at FROM conversations`;
+
+      const late = await repo.recordUserAgentMessage({
+        conversationId: userAgentConversationId('agent-1'),
+        ownerUserId: 'user-1',
+        agentId: 'agent-1',
+        message: {
+          id: 'late', senderType: 'platform', senderId: null, channel: 'web', subject: null, body: 'late',
+          messageClass: null, deliveryStatus: 'queued', createdAt: new Date(clock - 60_000),
+        },
+      });
+
+      const [after] = await scratch.sql<{ last_message_at: Date }[]>`SELECT last_message_at FROM conversations`;
+      expect(late.ok).toBe(true);
+      expect(after?.last_message_at.getTime()).toBe(before?.last_message_at.getTime());
+    });
+
+    it('returns the stored row for a repeated id and does not insert or move last_message_at', async () => {
+      const first = await user('agent-1', 'hello', 'client-1');
+      const [afterFirst] = await scratch.sql<{ last_message_at: Date }[]>`SELECT last_message_at FROM conversations`;
+      const retry = await user('agent-1', 'hello', 'client-1');
+
+      expect(first).toMatchObject({ ok: true, data: { created: true } });
+      expect(retry).toMatchObject({ ok: true, data: { created: false, message: { id: 'client-1', body: 'hello' } } });
+      const [count] = await scratch.sql`SELECT count(*)::int AS n FROM conversation_messages`;
+      const [afterRetry] = await scratch.sql<{ last_message_at: Date }[]>`SELECT last_message_at FROM conversations`;
+      expect(count?.n).toBe(1);
+      expect(afterRetry?.last_message_at.getTime()).toBe(afterFirst?.last_message_at.getTime());
+    });
+
+    it('refuses an id that already belongs to another conversation, without returning that row', async () => {
+      await user('agent-1', 'secret', 'shared-id');
+
+      const clash = await user('agent-2', 'other text', 'shared-id');
+
+      expect(clash).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.messageIdConflict } });
+      expect(JSON.stringify(clash)).not.toContain('secret');
+    });
+
+    it('refuses an id reused by a different sender in the same conversation', async () => {
+      await user('agent-1', 'hello', 'same-id');
+
+      const clash = await service().recordAgentMessage({ id: 'same-id', ownerUserId: 'user-1', agentId: 'agent-1', channel: 'web', body: 'forged' });
+
+      expect(clash).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.messageIdConflict } });
+    });
+
+    it('refuses a write by a user who does not own the conversation, and writes nothing', async () => {
+      await user('agent-1', 'hello');
+
+      const intruder = await service().recordUserMessage({ ownerUserId: 'user-2', agentId: 'agent-1', channel: 'web', body: 'let me in' });
+
+      expect(intruder).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.ownerMismatch } });
+      const [count] = await scratch.sql`SELECT count(*)::int AS n FROM conversation_messages`;
+      expect(count?.n).toBe(1);
+    });
+
+    it('stores agent, creator-agent and platform messages with their sender, subject and class', async () => {
+      const svc = service();
+      await svc.recordAgentMessage({ ownerUserId: 'user-1', agentId: 'agent-1', channel: 'telegram', subject: 'Update', body: 'a', messageClass: 'alert' });
+      await svc.recordAgentMessage({ ownerUserId: 'user-1', agentId: 'agent-1', senderAgentId: 'agent-2', channel: 'web', body: 'b' });
+      await svc.recordPlatformMessage({ ownerUserId: 'user-1', agentId: 'agent-1', channel: 'web', subject: 'Safety', body: 'c', messageClass: 'alert', deliveryStatus: 'not_applicable' });
+
+      const rows = await scratch.sql`SELECT sender_type, sender_id, channel, subject, message_class, delivery_status FROM conversation_messages ORDER BY created_at`;
+      expect(rows).toEqual([
+        { sender_type: 'agent', sender_id: 'agent-1', channel: 'telegram', subject: 'Update', message_class: 'alert', delivery_status: 'queued' },
+        { sender_type: 'agent', sender_id: 'agent-2', channel: 'web', subject: null, message_class: null, delivery_status: 'queued' },
+        { sender_type: 'platform', sender_id: null, channel: 'web', subject: 'Safety', message_class: 'alert', delivery_status: 'not_applicable' },
+      ]);
+    });
+
+    it('creates one conversation and two participants when first messages race on separate connections', async () => {
+      const results = await Promise.all(Array.from({ length: 8 }, (_, i) => user('agent-1', `message ${i}`)));
+
+      expect(results.every((r) => r.ok)).toBe(true);
+      const [counts] = await scratch.sql`SELECT
+        (SELECT count(*)::int FROM conversations) AS conversations,
+        (SELECT count(*)::int FROM conversation_participants) AS participants,
+        (SELECT count(*)::int FROM conversation_messages) AS messages`;
+      expect(counts).toEqual({ conversations: 1, participants: 2, messages: 8 });
+    });
+
+    it('persists nothing for a foreign owner who loses the first-write race, and keeps the winner intact', async () => {
+      // The winner has inserted the conversation but not committed. The intruder's insert blocks on the
+      // unique key, then sees DO NOTHING once the winner commits: the interleaving that used to leave the
+      // intruder's participant rows behind.
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      let held!: () => void;
+      const winnerHoldsRow = new Promise<void>((resolve) => { held = resolve; });
+      // scratch.sql has one connection, so the winner gets its own; the poll below uses scratch.sql.
+      const winnerSql = connect();
+      const winner = winnerSql.begin(async (tx) => {
+        await tx`INSERT INTO conversations (id, kind, owner_user_id, created_at) VALUES (${userAgentConversationId('agent-1')}, 'user_agent', 'user-1', now())`;
+        await tx`INSERT INTO conversation_participants (conversation_id, participant_type, participant_id) VALUES
+          (${userAgentConversationId('agent-1')}, 'user', 'user-1'), (${userAgentConversationId('agent-1')}, 'agent', 'agent-1')`;
+        held();
+        await released;
+      });
+      await winnerHoldsRow;
+
+      const intruder = service().recordUserMessage({ ownerUserId: 'user-2', agentId: 'agent-1', channel: 'web', body: 'let me in' });
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const [waiting] = await scratch.sql<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE 'insert into "conversations"%'`;
+        if (waiting && waiting.n > 0) break;
+        if (Date.now() > deadline) throw new Error('intruder never blocked on the conversation insert');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      release();
+      await winner;
+      await winnerSql.end();
+      const result = await intruder;
+
+      expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.ownerMismatch } });
+      const participants = await scratch.sql`SELECT participant_type, participant_id FROM conversation_participants ORDER BY participant_type`;
+      const [conversation] = await scratch.sql`SELECT owner_user_id FROM conversations`;
+      const [messages] = await scratch.sql`SELECT count(*)::int AS n FROM conversation_messages`;
+      expect(participants.map((p) => `${p.participant_type}:${p.participant_id}`)).toEqual(['agent:agent-1', 'user:user-1']);
+      expect(conversation?.owner_user_id).toBe('user-1');
+      expect(messages?.n).toBe(0);
+    });
+
+    it('persists nothing when a foreign owner writes to an existing conversation', async () => {
+      await user('agent-1', 'hello');
+
+      const intruder = await service().recordUserMessage({ ownerUserId: 'user-2', agentId: 'agent-1', channel: 'web', body: 'x' });
+
+      expect(intruder).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.ownerMismatch } });
+      const [participants] = await scratch.sql`SELECT count(*)::int AS n FROM conversation_participants`;
+      expect(participants?.n).toBe(2);
+    });
+
+    it('inserts a retried id once when the same message is posted concurrently', async () => {
+      const results = await Promise.all(Array.from({ length: 6 }, () => user('agent-1', 'hello', 'client-race')));
+
+      expect(results.every((r) => r.ok)).toBe(true);
+      const created = results.filter((r) => r.ok && r.data.created);
+      expect(created).toHaveLength(1);
+      const [count] = await scratch.sql`SELECT count(*)::int AS n FROM conversation_messages`;
+      expect(count?.n).toBe(1);
+    });
+  });
+
+  describe('markDelivery', () => {
+    const row = async (id: string) => {
+      const [r] = await scratch.sql<{ delivery_status: string; delivery_detail: string | null; provider_message_id: string | null }[]>`
+        SELECT delivery_status, delivery_detail, provider_message_id FROM conversation_messages WHERE id = ${id}`;
+      return r;
+    };
+
+    it('moves a queued row to sent and records the provider message id', async () => {
+      await user('agent-1', 'hello', 'm1');
+
+      const sent = await service().markDelivery({ messageId: 'm1', status: 'sent', providerMessageId: 'tg-42' });
+
+      expect(sent).toMatchObject({ ok: true, data: { deliveryStatus: 'sent', providerMessageId: 'tg-42', deliveryDetail: null } });
+    });
+
+    it('moves a queued row to failed and records the detail', async () => {
+      await user('agent-1', 'hello', 'm1');
+
+      const failed = await service().markDelivery({ messageId: 'm1', status: 'failed', detail: 'timeout' });
+
+      expect(failed).toMatchObject({ ok: true, data: { deliveryStatus: 'failed', deliveryDetail: 'timeout', providerMessageId: null } });
+    });
+
+    it('stores a refused status with a reason code', async () => {
+      await user('agent-1', 'hello', 'm1');
+
+      const refused = await service().markDelivery({ messageId: 'm1', status: 'refused', detail: 'peer.rate_limited' });
+
+      expect(refused).toMatchObject({ ok: true, data: { deliveryStatus: 'refused', deliveryDetail: 'peer.rate_limited' } });
+    });
+
+    it.each(['sent', 'failed', 'refused'] as const)('treats %s as final: no later mark changes the row', async (final) => {
+      await user('agent-1', 'hello', 'm1');
+      await service().markDelivery({ messageId: 'm1', status: final, detail: 'first', providerMessageId: 'p1' });
+
+      for (const next of ['sent', 'failed', 'refused'] as const) {
+        const again = await service().markDelivery({ messageId: 'm1', status: next, detail: 'second', providerMessageId: 'p2' });
+        expect(again).toMatchObject({
+          ok: false,
+          error: { code: CONVERSATION_ERROR_CODES.invalidDeliveryTransition, context: { from: final, to: next } },
+        });
+      }
+      expect(await row('m1')).toEqual({ delivery_status: final, delivery_detail: 'first', provider_message_id: 'p1' });
+    });
+
+    it('refuses to move a row back to queued or to not_applicable', async () => {
+      await user('agent-1', 'hello', 'm1');
+
+      for (const status of ['queued', 'not_applicable'] as const) {
+        const result = await service().markDelivery({ messageId: 'm1', status });
+        expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.invalidDeliveryTransition } });
+      }
+      expect(await row('m1')).toEqual({ delivery_status: 'queued', delivery_detail: null, provider_message_id: null });
+    });
+
+    it('does not mark a row that never was queued (a platform not_applicable row)', async () => {
+      await service().recordPlatformMessage({ id: 'p1', ownerUserId: 'user-1', agentId: 'agent-1', channel: 'web', body: 'notice', deliveryStatus: 'not_applicable' });
+
+      const result = await service().markDelivery({ messageId: 'p1', status: 'sent' });
+
+      expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.invalidDeliveryTransition, context: { from: 'not_applicable', to: 'sent' } } });
+    });
+
+    it('applies exactly one of several concurrent marks and keeps that mark\'s fields', async () => {
+      await user('agent-1', 'hello', 'm1');
+
+      const results = await Promise.all([
+        service().markDelivery({ messageId: 'm1', status: 'sent', providerMessageId: 'tg-1' }),
+        service().markDelivery({ messageId: 'm1', status: 'failed', detail: 'boom' }),
+      ]);
+
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      const final = await row('m1');
+      expect(final).toEqual(final?.delivery_status === 'sent'
+        ? { delivery_status: 'sent', delivery_detail: null, provider_message_id: 'tg-1' }
+        : { delivery_status: 'failed', delivery_detail: 'boom', provider_message_id: null });
+    });
+
+    it('keeps stored detail and provider id when a mark omits them', async () => {
+      await user('agent-1', 'hello', 'm1');
+      // Stored by an earlier writer; the guard allows the omitting mark to proceed from queued.
+      await scratch.sql`UPDATE conversation_messages SET delivery_detail = 'retrying', provider_message_id = 'tg-7' WHERE id = 'm1'`;
+
+      const sent = await service().markDelivery({ messageId: 'm1', status: 'sent' });
+
+      expect(sent).toMatchObject({ ok: true, data: { deliveryStatus: 'sent', deliveryDetail: 'retrying', providerMessageId: 'tg-7' } });
+    });
+
+    it('reports an unknown message id', async () => {
+      const result = await service().markDelivery({ messageId: 'missing', status: 'sent' });
+
+      expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.messageNotFound } });
+    });
+  });
+
+  describe('listThread', () => {
+    const seed = async (count: number) => {
+      for (let i = 1; i <= count; i++) await user('agent-1', `m${i}`);
+    };
+    const bodies = (result: Awaited<ReturnType<ConversationService['listThread']>>) =>
+      result.ok ? result.data.map((m) => m.body) : null;
+
+    it('returns the newest page in ascending order', async () => {
+      await seed(5);
+
+      const page = await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-1', limit: 3 });
+
+      expect(bodies(page)).toEqual(['m3', 'm4', 'm5']);
+    });
+
+    it('walks back through older pages with the before cursor without gaps or repeats', async () => {
+      await seed(7);
+      const collected: string[] = [];
+      let cursor: { before: Date; beforeId: string } | undefined;
+
+      for (let guard = 0; guard < 5; guard++) {
+        const page = await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-1', limit: 3, ...cursor });
+        if (!page.ok || page.data.length === 0) break;
+        collected.unshift(...page.data.map((m) => m.body));
+        const oldest = page.data[0];
+        cursor = oldest ? { before: oldest.createdAt, beforeId: oldest.id } : undefined;
+      }
+
+      expect(collected).toEqual(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7']);
+    });
+
+    it('orders rows that share a timestamp by id, deterministically', async () => {
+      const at = new Date(clock + 1000);
+      for (const id of ['b', 'a', 'c']) {
+        await repo.recordUserAgentMessage({
+          conversationId: userAgentConversationId('agent-1'), ownerUserId: 'user-1', agentId: 'agent-1',
+          message: { id, senderType: 'user', senderId: 'user-1', channel: 'web', subject: null, body: id, messageClass: null, deliveryStatus: 'queued', createdAt: at },
+        });
+      }
+
+      const page = await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-1' });
+
+      expect(bodies(page)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('pages across a run of rows that share one timestamp without skipping or repeating any', async () => {
+      const at = new Date(clock + 1000);
+      const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+      await user('agent-1', 'older');
+      for (const id of ids) {
+        await repo.recordUserAgentMessage({
+          conversationId: userAgentConversationId('agent-1'), ownerUserId: 'user-1', agentId: 'agent-1',
+          message: { id, senderType: 'user', senderId: 'user-1', channel: 'web', subject: null, body: id, messageClass: null, deliveryStatus: 'queued', createdAt: at },
+        });
+      }
+      const collected: string[] = [];
+      let cursor: { before: Date; beforeId: string } | undefined;
+
+      for (let guard = 0; guard < 6; guard++) {
+        const page = await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-1', limit: 3, ...cursor });
+        if (!page.ok || page.data.length === 0) break;
+        collected.unshift(...page.data.map((m) => m.body));
+        const oldest = page.data[0];
+        cursor = oldest ? { before: oldest.createdAt, beforeId: oldest.id } : undefined;
+      }
+
+      expect(collected).toEqual(['older', ...ids]);
+    });
+
+    it('rejects a cursor with only one half', async () => {
+      const missingId = await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-1', before: new Date(clock) });
+      const missingTime = await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-1', beforeId: 'x' });
+
+      expect(missingId).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.invalidCursor } });
+      expect(missingTime).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.invalidCursor } });
+    });
+
+    it('keeps a conversation per agent separate', async () => {
+      await user('agent-1', 'for one');
+      await user('agent-2', 'for two');
+
+      expect(bodies(await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-1' }))).toEqual(['for one']);
+      expect(bodies(await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-2' }))).toEqual(['for two']);
+    });
+
+    it('returns an empty thread to a user who does not own it, and for an agent with no messages', async () => {
+      await user('agent-1', 'private');
+
+      expect(bodies(await service().listThread({ ownerUserId: 'user-2', agentId: 'agent-1' }))).toEqual([]);
+      expect(bodies(await service().listThread({ ownerUserId: 'user-1', agentId: 'agent-2' }))).toEqual([]);
+    });
+
+    it('clamps the page to the configured maximum', async () => {
+      const small = new ConversationService({ store: repo, limits: { ...LIMITS, threadMaxPageSize: 2 }, newId: () => `s-${++nextId}`, now: () => new Date(++clock) });
+      await seed(4);
+
+      const page = await small.listThread({ ownerUserId: 'user-1', agentId: 'agent-1', limit: 100 });
+
+      expect(bodies(page)).toEqual(['m3', 'm4']);
+    });
+  });
+});

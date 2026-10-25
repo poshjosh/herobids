@@ -778,6 +778,10 @@ messaging:
       eventClasses: [agent.question]  # classes that may fall back to email; each must also be in eventClasses above
       maxPerUserPerDay: 10          # fallback emails per user in a rolling 24h window
       userDefaultEnabled: true      # false = users opt in to email fallback; true = on unless the user opts out
+  conversations:
+    userMessageMaxChars: 4000       # longest message a user may send to an agent (characters)
+    threadDefaultPageSize: 50       # rows in a thread read when the caller names no limit
+    threadMaxPageSize: 200          # largest page a thread read may return
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:

@@ -1,6 +1,6 @@
 # Plan: Two-way agent chat
 
-**Status:** approved 2026-10-25 (DEC-31, DEC-32). Not started. Runs after the address cutover (C1). The answers to section 9 are in the decision register.
+**Status:** approved 2026-10-25 (DEC-31, DEC-32). P0 and P1 done 2026-10-25 (CH2W slice 1); P2 to P4 not started. Runs after the address cutover (C1). The answers to section 9 are in the decision register.
 **Owner:** Chinomso Ikwuagwu
 **Related:** [agent-onboarding epic IMPLEMENTATION](../../../10/10/002-agent-onboarding-epic/IMPLEMENTATION.md) (§4 D-C3, D-R1; §6 WP-C S2, WP-M Phase 2–3), [PROGRESS](../../../10/10/002-agent-onboarding-epic/PROGRESS.md) (S2 entry), [next plan: agent-to-agent messaging](../../../../pending/000-agent-to-agent-messaging/001-plan.md), superseded: [chat sessions notes](superseded/003-agent-chat-sessions/000-notes.md).
 
@@ -156,7 +156,56 @@ Rough, to be confirmed after P0: P0 half a day, P1 two to three days, P2 four to
 
 ## 10. Appendix — P0 inventory
 
-_To be filled in during P0._
+Recorded 2026-10-25 (CH2W slice 1) from the code at commit `2062b0eb` (C1). Paths are relative to the repository root. "Test" rows only matter when the table is dropped.
+
+### 10.1 Findings that differ from section 1
+
+1. **User messages are already stored.** `POST /agents/:id/message` inserts an `agent_outbound_messages` row (`authored_by` = `user`, or `agent:{actingAgentId}` for a creator agent) before it publishes, and the row id is the envelope `messageId` (`apps/api/src/routes/agent-interactivity.ts`, around lines 405 to 423). The "never stores them" claim in section 1 is stale. Reload does not lose web messages today. What is missing is the unified store, correct authorship labels, and Telegram inbound.
+2. **Telegram inbound is not recorded.** `ChatInboundRouter` (`apps/api/src/routes/chat-inbound-router.ts`, line 46) publishes to `agent:outbound:{id}` and writes no row.
+3. **R2 is confirmed as a non-gap for replies, and a gap for plain output.** The agent reaches the user only through the `send_message` tool. The broker writes the row before the channel send (`agent-message-broker.ts`, `handleSendMessage`), so an in-app reply always reaches the thread, even when Telegram delivery fails. Plain-text output is never delivered; the worker logs `User message received but no send_message reply was made` (`apps/worker/src/agent.ts`, around line 4213). No P1 change is needed. Surfacing that case in the thread is an optional follow-up, not part of this plan.
+
+### 10.2 Writers of `agent_outbound_messages`
+
+| Writer | Where | Authorship | Moves to |
+|---|---|---|---|
+| Web POST (and creator agent to child) | `apps/api/src/routes/agent-interactivity.ts` ~409, via `AgentRepository.insertOutboundMessage` | `user`, `agent:{id}` | `recordUserMessage` / `recordAgentMessage` (P2) |
+| Broker `send_message` | `apps/worker/src/agents/agent-message-broker.ts` ~535, then `markOutboundMessageFailed` / `markOutboundMessageSent` ~559-561 | `agent` | `recordAgentMessage` + `markDelivery` (P3) |
+| Platform alert service | `apps/worker/src/alerting/platform-alert-service.ts` ~73, ~95, ~102 | `platform` | `recordPlatformMessage` + `markDelivery` (P3) |
+| Session-started anchor | `apps/worker/src/index.ts` ~708-724 | `platform` | `recordPlatformMessage` + `markDelivery` (P3) |
+| Repository methods | `packages/db/src/agent-repository.ts` 197, 756-811: `insertOutboundMessage`, `markOutboundMessageSent` (still records provider `telegram`), `markOutboundMessageFailed`, `markOutboundMessageEmailSent`, `markOutboundMessageEmailSkipped`, `markOutboundMessageEmailFailed`, `getOutboundMessages` | | Removed in P3. The three `…Email…` methods and `getOutboundMessages` have no non-test caller |
+| Agent delete | `apps/api/src/routes/agents.ts` `purgeAgentRows` ~273 deletes the agent's rows | | Replaced by deleting the agent's conversations and participants (see 10.6) |
+
+### 10.3 Readers of `agent_outbound_messages`
+
+| Reader | Where | Use | Moves to |
+|---|---|---|---|
+| `GET /agents/:id/messages` | `apps/api/src/routes/agents.ts` ~2950-2970 | Web chat and "Messages to user" | `GET /agents/:id/conversation` (P2); the old route is removed (DEC-32) |
+| `GET /agents/:id/conversation-turn` | `agents.ts` ~2983 | Latest `user` row id, so the runtime's tick events can name the message | `sender_type = 'user'`, newest row of the agent's conversation (P2) |
+| Activity feed | `agents.ts` ~3043-3049, `mapOutboundMessage` in `apps/api/src/routes/agent-activity-mapper.ts` | Non-user rows as `message.authored` entries (uses `authoredBy`, `subject`, `body`, `messageClass`, `deliveryStatus`, `sessionId`) | `conversation_messages` where `sender_type <> 'user'` (P3). `sessionId` has no column in the schema note (see 10.6) |
+| Telegram `/log` | `apps/api/src/routes/telegram-command-handlers.ts` ~297-306 (raw SQL `UNION ALL`) | Last 10 platform legs | `listThread` (P3) |
+| Reply correlation | `AgentRepository.resolveAgentForChatReply`, `packages/db/src/agent-repository.ts` ~942-975, wired at `agent-interactivity.ts` ~878 | Finds the agent for a Telegram reply by (`delivery_provider`, `delivery_address`, `provider_message_id`) using `idx_agent_outbound_messages_delivery` | See 10.6 (needs a lookup key the schema note does not name) |
+| Web | `apps/web/src/lib/api-client.ts` ~1108 (`AgentOutboundMessage`) and ~1339 (`messages`), `apps/web/src/features/agents/AgentConversation.tsx` (~17, ~96, ~327) | The only web caller; used by `AgentDetailPage.tsx` | New read and component (P2) |
+| Script | `scripts/ts/run-connection-cycle.ts` ~78 | `GET /agents/{id}/messages?limit=50` | New read (P2) |
+
+Not readers: `apps/worker/src/agents/outbound-message-reader.ts`, `runtime-pause.ts`, `agent.ts` `readOutboundMessages`. They read the Redis stream `agent:outbound:{id}` and share only a name. `notification_deliveries.event_key` is `{agentId}:{messageId}` by value, with no foreign key, so it follows the new row id unchanged.
+
+### 10.4 Tests that touch the table
+
+Update or remove with the code they cover: `packages/db/src/agent-repository.test.ts`, `chat-address-resolution.integration.test.ts` (outbound rows and the delivery columns), `chat-addresses-backfill.integration.test.ts` (migration test; keep reading the pre-0083 shape, drop only if the migrations are retired); `apps/api/src/__tests__/functional/{helpers.ts,agents.functional.test.ts,telegram-slash-commands.functional.test.ts}`, `apps/api/src/routes/{agent-activity-mapper.test.ts,telegram-command-handlers.test.ts,agent-creator-actions.integration.test.ts}` (the last reads the stored creator message) and `agent-audit`, `agent-child-allowance`, `agent-delete-subtree` `.integration.test.ts` (a `TRUNCATE` only); `apps/worker/src/agents/{agent-message-broker.test.ts,agent-broker.test.ts}`, `apps/worker/src/alerting/platform-alert-service.test.ts`, `apps/worker/src/__tests__/integration/{config-propagation,session-lifecycle}.integration.test.ts` (`TRUNCATE` only); `apps/web/src/features/agents/AgentConversation.test.tsx`. Historical migrations (0000, 0003, 0076, 0077, 0083) keep their references.
+
+### 10.5 Go or no-go
+
+- **P1: go.** Additive only: three tables, one `users` column, no caller, nothing removed.
+- **P2: go**, with the delete-path condition in 10.6 item 2 met in the same phase, because P2 is the first phase that writes rows.
+- **Retirement of `agent_outbound_messages` (P3): conditional go.** Every reader and writer above has a destination. It stays blocked until the owner answers the two questions in 10.6 (items 1 and 3).
+
+### 10.6 Gaps between the schema note and the readers
+
+1. **Reply correlation needs a lookup key (open question, owner).** Reply routing finds a message by (`delivery_provider`, `delivery_address`, `provider_message_id`). `conversation_messages` keeps `channel` and `provider_message_id`, which is enough to match, because a Telegram message id is unique within one chat and the owner can be checked through `conversations.owner_user_id` and the resolved chat address. But the schema note names no index that serves this lookup, so the query would scan the messages table on every Telegram reply. Recommendation: approve one non-unique partial index in the P3 migration, on (`channel`, `provider_message_id`) where `provider_message_id` is not null. No new column.
+2. **Agent delete must clear conversations.** `conversation_participants.participant_id` has no foreign key to `agents` (by design, the type column decides the table). Deleting an agent therefore leaves its `user_agent` conversation and messages behind unless `purgeAgentRows` deletes them. Fix in P2, using the derived conversation id, and extend it to peer threads in A2A-B. No schema change.
+3. **`session_id` and `context_ref` have no column (open question, owner).** The activity feed shows `sessionId` on message entries. `context_ref` is written by the broker and returned by the old endpoint, but no UI reads it. Recommendation: drop both. Message entries in the feed then carry `sessionId: null`, which the feed type already allows.
+4. **Delivery detail.** `delivery_provider` and `delivery_address` are dropped. `channel` carries the provider. The address stays in `chat_addresses`.
+5. **Status vocabulary.** Old `pending` becomes `queued`. The web type maps it in P2.
 
 ## 11. Owner decisions (2026-10-25)
 

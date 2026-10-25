@@ -56,3 +56,5 @@ export * from './chat-typing.js';
 export * from './notifications/payload.js';
 export * from './notifications/push-service-hosts.js';
 export * from './notifications/fallback-policy.js';
+export * from './conversations/conversation.js';
+export * from './conversations/conversation-service.js';
