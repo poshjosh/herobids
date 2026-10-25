@@ -1,6 +1,6 @@
 # Agent-Created Agents — Plan
 
-Status: Draft (revision 5)
+Status: Draft (revision 6)
 Date: 2026-10-25
 
 ## 1. Goal
@@ -48,6 +48,8 @@ Add to `agents` (`packages/db/src/schema/agents.ts`) with one additive migration
 - `depth` — `integer`, not null, default 0. 0 for user-created agents; parent depth + 1 for children.
 - `childAgentLimit` — `integer`, not null, default 0.
 
+Also on `agent_runtime_sessions`: `api_key_hash` — `text`, nullable. Holds the hash of the per-session agent API key (§6).
+
 Bots are not in this table. Bot ownership and creator data live in Traderton. Bot creator lookups go through the boundary (`list_owner_bots`, filtered by `creatorType === 'agent' && creatorId === agentId`), as the existing agent-delete path does.
 
 Indexes: `(parent_agent_id)`, `(user_id, creator_type)`.
@@ -74,13 +76,12 @@ Admin bypass: plan total bypasses for admins, as today. Rate and depth still app
 
 Agent reasoning and tools run inside each agent's container ([agent.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/agent.ts)). The container calls the platform API over HTTP, using the existing routes.
 
-**Per-agent API key (option 1, decided):**
+**Per-agent API key (decided, simplified):**
 
-- When the worker starts an agent runtime, it generates a random key, stores only its hash in the database (linked to agent id, user id and runtime session id), and injects the key into the container.
-- The API resolves the key by hash on each request. The key yields the agent and user identity; the request is marked as coming from that agent.
-- The key is valid only while its runtime session is active. It is revoked when the runtime stops or crashes.
-- The key can call agent routes only. User-only routes (setting `childAgentLimit`, resuming, starting, editing a child, deleting) reject any key-authenticated request with 403.
-- Keys are never logged. Key use is audited.
+- When the worker starts an agent runtime, it generates a random key, stores only its hash in a new column `api_key_hash` on `agent_runtime_sessions`, and injects the key into the container.
+- The API finds the runtime session by hash and treats the request as that agent and its owner. The request is rejected if the session is `stopped` or `crashed`. Stopping or crashing the runtime therefore revokes the key automatically; there is no separate revocation field.
+- The key reaches agent routes only. User-only routes (setting `childAgentLimit`, resuming, starting, editing a child, deleting) reject any key-authenticated request with 403.
+- No new table, no signing, no JWT. Keys are never logged.
 
 **Credential boundary:** the agent container still has `DATABASE_URL` and `REDIS_URL` today. The API key does not remove that. Removing direct database access from the container is a separate task and is needed for the full benefit of this design.
 
