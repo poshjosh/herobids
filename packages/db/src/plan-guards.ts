@@ -101,7 +101,7 @@ export async function lockUserAgentCreation(tx: DatabaseTransaction, userId: str
 }
 
 /** Check if user can create a new agent. Pass the transaction that inserts the agent so the count is under the lock. */
-export async function checkAgentLimit(db: Database | DatabaseTransaction, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
+export async function checkAgentLimit(db: Pick<Database, 'select'>, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
   const resolved = resolvePlanForCheck(config, planId, isAdmin);
   if (resolved.isAdminBypass) return ok(undefined);
   const limits = resolved.entitlements.limits;

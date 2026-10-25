@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { sql, eq } from 'drizzle-orm';
+import { sql, eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { Redis } from 'ioredis';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import {
   agents,
   agentRuntimeSessions,
   generateAgentApiKey,
+  agentAuditEvents,
 } from '@herobids/db';
 import type { AuthConfig, PlansConfig } from '@herobids/domain';
 import { AgentCreationConfigSchema } from '@herobids/domain';
@@ -98,6 +99,8 @@ class FakeTradertonBoundary extends ExternalBackendClient {
   readonly deletedBotOwners: string[] = [];
   /** Bot ids whose next delete_bot fails with a transport error (then succeeds on retry). */
   readonly failNextDeleteFor = new Set<string>();
+  /** Runs after a successful delete_bot, to change the subtree between the teardown and the platform delete. */
+  afterDelete: ((botId: string) => Promise<void>) | undefined = undefined;
 
   constructor() {
     super({
@@ -127,6 +130,7 @@ class FakeTradertonBoundary extends ExternalBackendClient {
         const bot = this.bots.find((candidate) => candidate.id === botId);
         if (bot?.creatorId) this.deletedBotOwners.push(bot.creatorId);
         this.bots = this.bots.filter((candidate) => candidate.id !== botId);
+        await this.afterDelete?.(botId);
         return { kind: 'success', requestId, correlationId: requestId, payload: {} };
       }
       default:
@@ -230,6 +234,13 @@ async function userToken(db: Db, userId: string): Promise<string> {
     createdAt: new Date(),
   });
   return createSessionToken(makeAuthConfig(), userId, sessionId);
+}
+
+async function deleteFailedEventsFor(db: Db, userId: string) {
+  return db.select().from(agentAuditEvents).where(and(
+    eq(agentAuditEvents.userId, userId),
+    eq(agentAuditEvents.action, 'agent.delete_failed'),
+  ));
 }
 
 async function readAgent(db: Db, agentId: string) {
@@ -377,6 +388,14 @@ describe.skipIf(SKIP)('agent delete with subtree scope (integration)', () => {
 
     expect(failed.statusCode).toBe(503);
     expect(failed.json()).toMatchObject({ step: 'delete_bot', agentId: tree.childA.agentId });
+    const failedEvents = await deleteFailedEventsFor(db, tree.userId);
+    expect(failedEvents).toHaveLength(1);
+    expect(failedEvents[0]).toMatchObject({
+      actorType: 'user',
+      actorId: tree.userId,
+      targetId: tree.root.agentId,
+      detail: { scope: 'subtree', step: 'delete_bot', botCount: boundary.deletedBotOwners.length },
+    });
     for (const agent of [tree.root, tree.childA, tree.grandA, tree.greatA, tree.childB, tree.grandB]) {
       expect(await agentExists(db, agent.agentId)).toBe(true);
     }
@@ -415,6 +434,75 @@ describe.skipIf(SKIP)('agent delete with subtree scope (integration)', () => {
     for (const agent of [tree.root, tree.childA, tree.grandA, tree.greatA, tree.childB, tree.grandB]) {
       expect(await agentExists(db, agent.agentId)).toBe(true);
     }
+    // Nothing was torn down, so there is no failed delete to audit.
+    expect(await deleteFailedEventsFor(db, tree.userId)).toHaveLength(0);
+  });
+
+  it('a subtree whose member changes after the teardown returns a typed 503 with the step and agent, removes nothing, and audits the failure', async () => {
+    const tree = await seedTree(db);
+    const boundary = buildBoundary();
+    seedBotsForTree(boundary, tree);
+    // The root is torn down last. Activating a grandchild after its teardown makes the re-check under the transaction fail.
+    boundary.afterDelete = async (botId) => {
+      if (botId === `bot-root-${tree.root.agentId}`) {
+        await db.update(agents).set({ status: 'active' }).where(eq(agents.id, tree.grandB.agentId));
+      }
+    };
+    const token = await userToken(db, tree.userId);
+    const app = await appWith(boundary);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/agents/${tree.root.agentId}`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({
+      error: 'agent.delete.revalidation_failed',
+      step: 'revalidate_subtree',
+      agentId: tree.root.agentId,
+    });
+    for (const agent of [tree.root, tree.childA, tree.grandA, tree.greatA, tree.childB, tree.grandB]) {
+      expect(await agentExists(db, agent.agentId)).toBe(true);
+    }
+    const events = await deleteFailedEventsFor(db, tree.userId);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      targetId: tree.root.agentId,
+      detail: { scope: 'subtree', step: 'revalidate_subtree', botCount: 6 },
+    });
+  });
+
+  it('an agent-only delete whose subtree changes after the teardown returns a typed 503 and audits the failure', async () => {
+    const tree = await seedTree(db);
+    const boundary = buildBoundary();
+    seedBotsForTree(boundary, tree);
+    // The deleted agent's own bot is torn down first, so the change lands before the platform delete re-checks.
+    boundary.afterDelete = async (botId) => {
+      if (botId === `bot-root-${tree.root.agentId}`) {
+        await db.update(agents).set({ status: 'active' }).where(eq(agents.id, tree.childA.agentId));
+      }
+    };
+    const token = await userToken(db, tree.userId);
+    const app = await appWith(boundary);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/agents/${tree.root.agentId}?scope=agent`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({
+      error: 'agent.delete.revalidation_failed',
+      step: 'revalidate_subtree',
+      agentId: tree.root.agentId,
+    });
+    expect(await agentExists(db, tree.root.agentId)).toBe(true);
+    const events = await deleteFailedEventsFor(db, tree.userId);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ detail: { scope: 'agent', step: 'revalidate_subtree', botCount: 1 } });
   });
 
   it('agent-only delete across three levels lifts children to top level and reduces descendant depths', async () => {

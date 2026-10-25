@@ -172,6 +172,16 @@ type DeletionAgent = {
   level: number;
 };
 
+/**
+ * The subtree or a trading-profile connection set changed after the bot teardown and before the platform
+ * delete. Thrown inside the delete transaction (which rolls back). The route maps it to a 503 with the step.
+ */
+class DeletionRevalidationError extends Error {
+  constructor(readonly step: 'revalidate_subtree' | 'revalidate_connections', readonly agentId: string) {
+    super(`agent deletion could not be committed: ${step}`);
+  }
+}
+
 const DeleteAgentQuerySchema = z.object({
   scope: z.enum(['subtree', 'agent']).optional(),
 });
@@ -651,8 +661,10 @@ export async function agentRoutes(
   // removes no platform rows. The bot list is re-read per call, so a retry resumes cleanly.
   type BotTeardown =
     | { ok: true; botsRemoved: number }
-    | { ok: false; status: number; body: ReturnType<typeof errorPayload> };
+    | { ok: false; status: number; body: ReturnType<typeof errorPayload>; step: string; botsRemoved: number };
   const tearDownAgentBots = async (ownerId: string, agentId: string): Promise<BotTeardown> => {
+    // Bots this call has already removed when it fails. The caller audits a failed delete that removed any.
+    let botsRemoved = 0;
     const unavailable = (step: string): BotTeardown => ({
       ok: false,
       status: boundaryUnconfiguredError.status,
@@ -662,6 +674,8 @@ export async function agentRoutes(
         undefined,
         { step, agentId },
       ),
+      step,
+      botsRemoved,
     });
     // 0. The local `bots` table is gone; Traderton owns bots, so the boundary is required.
     //    Agents' bots are not guaranteed stopped (the worker health-monitor stops them
@@ -679,10 +693,11 @@ export async function agentRoutes(
         ok: false,
         status: listed.error.status,
         body: errorPayload(listed.error.code, listed.error.message, undefined, { step: 'list_bots', agentId }),
+        step: 'list_bots',
+        botsRemoved,
       };
     }
     const agentOwnedBots = listed.rows.filter((b) => b.creatorType === 'agent' && b.creatorId === agentId);
-    let botsRemoved = 0;
     for (const bot of agentOwnedBots) {
       if (bot.status === 'running') {
         const stopResult = await invokeBotWrite('stop_bot', { botId: bot.id }, ownerId);
@@ -810,10 +825,18 @@ export async function agentRoutes(
       }
     }
 
+    // Agent keys carry no admin rights (request.isAdmin is false), so a child of an admin owner takes the
+    // owner's entitlements. Read once here and used for the maxBots and skill plan checks below.
+    let entitlementIsAdmin = request.isAdmin;
+    if (parentAgentId) {
+      const [owner] = await db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, request.userId)).limit(1);
+      entitlementIsAdmin = owner?.isAdmin ?? false;
+    }
+
     // Resolve maxBots from plan — if not provided, default to plan limit; if provided, validate ≤ plan limit
     let resolvedMaxBots: number | null = null;
     if (plansConfig) {
-      const planLimits = resolvePlanLimitEntitlements(plansConfig, request.userPlanId || 'free', request.isAdmin);
+      const planLimits = resolvePlanLimitEntitlements(plansConfig, request.userPlanId || 'free', entitlementIsAdmin);
       if (parsed.data.maxBots != null) {
         if (parsed.data.maxBots > planLimits.maxBots) {
           return reply.status(400).send(errorPayload(
@@ -910,7 +933,7 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: [authorizationMode.issue] });
     }
 
-    const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
+    const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', entitlementIsAdmin);
     // `parsed.data.skillIds` were already ensured + resolved to ids by
     // resolveSkillSlugs above (Phase 4 T6 — unknown skills.sh refs get a
     // placeholder row there, so creation is never blocked).
@@ -1124,6 +1147,15 @@ export async function agentRoutes(
             action: 'agent.child_created',
             targetId: agentId,
             detail: { parentAgentId, depth: lineage.depth },
+          });
+        } else {
+          await recordAgentAuditEvent(tx, {
+            userId: request.userId,
+            actorType: 'user',
+            actorId: request.userId,
+            action: 'agent.created',
+            targetId: agentId,
+            detail: { depth: lineage.depth },
           });
         }
         if (parsed.data.telegramChatId !== undefined) {
@@ -2329,12 +2361,28 @@ export async function agentRoutes(
     const teardownOrder = scope === 'subtree' ? [...members].sort((a, b) => b.level - a.level) : [root];
     const priorConnections = new Map<string, ProfileConnections>();
     let botsRemoved = 0;
+    let agentsTornDown = 0;
+    // A delete that fails after the first bot teardown is audited with the step reached. Counts only.
+    const refuseDelete = async (status: number, body: ReturnType<typeof errorPayload>, step: string) => {
+      if (agentsTornDown > 0 || botsRemoved > 0) {
+        await recordAgentAuditEvent(db, {
+          userId: ownerId,
+          actorType: 'user',
+          actorId: ownerId,
+          action: 'agent.delete_failed',
+          targetId: id,
+          detail: { scope, step, botCount: botsRemoved },
+        });
+      }
+      return reply.status(status).send(body);
+    };
     for (const target of teardownOrder) {
       const torn = await tearDownAgentBots(ownerId, target.id);
-      if (!torn.ok) {
-        return reply.status(torn.status).send(torn.body);
-      }
       botsRemoved += torn.botsRemoved;
+      if (!torn.ok) {
+        return refuseDelete(torn.status, torn.body, torn.step);
+      }
+      agentsTornDown += 1;
 
       // Subtree scope: reconcile each agent's trading profiles now. executeStaged commits one
       // local transaction per call, so the platform rows are removed afterwards in one transaction.
@@ -2353,12 +2401,12 @@ export async function agentRoutes(
           });
         } catch (err) {
           request.log.warn({ err, agentId: target.id }, 'agent subtree delete: profile reconciliation failed');
-          return reply.status(boundaryUnconfiguredError.status).send(errorPayload(
+          return refuseDelete(boundaryUnconfiguredError.status, errorPayload(
             boundaryUnconfiguredError.code,
             'Trading service is unavailable — the agent could not be deleted.',
             undefined,
             { step: 'profile_reconciliation', agentId: target.id },
-          ));
+          ), 'profile_reconciliation');
         }
       }
     }
@@ -2372,12 +2420,12 @@ export async function agentRoutes(
         || current.members.length !== members.length
         || current.members.some((member) => !memberIds.includes(member.id) || member.status !== 'stopped')
       ) {
-        throw new Error('agent subtree changed before deletion could be committed');
+        throw new DeletionRevalidationError('revalidate_subtree', id);
       }
       for (const [agentId, prior] of priorConnections) {
         const currentConnections = await loadActiveTradingProfileConnections(tx, agentId);
         if (JSON.stringify(currentConnections) !== JSON.stringify(prior)) {
-          throw new Error('agent connections changed before deletion could be committed');
+          throw new DeletionRevalidationError('revalidate_connections', agentId);
         }
       }
       return current.members;
@@ -2393,28 +2441,40 @@ export async function agentRoutes(
       targetId: id,
       detail: { scope, agentCount: deletedIds.length, botCount: botsRemoved },
     });
-    if (scope === 'subtree') {
-      await db.transaction(async (tx) => {
-        await assertSubtreeUnchanged(tx);
-        await purgeAgentRows(tx, memberIds);
-        await auditDeletion(tx);
-      });
-    } else {
-      const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
-      await stagedProfileReconciliationSaga.executeStaged({
-        ownerId,
-        actorId: id,
-        localMutationId: crypto.randomUUID(),
-        preparePlannerInput: profileDeletionInput(ownerId, id, priorProfileConnections),
-        commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {
-          const current = await assertSubtreeUnchanged(tx);
-          // Re-parent before the delete: the parent FK is ON DELETE NO ACTION.
-          await detachChildrenOfDeletedAgent(tx, current, id);
-          await purgeAgentRows(tx, [id]);
+    try {
+      if (scope === 'subtree') {
+        await db.transaction(async (tx) => {
+          await assertSubtreeUnchanged(tx);
+          await purgeAgentRows(tx, memberIds);
           await auditDeletion(tx);
-          await markLocalCommitted();
-        },
-      });
+        });
+      } else {
+        const priorProfileConnections = await loadActiveTradingProfileConnections(db, id);
+        await stagedProfileReconciliationSaga.executeStaged({
+          ownerId,
+          actorId: id,
+          localMutationId: crypto.randomUUID(),
+          preparePlannerInput: profileDeletionInput(ownerId, id, priorProfileConnections),
+          commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {
+            const current = await assertSubtreeUnchanged(tx);
+            // Re-parent before the delete: the parent FK is ON DELETE NO ACTION.
+            await detachChildrenOfDeletedAgent(tx, current, id);
+            await purgeAgentRows(tx, [id]);
+            await auditDeletion(tx);
+            await markLocalCommitted();
+          },
+        });
+      }
+    } catch (error) {
+      if (error instanceof DeletionRevalidationError) {
+        return refuseDelete(boundaryUnconfiguredError.status, errorPayload(
+          'agent.delete.revalidation_failed',
+          'The agent changed while it was being deleted. Nothing was removed. Retry the delete.',
+          undefined,
+          { step: error.step, agentId: error.agentId },
+        ), error.step);
+      }
+      throw error;
     }
 
     // Signal the worker to stop and remove the Docker container for each deleted agent.
@@ -2740,7 +2800,10 @@ export async function agentRoutes(
   });
 
   // Get recent decisions initiated by this agent directly or through its bots.
-  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/agents/:id/decisions', async (request, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/agents/:id/decisions', {
+    config: { agentAccess: 'creator' },
+    preHandler: requireDirectChildOfActingAgent(db),
+  }, async (request, reply) => {
     const { id } = request.params;
     const limit = Math.min(parseInt(request.query.limit ?? '20', 10), 100);
 

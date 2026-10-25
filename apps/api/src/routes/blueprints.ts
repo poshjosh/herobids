@@ -15,6 +15,7 @@ import {
   connections,
   agentConnections,
   users,
+  lockUserAgentCreation,
 } from '@herobids/db';
 import {
   AgentRiskDefaultsSchema,
@@ -45,7 +46,9 @@ import type {
 } from '@herobids/domain';
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
 import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
-import { resolvePlanBlueprintEntitlements } from '../plan-guards.js';
+import { checkAgentLimit, resolvePlanBlueprintEntitlements } from '../plan-guards.js';
+import { AgentCreatePolicyError } from '../agents/agent-create-policy.js';
+import { errorPayload } from '../error-payload.js';
 import { createAgentFromPayload } from '../services/agent-instantiation-service.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { computeInstantiateRequestHash, deriveInstantiateActorId } from '../services/blueprint-idempotency.js';
@@ -2293,7 +2296,7 @@ export async function blueprintRoutes(
           const connectionIds = parsed.data.bindings?.kind === 'agent'
             ? [...new Set(parsed.data.bindings.connectionIds)]
             : [];
-          const responsePayload = await profileReconciliationSaga.executeStaged({
+          const stagedOutcome = await profileReconciliationSaga.executeStaged({
             ownerId: request.userId,
             actorId,
             localMutationId: trimmedKey,
@@ -2347,6 +2350,16 @@ export async function blueprintRoutes(
               };
             },
             commitLocal: async (localTx, markLocalCommitted) => {
+              // Same per-user creation lock and plan total as POST /agents, in the transaction that inserts the agent.
+              await lockUserAgentCreation(localTx, request.userId);
+              const agentLimitCheck = await checkAgentLimit(localTx, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+              if (!agentLimitCheck.ok) {
+                throw new AgentCreatePolicyError(403, 'plan_total', errorPayload(
+                  agentLimitCheck.error.code,
+                  agentLimitCheck.error.message,
+                  agentLimitCheck.error.params,
+                ));
+              }
               await createAgentFromPayload(
                 localTx as unknown as Database,
                 agentPayloadFinal,
@@ -2396,13 +2409,19 @@ export async function blueprintRoutes(
               await markLocalCommitted();
               return localResponsePayload;
             },
+          }).catch((error: unknown) => {
+            if (error instanceof AgentCreatePolicyError) return error;
+            throw error;
           });
 
+          if (stagedOutcome instanceof AgentCreatePolicyError) {
+            return { kind: 'plan_limit_exceeded' as const, status: stagedOutcome.status, body: stagedOutcome.body };
+          }
           return {
             kind: 'created' as const,
             actorId,
             actorKind: bp.kind,
-            responsePayload,
+            responsePayload: stagedOutcome,
           };
         } else {
           // Bot creation — c4.9d-FG: the trading write MOVES over the Traderton
@@ -2462,6 +2481,9 @@ export async function blueprintRoutes(
           error: BlueprintErrorCodes.IDEMPOTENCY_CONFLICT,
           message: 'Different request body for the same idempotency key',
         });
+      }
+      if (result.kind === 'plan_limit_exceeded') {
+        return reply.status(result.status).send(result.body);
       }
       if (result.kind === 'error') {
         const status = result.code === BlueprintErrorCodes.NOT_FOUND ? 404

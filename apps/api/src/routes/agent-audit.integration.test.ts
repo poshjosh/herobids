@@ -283,6 +283,32 @@ describe.skipIf(SKIP)('agent audit events (integration)', () => {
     expect(serialized).not.toContain(parent.rawKey);
   });
 
+  it('a user creation writes one agent.created event with the user as actor and no prompt in detail', async () => {
+    const userId = await seedUser(db);
+    const token = await userToken(db, userId);
+    const app = await appWith();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { name: 'Mine', prompt: `${PROMPT_MARKER} mine` },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const events = await auditEventsFor(db, userId);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      actorType: 'user',
+      actorId: userId,
+      action: 'agent.created',
+      targetType: 'agent',
+      targetId: res.json<{ id: string }>().id,
+    });
+    expect(events[0]!.detail).toEqual({ depth: 0 });
+    expect(JSON.stringify(events[0]!.detail)).not.toContain(PROMPT_MARKER);
+  });
+
   it('a refused child creation writes no event', async () => {
     const userId = await seedUser(db);
     const parent = await seedAgent(db, userId, { childAgentLimit: 0 });

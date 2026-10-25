@@ -47,7 +47,7 @@ function makeAuthConfig(): AuthConfig {
   };
 }
 
-function makePlansConfig(maxAgents: number): PlansConfig {
+function makePlansConfig(maxAgents: number, canViewMarketplaceSkills = true): PlansConfig {
   return {
     defaultPlanId: 'free',
     plans: {
@@ -55,7 +55,7 @@ function makePlansConfig(maxAgents: number): PlansConfig {
         entitlements: {
           skills: {
             canCreatePrivateSkills: false,
-            canViewMarketplaceSkills: true,
+            canViewMarketplaceSkills,
             canPublishToMarketplace: true,
             autoPublishNonDraftSkills: true,
             canPriceSkills: false,
@@ -83,6 +83,7 @@ type Db = ReturnType<typeof createDatabase>;
 
 interface BuildOptions {
   maxAgents?: number;
+  canViewMarketplaceSkills?: boolean;
   rateLimitPerMinute?: number;
   maxAgentDepth?: number;
   redis?: Redis;
@@ -100,7 +101,7 @@ async function buildApp(db: Db, options: BuildOptions): Promise<FastifyInstance>
   await agentRoutes(
     app,
     db,
-    makePlansConfig(options.maxAgents ?? 10),
+    makePlansConfig(options.maxAgents ?? 10, options.canViewMarketplaceSkills ?? true),
     undefined,
     undefined,
     options.redis,
@@ -180,6 +181,14 @@ interface SeededSkill {
 }
 
 /** A system-owned published skill, selectable by any user. */
+/** A published, free skill authored by someone else: selectable only through the plan's marketplace entitlement. */
+async function seedMarketplaceSkill(db: Db): Promise<SeededSkill> {
+  const skill = await seedSystemSkill(db);
+  const authorId = await seedUser(db);
+  await db.update(skills).set({ authorId }).where(eq(skills.id, skill.skillId));
+  return skill;
+}
+
 async function seedSystemSkill(db: Db): Promise<SeededSkill> {
   const suffix = crypto.randomUUID().slice(0, 8);
   const skillId = `skill-${suffix}`;
@@ -613,6 +622,31 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
 
       expect(res.statusCode).toBe(403);
       expect(res.json<{ error: string }>().error).toBe('agent.create.depth_exceeded');
+    });
+
+    it('an admin owner child gets the admin skill policy, so a marketplace skill the plan withholds is granted', async () => {
+      const userId = await seedUser(db, { isAdmin: true });
+      const skill = await seedMarketplaceSkill(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      await grantSkillToAgent(db, parent.agentId, skill);
+      const app = await appWith({ canViewMarketplaceSkills: false });
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', skillIds: [skill.skillId] });
+
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('a non-admin owner child gets the plan skill policy, so the same marketplace skill is refused', async () => {
+      const userId = await seedUser(db);
+      const skill = await seedMarketplaceSkill(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 1 });
+      await grantSkillToAgent(db, parent.agentId, skill);
+      const app = await appWith({ canViewMarketplaceSkills: false });
+
+      const res = await postAsAgent(app, parent.rawKey, { name: 'Child', prompt: 'Help.', skillIds: [skill.skillId] });
+
+      expect(res.statusCode).toBe(400);
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
     });
   });
 

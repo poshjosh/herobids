@@ -25,6 +25,7 @@ vi.mock('@herobids/db', async (importOriginal) => {
     agentSkills: { agentId: 'as.agentId', skillId: 'as.skillId', orderIndex: 'as.orderIndex' },
     users: { id: 'users.id', aiModelConfig: 'users.aiModelConfig' },
     resolveSkillAssignmentsForUser: vi.fn(),
+    lockUserAgentCreation: vi.fn(),
   };
 });
 
@@ -60,7 +61,7 @@ vi.mock('@herobids/domain', async (importOriginal) => {
 // ── Imports (after mocks) ────────────────────────────────────────────────────
 
 import { cloneAgentAsLive, type GoLiveParams } from './agent-go-live-service.js';
-import { resolveSkillAssignmentsForUser } from '@herobids/db';
+import { resolveSkillAssignmentsForUser, lockUserAgentCreation } from '@herobids/db';
 import { checkLiveEnabled, checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { extractModelSelection, mergeModelPolicy, validateAgentModelPolicy } from '../routes/agent-config-helpers.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
@@ -440,6 +441,37 @@ describe('cloneAgentAsLive', () => {
     expect(result.status).toBe(403);
     expect(result.error).toBe('plan.limit_exceeded');
     expect(result.params).toEqual({ resource: 'agent', limit: 3, current: 3 });
+  });
+
+  it('takes the user creation lock on the insert transaction before the agent is inserted', async () => {
+    const { db } = setupHappyPath();
+
+    const result = await cloneAgentAsLive(makeParams(db));
+
+    expect(result.ok).toBe(true);
+    expect(lockUserAgentCreation).toHaveBeenCalledWith(db, 'user-1');
+    expect(vi.mocked(lockUserAgentCreation).mock.invocationCallOrder[0]!).toBeLessThan(
+      vi.mocked(createAgentFromPayload).mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('refuses at the plan total inside the transaction when the total is reached after the pre-check, and inserts nothing', async () => {
+    const { db } = setupHappyPath();
+    vi.mocked(checkAgentLimit)
+      .mockResolvedValueOnce(ok(undefined))
+      .mockResolvedValueOnce(
+        err({ code: 'plan.limit_exceeded', message: 'Agent limit reached (3)', limit: 3, current: 3, params: { resource: 'agent', limit: 3, current: 3 } }),
+      );
+
+    const result = await cloneAgentAsLive(makeParams(db));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect(result.status).toBe(403);
+    expect(result.error).toBe('plan.limit_exceeded');
+    expect(result.params).toEqual({ resource: 'agent', limit: 3, current: 3 });
+    expect(checkAgentLimit).toHaveBeenLastCalledWith(db, expect.anything(), 'user-1', 'free', false);
+    expect(createAgentFromPayload).not.toHaveBeenCalled();
   });
 
   // ── Name handling ────────────────────────────────────────────────────────

@@ -14,6 +14,11 @@ import {
 } from '@herobids/db';
 import type { AuthConfig, PlansConfig } from '@herobids/domain';
 import { AgentCreationConfigSchema } from '@herobids/domain';
+import {
+  ExternalBackendClient,
+  type ExternalBackendClientResult,
+  type InvokeToolInput,
+} from '@herobids/domain/external-backend';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { agentRoutes } from './agents.js';
 import { agentInteractivityRoutes } from './agent-interactivity.js';
@@ -76,7 +81,38 @@ function makePlansConfig(): PlansConfig {
 
 type Db = ReturnType<typeof createDatabase>;
 
-async function buildApp(db: Db, redis: Redis, creatorMessageRatePerMinute = 10): Promise<FastifyInstance> {
+/** The real ExternalBackendClient with `invoke` replaced by a fixed decisions read for the decisions route. */
+class FakeDecisionsBoundary extends ExternalBackendClient {
+  constructor() {
+    super({
+      baseUrl: 'http://127.0.0.1:9',
+      consumerId: 'test-consumer',
+      keyId: 'test-key',
+      hmacSecret: 'test-hmac-secret',
+      requestTimeoutMs: 1000,
+    });
+  }
+
+  override async invoke(input: InvokeToolInput): Promise<ExternalBackendClientResult> {
+    const requestId = crypto.randomUUID();
+    if (input.toolName !== 'get_agent_decisions') {
+      return { kind: 'transport_error', requestId, retryable: true, message: `unexpected tool ${input.toolName}` };
+    }
+    return {
+      kind: 'success',
+      requestId,
+      correlationId: requestId,
+      payload: { decisions: [{ id: 'decision-1', intent: 'hold', createdAt: '2026-10-25T00:00:00.000Z' }] },
+    };
+  }
+}
+
+async function buildApp(
+  db: Db,
+  redis: Redis,
+  creatorMessageRatePerMinute = 10,
+  boundary?: ExternalBackendClient,
+): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   await authPlugin(app, { config: makeAuthConfig(), db });
   const agentCreation = AgentCreationConfigSchema.parse({ creatorMessageRatePerMinute });
@@ -88,7 +124,7 @@ async function buildApp(db: Db, redis: Redis, creatorMessageRatePerMinute = 10):
     undefined,
     redis,
     { provider: 'openai' },
-    undefined,
+    boundary,
     undefined,
     undefined,
     undefined,
@@ -208,8 +244,8 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
   const apps: FastifyInstance[] = [];
   const streamKeys: string[] = [];
 
-  async function appWith(creatorMessageRatePerMinute?: number): Promise<FastifyInstance> {
-    const app = await buildApp(db, redis, creatorMessageRatePerMinute);
+  async function appWith(creatorMessageRatePerMinute?: number, boundary?: ExternalBackendClient): Promise<FastifyInstance> {
+    const app = await buildApp(db, redis, creatorMessageRatePerMinute, boundary);
     apps.push(app);
     return app;
   }
@@ -262,6 +298,34 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
     expect(res.body).not.toContain(PROMPT_MARKER);
     expect(res.body).not.toContain('apiKeyHash');
     expect(res.body).not.toContain(tree.creator.rawKey);
+  });
+
+  it('a creator key reads the decisions of a direct child', async () => {
+    const tree = await seedCreatorTree(db);
+    const app = await appWith(undefined, new FakeDecisionsBoundary());
+
+    const res = await agentKeyRequest(app, 'GET', `/agents/${tree.child.agentId}/decisions`, tree.creator.rawKey);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject([{ id: 'decision-1', intent: 'hold' }]);
+  });
+
+  it('a creator key cannot read the decisions of an agent that is not its child', async () => {
+    const tree = await seedCreatorTree(db);
+    const app = await appWith(undefined, new FakeDecisionsBoundary());
+
+    const res = await agentKeyRequest(app, 'GET', `/agents/${tree.unrelated.agentId}/decisions`, tree.creator.rawKey);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('a creator key cannot read the decisions of a grandchild', async () => {
+    const tree = await seedCreatorTree(db);
+    const app = await appWith(undefined, new FakeDecisionsBoundary());
+
+    const res = await agentKeyRequest(app, 'GET', `/agents/${tree.grandchild.agentId}/decisions`, tree.creator.rawKey);
+
+    expect(res.statusCode).toBe(403);
   });
 
   it('a creator key cannot read the status of an agent that is not its child', async () => {

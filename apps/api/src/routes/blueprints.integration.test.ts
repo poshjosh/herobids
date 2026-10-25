@@ -1045,6 +1045,27 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
     expect(capturedInvokes).toHaveLength(0);
   });
 
+  it('agent instantiate is refused with plan.limit_exceeded at maxAgents and inserts no second agent', async () => {
+    const payload = makeAgentPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+    const instantiate = (key: string) => app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: { 'Authorization': `Bearer ${token}`, 'Idempotency-Key': key },
+      payload: { revisionId: revId },
+    });
+
+    const first = await instantiate(`test-limit-1-${crypto.randomUUID()}`);
+    expect(first.statusCode).toBe(201);
+    const second = await instantiate(`test-limit-2-${crypto.randomUUID()}`);
+
+    expect(second.statusCode).toBe(403);
+    expect(second.json()).toMatchObject({ error: 'plan.limit_exceeded', params: { resource: 'agent', limit: 1, current: 1 } });
+    const agentRows = await db.select().from(agents).where(eq(agents.userId, TEST_USER_ID));
+    expect(agentRows).toHaveLength(1);
+  });
+
   // ── Test 3: Paired-null enforcement ────────────────────────────────────
 
   it('rejects agent with half-null attribution at DB level', async () => {
@@ -1073,6 +1094,9 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
     });
     const { bpId, revId } = await seedBlueprint({}, payload);
     const token = await getAuthToken();
+    // The free plan allows one agent and the plan total now applies to blueprint instantiation. Admins bypass
+    // the total, so two creations from one revision can still be compared.
+    await db.update(users).set({ isAdmin: true }).where(eq(users.id, TEST_USER_ID));
 
     const key1 = `test-det-1-${crypto.randomUUID()}`;
     const key2 = `test-det-2-${crypto.randomUUID()}`;

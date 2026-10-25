@@ -6,6 +6,7 @@ import {
   agentSkills,
   connections,
   users,
+  lockUserAgentCreation,
   resolveSkillAssignmentsForUser,
 } from '@herobids/db';
 import { eq, and, asc } from 'drizzle-orm';
@@ -29,6 +30,8 @@ import { selectExecutionBinding, type TradingProfileConnection } from '../agents
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { TradingProfileCeilingViolationError, TradingProfileScanValidationError } from '../agents/trading-profile-reconciliation-saga.js';
 import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
+import { AgentCreatePolicyError } from '../agents/agent-create-policy.js';
+import { errorPayload } from '../error-payload.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +230,18 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
   const now = new Date();
 
   const commitLocal = async (tx: DatabaseTransaction, markLocalCommitted: () => Promise<void>) => {
+    // Same per-user creation lock as POST /agents, then the plan total, both in the transaction that inserts the agent.
+    await lockUserAgentCreation(tx, userId);
+    if (plansConfig) {
+      const agentLimitCheck = await checkAgentLimit(tx, plansConfig, userId, userPlanId, isAdmin);
+      if (!agentLimitCheck.ok) {
+        throw new AgentCreatePolicyError(403, 'plan_total', errorPayload(
+          agentLimitCheck.error.code,
+          agentLimitCheck.error.message,
+          agentLimitCheck.error.params,
+        ));
+      }
+    }
     const [currentSource] = await tx.select({ userId: agents.userId, status: agents.status })
         .from(agents).where(eq(agents.id, sourceAgentId));
     if (!currentSource || currentSource.userId !== userId || currentSource.status === 'live') {
@@ -351,6 +366,15 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     }
     if (error instanceof TradingProfileScanValidationError) {
       return { ok: false, status: 400, error: 'validation_error', message: error.message };
+    }
+    if (error instanceof AgentCreatePolicyError) {
+      return {
+        ok: false,
+        status: error.status,
+        error: error.body.error,
+        message: error.body.message,
+        params: error.body.params as Record<string, unknown> | undefined,
+      };
     }
     throw error;
   }

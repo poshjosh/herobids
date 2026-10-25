@@ -34,7 +34,8 @@ export interface TokenBucketSpec {
   refillPerMinute: number;
 }
 
-export async function consumeTokenBucketToken(redis: Redis, spec: TokenBucketSpec): Promise<Result<boolean, string>> {
+/** Takes only the `eval` the bucket uses, so tests can pass a fake without a Redis connection. */
+export async function consumeTokenBucketToken(redis: Pick<Redis, 'eval'>, spec: TokenBucketSpec): Promise<Result<boolean, string>> {
   try {
     const allowed = await redis.eval(
       TOKEN_BUCKET_SCRIPT,

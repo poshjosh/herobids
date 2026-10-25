@@ -42,8 +42,8 @@ function agentPolicyError(
 
 /** The parent agent's own token bucket, shared across the user's whole tree. Every attempt that reaches it takes a token. */
 export async function consumeAgentCreateToken(
-  redis: Redis | undefined,
-  log: FastifyBaseLogger,
+  redis: Pick<Redis, 'eval'> | undefined,
+  log: Pick<FastifyBaseLogger, 'warn'>,
   userId: string,
   ratePerMinute: number,
 ): Promise<AgentCreatePolicyError | null> {
@@ -69,6 +69,9 @@ export async function consumeAgentCreateToken(
   }
   return null;
 }
+
+/** The reads the policy makes. The database and a transaction both satisfy it, so tests can pass a fake. */
+export type AgentPolicyReader = Pick<Database, 'select'>;
 
 export interface AgentCreateCaller {
   userId: string;
@@ -135,8 +138,8 @@ export async function preflightAgentCreatePolicy(db: Database, input: AgentCreat
   await evaluateAgentCreatePolicy(db, input, false);
 }
 
-async function evaluateAgentCreatePolicy(
-  q: Database | DatabaseTransaction,
+export async function evaluateAgentCreatePolicy(
+  q: AgentPolicyReader,
   input: AgentCreatePolicyInput,
   lockParent: boolean,
 ): Promise<AgentLineage> {
@@ -181,7 +184,7 @@ async function evaluateAgentCreatePolicy(
   return { creatorType: 'agent', creatorId: parent.id, parentAgentId: parent.id, depth: childDepth, permissionLevel };
 }
 
-async function lockParentAgent(q: Database | DatabaseTransaction, userId: string, parentAgentId: string, lock: boolean) {
+async function lockParentAgent(q: AgentPolicyReader, userId: string, parentAgentId: string, lock: boolean) {
   const query = q
     .select({
       id: agents.id,
@@ -200,7 +203,7 @@ async function lockParentAgent(q: Database | DatabaseTransaction, userId: string
 
 /** The plan total counts the user's agents, children included. Null when the plan allows the create. */
 async function checkPlanTotal(
-  q: Database | DatabaseTransaction,
+  q: AgentPolicyReader,
   input: AgentCreatePolicyInput,
   userId: string,
   isAdmin: boolean,
@@ -217,7 +220,7 @@ async function checkPlanTotal(
  * lock serialises creations from the same parent only, so no further lock is taken here.
  */
 async function assertGrantsHeldByParent(
-  q: Database | DatabaseTransaction,
+  q: AgentPolicyReader,
   parent: { id: string },
   input: AgentCreatePolicyInput,
 ): Promise<void> {

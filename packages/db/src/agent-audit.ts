@@ -11,6 +11,7 @@ export const AGENT_AUDIT_ACTIONS = [
   'agent.creator_stopped_child',
   'agent.creator_messaged_child',
   'agent.deleted',
+  'agent.delete_failed',
 ] as const;
 
 export type AgentAuditAction = (typeof AGENT_AUDIT_ACTIONS)[number];
@@ -28,6 +29,8 @@ export interface AgentAuditDetail {
   scope?: 'agent' | 'subtree';
   agentCount?: number;
   botCount?: number;
+  /** The delete step reached when a delete failed. */
+  step?: string;
 }
 
 export interface AgentAuditEventInput {
