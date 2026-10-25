@@ -1,6 +1,6 @@
 # Agent-Created Agents — Plan
 
-Status: Draft (revision 6)
+Status: Draft (revision 7)
 Date: 2026-10-25
 
 ## 1. Goal
@@ -70,7 +70,7 @@ Rules are enforced inside the existing API routes, not in a new service or packa
 
 Failures return an error naming the rule that failed. Creation is atomic: the checks and the insert run in one transaction, with the parent row locked so concurrent calls cannot exceed the allowance.
 
-Admin bypass: plan total bypasses for admins, as today. Rate and depth still apply to admins. The allowance is user-set and always applies.
+Admin bypass: plan total bypasses for admins, as today. The child-allowance ceiling applies to admins as well (decided 2026-10-25). Rate and depth still apply to admins. The allowance is user-set and always applies.
 
 Agent callers and admin: `request.isAdmin` is `false` for agent keys (auth plugin). For an agent-created child, the plan-total bypass therefore follows the owner's `users.isAdmin`, read in the creation transaction. That is the only use of the owner's admin flag for agent callers. No other rule changes for admin owners.
 
@@ -103,7 +103,7 @@ Agent reasoning and tools run inside each agent's container ([agent.ts](/Users/c
 
 | Capability | Allowed | Notes |
 |---|---|---|
-| Read status, decisions and notices | Yes | Read-only. |
+| Read status and decisions | Yes | Read-only. Notices are not part of this release (decided 2026-10-25). |
 | Send messages to the child | Yes | Subject to `creatorMessageRatePerMinute`. Logged with the creator as sender. |
 | Pause the child | Yes | Sets `pauseState.requestedBy = 'agent:<creatorId>'`. Audited. |
 | Stop the child | Yes | Same effect as the user's Stop action. Bot behavior is unchanged. Audited. |
@@ -227,11 +227,19 @@ Children keep `creatorType` and `creatorId` as history. No bots are torn down, b
 
 Known gaps as of the documentation update. Each needs a fix or an explicit decision.
 
-- (a) Child-to-creator replies go through the child's own `send_message` and do not pass through the creator-child message bucket. The `message_child_agent` tool description says replies count against the limit; that is not yet true.
+- (a) Child-to-creator replies are not supported in this release. A child has no delivery path back to its creator, so the loop control in §7 has nothing to guard. Decision: deferred to the agent-to-agent plan (`docs/features/pending/000-agent-to-agent-messaging/001-plan.md`), where peer grants, turn caps and ping-pong detection apply. The `message_child_agent` description is corrected to say only the creator's messages are limited.
 - (b) The creator pause and stop audit row is written after the state change and is not atomic with it.
 - (c) Post-commit skill sync for children can leave a child without its skills if the sync fails.
 - (d) The agent container still holds `DATABASE_URL`. The restricted database role is not done, so the per-runtime key does not remove direct database access.
 - (e) The default-deny route flags `'child-create'` and `'creator'` must be reviewed whenever a new agent route is added.
 - (f) The careful tool budget (`maxVisibleToolSchemas`) was raised from 32 to 40 in the code default (`packages/domain/src/config/schema.ts`). Review it. `config/default.yaml` sets a separate `defaultBudgets.maxVisibleToolSchemas` of 64.
 - (g) Pre-existing, unrelated docs changes under `docs/features/2026/10/10` and `docs/features/pending` are not part of this feature.
-- (h) Subtree delete ordering residual risk: each agent's trading profiles are cleared on the boundary inside the loop in `apps/api/src/routes/agents.ts`, before the final purge transaction. If that transaction fails, the profiles are already cleared while the agents remain.
+- (h) Accepted and documented (decided 2026-10-25). Subtree delete ordering residual risk: each agent's trading profiles are cleared on the boundary inside the loop in `apps/api/src/routes/agents.ts`, before the final purge transaction. If that transaction fails, the profiles are already cleared while the agents remain.
+
+## Decisions recorded (2026-10-25)
+
+- Child-to-creator messaging: deferred to the agent-to-agent plan (see (a)).
+- Child allowance ceiling applies to admin owners (§5).
+- Notices removed from creator read access (§7).
+- Blueprint and Go Live creations write `agent.created` audit events.
+- Subtree delete ordering risk accepted (see (h)).

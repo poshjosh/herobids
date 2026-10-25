@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { agents, agentSkills, chatAddresses, type Database } from '@herobids/db';
+import { agents, agentAuditEvents, agentSkills, chatAddresses, type Database } from '@herobids/db';
 import type { AgentBlueprintRevisionPayload } from '@herobids/domain';
 import {
   buildUnifiedConfigFromPayload,
@@ -43,6 +43,9 @@ function buildMockTx(tracker: InsertTracker): Database {
         if (table === chatAddresses) {
           tracker.chatAddressRows.push(v as Record<string, unknown>);
           return { onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) };
+        }
+        if (table === agentAuditEvents) {
+          return Promise.resolve();
         }
         if (table === agents) {
           tracker.agentRows.push(v as Record<string, unknown>);
@@ -415,8 +418,8 @@ describe('createAgentFromPayload', () => {
     await createAgentFromPayload(tx, makePayload(), [], { userId: 'user-1' });
 
     expect(tracker.skillRows).toHaveLength(0);
-    // Only one insert call should have been made (for agents)
-    expect(tx.insert).toHaveBeenCalledTimes(1);
+    // Two inserts: the agent row and its agent.created audit event
+    expect(tx.insert).toHaveBeenCalledTimes(2);
   });
 
   it('agent starts in stopped status', async () => {

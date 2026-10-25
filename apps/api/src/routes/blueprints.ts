@@ -2361,7 +2361,7 @@ export async function blueprintRoutes(
                 ));
               }
               await createAgentFromPayload(
-                localTx as unknown as Database,
+                localTx,
                 agentPayloadFinal,
                 skillRefs,
                 {
