@@ -207,6 +207,11 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `start_bot` | `external:trading` | Trading bot lifecycle. |
 | `stat_file` | `core` | Agent workspace operation. |
 | `stop_bot` | `external:trading` | Trading bot lifecycle. |
+| `create_agent` | `core` | Creates a child agent within the creator's allowance. |
+| `get_child_agent_status` | `core` | Reads a direct child agent's status. |
+| `pause_child_agent` | `core` | Pauses a direct child agent. |
+| `stop_child_agent` | `core` | Stops a direct child agent. |
+| `message_child_agent` | `core` | Sends a message to a direct child agent. |
 | `submit_decision` | `external:trading` | Trading decision execution. |
 | `watch_token` | `external:trading` | Trading price-watch creation. |
 | `write_file` | `core` | Agent workspace operation. |
