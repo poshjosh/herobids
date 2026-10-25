@@ -58,3 +58,4 @@ export * from './notifications/push-service-hosts.js';
 export * from './notifications/fallback-policy.js';
 export * from './conversations/conversation.js';
 export * from './conversations/conversation-service.js';
+export * from './conversations/peer-send.js';

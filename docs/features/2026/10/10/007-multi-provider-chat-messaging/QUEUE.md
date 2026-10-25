@@ -9,8 +9,8 @@ Scope: the messaging MVP and the agent-to-agent MVP (DEC-40 to DEC-46). Deferred
 | 1 | C0 | Baseline: `pnpm test` counts recorded | none | done (2026-10-25) | [C0](./tasks/C0-baseline.md) |
 | 2 | C1 | Cutover to `chat_addresses` and `chat_suppressions`; drop the four legacy columns (DEC-01 to DEC-12) | C0 | done (2026-10-25) | [C1](./tasks/C1-cutover.md) |
 | 3 | CH2W | Two-way agent chat (002): conversation store, write path, owner view (DEC-31, DEC-32) | C1 | done in code (2026-10-25); owner e2e gate and phase reviews open | [CH2W](./tasks/CH2W-two-way-chat.md) |
-| 4 | A2A-A | Same-user check: both agents belong to the same user. No grant table, no screen (DEC-40) | none (may run early) | ready | [A2A-A](./tasks/A2A-A-same-user-check.md) |
-| 5 | A2A-B | MVP peer messaging: send path, peer wake, per-user rate limit, owner view, stop switch (DEC-40 to DEC-43) | A2A-A, CH2W | blocked until A2A-A is ticked (CH2W is done in code) | [A2A-B](./tasks/A2A-B-peer-send.md) |
+| 4 | A2A-A | Same-user check: both agents belong to the same user. No grant table, no screen (DEC-40) | none (may run early) | done (2026-10-25) | [A2A-A](./tasks/A2A-A-same-user-check.md) |
+| 5 | A2A-B | MVP peer messaging: send path, peer wake, per-user rate limit, owner view, stop switch (DEC-40 to DEC-43) | A2A-A, CH2W | ready (A2A-A done; CH2W is done in code) | [A2A-B](./tasks/A2A-B-peer-send.md) |
 
 ## Deferred (not in scope; specs kept for later, DEC-45)
 
@@ -111,3 +111,6 @@ Non-blocking issues from code reviews, grouped by item.
 - (medium) Reply correlation guard uses `chat_addresses.updated_at`, which the upsert bumps even when the address is unchanged (re-link, status flip). Replies to older messages then fall back to address-only resolution (safe, may drop replies). Consider an `address_changed_at` (owner decision, new column) or document as deliberate.
 - (medium) Migration 0086 drops `agent_outbound_messages` with no backfill (pre-launch, no backward compatibility, DEC-01). Staging/prod history from before the mirror is lost; owner to confirm at re-provisioning.
 - (owner) Remaining hand-offs: e2e gate, phase P3/P4 review, manual UAT rows OPT-02 and CH2W-01..10, ar/hi native review.
+
+### A2A-A
+- (low) `canPeerSend(agents, from, to)` takes the lookup port as first argument (spec shows two args). Rejects on lookup failure; A2A-B must catch it and refuse, with a test.

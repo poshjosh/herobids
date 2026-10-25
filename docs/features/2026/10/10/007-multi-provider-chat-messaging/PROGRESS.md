@@ -442,3 +442,21 @@ Tests added: db unit (SQL predicates, non-thread-channel skip), db integration (
 | `env -u DATABASE_URL -u REDIS_URL pnpm test` | 421 files: 0 failed, 383 passed, 38 skipped. 7701 tests: 0 failed, 7150 passed, 551 skipped |
 
 Left as documented outstanding, not changed (QUEUE, CH2W slice 3): silent drop for suppressed chats (also blocks `/help`), 4000 vs 4096 characters, plus the new items added in the same section (time-based correlation and clock skew, non-thread-channel providers, replay of a `queued` row, failed `sent` mark, `refused` for a send without a thread channel, activity feed status display).
+
+## 2026-10-25: A2A-A same-user check (done)
+
+- **Files.** New `packages/domain/src/conversations/peer-send.ts` (`canPeerSend`, port `AgentOwnerLookup`), `peer-send.test.ts`; export added to `packages/domain/src/index.ts`. No table, migration, route, or screen.
+- **Tier 2 decisions.**
+  - Placement: domain, pure and port-based, beside `ConversationService`. Signature `canPeerSend(agents: AgentOwnerLookup, fromAgentId, toAgentId): Promise<boolean>`. A2A-B calls it from the send path with the existing `AgentRepository` (it satisfies the port structurally via `getAgent`; checked with a temporary type assertion in `apps/worker`, then removed) and runs it before `ConversationService` records the peer message.
+  - A failed lookup rejects, not `false`. The caller's send then cannot proceed (I4, fail closed), and a DB outage is not reported as "different user". A2A-B should map the rejection to a refusal.
+  - A self-send returns true after one lookup (the sender must exist). A2A-B refuses self-sends.
+- **Tests** (`packages/domain/src/conversations/peer-send.test.ts`, 8): same user true; different users false; unknown sender false; unknown recipient false; both unknown false; self true (one lookup); unknown self false; lookup failure rejects.
+- **Commands.**
+
+| Command | Result |
+|---|---|
+| `pnpm exec vitest run peer-send` (packages/domain) | 8 passed |
+| `tsc --build packages/domain packages/db`; `tsc --noEmit` api, worker, db; `pnpm lint` | exit 0 |
+| `env -u DATABASE_URL -u REDIS_URL pnpm test` | 422 files: 384 passed, 38 skipped, 0 failed. 7709 tests: 7158 passed, 551 skipped, 0 failed (C0/CH2W3 baseline 7701 + 8 new) |
+
+- **Next ready item:** A2A-B.
