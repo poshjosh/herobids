@@ -12,7 +12,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
-import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { StubRuntimeAdapter } from './stub-runtime-adapter.js';
+import { AGENT_STREAM_MAXLEN, RUNTIME_ERROR_CODES } from '@herobids/domain';
+
+const { loggerError } = vi.hoisted(() => ({ loggerError: vi.fn() }));
+vi.mock('../logger.js', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: loggerError }),
+}));
 
 function makeRedis() {
   return { xadd: vi.fn().mockResolvedValue('1234-0') } as any;
@@ -160,5 +166,32 @@ describe('AgentRuntimeLauncher — stub mode heartbeats (bug-012 regression)', (
     await launcher.launch(BASE_LAUNCH);
 
     expect(redis.xadd.mock.calls[0]?.[0]).toBe('custom:prefix:agent-1');
+  });
+});
+
+describe('AgentRuntimeLauncher — agent key redaction', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('scrubs the raw agent key from the thrown error and the logged port error', async () => {
+    const rawKey = 'agk_test-secret-value-123';
+    const port = new StubRuntimeAdapter();
+    vi.spyOn(port, 'launch').mockResolvedValue({
+      ok: false,
+      error: {
+        code: RUNTIME_ERROR_CODES.LAUNCH_FAILED,
+        message: `container create echoed ${rawKey}`,
+        context: { body: `env AGENT_API_KEY=${rawKey}` },
+      },
+    });
+    const launcher = new AgentRuntimeLauncher({ port });
+
+    await expect(launcher.launch({ ...BASE_LAUNCH, agentApiKey: rawKey }))
+      .rejects.toThrow('Runtime launch failed: container create echoed [REDACTED]');
+
+    const logged = JSON.stringify(loggerError.mock.calls);
+    expect(logged).not.toContain(rawKey);
+    expect(logged).toContain('[REDACTED]');
   });
 });

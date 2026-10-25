@@ -7,6 +7,7 @@ import type {
   RuntimeResourceProfile,
   DocumentStore,
   RuntimeDocumentMaterializer,
+  RuntimeError,
 } from '@herobids/domain';
 import { ok, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import { sanitizeFilename } from '@herobids/documents';
@@ -24,6 +25,15 @@ import { createLogger } from '../logger.js';
 
 const logger = createLogger('agent-runtime-launcher');
 
+const REDACTED = '[REDACTED]';
+
+/** Returns a copy of a runtime error with every occurrence of the raw agent key removed. */
+function redactSecret(error: RuntimeError, secret: string | undefined): RuntimeError {
+  if (!secret) return error;
+  const scrub = (text: string): string => text.split(secret).join(REDACTED);
+  return JSON.parse(scrub(JSON.stringify(error))) as RuntimeError;
+}
+
 // ── Public Types (backward-compatible) ──────────────────────────────────────
 
 /**
@@ -40,6 +50,8 @@ export interface LauncherLaunchConfig {
   agentConfig?: Record<string, unknown>;
   runtimeDescriptor?: RuntimeDescriptor;
   toolPolicy?: Record<string, unknown>;
+  /** Raw per-runtime API key injected as AGENT_API_KEY. Only its hash is persisted. */
+  agentApiKey?: string;
   /** Container image for the agent runtime */
   image?: string;
   /** Optional plan tier for resource profile selection (e.g. 'free', 'pro', 'enterprise'). */
@@ -349,6 +361,8 @@ export class AgentRuntimeLauncher {
           agentConfigJson,
           toolPolicyJson,
           this.envConfig,
+          undefined,
+          config.agentApiKey,
         )
       : {};
 
@@ -379,8 +393,10 @@ export class AgentRuntimeLauncher {
     });
 
     if (!portResult.ok) {
-      logger.error({ error: portResult.error, sessionId: config.sessionId }, 'Runtime port launch failed');
-      throw new Error(`Runtime launch failed: ${portResult.error.message}`);
+      // Port errors can echo request content (e.g. a container runtime's response body), so the raw key is scrubbed first.
+      const error = redactSecret(portResult.error, config.agentApiKey);
+      logger.error({ error, sessionId: config.sessionId }, 'Runtime port launch failed');
+      throw new Error(`Runtime launch failed: ${error.message}`);
     }
 
     const handle: LauncherRuntimeHandle = {

@@ -11,7 +11,7 @@ import type {
 } from '@herobids/domain';
 import { readSkillPresetId, resolveAgentRuntimePolicy } from '@herobids/domain';
 import { deriveHasTradingCapability } from '../agent-capabilities.js';
-import { buildRuntimeDescriptor } from '@herobids/db';
+import { buildRuntimeDescriptor, generateAgentApiKey } from '@herobids/db';
 import type { AgentRepository, UsageBillingRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { AgentReconnectHandler } from './agent-reconnect-handler.js';
@@ -533,12 +533,15 @@ export class AgentSessionManager {
             { hasTradingCapability: deriveHasTradingCapability(runtimeDescriptor.resolvedSkills) },
           ),
         };
+        const { rawKey: agentApiKey, keyHash: apiKeyHash } = generateAgentApiKey();
+        await this.agentRepo.updateSession(session.id, { apiKeyHash });
         await this.runtimeLauncher.launch({
           agentId: session.agentId,
           sessionId: session.id,
           agentConfig,
           runtimeDescriptor,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
+          agentApiKey,
         });
 
         if (this.config.streamSubscribe) {

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentRuntimeSessions, agents } from '@herobids/db';
+import { agentRuntimeSessionPublicColumns } from '../services/agent-runtime-session-projection.js';
 
 export async function sessionRoutes(app: FastifyInstance, db: Database): Promise<void> {
   // GET /sessions — list agent runtime sessions for the authenticated user.
@@ -23,7 +24,7 @@ export async function sessionRoutes(app: FastifyInstance, db: Database): Promise
       ? and(eq(agentRuntimeSessions.agentId, request.query.agentId), inArray(agentRuntimeSessions.agentId, agentIds))
       : inArray(agentRuntimeSessions.agentId, agentIds);
 
-    const sessions = await db.select().from(agentRuntimeSessions)
+    const sessions = await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
       .where(baseWhere)
       .orderBy(desc(agentRuntimeSessions.startedAt))
       .limit(limit)
@@ -36,7 +37,7 @@ export async function sessionRoutes(app: FastifyInstance, db: Database): Promise
   app.get<{ Params: { id: string } }>('/sessions/:id', async (request, reply) => {
     const { id } = request.params;
 
-    const [session] = await db.select().from(agentRuntimeSessions)
+    const [session] = await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
       .where(eq(agentRuntimeSessions.id, id))
       .limit(1);
 

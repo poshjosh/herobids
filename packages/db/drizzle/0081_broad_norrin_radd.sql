@@ -1,0 +1,2 @@
+ALTER TABLE "agent_runtime_sessions" ADD COLUMN "api_key_hash" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_agent_runtime_sessions_api_key_hash" ON "agent_runtime_sessions" USING btree ("api_key_hash") WHERE "agent_runtime_sessions"."api_key_hash" IS NOT NULL;

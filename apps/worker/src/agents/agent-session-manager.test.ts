@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentSessionManager } from './agent-session-manager.js';
+import { hashAgentApiKey } from '@herobids/db';
 
 const TEST_RUNTIME_BUDGETS = {
   maxHistoryMessages: 20,
@@ -100,6 +101,21 @@ describe('AgentSessionManager', () => {
 
     return { manager, agentRepo, runtimeLauncher, reconnectHandler };
   }
+
+  it('persists only the hash of a per-launch agent key and passes the raw key to the launcher', async () => {
+    const { manager, agentRepo, runtimeLauncher } = buildManager();
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
+    ]);
+
+    await manager.reconcileStartingSessions();
+
+    const launchArg = (runtimeLauncher.launch as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { agentApiKey: string };
+    const updateCall = (agentRepo.updateSession as ReturnType<typeof vi.fn>).mock.calls.find(([id]) => id === 'sess-1');
+    expect(launchArg.agentApiKey).toMatch(/^agk_/);
+    expect(updateCall?.[1]).toEqual({ apiKeyHash: hashAgentApiKey(launchArg.agentApiKey) });
+    expect(JSON.stringify(agentRepo.updateSession.mock.calls)).not.toContain(launchArg.agentApiKey);
+  });
 
   it('launches each eligible starting session exactly once', async () => {
     const { manager, agentRepo, runtimeLauncher } = buildManager();

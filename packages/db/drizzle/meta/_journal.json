@@ -568,6 +568,13 @@
       "when": 1792937970480,
       "tag": "0080_strong_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1792943048436,
+      "tag": "0081_broad_norrin_radd",
+      "breakpoints": true
     }
   ]
 }

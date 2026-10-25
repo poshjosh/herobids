@@ -29,6 +29,7 @@ import {
   resolveSessionStopReasons,
 } from './agent-activity-mapper.js';
 import type { AgentActivityEntry } from './agent-activity-types.js';
+import { agentRuntimeSessionPublicColumns } from '../services/agent-runtime-session-projection.js';
 
 /** Fallback read deadline when the operator boundary timeout is not supplied. */
 const DEFAULT_READ_TIMEOUT_MS = 10_000;
@@ -477,7 +478,7 @@ export async function dashboardRoutes(
         ))
         .orderBy(desc(agentMessages.createdAt))
         .limit(limit + 1),
-      db.select().from(agentRuntimeSessions)
+      db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
         .where(inArray(agentRuntimeSessions.agentId, agentIds as [string, ...string[]]))
         .orderBy(desc(agentRuntimeSessions.startedAt))
         .limit(limit + 1),

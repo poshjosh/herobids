@@ -512,3 +512,15 @@ describe('buildRuntimeLaunchConfig', () => {
     expect(config.labels['herobids.sessionId']).toBe('sess-x');
   });
 });
+
+describe('buildAgentEnv agent API key', () => {
+  it('injects the agent API key as AGENT_API_KEY when provided', () => {
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', BASE_ENV_CONFIG, undefined, 'agk_test-key');
+    expect(env['AGENT_API_KEY']).toBe('agk_test-key');
+  });
+
+  it('omits AGENT_API_KEY when no key is provided', () => {
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', BASE_ENV_CONFIG);
+    expect(env).not.toHaveProperty('AGENT_API_KEY');
+  });
+});

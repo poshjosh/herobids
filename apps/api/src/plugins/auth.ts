@@ -2,16 +2,33 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import * as jose from 'jose';
 import type { AuthConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { sessions, users } from '@herobids/db';
-import { eq, and, isNull, gt } from 'drizzle-orm';
+import { sessions, users, agents, agentRuntimeSessions, hashAgentApiKey, isAgentApiKey } from '@herobids/db';
+import { eq, and, isNull, gt, inArray, notInArray } from 'drizzle-orm';
 
 declare module 'fastify' {
   interface FastifyRequest {
     userId: string;
     userPlanId: string;
     isAdmin: boolean;
+    /** Set when the request was authenticated with an agent API key; null for user JWTs. */
+    actingAgentId: string | null;
   }
 }
+
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    /**
+     * Opts a route in to agent-key callers. Routes without it refuse agent keys (default-deny).
+     * 'self' means the route may be called by an agent key only for its own agent (see requireSelfAgentOrUser).
+     */
+    agentAccess?: AgentAccessLevel;
+  }
+}
+
+export type AgentAccessLevel = 'self';
+
+/** Runtime statuses whose API keys are revoked. */
+const INACTIVE_RUNTIME_STATUSES = ['stopped', 'crashed'];
 
 /**
  * Auth plugin — verifies Bearer JWT on every request (except public routes).
@@ -41,6 +58,7 @@ export async function authPlugin(app: FastifyInstance, opts: { config: AuthConfi
   app.decorateRequest('userId', '');
   app.decorateRequest('userPlanId', '');
   app.decorateRequest('isAdmin', false);
+  app.decorateRequest('actingAgentId', null);
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     // Skip auth for public routes
@@ -54,6 +72,23 @@ export async function authPlugin(app: FastifyInstance, opts: { config: AuthConfi
     }
 
     const token = authHeader.slice(7);
+
+    // Agent keys are opaque and never parsed as JWTs.
+    if (isAgentApiKey(token)) {
+      const agentCaller = await resolveAgentApiKeyCaller(db, token);
+      if (!agentCaller) {
+        return reply.status(401).send({ error: 'Invalid or expired agent key' });
+      }
+      request.userId = agentCaller.userId;
+      request.userPlanId = agentCaller.planId;
+      request.isAdmin = false; // agent keys never carry admin rights
+      request.actingAgentId = agentCaller.agentId;
+      if (!getRouteAgentAccess(request)) {
+        return reply.status(403).send({ error: 'Agent keys cannot access this route' });
+      }
+      return;
+    }
+
     let payload: jose.JWTPayload;
     try {
       const result = await jose.jwtVerify(token, secret, { algorithms: ['HS256'] });
@@ -102,6 +137,58 @@ export async function authPlugin(app: FastifyInstance, opts: { config: AuthConfi
     request.userPlanId = user.planId;
     request.isAdmin = user.isAdmin;
   });
+}
+
+/**
+ * Resolve an agent API key to the agent and its owner. Returns null when the key is unknown,
+ * its runtime session is stopped or crashed, the agent is paused, or the owner user row is missing
+ * (the inner join to users enforces the last one).
+ */
+async function resolveAgentApiKeyCaller(db: Database, rawKey: string) {
+  const [caller] = await db
+    .select({
+      agentId: agents.id,
+      userId: agents.userId,
+      planId: users.planId,
+      isAdmin: users.isAdmin,
+    })
+    .from(agentRuntimeSessions)
+    .innerJoin(agents, eq(agents.id, agentRuntimeSessions.agentId))
+    .innerJoin(users, eq(users.id, agents.userId))
+    .where(and(
+      eq(agentRuntimeSessions.apiKeyHash, hashAgentApiKey(rawKey)),
+      notInArray(agentRuntimeSessions.status, INACTIVE_RUNTIME_STATUSES),
+      inArray(agents.status, AGENT_KEY_ALLOWED_AGENT_STATUSES),
+    ))
+    .limit(1);
+  return caller ?? null;
+}
+
+/** Agent statuses in which the agent's own key may be used. Stopped, crashed and paused agents are refused. */
+const AGENT_KEY_ALLOWED_AGENT_STATUSES = ['starting', 'active'] as const;
+
+/** The agent access level a route declared in its config, or undefined when agent keys are refused. */
+export function getRouteAgentAccess(request: FastifyRequest): AgentAccessLevel | undefined {
+  return request.routeOptions.config.agentAccess;
+}
+
+/** Route preHandler: rejects agent-key callers. Attach to routes only a user may call. */
+export async function requireUserCaller(request: FastifyRequest, reply: FastifyReply) {
+  if (request.actingAgentId) {
+    return reply.status(403).send({ error: 'This action requires a user session' });
+  }
+}
+
+/**
+ * Route preHandler for routes opened to agent keys with agentAccess 'self': an agent key may only
+ * address its own agent (params.id must equal the acting agent). User callers pass through.
+ */
+export async function requireSelfAgentOrUser(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.actingAgentId) return;
+  const params = request.params as { id?: unknown } | undefined;
+  if (params?.id !== request.actingAgentId) {
+    return reply.status(403).send({ error: 'Agent keys may only act on their own agent' });
+  }
 }
 
 /** Routes that do not require authentication */

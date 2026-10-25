@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { z } from 'zod';
+import { requireUserCaller } from '../plugins/auth.js';
 import { eq, and, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
@@ -136,7 +137,7 @@ export async function agentInteractivityRoutes(
   const telegramToken = telegram?.botToken ?? '';
 
   // PUT /agents/:id — full replacement update (agent must be stopped or crashed)
-  app.put<{ Params: { id: string }; Body: unknown }>('/agents/:id', async (request, reply) => {
+  app.put<{ Params: { id: string }; Body: unknown }>('/agents/:id', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id } = request.params;
     const parsed = UpdateAgentSchema.safeParse(request.body);
     if (!parsed.success) {

@@ -76,6 +76,7 @@ export function buildAgentEnv(
   toolPolicyJson: string,
   config: AgentEnvConfig,
   processEnv?: NodeJS.ProcessEnv,
+  agentApiKey?: string,
 ): Record<string, string> {
   // Resolve Redis URL: prefer shared-services cluster address, fall back to worker's URL.
   // sharedServices is always populated via config defaults (default.yaml → SharedServicesConfigSchema).
@@ -107,6 +108,9 @@ export function buildAgentEnv(
     AGENT_RUNTIME_CONFIG_JSON: config.agentRuntimeConfigJson,
     AGENT_WORKSPACE_ROOT: '/workspace',
   };
+
+  // Per-runtime key for calling the platform API as this agent. Only the hash is persisted.
+  if (agentApiKey) envOut['AGENT_API_KEY'] = agentApiKey;
 
   // Forward NODE_ENV so agent containers inherit the worker's environment
   // classification (development → pretty logs + debug level, etc.).

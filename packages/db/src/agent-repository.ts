@@ -153,6 +153,7 @@ export interface UpdateAgentRuntimeSession {
   cpuPct?: number;
   memoryBytes?: number;
   stoppedAt?: Date;
+  apiKeyHash?: string;
 }
 
 export interface LaunchableStartingSession {

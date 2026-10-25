@@ -20,9 +20,14 @@ export const agentRuntimeSessions = pgTable('agent_runtime_sessions', {
   memoryBytes: integer('memory_bytes'),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+  /** SHA-256 hex of the per-runtime agent API key. The raw key is never stored. */
+  apiKeyHash: text('api_key_hash'),
 }, (t) => [
   index('idx_agent_runtime_sessions_agent_id').on(t.agentId),
   index('idx_agent_runtime_sessions_status').on(t.status),
+  uniqueIndex('uq_agent_runtime_sessions_api_key_hash')
+    .on(t.apiKeyHash)
+    .where(sql`${t.apiKeyHash} IS NOT NULL`),
   // Replaces the session guard that was on agent_instance_links.
   // Prevents two concurrent active/starting/unhealthy sessions for the same agent.
   uniqueIndex('uq_agent_runtime_sessions_active_agent')

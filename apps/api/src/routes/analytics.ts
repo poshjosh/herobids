@@ -5,6 +5,7 @@ import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions } from '@herobids/db';
 import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { errorPayload } from '../error-payload.js';
+import { agentRuntimeSessionPublicColumns } from '../services/agent-runtime-session-projection.js';
 import {
   createTradertonReadBoundary,
   loadAgentEvidence,
@@ -184,7 +185,7 @@ async function computeAnalytics(
       const ownedAgentIds = (await db.select({ id: agents.id }).from(agents)
         .where(eq(agents.userId, userId))).map((a) => a.id);
       const rows = ownedAgentIds.length > 0
-        ? await db.select().from(agentRuntimeSessions)
+        ? await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
             .where(and(
               inArray(agentRuntimeSessions.id, query.sessions),
               inArray(agentRuntimeSessions.agentId, ownedAgentIds),
@@ -200,7 +201,7 @@ async function computeAnalytics(
       const userAgentIds = (await db.select({ id: agents.id }).from(agents)
         .where(eq(agents.userId, userId))).map((a) => a.id);
       if (userAgentIds.length > 0) {
-        const rows = await db.select().from(agentRuntimeSessions)
+        const rows = await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
           .where(inArray(agentRuntimeSessions.agentId, userAgentIds))
           .orderBy(agentRuntimeSessions.startedAt);
         sessionRanges = rows.map((s) => ({

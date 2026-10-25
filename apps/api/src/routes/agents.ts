@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
+import { requireUserCaller } from '../plugins/auth.js';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { TradingProfileReconciliationOutboxRepository, setTelegramChatAddress, type Database, type DatabaseTransaction } from '@herobids/db';
@@ -69,6 +70,7 @@ import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
 import { CONVERSATION_TURN_EVENT_WINDOW, deriveSubjectTurnState, TURN_EVENT_TYPES } from '../services/agent-conversation-turn.js';
 import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
+import { agentRuntimeSessionPublicColumns } from '../services/agent-runtime-session-projection.js';
 import { cloneAgentAsLive } from '../services/agent-go-live-service.js';
 import { buildBlueprintDetail } from './blueprints.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
@@ -1051,7 +1053,7 @@ export async function agentRoutes(
     // Include active session (starting/launching/running/unhealthy).
     // Do not return lingering sessions for stopped/crashed agents — any such session is stale.
     const isTerminalState = agent.status === 'stopped' || agent.status === 'crashed';
-    const [session] = isTerminalState ? [] : await db.select().from(agentRuntimeSessions)
+    const [session] = isTerminalState ? [] : await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
       .where(and(
         eq(agentRuntimeSessions.agentId, id),
         inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
@@ -1097,7 +1099,7 @@ export async function agentRoutes(
   });
 
   // Update agent
-  app.patch<{ Params: { id: string } }>('/agents/:id', async (request, reply) => {
+  app.patch<{ Params: { id: string } }>('/agents/:id', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id } = request.params;
     const parsed = UpdateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -1999,7 +2001,7 @@ export async function agentRoutes(
   });
 
   // Delete agent
-  app.delete<{ Params: { id: string } }>('/agents/:id', async (request, reply) => {
+  app.delete<{ Params: { id: string } }>('/agents/:id', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id } = request.params;
     const [agent] = await db.select().from(agents)
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
@@ -2179,7 +2181,7 @@ export async function agentRoutes(
   });
 
   // Resume agent
-  app.post<{ Params: { id: string } }>('/agents/:id/resume', async (request, reply) => {
+  app.post<{ Params: { id: string } }>('/agents/:id/resume', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id } = request.params;
 
     const result = await resumeAgent(db, id, request.userId);
@@ -2197,7 +2199,7 @@ export async function agentRoutes(
   });
 
   // Start agent (stopped → starting) — records the request durably.
-  app.post<{ Params: { id: string } }>('/agents/:id/start', async (request, reply) => {
+  app.post<{ Params: { id: string } }>('/agents/:id/start', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id } = request.params;
 
     const result = await startAgent(db, id, request.userId, tradertonReadClient, tradertonReadTimeoutMs);
@@ -2344,7 +2346,7 @@ export async function agentRoutes(
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    const sessions = await db.select().from(agentRuntimeSessions)
+    const sessions = await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
       .where(eq(agentRuntimeSessions.agentId, id))
       .orderBy(agentRuntimeSessions.startedAt);
 
@@ -2508,7 +2510,7 @@ export async function agentRoutes(
         )
         .orderBy(desc(agentMessages.createdAt))
         .limit(limit),
-      db.select().from(agentRuntimeSessions)
+      db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
         .where(eq(agentRuntimeSessions.agentId, id))
         .orderBy(desc(agentRuntimeSessions.startedAt))
         .limit(10),
@@ -2643,7 +2645,7 @@ export async function agentRoutes(
   });
 
   // POST /agents/:id/approvals/:approvalId/approve — approve a pending approval
-  app.post<{ Params: { id: string; approvalId: string } }>('/agents/:id/approvals/:approvalId/approve', async (request, reply) => {
+  app.post<{ Params: { id: string; approvalId: string } }>('/agents/:id/approvals/:approvalId/approve', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id: agentId, approvalId } = request.params;
 
     // Verify the agent belongs to the requesting user
@@ -2714,7 +2716,7 @@ export async function agentRoutes(
   });
 
   // POST /agents/:id/approvals/:approvalId/reject — reject a pending approval
-  app.post<{ Params: { id: string; approvalId: string } }>('/agents/:id/approvals/:approvalId/reject', async (request, reply) => {
+  app.post<{ Params: { id: string; approvalId: string } }>('/agents/:id/approvals/:approvalId/reject', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id: agentId, approvalId } = request.params;
 
     // Verify the agent belongs to the requesting user
