@@ -1,5 +1,7 @@
 # Agent entrypoint: multi-provider chat messaging (WP-M)
 
+> **Superseded for queue and rules (2026-10-25).** Read [ENTRYPOINT.md](./ENTRYPOINT.md) first. The task queue is now [QUEUE.md](./QUEUE.md). This file is kept as the historical record of P0 to P3.4 and T, and for the task details in section 4.
+
 Read this file and follow it. The task queue in section 3 is the only list of what to do next.
 
 ## Stop and ask the owner (do not proceed)
@@ -32,34 +34,9 @@ Let a user talk to their agent over **any supported messaging platform**, with t
 
 **Done for the feature** when every item in section 3 is ticked **and** the owner has resolved open decision C in [900](./900-implementation-plan.md) (the two-provider target). Until then, stop after the last ticked item and report.
 
-## 3. Task queue (in order)
+## 3. Task queue (moved)
 
-This is the only record of task state. Work from the top. The first unchecked item is your next task. Tick an item when its gate passes.
-
-- `[x]` **Phase 0**: capability manifest amendment. Evidence: `messaging / chat / sms` planned row; manifest tests in [providers.test.ts](../../../../../../apps/api/src/routes/providers.test.ts).
-- `[x]` **Phase 1**: port and Telegram behind it. Evidence: `ChatDelivery`, `ChatInboundRouter`, `chat-channel.ts`. Wave 1 gate passed (see [PROGRESS](../002-agent-onboarding-epic/PROGRESS.md)).
-- `[x]` **P0** Baseline: the Telegram test files pass before you change anything (section 4)
-- `[x]` **P2.1** Schema (Phase 2)
-- `[x]` **P2.2** Generated expand migration (Phase 2)
-- `[x]` **P2.3** Repository and resolver (Phase 2)
-- `[x]` **P2.4** Custom backfill migration (Phase 2)
-- `[x]` **P2.5** Dual-write (Phase 2)
-- `[x]` **P2.6** Tests and Phase 2 gate
-- `[x]` **P3.1** Neutral webhook route (Phase 3)
-- `[x]` **P3.2** Auth bypass for the new route (Phase 3)
-- `[x]` **P3.3** `messaging.chat.*` config (Phase 3)
-- `[x]` **P3.4** Tests and Phase 3 gate
-- `[x]` **T** Telegram typing indicator ([070](./070-typing-indicator.md))
-- `[ ]` **W** Web Push and installable PWA ([080](./080-web-push-notifications.md))
-- `[ ]` **E** Email notification fallback ([080](./080-web-push-notifications.md))
-- `[ ]` **U** Messaging as a user capability (no design doc yet; section 4)
-- `[ ]` **A2A** Agent-to-agent messaging (nice to have; see the [pending plan](../../../../pending/000-agent-to-agent-messaging/001-plan.md))
-
-**Not in the queue.** Do not start these unless the owner resumes them:
-
-- **Phase 4, WhatsApp adapter: paused.** Meta billing is unclear. See [085](./085-billing-and-metering.md).
-- **Phase 5, SMS adapter: deferred** (decision D-R2).
-- **Phase 6, contract migration:** only after dual-read is live in every environment.
+The queue is now [QUEUE.md](./QUEUE.md). It is the only task list. The items completed before 2026-10-25 (P0, P2.1 to P2.6, P3.1 to P3.4, T) are recorded there as done.
 
 ## 4. Task details
 

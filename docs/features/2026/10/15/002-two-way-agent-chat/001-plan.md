@@ -1,6 +1,6 @@
 # Plan: Two-way agent chat
 
-**Status:** draft, awaiting owner review (2026-10-15). No code written yet.
+**Status:** approved 2026-10-25 (DEC-31, DEC-32). Not started. Runs after the address cutover (C1). The answers to section 9 are in the decision register.
 **Owner:** Chinomso Ikwuagwu
 **Related:** [agent-onboarding epic IMPLEMENTATION](../../../10/10/002-agent-onboarding-epic/IMPLEMENTATION.md) (§4 D-C3, D-R1; §6 WP-C S2, WP-M Phase 2–3), [PROGRESS](../../../10/10/002-agent-onboarding-epic/PROGRESS.md) (S2 entry), [next plan: agent-to-agent messaging](../../../../pending/000-agent-to-agent-messaging/001-plan.md), superseded: [chat sessions notes](superseded/003-agent-chat-sessions/000-notes.md).
 
@@ -157,3 +157,15 @@ Rough, to be confirmed after P0: P0 half a day, P1 two to three days, P2 four to
 ## 10. Appendix — P0 inventory
 
 _To be filled in during P0._
+
+## 11. Owner decisions (2026-10-25)
+
+- Q1: retire `agent_outbound_messages`.
+- Q2: remove "Messages to user" in the first phase.
+- Q3: include Telegram in the Telegram phase.
+- Q4: keep "Chat with {name}".
+- Q5: approve the three tables, and remove `GET /agents/:id/messages`.
+- Gate: the P0 inventory of readers and writers is recorded before any table is removed.
+- Sequence: after the address cutover (C1). C1 drops only two Telegram columns from `agent_outbound_messages`.
+
+Source: [DECISIONS](../../../10/10/007-multi-provider-chat-messaging/DECISIONS.md), DEC-31 and DEC-32.

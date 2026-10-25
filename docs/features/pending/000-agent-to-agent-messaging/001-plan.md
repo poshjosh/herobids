@@ -1,3 +1,5 @@
+> **Superseded for the MVP (2026-10-25).** The current scope is in the messaging queue ([QUEUE](../../2026/10/10/007-multi-provider-chat-messaging/QUEUE.md)) and its decisions (DEC-40 to DEC-46). Off-by-default grants, the per-pair limits, the cost cap, and the trade block are deferred. This document is kept as the design reference for later phases.
+
 # Plan: Agent-to-agent messaging
 
 **Status:** pending. Not scheduled. Depends on [two-way agent chat](../../2026/10/15/002-two-way-agent-chat/001-plan.md) (the conversation store and participant model).
@@ -76,9 +78,16 @@ Each phase gets its own review. Phase C is the safety gate; the feature does not
 - Owner review of the default-off permission and the operator config keys.
 - No shared-environment rollout without explicit approval.
 
-## 8. Open questions
+## 8. Decisions (approved 2026-10-25)
 
-1. Should the owner approve each pair one by one, or allow a whole group of agents at once?
-2. Should a paused thread resume automatically when the owner sends a user message, or only on explicit resume?
-3. What defaults for the turn cap and the cost cap?
-4. Should peers be able to share memory, or only messages?
+1. **Pair approval:** per pair. No group grants in the MVP.
+2. **Paused thread:** resumes only on an explicit owner action. A user message does not resume it.
+3. **Defaults** (operator config, starting values, tune from traffic; none hard-coded):
+   - `agentRuntime.peer.maxTurnsPerHour`: 20 peer turns per thread
+   - Ping-pong pause: after 6 consecutive peer turns with no user message between them
+   - `agentRuntime.peer.tokenBudgetPer24h`: 50,000 tokens per thread
+   - Rate limit: 30 peer messages per agent pair per hour
+4. **Memory:** no sharing. Messages only in the MVP.
+5. **Trading:** peer messages cannot submit or change orders. Trading execution stays in traderton (legal requirement). Trading-related peer text is delivered as information only.
+
+**Sequencing:** see the queue items A2A-A to A2A-D in [AGENT-ENTRYPOINT](../../2026/10/10/007-multi-provider-chat-messaging/AGENT-ENTRYPOINT.md) §3. A2A-B depends on the 002 conversation store and on C2.

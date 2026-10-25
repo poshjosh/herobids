@@ -203,7 +203,7 @@ Tasks: [entrypoint §4 P3.1–P3.4](./AGENT-ENTRYPOINT.md).
 - Cross-tenant suppression: resolved 2026-10-24 (owner: option A, including pending_optin).
 - The Telegram suppression check reads the stored address with `trim()` in SQL; keep this when writers for `chat_addresses` are added.
 
-- Secret compare in `apps/api/src/routes/telegram-channel.ts` is not constant-time (pre-existing). Changing it needs owner approval (secret verification is not pre-approved).
+- Secret compare in `apps/api/src/routes/telegram-channel.ts` was not constant-time. **Fixed** in `d553c64e` (2026-10-24) with 15 passing regression tests (re-run 2026-10-25). See [bug report](../../../../../bug-reports/2026/10/25/001-telegram-webhook-secret-compare-not-constant-time.md).
 - `messaging.chat.telegram.*` has no env mapping (YAML only). Confirm this is intended.
 - Per-field fallback can mix `messaging.chat` and `alerts.telegram` sources. Consider resolving the whole block from one source.
 - GET verify returns 405 for a registered provider with no verify handshake. Decide the status when WhatsApp lands.
@@ -225,8 +225,10 @@ Tasks: [entrypoint §4 P3.1–P3.4](./AGENT-ENTRYPOINT.md).
 
 ### W and E implementation status (2026-10-24)
 
-- W1–W8 implemented and committed (d009df58, f46fc4ea). W9 manual checks M1–M5 and the W gate are OPEN; AGENT-ENTRYPOINT W is not ticked.
-- E1–E7 implemented and committed (this commit). E8 manual checks M-E1–M-E5 are OPEN; E is not ticked.
+- W1–W8 implemented and committed (d009df58, f46fc4ea).
+- **Update 2026-10-25:** W9 manual checks M1–M5 were run by the owner on 2026-10-24 and reported passed. Recorded in [user-acceptance-tests §19](../../../../../tech/user-acceptance-tests.md). W is ticked.
+- E1–E7 implemented and committed.
+- **Update 2026-10-25:** E8 manual checks M-E1–M-E4 were run by the owner on 2026-10-24 and reported passed. M-E5 (SES bounce metrics) is open. Recorded in [user-acceptance-tests §19](../../../../../tech/user-acceptance-tests.md). E is ticked.
 - Automated gates: `pnpm test` 362 files passed, 28 skipped; 6816 passed, 352 skipped. DB integration: 33 passed against Postgres 17.
 - Owner to confirm: E-D3/E-D4 opt-in default (`userDefaultEnabled: false`), email-only delivery when push is off and email is on, and the PATCH /auth/me contract extension (AGENT-ENTRYPOINT §0 item 3).
 
@@ -269,7 +271,9 @@ Depends on Phases 1–3; independent of Phase 4.
 
 ## Phase 6 — Contract migration (cleanup, separate PR)
 
-Only after dual-read has been live and verified across environments.
+**Superseded (2026-10-25).** No backward compatibility is required, so the contract step is folded into queue item C1 (cutover) instead of a later PR. See the decision log. The text below is kept for reference.
+
+Original plan: only after dual-read has been live and verified across environments.
 - Remove dual-read; drop `users.telegram_chat_id`, `agents.telegram_chat_id`,
   `agent_outbound_messages.telegram_message_id` / `telegram_chat_id`; remove the
   `alerts.telegram.*` config alias and the `/telegram/webhook` alias (or keep
@@ -317,6 +321,22 @@ Only after dual-read has been live and verified across environments.
 | 2026-10-24 | Reply correlation: keep the current code. A plain message goes to the user's only running agent; with several running, the user is asked to use `/to`. The number-based rule is deferred to the shared-number channels (WhatsApp, SMS) | Owner | [050](./050-inbound-routing.md); [reply correlation](../../../../../../apps/web/src/features/public-pages/content/en/docs/messaging/reply-correlation.md) |
 | 2026-10-24 | Cross-tenant opt-out: option A. A non-active address (revoked or pending_optin) blocks inbound and outbound for all users on that provider and address. Includes pending_optin | Owner | [060](./060-config-secrets-onboarding.md) "Honour revocation" |
 | 2026-10-24 | Approval resolution source generalised to `chat_yes` / `chat_no` with a provider field (`resolution_provider`), not per-provider values (040 §3 option a); `agent_documents.source` widened to add `whatsapp` / `sms` | Owner | [040](./040-data-model-and-migration.md) §3 |
+| 2026-10-25 | Owner direction: production grade and highly scalable; seamless messaging across platforms with minimum infrastructure and maintenance; no backward compatibility (pre-launch); avoid blind complexity; trading stays in traderton (legal) | Owner | This log |
+| 2026-10-25 | No backward compatibility. The Phase 2 dual-read and dual-write are removed in one cutover. Legacy columns are dropped in the same change. Teardown and re-provisioning are owner-run for staging and production. The agent may tear down local and dev only (owner, 2026-10-25). Supersedes Phase 6 as a later step and 095 M1–M11 | Owner | [095](./095-chat-address-migration-plan.md) §0; queue C1 |
+| 2026-10-25 | Opt-outs move to a new `chat_suppressions(provider, address)` table with unique `(provider, address)` and no foreign keys. `chat_addresses` keeps the unique key `(user_id, agent_id, provider)`. Supersedes 095 D2 | Owner | [095](./095-chat-address-migration-plan.md) §0 |
+| 2026-10-25 | Revoking deletes the active row and writes a suppression row. A suppression is lifted only by a successful proof-of-control bind for that exact address. An owner cannot lift another user's block | Owner | [095](./095-chat-address-migration-plan.md) §0 |
+| 2026-10-25 | A second active claim on `(provider, address)` from a different user is refused with 409 `chat_address.already_bound`. The check runs under `pg_advisory_xact_lock` in the write transaction. The same user may hold one address on several scopes | Owner | [095](./095-chat-address-migration-plan.md) §0 |
+| 2026-10-25 | Binding requires proof of control: a one-time code (6 digits, 10-minute expiry, rate-limited) sent by the provider and entered on the web. Inbound messages never create or change a binding. Supersedes the earlier deferral of the bind token. Each security-boundary change in queue C2 keeps its own review gate (AGENT-ENTRYPOINT stop rules) | Owner | [095](./095-chat-address-migration-plan.md) §0; queue C2 |
+| 2026-10-25 | Addresses are normalised on write (trimmed; E.164 for phone-based providers) | Owner | [095](./095-chat-address-migration-plan.md) §0 |
+| 2026-10-25 | Agent-level override with inherit-from-user (no agent row means inherit) | Owner | [095](./095-chat-address-migration-plan.md) §0 |
+| 2026-10-25 | Public API: `telegramChatId` is replaced by `chatAddresses: [{ provider, address, scope, status }]` in responses and the PATCH body. The dead `telegramChatId` field in the PUT agent schema is removed. This is a public API change. Supersedes the 095 non-goal of no API change | Owner | [095](./095-chat-address-migration-plan.md) §0 |
+| 2026-10-25 | Unbound inbound replies get "Open Settings to link your Telegram account." | Owner | [095](./095-chat-address-migration-plan.md) §0 |
+| 2026-10-25 | The `/telegram/webhook` route alias is kept, because Telegram's `setWebhook` points at a fixed URL. Only the `alerts.telegram.*` config alias and the legacy columns are removed | Owner | Phase 6 text above; queue C1 |
+| 2026-10-25 | Typing indicator (T) is delivered. Web-chat typing and other providers stay with [070](./070-typing-indicator.md) | Owner | [070](./070-typing-indicator.md) |
+| 2026-10-25 | A2A approvals: per-pair grants only (no group grants in the MVP); a paused thread resumes only on an explicit owner action; no memory sharing (messages only); peer messages cannot submit or change orders. Turn cap 20 per hour, ping-pong pause after 6 peer turns with no user message, token budget 50,000 per 24 h, rate limit 30 per pair per hour, all in operator config | Owner | [pending A2A plan](../../../../pending/000-agent-to-agent-messaging/001-plan.md) §8 |
+| 2026-10-25 | Correction to the 2026-10-24 "P3.1 and P3.2 held" row: both are done in code. The route is registered in `apps/api/src/routes/agent-interactivity.ts`, and the bypass is in `apps/api/src/plugins/auth.ts` limited to the webhook pattern. Status entries corrected to done | Owner (confirmed by code check) | [AGENT-ENTRYPOINT](./AGENT-ENTRYPOINT.md) §3 |
+| 2026-10-25 | Telegram webhook secret comparison: the constant-time fix is already in `d553c64e`. The defect came from `919f9ec7` (not from this session). No further change needed | Owner | [bug report 001](../../../../../bug-reports/2026/10/25/001-telegram-webhook-secret-compare-not-constant-time.md) |
+| 2026-10-25 | Queue order: C0, C1, C2 (cutover and binding) before W, E, U and A2A. A2A Phase A may start earlier because it has no dependency on C1 | Owner | [AGENT-ENTRYPOINT](./AGENT-ENTRYPOINT.md) §3 |
 
 ## Risk notes
 

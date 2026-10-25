@@ -1,9 +1,44 @@
 # Chat address migration plan: retire the legacy Telegram columns
 
-**Status:** Draft, awaiting owner approval
+**Status:** Approved 2026-10-25 with amendments. See §0 (decision record); sections 1 to 8 are superseded where §0 says so
 **Date:** 2026-10-24
 **Parent:** [900-implementation-plan.md](./900-implementation-plan.md) · [040-data-model-and-migration.md](./040-data-model-and-migration.md)
 **Related:** [060](./060-config-secrets-onboarding.md) ("Honour revocation"), [050](./050-inbound-routing.md)
+
+## 0. Decision record (approved 2026-10-25)
+
+The owner approved the recommendations in this document, with the changes below. **Where this section conflicts with sections 1 to 8, this section wins.** Sections 3 to 6 are kept as the reasoning record. The task list is the queue in [AGENT-ENTRYPOINT](./AGENT-ENTRYPOINT.md) §3 (C0, C1, C2), and the decisions are in the [900](./900-implementation-plan.md) decision log.
+
+Owner constraints that drove the changes: production grade and highly scalable; minimum infrastructure and maintenance; no backward compatibility (pre-launch, environments may be torn down); no blind complexity; trading stays in traderton.
+
+| ID | Approved decision |
+| --- | --- |
+| D1 | No row means no address. Clearing deletes the active row. No `''` values. |
+| D2 (amended) | Keep the unique key `(user_id, agent_id, provider)`. Opt-outs live in `chat_suppressions(provider, address, status, created_at)`, unique on `(provider, address)`, with **no foreign keys**. Revoking deletes the active row and writes a suppression row. Suppression stays platform-wide per address. |
+| D3 | A second active claim from a **different user** is refused with 409 `chat_address.already_bound`. The check runs under `pg_advisory_xact_lock` in the write transaction. The same user may hold one address on several scopes. |
+| D4 (amended) | Binding requires proof of control. The web asks the server to send a one-time code (6 digits, 10-minute expiry, rate-limited) through the provider, and the user enters it on the web. Inbound messages never create or change a binding. Unbound replies point to Settings. |
+| Suppression lift | Lifted only by a successful proof-of-control bind for that exact address. An owner cannot lift another user's block. |
+| D5 | Agent override with inherit-from-user, as proposed. |
+| D6 (amended) | Responses and the PATCH body use `chatAddresses: [{ provider, address, scope, status }]` instead of `telegramChatId`. The dead field in the PUT schema is removed. The web form changes in the same change. |
+| Normalisation | Trim on write; E.164 for phone-based providers. Queries compare normalised values only. |
+| Q2 | No pre-cutover production duplicate check. Environments may be torn down. |
+| Q3 | Run all seven `packages/db` integration files. |
+| Q4 | Baseline re-run (C0) is authoritative. Update 900 with the real counts. |
+| Q5 | Teardown and re-provision: the owner runs staging and production. The agent may tear down local and dev only. |
+| Q6 | Remove the dead PUT field now. |
+| Q7 | Not applicable. The unique key does not change (D2 amended). |
+| Q8 | Approved: 409 `chat_address.already_bound`. |
+| Q9 | Approved: "Open Settings to link your Telegram account." |
+
+**Superseded parts of this document:**
+
+- **§1 non-goal "no change to public API field names"** no longer applies (D6).
+- **§3 D2 "unique key includes address"** is replaced by `chat_suppressions` (above).
+- **§3 D4 "defer the bind token"** is replaced by proof-of-control (above).
+- **§5 tasks M1 to M11** are replaced by the single cutover C1 and binding C2. The staged expand, dual-read, staged writer and deploy-order steps are not needed. M10 (teardown) is approved.
+- **§6 verification:** the integration-file and gate commands still apply to C1. The baseline counts come from C0, not from §6.
+- **§7 risks 4 and 5** (destructive drop, environment reset) are accepted under the no-backcompat decision. Risk 3 (revocation overwrite) is fixed by the suppression table.
+- **§8 open questions** are answered above.
 
 ## 1. Goal and non-goals
 

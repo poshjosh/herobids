@@ -418,6 +418,8 @@ the legal-page trading-clause removal implemented by
 
 ## 19. Messaging — typing, reply correlation, Web Push, email fallback
 
+Recorded results: the owner ran the Telegram, Web Push, and email checks on 2026-10-24 and reported them passed. The agent did not re-run them. Rows marked `—` have not been recorded.
+
 Verifies the messaging changes in `docs/features/2026/10/10/007-multi-provider-chat-messaging/`
 (T, W, E). Web Push and email need configuration: `messaging.notifications.enabled`,
 `messaging.notifications.webPush.*` (with `VAPID_PRIVATE_KEY` set for the worker), and
@@ -426,25 +428,27 @@ and [082](../features/2026/10/10/007-multi-provider-chat-messaging/082-email-fal
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| MSG-01 | Typing indicator while agent works | Link Telegram chat; send a message to the agent; watch the chat | "typing…" appears within a few seconds of the message | — | Plan 070 (T) |
-| MSG-02 | Typing stops when reply is sent | Continue MSG-01 until the reply arrives | "typing…" disappears when the reply appears; does not reappear afterwards | — | Plan 070 (T), stop signal |
-| MSG-03 | Quoted reply goes to the right agent | Quote an agent message in Telegram and reply | Reply is delivered to the agent that sent the quoted message; confirmation shown | — | Reply correlation |
-| MSG-04 | Plain message with one running agent | With exactly one agent running, send a message with no quote | Message delivered to that agent | — | Reply correlation rule 3 |
-| MSG-05 | Plain message with several running agents | With two or more agents running, send a message with no quote | Reply says "Multiple running agents found. Use /to …"; nothing delivered | — | Reply correlation rule 4 |
-| MSG-06 | `/to` routes to named agent | Send `/to <agent name> <message>` | Message delivered to that agent only | — | Reply correlation rule 2 |
-| MSG-07 | `/to` with unknown agent | Send `/to unknown hello` | "No agent named unknown found." | — | |
+| MSG-01 | Typing indicator while agent works | Link Telegram chat; send a message to the agent; watch the chat | "typing…" appears within a few seconds of the message | ✅ | Plan 070 (T) |
+| MSG-02 | Typing stops when reply is sent | Continue MSG-01 until the reply arrives | "typing…" disappears when the reply appears; does not reappear afterwards | ✅ | Plan 070 (T), stop signal |
+| MSG-03 | Quoted reply goes to the right agent | Quote an agent message in Telegram and reply | Reply is delivered to the agent that sent the quoted message; confirmation shown | ✅ | Reply correlation |
+| MSG-04 | Plain message with one running agent | With exactly one agent running, send a message with no quote | Message delivered to that agent | ✅ | Reply correlation rule 3 |
+| MSG-05 | Plain message with several running agents | With two or more agents running, send a message with no quote | Reply says "Multiple running agents found. Use /to …"; nothing delivered | ✅ | Reply correlation rule 4 |
+| MSG-06 | `/to` routes to named agent | Send `/to <agent name> <message>` | Message delivered to that agent only | ✅ | Reply correlation rule 2 |
+| MSG-07 | `/to` with unknown agent | Send `/to unknown hello` | "No agent named unknown found." | ✅ | |
 | WP-01 | Notifications option appears | Open an agent page (or Settings) while Web Push is enabled | Notifications opt-in control is shown; hidden when feature is off | — | Plan 081 W8 |
 | WP-02 | Permission asked only on click | Load the page; do not click | No browser permission prompt on load | — | Plan 081 D2 |
-| WP-03 | Enable notifications | Click the opt-in button and allow the browser prompt | Button shows enabled state; a `push_subscriptions` row exists for the user | — | Manual check M1 |
-| WP-04 | Push notification content | Trigger an agent reply while the browser is closed or in the background | Notification shows the agent name and "You have a new message"; no message text | — | Manual check M1 |
-| WP-05 | Clicking notification opens the agent | Click the notification | Opens `/agents/<id>` in the app | — | Manual check M1 |
-| WP-06 | Install as app | Chromium menu: install the app; check DevTools > Manifest | Manifest has no errors; app installs and opens in its own window | — | Manual check M2 |
-| WP-07 | Android Chrome push | Install the app on Android; trigger a reply with the app closed | Notification arrives; tapping opens the agent | — | Manual check M3 |
-| WP-08 | iOS Safari push | iOS 16.4+: Add to Home Screen; open from the icon; enable notifications; lock screen; trigger reply | Notification arrives; tapping opens the agent | — | Manual check M4 |
-| WP-09 | Turn off notifications | Click the opt-in button to turn off | Subscription revoked (`revoked_at` set); no further push arrives | — | Manual check M5 |
-| EM-01 | Email when push cannot reach user | With no push subscription, trigger an agent question | Email received naming the agent and linking to the conversation; no message text | — | Plan 082 E-D1; manual check M-E1 |
+| WP-03 | Enable notifications | Click the opt-in button and allow the browser prompt | Button shows enabled state; a `push_subscriptions` row exists for the user | ✅ | Manual check M1. Owner-reported 2026-10-24. |
+| WP-04 | Push notification content | Trigger an agent reply while the browser is closed or in the background | Notification shows the agent name and "You have a new message"; no message text | ✅ | Manual check M1. Owner-reported 2026-10-24. |
+| WP-05 | Clicking notification opens the agent | Click the notification | Opens `/agents/<id>` in the app | ✅ | Manual check M1. Owner-reported 2026-10-24. |
+| WP-06 | Install as app | Chromium menu: install the app; check DevTools > Manifest | Manifest has no errors; app installs and opens in its own window | ✅ | Manual check M2. Owner-reported 2026-10-24. |
+| WP-07 | Android Chrome push | Install the app on Android; trigger a reply with the app closed | Notification arrives; tapping opens the agent | ✅ | Manual check M3. Owner-reported 2026-10-24. |
+| WP-08 | iOS Safari push | iOS 16.4+: Add to Home Screen; open from the icon; enable notifications; lock screen; trigger reply | Notification arrives; tapping opens the agent | ✅ | Manual check M4. Owner-reported 2026-10-24. |
+| WP-09 | Turn off notifications | Click the opt-in button to turn off | Subscription revoked (`revoked_at` set); no further push arrives | ✅ | Manual check M5. Owner-reported 2026-10-24. |
+| EM-01 | Email when push cannot reach user | With no push subscription, trigger an agent question | Email received naming the agent and linking to the conversation; no message text | ✅ | Plan 082 E-D1; manual check M-E2 (email with no push). Owner-reported 2026-10-24. |
 | EM-02 | Email cap | Trigger more than 10 agent questions in 24 hours with no push subscription | No more than 10 fallback emails sent in 24 hours | — | Plan 082 cap; manual check M-E2 |
 | EM-03 | Email toggle shows effective state | Open Settings with no saved choice | Email fallback toggle is ON while `userDefaultEnabled` is true | — | Toggle fix |
-| EM-04 | Turn email fallback off | Set the Settings toggle to OFF; trigger an agent question with no push subscription | No email sent for that question | — | Manual check M-E3 |
-| EM-05 | Email link opens conversation | Click the link in the email | Opens `/agents/<id>` after sign-in | — | Manual check M-E4 |
+| EM-04 | Turn email fallback off | Set the Settings toggle to OFF; trigger an agent question with no push subscription | No email sent for that question | ✅ | Manual check M-E4 (opt-out, no fallback email). Owner-reported 2026-10-24. |
+| EM-05 | Email link opens conversation | Click the link in the email | Opens `/agents/<id>` after sign-in | ✅ | Manual check M-E1 (email link opens the agent). Owner-reported 2026-10-24. |
+| EM-06 | Push succeeds, no email | User with a working push subscription; trigger an agent question | Push arrives; no email for that event | ✅ | Manual check M-E3. Owner-reported 2026-10-24. |
+| EM-07 | SES bounce and complaint metrics | After the first run, check the metrics for `alerts.email.ses.configurationSetName` | Bounce and complaint rates within SES limits | — | Manual check M-E5. Needs SES console access. Not recorded. |
 | OPT-01 | Opt-out blocks sends on every account | Mark a chat address as revoked for one user (DB or admin); send from another account that uses the same address | Messages to that address are not sent for any account; the send reports the suppressed status | — | Decision: platform-wide opt-out (060) |

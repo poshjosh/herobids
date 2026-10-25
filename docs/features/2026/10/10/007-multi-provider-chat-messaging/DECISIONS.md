@@ -1,0 +1,64 @@
+# Decision register
+
+The only approvals an agent may rely on. Each row has a scope. Work outside the scope is tier 3 (see [ENTRYPOINT](./ENTRYPOINT.md) section 5).
+
+The 900 decision log is historical. New decisions go here. 900 links here.
+
+Status values: `approved`, `superseded`, `open` (needs owner decision, do not rely on it).
+
+## Approved on 2026-10-25 by the owner
+
+| ID | Decision | Scope | Status |
+| --- | --- | --- | --- |
+| DEC-01 | No backward compatibility. Pre-launch. The dual-read and dual-write from Phase 2 are removed in one cutover (C1). The Phase 6 contract step is folded into C1 | C1 | approved |
+| DEC-02 | No row means no address. Clearing an address deletes its active row. No `''` values | C1 | approved |
+| DEC-03 | Keep the unique key `(user_id, agent_id, provider)` on `chat_addresses`. Opt-outs live in `chat_suppressions(provider, address, status, created_at)`, unique on `(provider, address)`, with no foreign keys. Revoke deletes the active row and writes a suppression row. Suppression is platform-wide per address | C1 | approved |
+| DEC-04 | Saving a new address on a scope never touches another address's suppression row | C1 | approved |
+| DEC-05 | A suppression is lifted only by a successful proof-of-control bind for that exact address. An owner cannot lift another user's block | C2 | deferred (DEC-45) |
+| DEC-06 | A second active claim on `(provider, address)` from a different user is refused with HTTP 409 and error code `chat_address.already_bound`. The check runs under `pg_advisory_xact_lock` in the write transaction. The same user may hold one address on several scopes | C2 | deferred (DEC-45) |
+| DEC-07 | Binding requires proof of control: a one-time code (6 digits, 10-minute expiry, rate-limited) sent through the provider and entered on the web. Inbound messages never create or change a binding | C2 | deferred (DEC-45) |
+| DEC-08 | Addresses are trimmed on write. Phone-based providers store E.164. Queries compare normalised values | C1 | approved |
+| DEC-09 | Agent-level override with inherit-from-user. No agent row means inherit | C1 | approved |
+| DEC-10 | Public API change: `telegramChatId` is replaced by `chatAddresses: [{ provider, address, scope, status }]` in responses and the PATCH body. The dead `telegramChatId` field in the PUT agent schema is removed. The web form changes in the same PR | C1 | approved |
+| DEC-11 | Unbound inbound replies say "Open Settings to link your Telegram account." | C2 | deferred (DEC-45) |
+| DEC-12 | The `/telegram/webhook` route alias is kept, because Telegram's `setWebhook` points at a fixed URL. The `alerts.telegram.*` config alias and the legacy columns are removed | C1 | approved |
+| DEC-13 | Teardown and re-provisioning. The agent may tear down and re-provision local and dev only. Staging and production are owner-run hand-offs | C1 | approved |
+| DEC-14 | The 2026-10-24 hold on P3.1 and P3.2 is superseded. Both are done in code: route in `apps/api/src/routes/agent-interactivity.ts`, bypass in `apps/api/src/plugins/auth.ts`, limited to the webhook pattern | P3 | approved |
+| DEC-15 | The Telegram webhook secret comparison is constant-time (`d553c64e`). No further change | P3 | approved |
+| DEC-16 | Agent-to-agent MVP: per-pair grants only, no group grants. A paused thread resumes only on an explicit owner action | A2A | superseded by DEC-40 (grants deferred) |
+| DEC-17 | Agent-to-agent MVP: no memory sharing. Messages only | A2A | approved |
+| DEC-18 | Agent-to-agent MVP: peer messages cannot submit, cancel, or change orders. Trading execution stays in traderton | A2A | superseded for the MVP by DEC-41 |
+| DEC-19 | Agent-to-agent starting caps, all in operator config and tunable: 20 peer turns per thread per rolling hour (`agentRuntime.peer.maxTurnsPerHour`); pause after 6 consecutive peer turns with no user message; 50,000 tokens per thread per 24 hours (`agentRuntime.peer.tokenBudgetPer24h`); 30 peer messages per agent pair per hour | A2A | partly superseded by DEC-42 |
+| DEC-20 | Plan-then-build for U: the agent writes `090-messaging-capability.md`, self-reviews it against the checklist in [tasks/U](./tasks/U-messaging-capability.md), and proceeds when it has no open tier-3 questions. Otherwise it waits | U | deferred (DEC-45) |
+| DEC-21 | Typing indicator (T) is delivered (`25f895fe`). Web-chat typing and other providers are separate work | T | approved |
+| DEC-22 | Queue order: C0, C1, C2, then W, E, U, then the 002 chat gate, then A2A-A to A2A-D. A2A-A has no dependency on C1 and may start earlier if the queue is blocked | Queue | approved |
+| DEC-23 | Q2 (pre-cutover production duplicate check) is not required | C1 | approved |
+| DEC-24 | Q3: run all seven `packages/db` integration files at C1 | C1 | approved |
+| DEC-25 | Q4: the C0 baseline is authoritative. Record its counts in 900 and replace the conflicting figures in 095 | C0 | approved |
+| DEC-26 | Q8: HTTP 409 `chat_address.already_bound` is approved (same as DEC-06) | C2 | deferred (DEC-45) |
+| DEC-27 | Q9: wording "Open Settings to link your Telegram account." (same as DEC-11) | C2 | deferred (DEC-45) |
+| DEC-28 | Constant-time secret check and the Telegram webhook secret verification are unchanged by any other item | All | approved |
+| DEC-29 | W9 manual checks (M1 to M5) and E8 manual checks (M-E1 to M-E4) recorded as passed on the owner's report of 2026-10-24. W and E are ticked. M-E5 remains open | W, E | approved |
+| DEC-30 | D01: Chat channels. Telegram, web push and email for now. WhatsApp and SMS stay paused. Revisit WhatsApp after C2 and U. The product target is revised to match | Scope | approved |
+| DEC-31 | D02: Approve the two-way chat plan (002). Run it after C1. C1 drops only the two Telegram-named columns from `agent_outbound_messages`; the table is not rewritten. 002 then retires `agent_outbound_messages` | CH2W | approved |
+| DEC-32 | D02 answers to 002 section 9: Q1 retire `agent_outbound_messages`; Q2 remove "Messages to user" in the first phase; Q3 include Telegram; Q4 keep "Chat with {name}"; Q5 approve the three tables (`conversations`, `conversation_participants`, `conversation_messages`) and remove `GET /agents/:id/messages`. The 002 P0 inventory of readers and writers is a gate before any table is removed | CH2W | approved |
+| DEC-33 | D03: C2 is reviewed by an independent reviewer agent (not its author) against DEC-05 to DEC-07 before U starts. No human review gate | C2-R, U | deferred (DEC-45) |
+| DEC-34 | D04: Remove `POST /agents/verify-telegram` in C2. No web caller exists. Remove the route in `apps/api/src/routes/agent-interactivity.ts` and its tests in `apps/api/src/routes/agent-interactivity.test.ts` and `apps/api/src/__tests__/functional/agent-interactivity.functional.test.ts`. Public API removal | C2 | deferred (DEC-45) |
+| DEC-35 | D05: Email fallback sends only if no push subscription was delivered for the event and no chat message was sent for it. Opt-in default (E-D4) kept. Decided at event time, with no timers. Escalation after an unread timeout is out of scope | E-R1 | deferred (DEC-45) |
+| DEC-36 | D06: Billing, platform-alert and `send_email` email paths stay out of the new rules. The 10-per-day cap (E-D5) applies to system fallback emails only. Agent `send_email` is not capped by it | Email scope | approved |
+| DEC-37 | D07: Confirm all eight web push defaults (D1 to D8) as built | W | approved |
+| DEC-38 | D08: Accept the additive field on `PATCH /auth/me` as built | E | approved |
+| DEC-39 | D09: Keep pass-through billing with Meta's billable flag. Before WhatsApp launches, confirm the flag and the free allowance against a real Meta invoice (owner hand-off) | Phase 4 | approved |
+| DEC-40 | Owner decision 2026-10-25: MVP agent-to-agent messaging is on by default for agents of the same user. This supersedes DEC-16 ("off by default, per pair"). Per-pair grants and the grant screen are deferred | A2A MVP | approved |
+| DEC-41 | Owner decision 2026-10-25, accepted risk: for the MVP, peer messages may reach agents that hold trading tools. This overrides DEC-18 and invariant I5 for the MVP only. Trade execution still happens only in traderton, under its own limits. Must be revisited before any cross-user or public peer messaging | A2A MVP | approved |
+| DEC-42 | Owner decision 2026-10-25: the MVP has one peer limit, a per-user rate limit of 10 peer messages per minute, held as a Redis counter and set in operator config (`agentRuntime.peer.rateLimitPerMinute`). The per-pair limit, turn cap, ping-pong pause, and token cap of DEC-19 are deferred. This partly supersedes DEC-19 | A2A MVP | approved |
+| DEC-43 | Owner decision 2026-10-25: owner visibility is required for the MVP. Peer threads appear in the owner's existing conversation view. The owner also has a per-user stop switch that refuses all peer sends and pauses peer wakes. The stop switch is a user setting, stored in the database, not in operator config | A2A MVP | approved |
+| DEC-44 | Owner decision 2026-10-25: the prompt-injection stance (peer text as data, no change to goals or limits) is deferred for the MVP. The owner accepts that peer text can influence an agent | A2A MVP | approved |
+| DEC-45 | Owner decision 2026-10-25: deferred for the MVP, with specs kept in the repository: C2 (binding), C2-R (its review), E-R1 (email rule), U (messaging capability), the A2A grant table and screen, A2A-C beyond the rate limit, and A2A-D. Approvals already given stay valid. Deferral is reversible | Queue | approved |
+| DEC-46 | Owner decision 2026-10-25: queue order for the A2A MVP is C0, C1, CH2W, then A2A-A (same-user check), then A2A-B (MVP send path). The owner chose to keep the design clean and wait for CH2W | Queue | approved |
+| DEC-47 | Owner decision 2026-10-25: the schema note for the MVP is approved: `conversations` (adds `peer_key`, `last_message_at`), `conversation_participants`, and `conversation_messages` (adds `channel = internal` and `delivery_status = refused`), plus one column `users.peer_messaging_paused`. Peer threads are one per agent pair. Rate limit stays in Redis. See the schema note | CH2W, A2A-B | approved |
+| DEC-48 | Owner decision 2026-10-25: the implementer chooses the write path for the stop switch (DEC-43), between (a) a new endpoint and (b) an additive field on `PATCH /auth/me`. Both options are approved. Criteria, in order: (1) fewer new public routes; (2) follow the existing user-settings pattern (DEC-38); (3) additive only, nothing removed or renamed; (4) unset or unreadable means switch off for sends and refusal of the change, fail closed. The implementer records the chosen option, its reason, and the route contract in PROGRESS.md, and adds a DEC-49 row for the contract | A2A-B | approved (delegated to implementer) |
+
+## Open
+
+None. The items open on 2026-10-24 and 2026-10-25 were closed on 2026-10-25 (DEC-30 to DEC-39). Scope changed the same day for the A2A MVP (DEC-40 to DEC-46). Remaining owner hand-offs are in [ENTRYPOINT](./ENTRYPOINT.md) section 10.

@@ -46,7 +46,7 @@ closes the gap between that taxonomy and the Telegram-only implementation.
 3. The conversational requirement is narrow and specific: **if a user initiates
    a message on a chat platform, their agent should be able to reply there, on
    platforms we support.**
-4. Target: support **at least two** chat providers beyond the platform inbox.
+4. Target (revised 2026-10-25, DEC-30): Telegram is the chat provider. Web push and email are the notification channels. WhatsApp and SMS are paused or deferred, and WhatsApp is revisited after C2 and U. The earlier target was "at least two chat providers beyond the platform inbox". Decision record: [DECISIONS](./DECISIONS.md).
 
 Fact (3) is load-bearing for feasibility — see `030-provider-constraints.md`.
 It keeps us inside each provider's free-form "session window" and avoids
