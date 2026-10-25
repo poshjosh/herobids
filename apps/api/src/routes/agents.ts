@@ -11,7 +11,7 @@ import {
   agentConnectionAudit,
   agentConnections,
   agentMessages,
-  agentOutboundMessages,
+  conversationMessages,
   agentRuntimeSessions,
   agentSkills,
   billingUsageEvents,
@@ -82,7 +82,7 @@ import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.j
 import { deriveProfileScanConfig } from '../agents/profile-scan-config.js';
 import { deriveTradingProfileFields } from '../agents/trading-profile-fields.js';
 import type { UnifiedAgentConfig } from '@herobids/domain';
-import { AgentStyleSchema, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs } from '@herobids/domain';
+import { AgentStyleSchema, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs, userAgentConversationId } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
 import { CONVERSATION_TURN_EVENT_WINDOW, deriveSubjectTurnState, TURN_EVENT_TYPES } from '../services/agent-conversation-turn.js';
@@ -113,7 +113,7 @@ import {
 import {
   mapProtocolMessage,
   mapRuntimeSession,
-  mapOutboundMessage,
+  mapConversationMessage,
   mapArtifact,
   isSuppressedProtocolMessageType,
   SUPPRESSED_PROTOCOL_MESSAGE_TYPES,
@@ -270,7 +270,6 @@ async function detachChildrenOfDeletedAgent(
  * A connection is revoked only when every agent link to it belongs to `agentIds`.
  */
 async function purgeAgentRows(tx: DatabaseTransaction, agentIds: string[]): Promise<void> {
-  await tx.delete(agentOutboundMessages).where(inArray(agentOutboundMessages.agentId, agentIds));
   // Conversation participants have no foreign key to agents, so the agents' conversations are removed here.
   await deleteUserAgentConversations(tx, agentIds);
   await tx.delete(agentArtifacts).where(inArray(agentArtifacts.agentId, agentIds));
@@ -2947,30 +2946,6 @@ export async function agentRoutes(
     });
   });
 
-  // Get agent outbound messages (agent-authored + platform safety alerts).
-  // Returns the actual content sent to the user, with authorship distinction.
-  app.get<{ Params: { id: string }; Querystring: { limit?: string; authoredBy?: string } }>('/agents/:id/messages', async (request, reply) => {
-    const { id } = request.params;
-    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
-    const authoredByFilter = request.query.authoredBy;
-
-    const [agent] = await db.select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-    const query = db.select().from(agentOutboundMessages)
-      .where(
-        authoredByFilter
-          ? and(eq(agentOutboundMessages.agentId, id), eq(agentOutboundMessages.authoredBy, authoredByFilter))
-          : eq(agentOutboundMessages.agentId, id),
-      )
-      .orderBy(desc(agentOutboundMessages.createdAt))
-      .limit(limit);
-
-    return reply.send(await query);
-  });
-
   // ─── GET /agents/:id/conversation-turn ────────────────────────────────────
   // Where the agent is with the latest user message and, when given, one connection request.
   app.get<{ Params: { id: string }; Querystring: { connectionRequestId?: string } }>('/agents/:id/conversation-turn', async (request, reply) => {
@@ -2982,10 +2957,11 @@ export async function agentRoutes(
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
     if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-    const [latestUserMessage] = await db.select({ id: agentOutboundMessages.id })
-      .from(agentOutboundMessages)
-      .where(and(eq(agentOutboundMessages.agentId, id), eq(agentOutboundMessages.authoredBy, 'user')))
-      .orderBy(desc(agentOutboundMessages.createdAt))
+    // The user's newest message in the agent's conversation (web or chat), newest by (created_at, id).
+    const [latestUserMessage] = await db.select({ id: conversationMessages.id })
+      .from(conversationMessages)
+      .where(and(eq(conversationMessages.conversationId, userAgentConversationId(id)), eq(conversationMessages.senderType, 'user')))
+      .orderBy(desc(conversationMessages.createdAt), desc(conversationMessages.id))
       .limit(1);
 
     const events = await db.select({
@@ -3042,13 +3018,13 @@ export async function agentRoutes(
         .orderBy(desc(agentRuntimeSessions.startedAt))
         .limit(10),
       // User-authored rows are chat messages, not feed entries.
-      db.select().from(agentOutboundMessages)
+      db.select().from(conversationMessages)
         .where(
           beforeFilter
-            ? and(eq(agentOutboundMessages.agentId, id), ne(agentOutboundMessages.authoredBy, 'user'), sql`${agentOutboundMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`)
-            : and(eq(agentOutboundMessages.agentId, id), ne(agentOutboundMessages.authoredBy, 'user')),
+            ? and(eq(conversationMessages.conversationId, userAgentConversationId(id)), ne(conversationMessages.senderType, 'user'), sql`${conversationMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`)
+            : and(eq(conversationMessages.conversationId, userAgentConversationId(id)), ne(conversationMessages.senderType, 'user')),
         )
-        .orderBy(desc(agentOutboundMessages.createdAt))
+        .orderBy(desc(conversationMessages.createdAt))
         .limit(limit),
       db.select().from(agentArtifacts)
         .where(
@@ -3090,7 +3066,7 @@ export async function agentRoutes(
     }
 
     for (const msg of outboundRows) {
-      entries.push(mapOutboundMessage(msg as Parameters<typeof mapOutboundMessage>[0]));
+      entries.push(mapConversationMessage(id, msg));
     }
 
     for (const artifact of artifactRows) {

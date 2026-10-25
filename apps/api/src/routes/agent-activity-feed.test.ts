@@ -26,7 +26,7 @@ function buildDb(options: {
     options.agentRows ?? [], // first select = agent ownership check
     options.protocolRows ?? [], // protocol messages
     options.sessionRows ?? [], // sessions
-    options.outboundRows ?? [], // outbound messages
+    options.outboundRows ?? [], // conversation messages (agent and platform)
     options.artifactRows ?? [], // artifacts
   ];
 
@@ -129,6 +129,29 @@ describe('GET /agents/:id/activity-feed', () => {
     const sessionStart = body.entries.find((e: Record<string, unknown>) => e.title === 'Session started');
     expect(sessionStart).toBeDefined();
     expect(sessionStart.category).toBe('runtime');
+  });
+
+  it('shows agent and platform conversation messages as message entries with no session', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: AGENT_ID }],
+      outboundRows: [
+        { id: 'cm-1', conversationId: `user_agent:${AGENT_ID}`, senderType: 'agent', subject: 'Update', body: 'All good', messageClass: 'routine', deliveryStatus: 'sent', createdAt: new Date('2026-06-11T12:00:00Z') },
+        { id: 'cm-2', conversationId: `user_agent:${AGENT_ID}`, senderType: 'platform', subject: null, body: 'Paused by guardrail', messageClass: 'alert', deliveryStatus: 'not_applicable', createdAt: new Date('2026-06-11T12:01:00Z') },
+      ],
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db as any);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/activity-feed?limit=10` });
+
+    expect(res.statusCode).toBe(200);
+    const messages = JSON.parse(res.body).entries.filter((e: Record<string, unknown>) => e.eventType === 'message.authored');
+    expect(messages.map((e: Record<string, unknown>) => [e.id, e.title, e.sessionId])).toEqual([
+      ['msg-cm-2', 'Platform message', null],
+      ['msg-cm-1', 'Agent message', null],
+    ]);
   });
 
   it('returns entries sorted by timestamp descending', async () => {

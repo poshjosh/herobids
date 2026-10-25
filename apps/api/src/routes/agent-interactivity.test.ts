@@ -92,6 +92,14 @@ function selectSkippingSuppressions(impl: () => unknown) {
   }));
 }
 
+/**
+ * The row a mocked reply lookup returns for both of its selects: the agent that sent the message the reply points at,
+ * and that agent's current address for the provider (which must be the replying chat).
+ */
+function replyRow(chatId: string, overrides: Record<string, unknown> = {}) {
+  return { agentId: AGENT_ID, agentName: 'My Agent', status: 'active', userId: TEST_USER_ID, rowAgentId: AGENT_ID, address: chatId, isActive: true, ...overrides };
+}
+
 const stubAgent = {
   id: AGENT_ID,
   userId: TEST_USER_ID,
@@ -720,29 +728,28 @@ describe('PUT /agents/:id', () => {
   });
 });
 
+/** The webhook with an in-memory conversation store, since these tests run on a mocked database. */
+function webhookWithMemoryStore(app: ReturnType<typeof Fastify>, db: Database, redis: Redis, telegram: Parameters<typeof telegramWebhookHandler>[3], conversations = buildInMemoryConversationDeps()) {
+  return telegramWebhookHandler(app, db, redis, telegram, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, conversations);
+}
+
 // ─── POST /agents/:id/message ─────────────────────────────────────────────
 
 const CLIENT_ID = '0b7d4f3e-6f0e-4c52-9a7e-3a1f5d2c9b11';
 
 async function buildMessageApp(options: { agent?: Record<string, unknown> | null; redis?: Redis; userId?: string } = {}) {
-  // `insertValues` is the legacy outbound-row insert: `.values(row).onConflictDoNothing(...)`, awaited at the end.
-  const insertValues = vi.fn();
-  const db = Object.assign(buildAgentDb(options.agent === undefined ? { ...stubAgent, status: 'running' } : options.agent), {
-    insert: vi.fn().mockReturnValue({
-      values: (row: unknown) => ({ onConflictDoNothing: () => Promise.resolve(insertValues(row)) }),
-    }),
-  });
+  const db = buildAgentDb(options.agent === undefined ? { ...stubAgent, status: 'running' } : options.agent);
   const redis = options.redis ?? buildMockRedis();
   const conversations = buildInMemoryConversationDeps();
   const app = Fastify();
   decorateWithAuth(app, options.userId);
   await agentInteractivityRoutes(app, db, redis, undefined, undefined, undefined, undefined, undefined, conversations);
-  return { app, db, redis, conversations, insertValues };
+  return { app, db, redis, conversations };
 }
 
 describe('POST /agents/:id/message', () => {
   it('records the user message first, publishes it under the same id, and returns 202 with the sent row', async () => {
-    const { app, redis, conversations, insertValues } = await buildMessageApp();
+    const { app, redis, conversations } = await buildMessageApp();
 
     const res = await app.inject({
       method: 'POST',
@@ -760,8 +767,6 @@ describe('POST /agents/:id/message', () => {
     expect(redis.xadd).toHaveBeenCalledWith(
       `agent:outbound:${AGENT_ID}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', expect.any(String),
     );
-    // Transitional write for readers still on the old table.
-    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ id: CLIENT_ID, agentId: AGENT_ID, authoredBy: 'user', body: 'Hello agent' }));
   });
 
   it('generates the message id when the client sends none', async () => {
@@ -774,7 +779,7 @@ describe('POST /agents/:id/message', () => {
   });
 
   it('returns the stored row for a repeated client message id without publishing again', async () => {
-    const { app, redis, conversations, insertValues } = await buildMessageApp();
+    const { app, redis, conversations } = await buildMessageApp();
     const send = () => app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Once', clientMessageId: CLIENT_ID } });
 
     const first = await send();
@@ -785,7 +790,6 @@ describe('POST /agents/:id/message', () => {
     expect(second.json().message).toMatchObject({ id: CLIENT_ID, body: 'Once' });
     expect(conversations.store.messages).toHaveLength(1);
     expect(redis.xadd).toHaveBeenCalledTimes(1);
-    expect(insertValues).toHaveBeenCalledTimes(1);
   });
 
   it('returns 503 and keeps the row as failed when publishing fails, then publishes on a retry of the same id', async () => {
@@ -805,21 +809,6 @@ describe('POST /agents/:id/message', () => {
     expect(retry.json().message).toMatchObject({ id: CLIENT_ID, deliveryStatus: 'sent' });
     expect(conversations.store.messages).toHaveLength(1);
     expect(xadd).toHaveBeenCalledTimes(2);
-  });
-
-  it('recreates the legacy outbound row on a retry when its first write failed', async () => {
-    const xadd = vi.fn().mockRejectedValueOnce(new Error('redis down')).mockResolvedValue('1-1');
-    const { app, insertValues } = await buildMessageApp({ redis: buildMockRedis({ xadd }) });
-    insertValues.mockImplementationOnce(() => { throw new Error('db down'); });
-    const send = () => app.inject({ method: 'POST', url: `/agents/${AGENT_ID}/message`, payload: { message: 'Retry me', clientMessageId: CLIENT_ID } });
-
-    const failed = await send();
-    const retry = await send();
-
-    expect(failed.statusCode).toBe(503);
-    expect(retry.statusCode).toBe(202);
-    expect(insertValues).toHaveBeenCalledTimes(2);
-    expect(insertValues).toHaveBeenLastCalledWith(expect.objectContaining({ id: CLIENT_ID, authoredBy: 'user', body: 'Retry me' }));
   });
 
   it('re-publishes a message that was stuck queued (process died before publishing) on a same-id retry, once', async () => {
@@ -1317,7 +1306,7 @@ describe('POST /agents/verify-telegram', () => {
 describe('POST /telegram/webhook', () => {
   it('returns 501 when Telegram webhook auth is not fully configured', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig({ webhookSecret: '' }));
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig({ webhookSecret: '' }));
 
     const res = await app.inject({
       method: 'POST',
@@ -1331,7 +1320,7 @@ describe('POST /telegram/webhook', () => {
 
   it('returns 401 when the webhook secret header is missing or wrong', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
 
     const missing = await app.inject({
       method: 'POST',
@@ -1351,7 +1340,7 @@ describe('POST /telegram/webhook', () => {
 
   it('returns 200 when the webhook secret header matches', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1373,11 +1362,11 @@ describe('POST /telegram/webhook', () => {
         selectCount += 1;
         return makeChain(selectCount === 1
           ? [{ userId: TEST_USER_ID }]
-          : [{ agentId: AGENT_ID, agentName: 'My Agent', status: 'active', userId: TEST_USER_ID }]);
+          : [replyRow('12345')]);
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1428,13 +1417,13 @@ describe('POST /telegram/webhook', () => {
           // User-level chat binding lookup — no match (the chat is only bound at agent level).
           return makeChain([]);
         }
-        // resolveAgentForTelegramReply — resolves directly from the outbound
+        // resolveAgentForChatReply — resolves directly from the conversation
         // message record, returning the userId from the agent's owner row.
-        return makeChain([{ agentId: AGENT_ID, agentName: 'My Agent', status: 'active', userId: TEST_USER_ID }]);
+        return makeChain([replyRow('agent-chat-1')]);
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1468,7 +1457,7 @@ describe('POST /telegram/webhook', () => {
       // First iteration: user found but reply can't be resolved → fallback message.
       [{ userId: TEST_USER_ID }, null],
       // Second iteration: reply resolved but agent is stopped → fallback message.
-      [{ userId: TEST_USER_ID }, { agentId: AGENT_ID, agentName: 'My Agent', status: 'stopped', userId: TEST_USER_ID }],
+      [{ userId: TEST_USER_ID }, replyRow('12345', { status: 'stopped' })],
     ] as const) {
       const redis = buildMockRedis();
       let selectCount = 0;
@@ -1482,7 +1471,7 @@ describe('POST /telegram/webhook', () => {
         }),
       } as unknown as Database;
       const app = Fastify();
-      await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+      await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
       const res = await app.inject({
         method: 'POST',
@@ -1525,7 +1514,7 @@ describe('POST /telegram/webhook', () => {
       [{ userId: TEST_USER_ID, planId: 'free', isAdmin: false, agentId: AGENT_ID, agentName: 'My Agent', status: 'running' }],
     );
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1541,7 +1530,7 @@ describe('POST /telegram/webhook', () => {
     fetchSpy.mockRestore();
   });
 
-  it('does not route a reply from a suppressed address to the agent that sent the message', async () => {
+  it('drops a reply from a suppressed address silently: it is neither routed nor answered', async () => {
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
     const redis = buildMockRedis();
     const db = buildSuppressionDb(
@@ -1549,7 +1538,7 @@ describe('POST /telegram/webhook', () => {
       [{ userId: TEST_USER_ID, planId: 'free', isAdmin: false, agentId: AGENT_ID, agentName: 'My Agent', status: 'running' }],
     );
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     await app.inject({
       method: 'POST',
@@ -1560,7 +1549,7 @@ describe('POST /telegram/webhook', () => {
     await flushPromises();
 
     expect(redis.xadd).not.toHaveBeenCalled();
-    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain("I couldn't find which agent that reply belongs to.");
+    expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 
@@ -1576,7 +1565,7 @@ describe('POST /telegram/webhook', () => {
       })),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1598,7 +1587,7 @@ describe('POST /telegram/webhook', () => {
       select: vi.fn().mockImplementation(() => makeChain([])),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1633,7 +1622,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1675,7 +1664,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1712,7 +1701,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1733,6 +1722,108 @@ describe('POST /telegram/webhook', () => {
     fetchSpy.mockRestore();
   });
 
+  it('records a plain Telegram message in the agent thread on the telegram channel, then publishes it under the row id', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: selectSkippingSuppressions(() => {
+        selectCount += 1;
+        return makeChain(selectCount === 1
+          ? [{ userId: TEST_USER_ID }]
+          : [{ agentId: AGENT_ID, agentName: 'Solo Agent', status: 'running' }]);
+      }),
+    } as unknown as Database;
+    const conversations = buildInMemoryConversationDeps();
+    const app = Fastify();
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig(), conversations);
+
+    await app.inject({
+      method: 'POST',
+      url: '/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: { message: { chat: { id: '12345' }, text: 'check ETH too' } },
+    });
+    await flushPromises();
+
+    expect(conversations.store.messages).toHaveLength(1);
+    const [row] = conversations.store.messages;
+    expect(row).toMatchObject({ senderType: 'user', senderId: TEST_USER_ID, channel: 'telegram', body: 'check ETH too', deliveryStatus: 'sent' });
+    const envelope = JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0]![6] as string) as Record<string, unknown>;
+    expect(envelope).toMatchObject({ messageId: row?.id, type: 'user.message', payload: { message: 'check ETH too' } });
+    fetchSpy.mockRestore();
+  });
+
+  it('does not publish a Telegram message that cannot be recorded, and tells the user', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: selectSkippingSuppressions(() => {
+        selectCount += 1;
+        return makeChain(selectCount === 1
+          ? [{ userId: TEST_USER_ID }]
+          : [{ agentId: AGENT_ID, agentName: 'Solo Agent', status: 'running' }]);
+      }),
+    } as unknown as Database;
+    const conversations = buildInMemoryConversationDeps();
+    const tooLong = 'x'.repeat(conversations.limits.userMessageMaxChars + 1);
+    const app = Fastify();
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig(), conversations);
+
+    await app.inject({
+      method: 'POST',
+      url: '/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: { message: { chat: { id: '12345' }, text: tooLong } },
+    });
+    await flushPromises();
+
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect(conversations.store.messages).toHaveLength(0);
+    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('too long');
+    fetchSpy.mockRestore();
+  });
+
+  it('answers nothing, not even /help, to a suppressed chat', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    const db = buildSuppressionDb([{ address: '12345' }], []);
+    const app = Fastify();
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: { message: { chat: { id: '12345' }, text: '/help' } },
+    });
+    await flushPromises();
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(redis.xadd).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('answers a chat that is not suppressed to /help as before', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const db = buildSuppressionDb([], []);
+    const app = Fastify();
+    await webhookWithMemoryStore(app, db, buildMockRedis(), buildTelegramChatConfig());
+
+    await app.inject({
+      method: 'POST',
+      url: '/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: { message: { chat: { id: '12345' }, text: '/help' } },
+    });
+    await flushPromises();
+
+    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('Your chat ID: 12345');
+    fetchSpy.mockRestore();
+  });
+
   it('prompts for /to when multiple agents are running and no command target is provided', async () => {
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
     const redis = buildMockRedis();
@@ -1750,7 +1841,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1786,7 +1877,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1826,7 +1917,7 @@ describe('POST /telegram/webhook', () => {
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig(), undefined);
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1861,7 +1952,7 @@ const TELEGRAM_WEBHOOK_ROUTES = [
 describe.each(TELEGRAM_WEBHOOK_ROUTES)('Telegram webhook through the %s', (_label, url) => {
   it('returns 401 when the secret header is missing or wrong', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
 
     const missing = await app.inject({ method: 'POST', url, payload: {} });
     const wrong = await app.inject({
@@ -1877,7 +1968,7 @@ describe.each(TELEGRAM_WEBHOOK_ROUTES)('Telegram webhook through the %s', (_labe
 
   it('returns 501 when the Telegram webhook secret is not configured', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig({ webhookSecret: '' }));
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig({ webhookSecret: '' }));
 
     const res = await app.inject({
       method: 'POST',
@@ -1899,11 +1990,11 @@ describe.each(TELEGRAM_WEBHOOK_ROUTES)('Telegram webhook through the %s', (_labe
         selectCount += 1;
         return makeChain(selectCount === 1
           ? [{ userId: TEST_USER_ID }]
-          : [{ agentId: AGENT_ID, agentName: 'My Agent', status: 'active', userId: TEST_USER_ID }]);
+          : [replyRow('chat-1')]);
       }),
     } as unknown as Database;
     const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, db, redis, buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1933,7 +2024,7 @@ describe.each(TELEGRAM_WEBHOOK_ROUTES)('Telegram webhook through the %s', (_labe
 describe('POST /messaging/chat/:provider/webhook', () => {
   it('returns 404 for a provider with no registered adapter', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -1948,7 +2039,7 @@ describe('POST /messaging/chat/:provider/webhook', () => {
 
   it('returns 405 for the GET verify request on a provider without a verify handshake', async () => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
 
     const telegram = await app.inject({ method: 'GET', url: '/messaging/chat/telegram/webhook' });
     const unknown = await app.inject({ method: 'GET', url: '/messaging/chat/whatsapp/webhook' });
@@ -1968,7 +2059,7 @@ describe('messaging.chat.telegram config drives the Telegram webhook', () => {
 
   it.each(TELEGRAM_WEBHOOK_ROUTES)('accepts the secret set only under messaging.chat.telegram on the %s', async (_label, url) => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), resolvedFrom({}, { botToken: 'chat-token', webhookSecret: 'chat-secret' }));
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), resolvedFrom({}, { botToken: 'chat-token', webhookSecret: 'chat-secret' }));
 
     const res = await app.inject({
       method: 'POST',
@@ -1982,7 +2073,7 @@ describe('messaging.chat.telegram config drives the Telegram webhook', () => {
 
   it.each(TELEGRAM_WEBHOOK_ROUTES)('rejects a wrong secret when only messaging.chat.telegram is set on the %s', async (_label, url) => {
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), resolvedFrom({}, { botToken: 'chat-token', webhookSecret: 'chat-secret' }));
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), resolvedFrom({}, { botToken: 'chat-token', webhookSecret: 'chat-secret' }));
 
     const res = await app.inject({
       method: 'POST',
@@ -2063,7 +2154,7 @@ describe('telegramWebhookHandler typing indicator lifecycle', () => {
   it('does not dispose anything on close when typing is not configured', async () => {
     const dispose = vi.spyOn(ChatTypingIndicator.prototype, 'dispose');
     const app = Fastify();
-    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
+    await webhookWithMemoryStore(app, buildAgentDb(null), buildMockRedis(), buildTelegramChatConfig());
     await app.ready();
 
     await app.close();

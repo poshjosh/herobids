@@ -18,13 +18,18 @@ vi.mock('../logger.js', () => ({ createLogger: () => ({ warn: logWarn, info: vi.
 
 function makeAgentRepo(overrides: Record<string, unknown> = {}) {
   return {
-    insertOutboundMessage: vi.fn().mockResolvedValue('msg-001'),
+    getAgent: vi.fn().mockResolvedValue({ id: 'agent-abc-12345678', userId: 'user-1' }),
     getEffectiveChatAddress: vi.fn().mockResolvedValue(null),
     isChatAddressSuppressed: vi.fn().mockResolvedValue(false),
     getUserEmailByAgentId: vi.fn().mockResolvedValue(null),
-    markOutboundMessageSent: vi.fn().mockResolvedValue(undefined),
-    markOutboundMessageFailed: vi.fn().mockResolvedValue(undefined),
     ...overrides,
+  };
+}
+
+function makeConversations(recorded: unknown = { ok: true, data: { message: { id: 'msg-001' }, created: true } }) {
+  return {
+    recordPlatformMessage: vi.fn().mockResolvedValue(recorded),
+    markDelivery: vi.fn().mockResolvedValue({ ok: true, data: {} }),
   };
 }
 
@@ -77,68 +82,66 @@ describe('PlatformAlertService', () => {
   // -- Persistence ------------------------------------------------------------
 
   describe('persistence', () => {
-    it('persists an outbound message before delivering', async () => {
-      const { service, agentRepo } = makeService();
-      const ctx = makeContext();
+    function threadService(agentRepoOverrides: Record<string, unknown> = {}, conversations = makeConversations()) {
+      const agentRepo = makeAgentRepo(agentRepoOverrides);
+      return { agentRepo, conversations, service: new PlatformAlertService(agentRepo as any, undefined, undefined, undefined, undefined, conversations as any) };
+    }
 
-      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, ctx);
+    it('records the alert in the agent conversation before delivering', async () => {
+      const { service, conversations } = threadService();
 
-      expect(agentRepo.insertOutboundMessage).toHaveBeenCalledTimes(1);
-      const call = agentRepo.insertOutboundMessage.mock.calls[0]![0];
+      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext());
+
+      expect(conversations.recordPlatformMessage).toHaveBeenCalledTimes(1);
+      const call = conversations.recordPlatformMessage.mock.calls[0]![0];
+      expect(call.ownerUserId).toBe('user-1');
       expect(call.agentId).toBe('agent-abc-12345678');
-      expect(call.authoredBy).toBe('platform');
       expect(call.messageClass).toBe('alert');
       expect(call.subject).toBe('Runtime Unhealthy');
       expect(call.body).toContain('heartbeat loss');
       expect(call.body).toContain('300 seconds ago');
     });
 
-    it('mirrors the stored alert into the conversation after the chat send', async () => {
-      const mirror = { mirror: vi.fn().mockResolvedValue(undefined) };
-      const agentRepo = makeAgentRepo();
-      const service = new PlatformAlertService(agentRepo as any, undefined, undefined, undefined, undefined, mirror as any);
+    it('records the body without detail when detail is undefined', async () => {
+      const { service, conversations } = threadService();
 
-      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext());
+      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, makeContext({ detail: undefined }));
 
-      expect(mirror.mirror).toHaveBeenCalledWith('msg-001');
-    });
-
-    it('does not mirror when the alert could not be stored', async () => {
-      const mirror = { mirror: vi.fn().mockResolvedValue(undefined) };
-      const agentRepo = makeAgentRepo({ insertOutboundMessage: vi.fn().mockRejectedValue(new Error('DB down')) });
-      const service = new PlatformAlertService(agentRepo as any, undefined, undefined, undefined, undefined, mirror as any);
-
-      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext());
-
-      expect(mirror.mirror).not.toHaveBeenCalled();
-    });
-
-    it('persists message body without detail when detail is undefined', async () => {
-      const { service, agentRepo } = makeService();
-      const ctx = makeContext({ detail: undefined });
-
-      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, ctx);
-
-      const call = agentRepo.insertOutboundMessage.mock.calls[0]![0];
+      const call = conversations.recordPlatformMessage.mock.calls[0]![0];
       expect(call.body).toBe('The agent runtime has become unhealthy due to heartbeat loss.');
       expect(call.body).not.toContain('300 seconds');
     });
 
-    it('survives persistence failure and continues delivery', async () => {
-      const { service, agentRepo } = makeService({
-        insertOutboundMessage: vi.fn().mockRejectedValue(new Error('DB down')),
+    it('marks the thread message not applicable when chat is not configured', async () => {
+      const { service, conversations } = threadService();
+
+      await service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext());
+
+      expect(conversations.markDelivery).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'msg-001', status: 'not_applicable' }));
+    });
+
+    it.each([
+      ['a store error', makeConversations({ ok: false, error: { code: 'conversation.store_failed', message: 'down' } })],
+      ['a thrown error', Object.assign(makeConversations(), { recordPlatformMessage: vi.fn().mockRejectedValue(new Error('DB down')) })],
+    ])('survives %s on recording and continues delivery', async (_name, conversations) => {
+      const agentRepo = makeAgentRepo({
         getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
       const telegram = makeTelegramClient();
-      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
+      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined, undefined, conversations as any);
 
-      // Should not throw
-      await expect(
-        svc.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext()),
-      ).resolves.toBeUndefined();
+      await expect(svc.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext())).resolves.toBeUndefined();
 
-      // Telegram should still be attempted even though persistence failed
       expect(telegram.sendText).toHaveBeenCalledTimes(1);
+      expect(conversations.markDelivery).not.toHaveBeenCalled();
+    });
+
+    it('survives an unknown agent and continues delivery', async () => {
+      const { service, conversations } = threadService({ getAgent: vi.fn().mockResolvedValue(null) });
+
+      await expect(service.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, makeContext())).resolves.toBeUndefined();
+
+      expect(conversations.recordPlatformMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -162,30 +165,69 @@ describe('PlatformAlertService', () => {
       expect(text).toContain('heartbeat loss');
     });
 
-    it('marks outbound message as sent on Telegram success', async () => {
+    it('marks the thread message sent on the Telegram channel on Telegram success', async () => {
       const { agentRepo } = makeService({
         getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
+      const conversations = makeConversations();
       const telegram = makeTelegramClient();
-      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
+      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined, undefined, conversations as any);
 
       await svc.fireAlert(PLATFORM_ALERT_EVENTS.PAUSED_BY_GUARDRAIL, makeContext());
 
-      expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('msg-001', '42', '111111');
+      expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'msg-001', status: 'sent', providerMessageId: '42', channel: 'telegram' });
     });
 
-    it('marks outbound message as failed on Telegram failure', async () => {
+    it('marks the thread message failed on Telegram failure', async () => {
       const { agentRepo } = makeService({
         getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
       });
+      const conversations = makeConversations();
       const telegram = makeTelegramClient({
         sendText: vi.fn().mockResolvedValue({ ok: false, error: { code: 'tg.error', message: 'Network error' } }),
       });
-      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined);
+      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined, undefined, conversations as any);
 
       await svc.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, makeContext());
 
-      expect(agentRepo.markOutboundMessageFailed).toHaveBeenCalledWith('msg-001', 'Network error');
+      expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'msg-001', status: 'failed', detail: 'Network error' });
+    });
+
+    it('marks the thread message not applicable when the agent has no chat address', async () => {
+      const { agentRepo } = makeService({ getEffectiveChatAddress: vi.fn().mockResolvedValue(null) });
+      const conversations = makeConversations();
+      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, makeTelegramClient()), 'bot-token', undefined, undefined, conversations as any);
+
+      await svc.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, makeContext());
+
+      expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'msg-001', status: 'not_applicable', detail: 'no_chat_address' });
+    });
+
+    it('marks the thread message failed when the chat address lookup fails (fail closed)', async () => {
+      const { agentRepo } = makeService({ getEffectiveChatAddress: vi.fn().mockRejectedValue(new Error('DB error')) });
+      const conversations = makeConversations();
+      const telegram = makeTelegramClient();
+      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined, undefined, conversations as any);
+
+      await svc.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, makeContext());
+
+      expect(telegram.sendText).not.toHaveBeenCalled();
+      expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'msg-001', status: 'failed', detail: 'DB error' });
+    });
+
+    it('marks the thread message failed for a suppressed address', async () => {
+      const { agentRepo } = makeService({
+        getEffectiveChatAddress: vi.fn().mockResolvedValue({ provider: 'telegram', address: '111111' }),
+        isChatAddressSuppressed: vi.fn().mockResolvedValue(true),
+      });
+      const conversations = makeConversations();
+      const telegram = makeTelegramClient();
+      const svc = new PlatformAlertService(agentRepo as any, chatDelivery(agentRepo, telegram), 'bot-token', undefined, undefined, conversations as any);
+
+      await svc.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, makeContext());
+
+      expect(telegram.sendText).not.toHaveBeenCalled();
+      expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'msg-001', status: 'failed', detail: 'address_suppressed' });
     });
 
     it('skips Telegram when no chat ID is available', async () => {

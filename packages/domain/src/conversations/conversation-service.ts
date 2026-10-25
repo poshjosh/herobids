@@ -7,16 +7,13 @@ import {
   CONVERSATION_ERROR_CODES,
   userAgentConversationId,
   type ConversationDeliveryTarget,
-  type ConversationChannel,
   type ConversationDeliveryStatus,
   type ConversationError,
   type ConversationLimits,
   type ConversationMessage,
   type RecordedConversationMessage,
+  type UserAgentChannel,
 } from './conversation.js';
-
-/** Channels of a user-agent thread. `internal` is reserved for peer threads. */
-export type UserAgentChannel = Exclude<ConversationChannel, 'internal'>;
 
 export interface RecordUserMessageInput {
   /** Client-generated id. A repeat of the same id is a retry and returns the stored row. */
@@ -65,6 +62,8 @@ export interface MarkDeliveryInput {
   status: ConversationDeliveryStatus;
   detail?: string | null;
   providerMessageId?: string | null;
+  /** The channel that carried the message, when it differs from the one it was recorded on (set with `sent`). */
+  channel?: UserAgentChannel;
 }
 
 /** Who wrote the message being retried: the owner, or the creator agent that wrote to its child. */
@@ -215,11 +214,16 @@ export class ConversationService {
     if (!isDeliveryTarget(input.status)) {
       return invalid(CONVERSATION_ERROR_CODES.invalidDeliveryTransition, 'invalid_delivery_transition', { to: input.status });
     }
+    if (input.channel !== undefined) {
+      const badChannel = this.checkChannel(input.channel);
+      if (badChannel) return badChannel;
+    }
     return this.store.markDelivery({
       messageId: input.messageId,
       status: input.status,
       detail: input.detail ?? null,
       providerMessageId: input.providerMessageId ?? null,
+      channel: input.channel ?? null,
     });
   }
 

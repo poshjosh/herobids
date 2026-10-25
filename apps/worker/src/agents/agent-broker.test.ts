@@ -381,11 +381,10 @@ describe('AgentMessageBroker', () => {
 
   describe('send_message email fanout regression', () => {
     it('does NOT call emailClient.send when handleSendMessage processes a brokered send_message', async () => {
-      // Enrich agentRepo with the additional methods handleSendMessage needs
-      (agentRepo as any).insertOutboundMessage = vi.fn().mockResolvedValue('out-msg-1');
-      (agentRepo as any).getEffectiveTelegramChatId = vi.fn().mockResolvedValue(null);
-      (agentRepo as any).markOutboundMessageFailed = vi.fn().mockResolvedValue(undefined);
-      (agentRepo as any).markOutboundMessageSent = vi.fn().mockResolvedValue(undefined);
+      const conversations = {
+        recordAgentMessage: vi.fn().mockResolvedValue({ ok: true, data: { message: { id: 'out-msg-1' }, created: true } }),
+        markDelivery: vi.fn().mockResolvedValue({ ok: true, data: {} }),
+      };
 
       // Set up mocks so handleSendMessage can succeed without Telegram
       agentRepo.getAgent.mockResolvedValue({
@@ -411,6 +410,8 @@ describe('AgentMessageBroker', () => {
         undefined,              // botRepo
         undefined,              // botLiveCheck
         emailClient as any,     // emailClient
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        conversations as any,
       );
 
       const envelope = makeEnvelope({

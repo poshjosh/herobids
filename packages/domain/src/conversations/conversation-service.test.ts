@@ -175,15 +175,33 @@ describe('ConversationService.recordAgentMessage', () => {
     expect(store.markDelivery).not.toHaveBeenCalled();
   });
 
-  it.each(['sent', 'failed', 'refused'] as const)('passes a %s mark to the store with omitted fields as null', async (status) => {
+  it.each(['sent', 'failed', 'refused', 'not_applicable'] as const)('passes a %s mark to the store with omitted fields as null', async (status) => {
     const { store, service } = setup();
 
     await service.markDelivery({ messageId: 'm1', status });
 
-    expect(store.markDelivery).toHaveBeenCalledWith({ messageId: 'm1', status, detail: null, providerMessageId: null });
+    expect(store.markDelivery).toHaveBeenCalledWith({ messageId: 'm1', status, detail: null, providerMessageId: null, channel: null });
   });
 
-  it.each(['queued', 'not_applicable'] as const)('refuses a mark to %s as an invalid transition', async (status) => {
+  it('passes the channel that carried a sent message to the store', async () => {
+    const { store, service } = setup();
+
+    await service.markDelivery({ messageId: 'm1', status: 'sent', providerMessageId: 'tg-1', channel: 'telegram' });
+
+    expect(store.markDelivery).toHaveBeenCalledWith({ messageId: 'm1', status: 'sent', detail: null, providerMessageId: 'tg-1', channel: 'telegram' });
+  });
+
+  it('refuses a mark with the internal channel or an unknown one', async () => {
+    const { store, service } = setup();
+
+    for (const channel of ['internal', 'sms'] as const) {
+      const result = await service.markDelivery({ messageId: 'm1', status: 'sent', channel: channel as never });
+      expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.invalidMessage, message: 'invalid_channel' } });
+    }
+    expect(store.markDelivery).not.toHaveBeenCalled();
+  });
+
+  it.each(['queued'] as const)('refuses a mark to %s as an invalid transition', async (status) => {
     const { store, service } = setup();
 
     const result = await service.markDelivery({ messageId: 'm1', status });

@@ -189,8 +189,8 @@ describe('handleConnectSetup', () => {
 
 // ─── handleLog ───────────────────────────────────────────────────────────
 //
-// handleLog merges LOCAL platform rows (agent_messages + agent_outbound_messages
-// via db.execute) with the decision-failures leg fetched over the Traderton read
+// handleLog merges LOCAL platform rows (agent_messages via db.execute, and the
+// agent's conversation via ConversationService.listThread) with the decision-failures leg fetched over the Traderton read
 // boundary, re-sorts newest-first, keeps the first 10 (splice), then renders the
 // 5 most-recent oldest-first. The boundary leg is best-effort: an absent client
 // or a boundary failure DEGRADES to platform-only output (never errors/503s).
@@ -198,7 +198,7 @@ describe('handleConnectSetup', () => {
 /**
  * Build a minimal db for handleLog:
  *  - `select().from().where().limit(3)` resolves resolveAgentByName → single agent (found)
- *  - `execute(sql`...`)` resolves the platform LogRow[] (agent_messages + outbound)
+ *  - `execute(sql`...`)` resolves the protocol LogRow[] (agent_messages)
  */
 function makeLogDb(agent: Record<string, unknown>, platformRows: unknown[]) {
   const execute = vi.fn().mockResolvedValue(platformRows);
@@ -207,6 +207,14 @@ function makeLogDb(agent: Record<string, unknown>, platformRows: unknown[]) {
     execute,
   } as unknown as Database;
   return { db, execute };
+}
+
+function threadMessage(overrides: Record<string, unknown>) {
+  return { id: 'm', senderType: 'agent', subject: null, body: '', createdAt: new Date('2026-01-01T08:00:00.000Z'), ...overrides };
+}
+
+function makeThread(messages: unknown[] = []) {
+  return { listThread: vi.fn().mockResolvedValue({ ok: true, data: messages }) };
 }
 
 /**
@@ -240,7 +248,7 @@ describe('handleLog', () => {
       { failureCode: 'risk.exceeded', failureMessage: 'position cap breached', failedAt: '2026-01-01T10:10:00.000Z' },
     ]));
 
-    const result = await handleLog(db, 'user-1', ['Momentum'], client);
+    const result = await handleLog(db, makeThread() as never, 'user-1', ['Momentum'], client);
 
     // Boundary invoked with the agent-scoped tool + payload the handler passes.
     expect(invoke).toHaveBeenCalledTimes(1);
@@ -267,7 +275,7 @@ describe('handleLog', () => {
       { failureCode: 'venue.timeout', failureMessage: longMsg, failedAt: '2026-01-01T12:00:00.000Z' },
     ]));
 
-    const result = await handleLog(db, 'user-1', ['Momentum'], client);
+    const result = await handleLog(db, makeThread() as never, 'user-1', ['Momentum'], client);
 
     // truncate(str, 60) → first 57 chars + '...'
     const expectedMsg = 'x'.repeat(57) + '...';
@@ -300,7 +308,7 @@ describe('handleLog', () => {
     const { db } = makeLogDb(AGENT, platformRows);
     const { client } = makeFailuresClient(successFailures(failures));
 
-    const result = await handleLog(db, 'user-1', ['Momentum'], client);
+    const result = await handleLog(db, makeThread() as never, 'user-1', ['Momentum'], client);
 
     // 5 most-recent = failures 11:05,11:04,11:03,11:02,11:01 → reversed oldest-first.
     expect(result).toBe([
@@ -316,18 +324,46 @@ describe('handleLog', () => {
   it('degrades to platform-only output when no boundary client is supplied', async () => {
     const platformRows = [
       { source: 'msg', raw_type: 'agent.decision.go_flat', subject: null, body_text: null, failure_msg: null, created_at: new Date('2026-01-01T08:00:00.000Z') },
-      { source: 'outbound', raw_type: 'agent', subject: 'Rebalanced portfolio', body_text: null, failure_msg: null, created_at: new Date('2026-01-01T08:01:00.000Z') },
     ];
     const { db } = makeLogDb(AGENT, platformRows);
+    const thread = makeThread([threadMessage({ subject: 'Rebalanced portfolio', createdAt: new Date('2026-01-01T08:01:00.000Z') })]);
 
     // No tradertonReadClient → the failure leg is simply omitted, no throw/503.
-    const result = await handleLog(db, 'user-1', ['Momentum']);
+    const result = await handleLog(db, thread as never, 'user-1', ['Momentum']);
 
     expect(result).toBe([
       'Momentum — recent activity:',
       '[08:00] DECISION',
       '[08:01] AGENT: Rebalanced portfolio',
     ].join('\n'));
+  });
+
+  it('reads the agent conversation, newest ten, and labels who wrote each message', async () => {
+    const { db } = makeLogDb(AGENT, []);
+    const thread = makeThread([
+      threadMessage({ id: 'a', senderType: 'user', body: 'buy more', createdAt: new Date('2026-01-01T08:00:00.000Z') }),
+      threadMessage({ id: 'b', senderType: 'agent', body: 'On it', createdAt: new Date('2026-01-01T08:01:00.000Z') }),
+      threadMessage({ id: 'c', senderType: 'platform', subject: 'Runtime Unhealthy', createdAt: new Date('2026-01-01T08:02:00.000Z') }),
+    ]);
+
+    const result = await handleLog(db, thread as never, 'user-1', ['Momentum']);
+
+    expect(thread.listThread).toHaveBeenCalledWith({ ownerUserId: 'user-1', agentId: 'agent-1', limit: 10 });
+    expect(result).toBe([
+      'Momentum — recent activity:',
+      '[08:00] YOU: buy more',
+      '[08:01] AGENT: On it',
+      '[08:02] ALERT: Runtime Unhealthy',
+    ].join('\n'));
+  });
+
+  it('fails the command when the conversation cannot be read', async () => {
+    const { db } = makeLogDb(AGENT, []);
+    const thread = { listThread: vi.fn().mockResolvedValue({ ok: false, error: { code: 'conversation.store_failed', message: 'down' } }) };
+
+    const result = await handleLog(db, thread as never, 'user-1', ['Momentum']);
+
+    expect(result).toBe('Failed to get activity log. Please try again later.');
   });
 
   it('degrades to platform-only output when the boundary read fails (no error/503)', async () => {
@@ -338,7 +374,7 @@ describe('handleLog', () => {
     // transport_error → loadAgentEvidence returns { ok: false } → failure leg skipped.
     const { client } = makeFailuresClient({ kind: 'transport_error', requestId: 'r', message: 'boundary down', retryable: true });
 
-    const result = await handleLog(db, 'user-1', ['Momentum'], client);
+    const result = await handleLog(db, makeThread() as never, 'user-1', ['Momentum'], client);
 
     expect(result).toBe([
       'Momentum — recent activity:',

@@ -258,7 +258,7 @@ describe('Config propagation: budget values reach consumers', () => {
       await db.execute(sql`
         TRUNCATE
           agent_runtime_sessions, agent_messages, agent_artifacts,
-          agent_outbound_messages, agents, sessions, local_identities,
+          conversations, agents, sessions, local_identities,
           oauth_identities, user_plans, users
         CASCADE
       `);

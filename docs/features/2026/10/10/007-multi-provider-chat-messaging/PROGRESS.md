@@ -349,3 +349,96 @@ None other new block P2 or P3. The two from slice 1 still block retirement of `a
 - Owner review after P2 (plan section 5).
 
 Next ready item: CH2W P3 (slice 3), blocked only on the two slice 1 tier-3 answers for the table retirement; the Telegram inbound/outbound and broker moves can start before. A2A-A can run at any time.
+
+## 2026-10-25: CH2W slice 3 (plan phases P3 Channels and P4 Close). CH2W is done in code and ticked; the owner e2e gate is open
+
+Unstaged, uncommitted, as asked. Owner decisions of 2026-10-25 recorded: DEC-50 approved, DEC-51 (index on `conversation_messages (channel, provider_message_id)`), DEC-52 (drop `session_id` and `context_ref`). The schema note has both.
+
+### What was built
+
+**Domain and store.** `markDelivery` can now move a `queued` row to `not_applicable` (nowhere to send) as well as `sent`, `failed` and `refused`, and a `sent` mark can set the `channel` that carried the message. New `isUserAgentChannel` and `UserAgentChannel` in `conversation.ts`. Why: the row is recorded before the chat send (record, send, mark: the plan's order), but the channel and a `not_applicable` outcome are known only after the send.
+
+**Migration `0086_first_guardian`** (generated): the DEC-51 partial index, then `DROP TABLE agent_outbound_messages`. Applied from zero on a fresh Postgres 17 database (87 migrations).
+
+**Worker.** New `thread-delivery.ts` (moved from `alerting/` in the review fixes): `markThreadDelivery` maps a `ChatDelivery` result to a mark (`sent` on the carrying channel; `not_applicable` for `chat.no_address` and `chat.not_configured`; `failed` for everything else, including a failed address or suppression lookup, I4), never throws, treats `invalid_delivery_transition` as already marked, and logs an error for any other mark failure. The broker `send_message`, `PlatformAlertService.fireAlert` and the session-started anchor now record through `ConversationService` (`recordAgentMessage` or `recordPlatformMessage`, channel `web`) before the send, then call `markThreadDelivery`. A failed record means the message is not sent (broker throws, fail closed); a failed record in the alert service only skips the thread row, the alert is still delivered. `OutboundConversationMirror` is deleted.
+
+**API.** `ChatInboundRouter` records each inbound chat message with `recordUserMessage` (channel from the address provider), publishes under the row id, then marks it `sent` (or `failed` with `publish_failed` and tells the user). A message that cannot be recorded is not published; the user gets "Could not deliver ..." or, over the limit, "too long". The web route's legacy double write and `GET /agents/:id/messages` are removed. `resolveAgentForChatReply` reads `conversation_messages` (channel, provider message id, through participants and the owner), then accepts a candidate only if its agent's current address for the provider is the replying address. `processWebhookUpdate` and `processWebhookDocument` drop a suppressed chat silently first (a lookup error drops the update). `/log` reads `listThread` (user rows now `YOU:`). `conversation-turn` takes the newest `sender_type = 'user'` row. The activity feed reads non-user rows from `conversation_messages` (`mapConversationMessage`, `sessionId: null`). `purgeAgentRows` no longer touches the old table. `AgentRepository` lost the outbound methods (including `markOutboundMessageSent`, so the hardcoded-provider item is gone).
+
+**P4.** UAT rows OPT-02 and CH2W-01 to CH2W-10 added to `docs/tech/user-acceptance-tests.md` (section 19; status `—`, automated evidence named, manual and e2e runs pending). Platform docs (`platform-docs-data.ts`): opted-out chats get no reply at all; two new Telegram error texts; replies are saved in the agent's chat; the `get-started` line "Talk to your agent" is now the "Chat with" card (also in en, ar, hi help). ar and hi i18n: every `agentDetail.conversation.*` key exists in both; no new keys in P3; native review still pending. Plan 001 status and appendix updated.
+
+### Files changed
+
+- Domain: `conversations/conversation.ts`, `conversation-service.ts` (+ test), `ports/conversation-store.ts`.
+- DB: `schema/conversation-messages.ts`, `schema/index.ts`, deleted `schema/agent-outbound-messages.ts`, `agent-repository.ts` (+ test), `conversation-repository.ts`, `index.ts`, `drizzle/0086_first_guardian.sql`, `drizzle/meta/0086_snapshot.json`, `_journal.json`; integration tests `chat-address-resolution`, `conversation-repository`.
+- Worker: `agents/agent-message-broker.ts` (+ tests, `agent-broker.test.ts`), `alerting/platform-alert-service.ts` (+ test), new `thread-delivery.ts` (+ test), `index.ts`, `tools/platform-docs-data.ts`, deleted `agents/outbound-conversation-mirror.ts` and its test; integration tests `config-propagation`, `session-lifecycle` (TRUNCATE only).
+- API: `routes/chat-inbound-router.ts`, `agent-interactivity.ts`, `agents.ts`, `agent-activity-mapper.ts`, `telegram-command-handlers.ts`, `index.ts`, tests (`agent-interactivity`, `telegram-channel`, `telegram-command-handlers`, `agent-activity-mapper`, `agent-activity-feed`, functional `agent-interactivity`, `agents`, `helpers`, `telegram-slash-commands`, integration `agent-audit`, `agent-child-allowance`, `agent-creator-actions`, `agent-delete-subtree`, in-memory store helper), new `__tests__/functional/telegram-conversation.functional.test.ts`.
+- Web: `get-started.md` in en, ar, hi.
+- Docs: DECISIONS, schema note, plan 001, task CH2W, QUEUE, UAT, this file.
+
+### Commands and results
+
+| Command | Result |
+|---|---|
+| `docker run` Postgres 17 (`herobids-ch2w3-pg`, 55432) and Redis 7 (`herobids-ch2w3-redis`, 56379); fresh database `herobids_ch2w3`; `pnpm --filter @herobids/db run db:migrate` | migrated from zero: 87 migrations, `agent_outbound_messages` gone, DEC-51 index present. The running `herobids-*` containers were not touched |
+| `pnpm exec vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork packages/db` | 27 files passed, 1 skipped; 377 passed, 6 skipped (was 371 and 9: three skipped email-metadata tests removed with the methods) |
+| `pnpm test:functional` | 17 files, 209 passed (was 16 and 200: new Telegram functional file, new reader tests) |
+| `pnpm test:integration` | 9 files, 107 passed |
+| I1 gate `pnpm exec vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork telegram chat-inbound agent-message-broker platform-alert` (DB env set) | 11 files, 254 passed. Without DB env: 9 passed, 2 skipped; 218 passed, 36 skipped. Run in parallel with DB env, the two Telegram functional files race on the shared tables (same pre-existing race as the repo's own functional script, which is serial) |
+| `tsc --build` domain and db; `tsc --noEmit` api, worker, web; `pnpm lint` | clean |
+| `env -u DATABASE_URL -u REDIS_URL pnpm test` | exit 0. 421 files: 0 failed, 383 passed, 38 skipped. 7693 tests: 0 failed, 7146 passed, 547 skipped (compare 7125 passed, 535 skipped at the end of slice 2: +21 passed) |
+| Mutation: reply lookup without the address match | the two new integration tests failed; restored |
+| `docker rm -f herobids-ch2w3-pg herobids-ch2w3-redis` | removed (0 `ch2w` containers left) |
+| `grep -rn agent_outbound_messages apps packages` outside migrations | only the two migration test files that read the pre-0083 shape on purpose (0077 backfill, 0083 cutover) |
+| I2 review (`'telegram'` in non-test code) | no new hit outside config, schema, adapters and docs text; the router narrows the provider with `isUserAgentChannel` |
+| I3 grep | unchanged: only the i18n keys and `alerts.operator.telegramChatId` (known, QUEUE C1) |
+
+E2E scripts (`run-all-tests.sh --e2e`) were not run.
+
+### Tier-2 decisions
+
+1. **Record, send, mark.** The agent, alert and anchor rows are recorded `queued` on `web` first, then marked. Alternative (send first, record with the final outcome, as the mirror did) loses the thread row if the process dies after the send and breaks reply lookup for that message. Cost: `markDelivery` gained `not_applicable` and a channel.
+2. **Lookup failure (QUEUE C1/CH2W).** The stream consumer acknowledges every message, so there is no final-attempt redelivery to wait for. The row is marked `failed` (fail closed, I4) and the broker throws as before. The alert service marks `failed` too and still sends email.
+3. **Anchor mark failure.** `markThreadDelivery` logs at error level; a repeated mark is debug only.
+4. **Inbound recording order.** Same as the web route: record, publish under the row id, mark. A record failure does not publish. Over-limit and unavailable cases reply to the user in plain English, like the other Telegram texts.
+5. **Provider with no thread channel** (for example WhatsApp, paused) is refused rather than recorded under `web`. The old provider-neutrality test now asserts that.
+6. **Telegram document notice** is not recorded (platform text, not the user's message). Open question below.
+7. **Reply lookup** (superseded by the review fixes below; was: up to 5 candidates, then a per-candidate address check) requires the candidate agent's current address to equal the replying address (DEC-51 reason). A message whose agent later changed address no longer resolves through the message; it falls back to the address rows, as for a missing message.
+8. **Suppression early drop** is generic over `message.from.provider` and sits at the top of both webhook processors; the existing check in `findUserByTelegramChatId` stays.
+9. **`/log`**: two legs (10 protocol rows, 10 thread rows), merged and cut to 10 as before; a thread read error returns the existing "Failed to get activity log" text.
+10. **CH2W ticked as done in code**, not as closed: the plan's e2e gates and the owner reviews are hand-offs. This unblocks A2A-B only once A2A-A is ticked.
+
+### Open questions for the owner (none blocks)
+
+- Should Telegram document uploads appear in the web thread (record the notice as a platform message)? Today they do not.
+- Telegram allows 4096 characters; the thread limit is 4000 (`messaging.conversations.userMessageMaxChars`). Raise the limit, or keep the "too long" reply?
+- An agent or platform row stuck `queued` after a crash is never re-marked. Add a sweeper (marks stale agent rows `failed`), or accept?
+
+### Owner hand-offs and gates still open
+
+- `scripts/shell/tests/run-all-tests.sh --e2e` (plan gate before P2 closes and before P3 closes), not run.
+- Owner review after P3 and P4; manual UAT rows OPT-02, CH2W-01 to CH2W-10.
+- Migration 0086 on staging and production with the C1 re-provisioning (drops `agent_outbound_messages`).
+- ar and hi native review of the chat strings and the reworded `get-started` line.
+
+Next ready item: A2A-A (same-user check), then A2A-B.
+
+### Review fixes (slice 3, second pass; unstaged, no commit)
+
+1. **Reply lookup, rebind (HIGH).** `resolveAgentForChatReply` accepts a message only if the replying address row's `updated_at` is not later than the message's `created_at`. A rebind (`setChatAddress` stamps `updated_at` only when the address or status changes) disqualifies older messages, so a chat that shares a provider message id cannot reach another user's agent. No schema change.
+2. **Reply lookup, limit (HIGH).** The address predicate is now in SQL: `chat_addresses` joined on user, provider, normalized address and `status = 'active'`, with the agent's own row or a user-level row that no agent-level row shadows (a left join on an alias). The cap (now 20) applies after the filter, and the per-candidate queries are gone. `channel` uses a typed `eq` after narrowing with `isUserAgentChannel`, so a provider that is not a thread channel skips the message lookup. The suppression check is unchanged.
+3. **Inbound router (MEDIUM).** `markDelivery('sent')` is tried 3 times, logged at error when all fail (a repeated-mark error counts as done). `recordUserMessage` gets a deterministic id for Telegram redeliveries (`chat-inbound-` plus the first 40 hex of SHA-256 over provider, chat address, provider message id and agent id; the agent is in the key so a `/to all` message gets one row per agent). A replay that returns an existing row: `sent` is not published again, `queued` is published under the same id, anything else is answered "Could not deliver". `ChatInboundDependencies.log` gained `error`.
+4. **Thread delivery (MEDIUM).** A send on a provider with no thread channel is marked `refused` (`no_thread_channel:<provider>`) and logged at error instead of leaving the row on `web`. Telegram is unchanged.
+5. **Cheap (LOW).** `thread-delivery.ts` (+ test) moved from `alerting/` to `apps/worker/src/`; the stray blank line and the `conversations` local alias are gone from `platform-alert-service.ts`. The activity mapper passes `deliveryStatus` through, so `not_applicable` and `refused` need no mapping (see QUEUE for the display note).
+
+Tests added: db unit (SQL predicates, non-thread-channel skip), db integration (rebind, 30 colliding users past the cap, shadowing override, non-active row), router (retry, error log, deterministic id, replay sent, queued and failed), `markThreadDelivery` refusal. Mutation checks: removing the `updated_at` predicate failed the rebind test; removing the shadow predicate failed the shadowing test. Integration test messages are stamped one second ahead of the address save so a host to Docker clock skew cannot flip the order (one flake seen and fixed).
+
+| Command | Result |
+|---|---|
+| `tsc --build` domain and db; `tsc --noEmit` api, worker, web; `pnpm lint` | clean |
+| Disposable Postgres 17 and Redis 7 (`herobids-ch2w4-*`, ports 55432, 56379); `db:migrate` | removed afterwards; the running `herobids-*` containers were not touched |
+| I1 gate `pnpm exec vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork telegram chat-inbound agent-message-broker platform-alert thread-delivery` (DB env) | 12 files, 272 passed |
+| `packages/db` (single fork, DB env) | 27 files passed, 1 skipped; 377 passed, 6 skipped (3 consecutive clean runs after the flake fix) |
+| `pnpm test:functional` / `pnpm test:integration` (DB env) | 17 files, 209 passed / 9 files, 107 passed |
+| `env -u DATABASE_URL -u REDIS_URL pnpm test` | 421 files: 0 failed, 383 passed, 38 skipped. 7701 tests: 0 failed, 7150 passed, 551 skipped |
+
+Left as documented outstanding, not changed (QUEUE, CH2W slice 3): silent drop for suppressed chats (also blocks `/help`), 4000 vs 4096 characters, plus the new items added in the same section (time-based correlation and clock skew, non-thread-channel providers, replay of a `queued` row, failed `sent` mark, `refused` for a send without a thread channel, activity feed status display).

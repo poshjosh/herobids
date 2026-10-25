@@ -17,7 +17,7 @@ import { truncate } from './test-helpers/integration-db.js';
 
 // Runs only against a local Postgres (DATABASE_URL on localhost), in a database it creates and drops.
 // Skipped otherwise. After the C1 cutover, addresses live in chat_addresses and opt-outs in
-// chat_suppressions; outbound reply correlation uses the delivery columns.
+// chat_suppressions; reply correlation reads conversation_messages.
 const BASE_URL = localDatabaseUrl();
 const ALL_MIGRATIONS = '9999_all.sql';
 
@@ -37,7 +37,7 @@ describe.skipIf(!BASE_URL)('chat address resolution on neutral rows (integration
   });
 
   beforeEach(async () => {
-    await truncate(scratch.sql, 'agent_outbound_messages', 'chat_addresses', 'chat_suppressions', 'agents', 'users');
+    await truncate(scratch.sql, 'conversations', 'chat_addresses', 'chat_suppressions', 'agents', 'users');
     const sql = scratch.sql;
     await sql`INSERT INTO users (id, username, display_name, email) VALUES
       ('user-1', 'owner', 'Owner', 'owner@example.test'),
@@ -58,10 +58,25 @@ describe.skipIf(!BASE_URL)('chat address resolution on neutral rows (integration
   const suppressionRows = () => scratch.sql`
     SELECT "provider", "address", "status" FROM "chat_suppressions" ORDER BY "provider", "address"`;
 
-  async function addOutbound(id: string, agentId: string, address: string, providerMessageId: string) {
-    await scratch.sql`INSERT INTO agent_outbound_messages
-        (id, agent_id, authored_by, body, delivery_provider, delivery_address, provider_message_id)
-      VALUES (${id}, ${agentId}, 'agent', 'hi', 'telegram', ${address}, ${providerMessageId})`;
+  // The message the agent sent to the chat (delivered, with the id Telegram returned).
+  async function addOutbound(
+    id: string,
+    agentId: string,
+    providerMessageId: string,
+    channel = 'telegram',
+    // A second after the address was saved, so a skew between this clock and the database clock cannot flip the order.
+    createdAt: Date = new Date(Date.now() + 1_000),
+  ) {
+    const conversationId = `user_agent:${agentId}`;
+    const [agent] = await scratch.sql`SELECT "user_id" FROM agents WHERE id = ${agentId}`;
+    await scratch.sql`INSERT INTO conversations (id, kind, owner_user_id)
+      VALUES (${conversationId}, 'user_agent', ${agent!.user_id}) ON CONFLICT DO NOTHING`;
+    await scratch.sql`INSERT INTO conversation_participants (conversation_id, participant_type, participant_id)
+      VALUES (${conversationId}, 'user', ${agent!.user_id}), (${conversationId}, 'agent', ${agentId}) ON CONFLICT DO NOTHING`;
+    await scratch.sql`INSERT INTO conversation_messages
+        (id, conversation_id, sender_type, sender_id, channel, body, delivery_status, provider_message_id, created_at)
+      VALUES (${id}, ${conversationId}, 'agent', ${agentId}, ${channel}, 'hi', 'sent', ${providerMessageId},
+        ${createdAt.toISOString()}::timestamptz)`;
   }
 
   describe('setChatAddress', () => {
@@ -175,16 +190,93 @@ describe.skipIf(!BASE_URL)('chat address resolution on neutral rows (integration
       await expect(repo.resolveAgentForChatReply('telegram', '5550001')).resolves.toBeNull();
     });
 
-    it('resolves the agent from the outbound delivery columns, per chat', async () => {
+    it('resolves the agent from the conversation message, per chat', async () => {
       await setChatAddress(db, userScope, 'telegram', '5550001');
-      await addOutbound('out-1', 'agent-1', '5550001', '4242');
+      await addOutbound('out-1', 'agent-1', '4242');
       await expect(repo.resolveAgentForChatReply('telegram', '5550001', '4242')).resolves.toEqual(agentOne);
       await expect(repo.resolveAgentForChatReply('telegram', '9999999', '4242')).resolves.toBeNull();
     });
 
+    it('picks the agent of the chat when two chats share a provider message id', async () => {
+      await setChatAddress(db, agentOneScope, 'telegram', '5550001');
+      await setChatAddress(db, { userId: 'user-2', agentId: 'agent-3' }, 'telegram', '8800004');
+      await addOutbound('out-1', 'agent-1', '4242');
+      await addOutbound('out-3', 'agent-3', '4242');
+      await expect(repo.resolveAgentForChatReply('telegram', '5550001', '4242')).resolves.toEqual(agentOne);
+      await expect(repo.resolveAgentForChatReply('telegram', '8800004', '4242')).resolves.toEqual(
+        { agentId: 'agent-3', agentName: 'Ama', status: 'active', userId: 'user-2' },
+      );
+    });
+
+    it('a rebind after the message disqualifies it: a chat that merely shares the provider message id does not match', async () => {
+      const hourAgo = new Date(Date.now() - 3_600_000);
+      await setChatAddress(db, userScope, 'telegram', '5550001');
+      await scratch.sql`UPDATE chat_addresses SET updated_at = ${new Date(Date.now() - 7_200_000).toISOString()}::timestamptz WHERE user_id = 'user-1'`;
+      await addOutbound('out-old', 'agent-1', '4242', 'telegram', hourAgo);
+      await expect(repo.resolveAgentForChatReply('telegram', '5550001', '4242')).resolves.toEqual(agentOne);
+
+      await setChatAddress(db, userScope, 'telegram', '7770001');
+      await expect(repo.resolveAgentForChatReply('telegram', '7770001', '4242')).resolves.toBeNull();
+
+      await addOutbound('out-new', 'agent-1', '4343', 'telegram', new Date(Date.now() + 60_000));
+      await expect(repo.resolveAgentForChatReply('telegram', '7770001', '4343')).resolves.toEqual(agentOne);
+    });
+
+    it('still finds the message when more than the candidate cap of other users share the provider message id', async () => {
+      await setChatAddress(db, userScope, 'telegram', '5550001');
+      await scratch.sql`UPDATE chat_addresses SET updated_at = now() - interval '1 hour' WHERE user_id = 'user-1'`;
+      await addOutbound('out-1', 'agent-1', '4242', 'telegram', new Date(Date.now() - 60_000));
+      for (let i = 0; i < 30; i += 1) {
+        await scratch.sql`INSERT INTO users (id, username, display_name, email)
+          VALUES (${`crowd-user-${i}`}, ${`crowd${i}`}, 'Crowd', ${`crowd${i}@example.test`})`;
+        await scratch.sql`INSERT INTO agents (id, user_id, name, prompt, status)
+          VALUES (${`crowd-agent-${i}`}, ${`crowd-user-${i}`}, 'Crowd', 'p', 'active')`;
+        await setChatAddress(db, { userId: `crowd-user-${i}`, agentId: null }, 'telegram', `90000${i}`);
+        await addOutbound(`crowd-out-${i}`, `crowd-agent-${i}`, '4242', 'telegram', new Date(Date.now() + 1_000 * (i + 1)));
+      }
+      await expect(repo.resolveAgentForChatReply('telegram', '5550001', '4242')).resolves.toEqual(agentOne);
+      await expect(repo.resolveAgentForChatReply('telegram', '900007', '4242')).resolves.toEqual(
+        { agentId: 'crowd-agent-7', agentName: 'Crowd', status: 'active', userId: 'crowd-user-7' },
+      );
+    });
+
+    it('does not match a user-level address that an agent-level override shadows', async () => {
+      await setChatAddress(db, userScope, 'telegram', '5550001');
+      await setChatAddress(db, agentOneScope, 'telegram', '6600002');
+      await addOutbound('out-1', 'agent-1', '4242', 'telegram', new Date(Date.now() + 60_000));
+      await expect(repo.resolveAgentForChatReply('telegram', '5550001', '4242')).resolves.toBeNull();
+      await expect(repo.resolveAgentForChatReply('telegram', '6600002', '4242')).resolves.toEqual(agentOne);
+    });
+
+    it('does not match through a non-active address row', async () => {
+      await scratch.sql`INSERT INTO chat_addresses (id, user_id, agent_id, provider, address, status, updated_at)
+        VALUES ('pending-1', 'user-1', NULL, 'telegram', '5550001', 'pending_optin', now() - interval '1 hour')`;
+      await addOutbound('out-1', 'agent-1', '4242');
+      await expect(repo.resolveAgentForChatReply('telegram', '5550001', '4242')).resolves.toBeNull();
+    });
+
+    it('ignores a message that went out on another channel', async () => {
+      await setChatAddress(db, userScope, 'telegram', '5550001');
+      await addOutbound('out-1', 'agent-1', '4242', 'web');
+      await expect(repo.resolveAgentForChatReply('telegram', '5550001', '4242')).resolves.toBeNull();
+    });
+
+    it('has retired agent_outbound_messages once every migration is applied', async () => {
+      const rows = await scratch.sql`SELECT to_regclass('public.agent_outbound_messages') AS name`;
+      expect(rows[0]!.name).toBeNull();
+    });
+
+    it('uses the provider message index for the lookup', async () => {
+      const rows = await scratch.sql`
+        SELECT "indexdef" FROM pg_indexes WHERE "indexname" = 'idx_conversation_messages_provider_message'`;
+      expect(rows).toHaveLength(1);
+      expect(String(rows[0]!.indexdef)).toContain('(channel, provider_message_id)');
+      expect(String(rows[0]!.indexdef)).toContain('WHERE (provider_message_id IS NOT NULL)');
+    });
+
     it('a suppressed address resolves to nothing, even with a matching outbound message', async () => {
       await setChatAddress(db, agentOneScope, 'telegram', '6600002');
-      await addOutbound('out-1', 'agent-1', '6600002', '4242');
+      await addOutbound('out-1', 'agent-1', '4242');
       await scratch.sql`INSERT INTO chat_suppressions (provider, address, status) VALUES ('telegram', '6600002', 'revoked')`;
       await expect(repo.resolveAgentForChatReply('telegram', '6600002')).resolves.toBeNull();
       await expect(repo.resolveAgentForChatReply('telegram', '6600002', '4242')).resolves.toBeNull();
@@ -253,13 +345,5 @@ describe.skipIf(!BASE_URL)('0083 cutover migration (integration)', () => {
       WHERE "table_schema" = 'public'
         AND "table_name" IN ('users', 'agents', 'agent_outbound_messages') AND "column_name" LIKE 'telegram%'`;
     expect(rows).toEqual([]);
-  });
-
-  it('keeps the outbound delivery columns', async () => {
-    const rows = await scratch.sql`
-      SELECT "column_name" FROM information_schema.columns
-      WHERE "table_name" = 'agent_outbound_messages' AND "column_name" IN ('delivery_provider', 'delivery_address', 'provider_message_id')
-      ORDER BY "column_name"`;
-    expect(rows.map((row) => row.column_name)).toEqual(['delivery_address', 'delivery_provider', 'provider_message_id']);
   });
 });

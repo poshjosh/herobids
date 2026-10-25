@@ -5,7 +5,7 @@ import { fetchOpenRouterPricing } from '@herobids/llm';
 import { createDatabase, AlertDeliveryRepository, AgentRepository, ConversationRepository, ConnectionOwnershipRepository, UsageBillingRepository, AgentDocumentsRepository, DecisionApprovalRepository, PushSubscriptionRepository, NotificationDeliveryRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { ConversationService, DEFAULT_EXTERNAL_BACKEND_REQUEST_TIMEOUT_MS, findExternalBackend, type ProvidersYaml } from '@herobids/domain';
-import { OutboundConversationMirror, isUndeliverableChatError } from './agents/outbound-conversation-mirror.js';
+import { markThreadDelivery } from './thread-delivery.js';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import crypto from 'node:crypto';
@@ -688,16 +688,16 @@ const workerEmailConfig: EmailClientConfig = {
 };
 const workerEmail = createEmailClient(workerEmailConfig);
 
-// Transitional (CH2W P2 to P3): copies agent and platform messages into the conversation the web chat reads.
-const outboundConversationMirror = new OutboundConversationMirror(agentRepo, new ConversationService({
+// The only writer of conversation rows for the worker: agent replies, platform alerts and the session anchor.
+const conversations = new ConversationService({
   store: new ConversationRepository(db),
   limits: appConfig.messaging.conversations,
   newId: () => crypto.randomUUID(),
   now: () => new Date(),
-}));
-const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, telegramChat.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl, outboundConversationMirror);
+});
+const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, telegramChat.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl, conversations);
 
-async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: string): Promise<void> {
+async function sendSessionStartedTelegramAnchor(agentId: string): Promise<void> {
   if (!workerTelegram) {
     return;
   }
@@ -713,25 +713,24 @@ async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: stri
   }
 
   const text = `${agent.name} is now ready for your instructions. Reply to this message to instruct it what to do.`;
-  const outboundMessageId = await agentRepo.insertOutboundMessage({
+  const recorded = await conversations.recordPlatformMessage({
+    ownerUserId: agent.userId,
     agentId,
-    sessionId,
-    authoredBy: 'platform',
+    channel: 'web',
     subject: 'Session started',
     body: text,
     messageClass: 'reminder',
   });
-
-  const result = await chatDelivery.send(agentId, { body: text, replyRequested: true });
-  if (!result.ok) {
-    await agentRepo.markOutboundMessageFailed(outboundMessageId, result.error.message).catch(() => undefined);
-    await outboundConversationMirror.mirror(outboundMessageId, isUndeliverableChatError(result.error.code) ? 'not_applicable' : undefined);
-    logger.warn({ agentId, error: result.error }, 'Failed to send Telegram session-started anchor');
+  if (!recorded.ok) {
+    logger.error({ agentId, code: recorded.error.code }, 'Could not record the session-started anchor in the thread; not sent');
     return;
   }
 
-  await agentRepo.markOutboundMessageSent(outboundMessageId, result.data.providerMessageId, result.data.address.address).catch(() => undefined);
-  await outboundConversationMirror.mirror(outboundMessageId);
+  const result = await chatDelivery.send(agentId, { body: text, replyRequested: true });
+  await markThreadDelivery(conversations, recorded.data.message.id, result);
+  if (!result.ok) {
+    logger.warn({ agentId, error: result.error }, 'Failed to send Telegram session-started anchor');
+  }
 }
 
 // Late-bound subscribe callback: set once agentStreamConsumer is constructed below.
@@ -766,7 +765,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   onSessionStopped: (agentId, sessionId) => {
     void agentActorLifecycle.stop(agentId, 'session_stopped', sessionId);
   },
-  onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
+  onSessionStarted: (agentId) => sendSessionStartedTelegramAnchor(agentId),
   usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems, providersYaml, appConfig.usageBilling.fallbackCacheReadPct),
   plansConfig: appConfig.plans,
   usageBillingConfig: appConfig.usageBilling,
@@ -862,7 +861,7 @@ const agentBroker = new AgentMessageBroker(
   appConfig.connectionRequests,
   operatorNotifier,
   agentNotificationDispatcher,
-  outboundConversationMirror,
+  conversations,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

@@ -850,13 +850,18 @@ function makeNotifier(options: {
   return { dispatcher, notify, listActiveForUser };
 }
 
-function makeSendBroker(options: { chatOk: boolean; chatErrorCode?: string; notifications?: AgentMessageNotifier; mirror?: { mirror: ReturnType<typeof vi.fn> } }) {
+function makeConversations(recorded: unknown = { ok: true, data: { message: { id: 'out-1' }, created: true } }) {
+  return {
+    recordAgentMessage: vi.fn(async (_input: unknown) => recorded),
+    markDelivery: vi.fn(async (_input: unknown) => ({ ok: true, data: {} })),
+  };
+}
+
+function makeSendBroker(options: { chatOk: boolean; chatErrorCode?: string; notifications?: AgentMessageNotifier; conversations?: ReturnType<typeof makeConversations> | null }) {
+  const conversations = options.conversations === null ? undefined : options.conversations ?? makeConversations();
   const agentRepo = makeAgentRepo({
     getAgent: vi.fn().mockResolvedValue(SENDING_AGENT),
     getActiveSession: vi.fn().mockResolvedValue({ id: 'session-1', status: 'running' }),
-    insertOutboundMessage: vi.fn(async () => 'out-1'),
-    markOutboundMessageSent: vi.fn(async () => undefined),
-    markOutboundMessageFailed: vi.fn(async () => undefined),
   });
   const delivery = new ChatDelivery(
     { getEffectiveChatAddress: vi.fn(), isChatAddressSuppressed: vi.fn() },
@@ -877,9 +882,9 @@ function makeSendBroker(options: { chatOk: boolean; chatErrorCode?: string; noti
     undefined, undefined, undefined, undefined, undefined, undefined,
     undefined, undefined, undefined, undefined, undefined, undefined,
     options.notifications,
-    options.mirror as never,
+    conversations as never,
   );
-  return { broker, agentRepo, chatSend };
+  return { broker, agentRepo, chatSend, conversations };
 }
 
 describe('AgentMessageBroker — send_message push notifications', () => {
@@ -887,13 +892,13 @@ describe('AgentMessageBroker — send_message push notifications', () => {
     const { dispatcher, notify, listActiveForUser } = makeNotifier({
       subscriptions: [makeSubscription('sub-1'), makeSubscription('sub-2')],
     });
-    const { broker, agentRepo, chatSend } = makeSendBroker({ chatOk: true, notifications: dispatcher });
+    const { broker, conversations, chatSend } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
     expect(result.accepted).toBe(true);
     expect(chatSend).toHaveBeenCalledWith('agent-1', expect.objectContaining({ replyRequested: true }));
-    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
+    expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'out-1', status: 'sent', providerMessageId: 'tg-1', channel: 'telegram' });
     expect(listActiveForUser).toHaveBeenCalledWith('user-1');
     expect(notify).toHaveBeenCalledTimes(2);
     expect(notify).toHaveBeenNthCalledWith(
@@ -921,22 +926,22 @@ describe('AgentMessageBroker — send_message push notifications', () => {
 
   it('sends no push when the feature is off', async () => {
     const { dispatcher, notify, listActiveForUser } = makeNotifier({ config: { enabled: false } });
-    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: dispatcher });
+    const { broker, conversations } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     await broker.processInbound(makeSendMessageEnvelope());
 
-    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalled();
+    expect(conversations.markDelivery).toHaveBeenCalledWith(expect.objectContaining({ status: 'sent' }));
     expect(listActiveForUser).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
 
   it('sends no push when agent.question is not an enabled event class', async () => {
     const { dispatcher, notify } = makeNotifier({ config: { eventClasses: ['task.completed'] } });
-    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: dispatcher });
+    const { broker, conversations } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     await broker.processInbound(makeSendMessageEnvelope());
 
-    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalled();
+    expect(conversations.markDelivery).toHaveBeenCalledWith(expect.objectContaining({ status: 'sent' }));
     expect(notify).not.toHaveBeenCalled();
   });
 
@@ -944,13 +949,13 @@ describe('AgentMessageBroker — send_message push notifications', () => {
     const { dispatcher } = makeNotifier({
       notify: vi.fn().mockRejectedValue(new Error('push service unreachable')),
     });
-    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: dispatcher });
+    const { broker, conversations } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
     expect(result.accepted).toBe(true);
-    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
-    expect(agentRepo.markOutboundMessageFailed).not.toHaveBeenCalled();
+    expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'out-1', status: 'sent', providerMessageId: 'tg-1', channel: 'telegram' });
+    expect(conversations.markDelivery).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
   });
 
   it('still pushes the second subscription when the first throws', async () => {
@@ -978,89 +983,107 @@ describe('AgentMessageBroker — send_message push notifications', () => {
     const { dispatcher } = makeNotifier({
       notify: vi.fn().mockResolvedValue({ ok: false, error: { code: 'notification.provider_failed', message: 'provider_failed' } }),
     });
-    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: dispatcher });
+    const { broker, conversations } = makeSendBroker({ chatOk: true, notifications: dispatcher });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
     expect(result.accepted).toBe(true);
-    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
+    expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'out-1', status: 'sent', providerMessageId: 'tg-1', channel: 'telegram' });
   });
 
   it('still pushes when the Telegram send fails, because push is an independent channel', async () => {
     const { dispatcher, notify } = makeNotifier();
-    const { broker, agentRepo } = makeSendBroker({ chatOk: false, notifications: dispatcher });
+    const { broker, conversations } = makeSendBroker({ chatOk: false, notifications: dispatcher });
 
     await broker.processInbound(makeSendMessageEnvelope());
 
-    expect(agentRepo.markOutboundMessageFailed).toHaveBeenCalledWith('out-1', 'no_chat_address');
+    expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'out-1', status: 'not_applicable', detail: 'no_chat_address' });
     expect(notify).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the chat result when the notifier throws', async () => {
     const notifier: AgentMessageNotifier = { dispatch: vi.fn().mockRejectedValue(new Error('dispatcher unavailable')) };
-    const { broker, agentRepo } = makeSendBroker({ chatOk: true, notifications: notifier });
+    const { broker, conversations } = makeSendBroker({ chatOk: true, notifications: notifier });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
     expect(result.accepted).toBe(true);
-    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
+    expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'out-1', status: 'sent', providerMessageId: 'tg-1', channel: 'telegram' });
   });
 
   it('leaves send_message unchanged when no notifications are wired', async () => {
-    const { broker, agentRepo } = makeSendBroker({ chatOk: true });
+    const { broker, conversations } = makeSendBroker({ chatOk: true });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
     expect(result.accepted).toBe(true);
-    expect(agentRepo.markOutboundMessageSent).toHaveBeenCalledWith('out-1', 'tg-1', '123');
+    expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'out-1', status: 'sent', providerMessageId: 'tg-1', channel: 'telegram' });
   });
 
-  it('mirrors the stored message into the conversation once its delivery outcome is recorded', async () => {
+  it('records the agent message in its conversation before the chat send, then marks the delivery', async () => {
     const order: string[] = [];
-    const mirror = { mirror: vi.fn(async () => { order.push('mirror'); }) };
-    const { broker, agentRepo } = makeSendBroker({ chatOk: true, mirror });
-    agentRepo.markOutboundMessageSent.mockImplementation(async () => { order.push('marked'); });
+    const conversations = makeConversations();
+    conversations.recordAgentMessage.mockImplementation(async () => { order.push('recorded'); return { ok: true, data: { message: { id: 'out-1' }, created: true } }; });
+    conversations.markDelivery.mockImplementation(async () => { order.push('marked'); return { ok: true, data: {} }; });
+    const { broker, chatSend } = makeSendBroker({ chatOk: true, conversations });
+    chatSend.mockImplementation(async () => { order.push('sent'); return { ok: true, data: { providerMessageId: 'tg-1', address: { provider: 'telegram', address: '123' } } } as never; });
 
     const result = await broker.processInbound(makeSendMessageEnvelope());
 
     expect(result.accepted).toBe(true);
-    expect(mirror.mirror).toHaveBeenCalledWith('out-1', undefined);
-    expect(order).toEqual(['marked', 'mirror']);
+    expect(order).toEqual(['recorded', 'sent', 'marked']);
+    expect(conversations.recordAgentMessage).toHaveBeenCalledWith(expect.objectContaining({
+      ownerUserId: 'user-1',
+      agentId: 'agent-1',
+      channel: 'web',
+      body: expect.any(String),
+    }));
   });
 
-  it('mirrors a message with no chat address as not applicable, not failed', async () => {
-    const mirror = { mirror: vi.fn(async () => undefined) };
-    const { broker } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.no_address', mirror });
+  it.each(['chat.no_address', 'chat.not_configured'])('marks a message with %s as not applicable, not failed', async (chatErrorCode) => {
+    const { broker, conversations } = makeSendBroker({ chatOk: false, chatErrorCode });
+
+    const result = await broker.processInbound(makeSendMessageEnvelope());
+
+    expect(result.accepted).toBe(true);
+    expect(conversations.markDelivery).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'out-1', status: 'not_applicable' }));
+  });
+
+  it('marks a real delivery failure as failed', async () => {
+    const { broker, conversations } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.send_failed' });
 
     await broker.processInbound(makeSendMessageEnvelope());
 
-    expect(mirror.mirror).toHaveBeenCalledWith('out-1', 'not_applicable');
+    expect(conversations.markDelivery).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'out-1', status: 'failed' }));
   });
 
-  it('mirrors a message with chat not configured as not applicable', async () => {
-    const mirror = { mirror: vi.fn(async () => undefined) };
-    const { broker } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.not_configured', mirror });
+  it('marks the message failed and fails the envelope when the chat address lookup fails (fail closed)', async () => {
+    const { broker, conversations } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.address_lookup_failed' });
 
-    await broker.processInbound(makeSendMessageEnvelope());
+    const result = await broker.processInbound(makeSendMessageEnvelope());
 
-    expect(mirror.mirror).toHaveBeenCalledWith('out-1', 'not_applicable');
+    expect(result.accepted).toBe(false);
+    expect(conversations.markDelivery).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'out-1', status: 'failed' }));
   });
 
-  it('mirrors a real delivery failure without the not-applicable outcome', async () => {
-    const mirror = { mirror: vi.fn(async () => undefined) };
-    const { broker } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.send_failed', mirror });
+  it('does not send or notify when the message cannot be recorded', async () => {
+    const conversations = makeConversations({ ok: false, error: { code: 'conversation.store_failed', message: 'down' } });
+    const { dispatcher, notify } = makeNotifier();
+    const { broker, chatSend } = makeSendBroker({ chatOk: true, conversations, notifications: dispatcher });
 
-    await broker.processInbound(makeSendMessageEnvelope());
+    const result = await broker.processInbound(makeSendMessageEnvelope());
 
-    expect(mirror.mirror).toHaveBeenCalledWith('out-1', undefined);
+    expect(result.accepted).toBe(false);
+    expect(chatSend).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it('does not mirror when the chat address lookup fails, so the redelivery can record the real outcome', async () => {
-    const mirror = { mirror: vi.fn(async () => undefined) };
-    const { broker } = makeSendBroker({ chatOk: false, chatErrorCode: 'chat.address_lookup_failed', mirror });
+  it('does not send when no conversation store is wired', async () => {
+    const { broker, chatSend } = makeSendBroker({ chatOk: true, conversations: null });
 
-    await broker.processInbound(makeSendMessageEnvelope());
+    const result = await broker.processInbound(makeSendMessageEnvelope());
 
-    expect(mirror.mirror).not.toHaveBeenCalled();
+    expect(result.accepted).toBe(false);
+    expect(chatSend).not.toHaveBeenCalled();
   });
 });

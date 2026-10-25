@@ -10,15 +10,25 @@ export type ConversationSenderType = (typeof CONVERSATION_SENDER_TYPES)[number];
 export const CONVERSATION_CHANNELS = ['web', 'telegram', 'internal'] as const;
 export type ConversationChannel = (typeof CONVERSATION_CHANNELS)[number];
 
+/** Channels of a user-agent thread. `internal` is reserved for peer threads. */
+export type UserAgentChannel = Exclude<ConversationChannel, 'internal'>;
+
+/** True when a provider name (a delivery result's provider) is a channel the user-agent thread has. */
+export function isUserAgentChannel(provider: string): provider is UserAgentChannel {
+  return provider !== 'internal' && (CONVERSATION_CHANNELS as readonly string[]).includes(provider);
+}
+
 export const CONVERSATION_DELIVERY_STATUSES = ['queued', 'sent', 'failed', 'not_applicable', 'refused'] as const;
 export type ConversationDeliveryStatus = (typeof CONVERSATION_DELIVERY_STATUSES)[number];
 
 /**
  * Delivery state machine. Only a `queued` row may be marked, and only to one of these targets.
- * `sent`, `failed` and `refused` are final for `markDelivery`; only a retry claim (requeueUndeliveredMessage) returns a row to `queued`.
+ * `sent`, `failed`, `refused` and `not_applicable` are final for `markDelivery`; only a retry claim (requeueUndeliveredMessage)
+ * returns a row to `queued`. `not_applicable` is a message that had nowhere to go (no chat address, no chat channel):
+ * the thread itself is its delivery.
  */
 export const CONVERSATION_DELIVERY_FROM = 'queued' satisfies ConversationDeliveryStatus;
-export const CONVERSATION_DELIVERY_TARGETS = ['sent', 'failed', 'refused'] as const satisfies readonly ConversationDeliveryStatus[];
+export const CONVERSATION_DELIVERY_TARGETS = ['sent', 'failed', 'refused', 'not_applicable'] as const satisfies readonly ConversationDeliveryStatus[];
 export type ConversationDeliveryTarget = (typeof CONVERSATION_DELIVERY_TARGETS)[number];
 
 export const CONVERSATION_ERROR_CODES = {

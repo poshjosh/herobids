@@ -251,7 +251,7 @@ describe.skipIf(SKIP)('agent audit events (integration)', () => {
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE agent_audit_events, agent_outbound_messages, agent_runtime_sessions, agents, sessions, users CASCADE`);
+    await db.execute(sql`TRUNCATE agent_audit_events, conversations, agent_runtime_sessions, agents, sessions, users CASCADE`);
   });
 
   afterEach(async () => {

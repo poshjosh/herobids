@@ -151,6 +151,7 @@ export class ConversationRepository implements ConversationStore {
           deliveryStatus: input.status,
           ...(input.detail !== null ? { deliveryDetail: input.detail } : {}),
           ...(input.providerMessageId !== null ? { providerMessageId: input.providerMessageId } : {}),
+          ...(input.channel !== null ? { channel: input.channel } : {}),
         })
         .where(and(
           eq(conversationMessages.id, input.messageId),

@@ -1,5 +1,5 @@
-import type { ChatAddress, InboundChatMessage } from '@herobids/domain';
-import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import type { ChatAddress, ConversationService, InboundChatMessage } from '@herobids/domain';
+import { AGENT_STREAM_MAXLEN, CONVERSATION_ERROR_CODES, isUserAgentChannel } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { parseTelegramCommand } from './telegram-command-parser.js';
@@ -13,6 +13,12 @@ interface RoutableAgent {
 
 interface ChatInboundDependencies {
   redis: Redis;
+  /** Records each inbound user message in the agent's conversation before it is published (CH2W P3). */
+  conversations: Pick<ConversationService, 'recordUserMessage' | 'markDelivery'>;
+  log?: {
+    warn: (context: Record<string, unknown>, message: string) => void;
+    error: (context: Record<string, unknown>, message: string) => void;
+  };
   resolveReply: (providerMessageId: string, address: ChatAddress) => Promise<(RoutableAgent & { userId: string }) | null>;
   listAgents: (userId: string) => Promise<RoutableAgent[]>;
   sendText: (address: ChatAddress, text: string) => Promise<void>;
@@ -22,6 +28,24 @@ interface ChatInboundDependencies {
 
 function canReceive(status: string): boolean {
   return status !== 'stopped' && status !== 'crashed';
+}
+
+type DeliverOutcome = { ok: true } | { ok: false; reply: string };
+
+/** Attempts (first try included) to mark a published message as sent before giving up. */
+const MARK_SENT_ATTEMPTS = 3;
+
+/**
+ * Row id for a provider message delivered to one agent: the same provider message to the same agent always maps to
+ * the same id, so a redelivered webhook finds its row instead of creating (and publishing) a second one. The agent is
+ * part of the key because one message can target several agents.
+ */
+function inboundMessageId(message: InboundChatMessage, agentId: string): string | undefined {
+  if (!message.providerMessageId) return undefined;
+  const digest = crypto.createHash('sha256')
+    .update(JSON.stringify([message.from.provider, message.from.address, message.providerMessageId, agentId]))
+    .digest('hex');
+  return `chat-inbound-${digest.slice(0, 40)}`;
 }
 
 export class ChatInboundRouter {
@@ -37,13 +61,87 @@ export class ChatInboundRouter {
     return { kind: 'plain' as const, body: target?.body.trim() ?? text };
   }
 
-  async deliver(agentId: string, userId: string, messageText: string, redis: Redis): Promise<void> {
+  /** Publishes to the agent without recording a conversation row: for platform-composed notices, not user text. */
+  async deliver(agentId: string, userId: string, messageText: string, redis: Redis, messageId: string = crypto.randomUUID()): Promise<void> {
     const envelope = {
-      schemaVersion: 'v1', messageId: crypto.randomUUID(), correlationId: crypto.randomUUID(),
+      schemaVersion: 'v1', messageId, correlationId: crypto.randomUUID(),
       initiatorType: 'user', initiatorId: userId, agentId, type: 'user.message',
       createdAt: new Date().toISOString(), payload: { message: messageText },
     };
     await redis.xadd(`agent:outbound:${agentId}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
+  }
+
+  /**
+   * Records the user's chat message in the agent's conversation, then publishes it under the row id and marks the
+   * delivery (the web route's order, 002 D6). When the message cannot be recorded it is not published, and the
+   * reply to send back to the user says why.
+   */
+  private async deliverUserMessage(
+    address: ChatAddress,
+    agent: RoutableAgent,
+    userId: string,
+    messageText: string,
+    deps: ChatInboundDependencies,
+    inboundId?: string,
+  ): Promise<DeliverOutcome> {
+    const unavailable: DeliverOutcome = { ok: false, reply: `Could not deliver your message to ${agent.agentName}. Please try again.` };
+    // A provider the thread has no channel for is refused rather than recorded under the wrong channel.
+    if (!isUserAgentChannel(address.provider)) {
+      deps.log?.warn({ agentId: agent.agentId, provider: address.provider }, 'chat inbound provider has no conversation channel');
+      return unavailable;
+    }
+    const recorded = await deps.conversations.recordUserMessage({
+      ownerUserId: userId,
+      agentId: agent.agentId,
+      channel: address.provider,
+      body: messageText,
+      ...(inboundId ? { id: inboundId } : {}),
+    });
+    if (!recorded.ok) {
+      if (recorded.error.code === CONVERSATION_ERROR_CODES.bodyTooLong) {
+        const maxChars = recorded.error.context?.['maxChars'];
+        return { ok: false, reply: `Your message is too long${typeof maxChars === 'number' ? ` (the limit is ${maxChars} characters)` : ''}. Please shorten it and send it again.` };
+      }
+      deps.log?.warn({ agentId: agent.agentId, code: recorded.error.code }, 'chat inbound message could not be recorded');
+      return unavailable;
+    }
+    const messageId = recorded.data.message.id;
+    if (!recorded.data.created) {
+      // A redelivered message. Already sent: the agent has it. Queued: an earlier attempt stopped before it was
+      // marked, so publish under the same id. Any other state is final and is not retried.
+      const { deliveryStatus } = recorded.data.message;
+      if (deliveryStatus === 'sent') return { ok: true };
+      if (deliveryStatus !== 'queued') {
+        deps.log?.warn({ agentId: agent.agentId, deliveryStatus }, 'chat inbound redelivery of a message that is not queued');
+        return unavailable;
+      }
+    }
+    try {
+      await this.deliver(agent.agentId, userId, messageText, deps.redis, messageId);
+    } catch (error) {
+      deps.log?.warn({ agentId: agent.agentId, error: error instanceof Error ? error.name : 'NonError' }, 'chat inbound message publish failed');
+      const marked = await deps.conversations.markDelivery({ messageId, status: 'failed', detail: 'publish_failed' });
+      if (!marked.ok) deps.log?.warn({ agentId: agent.agentId, code: marked.error.code }, 'could not mark chat inbound message as failed');
+      return unavailable;
+    }
+    await this.markSent(agent.agentId, messageId, deps);
+    return { ok: true };
+  }
+
+  /** The agent already has the message, so a failed mark never fails the delivery; it is retried a bounded number of times, then logged. */
+  private async markSent(agentId: string, messageId: string, deps: ChatInboundDependencies): Promise<void> {
+    let code = 'unknown';
+    for (let attempt = 1; attempt <= MARK_SENT_ATTEMPTS; attempt += 1) {
+      try {
+        const sent = await deps.conversations.markDelivery({ messageId, status: 'sent' });
+        // Not queued any more: an earlier attempt's mark landed.
+        if (sent.ok || sent.error.code === CONVERSATION_ERROR_CODES.invalidDeliveryTransition) return;
+        code = sent.error.code;
+      } catch (error) {
+        code = error instanceof Error ? error.name : 'NonError';
+      }
+    }
+    deps.log?.error({ agentId, messageId, code, attempts: MARK_SENT_ATTEMPTS }, 'could not mark published chat inbound message as sent; the thread shows it as queued');
   }
 
   async dispatch(message: InboundChatMessage, userId: string | undefined, deps: ChatInboundDependencies): Promise<void> {
@@ -61,7 +159,11 @@ export class ChatInboundRouter {
         await deps.sendText(address, `Agent ${agent.agentName} is stopped and cannot receive messages right now.`);
         return;
       }
-      await this.deliver(agent.agentId, agent.userId, message.text!.trim(), deps.redis);
+      const outcome = await this.deliverUserMessage(address, agent, agent.userId, message.text!.trim(), deps, inboundMessageId(message, agent.agentId));
+      if (!outcome.ok) {
+        await deps.sendText(address, outcome.reply);
+        return;
+      }
       await deps.sendText(address, `Delivered to ${agent.agentName}.`);
       deps.startTyping?.(address);
       return;
@@ -94,7 +196,11 @@ export class ChatInboundRouter {
             confirmations.push(`Agent ${agent.agentName} is stopped and cannot receive messages right now.`);
             continue;
           }
-          await this.deliver(agent.agentId, userId, body, deps.redis);
+          const outcome = await this.deliverUserMessage(address, agent, userId, body, deps, inboundMessageId(message, agent.agentId));
+          if (!outcome.ok) {
+            confirmations.push(outcome.reply);
+            continue;
+          }
           anyDelivered = true;
           confirmations.push(`Delivered to ${agent.agentName}.`);
         }
@@ -106,8 +212,13 @@ export class ChatInboundRouter {
 
     const runningAgents = userAgents.filter((agent) => canReceive(agent.status));
     if (runningAgents.length === 1) {
-      await this.deliver(runningAgents[0]!.agentId, userId, body, deps.redis);
-      await deps.sendText(address, `Delivered to ${runningAgents[0]!.agentName}.`);
+      const target = runningAgents[0]!;
+      const outcome = await this.deliverUserMessage(address, target, userId, body, deps, inboundMessageId(message, target.agentId));
+      if (!outcome.ok) {
+        await deps.sendText(address, outcome.reply);
+        return;
+      }
+      await deps.sendText(address, `Delivered to ${target.agentName}.`);
       deps.startTyping?.(address);
     } else if (runningAgents.length === 0) {
       await deps.sendText(address, 'No running agents found. Start an agent or reply to one of its Telegram messages.');

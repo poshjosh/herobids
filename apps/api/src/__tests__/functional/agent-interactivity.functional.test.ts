@@ -382,6 +382,77 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
 
   // ─── GET /agents/:id/memory ───────────────────────────────────────────────
 
+  describe('conversation readers (CH2W P3)', () => {
+    async function seedThread(agentId: string) {
+      const [owner] = await ctx.db.select({ userId: agents.userId }).from(agents).where(eq(agents.id, agentId));
+      const conversationId = userAgentConversationId(agentId);
+      await ctx.db.insert(conversations).values({ id: conversationId, kind: 'user_agent', ownerUserId: owner!.userId });
+      await ctx.db.insert(conversationParticipants).values([
+        { conversationId, participantType: 'user', participantId: owner!.userId },
+        { conversationId, participantType: 'agent', participantId: agentId },
+      ]);
+      const base = Date.now() - 60_000;
+      await ctx.db.insert(conversationMessages).values([
+        { id: 'cm-user-1', conversationId, senderType: 'user', senderId: owner!.userId, channel: 'telegram', body: 'first', deliveryStatus: 'sent', createdAt: new Date(base) },
+        { id: 'cm-agent-1', conversationId, senderType: 'agent', senderId: agentId, channel: 'web', subject: 'Update', body: 'reply', messageClass: 'routine', deliveryStatus: 'sent', createdAt: new Date(base + 1000) },
+        { id: 'cm-user-2', conversationId, senderType: 'user', senderId: owner!.userId, channel: 'web', body: 'second', deliveryStatus: 'sent', createdAt: new Date(base + 2000) },
+        { id: 'cm-platform-1', conversationId, senderType: 'platform', senderId: null, channel: 'web', subject: 'Runtime Unhealthy', body: 'alert', messageClass: 'alert', deliveryStatus: 'not_applicable', createdAt: new Date(base + 3000) },
+      ]);
+    }
+
+    it('no longer serves GET /agents/:id/messages', async () => {
+      const id = await createAgent();
+
+      const res = await ctx.app.inject({ method: 'GET', url: `/agents/${id}/messages`, headers: authHeader() });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('lists the agent and platform messages, not the user\'s, in the activity feed with no session', async () => {
+      const id = await createAgent();
+      await seedThread(id);
+
+      const res = await ctx.app.inject({ method: 'GET', url: `/agents/${id}/activity-feed`, headers: authHeader() });
+
+      expect(res.statusCode).toBe(200);
+      const messages = res.json<{ entries: Array<{ id: string; eventType: string; title: string; sessionId: string | null; detail: Record<string, unknown> }> }>()
+        .entries.filter((entry) => entry.eventType === 'message.authored');
+      expect(messages.map((entry) => [entry.id, entry.title, entry.sessionId])).toEqual([
+        ['msg-cm-platform-1', 'Platform message', null],
+        ['msg-cm-agent-1', 'Agent message', null],
+      ]);
+      expect(messages[0]!.detail).toMatchObject({ authoredBy: 'platform', deliveryStatus: 'not_applicable' });
+    });
+
+    it('pages the activity feed messages by the before cursor', async () => {
+      const id = await createAgent();
+      await seedThread(id);
+      const [platform] = await ctx.db.select({ createdAt: conversationMessages.createdAt }).from(conversationMessages).where(eq(conversationMessages.id, 'cm-platform-1'));
+
+      const res = await ctx.app.inject({ method: 'GET', url: `/agents/${id}/activity-feed?before=${encodeURIComponent(platform!.createdAt.toISOString())}`, headers: authHeader() });
+
+      const ids = res.json<{ entries: Array<{ id: string; eventType: string }> }>().entries.filter((entry) => entry.eventType === 'message.authored').map((entry) => entry.id);
+      expect(ids).toEqual(['msg-cm-agent-1']);
+    });
+
+    it('names the newest user message, from either channel, as the conversation turn subject', async () => {
+      const id = await createAgent();
+      await seedThread(id);
+      await ctx.db.insert(conversationMessages).values({
+        id: 'cm-user-3', conversationId: userAgentConversationId(id), senderType: 'user', senderId: 'whoever', channel: 'telegram', body: 'third', deliveryStatus: 'sent', createdAt: new Date(),
+      });
+
+      const res = await ctx.app.inject({ method: 'GET', url: `/agents/${id}/conversation-turn`, headers: authHeader() });
+
+      expect(res.statusCode).toBe(200);
+      // No tick has handled the newest user message yet, so it is queued; an agent with no thread has no subject.
+      expect(res.json()).toMatchObject({ message: 'queued' });
+      const empty = await createAgent('Empty');
+      const none = await ctx.app.inject({ method: 'GET', url: `/agents/${empty}/conversation-turn`, headers: authHeader() });
+      expect(none.json().message ?? null).toBeNull();
+    });
+  });
+
   describe('GET /agents/:id/memory', () => {
     it('returns empty entries when no memory is stored', async () => {
       const id = await createAgent();

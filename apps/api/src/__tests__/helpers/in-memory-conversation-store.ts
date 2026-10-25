@@ -53,7 +53,13 @@ export class InMemoryConversationStore implements ConversationStore {
     if (current.deliveryStatus !== CONVERSATION_DELIVERY_FROM) {
       return err({ code: CONVERSATION_ERROR_CODES.invalidDeliveryTransition, message: 'invalid_delivery_transition' });
     }
-    const updated = { ...current, deliveryStatus: input.status, deliveryDetail: input.detail ?? current.deliveryDetail };
+    const updated = {
+      ...current,
+      deliveryStatus: input.status,
+      deliveryDetail: input.detail ?? current.deliveryDetail,
+      providerMessageId: input.providerMessageId ?? current.providerMessageId,
+      channel: input.channel ?? current.channel,
+    };
     this.messages[index] = updated;
     return ok(updated);
   }

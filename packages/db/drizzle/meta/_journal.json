@@ -603,6 +603,13 @@
       "when": 1792963564017,
       "tag": "0085_redundant_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1792965349380,
+      "tag": "0086_first_guardian",
+      "breakpoints": true
     }
   ]
 }

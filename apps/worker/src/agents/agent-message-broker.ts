@@ -30,7 +30,7 @@ import {
   AuthConfigSchema,
   ConnectionRequestsConfigSchema,
 } from '@herobids/domain';
-import type { NotificationClass } from '@herobids/domain';
+import type { ConversationService, NotificationClass } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
 import type { NotificationDispatchEvent, NotificationDispatchOutcome } from '../notifications/notification-dispatcher.js';
 import type { UpdatePromptPayload, UpdatePromptResult, Result, DomainError } from '@herobids/domain';
@@ -48,7 +48,7 @@ import type { CapabilityGrant } from './capability-policy.js';
 import type { ExternalBackendWriteBoundary } from '../external-backend/write-adapter.js';
 import type { ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createLogger } from '../logger.js';
-import { isUndeliverableChatError, type OutboundConversationMirror } from './outbound-conversation-mirror.js';
+import { markThreadDelivery } from '../thread-delivery.js';
 
 const logger = createLogger('agent-message-broker');
 
@@ -110,7 +110,7 @@ export class AgentMessageBroker {
     private readonly connectionRequests?: { ttlSecs: number; maxPendingPerAgent: number; expiryGraceSecs: number },
     private readonly operatorNotifier?: OperatorNotifier,
     private readonly notifications?: AgentMessageNotifier,
-    private readonly conversationMirror?: OutboundConversationMirror,
+    private readonly conversations?: Pick<ConversationService, 'recordAgentMessage' | 'markDelivery'>,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -492,7 +492,7 @@ export class AgentMessageBroker {
    *
    * The platform owns recipient resolution — the agent cannot specify a destination.
    * Rate limited per agent. Always available in the MVP (not user-disableable).
-   * Persists to agent_outbound_messages with authored_by='agent'.
+   * Records the message in the agent's conversation (sender `agent`) before the chat send, then marks its delivery.
    */
   private async handleSendMessage(agentId: string, _envelope: MessageEnvelope, payload: SendMessagePayload): Promise<void> {
     const agent = await this.agentRepo.getAgent(agentId);
@@ -533,16 +533,24 @@ export class AgentMessageBroker {
     const body = payload.body.slice(0, SEND_MESSAGE_MAX_BODY_LENGTH);
     const messageClass = payload.messageClass ?? 'routine';
 
-    // Persist to audit trail first (inbox is always the primary path)
-    const msgId = await this.agentRepo.insertOutboundMessage({
+    // Record in the conversation first (the thread is always the primary path). The row starts on the web channel and
+    // moves to the chat channel that carried it when the send succeeds. No store means no thread, so the message is
+    // not sent (fail closed).
+    if (!this.conversations) {
+      throw new Error('conversation_store_not_configured');
+    }
+    const recorded = await this.conversations.recordAgentMessage({
+      ownerUserId: agent.userId,
       agentId: agent.id,
-      sessionId: activeSession.id,
-      authoredBy: 'agent',
+      channel: 'web',
       subject: payload.subject,
       body,
-      contextRef: payload.contextRef,
       messageClass,
     });
+    if (!recorded.ok) {
+      throw new Error(`conversation_record_failed:${recorded.error.code}`);
+    }
+    const msgId = recorded.data.message.id;
 
     // Chat is reply-only, so every send_message asks for a reply.
     const replyRequested = true;
@@ -555,22 +563,17 @@ export class AgentMessageBroker {
         replyRequested,
       })
       : { ok: false as const, error: { code: 'chat.not_configured', message: 'telegram_not_configured' } };
-    let mirrorOutcome: 'not_applicable' | undefined;
+    await markThreadDelivery(this.conversations, msgId, result);
     if (!result.ok) {
+      // A failed lookup leaves the chat outcome unknown, so the message fails (the row is marked failed, I4). The
+      // stream consumer acknowledges every message, so there is no redelivery to wait for.
       if (result.error.code === 'chat.address_lookup_failed') {
-        // Not mirrored: the delivery outcome is unknown and the redelivery inserts a new row that is mirrored
-        // with its real outcome. Mirroring here would pin the thread row to `not_applicable`.
         throw new Error(result.error.message);
       }
       logger.warn({ agentId: agent.id, error: result.error }, 'send_message chat delivery failed');
-      await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message);
-      // No address or no chat configured is not a failed delivery in the thread: the thread itself is the delivery.
-      if (isUndeliverableChatError(result.error.code)) mirrorOutcome = 'not_applicable';
     } else {
-      await this.agentRepo.markOutboundMessageSent(msgId, result.data.providerMessageId, result.data.address.address);
       logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered via chat');
     }
-    await this.conversationMirror?.mirror(msgId, mirrorOutcome);
 
     await this.notifyAgentMessage(agent, msgId, replyRequested ? 'agent.question' : 'agent.reply');
 

@@ -1,9 +1,9 @@
 import type { AgentRepository } from '@herobids/db';
-import { renderEmail } from '@herobids/domain';
+import { renderEmail, type ConversationService } from '@herobids/domain';
 import type { ChatDelivery } from './chat-delivery.js';
 import type { EmailClient } from './email-client.js';
 import { createLogger } from '../logger.js';
-import type { OutboundConversationMirror } from '../agents/outbound-conversation-mirror.js';
+import { markThreadDelivery } from '../thread-delivery.js';
 
 const logger = createLogger('platform-alert-service');
 
@@ -61,54 +61,39 @@ export class PlatformAlertService {
     _botToken: string | undefined,
     private readonly emailClient?: EmailClient,
     private readonly brandImageUrl?: string,
-    private readonly conversationMirror?: OutboundConversationMirror,
+    private readonly conversations?: Pick<ConversationService, 'recordPlatformMessage' | 'markDelivery'>,
   ) {}
 
   /**
    * Fire a mandatory safety alert to the user who owns the given agent.
    * Resolves the effective Telegram chat ID (agent-level override > user-level default) and sends a platform-authored message.
-   * Persists to agent_outbound_messages with authored_by='platform'.
+   * Records the alert in the agent's conversation (sender `platform`) before delivery, then marks its delivery.
    */
   async fireAlert(event: PlatformAlertEvent, ctx: PlatformAlertContext): Promise<void> {
-    // Always persist first so the UI message feed and audit trail are complete
-    // regardless of delivery outcome. Skipped delivery is not the same as no alert.
-    const msgId = await this.agentRepo.insertOutboundMessage({
-      agentId: ctx.agentId,
-      sessionId: ctx.sessionId,
-      authoredBy: 'platform',
-      messageClass: 'alert',
-      subject: eventSubject(event),
-      body: ctx.message + (ctx.detail ? `\n\n${ctx.detail}` : ''),
-      contextRef: ctx.sessionId,
-    }).catch((err: unknown) => {
-      logger.warn({ err, agentId: ctx.agentId }, 'Failed to persist platform alert record');
-      return null;
-    });
+    // Always record first so the thread and audit trail are complete regardless of delivery outcome.
+    // Skipped delivery is not the same as no alert. A recording failure never blocks the alert itself.
+    const msgId = await this.recordInThread(event, ctx);
 
     let anyDelivered = false;
 
-    // Deliver via Telegram
+    // Deliver via chat
     if (this.chatDelivery) {
-        const text = formatPlatformAlert(event, ctx);
-        const result = await this.chatDelivery.send(ctx.agentId, { body: text });
-        if (result.ok) {
-          anyDelivered = true;
-          if (msgId) {
-            await this.agentRepo.markOutboundMessageSent(msgId, result.data.providerMessageId, result.data.address.address).catch(() => undefined);
-          }
-        } else if (result.error.code === 'chat.address_lookup_failed') {
-          logger.warn({ event, agentId: ctx.agentId, error: result.error }, 'Platform alert chat address lookup failed');
-        } else if (result.error.code !== 'chat.no_address') {
-          logger.warn({ event, agentId: ctx.agentId, error: result.error }, 'Platform alert Telegram delivery failed');
-          if (msgId) {
-            await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message).catch(() => undefined);
-          }
-        }
+      const text = formatPlatformAlert(event, ctx);
+      const result = await this.chatDelivery.send(ctx.agentId, { body: text });
+      if (result.ok) {
+        anyDelivered = true;
+      } else if (result.error.code === 'chat.address_lookup_failed') {
+        logger.warn({ event, agentId: ctx.agentId, error: result.error }, 'Platform alert chat address lookup failed');
+      } else if (result.error.code !== 'chat.no_address') {
+        logger.warn({ event, agentId: ctx.agentId, error: result.error }, 'Platform alert Telegram delivery failed');
+      }
+      if (msgId && this.conversations) await markThreadDelivery(this.conversations, msgId, result);
     } else {
       logger.debug({ event, agentId: ctx.agentId }, 'Platform alert — Telegram not configured, skipping Telegram delivery');
+      if (msgId && this.conversations) {
+        await markThreadDelivery(this.conversations, msgId, { ok: false, error: { code: 'chat.not_configured', message: 'telegram_not_configured' } });
+      }
     }
-
-    if (msgId) await this.conversationMirror?.mirror(msgId);
 
     // Deliver via Email
     if (this.emailClient) {
@@ -156,6 +141,27 @@ export class PlatformAlertService {
     } else {
       logger.warn({ event, agentId: ctx.agentId }, 'Platform safety alert could not be delivered via any channel');
     }
+  }
+
+  private async recordInThread(event: PlatformAlertEvent, ctx: PlatformAlertContext): Promise<string | null> {
+    if (!this.conversations) return null;
+    try {
+      const agent = await this.agentRepo.getAgent(ctx.agentId);
+      if (!agent) return null;
+      const recorded = await this.conversations.recordPlatformMessage({
+        ownerUserId: agent.userId,
+        agentId: ctx.agentId,
+        channel: 'web',
+        messageClass: 'alert',
+        subject: eventSubject(event),
+        body: ctx.message + (ctx.detail ? `\n\n${ctx.detail}` : ''),
+      });
+      if (recorded.ok) return recorded.data.message.id;
+      logger.warn({ agentId: ctx.agentId, code: recorded.error.code }, 'Failed to record platform alert in the thread');
+    } catch (err) {
+      logger.warn({ err, agentId: ctx.agentId }, 'Failed to record platform alert in the thread');
+    }
+    return null;
   }
 }
 

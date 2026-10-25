@@ -26,7 +26,7 @@ See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how t
 
 ## 4. Start your agent
 
-A new agent starts stopped. Open it, add skills under **Capabilities** (for example web browsing or deal finder), then click **Start**. Once it runs, it talks to you under **Talk to your agent** and asks you for instructions.
+A new agent starts stopped. Open it, add skills under **Capabilities** (for example web browsing or deal finder), then click **Start**. Once it runs, it talks to you in the **Chat with** card on the agent page (and on Telegram, if you linked it) and asks you for instructions.
 
 ## Where to go next
 

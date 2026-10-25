@@ -348,11 +348,30 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
       expect(refused).toMatchObject({ ok: true, data: { deliveryStatus: 'refused', deliveryDetail: 'peer.rate_limited' } });
     });
 
-    it.each(['sent', 'failed', 'refused'] as const)('treats %s as final: no later mark changes the row', async (final) => {
+    it('moves a queued row to not_applicable: it had nowhere to go', async () => {
+      await user('agent-1', 'hello', 'm1');
+
+      const marked = await service().markDelivery({ messageId: 'm1', status: 'not_applicable', detail: 'chat.no_address' });
+
+      expect(marked).toMatchObject({ ok: true, data: { deliveryStatus: 'not_applicable', deliveryDetail: 'chat.no_address' } });
+    });
+
+    it('moves the channel with a sent mark and leaves it alone otherwise', async () => {
+      await user('agent-1', 'hello', 'm1');
+      await user('agent-1', 'again', 'm2');
+
+      const sent = await service().markDelivery({ messageId: 'm1', status: 'sent', providerMessageId: 'tg-1', channel: 'telegram' });
+      const failed = await service().markDelivery({ messageId: 'm2', status: 'failed', detail: 'boom' });
+
+      expect(sent).toMatchObject({ ok: true, data: { channel: 'telegram', providerMessageId: 'tg-1' } });
+      expect(failed).toMatchObject({ ok: true, data: { channel: 'web' } });
+    });
+
+    it.each(['sent', 'failed', 'refused', 'not_applicable'] as const)('treats %s as final: no later mark changes the row', async (final) => {
       await user('agent-1', 'hello', 'm1');
       await service().markDelivery({ messageId: 'm1', status: final, detail: 'first', providerMessageId: 'p1' });
 
-      for (const next of ['sent', 'failed', 'refused'] as const) {
+      for (const next of ['sent', 'failed', 'refused', 'not_applicable'] as const) {
         const again = await service().markDelivery({ messageId: 'm1', status: next, detail: 'second', providerMessageId: 'p2' });
         expect(again).toMatchObject({
           ok: false,
@@ -362,10 +381,10 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
       expect(await row('m1')).toEqual({ delivery_status: final, delivery_detail: 'first', provider_message_id: 'p1' });
     });
 
-    it('refuses to move a row back to queued or to not_applicable', async () => {
+    it('refuses to move a row back to queued', async () => {
       await user('agent-1', 'hello', 'm1');
 
-      for (const status of ['queued', 'not_applicable'] as const) {
+      for (const status of ['queued'] as const) {
         const result = await service().markDelivery({ messageId: 'm1', status });
         expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.invalidDeliveryTransition } });
       }

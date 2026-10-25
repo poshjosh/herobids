@@ -68,15 +68,13 @@ export interface RawRuntimeSession {
   stopReason: string | null;
 }
 
-export interface RawOutboundMessage {
+/** The fields of a conversation message the activity feed shows. */
+export interface RawConversationMessage {
   id: string;
-  agentId: string;
-  sessionId: string | null;
-  authoredBy: string;
+  senderType: string;
   subject: string | null;
   body: string;
-  contextRef: string | null;
-  messageClass: string;
+  messageClass: string | null;
   deliveryStatus: string;
   createdAt: Date;
 }
@@ -495,26 +493,27 @@ export function mapRuntimeSession(session: RawRuntimeSession): AgentActivityEntr
 }
 
 // ---------------------------------------------------------------------------
-// Mapper: outbound message → activity entry
+// Mapper: conversation message → activity entry
 // ---------------------------------------------------------------------------
 
-export function mapOutboundMessage(msg: RawOutboundMessage): AgentActivityEntry {
+/** A message the agent or the platform wrote to the user. The feed has no session for it (DEC-52), so `sessionId` is null. */
+export function mapConversationMessage(agentId: string, msg: RawConversationMessage): AgentActivityEntry {
   return {
     id: `msg-${msg.id}`,
-    agentId: msg.agentId,
+    agentId,
     timestamp: msg.createdAt.toISOString(),
     category: 'message',
     severity: 'info',
     eventType: 'message.authored',
-    title: msg.authoredBy === 'platform' ? 'Platform message' : 'Agent message',
+    title: msg.senderType === 'platform' ? 'Platform message' : 'Agent message',
     summary: msg.subject ?? msg.body.slice(0, 100),
     detail: {
-      authoredBy: msg.authoredBy,
+      authoredBy: msg.senderType,
       messageClass: msg.messageClass,
       deliveryStatus: msg.deliveryStatus,
       ...(msg.subject ? { subject: msg.subject } : {}),
     },
-    sessionId: msg.sessionId,
+    sessionId: null,
     direction: 'outbound',
     processingStatus: msg.deliveryStatus,
     correlationId: null,

@@ -1,22 +1,28 @@
 import crypto from 'node:crypto';
-import { eq, and, or, desc, inArray, asc, ne, isNull, sql } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, asc, ne, isNull, lte, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from './index.js';
 import {
   agentArtifacts,
   agentMessages,
-  agentOutboundMessages,
   agentRuntimeSessions,
   agentSkills,
   agents,
   chatAddresses,
   chatSuppressions,
+  conversationMessages,
+  conversationParticipants,
+  conversations,
   skillUsageEvents,
   users,
 } from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
-import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type UnifiedAgentConfig, type ProvidersYaml, TechnicalConfigSchema, IntelligenceConfigSchema, type ChatAddress, type ChatAddressValue, type ChatProvider } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type UnifiedAgentConfig, type ProvidersYaml, TechnicalConfigSchema, IntelligenceConfigSchema, type ChatAddress, type ChatAddressValue, type ChatProvider, isUserAgentChannel } from '@herobids/domain';
 
 // --- Helpers ---
+
+/** Safety cap on candidate messages for a reply; the address predicate is applied in SQL, before the cap. */
+const REPLY_CANDIDATE_LIMIT = 20;
 
 /**
  * 004: Canonical location for stamping `capabilityMode` (and `hybridMode` for
@@ -190,22 +196,6 @@ export interface InsertAgentArtifact {
   metadata?: Record<string, unknown>;
   retentionClass?: string;
   expiresAt?: Date;
-}
-
-// --- Agent Outbound Message ---
-
-export interface InsertAgentOutboundMessage {
-  /** Optional row id; the user-message path reuses the envelope messageId so runtime events can reference it. */
-  id?: string;
-  agentId: string;
-  sessionId?: string;
-  /** 'agent' | 'platform' */
-  authoredBy: string;
-  subject?: string;
-  body: string;
-  contextRef?: string;
-  /** Message class: 'routine' | 'alert' | 'reminder' */
-  messageClass?: string;
 }
 
 export interface ChatAddressScope {
@@ -751,75 +741,6 @@ export class AgentRepository {
       .limit(limit);
   }
 
-  // --- Agent Outbound Messages ---
-
-  async insertOutboundMessage(input: InsertAgentOutboundMessage): Promise<string> {
-    const id = input.id ?? crypto.randomUUID();
-    await this.db.insert(agentOutboundMessages).values({
-      id,
-      agentId: input.agentId,
-      sessionId: input.sessionId ?? null,
-      authoredBy: input.authoredBy,
-      subject: input.subject ?? null,
-      body: input.body,
-      contextRef: input.contextRef ?? null,
-      messageClass: input.messageClass ?? null,
-      deliveryStatus: 'pending',
-    }).onConflictDoNothing({ target: agentOutboundMessages.id });
-    return id;
-  }
-
-  async getOutboundMessage(id: string) {
-    const rows = await this.db.select().from(agentOutboundMessages).where(eq(agentOutboundMessages.id, id)).limit(1);
-    return rows[0] ?? null;
-  }
-
-  async markOutboundMessageSent(id: string, providerMessageId: string, address: string): Promise<void> {
-    await this.db.update(agentOutboundMessages).set({
-      deliveryStatus: 'sent',
-      deliveryProvider: 'telegram',
-      deliveryAddress: address,
-      providerMessageId,
-    }).where(eq(agentOutboundMessages.id, id));
-  }
-
-  async markOutboundMessageFailed(id: string, error: string): Promise<void> {
-    await this.db.update(agentOutboundMessages).set({
-      deliveryStatus: 'failed',
-      deliveryError: error,
-    }).where(eq(agentOutboundMessages.id, id));
-  }
-
-  /** @deprecated Email fanout from send_message has been removed (2026-07-17). Retained for historical audit. */
-  async markOutboundMessageEmailSent(id: string, emailMessageId: string): Promise<void> {
-    await this.db.update(agentOutboundMessages).set({
-      emailDeliveryStatus: 'email_sent',
-      emailMessageId,
-    }).where(eq(agentOutboundMessages.id, id));
-  }
-
-  /** @deprecated Email fanout from send_message has been removed (2026-07-17). Retained for historical audit. */
-  async markOutboundMessageEmailSkipped(id: string, reason: string): Promise<void> {
-    await this.db.update(agentOutboundMessages).set({
-      emailDeliveryStatus: reason,
-    }).where(eq(agentOutboundMessages.id, id));
-  }
-
-  /** @deprecated Email fanout from send_message has been removed (2026-07-17). Retained for historical audit. */
-  async markOutboundMessageEmailFailed(id: string, error: string): Promise<void> {
-    await this.db.update(agentOutboundMessages).set({
-      emailDeliveryStatus: 'email_failed_provider',
-      emailDeliveryError: error,
-    }).where(eq(agentOutboundMessages.id, id));
-  }
-
-  async getOutboundMessages(agentId: string, limit = 50) {
-    return this.db.select().from(agentOutboundMessages)
-      .where(eq(agentOutboundMessages.agentId, agentId))
-      .orderBy(desc(agentOutboundMessages.createdAt))
-      .limit(limit);
-  }
-
   /** List all agents currently in 'active' status. Used by DockerAgentManager reconciliation. */
   async listActiveAgents() {
     return this.db.select().from(agents).where(eq(agents.status, 'active'));
@@ -944,9 +865,10 @@ export class AgentRepository {
    * Resolve the agent that owns an inbound chat reply, for any provider.
    *
    * The address is normalised like stored addresses; a blank address resolves nothing. A
-   * suppressed address resolves nothing. With a providerMessageId, the outbound message it
-   * identifies (delivery columns) is checked first. That agent's scope for the provider must be
-   * active, otherwise null is returned with no fallback. Then the chat_addresses rows for the
+   * suppressed address resolves nothing. With a providerMessageId, the conversation message it
+   * identifies (`channel`, `provider_message_id`) is checked first, and only for an agent whose
+   * active address for the provider is the replying one and was set no later than the message.
+   * Then the chat_addresses rows for the
    * address, user-level rows included: any non-active row yields null; a single active row naming
    * an agent resolves it. A user-level address names no agent, and an address shared by several
    * agents is not guessed.
@@ -969,22 +891,47 @@ export class AgentRepository {
       userId: agents.userId,
     };
 
-    if (providerMessageId) {
-      const outboundRows = await this.db.select(agentOwner)
-        .from(agentOutboundMessages)
-        .innerJoin(agents, eq(agentOutboundMessages.agentId, agents.id))
-        .where(and(
-          eq(agentOutboundMessages.deliveryProvider, provider),
-          eq(agentOutboundMessages.deliveryAddress, normalizedAddress),
-          eq(agentOutboundMessages.providerMessageId, providerMessageId),
+    // Only providers that are a thread channel can have stored messages to correlate with.
+    if (providerMessageId && isUserAgentChannel(provider)) {
+      // The message the reply points at (DEC-51 index). A provider message id is unique only within one chat, so the
+      // message counts only when the replying address is the agent's effective address for the provider (an agent-level
+      // row shadows the user-level one), that row is active, and it was set no later than the message: a rebind
+      // after the message was sent disqualifies it, so a reply from a chat that merely shares the id cannot match.
+      const agentOverride = alias(chatAddresses, 'agent_override');
+      const [candidate] = await this.db.select(agentOwner)
+        .from(conversationMessages)
+        .innerJoin(conversations, eq(conversations.id, conversationMessages.conversationId))
+        .innerJoin(conversationParticipants, and(
+          eq(conversationParticipants.conversationId, conversationMessages.conversationId),
+          eq(conversationParticipants.participantType, 'agent'),
         ))
-        .limit(1);
-      const outboundOwner = outboundRows[0];
-      if (outboundOwner) {
-        const outboundScope = await this.getChatAddressScope(outboundOwner.agentId, provider);
-        if (outboundScope && !outboundScope.isActive) return null;
-        return outboundOwner;
-      }
+        .innerJoin(agents, and(
+          eq(agents.id, conversationParticipants.participantId),
+          eq(agents.userId, conversations.ownerUserId),
+        ))
+        .innerJoin(chatAddresses, and(
+          eq(chatAddresses.userId, agents.userId),
+          eq(chatAddresses.provider, provider),
+          eq(chatAddresses.address, normalizedAddress),
+          eq(chatAddresses.status, 'active'),
+          or(isNull(chatAddresses.agentId), eq(chatAddresses.agentId, agents.id)),
+          lte(chatAddresses.updatedAt, conversationMessages.createdAt),
+        ))
+        .leftJoin(agentOverride, and(
+          eq(agentOverride.userId, agents.userId),
+          eq(agentOverride.agentId, agents.id),
+          eq(agentOverride.provider, provider),
+        ))
+        .where(and(
+          eq(conversationMessages.channel, provider),
+          eq(conversationMessages.providerMessageId, providerMessageId),
+          eq(conversations.kind, 'user_agent'),
+          // Matched the agent's own row, or the user-level row with no agent-level row shadowing it.
+          or(eq(chatAddresses.agentId, agents.id), isNull(agentOverride.id)),
+        ))
+        .orderBy(desc(conversationMessages.createdAt))
+        .limit(REPLY_CANDIDATE_LIMIT);
+      if (candidate) return candidate;
     }
 
     // Left join: user-level rows (no agent) must still be seen by the blocking check.

@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
-import { agentRuntimeSessions, agentArtifacts, agentOutboundMessages, agents, users } from '@herobids/db';
+import { agentRuntimeSessions, agentArtifacts, conversationMessages, conversationParticipants, conversations, agents, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 
 describe.skipIf(SKIP)('Agents functional', () => {
@@ -265,7 +265,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
   });
 
   describe('DELETE /agents/:id', () => {
-    it('cascade-deletes dependent rows (sessions, artifacts, outbound messages) with the agent', async () => {
+    it('cascade-deletes dependent rows (sessions, artifacts) with the agent and removes its conversation', async () => {
       const createRes = await ctx.app.inject({
         method: 'POST',
         url: '/agents',
@@ -292,12 +292,21 @@ describe.skipIf(SKIP)('Agents functional', () => {
         summary: 'test artifact',
         retentionClass: 'ephemeral',
       });
-      await ctx.db.insert(agentOutboundMessages).values({
+      const [owner] = await ctx.db.select({ userId: agents.userId }).from(agents).where(eq(agents.id, id));
+      const conversationId = `user_agent:${id}`;
+      await ctx.db.insert(conversations).values({ id: conversationId, kind: 'user_agent', ownerUserId: owner!.userId });
+      await ctx.db.insert(conversationParticipants).values([
+        { conversationId, participantType: 'user', participantId: owner!.userId },
+        { conversationId, participantType: 'agent', participantId: id },
+      ]);
+      await ctx.db.insert(conversationMessages).values({
         id: 'msg-cascade-test',
-        agentId: id,
-        authoredBy: 'platform',
+        conversationId,
+        senderType: 'platform',
+        senderId: null,
+        channel: 'web',
         body: 'cascade test message',
-        deliveryStatus: 'pending',
+        deliveryStatus: 'sent',
       });
 
       const deleteRes = await ctx.app.inject({
@@ -312,8 +321,10 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(sessions).toHaveLength(0);
       const artifacts = await ctx.db.select().from(agentArtifacts).where(eq(agentArtifacts.agentId, id));
       expect(artifacts).toHaveLength(0);
-      const messages = await ctx.db.select().from(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
+      const messages = await ctx.db.select().from(conversationMessages).where(eq(conversationMessages.conversationId, `user_agent:${id}`));
       expect(messages).toHaveLength(0);
+      const threads = await ctx.db.select().from(conversationParticipants).where(eq(conversationParticipants.participantId, id));
+      expect(threads).toHaveLength(0);
     });
 
     it('deletes a stopped agent and returns 204', async () => {

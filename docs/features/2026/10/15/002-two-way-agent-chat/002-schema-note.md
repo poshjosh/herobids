@@ -67,12 +67,17 @@ An agent-to-agent conversation has two rows with `participant_type = agent`. The
 | `delivery_detail` | text | yes | Failure text. For `refused`, a dot-string reason code such as `peer.rate_limited` or `peer.paused` |
 | `provider_message_id` | text | yes | Set when a channel returns one |
 | `created_at` | timestamptz | no | |
-| `queued_at` | timestamptz | no | Default `now()`. **Proposed, pending owner confirmation (DEC-50).** When the row last entered `queued`: equals `created_at` on insert, restamped when a retry claims a `failed` or stale `queued` row. Ages a stuck `queued` row against `messaging.conversations.staleQueuedAfterSeconds`. Added by migration 0085; existing rows get the migration time |
+| `queued_at` | timestamptz | no | Default `now()`. **Approved (DEC-50, 2026-10-25).** When the row last entered `queued`: equals `created_at` on insert, restamped when a retry claims a `failed` or stale `queued` row. Ages a stuck `queued` row against `messaging.conversations.staleQueuedAfterSeconds`. Added by migration 0085; existing rows get the migration time |
 
 Keys and indexes:
 
 - Primary key: `id`. A repeated write with the same ID returns the existing row (002 D5).
 - Index on `(conversation_id, created_at)`. Serves thread reads in one query (002 section 4.2).
+- Non-unique partial index `idx_conversation_messages_provider_message` on `(channel, provider_message_id)` where `provider_message_id` is not null (DEC-51, migration 0086). Serves the Telegram reply lookup. It is not unique because a provider message id is unique only within one chat; the lookup keeps a candidate only when its agent's current address for the provider is the replying address.
+
+**No `session_id` and no `context_ref` (DEC-52).** The old `agent_outbound_messages` carried both. They have no column here. Activity feed message entries show `sessionId: null`, and `context_ref` is neither stored nor returned.
+
+**Delivery marks.** A `queued` row is marked `sent`, `failed`, `refused`, or `not_applicable` (a message with nowhere to go: no chat address, no chat channel). A `sent` mark may also set the `channel` that carried the message (a reply recorded on `web` before the send moves to `telegram` when Telegram accepts it). All of these are final until a retry claim returns the row to `queued`.
 
 Peer messages use `channel = 'internal'`, `delivery_status = 'sent'` once they reach the recipient's queue, and `sender_type = 'agent'`.
 
@@ -128,7 +133,7 @@ The owner approved the implementer choosing between (a) a new endpoint and (b) a
 ## 6. Migration order
 
 1. CH2W creates `conversations`, `conversation_participants`, `conversation_messages`, and the partial index. It adds the `users.peer_messaging_paused` column and the two `channel` and `delivery_status` values.
-2. CH2W retires `agent_outbound_messages` after its readers move (002 P0 inventory).
+2. CH2W retires `agent_outbound_messages` after its readers move (002 P0 inventory). Done in migration 0086, together with the DEC-51 index.
 3. A2A-B writes peer rows. It does not change the schema.
 
 ## 7. Acceptance for this note

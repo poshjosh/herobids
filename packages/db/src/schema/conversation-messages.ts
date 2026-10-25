@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { pgTable, text, timestamp, index } from 'drizzle-orm/pg-core';
 import type {
   ConversationChannel,
@@ -34,4 +35,6 @@ export const conversationMessages = pgTable('conversation_messages', {
   queuedAt: timestamp('queued_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_conversation_messages_conversation_created').on(t.conversationId, t.createdAt),
+  // Reply correlation (DEC-51): finds the message a Telegram reply points at. Non-unique: a provider message id is unique only within one chat.
+  index('idx_conversation_messages_provider_message').on(t.channel, t.providerMessageId).where(sql`${t.providerMessageId} is not null`),
 ]);

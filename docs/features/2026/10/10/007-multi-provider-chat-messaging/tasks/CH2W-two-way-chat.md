@@ -1,6 +1,6 @@
 # CH2W: Two-way agent chat (002)
 
-**Status:** approved 2026-10-25 (DEC-31, DEC-32). Not started.
+**Status:** approved 2026-10-25 (DEC-31, DEC-32). Done in code 2026-10-25 (slices 1 to 3: P0 to P4). Owner hand-off open: the plan's e2e gate (`run-all-tests.sh --e2e`) and the owner review after each phase.
 **Depends on:** C1 ticked. **Schema:** [schema note](../../../15/002-two-way-agent-chat/002-schema-note.md) (DEC-47). Build only the tables and columns it names. **MVP scope:** owner view of peer threads and the conversation store (DEC-43, DEC-46). **Plan:** [002 two-way agent chat](../../../../10/15/002-two-way-agent-chat/001-plan.md).
 
 ## Why it matters

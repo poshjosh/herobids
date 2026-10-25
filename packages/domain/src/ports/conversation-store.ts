@@ -7,6 +7,7 @@ import type {
   ConversationMessage,
   ConversationSenderType,
   RecordedConversationMessage,
+  UserAgentChannel,
 } from '../conversations/conversation.js';
 
 export interface NewConversationMessage {
@@ -38,6 +39,8 @@ export interface MarkConversationDeliveryInput {
   detail: string | null;
   /** Null leaves the stored value unchanged. */
   providerMessageId: string | null;
+  /** Null leaves the stored channel unchanged. */
+  channel: UserAgentChannel | null;
 }
 
 export interface RequeueUndeliveredMessageInput {

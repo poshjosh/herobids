@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   mapProtocolMessage,
   mapRuntimeSession,
-  mapOutboundMessage,
+  mapConversationMessage,
   mapArtifact,
   isSuppressedProtocolMessageType,
   type RawAgentMessage,
   type RawRuntimeSession,
-  type RawOutboundMessage,
+  type RawConversationMessage,
   type RawArtifact,
 } from './agent-activity-mapper.js';
 
@@ -195,41 +195,45 @@ describe('mapRuntimeSession', () => {
   });
 });
 
-describe('mapOutboundMessage', () => {
+describe('mapConversationMessage', () => {
   it('maps an agent-authored message correctly', () => {
-    const msg: RawOutboundMessage = {
+    const msg: RawConversationMessage = {
       id: 'om-1',
-      agentId: 'agent-1',
-      sessionId: 'sess-1',
-      authoredBy: 'agent',
+      senderType: 'agent',
       subject: 'Market Update',
       body: 'ETH is up 5% in the last hour.',
-      contextRef: null,
       messageClass: 'routine',
       deliveryStatus: 'sent',
       createdAt: new Date('2026-06-11T12:00:00Z'),
     };
-    const entry = mapOutboundMessage(msg);
+    const entry = mapConversationMessage('agent-1', msg);
+    expect(entry.id).toBe('msg-om-1');
+    expect(entry.agentId).toBe('agent-1');
     expect(entry.category).toBe('message');
     expect(entry.title).toBe('Agent message');
     expect(entry.summary).toBe('Market Update');
-    expect(entry.sessionId).toBe('sess-1');
+    expect(entry.detail).toMatchObject({ authoredBy: 'agent', messageClass: 'routine', deliveryStatus: 'sent', subject: 'Market Update' });
+  });
+
+  it('has no session on a message entry', () => {
+    const entry = mapConversationMessage('agent-1', {
+      id: 'om-3', senderType: 'agent', subject: null, body: 'hello', messageClass: null, deliveryStatus: 'queued', createdAt: new Date('2026-06-11T12:00:00Z'),
+    });
+    expect(entry.sessionId).toBeNull();
+    expect(entry.detail).toMatchObject({ messageClass: null });
   });
 
   it('maps a platform-authored message', () => {
-    const msg: RawOutboundMessage = {
+    const msg: RawConversationMessage = {
       id: 'om-2',
-      agentId: 'agent-1',
-      sessionId: null,
-      authoredBy: 'platform',
+      senderType: 'platform',
       subject: null,
       body: 'Your agent was stopped due to excessive losses.',
-      contextRef: null,
       messageClass: 'alert',
       deliveryStatus: 'sent',
       createdAt: new Date('2026-06-11T12:00:00Z'),
     };
-    const entry = mapOutboundMessage(msg);
+    const entry = mapConversationMessage('agent-1', msg);
     expect(entry.title).toBe('Platform message');
     expect(entry.summary).toBe('Your agent was stopped due to excessive losses.');
   });

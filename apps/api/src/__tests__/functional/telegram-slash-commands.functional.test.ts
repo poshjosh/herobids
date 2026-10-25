@@ -99,7 +99,7 @@ beforeEach(async () => {
   // decision_failures was dropped from herobids by the trading-isolation cutover
   // (decision state lives behind the REST boundary) — omitted from TRUNCATE.
   await db.execute(sql`
-    TRUNCATE agent_outbound_messages, agent_messages,
+    TRUNCATE conversations, agent_messages,
       agent_runtime_sessions, agent_skills, agent_connections,
       connections, agents, skills, users, chat_addresses, chat_suppressions CASCADE
   `);

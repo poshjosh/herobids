@@ -476,20 +476,6 @@ export async function agentInteractivityRoutes(
       return reply.status(202).send({ delivered: true, message: respondWith(stored) });
     }
 
-    // Transitional (CH2W P2 to P3): the old readers (conversation-turn, activity feed, GET /agents/:id/messages)
-    // still read agent_outbound_messages. P3 moves them and removes this write. It runs on every publish, not only
-    // on the first: the insert is idempotent on the id, so a retry recreates a row whose first write failed.
-    try {
-      await new AgentRepository(db).insertOutboundMessage({
-        id: stored.id,
-        agentId: id,
-        authoredBy: actingAgentId !== null ? `agent:${actingAgentId}` : 'user',
-        body,
-      });
-    } catch (error) {
-      request.log.warn({ err: error instanceof Error ? error.name : 'NonError' }, 'legacy outbound message write failed');
-    }
-
     // Publish to agent:outbound:{agentId} — the platform→agent channel
     const envelope = {
       schemaVersion: 'v1',
@@ -710,6 +696,7 @@ export async function telegramWebhookHandler(
   tradertonReadTimeoutMs?: number,
   profileReconciliationSaga?: TradingProfileReconciliationSaga,
   typingTiming?: ChatTypingTiming,
+  conversations: ConversationRouteDeps = createConversationRouteDeps(db),
 ): Promise<void> {
   const botToken = telegram?.botToken ?? '';
   const webhookSecret = telegram?.webhookSecret ?? '';
@@ -827,6 +814,9 @@ export async function telegramWebhookHandler(
     chatId: string,
     message: InboundChatMessage,
   ): Promise<void> {
+    // A suppressed address gets no reply at all, not even help or "bind first": an opt-out blocks inbound as well as
+    // outbound. A lookup error propagates, so the update is dropped unprocessed (fail closed, I4).
+    if (await agentRepo.isChatAddressSuppressed(message.from.provider, chatId)) return;
     const boundUser = await findUserByTelegramChatId(chatId);
 
     const userId = boundUser?.userId;
@@ -873,7 +863,7 @@ export async function telegramWebhookHandler(
           return;
         }
         if (slashCmd.command === 'log') {
-          const response = await handleLog(db, userId, slashCmd.args, tradertonReadClient, tradertonReadTimeoutMs);
+          const response = await handleLog(db, conversations.service, userId, slashCmd.args, tradertonReadClient, tradertonReadTimeoutMs);
           await sendTelegramText(chatId, response);
           return;
         }
@@ -1012,6 +1002,8 @@ export async function telegramWebhookHandler(
 
     await chatRouter.dispatch(message, userId, {
       redis: redisClient,
+      conversations: conversations.service,
+      log: app.log,
       resolveReply: (providerMessageId, address) => agentRepo.resolveAgentForChatReply(address.provider, address.address, providerMessageId),
       listAgents: (ownerId) => db.select({
         agentId: agents.id,
@@ -1070,6 +1062,8 @@ export async function telegramWebhookHandler(
     message: InboundChatMessage,
   ): Promise<void> {
     const document = message.document!; // guaranteed present by caller
+
+    if (await agentRepo.isChatAddressSuppressed(message.from.provider, chatId)) return; // opt-out: silent drop, fail closed
 
     // ── 1. Resolve user ──────────────────────────────────────────────────
 

@@ -9,7 +9,6 @@ import {
   sessions,
   agents,
   agentRuntimeSessions,
-  agentOutboundMessages,
   conversationMessages,
   generateAgentApiKey,
 } from '@herobids/db';
@@ -261,7 +260,7 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE agent_outbound_messages, agent_runtime_sessions, agents, sessions, users CASCADE`);
+    await db.execute(sql`TRUNCATE conversations, agent_runtime_sessions, agents, sessions, users CASCADE`);
   });
 
   afterEach(async () => {
@@ -411,11 +410,9 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
     const res = await agentKeyRequest(app, 'POST', `/agents/${tree.child.agentId}/message`, tree.creator.rawKey, { message: 'Status update?' });
 
     expect(res.statusCode).toBe(202);
-    const [stored] = await db.select().from(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, tree.child.agentId));
-    expect(stored).toMatchObject({ authoredBy: `agent:${tree.creator.agentId}`, body: 'Status update?' });
     const [conversationRow] = await db.select().from(conversationMessages).where(eq(conversationMessages.conversationId, userAgentConversationId(tree.child.agentId)));
-    expect(conversationRow).toMatchObject({ id: stored?.id, senderType: 'agent', senderId: tree.creator.agentId, body: 'Status update?', deliveryStatus: 'sent' });
-    expect(res.json()).toMatchObject({ delivered: true, message: { id: stored?.id, senderType: 'agent', senderId: tree.creator.agentId } });
+    expect(conversationRow).toMatchObject({ senderType: 'agent', senderId: tree.creator.agentId, body: 'Status update?', deliveryStatus: 'sent' });
+    expect(res.json()).toMatchObject({ delivered: true, message: { id: conversationRow?.id, senderType: 'agent', senderId: tree.creator.agentId } });
     const entries = await redis.xrange(`agent:outbound:${tree.child.agentId}`, '-', '+');
     expect(entries).toHaveLength(1);
     const envelope = JSON.parse(entries[0]![1][1]!) as Record<string, unknown>;
@@ -478,7 +475,7 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
 
     expect(unrelated.statusCode).toBe(403);
     expect(grandchild.statusCode).toBe(403);
-    expect(await db.select().from(agentOutboundMessages)).toHaveLength(0);
+    expect(await db.select().from(conversationMessages)).toHaveLength(0);
   });
 
   it('a user caller pauses and stops an owned agent with requestedBy user', async () => {

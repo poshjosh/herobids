@@ -702,7 +702,7 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
       agent_runtime_sessions,
       agent_messages,
       agent_artifacts,
-      agent_outbound_messages,
+      conversations,
       skill_usage_events,
       skill_likes,
       skill_entitlements,

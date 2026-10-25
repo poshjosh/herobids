@@ -148,7 +148,7 @@ describe.skipIf(SKIP)('own child allowance read (integration)', () => {
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE agent_outbound_messages, agent_runtime_sessions, agents, sessions, users CASCADE`);
+    await db.execute(sql`TRUNCATE conversations, agent_runtime_sessions, agents, sessions, users CASCADE`);
   });
 
   afterEach(async () => {

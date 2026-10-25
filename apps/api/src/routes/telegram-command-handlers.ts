@@ -11,7 +11,7 @@
 
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
-import type { AuthConfig, PlansConfig, ModelDefaults } from '@herobids/domain';
+import type { AuthConfig, ConversationService, PlansConfig, ModelDefaults } from '@herobids/domain';
 import type { ExternalBackendClient, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createTradertonReadBoundary, loadAgentEvidence } from './exports-traderton.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
@@ -265,6 +265,7 @@ export async function handleInfo(
 
 export async function handleLog(
   db: Database,
+  conversations: Pick<ConversationService, 'listThread'>,
   userId: string,
   args: string[],
   tradertonReadClient?: ExternalBackendClient,
@@ -286,7 +287,7 @@ export async function handleLog(
     const agent = resolved.agent;
 
     type LogRow = {
-      source: 'msg' | 'outbound' | 'failure';
+      source: 'msg' | 'thread' | 'failure';
       raw_type: string;
       subject: string | null;
       body_text: string | null;
@@ -294,21 +295,30 @@ export async function handleLog(
       created_at: Date;
     };
 
-    // Platform legs stay LOCAL (agent_messages + agent_outbound_messages).
-    // The decision-failures leg moved behind the Traderton boundary — it is
-    // fetched separately and merged in-app.
-    const platformRows = await db.execute(sql`
+    // Platform legs stay LOCAL (agent_messages + the agent's conversation). The decision-failures leg moved behind
+    // the Traderton boundary — it is fetched separately and merged in-app.
+    const protocolRows = await db.execute(sql`
       SELECT 'msg' AS source, type AS raw_type, NULL::text AS subject, NULL::text AS body_text, NULL::text AS failure_msg, created_at
       FROM agent_messages WHERE agent_id = ${agent.id}
         AND type NOT IN ('agent.runtime.heartbeat', 'agent.heartbeat')
-      UNION ALL
-      SELECT 'outbound', authored_by, subject, body, NULL, created_at
-      FROM agent_outbound_messages WHERE agent_id = ${agent.id}
       ORDER BY created_at DESC
       LIMIT 10
     `) as unknown as LogRow[];
+    const thread = await conversations.listThread({ ownerUserId: userId, agentId: agent.id, limit: 10 });
+    if (!thread.ok) {
+      console.error('handleLog thread read failed:', thread.error.code);
+      return 'Failed to get activity log. Please try again later.';
+    }
+    const threadRows: LogRow[] = thread.data.map((message) => ({
+      source: 'thread',
+      raw_type: message.senderType,
+      subject: message.subject,
+      body_text: message.body,
+      failure_msg: null,
+      created_at: message.createdAt,
+    }));
 
-    const logRows: LogRow[] = [...platformRows];
+    const logRows: LogRow[] = [...protocolRows, ...threadRows];
 
     // Decision-failures leg over the Traderton read boundary (agent-actor scoped).
     // /log is a best-effort chat summary — if the boundary is absent or fails we
@@ -346,16 +356,16 @@ export async function handleLog(
     logRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     logRows.splice(10);
 
-    // Map to display entries with human-readable labels (descending order from SQL)
+    // Map to display entries with human-readable labels (newest first)
     const entries = logRows.map((row) => {
       const time = formatTime(new Date(row.created_at));
       if (row.source === 'msg') {
         const label = formatActivityLabel(row.raw_type);
         return `[${time}] ${label}`;
       }
-      if (row.source === 'outbound') {
+      if (row.source === 'thread') {
         const desc = row.subject ?? truncate(row.body_text ?? '', 80);
-        const prefix = row.raw_type === 'platform' ? 'ALERT' : 'AGENT';
+        const prefix = row.raw_type === 'platform' ? 'ALERT' : row.raw_type === 'user' ? 'YOU' : 'AGENT';
         return `[${time}] ${prefix}: ${desc}`;
       }
       // failure

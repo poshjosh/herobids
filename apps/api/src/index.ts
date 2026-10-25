@@ -296,6 +296,8 @@ app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOStrin
 
 // Telegram webhook — public (unauthenticated), token-validated
 const telegramChat = resolveTelegramChatConfig(appConfig);
+// One conversation service for the web chat and the Telegram inbound path.
+const conversationDeps = createConversationRouteDeps(db, appConfig.messaging.conversations);
 await telegramWebhookHandler(
   app, db, redisClient, telegramChat, appConfig.auth, appConfig.agentApprovals,
   appConfig.plans,
@@ -308,6 +310,7 @@ await telegramWebhookHandler(
     refreshIntervalMs: appConfig.messaging.chat.telegram.typingRefreshIntervalMs,
     maxWindowMs: appConfig.messaging.chat.telegram.typingMaxWindowMs,
   },
+  conversationDeps,
 );
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
@@ -385,7 +388,7 @@ await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.
 await sessionRoutes(app, db);
 await pushRoutes(app, { store: new PushSubscriptionRepository(db), publicConfig: resolvePushPublicConfig(appConfig.messaging.notifications) });
 await blueprintRoutes(app, db, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
-await agentInteractivityRoutes(app, db, redisClient, telegramChat, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga, appConfig.agentCreation, createConversationRouteDeps(db, appConfig.messaging.conversations));
+await agentInteractivityRoutes(app, db, redisClient, telegramChat, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga, appConfig.agentCreation, conversationDeps);
 await analyticsRoutes(app, db, tradingBackendClient, tradingBackendTimeoutMs);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 await skillsRoutes(app, db, appConfig.plans, (() => {

@@ -88,49 +88,12 @@ describe('AgentRepository.getUserEmailByAgentId', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// email delivery metadata methods
-// ---------------------------------------------------------------------------
-
 function buildUpdateDb() {
   const whereFn = vi.fn().mockResolvedValue(undefined);
   const setFn = vi.fn().mockReturnValue({ where: whereFn });
   const updateFn = vi.fn().mockReturnValue({ set: setFn });
   return { db: { update: updateFn }, setFn, whereFn };
 }
-
-// Email fanout from send_message has been removed (2026-07-17).
-// These persistence methods are retained for historical audit but no longer written by runtime.
-describe.skip('AgentRepository email delivery metadata', () => {
-  it('markOutboundMessageEmailSent writes email_sent status and messageId', async () => {
-    const { db, setFn } = buildUpdateDb();
-    const repo = new AgentRepository(db as never);
-    await repo.markOutboundMessageEmailSent('msg-1', 'resend-abc123');
-    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({
-      emailDeliveryStatus: 'email_sent',
-      emailMessageId: 'resend-abc123',
-    }));
-  });
-
-  it('markOutboundMessageEmailSkipped writes the supplied reason string', async () => {
-    const { db, setFn } = buildUpdateDb();
-    const repo = new AgentRepository(db as never);
-    await repo.markOutboundMessageEmailSkipped('msg-2', 'email_skipped_policy');
-    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({
-      emailDeliveryStatus: 'email_skipped_policy',
-    }));
-  });
-
-  it('markOutboundMessageEmailFailed writes email_failed_provider status and error', async () => {
-    const { db, setFn } = buildUpdateDb();
-    const repo = new AgentRepository(db as never);
-    await repo.markOutboundMessageEmailFailed('msg-3', 'Provider returned 503');
-    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({
-      emailDeliveryStatus: 'email_failed_provider',
-      emailDeliveryError: 'Provider returned 503',
-    }));
-  });
-});
 
 // ---------------------------------------------------------------------------
 // runtime session retirement
@@ -248,7 +211,7 @@ function buildSequencedDb(results: Array<Array<Record<string, unknown>>>) {
         leftJoin: vi.fn(() => chain),
         where: vi.fn(() => Object.assign(Promise.resolve(rows), {
           limit: vi.fn().mockResolvedValue(rows),
-          orderBy: vi.fn().mockResolvedValue(rows),
+          orderBy: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn().mockResolvedValue(rows) })),
         })),
       };
       return chain;
@@ -280,7 +243,7 @@ function buildRecordingDb(results: Array<Array<Record<string, unknown>>>) {
           whereConditions.push(condition);
           return Object.assign(Promise.resolve(rows), {
             limit: vi.fn().mockResolvedValue(rows),
-            orderBy: vi.fn().mockResolvedValue(rows),
+            orderBy: vi.fn(() => Object.assign(Promise.resolve(rows), { limit: vi.fn().mockResolvedValue(rows) })),
           });
         }),
       };
@@ -370,8 +333,6 @@ describe('AgentRepository.resolveAgentForChatReply', () => {
   // Rows from the chat_addresses lookup carry whether that address row is active.
   const activeAddressOne = { ...agentOne, isAddressActive: true };
   const activeAddressTwo = { ...agentTwo, isAddressActive: true };
-  const activeScope = { rowAgentId: 'agent-1', address: '111111', isActive: true };
-  const blockedScope = { rowAgentId: 'agent-1', address: '111111', isActive: false };
   const noSuppression: Array<Record<string, unknown>> = [];
   const suppression = [{ address: 'chat-a' }];
 
@@ -387,38 +348,49 @@ describe('AgentRepository.resolveAgentForChatReply', () => {
     await expect(repo.resolveAgentForChatReply('telegram', 'chat-a')).resolves.toBeNull();
   });
 
-  it('resolves the agent from the outbound delivery columns', async () => {
-    const db = buildSequencedDb([noSuppression, [agentOne], [activeScope]]);
+  it('resolves the agent from the conversation message the reply points at', async () => {
+    const db = buildSequencedDb([noSuppression, [agentOne]]);
     const repo = new AgentRepository(db as never);
     await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toEqual(agentOne);
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 
-  it('resolves a non-telegram provider from the delivery columns', async () => {
-    const db = buildSequencedDb([noSuppression, [agentOne], [activeScope]]);
+  it('skips the message lookup for a provider that is not a thread channel', async () => {
+    const db = buildSequencedDb([noSuppression, [activeAddressOne]]);
     const repo = new AgentRepository(db as never);
     await expect(repo.resolveAgentForChatReply('whatsapp', '+15555550100', 'wamid-1')).resolves.toEqual(agentOne);
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 
-  it('prefers the message ID match over an agent-level address', async () => {
-    const db = buildSequencedDb([noSuppression, [agentOne], []]);
+  it('puts the address, active status, rebind and shadowing predicates in the message lookup SQL', async () => {
+    const { db, joinConditions, whereConditions } = buildRecordingDb([noSuppression, [agentOne]]);
     const repo = new AgentRepository(db as never);
-    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toEqual(agentOne);
+    await repo.resolveAgentForChatReply('telegram', 'chat-a', '999');
+    const addressJoin = renderWhere(joinConditions.find((c) => renderWhere(c).sql.includes('"chat_addresses"."address"'))).sql;
+    expect(addressJoin).toContain('"chat_addresses"."address" = $');
+    expect(addressJoin).toContain('"chat_addresses"."status" = $');
+    expect(addressJoin).toContain('"chat_addresses"."user_id" = "agents"."user_id"');
+    expect(addressJoin).toContain('"chat_addresses"."updated_at" <= "conversation_messages"."created_at"');
+    const messageWhere = renderWhere(whereConditions[1]);
+    expect(messageWhere.sql).toContain('"conversation_messages"."channel" = $');
+    expect(messageWhere.sql).toContain('"agent_override"."id" is null');
+    expect(messageWhere.params).toEqual(expect.arrayContaining(['telegram', '999', 'user_agent']));
   });
 
-  it('falls back to the agent-level address when the message ID matches no outbound row', async () => {
+  it('falls back to the agent-level address when the message ID matches no conversation message', async () => {
     const db = buildSequencedDb([noSuppression, [], [activeAddressTwo]]);
     const repo = new AgentRepository(db as never);
     await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toEqual(agentTwo);
   });
 
-  it('returns null when neither the delivery columns nor an address row match the reply', async () => {
+  it('returns null when neither a conversation message nor an address row match the reply', async () => {
     const db = buildSequencedDb([noSuppression, [], []]);
     const repo = new AgentRepository(db as never);
     await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
   });
 
   it('a suppressed address resolves nothing and no other lookup runs', async () => {
-    const db = buildSequencedDb([suppression, [agentOne], [activeScope]]);
+    const db = buildSequencedDb([suppression, [agentOne]]);
     const repo = new AgentRepository(db as never);
     await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
     expect(db.select).toHaveBeenCalledTimes(1);
@@ -451,19 +423,6 @@ describe('AgentRepository.resolveAgentForChatReply', () => {
     const repo = new AgentRepository(db as never);
     await repo.resolveAgentForChatReply('telegram', 'chat-a');
     expect(renderWhere(joinConditions[0]).sql).toContain('"chat_addresses"."user_id" = "agents"."user_id"');
-  });
-
-  it('a non-active outbound-agent scope returns null even when a providerMessageId matches', async () => {
-    const db = buildSequencedDb([noSuppression, [agentOne], [blockedScope]]);
-    const repo = new AgentRepository(db as never);
-    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
-    expect(db.select).toHaveBeenCalledTimes(3);
-  });
-
-  it('a non-active user-level outbound scope also returns null when a providerMessageId matches', async () => {
-    const db = buildSequencedDb([noSuppression, [agentOne], [{ rowAgentId: null, address: '222222', isActive: false }]]);
-    const repo = new AgentRepository(db as never);
-    await expect(repo.resolveAgentForChatReply('telegram', 'chat-a', '999')).resolves.toBeNull();
   });
 
   it('does not guess when an address is shared by several agent overrides and no message ID is given', async () => {
@@ -659,22 +618,6 @@ function buildUnifiedConfigDb(raw: Record<string, unknown> | null) {
   };
 }
 
-describe('AgentRepository.markOutboundMessageSent', () => {
-  it('writes the neutral delivery columns and no legacy telegram columns', async () => {
-    const { db, setFn } = buildUpdateDb();
-    const repo = new AgentRepository(db as never);
-
-    await repo.markOutboundMessageSent('msg-001', '42', '111111');
-
-    expect(setFn).toHaveBeenCalledWith({
-      deliveryStatus: 'sent',
-      deliveryProvider: 'telegram',
-      deliveryAddress: '111111',
-      providerMessageId: '42',
-    });
-  });
-});
-
 describe('AgentRepository.getUnifiedConfig (capabilityMode/hybridMode defaults)', () => {
   it('returns hybridMode: "mixed" when config has capabilityMode: "hybrid" but no hybridMode', async () => {
     const db = buildUnifiedConfigDb({ capabilityMode: 'hybrid', technical: { venue: 'hyperliquid' } });
@@ -857,18 +800,5 @@ describe('AgentRepository.updateUnifiedConfig (hybridMode write-path stamping)',
     expect(setFn).toHaveBeenCalledWith(expect.objectContaining({
       unifiedConfig: null,
     }));
-  });
-});
-describe('AgentRepository.insertOutboundMessage', () => {
-  it('is idempotent on a supplied id: the insert does nothing on a conflict', async () => {
-    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
-    const repository = new AgentRepository({ insert: vi.fn().mockReturnValue({ values }) } as never, mockProvidersYaml);
-
-    const id = await repository.insertOutboundMessage({ id: 'msg-1', agentId: 'agent-1', authoredBy: 'user', body: 'Hello' });
-
-    expect(id).toBe('msg-1');
-    expect(values).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg-1', agentId: 'agent-1', deliveryStatus: 'pending' }));
-    expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
   });
 });
