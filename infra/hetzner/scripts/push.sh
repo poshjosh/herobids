@@ -139,6 +139,11 @@ docker compose ${COMPOSE_FILES} restart caddy
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning dangling images..."
 docker image prune -f
 
+# Build cache from every deploy accumulates on the host (tens of GB across
+# repeated deploys). Keep the last 24h so the next build stays cache-warm.
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning build cache older than 24h..."
+docker builder prune -f --filter until=24h
+
 # ── Nomad infrastructure jobs ────────────────────────────────────────────────
 # Submit standalone Nomad jobs (browser-pool, etc.) when the Nomad server is
 # running on this host. Skipped silently on Docker-only deploys.
