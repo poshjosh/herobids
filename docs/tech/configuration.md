@@ -39,12 +39,14 @@ Key sections:
 - `risk` — global drawdown cap, open position limits
 - `agentRiskDefaults` — operator ceilings for agent risk parameters
 - `agentRuntime` — agent container policy (tool limits, sandbox, LLM budgets)
+- `agentCreation` — rate limits, depth and API timeout for agent-created agents (see [Agent creation limits](#agent-creation-limits))
+- `sharedServices` — shared Postgres and Redis hosts, and `apiBaseUrl`, the platform API URL that agent containers call
 - `llm` — LLM provider, model, timeout, tick interval
 - `marketData` — discovery source rate limits and configs
 - `streams` — WebSocket reconnection policy
 - `liveRollout` — fail-closed gating for live execution mode
 - `auth` — JWT, Google OAuth
-- `plans` — subscription plan definitions and entitlements
+- `plans` — subscription plan definitions and entitlements (includes `childAgentLimitCeiling`, see [Agent creation limits](#agent-creation-limits))
 - `billing` — payment provider config (Stripe, Creem, mock)
 - `usageBilling` — metering, rate cards, credit top-up products
 
@@ -82,6 +84,23 @@ Environment-specific overrides. Only include values that differ from `default.ya
 ### `config/personal-assistant.yaml`
 
 Blueprint preset for non-trading personal-assistant agents. Separate from the strategy presets since it does not involve trading parameters.
+
+---
+
+---
+
+## Agent creation limits
+
+Agents can create child agents only when a user sets a child allowance on the agent. The settings below cap what an allowance can do. They live under `agentCreation` in `config/default.yaml` and are validated in `packages/domain/src/config/schema.ts`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `agentCreation.agentCreateRatePerMinute` | `10` | Token bucket for `create_agent` attempts, per user across the whole agent tree. Every attempt uses a token, including refused ones. `0` refuses all attempts. |
+| `agentCreation.creatorMessageRatePerMinute` | `10` | Token bucket per creator-child pair for messages the creator sends to a child. `0` refuses all of them. |
+| `agentCreation.maxAgentDepth` | `6` | Max generations below a user-created agent. At this depth an agent cannot create children. |
+| `agentCreation.platformApiTimeoutMs` | `10000` | Timeout for each agent-container call to the platform API (create, allowance read, creator actions). Minimum `100`. |
+
+The plan entitlement `childAgentLimitCeiling` sets the highest child allowance a user may set on an agent. It is set per plan under `plans.<plan>.entitlements.limits`, next to `maxAgents`. When unset, the ceiling is `max(0, maxAgents - 1)`, so no explicit value is needed to keep creation off. Child agents start with an allowance of `0`.
 
 ---
 

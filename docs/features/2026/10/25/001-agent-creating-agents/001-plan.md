@@ -225,11 +225,13 @@ Children keep `creatorType` and `creatorId` as history. No bots are torn down, b
 
 ## Outstanding Issues
 
-### Item: operator-and-plan-configs (§3, §13 step 2)
+Known gaps as of the documentation update. Each needs a fix or an explicit decision.
 
-- MEDIUM: add non-integer test cases for `agentCreateRatePerMinute`, `creatorMessageRatePerMinute`, and `childAgentLimitCeiling` (e.g. `1.5`) in `packages/domain/src/config/schema.test.ts`.
-- LOW: document that `0` disables the feature for `agentCreateRatePerMinute` and `creatorMessageRatePerMinute` in the schema comments.
-- LOW: decide whether an explicit `childAgentLimitCeiling` above `maxAgents - 1` should be rejected at plan validation or clamped in `resolveChildAgentLimitCeiling`.
-- LOW: add one test that loads `config/default.yaml` through `AppConfigSchema` to catch drift.
-- LOW: `config/default.yaml` plans intentionally leave `childAgentLimitCeiling` unset; confirm this is the intent.
-- Pre-existing, out of scope: `apps/api/src/routes/agent-interactivity.ts:539` uses a hard-coded `?? 20`.
+- (a) Child-to-creator replies go through the child's own `send_message` and do not pass through the creator-child message bucket. The `message_child_agent` tool description says replies count against the limit; that is not yet true.
+- (b) The creator pause and stop audit row is written after the state change and is not atomic with it.
+- (c) Post-commit skill sync for children can leave a child without its skills if the sync fails.
+- (d) The agent container still holds `DATABASE_URL`. The restricted database role is not done, so the per-runtime key does not remove direct database access.
+- (e) The default-deny route flags `'child-create'` and `'creator'` must be reviewed whenever a new agent route is added.
+- (f) The careful tool budget (`maxVisibleToolSchemas`) was raised from 32 to 40 in the code default (`packages/domain/src/config/schema.ts`). Review it. `config/default.yaml` sets a separate `defaultBudgets.maxVisibleToolSchemas` of 64.
+- (g) Pre-existing, unrelated docs changes under `docs/features/2026/10/10` and `docs/features/pending` are not part of this feature.
+- (h) Subtree delete ordering residual risk: each agent's trading profiles are cleared on the boundary inside the loop in `apps/api/src/routes/agents.ts`, before the final purge transaction. If that transaction fails, the profiles are already cleared while the agents remain.

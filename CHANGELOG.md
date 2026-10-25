@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Agents can create child agents within a child allowance that only the user can set. Children start stopped, and the parent may grant them some of its skills and connections.
+- Creator agents can read, message, pause and stop their direct children. Messages are rate limited per creator-child pair.
+- Agents page shows agents as a hierarchy, with each parent's children used and remaining allowance.
+- Agent deletion offers "subtree" and "agent only" options. Every affected agent must be stopped first.
+- Per-runtime agent API key. Agent routes refuse agent keys unless they are explicitly opened to them.
+- `agentCreation` operator config and the plan entitlement `childAgentLimitCeiling`. See [Configuration](docs/tech/configuration.md#agent-creation-limits).
+- Append-only `agent_audit_events` table for agent creation, child-limit, creator-action and deletion events.
+
 ## v0.7.11 - 2026-10-25
 
 ## v0.7.10 - 2026-10-25

@@ -156,7 +156,7 @@ const stopChildAgentTool: AgentTool = {
 
 const messageChildAgentTool: AgentTool = {
   name: 'message_child_agent',
-  description: 'Send a message to one of your direct child agents. Messages are rate limited per pair, and replies count against the same limit.',
+  description: 'Send a message to one of your direct child agents. Messages you send are rate limited per parent-child pair.',
   parametersSchema: MessageChildParamsSchema,
   parameters: convertZodToJsonSchema(MessageChildParamsSchema),
   category: 'write-messaging',

@@ -196,6 +196,20 @@ Implementation details for tools and sandbox policy are defined in [Tool Access 
 
 Pause is an agent guardrail, not a container stop. Pause and resume only write `agents.status`; the runtime session stays `running` and heartbeats continue. The runtime reads its own status (read-only) at tick start and, while paused, does no ticks, wakes or LLM calls; bots keep running and the engine still rejects decisions with `agent_paused` as defence in depth. Messages received while paused are held and processed on the first resumed tick, which always runs a full evaluation. Worker restart or first-boot heartbeats never overwrite `paused`. See `docs/bug-reports/2026/10/05/001-paused-agent-keeps-ticking.md`.
 
+### Per-runtime agent API key
+
+An agent container calls the platform API with its own key. Agent-created agents (001-agent-creating-agents) depend on this key to identify the caller.
+
+- When the worker starts a runtime, it generates a random key and injects it into the container. Only its hash is stored, in `agent_runtime_sessions.api_key_hash` (unique). The raw key is never logged or stored.
+- The API hashes the presented key and looks up the runtime session. The request acts as that agent and its owner. It is refused when the runtime session is `stopped` or `crashed`, when the agent is `stopped`, `crashed` or `paused`, and when the owner row is missing. Stopping or crashing the runtime therefore revokes the key.
+- Default-deny: a route refuses agent keys unless it sets `config.agentAccess`. `self` limits a key to its own agent. `child-create` lets a key call `POST /agents`, with lineage taken from the key. `creator` limits a key to direct children. The guards are in `apps/api/src/plugins/auth.ts`.
+- User-owned changes (child allowance, start, resume, edit, delete) use `requireUserCaller` and refuse every agent key.
+- Known gap: the container still has `DATABASE_URL` and `REDIS_URL`, so the key does not yet remove direct database access. A restricted database role is a separate task.
+
+Every creation, child-limit change, creator action and deletion writes one row to `agent_audit_events`. The table is append-only. Each row records the user, the actor (`user`, `agent` or `system`), the action, the target and `detail`. `detail` holds ids and counts only, never prompts, configuration, keys or message text. Actions: `agent.created`, `agent.child_created`, `agent.child_limit_set`, `agent.creator_paused_child`, `agent.creator_stopped_child`, `agent.creator_messaged_child` and `agent.deleted`. Schema: `packages/db/src/schema/agent-audit-events.ts`. Writer: `packages/db/src/agent-audit.ts`.
+
+Creator pause and stop audit rows are written after the state change, so they are not atomic with it.
+
 ## Message Contract Principles
 
 1. The contract is versioned and deployment-neutral.
