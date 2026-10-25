@@ -23,6 +23,7 @@ export function SetupProviderLinkPage() {
   const agentId = searchParams.get('agentId');
   const returnPath = connectionReturnPath(agentId);
   const approvedReturnPath = connectionReturnPath(agentId, { connectedRequestId: searchParams.get('requestId') });
+  const requestingAgentName = searchParams.get('agentName');
 
   useEffect(() => {
     if (ran.current) return;
@@ -114,7 +115,9 @@ export function SetupProviderLinkPage() {
               fontWeight: '500',
             }}
           >
-            Go to Dashboard
+            {requestingAgentName
+              ? intl.formatMessage({ id: 'setup.done.goToAgent' }, { agent: requestingAgentName })
+              : intl.formatMessage({ id: 'setup.done.goToDashboard' })}
           </button>
         </div>
       </div>
@@ -127,32 +130,24 @@ export function SetupProviderLinkPage() {
 
   const requestedProvider = searchParams.get('provider');
   const connectionRequestId = searchParams.get('requestId');
-  const requestingAgentName = searchParams.get('agentName');
   const connectionRequest = requestedProvider && connectionRequestId && requestingAgentName
     ? { requestId: connectionRequestId, provider: requestedProvider, agentName: requestingAgentName }
     : undefined;
   return (
-    <>
-      {connectionRequest && (
-        <div style={{ padding: '48px 24px 0' }}>
-          <div style={{ maxWidth: 'var(--content-max-width)', margin: '0 auto' }}>
-            <UseExistingConnectionPanel
-              requestId={connectionRequest.requestId}
-              provider={connectionRequest.provider}
-              agentName={connectionRequest.agentName}
-              onDone={() => navigate(approvedReturnPath, { replace: true })}
-            />
-          </div>
-        </div>
-      )}
-      <ProviderSetupForm
-        standalone
-        defaultCapability="trading"
-        initialProviderId={requestedProvider ?? undefined}
-        connectionRequest={connectionRequest}
-        onClose={handleClose}
-        onSuccess={handleSuccess}
-      />
-    </>
+    <ProviderSetupForm
+      standalone
+      defaultCapability="trading"
+      initialProviderId={requestedProvider ?? undefined}
+      connectionRequest={connectionRequest}
+      existingConnections={connectionRequest ? (
+        <UseExistingConnectionPanel
+          requestId={connectionRequest.requestId}
+          provider={connectionRequest.provider}
+          onDone={() => navigate(approvedReturnPath, { replace: true })}
+        />
+      ) : undefined}
+      onClose={handleClose}
+      onSuccess={handleSuccess}
+    />
   );
 }

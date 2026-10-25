@@ -10,7 +10,6 @@ export interface ExistingConnectionOption {
 }
 
 export interface UseExistingConnectionViewProps {
-  agentName: string;
   options: ExistingConnectionOption[];
   selectedId: string | null;
   isSubmitting: boolean;
@@ -18,11 +17,18 @@ export interface UseExistingConnectionViewProps {
   onConfirm: () => void;
 }
 
-export function UseExistingConnectionView({ agentName, options, selectedId, isSubmitting, onSelect, onConfirm }: UseExistingConnectionViewProps) {
+/** A single existing connection is the only possible choice, so it is pre-selected. */
+export function resolveSelectedId(options: ExistingConnectionOption[], selectedId: string | null): string | null {
+  if (selectedId !== null) return selectedId;
+  const [only] = options;
+  return options.length === 1 && only ? only.id : null;
+}
+
+export function UseExistingConnectionView({ options, selectedId, isSubmitting, onSelect, onConfirm }: UseExistingConnectionViewProps) {
   const intl = useIntl();
   return (
     <Card>
-      <SectionLabel>{intl.formatMessage({ id: 'setup.useExisting.title' }, { agent: agentName })}</SectionLabel>
+      <SectionLabel>{intl.formatMessage({ id: 'setup.useExisting.title' })}</SectionLabel>
       <ul>
         {options.map((option) => (
           <li key={option.id}>
@@ -40,19 +46,19 @@ export function UseExistingConnectionView({ agentName, options, selectedId, isSu
           </li>
         ))}
       </ul>
-      <Button onClick={onConfirm} disabled={selectedId === null || isSubmitting}>
+      <Button type="button" variant="primary" onClick={onConfirm} disabled={selectedId === null || isSubmitting}>
         {intl.formatMessage({ id: 'setup.useExisting.confirm' })}
       </Button>
     </Card>
   );
 }
 
-export function UseExistingConnectionPanel({ requestId, provider, agentName, onDone }: {
+export function UseExistingConnectionPanel({ requestId, provider, onDone }: {
   requestId: string;
   provider: string;
-  agentName: string;
   onDone: () => void;
 }) {
+  const intl = useIntl();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const connectionsQuery = useQuery({
@@ -72,16 +78,24 @@ export function UseExistingConnectionPanel({ requestId, provider, agentName, onD
 
   if (options.length === 0) return null;
 
+  const effectiveSelectedId = resolveSelectedId(options, selectedId);
+
   return (
-    <UseExistingConnectionView
-      agentName={agentName}
-      options={options}
-      selectedId={selectedId}
-      isSubmitting={confirmMutation.isPending}
-      onSelect={setSelectedId}
-      onConfirm={() => {
-        if (selectedId) confirmMutation.mutate(selectedId);
-      }}
-    />
+    <>
+      <UseExistingConnectionView
+        options={options}
+        selectedId={effectiveSelectedId}
+        isSubmitting={confirmMutation.isPending}
+        onSelect={setSelectedId}
+        onConfirm={() => {
+          if (effectiveSelectedId) confirmMutation.mutate(effectiveSelectedId);
+        }}
+      />
+      <div role="separator" style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+        <span style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
+        {intl.formatMessage({ id: 'setup.form.orNewConnection' })}
+        <span style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
+      </div>
+    </>
   );
 }

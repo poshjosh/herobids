@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import type { FieldDefinition } from '@herobids/domain';
@@ -106,9 +106,11 @@ interface Props {
   onBeforeOAuthRedirect?: () => void;
   /** An agent's open connection request this link fulfils; locks the provider and enables Cancel-as-decline. */
   connectionRequest?: { requestId: string; provider: string; agentName: string };
+  /** Existing-connection choices shown above the new-connection fields for a connection request. */
+  existingConnections?: ReactNode;
 }
 
-export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initialProviderId, standalone, inline, oauthReturnTo, onBeforeOAuthRedirect, connectionRequest }: Props) {
+export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initialProviderId, standalone, inline, oauthReturnTo, onBeforeOAuthRedirect, connectionRequest, existingConnections }: Props) {
   const intl = useIntl();
   const [providerChoice, setProviderChoice] = useState('');  // '' = not yet initialised; see defaultProviderChoice below
   const [label, setLabel] = useState('');
@@ -271,6 +273,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
           {intl.formatMessage({ id: 'setup.connectionRequest.banner' }, { provider: connectionRequest.provider, agent: connectionRequest.agentName })}
         </div>
       )}
+      {existingConnections}
       {declineMutation.isError && (
         <ErrorBanner message={localizeApiError(intl, declineMutation.error, 'common.errorTitle')} />
       )}
@@ -317,7 +320,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
                 ? { background: 'var(--color-surface-1)', color: 'var(--color-text-primary)', border: '1px solid var(--color-brand)' }
                 : { border: '1px solid transparent' }}
             >
-              Use existing wallet
+              Use existing
             </Button>
             <Button
               type="button"
@@ -330,7 +333,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
                 ? { background: 'var(--color-surface-1)', color: 'var(--color-text-primary)', border: '1px solid var(--color-brand)' }
                 : { border: '1px solid transparent' }}
             >
-              Create wallet
+              Create new
             </Button>
           </div>
         </div>
@@ -348,6 +351,9 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
 
       {credentialMode === 'manual' && <div style={{ marginBottom: '12px' }}>
         <FieldLabel>{intl.formatMessage({ id: 'setup.form.secrets' })}</FieldLabel>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
+          {intl.formatMessage({ id: 'setup.form.secretsHint' })}
+        </div>
         {isCustomProvider ? (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

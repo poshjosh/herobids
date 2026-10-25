@@ -110,6 +110,11 @@ describe('setup flow copy changes', () => {
     expect(enMessages['agents.capabilityPage.noConnections']).not.toContain('Create a trading connection first');
   });
 
+  it('setup.done.goToAgent names the agent and replaces the generic dashboard button', () => {
+    expect(enMessages['setup.done.goToAgent']).toBe('Go to {agent}');
+    expect(enMessages['setup.done.goToDashboard']).toBe('Go to Dashboard');
+  });
+
   it('setup.form.title is defined and names the guided setup flow', () => {
     expect(enMessages['setup.form.title']).toBeTruthy();
     expect(enMessages['setup.form.title']).toBe('Connect agent to external platform');

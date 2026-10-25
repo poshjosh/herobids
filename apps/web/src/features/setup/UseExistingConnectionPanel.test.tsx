@@ -1,10 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { describe, expect, it, vi } from 'vitest';
-import { UseExistingConnectionView } from './UseExistingConnectionPanel.js';
+import { UseExistingConnectionView, resolveSelectedId } from './UseExistingConnectionPanel.js';
 
 const englishMessages: Record<string, string> = {
-  'setup.useExisting.title': 'Use an existing connection for {agent}',
+  'setup.useExisting.title': 'Existing connections',
   'setup.useExisting.confirm': 'Use this connection',
 };
 
@@ -12,7 +12,6 @@ function render(props: Partial<Parameters<typeof UseExistingConnectionView>[0]> 
   return renderToStaticMarkup(
     <IntlProvider locale="en" messages={englishMessages}>
       <UseExistingConnectionView
-        agentName="tom"
         options={[{ id: 'conn-1', label: 'Main account' }]}
         selectedId={null}
         isSubmitting={false}
@@ -42,7 +41,23 @@ describe('UseExistingConnectionView', () => {
     expect(html).not.toContain('disabled');
   });
 
-  it('names the agent in the title', () => {
-    expect(render()).toContain('Use an existing connection for tom');
+  it('shows the existing connections heading', () => {
+    expect(render()).toContain('Existing connections');
+  });
+});
+
+describe('resolveSelectedId', () => {
+  it('pre-selects the only option', () => {
+    expect(resolveSelectedId([{ id: 'conn-1', label: 'Main' }], null)).toBe('conn-1');
+  });
+
+  it('does not pre-select when there are several options', () => {
+    const options = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }];
+    expect(resolveSelectedId(options, null)).toBeNull();
+  });
+
+  it('keeps an explicit choice', () => {
+    const options = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }];
+    expect(resolveSelectedId(options, 'b')).toBe('b');
   });
 });

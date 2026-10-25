@@ -3,6 +3,7 @@ import { useIntl } from 'react-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type AgentOutboundMessage } from '../../lib/api-client.js';
 import { Button, Card, SectionLabel } from '../../lib/ui.js';
+import { Linkify } from '../../lib/linkify.js';
 
 const RUNNING_STATUSES = ['active', 'starting', 'paused', 'unhealthy'];
 
@@ -207,7 +208,7 @@ export function AgentConversationView({
                         : intl.formatMessage({ id: isSafetyAlert(message) ? 'agentDetail.conversation.fromPlatform' : 'agentDetail.conversation.fromOpenAIdom' })}
                     </div>
                   )}
-                  {message.body}
+                  <Linkify text={message.body} />
                   <time
                     dateTime={message.createdAt}
                     title={intl.formatDate(message.createdAt, { dateStyle: 'full', timeStyle: 'medium' })}
