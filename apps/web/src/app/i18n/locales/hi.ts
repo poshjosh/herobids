@@ -167,9 +167,9 @@ export const messages: Record<string, string> = {
   'settings.subtitle': 'खाता प्राथमिकताएं और अधिसूचना कॉन्फ़िगरेशन',
   'settings.telegram.title': 'Telegram सूचनाएं',
   'settings.telegram.description':
-    'आपके एजेंट Telegram पर आपको मैसेज कर सकते हैं। Connect पर क्लिक करें, फिर अपना खाता जोड़ने के लिए Telegram में Start पर टैप करें।',
+    'आपके एजेंट Telegram पर आपको मैसेज कर सकते हैं। Connect पर क्लिक करें, आपका खाता अपने-आप जुड़ जाएगा।',
   'settings.telegram.connect': 'Telegram कनेक्ट करें',
-  'settings.telegram.connecting': 'Telegram में Start पर टैप करने का इंतज़ार है…',
+  'settings.telegram.connecting': 'Telegram से कनेक्शन की पुष्टि का इंतज़ार है…',
   'settings.telegram.openTelegram': 'Telegram खोलें',
   'settings.telegram.popupBlocked': 'आपके ब्राउज़र ने Telegram टैब को रोक दिया। उसे खोलने के लिए नीचे दिया गया लिंक इस्तेमाल करें।',
   'settings.telegram.connected': 'Telegram कनेक्ट हो गया',

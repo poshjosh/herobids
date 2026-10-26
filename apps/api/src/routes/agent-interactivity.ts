@@ -753,7 +753,7 @@ export async function telegramWebhookHandler(
 
   /** Button that opens the web app at the page the user connected from. `returnTo` is already validated, so resolving it against the origin cannot leave the origin. */
   function openAppMarkup(returnTo: string): TelegramInlineKeyboardMarkup {
-    return { inline_keyboard: [[{ text: 'Open OpenAIdom', url: new URL(returnTo, frontendOrigin).href }]] };
+    return { inline_keyboard: [[{ text: 'Return to OpenAIdom', url: new URL(returnTo, frontendOrigin).href }]] };
   }
 
   function agentCanReceiveTelegram(status: string): boolean {

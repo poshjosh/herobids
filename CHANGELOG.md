@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Child agents on the agents page show Pause and Stop in the same hover icons as other agents. Their separate always-visible controls are removed.
+- Top-level agents on the agents page align with the search box. The expand toggle sits in the left gutter and children stay indented.
+- Telegram connect text no longer asks the user to tap Start, since linking is automatic. The reply button is renamed "Return to OpenAIdom" (English only).
+
 ## v0.8.0 - 2026-10-26
 
 ### Added

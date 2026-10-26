@@ -167,9 +167,9 @@ export const messages: Record<string, string> = {
   'settings.subtitle': 'تفضيلات الحساب وإعداد الإشعارات',
   'settings.telegram.title': 'إشعارات تيليغرام',
   'settings.telegram.description':
-    'يمكن لوكلائك مراسلتك على تيليغرام. اضغط «ربط تيليغرام»، ثم اضغط «ابدأ» في تيليغرام لربط حسابك.',
+    'يمكن لوكلائك مراسلتك على تيليغرام. اضغط «ربط تيليغرام» لربط حسابك تلقائياً.',
   'settings.telegram.connect': 'ربط تيليغرام',
-  'settings.telegram.connecting': 'في انتظار الضغط على «ابدأ» في تيليغرام…',
+  'settings.telegram.connecting': 'في انتظار تأكيد تيليغرام للربط…',
   'settings.telegram.openTelegram': 'فتح تيليغرام',
   'settings.telegram.popupBlocked': 'منع المتصفح فتح نافذة تيليغرام. استخدم الرابط أدناه لفتحها.',
   'settings.telegram.connected': 'تم ربط تيليغرام',

@@ -521,13 +521,15 @@ export function SkillsPage() {
 
       {!isLoading && !queryError && showSkillsUI && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          <input
-            type="text"
-            placeholder={intl.formatMessage({ id: 'skills.searchPlaceholder', defaultMessage: 'Search skills…' })}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ ...inputStyle, padding: '8px 12px', fontSize: '0.875rem', maxWidth: '360px' }}
-          />
+          <div className="search-half-row">
+            <input
+              type="text"
+              placeholder={intl.formatMessage({ id: 'skills.searchPlaceholder', defaultMessage: 'Search skills…' })}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ ...inputStyle, padding: '8px 12px', fontSize: '0.875rem' }}
+            />
+          </div>
           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
             {skillTabs.map((tab) => (
               <Button

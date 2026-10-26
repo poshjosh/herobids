@@ -54,7 +54,7 @@ describe('ConnectTelegramView', () => {
     expect(html).not.toContain(messages['settings.telegram.connected']);
   });
 
-  it('connecting: says to tap Start, hides the button, and links to Telegram when given a url', () => {
+  it('connecting: shows the waiting text, hides the button, and links to Telegram when given a url', () => {
     const html = renderView({ status: 'connecting', linkUrl: 'https://t.me/OpenAIdomBot?start=link_abc' });
     expect(html).toContain(messages['settings.telegram.connecting']);
     expect(html).not.toContain('<button');

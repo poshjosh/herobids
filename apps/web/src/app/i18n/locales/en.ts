@@ -165,9 +165,9 @@ export const messages: Record<string, string> = {
   'settings.subtitle': 'Account preferences and notification configuration',
   'settings.telegram.title': 'Telegram Notifications',
   'settings.telegram.description':
-    'Your agents can message you on Telegram. Click Connect, then tap Start in Telegram to link your account.',
+    'Your agents can message you on Telegram. Click Connect to link your account automatically.',
   'settings.telegram.connect': 'Connect Telegram',
-  'settings.telegram.connecting': 'Waiting for you to tap Start in Telegram…',
+  'settings.telegram.connecting': 'Waiting for Telegram to confirm the link…',
   'settings.telegram.openTelegram': 'Open Telegram',
   'settings.telegram.popupBlocked': 'Your browser blocked the Telegram tab. Use the link below to open it.',
   'settings.telegram.connected': 'Telegram connected',

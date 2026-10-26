@@ -181,7 +181,7 @@ export function ConnectTelegram() {
     tabRef.current = tab;
     dispatch({ type: 'connectStarted', tabBlocked: tab === null });
 
-    // The bot's "Open OpenAIdom" button returns the user to this page. Relative paths only; the API checks it again.
+    // The bot's "Return to OpenAIdom" button returns the user to this page. Relative paths only; the API checks it again.
     const returnTo = `${window.location.pathname}${window.location.search}`.slice(0, 200);
     linkMutation.mutate(returnTo, {
       onSuccess: (link) => {

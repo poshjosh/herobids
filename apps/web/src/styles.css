@@ -428,6 +428,20 @@ textarea:not(:placeholder-shown) {
   margin-bottom: 24px;
 }
 
+/* Search bar sized to one column of the two-column metric grid. */
+.search-half-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+/* On small screens the search bar spans the full width. */
+@media (max-width: 768px) {
+  .search-half-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Two compact metric cards fit comfortably on small screens — no horizontal
  * scroll needed. */
 @media (max-width: 768px) {

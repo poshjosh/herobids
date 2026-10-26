@@ -1041,7 +1041,7 @@ export async function authRoutes(
 
   /**
    * POST /auth/me/telegram/link — Issues a single-use deep link that connects the user's Telegram chat when opened in Telegram.
-   * Optional body `{ returnTo }` is the in-app path the bot's "Open OpenAIdom" button goes back to.
+   * Optional body `{ returnTo }` is the in-app path the bot's "Return to OpenAIdom" button goes back to.
    */
   app.post('/auth/me/telegram/link', async (request, reply) => {
     const userId = request.userId;

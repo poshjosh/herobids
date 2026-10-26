@@ -25,7 +25,7 @@ const EXPIRED_TEXT = 'This link has expired. Generate a new one in the web app.'
 const ALREADY_CONNECTED_TEXT = 'This Telegram account is already connected to another OpenAIdom account.';
 const CONNECTED_TEXT = 'Connected ✅';
 const FRONTEND_ORIGIN = makeAuthConfig().frontendOrigin;
-const OPEN_APP_LABEL = 'Open OpenAIdom';
+const OPEN_APP_LABEL = 'Return to OpenAIdom';
 
 interface InlineKeyboard {
   inline_keyboard: Array<Array<{ text: string; url: string }>>;
@@ -299,7 +299,7 @@ describe.skipIf(SKIP)('Telegram deep-link connect — functional', () => {
       return last?.replyMarkup as InlineKeyboard | undefined;
     }
 
-    it('replies Connected with an Open OpenAIdom button to the page the link was issued from', async () => {
+    it('replies Connected with a Return to OpenAIdom button to the page the link was issued from', async () => {
       const chatId = '910020';
       const userId = await seedUser('returnbutton');
       const token = await issueToken(userId, '/agents/abc?tab=open');

@@ -36,8 +36,6 @@ export interface AgentHierarchyMeta {
   childCountLabel: string | null;
   /** Set for child agents. Opens the message form rendered by the tree row. */
   onMessage?: () => void;
-  /** Set when the tree row renders Pause and Stop itself, so the card omits its own icons. */
-  rowLifecycleActions?: boolean;
 }
 
 interface AgentSummaryCardProps {
@@ -102,7 +100,6 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
   const canPause = canPauseAgent(agent.status);
   const canResume = agent.status === 'paused';
   const canStop = canStopAgent(agent.status);
-  const showCardPauseStop = !hierarchy?.rowLifecycleActions;
   const anyActionPending = startMutation.isPending || pauseMutation.isPending || resumeMutation.isPending || stopMutation.isPending;
 
   // ── Handlers ───────────────────────────────────────────────────────────
@@ -160,7 +157,7 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
         )}
 
         {/* Pause */}
-        {canPause && showCardPauseStop && (
+        {canPause && (
           <button
             type="button"
             style={ICON_BUTTON_STYLE}
@@ -192,7 +189,7 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
         )}
 
         {/* Stop */}
-        {canStop && showCardPauseStop && (
+        {canStop && (
           <button
             type="button"
             style={{ ...ICON_BUTTON_STYLE, color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}

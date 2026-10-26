@@ -97,14 +97,16 @@ export function AgentsPage() {
 
           {query.isSuccess && items.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={intl.formatMessage({ id: 'agents.tree.search' })}
-                aria-label={intl.formatMessage({ id: 'agents.tree.search' })}
-                style={{ ...inputStyle, maxWidth: '360px' }}
-              />
+              <div className="search-half-row">
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={intl.formatMessage({ id: 'agents.tree.search' })}
+                  aria-label={intl.formatMessage({ id: 'agents.tree.search' })}
+                  style={inputStyle}
+                />
+              </div>
               <AgentHierarchyList agents={items} searchQuery={searchQuery} />
             </div>
           )}

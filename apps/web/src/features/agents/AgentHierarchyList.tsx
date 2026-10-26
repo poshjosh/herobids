@@ -3,7 +3,6 @@ import { useIntl } from 'react-intl';
 import type { Agent } from '../../lib/api-client.js';
 import { EmptyState } from '../../lib/ui.js';
 import { AgentSummaryCard, type AgentHierarchyMeta } from './AgentSummaryCard.js';
-import { ChildAgentLifecycleActions } from './ChildAgentLifecycleActions.js';
 import { ChildAgentMessageForm } from './ChildAgentMessageForm.js';
 import { buildAgentTree, filterAgentTree, isExpandedByDefault, type AgentTreeNode } from './agent-tree.js';
 
@@ -12,8 +11,11 @@ interface AgentHierarchyListProps {
   searchQuery: string;
 }
 
+// The toggle sits in the gutter left of the card, so top-level cards stay flush with the search box.
 const TOGGLE_STYLE: React.CSSProperties = {
-  flexShrink: 0,
+  position: 'absolute',
+  left: '-28px',
+  top: '0',
   width: '24px',
   height: '32px',
   display: 'inline-flex',
@@ -26,8 +28,6 @@ const TOGGLE_STYLE: React.CSSProperties = {
   fontSize: '0.875rem',
   padding: 0,
 };
-
-const TOGGLE_SPACER_STYLE: React.CSSProperties = { flexShrink: 0, width: '24px', height: '32px' };
 
 // The connector line sits under the parent's toggle, and children are indented from it.
 const CHILDREN_STYLE: React.CSSProperties = {
@@ -72,31 +72,24 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
       onMessage: isChildAgent
         ? () => setOpenMessageAgentId((current) => (current === id ? null : id))
         : undefined,
-      rowLifecycleActions: isChildAgent,
     };
 
     return (
-      <div key={id} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-          {/* The toggle slot is always reserved so cards at the same depth line up. */}
-          {hasChildren ? (
-            <button
-              type="button"
-              style={TOGGLE_STYLE}
-              aria-expanded={expanded}
-              aria-label={intl.formatMessage({ id: expanded ? 'agents.tree.collapse' : 'agents.tree.expand' }, { name: node.agent.name })}
-              onClick={() => setExpansionOverrides((current) => ({ ...current, [id]: !expanded }))}
-            >
-              {expanded ? '▾' : '▸'}
-            </button>
-          ) : (
-            <span aria-hidden="true" style={TOGGLE_SPACER_STYLE} />
-          )}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <AgentSummaryCard agent={node.agent} hierarchy={hierarchy} />
-            {isChildAgent && <ChildAgentLifecycleActions agent={node.agent} />}
-            {openMessageAgentId === id && <ChildAgentMessageForm agentId={id} agentName={node.agent.name} />}
-          </div>
+      <div key={id} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {hasChildren && (
+          <button
+            type="button"
+            style={TOGGLE_STYLE}
+            aria-expanded={expanded}
+            aria-label={intl.formatMessage({ id: expanded ? 'agents.tree.collapse' : 'agents.tree.expand' }, { name: node.agent.name })}
+            onClick={() => setExpansionOverrides((current) => ({ ...current, [id]: !expanded }))}
+          >
+            {expanded ? '▾' : '▸'}
+          </button>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <AgentSummaryCard agent={node.agent} hierarchy={hierarchy} />
+          {openMessageAgentId === id && <ChildAgentMessageForm agentId={id} agentName={node.agent.name} />}
         </div>
         {expanded && (
           <div style={CHILDREN_STYLE}>
