@@ -18,6 +18,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Agents can message other agents of the same user with `message_peer_agent`. The recipient wakes and reads the message, tagged as written by another agent. All of a user's agents share a limit of 10 peer messages per minute (`agentRuntime.peer.rateLimitPerMinute`). See [Agent-to-Agent Messages](apps/web/src/features/public-pages/content/en/docs/messaging/agent-to-agent.md).
 - The agent page shows a read-only "Agent-to-agent messages" card, with refused messages and their reason. Settings has a "Pause agent-to-agent messaging" switch (`peerMessagingPaused` on `PATCH /auth/me`), which refuses all peer sends while on.
 - `GET /agents/:id/peer-threads` and `GET /agents/:id/peer-threads/:peerAgentId` read an agent's peer threads for the signed-in owner.
+- Pausing agent-to-agent messaging also drops peer messages already queued for an agent; a dropped message shows as refused.
+- Two-way chat: web and Telegram messages and agent replies are stored in one conversation. `GET /agents/:id/conversation` returns the thread, and `POST /agents/:id/message` is idempotent on `clientMessageId`.
+
+### Changed
+
+- Chat addresses are read only from `chat_addresses`, and opt-outs from `chat_suppressions`. Agent and user responses return `chatAddresses`. The `telegramChatId` columns and fields are removed, and the Telegram bot settings move to `messaging.chat.telegram.*` (`alerts.telegram.*` is gone).
+
+### Removed
+
+- `GET /agents/:id/messages` and the `agent_outbound_messages` table.
 
 ## v0.7.11 - 2026-10-25
 
