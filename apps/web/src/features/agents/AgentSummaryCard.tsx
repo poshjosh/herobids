@@ -34,8 +34,6 @@ export interface AgentHierarchyMeta {
   allowanceLabel: string | null;
   /** Direct child count shown on parent rows, e.g. "2 children". */
   childCountLabel: string | null;
-  /** Set for child agents. Opens the message form rendered by the tree row. */
-  onMessage?: () => void;
 }
 
 interface AgentSummaryCardProps {
@@ -65,7 +63,6 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
     })),
   );
   const openAgent = onOpen ?? (() => navigate(`/agents/${agent.id}`));
-  const onMessage = hierarchy?.onMessage;
 
   // ── Lifecycle mutations (same as agent detail page) ────────────────────
 
@@ -168,22 +165,6 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
               <rect x="6" y="4" width="4" height="16" rx="1" />
               <rect x="14" y="4" width="4" height="16" rx="1" />
-            </svg>
-          </button>
-        )}
-
-        {/* Message (child agents only) */}
-        {onMessage && (
-          <button
-            type="button"
-            style={ICON_BUTTON_STYLE}
-            title={intl.formatMessage({ id: 'agents.tree.message' })}
-            aria-label={intl.formatMessage({ id: 'agents.tree.message' })}
-            disabled={anyActionPending}
-            onClick={(e) => handleAction(e, onMessage)}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
           </button>
         )}

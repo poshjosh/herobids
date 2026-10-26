@@ -3,7 +3,6 @@ import { useIntl } from 'react-intl';
 import type { Agent } from '../../lib/api-client.js';
 import { EmptyState } from '../../lib/ui.js';
 import { AgentSummaryCard, type AgentHierarchyMeta } from './AgentSummaryCard.js';
-import { ChildAgentMessageForm } from './ChildAgentMessageForm.js';
 import { buildAgentTree, filterAgentTree, isExpandedByDefault, type AgentTreeNode } from './agent-tree.js';
 
 interface AgentHierarchyListProps {
@@ -43,7 +42,6 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
   const intl = useIntl();
   // Explicit expand/collapse choices. Nodes without one follow isExpandedByDefault.
   const [expansionOverrides, setExpansionOverrides] = useState<Record<string, boolean>>({});
-  const [openMessageAgentId, setOpenMessageAgentId] = useState<string | null>(null);
 
   const isSearching = searchQuery.trim() !== '';
   const roots = filterAgentTree(buildAgentTree(agents), searchQuery);
@@ -69,9 +67,6 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
       childCountLabel: hasChildren
         ? intl.formatMessage({ id: 'agents.tree.childCount' }, { count: node.childCount })
         : null,
-      onMessage: isChildAgent
-        ? () => setOpenMessageAgentId((current) => (current === id ? null : id))
-        : undefined,
     };
 
     return (
@@ -89,7 +84,6 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <AgentSummaryCard agent={node.agent} hierarchy={hierarchy} />
-          {openMessageAgentId === id && <ChildAgentMessageForm agentId={id} agentName={node.agent.name} />}
         </div>
         {expanded && (
           <div style={CHILDREN_STYLE}>
