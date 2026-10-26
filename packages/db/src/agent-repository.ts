@@ -315,6 +315,71 @@ export async function setChatAddress(
 }
 
 /**
+ * True when an active chat_addresses row of any scope binds this address to a user other than `userId`.
+ * Agent-level rows count, unlike the user-level inbound lookup, so a chat is never shared across accounts.
+ */
+export async function isChatAddressBoundToOtherUser(
+  executor: Pick<Database, 'select'>,
+  provider: ChatProvider,
+  address: string,
+  userId: string,
+): Promise<boolean> {
+  const rows = await executor.select({ userId: chatAddresses.userId })
+    .from(chatAddresses)
+    .where(and(
+      eq(chatAddresses.provider, provider),
+      eq(chatAddresses.address, normalizeChatAddress(provider, address)),
+      eq(chatAddresses.status, 'active'),
+      ne(chatAddresses.userId, userId),
+    ))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * Takes the transaction-scoped advisory lock for one chat address, so writers on the same address queue behind each
+ * other until the transaction commits or rolls back.
+ */
+export async function lockChatAddress(
+  executor: Pick<Database, 'execute'>,
+  provider: ChatProvider,
+  address: string,
+): Promise<void> {
+  const key = `${provider}:${normalizeChatAddress(provider, address)}`;
+  await executor.execute(sql`SELECT pg_advisory_xact_lock(75, hashtext(${key}))`);
+}
+
+/**
+ * Locks the address, then reports whether another user owns it. Run it inside the write transaction: the lock holds
+ * until commit, so two users cannot both pass the check for the same address.
+ */
+export async function isChatAddressClaimedByOtherUser(
+  executor: Pick<Database, 'execute' | 'select'>,
+  provider: ChatProvider,
+  address: string,
+  userId: string,
+): Promise<boolean> {
+  await lockChatAddress(executor, provider, address);
+  return isChatAddressBoundToOtherUser(executor, provider, address, userId);
+}
+
+/**
+ * Lifts the platform-wide suppression for one address. Call it only on an explicit user action that
+ * re-consents to the address, such as a valid link token.
+ */
+export async function clearChatSuppression(
+  executor: Pick<Database, 'delete'>,
+  provider: ChatProvider,
+  address: string,
+): Promise<void> {
+  await executor.delete(chatSuppressions)
+    .where(and(
+      eq(chatSuppressions.provider, provider),
+      eq(chatSuppressions.address, normalizeChatAddress(provider, address)),
+    ));
+}
+
+/**
  * Revokes the scope's active address: deletes the row and writes the platform-wide suppression
  * row for that address. Run it in one transaction. Returns the revoked address, or null when the
  * scope had no active row (nothing is written then).

@@ -242,9 +242,12 @@ function buildDb(options: {
   };
 
   const db: any = {
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockImplementation((table: unknown) => makeSelectChain(rowsForTable(table))),
-    }),
+    select: vi.fn().mockImplementation((fields?: Record<string, unknown>) => ({
+      from: vi.fn().mockImplementation((table: unknown) => makeSelectChain(
+        // The telegram ownership lookup selects only userId. The fake answers "no other owner"; listing reads keep the seeded rows.
+        table === chatAddresses && fields && 'userId' in fields ? [] : rowsForTable(table),
+      )),
+    })),
     update: vi.fn().mockImplementation((table: unknown) => ({
       set: vi.fn().mockImplementation((values: Record<string, unknown>) => {
         updateSets.push(values);

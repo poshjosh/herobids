@@ -20,6 +20,8 @@ export interface ChatOutboundBody {
 export interface InboundChatMessage {
   provider: ChatProvider;
   from: ChatAddress;
+  /** Provider chat kind, for example "private", "group" or "supergroup". Absent when the provider does not send it. */
+  chatType?: string;
   text?: string;
   caption?: string;
   document?: { id: string; filename?: string; mimeType?: string; size?: number };

@@ -6,8 +6,9 @@ import { requireDirectChildOfActingAgent, requireUserCaller } from '../plugins/a
 import { consumeTokenBucketToken } from '../services/token-bucket.js';
 import { eq, and, asc, isNull } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, chatAddresses, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, syncAgentSkillAssignmentsInTx, users } from '@herobids/db';
+import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, chatAddresses, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, setChatAddress, syncAgentSkillAssignmentsInTx, isChatAddressClaimedByOtherUser, clearChatSuppression, users } from '@herobids/db';
 import { childAllowanceForNewAssignment } from '../agents/child-allowance-assignment.js';
+import { consumeTelegramLinkToken } from '../agents/telegram-link-token.js';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import type { InboundChatMessage } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
@@ -829,13 +830,67 @@ export async function telegramWebhookHandler(
     return rows[0] ?? null;
   }
 
+  /**
+   * Checks ownership and writes the binding in one transaction. The shared chat-address lock serialises concurrent
+   * link attempts, and every telegram writer takes the same lock (see applyChatAddresses).
+   */
+  async function bindTelegramChat(chatId: string, userId: string): Promise<'connected' | 'bound_to_other_user'> {
+    return db.transaction(async (tx) => {
+      if (await isChatAddressClaimedByOtherUser(tx, 'telegram', chatId, userId)) return 'bound_to_other_user';
+      // A valid link is explicit consent, so it lifts a revoked (disconnected) suppression for this chat.
+      await clearChatSuppression(tx, 'telegram', chatId);
+      // Re-linking replaces the user's address. Linking the same chat again writes the same row, so it is a no-op.
+      await setChatAddress(tx, { userId, agentId: null }, 'telegram', chatId);
+      return 'connected';
+    });
+  }
+
+  /**
+   * Handles `/start link_<token>`. It runs before the suppression check. A suppressed chat stays silent unless
+   * the token is valid, because an invalid link must not produce replies on an opted-out chat.
+   */
+  async function linkTelegramChat(chatId: string, message: InboundChatMessage, token: string): Promise<void> {
+    const suppressed = await agentRepo.isChatAddressSuppressed(message.from.provider, chatId);
+    const reply = async (text: string) => {
+      if (!suppressed) await sendTelegramText(chatId, text);
+    };
+
+    // Link tokens are only redeemed from a private chat, so a token shared into a group cannot bind the group.
+    // The check runs before the token is consumed, so the user can retry from a private chat.
+    if (message.chatType !== 'private') {
+      await reply('Connect Telegram from a private chat with the bot.');
+      return;
+    }
+
+    const userId = await consumeTelegramLinkToken(redisClient, token);
+    if (!userId) {
+      await reply('This link has expired. Generate a new one in the web app.');
+      return;
+    }
+    // The token is spent before the ownership check, so a rejected link cannot be retried.
+    if (await bindTelegramChat(chatId, userId) === 'bound_to_other_user') {
+      await reply('This Telegram account is already connected to another OpenAIdom account.');
+      return;
+    }
+    await sendTelegramText(chatId, 'Connected ✅');
+  }
+
   async function processWebhookUpdate(
     chatId: string,
     message: InboundChatMessage,
   ): Promise<void> {
+    // Matched before the suppression check and slash routing. The reserved link_ payload never reaches the
+    // /start <agent> lifecycle command, and a valid link can reconnect a suppressed chat.
+    const linkStart = /^\/start link_([A-Za-z0-9_-]+)$/.exec(message.text?.trim() ?? '');
+    if (linkStart) {
+      await linkTelegramChat(chatId, message, linkStart[1]!);
+      return;
+    }
+
     // A suppressed address gets no reply at all, not even help or "bind first": an opt-out blocks inbound as well as
     // outbound. A lookup error propagates, so the update is dropped unprocessed (fail closed, I4).
     if (await agentRepo.isChatAddressSuppressed(message.from.provider, chatId)) return;
+
     const boundUser = await findUserByTelegramChatId(chatId);
 
     const userId = boundUser?.userId;

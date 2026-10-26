@@ -297,6 +297,9 @@ app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOStrin
 
 // Telegram webhook — public (unauthenticated), token-validated
 const telegramChat = resolveTelegramChatConfig(appConfig);
+if (!telegramChat.botUsername) {
+  app.log.warn('messaging.chat.telegram.botUsername is not set: POST /auth/me/telegram/link returns 503 until TELEGRAM_BOT_USERNAME is configured');
+}
 // One conversation service for the web chat and the Telegram inbound path.
 const conversationDeps = createConversationRouteDeps(db, appConfig.messaging.conversations);
 await telegramWebhookHandler(
@@ -316,7 +319,7 @@ await telegramWebhookHandler(
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
 const authMailer = createAuthMailer(appConfig.alerts, appConfig.alerts.email.brandImageUrl);
-await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans, authMailer, appConfig.messaging.notifications.email.userDefaultEnabled);
+await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans, authMailer, appConfig.messaging.notifications.email.userDefaultEnabled, telegramChat.botUsername);
 
 // ── Capability routes (primary public surface) ────────────────────────────
 // The AGENT trading-evidence endpoints (state/activity/outcomes/positions)

@@ -38,6 +38,11 @@ function makeInsertTracker(): InsertTracker {
  */
 function buildMockTx(tracker: InsertTracker): Database {
   return {
+    // Telegram writes take the chat lock, then look up an owner. No other user owns the chat here.
+    execute: vi.fn().mockResolvedValue([]),
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }),
+    }),
     insert: vi.fn().mockImplementation((table: unknown) => ({
       values: vi.fn().mockImplementation((v: Record<string, unknown> | Record<string, unknown>[]) => {
         if (table === chatAddresses) {

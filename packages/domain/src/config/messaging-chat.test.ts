@@ -45,6 +45,49 @@ describe('resolveTelegramChatConfig', () => {
     });
   });
 
+  it('reads the bot username and strips a leading @', () => {
+    const config = parseWith({
+      messaging: { chat: { telegram: { botUsername: '@OpenAIdomBot' } } },
+    });
+
+    expect(resolveTelegramChatConfig(config).botUsername).toBe('OpenAIdomBot');
+  });
+
+  it('leaves the bot username undefined when it is blank', () => {
+    const config = parseWith({
+      messaging: { chat: { telegram: { botUsername: '   ' } } },
+    });
+
+    expect(resolveTelegramChatConfig(config).botUsername).toBeUndefined();
+  });
+
+  it.each([
+    ['OpenAIdomBot', 'OpenAIdomBot'],
+    ['@tiny_bot', 'tiny_bot'],
+    ['lowercase_bot', 'lowercase_bot'],
+    ['SHOUTY_BOT', 'SHOUTY_BOT'],
+    ['a_bot', 'a_bot'],
+    ['a'.repeat(29) + 'bot', 'a'.repeat(29) + 'bot'],
+  ])('accepts a valid bot username %s', (raw, expected) => {
+    const config = parseWith({ messaging: { chat: { telegram: { botUsername: raw } } } });
+
+    expect(resolveTelegramChatConfig(config).botUsername).toBe(expected);
+  });
+
+  it.each([
+    'bot',
+    'OpenAIdomChat',
+    'my-bot',
+    'OpenAIdom Bot',
+    'https://t.me/OpenAIdomBot',
+    'a'.repeat(30) + 'bot',
+    '@@OpenAIdomBot',
+  ])('rejects the invalid bot username %j', (raw) => {
+    const config = parseWith({ messaging: { chat: { telegram: { botUsername: raw } } } });
+
+    expect(resolveTelegramChatConfig(config).botUsername).toBeUndefined();
+  });
+
   it('ignores a blank bot token and no longer falls back to alerts.telegram', () => {
     const config = parseWith({
       alerts: { telegram: { botToken: 'legacy-token', webhookSecret: 'legacy-secret' } },

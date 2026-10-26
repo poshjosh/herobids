@@ -309,14 +309,21 @@ describe('auth routes', () => {
     /** Fake db for PATCH /auth/me with chatAddresses: the profile update, then a transaction that writes addresses. */
     function makeChatPatchDb(updatedUser: Record<string, unknown>, chatRows: unknown[] = []) {
       const updateWhere = vi.fn().mockResolvedValue(undefined);
+      const update = vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: updateWhere }) });
       const insertValues = vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) });
       const deleteWhere = vi.fn().mockResolvedValue(undefined);
       const tx = {
+        update,
         insert: vi.fn().mockReturnValue({ values: insertValues }),
         delete: vi.fn().mockReturnValue({ where: deleteWhere }),
+        // Advisory lock, then the ownership lookup: no other user owns the address.
+        execute: vi.fn().mockResolvedValue([]),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }),
+        }),
       };
       const db = {
-        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: updateWhere }) }),
+        update,
         transaction: vi.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
         select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: meWhere([updatedUser], chatRows) }) }),
       };

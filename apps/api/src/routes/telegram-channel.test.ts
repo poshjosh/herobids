@@ -73,6 +73,14 @@ describe('Telegram inbound channel', () => {
     });
   });
 
+  it('exposes the chat type so the link branch can require a private chat', () => {
+    const privateChat = adapter.parse({ headers, body: { message: { chat: { id: 1, type: 'private' }, text: 'hi' } } });
+    const groupChat = adapter.parse({ headers, body: { message: { chat: { id: -1, type: 'group' }, text: 'hi' } } });
+
+    expect(privateChat.ok && privateChat.data[0]).toMatchObject({ chatType: 'private' });
+    expect(groupChat.ok && groupChat.data[0]).toMatchObject({ chatType: 'group' });
+  });
+
   it('preserves slash, reply, target, and plain-text precedence', () => {
     const router = new ChatInboundRouter();
     const parsed = adapter.parse({ headers, body: {

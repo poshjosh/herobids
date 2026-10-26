@@ -48,6 +48,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   TELEGRAM_BOT_TOKEN: { path: 'messaging.chat.telegram.botToken', type: 'string' },
   TELEGRAM_WEBHOOK_SECRET: { path: 'messaging.chat.telegram.webhookSecret', type: 'string' },
   TELEGRAM_WEBHOOK_URL: { path: 'messaging.chat.telegram.webhookUrl', type: 'string' },
+  TELEGRAM_BOT_USERNAME: { path: 'messaging.chat.telegram.botUsername', type: 'string' },
   // Web Push (081 D1): the one secret in messaging.notifications, env-only.
   // Email — outbound provider (SES)
   EMAIL_PROVIDER: { path: 'alerts.email.provider', type: 'string' },

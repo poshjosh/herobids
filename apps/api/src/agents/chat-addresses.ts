@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CHAT_PROVIDERS } from '@herobids/domain';
 import {
+  isChatAddressClaimedByOtherUser,
   listChatAddressesForOutput,
   setChatAddress,
   type ChatAddressOutput,
@@ -22,13 +23,34 @@ export const ChatAddressesInputSchema = z.array(ChatAddressInputSchema)
 
 export type ChatAddressesInput = z.infer<typeof ChatAddressesInputSchema>;
 
-/** Applies each entry to one scope. Run it inside the write transaction when one exists. */
+/** A Telegram chat is already bound to another user's account. The write transaction rolls back. */
+export class ChatAddressInUseError extends Error {
+  readonly code = 'chat_address.in_use';
+
+  constructor() {
+    super('This Telegram account is already connected to another OpenAIdom account.');
+    this.name = 'ChatAddressInUseError';
+  }
+}
+
+/**
+ * Applies each entry to one scope. Run it inside the write transaction. A telegram address owned by another user
+ * throws ChatAddressInUseError before anything is written for that entry; the transaction then rolls back.
+ */
 export async function applyChatAddresses(
-  executor: Parameters<typeof setChatAddress>[0],
+  executor: Pick<Database, 'insert' | 'delete' | 'select' | 'execute'>,
   scope: ChatAddressScope,
   entries: ChatAddressesInput,
 ): Promise<void> {
   for (const entry of entries) {
+    if (
+      entry.provider === 'telegram'
+      && entry.address !== null
+      && entry.address.trim() !== ''
+      && await isChatAddressClaimedByOtherUser(executor, 'telegram', entry.address, scope.userId)
+    ) {
+      throw new ChatAddressInUseError();
+    }
     await setChatAddress(executor, scope, entry.provider, entry.address);
   }
 }

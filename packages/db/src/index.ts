@@ -34,7 +34,7 @@ export { BillingRepository } from './billing-repository.js';
 export type { UpsertSubscription, BillingCustomerRow, BillingSubscriptionRow } from './billing-repository.js';
 export { UsageBillingRepository } from './usage-billing-repository.js';
 export type { InsertUsageEvent, InsertLedgerEntry, RecordUsageBatchInput, UsageSummaryFilters, UsageEventFilters, SpendCaps, OpenTopUpCreditInput, AccountStatus, CanSpendNowResult, BillingAccountRow, RateCardSeedItem } from './usage-billing-repository.js';
-export { AgentRepository, setChatAddress, revokeChatAddress, normalizeChatAddress, listChatAddressesForOutput } from './agent-repository.js';
+export { AgentRepository, setChatAddress, revokeChatAddress, normalizeChatAddress, listChatAddressesForOutput, isChatAddressBoundToOtherUser, isChatAddressClaimedByOtherUser, lockChatAddress, clearChatSuppression } from './agent-repository.js';
 export type { InsertAgent, UpdateAgent, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, LaunchableStartingSession, InsertAgentMessage, InsertAgentArtifact, ChatAddressScope, ChatAddressOutput } from './agent-repository.js';
 export { AGENT_API_KEY_PREFIX, generateAgentApiKey, hashAgentApiKey, isAgentApiKey } from './agent-api-key.js';
 export type { GeneratedAgentApiKey } from './agent-api-key.js';

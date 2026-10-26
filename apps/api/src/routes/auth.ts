@@ -8,7 +8,8 @@ import type { Database } from '@herobids/db';
 import { users, oauthIdentities, localIdentities, sessions, userPlans, agents } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
-import { ChatAddressesInputSchema, applyChatAddresses, listUserChatAddresses, type ChatAddressesInput } from '../agents/chat-addresses.js';
+import { ChatAddressInUseError, ChatAddressesInputSchema, applyChatAddresses, listUserChatAddresses, type ChatAddressesInput } from '../agents/chat-addresses.js';
+import { createTelegramLinkToken } from '../agents/telegram-link-token.js';
 import { errorPayload } from '../error-payload.js';
 import { resolvePlanEntitlements } from '../plan-guards.js';
 import { resolveNotificationPreferences, type StoredNotificationPreferences } from './user-config-helpers.js';
@@ -173,6 +174,7 @@ export async function authRoutes(
   plansConfig?: PlansConfig,
   authMailer?: AuthMailer,
   emailFallbackUserDefaultEnabled = false,
+  telegramBotUsername?: string,
 ) {
   // The child-agent ceiling is resolved here (explicit plan value, else maxAgents - 1) so the web
   // never re-derives it from maxAgents.
@@ -997,10 +999,22 @@ export async function authRoutes(
       }
     }
 
-    await db.update(users).set(updates).where(eq(users.id, userId));
-    if (chatAddressesUpdate !== undefined) {
+    if (chatAddressesUpdate === undefined) {
+      await db.update(users).set(updates).where(eq(users.id, userId));
+    } else {
+      // One transaction: a rejected chat address also rolls back the profile fields in the same request.
       const entries = chatAddressesUpdate;
-      await db.transaction((tx) => applyChatAddresses(tx, { userId, agentId: null }, entries));
+      try {
+        await db.transaction(async (tx) => {
+          await tx.update(users).set(updates).where(eq(users.id, userId));
+          await applyChatAddresses(tx, { userId, agentId: null }, entries);
+        });
+      } catch (error) {
+        if (error instanceof ChatAddressInUseError) {
+          return reply.status(409).send(errorPayload(error.code, error.message));
+        }
+        throw error;
+      }
     }
 
     const [updated] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -1020,6 +1034,33 @@ export async function authRoutes(
       emailFallbackEnabled: isEmailFallbackAllowed(updated.notificationPreferences, emailFallbackUserDefaultEnabled),
       peerMessagingPaused: updated.peerMessagingPaused,
       createdAt: updated.createdAt.toISOString(),
+    });
+  });
+
+  /**
+   * POST /auth/me/telegram/link — Issues a single-use deep link that connects the user's Telegram chat when opened in Telegram.
+   */
+  app.post('/auth/me/telegram/link', async (request, reply) => {
+    const userId = request.userId;
+    if (!userId) {
+      return reply.status(401).send(errorPayload('auth.unauthenticated', 'Not authenticated'));
+    }
+    if (!telegramBotUsername) {
+      return reply.status(503).send(
+        errorPayload('auth.telegram_link.bot_not_configured', 'Telegram connect is not configured'),
+      );
+    }
+
+    const created = await createTelegramLinkToken(redis, userId);
+    if (!created.ok) {
+      return reply.status(429).send(errorPayload(created.error.code, created.error.message));
+    }
+    const { token, expiresAt } = created.data;
+    // The URL carries a live bearer token, so it must not be cached by browsers or proxies.
+    reply.header('Cache-Control', 'no-store');
+    return reply.send({
+      url: `https://t.me/${telegramBotUsername}?start=link_${token}`,
+      expiresAt: expiresAt.toISOString(),
     });
   });
 

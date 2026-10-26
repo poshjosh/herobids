@@ -615,6 +615,8 @@ export const MessagingChatTelegramSchema = z.object({
   botToken: z.string().default(''),
   /** Shared secret Telegram sends with webhook requests. Override: TELEGRAM_WEBHOOK_SECRET */
   webhookSecret: z.string().default(''),
+  /** Bot username (without the @) that builds the t.me deep link for account connect. Override: TELEGRAM_BOT_USERNAME */
+  botUsername: z.string().default(''),
   /** Public HTTPS webhook endpoint. Override: TELEGRAM_WEBHOOK_URL */
   webhookUrl: z.string().url().optional(),
   /** Interval between typing-indicator refreshes while an agent works on a user message (ms). Telegram's typing status lasts about 5s. */

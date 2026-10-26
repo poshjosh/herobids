@@ -4,7 +4,10 @@ import { err, ok, type ChatInboundAdapter, type ChatWebhookRequest, type Inbound
 
 const TelegramWebhookUpdateSchema = z.object({
   message: z.object({
-    chat: z.object({ id: z.union([z.string(), z.number().int()]).transform(String) }),
+    chat: z.object({
+      id: z.union([z.string(), z.number().int()]).transform(String),
+      type: z.string().optional(),
+    }),
     message_id: z.number().int().optional(),
     text: z.string().optional(),
     caption: z.string().optional(),
@@ -47,6 +50,7 @@ export class TelegramInboundChannel implements ChatInboundAdapter {
     const inbound: InboundChatMessage = {
       provider: 'telegram',
       from: { provider: 'telegram', address: message.chat.id as InboundChatMessage['from']['address'] },
+      ...(message.chat.type !== undefined ? { chatType: message.chat.type } : {}),
       ...(message.text !== undefined ? { text: message.text } : {}),
       ...(message.caption !== undefined ? { caption: message.caption } : {}),
       ...(message.message_id !== undefined ? { providerMessageId: String(message.message_id) } : {}),
