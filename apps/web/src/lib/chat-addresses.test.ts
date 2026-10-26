@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatAddressFor, chatAddressInput } from './chat-addresses.js';
+import { chatAddressFor } from './chat-addresses.js';
 
 describe('chatAddressFor', () => {
   it('returns the active address of the requested provider', () => {
@@ -13,15 +13,5 @@ describe('chatAddressFor', () => {
     expect(chatAddressFor(undefined, 'telegram')).toBe('');
     expect(chatAddressFor([], 'telegram')).toBe('');
     expect(chatAddressFor([{ provider: 'telegram', address: '1', scope: 'user', status: 'revoked' }], 'telegram')).toBe('');
-  });
-});
-
-describe('chatAddressInput', () => {
-  it('trims the address', () => {
-    expect(chatAddressInput('telegram', '  123  ')).toEqual({ provider: 'telegram', address: '123' });
-  });
-
-  it('sends null for a blank address so the server clears it', () => {
-    expect(chatAddressInput('telegram', '   ')).toEqual({ provider: 'telegram', address: null });
   });
 });

@@ -223,6 +223,12 @@ export interface ChatAddressInput {
   address: string | null;
 }
 
+/** Response of POST /auth/me/telegram/link. The url opens the bot with a single-use start payload. */
+export interface TelegramLinkResponse {
+  url: string;
+  expiresAt: string;
+}
+
 export interface MeResponse {
   id: string;
   username: string;
@@ -302,7 +308,8 @@ export const auth = {
       method: 'POST',
       body: JSON.stringify({ email, ...(username ? { username } : {}), ...(next ? { next } : {}) }),
     }),
-  me: () => request<MeResponse>('/auth/me'),
+  me: (signal?: AbortSignal) => request<MeResponse>('/auth/me', signal ? { signal } : undefined),
+  linkTelegram: () => request<TelegramLinkResponse>('/auth/me/telegram/link', { method: 'POST' }),
   updateMe: (data: { preferredLocale?: string | null; peerMessagingPaused?: boolean; chatAddresses?: ChatAddressInput[]; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } }; notifications?: { emailFallback?: { enabled: boolean }; push?: { enabled: boolean } } } | null }) =>
     request<MeResponse>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
@@ -1285,7 +1292,6 @@ export const agents = {
     costPreset?: 'minimal' | 'standard' | 'premium' | 'custom' | null;
     dailySpendBudgetUsd?: number | null;
     executionMode?: string | null;
-    chatAddresses?: ChatAddressInput[];
     risk?: Record<string, unknown> | null;
     executionDefaults?: Record<string, unknown> | null;
     tickIntervalMs?: number | null;
@@ -1316,7 +1322,6 @@ export const agents = {
     heavyModel?: string | null;
     costPreset?: 'minimal' | 'standard' | 'premium' | 'custom' | null;
     dailySpendBudgetUsd?: number | null;
-    chatAddresses?: ChatAddressInput[];
     executionMode?: string | null;
     risk?: Record<string, unknown> | null;
     executionDefaults?: Record<string, unknown> | null;

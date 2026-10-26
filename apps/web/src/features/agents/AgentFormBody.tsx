@@ -160,7 +160,7 @@ const errorStyle: React.CSSProperties = {
 
 export type AgentIdentityFieldsProps = Pick<AgentFormBodyProps, 'value' | 'onChange' | 'formErrors' | 'onClearFieldError' | 'onBlurField'>;
 
-/** Name and Telegram chat ID, rendered at the top of the edit form. */
+/** Agent name, rendered at the top of the create and edit forms. */
 export function AgentIdentityFields(props: AgentIdentityFieldsProps) {
   const intl = useIntl();
   return (
@@ -186,22 +186,6 @@ export function AgentIdentityFields(props: AgentIdentityFieldsProps) {
         {props.formErrors.name && (
           <div style={errorStyle}>{props.formErrors.name}</div>
         )}
-      </div>
-
-      {/* Telegram Chat ID */}
-      <div style={fieldGap}>
-        <FieldLabel>
-          {intl.formatMessage({ id: 'agents.create.telegramChatId' })}
-        </FieldLabel>
-        <input
-          style={inputStyle}
-          value={props.value.telegramAddress}
-          onChange={(e) => props.onChange({ telegramAddress: e.target.value })}
-          placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
-        />
-        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
-          {intl.formatMessage({ id: 'agents.telegramChatId.help' })}
-        </p>
       </div>
     </>
   );

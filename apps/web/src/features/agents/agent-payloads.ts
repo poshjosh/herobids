@@ -1,5 +1,4 @@
-import type { ChatAddressInput, ProviderSetupResult } from '../../lib/api-client.js';
-import { chatAddressInput } from '../../lib/chat-addresses.js';
+import type { ProviderSetupResult } from '../../lib/api-client.js';
 import type { CapabilityMode, HybridMode } from './CapabilitySelector.js';
 import type { TechnicalConfig } from './technical-config-helpers.js';
 import type { RuntimePolicyOverrides } from './style-mapping.js';
@@ -110,7 +109,6 @@ export interface CreateAgentIntentPayloadInput {
   };
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
-  telegramAddress: string;
   emailDelivery?: 'inherit' | 'allow' | 'disable';
   tickIntervalMins: string;
   capital: string;
@@ -150,7 +148,6 @@ export interface UpdateAgentPayloadInput {
   executionMode: 'test' | 'live' | 'paper' | 'shadow' | '';
   hasTradingCapability: boolean;
   connectionIds?: string[];
-  telegramAddress: string;
   emailDelivery: 'inherit' | 'allow' | 'disable';
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
@@ -199,7 +196,6 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   heavyModel?: string | null;
   costPreset?: 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd?: number;
-  telegramAddress?: string;
   risk?: Record<string, unknown>;
   executionDefaults?: Record<string, unknown>;
   tickIntervalMs?: number;
@@ -256,7 +252,6 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     } : {}),
     ...(input.costPreset ? { costPreset: input.costPreset } : {}),
     ...(input.dailySpendBudgetUsd ? { dailySpendBudgetUsd: parseFloat(input.dailySpendBudgetUsd) } : {}),
-    ...(input.telegramAddress.trim() ? { chatAddresses: [chatAddressInput('telegram', input.telegramAddress)] } : {}),
     ...(emailDeliveryPolicy !== undefined ? { notificationPolicy: emailDeliveryPolicy } : {}),
     ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
@@ -286,7 +281,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   prompt: string;
   skillIds: string[];
   connectionIds?: string[];
-  chatAddresses: ChatAddressInput[];
   costPreset: 'minimal' | 'standard' | 'premium' | 'custom' | null;
   dailySpendBudgetUsd: number | null;
   risk?: Record<string, unknown> | null;
@@ -358,7 +352,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     ...(includeIntelligence ? { prompt: input.prompt.trim() } : { prompt: '' }),
     skillIds: includeIntelligence ? [...input.skillIds] : [],
     ...(input.connectionIds !== undefined ? { connectionIds: input.connectionIds } : {}),
-    chatAddresses: [chatAddressInput('telegram', input.telegramAddress)],
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
     risk,

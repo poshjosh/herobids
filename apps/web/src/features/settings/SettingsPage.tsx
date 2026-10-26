@@ -7,10 +7,12 @@ import { PageShell, PageHeader, Card, Button, FieldLabel, ErrorBanner } from '..
 import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
-import { chatAddressFor, chatAddressInput } from '../../lib/chat-addresses.js';
+import { chatAddressFor } from '../../lib/chat-addresses.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from './ModelSelectionFields.js';
 import { PushOptIn } from '../notifications/PushOptIn.js';
 import { EmailFallbackToggle } from '../notifications/EmailFallbackToggle.js';
+import { ConnectTelegram } from '../notifications/ConnectTelegram.js';
+import { telegramDisconnectBody } from '../notifications/telegram-connect.js';
 import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, type AiModelSelectionState } from './ai-model-settings.js';
 
 const LOCALE_DISPLAY_NAMES: Record<SupportedLocale, string> = {
@@ -50,9 +52,7 @@ export function SettingsPage() {
     queryFn: () => aiApi.settings(),
   });
 
-  const [telegramAddress, setTelegramAddress] = useState<string>('');
-  const [saved, setSaved] = useState(false);
-  const savedTelegramAddress = chatAddressFor(meQuery.data?.chatAddresses, 'telegram');
+  const telegramLinked = chatAddressFor(meQuery.data?.chatAddresses, 'telegram') !== '';
   const savedEmailEnabled = meQuery.data?.notificationPreferences?.sendMessage?.email?.enabled ?? true;
   const [emailEnabled, setEmailEnabled] = useState<boolean>(true);
   const [emailDeliverySaved, setEmailDeliverySaved] = useState(false);
@@ -60,12 +60,6 @@ export function SettingsPage() {
   const [modelTouched, setModelTouched] = useState(false);
   const [modelSaved, setModelSaved] = useState(false);
   const savedModelSettings = aiSettingsQuery.data?.aiModelConfig ?? null;
-
-  // Only react to changes in the saved Telegram value. Locale-only profile
-  // updates also refresh the ['me'] query and should not overwrite the input.
-  useEffect(() => {
-    setTelegramAddress(savedTelegramAddress);
-  }, [savedTelegramAddress]);
 
   useEffect(() => {
     setEmailEnabled(savedEmailEnabled);
@@ -95,12 +89,10 @@ export function SettingsPage() {
     setModelSettings({ ...modelSettings, ...defaultSelection });
   }, [availableModelsQuery.data?.providers, aiSettingsQuery.isSuccess, modelSettings.provider, modelTouched, savedModelSettings]);
 
-  const telegramMutation = useMutation({
-    mutationFn: (chatId: string) => authApi.updateMe({ chatAddresses: [chatAddressInput('telegram', chatId)] }),
+  const telegramDisconnectMutation = useMutation({
+    mutationFn: () => authApi.updateMe(telegramDisconnectBody()),
     onSuccess: (updated) => {
       qc.setQueryData(['me'], updated);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
     },
   });
 
@@ -359,53 +351,22 @@ export function SettingsPage() {
             {intl.formatMessage({ id: 'settings.telegram.description' })}
           </p>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              telegramMutation.mutate(telegramAddress);
-            }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
-          >
-            {telegramMutation.isError && (
-              <ErrorBanner message={localizeApiError(intl, telegramMutation.error, 'common.errorTitle')} />
-            )}
-            {saved && (
-              <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--color-success-subtle)', color: 'var(--color-success)', fontSize: '0.8125rem' }}>
-                {intl.formatMessage({ id: 'settings.telegram.saved' })}
-              </div>
-            )}
-
-            <div>
-              <FieldLabel>{intl.formatMessage({ id: 'settings.telegram.chatId.label' })}</FieldLabel>
-              <input
-                style={inputStyle}
-                value={telegramAddress}
-                onChange={(e) => setTelegramAddress(e.target.value)}
-                placeholder={intl.formatMessage({ id: 'settings.telegram.chatId.placeholder' })}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Button variant="primary" type="submit" disabled={telegramMutation.isPending || telegramAddress.trim() === savedTelegramAddress}>
-                {telegramMutation.isPending
-                  ? intl.formatMessage({ id: 'common.pleaseWait' })
-                  : intl.formatMessage({ id: 'settings.save' })}
+          {telegramDisconnectMutation.isError && (
+            <ErrorBanner message={localizeApiError(intl, telegramDisconnectMutation.error, 'common.errorTitle')} />
+          )}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <ConnectTelegram />
+            {telegramLinked && (
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => telegramDisconnectMutation.mutate()}
+                disabled={telegramDisconnectMutation.isPending}
+              >
+                {intl.formatMessage({ id: 'settings.telegram.disconnect' })}
               </Button>
-              {telegramAddress && (
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() => {
-                    setTelegramAddress('');
-                    telegramMutation.mutate('');
-                  }}
-                  disabled={telegramMutation.isPending}
-                >
-                  {intl.formatMessage({ id: 'common.remove' })}
-                </Button>
-              )}
-            </div>
-          </form>
+            )}
+          </div>
         </Card>
 
         <Card>

@@ -51,24 +51,10 @@ describe('agentToFormState — maxDrawdownPct hydration', () => {
   });
 });
 
-describe('agentToFormState — chatAddresses hydration', () => {
-  it('reads the agent override from chatAddresses', () => {
+describe('agentToFormState — no per-agent Telegram field', () => {
+  it('does not expose a telegramAddress field', () => {
     const agent = makeAgent({ chatAddresses: [{ provider: 'telegram', address: '777001', scope: 'agent', status: 'active' }] });
-    expect(agentToFormState(agent).telegramAddress).toBe('777001');
-  });
-
-  it('is blank when the agent has no chat address', () => {
-    expect(agentToFormState(makeAgent({ chatAddresses: [] })).telegramAddress).toBe('');
-  });
-
-  it('ignores addresses of other providers and inactive rows', () => {
-    const agent = makeAgent({
-      chatAddresses: [
-        { provider: 'sms', address: '+15555550100', scope: 'agent', status: 'active' },
-        { provider: 'telegram', address: '111', scope: 'agent', status: 'revoked' },
-      ],
-    });
-    expect(agentToFormState(agent).telegramAddress).toBe('');
+    expect(agentToFormState(agent)).not.toHaveProperty('telegramAddress');
   });
 });
 
@@ -219,7 +205,6 @@ const BASE_INTENT = {
   connectionIds: [],
   executionMode: 'test' as const,
   capital: '',
-  telegramAddress: '',
   emailDelivery: 'inherit' as const,
   costPreset: '' as const,
   dailySpendBudgetUsd: '',

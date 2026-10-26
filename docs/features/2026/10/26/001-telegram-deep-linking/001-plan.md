@@ -78,7 +78,7 @@ About 1.5–2.5 days.
 
 ## Task Status
 - [x] DONE — Phase 1: Backend (token module, link route, webhook branch, config) plus tests
-- [ ] PENDING — Phase 2: Web component, Settings and Create flow, i18n
+- [x] DONE — Phase 2: Web component, Settings and Create flow, i18n
 - [ ] PENDING — Phase 3: Per-agent Telegram cleanup, docs and UAT
 
 ## Outstanding Issues
@@ -94,3 +94,15 @@ About 1.5–2.5 days.
 - **LOW:** The `link_` payload regex has no explicit length cap. Telegram enforces 64.
 - **LOW:** `revokeChatAddress` does not take the lock. A concurrent link may get a spurious 409.
 - **LOW:** Rate-limit and token TTL values are constants, not config.
+
+### Phase 2 (Web) — review findings deferred
+- **MEDIUM:** A single failed `/auth/me` during polling ends the flow in the error state, even if the user already tapped Start in Telegram. Retry until the deadline, respecting the abort signal.
+- **MEDIUM:** `handleConnect` has no state guard. The pre-close is safe only because the Connect button is hidden while connecting. Add an early return for connecting, fallback and a pending link request.
+- **MEDIUM:** No DOM test covers a rejected `auth.linkTelegram` (rate_limited and bot_not_configured) at component level.
+- **LOW:** Focus is not asserted for `connecting`, and there is no DOM test for `expired`.
+- **LOW:** `SettingsPage.disconnect.dom.test.tsx` uses `?? ''` fallbacks that hide missing keys.
+- **LOW:** `ConnectTelegram.dom.test.tsx` assumes the exact count of initial `/auth/me` calls. `window.open` and `auth.me` test doubles do not model real abort or tab behaviour.
+- **LOW:** `tabRef` is not cleared when the pre-opened tab is already closed. The catalog-consistency test string-matches API source.
+- **Dependencies added:** `jsdom@^26.1.0` (not 30.x, which needs Node 22.22+), `@testing-library/react@^16.3.3`, `@testing-library/dom@^10.4.2`, all devDependencies of `apps/web`.
+- **Translation:** Hindi and Arabic copy for the Telegram strings (including the new `popupBlocked`, `rate_limited` and `bot_not_configured`) are drafts and need native review.
+- **Visual test not yet run** for the Settings card and the Create-agent connect state.

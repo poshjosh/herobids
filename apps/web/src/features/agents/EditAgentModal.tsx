@@ -438,7 +438,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         executionMode: form.executionMode,
         hasTradingCapability,
         connectionIds: form.connectionIds,
-        telegramAddress: form.telegramAddress,
         emailDelivery: form.emailDelivery,
         costPreset: form.costPreset,
         dailySpendBudgetUsd: form.dailySpendBudgetUsd,
