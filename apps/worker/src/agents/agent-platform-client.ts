@@ -6,6 +6,7 @@ import type {
   AgentPlatformPort,
   ChildAgentCreated,
   ChildAgentStatus,
+  ChildAgentSummary,
   CreateChildAgentInput,
   PeerMessagingState,
   PeerMessagingStatePort,
@@ -39,9 +40,19 @@ const AllowanceResponseSchema = z.object({
   remainingChildAllowance: z.number().int().min(0),
 });
 
+const StartRefusalSchema = z.object({
+  code: z.string().min(1).max(100),
+  message: z.string().max(500),
+  at: z.string(),
+});
+
 const CreatedResponseSchema = z.object({
   id: z.string().min(1),
   depth: z.number().int().min(0),
+  status: z.string(),
+  duplicate: z.boolean(),
+  started: z.boolean(),
+  startError: z.object({ code: z.string().min(1).max(100), message: z.string().max(500) }).nullable(),
 });
 
 const ChildStatusResponseSchema = z.object({
@@ -51,8 +62,20 @@ const ChildStatusResponseSchema = z.object({
   depth: z.number().int().min(0),
   runtimeStatus: z.string().nullable(),
   childAgentLimit: z.number().int().min(0),
+  lastStartRefusal: StartRefusalSchema.nullable(),
 });
 
+const ChildrenResponseSchema = z.object({
+  children: z.array(z.object({
+    id: z.string().min(1),
+    name: z.string(),
+    status: z.string(),
+    depth: z.number().int().min(0),
+    childCount: z.number().int().min(0),
+    lastStartRefusal: StartRefusalSchema.nullable(),
+  })),
+});
+const DeletedResponseSchema = z.object({ deleted: z.literal(true), stopped: z.boolean() });
 const PeerMessagingStateResponseSchema = z.object({ paused: z.boolean() });
 const StatusResponseSchema = z.object({ status: z.string() });
 const DeliveredResponseSchema = z.object({ delivered: z.boolean() });
@@ -95,7 +118,7 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
   const agentPath = `/agents/${encodeURIComponent(agentId)}`;
 
   async function request<T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     path: string,
     schema: z.ZodType<T>,
     body?: Record<string, unknown>,
@@ -158,10 +181,16 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
 
     async createChildAgent(input: CreateChildAgentInput): Promise<Result<ChildAgentCreated, AgentPlatformError>> {
       // Only the four allowed fields are forwarded; the API refuses anything else.
-      const body: Record<string, unknown> = { name: input.name, prompt: input.prompt };
+      const body: Record<string, unknown> = { name: input.name, prompt: input.prompt, start: input.start };
       if (input.skillIds) body['skillIds'] = input.skillIds;
       if (input.connectionIds) body['connectionIds'] = input.connectionIds;
       return request('POST', '/agents', CreatedResponseSchema, body);
+    },
+
+    async listChildAgents(): Promise<Result<ChildAgentSummary[], AgentPlatformError>> {
+      const listed = await request('GET', `${agentPath}/children`, ChildrenResponseSchema);
+      if (!listed.ok) return listed;
+      return ok(listed.data.children);
     },
 
     async getChildStatus(childId: string): Promise<Result<ChildAgentStatus, AgentPlatformError>> {
@@ -179,6 +208,11 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
 
     async messageChildAgent(childId: string, message: string): Promise<Result<{ delivered: boolean }, AgentPlatformError>> {
       return request('POST', `/agents/${encodeURIComponent(childId)}/message`, DeliveredResponseSchema, { message });
+    },
+
+    async deleteChildAgent(childId: string, stopFirst: boolean): Promise<Result<{ deleted: true; stopped: boolean }, AgentPlatformError>> {
+      // Sent explicitly so the platform never has to guess the caller's intent.
+      return request('DELETE', `${agentPath}/children/${encodeURIComponent(childId)}?stopFirst=${stopFirst ? 'true' : 'false'}`, DeletedResponseSchema);
     },
   };
 }

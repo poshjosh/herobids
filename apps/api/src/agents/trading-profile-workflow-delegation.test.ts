@@ -12,7 +12,7 @@ const dbTradingProfilesRoot = join(dbSourceRoot, 'trading-profiles');
 const profileSnapshotProperties = ['actorId', 'venueAccountId', 'capital', 'riskPosture', 'executionDefaults'];
 
 const activeBindingMutators = [
-  { path: 'routes/agents.ts', reconciliationCalls: 4 }, // 4th: subtree delete reconciles each agent before its purge
+  { path: 'routes/agents.ts', reconciliationCalls: 5 }, // 4th: subtree delete reconciles each agent before its purge; 5th: agent-key child delete
   { path: 'routes/connections.ts', reconciliationCalls: 1 },
   { path: 'routes/blueprints.ts', reconciliationCalls: 1 },
   { path: 'db/agents/agent-config-service.ts', reconciliationCalls: 2 },

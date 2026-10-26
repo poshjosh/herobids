@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext, ExternalSkillInstaller, ExternalSkillInstallResult } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES, ManageAgentSkillsResultSchema, SYSTEM_SKILL_SLUGS } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, ManageAgentSkillsResultSchema, SYSTEM_SKILL_SLUGS, isUserOnlySkill } from '@herobids/domain';
 import { resolveSkillIdsBySlugOrId, upsertExternalSkill, normalizeSourceRefToSlug, findExternalSourceRefs, type Database } from '@herobids/db';
 import { convertZodToJsonSchema } from './registry.js';
 import { parseBrokerDenialReply } from './tool-errors.js';
@@ -469,6 +469,11 @@ export const addSkillsTool: AgentTool = {
           ...(legacyTaskManagementNote ? { note: legacyTaskManagementNote } : {}),
         },
       };
+    }
+
+    // Only the user may assign a user-only skill. Refused for the whole call, so nothing else is added.
+    if (inputRefs.some(isUserOnlySkill)) {
+      return { success: false, error: 'This skill can only be added by the user.', errorCode: 'skill.user_only', retryable: false };
     }
 
     if (!ctx.publishToInbound || typeof ctx.redis.blpop !== 'function') {

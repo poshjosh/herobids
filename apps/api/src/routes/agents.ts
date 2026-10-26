@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { requireDirectChildOfActingAgent, requireSelfAgentOrUser, requireUserCaller } from '../plugins/auth.js';
+import { requireAgentKeyCaller, requireDirectChildOfActingAgent, requireSelfAgentOrUser, requireUserCaller } from '../plugins/auth.js';
 import { eq, and, inArray, notInArray, desc, sql, asc, isNull, ne } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { TradingProfileReconciliationOutboxRepository, deleteUserAgentConversations, recordAgentAuditEvent, type Database, type DatabaseTransaction } from '@herobids/db';
@@ -22,10 +22,11 @@ import {
   users,
   resolveSkillAssignmentsForUser,
   resolveSkillIdsBySlugOrId,
-  syncAgentSkillAssignments,
+  syncAgentSkillAssignmentsInTx,
   ensureExternalSkillIds,
 } from '@herobids/db';
 import { AgentCreationConfigSchema, type AgentCreationConfig, type PlansConfig } from '@herobids/domain';
+import { childAllowanceForNewAssignment } from '../agents/child-allowance-assignment.js';
 import { DecisionApprovalRepository } from '@herobids/db';
 import type { ExternalBackendClient, ExternalBackendClientResult, ExternalBackendSubject } from '@herobids/domain/external-backend';
 import {
@@ -58,6 +59,7 @@ import {
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import {
   AGENT_CHILD_CREATE_FIELDS,
+  AgentChildDuplicateError,
   AgentCreatePolicyError,
   consumeAgentCreateToken,
   disallowedAgentCreateFields,
@@ -85,6 +87,7 @@ import type { UnifiedAgentConfig } from '@herobids/domain';
 import { AgentStyleSchema, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs, userAgentConversationId } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
+import { startCreatedChild } from '../agents/child-start.js';
 import { CONVERSATION_TURN_EVENT_WINDOW, deriveSubjectTurnState, TURN_EVENT_TYPES } from '../services/agent-conversation-turn.js';
 import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
 import { agentRuntimeSessionPublicColumns } from '../services/agent-runtime-session-projection.js';
@@ -185,6 +188,10 @@ class DeletionRevalidationError extends Error {
 
 const DeleteAgentQuerySchema = z.object({
   scope: z.enum(['subtree', 'agent']).optional(),
+});
+
+const DeleteChildQuerySchema = z.object({
+  stopFirst: z.enum(['true', 'false']).optional(),
 });
 
 /**
@@ -342,6 +349,8 @@ const CreateAgentSchema = z.object({
     }).optional(),
   }).nullable().optional(),
   executionVenue: z.string().min(1).optional(),
+  // Agent callers only: start the child after it is created. Omitted means start. Ignored for user creations.
+  start: z.boolean().optional(),
   maxBots: optionalPositiveIntegerSchema(),
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
@@ -857,6 +866,16 @@ export async function agentRoutes(
 
     const agentId = crypto.randomUUID();
     const now = new Date();
+    // A user who creates the agent with the children skill gets the plan ceiling as its child limit.
+    const childAllowance = parentAgentId
+      ? null
+      : childAllowanceForNewAssignment({
+        plansConfig,
+        planId: request.userPlanId || 'free',
+        isAdmin: entitlementIsAdmin,
+        previousSkillIds: [],
+        nextSkillIds: parsed.data.skillIds ?? [],
+      });
 
     const effectiveModelPolicy = mergeModelPolicy(parsed.data.modelPolicy ?? null, parsed.data);
     const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogDeps);
@@ -1097,6 +1116,8 @@ export async function agentRoutes(
       caller: { userId: request.userId, planId: request.userPlanId || 'free', isAdmin: request.isAdmin, parentAgentId },
       plansConfig,
       maxAgentDepth: agentCreation.maxAgentDepth,
+      childName: agentName,
+      duplicateChildWindowSeconds: agentCreation.duplicateChildWindowSeconds,
       skillIds: parsed.data.skillIds ?? [],
       connectionIds,
       permissionLevel: parsed.data.permissionLevel,
@@ -1121,7 +1142,7 @@ export async function agentRoutes(
           creatorId: lineage.creatorId,
           parentAgentId: lineage.parentAgentId,
           depth: lineage.depth,
-          childAgentLimit: 0,
+          childAgentLimit: childAllowance?.childAgentLimit ?? 0,
           prompt: parsed.data.prompt ?? '',
           status: 'stopped',
           toolPolicy: createFields.toolPolicy,
@@ -1159,6 +1180,17 @@ export async function agentRoutes(
             detail: { depth: lineage.depth },
           });
         }
+        if (childAllowance) {
+          await recordAgentAuditEvent(tx, {
+            userId: request.userId,
+            actorType: 'user',
+            actorId: request.userId,
+            action: 'agent.child_limit_set',
+            targetId: agentId,
+            detail: { childAgentLimit: childAllowance.childAgentLimit, source: 'skill_assigned' },
+          });
+        }
+        await syncAgentSkillAssignmentsInTx(tx, agentId, request.userId, assignmentResolution.assignments ?? []);
         if (parsed.data.chatAddresses !== undefined) {
           await applyChatAddresses(tx, { userId: request.userId, agentId }, parsed.data.chatAddresses);
         }
@@ -1239,19 +1271,41 @@ export async function agentRoutes(
         setCreateAgentOutcome(request, createAgentOutcomeForRule(error.rule));
         return reply.status(error.status).send(error.body);
       }
+      if (error instanceof AgentChildDuplicateError) {
+        // Nothing was created or started. The retry gets the child the earlier create made, with its current status.
+        setCreateAgentOutcome(request, 'duplicate');
+        const [existing] = await db.select().from(agents).where(eq(agents.id, error.childId));
+        if (!existing) {
+          return reply.status(409).send(errorPayload('agent.create.duplicate_gone', 'The child created moments ago was removed. Retry the create.'));
+        }
+        const existingSkillIds = await listSkillIdsForAgent(db, error.childId);
+        const [existingOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...existing, skillIds: existingSkillIds }), ...enrichAgentResponse(existing) }]);
+        return reply.status(200).send({ ...existingOut, duplicate: true, started: false, startError: null });
+      }
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
       if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       if (error instanceof TradingProfileScanValidationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       throw error;
     }
 
-    await syncAgentSkillAssignments(db, agentId, request.userId, assignmentResolution.assignments ?? []);
+    // A child is started by default, through the same start the user uses. A refused start leaves the
+    // child created and stopped, and the response says why. Run before the read so the status is current.
+    const childStart = parentAgentId
+      ? await startCreatedChild(
+        () => startAgent(db, agentId, request.userId, tradertonReadClient, tradertonReadTimeoutMs),
+        parsed.data.start !== false,
+      )
+      : null;
 
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     const skillIds = await listSkillIdsForAgent(db, agentId);
     setCreateAgentOutcome(request, 'success');
     const [createdOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent!, skillIds }), ...enrichAgentResponse(agent!) }]);
-    return reply.status(201).send(createdOut);
+    return reply.status(201).send({
+      ...createdOut,
+      ...(childAllowance?.notice ? { childAgentLimitNotice: childAllowance.notice } : {}),
+      ...(childStart ? { duplicate: false, started: childStart.started, startError: childStart.startError } : {}),
+    });
   });
 
   // List user's agents
@@ -1491,6 +1545,14 @@ export async function agentRoutes(
     // so that capability grants stay consistent whenever skills are added or removed via PATCH.
     const existingSkillIds = await listSkillIdsForAgent(db, id);
     const mergedSkillIds = parsed.data.skillIds ?? existingSkillIds;
+    // Newly assigning the children skill sets the child limit to the plan ceiling, in the assignment's transaction.
+    const childAllowance = childAllowanceForNewAssignment({
+      plansConfig,
+      planId: request.userPlanId || 'free',
+      isAdmin: request.isAdmin,
+      previousSkillIds: existingSkillIds,
+      nextSkillIds: mergedSkillIds,
+    });
     // If toolPolicy is explicitly provided in the PATCH body, replace the stored policy entirely
     // (allow callers to remove overrides). If omitted, preserve the existing stored policy.
     const basePolicy: Record<string, unknown> = parsed.data.toolPolicy !== undefined
@@ -2281,10 +2343,22 @@ export async function agentRoutes(
           ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
           ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
           ...(strategyUpdateJsonb !== undefined ? { strategy: strategyUpdateJsonb as never } : {}),
+          ...(childAllowance ? { childAgentLimit: childAllowance.childAgentLimit } : {}),
           toolPolicy: effectiveToolPolicy,
           modelPolicy: effectiveModelPolicy,
           updatedAt: new Date(),
         } as never).where(eq(agents.id, id));
+        if (childAllowance) {
+          await recordAgentAuditEvent(tx, {
+            userId: request.userId,
+            actorType: 'user',
+            actorId: request.userId,
+            action: 'agent.child_limit_set',
+            targetId: id,
+            detail: { childAgentLimit: childAllowance.childAgentLimit, source: 'skill_assigned' },
+          });
+        }
+        await syncAgentSkillAssignmentsInTx(tx, id, request.userId, assignmentResolution.assignments ?? []);
         if (chatAddressesUpdate !== undefined) {
           await applyChatAddresses(tx, { userId: request.userId, agentId: id }, chatAddressesUpdate);
         }
@@ -2315,12 +2389,10 @@ export async function agentRoutes(
       }
     }
 
-    await syncAgentSkillAssignments(db, id, request.userId, assignmentResolution.assignments ?? []);
-
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(db, id);
     const [updatedOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...updated!, skillIds }), ...enrichAgentResponse(updated!) }]);
-    return reply.send(updatedOut);
+    return reply.send({ ...updatedOut, ...(childAllowance?.notice ? { childAgentLimitNotice: childAllowance.notice } : {}) });
   });
 
   // Delete agent. User-only and owner-only. Scope 'subtree' removes the agent and all of its
@@ -2901,6 +2973,7 @@ export async function agentRoutes(
       depth: agents.depth,
       parentAgentId: agents.parentAgentId,
       childAgentLimit: agents.childAgentLimit,
+      lastStartRefusal: agents.lastStartRefusal,
     }).from(agents)
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
     if (!agent) {
@@ -2944,6 +3017,157 @@ export async function agentRoutes(
       childCount,
       remainingChildAllowance: Math.max(0, agent.childAgentLimit - childCount),
     });
+  });
+
+  // The agent's direct children, so it can learn their IDs. One query: each child's own child count is a
+  // correlated subquery, so the cost does not grow with the number of children. Zero children is a valid answer.
+  app.get<{ Params: { id: string } }>('/agents/:id/children', {
+    config: { agentAccess: 'self' },
+    preHandler: requireSelfAgentOrUser,
+  }, async (request, reply) => {
+    const { id } = request.params;
+    const ownedChildCounts = db.select({
+      parentAgentId: agents.parentAgentId,
+      childCount: sql<number>`count(*)::int`.as('child_count'),
+    })
+      .from(agents)
+      .where(eq(agents.userId, request.userId))
+      .groupBy(agents.parentAgentId)
+      .as('owned_child_counts');
+    const children = await db.select({
+      id: agents.id,
+      name: agents.name,
+      status: agents.status,
+      depth: agents.depth,
+      childCount: sql<number>`coalesce(${ownedChildCounts.childCount}, 0)`,
+      lastStartRefusal: agents.lastStartRefusal,
+    })
+      .from(agents)
+      .leftJoin(ownedChildCounts, eq(ownedChildCounts.parentAgentId, agents.id))
+      .where(and(eq(agents.parentAgentId, id), eq(agents.userId, request.userId)))
+      .orderBy(asc(agents.createdAt), asc(agents.id));
+    return reply.send({ children });
+  });
+
+  // An agent deletes one of its own direct children. Same rules as the user's delete of a lone agent: the
+  // child must be stopped, its bots are torn down, and its trading profile is reconciled before the platform
+  // rows go. A child that has children of its own is refused, because a creator cannot reach grandchildren;
+  // the user deletes that subtree. A running child is stopped first by the same stop the creator's stop uses,
+  // unless stopFirst=false, which refuses instead. The child-has-children check runs before any stop.
+  app.delete<{ Params: { id: string; childId: string }; Querystring: { stopFirst?: string } }>('/agents/:id/children/:childId', {
+    config: { agentAccess: 'self' },
+    preHandler: [requireAgentKeyCaller, requireSelfAgentOrUser, requireDirectChildOfActingAgent(db, 'childId')],
+  }, async (request, reply) => {
+    const { id, childId } = request.params;
+    const actingAgentId = request.actingAgentId!;
+    const ownerId = request.userId;
+    const query = DeleteChildQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.status(400).send({ error: 'validation_error', details: query.error.issues });
+    }
+    const stopFirst = query.data.stopFirst !== 'false';
+
+    const walk = await loadDeletionSubtree(db, ownerId, childId);
+    if (!walk) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    if (walk.members.length > 1) {
+      return reply.status(409).send(errorPayload(
+        'agent.child.has_children',
+        'This child agent has children of its own. Ask the user to delete it.',
+        { childCount: walk.members.length - 1 },
+      ));
+    }
+
+    let stopped = false;
+    if (walk.root.status !== 'stopped') {
+      if (!stopFirst) {
+        return reply.status(409).send(errorPayload(
+          'agent.child.running',
+          'child is running; stop it first or pass stopFirst: true',
+          { status: walk.root.status },
+        ));
+      }
+      const stop = await stopAgent(db, childId, ownerId, tradertonReadClient, tradertonReadTimeoutMs);
+      if (!stop.ok) {
+        return reply.status(500).send({ error: stop.error.code, message: stop.error.message });
+      }
+      // Same audit as the creator's own stop route, so a delete that stopped the child first leaves that trace.
+      await recordAgentAuditEvent(db, {
+        userId: ownerId,
+        actorType: 'agent',
+        actorId: actingAgentId,
+        action: 'agent.creator_stopped_child',
+        targetId: childId,
+      });
+      stopped = true;
+    }
+
+    const torn = await tearDownAgentBots(ownerId, childId);
+    if (!torn.ok) {
+      if (torn.botsRemoved > 0) {
+        await recordAgentAuditEvent(db, {
+          userId: ownerId,
+          actorType: 'agent',
+          actorId: actingAgentId,
+          action: 'agent.delete_failed',
+          targetId: childId,
+          detail: { scope: 'agent', step: torn.step, botCount: torn.botsRemoved },
+        });
+      }
+      return reply.status(torn.status).send(torn.body);
+    }
+
+    // Re-checked under the transaction: the child must still be a lone, stopped agent with the trading
+    // profile connections reconciled above. Anything else rolls the delete back.
+    const priorConnections = await loadActiveTradingProfileConnections(db, childId);
+    try {
+      await stagedProfileReconciliationSaga.executeStaged({
+        ownerId,
+        actorId: childId,
+        localMutationId: crypto.randomUUID(),
+        preparePlannerInput: profileDeletionInput(ownerId, childId, priorConnections),
+        commitLocal: async (tx: DatabaseTransaction, markLocalCommitted) => {
+          const current = await loadDeletionSubtree(tx, ownerId, childId);
+          if (!current || current.members.length !== 1 || current.root.status !== 'stopped') {
+            throw new DeletionRevalidationError('revalidate_subtree', childId);
+          }
+          const currentConnections = await loadActiveTradingProfileConnections(tx, childId);
+          if (JSON.stringify(currentConnections) !== JSON.stringify(priorConnections)) {
+            throw new DeletionRevalidationError('revalidate_connections', childId);
+          }
+          await purgeAgentRows(tx, [childId]);
+          await recordAgentAuditEvent(tx, {
+            userId: ownerId,
+            actorType: 'agent',
+            actorId: actingAgentId,
+            action: 'agent.child_deleted',
+            targetId: childId,
+            detail: { parentAgentId: id, botCount: torn.botsRemoved },
+          });
+          await markLocalCommitted();
+          return { kind: 'ok' as const };
+        },
+      });
+    } catch (error) {
+      if (error instanceof DeletionRevalidationError) {
+        return reply.status(boundaryUnconfiguredError.status).send(errorPayload(
+          'agent.delete.revalidation_failed',
+          'The child agent changed while it was being deleted. Nothing was removed. Retry the delete.',
+          undefined,
+          { step: error.step, agentId: error.agentId },
+        ));
+      }
+      throw error;
+    }
+
+    // Best-effort container cleanup, as for the user's delete.
+    if (redisClient) {
+      redisClient.publish(`agent:cleanup:${childId}`, JSON.stringify({ agentId: childId })).catch((err: unknown) => {
+        app.log.warn({ err, agentId: childId }, 'Failed to publish agent cleanup signal to Redis');
+      });
+    }
+    return reply.send({ deleted: true, stopped });
   });
 
   // ─── GET /agents/:id/conversation-turn ────────────────────────────────────

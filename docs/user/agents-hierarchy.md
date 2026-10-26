@@ -18,7 +18,7 @@ Each agent has a child allowance, which is the number of child agents it may cre
 - Open the agent's settings and find the child agents allowance.
 - The limit can be set from 0 up to your plan's maximum, which is shown on the card.
 - Lowering the limit below the current number of children keeps the existing children.
-- A new child starts stopped. You start it.
+- A child starts as soon as its parent creates it, unless the parent creates it stopped. You can stop or start it from its page.
 
 An agent may also pause or stop its direct children, and send them messages. It cannot start, resume or edit them, and it cannot read their private memory.
 

@@ -27,6 +27,7 @@ import {
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { createAgentFromPayload } from './agent-instantiation-service.js';
+import { childAllowanceForNewAssignment } from '../agents/child-allowance-assignment.js';
 import { chatAddressesToInput } from '../agents/chat-addresses.js';
 import { selectExecutionBinding, type TradingProfileConnection } from '../agents/trading-profile-reconciliation.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
@@ -268,6 +269,13 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
         agentId: newAgentId,
         // No blueprint attribution for Go Live
         chatAddresses: sourceChatAddresses,
+        childAgentLimit: childAllowanceForNewAssignment({
+          plansConfig,
+          planId: userPlanId,
+          isAdmin,
+          previousSkillIds: [],
+          nextSkillIds: (assignmentResolution.assignments ?? []).map((assignment) => assignment.skillId),
+        })?.childAgentLimit,
       },
     );
 

@@ -555,12 +555,14 @@ export const AgentApprovalsConfigSchema = z.object({
 
 /** Operator limits for agent-created agents (001-agent-creating-agents §3). */
 export const AgentCreationConfigSchema = z.object({
-  /** Token bucket capacity and refill per minute for create_agent attempts, per user across the whole tree. */
+  /** Token bucket capacity and refill per minute for create_child_agent attempts, per user across the whole tree. */
   agentCreateRatePerMinute: z.number().int().min(0).default(10),
   /** Token bucket capacity and refill per minute for messages per creator-child pair, in either direction. */
   creatorMessageRatePerMinute: z.number().int().min(0).default(10),
   /** Max number of generations below a user-created agent. */
   maxAgentDepth: z.number().int().min(0).default(6),
+  /** Seconds in which a retried create with the same name, under the same parent, returns the existing child. 0 disables the check. */
+  duplicateChildWindowSeconds: z.number().int().min(0).default(300),
   /** Timeout in ms for each agent-container call to the platform API (create, allowance, creator actions). */
   platformApiTimeoutMs: z.number().int().min(100).default(10_000),
 }).default({});

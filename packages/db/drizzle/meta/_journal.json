@@ -610,6 +610,13 @@
       "when": 1792965349380,
       "tag": "0086_first_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1793009157994,
+      "tag": "0087_agent_last_start_refusal",
+      "breakpoints": true
     }
   ]
 }

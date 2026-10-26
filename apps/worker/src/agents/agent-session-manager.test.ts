@@ -1793,10 +1793,64 @@ describe('AgentSessionManager', () => {
       expect(runtimeLauncher.launch).toHaveBeenCalledWith(
         expect.objectContaining({ sessionId: 'sess-billing', agentId: 'agent-1' }),
       );
-      expect(agentRepo.updateAgent).not.toHaveBeenCalled();
+      // A launch that reached the runtime clears the refusal the parent reads. No status change is written.
+      expect(agentRepo.updateAgent).toHaveBeenCalledTimes(1);
+      expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { lastStartRefusal: null });
       expect(agentRepo.markSessionStopped).not.toHaveBeenCalled();
       expect(eventPublisher.emitGuardrailTriggered).not.toHaveBeenCalled();
       expect(eventPublisher.emitInstanceStatus).not.toHaveBeenCalled();
+    });
+
+    it('a launch refused for lack of credit records the refusal on the agent and still emits the guardrail on the child', async () => {
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      const mockBillingAccount = { id: 'account-1', userId: 'user-1', status: 'active' };
+      const mockRateCard = { id: 'ratecard-1', name: 'default' };
+      const usageBillingRepo = {
+        getUserPlanId: vi.fn().mockResolvedValue(null),
+        getAccountByUserId: vi.fn().mockResolvedValue(null),
+        getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue(mockBillingAccount),
+        ensureActiveRateCard: vi.fn().mockResolvedValue(mockRateCard),
+        getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period-1' }),
+        recomputeSpendState: vi.fn().mockResolvedValue('active'),
+        canSpendNow: vi.fn().mockResolvedValue({ canSpend: false, availableMicrousd: 0, hardCapMicrousd: null, status: 'active', reason: 'no_available_credit' }),
+      };
+      (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'sess-refused', agentId: 'agent-1' },
+      ]);
+      const eventPublisher = {
+        emitGuardrailTriggered: vi.fn().mockResolvedValue(undefined),
+        emitInstanceStatus: vi.fn().mockResolvedValue(undefined),
+        publishUserNotification: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        eventPublisher as any,
+        runtimeLauncher as any,
+        {
+          budgets: TEST_RUNTIME_BUDGETS,
+          usageBillingRepo: usageBillingRepo as any,
+          usageBillingConfig: { defaultRateCardName: 'default' } as any,
+        },
+        reconnectHandler as any,
+      );
+
+      await manager.reconcileStartingSessions();
+
+      expect(runtimeLauncher.launch).not.toHaveBeenCalled();
+      expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', {
+        status: 'stopped',
+        lastStartRefusal: {
+          code: 'billing.insufficient_funds',
+          message: 'Insufficient billing credit — agent session start blocked',
+          at: expect.any(String),
+        },
+      });
+      expect(eventPublisher.emitGuardrailTriggered).toHaveBeenCalledWith(
+        'agent-1',
+        expect.objectContaining({ code: 'billing.insufficient_funds', scope: 'agent_guardrail' }),
+      );
     });
   });
 

@@ -6,7 +6,8 @@ import { requireDirectChildOfActingAgent, requireUserCaller } from '../plugins/a
 import { consumeTokenBucketToken } from '../services/token-bucket.js';
 import { eq, and, asc, isNull } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, chatAddresses, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, syncAgentSkillAssignments, users } from '@herobids/db';
+import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, chatAddresses, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, syncAgentSkillAssignmentsInTx, users } from '@herobids/db';
+import { childAllowanceForNewAssignment } from '../agents/child-allowance-assignment.js';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import type { InboundChatMessage } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
@@ -197,6 +198,14 @@ export async function agentInteractivityRoutes(
 
     const existingSkillIds = await listSkillIdsForAgent(id);
     const mergedSkillIds = parsed.data.skillIds ?? existingSkillIds;
+    // Newly assigning the children skill sets the child limit to the plan ceiling, in the assignment's transaction.
+    const childAllowance = childAllowanceForNewAssignment({
+      plansConfig,
+      planId: request.userPlanId || 'free',
+      isAdmin: request.isAdmin,
+      previousSkillIds: existingSkillIds,
+      nextSkillIds: mergedSkillIds,
+    });
     const basePolicy: Record<string, unknown> = parsed.data.toolPolicy !== undefined
       ? { ...parsed.data.toolPolicy }
       : { ...((agent.toolPolicy as Record<string, unknown> | null) ?? {}) };
@@ -293,6 +302,7 @@ export async function agentInteractivityRoutes(
         ? { risk: { ...(selectedProfile?.riskPosture ?? {}), maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null } }
         : {}),
       ...(parsed.data.runtimePolicyOverrides !== undefined ? { runtimePolicyOverrides: parsed.data.runtimePolicyOverrides } : {}),
+      ...(childAllowance ? { childAgentLimit: childAllowance.childAgentLimit } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),
@@ -337,6 +347,19 @@ export async function agentInteractivityRoutes(
         },
         commitLocal: async (tx, markLocalCommitted) => {
           await tx.update(agents).set(updateValues).where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+          if (childAllowance) {
+            await recordAgentAuditEvent(tx, {
+              userId: request.userId,
+              actorType: 'user',
+              actorId: request.userId,
+              action: 'agent.child_limit_set',
+              targetId: id,
+              detail: { childAgentLimit: childAllowance.childAgentLimit, source: 'skill_assigned' },
+            });
+          }
+          if (assignmentResolution) {
+            await syncAgentSkillAssignmentsInTx(tx, id, request.userId, assignmentResolution.assignments ?? []);
+          }
           await markLocalCommitted();
         },
       });
@@ -350,14 +373,10 @@ export async function agentInteractivityRoutes(
       throw error;
     }
 
-    if (assignmentResolution) {
-      await syncAgentSkillAssignments(db, id, request.userId, assignmentResolution.assignments ?? []);
-    }
-
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(id);
     const [updatedOut] = await withAgentChatAddresses(db, request.userId, [decorateAgentResponse({ ...updated!, skillIds })]);
-    return reply.send(updatedOut);
+    return reply.send({ ...updatedOut, ...(childAllowance?.notice ? { childAgentLimitNotice: childAllowance.notice } : {}) });
   });
 
   // POST /agents/:id/message — deliver a message to a running agent.

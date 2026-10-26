@@ -134,7 +134,7 @@ Communicating with users:
 - Ask at most two questions per message, unless the user has asked for more.
 - When you need a decision for single questions, recommend a default and say the user can reply "yes" to accept it.
 - Present choices as a numbered list so the user can reply with a number.`,
-  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'list_providers', 'request_connection', 'update_my_prompt', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'load_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder', 'create_agent', 'get_child_agent_status', 'pause_child_agent', 'stop_child_agent', 'message_child_agent', 'message_peer_agent'],
+  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'list_providers', 'request_connection', 'update_my_prompt', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'load_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder', 'message_peer_agent'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -149,6 +149,45 @@ Communicating with users:
 // source-ref map have been removed. Trading skills are now external skills.sh
 // skills (`traderton/skills/crypto-*`), installed at agent start and discovered
 // over MCP. Herobids holds no trading skill text.
+
+/** Id of the user-only children skill. See {@link USER_ONLY_SKILL_IDS}. */
+export const AGENT_CHILDREN_MANAGEMENT_SKILL_ID = 'agent-children-management';
+
+/**
+ * `agent-children-management` skill — creates and manages the child agents an agent creates.
+ * Assignable only by the user: an agent may not add it to itself, and may not grant it to a child.
+ */
+export const AGENT_CHILDREN_MANAGEMENT_SKILL: SkillDefinition = {
+  id: AGENT_CHILDREN_MANAGEMENT_SKILL_ID,
+  slug: 'system/agent-children-management',
+  name: 'Agent children management',
+  description: 'Create, list, inspect, pause, stop, message and delete the child agents you created.',
+  instructions: `You can create child agents and manage the ones you created.
+
+- Call \`list_child_agents\` first to get the IDs of your children. Do not guess IDs.
+- Use \`create_child_agent\` only when a separate, focused goal needs its own agent. The child starts when you create it. Pass \`start: false\` to create it stopped.
+- A retry of \`create_child_agent\` with the same name returns the existing child with \`duplicate: true\`. Nothing is created or started again, so do not create another child to retry.
+- Use \`get_child_agent_status\`, \`pause_child_agent\`, \`stop_child_agent\` and \`message_child_agent\` only on your direct children.
+- A child's \`lastStartRefusal\` (shown by \`list_child_agents\` and \`get_child_agent_status\`) means the platform refused to launch it after a start, for example for credit or a usage limit. Its \`code\` and \`message\` say why. You cannot start a child yourself: it stays stopped until the user starts it. Tell the user the reason and do not keep checking or create a new child to retry. \`lastStartRefusal\` is null when the last launch succeeded.
+- Use \`delete_child_agent\` only on a direct child you no longer need. Deletion is permanent. The child must have no children of its own. A running child is stopped first. Pass \`stopFirst: false\` to refuse the delete while the child runs instead.`,
+  requiredTools: [
+    'create_child_agent',
+    'list_child_agents',
+    'get_child_agent_status',
+    'pause_child_agent',
+    'stop_child_agent',
+    'message_child_agent',
+    'delete_child_agent',
+  ],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: [],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 900_000, // 15 minutes
+  visibility: 'public',
+};
 
 /**
  * `programming` skill — code execution tools.
@@ -487,7 +526,20 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   PLATFORM_DOCS_SKILL,
   BROWSER_SKILL,
   LONG_RUNNING_TASK_SKILL,
+  AGENT_CHILDREN_MANAGEMENT_SKILL,
 ];
+
+/**
+ * Skills only the user may assign. The agent-side add_skills tool, the broker and the child-create
+ * route all refuse these ids. Removal is not restricted.
+ */
+export const USER_ONLY_SKILL_IDS: ReadonlySet<string> = new Set([AGENT_CHILDREN_MANAGEMENT_SKILL_ID]);
+
+/** Whether a skill id, or a system slug, is assignable only by the user. */
+export function isUserOnlySkill(skillIdOrSlug: string): boolean {
+  if (USER_ONLY_SKILL_IDS.has(skillIdOrSlug)) return true;
+  return SYSTEM_SKILLS.some((skill) => skill.slug === skillIdOrSlug && USER_ONLY_SKILL_IDS.has(skill.id));
+}
 
 /**
  * Map from system skill slug → skill ID for fast lookup.

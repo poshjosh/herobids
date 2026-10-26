@@ -11,7 +11,7 @@ This is a living document — update it as new surfaces, actors, or mitigations 
 | Actor | Motivation | Example |
 |-------|-----------|---------|
 | Malicious user | Escalate privileges, steal funds, abuse free-tier resources | Prompt injection to bypass tool restrictions, capital manipulation |
-| Compromised LLM output | Hallucinated tool calls, instruction drift, tool-call smuggling | Model calls `submit_decision` when only `create_agent` is allowed |
+| Compromised LLM output | Hallucinated tool calls, instruction drift, tool-call smuggling | Model calls `submit_decision` when only `create_child_agent` is allowed |
 | Compromised venue response | Inject malicious data into platform state | Venue returns crafted JSON that exploits downstream parsing |
 | Replay / MITM attacker | Intercept or replay API calls | Stolen auth token used to create agents on another user's behalf |
 | Internal misconfiguration | Accidental privilege expansion | Developer adds a powerful tool to a low-trust surface without review |

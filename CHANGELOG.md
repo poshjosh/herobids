@@ -8,8 +8,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Agents can create child agents within a child allowance that only the user can set. Children start stopped, and the parent may grant them some of its skills and connections.
+- A `create_child_agent` retry with the same name, under the same parent, within `agentCreation.duplicateChildWindowSeconds` (default 300) returns the existing child with `duplicate: true`. It creates nothing and starts nothing again.
+- A child's refused launch (billing: no credit, usage limit, top-up needed or suspended) is recorded on the child as `lastStartRefusal` (`code`, `message`, `at`). The creating agent reads it from `get_child_agent_status` and `list_child_agents`. It clears when a launch reaches the runtime. Migration `0087_agent_last_start_refusal`.
+- Agents can create child agents within a child allowance that only the user can set. A child starts when it is created, unless the parent passes `start: false`. The parent may grant children some of its skills and connections.
 - Creator agents can read, message, pause and stop their direct children. Messages are rate limited per creator-child pair.
+- Agent children management skill (`agent-children-management`). It lists the tools to create, list, inspect, pause, stop, message and delete an agent's direct children. Only the user can assign it. Assigning it sets the agent's child limit to the plan ceiling. `list_child_agents` and `delete_child_agent` are new. `delete_child_agent` deletes a child with no children of its own. A running child is stopped first, unless the call passes `stopFirst: false`, which refuses the delete instead. An agent-key route, `DELETE /agents/:id/children/:childId`, does the delete, and `GET /agents/:id/children` lists the children.
 - Agents page shows agents as a hierarchy, with each parent's children used and remaining allowance.
 - Agent deletion offers "subtree" and "agent only" options. Every affected agent must be stopped first.
 - Per-runtime agent API key. Agent routes refuse agent keys unless they are explicitly opened to them.
@@ -19,10 +22,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The agent page shows a read-only "Agent-to-agent messages" card, with refused messages and their reason. Settings has a "Pause agent-to-agent messaging" switch (`peerMessagingPaused` on `PATCH /auth/me`), which refuses all peer sends while on.
 - `GET /agents/:id/peer-threads` and `GET /agents/:id/peer-threads/:peerAgentId` read an agent's peer threads for the signed-in owner.
 - Pausing agent-to-agent messaging also drops peer messages already queued for an agent; a dropped message shows as refused.
-- Two-way chat: web and Telegram messages and agent replies are stored in one conversation. `GET /agents/:id/conversation` returns the thread, and `POST /agents/:id/message` is idempotent on `clientMessageId`.
+- Two-way chat: web and Telegram messages and agent replies are stored in one conversation.
+- Agents can stop and delete their direct children with `delete_child_agent`. It stops a running child first by default (`stopFirst`), and a child with its own children is refused. It is audited.
+- Peer messages are dropped on receipt while the recipient's owner has agent-to-agent messaging paused. The sender's thread row shows the message as refused. `GET /agents/:id/conversation` returns the thread, and `POST /agents/:id/message` is idempotent on `clientMessageId`.
 
 ### Changed
 
+- `create_child_agent` starts the child by default. Pass `start: false` to create it stopped.
+- Telegram messages longer than 4000 characters get a "too long" reply and are not delivered. Telegram allows 4096.
+- A chat address that is opted out gets no reply from the bot, not even help text.
+- The `alerts.telegram.*` config keys are removed. Telegram routing rules stay at `alerts.telegram.channels`, and the bot token and webhook settings are at `messaging.chat.telegram.*`.
+- The agent detail page shows "Child Agents" below "Agent Health".
+- The child-creation tool is renamed `create_child_agent` (was `create_agent`). Its visibility and rules are unchanged.
+- The child tools are no longer in the `base` skill. Agents that have a child limit above 0 but do not hold `agent-children-management` lose `create_child_agent` and the creator tools until the user assigns the skill.
 - Chat addresses are read only from `chat_addresses`, and opt-outs from `chat_suppressions`. Agent and user responses return `chatAddresses`. The `telegramChatId` columns and fields are removed, and the Telegram bot settings move to `messaging.chat.telegram.*` (`alerts.telegram.*` is gone).
 
 ### Removed

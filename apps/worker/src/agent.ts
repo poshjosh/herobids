@@ -24,7 +24,7 @@ import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';
 import { createAgentPlatformClientFromEnv } from './agents/agent-platform-client.js';
 import { PeerReceiveGate, isPeerEnvelope } from './agents/peer-receive-gate.js';
-import { CREATE_AGENT_TOOL_NAME, CREATOR_TOOL_NAMES, isCreateAgentExposed, isCreatorToolExposed } from './tools/agent-creation.js';
+import { CREATE_CHILD_AGENT_TOOL_NAME, CREATOR_TOOL_NAMES, isCreateChildAgentExposed, isCreatorToolExposed } from './tools/agent-creation.js';
 import type { AgentAllowance } from '@herobids/domain';
 import { buildIncrementalContext, estimateTokens } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
@@ -732,13 +732,13 @@ function recordToolSuccess(tool: string): void {
 
 applyToolVisibility();
 
-// create_agent and the creator tools stay hidden until the first allowance read succeeds.
+// create_child_agent and the creator tools stay hidden until the first allowance read succeeds.
 setAgentPlatformToolAvailability(null);
 
-/** Sets create_agent and the creator tools from the agent's allowance. A null allowance hides them all. */
+/** Sets create_child_agent and the creator tools from the agent's allowance. A null allowance hides them all. */
 function setAgentPlatformToolAvailability(allowance: AgentAllowance | null): void {
   const circuitBlockedTools = toolCircuitBreaker.getBlockedTools(tickCount);
-  toolVisibility.setToolAvailability(CREATE_AGENT_TOOL_NAME, isCreateAgentExposed(allowance), circuitBlockedTools);
+  toolVisibility.setToolAvailability(CREATE_CHILD_AGENT_TOOL_NAME, isCreateChildAgentExposed(allowance), circuitBlockedTools);
   const creatorToolsVisible = isCreatorToolExposed(allowance);
   for (const toolName of CREATOR_TOOL_NAMES) {
     toolVisibility.setToolAvailability(toolName, creatorToolsVisible, circuitBlockedTools);
@@ -753,7 +753,7 @@ async function refreshAgentPlatformToolExposure(): Promise<void> {
     if (result.ok) {
       allowance = result.data;
     } else {
-      logger.warn({ code: result.error.code }, 'Child allowance unavailable — create_agent and creator tools hidden this tick');
+      logger.warn({ code: result.error.code }, 'Child allowance unavailable — create_child_agent and creator tools hidden this tick');
     }
   }
   setAgentPlatformToolAvailability(allowance);
@@ -965,7 +965,7 @@ const { read: externalBackendRead, write: externalBackendWrite } = buildAgentExt
   agentId: AGENT_ID!,
   logger,
 });
-// Platform API client for create_agent and the creator tools. Undefined when the container has no
+// Platform API client for create_child_agent and the creator tools. Undefined when the container has no
 // API key or base URL, and those tools then stay hidden.
 const agentPlatformClient = createAgentPlatformClientFromEnv(process.env, logger);
 // Drops a peer message that reaches this agent after the owner paused agent-to-agent messaging (DEC-56), and reports the
@@ -2625,7 +2625,7 @@ async function runActiveTick(): Promise<void> {
   refreshToolCircuits();
   logger.info({ tickCount }, 'Agent tick starting');
 
-  // Exposure of create_agent and the creator tools follows this agent's current allowance.
+  // Exposure of create_child_agent and the creator tools follows this agent's current allowance.
   await refreshAgentPlatformToolExposure();
 
   // docs/features/2026/10/05/001-backend-tool-discovery-retry: a prior

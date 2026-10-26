@@ -23,6 +23,13 @@ import { AgentCreationConfigSchema } from '@herobids/domain';
 import type { ExternalBackendClientResult } from '@herobids/domain/external-backend';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { agentRoutes } from './agents.js';
+import { startAgent } from '../services/agent-lifecycle-service.js';
+
+// The start is spied on with its real implementation, so a test can assert whether a create started a child.
+vi.mock('../services/agent-lifecycle-service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/agent-lifecycle-service.js')>();
+  return { ...actual, startAgent: vi.fn(actual.startAgent) };
+});
 
 const SKIP = !process.env['DATABASE_URL'];
 
@@ -779,6 +786,118 @@ describe.skipIf(SKIP)('agent-created child agents (integration)', () => {
       expect(res.json<{ error: string }>().error).toBe('agent.create.grant_not_held');
       expect(invoke).not.toHaveBeenCalled();
       expect(await childrenOf(db, parent.agentId)).toHaveLength(0);
+    });
+  });
+
+  describe('duplicate protection', () => {
+    const TEN_MINUTES_MS = 600_000;
+
+    it('a same-name retry under the same parent returns the existing child with duplicate true and starts nothing', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 5 });
+      const app = await appWith({});
+      const first = await postAsAgent(app, parent.rawKey, { name: 'Scout', prompt: 'Look.', start: false });
+      expect(first.statusCode).toBe(201);
+      const childId = first.json<{ id: string }>().id;
+      vi.mocked(startAgent).mockClear();
+
+      const retry = await postAsAgent(app, parent.rawKey, { name: 'Scout', prompt: 'Look again.' });
+
+      expect(retry.statusCode).toBe(200);
+      expect(retry.json()).toMatchObject({ id: childId, duplicate: true, started: false, startError: null, status: 'stopped' });
+      expect(startAgent).not.toHaveBeenCalled();
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(1);
+    });
+
+    it('a same-name create after the window creates a new child', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 5 });
+      const app = await appWith({});
+      const first = await postAsAgent(app, parent.rawKey, { name: 'Scout', prompt: 'Look.', start: false });
+      const firstId = first.json<{ id: string }>().id;
+      await db.update(agents).set({ createdAt: new Date(Date.now() - TEN_MINUTES_MS) }).where(eq(agents.id, firstId));
+
+      const second = await postAsAgent(app, parent.rawKey, { name: 'Scout', prompt: 'Look.', start: false });
+
+      expect(second.statusCode).toBe(201);
+      expect(second.json()).toMatchObject({ duplicate: false, started: false });
+      expect(second.json<{ id: string }>().id).not.toBe(firstId);
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(2);
+    });
+
+    it('a different name inside the window creates a new child', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 5 });
+      const app = await appWith({});
+      await postAsAgent(app, parent.rawKey, { name: 'Scout', prompt: 'Look.', start: false });
+
+      const other = await postAsAgent(app, parent.rawKey, { name: 'Trader', prompt: 'Trade.', start: false });
+
+      expect(other.statusCode).toBe(201);
+      expect(other.json()).toMatchObject({ duplicate: false });
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(2);
+    });
+
+    it('identical concurrent creates produce exactly one child, and every reply names it', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 5 });
+      const app = await appWith({});
+
+      const replies = await Promise.all(Array.from({ length: 5 }, () =>
+        postAsAgent(app, parent.rawKey, { name: 'Race', prompt: 'Go.', start: false }),
+      ));
+
+      expect(replies.map((reply) => reply.statusCode).sort()).toEqual([200, 200, 200, 200, 201]);
+      const bodies = replies.map((reply) => reply.json<{ id: string; duplicate: boolean }>());
+      expect(new Set(bodies.map((body) => body.id)).size).toBe(1);
+      expect(bodies.filter((body) => !body.duplicate)).toHaveLength(1);
+      expect(await childrenOf(db, parent.agentId)).toHaveLength(1);
+    });
+  });
+
+  describe('start refusal visibility', () => {
+    const REFUSAL = {
+      code: 'billing.insufficient_funds',
+      message: 'Insufficient billing credit — agent session start blocked',
+      at: '2026-10-26T10:00:00.000Z',
+    };
+
+    it('the parent reads a null lastStartRefusal, then the recorded refusal, on its child status and child list', async () => {
+      const userId = await seedUser(db);
+      const parent = await seedAgent(db, userId, { childAgentLimit: 2 });
+      const app = await appWith({});
+      const created = await postAsAgent(app, parent.rawKey, { name: 'Scout', prompt: 'Look.', start: false });
+      const childId = created.json<{ id: string }>().id;
+
+      const statusBefore = await app.inject({ method: 'GET', url: `/agents/${childId}/status`, headers: { Authorization: `Bearer ${parent.rawKey}` } });
+      const listBefore = await app.inject({ method: 'GET', url: `/agents/${parent.agentId}/children`, headers: { Authorization: `Bearer ${parent.rawKey}` } });
+      expect(statusBefore.json()).toMatchObject({ id: childId, lastStartRefusal: null });
+      expect(listBefore.json<{ children: Array<{ lastStartRefusal: unknown }> }>().children[0]?.lastStartRefusal).toBeNull();
+
+      await db.update(agents).set({ lastStartRefusal: REFUSAL }).where(eq(agents.id, childId));
+
+      const statusAfter = await app.inject({ method: 'GET', url: `/agents/${childId}/status`, headers: { Authorization: `Bearer ${parent.rawKey}` } });
+      const listAfter = await app.inject({ method: 'GET', url: `/agents/${parent.agentId}/children`, headers: { Authorization: `Bearer ${parent.rawKey}` } });
+      expect(statusAfter.json()).toMatchObject({ lastStartRefusal: REFUSAL });
+      expect(listAfter.json<{ children: Array<{ lastStartRefusal: unknown }> }>().children[0]?.lastStartRefusal).toEqual(REFUSAL);
+    });
+
+    it('another agent cannot read the refusal on a child it does not own', async () => {
+      const userId = await seedUser(db);
+      const owner = await seedAgent(db, userId, { childAgentLimit: 2 });
+      const stranger = await seedAgent(db, userId, { childAgentLimit: 2 });
+      const app = await appWith({});
+      const created = await postAsAgent(app, owner.rawKey, { name: 'Scout', prompt: 'Look.', start: false });
+      const childId = created.json<{ id: string }>().id;
+      await db.update(agents).set({ lastStartRefusal: REFUSAL }).where(eq(agents.id, childId));
+
+      const status = await app.inject({ method: 'GET', url: `/agents/${childId}/status`, headers: { Authorization: `Bearer ${stranger.rawKey}` } });
+      const list = await app.inject({ method: 'GET', url: `/agents/${owner.agentId}/children`, headers: { Authorization: `Bearer ${stranger.rawKey}` } });
+
+      expect(status.statusCode).not.toBe(200);
+      expect(status.body).not.toContain('Insufficient billing credit');
+      expect(list.statusCode).not.toBe(200);
+      expect(list.body).not.toContain('Insufficient billing credit');
     });
   });
 });

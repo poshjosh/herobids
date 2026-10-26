@@ -95,9 +95,10 @@ agentApprovals:
 # Agent-created agents (001-agent-creating-agents §3). Plan-level childAgentLimitCeiling is
 # separate and unset by default (derived as maxAgents - 1, floored at 0).
 agentCreation:
-  agentCreateRatePerMinute: 10       # token bucket capacity and refill per minute for create_agent attempts, per user across the tree
+  agentCreateRatePerMinute: 10       # token bucket capacity and refill per minute for create_child_agent attempts, per user across the tree
   creatorMessageRatePerMinute: 10    # token bucket per creator-child pair, both directions
   maxAgentDepth: 6                   # max generations below a user-created agent
+  duplicateChildWindowSeconds: 300   # a create with the same name under the same parent within this window returns the existing child, not a new one. 0 disables
   platformApiTimeoutMs: 10000        # timeout per agent-container call to the platform API (create, allowance, creator actions)
 
 # Per-tick LLM cost estimates by usage tier (USD). Derived from eval data

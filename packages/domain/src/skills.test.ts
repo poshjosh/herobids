@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  AGENT_CHILDREN_MANAGEMENT_SKILL,
   BASE_SKILL,
   EMAIL_SKILL,
   FILE_MANAGEMENT_SKILL,
+  isUserOnlySkill,
   LONG_RUNNING_TASK_SKILL,
   PROGRAMMING_SKILL,
   SKILL_PRESET_MAP,
@@ -126,6 +128,7 @@ describe('SYSTEM_SKILLS', () => {
 
   it('contains exactly the non-trading system skills', () => {
     expect(SYSTEM_SKILLS.map((s) => s.id).sort()).toEqual([
+      'agent-children-management',
       'browser',
       'email',
       'file-management',
@@ -371,3 +374,38 @@ describe('BASE_SKILL — long-running task pointer', () => {
     expect(BASE_SKILL.instructions).not.toContain('ltt/<campaign>');
   });
 });
+
+describe('agent-children-management skill', () => {
+  it('lists exactly the seven child-management tools', () => {
+    expect(AGENT_CHILDREN_MANAGEMENT_SKILL.requiredTools.slice().sort()).toEqual([
+      'create_child_agent',
+      'delete_child_agent',
+      'get_child_agent_status',
+      'list_child_agents',
+      'message_child_agent',
+      'pause_child_agent',
+      'stop_child_agent',
+    ]);
+  });
+
+  it('is a system skill, so it is seeded with the others', () => {
+    expect(SYSTEM_SKILLS).toContain(AGENT_CHILDREN_MANAGEMENT_SKILL);
+    expect(AGENT_CHILDREN_MANAGEMENT_SKILL.slug).toBe('system/agent-children-management');
+  });
+
+  it('is user-only by id and by system slug, and no other skill is', () => {
+    expect(isUserOnlySkill('agent-children-management')).toBe(true);
+    expect(isUserOnlySkill('system/agent-children-management')).toBe(true);
+    expect(isUserOnlySkill('browser')).toBe(false);
+    expect(isUserOnlySkill('system/browser')).toBe(false);
+    expect(isUserOnlySkill('base')).toBe(false);
+  });
+
+  it('is not in the base skill, so an agent without it cannot see the child tools', () => {
+    for (const tool of AGENT_CHILDREN_MANAGEMENT_SKILL.requiredTools) {
+      expect(BASE_SKILL.requiredTools).not.toContain(tool);
+    }
+    expect(BASE_SKILL.requiredTools).toContain('message_peer_agent');
+  });
+});
+

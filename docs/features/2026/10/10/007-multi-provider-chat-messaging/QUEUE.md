@@ -153,3 +153,7 @@ Non-blocking issues from code reviews, grouped by item.
 
 ### E2E Journey 3 (owner run, 2026-10-26)
 - Failed: `getByText(userMessage, {exact: true})` could not match the bubble body because the body was a bare text node beside the `<time>` element. Fixed by wrapping the body in its own `<div>` in `AgentConversation.tsx`. Web tests (534) and `tsc` pass. Owner to re-run `run-all-tests.sh --e2e`; not run by the agent.
+
+### Child agents (owner decisions 2026-10-26)
+- DEC-64 and DEC-65 approved. Parent tick note for child launch refusals: deferred (no wake source). Model-selection refusals: not recorded (owner decision).
+- Telegram chat-ID onboarding (idea, not started): the web copy asks users to send `/start` to @OpenAIdomBot manually. Telegram supports `https://t.me/OpenAIdomBot?start=<payload>`, which opens the bot with a Start button. `?text=` pre-fills the composer, but the user still taps send. There is no `?message=` parameter. A one-time-code link (C2, deferred) would remove the paste step entirely.

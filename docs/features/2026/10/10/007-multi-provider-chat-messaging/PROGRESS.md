@@ -642,3 +642,117 @@ Disposable `postgres:17-alpine` (port 55432) and `redis:7-alpine` (port 56379), 
 - Everything listed under the earlier entries stays open.
 
 - **Next ready item:** none.
+
+## 2026-10-26: agent children management skill (proposed, DEC-58 to DEC-63)
+
+The earlier work of the same day is still unstaged. These changes are left unstaged, not committed. Nothing here is approved: the decisions are `proposed — pending owner confirmation`.
+
+### What changed
+
+- **1. Skill `agent-children-management`** (`packages/domain/src/skills.ts`, system skill, seeded by sync). It lists the seven child tools. The five child tools leave `base`, so only the skill grants them. User-only: `USER_ONLY_SKILL_IDS` and `isUserOnlySkill` (id or system slug).
+- **2. Assignment paths and their refusals.** Agent `add_skills` (worker) refuses with `skill.user_only`. The broker that writes assignments refuses the same add (server side). A child grant in `create_child_agent` is refused in the worker (`skill.user_only`) and in the creation policy (`agent.create.grant_user_only`, checked for agent callers only, in preflight and in the transaction). Removal is not restricted.
+- **3. New tools.** `list_child_agents` (gated on the skill only, not on a child) and `delete_child_agent` (creator tool, gated on a child). Worker client `listChildAgents` and `deleteChildAgent`, plus the port.
+- **4. New agent-key routes.** `GET /agents/:id/children` (self, one query with a grouped count) and `DELETE /agents/:id/children/:childId` (agent key only, self-scoped, direct child only). The delete needs the child stopped and childless, tears down bots, reconciles the profile, and audits `agent.child_deleted`. The direct-child guard now takes the param name, and `requireAgentKeyCaller` is new (`apps/api/src/plugins/auth.ts`).
+- **5. Rename.** `create_agent` is now `create_child_agent` in the catalog, `KNOWN_AGENT_TOOL_NAMES`, the worker registry, `CREATE_CHILD_AGENT_TOOL_NAME`, `isCreateChildAgentExposed`, `agent.ts`, `runtime-lifecycle.ts`, the metrics log label, the config comment, and the docs. `/agents` and `createAgent` names are unchanged. No stored data holds the tool name (checked the migrations, `packages/db` and `toolPolicy` derivation), so no data migration.
+- **6. Ceiling on assignment.** `childAllowanceForNewAssignment` (`apps/api/src/agents/child-allowance-assignment.ts`) sets `childAgentLimit` to the plan ceiling when a user newly assigns the skill. It applies to `POST /agents`, `PATCH /agents/:id`, `PUT /agents/:id`, blueprint instantiate and go-live. The limit, the `agent.child_limit_set` audit row (`source: skill_assigned`) and the assignment commit in one transaction (`syncAgentSkillAssignmentsInTx`). A zero ceiling returns `childAgentLimitNotice`.
+- **7. Docs.** `docs/tech/agents/tools/agent-creation-tools.md` (new tools, gating, skill section), `apps/worker/src/tools/platform-docs-data.ts` (skill list), `CHANGELOG.md` (Unreleased), `DECISIONS.md` (DEC-58 to DEC-63), current `docs/tech` and `config/default.yaml` references to the tool name. ADRs and audits are records and were not edited.
+
+### Tier 2 and 3 choices
+
+- `base` no longer lists the child tools. Otherwise the user-only rule would not hold, because `base` is visible to every agent. Side effect: agents with a child limit above 0 that do not hold the skill lose the create and creator tools until the user assigns it (DEC-63, owner question).
+- `delete_child_agent` refuses a child that has children. A creator cannot reach grandchildren, so only the user deletes a subtree.
+- `list_child_agents` and `delete_child_agent` use `agentAccess: 'self'` and a direct-child guard. The user delete is unchanged.
+- The `PATCH`, `PUT` and `POST` skill writes moved into the agent row's transaction (DEC-62). The blueprint and go-live limits are set in their creation transaction, but their responses carry no notice.
+- The capability manifest (`docs/features/pending/000-capability-foundations/009-...`) lists every known tool. `apps/api/src/routes/providers.test.ts` checks it against `KNOWN_AGENT_TOOL_NAMES`, so I renamed one row and added two. This is a feature doc, edited only because the test reads it.
+- `search_skills` and `list_skills` still show the user-only skill to agents as available. Only assignment is refused.
+
+### Tests added or changed
+
+- Domain: `skills.test.ts` (seven tools, system skill, `isUserOnlySkill`, base excludes child tools). `SYSTEM_SKILLS` list and the trading-delegation source guard (`reconciliationCalls` 4 to 5, for the new child delete) updated.
+- Worker unit: `agent-creation.test.ts` (user-only refusal, `list_child_agents` gating and empty list, `delete_child_agent` stopped check, has-children message, not-found mapping), `agent-platform-client.test.ts` (list and delete), `skills-user-only.test.ts` (add_skills refusal, id and slug, mixed list), `agent-broker.test.ts` (broker refusal, no DB writes). `runtime-tool-visibility.test.ts` budget 36 to 31.
+- API unit: `child-allowance-assignment.test.ts` (ceiling 0 and above, maxAgents fallback, no plan, admin flag, already held, not included), `agent-create-policy.test.ts` (user-only grant refused for a child, allowed for a user), `agent-create-metrics.test.ts` (label).
+- Real Postgres: `agent-children-management.integration.test.ts` (10: list, empty list, other agent's children, delete with audit, not stopped, has children, grandchild by either path, not the parent, unknown child, user session). `agent-children-skill-assignment.integration.test.ts` (5: PATCH on a plan with children sets the ceiling and audits, zero ceiling with notice, later save keeps limit, POST with and without the skill).
+
+### Commands and results
+
+Disposable `postgres:17-alpine` (`chi-tmp-pgtest-17`), migrated with `drizzle-kit migrate`, removed afterwards. `herobids-*` containers were not touched.
+
+| Check | Result |
+| --- | --- |
+| `npx tsc -p {packages/domain,packages/db,apps/api,apps/worker,apps/web}/tsconfig.json --noEmit` | exit 0 each (domain and db `dist` rebuilt first) |
+| `pnpm lint` | exit 0 |
+| `pnpm test` (`DATABASE_URL` and `REDIS_URL` unset) | 394 files passed, 42 skipped; 7380 tests passed, 654 skipped, 0 failed (baseline 7345 passed, 639 skipped) |
+| DB-only integration on the disposable Postgres (`packages/db/src`, the auth, agent-api-key, blueprints and auth-oauth suites, the two new suites) | 33 files passed, 1 skipped; 530 tests passed, 6 skipped |
+
+Not run:
+
+- The Redis-dependent integration suites: `agent-creator-actions`, `agent-delete-subtree`, `agent-child-create`, `agent-child-limit`, `agent-child-allowance`, `agent-audit`, `agent-key-route-guards`, and the `test:functional` and worker integration sets. Their tests connect to `localhost:6379`, which is `herobids-redis-1`, and I did not want to touch it. An in-container run hit a private npm registry token (`@poshjosh/contracts`), which I did not use. These need a CI or owner run with a disposable Redis.
+- The e2e gate.
+
+### Owner hand-offs still open
+
+- Confirm or change DEC-58 to DEC-63. DEC-63 (existing agents with a limit lose the tools) needs a decision: accept, or a one-off data migration.
+- Run the Redis-dependent integration suites against a disposable Redis (see above).
+- Everything listed under the earlier entries stays open.
+
+- **Next ready item:** none.
+
+## Child start and stop defaults (DEC-64, proposed)
+
+Owner rejected the rule that the user must start a created child. Implemented as proposed in DEC-64, pending owner confirmation.
+
+- `create_child_agent` takes `start` (default `true`). The API starts the child after its create commits, through the same `startAgent` the user uses. A refused start does not roll back the create. The response carries `started` and `startError`. The worker tool returns success with `started: false` and the reason.
+- `delete_child_agent` takes `stopFirst` (default `true`). The API stops a running child through the same `stopAgent` as the creator's stop route, then deletes it. With `stopFirst=false` a running child is refused with `agent.child.running` and nothing changes.
+- The has-children refusal runs before any stop. Ownership and direct-child checks are unchanged.
+- Skill text, tool catalog, tech and user docs, CHANGELOG, and DEC-59's not-stopped sentence (marked superseded) are updated.
+
+| Check | Result |
+| --- | --- |
+| `pnpm --filter @herobids/domain run build` and `@herobids/db` build | exit 0 |
+| `npx tsc -p {packages/domain,packages/db,apps/api,apps/worker,apps/web}/tsconfig.json --noEmit` | exit 0 each |
+| `pnpm lint` | exit 0 |
+| `env -u DATABASE_URL -u REDIS_URL pnpm test` | 395 files passed, 42 skipped; 7396 tests passed, 657 skipped, 0 failed (baseline 7380 passed) |
+| DB integration on a disposable Postgres 17 (`agent-children-management`, `agent-children-skill-assignment`), run one file at a time | 18 passed |
+
+Notes:
+
+- The two DB suites TRUNCATE the same tables. Run in parallel they fail each other. Run one at a time they pass.
+- The start path has no credit or billing check. Its checks are ownership, stopped status, model selection and skill portability (through blueprint sync). The start is reused as it is.
+- The create route's start runs the blueprint sync, which may call the external backend. A slow sync is bounded by the existing read timeout. The worker's platform timeout is separate and can fire first, which the agent would see as a retryable error after the child exists. The agent could then retry and create a duplicate. Not addressed here.
+- A stop made for `stopFirst` is asynchronous in the runtime, as for the creator's stop. The delete publishes the cleanup signal after commit, as before.
+- Not run: the Redis-dependent suites (`agent-child-create`, `agent-creator-actions`, `agent-delete-subtree`, and others). The create route's new start branch is covered by the helper unit tests, not by a route integration test.
+
+Open for the owner: confirm or change DEC-64. Also confirm that a `start` refusal should be a success with `started: false` (current), not a tool failure.
+
+## Duplicate create protection and launch-refusal visibility (DEC-65, proposed)
+
+Two changes to child creation, both pending owner confirmation of DEC-65.
+
+- Duplicate window. A `create_child_agent` whose name matches a direct child of the same parent, created within `agentCreation.duplicateChildWindowSeconds` (default 300, 0 disables), returns that child with `duplicate: true`, `started: false` and its status. Nothing is created or started. The check runs under the parent row lock in the insert's transaction, before the allowance rule. The route answers 200 for a duplicate (metric outcome `duplicate`).
+- Refusal visibility. `agents.last_start_refusal` (jsonb `{code, message, at}`) is set by the worker when a billing refusal stops a launch and cleared after a launch that reaches the runtime. `lastStartRefusal` is returned by `GET /agents/:id/status` and `GET /agents/:id/children` to the creator's agent key, for direct children only. The worker tools `get_child_agent_status` and `list_child_agents` carry it.
+- Migration `0087_agent_last_start_refusal`: one nullable column and the index `idx_agents_parent_name_created (parent_agent_id, name, created_at)`.
+- Gap: the parent is not told on its tick. The wake-source enum has no child-status source. The parent learns of a refusal when it calls a status tool.
+
+| Check | Result |
+| --- | --- |
+| `pnpm --filter @herobids/db run db:generate` | `0087_agent_last_start_refusal.sql`: ADD COLUMN and CREATE INDEX only |
+| `pnpm --filter @herobids/domain run build` and `@herobids/db` build | exit 0 |
+| `npx tsc -p {packages/domain,packages/db,apps/api,apps/worker,apps/web}/tsconfig.json --noEmit` | exit 0 each |
+| `pnpm lint` | exit 0 |
+| `env -u DATABASE_URL -u REDIS_URL pnpm test` | 395 files passed, 42 skipped; 7412 tests passed, 663 skipped, 0 failed (baseline 7396 passed) |
+| DB integration on a disposable Postgres 17, one file at a time (28 files) | all pass. `agent-child-create` 35 (6 new), `agent-children-management` 13, `agent-creator-actions` 17, `conversation-repository` 77 |
+
+Notes:
+
+- Two existing integration assertions pinned the old shape and were updated: the children-list exact body and the status projection key list. Both now include `lastStartRefusal`.
+- The worker records only billing refusals. A model-selection refusal in the worker is not recorded: the API already checks model selection before it accepts a start.
+- The worker clears the refusal after `runtimeLauncher.launch` returns, not when the session reaches `running`.
+- Concurrency: identical creates from one parent serialise on the parent row lock (`FOR UPDATE`) that the policy already takes. The second create sees the first commit under READ COMMITTED. An integration test runs five identical concurrent creates and expects one child.
+- The DB integration suites use the existing Redis on 6379 for token-bucket keys only. Nothing flushes it.
+
+
+## 2026-10-26: owner decisions on child-agent follow-ups
+
+- **DEC-65 approved** (duplicate-create window 300 s; persisted `lastStartRefusal`; parent sees it through the status and list tools).
+- **Open point 2 (parent tick note): deferred by owner.** The parent learns of a launch refusal only by calling `get_child_agent_status` or `list_child_agents`. No wake source is added.
+- **Open point 3 (model-selection refusals): not recorded, by owner.** Only billing refusals set `lastStartRefusal`.

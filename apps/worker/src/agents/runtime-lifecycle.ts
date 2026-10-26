@@ -41,7 +41,7 @@ export interface AgentEnvConfig {
   externalBackendConfigJson?: string;
   /** Browser pool URL forwarded to agent containers when browser pool is enabled. */
   browserPoolUrl?: string;
-  /** Platform API base URL the agent calls for create_agent and creator tools (sharedServices.apiBaseUrl). */
+  /** Platform API base URL the agent calls for create_child_agent and creator tools (sharedServices.apiBaseUrl). */
   apiBaseUrl?: string;
   /** Timeout in ms for agent-container calls to the platform API (agentCreation.platformApiTimeoutMs). */
   agentPlatformTimeoutMs?: number;

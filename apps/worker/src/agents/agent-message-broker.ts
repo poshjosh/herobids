@@ -31,6 +31,7 @@ import {
   ConnectionRequestsConfigSchema,
   PeerDropPayloadSchema,
   PeerSendPayloadSchema,
+  isUserOnlySkill,
 } from '@herobids/domain';
 import type { ConversationService, NotificationClass, PeerMessagingService, PeerSendResult } from '@herobids/domain';
 import type { AgentRepository, ConnectionOwnershipRepository, Database } from '@herobids/db';
@@ -895,6 +896,19 @@ export class AgentMessageBroker {
           warnings: [],
           error: 'Database not available',
           errorCode: 'db_unavailable',
+        });
+        return;
+      }
+
+      // Only the user may add a user-only skill. The agent's own add_skills refuses it too; this is the server-side check.
+      if (parsed.data.action === 'add' && parsed.data.skillIds.some(isUserOnlySkill)) {
+        await publishReply({
+          status: 'error',
+          action: 'add',
+          skillIds: [],
+          warnings: [],
+          error: 'This skill can only be added by the user.',
+          errorCode: 'skill.user_only',
         });
         return;
       }

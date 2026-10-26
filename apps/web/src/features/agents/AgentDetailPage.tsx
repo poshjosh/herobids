@@ -359,8 +359,6 @@ export function AgentDetailPage() {
           </div>
         </Card>
 
-        <ChildAgentAllowanceCard agent={agent} ceiling={childAgentLimitCeiling} />
-
         <Card>
           <details>
             <summary
@@ -538,6 +536,8 @@ export function AgentDetailPage() {
             </details>
           </Card>
         )}
+
+        <ChildAgentAllowanceCard agent={agent} ceiling={childAgentLimitCeiling} />
 
         <Card>
           <details>

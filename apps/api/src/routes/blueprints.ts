@@ -50,6 +50,7 @@ import { checkAgentLimit, resolvePlanBlueprintEntitlements } from '../plan-guard
 import { AgentCreatePolicyError } from '../agents/agent-create-policy.js';
 import { errorPayload } from '../error-payload.js';
 import { createAgentFromPayload } from '../services/agent-instantiation-service.js';
+import { childAllowanceForNewAssignment } from '../agents/child-allowance-assignment.js';
 import { chatAddressesToInput, listUserChatAddresses } from '../agents/chat-addresses.js';
 import type { TradingProfileReconciliationSaga } from '../agents/trading-profile-reconciliation-saga.js';
 import { computeInstantiateRequestHash, deriveInstantiateActorId } from '../services/blueprint-idempotency.js';
@@ -2366,6 +2367,13 @@ export async function blueprintRoutes(
                   blueprintRevisionId: revision.id,
                   chatAddresses,
                   fallbackName: bp.name,
+                  childAgentLimit: childAllowanceForNewAssignment({
+                    plansConfig,
+                    planId: request.userPlanId || 'free',
+                    isAdmin: request.isAdmin,
+                    previousSkillIds: [],
+                    nextSkillIds: skillRefs.map((ref) => ref.skillId),
+                  })?.childAgentLimit,
                 },
                 agentPayloadFinal.risk,
               );

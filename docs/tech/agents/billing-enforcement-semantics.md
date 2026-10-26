@@ -102,7 +102,7 @@ When `hardCapMicrousd = null`, reservations are not blocked on the credit dimens
 | Hybrid evaluator LLM dispatch | `agent.ts` hybrid path | Tick skipped before any LLM call |
 | Guided Setup chat (message send) | `apps/api/src/routes/chat.ts` `POST /chat/threads/:id/messages` | Message rejected with HTTP 402 `billing.top_up_required` before LLM call |
 | Guided Setup chat (action result) | `apps/api/src/routes/chat.ts` `POST /chat/threads/:id/actions/:actionId` | Action rejected with HTTP 402 `billing.top_up_required` before LLM resume |
-| Guided Setup `create_agent` tool | `apps/api/src/routes/chat.ts` `executeChatAction` | Tool returns `billing.top_up_required` error (defense-in-depth) |
+| Guided Setup `create_child_agent` tool | `apps/api/src/routes/chat.ts` `executeChatAction` | Tool returns `billing.top_up_required` error (defense-in-depth) |
 
 ### Reason code
 
@@ -133,7 +133,7 @@ The `canSpendNow()` guard also applies to the Guided Setup (AI-assisted agent cr
 |-------------------|----------|----------------------|
 | Message send | `POST /chat/threads/:id/messages` | Returns HTTP 402 with error code `billing.top_up_required`. User message is **not** persisted, LLM is **not** invoked. |
 | Action result (e.g. OAuth callback) | `POST /chat/threads/:id/actions/:actionId` | Returns HTTP 402 with error code `billing.top_up_required`. Connection-link metadata updates are still persisted (not a paid action), but the LLM resume is blocked. |
-| `create_agent` tool call | `executeChatAction` (tool loop) | Returns a `billing.top_up_required` error as the tool result (defense-in-depth — the message-send gate is the primary block). |
+| `create_child_agent` tool call | `executeChatAction` (tool loop) | Returns a `billing.top_up_required` error as the tool result (defense-in-depth — the message-send gate is the primary block). |
 
 ### Frontend gate
 

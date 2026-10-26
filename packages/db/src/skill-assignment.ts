@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { and, eq, inArray, notInArray, or, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
+import type { DatabaseTransaction } from './trading-profile-reconciliation-outbox-repository.js';
 import { agentSkills, skillEntitlements, skillRevisions, skillUsageEvents, skills } from './schema/index.js';
 
 export type SkillAssignmentResolution = {
@@ -158,60 +159,69 @@ export async function syncAgentSkillAssignments(
   assignments: SkillAssignmentResolution[],
   assignmentSource: 'user_select' | 'guided_setup' | 'blueprint_instantiate' | 'agent_self' = 'user_select',
 ): Promise<void> {
+  await db.transaction((tx) => syncAgentSkillAssignmentsInTx(tx, agentId, userId, assignments, assignmentSource));
+}
+
+/** {@link syncAgentSkillAssignments} inside the caller's transaction, so a write can commit with its own row changes. */
+export async function syncAgentSkillAssignmentsInTx(
+  tx: DatabaseTransaction,
+  agentId: string,
+  userId: string,
+  assignments: SkillAssignmentResolution[],
+  assignmentSource: 'user_select' | 'guided_setup' | 'blueprint_instantiate' | 'agent_self' = 'user_select',
+): Promise<void> {
   const now = new Date();
-  await db.transaction(async (tx) => {
-    const existingRows = await tx.select({
-      skillId: agentSkills.skillId,
-      skillRevisionId: agentSkills.skillRevisionId,
-    }).from(agentSkills).where(eq(agentSkills.agentId, agentId));
+  const existingRows = await tx.select({
+    skillId: agentSkills.skillId,
+    skillRevisionId: agentSkills.skillRevisionId,
+  }).from(agentSkills).where(eq(agentSkills.agentId, agentId));
 
-    const existingBySkillId = new Map(existingRows.map((row) => [row.skillId, row.skillRevisionId] as const));
-    const nextSkillIds = assignments.map((assignment) => assignment.skillId);
+  const existingBySkillId = new Map(existingRows.map((row) => [row.skillId, row.skillRevisionId] as const));
+  const nextSkillIds = assignments.map((assignment) => assignment.skillId);
 
-    if (nextSkillIds.length === 0) {
-      await tx.delete(agentSkills).where(eq(agentSkills.agentId, agentId));
-    } else {
-      await tx.delete(agentSkills).where(and(
-        eq(agentSkills.agentId, agentId),
-        notInArray(agentSkills.skillId, nextSkillIds),
-      ));
-    }
+  if (nextSkillIds.length === 0) {
+    await tx.delete(agentSkills).where(eq(agentSkills.agentId, agentId));
+  } else {
+    await tx.delete(agentSkills).where(and(
+      eq(agentSkills.agentId, agentId),
+      notInArray(agentSkills.skillId, nextSkillIds),
+    ));
+  }
 
-    for (const [orderIndex, assignment] of assignments.entries()) {
-      const previousRevisionId = existingBySkillId.get(assignment.skillId);
-      await tx.insert(agentSkills).values({
-        agentId,
-        skillId: assignment.skillId,
+  for (const [orderIndex, assignment] of assignments.entries()) {
+    const previousRevisionId = existingBySkillId.get(assignment.skillId);
+    await tx.insert(agentSkills).values({
+      agentId,
+      skillId: assignment.skillId,
+      skillRevisionId: assignment.skillRevisionId,
+      orderIndex,
+      assignedAt: now,
+      assignedByUserId: userId,
+      assignmentSource,
+    }).onConflictDoUpdate({
+      target: [agentSkills.agentId, agentSkills.skillId],
+      set: {
         skillRevisionId: assignment.skillRevisionId,
         orderIndex,
         assignedAt: now,
         assignedByUserId: userId,
         assignmentSource,
-      }).onConflictDoUpdate({
-        target: [agentSkills.agentId, agentSkills.skillId],
-        set: {
-          skillRevisionId: assignment.skillRevisionId,
-          orderIndex,
-          assignedAt: now,
-          assignedByUserId: userId,
-          assignmentSource,
-        },
-      });
+      },
+    });
 
-      if (previousRevisionId !== assignment.skillRevisionId) {
-        await tx.insert(skillUsageEvents).values({
-          id: crypto.randomUUID(),
-          skillId: assignment.skillId,
-          skillRevisionId: assignment.skillRevisionId,
-          userId,
-          agentId,
-          sessionId: null,
-          eventType: 'agent_assigned',
-          occurredAt: now,
-          metadata: { source: 'agent_update' },
-          createdAt: now,
-        });
-      }
+    if (previousRevisionId !== assignment.skillRevisionId) {
+      await tx.insert(skillUsageEvents).values({
+        id: crypto.randomUUID(),
+        skillId: assignment.skillId,
+        skillRevisionId: assignment.skillRevisionId,
+        userId,
+        agentId,
+        sessionId: null,
+        eventType: 'agent_assigned',
+        occurredAt: now,
+        metadata: { source: 'agent_update' },
+        createdAt: now,
+      });
     }
-  });
+  }
 }

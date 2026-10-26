@@ -2488,6 +2488,40 @@ describe('handleManageAgentSkills — handler logic', () => {
       );
     });
 
+    it('refuses an agent add of the user-only children skill with skill.user_only, and writes nothing', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMock();
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'add', skillIds: ['browser', 'agent-children-management'], requestMessageId: 'req-user-only' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).not.toHaveBeenCalled();
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-user-only',
+        expect.objectContaining({
+          status: 'error',
+          errorCode: 'skill.user_only',
+          error: 'This skill can only be added by the user.',
+        }),
+      );
+    });
+
     it('publishes db_unavailable error reply when db is not wired', async () => {
       const agentRepo = mockAgentRepo();
       agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });

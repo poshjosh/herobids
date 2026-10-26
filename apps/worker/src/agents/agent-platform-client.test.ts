@@ -63,12 +63,15 @@ describe('agent platform client', () => {
     expect(result).toMatchObject({ ok: false, error: { code: 'agent.platform.invalid_response' } });
   });
 
-  it('forwards only name, prompt, skillIds and connectionIds when creating a child', async () => {
-    const fetchImpl = fetchReturning(jsonResponse(201, { id: 'child-1', depth: 1, creatorId: 'ignored' }));
+  it('forwards only name, prompt, skillIds, connectionIds and start when creating a child', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(201, {
+      id: 'child-1', depth: 1, status: 'starting', duplicate: false, started: true, startError: null, creatorId: 'ignored',
+    }));
     const result = await makeClient(fetchImpl).createChildAgent({
       name: 'Research child',
       prompt: 'Summarise the market.',
       skillIds: ['skill-1'],
+      start: true,
     });
 
     const [, init] = fetchImpl.mock.calls[0]!;
@@ -76,8 +79,54 @@ describe('agent platform client', () => {
       name: 'Research child',
       prompt: 'Summarise the market.',
       skillIds: ['skill-1'],
+      start: true,
     });
-    expect(result).toEqual({ ok: true, data: { id: 'child-1', depth: 1 } });
+    expect(result).toEqual({ ok: true, data: { id: 'child-1', depth: 1, status: 'starting', duplicate: false, started: true, startError: null } });
+  });
+
+  it('reads a duplicate create as the existing child with duplicate true and started false', async () => {
+    const body = { id: 'child-1', depth: 1, status: 'stopped', duplicate: true, started: false, startError: null };
+    const result = await makeClient(fetchReturning(jsonResponse(200, body))).createChildAgent({
+      name: 'Research child', prompt: 'Summarise.', start: true,
+    });
+
+    expect(result).toEqual({ ok: true, data: body });
+  });
+
+  it('a create reply without the duplicate flag is an invalid response', async () => {
+    const body = { id: 'child-1', depth: 1, status: 'stopped', started: false, startError: null };
+    const result = await makeClient(fetchReturning(jsonResponse(201, body))).createChildAgent({
+      name: 'Research child', prompt: 'Summarise.', start: false,
+    });
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'agent.platform.invalid_response' } });
+  });
+
+  it('reads the last start refusal on a child status, and null when there is none', async () => {
+    const refusal = { code: 'billing.limit_exceeded', message: 'Usage limit reached — agent session start blocked', at: '2026-10-26T10:00:00.000Z' };
+    const status = { id: 'child-1', name: 'Research', status: 'stopped', depth: 1, runtimeStatus: null, childAgentLimit: 0, lastStartRefusal: refusal };
+
+    const refused = await makeClient(fetchReturning(jsonResponse(200, status))).getChildStatus('child-1');
+    const clear = await makeClient(fetchReturning(jsonResponse(200, { ...status, lastStartRefusal: null }))).getChildStatus('child-1');
+
+    expect(refused).toEqual({ ok: true, data: status });
+    expect(clear).toMatchObject({ ok: true, data: { lastStartRefusal: null } });
+  });
+
+  it('reads a refused start as created-but-not-started, with the namespaced code and message', async () => {
+    const body = {
+      id: 'child-1',
+      depth: 1,
+      status: 'stopped',
+      duplicate: false,
+      started: false,
+      startError: { code: 'agent.model_selection_incomplete', message: 'Agent cannot start.' },
+    };
+    const result = await makeClient(fetchReturning(jsonResponse(201, body))).createChildAgent({
+      name: 'Research child', prompt: 'Summarise.', start: true,
+    });
+
+    expect(result).toEqual({ ok: true, data: body });
   });
 
   it('a 403 response maps to a namespaced forbidden error without the response body', async () => {
@@ -94,7 +143,7 @@ describe('agent platform client', () => {
   it('a 403 from the platform reaches the model as a namespaced tool error', async () => {
     const fetchImpl = fetchReturning(jsonResponse(403, { error: 'agent.create.allowance_exhausted' }));
     const client = makeClient(fetchImpl);
-    const createAgentTool = agentCreationTools.find((t) => t.name === 'create_agent')!;
+    const createAgentTool = agentCreationTools.find((t) => t.name === 'create_child_agent')!;
     const ctx: ToolContext = {
       agentId: AGENT_ID,
       sessionId: 'session-1',
@@ -156,7 +205,7 @@ describe('agent platform client', () => {
 
   it('a success with an unexpected body shape maps to an invalid-response error', async () => {
     const fetchImpl = fetchReturning(jsonResponse(201, { unexpected: true }));
-    const result = await makeClient(fetchImpl).createChildAgent({ name: 'Research child', prompt: 'Summarise.' });
+    const result = await makeClient(fetchImpl).createChildAgent({ name: 'Research child', prompt: 'Summarise.', start: true });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -202,3 +251,56 @@ describe('agent platform client', () => {
     expect(client).toBeDefined();
   });
 });
+
+describe('agent platform client — child listing and deletion', () => {
+  it('lists the direct children from the agent-scoped children route', async () => {
+    const children = [{ id: 'child-1', name: 'Research', status: 'stopped', depth: 1, childCount: 0, lastStartRefusal: null }];
+    const fetchImpl = fetchReturning(jsonResponse(200, { children }));
+    const result = await makeClient(fetchImpl).listChildAgents();
+
+    expect(result).toEqual({ ok: true, data: children });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe(`${BASE_URL}/agents/${AGENT_ID}/children`);
+    expect(init?.method).toBe('GET');
+  });
+
+  it('an empty children list is a valid answer', async () => {
+    const result = await makeClient(fetchReturning(jsonResponse(200, { children: [] }))).listChildAgents();
+
+    expect(result).toEqual({ ok: true, data: [] });
+  });
+
+  it('a malformed children list maps to an invalid-response error', async () => {
+    const result = await makeClient(fetchReturning(jsonResponse(200, { children: [{ id: 'c' }] }))).listChildAgents();
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'agent.platform.invalid_response' } });
+  });
+
+  it('deletes one child with DELETE on the agent-scoped child route, sending stopFirst and no body', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(200, { deleted: true, stopped: true }));
+    const result = await makeClient(fetchImpl).deleteChildAgent('child-1', true);
+
+    expect(result).toEqual({ ok: true, data: { deleted: true, stopped: true } });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe(`${BASE_URL}/agents/${AGENT_ID}/children/child-1?stopFirst=true`);
+    expect(init?.method).toBe('DELETE');
+    expect(init?.body).toBeUndefined();
+  });
+
+  it('sends stopFirst=false when the caller refuses to stop a running child', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(200, { deleted: true, stopped: false }));
+    await makeClient(fetchImpl).deleteChildAgent('child-1', false);
+
+    const [url] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe(`${BASE_URL}/agents/${AGENT_ID}/children/child-1?stopFirst=false`);
+  });
+
+  it('a refused delete reaches the model as the namespaced code and never the key', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(409, { error: 'agent.child.has_children' }));
+    const result = await makeClient(fetchImpl).deleteChildAgent('child-1', true);
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'agent.child.has_children' } });
+    expect(JSON.stringify(result)).not.toContain(API_KEY);
+  });
+});
+

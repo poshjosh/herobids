@@ -66,6 +66,8 @@ export const agents = pgTable('agents', {
   depth: integer('depth').notNull().default(0),
   /** How many child agents this agent may create. User-set; starts at 0. */
   childAgentLimit: integer('child_agent_limit').notNull().default(0),
+  /** Why the last launch was refused (billing). Set by the worker on refusal, cleared on a successful launch. Read by the parent. */
+  lastStartRefusal: jsonb('last_start_refusal').$type<AgentStartRefusal | null>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -73,4 +75,12 @@ export const agents = pgTable('agents', {
   index('idx_agents_status').on(t.status),
   index('idx_agents_parent_agent_id').on(t.parentAgentId),
   index('idx_agents_user_creator_type').on(t.userId, t.creatorType),
+  index('idx_agents_parent_name_created').on(t.parentAgentId, t.name, t.createdAt),
 ]);
+
+/** A refused launch: a namespaced code and a fixed message, plus when it happened (ISO 8601). */
+export interface AgentStartRefusal {
+  code: string;
+  message: string;
+  at: string;
+}

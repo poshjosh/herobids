@@ -78,7 +78,7 @@ export interface ToolContext extends TradingToolContext {
    * external-skill support (tests, onboarding chat).
    */
   /**
-   * Platform API client for create_agent and the creator tools. Absent when the container
+   * Platform API client for create_child_agent and the creator tools. Absent when the container
    * has no per-runtime API key or API base URL, in which case those tools are never visible.
    */
   agentPlatform?: import('./ports/agent-platform.js').AgentPlatformPort;
@@ -119,8 +119,8 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'check_regime',
   'check_watches',
   'complete_task',
-  'create_agent',
   'create_bot',
+  'create_child_agent',
   'create_task',
   'delete_file',
   'delete_memory',
@@ -129,6 +129,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'execute_shell',
   'find_instrument',
   'get_account_summary',
+  'delete_child_agent',
   'get_child_agent_status',
   'get_analytics',
   'get_bot_status',
@@ -141,6 +142,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_schema',
   'list_app_docs',
   'list_bots',
+  'list_child_agents',
   'list_files',
   'list_memory_keys',
   'list_positions',
@@ -212,6 +214,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
 
   // read-database
   get_child_agent_status: { category: 'read-database', description: 'Read the status, runtime state and child allowance of one of your direct child agents. Only works for children you created.' },
+  list_child_agents:   { category: 'read-database',       description: 'List your direct child agents with their ID, name, status and number of children. Returns an empty list when you have none.' },
   get_analytics:       { category: 'read-database',       description: 'Get trading analytics: total trades, win rate, P&L, fees, per-bot/agent-direct breakdown.' },
   list_positions:      { category: 'read-database',       description: 'List open positions owned by this agent (bot-created + direct).' },
   list_bots:           { category: 'read-database',       description: 'List bots created by this agent, optionally filtered by creation date.' },
@@ -225,7 +228,8 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   list_providers:      { category: 'read-database',       description: 'List connection providers and show which are owned or granted to this agent.' },
   search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the system skills/platform catalog and the external skill registry.' },
   // write-database
-  create_agent:        { category: 'write-database',     description: 'Create a child agent with its own name, prompt, and skills or connections you grant from your own. The child starts stopped; the user starts it. Only available while you have child allowance.' },
+  create_child_agent: { category: 'write-database',     description: 'Create a child agent with its own name, prompt, and skills or connections you grant from your own. The child starts when created unless you pass start: false. Only available while you have child allowance.' },
+  delete_child_agent: { category: 'write-database',     description: 'Permanently delete one of your direct child agents. The child must have no children of its own. A running child is stopped first unless you pass stopFirst: false. Only works for children you created.' },
   pause_child_agent:   { category: 'write-database',     description: 'Pause one of your direct child agents. Only works for children you created.' },
   stop_child_agent:    { category: 'write-database',     description: 'Stop one of your direct child agents. Only works for children you created.' },
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },

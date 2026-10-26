@@ -15,6 +15,7 @@ import {
   conversations,
   skillUsageEvents,
   users,
+  type AgentStartRefusal,
 } from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
 import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type UnifiedAgentConfig, type ProvidersYaml, TechnicalConfigSchema, IntelligenceConfigSchema, type ChatAddress, type ChatAddressValue, type ChatProvider, isUserAgentChannel } from '@herobids/domain';
@@ -140,6 +141,7 @@ export interface UpdateAgent {
   } | null;
   maxBots?: number;
   openPositionEscalationToJudgePolicy?: string;
+  lastStartRefusal?: AgentStartRefusal | null;
 }
 
 // agent_instance_links REMOVED — replaced by bots.creatorType/creatorId

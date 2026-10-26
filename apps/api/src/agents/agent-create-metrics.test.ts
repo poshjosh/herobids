@@ -7,7 +7,7 @@ import {
   setCreateAgentOutcome,
 } from './agent-create-metrics.js';
 
-describe('create_agent attempt metrics', () => {
+describe('create_child_agent attempt metrics', () => {
   it('records each outcome in the closed set as one agent.create_attempt line', () => {
     const info = vi.fn();
     for (const outcome of CREATE_AGENT_OUTCOMES) {
@@ -15,7 +15,7 @@ describe('create_agent attempt metrics', () => {
     }
 
     expect(info).toHaveBeenCalledTimes(CREATE_AGENT_OUTCOMES.length);
-    expect(info).toHaveBeenCalledWith({ evt: 'agent.create_attempt', outcome: 'limiter_unavailable' }, 'create_agent attempt');
+    expect(info).toHaveBeenCalledWith({ evt: 'agent.create_attempt', outcome: 'limiter_unavailable' }, 'create_child_agent attempt');
   });
 
   it('does not record an outcome outside the closed set', () => {

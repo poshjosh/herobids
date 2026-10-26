@@ -12,6 +12,7 @@ export const AGENT_AUDIT_ACTIONS = [
   'agent.creator_messaged_child',
   'agent.deleted',
   'agent.delete_failed',
+  'agent.child_deleted',
 ] as const;
 
 export type AgentAuditAction = (typeof AGENT_AUDIT_ACTIONS)[number];
@@ -31,6 +32,8 @@ export interface AgentAuditDetail {
   botCount?: number;
   /** The delete step reached when a delete failed. */
   step?: string;
+  /** Why a child limit changed: a user assigned the children skill. */
+  source?: 'skill_assigned';
 }
 
 export interface AgentAuditEventInput {

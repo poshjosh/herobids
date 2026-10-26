@@ -6,6 +6,7 @@ import type { PlansConfig } from '@herobids/domain';
 import { err, ok } from '@herobids/domain';
 import { consumeTokenBucketToken } from '../services/token-bucket.js';
 import {
+  AgentChildDuplicateError,
   AgentCreatePolicyError,
   consumeAgentCreateToken,
   evaluateAgentCreatePolicy,
@@ -20,6 +21,7 @@ vi.mock('drizzle-orm', async (importOriginal) => {
   return {
     ...actual,
     eq: (column: unknown, value: unknown) => ({ kind: 'eq', column, value }),
+    gte: (column: unknown, value: unknown) => ({ kind: 'gte', column, value }),
     and: (...conditions: unknown[]) => ({ kind: 'and', conditions }),
   };
 });
@@ -32,7 +34,7 @@ vi.mock('@herobids/db', async (importOriginal) => {
 vi.mock('../services/token-bucket.js', () => ({ consumeTokenBucketToken: vi.fn() }));
 
 type Row = Record<string, unknown>;
-type Condition = { kind: 'eq'; column: unknown; value: unknown } | { kind: 'and'; conditions: Condition[] };
+type Condition = { kind: 'eq'; column: unknown; value: unknown } | { kind: 'gte'; column: unknown; value: unknown } | { kind: 'and'; conditions: Condition[] };
 
 interface Store {
   agents: Row[];
@@ -53,12 +55,14 @@ function columnKey(column: unknown): string {
 
 function matches(condition: Condition, row: Row): boolean {
   if (condition.kind === 'and') return condition.conditions.every((inner) => matches(inner, row));
+  if (condition.kind === 'gte') return (row[columnKey(condition.column)] as Date).getTime() >= (condition.value as Date).getTime();
   return row[columnKey(condition.column)] === condition.value;
 }
 
 interface FakeQuery extends PromiseLike<Row[]> {
   where(condition: Condition): FakeQuery;
   for(mode: string): FakeQuery;
+  orderBy(...order: unknown[]): FakeQuery;
   limit(count: number): FakeQuery;
 }
 
@@ -67,6 +71,7 @@ function rowsQuery(rows: Row[], condition?: Condition): FakeQuery {
   const query: FakeQuery = {
     where: (next) => rowsQuery(rows, next),
     for: () => query,
+    orderBy: () => query,
     limit: () => query,
     then: (onFulfilled, onRejected) => Promise.resolve(selected()).then(onFulfilled, onRejected),
   };
@@ -128,6 +133,8 @@ function childInput(overrides: Partial<AgentCreatePolicyInput> = {}): AgentCreat
     caller: { userId: USER_ID, planId: 'free', isAdmin: false, parentAgentId: PARENT_ID },
     plansConfig: PLANS_CONFIG,
     maxAgentDepth: 6,
+    childName: 'Child',
+    duplicateChildWindowSeconds: 300,
     skillIds: [],
     connectionIds: [],
     permissionLevel: undefined,
@@ -137,6 +144,16 @@ function childInput(overrides: Partial<AgentCreatePolicyInput> = {}): AgentCreat
 
 function userInput(overrides: Partial<AgentCreatePolicyInput> = {}): AgentCreatePolicyInput {
   return childInput({ caller: { userId: USER_ID, planId: 'free', isAdmin: false, parentAgentId: null }, ...overrides });
+}
+
+async function duplicateOf(promise: Promise<unknown>): Promise<AgentChildDuplicateError> {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof AgentChildDuplicateError) return error;
+    throw error;
+  }
+  throw new Error('expected the policy to report a duplicate child');
 }
 
 async function ruleOf(promise: Promise<unknown>): Promise<AgentCreatePolicyError> {
@@ -236,6 +253,21 @@ describe('agent create policy: each rule in isolation', () => {
 
     expect(refusal).toMatchObject({ status: 403, rule: 'grant' });
     expect(refusal.body).toMatchObject({ error: 'agent.create.grant_not_held', params: { kind: 'skill', missing: ['skill-b'] } });
+  });
+
+  it('grant refuses the user-only children skill even when the parent holds it', async () => {
+    const store = storeWith();
+    store.agentSkills.push({ agentId: PARENT_ID, skillId: 'agent-children-management' });
+    const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(store), childInput({ skillIds: ['agent-children-management'] }), false));
+
+    expect(refusal).toMatchObject({ status: 403, rule: 'grant' });
+    expect(refusal.body).toMatchObject({ error: 'agent.create.grant_user_only', message: 'This skill can only be added by the user.' });
+  });
+
+  it('a user creation may carry the user-only children skill', async () => {
+    const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith()), userInput({ skillIds: ['agent-children-management'] }), false);
+
+    expect(lineage).toMatchObject({ creatorType: 'user', depth: 0 });
   });
 
   it('grant refuses a connection the parent is not actively assigned and names it', async () => {
@@ -376,5 +408,88 @@ describe('consumeAgentCreateToken', () => {
     expect(refusal).toMatchObject({ status: 503, rule: 'limiter' });
     expect(refusal?.body).toMatchObject({ error: 'agent.create.limiter_unavailable' });
     expect(warn).toHaveBeenCalledWith({ err: 'connection refused' }, 'agent create rate limiter unavailable');
+  });
+});
+
+describe('agent create policy: duplicate child window', () => {
+  const WINDOW_SECONDS = 300;
+
+  /** Adds a direct child of PARENT_ID with the given name, created `ageSeconds` ago. */
+  function withChild(store: Store, name: string, ageSeconds: number, parentId = PARENT_ID, id = 'dup-child'): Store {
+    store.agents.push({
+      id,
+      userId: USER_ID,
+      parentAgentId: parentId,
+      name,
+      depth: 2,
+      childAgentLimit: 0,
+      createdAt: new Date(Date.now() - ageSeconds * 1000),
+    });
+    return store;
+  }
+
+  it('a same-name child created inside the window is reported as the duplicate, with its id', async () => {
+    const store = withChild(storeWith(), 'Scout', 10);
+
+    const duplicate = await duplicateOf(evaluateAgentCreatePolicy(readerOf(store), childInput({ childName: 'Scout', duplicateChildWindowSeconds: WINDOW_SECONDS }), true));
+
+    expect(duplicate).toBeInstanceOf(AgentChildDuplicateError);
+    expect(duplicate.childId).toBe('dup-child');
+  });
+
+  it('the preflight read (no lock) reports the same duplicate', async () => {
+    const store = withChild(storeWith(), 'Scout', 10);
+
+    const duplicate = await duplicateOf(evaluateAgentCreatePolicy(readerOf(store), childInput({ childName: 'Scout', duplicateChildWindowSeconds: WINDOW_SECONDS }), false));
+
+    expect(duplicate.childId).toBe('dup-child');
+  });
+
+  it('a same-name child created before the window opened does not block a new create', async () => {
+    const store = withChild(storeWith(), 'Scout', WINDOW_SECONDS + 60);
+
+    const lineage = await evaluateAgentCreatePolicy(readerOf(store), childInput({ childName: 'Scout', duplicateChildWindowSeconds: WINDOW_SECONDS }), true);
+
+    expect(lineage).toMatchObject({ creatorType: 'agent', parentAgentId: PARENT_ID });
+  });
+
+  it('a different name creates a new child even inside the window', async () => {
+    const store = withChild(storeWith(), 'Scout', 10);
+
+    const lineage = await evaluateAgentCreatePolicy(readerOf(store), childInput({ childName: 'Trader', duplicateChildWindowSeconds: WINDOW_SECONDS }), true);
+
+    expect(lineage).toMatchObject({ creatorType: 'agent', parentAgentId: PARENT_ID });
+  });
+
+  it('a window of zero disables the check', async () => {
+    const store = withChild(storeWith(), 'Scout', 0);
+
+    const lineage = await evaluateAgentCreatePolicy(readerOf(store), childInput({ childName: 'Scout', duplicateChildWindowSeconds: 0 }), true);
+
+    expect(lineage).toMatchObject({ creatorType: 'agent', parentAgentId: PARENT_ID });
+  });
+
+  it('a same-name child of another parent does not match', async () => {
+    const store = withChild(storeWith(), 'Scout', 10, 'other-parent');
+
+    const lineage = await evaluateAgentCreatePolicy(readerOf(store), childInput({ childName: 'Scout', duplicateChildWindowSeconds: WINDOW_SECONDS }), true);
+
+    expect(lineage).toMatchObject({ creatorType: 'agent', parentAgentId: PARENT_ID });
+  });
+
+  it('the duplicate is reported before the allowance rule, so a retry at the allowance limit still gets the child', async () => {
+    const store = withChild(storeWith({ childAgentLimit: 1 }, { children: 0 }), 'Scout', 10);
+
+    const duplicate = await duplicateOf(evaluateAgentCreatePolicy(readerOf(store), childInput({ childName: 'Scout', duplicateChildWindowSeconds: WINDOW_SECONDS }), true));
+
+    expect(duplicate.childId).toBe('dup-child');
+  });
+
+  it('a user creation is never matched against children', async () => {
+    const store = withChild(storeWith(), 'Scout', 10);
+
+    const lineage = await evaluateAgentCreatePolicy(readerOf(store), userInput({ childName: 'Scout', duplicateChildWindowSeconds: WINDOW_SECONDS }), true);
+
+    expect(lineage).toMatchObject({ creatorType: 'user', parentAgentId: null });
   });
 });

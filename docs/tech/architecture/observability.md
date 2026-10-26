@@ -147,14 +147,14 @@ This is a write-dedup **correctness** check (same key → one durable write), no
 invocation-timing fact. It belongs with the write-path / shadow-mode verification,
 not with this metrics layer, and is intentionally out of scope here.
 
-## Agent creation attempts (`create_agent`)
+## Agent creation attempts (`create_child_agent`)
 
 Not an external-backend invocation, so it has its own line rather than the sink above. `POST /agents`
 emits one structured line per attempt from its `onResponse` hook, whatever branch answered it:
 
 - Event tag: `evt: 'agent.create_attempt'`, field `outcome`.
 - `outcome` is a closed set: `success`, `rate`, `allowance`, `depth`, `plan_total`,
-  `limiter_unavailable`, `grant_refused`, `field_refused`, `other`. Ids and free text are never labels.
+  `limiter_unavailable`, `grant_refused`, `field_refused`, `duplicate`, `other`. Ids and free text are never labels.
 - Source: `apps/api/src/agents/agent-create-metrics.ts`. A value outside the set is dropped, not logged.
 
 Counting is done offline from these lines. Audit events for creations, child-limit changes, creator

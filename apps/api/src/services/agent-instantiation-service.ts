@@ -17,6 +17,8 @@ export interface AgentFromPayloadContext {
   chatAddresses?: ChatAddressesInput;
   /** Default name when payload.name is absent. */
   fallbackName?: string;
+  /** Child-agent limit for the new row, set when the user assigns the children skill. Omitted means 0. */
+  childAgentLimit?: number;
 }
 
 export interface SkillRef {
@@ -110,6 +112,7 @@ export async function createAgentFromPayload(
     prompt: payload.prompt ?? '',
     style: payload.style,
     status: 'stopped',
+    childAgentLimit: context.childAgentLimit ?? 0,
     strategy: payload.strategy ?? null,
     maxBots: payload.maxBots ?? null,
     tickIntervalMs: payload.tickIntervalMs ?? null,
@@ -135,6 +138,16 @@ export async function createAgentFromPayload(
     targetId: agentId,
     detail: { depth: 0 },
   });
+  if (context.childAgentLimit !== undefined) {
+    await recordAgentAuditEvent(tx, {
+      userId: context.userId,
+      actorType: 'user',
+      actorId: context.userId,
+      action: 'agent.child_limit_set',
+      targetId: agentId,
+      detail: { childAgentLimit: context.childAgentLimit, source: 'skill_assigned' },
+    });
+  }
 
   // Insert agent_skills rows
   if (skillRefs.length > 0) {

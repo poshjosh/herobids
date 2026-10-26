@@ -193,23 +193,32 @@ export async function requireSelfAgentOrUser(request: FastifyRequest, reply: Fas
   }
 }
 
+/** Route preHandler: rejects user callers. Attach to routes only an agent key may call. */
+export async function requireAgentKeyCaller(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.actingAgentId) {
+    return reply.status(403).send({ error: 'This action requires an agent key' });
+  }
+}
+
 /**
  * Route preHandler for routes opened to agent keys with agentAccess 'creator': an agent key may only
  * address an agent whose parent is the acting agent. Any other target, including a grandchild or an
- * unrelated agent, gets 403. User callers pass through.
+ * unrelated agent, gets 403. User callers pass through. `paramName` names the route param that
+ * holds the child's id (default `id`).
  */
-export function requireDirectChildOfActingAgent(db: Database) {
+export function requireDirectChildOfActingAgent(db: Database, paramName = 'id') {
   return async function requireDirectChild(request: FastifyRequest, reply: FastifyReply) {
     const actingAgentId = request.actingAgentId;
     if (!actingAgentId) return;
-    const params = request.params as { id?: unknown } | undefined;
-    if (typeof params?.id !== 'string') {
+    const params = request.params as Record<string, unknown> | undefined;
+    const childId = params?.[paramName];
+    if (typeof childId !== 'string') {
       return reply.status(403).send({ error: 'Agent keys may only act on their direct children' });
     }
     const [target] = await db
       .select({ parentAgentId: agents.parentAgentId })
       .from(agents)
-      .where(eq(agents.id, params.id))
+      .where(eq(agents.id, childId))
       .limit(1);
     if (target?.parentAgentId !== actingAgentId) {
       return reply.status(403).send({ error: 'Agent keys may only act on their direct children' });

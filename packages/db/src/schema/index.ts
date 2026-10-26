@@ -22,7 +22,7 @@ export { billingRateCards } from './billing-rate-cards.js';
 export { billingRateCardItems } from './billing-rate-card-items.js';
 export { billingPeriods } from './billing-periods.js';
 export { billingLedgerEntries } from './billing-ledger-entries.js';
-export { agents } from './agents.js';
+export { agents, type AgentStartRefusal } from './agents.js';
 export { skills } from './skills.js';
 export { skillRevisions } from './skill-revisions.js';
 export { agentSkills } from './agent-skills.js';

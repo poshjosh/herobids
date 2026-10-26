@@ -1,7 +1,7 @@
 import type { AgentCreateRule } from './agent-create-policy.js';
 
 /**
- * Closed outcome set for `create_agent` attempts. Labels are bounded: no ids, no free text.
+ * Closed outcome set for `create_child_agent` attempts. Labels are bounded: no ids, no free text.
  * Recorded as one structured log line per attempt (see docs/tech/architecture/observability.md).
  */
 export const CREATE_AGENT_OUTCOMES = [
@@ -13,6 +13,7 @@ export const CREATE_AGENT_OUTCOMES = [
   'limiter_unavailable',
   'grant_refused',
   'field_refused',
+  'duplicate',
   'other',
 ] as const;
 
@@ -32,7 +33,7 @@ export interface CreateAgentMetricsLogger {
 /** Emits one `agent.create_attempt` line. A value outside the closed set is dropped, not recorded. */
 export function recordCreateAgentAttempt(log: CreateAgentMetricsLogger, outcome: string): boolean {
   if (!isCreateAgentOutcome(outcome)) return false;
-  log.info({ evt: 'agent.create_attempt', outcome }, 'create_agent attempt');
+  log.info({ evt: 'agent.create_attempt', outcome }, 'create_child_agent attempt');
   return true;
 }
 

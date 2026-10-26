@@ -109,7 +109,7 @@ runtimePolicyOverrides (object, optional): Update runtime policy overrides.
 wakePreferences (object, optional): Update wake schedule.
 notificationPolicy (object, optional): Update notification settings.
 dexWatchlistSymbols (string[], optional): Update DEX watchlist.
-chatAddresses (array, optional): Set or clear this agent's own chat addresses. Each entry is { provider: 'telegram' | 'whatsapp' | 'sms', address: string | null }; a null address clears that provider's override so the agent inherits the owner's address. Responses return chatAddresses as [{ provider, address, scope, status }].
+telegramChatId (string, optional): Update Telegram chat ID.
 hybridMode (object, optional): Update hybrid mode config.
 `,
   headings: [
@@ -130,7 +130,7 @@ const SKILL_PRESET_ENTRY: DocsIndexEntry = {
   id: 'mapping/skill-presets',
   title: 'Skill Preset to Skill Mapping',
   kind: 'mapping',
-  content: "\nWhen a user selects a preset in the UI, these are the skills assigned:\n\ntrading (AI crypto trader):\n  - traderton/skills/crypto-trading\n  - traderton/skills/crypto-bot-management\n\ndirect-trading (AI direct trader):\n  - traderton/skills/crypto-trading\n\ntrading-assistant (AI trading assistant):\n  - traderton/skills/crypto-trading\n\npersonal-assistant (AI personal assistant):\n  - web-access\n  - email\n\ncustom (Custom AI):\n  - No preset skills; user selects skills manually\n\nTrading presets assign external skills.sh refs (installed at the agent's first start).\n\nAvailable platform skills (all public):\n  - system/base: Core tools: memory, tasks, reminders, messaging, cost tracking, and schema fetching. Auto-injected into every agent.\n  - system/programming: Code execution tools\n  - system/file-management: Manage a per-agent workspace for intermediate files and outputs.\n  - system/web-access: Search the internet, read web pages, fetch documents, and make structured HTTP requests for research and information gathering.\n  - system/email: Send emails on behalf of the user.\n  - system/platform-docs: Search and read platform documentation, form schemas, and configuration references.\n  - system/browser: Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.\n  - system/long-running-task: Make steady progress on goals that span many ticks/sessions: split the work into recorded units, keep progress in durable tasks and memory, and resume after a restart.\n",
+  content: "\nWhen a user selects a preset in the UI, these are the skills assigned:\n\ntrading (AI crypto trader):\n  - traderton/skills/crypto-trading\n  - traderton/skills/crypto-bot-management\n\ndirect-trading (AI direct trader):\n  - traderton/skills/crypto-trading\n\ntrading-assistant (AI trading assistant):\n  - traderton/skills/crypto-trading\n\npersonal-assistant (AI personal assistant):\n  - web-access\n  - email\n\ncustom (Custom AI):\n  - No preset skills; user selects skills manually\n\nTrading presets assign external skills.sh refs (installed at the agent's first start).\n\nAvailable platform skills (all public):\n  - system/base: Core tools: memory, tasks, reminders, messaging, cost tracking, and schema fetching. Auto-injected into every agent.\n  - system/programming: Code execution tools\n  - system/file-management: Manage a per-agent workspace for intermediate files and outputs.\n  - system/web-access: Search the internet, read web pages, fetch documents, and make structured HTTP requests for research and information gathering.\n  - system/email: Send emails on behalf of the user.\n  - system/platform-docs: Search and read platform documentation, form schemas, and configuration references.\n  - system/browser: Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.\n  - system/long-running-task: Make steady progress on goals that span many ticks/sessions: split the work into recorded units, keep progress in durable tasks and memory, and resume after a restart.\n  - system/agent-children-management: Create, list, inspect, pause, stop, message and delete the child agents you created. Only the user can add this skill.\n",
   headings: ["trading","direct-trading","trading-assistant","personal-assistant","custom","Available platform skills"],
   tags: ['skills', 'presets', 'mapping', 'configuration'],
 };
@@ -1002,7 +1002,7 @@ OpenAIdom checks these rules in order and uses the first one that gives a clear 
 ## Opt-Out and Pending Addresses
 
 - An address that has opted out (revoked) or is pending confirmation is not used.
-- Messages are not sent to that address, and nothing from it is routed or answered: a chat that has opted out gets no reply at all, not even help text.
+- Messages are not sent to that address, and replies from it are not routed.
 - OpenAIdom never falls back to an older address. If an agent goes quiet after you opted out or changed numbers, this is why.
 - To receive messages again, confirm the address is active.
 
@@ -1017,7 +1017,7 @@ Telegram chat IDs are per user, so the shared-number rule does not affect Telegr
 ## User-Facing Errors
 
 - \`I couldn't find which agent that reply belongs to. The message may be too old.\`
-  A reply could not be matched to an agent. This also applies when the address is pending confirmation. An address that has opted out is not answered at all.
+  A reply could not be matched to an agent. This also applies when the address is opted out or pending confirmation.
 
 - \`Agent <name> is stopped and cannot receive messages right now.\`
   The message matched an agent, but that agent cannot receive input in its current state.
@@ -1030,12 +1030,6 @@ Telegram chat IDs are per user, so the shared-number rule does not affect Telegr
 
 - \`No agent named <name> found.\`
   A \`/to\` prefix named an agent that does not belong to your account.
-
-- \`Your message is too long (the limit is <n> characters). Please shorten it and send it again.\`
-  The message is longer than the chat limit. Nothing was delivered to the agent.
-
-- \`Could not deliver your message to <name>. Please try again.\`
-  OpenAIdom could not save or deliver the message. Nothing was delivered to the agent, so you can send it again.
 
 - \`Please include a message after the target.\`
   A \`/to\` prefix was sent without message text.
@@ -1061,14 +1055,13 @@ OpenAIdom agent messages sent to Telegram now arrive with reply mode already arm
 3. OpenAIdom sends a session-started message that says the agent is running.
 4. Every agent message also includes Telegram \`ForceReply\` markup.
 5. Reply directly to that message in Telegram.
-6. OpenAIdom resolves the original Telegram message back to the owning agent, saves your reply in the agent's chat, and delivers it into that agent's runtime inbox.
+6. OpenAIdom resolves the original Telegram message back to the owning agent and delivers your reply into that agent's runtime inbox.
 
 ## What You Will See
 
 - A session-started anchor message when a new agent session becomes active.
 - Normal agent messages with reply mode pre-opened in Telegram.
 - A delivery confirmation after your reply is accepted.
-- The same conversation in the web app: your Telegram messages and the agent's messages appear in the agent's "Chat with <name>" card.
 
 ## Delivery Rules
 
@@ -1079,7 +1072,7 @@ OpenAIdom agent messages sent to Telegram now arrive with reply mode already arm
 ## User-Facing Errors
 
 - \`I couldn't find which agent that reply belongs to. The message may be too old.\`
-  The original Telegram message could not be mapped back to a message in an agent's chat.
+  The original Telegram message could not be mapped back to a stored OpenAIdom outbound message.
 
 - \`Agent <name> is stopped and cannot receive messages right now.\`
   The reply was valid, but the agent is not in a state that can consume new user input.
@@ -1115,7 +1108,7 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., \`"DCA
 |---|---|
 | \`/agents\` | List all your agents with their current status |
 | \`/info <agent>\` | Full agent details: status, mode, configuration, skills, session |
-| \`/log <agent>\` | Last 5 activity entries (decisions, messages in the chat, errors) |
+| \`/log <agent>\` | Last 5 activity entries (decisions, messages, errors) |
 | \`/connections\` | List your active connections |
 | \`/connections <agent>\` | List connections assigned to an agent |
 

@@ -412,7 +412,11 @@ export class AgentSessionManager {
                   : 'Usage limit reached — agent session start blocked');
 
             logger.warn({ agentId: agent.id, userId: agent.userId, billingStatus: canSpendResult.reason, availableMicrousd: canSpendResult.availableMicrousd }, 'Session launch blocked by billing spend state');
-            await this.agentRepo.updateAgent(agent.id, { status: 'stopped' });
+            // The parent reads this on its status and list calls; the child's own guardrail event is unchanged.
+            await this.agentRepo.updateAgent(agent.id, {
+              status: 'stopped',
+              lastStartRefusal: { code, message, at: new Date().toISOString() },
+            });
             await this.agentRepo.markSessionStopped(session.id, new Date());
             await this.eventPublisher.emitGuardrailTriggered(agent.id, {
               scope: 'agent_guardrail',
@@ -542,6 +546,9 @@ export class AgentSessionManager {
           runtimeDescriptor,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
           agentApiKey,
+        });
+        await this.agentRepo.updateAgent(session.agentId, { lastStartRefusal: null }).catch((clearErr: unknown) => {
+          logger.warn({ clearErr, agentId: session.agentId }, 'Failed to clear last start refusal after launch');
         });
 
         if (this.config.streamSubscribe) {

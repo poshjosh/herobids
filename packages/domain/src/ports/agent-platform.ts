@@ -21,11 +21,31 @@ export interface CreateChildAgentInput {
   prompt: string;
   skillIds?: string[];
   connectionIds?: string[];
+  /** Start the child after it is created. The tool defaults this to true. */
+  start: boolean;
+}
+
+/** Why a child was created but not started. Only a namespaced code and a fixed message leave the platform. */
+export interface ChildStartError {
+  code: string;
+  message: string;
+}
+
+/** Why a child's last launch was refused (billing). Only a namespaced code and a fixed message leave the platform. */
+export interface ChildStartRefusal {
+  code: string;
+  message: string;
+  at: string;
 }
 
 export interface ChildAgentCreated {
   id: string;
   depth: number;
+  status: string;
+  /** True when a same-name child was created within the duplicate window; that child is returned and not started again. */
+  duplicate: boolean;
+  started: boolean;
+  startError: ChildStartError | null;
 }
 
 export interface ChildAgentStatus {
@@ -35,16 +55,29 @@ export interface ChildAgentStatus {
   depth: number;
   runtimeStatus: string | null;
   childAgentLimit: number;
+  lastStartRefusal: ChildStartRefusal | null;
+}
+
+/** One direct child of the calling agent, as the platform lists it. */
+export interface ChildAgentSummary {
+  id: string;
+  name: string;
+  status: string;
+  depth: number;
+  childCount: number;
+  lastStartRefusal: ChildStartRefusal | null;
 }
 
 /** Platform API operations an agent container may perform as itself (see 001-plan §6-§8). */
 export interface AgentPlatformPort {
   getOwnAllowance(): Promise<Result<AgentAllowance, AgentPlatformError>>;
   createChildAgent(input: CreateChildAgentInput): Promise<Result<ChildAgentCreated, AgentPlatformError>>;
+  listChildAgents(): Promise<Result<ChildAgentSummary[], AgentPlatformError>>;
   getChildStatus(agentId: string): Promise<Result<ChildAgentStatus, AgentPlatformError>>;
   pauseChildAgent(agentId: string, reason?: string): Promise<Result<{ status: string }, AgentPlatformError>>;
   stopChildAgent(agentId: string): Promise<Result<{ status: string }, AgentPlatformError>>;
   messageChildAgent(agentId: string, message: string): Promise<Result<{ delivered: boolean }, AgentPlatformError>>;
+  deleteChildAgent(agentId: string, stopFirst: boolean): Promise<Result<{ deleted: true; stopped: boolean }, AgentPlatformError>>;
 }
 
 /** The owner's peer-messaging stop switch (DEC-43, DEC-56), as the receiving agent reads it before it accepts a peer message. */

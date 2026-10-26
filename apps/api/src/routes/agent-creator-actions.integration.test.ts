@@ -294,7 +294,7 @@ describe.skipIf(SKIP)('creator agent actions on direct children (integration)', 
 
     expect(res.statusCode).toBe(200);
     expect(Object.keys(res.json()).sort()).toEqual(
-      ['childAgentLimit', 'depth', 'id', 'name', 'parentAgentId', 'runtimeStatus', 'status'],
+      ['childAgentLimit', 'depth', 'id', 'lastStartRefusal', 'name', 'parentAgentId', 'runtimeStatus', 'status'],
     );
     expect(res.body).not.toContain(PROMPT_MARKER);
     expect(res.body).not.toContain('apiKeyHash');

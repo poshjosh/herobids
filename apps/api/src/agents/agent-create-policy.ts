@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { Redis } from 'ioredis';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import {
   agentConnections,
   agentSkills,
@@ -11,7 +11,7 @@ import {
   type Database,
   type DatabaseTransaction,
 } from '@herobids/db';
-import type { PermissionLevel, PlanCheckResult, PlansConfig } from '@herobids/domain';
+import { isUserOnlySkill, type PermissionLevel, type PlanCheckResult, type PlansConfig } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { consumeTokenBucketToken } from '../services/token-bucket.js';
 
@@ -27,6 +27,16 @@ type PlanCheckError = Extract<PlanCheckResult, { ok: false }>['error'];
 export class AgentCreatePolicyError extends Error {
   constructor(readonly status: number, readonly rule: AgentCreateRule, readonly body: ApiErrorBody) {
     super(body.message);
+  }
+}
+
+/**
+ * Thrown when a direct child of the same parent already has this name and was created inside the duplicate
+ * window. Thrown in the creation transaction (rolls it back) and mapped by the route to that existing child.
+ */
+export class AgentChildDuplicateError extends Error {
+  constructor(readonly childId: string) {
+    super('A child with this name was created recently.');
   }
 }
 
@@ -83,7 +93,7 @@ export interface AgentCreateCaller {
 }
 
 /** The only body fields an agent key may send to create a child. The server sets everything else. */
-export const AGENT_CHILD_CREATE_FIELDS = ['name', 'prompt', 'skillIds', 'connectionIds'] as const;
+export const AGENT_CHILD_CREATE_FIELDS = ['name', 'prompt', 'skillIds', 'connectionIds', 'start'] as const;
 
 const agentChildCreateFieldSet = new Set<string>(AGENT_CHILD_CREATE_FIELDS);
 
@@ -97,6 +107,10 @@ export interface AgentCreatePolicyInput {
   caller: AgentCreateCaller;
   plansConfig: PlansConfig | undefined;
   maxAgentDepth: number;
+  /** Name of the child being created. Matched exactly against the parent's direct children. */
+  childName: string;
+  /** Seconds a same-name child of the same parent is returned instead of a new create. 0 disables the check. */
+  duplicateChildWindowSeconds: number;
   skillIds: string[];
   connectionIds: string[];
   /** Omitted: a user creation gets standard; an agent creation gets the lower of the parent's level and standard. */
@@ -153,7 +167,16 @@ export async function evaluateAgentCreatePolicy(
     return { creatorType: 'user', creatorId: caller.userId, parentAgentId: null, depth: 0, permissionLevel: input.permissionLevel ?? 'standard' };
   }
 
+  // Only the user may give a child the children skill. A parent that holds it cannot pass it on.
+  if (input.skillIds.some(isUserOnlySkill)) {
+    throw agentPolicyError(403, 'grant', 'agent.create.grant_user_only', 'This skill can only be added by the user.', { kind: 'skill' });
+  }
+
   const parent = await lockParentAgent(q, caller.userId, caller.parentAgentId, lockParent);
+
+  // Before the allowance check, so a retry at the allowance limit gets the child it already made.
+  const duplicateChildId = await findRecentDuplicateChild(q, parent.id, input.childName, input.duplicateChildWindowSeconds);
+  if (duplicateChildId) throw new AgentChildDuplicateError(duplicateChildId);
 
   const children = await q.select({ id: agents.id }).from(agents).where(eq(agents.parentAgentId, parent.id));
   if (children.length >= parent.childAgentLimit) {
@@ -182,6 +205,29 @@ export async function evaluateAgentCreatePolicy(
 
   const permissionLevel = resolveChildPermission(parent.permissionLevel, input.permissionLevel);
   return { creatorType: 'agent', creatorId: parent.id, parentAgentId: parent.id, depth: childDepth, permissionLevel };
+}
+
+const MS_PER_SECOND = 1000;
+
+/**
+ * The newest direct child of the parent with this exact name, created at or after the window start. One query,
+ * served by idx_agents_parent_name_created. Null when no child matches or the window is disabled.
+ */
+async function findRecentDuplicateChild(
+  q: AgentPolicyReader,
+  parentId: string,
+  name: string,
+  windowSeconds: number,
+): Promise<string | null> {
+  if (windowSeconds === 0) return null;
+  const windowStart = new Date(Date.now() - windowSeconds * MS_PER_SECOND);
+  const [duplicate] = await q
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.parentAgentId, parentId), eq(agents.name, name), gte(agents.createdAt, windowStart)))
+    .orderBy(desc(agents.createdAt))
+    .limit(1);
+  return duplicate?.id ?? null;
 }
 
 async function lockParentAgent(q: AgentPolicyReader, userId: string, parentAgentId: string, lock: boolean) {
