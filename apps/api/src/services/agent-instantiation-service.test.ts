@@ -455,7 +455,7 @@ describe('createAgentFromPayload', () => {
 
     const context: AgentFromPayloadContext = {
       userId: 'user-1',
-      chatAddresses: [{ provider: 'telegram', address: 'chat-999' }],
+      chatAddresses: [{ provider: 'whatsapp', address: '+15550999' }],
     };
     await createAgentFromPayload(tx, makePayload(), [], context);
 
@@ -463,10 +463,23 @@ describe('createAgentFromPayload', () => {
     expect(tracker.chatAddressRows).toEqual([expect.objectContaining({
       userId: 'user-1',
       agentId: tracker.agentRows[0]!.id,
-      provider: 'telegram',
-      address: 'chat-999',
+      provider: 'whatsapp',
+      address: '+15550999',
       status: 'active',
     })]);
+  });
+
+  it('ignores a Telegram chat address from context, since Telegram is user-level only', async () => {
+    const tracker = makeInsertTracker();
+    const tx = buildMockTx(tracker);
+
+    const context: AgentFromPayloadContext = {
+      userId: 'user-1',
+      chatAddresses: [{ provider: 'telegram', address: 'chat-999' }],
+    };
+    await createAgentFromPayload(tx, makePayload(), [], context);
+
+    expect(tracker.chatAddressRows).toEqual([]);
   });
 
   it('persists toolPolicy, modelPolicy, runtimePolicyOverrides, and wakePreferences from payload', async () => {

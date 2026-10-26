@@ -3021,12 +3021,44 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(res.json()).toEqual(expect.objectContaining({ capital: '750', dailyLlmTokenBudget: null }));
   });
 
-  it('writes a chatAddresses entry to the agent scope on PATCH, trimmed, and removes telegramChatId from the row update', async () => {
+  it('writes a WhatsApp chatAddresses entry to the agent scope on PATCH, trimmed, and removes telegramChatId from the row update', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
     };
     const { db, updateSets, insertedValues } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: '750', risk: null, executionDefaults: null }],
+      activeLinkRows: [updatedAgent],
+      chatAddressRows: [{ agentId: 'agent-1', provider: 'whatsapp', address: '+15550001', status: 'active' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { chatAddresses: [{ provider: 'whatsapp', address: ' +15550001 ' }] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(insertedValues).toContainEqual(expect.objectContaining({
+      userId: TEST_USER_ID, agentId: 'agent-1', provider: 'whatsapp', address: '+15550001', status: 'active',
+    }));
+    expect(updateSets.every((update) => !('telegramChatId' in update) && !('chatAddresses' in update))).toBe(true);
+    expect(res.json()).toEqual(expect.objectContaining({
+      chatAddresses: [{ provider: 'whatsapp', address: '+15550001', scope: 'agent', status: 'active' }],
+    }));
+    expect(res.json()).not.toHaveProperty('telegramChatId');
+  });
+
+  it('ignores a Telegram entry on PATCH and returns no agent-scoped Telegram row', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
+    };
+    const { db, insertedValues } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, capital: '750', risk: null, executionDefaults: null }],
       activeLinkRows: [updatedAgent],
       chatAddressRows: [{ agentId: 'agent-1', provider: 'telegram', address: '123456', status: 'active' }],
@@ -3039,18 +3071,12 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/agents/agent-1',
-      payload: { chatAddresses: [{ provider: 'telegram', address: ' 123456 ' }] },
+      payload: { chatAddresses: [{ provider: 'telegram', address: ' 654321 ' }] },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(insertedValues).toContainEqual(expect.objectContaining({
-      userId: TEST_USER_ID, agentId: 'agent-1', provider: 'telegram', address: '123456', status: 'active',
-    }));
-    expect(updateSets.every((update) => !('telegramChatId' in update) && !('chatAddresses' in update))).toBe(true);
-    expect(res.json()).toEqual(expect.objectContaining({
-      chatAddresses: [{ provider: 'telegram', address: '123456', scope: 'agent', status: 'active' }],
-    }));
-    expect(res.json()).not.toHaveProperty('telegramChatId');
+    expect(insertedValues.filter((row) => row['provider'] === 'telegram')).toEqual([]);
+    expect(res.json()).toEqual(expect.objectContaining({ chatAddresses: [] }));
   });
 
   it('clears the agent override by deleting its active row when the PATCH address is blank', async () => {
@@ -3070,12 +3096,12 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/agents/agent-1',
-      payload: { chatAddresses: [{ provider: 'telegram', address: '   ' }] },
+      payload: { chatAddresses: [{ provider: 'whatsapp', address: '   ' }] },
     });
 
     expect(res.statusCode).toBe(200);
     expect(db.delete).toHaveBeenCalledWith(chatAddresses);
-    expect(insertedValues.filter((row) => row['provider'] === 'telegram')).toEqual([]);
+    expect(insertedValues.filter((row) => row['provider'] === 'whatsapp')).toEqual([]);
     expect(res.json()).toEqual(expect.objectContaining({ chatAddresses: [] }));
   });
 
@@ -3115,7 +3141,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('writes chatAddresses to the new agent scope on POST create, trimmed', async () => {
+  it('writes a WhatsApp chatAddresses entry to the new agent scope on POST create, trimmed', async () => {
     const { agentRoutes } = await import('./agents.js');
     const createdAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
@@ -3123,7 +3149,41 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     const { db, insertedValues } = buildDb({
       agentRows: [createdAgent],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
-      chatAddressRows: [{ agentId: 'agent-1', provider: 'telegram', address: '123456', status: 'active' }],
+      chatAddressRows: [{ agentId: 'agent-1', provider: 'whatsapp', address: '+15550001', status: 'active' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+        chatAddresses: [{ provider: 'whatsapp', address: ' +15550001 ' }],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(expect.objectContaining({
+      userId: TEST_USER_ID, provider: 'whatsapp', address: '+15550001', status: 'active',
+    }));
+    expect(insertedValues.every((row) => !('telegramChatId' in row))).toBe(true);
+    expect(res.json()).toEqual(expect.objectContaining({
+      chatAddresses: [{ provider: 'whatsapp', address: '+15550001', scope: 'agent', status: 'active' }],
+    }));
+  });
+
+  it('ignores a Telegram entry on POST create and writes no agent-scoped Telegram row', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
+    };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
     const app = Fastify();
@@ -3141,13 +3201,8 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(insertedValues).toContainEqual(expect.objectContaining({
-      userId: TEST_USER_ID, provider: 'telegram', address: '123456', status: 'active',
-    }));
-    expect(insertedValues.every((row) => !('telegramChatId' in row))).toBe(true);
-    expect(res.json()).toEqual(expect.objectContaining({
-      chatAddresses: [{ provider: 'telegram', address: '123456', scope: 'agent', status: 'active' }],
-    }));
+    expect(insertedValues.filter((row) => row['provider'] === 'telegram')).toEqual([]);
+    expect(res.json()).toEqual(expect.objectContaining({ chatAddresses: [] }));
   });
 
   it('writes no chat address row on POST create when chatAddresses is absent', async () => {
@@ -3178,6 +3233,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       ],
       chatAddressRows: [
         { agentId: null, provider: 'telegram', address: '5550001', status: 'active' },
+        { agentId: 'agent-1', provider: 'whatsapp', address: '+15550002', status: 'active' },
         { agentId: 'agent-1', provider: 'telegram', address: '6600002', status: 'active' },
       ],
     });
@@ -3199,7 +3255,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(res.statusCode).toBe(200);
     const list = res.json<Array<{ id: string; chatAddresses: unknown[] }>>();
     expect(list.map((agent) => agent.chatAddresses)).toEqual([
-      [{ provider: 'telegram', address: '6600002', scope: 'agent', status: 'active' }],
+      [{ provider: 'whatsapp', address: '+15550002', scope: 'agent', status: 'active' }],
       [],
     ]);
     expect(chatSelects).toHaveBeenCalledTimes(1);

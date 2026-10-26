@@ -68,7 +68,7 @@ import {
   type AgentCreatePolicyInput,
 } from '../agents/agent-create-policy.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
-import { ChatAddressInUseError, ChatAddressesInputSchema, applyChatAddresses, withAgentChatAddresses } from '../agents/chat-addresses.js';
+import { ChatAddressesInputSchema, applyChatAddresses, withAgentChatAddresses } from '../agents/chat-addresses.js';
 import {
   createAgentOutcomeForRule,
   recordCreateAgentAttempt,
@@ -1282,7 +1282,6 @@ export async function agentRoutes(
         const [existingOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...existing, skillIds: existingSkillIds }), ...enrichAgentResponse(existing) }]);
         return reply.status(200).send({ ...existingOut, duplicate: true, started: false, startError: null });
       }
-      if (error instanceof ChatAddressInUseError) return reply.status(409).send(errorPayload(error.code, error.message));
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
       if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       if (error instanceof TradingProfileScanValidationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
@@ -2368,7 +2367,6 @@ export async function agentRoutes(
       },
     });
     } catch (error) {
-      if (error instanceof ChatAddressInUseError) return reply.status(409).send(errorPayload(error.code, error.message));
       if (error instanceof ConnectionValidationError) return reply.status(error.status).send(error.body);
       if (error instanceof TradingProfileCeilingViolationError) return reply.status(400).send({ error: 'validation_error', message: error.message });
       if (error instanceof TradingProfileScanValidationError) return reply.status(400).send({ error: 'validation_error', message: error.message });

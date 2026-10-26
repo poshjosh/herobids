@@ -13,7 +13,7 @@ export interface AgentFromPayloadContext {
   /** Blueprint attribution — omitted for non-blueprint callers (e.g. Go Live). */
   blueprintId?: string;
   blueprintRevisionId?: string;
-  /** Chat address pre-fill for the new agent's own scope. */
+  /** Chat address pre-fill for the new agent's own scope. Telegram entries are ignored: Telegram is user-level only. */
   chatAddresses?: ChatAddressesInput;
   /** Default name when payload.name is absent. */
   fallbackName?: string;

@@ -36,6 +36,7 @@ export class ChatAddressInUseError extends Error {
 /**
  * Applies each entry to one scope. Run it inside the write transaction. A telegram address owned by another user
  * throws ChatAddressInUseError before anything is written for that entry; the transaction then rolls back.
+ * Telegram is user-level only, so agent scopes skip telegram entries. Every agent write path comes through here.
  */
 export async function applyChatAddresses(
   executor: Pick<Database, 'insert' | 'delete' | 'select' | 'execute'>,
@@ -43,6 +44,7 @@ export async function applyChatAddresses(
   entries: ChatAddressesInput,
 ): Promise<void> {
   for (const entry of entries) {
+    if (entry.provider === 'telegram' && scope.agentId !== null) continue;
     if (
       entry.provider === 'telegram'
       && entry.address !== null
@@ -55,14 +57,20 @@ export async function applyChatAddresses(
   }
 }
 
-/** Adds `chatAddresses` (the agent's own rows) to each agent object, using one query for the whole list. */
+/**
+ * Adds `chatAddresses` (the agent's own rows) to each agent object, using one query for the whole list.
+ * Telegram rows are left out: Telegram is user-level only, so an agent never exposes one.
+ */
 export async function withAgentChatAddresses<T extends { id: string }>(
   db: Pick<Database, 'select'>,
   userId: string,
   agentObjects: readonly T[],
 ): Promise<Array<T & { chatAddresses: ChatAddressOutput[] }>> {
   const { byAgent } = await listChatAddressesForOutput(db, userId, agentObjects.map((agent) => agent.id));
-  return agentObjects.map((agent) => ({ ...agent, chatAddresses: byAgent.get(agent.id) ?? [] }));
+  return agentObjects.map((agent) => ({
+    ...agent,
+    chatAddresses: (byAgent.get(agent.id) ?? []).filter((row) => row.provider !== 'telegram'),
+  }));
 }
 
 /** The user-level chat addresses of one user, for `GET /auth/me` and `PATCH /auth/me` responses. */

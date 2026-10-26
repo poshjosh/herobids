@@ -79,7 +79,7 @@ About 1.5–2.5 days.
 ## Task Status
 - [x] DONE — Phase 1: Backend (token module, link route, webhook branch, config) plus tests
 - [x] DONE — Phase 2: Web component, Settings and Create flow, i18n
-- [ ] PENDING — Phase 3: Per-agent Telegram cleanup, docs and UAT
+- [x] DONE — Phase 3: Per-agent Telegram cleanup, docs and UAT
 
 ## Outstanding Issues
 - Consume happens outside the DB transaction; a DB failure after consume spends the token and the user must regenerate the link.
@@ -106,3 +106,13 @@ About 1.5–2.5 days.
 - **Dependencies added:** `jsdom@^26.1.0` (not 30.x, which needs Node 22.22+), `@testing-library/react@^16.3.3`, `@testing-library/dom@^10.4.2`, all devDependencies of `apps/web`.
 - **Translation:** Hindi and Arabic copy for the Telegram strings (including the new `popupBlocked`, `rate_limited` and `bot_not_configured`) are drafts and need native review.
 - **Visual test not yet run** for the Settings card and the Create-agent connect state.
+
+### Phase 3 notes
+- **Agent write path:** `applyChatAddresses` skips `telegram` at agent scope. Agent create, PATCH and blueprint or go-live instantiation ignore Telegram entries (not rejected). `withAgentChatAddresses` omits agent-scope Telegram rows from responses. The agent-level 409 mapping is removed from `agents.ts`, since no agent path throws `ChatAddressInUseError` now. This also closes the Phase 1 MEDIUM about blueprint and instantiation 409s for Telegram.
+- **Read compatibility (kept):** pre-existing agent-scope Telegram rows still route. `getEffectiveChatAddress` (outbound, agent row over user row) and `resolveAgentForChatReply` (reply routing) read them. New inbound binding is user-level only (`findUserByTelegramChatId` requires `agentId IS NULL`). No migration. Deleting legacy agent-scope rows is deferred and needs an ops query.
+- **Blueprint pre-fill:** `blueprints.ts` still passes the author's user-level Telegram row into instantiation. The shared guard drops it. Filtering at the source is deferred as cosmetic.
+- **Web:** no per-agent Telegram reads or payloads remain. The only change is the `Agent.chatAddresses` doc comment. `agent-form-state.test.ts` keeps a negative regression test. `telegram-link-poll.test.ts` has a cosmetic `telegramAddress` parameter name, left as is.
+- **Docs:** `platform-docs-data.ts` drops the `telegramChatId` parameter and rewrites the Telegram setup steps (Connect Telegram, no Chat ID). UAT AG-E09, AG-E10, AG-N04 and AG-N05 are updated. CHANGELOG has one Unreleased entry. `operator.telegramChatId` (ops fault alerts) is unrelated and unchanged.
+- **Deferred, outside `docs/`:** public help pages still describe Chat ID entry. These are `apps/web/src/features/public-pages/content/en/help/{faqs,get-started}.md`, `en/docs/messaging/telegram/reply-threading.md`, `en/legal/privacy-policy.md`, `hi/help/{faqs,get-started}.md` and `ar/help/get-started.md`. The hi and ar copy needs native review.
+- **Deferred:** `POST /agents/verify-telegram` (`agent-interactivity.ts`) has no web caller after Phase 2. It is left in place.
+- **Not run:** lint, typecheck and tests, per the Phase 3 brief. These need a run by the user.

@@ -109,7 +109,6 @@ runtimePolicyOverrides (object, optional): Update runtime policy overrides.
 wakePreferences (object, optional): Update wake schedule.
 notificationPolicy (object, optional): Update notification settings.
 dexWatchlistSymbols (string[], optional): Update DEX watchlist.
-telegramChatId (string, optional): Update Telegram chat ID.
 hybridMode (object, optional): Update hybrid mode config.
 `,
   headings: [
@@ -1050,7 +1049,7 @@ OpenAIdom agent messages sent to Telegram now arrive with reply mode already arm
 
 ## How It Works
 
-1. Link your Telegram chat ID through the existing account setup flow.
+1. Connect Telegram in **Settings** (select **Connect Telegram**, then tap **Start** in Telegram).
 2. Start an agent session.
 3. OpenAIdom sends a session-started message that says the agent is running.
 4. Every agent message also includes Telegram \`ForceReply\` markup.
@@ -1271,7 +1270,7 @@ See [Authorization](/docs/agents/#authorization) for more on configuring authori
 
 ## How do I talk to my agent from Telegram?
 
-First, make sure your Telegram account is linked — go to **Settings** in the web app and enter your Telegram Chat ID. Your agent must be running.
+First, make sure your Telegram account is connected — go to **Settings** in the web app and select **Connect Telegram**, then tap **Start** in Telegram. Your agent must be running.
 
 Once set up, you have three options:
 
@@ -1331,7 +1330,7 @@ Go to the [OpenAIdom web app](/) and sign in. Your account is your control cente
 Your agents can talk to you directly on Telegram. To set it up:
 
 1. Go to **Settings** in the web app.
-2. Enter your Telegram Chat ID.
+2. Select **Connect Telegram**, then tap **Start** in the Telegram tab that opens.
 3. Your agents will start sending you messages when they have updates, need input, or hit a billing cap.
 
 See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how to talk back to your agents from Telegram.
@@ -1446,7 +1445,7 @@ OpenAIdom, ("we", "our", or "us"), is an AI agent platform. This policy explains
 
 ### Account data
 - Email address (required for sign-in)
-- Telegram Chat ID (optional, for agent messaging)
+- Telegram account link (optional, for agent messaging)
 
 ### Agent data
 - Agent configuration (goals, styles, risk limits)

@@ -1033,7 +1033,7 @@ export interface Agent {
   strategy?: Record<string, unknown> | null;
   /** WP4 canonical: shared ExecutionDefaults JSONB. */
   executionDefaults?: Record<string, unknown> | null;
-  /** The agent's own chat address overrides (scope 'agent'). */
+  /** The agent's own chat address overrides (scope 'agent'), for non-Telegram providers. Telegram is user-level only. */
   chatAddresses: ChatAddressEntry[];
   /** Derived from executionDefaults.mode in API response. Prefer reading executionDefaults directly. */
   executionMode: string | null;

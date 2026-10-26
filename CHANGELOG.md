@@ -25,6 +25,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Two-way chat: web and Telegram messages and agent replies are stored in one conversation.
 - Agents can stop and delete their direct children with `delete_child_agent`. It stops a running child first by default (`stopFirst`), and a child with its own children is refused. It is audited.
 - Peer messages are dropped on receipt while the recipient's owner has agent-to-agent messaging paused. The sender's thread row shows the message as refused. `GET /agents/:id/conversation` returns the thread, and `POST /agents/:id/message` is idempotent on `clientMessageId`.
+- Telegram connects with one tap. Settings and the create-agent form have a "Connect Telegram" button that opens the bot with a single-use link. Manual Telegram Chat ID entry is removed. Telegram is user-level only, so agents no longer take a per-agent Telegram address, and `telegram` entries in `chatAddresses` are ignored.
 
 ### Changed
 

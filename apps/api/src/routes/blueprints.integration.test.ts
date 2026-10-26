@@ -2730,11 +2730,12 @@ describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
     expect(body.modelSelectionReady).toBe(true);
   });
 
-  // ── Test 9: author's telegram address is pre-filled on instantiate ─────
+  // ── Test 9: author's non-telegram address is pre-filled, telegram is not ─────
 
-  it('instantiate pre-fills the telegram chat address when the installer is the blueprint author', async () => {
-    // Give the author a telegram chat address
+  it('instantiate pre-fills a WhatsApp chat address but no Telegram one when the installer is the blueprint author', async () => {
+    // Telegram is user-level only, so it is not copied into the agent. WhatsApp still is.
     await setChatAddress(db, { userId: TEST_USER_ID, agentId: null }, 'telegram', '123456789');
+    await setChatAddress(db, { userId: TEST_USER_ID, agentId: null }, 'whatsapp', '+15550123');
 
     const payload = makeAgentPayload();
     const { bpId, revId } = await seedBlueprint({}, payload, TEST_USER_ID);
@@ -2753,12 +2754,17 @@ describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json();
 
-    // The address is written as an active agent-scoped chat_addresses row.
-    const addresses = await db
-      .select({ userId: chatAddresses.userId, address: chatAddresses.address, status: chatAddresses.status })
+    const telegramRows = await db
+      .select({ address: chatAddresses.address })
       .from(chatAddresses)
       .where(and(eq(chatAddresses.agentId, body.actorId), eq(chatAddresses.provider, 'telegram')));
-    expect(addresses).toEqual([{ userId: TEST_USER_ID, address: '123456789', status: 'active' }]);
+    expect(telegramRows).toEqual([]);
+
+    const whatsappRows = await db
+      .select({ userId: chatAddresses.userId, address: chatAddresses.address, status: chatAddresses.status })
+      .from(chatAddresses)
+      .where(and(eq(chatAddresses.agentId, body.actorId), eq(chatAddresses.provider, 'whatsapp')));
+    expect(whatsappRows).toEqual([{ userId: TEST_USER_ID, address: '+15550123', status: 'active' }]);
   });
 
   // ── Test 10: a different installer gets no telegram address ────────────
