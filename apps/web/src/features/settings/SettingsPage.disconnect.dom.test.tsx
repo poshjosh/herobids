@@ -14,6 +14,8 @@ vi.mock('../../app/i18n/I18nProvider.js', () => ({
 // Push opt-in depends on service worker and Notification APIs that jsdom does not provide.
 vi.mock('../notifications/PushOptIn.js', () => ({ PushOptIn: () => null }));
 
+vi.mock('../../lib/push/push-browser.js', () => ({ readBrowserPushEnvironment: vi.fn(async () => ({ subscribed: false })) }));
+
 vi.mock('../../lib/api-client.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/api-client.js')>();
   return {

@@ -24,6 +24,7 @@ import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
 import { PromptInputBlock } from './PromptInputBlock.js';
 import { AgentFormBody, AgentIdentityFields } from './AgentFormBody.js';
+import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
 import { AgentConnectionField } from './AgentConnectionField.js';
@@ -538,6 +539,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             onClearFieldError={clearFieldError}
             onBlurField={validateFieldOnBlur}
           />
+          <NotificationsBlock variant="page" />
 
           {/* Prompt + files + style — unified block */}
           <div style={{ marginBottom: '8px' }}>

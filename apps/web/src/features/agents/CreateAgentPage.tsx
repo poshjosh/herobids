@@ -18,7 +18,7 @@ export function CreateAgentPage() {
 
   const handleCreated = (id: string) => {
     void qc.invalidateQueries({ queryKey: ['agents'] });
-    navigate(`/agents/${id}`, { state: { justCreated: true } });
+    navigate(`/agents/${id}`);
   };
 
   return (

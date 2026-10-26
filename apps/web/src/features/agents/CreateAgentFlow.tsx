@@ -8,9 +8,8 @@ import { Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolvePromptTemplate, resolveGoalPlaceholderKey, selectedSkillsHaveCapabilityFamily } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
-import { chatAddressFor } from '../../lib/chat-addresses.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
-import { ConnectTelegram } from '../notifications/ConnectTelegram.js';
+import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
 import { buildCreateAgentPayload, resolveCreateAgentConnectionIds } from './agent-payloads.js';
@@ -221,7 +220,6 @@ export function CreateAgentFlow({
     queryFn: () => authApi.me(),
   });
   // Offer the connect button only once the profile loaded and Telegram is unlinked.
-  const showConnectTelegram = meQuery.data !== undefined && chatAddressFor(meQuery.data.chatAddresses, 'telegram') === '';
   const aiSettingsQuery = useQuery({
     queryKey: ['ai', 'settings'],
     queryFn: () => aiApi.settings(),
@@ -677,15 +675,7 @@ export function CreateAgentFlow({
             onClearFieldError={clearFieldError}
             onBlurField={validateFieldOnBlur}
           />
-          {showConnectTelegram && (
-            <div>
-              <FieldLabel>{intl.formatMessage({ id: 'agents.create.telegram.label' })}</FieldLabel>
-              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '0 0 8px' }}>
-                {intl.formatMessage({ id: 'agents.create.telegram.help' })}
-              </p>
-              <ConnectTelegram />
-            </div>
-          )}
+          <NotificationsBlock variant="page" />
           <AgentFormBody
             aiLeadSlot={<>
           {/* 1. Prompt + files + style — the objective comes first (intent-first). */}

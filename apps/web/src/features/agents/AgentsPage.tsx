@@ -8,6 +8,7 @@ import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
 import type { BlueprintSummary } from '../../lib/api-client.js';
 import { AgentHierarchyList } from './AgentHierarchyList.js';
+import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 
@@ -52,6 +53,8 @@ export function AgentsPage() {
 
   return (
     <PageShell>
+      <NotificationsBlock variant="page" style={{ marginBottom: '20px' }} />
+
       <PageHeader
         title={intl.formatMessage({ id: 'agents.title' })}
         action={

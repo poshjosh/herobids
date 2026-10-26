@@ -14,6 +14,8 @@ export interface PushOptInViewProps {
   onEnable: () => void;
   onDisable: () => void;
   onClearAndRetry: () => void;
+  /** Renders without its own card, for use inside a parent card. */
+  embedded?: boolean;
 }
 
 const headingStyle: React.CSSProperties = { margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' };
@@ -26,15 +28,14 @@ function errorMessageId(errorCode: string): string {
 }
 
 /** Presentational only. Each state is a separate render, so the copy can be tested without a browser. */
-export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onClearAndRetry }: PushOptInViewProps) {
+export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onClearAndRetry, embedded = false }: PushOptInViewProps) {
   const intl = useIntl();
   const t = (id: string) => intl.formatMessage({ id });
 
-  let body: React.ReactNode;
+  let body: React.ReactNode = null;
   let action: React.ReactNode = null;
   switch (state) {
     case 'ready':
-      body = <p style={bodyStyle}>{t('push.optIn.ready')}</p>;
       action = (
         <Button variant="primary" onClick={onEnable} disabled={busy}>
           {busy ? t('push.optIn.working') : t('push.optIn.enable')}
@@ -42,7 +43,6 @@ export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onC
       );
       break;
     case 'subscribed':
-      body = <p style={bodyStyle}>{t('push.optIn.subscribed')}</p>;
       action = (
         <Button variant="secondary" onClick={onDisable} disabled={busy}>
           {busy ? t('push.optIn.working') : t('push.optIn.disable')}
@@ -73,7 +73,6 @@ export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onC
       );
       break;
     case 'error':
-      body = <p style={bodyStyle}>{t('push.optIn.ready')}</p>;
       // Retrying cannot succeed while another account owns this browser's endpoint. The user must clear the browser's
       // subscription first, so that is offered as an explicit action instead of a plain retry.
       if (errorCode === ENDPOINT_OWNED_CODE) {
@@ -92,19 +91,20 @@ export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onC
       break;
   }
 
-  return (
-    <Card>
+  const content = (
+    <>
       <h3 style={headingStyle}>{t('push.optIn.title')}</h3>
       {errorCode !== null && <ErrorBanner message={t(errorMessageId(errorCode))} />}
       {body}
       {action}
-    </Card>
+    </>
   );
+  return embedded ? <div>{content}</div> : <Card>{content}</Card>;
 }
 
 /** Opt-in for Web Push on this device. Renders nothing when the server has the feature off. */
 /** onChange reports the saved-by-user choice: true after a successful subscribe, false after turning off. */
-export function PushOptIn({ onChange }: { onChange?: (enabled: boolean) => void } = {}) {
+export function PushOptIn({ onChange, embedded = false }: { onChange?: (enabled: boolean) => void; embedded?: boolean } = {}) {
   const config = useQuery({
     queryKey: ['push', 'config'],
     queryFn: () => push.config(),
@@ -159,6 +159,7 @@ export function PushOptIn({ onChange }: { onChange?: (enabled: boolean) => void 
       state={state}
       busy={busy}
       errorCode={errorCode}
+      embedded={embedded}
       onEnable={() => void runAction(enableAndReport, PUSH_ERROR_CODES.subscribeFailed)}
       onDisable={() => void runAction(async () => {
         await disablePush(createBrowserPushDeps());

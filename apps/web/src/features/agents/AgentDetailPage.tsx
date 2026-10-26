@@ -13,7 +13,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentConversation } from './AgentConversation.js';
 import { PeerThreads } from './PeerThreads.js';
-import { NotificationSetupPrompt } from '../notifications/NotificationSetupPrompt.js';
+import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
 import { AgentDeleteDialog } from './AgentDeleteDialog.js';
 import { ChildAgentAllowanceCard } from './ChildAgentAllowanceCard.js';
@@ -330,6 +330,8 @@ export function AgentDetailPage() {
         }
       />
 
+      <NotificationsBlock variant="page" style={{ marginBottom: '20px' }} />
+
       {isDeleteDialogOpen && (
         <AgentDeleteDialog
           agentId={id!}
@@ -401,8 +403,6 @@ export function AgentDetailPage() {
             </div>
           </details>
         </Card>
-
-        <NotificationSetupPrompt justCreated={Boolean((location.state as { justCreated?: boolean } | null)?.justCreated)} />
 
         <AgentConversation key={id} agentId={id ?? ''} agentName={agent.name} status={agent.status} connectionRequestId={connectionRequestId} />
 

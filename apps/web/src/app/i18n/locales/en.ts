@@ -163,9 +163,6 @@ export const messages: Record<string, string> = {
   // Settings
   'settings.title': 'Settings',
   'settings.subtitle': 'Account preferences and notification configuration',
-  'settings.telegram.title': 'Telegram Notifications',
-  'settings.telegram.description':
-    'Your agents can message you on Telegram. Click Connect to link your account automatically.',
   'settings.telegram.connect': 'Connect Telegram',
   'settings.telegram.connecting': 'Waiting for Telegram to confirm the link…',
   'settings.telegram.openTelegram': 'Open Telegram',
@@ -353,8 +350,6 @@ export const messages: Record<string, string> = {
   'agents.create.executionMode.test': 'Test — simulated, no real money',
   'agents.create.executionMode.live': 'Live — real order placement',
   'agents.create.models.title': 'AI models',
-  'agents.create.telegram.label': 'Telegram notifications',
-  'agents.create.telegram.help': 'Connect Telegram so this agent can message you there. Optional: you can create the agent without it.',
   'agents.create.emailDelivery': 'Email Delivery',
   'agents.create.emailDelivery.help': 'Whether this agent may email you',
   'agents.create.emailDelivery.helpNoEmail': 'No account email on file. Add one in Settings to use email delivery.',
@@ -1036,11 +1031,12 @@ export const messages: Record<string, string> = {
   'capability.trading.authorization.approval_required': 'Approval required',
 
   // Web Push opt-in (081 W8)
-  'push.optIn.title': 'Notifications',
-  'push.optIn.ready': 'Get a notification when your agent replies or asks you a question.',
+  'notifications.block.title': "Notifications",
+  'notifications.block.intro': "Notifications allow your agents to chat with you.",
+  'notifications.block.telegramTitle': "Telegram Notifications (recommended)",
+  'push.optIn.title': "Browser Notifications",
   'push.optIn.enable': 'Turn on notifications',
   'push.optIn.working': 'Working…',
-  'push.optIn.subscribed': 'Notifications are on for this browser. Tapping one opens the agent.',
   'push.optIn.disable': 'Turn off notifications',
   'push.optIn.permissionDenied': 'Notifications are blocked for this site. Allow them in your browser settings, then try again.',
   'push.optIn.needsInstall.intro': 'On iPhone and iPad, notifications work only from OpenAIdom added to your Home Screen (iOS 16.4 or later).',

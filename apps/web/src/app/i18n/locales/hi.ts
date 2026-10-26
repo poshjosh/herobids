@@ -165,9 +165,6 @@ export const messages: Record<string, string> = {
   // Settings
   'settings.title': 'सेटिंग्स',
   'settings.subtitle': 'खाता प्राथमिकताएं और अधिसूचना कॉन्फ़िगरेशन',
-  'settings.telegram.title': 'Telegram सूचनाएं',
-  'settings.telegram.description':
-    'आपके एजेंट Telegram पर आपको मैसेज कर सकते हैं। Connect पर क्लिक करें, आपका खाता अपने-आप जुड़ जाएगा।',
   'settings.telegram.connect': 'Telegram कनेक्ट करें',
   'settings.telegram.connecting': 'Telegram से कनेक्शन की पुष्टि का इंतज़ार है…',
   'settings.telegram.openTelegram': 'Telegram खोलें',
@@ -355,8 +352,6 @@ export const messages: Record<string, string> = {
   'agents.create.executionMode.test': 'टेस्ट — सिमुलेटेड, कोई वास्तविक पैसा नहीं',
   'agents.create.executionMode.live': 'लाइव — वास्तविक ऑर्डर प्लेसमेंट',
   'agents.create.models.title': 'AI मॉडल',
-  'agents.create.telegram.label': 'Telegram सूचनाएं',
-  'agents.create.telegram.help': 'इस एजेंट को Telegram पर आपको मैसेज करने देने के लिए Telegram कनेक्ट करें। वैकल्पिक है: इसके बिना भी एजेंट बनाया जा सकता है।',
   'agents.create.emailDelivery': 'ईमेल डिलीवरी',
   'agents.create.emailDelivery.help': 'क्या यह एजेंट आपको ईमेल कर सकता है',
   'agents.create.emailDelivery.helpNoEmail': 'खाते में कोई ईमेल दर्ज नहीं है। ईमेल डिलीवरी का उपयोग करने के लिए सेटिंग्स में एक जोड़ें।',
@@ -1031,11 +1026,12 @@ export const messages: Record<string, string> = {
   'capability.trading.authorization.approval_required': 'अनुमोदन आवश्यक',
 
   // Web Push opt-in (081 W8)
-  'push.optIn.title': 'सूचनाएँ',
-  'push.optIn.ready': 'जब आपका एजेंट जवाब दे या आपसे प्रश्न पूछे, तब सूचना पाएँ।',
+  'notifications.block.title': "सूचनाएं",
+  'notifications.block.intro': "सूचनाएं आपके एजेंट्स को आपसे चैट करने देती हैं।",
+  'notifications.block.telegramTitle': "Telegram सूचनाएं (अनुशंसित)",
+  'push.optIn.title': "ब्राउज़र सूचनाएं",
   'push.optIn.enable': 'सूचनाएँ चालू करें',
   'push.optIn.working': 'प्रक्रिया जारी है…',
-  'push.optIn.subscribed': 'इस ब्राउज़र के लिए सूचनाएँ चालू हैं। सूचना पर टैप करने से एजेंट खुलता है।',
   'push.optIn.disable': 'सूचनाएँ बंद करें',
   'push.optIn.permissionDenied': 'इस साइट के लिए सूचनाएँ अवरुद्ध हैं। अपने ब्राउज़र सेटिंग्स में अनुमति दें, फिर दोबारा कोशिश करें।',
   'push.optIn.needsInstall.intro': 'iPhone और iPad पर सूचनाएँ केवल होम स्क्रीन पर जोड़े गए OpenAIdom ऐप से काम करती हैं (iOS 16.4 या उसके बाद)।',

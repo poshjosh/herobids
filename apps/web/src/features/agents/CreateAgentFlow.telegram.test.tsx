@@ -29,22 +29,23 @@ function renderCreateFlow(chatAddresses: MeResponse['chatAddresses'] | undefined
   );
 }
 
-describe('CreateAgentFlow Telegram connect', () => {
-  it('shows the connect control when Telegram is not linked', () => {
+describe('CreateAgentFlow notifications block', () => {
+  it('shows the notifications block with Telegram when Telegram is not linked', () => {
     const html = renderCreateFlow([]);
-    expect(html).toContain(messages['agents.create.telegram.label']);
+    expect(html).toContain(messages['notifications.block.title']);
+    expect(html).toContain(messages['notifications.block.telegramTitle']);
     expect(html).toContain(messages['settings.telegram.connect']);
   });
 
-  it('hides the connect control when Telegram is already linked', () => {
+  it('hides the notifications block when Telegram is already linked', () => {
     const html = renderCreateFlow([{ provider: 'telegram', address: '123456789', scope: 'user', status: 'active' }]);
-    expect(html).not.toContain(messages['agents.create.telegram.label']);
+    expect(html).not.toContain(messages['notifications.block.title']);
     expect(html).not.toContain(messages['settings.telegram.connect']);
   });
 
-  it('hides the connect control until the profile has loaded', () => {
+  it('hides the notifications block until the profile has loaded', () => {
     const html = renderCreateFlow(undefined);
-    expect(html).not.toContain(messages['agents.create.telegram.label']);
+    expect(html).not.toContain(messages['notifications.block.title']);
     expect(html).toContain(messages['agents.create.title']);
   });
 });

@@ -26,9 +26,9 @@ describe('PushOptInView', () => {
     expect(html).not.toContain(messages['push.optIn.disable']);
   });
 
-  it('describes what the user gets without mentioning message text', () => {
+  it('offers to turn notifications on without mentioning message text', () => {
     const html = render({ state: 'ready' });
-    expect(html).toContain('Get a notification when your agent replies or asks you a question.');
+    expect(html).toContain(messages['push.optIn.enable']);
     expect(html).not.toContain('never include message text');
   });
 

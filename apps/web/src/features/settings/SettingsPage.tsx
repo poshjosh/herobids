@@ -7,12 +7,9 @@ import { PageShell, PageHeader, Card, Button, FieldLabel, ErrorBanner } from '..
 import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
-import { chatAddressFor } from '../../lib/chat-addresses.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from './ModelSelectionFields.js';
-import { PushOptIn } from '../notifications/PushOptIn.js';
+import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { EmailFallbackToggle } from '../notifications/EmailFallbackToggle.js';
-import { ConnectTelegram } from '../notifications/ConnectTelegram.js';
-import { telegramDisconnectBody } from '../notifications/telegram-connect.js';
 import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, type AiModelSelectionState } from './ai-model-settings.js';
 
 const LOCALE_DISPLAY_NAMES: Record<SupportedLocale, string> = {
@@ -52,7 +49,6 @@ export function SettingsPage() {
     queryFn: () => aiApi.settings(),
   });
 
-  const telegramLinked = chatAddressFor(meQuery.data?.chatAddresses, 'telegram') !== '';
   const savedEmailEnabled = meQuery.data?.notificationPreferences?.sendMessage?.email?.enabled ?? true;
   const [emailEnabled, setEmailEnabled] = useState<boolean>(true);
   const [emailDeliverySaved, setEmailDeliverySaved] = useState(false);
@@ -89,13 +85,6 @@ export function SettingsPage() {
     setModelSettings({ ...modelSettings, ...defaultSelection });
   }, [availableModelsQuery.data?.providers, aiSettingsQuery.isSuccess, modelSettings.provider, modelTouched, savedModelSettings]);
 
-  const telegramDisconnectMutation = useMutation({
-    mutationFn: () => authApi.updateMe(telegramDisconnectBody()),
-    onSuccess: (updated) => {
-      qc.setQueryData(['me'], updated);
-    },
-  });
-
   const emailMutation = useMutation({
     mutationFn: (enabled: boolean) =>
       authApi.updateMe({ notificationPreferences: { sendMessage: { email: { enabled } } } }),
@@ -103,14 +92,6 @@ export function SettingsPage() {
       qc.setQueryData(['me'], updated);
       setEmailDeliverySaved(true);
       setTimeout(() => setEmailDeliverySaved(false), 3000);
-    },
-  });
-
-  const pushChoiceMutation = useMutation({
-    mutationFn: (enabled: boolean) =>
-      authApi.updateMe({ notificationPreferences: { notifications: { push: { enabled } } } }),
-    onSuccess: (updated) => {
-      qc.setQueryData(['me'], updated);
     },
   });
 
@@ -159,6 +140,8 @@ export function SettingsPage() {
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: 'var(--content-max-width)' }}>
+        <NotificationsBlock variant="settings" />
+
         {/* Language preference */}
         <Card>
           <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
@@ -345,32 +328,6 @@ export function SettingsPage() {
 
         <Card>
           <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
-            {intl.formatMessage({ id: 'settings.telegram.title' })}
-          </h3>
-          <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-            {intl.formatMessage({ id: 'settings.telegram.description' })}
-          </p>
-
-          {telegramDisconnectMutation.isError && (
-            <ErrorBanner message={localizeApiError(intl, telegramDisconnectMutation.error, 'common.errorTitle')} />
-          )}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <ConnectTelegram />
-            {telegramLinked && (
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() => telegramDisconnectMutation.mutate()}
-                disabled={telegramDisconnectMutation.isPending}
-              >
-                {intl.formatMessage({ id: 'settings.telegram.disconnect' })}
-              </Button>
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
             {intl.formatMessage({ id: 'settings.emailDelivery.title' })}
           </h3>
           <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
@@ -456,8 +413,6 @@ export function SettingsPage() {
             </div>
           </div>
         </Card>
-
-        <PushOptIn onChange={(enabled) => pushChoiceMutation.mutate(enabled)} />
 
         <EmailFallbackToggle />
       </div>

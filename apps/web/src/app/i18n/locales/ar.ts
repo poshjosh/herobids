@@ -165,9 +165,6 @@ export const messages: Record<string, string> = {
   // Settings
   'settings.title': 'الإعدادات',
   'settings.subtitle': 'تفضيلات الحساب وإعداد الإشعارات',
-  'settings.telegram.title': 'إشعارات تيليغرام',
-  'settings.telegram.description':
-    'يمكن لوكلائك مراسلتك على تيليغرام. اضغط «ربط تيليغرام» لربط حسابك تلقائياً.',
   'settings.telegram.connect': 'ربط تيليغرام',
   'settings.telegram.connecting': 'في انتظار تأكيد تيليغرام للربط…',
   'settings.telegram.openTelegram': 'فتح تيليغرام',
@@ -355,8 +352,6 @@ export const messages: Record<string, string> = {
   'agents.create.executionMode.test': 'تجريبي — محاكاة، بدون أموال حقيقية',
   'agents.create.executionMode.live': 'حي — تنفيذ أوامر حقيقية',
   'agents.create.models.title': 'نماذج الذكاء الاصطناعي',
-  'agents.create.telegram.label': 'إشعارات تيليغرام',
-  'agents.create.telegram.help': 'اربط تيليغرام ليتمكن هذا الوكيل من مراسلتك هناك. اختياري: يمكنك إنشاء الوكيل دون ربطه.',
   'agents.create.emailDelivery': 'تسليم البريد الإلكتروني',
   'agents.create.emailDelivery.help': 'ما إذا كان هذا الوكيل يمكنه مراسلتك عبر البريد الإلكتروني',
   'agents.create.emailDelivery.helpNoEmail': 'لا يوجد بريد إلكتروني مسجّل للحساب. أضف عنوانًا في الإعدادات لاستخدام تسليم البريد الإلكتروني.',
@@ -1031,11 +1026,12 @@ export const messages: Record<string, string> = {
   'capability.trading.authorization.approval_required': 'يتطلب موافقة',
 
   // Web Push opt-in (081 W8)
-  'push.optIn.title': 'الإشعارات',
-  'push.optIn.ready': 'احصل على إشعار عندما يرد وكيلك أو يطرح عليك سؤالاً.',
+  'notifications.block.title': "الإشعارات",
+  'notifications.block.intro': "تتيح لك الإشعارات التحدث مع وكلائك.",
+  'notifications.block.telegramTitle': "إشعارات تيليغرام (موصى به)",
+  'push.optIn.title': "إشعارات المتصفح",
   'push.optIn.enable': 'تفعيل الإشعارات',
   'push.optIn.working': 'جارٍ العمل…',
-  'push.optIn.subscribed': 'الإشعارات مفعلة لهذا المتصفح. عند النقر على إشعار يُفتح الوكيل.',
   'push.optIn.disable': 'إيقاف الإشعارات',
   'push.optIn.permissionDenied': 'الإشعارات محظورة لهذا الموقع. اسمح بها في إعدادات المتصفح ثم حاول مرة أخرى.',
   'push.optIn.needsInstall.intro': 'على iPhone وiPad تعمل الإشعارات فقط من تطبيق OpenAIdom المضاف إلى الشاشة الرئيسية (iOS 16.4 أو أحدث).',
