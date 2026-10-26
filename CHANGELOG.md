@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.0 - 2026-10-26
+
 ### Added
 
 - A `create_child_agent` retry with the same name, under the same parent, within `agentCreation.duplicateChildWindowSeconds` (default 300) returns the existing child with `duplicate: true`. It creates nothing and starts nothing again.
