@@ -253,6 +253,24 @@ describe('createRuntimeToolVisibilityController', () => {
     expect(controller.allowedTools()).toContain('submit_decision');
   });
 
+  it('restores a tool hidden before a re-snapshot when its skill object is reused (startup discovery)', () => {
+    const descriptor = makeDescriptor([
+      { id: 'agent-children-management', tools: ['create_child_agent', 'list_child_agents'] },
+    ]);
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+
+    controller.setToolAvailability('create_child_agent', false);
+    // Startup discovery reassigns resolvedSkills but reuses the system skill object.
+    descriptor.resolvedSkills = [...descriptor.resolvedSkills];
+    controller.snapshotToolBaselines();
+    expect(controller.allowedTools()).not.toContain('create_child_agent');
+
+    controller.setToolAvailability('create_child_agent', true);
+
+    expect(controller.allowedTools()).toContain('create_child_agent');
+    expect(controller.allowedTools()).toContain('list_child_agents');
+  });
+
   it('hides watch_token and check_watches but keeps list_watches and remove_watch when market-data is unavailable', () => {
     const watchTools = ['watch_token', 'list_watches', 'remove_watch', 'check_watches', 'send_message'];
     const descriptor = makeDescriptor([{ id: 'monitoring', tools: watchTools }]);

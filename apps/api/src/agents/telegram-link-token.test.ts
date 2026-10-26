@@ -4,6 +4,7 @@ import type { Redis } from 'ioredis';
 import {
   createTelegramLinkToken,
   consumeTelegramLinkToken,
+  normalizeReturnTo,
   TELEGRAM_LINK_TOKEN_TTL_SECS,
   TELEGRAM_LINK_TOKEN_RATE_LIMIT,
 } from './telegram-link-token.js';
@@ -100,15 +101,36 @@ describe('createTelegramLinkToken', () => {
     expect(first.ok && second.ok && first.data.token !== second.data.token).toBe(true);
   });
 
-  it('stores the token against the user with a 10 minute TTL, keyed by its sha256 hash', async () => {
+  it('stores the user and the return path as JSON with a 10 minute TTL, keyed by its sha256 hash', async () => {
     const { redis, spies, ttls } = fakeRedis();
 
-    const created = await createTelegramLinkToken(redis, 'user-1');
+    const created = await createTelegramLinkToken(redis, 'user-1', '/agents?tab=open');
 
     if (!created.ok) throw new Error('expected a token');
-    expect(spies.set).toHaveBeenCalledWith(tokenKeyFor(created.data.token), 'user-1', 'EX', 600);
+    expect(spies.set).toHaveBeenCalledWith(
+      tokenKeyFor(created.data.token),
+      JSON.stringify({ userId: 'user-1', returnTo: '/agents?tab=open' }),
+      'EX',
+      600,
+    );
     expect(ttls.get(tokenKeyFor(created.data.token))).toBe(TELEGRAM_LINK_TOKEN_TTL_SECS);
     expect(TELEGRAM_LINK_TOKEN_TTL_SECS).toBe(600);
+  });
+
+  it('stores "/" as the return path when none is given', async () => {
+    const { redis, spies } = fakeRedis();
+
+    await createTelegramLinkToken(redis, 'user-1');
+
+    expect(JSON.parse(String(spies.set.mock.calls[0]?.[1]))).toEqual({ userId: 'user-1', returnTo: '/' });
+  });
+
+  it('stores "/" instead of an unsafe return path', async () => {
+    const { redis, spies } = fakeRedis();
+
+    await createTelegramLinkToken(redis, 'user-1', 'https://evil.example/');
+
+    expect(JSON.parse(String(spies.set.mock.calls[0]?.[1]))).toEqual({ userId: 'user-1', returnTo: '/' });
   });
 
   it('never stores the raw token as a Redis key', async () => {
@@ -213,15 +235,67 @@ describe('createTelegramLinkToken', () => {
   });
 });
 
+describe('normalizeReturnTo', () => {
+  it.each([
+    ['/', '/'],
+    ['/agents', '/agents'],
+    ['/agents/abc-123?tab=open&x=1%20y', '/agents/abc-123?tab=open&x=1%20y'],
+  ])('keeps the safe path %s', (input, expected) => {
+    expect(normalizeReturnTo(input)).toBe(expected);
+  });
+
+  it.each([
+    ['absolute URL', 'https://evil.example/'],
+    ['protocol-relative', '//evil.example/'],
+    ['backslash', '/\evil.example'],
+    ['no leading slash', 'agents'],
+    ['fragment', '/agents#top'],
+    ['whitespace', '/agents now'],
+    ['too long', `/${'a'.repeat(200)}`],
+    ['not a string', 42],
+    ['missing', undefined],
+  ])('falls back to "/" for %s', (_label, input) => {
+    expect(normalizeReturnTo(input)).toBe('/');
+  });
+
+  it('accepts a path of exactly 200 characters', () => {
+    const path = `/${'a'.repeat(199)}`;
+
+    expect(normalizeReturnTo(path)).toBe(path);
+  });
+});
+
 describe('consumeTelegramLinkToken', () => {
-  it('returns the user id for a fresh token', async () => {
+  it('returns the user id and return path for a fresh token', async () => {
+    const { redis } = fakeRedis();
+    const created = await createTelegramLinkToken(redis, 'user-1', '/agents');
+    if (!created.ok) throw new Error('expected a token');
+
+    const link = await consumeTelegramLinkToken(redis, created.data.token);
+
+    expect(link).toEqual({ userId: 'user-1', returnTo: '/agents' });
+  });
+
+  it('re-validates the return path read from Redis and falls back to "/"', async () => {
     const { redis } = fakeRedis();
     const created = await createTelegramLinkToken(redis, 'user-1');
     if (!created.ok) throw new Error('expected a token');
+    await redis.set(tokenKeyFor(created.data.token), JSON.stringify({ userId: 'user-1', returnTo: '//evil.example' }), 'EX', 600);
 
-    const userId = await consumeTelegramLinkToken(redis, created.data.token);
+    const link = await consumeTelegramLinkToken(redis, created.data.token);
 
-    expect(userId).toBe('user-1');
+    expect(link).toEqual({ userId: 'user-1', returnTo: '/' });
+  });
+
+  it('returns null for a stored value that is not the expected JSON', async () => {
+    const { redis } = fakeRedis();
+    const created = await createTelegramLinkToken(redis, 'user-1');
+    if (!created.ok) throw new Error('expected a token');
+    await redis.set(tokenKeyFor(created.data.token), 'not-json', 'EX', 600);
+
+    const link = await consumeTelegramLinkToken(redis, created.data.token);
+
+    expect(link).toBeNull();
   });
 
   it('returns null on replay, because the first consume removed the token', async () => {
@@ -238,9 +312,9 @@ describe('consumeTelegramLinkToken', () => {
   it('returns null for a token that was never issued', async () => {
     const { redis } = fakeRedis();
 
-    const userId = await consumeTelegramLinkToken(redis, 'never-issued');
+    const link = await consumeTelegramLinkToken(redis, 'never-issued');
 
-    expect(userId).toBeNull();
+    expect(link).toBeNull();
   });
 
   it('returns null once the token has expired', async () => {
@@ -249,9 +323,9 @@ describe('consumeTelegramLinkToken', () => {
     if (!created.ok) throw new Error('expected a token');
     expireKey(tokenKeyFor(created.data.token));
 
-    const userId = await consumeTelegramLinkToken(redis, created.data.token);
+    const link = await consumeTelegramLinkToken(redis, created.data.token);
 
-    expect(userId).toBeNull();
+    expect(link).toBeNull();
   });
 
   it('consumes with GETDEL, keyed by the sha256 hash, so the read and the delete are one atomic step', async () => {

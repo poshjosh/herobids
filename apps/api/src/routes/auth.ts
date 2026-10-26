@@ -9,7 +9,7 @@ import { users, oauthIdentities, localIdentities, sessions, userPlans, agents } 
 import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
 import { ChatAddressInUseError, ChatAddressesInputSchema, applyChatAddresses, listUserChatAddresses, type ChatAddressesInput } from '../agents/chat-addresses.js';
-import { createTelegramLinkToken } from '../agents/telegram-link-token.js';
+import { createTelegramLinkToken, normalizeReturnTo } from '../agents/telegram-link-token.js';
 import { errorPayload } from '../error-payload.js';
 import { resolvePlanEntitlements } from '../plan-guards.js';
 import { resolveNotificationPreferences, type StoredNotificationPreferences } from './user-config-helpers.js';
@@ -164,6 +164,8 @@ function isUsernameUniqueConflict(err: unknown): boolean {
   // Fallback: Postgres detail always contains the column name in "Key (col)=..." format
   return /\(username\)/.test((e['detail'] as string | undefined) ?? '');
 }
+
+const telegramLinkBodySchema = z.object({ returnTo: z.string().optional() });
 
 export async function authRoutes(
   app: FastifyInstance,
@@ -1039,6 +1041,7 @@ export async function authRoutes(
 
   /**
    * POST /auth/me/telegram/link — Issues a single-use deep link that connects the user's Telegram chat when opened in Telegram.
+   * Optional body `{ returnTo }` is the in-app path the bot's "Open OpenAIdom" button goes back to.
    */
   app.post('/auth/me/telegram/link', async (request, reply) => {
     const userId = request.userId;
@@ -1051,7 +1054,9 @@ export async function authRoutes(
       );
     }
 
-    const created = await createTelegramLinkToken(redis, userId);
+    const body = telegramLinkBodySchema.safeParse(request.body ?? {});
+    const returnTo = normalizeReturnTo(body.success ? body.data.returnTo : undefined);
+    const created = await createTelegramLinkToken(redis, userId, returnTo);
     if (!created.ok) {
       return reply.status(429).send(errorPayload(created.error.code, created.error.message));
     }

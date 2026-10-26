@@ -32,6 +32,12 @@ alerts:
   email:
     brandImageUrl: https://openaidom.com/brand/compact-mark.png
 
+# Chat messaging transports, env TELEGRAM_* writes the messaging.chat.telegram.* paths below.
+messaging:
+  chat:
+    telegram:
+      botUsername: "OpenAIdomBot" # bot username without @, for t.me deep links; override: TELEGRAM_BOT_USERNAME
+
 # PRODUCTION: Billing must be a real provider (not mock). The startup guard
 # in apps/*/src/config.ts enforces this — the process will refuse to start if
 # billing.primaryProvider is still 'mock' when NODE_ENV=production.

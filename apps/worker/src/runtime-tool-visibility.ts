@@ -70,6 +70,19 @@ export function createRuntimeToolVisibilityController(
   const dependencyDegradations = new Set<RuntimeDependency>();
   let lastSnapshotDescriptor: RuntimeDescriptor | null = null;
   let lastSnapshotSkills: RuntimeDescriptor['resolvedSkills'] | null = null;
+  // applyToolVisibility mutates skill objects in place, so a later snapshot must not
+  // read their current (already filtered) tool lists. Each skill object's baseline is
+  // captured once, the first time this controller sees it, before any filtering.
+  const baselineBySkillObject = new WeakMap<object, string[]>();
+
+  function baselineFor(skill: RuntimeDescriptor['resolvedSkills'][number]): string[] {
+    let baseline = baselineBySkillObject.get(skill);
+    if (!baseline) {
+      baseline = [...skill.requiredTools];
+      baselineBySkillObject.set(skill, baseline);
+    }
+    return baseline;
+  }
 
   function snapshotToolBaselines(): void {
     const runtimeDescriptor = getDescriptor();
@@ -82,7 +95,7 @@ export function createRuntimeToolVisibilityController(
     }
     baseRequiredToolsBySkill.clear();
     for (const skill of runtimeDescriptor.resolvedSkills) {
-      baseRequiredToolsBySkill.set(skill.id, [...skill.requiredTools]);
+      baseRequiredToolsBySkill.set(skill.id, baselineFor(skill));
     }
     lastSnapshotDescriptor = runtimeDescriptor;
     lastSnapshotSkills = runtimeDescriptor.resolvedSkills;
@@ -91,7 +104,7 @@ export function createRuntimeToolVisibilityController(
   function applyToolVisibility(circuitBlockedTools = new Set<string>()): void {
     const runtimeDescriptor = getDescriptor();
     for (const skill of runtimeDescriptor.resolvedSkills) {
-      const baseline = baseRequiredToolsBySkill.get(skill.id) ?? [...skill.requiredTools];
+      const baseline = baseRequiredToolsBySkill.get(skill.id) ?? baselineFor(skill);
       skill.requiredTools = applyToolExclusions(baseline, {
         permanent: permanentlyExcludedTools,
         degraded: degradedExcludedTools,

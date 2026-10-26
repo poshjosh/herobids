@@ -24,21 +24,33 @@ const TELEGRAM_API_BASE = 'https://api.telegram.org';
 const EXPIRED_TEXT = 'This link has expired. Generate a new one in the web app.';
 const ALREADY_CONNECTED_TEXT = 'This Telegram account is already connected to another OpenAIdom account.';
 const CONNECTED_TEXT = 'Connected ✅';
+const FRONTEND_ORIGIN = makeAuthConfig().frontendOrigin;
+const OPEN_APP_LABEL = 'Open OpenAIdom';
+
+interface InlineKeyboard {
+  inline_keyboard: Array<Array<{ text: string; url: string }>>;
+}
 
 // ── Telegram Bot API mock ─────────────────────────────────────────────────
 
 const realFetch = globalThis.fetch;
-let sentMessages: Array<{ chatId: string; text: string }> = [];
+let sentMessages: Array<{ chatId: string; text: string; replyMarkup?: unknown }> = [];
+/** When set, Telegram refuses any message that carries reply_markup, as it does for URLs it does not accept. */
+let rejectReplyMarkup = false;
 
 function installTelegramMock() {
   sentMessages = [];
+  rejectReplyMarkup = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input
       : input instanceof URL ? input.href
       : (input as Request).url;
     if (url.startsWith(TELEGRAM_API_BASE)) {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { chat_id?: number | string; text?: string };
-      sentMessages.push({ chatId: String(body.chat_id), text: body.text ?? '' });
+      const body = JSON.parse(String(init?.body ?? '{}')) as { chat_id?: number | string; text?: string; reply_markup?: unknown };
+      if (rejectReplyMarkup && body.reply_markup !== undefined) {
+        return { ok: false, status: 400, json: async () => ({ ok: false }) } as Response;
+      }
+      sentMessages.push({ chatId: String(body.chat_id), text: body.text ?? '', replyMarkup: body.reply_markup });
       return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
     }
     return realFetch(input, init);
@@ -95,7 +107,7 @@ async function buildApp(botUsername: string | undefined): Promise<FastifyInstanc
     botToken: BOT_TOKEN,
     webhookSecret: WEBHOOK_SECRET,
     webhookUrl: undefined,
-  });
+  }, makeAuthConfig());
   await instance.ready();
   return instance;
 }
@@ -112,12 +124,17 @@ async function seedUser(label: string): Promise<string> {
   return id;
 }
 
-async function requestLink(userId: string) {
-  return app.inject({ method: 'POST', url: '/auth/me/telegram/link', headers: { 'x-test-user-id': userId } });
+async function requestLink(userId: string, body?: unknown) {
+  return app.inject({
+    method: 'POST',
+    url: '/auth/me/telegram/link',
+    headers: { 'x-test-user-id': userId, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    ...(body === undefined ? {} : { payload: body as Record<string, unknown> }),
+  });
 }
 
-async function issueToken(userId: string): Promise<string> {
-  const res = await requestLink(userId);
+async function issueToken(userId: string, returnTo?: string): Promise<string> {
+  const res = await requestLink(userId, returnTo === undefined ? undefined : { returnTo });
   if (res.statusCode !== 200) throw new Error(`link request failed with ${res.statusCode}`);
   const url = new URL((res.json() as { url: string }).url);
   return (url.searchParams.get('start') ?? '').replace(/^link_/, '');
@@ -252,6 +269,16 @@ describe.skipIf(SKIP)('Telegram deep-link connect — functional', () => {
       expect(expiresInMs).toBeLessThanOrEqual(610_000);
     });
 
+    it('accepts a returnTo path and still returns a t.me link', async () => {
+      const userId = await seedUser('returner');
+
+      const res = await requestLink(userId, { returnTo: '/agents?tab=open' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect((res.json() as { url: string }).url).toMatch(new RegExp(`^https://t\\.me/${BOT_USERNAME}\\?start=link_`));
+    });
+
     it('returns 429 once the user has requested five links in the window', async () => {
       const userId = await seedUser('spammer');
       for (let i = 0; i < 5; i += 1) {
@@ -266,6 +293,68 @@ describe.skipIf(SKIP)('Telegram deep-link connect — functional', () => {
   });
 
   describe('/start link_<token> webhook branch', () => {
+    /** The inline keyboard of the chat's latest reply, or undefined when it carried none. */
+    function lastReplyMarkup(chatId: string): InlineKeyboard | undefined {
+      const last = sentMessages.filter((message) => message.chatId === chatId).at(-1);
+      return last?.replyMarkup as InlineKeyboard | undefined;
+    }
+
+    it('replies Connected with an Open OpenAIdom button to the page the link was issued from', async () => {
+      const chatId = '910020';
+      const userId = await seedUser('returnbutton');
+      const token = await issueToken(userId, '/agents/abc?tab=open');
+
+      await sendStart(chatId, `/start link_${token}`);
+
+      expect(await waitForReply(chatId)).toBe(CONNECTED_TEXT);
+      expect(lastReplyMarkup(chatId)).toEqual({
+        inline_keyboard: [[{ text: OPEN_APP_LABEL, url: `${FRONTEND_ORIGIN}/agents/abc?tab=open` }]],
+      });
+    });
+
+    it('sends the button to the origin root when no returnTo is given', async () => {
+      const chatId = '910021';
+      const userId = await seedUser('noreturn');
+      const token = await issueToken(userId);
+
+      await sendStart(chatId, `/start link_${token}`);
+
+      await waitForReply(chatId);
+      expect(lastReplyMarkup(chatId)).toEqual({
+        inline_keyboard: [[{ text: OPEN_APP_LABEL, url: `${FRONTEND_ORIGIN}/` }]],
+      });
+    });
+
+    it.each([
+      ['an absolute URL', '910030', 'https://evil.example/phish'],
+      ['a protocol-relative path', '910031', '//evil.example/phish'],
+      ['a backslash path', '910032', '/\\evil.example'],
+      ['a path over 200 characters', '910033', `/${'a'.repeat(200)}`],
+    ])('falls back to the origin root when the requested return path is %s', async (_label, chatId, returnTo) => {
+      const userId = await seedUser(`unsafe${chatId}`);
+      const res = await requestLink(userId, { returnTo });
+      const token = (new URL((res.json() as { url: string }).url).searchParams.get('start') ?? '').replace(/^link_/, '');
+
+      await sendStart(chatId, `/start link_${token}`);
+
+      await waitForReply(chatId);
+      const url = lastReplyMarkup(chatId)?.inline_keyboard[0]?.[0]?.url;
+      expect(url).toBe(`${FRONTEND_ORIGIN}/`);
+    });
+
+    it('sends the Connected text alone when Telegram rejects the button', async () => {
+      const chatId = '910022';
+      const userId = await seedUser('rejectedbutton');
+      const token = await issueToken(userId, '/agents');
+      rejectReplyMarkup = true;
+
+      await sendStart(chatId, `/start link_${token}`);
+
+      expect(await waitForReplies(chatId, 1)).toEqual([CONNECTED_TEXT]);
+      expect(lastReplyMarkup(chatId)).toBeUndefined();
+      expect(await userTelegramRows(userId)).toEqual([{ address: chatId, agentId: null, status: 'active' }]);
+    });
+
     it('connects the chat to the user who issued the link', async () => {
       const chatId = '910001';
       const userId = await seedUser('connector');
@@ -283,6 +372,7 @@ describe.skipIf(SKIP)('Telegram deep-link connect — functional', () => {
       await sendStart(chatId, '/start link_not-a-real-token');
 
       expect(await waitForReply(chatId)).toBe(EXPIRED_TEXT);
+      expect(lastReplyMarkup(chatId)).toBeUndefined();
     });
 
     it('rejects a replayed link as expired and keeps the first connection', async () => {
@@ -309,6 +399,9 @@ describe.skipIf(SKIP)('Telegram deep-link connect — functional', () => {
       await sendStart(chatId, `/start link_${token}`);
 
       expect(await waitForReply(chatId)).toBe(ALREADY_CONNECTED_TEXT);
+      expect(lastReplyMarkup(chatId)).toEqual({
+        inline_keyboard: [[{ text: OPEN_APP_LABEL, url: `${FRONTEND_ORIGIN}/` }]],
+      });
       expect(await userTelegramRows(otherUserId)).toEqual([]);
       expect(await userTelegramRows(ownerId)).toEqual([{ address: chatId, agentId: null, status: 'active' }]);
     });

@@ -21,6 +21,7 @@ Replace manual Chat ID copy and paste with a one-tap "Connect Telegram" flow usi
 4. The webhook consumes the token (`GETDEL`). It takes the chat ID from the update and calls `setChatAddress` at user scope (`agentId = null`).
 5. The bot replies "Connected ✅".
 6. Web polls `GET /auth/me` every 2 s for up to about 2 min, until `chatAddresses` contains telegram. It then shows "Connected".
+7. The "Connected ✅" reply carries an **Open OpenAIdom** button to `frontendOrigin` + the validated `returnTo` the link was issued with (default `/`), since Telegram cannot redirect back to the web app on its own.
 
 ## Backend
 - **Token module** (new, under `apps/api/src/agents/`):

@@ -133,7 +133,13 @@ browserPool:
 alerts:
   email:
     brandImageUrl: https://staging.openaidom.com/brand/compact-mark.png
-          
+
+# Chat messaging transports, env TELEGRAM_* writes the messaging.chat.telegram.* paths below.
+messaging:
+  chat:
+    telegram:
+      botUsername: "OpenAIdomStagingBot" # bot username without @, for t.me deep links; override: TELEGRAM_BOT_USERNAME
+
 # Billing — multi-provider subscription billing.
 # Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).
 # Switch to 'creem' or 'stripe' in production once provider credentials are set.

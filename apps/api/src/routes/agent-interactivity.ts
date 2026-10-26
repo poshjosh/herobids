@@ -17,7 +17,7 @@ import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
 import type { AgentApprovalsConfig, AgentCreationConfig, AuthConfig, ChatInboundAdapter, ChatWebhookRequest, ModelDefaults, PlanAgentsEntitlements, PlansConfig, ResolvedTelegramChatConfig, UnifiedAgentConfig } from '@herobids/domain';
-import { AgentCreationConfigSchema, AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { AgentCreationConfigSchema, AgentRuntimePolicyOverridesSchema, AGENT_STREAM_MAXLEN, AuthConfigSchema } from '@herobids/domain';
 import type { ConversationMessage, MessageSender } from '@herobids/domain';
 import {
   ConversationQuerySchema,
@@ -701,6 +701,10 @@ export async function agentInteractivityRoutes(
   });
 }
 
+interface TelegramInlineKeyboardMarkup {
+  inline_keyboard: Array<Array<{ text: string; url: string }>>;
+}
+
 // Telegram webhook handler — registered as a public (unauthenticated) route
 export async function telegramWebhookHandler(
   app: FastifyInstance,
@@ -730,16 +734,26 @@ export async function telegramWebhookHandler(
   const typing = typingTiming && botToken ? new ChatTypingIndicator(typingSenders, typingTiming, redisClient, app.log) : undefined;
   if (typing) app.addHook('onClose', async () => { typing.dispose(); });
 
-  async function sendTelegramText(chatId: string, text: string): Promise<void> {
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  const frontendOrigin = AuthConfigSchema.shape.frontendOrigin.parse(authConfig?.frontendOrigin);
+
+  async function sendTelegramText(chatId: string, text: string, replyMarkup?: TelegramInlineKeyboardMarkup): Promise<void> {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
         text,
         link_preview_options: { is_disabled: true },
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     }).catch(() => undefined);
+    // Telegram rejects some button URLs (for example localhost in development). Resend the text alone so the reply still arrives.
+    if (replyMarkup && response?.ok === false) await sendTelegramText(chatId, text);
+  }
+
+  /** Button that opens the web app at the page the user connected from. `returnTo` is already validated, so resolving it against the origin cannot leave the origin. */
+  function openAppMarkup(returnTo: string): TelegramInlineKeyboardMarkup {
+    return { inline_keyboard: [[{ text: 'Open OpenAIdom', url: new URL(returnTo, frontendOrigin).href }]] };
   }
 
   function agentCanReceiveTelegram(status: string): boolean {
@@ -851,8 +865,8 @@ export async function telegramWebhookHandler(
    */
   async function linkTelegramChat(chatId: string, message: InboundChatMessage, token: string): Promise<void> {
     const suppressed = await agentRepo.isChatAddressSuppressed(message.from.provider, chatId);
-    const reply = async (text: string) => {
-      if (!suppressed) await sendTelegramText(chatId, text);
+    const reply = async (text: string, replyMarkup?: TelegramInlineKeyboardMarkup) => {
+      if (!suppressed) await sendTelegramText(chatId, text, replyMarkup);
     };
 
     // Link tokens are only redeemed from a private chat, so a token shared into a group cannot bind the group.
@@ -862,17 +876,18 @@ export async function telegramWebhookHandler(
       return;
     }
 
-    const userId = await consumeTelegramLinkToken(redisClient, token);
-    if (!userId) {
+    const link = await consumeTelegramLinkToken(redisClient, token);
+    if (!link) {
       await reply('This link has expired. Generate a new one in the web app.');
       return;
     }
+    const returnMarkup = openAppMarkup(link.returnTo);
     // The token is spent before the ownership check, so a rejected link cannot be retried.
-    if (await bindTelegramChat(chatId, userId) === 'bound_to_other_user') {
-      await reply('This Telegram account is already connected to another OpenAIdom account.');
+    if (await bindTelegramChat(chatId, link.userId) === 'bound_to_other_user') {
+      await reply('This Telegram account is already connected to another OpenAIdom account.', returnMarkup);
       return;
     }
-    await sendTelegramText(chatId, 'Connected ✅');
+    await sendTelegramText(chatId, 'Connected ✅', returnMarkup);
   }
 
   async function processWebhookUpdate(

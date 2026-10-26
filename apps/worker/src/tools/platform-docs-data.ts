@@ -109,6 +109,7 @@ runtimePolicyOverrides (object, optional): Update runtime policy overrides.
 wakePreferences (object, optional): Update wake schedule.
 notificationPolicy (object, optional): Update notification settings.
 dexWatchlistSymbols (string[], optional): Update DEX watchlist.
+telegramChatId (string, optional): Update Telegram chat ID.
 hybridMode (object, optional): Update hybrid mode config.
 `,
   headings: [
@@ -129,7 +130,7 @@ const SKILL_PRESET_ENTRY: DocsIndexEntry = {
   id: 'mapping/skill-presets',
   title: 'Skill Preset to Skill Mapping',
   kind: 'mapping',
-  content: "\nWhen a user selects a preset in the UI, these are the skills assigned:\n\ntrading (AI crypto trader):\n  - traderton/skills/crypto-trading\n  - traderton/skills/crypto-bot-management\n\ndirect-trading (AI direct trader):\n  - traderton/skills/crypto-trading\n\ntrading-assistant (AI trading assistant):\n  - traderton/skills/crypto-trading\n\npersonal-assistant (AI personal assistant):\n  - web-access\n  - email\n\ncustom (Custom AI):\n  - No preset skills; user selects skills manually\n\nTrading presets assign external skills.sh refs (installed at the agent's first start).\n\nAvailable platform skills (all public):\n  - system/base: Core tools: memory, tasks, reminders, messaging, cost tracking, and schema fetching. Auto-injected into every agent.\n  - system/programming: Code execution tools\n  - system/file-management: Manage a per-agent workspace for intermediate files and outputs.\n  - system/web-access: Search the internet, read web pages, fetch documents, and make structured HTTP requests for research and information gathering.\n  - system/email: Send emails on behalf of the user.\n  - system/platform-docs: Search and read platform documentation, form schemas, and configuration references.\n  - system/browser: Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.\n  - system/long-running-task: Make steady progress on goals that span many ticks/sessions: split the work into recorded units, keep progress in durable tasks and memory, and resume after a restart.\n  - system/agent-children-management: Create, list, inspect, pause, stop, message and delete the child agents you created. Only the user can add this skill.\n",
+  content: "\nWhen a user selects a preset in the UI, these are the skills assigned:\n\ntrading (AI crypto trader):\n  - traderton/skills/crypto-trading\n  - traderton/skills/crypto-bot-management\n\ndirect-trading (AI direct trader):\n  - traderton/skills/crypto-trading\n\ntrading-assistant (AI trading assistant):\n  - traderton/skills/crypto-trading\n\npersonal-assistant (AI personal assistant):\n  - web-access\n  - email\n\ncustom (Custom AI):\n  - No preset skills; user selects skills manually\n\nTrading presets assign external skills.sh refs (installed at the agent's first start).\n\nAvailable platform skills (all public):\n  - system/base: Core tools: memory, tasks, reminders, messaging, cost tracking, and schema fetching. Auto-injected into every agent.\n  - system/programming: Code execution tools\n  - system/file-management: Manage a per-agent workspace for intermediate files and outputs.\n  - system/web-access: Search the internet, read web pages, fetch documents, and make structured HTTP requests for research and information gathering.\n  - system/email: Send emails on behalf of the user.\n  - system/platform-docs: Search and read platform documentation, form schemas, and configuration references.\n  - system/browser: Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.\n  - system/long-running-task: Make steady progress on goals that span many ticks/sessions: split the work into recorded units, keep progress in durable tasks and memory, and resume after a restart.\n  - system/agent-children-management: Create, list, inspect, pause, stop, message and delete the child agents you created.\n",
   headings: ["trading","direct-trading","trading-assistant","personal-assistant","custom","Available platform skills"],
   tags: ['skills', 'presets', 'mapping', 'configuration'],
 };
@@ -1049,7 +1050,7 @@ OpenAIdom agent messages sent to Telegram now arrive with reply mode already arm
 
 ## How It Works
 
-1. Connect Telegram in **Settings** (select **Connect Telegram**, then tap **Start** in Telegram).
+1. Link your Telegram chat ID through the existing account setup flow.
 2. Start an agent session.
 3. OpenAIdom sends a session-started message that says the agent is running.
 4. Every agent message also includes Telegram \`ForceReply\` markup.
@@ -1270,7 +1271,7 @@ See [Authorization](/docs/agents/#authorization) for more on configuring authori
 
 ## How do I talk to my agent from Telegram?
 
-First, make sure your Telegram account is connected — go to **Settings** in the web app and select **Connect Telegram**, then tap **Start** in Telegram. Your agent must be running.
+First, make sure your Telegram account is linked — go to **Settings** in the web app and enter your Telegram Chat ID. Your agent must be running.
 
 Once set up, you have three options:
 
@@ -1330,7 +1331,7 @@ Go to the [OpenAIdom web app](/) and sign in. Your account is your control cente
 Your agents can talk to you directly on Telegram. To set it up:
 
 1. Go to **Settings** in the web app.
-2. Select **Connect Telegram**, then tap **Start** in the Telegram tab that opens.
+2. Enter your Telegram Chat ID.
 3. Your agents will start sending you messages when they have updates, need input, or hit a billing cap.
 
 See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how to talk back to your agents from Telegram.
@@ -1445,7 +1446,7 @@ OpenAIdom, ("we", "our", or "us"), is an AI agent platform. This policy explains
 
 ### Account data
 - Email address (required for sign-in)
-- Telegram account link (optional, for agent messaging)
+- Telegram Chat ID (optional, for agent messaging)
 
 ### Agent data
 - Agent configuration (goals, styles, risk limits)

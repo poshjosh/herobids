@@ -309,7 +309,7 @@ export const auth = {
       body: JSON.stringify({ email, ...(username ? { username } : {}), ...(next ? { next } : {}) }),
     }),
   me: (signal?: AbortSignal) => request<MeResponse>('/auth/me', signal ? { signal } : undefined),
-  linkTelegram: () => request<TelegramLinkResponse>('/auth/me/telegram/link', { method: 'POST' }),
+  linkTelegram: (body: { returnTo?: string } = {}) => request<TelegramLinkResponse>('/auth/me/telegram/link', { method: 'POST', body: JSON.stringify(body) }),
   updateMe: (data: { preferredLocale?: string | null; peerMessagingPaused?: boolean; chatAddresses?: ChatAddressInput[]; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } }; notifications?: { emailFallback?: { enabled: boolean }; push?: { enabled: boolean } } } | null }) =>
     request<MeResponse>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),

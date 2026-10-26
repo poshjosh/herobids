@@ -164,3 +164,23 @@ describe('api-client — 401 handling', () => {
     expect(mockWindowLocation.href).toBe('/login');
   });
 });
+
+describe('api-client — linkTelegram', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends returnTo as a JSON body on POST /auth/me/telegram/link', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(200, { url: 'https://t.me/bot?start=link_x', expiresAt: '2026-01-01T00:00:00.000Z' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await auth.linkTelegram({ returnTo: '/agents?tab=open' });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/auth/me/telegram/link');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify({ returnTo: '/agents?tab=open' }));
+  });
+});

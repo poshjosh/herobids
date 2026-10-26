@@ -118,7 +118,7 @@ export function ConnectTelegram() {
   }, [intl]);
 
   const linkMutation = useMutation({
-    mutationFn: () => authApi.linkTelegram(),
+    mutationFn: (returnTo: string) => authApi.linkTelegram({ returnTo }),
   });
 
   // Linked from outside this flow (for example by the bot during a window focus refetch): drop the stale flow.
@@ -181,7 +181,9 @@ export function ConnectTelegram() {
     tabRef.current = tab;
     dispatch({ type: 'connectStarted', tabBlocked: tab === null });
 
-    linkMutation.mutate(undefined, {
+    // The bot's "Open OpenAIdom" button returns the user to this page. Relative paths only; the API checks it again.
+    const returnTo = `${window.location.pathname}${window.location.search}`.slice(0, 200);
+    linkMutation.mutate(returnTo, {
       onSuccess: (link) => {
         if (flow.signal.aborted) {
           return;

@@ -156,4 +156,4 @@ Non-blocking issues from code reviews, grouped by item.
 
 ### Child agents (owner decisions 2026-10-26)
 - DEC-64 and DEC-65 approved. Parent tick note for child launch refusals: deferred (no wake source). Model-selection refusals: not recorded (owner decision).
-- Telegram chat-ID onboarding (idea, not started): the web copy asks users to send `/start` to @OpenAIdomBot manually. Telegram supports `https://t.me/OpenAIdomBot?start=<payload>`, which opens the bot with a Start button. `?text=` pre-fills the composer, but the user still taps send. There is no `?message=` parameter. A one-time-code link (C2, deferred) would remove the paste step entirely.
+- Telegram chat-ID onboarding (idea, not started): the web copy asks users to send `/start` to @OpenAIdomBot manually. Telegram supports `https://t.me/OpenAIdomBot?start=<payload>`, which opens the bot with a Start button. `?text=` pre-fills the composer, but the user still taps send. There is no `?message=` parameter. A one-time-code link (C2, deferred) would remove the paste step entirely. See: `docs/features/2026/10/26/001-telegram-deep-linking/001-plan.md`.
