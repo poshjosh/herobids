@@ -1262,47 +1262,6 @@ describe('GET /agents/telegram-bot', () => {
   });
 });
 
-// ─── POST /agents/verify-telegram ────────────────────────────────────────
-
-describe('POST /agents/verify-telegram', () => {
-  it('returns 501 when Telegram is not configured', async () => {
-    const db = buildAgentDb(null);
-    const redis = buildMockRedis();
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis, buildTelegramChatConfig({ botToken: '' }));
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/agents/verify-telegram',
-      payload: { chatId: '12345' },
-    });
-    expect(res.statusCode).toBe(501);
-  });
-
-  it('returns 400 when chatId is missing (token configured)', async () => {
-    // Token must be non-empty so endpoint reaches body validation; mock fetch to avoid real HTTP
-    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({ result: { username: 'test_bot' } }),
-    } as Response);
-
-    const db = buildAgentDb(null);
-    const redis = buildMockRedis();
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis, buildTelegramChatConfig());
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/agents/verify-telegram',
-      payload: {},
-    });
-    expect(res.statusCode).toBe(400);
-    fetchSpy.mockRestore();
-  });
-});
-
 describe('POST /telegram/webhook', () => {
   it('returns 501 when Telegram webhook auth is not fully configured', async () => {
     const app = Fastify();

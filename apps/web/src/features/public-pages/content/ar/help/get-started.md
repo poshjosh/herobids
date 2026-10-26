@@ -10,8 +10,8 @@ OpenAIdom يقدم وكلاء ذكاء اصطناعي كخدمة. صِف ما ت
 
 يمكن لوكلائك التحدث إليك مباشرة على Telegram. للإعداد:
 
-1. اذهب إلى **Settings** في التطبيق.
-2. أدخل معرف محادثة Telegram الخاص بك (Telegram Chat ID).
+1. اذهب إلى **Settings** في التطبيق وانقر **Connect Telegram**.
+2. سيفتح Telegram ويربط حسابك تلقائياً. اضغط **Return to OpenAIdom** للعودة إلى التطبيق.
 3. سيبدأ وكلاؤك بإرسال رسائل عندما يكون لديهم تحديثات، أو يحتاجون مدخلات، أو يصلون إلى حد الفوترة.
 
 راجع [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) لمعرفة كيفية التحدث مع وكلائك من Telegram.

@@ -81,10 +81,6 @@ import {
 
 // --- Schemas ---
 
-const VerifyTelegramSchema = z.object({
-  chatId: z.string().min(1),
-});
-
 const UpdateAgentSchema = z.object({
   name: z.string().min(1).max(100),
   prompt: z.string().min(1).max(8000),
@@ -666,38 +662,6 @@ export async function agentInteractivityRoutes(
     }
 
     return reply.send({ username: `@${data.result.username}` });
-  });
-
-  // POST /agents/verify-telegram — verify a Telegram chat ID is reachable (501 if not configured)
-  app.post<{ Body: unknown }>('/agents/verify-telegram', async (request, reply) => {
-    if (!telegramToken) {
-      return reply.status(501).send({ error: 'not_configured', message: 'Telegram is not configured on this platform' });
-    }
-
-    const parsed = VerifyTelegramSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
-    }
-
-    const { chatId } = parsed.data;
-    const response = await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: 'OpenAIdom: Telegram notification test — your chat ID is verified.',
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({})) as { description?: string };
-      return reply.status(422).send({
-        error: 'telegram_unreachable',
-        message: body.description ?? 'Chat ID is not reachable',
-      });
-    }
-
-    return reply.send({ verified: true, chatId });
   });
 }
 

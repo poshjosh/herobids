@@ -23,7 +23,7 @@ See [Authorization](/docs/agents/#authorization) for more on configuring authori
 
 ## How do I talk to my agent from Telegram?
 
-First, make sure your Telegram account is linked — go to **Settings** in the web app and enter your Telegram Chat ID. Your agent must be running.
+First, make sure your Telegram account is connected — go to **Settings** in the web app and click **Connect Telegram**. Your agent must be running.
 
 Once set up, you have three options:
 

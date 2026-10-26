@@ -586,22 +586,6 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
     });
   });
 
-  // ─── POST /agents/verify-telegram ────────────────────────────────────────
-
-  describe('POST /agents/verify-telegram', () => {
-    it('returns 501 because Telegram is not configured in the test app', async () => {
-      const res = await ctx.app.inject({
-        method: 'POST',
-        url: '/agents/verify-telegram',
-        headers: authHeader(),
-        payload: { chatId: '123456789' },
-      });
-
-      expect(res.statusCode).toBe(501);
-      expect(res.json<{ error: string }>().error).toBe('not_configured');
-    });
-  });
-
   // ─── POST /telegram/webhook ──────────────────────────────────────────
 
   describe('POST /telegram/webhook', () => {

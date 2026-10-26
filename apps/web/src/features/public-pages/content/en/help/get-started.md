@@ -10,8 +10,8 @@ Go to the [OpenAIdom web app](/) and sign in. Your account is your control cente
 
 Your agents can talk to you directly on Telegram. To set it up:
 
-1. Go to **Settings** in the web app.
-2. Enter your Telegram Chat ID.
+1. Go to **Settings** in the web app and click **Connect Telegram**.
+2. Telegram opens and connects your account automatically. Tap **Return to OpenAIdom** to go back to the app.
 3. Your agents will start sending you messages when they have updates, need input, or hit a billing cap.
 
 See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how to talk back to your agents from Telegram.

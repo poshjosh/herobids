@@ -4,7 +4,7 @@ OpenAIdom agent messages sent to Telegram now arrive with reply mode already arm
 
 ## How It Works
 
-1. Link your Telegram chat ID through the existing account setup flow.
+1. Connect your Telegram account from **Settings** (**Connect Telegram**).
 2. Start an agent session.
 3. OpenAIdom sends a session-started message that says the agent is running.
 4. Every agent message also includes Telegram `ForceReply` markup.

@@ -46,10 +46,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The child-creation tool is renamed `create_child_agent` (was `create_agent`). Its visibility and rules are unchanged.
 - The child tools are no longer in the `base` skill. Agents that have a child limit above 0 but do not hold `agent-children-management` lose `create_child_agent` and the creator tools until the user assigns the skill.
 - Chat addresses are read only from `chat_addresses`, and opt-outs from `chat_suppressions`. Agent and user responses return `chatAddresses`. The `telegramChatId` columns and fields are removed, and the Telegram bot settings move to `messaging.chat.telegram.*` (`alerts.telegram.*` is gone).
+- Help pages and the agent platform docs describe Connect Telegram in Settings, not entering a Chat ID.
 
 ### Removed
 
 - `GET /agents/:id/messages` and the `agent_outbound_messages` table.
+- `POST /agents/verify-telegram`. It had no web caller and could send messages to any Telegram chat ID.
 
 ### Fixed
 
