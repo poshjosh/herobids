@@ -474,6 +474,7 @@ export const messages: Record<string, string> = {
   'agents.tree.createdByDeleted': 'एक हटाए गए एजेंट द्वारा बनाया गया',
   'agents.tree.depth': 'स्तर {depth}',
   'agents.tree.allowance': '{limit} में से {used} चाइल्ड एजेंट उपयोग हुए',
+  'agents.tree.childCount': '{count, plural, one {# चाइल्ड एजेंट} other {# चाइल्ड एजेंट}}',
   'agents.tree.expand': '{name} विस्तृत करें',
   'agents.tree.collapse': '{name} संक्षिप्त करें',
   'agents.tree.search': 'एजेंट खोजें',

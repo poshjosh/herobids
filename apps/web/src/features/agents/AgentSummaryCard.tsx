@@ -32,6 +32,8 @@ export interface AgentHierarchyMeta {
   creatorLabel: CreatorLabel | null;
   /** Pre-formatted allowance text, e.g. "2 of 5 children used". */
   allowanceLabel: string | null;
+  /** Direct child count shown on parent rows, e.g. "2 children". */
+  childCountLabel: string | null;
   /** Set for child agents. Opens the message form rendered by the tree row. */
   onMessage?: () => void;
   /** Set when the tree row renders Pause and Stop itself, so the card omits its own icons. */
@@ -213,6 +215,11 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
             {hierarchy?.depth != null && (
               <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
                 {intl.formatMessage({ id: 'agents.tree.depth' }, { depth: hierarchy.depth })}
+              </span>
+            )}
+            {hierarchy?.childCountLabel && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                {hierarchy.childCountLabel}
               </span>
             )}
           </div>

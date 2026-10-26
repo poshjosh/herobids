@@ -2699,6 +2699,27 @@ describe('POST /agents/:id/start — model selection validation', () => {
     expect(res.statusCode).toBe(202);
     expect(insertedValues).toContainEqual(expect.objectContaining({ agentId: 'agent-1', status: 'starting' }));
   });
+
+  it('accepts start when only the operator modelDefaults supply the model selection', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      // No modelPolicy and no user AI settings: the same case create accepts via operator defaults.
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, {
+      provider: 'ollama',
+      lightModel: 'qwen3:8b',
+      heavyModel: 'qwen3.6:35b-a3b-q4_K_M',
+    });
+
+    const res = await app.inject({ method: 'POST', url: '/agents/agent-1/start' });
+
+    expect(res.statusCode).toBe(202);
+    expect(insertedValues).toContainEqual(expect.objectContaining({ agentId: 'agent-1', status: 'starting' }));
+  });
 });
 
 // ---------------------------------------------------------------------------

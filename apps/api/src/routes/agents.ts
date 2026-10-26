@@ -1292,7 +1292,7 @@ export async function agentRoutes(
     // child created and stopped, and the response says why. Run before the read so the status is current.
     const childStart = parentAgentId
       ? await startCreatedChild(
-        () => startAgent(db, agentId, request.userId, tradertonReadClient, tradertonReadTimeoutMs),
+        () => startAgent(db, agentId, request.userId, tradertonReadClient, tradertonReadTimeoutMs, operatorModelDefaults),
         parsed.data.start !== false,
       )
       : null;
@@ -2724,7 +2724,7 @@ export async function agentRoutes(
   app.post<{ Params: { id: string } }>('/agents/:id/start', { preHandler: requireUserCaller }, async (request, reply) => {
     const { id } = request.params;
 
-    const result = await startAgent(db, id, request.userId, tradertonReadClient, tradertonReadTimeoutMs);
+    const result = await startAgent(db, id, request.userId, tradertonReadClient, tradertonReadTimeoutMs, operatorModelDefaults);
     if (!result.ok) {
       if (result.error.code === 'agent.not_found') {
         return reply.status(404).send({ error: 'not_found' });

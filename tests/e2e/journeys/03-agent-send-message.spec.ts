@@ -64,11 +64,11 @@ test.describe('Journey 3: Chat with an agent on the agent detail page', () => {
     // The agent's reply appears in the thread without a reload (the chat polls)
     const agentReply = `Status update from the agent ${Date.now()}`;
     await seedAgentChatReply({ userId, agentId, body: agentReply });
-    await expect(page.getByText(agentReply, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('[data-author="agent"]').getByText(agentReply, { exact: true })).toBeVisible({ timeout: 20_000 });
 
     // Both messages are still there after a reload
     await page.reload();
     await expect(page.getByText(userMessage, { exact: true })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(agentReply, { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-author="agent"]').getByText(agentReply, { exact: true })).toBeVisible({ timeout: 10_000 });
   });
 });

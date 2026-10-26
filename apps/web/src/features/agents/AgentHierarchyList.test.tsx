@@ -162,3 +162,36 @@ describe('AgentHierarchyList child row actions', () => {
     expect(html).not.toContain('Something went wrong');
   });
 });
+
+describe('AgentHierarchyList nesting', () => {
+  const NESTED_PARENT = makeAgent({ id: 'parent-1', name: 'Parent', status: 'active', childAgentLimit: 0 });
+  const NESTED_CHILD = makeAgent({
+    id: 'child-1', name: 'Child', status: 'stopped', parentAgentId: 'parent-1', depth: 1, creatorId: 'parent-1', creatorType: 'agent',
+  });
+
+  it('shows the direct child count on a parent row', () => {
+    const html = renderTree([NESTED_PARENT, NESTED_CHILD]);
+
+    expect(html).toContain('1 child<');
+  });
+
+  it('omits the creator label on a nested child row', () => {
+    const html = renderTree([NESTED_PARENT, NESTED_CHILD]);
+
+    expect(html).not.toContain('Created by Parent');
+  });
+
+  it('keeps the creator label on a nested child row while searching', () => {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <IntlProvider locale="en" messages={messages}>
+          <MemoryRouter>
+            <AgentHierarchyList agents={[NESTED_PARENT, NESTED_CHILD]} searchQuery="child" />
+          </MemoryRouter>
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(html).toContain('Created by Parent');
+  });
+});

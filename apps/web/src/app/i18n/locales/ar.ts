@@ -474,6 +474,7 @@ export const messages: Record<string, string> = {
   'agents.tree.createdByDeleted': 'أنشأه وكيل محذوف',
   'agents.tree.depth': 'المستوى {depth}',
   'agents.tree.allowance': 'تم استخدام {used} من أصل {limit} وكلاء فرعيين',
+  'agents.tree.childCount': '{count, plural, one {وكيل فرعي واحد} other {# وكلاء فرعيين}}',
   'agents.tree.expand': 'توسيع {name}',
   'agents.tree.collapse': 'طي {name}',
   'agents.tree.search': 'البحث في الوكلاء',

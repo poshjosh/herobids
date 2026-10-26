@@ -247,7 +247,7 @@ describe('normalizeReturnTo', () => {
   it.each([
     ['absolute URL', 'https://evil.example/'],
     ['protocol-relative', '//evil.example/'],
-    ['backslash', '/\evil.example'],
+    ['backslash', '/\\evil.example'],
     ['no leading slash', 'agents'],
     ['fragment', '/agents#top'],
     ['whitespace', '/agents now'],

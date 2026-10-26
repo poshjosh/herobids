@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions, users } from '@herobids/db';
-import { normalizePersistedAiModelConfig } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, resolveEffectiveLlmSelection, type ModelDefaults } from '@herobids/domain';
 import { ok, err, type Result } from '@herobids/domain';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import { ensurePublishedBlueprintForAgent } from './agent-blueprint-sync-service.js';
@@ -26,6 +26,7 @@ export async function startAgent(
   userId: string,
   tradertonReadClient?: ExternalBackendClient,
   tradertonReadTimeoutMs?: number,
+  operatorModelDefaults?: ModelDefaults,
 ): Promise<Result<{ status: string; sessionId?: string }, AgentLifecycleError>> {
   const sessionId = crypto.randomUUID();
   const now = new Date();
@@ -57,12 +58,20 @@ export async function startAgent(
         .where(eq(users.id, userId))
         .limit(1);
 
+      // Same fallback order as the worker launch (agent → user → operator modelDefaults), so a start
+      // accepted by create is not refused here.
       const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
-      const effectiveProvider = agentProvider ?? userAiConfig?.provider ?? null;
-      const effectiveLightModel = agentLightModel ?? userAiConfig?.lightModel ?? null;
-      const effectiveHeavyModel = agentHeavyModel ?? userAiConfig?.heavyModel ?? null;
+      const effectiveSelection = resolveEffectiveLlmSelection({
+        agentConfig: {
+          provider: agentProvider,
+          lightModel: agentLightModel,
+          heavyModel: agentHeavyModel,
+          userModelDefaults: userAiConfig,
+          operatorModelDefaults: operatorModelDefaults ?? null,
+        },
+      });
 
-      if (!effectiveProvider || !effectiveLightModel || !effectiveHeavyModel) {
+      if (!effectiveSelection.provider || !effectiveSelection.lightModel || !effectiveSelection.heavyModel) {
         return { kind: 'model_selection_incomplete' as const };
       }
 

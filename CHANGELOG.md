@@ -43,6 +43,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `GET /agents/:id/messages` and the `agent_outbound_messages` table.
 
+### Fixed
+
+- An agent with no model policy is no longer refused at start when the operator's `agentRuntime.llm.modelDefaults` supply the provider and models. Start now uses the same fallback as create and the worker launch. This covers child agents created with `create_child_agent`, which auto-start, and the Telegram `/start` and `/restart` commands. See [bug 001](docs/bug-reports/2026/10/26/001-child-agent-start-refused-operator-defaults.md).
+
 ## v0.7.11 - 2026-10-25
 
 ## v0.7.10 - 2026-10-25

@@ -590,6 +590,7 @@ export async function handleStart(
   db: Database,
   userId: string,
   args: string[],
+  operatorModelDefaults?: ModelDefaults,
 ): Promise<string> {
   try {
     if (!userId) return 'Please bind your Telegram account first.';
@@ -602,7 +603,7 @@ export async function handleStart(
 
     const results: string[] = [];
     for (const agent of resolved.agents) {
-      const result = await startAgent(db, agent.id, userId);
+      const result = await startAgent(db, agent.id, userId, undefined, undefined, operatorModelDefaults);
 
       if (result.ok) {
         results.push(`Started ${agent.name}.`);
@@ -750,6 +751,7 @@ export async function handleRestart(
   db: Database,
   userId: string,
   args: string[],
+  operatorModelDefaults?: ModelDefaults,
 ): Promise<string> {
   try {
     if (!userId) return 'Please bind your Telegram account first.';
@@ -794,7 +796,7 @@ export async function handleRestart(
       }
 
       // Step 3: Start
-      const startResult = await startAgent(db, agent.id, userId);
+      const startResult = await startAgent(db, agent.id, userId, undefined, undefined, operatorModelDefaults);
       if (startResult.ok) {
         results.push(`Restarted ${agent.name}.`);
       } else {

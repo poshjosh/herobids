@@ -971,7 +971,7 @@ export async function telegramWebhookHandler(
 
         // Lifecycle commands (Slice 4)
         if (slashCmd.command === 'start') {
-          const response = await handleStart(db, userId, slashCmd.args);
+          const response = await handleStart(db, userId, slashCmd.args, operatorModelDefaults);
           await sendTelegramText(chatId, response);
           return;
         }
@@ -991,7 +991,7 @@ export async function telegramWebhookHandler(
           return;
         }
         if (slashCmd.command === 'restart') {
-          const response = await handleRestart(db, userId, slashCmd.args);
+          const response = await handleRestart(db, userId, slashCmd.args, operatorModelDefaults);
           await sendTelegramText(chatId, response);
           return;
         }

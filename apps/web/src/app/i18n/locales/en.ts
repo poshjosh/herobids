@@ -505,6 +505,7 @@ export const messages: Record<string, string> = {
   'agents.tree.createdByDeleted': 'Created by a deleted agent',
   'agents.tree.depth': 'Depth {depth}',
   'agents.tree.allowance': '{used} of {limit} children used',
+  'agents.tree.childCount': '{count, plural, one {# child} other {# children}}',
   'agents.tree.expand': 'Expand {name}',
   'agents.tree.collapse': 'Collapse {name}',
   'agents.tree.search': 'Search agents',

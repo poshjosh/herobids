@@ -27,6 +27,18 @@ const TOGGLE_STYLE: React.CSSProperties = {
   padding: 0,
 };
 
+const TOGGLE_SPACER_STYLE: React.CSSProperties = { flexShrink: 0, width: '24px', height: '32px' };
+
+// The connector line sits under the parent's toggle, and children are indented from it.
+const CHILDREN_STYLE: React.CSSProperties = {
+  marginLeft: '12px',
+  paddingLeft: '20px',
+  borderLeft: '1px solid var(--color-border)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '12px',
+};
+
 export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListProps) {
   const intl = useIntl();
   // Explicit expand/collapse choices. Nodes without one follow isExpandedByDefault.
@@ -51,8 +63,12 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
 
     const hierarchy: AgentHierarchyMeta = {
       depth: isChildAgent || hasChildren ? node.depth : null,
-      creatorLabel: node.creatorLabel,
+      // A nested child's position already shows its creator. Keep the label for search results.
+      creatorLabel: isChildAgent && !isSearching ? null : node.creatorLabel,
       allowanceLabel: allowanceLabelFor(node),
+      childCountLabel: hasChildren
+        ? intl.formatMessage({ id: 'agents.tree.childCount' }, { count: node.childCount })
+        : null,
       onMessage: isChildAgent
         ? () => setOpenMessageAgentId((current) => (current === id ? null : id))
         : undefined,
@@ -62,7 +78,8 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
     return (
       <div key={id} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-          {hasChildren && (
+          {/* The toggle slot is always reserved so cards at the same depth line up. */}
+          {hasChildren ? (
             <button
               type="button"
               style={TOGGLE_STYLE}
@@ -72,6 +89,8 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
             >
               {expanded ? '▾' : '▸'}
             </button>
+          ) : (
+            <span aria-hidden="true" style={TOGGLE_SPACER_STYLE} />
           )}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <AgentSummaryCard agent={node.agent} hierarchy={hierarchy} />
@@ -80,7 +99,7 @@ export function AgentHierarchyList({ agents, searchQuery }: AgentHierarchyListPr
           </div>
         </div>
         {expanded && (
-          <div style={{ marginLeft: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={CHILDREN_STYLE}>
             {node.children.map(renderNode)}
           </div>
         )}
