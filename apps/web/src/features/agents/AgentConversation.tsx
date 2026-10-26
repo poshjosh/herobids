@@ -259,7 +259,7 @@ export function AgentConversationView({
                           : intl.formatMessage({ id: isSafetyAlert(message) ? 'agentDetail.conversation.fromPlatform' : 'agentDetail.conversation.fromOpenAIdom' })}
                     </div>
                   )}
-                  <Linkify text={message.body} />
+                  <div><Linkify text={message.body} /></div>
                   <time
                     dateTime={message.createdAt}
                     title={intl.formatDate(message.createdAt, { dateStyle: 'full', timeStyle: 'medium' })}

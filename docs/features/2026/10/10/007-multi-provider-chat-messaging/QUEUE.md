@@ -150,3 +150,6 @@ Non-blocking issues from code reviews, grouped by item.
 - (medium) Wake path and tick path both report drops; a transient wake-side failure can mark a row `refused` that the tick later processes. Report drops only at consumption (`filter`).
 - (medium, I8) Name `PeerSendResultSchema.deliveryStatus` in DEC-57(g).
 - (medium, I9) Two new `as unknown as` casts in `apps/worker/src/__tests__/integration/peer-messaging.integration.test.ts` (~372, ~427); type the `db.execute` rows.
+
+### E2E Journey 3 (owner run, 2026-10-26)
+- Failed: `getByText(userMessage, {exact: true})` could not match the bubble body because the body was a bare text node beside the `<time>` element. Fixed by wrapping the body in its own `<div>` in `AgentConversation.tsx`. Web tests (534) and `tsc` pass. Owner to re-run `run-all-tests.sh --e2e`; not run by the agent.
