@@ -5,6 +5,7 @@ import {
   CONVERSATION_DELIVERY_STATUSES,
   CONVERSATION_DELIVERY_TARGETS,
   CONVERSATION_ERROR_CODES,
+  PEER_DROP_DETAILS,
   peerConversationId,
   peerKey,
   userAgentConversationId,
@@ -13,6 +14,7 @@ import {
   type ConversationError,
   type ConversationLimits,
   type ConversationMessage,
+  type PeerDropDetail,
   type PeerThreadSummary,
   type RecordedConversationMessage,
   type UserAgentChannel,
@@ -71,6 +73,24 @@ export interface RecordPeerMessageInput {
   deliveryStatus?: Extract<ConversationDeliveryStatus, 'queued' | 'refused'>;
   /** Reason code of a refused message, such as `peer.rate_limited`. */
   deliveryDetail?: string | null;
+}
+
+export interface RetryPeerMessageInput {
+  ownerUserId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  messageId: string;
+}
+
+export interface PeerMessageLookupInput {
+  ownerUserId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  messageId: string;
+}
+
+export interface RefuseDroppedPeerMessageInput extends PeerMessageLookupInput {
+  detail: PeerDropDetail;
 }
 
 export interface ListPeerThreadsInput {
@@ -259,6 +279,64 @@ export class ConversationService {
         ...(input.deliveryDetail !== undefined ? { deliveryDetail: input.deliveryDetail } : {}),
         createdAt: this.now(),
       },
+    });
+  }
+
+  /**
+   * Moves the sending agent's own failed (or stuck `queued`) peer message back to `queued` so the caller can publish it
+   * again. Null when there is nothing to retry (another state, or another retry claimed it first); the caller must not publish.
+   */
+  async retryUndeliveredPeerMessage(input: RetryPeerMessageInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.fromAgentId)
+      ?? this.checkIdentity(input.ownerUserId, input.toAgentId)
+      ?? this.checkOptionalId(input.messageId);
+    if (checked) return checked;
+    const now = this.now();
+    return this.store.requeueUndeliveredMessage({
+      messageId: input.messageId,
+      conversationId: peerConversationId(input.fromAgentId, input.toAgentId),
+      ownerUserId: input.ownerUserId,
+      senderType: 'agent',
+      senderId: input.fromAgentId,
+      now,
+      staleBefore: this.staleBefore(now),
+    });
+  }
+
+  /** The sending agent's own peer message by id in the pair's thread; null when absent. */
+  async findPeerMessage(input: PeerMessageLookupInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.fromAgentId)
+      ?? this.checkIdentity(input.ownerUserId, input.toAgentId)
+      ?? this.checkOptionalId(input.messageId);
+    if (checked) return checked;
+    return this.store.findMessage({
+      messageId: input.messageId,
+      conversationId: peerConversationId(input.fromAgentId, input.toAgentId),
+      ownerUserId: input.ownerUserId,
+      senderType: 'agent',
+      senderId: input.fromAgentId,
+    });
+  }
+
+  /**
+   * Marks a peer message the receiving agent dropped at its stop-switch check (DEC-57 c) as `refused` with the drop detail.
+   * Narrow by design: only the sender's own `sent` or `queued` row in this pair's thread moves. Null when there is nothing to
+   * move (absent, already final, or another owner's), which is not an error. Never reads or logs the message text.
+   */
+  async refuseDroppedPeerMessage(input: RefuseDroppedPeerMessageInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.fromAgentId)
+      ?? this.checkIdentity(input.ownerUserId, input.toAgentId)
+      ?? this.checkOptionalId(input.messageId);
+    if (checked) return checked;
+    if (!(PEER_DROP_DETAILS as readonly string[]).includes(input.detail)) {
+      return invalid(CONVERSATION_ERROR_CODES.invalidMessage, 'invalid_peer_drop_detail');
+    }
+    return this.store.refuseDroppedPeerMessage({
+      messageId: input.messageId,
+      conversationId: peerConversationId(input.fromAgentId, input.toAgentId),
+      ownerUserId: input.ownerUserId,
+      senderId: input.fromAgentId,
+      detail: input.detail,
     });
   }
 

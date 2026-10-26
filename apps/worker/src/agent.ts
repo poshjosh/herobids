@@ -23,6 +23,7 @@ import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/cap
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';
 import { createAgentPlatformClientFromEnv } from './agents/agent-platform-client.js';
+import { PeerReceiveGate, isPeerEnvelope } from './agents/peer-receive-gate.js';
 import { CREATE_AGENT_TOOL_NAME, CREATOR_TOOL_NAMES, isCreateAgentExposed, isCreatorToolExposed } from './tools/agent-creation.js';
 import type { AgentAllowance } from '@herobids/domain';
 import { buildIncrementalContext, estimateTokens } from './context-diff.js';
@@ -967,6 +968,22 @@ const { read: externalBackendRead, write: externalBackendWrite } = buildAgentExt
 // Platform API client for create_agent and the creator tools. Undefined when the container has no
 // API key or base URL, and those tools then stay hidden.
 const agentPlatformClient = createAgentPlatformClientFromEnv(process.env, logger);
+// Drops a peer message that reaches this agent after the owner paused agent-to-agent messaging (DEC-56), and reports the
+// drop (no text) so the sender's thread row becomes `refused` (DEC-57 c). One read of the switch is shared for a short time.
+const peerReceiveGate = new PeerReceiveGate(
+  agentPlatformClient,
+  logger,
+  {
+    cacheMs: agentRuntimePolicy.peer.switchCacheMs,
+    readRetries: agentRuntimePolicy.peer.switchReadRetries,
+    retryBackoffMs: agentRuntimePolicy.peer.switchRetryBackoffMs,
+    // A check runs inside the tick's read budget, so a stalled read cannot hold the tick.
+    maxWaitMs: OUTBOUND_READ_TIMEOUT_MS,
+  },
+  async (drop) => {
+    await publishToInbound(AGENT_MESSAGE_TYPES.PEER_DROP, { ...drop });
+  },
+);
 
 // Fail-fast startup guard (B7): in-process market-data has been removed, so the
 // Traderton read boundary is the SOLE source of market data. A trading agent
@@ -1648,7 +1665,9 @@ async function pollWakeSignals(): Promise<void> {
             if (pausedWakeAction === 'suppress') {
               logger.debug('Suppressing wake signal — agent paused');
             } else if (pausedWakeAction === 'flag_user_message') {
-              pendingUserMessage = true;
+              // A paused agent's key is refused, so the stop switch cannot be read for a peer message now. It is held and checked
+              // when the resumed tick consumes it (DEC-56), and that tick is a full evaluation anyway, so it is not flagged here.
+              if (!isPeerEnvelope(envelope)) pendingUserMessage = true;
             } else if (envelope['type'] === 'agent.wake') {
               // Suppress wake-driven ticks when circuit breaker is in cooldown
               if (sessionCircuitBreaker.isOpen() && sessionCircuitBreaker.state !== 'TERMINATED') {
@@ -1670,6 +1689,8 @@ async function pollWakeSignals(): Promise<void> {
                 pendingWakeSignalBuffer.push(buffered);
               }
               requestWakeDrivenTick('Received market wake signal between ticks');
+            } else if (!(await peerReceiveGate.admits(envelope))) {
+              // A peer message dropped by the owner's stop switch (DEC-56): no wake, no pending flag. The tick read applies the same check.
             } else if (isUserMessageType(envelope['type'])) {
               // A user message must be handled promptly rather than waiting for
               // the next scheduled tick (which can be many minutes away on the
@@ -2643,9 +2664,10 @@ async function runActiveTick(): Promise<void> {
     ]);
     // Messages held during a pause go first, in original order, so this tick
     // processes them exactly as if it had read them itself (bug 2026-10-05/001).
-    const incomingMessages = heldPausedMessages.size > 0
+    // Peer messages are checked against the owner's stop switch here, as they are consumed (DEC-56), including any held through a pause.
+    const incomingMessages = await peerReceiveGate.filter(heldPausedMessages.size > 0
       ? [...heldPausedMessages.drain(), ...freshMessages]
-      : freshMessages;
+      : freshMessages);
 
     for (const message of incomingMessages) {
       applyRuntimeMessage(runtimeState, message);

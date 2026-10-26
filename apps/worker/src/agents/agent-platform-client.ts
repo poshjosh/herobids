@@ -7,6 +7,8 @@ import type {
   ChildAgentCreated,
   ChildAgentStatus,
   CreateChildAgentInput,
+  PeerMessagingState,
+  PeerMessagingStatePort,
   Result,
 } from '@herobids/domain';
 
@@ -51,6 +53,7 @@ const ChildStatusResponseSchema = z.object({
   childAgentLimit: z.number().int().min(0),
 });
 
+const PeerMessagingStateResponseSchema = z.object({ paused: z.boolean() });
 const StatusResponseSchema = z.object({ status: z.string() });
 const DeliveredResponseSchema = z.object({ delivered: z.boolean() });
 
@@ -83,7 +86,10 @@ function mapStatusError(status: number, apiCode: string | null): AgentPlatformEr
   return platformError(code, `The platform returned HTTP ${status}.`, match?.retryable ?? false);
 }
 
-export function createAgentPlatformClient(options: AgentPlatformClientOptions): AgentPlatformPort {
+/** Everything the container may ask of the platform as itself. */
+export type AgentPlatformClient = AgentPlatformPort & PeerMessagingStatePort;
+
+export function createAgentPlatformClient(options: AgentPlatformClientOptions): AgentPlatformClient {
   const { baseUrl, apiKey, agentId, timeoutMs, logger } = options;
   const fetchImpl = options.fetchImpl ?? fetch;
   const agentPath = `/agents/${encodeURIComponent(agentId)}`;
@@ -146,6 +152,10 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
       return request('GET', `${agentPath}/child-allowance`, AllowanceResponseSchema);
     },
 
+    async getPeerMessagingState(): Promise<Result<PeerMessagingState, AgentPlatformError>> {
+      return request('GET', `${agentPath}/peer-messaging`, PeerMessagingStateResponseSchema);
+    },
+
     async createChildAgent(input: CreateChildAgentInput): Promise<Result<ChildAgentCreated, AgentPlatformError>> {
       // Only the four allowed fields are forwarded; the API refuses anything else.
       const body: Record<string, unknown> = { name: input.name, prompt: input.prompt };
@@ -199,7 +209,7 @@ const AgentPlatformEnvSchema = z.object({
 export function createAgentPlatformClientFromEnv(
   env: Record<string, string | undefined>,
   logger?: AgentPlatformLogger,
-): AgentPlatformPort | undefined {
+): AgentPlatformClient | undefined {
   const parsed = AgentPlatformEnvSchema.safeParse(env);
   if (!parsed.success) {
     logger?.warn(

@@ -31,6 +31,13 @@ export const CONVERSATION_DELIVERY_FROM = 'queued' satisfies ConversationDeliver
 export const CONVERSATION_DELIVERY_TARGETS = ['sent', 'failed', 'refused', 'not_applicable'] as const satisfies readonly ConversationDeliveryStatus[];
 export type ConversationDeliveryTarget = (typeof CONVERSATION_DELIVERY_TARGETS)[number];
 
+/**
+ * Why a receiving agent dropped a peer message at its stop-switch check (DEC-56, DEC-57 c). Stored as the `refused` row's
+ * detail: `paused` when the owner's switch was on, `paused_check_failed` when the switch could not be read (fail closed).
+ */
+export const PEER_DROP_DETAILS = ['paused', 'paused_check_failed'] as const;
+export type PeerDropDetail = (typeof PEER_DROP_DETAILS)[number];
+
 export const CONVERSATION_ERROR_CODES = {
   invalidMessage: 'conversation.invalid_message',
   invalidCursor: 'conversation.invalid_cursor',

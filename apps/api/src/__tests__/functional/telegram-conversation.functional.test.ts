@@ -82,6 +82,10 @@ async function seedUserWithChat(chatId: string) {
     id, email: `tg-${chatId}@t.local`, displayName: `TG${chatId}`, username: `tg-${chatId}-${id.slice(0, 6)}`,
   });
   await setChatAddress(ctx.db, { userId: id, agentId: null }, 'telegram', chatId);
+  // Reply correlation needs the address no newer than the message it points at (chat_addresses.updated_at <=
+  // conversation_messages.created_at). setChatAddress stamps with the app clock, so back-date it on the database clock
+  // and seed messages on the same clock, a fixed gap later: no app/DB clock skew can reorder them.
+  await ctx.db.execute(sql`UPDATE chat_addresses SET updated_at = now() - interval '1 hour' WHERE user_id = ${id}`);
   return id;
 }
 
@@ -116,6 +120,7 @@ async function seedAgentTelegramMessage(userId: string, agentId: string, provide
   await ctx.db.insert(conversationMessages).values({
     id: crypto.randomUUID(), conversationId, senderType: 'agent', senderId: agentId, channel: 'telegram',
     body: 'Which pair?', deliveryStatus: 'sent', providerMessageId,
+    createdAt: sql`now() - interval '30 minutes'`,
   });
 }
 

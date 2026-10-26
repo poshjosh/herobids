@@ -10,7 +10,7 @@ Scope: the messaging MVP and the agent-to-agent MVP (DEC-40 to DEC-46). Deferred
 | 2 | C1 | Cutover to `chat_addresses` and `chat_suppressions`; drop the four legacy columns (DEC-01 to DEC-12) | C0 | done (2026-10-25) | [C1](./tasks/C1-cutover.md) |
 | 3 | CH2W | Two-way agent chat (002): conversation store, write path, owner view (DEC-31, DEC-32) | C1 | done in code (2026-10-25); owner e2e gate and phase reviews open | [CH2W](./tasks/CH2W-two-way-chat.md) |
 | 4 | A2A-A | Same-user check: both agents belong to the same user. No grant table, no screen (DEC-40) | none (may run early) | done (2026-10-25) | [A2A-A](./tasks/A2A-A-same-user-check.md) |
-| 5 | A2A-B | MVP peer messaging: send path, peer wake, per-user rate limit, owner view, stop switch (DEC-40 to DEC-43) | A2A-A, CH2W | done (2026-10-25); DEC-53 and DEC-54 proposed, open to the owner | [A2A-B](./tasks/A2A-B-peer-send.md) |
+| 5 | A2A-B | MVP peer messaging: send path, peer wake, per-user rate limit, owner view, stop switch (DEC-40 to DEC-43) | A2A-A, CH2W | done (2026-10-25); DEC-53, DEC-54, DEC-56 and DEC-57 approved by the owner (2026-10-25) | [A2A-B](./tasks/A2A-B-peer-send.md) |
 
 ## Deferred (not in scope; specs kept for later, DEC-45)
 
@@ -47,7 +47,7 @@ Non-blocking issues from code reviews, grouped by item.
 - (low) 095 Q4 still says to use the M0 re-run as baseline; mark resolved by DEC-25 / C0.
 
 ### C1
-- (low) The literal acceptance grep still matches the web i18n label keys (`agents.create.telegramChatId`, `.placeholder`, `agents.telegramChatId.help`), the operator alert key `alerts.operator.telegramChatId`, and the 0077 backfill test. See the C1 PROGRESS entry. Decide whether to rename the keys.
+- (low) The literal acceptance grep still matches the web i18n label keys (`agents.create.telegramChatId`, `.placeholder`, `agents.telegramChatId.help`), the operator alert key `alerts.operator.telegramChatId`, and the 0077 backfill test. See the C1 PROGRESS entry. **Resolved:** DEC-55 signs the grep off with these exceptions; the keys stay.
 - (low) `markOutboundMessageSent` still records `telegram` as the provider. CH2W retires the table. **Fixed in CH2W slice 3:** the method is removed with the table.
 - (low) `packages/db` integration files race when run in parallel (shared `users` truncate). Use `--fileParallelism=false` as `test:integration` does.
 - (owner) Staging and production teardown and re-provisioning, and the YAML move of `alerts.telegram.{botToken,webhookSecret,webhookUrl}` to `messaging.chat.telegram.*`. Steps are in the C1 PROGRESS entry.
@@ -61,7 +61,7 @@ Non-blocking issues from code reviews, grouped by item.
 - (low) `auth.ts` ~343 and ~674: indentation of `aiModelConfig: null,`.
 - (low) Owner hand-off: environments setting `alerts.telegram.*` must move to `messaging.chat.telegram.*` (silently ignored otherwise).
 - (low) `listChatAddressesForOutput` reports a suppressed address as `active`.
-- (info) Acceptance grep still matches i18n keys and `alerts.operator.telegramChatId` (by design; coordinator signs off).
+- (info) Acceptance grep still matches i18n keys and `alerts.operator.telegramChatId` (by design). **Resolved:** signed off with exceptions in DEC-55.
 
 ### CH2W (slice 1: P0+P1)
 - (medium, fixed in slice 2) `conversation-repository.ts` `recordUserAgentMessage`: a first write whose message id belongs to another conversation committed an empty conversation + participants. Now throws a rollback sentinel (like owner mismatch); integration test added and checked by mutation.
@@ -116,11 +116,11 @@ Non-blocking issues from code reviews, grouped by item.
 - (low) `canPeerSend(agents, from, to)` takes the lookup port as first argument (spec shows two args). Rejects on lookup failure; A2A-B must catch it and refuse, with a test.
 
 ### A2A-B
-- (owner, tier 3) DEC-53 (owner read routes `GET /agents/:id/peer-threads` and `.../:peerAgentId`) and DEC-54 (tool `message_peer_agent`, `agentRuntime.peer.messageMaxChars`, which refusals are recorded, stopped-recipient refusal) are proposed, not approved. Both are in DECISIONS with options. DEC-49 (the stop switch contract) is recorded and approved under DEC-48.
-- (owner, medium) A peer message already in the recipient's stream when the owner turns the stop switch on is still delivered. The switch stops new sends and new wakes. A runtime-side check needs the container to read the user's setting.
+- (owner, tier 3) DEC-53 (owner read routes `GET /agents/:id/peer-threads` and `.../:peerAgentId`) and DEC-54 (tool `message_peer_agent`, `agentRuntime.peer.messageMaxChars`, which refusals are recorded, stopped-recipient refusal) were proposed. **Resolved:** both approved by the owner on 2026-10-25. DEC-49 (the stop switch contract) is recorded and approved under DEC-48.
+- (owner, medium) A peer message already in the recipient's stream when the owner turns the stop switch on is still delivered. **Resolved:** DEC-56 (approved) drops it at the receiving side; the agent re-checks the switch as it consumes the envelope (see PROGRESS, A2A-B review fixes).
 - (owner, low) DEC-48 criterion 4 was read as "an unreadable or missing switch refuses sends; an invalid change is refused". Confirm.
 - (medium) `platform-docs-data.ts` cannot be regenerated safely: the markdown sources and the hardcoded schema in `scripts/ts/build-docs-index.ts` predate the C1 and CH2W P4 hand edits. The A2A-B docs entry was merged by hand. Port the hand edits to the sources, then regenerate.
-- (low) `telegram-conversation.functional.test.ts` ("routes a reply ... through the provider message index", "shows the thread ... in /log") is flaky against a Dockerised database: it seeds the address row with the app clock and the message with the database clock, and reply correlation needs the address row not to be newer. Stamp the seeded message explicitly ahead of the address save, as the db integration tests do.
+- (low, **fixed**: the test now stamps address and message from the database clock with a fixed gap; 12 of 12 reruns passed) `apps/api/src/__tests__/functional/telegram-conversation.functional.test.ts` ("routes a reply ... through the provider message index", "shows the thread ... in /log") was flaky against a Dockerised database: it seeds the address row with the app clock and the message with the database clock, and reply correlation needs the address row not to be newer. Stamp the seeded message explicitly ahead of the address save, as the db integration tests do.
 - (low) The tool is in the base skill, so every agent sees `message_peer_agent` even when its user has one agent. It answers with an error and the (empty) peer list. Hiding it needs a peer count in the agent's allowance read.
 - (low) A repeated agent-to-agent exchange has no turn cap, cost cap or ping-pong pause (DEC-42, DEC-45). The per-user limit of 10 per minute is the only bound.
 - (low) The send tool waits for the broker reply up to 20 seconds; a broker or Redis outage shows as `broker.timeout` (retryable). A send whose publish succeeded but whose `sent` mark failed stays `queued` and is never re-published (nothing retries peer rows).
@@ -128,9 +128,25 @@ Non-blocking issues from code reviews, grouped by item.
 - (low) A peer message triggers the runtime's "User message received but no send_message reply was made" warning, because the shared wake counts it as a user message.
 
 ### A2A-B (code review)
-- (medium) Stop switch is checked only at send time; a peer envelope already in `agent:outbound:<id>` still wakes the recipient after the switch is turned on. Re-check at consume time (broker/runtime) or record as accepted (owner Q4).
-- (medium) `message_peer_agent` body has no hard schema `.max()`; oversized bodies travel Redis/stream/audit row before `messageMaxChars` refuses.
-- (medium) Refusals (paused, rate_limited, not_running, unavailable) each store a thread row with the full body and are unbounded; collapse repeats or cap stored bodies.
-- (medium) Peer prompt wording invites ping-pong ("reply if useful"); add "do not reply to acknowledgements"; residual loop/cost risk bounded only by 10/min/user (DEC-42/45).
+- (medium, **fixed**, DEC-56) Stop switch is checked only at send time; a peer envelope already in `agent:outbound:<id>` still wakes the recipient after the switch is turned on. The receiving agent now re-checks at consume time and fails closed.
+- (medium, **fixed**) `message_peer_agent` body had no hard schema `.max()`. The tool, the brokered payload and the stream payload now cap it at `PEER_MESSAGE_SAFETY_MAX_CHARS` (20000), and `messageMaxChars` cannot exceed it.
+- (medium, **fixed**) Refusals each stored a thread row with the full body. Repeats of one refusal (same code, same pair) inside the rate window are now one row.
+- (medium, **fixed** wording) Peer prompt wording invited ping-pong; it now says not to reply to acknowledgements or pure notifications. Residual loop/cost risk is bounded only by 10/min/user (DEC-42/45).
 - (medium, pre-existing) Parent→child `message_child_agent` (`agent.user.message` without `peer`) renders as `[USER]` in the prompt; tag every agent-initiated message.
-- (low) Retry of a refused/queued id returns ok without publishing; rate slot spent before record/publish; `PEER_SEND_REPLY_TIMEOUT_S` is a literal (I7); add a guard test that agent keys get 403 on `PATCH /auth/me`.
+- (low, **fixed**: a repeated id now reports its stored status and republishes a failed or stale queued message; guard test for `PATCH /auth/me` added) Retry of a refused/queued id returned ok without publishing. (low, open) rate slot is spent before record/publish; `PEER_SEND_REPLY_TIMEOUT_S` is a literal (I7).
+
+### A2A-B (gap review fixes, 2026-10-26)
+- (owner, tier 3, **resolved**) DEC-57 (the agent-key read `GET /agents/:id/peer-messaging`, the 20000-character safety cap, the one-row-per-window refusal id) was approved by the owner on 2026-10-25, with (c) changed: a dropped peer message's row becomes `refused`, detail `paused`.
+- (low, **fixed**, DEC-57 c) A peer message dropped by the stop switch is now `refused` in the owner's thread (detail `paused`, or `paused_check_failed` when the switch could not be read), through `agent.peer.drop` and the store method `refuseDroppedPeerMessage`.
+- (medium, **fixed**) The receive gate told `paused` from an unreadable switch only by log. It now retries a failed read (`agentRuntime.peer.switchReadRetries`, `switchRetryBackoffMs`) before dropping fail closed, and the two cases carry different row details.
+- (medium, **fixed**) The switch was read per wake and again per tick. One read is now reused for `agentRuntime.peer.switchCacheMs`; a dropped peer envelope sets no pending-user-message flag and requests no wake; the tick-side check runs inside the 2 s outbound read budget.
+- (medium, **fixed**) A repeat of a `sent` or `queued` peer message id took a rate-limit slot and could write a refusal. It is now answered from its stored row first; only a new message or a republish takes a slot, and a republish still passes the stop switch.
+- (low, open) A drop report is fire-and-forget over the inbound stream. If the platform is down when the container reports, the row stays `sent`; the drop itself still stands.
+- (low) A peer message read while the agent is paused by its owner is held and checked when consumed after resume; the agent key is refused while paused, so the check cannot run earlier.
+- (owner) The CH2W e2e journey `tests/e2e/journeys/03-agent-send-message.spec.ts` was rewritten and type-checks, but it has not been run (e2e is an owner hand-off). The agent reply is seeded through `seedAgentChatReply` in `tests/e2e/helpers.ts`.
+
+### MVP gap-fix round (DEC-56/57 receive-side stop switch)
+- (medium) `agent.ts` `pollWakeSignals`: `peerReceiveGate.admits` awaits inside the single-flight wake loop; a failed read is not negative-cached, so a batch of peer envelopes can delay a following `agent.wake` by up to ~2 s each. Add a short negative cache or one check per batch.
+- (medium) Wake path and tick path both report drops; a transient wake-side failure can mark a row `refused` that the tick later processes. Report drops only at consumption (`filter`).
+- (medium, I8) Name `PeerSendResultSchema.deliveryStatus` in DEC-57(g).
+- (medium, I9) Two new `as unknown as` casts in `apps/worker/src/__tests__/integration/peer-messaging.integration.test.ts` (~372, ~427); type the `db.execute` rows.

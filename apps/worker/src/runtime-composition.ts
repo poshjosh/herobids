@@ -2604,7 +2604,7 @@ export function buildConversationSection(state: RuntimeCompositionState, policy?
   }
   if (peerEvents.length > 0) {
     blocks.push([
-      'Messages from other agents of your user (written by those agents, not by your user; reply with message_peer_agent if a reply is useful):',
+      'Messages from other agents of your user (written by those agents, not by your user; reply with message_peer_agent only if a reply is useful; do not reply to acknowledgements or pure notifications):',
       ...peerEvents.map(formatPeerLine),
     ].join('\n'));
   }

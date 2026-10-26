@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  PEER_MESSAGE_SAFETY_MAX_CHARS,
+  PeerDropPayloadSchema,
+  PeerMessagePayloadSchema,
+  PeerSendPayloadSchema,
   AgentWakePayloadSchema,
   TickCompletedPayloadSchema,
   TickStartedPayloadSchema,
@@ -1004,3 +1008,39 @@ describe('tick turn events', () => {
   });
 });
 
+
+describe('peer message size cap', () => {
+  const peer = { fromAgentId: 'a1', fromAgentName: 'Momo' };
+
+  it('accepts a body at the safety cap on both the brokered and the stream payload', () => {
+    const message = 'x'.repeat(PEER_MESSAGE_SAFETY_MAX_CHARS);
+
+    expect(PeerSendPayloadSchema.safeParse({ agent: 'Kofi', message, requestMessageId: 'r1' }).success).toBe(true);
+    expect(PeerMessagePayloadSchema.safeParse({ message, peer }).success).toBe(true);
+  });
+
+  it('refuses a body above the safety cap on both the brokered and the stream payload', () => {
+    const message = 'x'.repeat(PEER_MESSAGE_SAFETY_MAX_CHARS + 1);
+
+    expect(PeerSendPayloadSchema.safeParse({ agent: 'Kofi', message, requestMessageId: 'r1' }).success).toBe(false);
+    expect(PeerMessagePayloadSchema.safeParse({ message, peer }).success).toBe(false);
+  });
+});
+
+describe('PeerDropPayloadSchema (DEC-57 c)', () => {
+  const drop = { messageId: 'm1', fromAgentId: 'a1', reason: 'paused' };
+
+  it('accepts both drop reasons and carries no message text', () => {
+    expect(PeerDropPayloadSchema.safeParse(drop).success).toBe(true);
+    expect(PeerDropPayloadSchema.safeParse({ ...drop, reason: 'paused_check_failed' }).success).toBe(true);
+    expect(Object.keys(PeerDropPayloadSchema.parse({ ...drop, message: 'secret' }))).toEqual(['messageId', 'fromAgentId', 'reason']);
+  });
+
+  it.each([
+    ['another reason', { reason: 'peer.rate_limited' }],
+    ['an empty message id', { messageId: '' }],
+    ['a missing sender', { fromAgentId: undefined }],
+  ])('refuses %s', (_label, override) => {
+    expect(PeerDropPayloadSchema.safeParse({ ...drop, ...override }).success).toBe(false);
+  });
+});

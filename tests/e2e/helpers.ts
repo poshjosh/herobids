@@ -8,7 +8,7 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { eq } from 'drizzle-orm';
-import { closeDatabase, createDatabase, connections } from '@herobids/db';
+import { closeDatabase, ConversationRepository, createDatabase, connections } from '@herobids/db';
 
 export const TEST_EMAIL = `e2e-${Date.now()}@test.local`;
 export const TEST_PASSWORD = 'TestPassword123!';
@@ -364,4 +364,43 @@ export async function setupTradingLink(
 
   const body = await response.json() as { connection: { id: string; resolvedVenueAccountId?: string } };
   return { connectionId: body.connection.id };
+}
+
+/**
+ * Store an agent-authored reply in the owner's web chat with the agent, as the
+ * worker does when the agent calls send_message. E2E has no real agent
+ * runtime or LLM, so the journey writes the reply straight to the
+ * conversation store; the web chat then shows it on its next poll.
+ */
+export async function seedAgentChatReply(params: {
+  userId: string;
+  agentId: string;
+  body: string;
+}): Promise<void> {
+  const databaseUrl = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
+  const db = createDatabase(databaseUrl);
+  try {
+    const result = await new ConversationRepository(db).recordUserAgentMessage({
+      // The user-to-agent thread id is `user_agent:<agentId>` (userAgentConversationId in @herobids/domain).
+      conversationId: `user_agent:${params.agentId}`,
+      ownerUserId: params.userId,
+      agentId: params.agentId,
+      message: {
+        id: `e2e-reply-${Date.now()}`,
+        senderType: 'agent',
+        senderId: params.agentId,
+        channel: 'web',
+        subject: null,
+        body: params.body,
+        messageClass: null,
+        deliveryStatus: 'sent',
+        createdAt: new Date(),
+      },
+    });
+    if (!result.ok) {
+      throw new Error(`Failed to seed agent chat reply: ${result.error.code}`);
+    }
+  } finally {
+    await closeDatabase(db);
+  }
 }

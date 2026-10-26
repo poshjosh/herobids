@@ -11,6 +11,7 @@ import {
   type ListUserAgentThreadInput,
   type MarkConversationDeliveryInput,
   type FindConversationMessageInput,
+  type RefuseDroppedPeerConversationMessageInput,
   type RequeueUndeliveredMessageInput,
   type PeerThreadSummary,
   type RecordPeerConversationMessageInput,
@@ -271,6 +272,28 @@ export class ConversationRepository implements ConversationStore {
         ))
         .returning();
       return ok(claimed ? toConversationMessage(claimed) : null);
+    } catch (error) {
+      return storeFailed(error);
+    }
+  }
+
+  async refuseDroppedPeerMessage(input: RefuseDroppedPeerConversationMessageInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    try {
+      // One conditional update, scoped to the sender's own agent-authored row in the owner's peer conversation and to the two
+      // states a delivered or in-flight message can be in. Anything else (another owner or sender, a final row) matches nothing.
+      const [refused] = await this.db
+        .update(conversationMessages)
+        .set({ deliveryStatus: 'refused', deliveryDetail: input.detail })
+        .where(and(
+          eq(conversationMessages.id, input.messageId),
+          eq(conversationMessages.conversationId, input.conversationId),
+          eq(conversationMessages.senderType, 'agent'),
+          eq(conversationMessages.senderId, input.senderId),
+          inArray(conversationMessages.deliveryStatus, ['sent', 'queued']),
+          sql`exists (select 1 from ${conversations} where ${conversations.id} = ${conversationMessages.conversationId} and ${conversations.ownerUserId} = ${input.ownerUserId} and ${conversations.kind} = 'agent_agent')`,
+        ))
+        .returning();
+      return ok(refused ? toConversationMessage(refused) : null);
     } catch (error) {
       return storeFailed(error);
     }

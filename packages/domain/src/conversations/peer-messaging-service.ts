@@ -1,5 +1,6 @@
 import { err, ok, type DomainError, type Result } from '../result.js';
 import type { ConversationService } from './conversation-service.js';
+import { PEER_DROP_DETAILS, type ConversationMessage, type PeerDropDetail } from './conversation.js';
 import { canPeerSend, type AgentOwnerLookup } from './peer-send.js';
 
 /** Peer messaging error codes (A2A MVP). Dot-strings, returned to the sending agent and stored as the reason of a refused row. */
@@ -67,16 +68,23 @@ export interface PeerMessagingLog {
 export interface PeerMessagingConfig {
   /** Longest message body, in characters (`agentRuntime.peer.messageMaxChars`). */
   messageMaxChars: number;
+  /**
+   * The window, in milliseconds, in which repeats of one refusal (same code, same agent pair) are stored as one thread row.
+   * It is the peer rate-limit window, so a flood of refused sends adds one row per window, not one per attempt.
+   */
+  refusalWindowMs: number;
 }
 
 export interface PeerMessagingDeps {
   agents: PeerAgentDirectory;
   settings: PeerMessagingSettings;
   limiter: PeerRateLimiter;
-  conversations: Pick<ConversationService, 'recordPeerMessage' | 'markDelivery'>;
+  conversations: Pick<ConversationService, 'recordPeerMessage' | 'findPeerMessage' | 'markDelivery' | 'retryUndeliveredPeerMessage' | 'refuseDroppedPeerMessage' | 'needsRepublish'>;
   wake: PeerWakePublisher;
   config: PeerMessagingConfig;
   log: PeerMessagingLog;
+  /** Clock for the refusal window. Defaults to the system clock. */
+  now?: () => Date;
 }
 
 export interface PeerSendInput {
@@ -84,7 +92,10 @@ export interface PeerSendInput {
   /** The recipient's id or exact name (case-insensitive). */
   recipient: string;
   body: string;
-  /** Becomes the id of the thread row and of the envelope. A repeat of the same id sends nothing. */
+  /**
+   * Becomes the id of the thread row and of the envelope. A repeat of an id already sent sends nothing; a repeat of one that
+   * failed, or has been queued too long, is published again.
+   */
   messageId: string;
 }
 
@@ -92,6 +103,8 @@ export interface PeerSent {
   messageId: string;
   recipientAgentId: string;
   recipientName: string;
+  /** `sent` once published; `queued` when an earlier attempt with the same id is still being delivered. */
+  deliveryStatus: 'sent' | 'queued';
 }
 
 export type PeerSendError = DomainError & { context?: { peers?: PeerAgentSummary[]; maxChars?: number } };
@@ -115,8 +128,10 @@ export function resolvePeerReference(agents: PeerAgentSummary[], reference: stri
 /**
  * Agent-to-agent messages between agents of one user (A2A MVP, DEC-40 to DEC-43).
  *
- * Checks run in a fixed order: input, recipient (self, then `canPeerSend`), stop switch, recipient running, rate limit,
- * then the row is recorded as sent by the agent and published to the recipient. Every failed check refuses the send,
+ * Checks run in a fixed order: input, recipient (self, then `canPeerSend`), a lookup of the message id, stop switch, recipient
+ * running, rate limit, then the row is recorded as sent by the agent and published to the recipient. A repeat of an id that
+ * was sent, is still queued or was refused is answered from its stored row after the lookup: it takes no rate-limit slot
+ * and writes no refusal. A new message and a republish both take a slot, after the stop switch. Every failed check refuses the send,
  * including a failed read of the stop switch, the rate limiter or an agent (fail closed, I4). Once both agents are known
  * to be the user's, a refusal is also recorded in the thread as `refused` with its code, so the owner can see it.
  *
@@ -167,7 +182,26 @@ export class PeerMessagingService {
 
     const userId = sender.userId;
     const refuse = (code: string, message: string) => this.refuse(input, userId, recipientId, code, message);
+    const sent: PeerSent = { messageId: input.messageId, recipientAgentId: recipientId, recipientName: recipient.name, deliveryStatus: 'sent' };
 
+    // A repeat of an id already recorded is answered from its stored row, before any check that spends something: it
+    // takes no rate-limit slot and writes no refusal. Only a message that never went out falls through to be published again.
+    const found = await conversations.findPeerMessage({
+      ownerUserId: userId,
+      fromAgentId: input.fromAgentId,
+      toAgentId: recipientId,
+      messageId: input.messageId,
+    });
+    if (!found.ok) {
+      this.deps.log.warn({ code: found.error.code }, 'Peer message could not be looked up; not publishing');
+      return failure(PEER_ERROR_CODES.unavailable, 'Peer messaging is temporarily unavailable.');
+    }
+    if (found.data) {
+      const settled = this.settledRepeat(found.data, sent);
+      if (settled) return settled;
+    }
+
+    // A new message and a republish both go through the stop switch, the recipient check and the rate limit.
     try {
       if (await settings.isPeerMessagingPaused(userId)) {
         return refuse(PEER_ERROR_CODES.paused, 'The owner has paused agent-to-agent messaging.');
@@ -191,20 +225,40 @@ export class PeerMessagingService {
       return refuse(PEER_ERROR_CODES.unavailable, 'Peer messaging is temporarily unavailable.');
     }
 
-    const recorded = await conversations.recordPeerMessage({
-      id: input.messageId,
-      ownerUserId: userId,
-      fromAgentId: input.fromAgentId,
-      toAgentId: recipientId,
-      body: input.body,
-    });
-    if (!recorded.ok) {
-      this.deps.log.warn({ code: recorded.error.code }, 'Peer message could not be recorded; not publishing');
-      return failure(PEER_ERROR_CODES.unavailable, 'Peer messaging is temporarily unavailable.');
+    let stored = found.data;
+    if (!stored) {
+      const recorded = await conversations.recordPeerMessage({
+        id: input.messageId,
+        ownerUserId: userId,
+        fromAgentId: input.fromAgentId,
+        toAgentId: recipientId,
+        body: input.body,
+      });
+      if (!recorded.ok) {
+        this.deps.log.warn({ code: recorded.error.code }, 'Peer message could not be recorded; not publishing');
+        return failure(PEER_ERROR_CODES.unavailable, 'Peer messaging is temporarily unavailable.');
+      }
+      if (!recorded.data.created) {
+        // A concurrent send of the same id recorded it after the lookup above.
+        stored = recorded.data.message;
+        const settled = this.settledRepeat(stored, sent);
+        if (settled) return settled;
+      }
     }
-    const sent: PeerSent = { messageId: input.messageId, recipientAgentId: recipientId, recipientName: recipient.name };
-    // A repeat of an id already recorded is a retry: it has been (or is being) published, so nothing more is sent.
-    if (!recorded.data.created) return ok(sent);
+    if (stored) {
+      const claimed = await conversations.retryUndeliveredPeerMessage({
+        ownerUserId: userId,
+        fromAgentId: input.fromAgentId,
+        toAgentId: recipientId,
+        messageId: input.messageId,
+      });
+      if (!claimed.ok) {
+        this.deps.log.warn({ code: claimed.error.code }, 'Peer message could not be claimed for a retry; not publishing');
+        return failure(PEER_ERROR_CODES.unavailable, 'Peer messaging is temporarily unavailable.');
+      }
+      // Another retry claimed it first: that one publishes.
+      if (!claimed.data) return ok({ ...sent, deliveryStatus: 'queued' });
+    }
 
     try {
       await wake.publish({
@@ -223,6 +277,52 @@ export class PeerMessagingService {
     return ok(sent);
   }
 
+  /**
+   * The answer for a repeat of an id already stored, or null when the stored message never went out and may be published
+   * again (it failed, or has been `queued` too long).
+   */
+  private settledRepeat(stored: ConversationMessage, sent: PeerSent): Result<PeerSent, PeerSendError> | null {
+    if (stored.deliveryStatus === 'refused') {
+      // A drop detail is the receiving side's reason, not an error code: to the sender it is the owner's stop switch.
+      const dropped = (PEER_DROP_DETAILS as readonly (string | null)[]).includes(stored.deliveryDetail);
+      return failure(dropped ? PEER_ERROR_CODES.paused : (stored.deliveryDetail ?? PEER_ERROR_CODES.unavailable), 'This message was already refused.');
+    }
+    if (this.deps.conversations.needsRepublish(stored)) return null;
+    return ok({ ...sent, deliveryStatus: stored.deliveryStatus === 'sent' ? 'sent' : 'queued' });
+  }
+
+  /**
+   * The receiving agent dropped this message at its stop-switch check (DEC-56). Marks the sender's thread row `refused` with
+   * the reason (DEC-57 c), so the owner sees what became of it. The recipient is the reporting agent, the sender must be one
+   * of the same user's agents, and only a `sent` or `queued` row moves. Best effort: a failure is logged (never the text)
+   * and the drop stands. Returns whether a row was marked.
+   */
+  async recordDropped(input: { recipientAgentId: string; fromAgentId: string; messageId: string; reason: PeerDropDetail }): Promise<boolean> {
+    try {
+      const lookup = memoizeAgentLookup(this.deps.agents);
+      const recipient = await lookup.getAgent(input.recipientAgentId);
+      if (!recipient || input.fromAgentId === input.recipientAgentId || !(await canPeerSend(lookup, input.fromAgentId, input.recipientAgentId))) {
+        this.deps.log.warn({ messageId: input.messageId }, 'Dropped peer message not recorded: the agents are not a peer pair of one user');
+        return false;
+      }
+      const marked = await this.deps.conversations.refuseDroppedPeerMessage({
+        ownerUserId: recipient.userId,
+        fromAgentId: input.fromAgentId,
+        toAgentId: input.recipientAgentId,
+        messageId: input.messageId,
+        detail: input.reason,
+      });
+      if (!marked.ok) {
+        this.deps.log.warn({ code: marked.error.code, messageId: input.messageId }, 'Dropped peer message could not be recorded in the thread');
+        return false;
+      }
+      return marked.data !== null;
+    } catch (error) {
+      this.deps.log.warn({ cause: causeName(error), messageId: input.messageId }, 'Dropped peer message could not be recorded in the thread');
+      return false;
+    }
+  }
+
   /** Records the refusal in the thread (best effort: a refusal stands even when it cannot be recorded) and returns it. */
   private async refuse(
     input: PeerSendInput,
@@ -231,8 +331,10 @@ export class PeerMessagingService {
     code: string,
     message: string,
   ): Promise<Result<never, PeerSendError>> {
+    // The refusal row has an id of its own, one per pair, code and window: a repeat of the same refusal is the same row,
+    // so a flood of refused sends stores one body per window, and the send itself (under its own id) can still go out later.
     const recorded = await this.deps.conversations.recordPeerMessage({
-      id: input.messageId,
+      id: this.refusalRowId(input.fromAgentId, recipientId, code),
       ownerUserId: userId,
       fromAgentId: input.fromAgentId,
       toAgentId: recipientId,
@@ -244,6 +346,12 @@ export class PeerMessagingService {
       this.deps.log.warn({ code: recorded.error.code, refusal: code }, 'Peer refusal could not be recorded in the thread');
     }
     return failure(code, message);
+  }
+
+  private refusalRowId(fromAgentId: string, toAgentId: string, code: string): string {
+    const now = (this.deps.now ?? (() => new Date()))();
+    const window = Math.floor(now.getTime() / this.deps.config.refusalWindowMs);
+    return `peer-refusal:${fromAgentId}:${toAgentId}:${code}:${window}`;
   }
 
   private async mark(messageId: string, status: 'sent' | 'failed', detail?: string): Promise<void> {

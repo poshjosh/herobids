@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { AgentTool, ToolContext, ToolResult } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES, PEER_ERROR_CODES, PeerSendResultSchema } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, PEER_ERROR_CODES, PEER_MESSAGE_SAFETY_MAX_CHARS, PeerSendResultSchema } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { parseBrokerDenialReply } from './tool-errors.js';
 
@@ -10,9 +10,11 @@ const PEER_SEND_REPLY_TIMEOUT_S = 20;
 
 export const MESSAGE_PEER_AGENT_TOOL_NAME = 'message_peer_agent';
 
-/** Refusals that may succeed on a later attempt without changing the message. */
+/**
+ * Refusals that may succeed on a later attempt without changing the message. A rate limit is not one: the window is a
+ * minute, and an agent that retries inside it only adds more refused sends. It waits, or goes on with other work.
+ */
 const RETRYABLE_CODES: readonly string[] = [
-  PEER_ERROR_CODES.rateLimited,
   PEER_ERROR_CODES.unavailable,
   PEER_ERROR_CODES.deliveryFailed,
 ];
@@ -20,7 +22,8 @@ const RETRYABLE_CODES: readonly string[] = [
 // Strict: the sender is always the calling agent, never named by input. The platform decides who may be messaged.
 const MessagePeerAgentParamsSchema = z.object({
   agent: z.string().trim().min(1).max(200).describe('The id or exact name of another agent of the same user'),
-  message: z.string().min(1).describe('The message to send to the other agent'),
+  // Safety cap only; the operator's messageMaxChars is the limit that applies and the platform enforces it.
+  message: z.string().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS).describe('The message to send to the other agent'),
 }).strict();
 
 export const messagePeerAgentTool: AgentTool = {
@@ -29,7 +32,7 @@ export const messagePeerAgentTool: AgentTool = {
   parametersSchema: MessagePeerAgentParamsSchema,
   parameters: convertZodToJsonSchema(MessagePeerAgentParamsSchema),
   category: 'write-messaging',
-  promptGuidance: 'A message from another agent is tagged [PEER ...] in your context. Reply to that agent with message_peer_agent, and to your user with send_message.',
+  promptGuidance: 'A message from another agent is tagged [PEER ...] in your context. Reply to that agent with message_peer_agent, and to your user with send_message. Do not reply to acknowledgements or pure notifications.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const parsed = MessagePeerAgentParamsSchema.safeParse(params);
     if (!parsed.success) {
@@ -82,7 +85,9 @@ export const messagePeerAgentTool: AgentTool = {
         ok: true,
         agentId: result.data.recipientAgentId,
         agentName: result.data.recipientName,
-        note: 'Message delivered. The recipient reads it on its next run; a reply, if any, arrives as a message from that agent.',
+        note: result.data.deliveryStatus === 'queued'
+          ? 'Message accepted and still being delivered. Do not send it again.'
+          : 'Message delivered. The recipient reads it on its next run; a reply, if any, arrives as a message from that agent.',
       },
     };
   },

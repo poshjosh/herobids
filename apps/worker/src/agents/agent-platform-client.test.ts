@@ -42,6 +42,27 @@ describe('agent platform client', () => {
     expect(init?.headers).toMatchObject({ Authorization: `Bearer ${API_KEY}` });
   });
 
+  it('reads the stop switch of its own agent with the agent key', async () => {
+    const fetchImpl = fetchReturning(jsonResponse(200, { paused: true }));
+
+    const result = await makeClient(fetchImpl).getPeerMessagingState();
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe(`${BASE_URL}/agents/${AGENT_ID}/peer-messaging`);
+    expect(init?.method).toBe('GET');
+    expect(init?.headers).toMatchObject({ Authorization: `Bearer ${API_KEY}` });
+    expect(result).toEqual({ ok: true, data: { paused: true } });
+  });
+
+  it.each([
+    ['a body without the flag', { state: 'on' }],
+    ['a flag that is not a boolean', { paused: 'no' }],
+  ])('reads the stop switch from %s as an invalid response, never as open', async (_label, body) => {
+    const result = await makeClient(fetchReturning(jsonResponse(200, body))).getPeerMessagingState();
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'agent.platform.invalid_response' } });
+  });
+
   it('forwards only name, prompt, skillIds and connectionIds when creating a child', async () => {
     const fetchImpl = fetchReturning(jsonResponse(201, { id: 'child-1', depth: 1, creatorId: 'ignored' }));
     const result = await makeClient(fetchImpl).createChildAgent({

@@ -29,6 +29,7 @@ import {
   resolvePlanSkillEntitlements,
   AuthConfigSchema,
   ConnectionRequestsConfigSchema,
+  PeerDropPayloadSchema,
   PeerSendPayloadSchema,
 } from '@herobids/domain';
 import type { ConversationService, NotificationClass, PeerMessagingService, PeerSendResult } from '@herobids/domain';
@@ -112,7 +113,7 @@ export class AgentMessageBroker {
     private readonly operatorNotifier?: OperatorNotifier,
     private readonly notifications?: AgentMessageNotifier,
     private readonly conversations?: Pick<ConversationService, 'recordAgentMessage' | 'markDelivery'>,
-    private readonly peerMessaging?: Pick<PeerMessagingService, 'send'>,
+    private readonly peerMessaging?: Pick<PeerMessagingService, 'send' | 'recordDropped'>,
   ) {}
 
   /** Resolved public base URL for link construction (operator config default when unset). */
@@ -431,6 +432,10 @@ export class AgentMessageBroker {
 
         case AGENT_MESSAGE_TYPES.PEER_SEND:
           await this.handlePeerSend(effectiveAgentId, envelope);
+          break;
+
+        case AGENT_MESSAGE_TYPES.PEER_DROP:
+          await this.handlePeerDrop(effectiveAgentId, envelope);
           break;
 
         default:
@@ -1186,7 +1191,7 @@ export class AgentMessageBroker {
         messageId: envelope.messageId,
       });
       await publishReply(sent.ok
-        ? { status: 'ok', messageId: sent.data.messageId, recipientAgentId: sent.data.recipientAgentId, recipientName: sent.data.recipientName }
+        ? { status: 'ok', messageId: sent.data.messageId, recipientAgentId: sent.data.recipientAgentId, recipientName: sent.data.recipientName, deliveryStatus: sent.data.deliveryStatus }
         : {
           status: 'error',
           error: sent.error.message,
@@ -1197,6 +1202,23 @@ export class AgentMessageBroker {
       logger.error({ agentId, err }, 'handlePeerSend failed');
       await publishReply({ status: 'error', error: 'Could not send the message. Please try again.', errorCode: 'peer.unavailable' });
     }
+  }
+
+  /**
+   * Handle a receiving agent's report that it dropped a queued peer message at its stop-switch check (DEC-56, DEC-57 c).
+   * The reporting agent is the envelope's agent, so it can only report on a message addressed to itself. Marks the sender's
+   * thread row `refused`. Best effort and fire-and-forget: there is no reply, and a failure is logged without any text.
+   */
+  private async handlePeerDrop(agentId: string, envelope: MessageEnvelope): Promise<void> {
+    const parsed = PeerDropPayloadSchema.safeParse(envelope.payload);
+    if (!parsed.success) throw new Error('invalid_payload');
+    if (!this.peerMessaging) return;
+    await this.peerMessaging.recordDropped({
+      recipientAgentId: agentId,
+      fromAgentId: parsed.data.fromAgentId,
+      messageId: parsed.data.messageId,
+      reason: parsed.data.reason,
+    });
   }
 
   private async handleRequestConnection(

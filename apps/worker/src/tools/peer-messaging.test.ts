@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ToolContext } from '@herobids/domain';
+import { PEER_MESSAGE_SAFETY_MAX_CHARS, type ToolContext } from '@herobids/domain';
 import { messagePeerAgentTool } from './peer-messaging.js';
 
 function makeCtx(blpopReply: [string, string] | null) {
@@ -44,6 +44,30 @@ describe('message_peer_agent tool', () => {
     expect(publishToInbound).not.toHaveBeenCalled();
   });
 
+  it('accepts a message at the safety cap and rejects one above it, without contacting the broker', async () => {
+    const ok = makeCtx(reply({ status: 'ok', messageId: 'm1', recipientAgentId: 'agent-2', recipientName: 'Kofi' }));
+    const tooLong = makeCtx(null);
+
+    const accepted = await messagePeerAgentTool.execute({ agent: 'Kofi', message: 'x'.repeat(PEER_MESSAGE_SAFETY_MAX_CHARS) }, ok.ctx);
+    const rejected = await messagePeerAgentTool.execute({ agent: 'Kofi', message: 'x'.repeat(PEER_MESSAGE_SAFETY_MAX_CHARS + 1) }, tooLong.ctx);
+
+    expect(accepted).toMatchObject({ success: true });
+    expect(rejected).toMatchObject({ success: false, errorCode: 'validation.invalid_payload' });
+    expect(tooLong.publishToInbound).not.toHaveBeenCalled();
+  });
+
+  it('tells the agent not to resend a message that is still being delivered', async () => {
+    const { ctx } = makeCtx(reply({ status: 'ok', messageId: 'm1', recipientAgentId: 'agent-2', recipientName: 'Kofi', deliveryStatus: 'queued' }));
+
+    const result = await messagePeerAgentTool.execute({ agent: 'Kofi', message: 'hello' }, ctx);
+
+    expect(result).toMatchObject({ success: true, data: { note: expect.stringContaining('still being delivered') } });
+  });
+
+  it('tells the agent not to reply to acknowledgements or pure notifications', () => {
+    expect(messagePeerAgentTool.promptGuidance).toContain('Do not reply to acknowledgements or pure notifications');
+  });
+
   it('returns a refusal with its code and lists the other agents', async () => {
     const peers = [{ id: 'agent-2', name: 'Kofi', status: 'active' }];
     const { ctx } = makeCtx(reply({ status: 'error', error: 'The recipient is not one of your agents.', errorCode: 'peer.not_allowed', peers }));
@@ -61,7 +85,8 @@ describe('message_peer_agent tool', () => {
   });
 
   it.each([
-    ['peer.rate_limited', true],
+    ['peer.rate_limited', false],
+    ['peer.delivery_failed', true],
     ['peer.unavailable', true],
     ['peer.paused', false],
     ['peer.recipient_not_running', false],

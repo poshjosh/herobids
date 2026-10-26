@@ -106,6 +106,22 @@ export class InMemoryConversationStore implements ConversationStore {
     return ok(updated);
   }
 
+  async refuseDroppedPeerMessage(input: Parameters<ConversationStore['refuseDroppedPeerMessage']>[0]) {
+    if (this.failWith) return err({ code: this.failWith, message: 'conversation_store_failed' });
+    const index = this.messages.findIndex((message) => message.id === input.messageId
+      && message.conversationId === input.conversationId
+      && this.peerAgents.has(message.conversationId)
+      && this.owners.get(message.conversationId) === input.ownerUserId
+      && message.senderType === 'agent'
+      && message.senderId === input.senderId
+      && (message.deliveryStatus === 'sent' || message.deliveryStatus === 'queued'));
+    const current = this.messages[index];
+    if (!current) return ok(null);
+    const updated = { ...current, deliveryStatus: 'refused' as const, deliveryDetail: input.detail };
+    this.messages[index] = updated;
+    return ok(updated);
+  }
+
   async findMessage(input: Parameters<ConversationStore['findMessage']>[0]) {
     if (this.failWith) return err({ code: this.failWith, message: 'conversation_store_failed' });
     const found = this.messages.find((message) => message.id === input.messageId

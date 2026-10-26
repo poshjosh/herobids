@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '@herobids/db';
-import { agents } from '@herobids/db';
+import { agents, users } from '@herobids/db';
+import { requireSelfAgentOrUser } from '../plugins/auth.js';
 import {
   ConversationQuerySchema,
   conversationErrorResponse,
@@ -19,8 +20,25 @@ const PeerThreadListQuerySchema = z.object({
 /**
  * The owner's view of agent-to-agent threads (A2A MVP, DEC-43). Read only, user callers only: an agent key gets
  * no `agentAccess`, so it cannot read a thread. Peer messages are written by the worker, never through these routes.
+ * The one exception is the stop-switch read below, which an agent may make for itself (DEC-56).
  */
 export async function peerThreadRoutes(app: FastifyInstance, db: Database, conversations: ConversationRouteDeps): Promise<void> {
+  // GET /agents/:id/peer-messaging — the owner's stop switch (DEC-43), read by the receiving agent before it accepts a
+  // peer message (DEC-56). An agent key may read only its own agent. Fail closed: a user row that cannot be found
+  // reads as paused, like the send path.
+  app.get<{ Params: { id: string } }>('/agents/:id/peer-messaging', {
+    config: { agentAccess: 'self' },
+    preHandler: requireSelfAgentOrUser,
+  }, async (request, reply) => {
+    const [row] = await db.select({ paused: users.peerMessagingPaused })
+      .from(agents)
+      .leftJoin(users, eq(users.id, agents.userId))
+      .where(and(eq(agents.id, request.params.id), eq(agents.userId, request.userId)))
+      .limit(1);
+    if (!row) return reply.status(404).send({ error: 'not_found' });
+    return reply.send({ paused: row.paused ?? true });
+  });
+
   // GET /agents/:id/peer-threads — the agent's threads with other agents, newest message first, with the peer's name.
   // Two reads for the threads (conversations, then their participants) and one for the names, whatever the page size.
   app.get<{ Params: { id: string }; Querystring: unknown }>('/agents/:id/peer-threads', async (request, reply) => {

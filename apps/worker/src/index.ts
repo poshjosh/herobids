@@ -42,7 +42,7 @@ import { buildExternalBackendClientConfig, createExternalBackendClient, createLo
 import type { ExternalBackendSubject } from '@herobids/domain/external-backend';
 import { createExternalBackendWriteBoundary } from './external-backend/write-adapter.js';
 import { AgentActorLifecycle } from './agents/agent-actor-lifecycle.js';
-import { RedisPeerRateLimiter } from './agents/peer-rate-limiter.js';
+import { PEER_RATE_WINDOW_MS, RedisPeerRateLimiter } from './agents/peer-rate-limiter.js';
 import { RedisPeerWakePublisher } from './agents/peer-wake-publisher.js';
 import { ActorEventRelay } from './agents/actor-event-relay.js';
 import { createBoundaryConsumerNotificationFeed } from './agents/boundary-consumer-notification-feed.js';
@@ -704,7 +704,7 @@ const peerMessaging = new PeerMessagingService({
   limiter: new RedisPeerRateLimiter(redisClient, appConfig.agentRuntime.peer.rateLimitPerMinute),
   conversations,
   wake: new RedisPeerWakePublisher(redisClient),
-  config: { messageMaxChars: appConfig.agentRuntime.peer.messageMaxChars },
+  config: { messageMaxChars: appConfig.agentRuntime.peer.messageMaxChars, refusalWindowMs: PEER_RATE_WINDOW_MS },
   log: createLogger('peer-messaging'),
 });
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram ? chatDelivery : undefined, telegramChat.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl, conversations);

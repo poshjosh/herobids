@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PEER_DROP_DETAILS } from './conversations/conversation.js';
 // Trading-owned protocol/enums relocated to a trading-owned module for trading-layer
 // independence (source-fix request 002). Imported here for internal use (schema
 // composition + message-type map) and re-exported below so the public API surface of
@@ -224,12 +225,20 @@ export const UpdatePromptResultSchema = z.discriminatedUnion('status', [
 export type UpdatePromptResult = z.infer<typeof UpdatePromptResultSchema>;
 
 /**
+ * Hard ceiling on a peer message body at every boundary (tool, broker payload, stream payload, and the configured
+ * `agentRuntime.peer.messageMaxChars`). It is a safety cap, not a product limit: the operator's `messageMaxChars` is the
+ * limit that applies, and it cannot be set above this value. It stops an oversized body travelling through Redis and the
+ * audit log before the service can refuse it.
+ */
+export const PEER_MESSAGE_SAFETY_MAX_CHARS = 20_000;
+
+/**
  * Brokered peer message — an agent asks the platform to send a message to another agent of the same user (A2A MVP).
  * `agent` is the recipient's id or exact name. The platform resolves it and decides whether the send is allowed.
  */
 export const PeerSendPayloadSchema = z.object({
   agent: z.string().trim().min(1).max(200),
-  message: z.string().min(1),
+  message: z.string().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS),
   requestMessageId: z.string().min(1),
 });
 export type PeerSendPayload = z.infer<typeof PeerSendPayloadSchema>;
@@ -240,6 +249,8 @@ export const PeerSendResultSchema = z.discriminatedUnion('status', [
     messageId: z.string().min(1),
     recipientAgentId: z.string().min(1),
     recipientName: z.string(),
+    /** `queued` when an earlier send with the same id is still being delivered. Absent means sent. */
+    deliveryStatus: z.enum(['sent', 'queued']).optional(),
   }),
   z.object({
     status: z.literal('error'),
@@ -256,13 +267,26 @@ export type PeerSendResult = z.infer<typeof PeerSendResultSchema>;
  * message as written by another agent; it is set by the platform, never by the sender. The text is data from another agent.
  */
 export const PeerMessagePayloadSchema = z.object({
-  message: z.string().min(1),
+  message: z.string().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS),
   peer: z.object({
     fromAgentId: z.string().min(1),
     fromAgentName: z.string(),
   }),
 });
 export type PeerMessagePayload = z.infer<typeof PeerMessagePayloadSchema>;
+
+/**
+ * Fire-and-forget report from the receiving agent that it dropped a queued peer message at its stop-switch check
+ * (DEC-56, DEC-57 c). The sender is `fromAgentId`; the recipient is the envelope's own agent, so a container can only
+ * report on messages addressed to itself. It carries no message text. The platform marks the thread row `refused`.
+ */
+export const PeerDropPayloadSchema = z.object({
+  /** The dropped envelope's message id, which is the thread row id. */
+  messageId: z.string().min(1),
+  fromAgentId: z.string().min(1),
+  reason: z.enum(PEER_DROP_DETAILS),
+});
+export type PeerDropPayload = z.infer<typeof PeerDropPayloadSchema>;
 
 // --- Trading Instance → Agent Messages ---
 
@@ -455,6 +479,7 @@ export const AGENT_MESSAGE_TYPES = {
   REQUEST_CONNECTION: 'agent.request_connection',
   UPDATE_PROMPT: 'agent.update_prompt',
   PEER_SEND: 'agent.peer.send',
+  PEER_DROP: 'agent.peer.drop',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -665,6 +690,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.REQUEST_CONNECTION]: ConnectionRequestPayloadSchema,
   [AGENT_MESSAGE_TYPES.UPDATE_PROMPT]: UpdatePromptPayloadSchema,
   [AGENT_MESSAGE_TYPES.PEER_SEND]: PeerSendPayloadSchema,
+  [AGENT_MESSAGE_TYPES.PEER_DROP]: PeerDropPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,

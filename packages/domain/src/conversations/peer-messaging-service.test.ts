@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { err, ok } from '../result.js';
-import { CONVERSATION_ERROR_CODES } from './conversation.js';
+import { CONVERSATION_ERROR_CODES, type ConversationMessage } from './conversation.js';
 import {
   PEER_ERROR_CODES,
   PeerMessagingService,
@@ -8,6 +8,10 @@ import {
   type PeerAgentRecord,
   type PeerAgentSummary,
 } from './peer-messaging-service.js';
+
+const NOW_MS = 1_700_000_040_000;
+const REFUSAL_WINDOW = Math.floor(NOW_MS / 60_000);
+const refusalId = (code: string, window = REFUSAL_WINDOW) => `peer-refusal:a1:a2:${code}:${window}`;
 
 const AGENTS: Record<string, PeerAgentRecord> = {
   a1: { userId: 'u1', name: 'Momo', status: 'active' },
@@ -42,11 +46,16 @@ function setup(options: { paused?: boolean | Error; allow?: boolean | Error; age
     },
     conversations: {
       recordPeerMessage: vi.fn(async () => ok({ message: {} as never, created: true })),
+      findPeerMessage: vi.fn(async (): Promise<ReturnType<typeof ok<ConversationMessage | null>>> => ok(null)),
+      refuseDroppedPeerMessage: vi.fn(async () => ok({} as ConversationMessage | null)),
       markDelivery: vi.fn(async () => ok({} as never)),
+      retryUndeliveredPeerMessage: vi.fn(async () => ok({} as never)),
+      needsRepublish: vi.fn((message: Pick<ConversationMessage, 'deliveryStatus'>) => message.deliveryStatus === 'failed'),
     },
     wake: { publish: vi.fn(async () => undefined) },
-    config: { messageMaxChars: options.maxChars ?? 100 },
+    config: { messageMaxChars: options.maxChars ?? 100, refusalWindowMs: 60_000 },
     log: { warn: vi.fn() },
+    now: vi.fn(() => new Date(NOW_MS)),
   };
   return { deps, state, service: new PeerMessagingService(deps) };
 }
@@ -65,7 +74,7 @@ describe('PeerMessagingService.send', () => {
 
     const result = await send(service);
 
-    expect(result).toEqual({ ok: true, data: { messageId: 'env-1', recipientAgentId: 'a2', recipientName: 'Kofi' } });
+    expect(result).toEqual({ ok: true, data: { messageId: 'env-1', recipientAgentId: 'a2', recipientName: 'Kofi', deliveryStatus: 'sent' } });
     expect(deps.conversations.recordPeerMessage).toHaveBeenCalledWith({ id: 'env-1', ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', body: 'hello' });
     expect(deps.wake.publish).toHaveBeenCalledWith({ messageId: 'env-1', fromAgentId: 'a1', fromAgentName: 'Momo', toAgentId: 'a2', body: 'hello' });
     expect(deps.conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'env-1', status: 'sent' });
@@ -262,7 +271,7 @@ describe('PeerMessagingService.send', () => {
 
       expect(refusedCode(result)).toBe(PEER_ERROR_CODES.paused);
       expect(deps.conversations.recordPeerMessage).toHaveBeenCalledWith({
-        id: 'env-1', ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', body: 'hello', deliveryStatus: 'refused', deliveryDetail: 'peer.paused',
+        id: refusalId('peer.paused'), ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', body: 'hello', deliveryStatus: 'refused', deliveryDetail: 'peer.paused',
       });
       expect(deps.wake.publish).not.toHaveBeenCalled();
       expect(deps.limiter.tryConsume).not.toHaveBeenCalled();
@@ -297,9 +306,33 @@ describe('PeerMessagingService.send', () => {
 
       expect(refusedCode(result)).toBe(PEER_ERROR_CODES.rateLimited);
       expect(deps.conversations.recordPeerMessage).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'env-1', fromAgentId: 'a1', toAgentId: 'a2', deliveryStatus: 'refused', deliveryDetail: 'peer.rate_limited',
+        id: refusalId('peer.rate_limited'), fromAgentId: 'a1', toAgentId: 'a2', deliveryStatus: 'refused', deliveryDetail: 'peer.rate_limited',
       }));
       expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('stores repeated refusals of one pair in one window under one row id, and a later window under a new one', async () => {
+      const { deps, service } = setup({ allow: false });
+
+      await send(service, { messageId: 'env-1' });
+      await send(service, { messageId: 'env-2', body: 'again' });
+      deps.now.mockReturnValue(new Date(NOW_MS + 60_000));
+      await send(service, { messageId: 'env-3' });
+
+      expect(deps.conversations.recordPeerMessage.mock.calls.map(([input]) => input.id)).toEqual([
+        refusalId('peer.rate_limited'), refusalId('peer.rate_limited'), refusalId('peer.rate_limited', REFUSAL_WINDOW + 1),
+      ]);
+    });
+
+    it('keeps the refusal rows of different pairs and of different codes apart', async () => {
+      const { deps, service } = setup({ allow: false });
+
+      await send(service, { recipient: 'a2' });
+      await send(service, { fromAgentId: 'a2', recipient: 'a1' });
+      deps.limiter.tryConsume.mockRejectedValueOnce(new Error('redis down'));
+      await send(service);
+
+      expect(new Set(deps.conversations.recordPeerMessage.mock.calls.map(([input]) => input.id)).size).toBe(3);
     });
 
     it('counts per user, not per agent', async () => {
@@ -322,15 +355,253 @@ describe('PeerMessagingService.send', () => {
     });
   });
 
-  it('sends nothing more for an id that was already recorded (a redelivered envelope)', async () => {
+  describe('a repeated id (a redelivered envelope)', () => {
+    const stored = (deliveryStatus: ConversationMessage['deliveryStatus'], extra: Partial<ConversationMessage> = {}): ConversationMessage =>
+      ({ id: 'env-1', deliveryStatus, deliveryDetail: null, ...extra } as ConversationMessage);
+
+    function repeat(status: ConversationMessage['deliveryStatus'], extra: Partial<ConversationMessage> = {}) {
+      const harness = setup();
+      harness.deps.conversations.findPeerMessage.mockResolvedValue(ok(stored(status, extra)));
+      return harness;
+    }
+
+    /** The id was recorded by a concurrent send between the lookup and the record. */
+    function raced(status: ConversationMessage['deliveryStatus'], extra: Partial<ConversationMessage> = {}) {
+      const harness = setup();
+      harness.deps.conversations.recordPeerMessage.mockResolvedValue(ok({ message: stored(status, extra), created: false }));
+      return harness;
+    }
+
+    it('reports a sent message as sent and publishes nothing', async () => {
+      const { deps, service } = repeat('sent');
+
+      const result = await send(service);
+
+      expect(result).toEqual({ ok: true, data: expect.objectContaining({ deliveryStatus: 'sent' }) });
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+      expect(deps.conversations.markDelivery).not.toHaveBeenCalled();
+    });
+
+    it('reports a message still queued as queued, not as delivered, and publishes nothing', async () => {
+      const { deps, service } = repeat('queued');
+
+      const result = await send(service);
+
+      expect(result).toEqual({ ok: true, data: expect.objectContaining({ deliveryStatus: 'queued' }) });
+      expect(deps.conversations.retryUndeliveredPeerMessage).not.toHaveBeenCalled();
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('takes no rate-limit slot, reads no switch and writes no refusal for a sent or queued repeat, even when the user is over the limit', async () => {
+      for (const status of ['sent', 'queued'] as const) {
+        const { deps, service } = repeat(status);
+        deps.limiter.tryConsume.mockResolvedValue(false);
+
+        const result = await send(service);
+
+        expect(result.ok).toBe(true);
+        expect(deps.limiter.tryConsume).not.toHaveBeenCalled();
+        expect(deps.settings.isPeerMessagingPaused).not.toHaveBeenCalled();
+        expect(deps.conversations.recordPeerMessage).not.toHaveBeenCalled();
+      }
+    });
+
+    it('looks the id up in the pair\'s thread, as the sender, before anything else is spent', async () => {
+      const { deps, service } = repeat('sent');
+
+      await send(service);
+
+      expect(deps.conversations.findPeerMessage).toHaveBeenCalledWith({ ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', messageId: 'env-1' });
+    });
+
+    it('fails closed, spending nothing, when the id cannot be looked up', async () => {
+      const { deps, service } = setup();
+      deps.conversations.findPeerMessage.mockResolvedValue(err({ code: CONVERSATION_ERROR_CODES.storeFailed, message: 'down' }));
+
+      const result = await send(service);
+
+      expect(refusedCode(result)).toBe(PEER_ERROR_CODES.unavailable);
+      expect(deps.limiter.tryConsume).not.toHaveBeenCalled();
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('takes one slot for a new message and one for a republish, and none for the repeats of a settled one', async () => {
+      const fresh = setup();
+      await send(fresh.service);
+      const republish = repeat('failed');
+      await send(republish.service);
+
+      expect(fresh.deps.limiter.tryConsume).toHaveBeenCalledTimes(1);
+      expect(republish.deps.limiter.tryConsume).toHaveBeenCalledTimes(1);
+    });
+
+    it('still applies the stop switch to a republish: it is refused, nothing is published, and the failed row is not claimed', async () => {
+      const { deps, service } = repeat('failed');
+      deps.settings.isPeerMessagingPaused.mockResolvedValue(true);
+
+      const result = await send(service);
+
+      expect(refusedCode(result)).toBe(PEER_ERROR_CODES.paused);
+      expect(deps.limiter.tryConsume).not.toHaveBeenCalled();
+      expect(deps.conversations.retryUndeliveredPeerMessage).not.toHaveBeenCalled();
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('applies the rate limit to a republish', async () => {
+      const { deps, service } = repeat('failed');
+      deps.limiter.tryConsume.mockResolvedValue(false);
+
+      const result = await send(service);
+
+      expect(refusedCode(result)).toBe(PEER_ERROR_CODES.rateLimited);
+      expect(deps.conversations.retryUndeliveredPeerMessage).not.toHaveBeenCalled();
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('republishes a stuck queued message after the stop switch and the rate limit', async () => {
+      const { deps, service } = setup();
+      deps.conversations.findPeerMessage.mockResolvedValue(ok(stored('queued')));
+      deps.conversations.needsRepublish.mockReturnValue(true);
+
+      const result = await send(service);
+
+      expect(result.ok).toBe(true);
+      expect(deps.limiter.tryConsume).toHaveBeenCalledTimes(1);
+      expect(deps.conversations.retryUndeliveredPeerMessage).toHaveBeenCalledTimes(1);
+      expect(deps.wake.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers a concurrent duplicate that was recorded after the lookup from its stored row', async () => {
+      const { deps, service } = raced('sent');
+
+      const result = await send(service);
+
+      expect(result).toEqual({ ok: true, data: expect.objectContaining({ deliveryStatus: 'sent' }) });
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('reports a refused message as refused with its stored code', async () => {
+      const { deps, service } = repeat('refused', { deliveryDetail: PEER_ERROR_CODES.paused });
+
+      const result = await send(service);
+
+      expect(refusedCode(result)).toBe(PEER_ERROR_CODES.paused);
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('reports a message dropped by the receiving agent as refused with peer.paused, whichever drop detail it holds', async () => {
+      for (const detail of ['paused', 'paused_check_failed']) {
+        const { deps, service } = repeat('refused', { deliveryDetail: detail });
+
+        const result = await send(service);
+
+        expect(refusedCode(result)).toBe(PEER_ERROR_CODES.paused);
+        expect(deps.wake.publish).not.toHaveBeenCalled();
+      }
+    });
+
+    it('claims a failed message and publishes it again, then marks it sent', async () => {
+      const { deps, service } = repeat('failed');
+
+      const result = await send(service);
+
+      expect(result).toEqual({ ok: true, data: expect.objectContaining({ deliveryStatus: 'sent' }) });
+      expect(deps.conversations.retryUndeliveredPeerMessage).toHaveBeenCalledWith({ ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', messageId: 'env-1' });
+      expect(deps.wake.publish).toHaveBeenCalledTimes(1);
+      expect(deps.conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'env-1', status: 'sent' });
+    });
+
+    it('does not publish when another retry won the claim', async () => {
+      const { deps, service } = repeat('failed');
+      deps.conversations.retryUndeliveredPeerMessage.mockResolvedValue(ok(null));
+
+      const result = await send(service);
+
+      expect(result).toEqual({ ok: true, data: expect.objectContaining({ deliveryStatus: 'queued' }) });
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the claim cannot be made', async () => {
+      const { deps, service } = repeat('failed');
+      deps.conversations.retryUndeliveredPeerMessage.mockResolvedValue(err({ code: CONVERSATION_ERROR_CODES.storeFailed, message: 'down' }));
+
+      const result = await send(service);
+
+      expect(refusedCode(result)).toBe(PEER_ERROR_CODES.unavailable);
+      expect(deps.wake.publish).not.toHaveBeenCalled();
+    });
+
+    it('marks a republish that fails again as failed', async () => {
+      const { deps, service } = repeat('failed');
+      deps.wake.publish.mockRejectedValue(new Error('redis down'));
+
+      const result = await send(service);
+
+      expect(refusedCode(result)).toBe(PEER_ERROR_CODES.deliveryFailed);
+      expect(deps.conversations.markDelivery).toHaveBeenCalledWith({ messageId: 'env-1', status: 'failed', detail: 'publish_failed' });
+    });
+  });
+});
+
+describe('PeerMessagingService.recordDropped (DEC-57 c)', () => {
+  const dropped = { recipientAgentId: 'a2', fromAgentId: 'a1', messageId: 'env-1', reason: 'paused' as const };
+
+  it('marks the sender\'s row refused with the reason, as the recipient\'s owner, and reports it', async () => {
     const { deps, service } = setup();
-    deps.conversations.recordPeerMessage.mockResolvedValue(ok({ message: {} as never, created: false }));
+    deps.conversations.refuseDroppedPeerMessage.mockResolvedValue(ok({ id: 'env-1' } as ConversationMessage));
 
-    const result = await send(service);
+    expect(await service.recordDropped(dropped)).toBe(true);
+    expect(deps.conversations.refuseDroppedPeerMessage).toHaveBeenCalledWith({
+      ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', messageId: 'env-1', detail: 'paused',
+    });
+  });
 
-    expect(result.ok).toBe(true);
-    expect(deps.wake.publish).not.toHaveBeenCalled();
-    expect(deps.conversations.markDelivery).not.toHaveBeenCalled();
+  it('passes paused_check_failed through', async () => {
+    const { deps, service } = setup();
+
+    await service.recordDropped({ ...dropped, reason: 'paused_check_failed' });
+
+    expect(deps.conversations.refuseDroppedPeerMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: 'paused_check_failed' }));
+  });
+
+  it('is a no-op that reports false when no row moved (already final, or not the caller\'s)', async () => {
+    const { deps, service } = setup();
+    deps.conversations.refuseDroppedPeerMessage.mockResolvedValue(ok(null));
+
+    expect(await service.recordDropped(dropped)).toBe(false);
+    expect(deps.log.warn).not.toHaveBeenCalled();
+  });
+
+  it('refuses to record for agents of different users and touches nothing', async () => {
+    const { deps, service } = setup();
+
+    expect(await service.recordDropped({ ...dropped, fromAgentId: 'x1' })).toBe(false);
+    expect(deps.conversations.refuseDroppedPeerMessage).not.toHaveBeenCalled();
+  });
+
+  it('refuses a report from an unknown recipient and a report about itself', async () => {
+    const { deps, service } = setup();
+
+    expect(await service.recordDropped({ ...dropped, recipientAgentId: 'ghost' })).toBe(false);
+    expect(await service.recordDropped({ ...dropped, fromAgentId: 'a2' })).toBe(false);
+    expect(deps.conversations.refuseDroppedPeerMessage).not.toHaveBeenCalled();
+  });
+
+  it('logs and returns false when the store fails, and never throws or logs text', async () => {
+    const { deps, service } = setup();
+    deps.conversations.refuseDroppedPeerMessage.mockResolvedValue(err({ code: CONVERSATION_ERROR_CODES.storeFailed, message: 'down' }));
+
+    expect(await service.recordDropped(dropped)).toBe(false);
+    expect(deps.log.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs and returns false when an agent lookup rejects', async () => {
+    const { deps, service } = setup();
+    deps.agents.getAgent.mockRejectedValue(new Error('db down'));
+
+    expect(await service.recordDropped(dropped)).toBe(false);
+    expect(deps.log.warn).toHaveBeenCalledTimes(1);
+    expect(deps.conversations.refuseDroppedPeerMessage).not.toHaveBeenCalled();
   });
 });
 

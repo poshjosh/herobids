@@ -6,6 +6,7 @@ import type {
   ConversationError,
   ConversationMessage,
   ConversationSenderType,
+  PeerDropDetail,
   PeerThreadSummary,
   RecordedConversationMessage,
   UserAgentChannel,
@@ -74,6 +75,16 @@ export interface RequeueUndeliveredMessageInput {
   staleBefore: Date;
 }
 
+export interface RefuseDroppedPeerConversationMessageInput {
+  messageId: string;
+  /** `peerConversationId(agentIds)`. */
+  conversationId: string;
+  ownerUserId: string;
+  /** The sending agent, the author of the row. */
+  senderId: string;
+  detail: PeerDropDetail;
+}
+
 export interface FindConversationMessageInput {
   messageId: string;
   conversationId: string;
@@ -135,6 +146,13 @@ export interface ConversationStore {
    * claimable (absent, another sender's, or in any other state).
    */
   requeueUndeliveredMessage(input: RequeueUndeliveredMessageInput): Promise<Result<ConversationMessage | null, ConversationError>>;
+  /**
+   * The one move from `sent` (or `queued`) to `refused`: a peer message the receiving agent dropped at its stop-switch
+   * check (DEC-57 c). One conditional update on the agent-authored row in the owner's peer conversation, so it cannot
+   * touch another owner's or sender's row, a user-agent row or a row in any other state. Sets `refused` and the detail.
+   * Null when no row matches (absent, already final, or not the caller's); that is not an error, so a repeated drop is a no-op.
+   */
+  refuseDroppedPeerMessage(input: RefuseDroppedPeerConversationMessageInput): Promise<Result<ConversationMessage | null, ConversationError>>;
   /** The sender's own message by id in the owner's conversation; null when there is none (another sender's or owner's rows are not read). */
   findMessage(input: FindConversationMessageInput): Promise<Result<ConversationMessage | null, ConversationError>>;
   /**

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentWakeSourceSchema } from '../agent-protocol.js';
+import { AgentWakeSourceSchema, PEER_MESSAGE_SAFETY_MAX_CHARS } from '../agent-protocol.js';
 import { TradingSessionNameSchema, type TradingSessionName } from '../trading/trading-protocol.js';
 import { ok, err, type Result } from '../result.js';
 import {
@@ -1419,8 +1419,18 @@ export const AgentRuntimeConfigSchema = z.object({
   peer: z.object({
     /** Peer messages one user's agents may send in any rolling one-minute window. Over the limit, a send is refused and recorded as refused. */
     rateLimitPerMinute: z.number().int().min(1).default(10),
-    /** Longest peer message body, in characters. */
-    messageMaxChars: z.number().int().min(1).default(4000),
+    /** Longest peer message body, in characters. Cannot exceed the protocol's safety cap. */
+    messageMaxChars: z.number().int().min(1).max(PEER_MESSAGE_SAFETY_MAX_CHARS).default(4000),
+    /**
+     * How long a receiving agent reuses one read of the owner's stop switch (DEC-56), so a batch, or a wake and the tick that
+     * follows it, share one read. 0 reads every time. Bounds how late a newly set switch can reach a peer message: a message
+     * consumed after the switch was turned on is dropped once this many milliseconds have passed.
+     */
+    switchCacheMs: z.number().int().min(0).max(30_000).default(2_000),
+    /** Extra attempts to read the stop switch when a read fails, before the peer message is dropped fail closed. 0 drops on the first failure. */
+    switchReadRetries: z.number().int().min(0).max(5).default(2),
+    /** Wait between two attempts to read the stop switch, in milliseconds. */
+    switchRetryBackoffMs: z.number().int().min(0).max(5_000).default(250),
   }).default({}),
   /** Cross-session crash-loop guard — persist crash counters in Redis and block
    *  relaunch when an agent has crashed too many times within the sliding window. */

@@ -46,3 +46,12 @@ export interface AgentPlatformPort {
   stopChildAgent(agentId: string): Promise<Result<{ status: string }, AgentPlatformError>>;
   messageChildAgent(agentId: string, message: string): Promise<Result<{ delivered: boolean }, AgentPlatformError>>;
 }
+
+/** The owner's peer-messaging stop switch (DEC-43, DEC-56), as the receiving agent reads it before it accepts a peer message. */
+export interface PeerMessagingState {
+  paused: boolean;
+}
+
+export interface PeerMessagingStatePort {
+  getPeerMessagingState(): Promise<Result<PeerMessagingState, AgentPlatformError>>;
+}

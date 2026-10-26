@@ -500,7 +500,10 @@ agentRuntime:
     pollMs: 1000               # Redis wake-stream block timeout; lower improves wake pickup latency, higher reduces idle polling churn
   peer:
     rateLimitPerMinute: 10     # peer messages one user's agents may send per rolling minute (DEC-42); over the limit a send is refused and recorded as refused
-    messageMaxChars: 4000      # longest peer message body; a longer one is refused and not recorded
+    messageMaxChars: 4000      # longest peer message body (max 20000, the protocol safety cap); a longer one is refused and not recorded
+    switchCacheMs: 2000        # a receiving agent reuses one read of the owner's stop switch for this long (0 = read every time); bounds how late a newly set switch reaches a queued peer message (max 30000)
+    switchReadRetries: 2       # extra attempts to read the stop switch before a peer message is dropped fail closed (0 = none, max 5)
+    switchRetryBackoffMs: 250  # wait between attempts to read the stop switch (max 5000)
   pause:
     statusPollMs: 30000        # while paused, re-check agents.status at min(tick interval, this); bounds resume latency (min 5000)
     maxHeldMessages: 500       # cap on outbound messages held while paused; user messages and config updates are always kept, oldest others dropped first

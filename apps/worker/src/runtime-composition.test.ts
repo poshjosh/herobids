@@ -3917,6 +3917,7 @@ describe('buildConversationSection', () => {
       const section = buildConversationSection(state, policy);
 
       expect(section).toContain('Messages from other agents of your user');
+      expect(section).toContain('do not reply to acknowledgements or pure notifications');
       expect(section).toContain('[PEER "Kofi" id=agent-2] "check the BTC position"');
       expect(section).not.toContain('[USER]');
       expect(section).not.toContain('Awaiting your reply');

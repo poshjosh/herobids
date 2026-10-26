@@ -785,6 +785,93 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
       expect(marked).toMatchObject({ ok: true, data: { deliveryStatus: 'sent', channel: 'internal' } });
     });
 
+    describe('findPeerMessage and refuseDroppedPeerMessage (DEC-57 c)', () => {
+      const refuse = (overrides: Partial<Parameters<ReturnType<typeof service>['refuseDroppedPeerMessage']>[0]> = {}) =>
+        service().refuseDroppedPeerMessage({ ownerUserId: 'user-1', fromAgentId: 'agent-1', toAgentId: 'agent-2', messageId: 'env-1', detail: 'paused', ...overrides });
+      const row = async (id = 'env-1') => (await scratch.sql<{ delivery_status: string; delivery_detail: string | null; body: string; sender_id: string }[]>`
+        SELECT delivery_status, delivery_detail, body, sender_id FROM conversation_messages WHERE id = ${id}`)[0];
+      const sendOne = async (status: 'sent' | 'queued' | 'failed') => {
+        await peer('agent-1', 'agent-2', 'secret body', { id: 'env-1' });
+        if (status !== 'queued') await service().markDelivery({ messageId: 'env-1', status, ...(status === 'failed' ? { detail: 'publish_failed' } : {}) });
+      };
+
+      it('moves a sent row to refused with the paused detail, keeping its body, sender and thread', async () => {
+        await sendOne('sent');
+
+        const result = await refuse();
+
+        expect(result).toMatchObject({ ok: true, data: { id: 'env-1', deliveryStatus: 'refused', deliveryDetail: 'paused', senderId: 'agent-1', conversationId: peerConversationId('agent-1', 'agent-2') } });
+        expect(await row()).toEqual({ delivery_status: 'refused', delivery_detail: 'paused', body: 'secret body', sender_id: 'agent-1' });
+        const thread = await service().listPeerThread({ ownerUserId: 'user-1', agentId: 'agent-2', peerAgentId: 'agent-1' });
+        expect((thread as { data: Array<{ deliveryStatus: string; deliveryDetail: string | null }> }).data).toMatchObject([{ deliveryStatus: 'refused', deliveryDetail: 'paused' }]);
+      });
+
+      it('moves a queued row to refused with paused_check_failed', async () => {
+        await sendOne('queued');
+
+        expect(await refuse({ detail: 'paused_check_failed' })).toMatchObject({ ok: true, data: { deliveryStatus: 'refused', deliveryDetail: 'paused_check_failed' } });
+        expect(await row()).toMatchObject({ delivery_status: 'refused', delivery_detail: 'paused_check_failed' });
+      });
+
+      it('does nothing for a row that is already final, and a repeated drop is a no-op that keeps the first detail', async () => {
+        await sendOne('failed');
+        expect(await refuse()).toEqual({ ok: true, data: null });
+        expect(await row()).toMatchObject({ delivery_status: 'failed', delivery_detail: 'publish_failed' });
+
+        await scratch.sql`UPDATE conversation_messages SET delivery_status = 'sent', delivery_detail = NULL WHERE id = 'env-1'`;
+        expect(await refuse()).toMatchObject({ ok: true, data: { deliveryDetail: 'paused' } });
+        expect(await refuse({ detail: 'paused_check_failed' })).toEqual({ ok: true, data: null });
+        expect(await row()).toMatchObject({ delivery_status: 'refused', delivery_detail: 'paused' });
+      });
+
+      it('does nothing for an unknown id', async () => {
+        expect(await refuse({ messageId: 'nope' })).toEqual({ ok: true, data: null });
+      });
+
+      it('does not touch another owner\'s row, a row in another pair\'s thread, or a row written by the other agent', async () => {
+        await sendOne('sent');
+        await peer('agent-1', 'agent-4', 'to dozer', { id: 'env-2' });
+        await service().markDelivery({ messageId: 'env-2', status: 'sent' });
+
+        expect(await refuse({ ownerUserId: 'user-2' })).toEqual({ ok: true, data: null });
+        expect(await refuse({ toAgentId: 'agent-4' })).toEqual({ ok: true, data: null });
+        expect(await refuse({ fromAgentId: 'agent-2', toAgentId: 'agent-1' })).toEqual({ ok: true, data: null });
+        expect(await refuse({ messageId: 'env-2' })).toEqual({ ok: true, data: null });
+
+        expect(await row()).toMatchObject({ delivery_status: 'sent', delivery_detail: null });
+        expect(await row('env-2')).toMatchObject({ delivery_status: 'sent', delivery_detail: null });
+      });
+
+      it('does not touch a user-agent message or an agent message in the agent\'s own user thread, even with the same ids', async () => {
+        await user('agent-1', 'hi', 'user-msg-1');
+        await service().markDelivery({ messageId: 'user-msg-1', status: 'sent' });
+
+        expect(await refuse({ messageId: 'user-msg-1' })).toEqual({ ok: true, data: null });
+        expect(await row('user-msg-1')).toMatchObject({ delivery_status: 'sent' });
+      });
+
+      it('is final: the row cannot be marked again, a repeated send reads it as refused, and no republish claims it', async () => {
+        await sendOne('sent');
+        await refuse();
+
+        expect(await service().markDelivery({ messageId: 'env-1', status: 'sent' })).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.invalidDeliveryTransition } });
+        expect(await peer('agent-1', 'agent-2', 'secret body', { id: 'env-1' })).toMatchObject({ ok: true, data: { created: false, message: { deliveryStatus: 'refused', deliveryDetail: 'paused' } } });
+        expect(await service().retryUndeliveredPeerMessage({ ownerUserId: 'user-1', fromAgentId: 'agent-1', toAgentId: 'agent-2', messageId: 'env-1' })).toEqual({ ok: true, data: null });
+      });
+
+      it('findPeerMessage returns the sender\'s own row in the pair\'s thread, from either way of naming the pair, and nothing for another sender, owner, pair or user thread', async () => {
+        await sendOne('sent');
+        const find = (overrides: Partial<Parameters<ReturnType<typeof service>['findPeerMessage']>[0]> = {}) =>
+          service().findPeerMessage({ ownerUserId: 'user-1', fromAgentId: 'agent-1', toAgentId: 'agent-2', messageId: 'env-1', ...overrides });
+
+        expect(await find()).toMatchObject({ ok: true, data: { id: 'env-1', deliveryStatus: 'sent', senderId: 'agent-1' } });
+        expect(await find({ fromAgentId: 'agent-2', toAgentId: 'agent-1' })).toEqual({ ok: true, data: null });
+        expect(await find({ ownerUserId: 'user-2' })).toEqual({ ok: true, data: null });
+        expect(await find({ toAgentId: 'agent-4' })).toEqual({ ok: true, data: null });
+        expect(await find({ messageId: 'nope' })).toEqual({ ok: true, data: null });
+      });
+    });
+
     describe('listPeerThreads', () => {
       it('lists the agent\'s threads newest first with the peer of each, in two queries whatever the page size', async () => {
         await peer('agent-1', 'agent-2', 'first');

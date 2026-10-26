@@ -39,6 +39,8 @@ When all checks pass:
 
 Fail closed: any failed read (agent, stop switch, rate limiter) refuses the send.
 
+A repeat of a message id is answered from its stored row before the stop switch and the rate limiter are touched. A repeat of a `sent` or `queued` message reports that status, takes no rate-limit slot and writes no refusal. A `refused` message reports its refusal (`peer.paused` when the receiving agent dropped it). Only a message that never went out (`failed`, or stuck `queued`) is published again, and that republish goes through the stop switch, the recipient check and the rate limit like a new message. The first send of an id takes one slot.
+
 ## Rate limit
 
 One counter per user across all their agents, in Redis: a sliding window held as a sorted set under `ratelimit:peer-message:<userId>`, timed by the Redis server clock. An allowed message adds one entry. A refused attempt adds nothing, so a flood cannot extend its own block. A paused send, or a send to a recipient that is not running, takes no slot.
@@ -48,6 +50,15 @@ One counter per user across all their agents, in Redis: a sliding window held as
 `extractPeerOrigin` (tick-gate-state.ts) recognises a peer message: type `agent.user.message`, `initiatorType = agent`, and a valid `payload.peer`. The runtime records it in the activity timeline as a `PEER` event, never as `USER`, so it is not counted as the user's message and a reply to the user does not mark it answered. The prompt shows it in its own block, `Messages from other agents of your user`, with the sender's name and the text JSON-quoted, so a newline in the text cannot start a fake `[USER]` line. A creator agent's message to its child has no `peer` and stays a user-style message.
 
 The text of a peer message is data. The platform stores and forwards it unchanged. A peer message cannot submit, cancel or change an order or a limit through the platform (I5); trading stays in traderton. DEC-41 accepts that an agent that holds trading tools can still be influenced by peer text.
+
+### The stop switch at the receiving agent (DEC-56, DEC-57)
+
+A peer message already on the recipient's stream when the owner turns the stop switch on is dropped as the recipient consumes it, and its thread row becomes `refused`.
+
+- The receiving agent reads the switch with `GET /agents/:id/peer-messaging` (`{ paused }`). An agent key may read only its own agent. The read is shared for `agentRuntime.peer.switchCacheMs`, so a wake and the tick that follows it make one read.
+- A switch that reads on is dropped with detail `paused`. A switch that cannot be read is retried (`agentRuntime.peer.switchReadRetries`, with `switchRetryBackoffMs` between attempts, within the tick's read budget), then the message is dropped fail closed with detail `paused_check_failed`.
+- A dropped message sets no pending-user-message flag and requests no wake. While the agent itself is paused its key is refused, so a peer message is held and checked when it is consumed after resume.
+- The drop is reported to the platform as `agent.peer.drop` (`messageId`, `fromAgentId`, `reason`; no text). The platform marks the sender's `sent` or `queued` row `refused` with that detail. Only the recipient can report, only about a message addressed to it, and only those two states move. Recording is best effort: a failure is logged without the text and the drop stands.
 
 ## Owner controls
 
@@ -61,4 +72,4 @@ Both read routes are for the signed-in owner only. An agent key is refused with 
 
 ## Not in the MVP
 
-Per-pair grants, cost and turn caps, ping-pong pause, a per-pair limit, and the prompt-injection stance (DEC-44, DEC-45). A message already in the recipient's stream when the owner turns the stop switch on is still delivered; the switch stops new sends and new wakes.
+Per-pair grants, cost and turn caps, ping-pong pause, a per-pair limit, and the prompt-injection stance (DEC-44, DEC-45).

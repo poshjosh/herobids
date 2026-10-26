@@ -104,12 +104,15 @@ The plan entitlement `childAgentLimitCeiling` sets the highest child allowance a
 
 ## Agent-to-agent messaging limits
 
-Agents of one user can message each other with `message_peer_agent` (see [peer messaging tools](agents/tools/peer-messaging-tools.md)). The MVP has one limit, set under `agentRuntime.peer` in `config/default.yaml` and validated in `packages/domain/src/config/schema.ts`.
+Agents of one user can message each other with `message_peer_agent` (see [peer messaging tools](agents/tools/peer-messaging-tools.md)). The MVP has one send limit, and the keys below it tune how a receiving agent reads the owner's stop switch. All are set under `agentRuntime.peer` in `config/default.yaml` and validated in `packages/domain/src/config/schema.ts`.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `agentRuntime.peer.rateLimitPerMinute` | `10` | Peer messages one user's agents may send in any rolling minute, across all their agents. Over the limit, a send is refused with `peer.rate_limited` and recorded as refused. Minimum `1`. |
-| `agentRuntime.peer.messageMaxChars` | `4000` | Longest peer message body. A longer one is refused with `peer.message_too_long` and not recorded. Minimum `1`. |
+| `agentRuntime.peer.messageMaxChars` | `4000` | Longest peer message body. A longer one is refused with `peer.message_too_long` and not recorded. Minimum `1`, maximum `20000` (the protocol safety cap). |
+| `agentRuntime.peer.switchCacheMs` | `2000` | How long a receiving agent reuses one read of the owner's stop switch, so a batch, or a wake and the tick after it, share one read. `0` reads every time. A newly set switch reaches a queued peer message at most this much later. Maximum `30000`. |
+| `agentRuntime.peer.switchReadRetries` | `2` | Extra attempts to read the stop switch when a read fails, before the receiving agent drops the peer message fail closed (the thread row becomes `refused`, detail `paused_check_failed`). `0` drops on the first failure. Maximum `5`. |
+| `agentRuntime.peer.switchRetryBackoffMs` | `250` | Wait between two attempts to read the stop switch. Maximum `5000`. |
 
 The owner's stop switch is not operator config. It is a per-user setting (`users.peer_messaging_paused`, set on `PATCH /auth/me` as `peerMessagingPaused`).
 

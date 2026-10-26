@@ -14,6 +14,7 @@ import {
 import type { AuthConfig } from '@herobids/domain';
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { agentRoutes } from './agents.js';
+import { authRoutes } from './auth.js';
 import { agentInteractivityRoutes } from './agent-interactivity.js';
 import { createConversationRouteDeps } from './conversation-http.js';
 import { peerThreadRoutes } from './peer-threads.js';
@@ -126,6 +127,7 @@ const AGENT_KEY_DENIED_ROUTES: DeniedRoute[] = [
   { name: 'POST /agents/:id/go-live', method: 'POST', url: (f) => `/agents/${f.agentId}/go-live`, payload: {} },
   { name: 'POST /agents/:id/blueprints', method: 'POST', url: (f) => `/agents/${f.agentId}/blueprints`, payload: {} },
   { name: 'POST /agents/:id/message', method: 'POST', url: (f) => `/agents/${f.agentId}/message`, payload: { content: 'hi' } },
+  { name: 'PATCH /auth/me (peer stop switch)', method: 'PATCH', url: () => '/auth/me', payload: { peerMessagingPaused: false } },
   { name: 'GET /agents/:id/peer-threads', method: 'GET', url: (f) => `/agents/${f.agentId}/peer-threads` },
   { name: 'GET /agents/:id/peer-threads/:peerAgentId', method: 'GET', url: (f) => `/agents/${f.agentId}/peer-threads/other-agent` },
 ];
@@ -142,6 +144,7 @@ describe.skipIf(SKIP)('agent key route guards (integration)', () => {
     redis = new Redis({ lazyConnect: true });
     app = Fastify({ logger: false });
     await authPlugin(app, { config: makeAuthConfig(), db });
+    await authRoutes(app, makeAuthConfig(), db, redis);
     await agentRoutes(app, db);
     await agentInteractivityRoutes(app, db, redis);
     await peerThreadRoutes(app, db, createConversationRouteDeps(db));
@@ -180,6 +183,69 @@ describe.skipIf(SKIP)('agent key route guards (integration)', () => {
     });
 
     expect(res.statusCode).toBe(404);
+  });
+
+  describe('GET /agents/:id/peer-messaging (the receiving agent reads the owner\'s stop switch, DEC-56)', () => {
+    const asAgent = (f: Fixture, id: string) => app.inject({ method: 'GET', url: `/agents/${id}/peer-messaging`, headers: { Authorization: `Bearer ${f.rawKey}` } });
+
+    it('an agent key reads the switch of its own agent, off by default and on once the owner pauses', async () => {
+      const off = await asAgent(fixture, fixture.agentId);
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = true WHERE id = ${fixture.userId}`);
+      const on = await asAgent(fixture, fixture.agentId);
+
+      expect(off.statusCode).toBe(200);
+      expect(off.json()).toEqual({ paused: false });
+      expect(on.json()).toEqual({ paused: true });
+    });
+
+    it('an agent key gets 403 for another agent, even the same owner\'s', async () => {
+      await db.insert(agents).values({ id: 'agent-sibling', userId: fixture.userId, name: 'Sibling', prompt: 'x', skillIds: [], status: 'active', createdAt: new Date(), updatedAt: new Date() });
+
+      expect((await asAgent(fixture, 'agent-sibling')).statusCode).toBe(403);
+    });
+
+    it('an agent key stops working once its agent is stopped', async () => {
+      await db.execute(sql`UPDATE agents SET status = 'stopped' WHERE id = ${fixture.agentId}`);
+
+      expect((await asAgent(fixture, fixture.agentId)).statusCode).toBe(401);
+    });
+
+    it('an agent key stops working once its agent is paused by its owner (a held peer message is checked after resume)', async () => {
+      await db.execute(sql`UPDATE agents SET status = 'paused' WHERE id = ${fixture.agentId}`);
+
+      expect((await asAgent(fixture, fixture.agentId)).statusCode).toBe(401);
+    });
+
+    it('an agent key gets 403 for another user\'s agent, and the answer does not say whether it exists', async () => {
+      const other = await seedFixture(db);
+
+      const res = await asAgent(fixture, other.agentId);
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).not.toHaveProperty('paused');
+    });
+
+    it('gives no answer without credentials, and 404 to the owner for an agent that does not exist', async () => {
+      const owner = await userToken(db, fixture.userId);
+
+      const anonymous = await app.inject({ method: 'GET', url: `/agents/${fixture.agentId}/peer-messaging` });
+      const missing = await app.inject({ method: 'GET', url: '/agents/no-such-agent/peer-messaging', headers: { Authorization: `Bearer ${owner}` } });
+
+      expect(anonymous.statusCode).toBe(401);
+      expect(missing.statusCode).toBe(404);
+    });
+
+    it('the owner reads it too; another user gets 404 for the agent', async () => {
+      const owner = await userToken(db, fixture.userId);
+      const other = await seedFixture(db);
+      const stranger = await userToken(db, other.userId);
+
+      const own = await app.inject({ method: 'GET', url: `/agents/${fixture.agentId}/peer-messaging`, headers: { Authorization: `Bearer ${owner}` } });
+      const foreign = await app.inject({ method: 'GET', url: `/agents/${fixture.agentId}/peer-messaging`, headers: { Authorization: `Bearer ${stranger}` } });
+
+      expect(own.statusCode).toBe(200);
+      expect(foreign.statusCode).toBe(404);
+    });
   });
 
   it('GET /sessions/:id omits apiKeyHash from the runtime session', async () => {

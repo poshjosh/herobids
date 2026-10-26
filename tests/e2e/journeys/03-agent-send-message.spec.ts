@@ -1,21 +1,24 @@
 /**
- * Journey 3: Messages section renders on agent detail page
+ * Journey 3: Chat with an agent on the agent detail page
  *
- * Verifies that the Messages to User and Protocol Activity cards are present
- * on the agent detail page and show the correct empty states.  Seeding actual
- * outbound messages requires the worker to process agent send_message actions;
- * that path is covered by worker integration tests.  This journey covers UI
- * rendering and empty-state presentation.
+ * The user opens an agent's detail page, finds the "Chat with {name}" card,
+ * sends a message, sees it appear in the thread, and then sees an agent reply.
+ *
+ * E2E has no real agent runtime or LLM, so the agent's reply is stored in the
+ * conversation by the seedAgentChatReply helper (what the worker does when an
+ * agent calls send_message). The web chat picks it up on its next poll.
+ * Worker delivery of the message to the agent is covered by worker tests.
  */
 
-import { registerUser } from '../helpers.js';
+import { ensureUserAiModelSettings, getAuthenticatedUserId, registerUser, seedAgentChatReply } from '../helpers.js';
 import { test, expect } from '@playwright/test';
 
 const EMAIL = `j3-${Date.now()}@e2e.local`;
 const PASSWORD = 'E2ePassword3!';
+const AGENT_NAME = 'Message Test Agent';
 
-test.describe('Journey 3: Messages section renders on agent detail page', () => {
-  test('agent detail page renders messages and activity cards with empty states', async ({ page, request }) => {
+test.describe('Journey 3: Chat with an agent on the agent detail page', () => {
+  test('user sends a message in the Chat card and sees it and an agent reply in the thread', async ({ page, request }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J3');
 
     const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
@@ -24,22 +27,48 @@ test.describe('Journey 3: Messages section renders on agent detail page', () => 
       return;
     }
 
-    // Create agent via API
+    // The agent needs AI model settings to start
+    await ensureUserAiModelSettings(page);
+
     const agentRes = await request.post('/api/agents', {
       headers: { Authorization: `Bearer ${token}` },
-      data: { name: 'Message Test Agent', prompt: 'Send status updates.' },
+      data: { name: AGENT_NAME, prompt: 'Send status updates.' },
     });
     if (!agentRes.ok()) {
       test.skip(true, 'Failed to create agent');
       return;
     }
     const { id: agentId } = await agentRes.json() as { id: string };
+    const userId = await getAuthenticatedUserId(page, request);
 
-    // Navigate to agent detail and check the messages section
     await page.goto(`/agents/${agentId}`);
 
-    // The Activity Timeline card should be present and show its empty state.
-    await expect(page.getByText(/Activity Timeline/i)).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText(/No activity recorded yet/i)).toBeVisible({ timeout: 5000 });
+    // A stopped agent cannot be chatted with; start it. While it is starting
+    // the composer is enabled and the message is queued for delivery.
+    await page.getByRole('button', { name: /^start$/i }).click();
+
+    const chatCard = page.getByText(`Chat with ${AGENT_NAME}`, { exact: true });
+    await expect(chatCard).toBeVisible({ timeout: 10_000 });
+
+    const composer = page.getByLabel('Message your agent');
+    await expect(composer).toBeEnabled({ timeout: 10_000 });
+
+    const userMessage = `Hello from journey 3 ${Date.now()}`;
+    await composer.fill(userMessage);
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+    // The message shows in the thread and the composer is cleared
+    await expect(page.getByText(userMessage, { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(composer).toHaveValue('');
+
+    // The agent's reply appears in the thread without a reload (the chat polls)
+    const agentReply = `Status update from the agent ${Date.now()}`;
+    await seedAgentChatReply({ userId, agentId, body: agentReply });
+    await expect(page.getByText(agentReply, { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    // Both messages are still there after a reload
+    await page.reload();
+    await expect(page.getByText(userMessage, { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(agentReply, { exact: true })).toBeVisible({ timeout: 10_000 });
   });
 });

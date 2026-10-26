@@ -57,7 +57,7 @@ Each invariant has a gate. A failing gate is a tier 0 event (section 5).
 | --- | --- | --- |
 | I1 | Telegram behaviour is unchanged, except where DECISIONS.md approves a change (suppression, binding) | `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert` green |
 | I2 | Core logic has no provider-name branches. Provider-specific code lives in adapters and config | Review `grep -rn "'telegram'" apps packages --include=*.ts`, excluding tests. Each new hit must be in an adapter, config, or the schema |
-| I3 | After C1, addresses live only in `chat_addresses` and opt-outs only in `chat_suppressions` | `grep -rn -e telegram_chat_id -e telegramChatId -e telegram_message_id apps packages --include=*.ts` returns no hits outside tests and the 0076 and 0077 migrations, after C1 |
+| I3 | After C1, addresses live only in `chat_addresses` and opt-outs only in `chat_suppressions` | `grep -rn -e telegram_chat_id -e telegramChatId -e telegram_message_id apps packages --include=*.ts` returns no hits outside tests and the 0076 and 0077 migrations, after C1. Signed off with exceptions for i18n key names and `alerts.operator.telegramChatId` (DEC-55) |
 | I4 | Fail closed. A non-active suppression blocks inbound and outbound. A lookup error blocks a send | Tests for both cases in the same change |
 | I5 | No trading execution in herobids. Peer messages never submit, cancel, or change orders, or change any limit. Exception for the A2A MVP only: DEC-41 | Any change near trading is tier 4 (section 5) |
 | I6 | Secrets never appear in code, docs, logs, or commits | `git diff --cached` review before every commit |

@@ -12,13 +12,15 @@ import crypto from 'node:crypto';
 import Redis from 'ioredis';
 import { sql } from 'drizzle-orm';
 import { AgentRepository, ConversationRepository, createDatabase } from '@herobids/db';
-import { ConversationService, PeerMessagingService, type ToolContext, type ToolResult } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, ConversationService, PeerMessagingService, ok, type PeerMessagingStatePort, type ToolContext, type ToolResult } from '@herobids/domain';
 import { AgentMessageBroker } from '../../agents/agent-message-broker.js';
 import { InstanceEventPublisher } from '../../agents/instance-event-publisher.js';
-import { RedisPeerRateLimiter } from '../../agents/peer-rate-limiter.js';
+import { PEER_RATE_WINDOW_MS, RedisPeerRateLimiter } from '../../agents/peer-rate-limiter.js';
 import { RedisPeerWakePublisher } from '../../agents/peer-wake-publisher.js';
 import { messagePeerAgentTool } from '../../tools/peer-messaging.js';
 import { extractPeerOrigin, isEarlyTickTriggerType } from '../../tick-gate-state.js';
+import { readOutboundMessages } from '../../agents/outbound-message-reader.js';
+import { PeerReceiveGate } from '../../agents/peer-receive-gate.js';
 
 const SKIP = !process.env['DATABASE_URL'] || !process.env['REDIS_URL'];
 const DB_URL = process.env['DATABASE_URL'] ?? 'postgres://localhost:5432/herobids';
@@ -41,23 +43,27 @@ describe.skipIf(SKIP)('Peer messaging: tool to broker to stream (integration)', 
   let redis: Redis;
   let agentRepo: AgentRepository;
 
-  /** A broker wired like the worker's index.ts, with the limit and window the test asks for. */
-  function wire(options: { rateLimitPerMinute?: number; windowMs?: number; messageMaxChars?: number } = {}) {
+  /** The service wired like the worker's index.ts, with the limit and window the test asks for. */
+  function buildService(options: { rateLimitPerMinute?: number; windowMs?: number; messageMaxChars?: number } = {}) {
     const conversations = new ConversationService({ store: new ConversationRepository(db), limits: LIMITS, newId: () => crypto.randomUUID(), now: () => new Date() });
-    const peerMessaging = new PeerMessagingService({
+    return new PeerMessagingService({
       agents: agentRepo,
       settings: agentRepo,
       limiter: new RedisPeerRateLimiter(redis, options.rateLimitPerMinute ?? 10, options.windowMs),
       conversations,
       wake: new RedisPeerWakePublisher(redis),
-      config: { messageMaxChars: options.messageMaxChars ?? 4000 },
+      config: { messageMaxChars: options.messageMaxChars ?? 4000, refusalWindowMs: options.windowMs ?? PEER_RATE_WINDOW_MS },
       log: { warn: () => undefined },
     });
+  }
+
+  /** A broker around that service. */
+  function wire(options: { rateLimitPerMinute?: number; windowMs?: number; messageMaxChars?: number } = {}) {
     return new AgentMessageBroker(
       redis, agentRepo, {} as never, {} as never, new InstanceEventPublisher(redis),
       undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
       undefined, undefined, undefined, undefined, undefined, undefined,
-      peerMessaging,
+      buildService(options),
     );
   }
 
@@ -175,13 +181,28 @@ describe.skipIf(SKIP)('Peer messaging: tool to broker to stream (integration)', 
 
       const over = await callTool(broker, 'a1', { agent: 'Kofi', message: 'm4' });
 
-      expect(over).toMatchObject({ success: false, errorCode: 'peer.rate_limited', retryable: true });
+      expect(over).toMatchObject({ success: false, errorCode: 'peer.rate_limited', retryable: false });
       const thread = await rows();
       expect(thread.map((row) => [row['body'], row['delivery_status'], row['delivery_detail']])).toEqual([
         ['m1', 'sent', null], ['m2', 'sent', null], ['m3', 'sent', null], ['m4', 'refused', 'peer.rate_limited'],
       ]);
       expect(await streamEntries('a2')).toHaveLength(2);
       expect(await streamEntries('a1')).toHaveLength(1);
+    });
+
+    it('stores repeated rate-limited refusals of one pair as one thread row, and sends again once the window has passed', async () => {
+      const broker = wire({ rateLimitPerMinute: 1 });
+      await callTool(broker, 'a1', { agent: 'Kofi', message: 'm1' });
+
+      for (let i = 0; i < 5; i += 1) {
+        expect(await callTool(broker, 'a1', { agent: 'Kofi', message: `over${i}` })).toMatchObject({ success: false, errorCode: 'peer.rate_limited' });
+      }
+
+      const thread = await rows();
+      expect(thread.map((row) => [row['body'], row['delivery_status'], row['delivery_detail']])).toEqual([
+        ['m1', 'sent', null], ['over0', 'refused', 'peer.rate_limited'],
+      ]);
+      expect(await streamEntries('a2')).toHaveLength(1);
     });
 
     it('takes the limit from config: the same traffic is allowed under a higher value', async () => {
@@ -279,6 +300,273 @@ describe.skipIf(SKIP)('Peer messaging: tool to broker to stream (integration)', 
     expect(await db.execute(sql`SELECT id, name, prompt, status, tool_policy FROM agents ORDER BY id`)).toEqual(before);
   });
 
+  describe('stop switch at the receiving side (DEC-56)', () => {
+    /** The switch as the receiving agent reads it through the API: the owner's row in Postgres, unreadable or missing reads as paused. */
+    const stateFromDb = (userId: string, read: () => Promise<boolean> = () => agentRepo.isPeerMessagingPaused(userId)): PeerMessagingStatePort => ({
+      getPeerMessagingState: async () => ok({ paused: await read() }),
+    });
+    const consume = (agentId: string) => readOutboundMessages(redis, {
+      outboundStream: `agent:outbound:${agentId}`, consumerGroup: 'agent-runtime', consumerName: 'test', blockMs: 50,
+    });
+    const nullLog = { warn: () => undefined };
+    // No cache and no backoff, so each check reads the owner's row and a failed read is retried straight away.
+    const GATE_OPTIONS = { cacheMs: 0, readRetries: 1, retryBackoffMs: 0 };
+    /** The recipient's gate, reporting a drop to the real broker the way the container does: as an `agent.peer.drop` from `agentId`. */
+    const gateFor = (agentId: string, state: PeerMessagingStatePort, broker: AgentMessageBroker = wire()) =>
+      new PeerReceiveGate(state, nullLog, GATE_OPTIONS, async (drop) => {
+        await broker.processInbound({
+          schemaVersion: 'v1',
+          messageId: crypto.randomUUID(),
+          correlationId: `session-${agentId}`,
+          initiatorType: 'agent',
+          initiatorId: agentId,
+          agentId,
+          type: AGENT_MESSAGE_TYPES.PEER_DROP,
+          createdAt: new Date().toISOString(),
+          payload: { ...drop },
+        });
+      });
+    const sentRow = async () => (await rows())[0];
+
+    it('drops a peer message that was queued before the owner paused, and the recipient sees none', async () => {
+      await callTool(wire(), 'a1', { agent: 'Kofi', message: 'sent before the pause' });
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = true WHERE id = 'u1'`);
+
+      const consumed = await consume('a2');
+      const kept = await gateFor('a2', stateFromDb('u1')).filter(consumed);
+
+      expect(consumed).toHaveLength(1);
+      expect(kept).toEqual([]);
+    });
+
+    it('delivers the queued peer message while the switch is off, and again after it is turned off', async () => {
+      await callTool(wire(), 'a1', { agent: 'Kofi', message: 'hello' });
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = true WHERE id = 'u1'`);
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = false WHERE id = 'u1'`);
+
+      const kept = await gateFor('a2', stateFromDb('u1')).filter(await consume('a2'));
+
+      expect(kept).toHaveLength(1);
+      expect(extractPeerOrigin(kept[0]!)).toEqual({ agentId: 'a1', agentName: 'Momo' });
+    });
+
+    it('fails closed when the owner row is missing or the read fails', async () => {
+      await callTool(wire(), 'a1', { agent: 'Kofi', message: 'hello' });
+      const consumed = await consume('a2');
+
+      const missingOwner = await gateFor('a2', stateFromDb('nobody')).filter(consumed);
+      const failedRead = await gateFor('a2', stateFromDb('u1', async () => { throw new Error('db down'); })).filter(consumed);
+
+      expect(missingOwner).toEqual([]);
+      expect(failedRead).toEqual([]);
+    });
+
+    it('marks the thread row of a dropped message refused with paused, and keeps the text out of the drop report', async () => {
+      await callTool(wire(), 'a1', { agent: 'Kofi', message: 'sent before the pause' });
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = true WHERE id = 'u1'`);
+
+      const kept = await gateFor('a2', stateFromDb('u1')).filter(await consume('a2'));
+
+      expect(kept).toEqual([]);
+      expect(await sentRow()).toMatchObject({ sender_id: 'a1', delivery_status: 'refused', delivery_detail: 'paused', body: 'sent before the pause' });
+      const [audit] = await db.execute(sql`SELECT payload FROM agent_messages WHERE type = 'agent.peer.drop'`) as unknown as Array<{ payload: Record<string, unknown> }>;
+      expect(Object.keys(audit!.payload).sort()).toEqual(['fromAgentId', 'messageId', 'reason']);
+    });
+
+    it('marks the row refused with paused_check_failed when the switch cannot be read after the retry', async () => {
+      await callTool(wire(), 'a1', { agent: 'Kofi', message: 'hello' });
+      let reads = 0;
+
+      const kept = await gateFor('a2', stateFromDb('u1', async () => { reads++; throw new Error('db down'); })).filter(await consume('a2'));
+
+      expect(kept).toEqual([]);
+      expect(reads).toBe(2);
+      expect(await sentRow()).toMatchObject({ delivery_status: 'refused', delivery_detail: 'paused_check_failed' });
+    });
+
+    it('accepts the message and leaves the row sent when the retry reads the switch off', async () => {
+      await callTool(wire(), 'a1', { agent: 'Kofi', message: 'hello' });
+      let reads = 0;
+
+      const kept = await gateFor('a2', stateFromDb('u1', async () => {
+        if (++reads === 1) throw new Error('blip');
+        return false;
+      })).filter(await consume('a2'));
+
+      expect(kept).toHaveLength(1);
+      expect(await sentRow()).toMatchObject({ delivery_status: 'sent', delivery_detail: null });
+    });
+
+    it('leaves a delivered message that is not dropped sent, and an ordinary user message is never reported', async () => {
+      await callTool(wire(), 'a1', { agent: 'Kofi', message: 'hello' });
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = true WHERE id = 'u1'`);
+      const userMessage = { messageId: 'user-1', type: 'agent.user.message', initiatorType: 'user', payload: { message: 'hi' } };
+
+      await gateFor('a2', stateFromDb('u1')).filter([userMessage]);
+
+      expect(await sentRow()).toMatchObject({ delivery_status: 'sent' });
+      expect(await db.execute(sql`SELECT 1 FROM agent_messages WHERE type = 'agent.peer.drop'`)).toHaveLength(0);
+    });
+
+    it('records a repeated drop once, and a late drop never moves a row that is already final', async () => {
+      await callTool(wire(), 'a1', { agent: 'Kofi', message: 'hello' });
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = true WHERE id = 'u1'`);
+      const consumed = await consume('a2');
+      await gateFor('a2', stateFromDb('u1')).filter(consumed);
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = false WHERE id = 'u1'`);
+      await db.execute(sql`UPDATE conversation_messages SET delivery_status = 'failed', delivery_detail = 'publish_failed'`);
+
+      await gateFor('a2', { getPeerMessagingState: async () => ok({ paused: true }) }).filter(consumed);
+
+      expect(await sentRow()).toMatchObject({ delivery_status: 'failed', delivery_detail: 'publish_failed' });
+    });
+
+    it('lets only the recipient report a drop: not the sender, not another user\'s agent, not a claim about another sender', async () => {
+      const broker = wire();
+      await callTool(broker, 'a1', { agent: 'Kofi', message: 'hello' });
+      const [{ id }] = await db.execute(sql`SELECT id FROM conversation_messages`) as unknown as Array<{ id: string }>;
+      const report = (agentId: string, fromAgentId: string) => broker.processInbound({
+        schemaVersion: 'v1', messageId: crypto.randomUUID(), correlationId: `session-${agentId}`, initiatorType: 'agent', initiatorId: agentId, agentId,
+        type: AGENT_MESSAGE_TYPES.PEER_DROP, createdAt: new Date().toISOString(),
+        payload: { messageId: id, fromAgentId, reason: 'paused' },
+      });
+
+      await report('a1', 'a2');
+      await report('x1', 'a1');
+      await report('a2', 'x1');
+      await report('a2', 'a2');
+
+      expect(await sentRow()).toMatchObject({ delivery_status: 'sent', delivery_detail: null });
+    });
+
+    it('does not touch messages that are not peer messages', async () => {
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = true WHERE id = 'u1'`);
+      const userMessage = { type: 'agent.user.message', initiatorType: 'user', payload: { message: 'hi' } };
+
+      expect(await gateFor('a2', stateFromDb('u1')).filter([userMessage])).toEqual([userMessage]);
+    });
+  });
+
+  // The broker drops a redelivered envelope it has already processed, so these call the service, which is what a
+  // retry reaches when the first attempt died before it was marked processed.
+  describe('a repeated message id whose message did not go out', () => {
+    const resend = (service: PeerMessagingService, messageId: string) =>
+      service.send({ fromAgentId: 'a1', recipient: 'a2', body: 'try again', messageId });
+
+    it('publishes a failed message again and marks it sent, once', async () => {
+      const service = buildService();
+      await resend(service, 'env-failed');
+      await db.execute(sql`UPDATE conversation_messages SET delivery_status = 'failed', delivery_detail = 'publish_failed' WHERE id = 'env-failed'`);
+      await redis.del('agent:outbound:a2');
+
+      const again = await resend(service, 'env-failed');
+      await resend(service, 'env-failed');
+
+      expect(again).toMatchObject({ ok: true, data: { deliveryStatus: 'sent' } });
+      expect(await rows()).toEqual([expect.objectContaining({ delivery_status: 'sent', delivery_detail: null })]);
+      expect(await streamEntries('a2')).toHaveLength(1);
+    });
+
+    it('reports a fresh queued message as queued and publishes nothing', async () => {
+      const service = buildService();
+      await resend(service, 'env-queued');
+      await db.execute(sql`UPDATE conversation_messages SET delivery_status = 'queued', queued_at = now() WHERE id = 'env-queued'`);
+      await redis.del('agent:outbound:a2');
+
+      const again = await resend(service, 'env-queued');
+
+      expect(again).toMatchObject({ ok: true, data: { deliveryStatus: 'queued' } });
+      expect(await streamEntries('a2')).toHaveLength(0);
+      expect(await rows()).toEqual([expect.objectContaining({ delivery_status: 'queued' })]);
+    });
+
+    it('publishes a message stuck queued past the stale window', async () => {
+      const service = buildService();
+      await resend(service, 'env-stuck');
+      await db.execute(sql`UPDATE conversation_messages SET delivery_status = 'queued', queued_at = now() - interval '10 minutes' WHERE id = 'env-stuck'`);
+      await redis.del('agent:outbound:a2');
+
+      const again = await resend(service, 'env-stuck');
+
+      expect(again).toMatchObject({ ok: true, data: { deliveryStatus: 'sent' } });
+      expect(await streamEntries('a2')).toHaveLength(1);
+      expect(await rows()).toEqual([expect.objectContaining({ delivery_status: 'sent' })]);
+    });
+
+    it('answers a refused message with its stored code and does not publish', async () => {
+      const service = buildService();
+      await resend(service, 'env-refused');
+      await db.execute(sql`UPDATE conversation_messages SET delivery_status = 'refused', delivery_detail = 'peer.paused' WHERE id = 'env-refused'`);
+      await redis.del('agent:outbound:a2');
+
+      const again = await resend(service, 'env-refused');
+
+      expect(again).toMatchObject({ ok: false, error: { code: 'peer.paused' } });
+      expect(await streamEntries('a2')).toHaveLength(0);
+    });
+  });
+
+  describe('a repeated id takes no rate-limit slot and writes no refusal', () => {
+    const resend = (service: PeerMessagingService, messageId: string) =>
+      service.send({ fromAgentId: 'a1', recipient: 'a2', body: 'once', messageId });
+
+    it('answers every repeat of a sent message as sent, with one slot spent, one row and one wake, even at a limit of 1', async () => {
+      const service = buildService({ rateLimitPerMinute: 1 });
+
+      const first = await resend(service, 'env-once');
+      const repeats = await Promise.all([resend(service, 'env-once'), resend(service, 'env-once'), resend(service, 'env-once')]);
+
+      expect(first).toMatchObject({ ok: true, data: { deliveryStatus: 'sent' } });
+      expect(repeats).toEqual(repeats.map(() => expect.objectContaining({ ok: true, data: expect.objectContaining({ deliveryStatus: 'sent' }) })));
+      expect(await rows()).toEqual([expect.objectContaining({ delivery_status: 'sent' })]);
+      expect(await streamEntries('a2')).toHaveLength(1);
+    });
+
+    it('does not let repeats of a sent message block a new message by using up the window', async () => {
+      const service = buildService({ rateLimitPerMinute: 2 });
+      await resend(service, 'env-a');
+      await resend(service, 'env-a');
+      await resend(service, 'env-a');
+
+      const next = await resend(service, 'env-b');
+
+      expect(next).toMatchObject({ ok: true, data: { deliveryStatus: 'sent' } });
+    });
+
+    it('still applies the stop switch and takes a slot when a failed message is republished', async () => {
+      const service = buildService({ rateLimitPerMinute: 1 });
+      await resend(service, 'env-failed');
+      await db.execute(sql`UPDATE conversation_messages SET delivery_status = 'failed', delivery_detail = 'publish_failed' WHERE id = 'env-failed'`);
+      await redis.del('agent:outbound:a2');
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = true WHERE id = 'u1'`);
+
+      const paused = await resend(service, 'env-failed');
+
+      expect(paused).toMatchObject({ ok: false, error: { code: 'peer.paused' } });
+      expect(await streamEntries('a2')).toHaveLength(0);
+      expect(await db.execute(sql`SELECT 1 FROM conversation_messages WHERE id = 'env-failed' AND delivery_status = 'failed'`)).toHaveLength(1);
+
+      await db.execute(sql`UPDATE users SET peer_messaging_paused = false WHERE id = 'u1'`);
+      await redis.flushdb();
+      const republished = await resend(service, 'env-failed');
+
+      expect(republished).toMatchObject({ ok: true, data: { deliveryStatus: 'sent' } });
+      expect(await streamEntries('a2')).toHaveLength(1);
+    });
+
+    it('tells the sender of a message the recipient dropped that it was refused as paused, without republishing it', async () => {
+      const service = buildService();
+      await resend(service, 'env-dropped');
+      await db.execute(sql`UPDATE conversation_messages SET delivery_status = 'refused', delivery_detail = 'paused_check_failed' WHERE id = 'env-dropped'`);
+      await redis.del('agent:outbound:a2');
+
+      const again = await resend(service, 'env-dropped');
+
+      expect(again).toMatchObject({ ok: false, error: { code: 'peer.paused' } });
+      expect(await streamEntries('a2')).toHaveLength(0);
+    });
+  });
+
   it('sends a redelivered envelope once', async () => {
     const broker = wire();
     const envelope = {
@@ -311,7 +599,7 @@ describe.skipIf(SKIP)('Peer messaging: tool to broker to stream (integration)', 
     const conversations = new ConversationService({ store: new ConversationRepository(db), limits: LIMITS, newId: () => crypto.randomUUID(), now: () => new Date() });
     const peerMessaging = new PeerMessagingService({
       agents: agentRepo, settings: broken, limiter: new RedisPeerRateLimiter(redis, 10), conversations,
-      wake: new RedisPeerWakePublisher(redis), config: { messageMaxChars: 4000 }, log: { warn: () => undefined },
+      wake: new RedisPeerWakePublisher(redis), config: { messageMaxChars: 4000, refusalWindowMs: PEER_RATE_WINDOW_MS }, log: { warn: () => undefined },
     });
     const broker = new AgentMessageBroker(
       redis, agentRepo, {} as never, {} as never, new InstanceEventPublisher(redis),

@@ -52,13 +52,13 @@ Next ready item: C0.
 - **Failures:** both in `packages/domain/src/config/schema.test.ts` (`AppConfigSchema — agentCreation`, "defaults the agent-creation limits to 10 / 10 / 6 when the block is absent" and "accepts zero and positive operator overrides"). Cause: `platformApiTimeoutMs` (schema.ts:565, default 10000; config/default.yaml:101) was added in `4089b51f` and the tests' expected objects were not updated. Pre-existing, unrelated to messaging, not touched by this item.
 - **Type checks:** `npx tsc -p apps/api/tsconfig.json --noEmit` exit 0; `apps/worker` exit 0; `packages/db` exit 0.
 - **Tier-2 decisions:** (1) Did not fix the 2 stale tests, because the acceptance says no code changed. They are recorded as known baseline failures. Fixing them is a one-line-per-test change for a later item or the owner. (2) Ticked C0: its acceptance is that `pnpm test` completes and counts are recorded, not that it is green. (3) The old 362/28 and 6816/6829 figures count differently from the current run (413 total files). They are marked superseded rather than reconciled.
-- **Not committed.** Changes are left unstaged for the coordinator.
+- Committed later with the item (see git history).
 
 Next ready item: C1.
 
 ## 2026-10-25: C1 cutover
 
-All changes are unstaged and uncommitted, for review by the coordinator. Start state: `git status` clean at `874d6949`.
+Committed with the item. Start state: `git status` clean at `874d6949`.
 
 ### Files changed
 
@@ -165,7 +165,7 @@ Findings that correct the plan text (plan 10.1): the web POST already stores the
 - Tests: `packages/domain/src/conversations/conversation-service.test.ts` (new), `packages/domain/src/config/messaging-conversations-config.test.ts` (new), `packages/db/src/conversation-repository.integration.test.ts` (new).
 - Docs: plan `001-plan.md` (status line and appendix 10), this entry.
 
-Not staged, not committed.
+Committed with the item.
 
 ### Commands and results
 
@@ -205,7 +205,7 @@ Migration shape (columns, nullability, the four indexes including the partial un
 10. **Errors.** `Result<T, DomainError>` with codes `conversation.{invalid_message,body_too_long,owner_mismatch,message_id_conflict,message_not_found,store_failed}`. Database errors are caught in the adapter and returned as `store_failed` with only the error name in context.
 11. **Not built in P1:** agent-pair (`peer_key`) creation, thread-list-by-owner query, the stop-switch write path (A2A-B, DEC-48), and a repository method to delete an agent's conversations (plan 10.6 item 2; P2).
 
-### Review fixes (same slice, still unstaged)
+### Review fixes (same slice)
 
 A code review of the slice found these; all are fixed and covered by tests.
 
@@ -294,7 +294,7 @@ E2E: not run (ENTRYPOINT section 7). The plan's gate "E2E journey" and `run-all-
 9. **Agent delete** uses an exported helper taking the transaction, called from `purgeAgentRows`, rather than raw table access in the route; the derived conversation id is the only key. Peer threads are A2A-B's.
 10. **Response shape.** `delivered: true` stays (the worker's `messageChildAgent` parses it) and `message` is added.
 
-### Review fixes (slice 2, still unstaged)
+### Review fixes (slice 2)
 
 1. **HIGH, creator retry.** `requeueFailedUserMessage` is now `requeueUndeliveredMessage` and takes the sender (`user` or the creator `agent` id); the route claims under the same authorship it recorded with, so a retry of a failed creator message (same `clientMessageId`) publishes again instead of returning 202 `delivered:true` with nothing sent. Chosen over rejecting `clientMessageId` for agent keys because the store, route and web already treat the id as the retry key, and the fix is one parameter. The claim also checks the conversation owner.
 2. **MEDIUM, stuck `queued`.** New operator setting `messaging.conversations.staleQueuedAfterSeconds` (Zod default 60, in `config/default.yaml`, validated positive). A `queued` message of the sender older than that is claimable by the same atomic update as a `failed` one. Age needs a stamp that a claim can refresh (a retried old message must not look stale again at once and be claimed by a racing second retry), so migration `0085_redundant_hammerhead` adds `conversation_messages.queued_at` (not null, default now; set to `created_at` on insert, set to the claim time on requeue). Existing rows get the migration time. The GET and POST responses carry `stuck` (queued and past the age, computed on the server clock); the web shows "Not sent" with Retry for a stuck row instead of "Sending..." forever, and the Retry resends under the same id.
@@ -318,7 +318,7 @@ E2E: not run (ENTRYPOINT section 7). The plan's gate "E2E journey" and `run-all-
 
 E2E scripts were not run.
 
-### Re-review fixes (slice 2, still unstaged)
+### Re-review fixes (slice 2)
 
 1. **HIGH (docs), `queued_at` has no decision.** Added the column to the schema note section 2.3 (marked proposed) and a DEC-50 row in DECISIONS.md under "Proposed by an implementer", status `proposed — pending owner confirmation` (not approved; DEC-49 stays reserved for the stop-switch contract per DEC-48). The row has the reasoning (claim restamps the age so a retried old message is not instantly stale and one racer wins), the migration-time value of existing rows, and the accepted clock-skew risk vs `staleQueuedAfterSeconds`. Tier-3 note added below and in QUEUE Outstanding Issues.
 2. **MEDIUM, `chat.address_lookup_failed` mirror.** The broker no longer mirrors before throwing (chosen over letting the mirror upgrade a `not_applicable` row: simplest, and the redelivery inserts a new old-table row that is mirrored with its real outcome). Test in `agent-message-broker.test.ts`. The alert service has the same lookup-failure branch but does not throw and is not redelivered, so it is unchanged.
@@ -352,7 +352,7 @@ Next ready item: CH2W P3 (slice 3), blocked only on the two slice 1 tier-3 answe
 
 ## 2026-10-25: CH2W slice 3 (plan phases P3 Channels and P4 Close). CH2W is done in code and ticked; the owner e2e gate is open
 
-Unstaged, uncommitted, as asked. Owner decisions of 2026-10-25 recorded: DEC-50 approved, DEC-51 (index on `conversation_messages (channel, provider_message_id)`), DEC-52 (drop `session_id` and `context_ref`). The schema note has both.
+Owner decisions of 2026-10-25 recorded: DEC-50 approved, DEC-51 (index on `conversation_messages (channel, provider_message_id)`), DEC-52 (drop `session_id` and `context_ref`). The schema note has both.
 
 ### What was built
 
@@ -422,7 +422,7 @@ E2E scripts (`run-all-tests.sh --e2e`) were not run.
 
 Next ready item: A2A-A (same-user check), then A2A-B.
 
-### Review fixes (slice 3, second pass; unstaged, no commit)
+### Review fixes (slice 3, second pass)
 
 1. **Reply lookup, rebind (HIGH).** `resolveAgentForChatReply` accepts a message only if the replying address row's `updated_at` is not later than the message's `created_at`. A rebind (`setChatAddress` stamps `updated_at` only when the address or status changes) disqualifies older messages, so a chat that shares a provider message id cannot reach another user's agent. No schema change.
 2. **Reply lookup, limit (HIGH).** The address predicate is now in SQL: `chat_addresses` joined on user, provider, normalized address and `status = 'active'`, with the agent's own row or a user-level row that no agent-level row shadows (a left join on an alias). The cap (now 20) applies after the filter, and the per-candidate queries are gone. `channel` uses a typed `eq` after narrowing with `isUserAgentChannel`, so a provider that is not a thread channel skips the message lookup. The suppression check is unchanged.
@@ -463,7 +463,7 @@ Left as documented outstanding, not changed (QUEUE, CH2W slice 3): silent drop f
 
 ## 2026-10-25: A2A-B MVP peer messaging (done)
 
-Agent to agent messaging between agents of one user: send path, wake, per-user rate limit, owner view, stop switch. Specs: [A2A-B](./tasks/A2A-B-peer-send.md), DEC-40 to DEC-43, DEC-47 to DEC-49. Left unstaged, not committed.
+Agent to agent messaging between agents of one user: send path, wake, per-user rate limit, owner view, stop switch. Specs: [A2A-B](./tasks/A2A-B-peer-send.md), DEC-40 to DEC-43, DEC-47 to DEC-49..
 
 ### What was built
 
@@ -538,9 +538,107 @@ All against a disposable Postgres 17 (`a2ab-pg`, port 55433) and Redis 7 (`a2ab-
 ### Owner hand-offs and gates still open
 
 - The CH2W e2e gate and phase reviews (unchanged from the CH2W entry). No e2e was run for A2A-B.
-- Confirm DEC-53 and DEC-54 (or reject), and answer open questions 2 and 3.
+- DEC-53 and DEC-54 were approved on 2026-10-25 (see the gap review entry). Open questions 2 and 3 are still the owner's.
 - Manual check suggestion: with two running agents of one user, ask one to message the other; confirm the thread card on both agent pages; turn on the Settings switch and confirm a refused row with "paused" and no wake.
 - Staging and production need no migration for A2A-B.
 
 - **Next ready item:** none. The MVP queue (C0, C1, CH2W, A2A-A, A2A-B) is complete; the deferred items stay deferred (DEC-45).
 
+## 2026-10-26: Final gap review fixes (A to G)
+
+Everything before this entry is committed. These changes are left unstaged, not committed.
+
+### What changed
+
+- **A. Decisions and wording.** DEC-53 and DEC-54 approved. DEC-55 added (C1 grep sign-off with exceptions: i18n key names and `alerts.operator.telegramChatId`). DEC-56 added (the stop switch also drops queued peer envelopes at the receiving side). DEC-57 added as proposed, pending owner confirmation, for the implementation details below. QUEUE Outstanding Issues: resolved items marked, new A2A-B gap review section added. Stale "unstaged, not committed" phrases removed from PROGRESS. ENTRYPOINT I3 row notes DEC-55.
+- **B. DEC-56 (HIGH).** The receiving agent re-checks the owner's switch as it consumes a peer envelope (`agent.user.message` with `payload.peer`, valid or not). New `PeerReceiveGate` (`apps/worker/src/agents/peer-receive-gate.ts`): one fresh read per batch, none when the batch has no peer message; a paused switch, an unreadable one, a thrown error, or no platform client drops the peer envelope and logs without its text. Wired in `agent.ts` at two points: the wake poller (no wake, no pending flag) and the tick read, which also covers messages held through a pause. The switch is read through a new agent-key route `GET /agents/:id/peer-messaging` (`{ paused }`, `agentAccess: self`, a user row that cannot be found reads as paused) and `getPeerMessagingState()` on the platform client (`PeerMessagingStatePort`, a separate port so existing `AgentPlatformPort` fakes keep compiling).
+- **C. CH2W e2e journey.** Done by a delegate: `tests/e2e/journeys/03-agent-send-message.spec.ts` rewritten (stale "Messages to User" header replaced). It starts the agent, sends in the "Chat with {name}" card, sees the message, then sees an agent reply seeded by the new `seedAgentChatReply` helper in `tests/e2e/helpers.ts` (writes an agent-authored web row through `ConversationRepository`, as `send_message` does), without reload, and after reload. **Not run** (owner hand-off). It type-checks with strict `tsc` (no e2e tsconfig exists); there is no eslint config in the repo, `pnpm lint` is `tsc --noEmit`.
+- **D.** A repeated message id now reports its stored status. `sent` is ok; `queued` and fresh is ok with `deliveryStatus: queued` (the tool says it is still being delivered); `refused` returns the stored code; `failed`, or `queued` past `staleQueuedAfterSeconds`, is claimed with the new `ConversationService.retryUndeliveredPeerMessage` (atomic, same store call as the web retry) and published again. A lost claim does not publish. Note: the broker drops an envelope id it has already processed before the service sees it, so this path is reached when the first attempt died before it was marked processed.
+- **E.** `peer.rate_limited` is no longer retryable for the tool. A refusal row has the id `peer-refusal:<from>:<to>:<code>:<window>` (window from `PEER_RATE_WINDOW_MS`, passed as `refusalWindowMs`), so repeats of one refusal for one pair inside the window are one row. The refused send's own id is not used for the refusal, so the same envelope can still be sent later.
+- **F.** `PEER_MESSAGE_SAFETY_MAX_CHARS` (20000, in `agent-protocol.ts`) caps the body at the tool, `PeerSendPayloadSchema` and `PeerMessagePayloadSchema`; `agentRuntime.peer.messageMaxChars` may not exceed it (Zod `.max`). Prompt wording: the conversation block and the tool guidance say not to reply to acknowledgements or pure notifications. `agent-key-route-guards.integration.test.ts` now registers `authRoutes` and proves an agent key gets 403 on `PATCH /auth/me`.
+- **G.** `telegram-conversation.functional.test.ts` (path is `apps/api/src/__tests__/functional/`): the address row is stamped one hour back and the seeded message 30 minutes back, both from the database clock (`now() - interval`), so the address is always older than the message. Production code unchanged. 12 of 12 consecutive runs passed against a disposable Postgres 17 and Redis (run by a delegate).
+
+### Tier 2 and 3 choices
+
+- The route is the smallest way for the container to read a user setting (no DB in the container). It is an API change outside DECISIONS, so DEC-57 records it for the owner.
+- Not done: marking the dropped message `refused` with detail `paused`. `markDelivery` only moves a `queued` row, and the row is already `sent`. The owner's thread shows it as sent (QUEUE, A2A-B gap review).
+- While the owner has paused the agent itself, its key is refused, so the check runs when the held message is consumed after resume, not before.
+
+### Tests added
+
+- Domain: `peer-messaging-service` (repeat of sent, queued, refused, failed, lost claim, claim failure, failed republish; refusal collapse per window, pair and code; `deliveryStatus` on the reply), `conversation-service` (`retryUndeliveredPeerMessage`), `agent-protocol` (cap at and above the limit), `agent-runtime-peer-config` (cap).
+- Worker unit: `peer-receive-gate.test.ts` (open, paused, unreadable, throws, no client, one read per batch, fresh read, no text in the log), `agent-platform-client` (`getPeerMessagingState`, invalid body), `tools/peer-messaging` (cap, queued note, `rate_limited` not retryable, guidance), `runtime-composition` (wording), broker peer reply.
+- Real DB and Redis: `peer-messaging.integration.test.ts` (queued peer message dropped after the owner pauses, delivered when off, fail closed on a missing owner or failed read, other messages untouched; collapse of repeated rate-limited refusals; failed, fresh queued, stuck queued and refused repeats), `agent-key-route-guards.integration.test.ts` (`PATCH /auth/me` 403; `GET /agents/:id/peer-messaging` for own agent, sibling 403, stopped agent 401, owner 200, other user 404).
+
+### Commands and results
+
+Disposable `postgres:17-alpine` (`hb-verify-pg`, port 55434) and `redis:7-alpine` (`hb-verify-redis`, port 56380), migrated with `pnpm --filter @herobids/db run db:migrate`, removed afterwards. The `herobids-*` containers were not touched.
+
+| Check | Result |
+| --- | --- |
+| `npx tsc -p {packages/domain,packages/db,apps/api,apps/worker,apps/web}/tsconfig.json --noEmit` | exit 0 each (domain `dist` rebuilt first) |
+| `pnpm lint` | exit 0 |
+| I1: `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert` (no DB env) | 10 files passed, 2 skipped; 235 passed, 36 skipped |
+| `packages/db/src/` with DB (`--fileParallelism=false --pool=forks --poolOptions.forks.singleFork`) | 27 files passed, 1 skipped; 392 passed, 6 skipped |
+| `pnpm test:functional` | 19 files, 254 tests passed |
+| `pnpm test:integration` | 9 files, 114 tests passed |
+| `pnpm test` (no DB env) | 392 files passed, 40 skipped; 7293 tests passed, 618 skipped, 0 failed |
+| `telegram-conversation.functional.test.ts` x12 | 12 of 12 passed |
+| e2e journey 03 | type-checked only, **not run** |
+
+Running the I1 filter with `DATABASE_URL` set also picks up the functional test file and races other files on the shared database; run it without the DB env, as the baseline does.
+
+### Owner hand-offs still open
+
+- Confirm or reject DEC-57.
+- Run the e2e gate, including journey 03.
+- Everything listed under the earlier entries stays open.
+
+- **Next ready item:** none.
+
+## 2026-10-26: DEC-57 approved; review fixes (receive gate, drop recording, repeat ids)
+
+The earlier work of the same day is still unstaged. These changes are left unstaged, not committed.
+
+### What changed
+
+- **1. DEC-57 approved (owner, 2026-10-25), (c) changed.** `DECISIONS.md`: DEC-57 moved to the approved table; (c) now says a dropped peer message's row becomes `refused` with detail `paused` (`paused_check_failed` when the switch could not be read); new (f) and (g) record how it is done. Implemented as follows. The container has no database, so the gate reports a drop over the inbound stream as the new fire-and-forget type `agent.peer.drop` (`PeerDropPayloadSchema`: `messageId`, `fromAgentId`, `reason`; no text). The broker handler `handlePeerDrop` passes the envelope's own agent as the recipient, so a container can report only on messages addressed to itself. `PeerMessagingService.recordDropped` checks both agents are a pair of one user, then calls `ConversationService.refuseDroppedPeerMessage`, which calls the new store method `refuseDroppedPeerMessage`. The Postgres method is one conditional UPDATE: the id, the pair's `agent_agent` conversation, `sender_type = agent`, the sender's id, status in (`sent`, `queued`), and the owner's conversation. A row in any other state, another owner's, or a user thread row matches nothing and returns null. `markDelivery` is unchanged. Best effort: any failure is logged (ids and codes, never text) and the drop stands.
+- **2. Receive gate (`peer-receive-gate.ts`, rewritten).** `check()` returns `open`, `paused` or `paused_check_failed`. A failed read (error result or throw) is retried `readRetries` times with `retryBackoffMs` between attempts; a non-retryable platform error (key refused, unknown agent) is not retried. Then the message is dropped fail closed and reported as `paused_check_failed`. `paused` is never retried. New API: `admits(envelope)` (wake path) and `filter(batch)` (tick); both report each drop once per message id.
+- **3. Latency and wasted ticks.** One read is reused for `agentRuntime.peer.switchCacheMs` (a paused or open verdict; a failed read is not cached), and concurrent callers share one in-flight read. New operator keys in the schema, `config/default.yaml` and `docs/tech/configuration.md`: `switchCacheMs` 2000, `switchReadRetries` 2, `switchRetryBackoffMs` 250 (each bounded). In `pollWakeSignals`, the paused-agent branch no longer sets `pendingUserMessage` for a peer envelope (the key is refused while paused, so the switch cannot be read; the resumed tick is a full evaluation and gates the held message when it consumes it, and user messages in the batch still escalate to the judge), and the not-paused branch asks `admits` before the flag and the wake. The gate bounds each check by `OUTBOUND_READ_TIMEOUT_MS` (2000 ms), so the tick-side read is inside the same budget as the outbound read; a check that runs over fails closed.
+- **4. `PeerMessagingService.send`.** After the recipient is known it looks the id up (`ConversationService.findPeerMessage`) before the stop switch, the recipient check and the rate limiter. `refused` answers the stored code (`peer.paused` when the detail is a drop detail). `sent` and `queued` (not stuck) answer their stored status with no slot and no refusal row. `failed` or stuck `queued` goes on through the stop switch, the recipient check and a rate slot, then claims and publishes. A new id takes a slot, then records. A concurrent duplicate that is recorded between the lookup and the record is answered from its row (one slot is spent in that race only). A failed lookup refuses with `peer.unavailable`.
+- **5. `GET /agents/:id/peer-messaging` integration tests.** Existing: own id 200 (off, then on), sibling agent 403, stopped agent key 401, owner 200, other user 404. Added: paused agent key 401, agent key on another user's agent 403 (no `paused` in the body), no credentials 401, owner on an unknown id 404.
+- **Docs.** `docs/tech/agents/tools/peer-messaging-tools.md`: repeat-id rule, receiving-side stop switch section, removed the stale "already queued is still delivered" line.
+
+### Tier 2 and 3 choices
+
+- Transport for the drop report: a broker message type, like DEC-54's send, so there is no new HTTP route and no database in the container. The alternative (an agent-key `POST` route) would add a public API.
+- Retries, backoff and cache TTL are operator config (I7) rather than constants.
+- A drop that cannot be reported (platform down, malformed envelope with no id or sender) leaves the row `sent`. Logged; listed in QUEUE as open (low).
+- The race path in (4) can spend one slot for a message that turns out to be a duplicate; avoiding it needs a cross-process claim and is not worth the machinery.
+
+### Tests added
+
+- Domain: `peer-messaging-service` (repeat takes no slot or refusal for sent and queued, lookup first, lookup failure, republish passes the switch and the limiter, stuck queued, race, drop details answer `peer.paused`, `recordDropped` cases), `conversation-service` (`findPeerMessage`, `refuseDroppedPeerMessage`), `agent-protocol` (`PeerDropPayloadSchema`), `agent-runtime-peer-config` (new keys, bounds, default.yaml parity).
+- Worker unit: `peer-receive-gate.test.ts` (25 tests: paused vs unreadable, retries, no retry for non-retryable, cache TTL, no caching of failures, shared in-flight read, deadline, report once, report failure, malformed envelope), `agent-message-broker-peer.test.ts` (`agent.peer.drop`).
+- Real Postgres: `conversation-repository.integration.test.ts` (8 new: sent and queued to refused, final rows untouched, repeated drop, unknown id, other owner, other pair, other sender, user thread row, final state, `findPeerMessage`). Real Postgres and Redis: `peer-messaging.integration.test.ts` (drop through the real broker marks the row `paused` and `paused_check_failed`, retry that succeeds leaves it `sent`, user messages are never reported, late drop never moves a final row, only the recipient can report; repeats take no slot at limit 1; republish passes the switch; dropped repeat answers `peer.paused`). `agent-key-route-guards.integration.test.ts` (4 new).
+
+### Commands and results
+
+Disposable `postgres:17-alpine` (port 55432) and `redis:7-alpine` (port 56379), migrated with `pnpm --filter @herobids/db run db:migrate`, removed afterwards. The `herobids-*` containers were not touched.
+
+| Check | Result |
+| --- | --- |
+| `npx tsc -p {packages/domain,packages/db,apps/api,apps/worker,apps/web}/tsconfig.json --noEmit` | exit 0 each (domain and db `dist` rebuilt first) |
+| `pnpm lint` | exit 0 |
+| I1: `pnpm exec vitest run telegram chat-inbound agent-message-broker platform-alert` (no DB env) | 10 files passed, 2 skipped; 241 passed, 36 skipped |
+| `packages/db/src/` with DB (`--fileParallelism=false --pool=forks --poolOptions.forks.singleFork`) | 27 files passed, 1 skipped; 400 passed, 6 skipped |
+| `pnpm test:functional` (DB and Redis) | 19 files, 264 tests passed |
+| `pnpm test:integration` (DB and Redis) | 9 files, 117 tests passed |
+| `pnpm test` (no DB env) | 392 files passed, 40 skipped; 7345 tests passed, 639 skipped, 0 failed |
+
+### Owner hand-offs still open
+
+- Run the e2e gate, including journey 03 (not run).
+- Everything listed under the earlier entries stays open.
+
+- **Next ready item:** none.

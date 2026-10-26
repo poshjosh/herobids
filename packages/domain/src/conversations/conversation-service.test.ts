@@ -36,6 +36,7 @@ function setup() {
     markDelivery: vi.fn(async () => ok(storedMessage({ deliveryStatus: 'sent' }))),
     requeueUndeliveredMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage())),
     findMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage())),
+    refuseDroppedPeerMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage({ deliveryStatus: 'refused', deliveryDetail: 'paused' }))),
     listUserAgentThread: vi.fn(async () => ok([storedMessage()])),
   } satisfies ConversationStore;
   let counter = 0;
@@ -298,6 +299,121 @@ describe('ConversationService.listThread', () => {
 
     expect(result.ok).toBe(false);
     expect(store.listUserAgentThread).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationService.retryUndeliveredPeerMessage', () => {
+  const input = { ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', messageId: 'm1' };
+
+  it('asks the store to requeue the sending agent\'s message in the pair\'s thread, whichever way round the pair is named', async () => {
+    const { store, service } = setup();
+
+    await service.retryUndeliveredPeerMessage(input);
+    await service.retryUndeliveredPeerMessage({ ...input, fromAgentId: 'a2', toAgentId: 'a1' });
+
+    expect(store.requeueUndeliveredMessage).toHaveBeenNthCalledWith(1, {
+      messageId: 'm1',
+      conversationId: peerConversationId('a1', 'a2'),
+      ownerUserId: 'u1',
+      senderType: 'agent',
+      senderId: 'a1',
+      now: NOW,
+      staleBefore: new Date(NOW.getTime() - LIMITS.staleQueuedAfterSeconds * 1000),
+    });
+    expect(store.requeueUndeliveredMessage).toHaveBeenNthCalledWith(2, expect.objectContaining({ conversationId: peerConversationId('a1', 'a2'), senderId: 'a2' }));
+  });
+
+  it('returns null when nothing was claimable, so the caller does not publish', async () => {
+    const { store, service } = setup();
+    store.requeueUndeliveredMessage.mockResolvedValueOnce(ok(null));
+
+    expect(await service.retryUndeliveredPeerMessage(input)).toEqual(ok(null));
+  });
+
+  it('refuses a blank message id or identity before touching the store', async () => {
+    const { store, service } = setup();
+
+    const results = [
+      await service.retryUndeliveredPeerMessage({ ...input, messageId: ' ' }),
+      await service.retryUndeliveredPeerMessage({ ...input, ownerUserId: '' }),
+      await service.retryUndeliveredPeerMessage({ ...input, toAgentId: '' }),
+    ];
+
+    expect(results.every((result) => !result.ok)).toBe(true);
+    expect(store.requeueUndeliveredMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationService.findPeerMessage', () => {
+  const input = { ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', messageId: 'm1' };
+
+  it('reads the sending agent\'s own row in the pair\'s thread, whichever way the pair is named', async () => {
+    const { store, service } = setup();
+
+    await service.findPeerMessage(input);
+    await service.findPeerMessage({ ...input, fromAgentId: 'a2', toAgentId: 'a1' });
+
+    expect(store.findMessage.mock.calls).toEqual([
+      [{ messageId: 'm1', conversationId: peerConversationId('a1', 'a2'), ownerUserId: 'u1', senderType: 'agent', senderId: 'a1' }],
+      [{ messageId: 'm1', conversationId: peerConversationId('a1', 'a2'), ownerUserId: 'u1', senderType: 'agent', senderId: 'a2' }],
+    ]);
+  });
+
+  it('rejects a blank id or identity without reading', async () => {
+    const { store, service } = setup();
+
+    const results = [
+      await service.findPeerMessage({ ...input, messageId: ' ' }),
+      await service.findPeerMessage({ ...input, ownerUserId: '' }),
+      await service.findPeerMessage({ ...input, toAgentId: '' }),
+    ];
+
+    expect(results.every((result) => !result.ok)).toBe(true);
+    expect(store.findMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationService.refuseDroppedPeerMessage (DEC-57 c)', () => {
+  const input = { ownerUserId: 'u1', fromAgentId: 'a1', toAgentId: 'a2', messageId: 'm1', detail: 'paused' as const };
+
+  it('asks the store to refuse the sender\'s own row in the pair\'s thread, owner scoped, with the detail', async () => {
+    const { store, service } = setup();
+
+    const result = await service.refuseDroppedPeerMessage(input);
+
+    expect(result.ok).toBe(true);
+    expect(store.refuseDroppedPeerMessage).toHaveBeenCalledWith({
+      messageId: 'm1', conversationId: peerConversationId('a1', 'a2'), ownerUserId: 'u1', senderId: 'a1', detail: 'paused',
+    });
+  });
+
+  it('passes a null result through: there was nothing to move', async () => {
+    const { store, service } = setup();
+    store.refuseDroppedPeerMessage.mockResolvedValue(ok(null));
+
+    expect(await service.refuseDroppedPeerMessage(input)).toEqual(ok(null));
+  });
+
+  it('refuses any detail other than the two drop reasons, without writing', async () => {
+    const { store, service } = setup();
+
+    const result = await service.refuseDroppedPeerMessage({ ...input, detail: 'peer.rate_limited' as never });
+
+    expect(result.ok).toBe(false);
+    expect(store.refuseDroppedPeerMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank id or identity without writing', async () => {
+    const { store, service } = setup();
+
+    const results = [
+      await service.refuseDroppedPeerMessage({ ...input, messageId: ' ' }),
+      await service.refuseDroppedPeerMessage({ ...input, ownerUserId: '' }),
+      await service.refuseDroppedPeerMessage({ ...input, fromAgentId: '' }),
+    ];
+
+    expect(results.every((result) => !result.ok)).toBe(true);
+    expect(store.refuseDroppedPeerMessage).not.toHaveBeenCalled();
   });
 });
 
