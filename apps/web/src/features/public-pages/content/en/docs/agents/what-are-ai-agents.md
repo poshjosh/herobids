@@ -1,22 +1,10 @@
 # What are AI agents?
 
-An AI agent is software that can **understand what you want, make decisions, use tools, and take action** for you.
+> AI agents are highly autonomous systems that outperform humans at most economically valuable work
 
-A chatbot answers your questions.
+An AI agent is vastly superior to a chatbot. An AI chatbot answers your questions. An AI agent goes a step further: it can take action to achieve your goals. It can browse websites, use tools, carry out tasks, monitor for changes, and report back to you. Instead of just telling you how to do something, an AI agent can do the work for you.
 
-An AI agent can **do the work**.
-
-For example, instead of asking:
-
-> What's the status of my flight?
-
-you could tell an agent:
-
-> Monitor my flight and tell me on Telegram if anything changes.
-
-The agent can monitor the situation, analyze what it finds, and message you when it matters.
-
-_the above agent would need a tool for sending telegram messages_
+For example, you ask a chatbot to find a job for you and it lists jobs that match your CV and maybe suggests one for you. However, an AI agent could search for jobs every morning and evening for weeks and keep applying for you until you get invited for an interview. This way, you can apply for a job that is 2 or 3 levels ahead of your current one. AI agents can do this because they can browse websites like humans, use tools and follow instructions to work towards your goal.
 
 ## What can an AI agent do?
 
