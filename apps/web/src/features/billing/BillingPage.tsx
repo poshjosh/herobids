@@ -332,6 +332,106 @@ export function BillingPage() {
         />
       )}
 
+      <div style={{ marginBottom: '24px' }}>
+        <Card style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {intl.formatMessage({ id: 'billing.usage.sectionTitle' })}
+            </div>
+            {usageSummary?.currentPeriod && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                {formatShortDate(intl, usageSummary.currentPeriod.periodStart)} - {formatShortDate(intl, usageSummary.currentPeriod.periodEnd)}
+              </div>
+            )}
+          </div>
+          {usageSummaryQuery.isLoading && <LoadingRows count={1} />}
+          {usageSummaryQuery.isError && (
+            <ErrorState
+              message={localizeApiError(intl, usageSummaryQuery.error, 'common.errorTitle')}
+              onRetry={() => void usageSummaryQuery.refetch()}
+            />
+          )}
+          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && !usageAccount && (
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
+              {intl.formatMessage({ id: 'billing.usage.emptyAccount' })}
+            </div>
+          )}
+          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && usageAccount && !usageSummary?.currentPeriod && (
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
+              {intl.formatMessage({ id: 'billing.usage.emptyPeriod' })}
+            </div>
+          )}
+          {usageAccount && usageSummary?.currentPeriod && (
+            <>
+              <CreditGauge
+                balanceMicrousd={usageSummary.currentPeriod.balanceMicrousd}
+                totalCreditMicrousd={usageSummary.currentPeriod.balanceMicrousd + usageSummary.currentPeriod.usageChargeMicrousd}
+                usageChargeMicrousd={usageSummary.currentPeriod.usageChargeMicrousd}
+                includedCreditMicrousd={usageSummary.currentPeriod.includedCreditMicrousd}
+                status={usageAccount.status}
+                planLabel={summary?.planLabel}
+                intl={intl}
+              />
+
+              {usageSummary.warnings.some((w) => w.reached) && (
+                <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {usageSummary.warnings.filter((w) => w.reached).map((w) => (
+                    <span
+                      key={w.thresholdPct}
+                      style={{ padding: '2px 8px', background: 'var(--color-surface-2)', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--color-warning-text, #92400e)' }}
+                    >
+                      {intl.formatMessage({ id: 'billing.usage.thresholdReached' }, { pct: w.thresholdPct })}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {/* Top-up row — intentionally does not require usageAccount to exist: a
+              usage_billing_account row is only created lazily on first metered
+              usage (see UsageBillingService.ensureAccount), so a fresh user who
+              hasn't run an agent yet would otherwise never see the top-up option
+              even though GET /billing/usage-summary already resolves topUpPacks
+              from the user's plan for exactly this case (account: null). */}
+          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && (
+            <>
+              <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>
+                  <select
+                    value={selectedTopUpPackId}
+                    onChange={(e) => setSelectedTopUpPackId(e.target.value)}
+                    disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
+                    style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
+                  >
+                    {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">{intl.formatMessage({ id: 'common.noPacksAvailable' })}</option>}
+                    {(usageSummary?.topUpPacks ?? []).map((pack) => (
+                      <option key={pack.packId} value={pack.packId}>
+                        {formatCurrencyFromCents(intl, pack.cents)}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="primary"
+                    disabled={topUpMutation.isPending || (usageSummary?.topUpPacks?.length ?? 0) === 0 || selectedTopUpPackId.length === 0}
+                    onClick={() => topUpMutation.mutate(selectedTopUpPackId)}
+                  >
+                    {topUpMutation.isPending ? intl.formatMessage({ id: 'billing.usage.openingCheckout' }) : intl.formatMessage({ id: 'billing.usage.buyTopUp' })}
+                  </Button>
+                </div>
+                {topUpError && (
+                  <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
+                )}
+                {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
+                  <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                    {intl.formatMessage({ id: 'billing.usage.topUpsNotEnabled' })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+
       {summary && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Current Plan */}
@@ -439,104 +539,6 @@ export function BillingPage() {
               : intl.formatMessage({ id: 'billing.usage.warning.softLimited' })}
           </div>
         )}
-        <Card style={{ padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              {intl.formatMessage({ id: 'billing.usage.sectionTitle' })}
-            </div>
-            {usageSummary?.currentPeriod && (
-              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                {formatShortDate(intl, usageSummary.currentPeriod.periodStart)} - {formatShortDate(intl, usageSummary.currentPeriod.periodEnd)}
-              </div>
-            )}
-          </div>
-          {usageSummaryQuery.isLoading && <LoadingRows count={1} />}
-          {usageSummaryQuery.isError && (
-            <ErrorState
-              message={localizeApiError(intl, usageSummaryQuery.error, 'common.errorTitle')}
-              onRetry={() => void usageSummaryQuery.refetch()}
-            />
-          )}
-          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && !usageAccount && (
-            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
-              {intl.formatMessage({ id: 'billing.usage.emptyAccount' })}
-            </div>
-          )}
-          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && usageAccount && !usageSummary?.currentPeriod && (
-            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
-              {intl.formatMessage({ id: 'billing.usage.emptyPeriod' })}
-            </div>
-          )}
-          {usageAccount && usageSummary?.currentPeriod && (
-            <>
-              <CreditGauge
-                balanceMicrousd={usageSummary.currentPeriod.balanceMicrousd}
-                totalCreditMicrousd={usageSummary.currentPeriod.balanceMicrousd + usageSummary.currentPeriod.usageChargeMicrousd}
-                usageChargeMicrousd={usageSummary.currentPeriod.usageChargeMicrousd}
-                includedCreditMicrousd={usageSummary.currentPeriod.includedCreditMicrousd}
-                status={usageAccount.status}
-                planLabel={summary?.planLabel}
-                intl={intl}
-              />
-
-              {usageSummary.warnings.some((w) => w.reached) && (
-                <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {usageSummary.warnings.filter((w) => w.reached).map((w) => (
-                    <span
-                      key={w.thresholdPct}
-                      style={{ padding: '2px 8px', background: 'var(--color-surface-2)', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--color-warning-text, #92400e)' }}
-                    >
-                      {intl.formatMessage({ id: 'billing.usage.thresholdReached' }, { pct: w.thresholdPct })}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-          {/* Top-up row — intentionally does not require usageAccount to exist: a
-              usage_billing_account row is only created lazily on first metered
-              usage (see UsageBillingService.ensureAccount), so a fresh user who
-              hasn't run an agent yet would otherwise never see the top-up option
-              even though GET /billing/usage-summary already resolves topUpPacks
-              from the user's plan for exactly this case (account: null). */}
-          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && (
-            <>
-              <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>
-                  <select
-                    value={selectedTopUpPackId}
-                    onChange={(e) => setSelectedTopUpPackId(e.target.value)}
-                    disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
-                    style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
-                  >
-                    {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">{intl.formatMessage({ id: 'common.noPacksAvailable' })}</option>}
-                    {(usageSummary?.topUpPacks ?? []).map((pack) => (
-                      <option key={pack.packId} value={pack.packId}>
-                        {formatCurrencyFromCents(intl, pack.cents)}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    variant="primary"
-                    disabled={topUpMutation.isPending || (usageSummary?.topUpPacks?.length ?? 0) === 0 || selectedTopUpPackId.length === 0}
-                    onClick={() => topUpMutation.mutate(selectedTopUpPackId)}
-                  >
-                    {topUpMutation.isPending ? intl.formatMessage({ id: 'billing.usage.openingCheckout' }) : intl.formatMessage({ id: 'billing.usage.buyTopUp' })}
-                  </Button>
-                </div>
-                {topUpError && (
-                  <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
-                )}
-                {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
-                  <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                    {intl.formatMessage({ id: 'billing.usage.topUpsNotEnabled' })}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </Card>
-
         <BillingDetails
             softCapInput={softCapInput}
             setSoftCapInput={setSoftCapInput}

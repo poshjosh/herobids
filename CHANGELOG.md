@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.1 - 2026-10-27
+
 ### Changed
 
 - Child agents on the agents page show Pause and Stop in the same hover icons as other agents. Their separate always-visible controls are removed.
