@@ -89,3 +89,17 @@ describe('localizeApiError', () => {
     );
   });
 });
+
+describe('localizeApiError — unknown errors', () => {
+  it('shows the generic fallback instead of raw technical text', () => {
+    expect(localizeApiError(intl, new TypeError('fetch failed'), 'common.errorTitle')).toBe('Something went wrong');
+  });
+
+  it('shows the network message for network_unavailable', () => {
+    const error = new ApiError(0, 'network_unavailable', 'Network unavailable');
+
+    expect(localizeApiError(intl, error, 'common.errorTitle')).toBe(
+      "We can't reach the server. Check your internet connection and try again.",
+    );
+  });
+});

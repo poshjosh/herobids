@@ -184,3 +184,28 @@ describe('api-client — linkTelegram', () => {
     expect(init.body).toBe(JSON.stringify({ returnTo: '/agents?tab=open' }));
   });
 });
+
+describe('api-client — network failures', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('maps a fetch network failure to a network_unavailable ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+
+    const err = await auth.login('test@example.com', 'pw').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('network_unavailable');
+    expect((err as ApiError).status).toBe(0);
+  });
+
+  it('rethrows aborts unchanged', async () => {
+    const abort = new DOMException('The operation was aborted.', 'AbortError');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort));
+
+    const err = await auth.login('test@example.com', 'pw').catch((e: unknown) => e);
+
+    expect(err).toBe(abort);
+  });
+});

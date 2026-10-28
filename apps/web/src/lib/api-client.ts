@@ -118,7 +118,16 @@ async function requestAgainstBase<T>(baseUrl: string, path: string, init?: Reque
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${baseUrl}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}${path}`, { ...init, headers });
+  } catch (error) {
+    // fetch rejects with a TypeError on network failure; aborts stay as-is.
+    if (error instanceof TypeError) {
+      throw new ApiError(0, 'network_unavailable', 'Network unavailable');
+    }
+    throw error;
+  }
 
   if (res.status === 401) {
     // Don't force-redirect on auth endpoints — let the caller handle the error

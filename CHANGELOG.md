@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### CHANGED
 
+- Improve error messages shown to users
 - Light model to xiaomi/mimo-v2.6-flash
 - Handle plain text reply, when agent does not use send_message to message the user.
 

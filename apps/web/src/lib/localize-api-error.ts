@@ -45,9 +45,6 @@ export function localizeApiError(intl: IntlShape, error: unknown, fallbackId: st
     }
   }
 
-  if (error instanceof Error) {
-    return error.message;
-  }
-
+  // Unknown errors may carry raw technical text (e.g. "fetch failed"); show the generic fallback instead.
   return intl.formatMessage({ id: fallbackId });
 }

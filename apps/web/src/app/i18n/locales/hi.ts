@@ -31,6 +31,7 @@ export const messages: Record<string, string> = {
   'common.retry': 'पुनः प्रयास करें',
   'common.errorTitle': 'कुछ गलत हो गया',
   'errors.internal': 'Something went wrong on our side. Try again. If it keeps happening, send this reference to support: {reference}',
+  'network_unavailable': 'हम सर्वर तक नहीं पहुँच पा रहे हैं। अपना इंटरनेट कनेक्शन जाँचें और फिर से प्रयास करें।',
   'common.pleaseWait': 'कृपया प्रतीक्षा करें…',
 
   // Auth
