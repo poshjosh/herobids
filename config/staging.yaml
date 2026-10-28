@@ -140,6 +140,22 @@ messaging:
     telegram:
       botUsername: "OpenAIdomStagingBot" # bot username without @, for t.me deep links; override: TELEGRAM_BOT_USERNAME
 
+plans:
+  plans:
+    free:
+      usage: # required
+        includedCreditCents: 500
+        softCapCents: 200  # warn when $2 left
+        hardCapCents: -100 # block when balance ≤ $hardCapCents
+        topUpPackIds: 
+          - Topup5
+          - Topup20
+          - Topup50
+          - Topup100
+          - Topup200
+          - Topup500
+          - Topup1000
+
 # Billing — multi-provider subscription billing.
 # Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).
 # Switch to 'creem' or 'stripe' in production once provider credentials are set.
