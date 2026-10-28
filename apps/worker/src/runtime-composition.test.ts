@@ -168,6 +168,8 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('hyperliquid (perpetuals)');
     expect(prompt).toContain('trade instruments use base tickers');
     expect(prompt).toContain('Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.');
+    expect(prompt).toContain('Text you write outside a tool call isn\'t shown to the user.');
+    expect(prompt).toContain('wrap only the text the user should read in <reply>…</reply> tags.');
     expect(prompt).toContain('Core Platform');
     expect(prompt).not.toContain('To call a tool, output a JSON object');
     expect(prompt).not.toContain('{"tool": "<tool_name>", "args": {...}}');

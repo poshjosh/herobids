@@ -74,6 +74,7 @@ import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailur
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState, isUserMessageType, timelineEventForUserMessage } from './tick-gate-state.js';
+import { resolveReplyDelivery } from './fallback-reply.js';
 import { createPauseStateTracker, HeldMessageQueue, PAUSED_TICK_GATE, PAUSED_TICK_REASON, resolvePausedTickDelay, resolvePausedWakeAction, runPauseGatedTick } from './runtime-pause.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, parseRegimeBoundaryPayload, parseMarketOverviewPayload, parseDexTokensPayload, parseEconomicCalendarBoundaryPayload, type RegimeBoundaryFreshness } from './venue-intelligence.js';
@@ -4061,6 +4062,24 @@ async function runActiveTick(): Promise<void> {
     });
 
     let judgeSentReply = false;
+    // Advances the answered-up-to marker after a successful reply. Monotonic: never regresses.
+    const advanceAnsweredMarker = (): void => {
+      if (!(agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled)) return;
+      // The target is the max USER-message timestamp in the timeline; if none are
+      // visible, fall back to Date.now() so a reply with no pending message
+      // still moves the marker forward harmlessly.
+      const nextMarker = computeAdvancedAnsweredMarker(runtimeState, Date.now());
+      if (nextMarker === null) return;
+      runtimeState.metrics.answeredUpToTs = nextMarker;
+      // Persist asynchronously; a write failure must not fail the tick —
+      // the in-memory value already advanced (worst case: duplicate reply
+      // after a restart before the write lands, per the plan's risk note).
+      void redis
+        .set(`agent:conversation:answered_at:${AGENT_ID}`, String(nextMarker))
+        .catch((err: unknown) => {
+          logger.warn({ err }, 'Failed to persist conversation answered marker');
+        });
+    };
     const judgeLoopResult = await runStructuredToolLoop({
       providerConfig: {
         provider: provider,
@@ -4167,31 +4186,9 @@ async function runActiveTick(): Promise<void> {
           if (toolCall.name === 'send_message' && !toolResultIndicatesFailure(toolResult)) {
             judgeSentReply = true;
             if (activeTick) activeTick.replied = true;
-          }
-          // ── Conversation state: advance the answered-up-to marker ───────
-          // A successful send_message marks all user messages up to this tick as
-          // answered (coarse single-marker; see plan "Conversation state"). The
-          // target is the max USER-message timestamp in the timeline; if none are
-          // visible, fall back to Date.now() so a reply with no pending message
-          // still moves the marker forward harmlessly. Monotonic: never regresses.
-          if (
-            agentRuntimePolicy.promptStyle === 'enriched'
-            && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled
-            && toolCall.name === 'send_message'
-            && !toolResultIndicatesFailure(toolResult)
-          ) {
-            const nextMarker = computeAdvancedAnsweredMarker(runtimeState, Date.now());
-            if (nextMarker !== null) {
-              runtimeState.metrics.answeredUpToTs = nextMarker;
-              // Persist asynchronously; a write failure must not fail the tick —
-              // the in-memory value already advanced (worst case: duplicate reply
-              // after a restart before the write lands, per the plan's risk note).
-              void redis
-                .set(`agent:conversation:answered_at:${AGENT_ID}`, String(nextMarker))
-                .catch((err: unknown) => {
-                  logger.warn({ err }, 'Failed to persist conversation answered marker');
-                });
-            }
+            // Conversation state: a successful send_message marks all user messages up to
+            // this tick as answered (coarse single-marker; see plan "Conversation state").
+            advanceAnsweredMarker();
           }
         }
       },
@@ -4211,6 +4208,35 @@ async function runActiveTick(): Promise<void> {
         }
       },
     });
+
+    // Deliver the judge's plain-text reply when it never called send_message. No extra LLM call.
+    if (judgeLoopResult.ok && hasPendingUserMessage && !judgeSentReply && !judgeLoopResult.terminatedByLimit) {
+      const delivery = resolveReplyDelivery(judgeLoopResult.assistantResponse);
+      if (delivery.unclosedTag) {
+        logger.warn({ agentId: AGENT_ID, tickId }, 'Judge response has an unclosed <reply> tag; ignored');
+      }
+      let deliveredCount = 0;
+      for (const body of delivery.bodies) {
+        try {
+          await publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, { body });
+          deliveredCount += 1;
+        } catch (err: unknown) {
+          logger.warn({ err, agentId: AGENT_ID, tickId }, 'Failed to deliver fallback reply');
+        }
+      }
+      if (deliveredCount > 0) {
+        judgeSentReply = true;
+        if (activeTick) activeTick.replied = true;
+        advanceAnsweredMarker();
+        logger.info({
+          agentId: AGENT_ID,
+          sessionId: SESSION_ID,
+          tickId,
+          deliveredVia: delivery.mode,
+          replyCount: deliveredCount,
+        }, 'Delivered plain-text judge response as fallback reply');
+      }
+    }
 
     emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED, {
       tickId,

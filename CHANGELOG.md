@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### CHANGED
+
+- Handle plain text reply, when agent does not use send_message to message the user.
+
 ### Added
 
 - Attachements for web chat (images not supported yet)

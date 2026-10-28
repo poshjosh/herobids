@@ -2564,6 +2564,7 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     '## Instructions',
     'Check if the user has sent a message, to which you have not yet responded.',
     'Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.',
+    'Text you write outside a tool call isn\'t shown to the user. Use `send_message` for any text the user should read. If you reply in plain text instead, wrap only the text the user should read in <reply>…</reply> tags.',
     'After responding, continue your job, if any. If there is nothing to answer and nothing to do, respond with a short status update.',
   ]
     .filter(Boolean)

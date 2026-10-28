@@ -5,7 +5,7 @@ import { convertZodToJsonSchema } from './registry.js';
 
 // --- send_message ---
 
-const SendMessageParamsSchema = z.object({
+export const SendMessageParamsSchema = z.object({
   body: z.string().min(1).max(2000),
   subject: z.string().max(200).optional(),
   messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
