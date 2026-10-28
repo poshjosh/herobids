@@ -3,8 +3,6 @@
 - production ip - 167.233.213.107
 - staging ip - 138.199.172.202
 
-infra/hetzner/scripts/reset-and-run.sh --env production 167.233.213.107 --env-file .env.ops.production
-
 ## local
 
 Run both herobids and the external trading service it depends
