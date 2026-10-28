@@ -73,6 +73,28 @@ const PASSTHROUGH_MIME_TYPES = new Set([
   'application/xml',
 ]);
 
+/**
+ * Checks a file against the upload rules without storing it. Routes call this before recording any
+ * message that carries the file, so a rejected file never leaves a half-recorded send behind.
+ */
+export function checkUploadable(params: { mimeType: string; sizeBytes: number; filename: string }): AgentDocumentError | null {
+  if (!ALLOWED_UPLOAD_MIME_TYPES.has(params.mimeType)) {
+    return {
+      code: 'agent_document.unsupported_type',
+      message: `Unsupported file type: ${params.mimeType}. Supported types: text, PDF, Word (.docx).`,
+      context: { mimeType: params.mimeType, filename: params.filename },
+    };
+  }
+  if (params.sizeBytes > MAX_UPLOAD_BYTES) {
+    return {
+      code: 'agent_document.too_large',
+      message: `File size ${params.sizeBytes} exceeds the ${MAX_UPLOAD_BYTES} byte limit.`,
+      context: { size: params.sizeBytes, maxSize: MAX_UPLOAD_BYTES },
+    };
+  }
+  return null;
+}
+
 // ── Service ─────────────────────────────────────────────────────────────────
 
 export class AgentDocumentService {
@@ -88,21 +110,12 @@ export class AgentDocumentService {
   async uploadDocument(params: UploadDocumentParams): Promise<Result<UploadDocumentResult, AgentDocumentError>> {
     // ── Validate ──────────────────────────────────────────────────────────
 
-    if (!ALLOWED_UPLOAD_MIME_TYPES.has(params.mimeType)) {
-      return err({
-        code: 'agent_document.unsupported_type',
-        message: `Unsupported file type: ${params.mimeType}. Supported types: text, PDF, Word (.docx).`,
-        context: { mimeType: params.mimeType, filename: params.originalFilename },
-      });
-    }
-
-    if (params.body.byteLength > MAX_UPLOAD_BYTES) {
-      return err({
-        code: 'agent_document.too_large',
-        message: `File size ${params.body.byteLength} exceeds the ${MAX_UPLOAD_BYTES} byte limit.`,
-        context: { size: params.body.byteLength, maxSize: MAX_UPLOAD_BYTES },
-      });
-    }
+    const rejected = checkUploadable({
+      mimeType: params.mimeType,
+      sizeBytes: params.body.byteLength,
+      filename: params.originalFilename,
+    });
+    if (rejected) return err(rejected);
 
     // ── Store original ────────────────────────────────────────────────────
 

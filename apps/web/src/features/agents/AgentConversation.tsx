@@ -5,6 +5,7 @@ import { agents as agentsApi, type AgentConversationMessage } from '../../lib/ap
 import { Button, Card, SectionLabel } from '../../lib/ui.js';
 import { Linkify } from '../../lib/linkify.js';
 import { buildThread, mergeMessages, type PendingSend } from './conversation-thread.js';
+import { attachmentProblem, CONVERSATION_ATTACHMENT_ACCEPT } from './attachment-rules.js';
 
 const RUNNING_STATUSES = ['active', 'starting', 'paused', 'unhealthy'];
 
@@ -117,6 +118,11 @@ export interface AgentConversationViewProps {
   maxChars?: number;
   onDraftChange: (value: string) => void;
   onSend: () => void;
+  /** The document to send with the next message, if any. */
+  attachment?: File | null;
+  attachmentError?: string | null;
+  onAttachFile?: (file: File) => void;
+  onRemoveAttachment?: () => void;
   /** Resends a message that was not delivered, under the same id. */
   onRetryMessage?: (messageId: string) => void;
   /** The thread could not be loaded and nothing is shown yet. */
@@ -136,10 +142,12 @@ export function AgentConversationView({
   agentId = '', agentName, messages, canSend, isStarting = false, showIntro = false, onDismissIntro, draft, maxChars = DEFAULT_MESSAGE_MAX_CHARS,
   onDraftChange, onSend, onRetryMessage, loadFailed = false, loadEarlierFailed = false, onLoadEarlier, isLoadingEarlier = false,
   isAwaitingReply = false, connectionBanner = false, onRetry,
+  attachment = null, attachmentError = null, onAttachFile, onRemoveAttachment,
 }: AgentConversationViewProps) {
   const intl = useIntl();
   const trimmed = draft.trim();
   const listRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const elapsed = useStartingElapsed(isStarting);
   const phase = startingPhase(elapsed);
   // Messages can be queued while the agent starts; the agent picks them up once it is ready.
@@ -349,6 +357,18 @@ export function AgentConversationView({
             lineHeight: '1.6',
           }}
         />
+        {attachment && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px 0', fontSize: '0.8125rem' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachment.name}</span>
+            <button
+              type="button"
+              onClick={onRemoveAttachment}
+              aria-label={intl.formatMessage({ id: 'agentDetail.conversation.removeAttachment' })}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '2px 4px' }}>
+              ×
+            </button>
+          </div>
+        )}
         <div
           style={{
             display: 'flex',
@@ -359,12 +379,39 @@ export function AgentConversationView({
             borderTop: '1px solid var(--color-border-subtle)',
           }}
         >
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{draft.length}/{maxChars}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={CONVERSATION_ATTACHMENT_ACCEPT}
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file && onAttachFile) onAttachFile(file);
+              }}
+            />
+            <button
+              type="button"
+              aria-label={intl.formatMessage({ id: 'agentDetail.conversation.attach' })}
+              title={intl.formatMessage({ id: 'agentDetail.conversation.attach' })}
+              disabled={!canCompose}
+              onClick={() => fileInputRef.current?.click()}
+              style={{ background: 'none', border: 'none', cursor: canCompose ? 'pointer' : 'default', color: 'var(--color-text-muted)', padding: '4px', display: 'inline-flex' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{draft.length}/{maxChars}</span>
+          </div>
           <Button onClick={onSend} disabled={!canCompose || trimmed.length === 0}>
             {intl.formatMessage({ id: 'agentDetail.conversation.send' })}
           </Button>
         </div>
       </div>
+      {attachmentError && (
+        <p role="alert" style={HINT_STYLE}>{attachmentError}</p>
+      )}
       </div>
     </Card>
   );
@@ -377,12 +424,15 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
   /** Set when returning from an approved connection request; the agent is resuming for it. */
   connectionRequestId?: string | null;
 }) {
+  const intl = useIntl();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState('');
   // Every row fetched so far. The newest page is polled and slides forward, so rows are kept here, not re-derived.
   const [history, setHistory] = useState<AgentConversationMessage[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
   const [pending, setPending] = useState<PendingSend[]>([]);
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const introKey = `${CONVERSATION_INTRO_STORAGE_PREFIX}${agentId}`;
   const [introDismissed, setIntroDismissed] = useState(() => {
     try {
@@ -425,7 +475,7 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
     refetchOnWindowFocus: true,
   });
   const sendMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: string }) => agentsApi.sendMessage(agentId, body, id),
+    mutationFn: ({ id, body, file }: { id: string; body: string; file?: File }) => agentsApi.sendMessage(agentId, body, id, file),
     onSuccess: async (result, { id }) => {
       // Show the stored row at once; the next poll confirms it.
       setHistory((previous) => mergeMessages(previous, [result.message]));
@@ -442,13 +492,13 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
     },
   });
 
-  const submit = (id: string, body: string) => {
+  const submit = (id: string, body: string, file?: File) => {
     setPending((previous) => (
       previous.some((entry) => entry.id === id)
         ? previous.map((entry) => (entry.id === id ? { ...entry, status: 'sending' } : entry))
-        : [...previous, { id, body, createdAt: new Date().toISOString(), status: 'sending' }]
+        : [...previous, { id, body, createdAt: new Date().toISOString(), status: 'sending', file }]
     ));
-    sendMutation.mutate({ id, body });
+    sendMutation.mutate({ id, body, file });
   };
 
   const turn = conversable ? turnQuery.data : undefined;
@@ -486,15 +536,34 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
       }}
       draft={draft}
       onDraftChange={setDraft}
+      attachment={attachment}
+      attachmentError={attachmentError}
+      onAttachFile={(file) => {
+        const problem = attachmentProblem(file);
+        if (problem) {
+          setAttachment(null);
+          setAttachmentError(intl.formatMessage({ id: problem === 'too_large' ? 'agentDetail.conversation.attachmentTooLarge' : 'agentDetail.conversation.attachmentUnsupported' }));
+          return;
+        }
+        setAttachmentError(null);
+        setAttachment(file);
+      }}
+      onRemoveAttachment={() => {
+        setAttachment(null);
+        setAttachmentError(null);
+      }}
       onSend={() => {
         const body = draft.trim();
         if (body.length === 0) return;
+        const file = attachment ?? undefined;
         setDraft('');
-        submit(crypto.randomUUID(), body);
+        setAttachment(null);
+        setAttachmentError(null);
+        submit(crypto.randomUUID(), body, file);
       }}
       onRetryMessage={(messageId) => {
         const original = thread.find((message) => message.id === messageId);
-        if (original) submit(messageId, original.body);
+        if (original) submit(messageId, original.body, pending.find((entry) => entry.id === messageId)?.file);
       }}
     />
   );

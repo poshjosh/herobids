@@ -12,7 +12,7 @@ import { consumeTelegramLinkToken } from '../agents/telegram-link-token.js';
 import type { ExternalBackendClient } from '@herobids/domain/external-backend';
 import type { InboundChatMessage } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
-import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
+import { AgentDocumentService, buildDocumentNoticeText, checkUploadable } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
@@ -105,6 +105,21 @@ const UpdateAgentSchema = z.object({
 });
 
 
+interface WebChatAttachment {
+  filename: string;
+  mimeType: string;
+  buffer: Buffer;
+}
+
+function documentErrorStatus(code: string): number {
+  switch (code) {
+    case 'agent_document.unsupported_type': return 400;
+    case 'agent_document.too_large': return 413;
+    case 'agent_document.not_found': return 404;
+    default: return 500;
+  }
+}
+
 // --- Route module ---
 
 export async function agentInteractivityRoutes(
@@ -119,6 +134,44 @@ export async function agentInteractivityRoutes(
   conversations: ConversationRouteDeps = createConversationRouteDeps(db),
 ): Promise<void> {
   const SendMessageSchema = buildSendMessageSchema(conversations.limits.userMessageMaxChars);
+  const webChatDocumentRepo = new AgentDocumentsRepository(db);
+  const webChatDocumentService = new AgentDocumentService(
+    new LocalDocumentStore(process.env['AGENT_DOCUMENTS_DIR'] ?? resolve(process.cwd(), 'data/agent-documents')),
+    createDocumentTextExtractor(),
+    webChatDocumentRepo,
+  );
+
+  /**
+   * Stores a web chat attachment once per message id. A retry of a message whose publish failed sends the file
+   * again; the existing document is reused so the agent does not get a duplicate.
+   */
+  async function stageWebChatAttachment(params: {
+    agentId: string;
+    userId: string;
+    messageId: string;
+    caption: string;
+    file: WebChatAttachment;
+  }) {
+    const existing = (await webChatDocumentRepo.listByAgent(params.agentId))
+      .find((doc) => doc.source === 'web_chat' && doc.sourceRef === params.messageId);
+    if (existing) {
+      return { ok: true as const, data: {
+        id: existing.id,
+        originalFilename: existing.originalFilename,
+        extractionStatus: existing.extractionStatus,
+      } };
+    }
+    return webChatDocumentService.uploadDocument({
+      agentId: params.agentId,
+      userId: params.userId,
+      source: 'web_chat',
+      originalFilename: params.file.filename,
+      mimeType: params.file.mimeType,
+      body: params.file.buffer,
+      sourceRef: params.messageId,
+      captionOrPrompt: params.caption,
+    });
+  }
 
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
@@ -384,7 +437,30 @@ export async function agentInteractivityRoutes(
     preHandler: requireDirectChildOfActingAgent(db),
   }, async (request, reply) => {
     const { id } = request.params;
-    const parsed = SendMessageSchema.safeParse(request.body);
+    let rawBody: unknown = request.body;
+    let attachment: WebChatAttachment | null = null;
+    if (request.headers['content-type']?.startsWith('multipart/form-data')) {
+      const fields: Record<string, string> = {};
+      try {
+        for await (const part of request.parts()) {
+          if (part.type === 'file') {
+            if (attachment) {
+              return reply.status(400).send({ error: 'validation_error', message: 'Send one attachment per message.' });
+            }
+            attachment = { filename: part.filename, mimeType: part.mimetype, buffer: await part.toBuffer() };
+          } else {
+            fields[part.fieldname] = String(part.value);
+          }
+        }
+      } catch (error) {
+        if ((error as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
+          return reply.status(413).send({ error: 'agent_document.too_large', message: 'File exceeds the upload size limit.' });
+        }
+        throw error;
+      }
+      rawBody = fields;
+    }
+    const parsed = SendMessageSchema.safeParse(rawBody);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
@@ -396,6 +472,15 @@ export async function agentInteractivityRoutes(
     const { message: body, clientMessageId } = parsed.data;
     const actingAgentId = request.actingAgentId ?? null;
     const sender: MessageSender = actingAgentId !== null ? { type: 'agent', agentId: actingAgentId } : { type: 'user' };
+    if (attachment) {
+      if (actingAgentId !== null) {
+        return reply.status(400).send({ error: 'validation_error', message: 'Agents cannot attach documents to messages.' });
+      }
+      const rejected = checkUploadable({ mimeType: attachment.mimeType, sizeBytes: attachment.buffer.byteLength, filename: attachment.filename });
+      if (rejected) {
+        return reply.status(documentErrorStatus(rejected.code)).send({ error: rejected.code, message: rejected.message });
+      }
+    }
     const respondWith = (message: ConversationMessage) =>
       toConversationResponse(message, conversations.service.isStuckQueued(message));
 
@@ -492,6 +577,22 @@ export async function agentInteractivityRoutes(
       return reply.status(202).send({ delivered: true, message: respondWith(stored) });
     }
 
+    let payloadMessage = body;
+    if (attachment) {
+      const staged = await stageWebChatAttachment({ agentId: id, userId: request.userId, messageId: stored.id, caption: body, file: attachment });
+      if (!staged.ok) {
+        const marked = await conversations.service.markDelivery({ messageId: stored.id, status: 'failed', detail: 'attachment_failed' });
+        if (!marked.ok) request.log.warn({ code: marked.error.code }, 'could not mark message as failed');
+        return reply.status(documentErrorStatus(staged.error.code)).send({ error: staged.error.code, message: staged.error.message, messageId: stored.id });
+      }
+      payloadMessage = `${body}\n\n${buildDocumentNoticeText({
+        documentId: staged.data.id,
+        filename: staged.data.originalFilename,
+        extracted: staged.data.extractionStatus === 'ready',
+        caption: body,
+      })}`;
+    }
+
     // Publish to agent:outbound:{agentId} — the platform→agent channel
     const envelope = {
       schemaVersion: 'v1',
@@ -502,7 +603,7 @@ export async function agentInteractivityRoutes(
       agentId: id,
       type: isCreatorMessage ? 'agent.user.message' : 'user.message',
       createdAt: new Date().toISOString(),
-      payload: { message: body },
+      payload: { message: payloadMessage },
     };
     try {
       await redisClient.xadd(`agent:outbound:${id}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
@@ -1203,14 +1304,12 @@ export async function telegramWebhookHandler(
       // ── 6. Publish text notification to the agent ─────────────────────
 
       const docResult = result.data;
-      const safeName = sanitizeFilename(filename);
-      const extracted = docResult.extractionStatus === 'ready';
-      const notificationText = [
-        `User sent document \`${filename}\`.`,
-        `Original saved at \`docs/original/${docResult.id}-${safeName}\`.`,
-        extracted ? `Extracted text saved at \`docs/extracted/${docResult.id}.txt\`.` : '',
-        caption ? `Caption: "${caption}"` : '',
-      ].filter(Boolean).join('\n');
+      const notificationText = buildDocumentNoticeText({
+        documentId: docResult.id,
+        filename,
+        extracted: docResult.extractionStatus === 'ready',
+        caption,
+      });
 
       await deliverTelegramMessage(targetAgent.agentId, userId, notificationText);
       await sendTelegramText(chatId, `Document delivered to ${targetAgent.agentName}.`);

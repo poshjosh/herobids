@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Attachements for web chat (images not supported yet)
+
 ## v0.8.1 - 2026-10-27
 
 ### Changed

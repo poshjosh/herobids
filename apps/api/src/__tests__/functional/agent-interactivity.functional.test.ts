@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
-import { agents, conversationMessages, conversationParticipants, conversations, users } from '@herobids/db';
+import { agents, AgentDocumentsRepository, conversationMessages, conversationParticipants, conversations, users } from '@herobids/db';
 import { userAgentConversationId } from '@herobids/domain';
 import { eq, sql } from 'drizzle-orm';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
@@ -306,6 +306,88 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
   });
 
   // ─── GET /agents/:id/conversation ─────────────────────────────────────────
+
+  describe('POST /agents/:id/message with an attachment', () => {
+    function multipartMessage(fields: Record<string, string>, file?: { name: string; type: string; content: string }) {
+      const boundary = 'herobidsTestBoundary';
+      let body = '';
+      for (const [name, value] of Object.entries(fields)) {
+        body += `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
+      }
+      if (file) {
+        body += `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name}"\r\nContent-Type: ${file.type}\r\n\r\n${file.content}\r\n`;
+      }
+      body += `--${boundary}--\r\n`;
+      return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+    }
+
+    it('stores the document, notifies the agent, and returns 202', async () => {
+      const id = await createAgent();
+      await ctx.db.update(agents).set({ status: 'running' }).where(eq(agents.id, id));
+      const payload = multipartMessage(
+        { message: 'Review this report' },
+        { name: 'report.txt', type: 'text/plain', content: 'Quarterly numbers' },
+      );
+
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/message`,
+        headers: { ...authHeader(), 'content-type': payload.contentType },
+        payload: payload.body,
+      });
+
+      expect(res.statusCode).toBe(202);
+      const docs = await new AgentDocumentsRepository(ctx.db).listByAgent(id);
+      expect(docs).toHaveLength(1);
+      expect(docs[0]!.source).toBe('web_chat');
+      expect(docs[0]!.originalFilename).toBe('report.txt');
+
+      const entries = await ctx.redisClient.xrange(`agent:outbound:${id}`, '-', '+');
+      const envelope = JSON.parse(entries[entries.length - 1]![1][1] as string) as { payload: { message: string } };
+      expect(envelope.payload.message).toContain('Review this report');
+      expect(envelope.payload.message).toContain(`docs/original/${docs[0]!.id}-report.txt`);
+    });
+
+    it('rejects an unsupported file type before recording the message', async () => {
+      const id = await createAgent();
+      await ctx.db.update(agents).set({ status: 'running' }).where(eq(agents.id, id));
+      const payload = multipartMessage(
+        { message: 'Look' },
+        { name: 'photo.png', type: 'image/png', content: 'not really a png' },
+      );
+
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/message`,
+        headers: { ...authHeader(), 'content-type': payload.contentType },
+        payload: payload.body,
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('agent_document.unsupported_type');
+      expect(await new AgentDocumentsRepository(ctx.db).listByAgent(id)).toHaveLength(0);
+      expect(await ctx.redisClient.xlen(`agent:outbound:${id}`)).toBe(0);
+    });
+
+    it('returns 409 for a stopped agent and stores nothing', async () => {
+      const id = await createAgent();
+      const payload = multipartMessage(
+        { message: 'Read this' },
+        { name: 'notes.md', type: 'text/markdown', content: '# Notes' },
+      );
+
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/message`,
+        headers: { ...authHeader(), 'content-type': payload.contentType },
+        payload: payload.body,
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json<{ error: string }>().error).toBe('agent_not_running');
+      expect(await new AgentDocumentsRepository(ctx.db).listByAgent(id)).toHaveLength(0);
+    });
+  });
 
   describe('GET /agents/:id/conversation', () => {
     async function runningAgentWith(messages: number): Promise<string> {

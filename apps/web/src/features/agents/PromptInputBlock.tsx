@@ -121,6 +121,32 @@ export function PromptInputBlock({
             minHeight: '36px',
           }}
         >
+          {/* Paper-clip button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title={intl.formatMessage({
+              id: 'agents.create.attachFiles',
+              defaultMessage: 'Attach files',
+            })}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '1.125rem',
+              padding: '4px 8px',
+              color:
+                pendingFiles.length > 0
+                  ? 'var(--color-brand)'
+                  : 'var(--color-text-muted)',
+              borderRadius: '4px',
+              lineHeight: 1,
+              transition: 'color 0.15s',
+            }}
+          >
+            📎
+          </button>
+
           {/* File chips (left) */}
           <div
             style={{
@@ -237,32 +263,6 @@ export function PromptInputBlock({
             }
             style={{ display: 'none' }}
           />
-
-          {/* Paper-clip button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title={intl.formatMessage({
-              id: 'agents.create.attachFiles',
-              defaultMessage: 'Attach files',
-            })}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '1.125rem',
-              padding: '4px 8px',
-              color:
-                pendingFiles.length > 0
-                  ? 'var(--color-brand)'
-                  : 'var(--color-text-muted)',
-              borderRadius: '4px',
-              lineHeight: 1,
-              transition: 'color 0.15s',
-            }}
-          >
-            📎
-          </button>
 
           {/* Compact style selector — no border, blends into bar */}
           <select

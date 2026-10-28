@@ -7,6 +7,8 @@ export interface PendingSend {
   body: string;
   createdAt: string;
   status: 'sending' | 'failed';
+  /** Kept so a retry re-sends the same document. */
+  file?: File;
 }
 
 /** Union by id (later lists win), oldest first, ties broken by id: the order the server pages in. */

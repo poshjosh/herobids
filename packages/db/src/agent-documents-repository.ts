@@ -5,7 +5,7 @@ import { agentDocuments } from './schema/index.js';
 
 // ── TypeScript literal union types for constrained enum columns ──
 
-export type DocumentSource = 'control_plane' | 'telegram' | 'whatsapp' | 'sms';
+export type DocumentSource = 'control_plane' | 'telegram' | 'web_chat' | 'whatsapp' | 'sms';
 export type ExtractionStatus = 'not_needed' | 'ready' | 'failed';
 export type DocumentLifecycleState = 'staged' | 'materialized' | 'deleted' | 'failed';
 

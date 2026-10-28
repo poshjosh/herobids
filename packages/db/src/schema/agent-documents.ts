@@ -11,7 +11,7 @@ export const agentDocuments = pgTable('agent_documents', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   userId: text('user_id').notNull().references(() => users.id),
-  /** Origin of the document: control_plane (web/API upload) | telegram | whatsapp | sms */
+  /** Origin of the document: control_plane (web/API upload) | telegram | web_chat (message attachment) | whatsapp | sms */
   source: text('source').notNull(),
   /** Reference to the source entity (e.g. Telegram message ID). Null for control-plane uploads. */
   sourceRef: text('source_ref'),

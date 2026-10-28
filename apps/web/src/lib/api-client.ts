@@ -1397,12 +1397,20 @@ export const agents = {
     request<PeerThreadPage>(`/agents/${id}/peer-threads/${encodeURIComponent(peerAgentId)}${buildQuery({ limit: options.limit, before: options.before })}`),
   conversationTurn: (id: string, connectionRequestId?: string) =>
     request<AgentConversationTurn>(`/agents/${id}/conversation-turn${buildQuery({ connectionRequestId })}`),
-  /** `clientMessageId` makes a retry of the same message idempotent on the server. */
-  sendMessage: (id: string, message: string, clientMessageId?: string) =>
-    request<AgentSendMessageResult>(`/agents/${id}/message`, {
+  /** `clientMessageId` makes a retry of the same message idempotent on the server. `file` is stored as a document. */
+  sendMessage: (id: string, message: string, clientMessageId?: string, file?: File) => {
+    if (file) {
+      const formData = new FormData();
+      formData.append('message', message);
+      if (clientMessageId) formData.append('clientMessageId', clientMessageId);
+      formData.append('file', file);
+      return request<AgentSendMessageResult>(`/agents/${id}/message`, { method: 'POST', body: formData });
+    }
+    return request<AgentSendMessageResult>(`/agents/${id}/message`, {
       method: 'POST',
       body: JSON.stringify(clientMessageId ? { message, clientMessageId } : { message }),
-    }),
+    });
+  },
   capabilityReadiness: agentCapabilityReadiness,
   tradingConnections: (id: string) =>
     request<{ agentId: string; family: 'trading'; connections: ConnectionSummary[] }>(`/agents/${id}/capabilities/trading/connections`),

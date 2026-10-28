@@ -49,6 +49,10 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.notSent': 'Not sent',
   'agentDetail.conversation.loadEarlier': 'Show earlier messages',
   'agentDetail.conversation.loadError': 'Could not load the conversation.',
+  'agentDetail.conversation.attach': 'Attach document',
+  'agentDetail.conversation.removeAttachment': 'Remove document',
+  'agentDetail.conversation.attachmentTooLarge': 'That file is larger than 10 MB.',
+  'agentDetail.conversation.attachmentUnsupported': 'That file type is not supported. Use text, JSON, XML, CSV, PDF or Word (.docx).',
 };
 
 function render(props: Partial<Parameters<typeof AgentConversationView>[0]> = {}): string {
