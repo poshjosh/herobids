@@ -38,6 +38,79 @@ messaging:
     telegram:
       botUsername: "OpenAIdomBot" # bot username without @, for t.me deep links; override: TELEGRAM_BOT_USERNAME
 
+plans:
+  plans:
+    starter:
+      entitlements: # required
+        skills:
+          canCreatePrivateSkills: true
+          canViewMarketplaceSkills: true
+          canPublishToMarketplace: true
+          autoPublishNonDraftSkills: false
+          canPriceSkills: true
+          canLikeMarketplaceSkills: true
+        agents:
+          canViewOwnPrompts: false
+        blueprints:
+          canViewMarketplaceBlueprints: true
+          canLikeMarketplaceBlueprints: true
+        limits:
+          maxAgents: 30
+          maxBots: 30
+          maxConnections: 15
+          maxCredentials: 15
+          maxBindings: 150
+          maxVenueAccounts: 15
+          maxConcurrentBacktests: 3
+          liveEnabled: true
+      usage: # required
+        includedCreditCents: 2000
+        softCapCents: 500  # warn when $5 credit left
+        hardCapCents: -100 # block when balance ≤ $hardCapCents
+        topUpPackIds: 
+          - Topup5
+          - Topup20
+          - Topup50
+          - Topup100
+          - Topup200
+          - Topup500
+          - Topup1000
+    pro:
+      entitlements: # required
+        skills:
+          canCreatePrivateSkills: true
+          canViewMarketplaceSkills: true
+          canPublishToMarketplace: true
+          autoPublishNonDraftSkills: false
+          canPriceSkills: true
+          canLikeMarketplaceSkills: true
+        agents:
+          canViewOwnPrompts: false
+        blueprints:
+          canViewMarketplaceBlueprints: true
+          canLikeMarketplaceBlueprints: true
+        limits:
+          maxAgents: 90
+          maxBots: 90
+          maxConnections: 45
+          maxCredentials: 45
+          maxBindings: 450
+          maxVenueAccounts: 45
+          maxConcurrentBacktests: 9
+          liveEnabled: true
+      usage: # required
+        includedCreditCents: 5000
+        softCapCents: 1000  # warn when $10 credit left
+        hardCapCents: -100 # block when balance ≤ $hardCapCents
+        topUpPackIds: 
+          - Topup5
+          - Topup20
+          - Topup50
+          - Topup100
+          - Topup200
+          - Topup500
+          - Topup1000
+
 # PRODUCTION: Billing must be a real provider (not mock). The startup guard
 # in apps/*/src/config.ts enforces this — the process will refuse to start if
 # billing.primaryProvider is still 'mock' when NODE_ENV=production.
