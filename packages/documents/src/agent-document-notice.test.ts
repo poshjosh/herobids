@@ -3,19 +3,18 @@ import { buildDocumentNoticeText } from './agent-document-notice.js';
 import { checkUploadable } from './agent-document-service.js';
 
 describe('buildDocumentNoticeText', () => {
-  it('points at the original and extracted copies and includes the caption', () => {
-    const text = buildDocumentNoticeText({ documentId: 'doc-1', filename: 'report.pdf', extracted: true, caption: 'Read this' });
+  it('names the document id, points at the read tool, and includes the caption', () => {
+    const text = buildDocumentNoticeText({ documentId: 'doc-1', filename: 'report.pdf', caption: 'Read this' });
 
-    expect(text).toContain('User sent document `report.pdf`.');
-    expect(text).toContain('docs/original/doc-1-report.pdf');
-    expect(text).toContain('docs/extracted/doc-1.txt');
+    expect(text).toContain('User sent document `report.pdf` (document id `doc-1`).');
+    expect(text).toContain('read_agent_document');
+    expect(text).not.toContain('docs/');
     expect(text).toContain('Caption: "Read this"');
   });
 
-  it('omits the extracted line and caption when neither applies', () => {
-    const text = buildDocumentNoticeText({ documentId: 'doc-2', filename: 'notes.txt', extracted: false });
+  it('omits the caption line when there is no caption', () => {
+    const text = buildDocumentNoticeText({ documentId: 'doc-2', filename: 'notes.txt' });
 
-    expect(text).not.toContain('docs/extracted');
     expect(text).not.toContain('Caption');
   });
 });

@@ -156,6 +156,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'load_skill',
   'make_http_request',
   'publish_artifact',
+  'read_agent_document',
   'read_app_docs',
   'read_document',
   'read_file',
@@ -227,6 +228,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   list_skills:         { category: 'read-database',       description: 'List skills assigned to this agent and skills available to add.' },
   list_providers:      { category: 'read-database',       description: 'List connection providers and show which are owned or granted to this agent.' },
   search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the system skills/platform catalog and the external skill registry.' },
+  read_agent_document: { category: 'read-database',       description: 'Read the text of a document the user sent in chat, by the document id from the "User sent document" message. Returns up to 100,000 characters per call; continue with the returned nextOffset.' },
   // write-database
   create_child_agent: { category: 'write-database',     description: 'Create a child agent with its own name, prompt, and skills or connections you grant from your own. The child starts when created unless you pass start: false. Only available while you have child allowance.' },
   delete_child_agent: { category: 'write-database',     description: 'Permanently delete one of your direct child agents. The child must have no children of its own. A running child is stopped first unless you pass stopFirst: false. Only works for children you created.' },

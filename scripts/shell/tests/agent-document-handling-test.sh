@@ -210,7 +210,7 @@ info "Step 3/8: Create agent"
 CREATE_PAYLOAD=$(cat <<'AGENTJSON'
 {
   "name": "Doc Test Agent",
-  "prompt": "You are a document reader. On your first tick, do exactly this:\n1. Use list_files with path '' (empty string) to see your workspace root.\n2. Use list_files with path 'docs/extracted' to find an extracted text file which we sent to you.\n3. Use read_file to read the content of the .txt file you find (use the relative path like docs/extracted/<file-name>.txt).\n4. Find the first non-empty line of text in that file — this is the heading.\n5. Call publish_artifact with artifactType='text', summary=the exact heading text, body=the full text you read.\n6. Do nothing else. Do not call any other tools.\nAfter publishing - STOP.",
+  "prompt": "You are a document reader. When the user's message lists a document id, do exactly this:\n1. Call read_agent_document with the first documentId listed in the message.\n2. Find the first non-empty line of the returned text — this is the heading.\n3. Call publish_artifact with artifactType='text', summary=the exact heading text, body=the full text you read.\n4. Do nothing else. Do not call any other tools.\nAfter publishing - STOP.",
   "provider": "ollama",
   "lightModel": "qwen3:8b",
   "heavyModel": "qwen3.6:35b-a3b-q4_K_M",
@@ -299,6 +299,18 @@ done
 if [[ "$AGENT_STATUS" != "active" ]]; then
   fail "Agent did not reach 'active' state within 60s (current: $AGENT_STATUS)"
 fi
+
+# Tell the agent which document to read. The agent reads text through read_agent_document, the
+# same path a document sent in chat takes, so the id is passed in a message rather than in the prompt.
+NOTIFY_BODY=$(jq -n --arg m "Document id to read: $PDF_DOC_ID (the PDF). Other document id: $DOCX_DOC_ID." '{message: $m}')
+NOTIFY_CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_BASE_URL/agents/$AGENT_ID/message" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$NOTIFY_BODY")
+if [[ "$NOTIFY_CODE" != "202" ]]; then
+  fail "Could not send document id message to agent (HTTP $NOTIFY_CODE)"
+fi
+log "Sent document id message to agent"
 
 # ─── Step 7 — Poll for artifact ──────────────────────────────────────────────
 

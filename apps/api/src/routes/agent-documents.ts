@@ -3,10 +3,11 @@ import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '@herobids/db';
 import { agents, AgentDocumentsRepository } from '@herobids/db';
-import { AgentDocumentService } from '@herobids/documents';
+import { AgentDocumentService, readAgentDocumentPage } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { errorPayload } from '../error-payload.js';
+import { requireSelfAgentOrUser } from '../plugins/auth.js';
 import { resolve } from 'node:path';
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -135,6 +136,43 @@ export async function agentDocumentRoutes(
       })),
     });
   });
+
+  // ── GET /agents/:id/documents/:documentId/text ──────────────────────────
+  // Read by the agent itself (its own key) through the platform client. The agent container has no
+  // access to the document store, so the text is served from here. Paged; see readAgentDocumentPage.
+
+  app.get<{ Params: { id: string; documentId: string }; Querystring: { offset?: string } }>(
+    '/agents/:id/documents/:documentId/text',
+    { config: { agentAccess: 'self' }, preHandler: requireSelfAgentOrUser },
+    async (request, reply) => {
+      const { id: agentId, documentId } = request.params;
+      const offset = request.query.offset === undefined ? 0 : Number(request.query.offset);
+      if (!Number.isInteger(offset) || offset < 0) {
+        return reply.status(400).send(errorPayload('validation_error', 'offset must be a non-negative integer.'));
+      }
+      if (!z.string().uuid().safeParse(documentId).success) {
+        return reply.status(404).send(errorPayload('agent_document.not_found', 'Document not found.'));
+      }
+
+      const [agent] = await db.select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)))
+        .limit(1);
+      if (!agent) {
+        return reply.status(404).send(errorPayload('agent_not_found', 'Agent not found.'));
+      }
+
+      const result = await readAgentDocumentPage({ lookup: repo, store, agentId, documentId, offset });
+      if (!result.ok) {
+        const statusCode = result.error.code === 'document.not_found' ? 404
+          : result.error.code === 'document.no_text' ? 422
+          : result.error.code === 'document.too_large' ? 413
+          : 500;
+        return reply.status(statusCode).send(errorPayload(result.error.code, result.error.message));
+      }
+      return reply.send(result.data);
+    },
+  );
 
   // ── DELETE /agents/:id/documents/:documentId ────────────────────────────
 

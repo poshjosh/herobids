@@ -68,9 +68,20 @@ export interface ChildAgentSummary {
   lastStartRefusal: ChildStartRefusal | null;
 }
 
+/** One page of a document's text that the user sent in chat, read through the platform. */
+export interface AgentDocumentTextPage {
+  documentId: string;
+  filename: string;
+  text: string;
+  offset: number;
+  nextOffset: number | null;
+  totalChars: number;
+}
+
 /** Platform API operations an agent container may perform as itself (see 001-plan §6-§8). */
 export interface AgentPlatformPort {
   getOwnAllowance(): Promise<Result<AgentAllowance, AgentPlatformError>>;
+  readAgentDocument(documentId: string, offset: number): Promise<Result<AgentDocumentTextPage, AgentPlatformError>>;
   createChildAgent(input: CreateChildAgentInput): Promise<Result<ChildAgentCreated, AgentPlatformError>>;
   listChildAgents(): Promise<Result<ChildAgentSummary[], AgentPlatformError>>;
   getChildStatus(agentId: string): Promise<Result<ChildAgentStatus, AgentPlatformError>>;

@@ -27,7 +27,7 @@ Let users attach a supported document (text, JSON, XML, CSV, PDF, DOCX; max 10 M
 ## Validation
 
 - Run the smallest affected test suites for `apps/api`, `apps/web`, and `packages/documents`/`db`.
-- Manual check: send a PDF from web chat to a running agent and confirm the file appears under `docs/original/` and the agent is notified.
+- Manual check: send a PDF from web chat to a running agent, confirm the notice gives its document id, and confirm the agent reads its text with `read_agent_document`. The file is not copied into the workspace on Nomad; the workspace copy (`docs/original/`) is only written by the Docker backend.
 - Manual check: send with a stopped agent and confirm the rejection and that no document row is created.
 
 ## Risks

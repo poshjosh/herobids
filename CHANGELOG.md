@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.5 - 2026-10-28
+
+### Changed
+
+- Documents sent in web chat are read by the agent with the new `read_agent_document` tool. The message now gives the document id instead of a workspace file path, so it works on every runtime backend. Text is read in pages of 100,000 characters.
+
+### Fixed
+
+- Documents sent in web chat did not reach agents running on Nomad (staging). The agent now reads them through `read_agent_document`.
+
 ## v0.8.4 - 2026-10-28
 
 ## v0.8.3 - 2026-10-28

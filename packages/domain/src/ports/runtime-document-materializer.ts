@@ -15,6 +15,10 @@ export interface RuntimeDocumentMaterializerError extends DomainError {
  * Documents are placed under `/workspace/docs/` with two sub-directories:
  *   - `docs/original/<document-id>-<sanitized-name>` — original file hierarchy
  *   - `docs/extracted/<document-id>.txt` — extracted plain text
+ *
+ * This copy is secondary. Only the Docker backend implements it. Nomad does not materialize
+ * documents, and agents read document text with `read_agent_document`, which the API serves.
+ * The workspace copy is still useful for file tools on Docker.
  */
 export interface RuntimeDocumentMaterializer {
   /**

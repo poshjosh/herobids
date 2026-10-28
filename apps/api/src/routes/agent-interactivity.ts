@@ -588,7 +588,6 @@ export async function agentInteractivityRoutes(
       payloadMessage = `${body}\n\n${buildDocumentNoticeText({
         documentId: staged.data.id,
         filename: staged.data.originalFilename,
-        extracted: staged.data.extractionStatus === 'ready',
         caption: body,
       })}`;
     }
@@ -1307,7 +1306,6 @@ export async function telegramWebhookHandler(
       const notificationText = buildDocumentNoticeText({
         documentId: docResult.id,
         filename,
-        extracted: docResult.extractionStatus === 'ready',
         caption,
       });
 

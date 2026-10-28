@@ -345,7 +345,9 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
       const entries = await ctx.redisClient.xrange(`agent:outbound:${id}`, '-', '+');
       const envelope = JSON.parse(entries[entries.length - 1]![1][1] as string) as { payload: { message: string } };
       expect(envelope.payload.message).toContain('Review this report');
-      expect(envelope.payload.message).toContain(`docs/original/${docs[0]!.id}-report.txt`);
+      expect(envelope.payload.message).toContain(`document id \`${docs[0]!.id}\``);
+      expect(envelope.payload.message).toContain('read_agent_document');
+      expect(envelope.payload.message).not.toContain('docs/original');
     });
 
     it('rejects an unsupported file type before recording the message', async () => {

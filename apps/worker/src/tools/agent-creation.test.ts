@@ -32,6 +32,7 @@ function fakePlatform(overrides: Partial<AgentPlatformPort> = {}): AgentPlatform
     messageChildAgent: vi.fn(async () => ok({ delivered: true })),
     listChildAgents: vi.fn(async () => ok([])),
     deleteChildAgent: vi.fn(async () => ok({ deleted: true as const, stopped: false })),
+    readAgentDocument: vi.fn(async () => err(platformError('agent.platform.not_found', false))),
     ...overrides,
   };
 }

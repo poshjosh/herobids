@@ -184,6 +184,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `load_skill` | `core` | Agent skill assignment plus instruction load (add_skills then read_skill). |
 | `make_http_request` | `general` | Structured HTTP client — stateless in-process fetch, no provider model. |
 | `publish_artifact` | `native:messaging` | User-facing artifact delivery. |
+| `read_agent_document` | `core` | Reads documents the user sent in chat. |
 | `read_app_docs` | `core` | Platform documentation access. |
 | `read_document` | `general` | Reusable document-reading expertise. |
 | `read_file` | `core` | Agent workspace operation. |

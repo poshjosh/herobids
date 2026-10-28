@@ -29,6 +29,7 @@ import { loadSkillTool } from './load-skill.js';
 import { createBrowserTools } from './browser.js';
 import { httpClientTools } from './http-client.js';
 import { shellTools } from './shell.js';
+import { agentDocumentTools } from './agent-documents.js';
 import { RemindersConfigSchema, type BrowserPoolPort, type ReminderConfig } from '@herobids/domain';
 
 // Operator reminder defaults, derived from the schema so there are no magic
@@ -124,6 +125,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...resolverTools,
     ...emailTools,
     ...platformDocsTools,
+    ...agentDocumentTools,
     listProvidersTool,
     requestConnectionTool,
     updateMyPromptTool,

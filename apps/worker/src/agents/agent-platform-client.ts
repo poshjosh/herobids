@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ok, err } from '@herobids/domain';
 import type {
   AgentAllowance,
+  AgentDocumentTextPage,
   AgentPlatformError,
   AgentPlatformPort,
   ChildAgentCreated,
@@ -79,6 +80,14 @@ const DeletedResponseSchema = z.object({ deleted: z.literal(true), stopped: z.bo
 const PeerMessagingStateResponseSchema = z.object({ paused: z.boolean() });
 const StatusResponseSchema = z.object({ status: z.string() });
 const DeliveredResponseSchema = z.object({ delivered: z.boolean() });
+const DocumentTextResponseSchema = z.object({
+  documentId: z.string().min(1),
+  filename: z.string(),
+  text: z.string(),
+  offset: z.number().int().min(0),
+  nextOffset: z.number().int().min(0).nullable(),
+  totalChars: z.number().int().min(0),
+});
 
 /** The API's own namespaced error code, read from the body. Only this field is ever read. */
 const ApiErrorBodySchema = z.object({ error: z.string().max(100) });
@@ -173,6 +182,10 @@ export function createAgentPlatformClient(options: AgentPlatformClientOptions): 
   return {
     async getOwnAllowance(): Promise<Result<AgentAllowance, AgentPlatformError>> {
       return request('GET', `${agentPath}/child-allowance`, AllowanceResponseSchema);
+    },
+
+    async readAgentDocument(documentId: string, offset: number): Promise<Result<AgentDocumentTextPage, AgentPlatformError>> {
+      return request('GET', `${agentPath}/documents/${encodeURIComponent(documentId)}/text?offset=${offset}`, DocumentTextResponseSchema);
     },
 
     async getPeerMessagingState(): Promise<Result<PeerMessagingState, AgentPlatformError>> {
