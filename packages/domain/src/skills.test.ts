@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  AGENT_CHILDREN_MANAGEMENT_SKILL,
+  CHILD_AGENT_MANAGEMENT_SKILL,
   BASE_SKILL,
   EMAIL_SKILL,
   FILE_MANAGEMENT_SKILL,
@@ -128,8 +128,8 @@ describe('SYSTEM_SKILLS', () => {
 
   it('contains exactly the non-trading system skills', () => {
     expect(SYSTEM_SKILLS.map((s) => s.id).sort()).toEqual([
-      'agent-children-management',
       'browser',
+      'child-agent-management',
       'email',
       'file-management',
       'long-running-task',
@@ -375,9 +375,9 @@ describe('BASE_SKILL — long-running task pointer', () => {
   });
 });
 
-describe('agent-children-management skill', () => {
+describe('child-agent-management skill', () => {
   it('lists exactly the seven child-management tools', () => {
-    expect(AGENT_CHILDREN_MANAGEMENT_SKILL.requiredTools.slice().sort()).toEqual([
+    expect(CHILD_AGENT_MANAGEMENT_SKILL.requiredTools.slice().sort()).toEqual([
       'create_child_agent',
       'delete_child_agent',
       'get_child_agent_status',
@@ -389,20 +389,20 @@ describe('agent-children-management skill', () => {
   });
 
   it('is a system skill, so it is seeded with the others', () => {
-    expect(SYSTEM_SKILLS).toContain(AGENT_CHILDREN_MANAGEMENT_SKILL);
-    expect(AGENT_CHILDREN_MANAGEMENT_SKILL.slug).toBe('system/agent-children-management');
+    expect(SYSTEM_SKILLS).toContain(CHILD_AGENT_MANAGEMENT_SKILL);
+    expect(CHILD_AGENT_MANAGEMENT_SKILL.slug).toBe('system/child-agent-management');
   });
 
   it('is user-only by id and by system slug, and no other skill is', () => {
-    expect(isUserOnlySkill('agent-children-management')).toBe(true);
-    expect(isUserOnlySkill('system/agent-children-management')).toBe(true);
+    expect(isUserOnlySkill('child-agent-management')).toBe(true);
+    expect(isUserOnlySkill('system/child-agent-management')).toBe(true);
     expect(isUserOnlySkill('browser')).toBe(false);
     expect(isUserOnlySkill('system/browser')).toBe(false);
     expect(isUserOnlySkill('base')).toBe(false);
   });
 
   it('is not in the base skill, so an agent without it cannot see the child tools', () => {
-    for (const tool of AGENT_CHILDREN_MANAGEMENT_SKILL.requiredTools) {
+    for (const tool of CHILD_AGENT_MANAGEMENT_SKILL.requiredTools) {
       expect(BASE_SKILL.requiredTools).not.toContain(tool);
     }
     expect(BASE_SKILL.requiredTools).toContain('message_peer_agent');

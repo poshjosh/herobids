@@ -10,9 +10,9 @@ Every tool calls the platform API with the calling agent's own API key. The API 
 |---|---|
 | `create_child_agent` | The agent's `childAgentLimit` is above 0 and its direct children are fewer than the limit. |
 | `get_child_agent_status`, `pause_child_agent`, `stop_child_agent`, `message_child_agent`, `delete_child_agent` | The agent has at least one direct child. |
-| `list_child_agents` | The agent holds the `agent-children-management` skill. Not gated on having a child, so the agent can learn it has none. |
+| `list_child_agents` | The agent holds the `child-agent-management` skill. Not gated on having a child, so the agent can learn it has none. |
 
-All of these tools come from the `agent-children-management` skill, which only the user can assign. The agent cannot add it to itself, and it cannot grant it to a child. The `base` skill no longer lists these tools.
+All of these tools come from the `child-agent-management` skill, which only the user can assign. The agent cannot add it to itself, and it cannot grant it to a child. The `base` skill no longer lists these tools.
 
 If the allowance has not been read, `create_child_agent` and the creator tools are hidden.
 
@@ -75,7 +75,7 @@ Operator settings are in [Configuration: Agent creation limits](../../configurat
 
 ## Assigning the children skill
 
-The `agent-children-management` skill is the only way these tools reach an agent. Only the user assigns it:
+The `child-agent-management` skill is the only way these tools reach an agent. Only the user assigns it:
 
 - The agent's `add_skills` tool refuses it (`skill.user_only`), and so does the broker that writes assignments.
 - A child-create that asks to grant it is refused by the creation policy.

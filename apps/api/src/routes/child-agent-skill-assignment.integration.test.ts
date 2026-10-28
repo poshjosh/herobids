@@ -12,7 +12,7 @@ import { agentRoutes } from './agents.js';
 
 const SKIP = !process.env['DATABASE_URL'];
 const TEST_JWT_SECRET = 'test-secret-for-integration-tests-32ch!!';
-const CHILDREN_SKILL = 'agent-children-management';
+const CHILDREN_SKILL = 'child-agent-management';
 
 function makeAuthConfig(): AuthConfig {
   return {

@@ -26,8 +26,8 @@ function makeCtx(): ToolContext {
 
 describe('add_skills refuses the user-only children skill', () => {
   it.each([
-    ['the id', 'agent-children-management'],
-    ['the system slug', 'system/agent-children-management'],
+    ['the id', 'child-agent-management'],
+    ['the system slug', 'system/child-agent-management'],
   ])('refuses %s for an agent caller and never reaches the broker', async (_label, skill) => {
     const ctx = makeCtx();
     const result = await addSkillsTool.execute({ skillIds: [skill] }, ctx);
@@ -42,7 +42,7 @@ describe('add_skills refuses the user-only children skill', () => {
 
   it('refuses the whole call when the user-only skill is mixed with an allowed one', async () => {
     const ctx = makeCtx();
-    const result = await addSkillsTool.execute({ skillIds: ['system/browser', 'agent-children-management'] }, ctx);
+    const result = await addSkillsTool.execute({ skillIds: ['system/browser', 'child-agent-management'] }, ctx);
 
     expect(result).toMatchObject({ success: false, errorCode: 'skill.user_only' });
     expect(ctx.publishToInbound).not.toHaveBeenCalled();

@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### CHANGED
+
+- Rename agent-child-management skill to child-agent-management
+
 ## v0.8.2 - 2026-10-28
 
 ### CHANGED
@@ -43,7 +47,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A child's refused launch (billing: no credit, usage limit, top-up needed or suspended) is recorded on the child as `lastStartRefusal` (`code`, `message`, `at`). The creating agent reads it from `get_child_agent_status` and `list_child_agents`. It clears when a launch reaches the runtime. Migration `0087_agent_last_start_refusal`.
 - Agents can create child agents within a child allowance that only the user can set. A child starts when it is created, unless the parent passes `start: false`. The parent may grant children some of its skills and connections.
 - Creator agents can read, message, pause and stop their direct children. Messages are rate limited per creator-child pair.
-- Agent children management skill (`agent-children-management`). It lists the tools to create, list, inspect, pause, stop, message and delete an agent's direct children. Only the user can assign it. Assigning it sets the agent's child limit to the plan ceiling. `list_child_agents` and `delete_child_agent` are new. `delete_child_agent` deletes a child with no children of its own. A running child is stopped first, unless the call passes `stopFirst: false`, which refuses the delete instead. An agent-key route, `DELETE /agents/:id/children/:childId`, does the delete, and `GET /agents/:id/children` lists the children.
+- Agent children management skill (`child-agent-management`). It lists the tools to create, list, inspect, pause, stop, message and delete an agent's direct children. Only the user can assign it. Assigning it sets the agent's child limit to the plan ceiling. `list_child_agents` and `delete_child_agent` are new. `delete_child_agent` deletes a child with no children of its own. A running child is stopped first, unless the call passes `stopFirst: false`, which refuses the delete instead. An agent-key route, `DELETE /agents/:id/children/:childId`, does the delete, and `GET /agents/:id/children` lists the children.
 - Agents page shows agents as a hierarchy, with each parent's children used and remaining allowance.
 - Agent deletion offers "subtree" and "agent only" options. Every affected agent must be stopped first.
 - Per-runtime agent API key. Agent routes refuse agent keys unless they are explicitly opened to them.
@@ -67,7 +71,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The `alerts.telegram.*` config keys are removed. Telegram routing rules stay at `alerts.telegram.channels`, and the bot token and webhook settings are at `messaging.chat.telegram.*`.
 - The agent detail page shows "Child Agents" below "Agent Health".
 - The child-creation tool is renamed `create_child_agent` (was `create_agent`). Its visibility and rules are unchanged.
-- The child tools are no longer in the `base` skill. Agents that have a child limit above 0 but do not hold `agent-children-management` lose `create_child_agent` and the creator tools until the user assigns the skill.
+- The child tools are no longer in the `base` skill. Agents that have a child limit above 0 but do not hold `child-agent-management` lose `create_child_agent` and the creator tools until the user assigns the skill.
 - Chat addresses are read only from `chat_addresses`, and opt-outs from `chat_suppressions`. Agent and user responses return `chatAddresses`. The `telegramChatId` columns and fields are removed, and the Telegram bot settings move to `messaging.chat.telegram.*` (`alerts.telegram.*` is gone).
 - Help pages and the agent platform docs describe Connect Telegram in Settings, not entering a Chat ID.
 

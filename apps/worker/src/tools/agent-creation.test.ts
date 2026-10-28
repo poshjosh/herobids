@@ -271,7 +271,7 @@ describe('create_child_agent execution', () => {
 });
 
 describe('create_child_agent refuses the user-only children skill', () => {
-  it.each([['agent-children-management'], ['system/agent-children-management']])('refuses to grant %s to a child', async (skill) => {
+  it.each([['child-agent-management'], ['system/child-agent-management']])('refuses to grant %s to a child', async (skill) => {
     const platform = fakePlatform();
     const result = await createAgentTool.execute(
       { name: 'Child', prompt: 'Do work.', skillIds: [skill] },

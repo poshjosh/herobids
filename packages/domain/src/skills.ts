@@ -151,15 +151,15 @@ Communicating with users:
 // over MCP. Herobids holds no trading skill text.
 
 /** Id of the user-only children skill. See {@link USER_ONLY_SKILL_IDS}. */
-export const AGENT_CHILDREN_MANAGEMENT_SKILL_ID = 'agent-children-management';
+export const CHILD_AGENT_MANAGEMENT_SKILL_ID = 'child-agent-management';
 
 /**
- * `agent-children-management` skill — creates and manages the child agents an agent creates.
+ * `child-agent-management` skill — creates and manages the child agents an agent creates.
  * Assignable only by the user: an agent may not add it to itself, and may not grant it to a child.
  */
-export const AGENT_CHILDREN_MANAGEMENT_SKILL: SkillDefinition = {
-  id: AGENT_CHILDREN_MANAGEMENT_SKILL_ID,
-  slug: 'system/agent-children-management',
+export const CHILD_AGENT_MANAGEMENT_SKILL: SkillDefinition = {
+  id: CHILD_AGENT_MANAGEMENT_SKILL_ID,
+  slug: 'system/child-agent-management',
   name: 'Agent children management',
   description: 'Create, list, inspect, pause, stop, message and delete the child agents you created.',
   instructions: `You can create child agents and manage the ones you created.
@@ -169,7 +169,14 @@ export const AGENT_CHILDREN_MANAGEMENT_SKILL: SkillDefinition = {
 - A retry of \`create_child_agent\` with the same name returns the existing child with \`duplicate: true\`. Nothing is created or started again, so do not create another child to retry.
 - Use \`get_child_agent_status\`, \`pause_child_agent\`, \`stop_child_agent\` and \`message_child_agent\` only on your direct children.
 - A child's \`lastStartRefusal\` (shown by \`list_child_agents\` and \`get_child_agent_status\`) means the platform refused to launch it after a start, for example for credit or a usage limit. Its \`code\` and \`message\` say why. You cannot start a child yourself: it stays stopped until the user starts it. Tell the user the reason and do not keep checking or create a new child to retry. \`lastStartRefusal\` is null when the last launch succeeded.
-- Use \`delete_child_agent\` only on a direct child you no longer need. Deletion is permanent. The child must have no children of its own. A running child is stopped first. Pass \`stopFirst: false\` to refuse the delete while the child runs instead.`,
+- Use \`delete_child_agent\` only on a direct child you no longer need. Deletion is permanent. The child must have no children of its own. A running child is stopped first. Pass \`stopFirst: false\` to refuse the delete while the child runs instead.
+
+- Only create child agents when necessary. One example is complex tasks that cannot be handled effectively by a single agent.
+- You are solely responsible for the child agents you create, unless the user explicitly takes over their management.
+- Give child agents clear, achievable and verifiable objectives.
+- Guide your child agents to achieve their objectives(s). 
+- Maintain communication with child agents. Also require each child agent to maintain communication with you.
+- Once a child agent is done, you may delete them or assign some other objective(s) to them. Do not leave them running with no task.`,
   requiredTools: [
     'create_child_agent',
     'list_child_agents',
@@ -526,14 +533,14 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   PLATFORM_DOCS_SKILL,
   BROWSER_SKILL,
   LONG_RUNNING_TASK_SKILL,
-  AGENT_CHILDREN_MANAGEMENT_SKILL,
+  CHILD_AGENT_MANAGEMENT_SKILL,
 ];
 
 /**
  * Skills only the user may assign. The agent-side add_skills tool, the broker and the child-create
  * route all refuse these ids. Removal is not restricted.
  */
-export const USER_ONLY_SKILL_IDS: ReadonlySet<string> = new Set([AGENT_CHILDREN_MANAGEMENT_SKILL_ID]);
+export const USER_ONLY_SKILL_IDS: ReadonlySet<string> = new Set([CHILD_AGENT_MANAGEMENT_SKILL_ID]);
 
 /** Whether a skill id, or a system slug, is assignable only by the user. */
 export function isUserOnlySkill(skillIdOrSlug: string): boolean {

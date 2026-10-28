@@ -255,7 +255,7 @@ describe('createRuntimeToolVisibilityController', () => {
 
   it('restores a tool hidden before a re-snapshot when its skill object is reused (startup discovery)', () => {
     const descriptor = makeDescriptor([
-      { id: 'agent-children-management', tools: ['create_child_agent', 'list_child_agents'] },
+      { id: 'child-agent-management', tools: ['create_child_agent', 'list_child_agents'] },
     ]);
     const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
 
@@ -302,7 +302,7 @@ describe('tool-visibility budget for base + web-access + email + programming (WP
 
   it("the unique tool set fits within careful's maxVisibleToolSchemas", () => {
     const uniqueTools = new Set(resolvedSkills.flatMap((skill) => skill.requiredTools));
-    // base(24: 23 + message_peer_agent; the child tools moved to agent-children-management) + web-access(+4 unique) + email(+1) + programming(+2) = 31.
+    // base(24: 23 + message_peer_agent; the child tools moved to child-agent-management) + web-access(+4 unique) + email(+1) + programming(+2) = 31.
     expect(uniqueTools.size).toBe(31);
     expect(uniqueTools.size).toBeLessThanOrEqual(careful.maxVisibleToolSchemas);
   });

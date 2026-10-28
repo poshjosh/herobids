@@ -8,7 +8,7 @@ vi.mock('@herobids/domain', async (importOriginal) => {
 });
 
 const PLANS_CONFIG = {} as PlansConfig;
-const CHILDREN = 'agent-children-management';
+const CHILDREN = 'child-agent-management';
 
 function limitsWith(limits: { maxAgents: number; childAgentLimitCeiling?: number }): PlanLimitsEntitlements {
   return limits as PlanLimitsEntitlements;

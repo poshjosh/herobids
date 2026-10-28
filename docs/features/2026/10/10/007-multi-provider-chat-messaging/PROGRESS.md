@@ -649,7 +649,7 @@ The earlier work of the same day is still unstaged. These changes are left unsta
 
 ### What changed
 
-- **1. Skill `agent-children-management`** (`packages/domain/src/skills.ts`, system skill, seeded by sync). It lists the seven child tools. The five child tools leave `base`, so only the skill grants them. User-only: `USER_ONLY_SKILL_IDS` and `isUserOnlySkill` (id or system slug).
+- **1. Skill `child-agent-management`** (`packages/domain/src/skills.ts`, system skill, seeded by sync). It lists the seven child tools. The five child tools leave `base`, so only the skill grants them. User-only: `USER_ONLY_SKILL_IDS` and `isUserOnlySkill` (id or system slug).
 - **2. Assignment paths and their refusals.** Agent `add_skills` (worker) refuses with `skill.user_only`. The broker that writes assignments refuses the same add (server side). A child grant in `create_child_agent` is refused in the worker (`skill.user_only`) and in the creation policy (`agent.create.grant_user_only`, checked for agent callers only, in preflight and in the transaction). Removal is not restricted.
 - **3. New tools.** `list_child_agents` (gated on the skill only, not on a child) and `delete_child_agent` (creator tool, gated on a child). Worker client `listChildAgents` and `deleteChildAgent`, plus the port.
 - **4. New agent-key routes.** `GET /agents/:id/children` (self, one query with a grouped count) and `DELETE /agents/:id/children/:childId` (agent key only, self-scoped, direct child only). The delete needs the child stopped and childless, tears down bots, reconciles the profile, and audits `agent.child_deleted`. The direct-child guard now takes the param name, and `requireAgentKeyCaller` is new (`apps/api/src/plugins/auth.ts`).
@@ -671,7 +671,7 @@ The earlier work of the same day is still unstaged. These changes are left unsta
 - Domain: `skills.test.ts` (seven tools, system skill, `isUserOnlySkill`, base excludes child tools). `SYSTEM_SKILLS` list and the trading-delegation source guard (`reconciliationCalls` 4 to 5, for the new child delete) updated.
 - Worker unit: `agent-creation.test.ts` (user-only refusal, `list_child_agents` gating and empty list, `delete_child_agent` stopped check, has-children message, not-found mapping), `agent-platform-client.test.ts` (list and delete), `skills-user-only.test.ts` (add_skills refusal, id and slug, mixed list), `agent-broker.test.ts` (broker refusal, no DB writes). `runtime-tool-visibility.test.ts` budget 36 to 31.
 - API unit: `child-allowance-assignment.test.ts` (ceiling 0 and above, maxAgents fallback, no plan, admin flag, already held, not included), `agent-create-policy.test.ts` (user-only grant refused for a child, allowed for a user), `agent-create-metrics.test.ts` (label).
-- Real Postgres: `agent-children-management.integration.test.ts` (10: list, empty list, other agent's children, delete with audit, not stopped, has children, grandchild by either path, not the parent, unknown child, user session). `agent-children-skill-assignment.integration.test.ts` (5: PATCH on a plan with children sets the ceiling and audits, zero ceiling with notice, later save keeps limit, POST with and without the skill).
+- Real Postgres: `child-agent-management.integration.test.ts` (10: list, empty list, other agent's children, delete with audit, not stopped, has children, grandchild by either path, not the parent, unknown child, user session). `child-agent-skill-assignment.integration.test.ts` (5: PATCH on a plan with children sets the ceiling and audits, zero ceiling with notice, later save keeps limit, POST with and without the skill).
 
 ### Commands and results
 
@@ -712,7 +712,7 @@ Owner rejected the rule that the user must start a created child. Implemented as
 | `npx tsc -p {packages/domain,packages/db,apps/api,apps/worker,apps/web}/tsconfig.json --noEmit` | exit 0 each |
 | `pnpm lint` | exit 0 |
 | `env -u DATABASE_URL -u REDIS_URL pnpm test` | 395 files passed, 42 skipped; 7396 tests passed, 657 skipped, 0 failed (baseline 7380 passed) |
-| DB integration on a disposable Postgres 17 (`agent-children-management`, `agent-children-skill-assignment`), run one file at a time | 18 passed |
+| DB integration on a disposable Postgres 17 (`child-agent-management`, `child-agent-skill-assignment`), run one file at a time | 18 passed |
 
 Notes:
 
@@ -740,7 +740,7 @@ Two changes to child creation, both pending owner confirmation of DEC-65.
 | `npx tsc -p {packages/domain,packages/db,apps/api,apps/worker,apps/web}/tsconfig.json --noEmit` | exit 0 each |
 | `pnpm lint` | exit 0 |
 | `env -u DATABASE_URL -u REDIS_URL pnpm test` | 395 files passed, 42 skipped; 7412 tests passed, 663 skipped, 0 failed (baseline 7396 passed) |
-| DB integration on a disposable Postgres 17, one file at a time (28 files) | all pass. `agent-child-create` 35 (6 new), `agent-children-management` 13, `agent-creator-actions` 17, `conversation-repository` 77 |
+| DB integration on a disposable Postgres 17, one file at a time (28 files) | all pass. `agent-child-create` 35 (6 new), `child-agent-management` 13, `agent-creator-actions` 17, `conversation-repository` 77 |
 
 Notes:
 

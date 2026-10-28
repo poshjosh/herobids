@@ -2506,7 +2506,7 @@ describe('handleManageAgentSkills — handler logic', () => {
       );
 
       const envelope = makeSkillsEnvelope({
-        payload: { action: 'add', skillIds: ['browser', 'agent-children-management'], requestMessageId: 'req-user-only' },
+        payload: { action: 'add', skillIds: ['browser', 'child-agent-management'], requestMessageId: 'req-user-only' },
       });
       const result = await broker.processInbound(envelope);
 

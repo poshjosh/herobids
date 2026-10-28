@@ -1,5 +1,5 @@
 import {
-  AGENT_CHILDREN_MANAGEMENT_SKILL_ID,
+  CHILD_AGENT_MANAGEMENT_SKILL_ID,
   resolveChildAgentLimitCeiling,
   resolvePlanLimitEntitlements,
   type PlansConfig,
@@ -30,7 +30,7 @@ export interface ChildAllowanceAssignment {
  * config there is no ceiling to grant against, so the limit fails closed at 0.
  */
 export function childAllowanceForNewAssignment(input: ChildAllowanceAssignmentInput): ChildAllowanceAssignment | null {
-  const skillId = AGENT_CHILDREN_MANAGEMENT_SKILL_ID;
+  const skillId = CHILD_AGENT_MANAGEMENT_SKILL_ID;
   if (!input.nextSkillIds.includes(skillId) || input.previousSkillIds.includes(skillId)) return null;
 
   const ceiling = input.plansConfig

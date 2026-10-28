@@ -257,15 +257,15 @@ describe('agent create policy: each rule in isolation', () => {
 
   it('grant refuses the user-only children skill even when the parent holds it', async () => {
     const store = storeWith();
-    store.agentSkills.push({ agentId: PARENT_ID, skillId: 'agent-children-management' });
-    const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(store), childInput({ skillIds: ['agent-children-management'] }), false));
+    store.agentSkills.push({ agentId: PARENT_ID, skillId: 'child-agent-management' });
+    const refusal = await ruleOf(evaluateAgentCreatePolicy(readerOf(store), childInput({ skillIds: ['child-agent-management'] }), false));
 
     expect(refusal).toMatchObject({ status: 403, rule: 'grant' });
     expect(refusal.body).toMatchObject({ error: 'agent.create.grant_user_only', message: 'This skill can only be added by the user.' });
   });
 
   it('a user creation may carry the user-only children skill', async () => {
-    const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith()), userInput({ skillIds: ['agent-children-management'] }), false);
+    const lineage = await evaluateAgentCreatePolicy(readerOf(storeWith()), userInput({ skillIds: ['child-agent-management'] }), false);
 
     expect(lineage).toMatchObject({ creatorType: 'user', depth: 0 });
   });
