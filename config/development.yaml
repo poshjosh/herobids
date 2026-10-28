@@ -10,7 +10,7 @@
 #   llm:
 #     modelDefaults:
 #       provider: openrouter                    # suggested provider in forms
-#       lightModel: deepseek/deepseek-v4.1-flash  # suggested economy (scout) model
+#       lightModel: xiaomi/mimo-v2.6-flash  # suggested economy (scout) model
 #       heavyModel: anthropic/claude-haiku-5.5    # suggested premium (judge) model
 
 # Alerting — dispatches journal events to Telegram channels.

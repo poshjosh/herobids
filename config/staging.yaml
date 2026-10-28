@@ -120,7 +120,7 @@ agentRuntime:
     # They are NOT used as runtime fallbacks — agents must have explicit models.
     modelDefaults:
       provider: openrouter                    # suggested provider in forms
-      lightModel: deepseek/deepseek-v4.1-flash  # suggested economy (scout) model
+      lightModel: xiaomi/mimo-v2.6-flash  # suggested economy (scout) model
       heavyModel: anthropic/claude-haiku-5.5    # suggested premium (judge) model
                        
 # Browser pool runs as the Nomad job infra/nomad/browser-pool.nomad.hcl, not a

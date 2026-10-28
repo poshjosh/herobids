@@ -16,7 +16,7 @@
 #   ADMIN_EMAIL        Admin user email for seeding (required).
 #   ADMIN_PASSWORD     Admin user password for seeding (required).
 #   AGENT_PROVIDER     LLM provider override (default: openrouter).
-#   AGENT_LIGHT_MODEL  Fast model override (default: deepseek/deepseek-v4.1-flash via OpenRouter).
+#   AGENT_LIGHT_MODEL  Fast model override (default: xiaomi/mimo-v2.6-flash via OpenRouter).
 #   AGENT_HEAVY_MODEL  Capable model override (default: anthropic/claude-haiku-5.5via OpenRouter).
 #   AGENT_TICK_INTERVAL_MS  Agent reasoning loop interval in ms (default: 86400000 = 24h).
 #
@@ -343,7 +343,7 @@ scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/system-skills-tester-prompt.md
 # Build agent env overrides
 AGENT_ENV_VARS=(
   "AGENT_PROVIDER=${AGENT_PROVIDER:-openrouter}"
-  "AGENT_LIGHT_MODEL=${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4.1-flash}"
+  "AGENT_LIGHT_MODEL=${AGENT_LIGHT_MODEL:-xiaomi/mimo-v2.6-flash}"
   "AGENT_HEAVY_MODEL=${AGENT_HEAVY_MODEL:-anthropic/claude-haiku-5.5}"
   "AGENT_TICK_INTERVAL_MS=${AGENT_TICK_INTERVAL_MS:-86400000}"
   "SECURITY_AUDIT_PROMPT_FILE=/tmp/security-audit-prompt.md"
@@ -397,7 +397,7 @@ echo "  Server:       ${SERVER_IP}"
 echo "  Admin user:   ${ADMIN_EMAIL}"
 echo "  Setup user:   ${AUTH_EMAIL}"
 echo "  Agents:       security-auditor"
-echo "  Agent LLM:    ${AGENT_PROVIDER:-openrouter} / ${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4.1-flash}"
+echo "  Agent LLM:    ${AGENT_PROVIDER:-openrouter} / ${AGENT_LIGHT_MODEL:-xiaomi/mimo-v2.6-flash}"
 echo "  Exec mode:    N/A (non-trading agent)"
 echo ""
 echo "  Frontend:     ${FRONTEND_URL}"
