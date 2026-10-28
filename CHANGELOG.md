@@ -6,9 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.3 - 2026-10-28
+
 ### CHANGED
 
 - Rename agent-child-management skill to child-agent-management
+- No longer cover proof cards with background image on landing page
 
 ## v0.8.2 - 2026-10-28
 
