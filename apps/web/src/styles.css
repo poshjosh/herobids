@@ -578,6 +578,8 @@ textarea:not(:placeholder-shown) {
 /* ── Proof cards row ─────────────────────────────────────────────────────── */
 
 .landing-page-proofs {
+  position: relative;
+  z-index: 1;  /* paint above the hero artwork (::before, z-index 0) on every browser */
   display: flex;
   gap: 20px;
   margin-top: -44px;  /* tune this — larger negative = more overlap */
