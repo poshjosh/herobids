@@ -1,3 +1,21 @@
+## SHORT VERSION
+
+*Create an AI personal assistant free of charge* 👉 https://staging.openaidom.com/try (follow the instructions).
+
+✉️ _an email will be sent to you to login. Check both inbox and spam folders_
+
+💬 Chat with your agent and give it some instructions. For example:
+
+> Help me trade crypto. I am a novice so set it up for me using reasonable defaults.
+
+> Find <???>. Rank each result based on <???>. Maintain a leaderboard. You have at most 7 days. Update me as you work.
+
+See more examples: https://staging.openaidom.com/docs/agents/ai-agent-use-cases
+
+Thank you for helping to test OpenAIdom.
+
+## LONG VERSION
+
 **Create an AI personal assistant free of charge**
 
 - Click https://staging.openaidom.com/try - _an email will be sent to you to login. Check both inbox and spam folders_.

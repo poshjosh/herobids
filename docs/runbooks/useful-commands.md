@@ -40,7 +40,7 @@ ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 "ls -d /opt/herobids/infr
 - HEROBIDS_ENV=staging  scripts/shell/ops/download-eval-reports.sh
 
 ```sh
-curl -v --resolve staging.openaidom.com:443:78.46.192.37 https://staging.openaidom.com
+curl -v --resolve staging.openaidom.com:443:138.199.172.202 https://staging.openaidom.com
 ```
 
 ```sh
