@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentConversationMessage } from '../../lib/api-client.js';
-import { buildThread, mergeMessages, type PendingSend } from './conversation-thread.js';
+import { buildThread, currentRunHistory, latestRunStartMs, mergeMessages, type PendingSend } from './conversation-thread.js';
 
 function message(id: string, createdAt: string, overrides: Partial<AgentConversationMessage> = {}): AgentConversationMessage {
   return {
@@ -89,5 +89,35 @@ describe('buildThread', () => {
 
   it('returns the confirmed rows untouched when nothing is pending', () => {
     expect(buildThread(history, [])).toEqual(history);
+  });
+});
+
+describe('latestRunStartMs', () => {
+  it('returns null when the agent has no runs', () => {
+    expect(latestRunStartMs(undefined)).toBeNull();
+    expect(latestRunStartMs([])).toBeNull();
+  });
+
+  it('returns the latest start across runs regardless of order', () => {
+    const sessions = [
+      { id: 'b', startedAt: '2026-10-28T10:00:00.000Z' },
+      { id: 'a', startedAt: '2026-10-27T09:00:00.000Z' },
+    ];
+    expect(latestRunStartMs(sessions)).toBe(Date.parse('2026-10-28T10:00:00.000Z'));
+  });
+});
+
+describe('currentRunHistory', () => {
+  const runStart = Date.parse('2026-10-28T10:00:00.000Z');
+  const before = message('old', '2026-10-28T09:59:59.000Z');
+  const atStart = message('start', '2026-10-28T10:00:00.000Z');
+  const after = message('new', '2026-10-28T10:05:00.000Z');
+
+  it('drops messages from before the current run', () => {
+    expect(currentRunHistory([before, atStart, after], runStart).map((m) => m.id)).toEqual(['start', 'new']);
+  });
+
+  it('keeps everything when no run start is known', () => {
+    expect(currentRunHistory([before, atStart, after], null)).toHaveLength(3);
   });
 });

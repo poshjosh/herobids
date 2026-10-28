@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type AgentConversationMessage } from '../../lib/api-client.js';
 import { Button, Card, SectionLabel } from '../../lib/ui.js';
 import { Linkify } from '../../lib/linkify.js';
-import { buildThread, mergeMessages, type PendingSend } from './conversation-thread.js';
+import { buildThread, currentRunHistory, latestRunStartMs, mergeMessages, type PendingSend } from './conversation-thread.js';
 import { attachmentProblem, CONVERSATION_ATTACHMENT_ACCEPT } from './attachment-rules.js';
 
 const RUNNING_STATUSES = ['active', 'starting', 'paused', 'unhealthy'];
@@ -442,6 +442,13 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
     }
   });
   const conversable = isAgentConversable(status);
+  // Shares its cache entry with the agent detail page's sessions query.
+  const sessionsQuery = useQuery({
+    queryKey: ['agents', agentId, 'sessions'],
+    queryFn: () => agentsApi.sessions(agentId),
+    enabled: agentId.length > 0,
+  });
+  const runStartMs = latestRunStartMs(sessionsQuery.data);
   const threadQuery = useQuery({
     queryKey: ['agent-conversation', agentId],
     queryFn: () => agentsApi.conversation(agentId),
@@ -504,7 +511,8 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
   const turn = conversable ? turnQuery.data : undefined;
   const awaitingReply = turn?.message === 'working' || turn?.connection === 'working';
   const connectionPending = connectionRequestId !== null && (turn?.connection === 'queued' || turn?.connection === 'working');
-  const thread = buildThread(history, pending);
+  // Scoped to the current run so the thread matches what the agent remembers. Plan: docs/features/pending/000-agent-conversation-hydration/001-plan.md
+  const thread = buildThread(currentRunHistory(history, runStartMs), pending);
 
   return (
     <AgentConversationView

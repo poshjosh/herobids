@@ -1,4 +1,4 @@
-import type { AgentConversationMessage } from '../../lib/api-client.js';
+import type { AgentConversationMessage, AgentRuntimeSession } from '../../lib/api-client.js';
 
 /** A message the user sent from this page that the thread has not confirmed yet. */
 export interface PendingSend {
@@ -20,6 +20,23 @@ export function mergeMessages(...lists: AgentConversationMessage[][]): AgentConv
   return [...byId.values()].sort((a, b) => (
     a.createdAt === b.createdAt ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : (a.createdAt < b.createdAt ? -1 : 1)
   ));
+}
+
+/** Start time (ms) of the agent's most recent run, or null when it has never run. */
+export function latestRunStartMs(sessions: AgentRuntimeSession[] | undefined): number | null {
+  if (!sessions || sessions.length === 0) return null;
+  const starts = sessions.map((session) => Date.parse(session.startedAt)).filter((ms) => !Number.isNaN(ms));
+  return starts.length === 0 ? null : Math.max(...starts);
+}
+
+/**
+ * Keeps only the messages sent at or after the current run started. Messages from earlier runs stay stored,
+ * but the agent no longer remembers them after a restart, so the thread should not show them as live context.
+ * With no run start known, every message is kept.
+ */
+export function currentRunHistory(history: AgentConversationMessage[], runStartMs: number | null): AgentConversationMessage[] {
+  if (runStartMs === null) return history;
+  return history.filter((message) => Date.parse(message.createdAt) >= runStartMs);
 }
 
 function toLocalMessage(pending: PendingSend): AgentConversationMessage {

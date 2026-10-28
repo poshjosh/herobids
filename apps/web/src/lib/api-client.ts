@@ -1094,6 +1094,12 @@ export interface Agent {
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
 }
 
+/** One run of an agent (GET /agents/:id/sessions), oldest first. */
+export interface AgentRuntimeSession {
+  id: string;
+  startedAt: string;
+}
+
 export interface AgentArtifact {
   id: string;
   agentId: string;
@@ -1386,7 +1392,7 @@ export const agents = {
   getArtifactDownloadUrl: (agentId: string, artifactId: string) =>
     `${config.apiBaseUrl}/agents/${agentId}/artifacts/${artifactId}/download`,
   prompt: (id: string) => request<AgentCompiledPrompt>(`/agents/${id}/prompt`),
-  sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
+  sessions: (id: string) => request<AgentRuntimeSession[]>(`/agents/${id}/sessions`),
   decisions: (id: string, limit?: number) =>
     request<unknown[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
   conversation: (id: string, options: { limit?: number; before?: string } = {}) =>
