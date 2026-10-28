@@ -455,6 +455,11 @@ export class ExternalBackendClient {
         deadlineAt: opts.deadlineAt,
       });
       if (outcome.kind !== 'in_progress') {
+        // A status request cut short by the deadline says nothing about the
+        // write: report the deadline, not a transport failure.
+        if (outcome.kind === 'transport_error' && hasPassed(deadlineMs)) {
+          return this.deadlineExpired(requestId, correlationId);
+        }
         return this.mapOutcome(outcome, requestId);
       }
 
