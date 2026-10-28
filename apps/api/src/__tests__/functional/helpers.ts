@@ -6,6 +6,7 @@
  */
 
 import Fastify from 'fastify';
+import fastifyMultipart from '@fastify/multipart';
 import { sql, eq } from 'drizzle-orm';
 import { createDatabase, agents } from '@herobids/db';
 import { authPlugin } from '../../plugins/auth.js';
@@ -32,8 +33,10 @@ import { syncSystemSkills } from '../../sync-system-skills.js';
 import { registerBackendRefFamilies } from '../../routes/agent-config-helpers.js';
 import { loadActiveTradingProfileConnections } from '../../agents/trading-profile-reconciliation-adapter.js';
 import { selectExecutionBinding } from '../../agents/trading-profile-reconciliation.js';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const TEST_BUDGETS: RuntimeBudgetPolicy = {
   maxHistoryMessages: 20,
@@ -453,7 +456,13 @@ export async function buildApp() {
   const redisConn = parseRedisUrl(REDIS_URL);
   const lifecycleQueue = new Queue('trading-instance-lifecycle', { connection: redisConn });
 
+  // Isolate uploaded agent documents from the repo working tree; removed on app close.
+  const documentsDir = mkdtempSync(join(tmpdir(), 'herobids-agent-docs-'));
+  process.env['AGENT_DOCUMENTS_DIR'] = documentsDir;
+
   const app = Fastify({ logger: false });
+  app.addHook('onClose', async () => rmSync(documentsDir, { recursive: true, force: true }));
+  await app.register(fastifyMultipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   const authConfig = makeAuthConfig();
   const testPlansConfig = {
     defaultPlanId: 'free',

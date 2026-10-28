@@ -1194,7 +1194,7 @@ export async function telegramWebhookHandler(
   let _documentService: AgentDocumentService | null = null;
   function getDocumentService(): AgentDocumentService {
     if (!_documentService) {
-      const store = new LocalDocumentStore(resolve(process.cwd(), 'data/agent-documents'));
+      const store = new LocalDocumentStore(process.env['AGENT_DOCUMENTS_DIR'] ?? resolve(process.cwd(), 'data/agent-documents'));
       const extractor = createDocumentTextExtractor();
       const repo = new AgentDocumentsRepository(db);
       _documentService = new AgentDocumentService(store, extractor, repo);
