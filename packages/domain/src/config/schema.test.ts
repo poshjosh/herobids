@@ -1219,18 +1219,18 @@ describe('AgentRuntimePolicyOverridesSchema — reasoning', () => {
 });
 
 describe('AGENT_STYLE_RUNTIME_DEFAULTS — reasoning', () => {
-  it('careful style has scoutReasoning=none, judgeReasoning=low', () => {
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.scoutReasoning).toBe('none');
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.judgeReasoning).toBe('low');
+  it('careful style has scoutReasoning=medium, judgeReasoning=medium', () => {
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.scoutReasoning).toBe('medium');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.judgeReasoning).toBe('medium');
   });
 
-  it('balanced style has scoutReasoning=none, judgeReasoning=medium', () => {
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.scoutReasoning).toBe('none');
+  it('balanced style has scoutReasoning=medium, judgeReasoning=medium', () => {
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.scoutReasoning).toBe('medium');
     expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.judgeReasoning).toBe('medium');
   });
 
-  it('bold style has scoutReasoning=low, judgeReasoning=high', () => {
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.bold.scoutReasoning).toBe('low');
+  it('bold style has scoutReasoning=medium, judgeReasoning=high', () => {
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.bold.scoutReasoning).toBe('medium');
     expect(AGENT_STYLE_RUNTIME_DEFAULTS.bold.judgeReasoning).toBe('high');
   });
 });
@@ -1238,8 +1238,8 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS — reasoning', () => {
 describe('resolveAgentRuntimePolicy — reasoning', () => {
   it('returns style default when no overrides', () => {
     const resolved = resolveAgentRuntimePolicy('careful', null);
-    expect(resolved.scoutReasoning).toBe('none');
-    expect(resolved.judgeReasoning).toBe('low');
+    expect(resolved.scoutReasoning).toBe('medium');
+    expect(resolved.judgeReasoning).toBe('medium');
   });
 
   it('null override falls back to style default', () => {
@@ -1247,13 +1247,13 @@ describe('resolveAgentRuntimePolicy — reasoning', () => {
       scoutReasoning: null,
       judgeReasoning: null,
     });
-    expect(resolved.scoutReasoning).toBe('none'); // balanced default
+    expect(resolved.scoutReasoning).toBe('medium'); // balanced default
     expect(resolved.judgeReasoning).toBe('medium'); // balanced default
   });
 
   it('undefined override falls back to style default', () => {
     const resolved = resolveAgentRuntimePolicy('bold', {});
-    expect(resolved.scoutReasoning).toBe('low'); // bold default
+    expect(resolved.scoutReasoning).toBe('medium'); // bold default
     expect(resolved.judgeReasoning).toBe('high'); // bold default
   });
 
@@ -1270,13 +1270,13 @@ describe('resolveAgentRuntimePolicy — reasoning', () => {
     const resolved = resolveAgentRuntimePolicy('balanced', {
       judgeReasoning: 'high',
     });
-    expect(resolved.scoutReasoning).toBe('none'); // balanced default
+    expect(resolved.scoutReasoning).toBe('medium'); // balanced default
     expect(resolved.judgeReasoning).toBe('high'); // override
   });
 
   it('falls back to balanced reasoning defaults when style is invalid', () => {
     const resolved = resolveAgentRuntimePolicy('aggressive', null);
-    expect(resolved.scoutReasoning).toBe('none'); // balanced default
+    expect(resolved.scoutReasoning).toBe('medium'); // balanced default
     expect(resolved.judgeReasoning).toBe('medium'); // balanced default
   });
 });

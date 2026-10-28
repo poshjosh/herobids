@@ -40,8 +40,8 @@ Three styles define the baseline. All numeric values are backed by
 | `judgeMaxTokens` | 2 048 | 4 096 | 8 192 |
 | `lightThinkingTokens` | 1 024 | 2 048 | 4 096 |
 | `deepThinkingTokens` | 4 096 | 10 240 | 20 480 |
-| `scoutReasoning` | none | none | low |
-| `judgeReasoning` | low | medium | high |
+| `scoutReasoning` | medium | medium | medium |
+| `judgeReasoning` | medium | medium | high |
 | `adaptScoutReasoning` | true | true | true |
 | `adaptJudgeReasoning` | true | true | true |
 | `allowedHoursUtc` | 14–20 | [] (all) | [] (all) |

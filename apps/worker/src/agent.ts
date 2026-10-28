@@ -3831,7 +3831,7 @@ async function runActiveTick(): Promise<void> {
           reasoning: resolveReasoningParams(
             resolveScoutReasoningLevel(
               sharedThinkingDecision.thinking,
-              agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'none',
+              agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'medium',
               agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false,
             ),
             lightModel,

@@ -31,6 +31,15 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 | **Light thinking tokens** | 1,024 | 2,048 | 4,096 |
 | **Deep thinking tokens** | 4,096 | 10,240 | 20,480 |
 
+### Reasoning
+
+| | **Careful** | **Balanced** | **Bold** |
+|---|---|---|---|
+| **Economy (scout) reasoning** | Medium | Medium | Medium |
+| **Judge reasoning** | Medium | Medium | High |
+
+Economy models already keep costs low, so every style uses at least medium reasoning for the economy model.
+
 ### Active Hours
 
 | | **Careful** | **Balanced** | **Bold** |
