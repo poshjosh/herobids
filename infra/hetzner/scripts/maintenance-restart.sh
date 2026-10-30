@@ -275,7 +275,16 @@ if [[ "${DO_DEPLOY}" == "true" ]]; then
   fi
 
   log "  Building agent image..."
-  docker build --pull --secret "id=NPM_TOKEN,env=NPM_TOKEN" -f docker/Dockerfile.agent -t herobids-agent:latest . 2>&1 | tail -3
+  # Keep the full build log so a failure can be read. Failing through "false" keeps the
+  # ERR trap above in charge, so the rollback still runs.
+  AGENT_BUILD_LOG="$(mktemp /tmp/agent-build.XXXXXX)"
+  if ! docker build --pull --secret "id=NPM_TOKEN,env=NPM_TOKEN" -f docker/Dockerfile.agent -t herobids-agent:latest . > "${AGENT_BUILD_LOG}" 2>&1; then
+    warn "Agent image build failed. Last 200 lines of ${AGENT_BUILD_LOG}:"
+    tail -n 200 "${AGENT_BUILD_LOG}" >&2
+    false
+  fi
+  tail -n 3 "${AGENT_BUILD_LOG}"
+  rm -f "${AGENT_BUILD_LOG}"
   ok "Agent image rebuilt."
 
   log "  Restarting api / worker / web..."
