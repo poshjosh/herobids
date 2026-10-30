@@ -155,12 +155,20 @@ for node_id in "${READY_NODE_IDS[@]}"; do
     reserved_mem_mb=0
   fi
 
-  # Fetch allocations on this node and sum their allocated memory
-  allocs_json="$(nomad_api GET "/v1/node/${node_id}/allocations" || echo "[]")"
-  allocated_mem_mb="$(echo "${allocs_json}" | jq -r '[.[] | select(.ClientStatus == "running") | .Resources.Memory.MemoryMB // 0] | add // 0')"
-  if [[ "${allocated_mem_mb}" == "null" ]]; then
-    allocated_mem_mb=0
+  # Memory per running allocation. Current Nomad reports each task's memory under
+  # AllocatedResources; the top-level Resources field is empty. Older responses only
+  # have Resources.Memory.MemoryMB, so that is the fallback. An allocation with no
+  # figure at all is an error, never zero, or the node would look empty.
+  allocs_json="$(nomad_api GET "/v1/node/${node_id}/allocations" || die "Failed to fetch allocations for node ${node_id}." 1)"
+  alloc_mem_json="$(echo "${allocs_json}" | jq -c '[.[] | select(.ClientStatus == "running") | (
+      if ((.AllocatedResources.Tasks // {}) | length) > 0 then ([.AllocatedResources.Tasks[].Memory.MemoryMB] | add)
+      elif (.Resources.Memory.MemoryMB // null) != null then .Resources.Memory.MemoryMB
+      else null end)]')"
+  missing_mem_count="$(echo "${alloc_mem_json}" | jq '[.[] | select(. == null)] | length')"
+  if [[ "${missing_mem_count}" -gt 0 ]]; then
+    die "Node ${node_id}: ${missing_mem_count} running allocation(s) report no memory figure. Refusing to report capacity." 1
   fi
+  allocated_mem_mb="$(echo "${alloc_mem_json}" | jq 'add // 0')"
 
   # Free memory on this node = total - reserved - allocated
   free_mem_mb=$(( node_mem_mb - reserved_mem_mb - allocated_mem_mb ))

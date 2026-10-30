@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The agent capacity check read a memory field that Nomad no longer fills in, so it reported the agent node as empty and autoscaling never added a node. It now reads `AllocatedResources`, and it stops with an error when a running allocation reports no memory figure. See [bug report 002](docs/bug-reports/2026/10/30/002-capacity-check-reads-empty-allocation-memory-no-autoscale.md).
+- The maintenance restart stopped counting running agents when the `execution_defaults` column was dropped. Live mode is read from `unified_config`, and a failing agent query stops the run.
+- The agent image build log is kept in full on failure, and the agent-browser install is retried.
+
 ## v0.8.5 - 2026-10-28
 
 ### Changed
