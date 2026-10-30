@@ -87,6 +87,15 @@ die()  { echo "[$(ts)] FAIL $*" >&2; exit 1; }
 
 PG() { docker exec herobids-postgres-1 psql -U herobids -d herobids -t -q "$@"; }
 
+# Runs a query that returns agent IDs, one per line. A failing query stops the script:
+# an empty result must mean "no agents", never "the query broke".
+agent_ids() {
+  local raw
+  raw="$(PG -v ON_ERROR_STOP=1 -c "$1")" \
+    || die "Agent query failed; no agents were stopped. Check the SQL against the current schema."
+  printf '%s\n' "$raw" | tr -d ' ' | grep -v '^$' || true
+}
+
 # ─── Rollback ────────────────────────────────────────────────────────────────
 # Called when a post-deploy health check fails. Agents are still in 'stopped'
 # state at this point (Step 5 has not run), so only the image/services need
@@ -154,30 +163,34 @@ log "Step 1 — Discovering running agents..."
 if [[ "${INCLUDE_LIVE}" == "true" ]]; then
   LIVE_FILTER=""
 else
-  # Execution mode lives in the execution_defaults JSONB column since the
-  # 2026-08-02 agent-table migration (docs/bug-reports/2026/08/02/001).
-  LIVE_FILTER="AND (a.execution_defaults->>'mode' IS DISTINCT FROM 'live')"
+  # Execution mode lives in agents.unified_config.execution.mode. The old
+  # execution_defaults column was dropped in migration 0072. A missing mode means paper.
+  LIVE_FILTER="AND (a.unified_config->'execution'->>'mode' IS DISTINCT FROM 'live')"
 fi
 
-mapfile -t AGENT_IDS < <(PG -c \
-  "SELECT DISTINCT s.agent_id
+AGENT_IDS=()
+AGENT_ID_OUTPUT="$(agent_ids "SELECT DISTINCT s.agent_id
    FROM agent_runtime_sessions s
    JOIN agents a ON a.id = s.agent_id
    WHERE s.status NOT IN ('stopped','crashed')
-   ${LIVE_FILTER}" \
-  | tr -d ' ' | grep -v '^$' || true)
+   ${LIVE_FILTER}")"
+if [[ -n "${AGENT_ID_OUTPUT}" ]]; then
+  mapfile -t AGENT_IDS <<< "${AGENT_ID_OUTPUT}"
+fi
 
 AGENT_COUNT=${#AGENT_IDS[@]}
 
 # Report skipped live agents
 if [[ "${INCLUDE_LIVE}" == "false" ]]; then
-  mapfile -t LIVE_IDS < <(PG -c \
-    "SELECT DISTINCT s.agent_id
+  LIVE_IDS=()
+  LIVE_ID_OUTPUT="$(agent_ids "SELECT DISTINCT s.agent_id
      FROM agent_runtime_sessions s
      JOIN agents a ON a.id = s.agent_id
      WHERE s.status NOT IN ('stopped','crashed')
-       AND a.execution_defaults->>'mode' = 'live'" \
-    | tr -d ' ' | grep -v '^$' || true)
+       AND a.unified_config->'execution'->>'mode' = 'live'")"
+  if [[ -n "${LIVE_ID_OUTPUT}" ]]; then
+    mapfile -t LIVE_IDS <<< "${LIVE_ID_OUTPUT}"
+  fi
 
   if [[ ${#LIVE_IDS[@]} -gt 0 ]]; then
     warn "${#LIVE_IDS[@]} live-mode agent(s) skipped (pass --include-live to include them):"
