@@ -19,7 +19,7 @@ export interface PollForTelegramLinkOptions {
 /**
  * Polls GET /auth/me until a Telegram chat address appears. Resolves with `expired`
  * once the timeout elapses, and with `cancelled` when the signal aborts. A failed
- * request rejects so the caller can show an error state.
+ * request is retried on the next tick, so a transient network error does not end the flow.
  */
 export async function pollForTelegramLink({
   fetchMe,
@@ -33,7 +33,19 @@ export async function pollForTelegramLink({
     if (signal.aborted) {
       return { status: 'cancelled' };
     }
-    const me = await fetchMe(signal);
+    let me: MeResponse;
+    try {
+      me = await fetchMe(signal);
+    } catch {
+      if (signal.aborted) {
+        return { status: 'cancelled' };
+      }
+      // Only the timeout or a cancel ends the poll; a failed request waits for the next tick.
+      if (Date.now() >= deadline) {
+        return { status: 'expired' };
+      }
+      continue;
+    }
     if (signal.aborted) {
       return { status: 'cancelled' };
     }

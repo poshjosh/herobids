@@ -88,15 +88,14 @@ describe('telegramConnectReducer', () => {
     expect(next).toEqual({ status: 'expired', linkUrl: null, errorMessage: null, tabBlocked: false });
   });
 
-  it('pollFailed moves to error and keeps the message', () => {
-    const next = telegramConnectReducer(stateWith({ status: 'fallback', linkUrl: LINK, tabBlocked: true }), { type: 'pollFailed', message: 'Network down' });
-    expect(next).toEqual({ status: 'error', linkUrl: null, errorMessage: 'Network down', tabBlocked: true });
+  it('linkRetryable moves to retry, drops the link, and keeps the blocked-tab flag', () => {
+    const next = telegramConnectReducer(stateWith({ status: 'connecting', linkUrl: LINK, tabBlocked: true }), { type: 'linkRetryable' });
+    expect(next).toEqual({ status: 'retry', linkUrl: null, errorMessage: null, tabBlocked: true });
   });
 
-  it('pollFailed with no message keeps errorMessage null so the view uses the default text', () => {
-    const next = telegramConnectReducer(stateWith({ status: 'connecting', linkUrl: LINK }), { type: 'pollFailed', message: null });
-    expect(next.status).toBe('error');
-    expect(next.errorMessage).toBeNull();
+  it('retry can start a new connect attempt', () => {
+    const retry = telegramConnectReducer(stateWith({ status: 'retry' }), { type: 'connectStarted', tabBlocked: false });
+    expect(retry.status).toBe('connecting');
   });
 
   it('pollLinked returns to the initial idle state', () => {

@@ -1,7 +1,8 @@
 import type { TelegramLinkPollResult } from './telegram-link-poll.js';
 
 /** `connected` is never stored in state. It is derived from the ['me'] query so a later disconnect is reflected. */
-export type ConnectTelegramStatus = 'idle' | 'connecting' | 'fallback' | 'connected' | 'expired' | 'error';
+/** `retry` is a muted, recoverable failure (the server could not be reached). `error` is red and needs action. */
+export type ConnectTelegramStatus = 'idle' | 'connecting' | 'fallback' | 'connected' | 'expired' | 'error' | 'retry';
 
 export interface TelegramConnectState {
   status: Exclude<ConnectTelegramStatus, 'connected'>;
@@ -19,7 +20,7 @@ export type TelegramConnectAction =
   | { type: 'pollLinked' }
   | { type: 'linkedExternally' }
   | { type: 'pollExpired' }
-  | { type: 'pollFailed'; message: string | null };
+  | { type: 'linkRetryable' };
 
 export const initialTelegramConnectState: TelegramConnectState = {
   status: 'idle',
@@ -42,8 +43,9 @@ export function telegramConnectReducer(state: TelegramConnectState, action: Tele
     case 'linkRejected':
       return { status: 'error', linkUrl: null, errorMessage: null, tabBlocked: state.tabBlocked };
     case 'linkFailed':
-    case 'pollFailed':
       return { status: 'error', linkUrl: null, errorMessage: action.message, tabBlocked: state.tabBlocked };
+    case 'linkRetryable':
+      return { status: 'retry', linkUrl: null, errorMessage: null, tabBlocked: state.tabBlocked };
     case 'pollExpired':
       return { status: 'expired', linkUrl: null, errorMessage: null, tabBlocked: state.tabBlocked };
     case 'pollLinked':
@@ -89,7 +91,7 @@ export function focusTargetFor(status: ConnectTelegramStatus): 'status' | 'fallb
   if (status === 'fallback') {
     return 'fallback';
   }
-  if (status === 'connecting' || status === 'error') {
+  if (status === 'connecting' || status === 'error' || status === 'retry') {
     return 'status';
   }
   return null;

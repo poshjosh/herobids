@@ -84,15 +84,26 @@ describe('pollForTelegramLink', () => {
     await expect(promise).resolves.toEqual({ status: 'cancelled' });
   });
 
-  it('rejects when a profile request fails so the caller can show an error', async () => {
-    const failure = new Error('network down');
-    const fetchMe = vi.fn().mockRejectedValue(failure);
+  it('keeps polling after a failed profile request and resolves linked once a later request succeeds', async () => {
+    const linkedMe = makeMe('123456789');
+    const fetchMe = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(linkedMe);
 
     const promise = pollForTelegramLink({ fetchMe, signal: new AbortController().signal });
-    const assertion = expect(promise).rejects.toBe(failure);
-    await vi.advanceTimersByTimeAsync(TELEGRAM_LINK_POLL_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(TELEGRAM_LINK_POLL_INTERVAL_MS * 2);
 
-    await assertion;
+    await expect(promise).resolves.toEqual({ status: 'linked', me: linkedMe });
+    expect(fetchMe).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves expired, not rejected, when every profile request fails until the timeout', async () => {
+    const fetchMe = vi.fn().mockRejectedValue(new Error('network down'));
+
+    const promise = pollForTelegramLink({ fetchMe, signal: new AbortController().signal });
+    await vi.advanceTimersByTimeAsync(TELEGRAM_LINK_POLL_TIMEOUT_MS);
+
+    await expect(promise).resolves.toEqual({ status: 'expired' });
   });
 
   it('passes the abort signal to each profile request so an in-flight request can be cancelled', async () => {

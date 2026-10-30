@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef } from 'react';
 import { useIntl } from 'react-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { auth as authApi } from '../../lib/api-client.js';
+import { ApiError, auth as authApi } from '../../lib/api-client.js';
 import { chatAddressFor } from '../../lib/chat-addresses.js';
 import { Button, ErrorBanner } from '../../lib/ui.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -54,7 +54,7 @@ export function ConnectTelegramView({ status, linkUrl, errorMessage, onConnect }
   }, [status]);
 
   const showLink = linkUrl !== null && (status === 'connecting' || status === 'fallback');
-  const showConnect = status === 'idle' || status === 'expired' || status === 'error';
+  const showConnect = status === 'idle' || status === 'expired' || status === 'error' || status === 'retry';
 
   return (
     <div style={columnStyle}>
@@ -63,6 +63,7 @@ export function ConnectTelegramView({ status, linkUrl, errorMessage, onConnect }
         {status === 'fallback' && <p style={statusTextStyle}>{t('settings.telegram.popupBlocked')}</p>}
         {status === 'connected' && <p style={connectedStyle}>{t('settings.telegram.connected')}</p>}
         {status === 'expired' && <p style={statusTextStyle}>{t('settings.telegram.expired')}</p>}
+        {status === 'retry' && <p style={statusTextStyle}>{t('settings.telegram.retry')}</p>}
         {status === 'error' && <ErrorBanner message={errorMessage ?? t('settings.telegram.error')} />}
       </div>
       {showLink && (
@@ -149,12 +150,6 @@ export function ConnectTelegram() {
         if (action) {
           dispatch(action);
         }
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        dispatch({ type: 'pollFailed', message: localizeApiError(intlRef.current, error, 'settings.telegram.error') });
       });
     return () => controller.abort();
   }, [polling, queryClient]);
@@ -206,6 +201,11 @@ export function ConnectTelegram() {
           return;
         }
         releaseTab(tabRef);
+        // A network failure is recoverable, so it gets the muted retry state, not the red error.
+        if (error instanceof ApiError && error.code === 'network_unavailable') {
+          dispatch({ type: 'linkRetryable' });
+          return;
+        }
         dispatch({ type: 'linkFailed', message: localizeApiError(intlRef.current, error, 'settings.telegram.error') });
       },
     });

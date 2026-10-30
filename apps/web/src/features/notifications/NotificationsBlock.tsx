@@ -54,6 +54,23 @@ const closeStyle: CSSProperties = {
   lineHeight: '1',
 };
 
+const optionalTagStyle: CSSProperties = {
+  marginLeft: '8px',
+  padding: '2px 6px',
+  borderRadius: '4px',
+  background: 'var(--color-surface-2)',
+  color: 'var(--color-text-muted)',
+  fontSize: '0.6875rem',
+  fontWeight: 500,
+  verticalAlign: 'middle',
+};
+const optionalNoteStyle: CSSProperties = { margin: '0 0 12px', fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' };
+
+function OptionalTag() {
+  const intl = useIntl();
+  return <span style={optionalTagStyle}>{intl.formatMessage({ id: 'notifications.block.optional' })}</span>;
+}
+
 interface NotificationsBlockProps {
   variant: NotificationsBlockVariant;
   style?: CSSProperties;
@@ -161,6 +178,7 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
 
       <h3 style={{ ...headingStyle, fontSize: '1rem' }}>{intl.formatMessage({ id: 'notifications.block.title' })}</h3>
       <p style={introStyle}>{intl.formatMessage({ id: 'notifications.block.intro' })}</p>
+      {variant === 'page' && <p style={optionalNoteStyle}>{intl.formatMessage({ id: 'notifications.block.optionalNote' })}</p>}
 
       {!crossChannelNoticeDismissed && (
         <div role="note" style={noticeStyle}>
@@ -173,7 +191,7 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
 
       {view.showTelegram && (
         <section style={rowStyle}>
-          <h3 style={headingStyle}>{intl.formatMessage({ id: 'notifications.block.telegramTitle' })}</h3>
+          <h3 style={headingStyle}>{intl.formatMessage({ id: 'notifications.block.telegramTitle' })}<OptionalTag /></h3>
           {disconnectTelegram.isError && (
             <ErrorBanner message={localizeApiError(intl, disconnectTelegram.error, 'common.errorTitle')} />
           )}
@@ -195,6 +213,7 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
 
       {view.showBrowser && (
         <section style={rowStyle}>
+          <div><OptionalTag /></div>
           <PushOptIn embedded onChange={handleBrowserChoice} />
         </section>
       )}
