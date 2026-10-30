@@ -1,0 +1,45 @@
+{
+  "_comment": "SYNTHETIC. Illustrative cloud inventory: name, index and address per server. Not captured from Hetzner. Addresses are RFC 5737 documentation addresses (192.0.2.0/24), not real hosts. 'joined' means present in the Nomad node list. A server can be healthy in cloud but unjoined, or joined but down.",
+  "servers": [
+    {
+      "name": "synthetic-agent-0",
+      "index": 0,
+      "address": "192.0.2.10",
+      "cloud_status": "running",
+      "nomad_node_id": "00000000-0000-4000-8000-000000000001",
+      "nomad_status": "ready",
+      "joined": true,
+      "classification": "healthy"
+    },
+    {
+      "name": "synthetic-agent-1",
+      "index": 1,
+      "address": "192.0.2.11",
+      "cloud_status": "running",
+      "nomad_node_id": "00000000-0000-4000-8000-000000000002",
+      "nomad_status": "ready",
+      "joined": true,
+      "classification": "healthy"
+    },
+    {
+      "name": "synthetic-agent-2",
+      "index": 2,
+      "address": "192.0.2.12",
+      "cloud_status": "running",
+      "nomad_node_id": "00000000-0000-4000-8000-000000000003",
+      "nomad_status": "down",
+      "joined": true,
+      "classification": "down"
+    },
+    {
+      "name": "synthetic-agent-3",
+      "index": 3,
+      "address": "192.0.2.13",
+      "cloud_status": "running",
+      "nomad_node_id": null,
+      "nomad_status": null,
+      "joined": false,
+      "classification": "unjoined"
+    }
+  ]
+}

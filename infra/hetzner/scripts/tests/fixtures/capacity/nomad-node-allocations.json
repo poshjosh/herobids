@@ -1,0 +1,102 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/node/{id}/allocations shape. Not captured from staging. Keyed by placeholder node ID. Covers: a current-shape running agent (AllocatedResources.Tasks), a legacy-shape running agent (Resources.Memory), an assigned-pending agent still pulling its image, a running Browserless (non-agent) reservation in the default namespace, and a terminal allocation replaced by another.",
+  "00000000-0000-4000-8000-000000000001": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c1",
+      "EvalID": "00000000-0000-4000-8000-0000000000e3",
+      "Name": "agent-00000000-0000-4000-8000-0000000000a2.agent[0]",
+      "Namespace": "herobids-agents",
+      "JobID": "agent-00000000-0000-4000-8000-0000000000a2",
+      "TaskGroup": "agent",
+      "DesiredStatus": "run",
+      "ClientStatus": "running",
+      "AllocatedResources": {
+        "Tasks": {
+          "agent": { "Cpu": { "CpuShares": 500 }, "Memory": { "MemoryMB": 256 } }
+        }
+      }
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c2",
+      "EvalID": "00000000-0000-4000-8000-0000000000e3",
+      "Name": "browserless.browserless[0]",
+      "Namespace": "default",
+      "JobID": "browserless",
+      "TaskGroup": "browserless",
+      "DesiredStatus": "run",
+      "ClientStatus": "running",
+      "AllocatedResources": {
+        "Tasks": {
+          "browserless": { "Cpu": { "CpuShares": 1000 }, "Memory": { "MemoryMB": 1024 } }
+        }
+      }
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c3",
+      "EvalID": "00000000-0000-4000-8000-0000000000e3",
+      "Name": "agent-00000000-0000-4000-8000-0000000000a3.agent[0]",
+      "Namespace": "herobids-agents",
+      "JobID": "agent-00000000-0000-4000-8000-0000000000a3",
+      "TaskGroup": "agent",
+      "DesiredStatus": "run",
+      "ClientStatus": "failed",
+      "AllocatedResources": {
+        "Tasks": {
+          "agent": { "Cpu": { "CpuShares": 500 }, "Memory": { "MemoryMB": 256 } }
+        }
+      },
+      "NextAllocation": "00000000-0000-4000-8000-0000000000c4"
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c4",
+      "EvalID": "00000000-0000-4000-8000-0000000000e3",
+      "Name": "agent-00000000-0000-4000-8000-0000000000a3.agent[0]",
+      "Namespace": "herobids-agents",
+      "JobID": "agent-00000000-0000-4000-8000-0000000000a3",
+      "TaskGroup": "agent",
+      "DesiredStatus": "run",
+      "ClientStatus": "running",
+      "AllocatedResources": {
+        "Tasks": {
+          "agent": { "Cpu": { "CpuShares": 500 }, "Memory": { "MemoryMB": 256 } }
+        }
+      },
+      "PreviousAllocation": "00000000-0000-4000-8000-0000000000c3"
+    }
+  ],
+  "00000000-0000-4000-8000-000000000002": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c5",
+      "EvalID": "00000000-0000-4000-8000-0000000000e3",
+      "Name": "agent-00000000-0000-4000-8000-0000000000a4.agent[0]",
+      "Namespace": "herobids-agents",
+      "JobID": "agent-00000000-0000-4000-8000-0000000000a4",
+      "TaskGroup": "agent",
+      "DesiredStatus": "run",
+      "ClientStatus": "pending",
+      "Resources": { "Memory": { "MemoryMB": 256 } },
+      "AllocatedResources": null,
+      "TaskStates": {
+        "agent": {
+          "State": "pending",
+          "Events": [
+            { "Type": "Received", "DisplayMessage": "Task received by client" },
+            { "Type": "Downloading Image", "DisplayMessage": "Downloading image" }
+          ]
+        }
+      }
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c6",
+      "EvalID": "00000000-0000-4000-8000-0000000000e3",
+      "Name": "agent-00000000-0000-4000-8000-0000000000a5.agent[0]",
+      "Namespace": "herobids-agents",
+      "JobID": "agent-00000000-0000-4000-8000-0000000000a5",
+      "TaskGroup": "agent",
+      "DesiredStatus": "run",
+      "ClientStatus": "running",
+      "Resources": { "Memory": { "MemoryMB": 256 } },
+      "AllocatedResources": null
+    }
+  ]
+}

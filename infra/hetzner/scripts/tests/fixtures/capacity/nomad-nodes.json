@@ -1,0 +1,63 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/nodes list and /v1/node/{id} detail shapes. Not captured from staging. Node IDs are placeholder UUIDs. Resources are in Nomad scheduler units: memory in MB, CPU in MHz (CpuShares).",
+  "list": [
+    {
+      "ID": "00000000-0000-4000-8000-000000000001",
+      "Name": "agent-node-example-1",
+      "Datacenter": "dc1",
+      "Status": "ready",
+      "SchedulingEligibility": "eligible",
+      "Drain": false
+    },
+    {
+      "ID": "00000000-0000-4000-8000-000000000002",
+      "Name": "agent-node-example-2",
+      "Datacenter": "dc1",
+      "Status": "ready",
+      "SchedulingEligibility": "eligible",
+      "Drain": false
+    },
+    {
+      "ID": "00000000-0000-4000-8000-000000000003",
+      "Name": "agent-node-example-3",
+      "Datacenter": "dc1",
+      "Status": "down",
+      "SchedulingEligibility": "ineligible",
+      "Drain": false
+    }
+  ],
+  "detail": {
+    "00000000-0000-4000-8000-000000000001": {
+      "ID": "00000000-0000-4000-8000-000000000001",
+      "Name": "agent-node-example-1",
+      "Status": "ready",
+      "SchedulingEligibility": "eligible",
+      "NodeResources": {
+        "Cpu": { "CpuShares": 4000, "TotalCpuCores": 2 },
+        "Memory": { "MemoryMB": 3900 },
+        "Disk": { "DiskMB": 38000 }
+      },
+      "ReservedResources": {
+        "Cpu": { "CpuShares": 0 },
+        "Memory": { "MemoryMB": 512 },
+        "Disk": { "DiskMB": 0 }
+      }
+    },
+    "00000000-0000-4000-8000-000000000002": {
+      "ID": "00000000-0000-4000-8000-000000000002",
+      "Name": "agent-node-example-2",
+      "Status": "ready",
+      "SchedulingEligibility": "eligible",
+      "NodeResources": {
+        "Cpu": { "CpuShares": 4000, "TotalCpuCores": 2 },
+        "Memory": { "MemoryMB": 3900 },
+        "Disk": { "DiskMB": 38000 }
+      },
+      "ReservedResources": {
+        "Cpu": { "CpuShares": 0 },
+        "Memory": { "MemoryMB": 512 },
+        "Disk": { "DiskMB": 0 }
+      }
+    }
+  }
+}

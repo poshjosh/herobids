@@ -1,0 +1,81 @@
+[
+  {
+    "_comment": "SYNTHETIC. Modelled on the Nomad /v1/evaluations shape. Not captured from staging. Namespace herobids-agents: the agent job's blocked eval, a UUID BlockedEval and a generic StatusDescription, plus a FailedTGAllocs resource-exhaustion diagnostic.",
+    "ID": "00000000-0000-4000-8000-0000000000e1",
+    "Namespace": "herobids-agents",
+    "JobID": "agent-00000000-0000-4000-8000-0000000000a1",
+    "Priority": 50,
+    "Type": "service",
+    "TriggeredBy": "job-register",
+    "Status": "blocked",
+    "StatusDescription": "created to place remaining allocations",
+    "BlockedEval": "00000000-0000-4000-8000-0000000000b1",
+    "FailedTGAllocs": {
+      "agent": {
+        "NodesEvaluated": 3,
+        "NodesFiltered": 0,
+        "NodesAvailable": {
+          "dc1": 3
+        },
+        "ClassFiltered": null,
+        "ConstraintFiltered": null,
+        "NodesExhausted": 3,
+        "ClassExhausted": null,
+        "DimensionExhausted": {
+          "memory": 3
+        },
+        "QuotaExhausted": null,
+        "Scores": null,
+        "AllocationTime": 41000,
+        "CoalescedFailures": 0
+      }
+    },
+    "CreateIndex": 900001,
+    "ModifyIndex": 900004,
+    "CreateTime": 1793400000000000000,
+    "ModifyTime": 1793400000500000000
+  },
+  {
+    "_comment": "SYNTHETIC decoy. Same blocked and resource-exhausted shape but in the default namespace. A namespace-aware watcher must ignore it when the agent namespace is configured.",
+    "ID": "00000000-0000-4000-8000-0000000000e2",
+    "Namespace": "default",
+    "JobID": "decoy-job-default-namespace",
+    "Priority": 50,
+    "Type": "service",
+    "TriggeredBy": "job-register",
+    "Status": "blocked",
+    "StatusDescription": "resources exhausted on 3 nodes",
+    "BlockedEval": "00000000-0000-4000-8000-0000000000b2",
+    "FailedTGAllocs": {
+      "decoy": {
+        "NodesEvaluated": 3,
+        "NodesExhausted": 3,
+        "DimensionExhausted": {
+          "memory": 3
+        },
+        "CoalescedFailures": 0
+      }
+    },
+    "CreateIndex": 900002,
+    "ModifyIndex": 900003,
+    "CreateTime": 1793400000000000000,
+    "ModifyTime": 1793400000100000000
+  },
+  {
+    "_comment": "SYNTHETIC. A completed evaluation in herobids-agents. Not blocked, so it must not be counted.",
+    "ID": "00000000-0000-4000-8000-0000000000e3",
+    "Namespace": "herobids-agents",
+    "JobID": "agent-00000000-0000-4000-8000-0000000000a2",
+    "Priority": 50,
+    "Type": "service",
+    "TriggeredBy": "job-register",
+    "Status": "complete",
+    "StatusDescription": "",
+    "BlockedEval": "",
+    "FailedTGAllocs": null,
+    "CreateIndex": 900000,
+    "ModifyIndex": 900000,
+    "CreateTime": 1793399990000000000,
+    "ModifyTime": 1793399990100000000
+  }
+]

@@ -749,18 +749,18 @@ This is not a scale-in redesign, but it shares inventory, locks and state:
 Complete small coherent changes. Check off work only when its tests pass.
 Stages describe dependencies, not mandatory separate services/files.
 
-| ID | Work package | Depends on | Completion evidence |
-|---|---|---|---|
-| P0 | Re-read source/history, preserve memory fix, capture sanitized API fixtures and effective config; record baseline phase timings | None | Fixtures cover namespace, blocked diagnostics, assigned pending allocations, cloud inventory and node resources |
-| P1 | Define validated config, shared snapshot/decision contract, disabled gates and durable convergence renderer | P0 | Fresh-boot/convergence parity, invalid-input and stale-override tests |
-| P2 | Implement reconciled managed inventory, durable state, in-flight/readiness accounting and read-only mode | P1 | Zero/stale-cache/down/unjoined/partial-apply/reboot tests; no mutation in dry-run |
-| P3 | Correct demand collection, classification and per-node resource/fit calculations | P0, P1 | Real-shape namespace/diagnostic/dedup/fragmentation/CPU fixtures pass |
-| P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests |
-| P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved |
-| P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement |
-| P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection |
-| P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow |
-| P9 | Obtain explicit staging mutation approval, deploy/migrate and execute controlled staging scenarios | P8 | Section 12 acceptance evidence; production still disabled |
+| ID | Work package | Depends on | Completion evidence | Status |
+|---|---|---|---|---|
+| P0 | Re-read source/history, preserve memory fix, capture sanitized API fixtures and effective config; record baseline phase timings | None | Fixtures cover namespace, blocked diagnostics, assigned pending allocations, cloud inventory and node resources | DONE (local, scope A; live capture and phase timings outstanding) |
+| P1 | Define validated config, shared snapshot/decision contract, disabled gates and durable convergence renderer | P0 | Fresh-boot/convergence parity, invalid-input and stale-override tests | PENDING |
+| P2 | Implement reconciled managed inventory, durable state, in-flight/readiness accounting and read-only mode | P1 | Zero/stale-cache/down/unjoined/partial-apply/reboot tests; no mutation in dry-run | PENDING |
+| P3 | Correct demand collection, classification and per-node resource/fit calculations | P0, P1 | Real-shape namespace/diagnostic/dedup/fragmentation/CPU fixtures pass | PENDING |
+| P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests | PENDING |
+| P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved | PENDING |
+| P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | PENDING |
+| P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection | PENDING |
+| P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow | PENDING |
+| P9 | Obtain explicit staging mutation approval, deploy/migrate and execute controlled staging scenarios | P8 | Section 12 acceptance evidence; production still disabled | PENDING |
 
 Do not activate the new infrastructure controller before the waiting lifecycle
 and configuration convergence are available. Conversely, do not enable long
@@ -1070,3 +1070,14 @@ The implementing agent's final report must state:
 - [ ] Scale-in cannot remove undrained/required/newly joining capacity.
 - [ ] Local tests/build/typecheck and approved staging acceptance are evidenced.
 - [ ] Production remains disabled pending separate approval.
+
+## Outstanding Issues
+
+### P0 (baseline and fixtures)
+
+- Placement-failure count in the fixture README depends on the wall clock (300 s window around fixed `CreateTime`). State the time qualifier or fake the clock in tests.
+- The README assumes `GET /v1/evaluations` without a namespace is unscoped. Verify against the Nomad 1.9.7 API docs before P3 relies on it; the default-namespace behaviour may differ.
+- `_comment` keys in fixture JSON are non-API keys; document them or strip them in P3.
+- Node `…0003` is `down` without a `detail` entry; document as intentional or add detail.
+- `test-harness.sh` wording in the fixture README: it is a sourced library, executed by `run-all.sh` but prints no count.
+- Live effective config capture and baseline phase timings remain outstanding (P0 not complete).
