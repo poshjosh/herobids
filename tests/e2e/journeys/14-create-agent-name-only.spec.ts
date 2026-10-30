@@ -26,7 +26,8 @@ test.describe('Journey 14: create agent with a name only', () => {
     await expect(page).toHaveURL(/\/agents\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Name only agent J14' })).toBeVisible({ timeout: 10_000 });
 
-    // Creating an agent auto-starts it, so Stop is shown instead of Start.
+    // Creating an agent auto-starts it, so Stop is shown instead of Start. Stop lives on the details page.
+    await page.goto(`${new URL(page.url()).pathname}/details`);
     await expect(page.getByRole('button', { name: /^Stop$/ })).toBeVisible({ timeout: 15_000 });
   });
 });

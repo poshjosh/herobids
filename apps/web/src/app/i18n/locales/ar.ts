@@ -312,6 +312,8 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'وكلاء الذكاء الاصطناعي',
+  'agents.chat.selectAgent': 'الوكيل',
+  'agents.statusOverview': 'نظرة عامة على الحالة',
   'agents.marketplace.useAgent': 'استخدم هذا الوكيل',
   'agents.createAgent': 'إنشاء',
   'agents.executionMode.label': 'وضع التنفيذ',
@@ -609,12 +611,11 @@ export const messages: Record<string, string> = {
   'narrative_llm_resolution_failed': 'تعذر حل إعدادات الذكاء الاصطناعي السردي.',
 
   // Setup: unified provider-link form
-  'agentDetail.conversation.title': 'الدردشة مع {name}',
-  'agentDetail.conversation.placeholder': 'اكتب رسالة إلى وكيلك',
   'agentDetail.conversation.send': 'إرسال',
+  'agentDetail.conversation.chatWith': 'الدردشة مع {name}',
+  'agentDetail.conversation.startToChat': 'ابدأ {name} للدردشة معه',
   'agentDetail.chat.details': 'التفاصيل',
   'agents.detail.backToChat': 'العودة إلى الدردشة',
-  'agentDetail.conversation.notRunning': 'ابدأ وكيلك للتحدث معه.',
   'agentDetail.conversation.attach': 'إرفاق مستند',
   'agentDetail.conversation.removeAttachment': 'إزالة المستند',
   'agentDetail.conversation.attachmentTooLarge': 'هذا الملف أكبر من 10 ميغابايت.',

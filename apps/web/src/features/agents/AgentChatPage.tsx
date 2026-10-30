@@ -7,6 +7,7 @@ import { PageShell, PageHeader, LoadingRows, ErrorState, Button } from '../../li
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { AgentConversation } from './AgentConversation.js';
+import { AgentQuickActions } from './AgentQuickActions.js';
 
 /** The agent's chat. Details, configuration and runtime panels live on the details page. */
 export function AgentChatPage() {
@@ -57,7 +58,14 @@ export function AgentChatPage() {
           </Button>
         }
       />
-      <AgentConversation key={id} agentId={id ?? ''} agentName={agent.name} status={agent.status} connectionRequestId={connectionRequestId} />
+      <AgentConversation
+        key={id}
+        agentId={id ?? ''}
+        agentName={agent.name}
+        status={agent.status}
+        connectionRequestId={connectionRequestId}
+        composerActions={<AgentQuickActions agentId={agent.id} status={agent.status} />}
+      />
     </PageShell>
   );
 }

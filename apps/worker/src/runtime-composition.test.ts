@@ -170,6 +170,11 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.');
     expect(prompt).toContain('Text you write outside a tool call isn\'t shown to the user.');
     expect(prompt).toContain('wrap only the text the user should read in <reply>…</reply> tags.');
+    expect(prompt).toContain('## Daily Check-in');
+    expect(prompt).toContain('by 09:00 in the user\'s local timezone');
+    expect(prompt).toContain('Send only one check-in per day.');
+    expect(prompt).toContain('## Maintaining a conversation');
+    expect(prompt).toContain('Ask one question at a time, even if you have multiple questions ready.');
     expect(prompt).toContain('Core Platform');
     expect(prompt).not.toContain('To call a tool, output a JSON object');
     expect(prompt).not.toContain('{"tool": "<tool_name>", "args": {...}}');

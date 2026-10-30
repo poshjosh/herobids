@@ -312,6 +312,8 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'AI एजेंट',
+  'agents.chat.selectAgent': 'एजेंट',
+  'agents.statusOverview': 'स्थिति का सारांश',
   'agents.marketplace.useAgent': 'इस एजेंट का उपयोग करें',
   'agents.createAgent': 'बनाएं',
   'agents.executionMode.label': 'निष्पादन मोड',
@@ -609,12 +611,11 @@ export const messages: Record<string, string> = {
   'narrative_llm_resolution_failed': 'नैरेटिव AI कॉन्फ़िगरेशन हल नहीं हो सका।',
 
   // Setup: unified provider-link form
-  'agentDetail.conversation.title': '{name} के साथ चैट करें',
-  'agentDetail.conversation.placeholder': 'अपने एजेंट को संदेश लिखें',
   'agentDetail.conversation.send': 'भेजें',
+  'agentDetail.conversation.chatWith': '{name} के साथ चैट करें',
+  'agentDetail.conversation.startToChat': 'चैट करने के लिए {name} शुरू करें',
   'agentDetail.chat.details': 'विवरण',
   'agents.detail.backToChat': 'चैट पर वापस',
-  'agentDetail.conversation.notRunning': 'बात करने के लिए अपना एजेंट शुरू करें।',
   'agentDetail.conversation.attach': 'दस्तावेज़ संलग्न करें',
   'agentDetail.conversation.removeAttachment': 'दस्तावेज़ हटाएँ',
   'agentDetail.conversation.attachmentTooLarge': 'यह फ़ाइल 10 MB से बड़ी है।',

@@ -1,7 +1,7 @@
 /**
  * Journey 3: Chat with an agent on the agent detail page
  *
- * The user opens an agent's detail page, finds the "Chat with {name}" card,
+ * The user opens an agent's detail page, finds the "Chat with {name}" composer,
  * sends a message, sees it appear in the thread, and then sees an agent reply.
  *
  * E2E has no real agent runtime or LLM, so the agent's reply is stored in the
@@ -41,16 +41,17 @@ test.describe('Journey 3: Chat with an agent on the agent detail page', () => {
     const { id: agentId } = await agentRes.json() as { id: string };
     const userId = await getAuthenticatedUserId(page, request);
 
-    await page.goto(`/agents/${agentId}`);
+    // Start lives on the details page; the chat is on /agents/:id.
+    await page.goto(`/agents/${agentId}/details`);
 
     // A stopped agent cannot be chatted with; start it. While it is starting
     // the composer is enabled and the message is queued for delivery.
     await page.getByRole('button', { name: /^start$/i }).click();
 
-    const chatCard = page.getByText(`Chat with ${AGENT_NAME}`, { exact: true });
-    await expect(chatCard).toBeVisible({ timeout: 10_000 });
+    await page.goto(`/agents/${agentId}`);
 
-    const composer = page.getByLabel('Message your agent');
+    // The composer is labelled "Chat with <agent>" once the agent runs.
+    const composer = page.getByLabel(`Chat with ${AGENT_NAME}`, { exact: true });
     await expect(composer).toBeEnabled({ timeout: 10_000 });
 
     const userMessage = `Hello from journey 3 ${Date.now()}`;

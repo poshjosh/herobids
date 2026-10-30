@@ -34,9 +34,10 @@ test.describe('Journey 6: Deleted agent is no longer visible in the agents list'
     }
     const { id: agentId } = await agentRes.json() as { id: string };
 
-    // Confirm the agent appears in the list before deletion
+    // Confirm the agent appears in the list before deletion. The name also appears in the chat selector
+    // and chat heading above the list, so match the last occurrence, which is the list row.
     await page.goto('/agents');
-    await expect(page.getByText(/Delete Me Agent/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Delete Me Agent/i).last()).toBeVisible({ timeout: 5000 });
 
     // Delete via API — AgentDetailPage does not yet have a delete button;
     // the API path exercises the correct server-side deletion logic and the
@@ -49,6 +50,6 @@ test.describe('Journey 6: Deleted agent is no longer visible in the agents list'
     // Reload the agents list and verify the agent is gone
     await page.goto('/agents');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByText(/Delete Me Agent/i)).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Delete Me Agent/i).last()).not.toBeVisible({ timeout: 5000 });
   });
 });

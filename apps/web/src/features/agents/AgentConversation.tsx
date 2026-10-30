@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type AgentConversationMessage } from '../../lib/api-client.js';
-import { Button, Card, SectionLabel } from '../../lib/ui.js';
+import { Button, Card } from '../../lib/ui.js';
 import { Linkify } from '../../lib/linkify.js';
 import { buildThread, currentRunHistory, latestRunStartMs, mergeMessages, type PendingSend } from './conversation-thread.js';
 import { attachmentProblem, CONVERSATION_ATTACHMENT_ACCEPT } from './attachment-rules.js';
@@ -133,6 +133,8 @@ export interface AgentConversationViewProps {
   isLoadingEarlier?: boolean;
   /** The agent is working on a message; shows a typing indicator in the thread. */
   isAwaitingReply?: boolean;
+  /** Controls shown right-aligned above the composer, e.g. the agent's quick actions. */
+  composerActions?: ReactNode;
   /** Explains a return from an approved connection request while the agent resumes. */
   connectionBanner?: boolean;
   onRetry?: () => void;
@@ -141,11 +143,15 @@ export interface AgentConversationViewProps {
 export function AgentConversationView({
   agentId = '', agentName, messages, canSend, isStarting = false, showIntro = false, onDismissIntro, draft, maxChars = DEFAULT_MESSAGE_MAX_CHARS,
   onDraftChange, onSend, onRetryMessage, loadFailed = false, loadEarlierFailed = false, onLoadEarlier, isLoadingEarlier = false,
-  isAwaitingReply = false, connectionBanner = false, onRetry,
+  isAwaitingReply = false, connectionBanner = false, onRetry, composerActions = null,
   attachment = null, attachmentError = null, onAttachFile, onRemoveAttachment,
 }: AgentConversationViewProps) {
   const intl = useIntl();
   const trimmed = draft.trim();
+  // The prompt names the agent and says what to do: chat when it runs, start it otherwise.
+  const composerPrompt = canSend
+    ? intl.formatMessage({ id: 'agentDetail.conversation.chatWith' }, { name: agentName })
+    : intl.formatMessage({ id: 'agentDetail.conversation.startToChat' }, { name: agentName });
   const listRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const elapsed = useStartingElapsed(isStarting);
@@ -163,7 +169,6 @@ export function AgentConversationView({
   return (
     <Card className="agent-conversation-card">
       <div style={{ border: canCompose ? '1.5px solid var(--color-brand)' : undefined, borderRadius: '10px', padding: '2px' }}>
-      <SectionLabel prominent>{intl.formatMessage({ id: 'agentDetail.conversation.title' }, { name: agentName })}</SectionLabel>
       {connectionBanner && (
         <div role="status" style={{ ...NOTICE_STYLE, margin: '0 0 12px' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -316,7 +321,9 @@ export function AgentConversationView({
         </div>
       )}
       {isStarting ? <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.queuedHint' })}</p> : null}
-      {canSend || isStarting ? null : <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.notRunning' })}</p>}
+      {composerActions && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginBottom: '8px' }}>{composerActions}</div>
+      )}
       <div
         style={{
           border: '1.5px solid var(--input-border-color)',
@@ -327,8 +334,8 @@ export function AgentConversationView({
         }}
       >
         <textarea
-          aria-label={intl.formatMessage({ id: 'agentDetail.conversation.placeholder' })}
-          placeholder={intl.formatMessage({ id: 'agentDetail.conversation.placeholder' })}
+          aria-label={composerPrompt}
+          placeholder={composerPrompt}
           value={draft}
           disabled={!canCompose}
           maxLength={maxChars}
@@ -415,16 +422,26 @@ export function AgentConversationView({
   );
 }
 
-export function AgentConversation({ agentId, agentName, status, connectionRequestId = null }: {
+export function AgentConversation({ agentId, agentName, status, connectionRequestId = null, initialDraft = '', onDraftChange, composerActions }: {
   agentId: string;
   agentName: string;
   status: string;
   /** Set when returning from an approved connection request; the agent is resuming for it. */
   connectionRequestId?: string | null;
+  /** Unsent text to restore when the conversation is shown again. */
+  initialDraft?: string;
+  /** Reports every change to the unsent text, so a parent can keep it while the conversation is unmounted. */
+  onDraftChange?: (value: string) => void;
+  /** Controls shown right-aligned above the composer. */
+  composerActions?: ReactNode;
 }) {
   const intl = useIntl();
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState('');
+  const [draft, setDraftState] = useState(initialDraft);
+  const setDraft = (value: string) => {
+    setDraftState(value);
+    onDraftChange?.(value);
+  };
   // Every row fetched so far. The newest page is polled and slides forward, so rows are kept here, not re-derived.
   const [history, setHistory] = useState<AgentConversationMessage[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
@@ -516,6 +533,7 @@ export function AgentConversation({ agentId, agentName, status, connectionReques
     <AgentConversationView
       agentId={agentId}
       agentName={agentName}
+      composerActions={composerActions}
       messages={thread}
       maxChars={latestPage?.maxMessageChars ?? DEFAULT_MESSAGE_MAX_CHARS}
       canSend={conversable}

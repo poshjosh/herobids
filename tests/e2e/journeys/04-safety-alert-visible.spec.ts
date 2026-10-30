@@ -38,8 +38,8 @@ test.describe('Journey 4: Agent health card visible after start', () => {
       return;
     }
 
-    // Navigate to agent detail page
-    await page.goto(`/agents/${agentId}`);
+    // Navigate to agent details page; the Agent Health section lives there, not on the chat page
+    await page.goto(`/agents/${agentId}/details`);
 
     // The Agent Health section is rendered whenever there is an active session
     // (status: starting | running | unhealthy).

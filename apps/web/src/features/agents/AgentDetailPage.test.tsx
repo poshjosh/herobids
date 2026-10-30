@@ -259,6 +259,17 @@ function renderedFamilyLabels(html: string): string[] {
   return families;
 }
 
+describe('AgentDetailPage header', () => {
+  it('shows Back to chat in the header and no objective line under the agent name', () => {
+    const html = renderDetail({ agentSkillIds: [], readinessFamilies: [] });
+    const actionAt = html.indexOf('class="page-header-action"');
+
+    expect(actionAt).toBeGreaterThan(-1);
+    expect(html.slice(actionAt, actionAt + 400)).toContain(messages['agents.detail.backToChat']);
+    expect(html.slice(html.indexOf('</h1>'), actionAt)).not.toContain('<p');
+  });
+});
+
 describe('AgentDetailPage capabilities list', () => {
   it('renders a single Trading card for a trading-only agent', () => {
     const html = renderDetail({ agentSkillIds: ['traderton/skills/crypto-trading'], readinessFamilies: ['trading'] });

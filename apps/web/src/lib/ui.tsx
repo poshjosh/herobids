@@ -21,17 +21,17 @@ export function PageShell({ children, style }: { children: ReactNode; style?: CS
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
   return (
     <div className="page-header-responsive">
-      <div>
-        <h1 style={{ margin: 0, fontSize: '1.375rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+      <div className="page-header-row">
+        <h1 style={{ margin: 0, fontSize: '1.375rem', fontWeight: '600', color: 'var(--color-text-primary)', minWidth: 0 }}>
           {title}
         </h1>
-        {subtitle && (
-          <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
-            {subtitle}
-          </p>
-        )}
+        {action && <div className="page-header-action">{action}</div>}
       </div>
-      {action && <div>{action}</div>}
+      {subtitle && (
+        <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+          {subtitle}
+        </p>
+      )}
     </div>
   );
 }

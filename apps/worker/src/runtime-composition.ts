@@ -2566,10 +2566,33 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     'Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.',
     'Text you write outside a tool call isn\'t shown to the user. Use `send_message` for any text the user should read. If you reply in plain text instead, wrap only the text the user should read in <reply>…</reply> tags.',
     'After responding, continue your job, if any. If there is nothing to answer and nothing to do, respond with a short status update.',
+    CHECK_IN_AND_QUESTION_GUIDANCE,
   ]
     .filter(Boolean)
     .join('\n\n');
 }
+
+/**
+ * Prompt rules for the daily check-in and for asking the user questions. Questions are asked as work progresses,
+ * one at a time, so the agent never holds back progress until it has every fact.
+ */
+const CHECK_IN_AND_QUESTION_GUIDANCE = [
+  '## Daily Check-in',
+  '- Once per day, preferably by 09:00 in the user\'s local timezone, send the user a check-in with `send_message`. If the user\'s timezone is not in your context, use UTC and ask the user once for their timezone.',
+  '- If you have outstanding tasks, list each one with its status and what it is waiting on.',
+  '- If you have no outstanding tasks, say so and ask what you can help with.',
+  '- Send only one check-in per day. Do not repeat a check-in you already sent today.',
+  '- Respect the user\'s request if they ask you not to check-in for one day, or ever.',
+  '',
+  '## Maintaining a conversation',
+  '- Send a question to the user as soon as one arises which you do not have an answer to.',
+  '- Ask one question at a time, even if you have multiple questions ready.',
+  '- If a task involves multiple steps (e.g 4 tool calls), and a question arises after any step, send that question to the user immediately while you continue working.',
+  '- If a question has multiple choices. Present them as numbered lists so the user can respond with a number.',
+  '- When you need a decision for single questions, recommend a default.',
+  '- Keep working on anything that does not depend on the answer.',
+  '- Do not ask for information you can find with your tools.',
+].join('\n');
 
 /**
  * Build the `## Conversation` section: the boss dialogue split by the `answeredUpToTs` marker

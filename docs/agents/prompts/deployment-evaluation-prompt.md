@@ -74,7 +74,7 @@ Save any relevant data from the database to <output-folder>
 
 Save data and a report (REPORT.md) to <output-folder>
 
-In the report add references to all the data you saved, preferrably at the bottom.
+In the report add references to all the data you saved, preferably at the bottom.
 
 If that folder already exists, create the next version of data you intend to save which will live side by side with the last version. Use a reasonable <serial> sequence.
 

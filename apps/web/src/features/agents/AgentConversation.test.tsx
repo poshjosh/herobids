@@ -28,8 +28,8 @@ const userMessage: AgentConversationMessage = {
 };
 
 const englishMessages: Record<string, string> = {
-  'agentDetail.conversation.title': 'Chat with {name}',
-  'agentDetail.conversation.placeholder': 'Message your agent',
+  'agentDetail.conversation.chatWith': 'Chat with {name}',
+  'agentDetail.conversation.startToChat': 'Start {name} to chat with it',
   'agentDetail.conversation.send': 'Send',
   'agentDetail.conversation.starting': 'Starting your agent…',
   'agentDetail.conversation.startingSlow': 'Still starting… this usually takes under a minute.',
@@ -40,7 +40,6 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.connectionApproved': 'Connection approved. {name} is picking up where you left off…',
   'agentDetail.conversation.intro': 'Tell your agent what to do by chatting with it on Telegram (if configured) or directly here, just like you would a human employee or personal assistant.',
   'agentDetail.conversation.introClose': 'Close',
-  'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
   'agentDetail.conversation.fromPlatform': 'Safety alert',
   'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',
   'agentDetail.conversation.fromParentAgent': 'Parent agent',
@@ -106,11 +105,11 @@ describe('startingPhase', () => {
 });
 
 describe('AgentConversationView', () => {
-  it('disables the composer and shows the not-running hint when the agent cannot receive messages', () => {
+  it('disables the composer and prompts the user to start the agent when it cannot receive messages', () => {
     const html = render({ canSend: false });
 
     expect(html).toContain('disabled');
-    expect(html).toContain('Start your agent to talk to it.');
+    expect(html).toContain('placeholder="Start Tom to chat with it"');
   });
 
   it('renders each message body in the thread', () => {
@@ -119,8 +118,8 @@ describe('AgentConversationView', () => {
     expect(html).toContain('Watching ETH.');
   });
 
-  it('titles the card with the agent name', () => {
-    expect(render()).toContain('Chat with Tom');
+  it('prompts the user to chat with the agent when it can receive messages', () => {
+    expect(render({ canSend: true })).toContain('placeholder="Chat with Tom"');
   });
 
   it('labels platform safety alerts as safety alerts, never as the user', () => {

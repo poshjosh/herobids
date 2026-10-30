@@ -349,6 +349,13 @@ textarea:not(:placeholder-shown) {
   background: var(--color-surface-2);
 }
 
+/* Touch screens have no hover, so the row actions stay visible there. */
+@media (hover: none) {
+  .agent-summary-actions {
+    opacity: 1 !important;
+  }
+}
+
 /* ─── Brand Logo ────────────────────────────────────────────────────────────── */
 .brand-wordmark {
   display: inline-flex;
@@ -389,13 +396,28 @@ textarea:not(:placeholder-shown) {
 
 /* ─── Responsive page header ───────────────────────────────────────────────── */
 
+/* Title and action share the first row; the subtitle sits full width beneath both. */
 .page-header-responsive {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 28px;
+}
+
+.page-header-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 28px;
   gap: 12px;
-  flex-wrap: wrap;
+}
+
+.page-header-row > h1 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page-header-action {
+  flex-shrink: 0;
 }
 
 /* ─── Auth page ────────────────────────────────────────────────────────────── */

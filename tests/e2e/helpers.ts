@@ -179,7 +179,7 @@ async function addAgentSkills(page: Page, agentId: string, skillRefs: string[]):
     return agent.status;
   }, { timeout: 30_000 }).toBe('stopped');
 
-  await page.goto(`/agents/${agentId}`);
+  await page.goto(`/agents/${agentId}/details`);
   const capabilities = page.locator('section[aria-label="Capabilities"]');
   await capabilities.locator('summary').click();
 
@@ -206,8 +206,8 @@ async function addAgentSkills(page: Page, agentId: string, skillRefs: string[]):
 
 /** Open the agent detail page directly. */
 export async function openAgentDetail(page: Page, agentId: string): Promise<void> {
-  await page.goto(`/agents/${agentId}`);
-  await page.waitForURL(new RegExp(`/agents/${agentId}$`), { timeout: 15_000 });
+  await page.goto(`/agents/${agentId}/details`);
+  await page.waitForURL(new RegExp(`/agents/${agentId}/details$`), { timeout: 15_000 });
 }
 
 export async function createConnection(

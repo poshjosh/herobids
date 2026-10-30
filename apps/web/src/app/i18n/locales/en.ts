@@ -310,6 +310,8 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'AI Agents',
+  'agents.chat.selectAgent': 'Agent',
+  'agents.statusOverview': 'Status overview',
   'agents.marketplace.useAgent': 'Use this agent',
   'agents.createAgent': 'Create',
   'agents.executionMode.label': 'Execution mode',
@@ -690,12 +692,11 @@ export const messages: Record<string, string> = {
   'narrative_llm_resolution_failed': 'Narrative AI configuration could not be resolved.',
 
   // Setup: unified provider-link form
-  'agentDetail.conversation.title': 'Chat with {name}',
-  'agentDetail.conversation.placeholder': 'Message your agent',
   'agentDetail.conversation.send': 'Send',
+  'agentDetail.conversation.chatWith': 'Chat with {name}',
+  'agentDetail.conversation.startToChat': 'Start {name} to chat with it',
   'agentDetail.chat.details': 'Details',
   'agents.detail.backToChat': 'Back to chat',
-  'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
   'agentDetail.conversation.attach': 'Attach document',
   'agentDetail.conversation.removeAttachment': 'Remove document',
   'agentDetail.conversation.attachmentTooLarge': 'That file is larger than 10 MB.',

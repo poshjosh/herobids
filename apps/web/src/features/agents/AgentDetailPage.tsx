@@ -8,7 +8,7 @@ import { EditAgentModal } from './EditAgentModal.js';
 import { SkillPicker } from './SkillPicker.js';
 import { AgentConnectionField } from './AgentConnectionField.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, formatSkillSelection, listSelectableSkills, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatSkillSelection, listSelectableSkills, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { PeerThreads } from './PeerThreads.js';
@@ -279,12 +279,13 @@ export function AgentDetailPage() {
     <PageShell>
       <PageHeader
         title={agent.name}
-        subtitle={formatObjectivePreview(objective, 40)}
         action={
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <Button variant="ghost" onClick={() => navigate(`/agents/${agent.id}`)}>
-              {intl.formatMessage({ id: 'agents.detail.backToChat' })}
-            </Button>
+          <Button variant="secondary" onClick={() => navigate(`/agents/${agent.id}`)}>
+            {intl.formatMessage({ id: 'agents.detail.backToChat' })}
+          </Button>
+        }
+      />
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
             {(agent.status === 'stopped' || agent.status === 'crashed') && (
               <Button variant="secondary" onClick={() => setIsEditing(true)}>
                 {intl.formatMessage({ id: 'agents.detail.editConfig' })}
@@ -318,9 +319,7 @@ export function AgentDetailPage() {
                 {intl.formatMessage({ id: 'common.delete' })}
               </Button>
             )}
-          </div>
-        }
-      />
+      </div>
 
       <NotificationsBlock variant="page" style={{ marginBottom: '20px' }} />
 
