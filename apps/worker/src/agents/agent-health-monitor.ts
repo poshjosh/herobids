@@ -12,6 +12,8 @@ export interface HealthMonitorConfig {
   checkIntervalMs: number;
   /** Heartbeat timeout — mark unhealthy after this (ms). Default: 30000 */
   heartbeatTimeoutMs: number;
+  /** Budget from session creation to first heartbeat before a start is failed (ms). Default: 60000 */
+  startTimeoutMs: number;
   /**
    * Called when the health monitor finds a terminal session in DB that still has
    * an in-memory runtime handle. This is the controlling path for user-initiated
@@ -28,6 +30,7 @@ export interface HealthMonitorConfig {
 const DEFAULT_CONFIG: HealthMonitorConfig = {
   checkIntervalMs: 10_000,
   heartbeatTimeoutMs: 30_000,
+  startTimeoutMs: 60_000,
 };
 
 /**
@@ -63,7 +66,9 @@ export class AgentHealthMonitor {
 
   private async checkHealth(): Promise<void> {
     try {
-      const threshold = new Date(Date.now() - this.config.heartbeatTimeoutMs);
+      const now = Date.now();
+      const threshold = new Date(now - this.config.heartbeatTimeoutMs);
+      const startThreshold = new Date(now - this.config.startTimeoutMs);
 
       // Find running sessions with stale heartbeats
       const staleRunningSessions = await this.db.select()
@@ -82,7 +87,7 @@ export class AgentHealthMonitor {
         .from(agentRuntimeSessions)
         .where(and(
           inArray(agentRuntimeSessions.status, ['starting', 'launching']),
-          lt(agentRuntimeSessions.startedAt, threshold),
+          lt(agentRuntimeSessions.startedAt, startThreshold),
         ));
 
       for (const session of staleStartingSessions) {

@@ -38,7 +38,7 @@ RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip git sudo
 # Install agent-browser CLI (Rust binary, connects to remote Browserless —
 # no local Chrome needed). Pinned to a specific version for reproducibility.
 # Requires gcompat (glibc shim) because the pre-built binary links against glibc.
-RUN apk add --no-cache gcompat && npm install -g agent-browser@0.14.0
+RUN apk add --no-cache gcompat && npm install -g agent-browser@0.14.0 && npm cache clean --force
 
 # Non-root agent user with passwordless sudo for full permission level.
 # The container still starts as root because sandbox-exec.sh requires

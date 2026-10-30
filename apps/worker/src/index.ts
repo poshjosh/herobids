@@ -889,6 +889,7 @@ const agentHealthMonitor = new AgentHealthMonitor(
     onTerminalSessionCleanup: (agentId, sessionId) =>
       agentActorLifecycle.stop(agentId, 'terminal_cleanup', sessionId),
     checkIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
+    startTimeoutMs: appConfig.worker.agents.startTimeoutMs,
   },
   agentRuntimeLauncher,
 );

@@ -367,6 +367,11 @@ runcmd:
       logger -t cloud-init "INFO: ghcr_username/ghcr_token not set — skipping ghcr.io login"
     fi
 
+  # ── Pre-pull agent image ─────────────────────────────────
+  # Removes the image pull from every agent start. Best-effort: if the pull
+  # fails, Nomad still pulls on first placement.
+  - docker pull ghcr.io/poshjosh/herobids-agent:latest || logger -t cloud-init "WARNING: agent image pre-pull failed; Nomad will pull on first placement"
+
   # ── Install Nomad ────────────────────────────────────────
   - wget -O- https://apt.releases.hashicorp.com/gpg 2>/dev/null | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
   - . /etc/os-release && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $VERSION_CODENAME main" > /etc/apt/sources.list.d/hashicorp.list

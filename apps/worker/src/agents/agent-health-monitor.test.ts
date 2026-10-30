@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { lt } from 'drizzle-orm';
+import { agentRuntimeSessions } from '@herobids/db';
 import { AgentHealthMonitor } from './agent-health-monitor.js';
+
+vi.mock('drizzle-orm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('drizzle-orm')>();
+  return { ...actual, lt: vi.fn(actual.lt) };
+});
 
 describe('AgentHealthMonitor', () => {
   function buildMonitor(queryResults: Array<Array<Record<string, unknown>>>) {
@@ -59,6 +66,19 @@ describe('AgentHealthMonitor', () => {
 
     expect(sessionManager.handleStartTimeout).not.toHaveBeenCalled();
     expect(sessionManager.markUnhealthy).not.toHaveBeenCalled();
+  });
+
+  it('uses startTimeoutMs (default 60 s) for the starting cutoff and heartbeatTimeoutMs (30 s) for running sessions', async () => {
+    const { monitor } = buildMonitor([[], []]);
+    vi.mocked(lt).mockClear();
+
+    await (monitor as any).checkHealth();
+
+    const cutoffFor = (column: unknown) =>
+      vi.mocked(lt).mock.calls.find(([col]) => col === column)?.[1] as Date;
+    const now = Date.now();
+    expect(cutoffFor(agentRuntimeSessions.lastHeartbeatAt)!.getTime()).toBeCloseTo(now - 30_000, -3);
+    expect(cutoffFor(agentRuntimeSessions.startedAt)!.getTime()).toBeCloseTo(now - 60_000, -3);
   });
 
   describe('checkIntervalMs config', () => {

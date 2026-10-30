@@ -347,6 +347,7 @@ worker:
   concurrency: 10              # WorkerRuntime max concurrent trading actors
   agents:
     healthCheckIntervalMs: 2000  # AgentSessionManager health poll cadence in ms
+    startTimeoutMs: 60000        # Max time from session creation to first heartbeat before a start is failed (covers Nomad placement + image pull + boot)
     botOrphanSweepIntervalMs: 60000  # Bot orphan sweep cadence in ms
 
 # ── Runtime Backend ──────────────────────────────────────────────────────────
