@@ -1,6 +1,6 @@
 # Bug Report 002 — Capacity check reads empty allocation memory, so the agent node looks empty and autoscale never adds a node
 
-- **Status:** FIXED IN CODE (2026-10-30). The regression test passes. Deployment to staging is pending. See [Fix](#10-fix) and [Verification](#11-verification).
+- **Status:** FIXED AND DEPLOYED to staging (2026-10-30, commit `ee90ca48`). The regression test passes. The autoscaler now reads the real capacity (235 MB free, 6%, 0 slots). Adding a node is blocked by a separate issue: the autoscale timer is stopped because its apply would replace the agent node. See [Fix](#10-fix) and [Verification](#11-verification).
 - **Severity:** High. Agents fail to start once the agent node's memory is full, and the autoscaler that exists to add capacity never does. This blocks paying users as the platform grows.
 - **Date:** 2026-10-30
 - **Environment:** Staging (Nomad, one agent node `herobids-staging-agent-1`). The bug is in the infrastructure scripts, so it affects every environment that autoscales.
@@ -143,7 +143,7 @@ Nothing ran the script against a Nomad response, so the change in Nomad's respon
 - [x] AC1. `check-nomad-capacity.sh` reports allocated memory from `AllocatedResources` (R1).
 - [x] AC2. A response with only the legacy field still produces a correct figure (R2).
 - [x] AC3. A running allocation with no memory figure makes the script fail with exit code 1 (R3).
-- [ ] AC4. After deploy to staging, `nomad-autoscale.log` reports free memory consistent with Nomad, and a node is added when the node is full (R5). **Pending deploy.**
+- [x] AC4 (partly). After deploy to staging, `nomad-autoscale.log` reports free memory consistent with Nomad (235 MB, 6%, 0 slots) and decides to scale out (R1–R4 verified). Adding a node (R5) is **not yet verified**: the apply it runs would replace the existing agent node, so the timer is stopped.
 - [x] AC5. The regression test in `infra/hetzner/scripts/tests/` passes on the fixed script and fails on the previous script.
 
 ---
@@ -174,7 +174,8 @@ Added [`tests/check-nomad-capacity.test.sh`](../../../../infra/hetzner/scripts/t
 - `infra/hetzner/scripts/tests/check-nomad-capacity.test.sh`: all three checks pass on the fixed script.
 - The same test against the previous script: fails all three checks (free memory 3,691 MB and 14 slots, where the correct values are 107 MB and 0; and no failure on a missing figure).
 - Syntax check: `bash -n` passes for both scripts.
-- **Not yet done:** deploy to staging and confirm the next autoscale run adds a node (AC4 and T4).
+- **Done on staging:** the fixed script was deployed in `ee90ca48`. The log shows the correct free memory and a scale-out decision.
+- **Not yet done:** confirm that a scale-out adds a node (AC4, T4). This is blocked until the Terraform drift is fixed and the replacement guard exists.
 
 ---
 
