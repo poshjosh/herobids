@@ -208,6 +208,8 @@ resource "hcloud_server" "default" {
     alert_to                 = var.alert_to
     alert_smtp_user          = var.alert_smtp_user
     alert_smtp_pass          = var.alert_smtp_pass
+    # P1 — demand-aware autoscale settings (non-secret, base64 KEY=VALUE input)
+    autoscale_settings_input_b64 = base64encode(local.autoscale_settings_input)
   })
 
   labels = {

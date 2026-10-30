@@ -752,7 +752,7 @@ Stages describe dependencies, not mandatory separate services/files.
 | ID | Work package | Depends on | Completion evidence | Status |
 |---|---|---|---|---|
 | P0 | Re-read source/history, preserve memory fix, capture sanitized API fixtures and effective config; record baseline phase timings | None | Fixtures cover namespace, blocked diagnostics, assigned pending allocations, cloud inventory and node resources | DONE (local, scope A; live capture and phase timings outstanding) |
-| P1 | Define validated config, shared snapshot/decision contract, disabled gates and durable convergence renderer | P0 | Fresh-boot/convergence parity, invalid-input and stale-override tests | PENDING |
+| P1 | Define validated config, shared snapshot/decision contract, disabled gates and durable convergence renderer | P0 | Fresh-boot/convergence parity, invalid-input and stale-override tests | DONE (gates off; see Outstanding Issues) |
 | P2 | Implement reconciled managed inventory, durable state, in-flight/readiness accounting and read-only mode | P1 | Zero/stale-cache/down/unjoined/partial-apply/reboot tests; no mutation in dry-run | PENDING |
 | P3 | Correct demand collection, classification and per-node resource/fit calculations | P0, P1 | Real-shape namespace/diagnostic/dedup/fragmentation/CPU fixtures pass | PENDING |
 | P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests | PENDING |
@@ -1081,3 +1081,14 @@ The implementing agent's final report must state:
 - Node `…0003` is `down` without a `detail` entry; document as intentional or add detail.
 - `test-harness.sh` wording in the fixture README: it is a sourced library, executed by `run-all.sh` but prints no count.
 - Live effective config capture and baseline phase timings remain outstanding (P0 not complete).
+
+### P1 (config and convergence)
+
+- MEDIUM: `write_if_changed` in `converge-control-plane.sh` (~144-154) runs inside an `if`, so a failed `cp`/`chmod` returns 0. Fix: `cp ... || return 2` and treat status 2 as `SETTINGS_FAILED`.
+- MEDIUM: missing `autoscale-settings.input` in converge (~278-280) warns and exits 0 without the failed marker. Fix: set `SETTINGS_FAILED` and write the marker. Decide the rollout order first (existing control planes will lack the input until setup runs once), or keep it a warning for one release.
+- LOW: cloud-init renderer call (`cloud-init.yaml` ~481) omits `--systemd-dir` and `--secrets-file`; pass the same arguments as converge for parity.
+- LOW: cloud-init comment (~468) says a consumer defaults to demand-disabled; no consumer exists until P2. Reword.
+- LOW: the `locals` block sits in `outputs.tf` (~40-54); move to `main.tf` or `locals.tf`.
+- LOW: converge skips steps 6-7 after a settings failure; document in the converge header.
+- Scope (M3/M4 from review 1): only five settings are wired and nothing consumes them yet. The remaining section 7 keys (namespace, datacenter, pool, fingerprint, state dir, min/max cross-check) are deferred to P2/P4. Consumers land in P2.
+- Known residual: if a main unit already has the settings `EnvironmentFile=` line and a secrets drop-in is added later, converge's skip logic could diverge from cloud-init order. No released unit has this shape.

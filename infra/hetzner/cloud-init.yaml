@@ -63,6 +63,13 @@ write_files:
     encoding: b64
     content: ${deploy_ssh_private_key_b64}
 
+  # Non-secret demand-aware autoscale settings input (Terraform autoscale_settings).
+  # Rendered into /etc/herobids/autoscale-settings.env by the runcmd below.
+  - path: /etc/herobids/autoscale-settings.input
+    permissions: '0644'
+    encoding: b64
+    content: ${autoscale_settings_input_b64}
+
   - path: /etc/nomad.d/nomad.hcl
     permissions: '0644'
     content: |
@@ -218,6 +225,9 @@ write_files:
       # Autoscale secrets loaded from deployed env file (see setup-autoscale-env.sh).
       # The - prefix makes the file optional — if missing, tf_backend_configured() handles it gracefully.
       EnvironmentFile=-/etc/herobids/autoscale.env
+      # Demand-aware autoscale settings (non-secret; rendered from autoscale_settings).
+      # Listed last so settings win on a collision; converge drop-ins sort the same way.
+      EnvironmentFile=-/etc/herobids/autoscale-settings.env
 
       # Security hardening: restrict privileges while allowing terraform state writes.
       # ProtectSystem=strict mounts /usr, /boot, /etc read-only.
@@ -300,6 +310,9 @@ write_files:
       # Autoscale secrets loaded from deployed env file (see setup-autoscale-env.sh).
       # The - prefix makes the file optional — if missing, tf_backend_configured() handles it gracefully.
       EnvironmentFile=-/etc/herobids/autoscale.env
+      # Demand-aware autoscale settings (non-secret; rendered from autoscale_settings).
+      # Listed last so settings win on a collision; converge drop-ins sort the same way.
+      EnvironmentFile=-/etc/herobids/autoscale-settings.env
 
       # Security hardening (same profile as autoscale-out)
       NoNewPrivileges=true
@@ -371,6 +384,9 @@ write_files:
       # Autoscale secrets loaded from deployed env file (see setup-autoscale-env.sh).
       # The - prefix makes the file optional — if missing, tf_backend_configured() handles it gracefully.
       EnvironmentFile=-/etc/herobids/autoscale.env
+      # Demand-aware autoscale settings (non-secret; rendered from autoscale_settings).
+      # Listed last so settings win on a collision; converge drop-ins sort the same way.
+      EnvironmentFile=-/etc/herobids/autoscale-settings.env
 
       # Security hardening
       NoNewPrivileges=true
@@ -454,6 +470,19 @@ runcmd:
     if [ ! -f /opt/herobids/${env_file} ]; then
       cp -n /opt/herobids/.env.example /opt/herobids/${env_file}
       chmod 600 /opt/herobids/${env_file}
+    fi
+
+  # ── Render demand-aware autoscale settings (first boot) ───
+  # Same renderer and input as convergence (converge-control-plane.sh), so a
+  # fresh host and a converged host produce byte-identical settings files.
+  - |
+    # The failed marker lets the consumer default to demand-disabled while settings are absent.
+    if [ -f /opt/herobids/infra/hetzner/scripts/render-autoscale-settings.sh ] && \
+       bash /opt/herobids/infra/hetzner/scripts/render-autoscale-settings.sh --input /etc/herobids/autoscale-settings.input --output /etc/herobids/autoscale-settings.env; then
+      rm -f /etc/herobids/autoscale-settings.failed
+    else
+      logger -t cloud-init "ERROR: autoscale settings render failed"
+      : > /etc/herobids/autoscale-settings.failed
     fi
 
   # ── Setup backup directory ───────────────────────────────

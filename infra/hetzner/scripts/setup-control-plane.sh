@@ -36,6 +36,7 @@ shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 # (asserted by scripts/tests/test-converge-control-plane.sh).
 DOCKER_BRIDGE_SUBNET="172.18.0.0/16"
 REMOTE_SCRIPT="/usr/local/sbin/herobids-converge-control-plane.sh"
+REMOTE_RENDERER="/usr/local/sbin/herobids-render-autoscale-settings.sh"
 CIDR_REGEX='^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$'
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
@@ -127,12 +128,35 @@ if [[ ! "${PRIVATE_SUBNET}" =~ ${CIDR_REGEX} ]]; then
   exit 1
 fi
 
+# Demand-aware autoscale settings: Terraform's autoscale_settings_input is the
+# single source of defaults and TF_VAR overrides. On the Terraform path a missing
+# output means stale state and must fail. Override mode (no Terraform state) can
+# only warn: the host keeps its current settings file, never a guessed one.
+AUTOSCALE_SETTINGS_INPUT_VALUE="$(terraform_output -raw autoscale_settings_input 2>/dev/null || true)"
+if [[ -z "${AUTOSCALE_SETTINGS_INPUT_VALUE}" ]]; then
+  if [[ -n "${HEROBIDS_NOMAD_ENABLED:-}" ]]; then
+    echo "WARNING: terraform output autoscale_settings_input unavailable; autoscale settings NOT converged." >&2
+  else
+    echo "ERROR: Could not read terraform output autoscale_settings_input (workspace ${HEROBIDS_ENV})." >&2
+    echo "  Run 'terraform apply' (or refresh) for workspace ${HEROBIDS_ENV}; the output must exist before converging." >&2
+    exit 1
+  fi
+fi
+
 # ─── Upload and run ──────────────────────────────────────────────────────────
 
 echo "==> [${HEROBIDS_ENV}] Converging control plane ${SERVER_IP} (private ${PRIVATE_SUBNET} from ${PRIVATE_SUBNET_SOURCE}; bridge ${DOCKER_BRIDGE_SUBNET})..."
 
 scp ${SSH_OPTS} "${SCRIPT_DIR}/converge-control-plane.sh" "root@${SERVER_IP}:${REMOTE_SCRIPT}"
 ssh ${SSH_OPTS} "root@${SERVER_IP}" "chmod 0755 ${REMOTE_SCRIPT}"
+
+# Same renderer and input format as cloud-init first boot (non-secret values).
+scp ${SSH_OPTS} "${SCRIPT_DIR}/render-autoscale-settings.sh" "root@${SERVER_IP}:${REMOTE_RENDERER}"
+ssh ${SSH_OPTS} "root@${SERVER_IP}" "chmod 0755 ${REMOTE_RENDERER}"
+if [[ -n "${AUTOSCALE_SETTINGS_INPUT_VALUE}" ]]; then
+  printf '%s\n' "${AUTOSCALE_SETTINGS_INPUT_VALUE}" | ssh ${SSH_OPTS} "root@${SERVER_IP}" \
+    "install -d -m 0755 /etc/herobids && cat > /etc/herobids/autoscale-settings.input && chmod 0644 /etc/herobids/autoscale-settings.input"
+fi
 
 # Inputs are validated CIDRs above, so plain interpolation is safe here.
 RC=0

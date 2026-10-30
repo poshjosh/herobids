@@ -1219,6 +1219,12 @@ export const WorkerConfigSchema = z.object({
     healthCheckIntervalMs: z.number().int().min(100).default(2_000),
     startTimeoutMs: z.number().int().min(1_000).default(60_000),
     botOrphanSweepIntervalMs: z.number().int().min(1000).default(60_000),
+    // Capacity-aware start gate. Disabled by default; budgets apply only when enabled.
+    capacityAwareStart: z.object({
+      enabled: z.boolean().default(false),
+      capacityWaitTimeoutMs: z.number().int().min(1_000).max(3_600_000).default(600_000),
+      placedStartTimeoutMs: z.number().int().min(1_000).max(3_600_000).default(120_000),
+    }).strict().default({}),
   }).default({}),
 });
 

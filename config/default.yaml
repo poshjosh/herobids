@@ -349,6 +349,10 @@ worker:
     healthCheckIntervalMs: 2000  # AgentSessionManager health poll cadence in ms
     startTimeoutMs: 60000        # Max time from session creation to first heartbeat before a start is failed (covers Nomad placement + image pull + boot)
     botOrphanSweepIntervalMs: 60000  # Bot orphan sweep cadence in ms
+    capacityAwareStart:
+      enabled: false               # Capacity-aware start gate (disabled until the autoscale rollout is approved)
+      capacityWaitTimeoutMs: 600000  # Max time a start waits for cluster capacity before placement
+      placedStartTimeoutMs: 120000   # Max time from placement to first heartbeat once capacity is placed
 
 # ── Runtime Backend ──────────────────────────────────────────────────────────
 # Controls which scheduler the worker uses to place agent containers.

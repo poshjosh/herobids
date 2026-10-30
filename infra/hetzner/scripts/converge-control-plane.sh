@@ -17,6 +17,10 @@
 #      nomad.service drop-in (After=/Requires=) unless the main unit has both.
 #   3c. Adds an EnvironmentFile=-/etc/herobids/autoscale.env drop-in to each
 #      autoscale unit whose unit file lacks it (daemon-reload only).
+#   3d. Renders /etc/herobids/autoscale-settings.env from the Terraform-derived
+#      input (same renderer as cloud-init first boot) and adds an
+#      EnvironmentFile= drop-in for the settings file to each autoscale unit
+#      that lacks it. Fails on invalid input or a stale Environment= override.
 #   4. Rewrites `{{ GetPrivateIP }}` / `__PRIVATE_IP__` in nomad.hcl to the IP.
 #   5. Checks once (no waiting) whether the live leader and `nomad server
 #      members` show the configured advertise IP. Restarts Nomad if nomad.hcl
@@ -38,6 +42,17 @@
 #   SYSTEMD_DIR            Path override (default /etc/systemd/system).
 #   CONVERGE_TIMEOUT_SECS  Max wait for leader + members after restart (default 60).
 #   CONVERGE_POLL_SECS     Poll interval (default 2).
+#   AUTOSCALE_SETTINGS_INPUT    KEY=VALUE input from setup (default
+#                          /etc/herobids/autoscale-settings.input).
+#   AUTOSCALE_SETTINGS_RENDERER Shared renderer (default
+#                          /usr/local/sbin/herobids-render-autoscale-settings.sh).
+#   AUTOSCALE_SETTINGS_ENV      Rendered settings file (default
+#                          /etc/herobids/autoscale-settings.env).
+#   AUTOSCALE_SECRETS_FILE      Secrets file the renderer checks for collisions
+#                          (default /etc/herobids/autoscale.env).
+#   AUTOSCALE_SETTINGS_FAILED_MARKER  Written when settings fail to render,
+#                          removed on success (default
+#                          /etc/herobids/autoscale-settings.failed).
 
 set -euo pipefail
 
@@ -48,6 +63,11 @@ NOMAD_ACL_TOKEN_FILE="${NOMAD_ACL_TOKEN_FILE:-/etc/nomad.d/acl-token}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 CONVERGE_TIMEOUT_SECS="${CONVERGE_TIMEOUT_SECS:-60}"
 CONVERGE_POLL_SECS="${CONVERGE_POLL_SECS:-2}"
+AUTOSCALE_SETTINGS_INPUT="${AUTOSCALE_SETTINGS_INPUT:-/etc/herobids/autoscale-settings.input}"
+AUTOSCALE_SETTINGS_RENDERER="${AUTOSCALE_SETTINGS_RENDERER:-/usr/local/sbin/herobids-render-autoscale-settings.sh}"
+AUTOSCALE_SETTINGS_ENV="${AUTOSCALE_SETTINGS_ENV:-/etc/herobids/autoscale-settings.env}"
+AUTOSCALE_SECRETS_FILE="${AUTOSCALE_SECRETS_FILE:-/etc/herobids/autoscale.env}"
+AUTOSCALE_SETTINGS_FAILED_MARKER="${AUTOSCALE_SETTINGS_FAILED_MARKER:-/etc/herobids/autoscale-settings.failed}"
 NOMAD_LOCAL_ADDR="http://127.0.0.1:4646"
 PRIVATE_IP_UNIT_NAME="nomad-private-ip.service"
 
@@ -204,6 +224,8 @@ fi
 
 AUTOSCALE_UNITS=(nomad-autoscale nomad-scale-in nomad-placement-failure-watcher)
 AUTOSCALE_ENV_DROPIN_NAME="10-autoscale-env.conf"
+# Sorts before 10-autoscale-settings.conf, so settings win on a collision, the
+# same order as cloud-init's EnvironmentFile= lines (checked by the parity test).
 for unit in "${AUTOSCALE_UNITS[@]}"; do
   unit_file="${SYSTEMD_DIR}/${unit}.service"
   [[ -f "${unit_file}" ]] || continue
@@ -214,6 +236,49 @@ for unit in "${AUTOSCALE_UNITS[@]}"; do
     AUTOSCALE_UNITS_CHANGED=true
   fi
 done
+
+# ─── 3d. Durable demand-aware autoscale settings ────────────────────────────
+# Same renderer and input format as cloud-init first boot, so a converged host
+# and a freshly booted one resolve identical settings. The settings take effect
+# the next time a unit starts (timer-driven oneshots), so no restart here.
+# A failure is recorded and raised at the end of step 5, so the nomad.hcl patch
+# and daemon-reload still run.
+
+SETTINGS_FAILED=false
+if [[ -f "${AUTOSCALE_SETTINGS_INPUT}" ]]; then
+  settings_before="$(cat "${AUTOSCALE_SETTINGS_ENV}" 2>/dev/null || true)"
+  if [[ ! -x "${AUTOSCALE_SETTINGS_RENDERER}" ]]; then
+    SETTINGS_FAILED=true
+    warn "autoscale settings renderer not executable: ${AUTOSCALE_SETTINGS_RENDERER}"
+  elif "${AUTOSCALE_SETTINGS_RENDERER}" --input "${AUTOSCALE_SETTINGS_INPUT}" \
+    --output "${AUTOSCALE_SETTINGS_ENV}" --systemd-dir "${SYSTEMD_DIR}" \
+    --secrets-file "${AUTOSCALE_SECRETS_FILE}"; then
+    rm -f "${AUTOSCALE_SETTINGS_FAILED_MARKER}"
+    if [[ "$(cat "${AUTOSCALE_SETTINGS_ENV}")" != "${settings_before}" ]]; then
+      CHANGES+=("rendered ${AUTOSCALE_SETTINGS_ENV}")
+    fi
+
+    SETTINGS_DROPIN_NAME="10-autoscale-settings.conf"
+    for unit in "${AUTOSCALE_UNITS[@]}"; do
+      unit_file="${SYSTEMD_DIR}/${unit}.service"
+      [[ -f "${unit_file}" ]] || continue
+      grep -Eq '^EnvironmentFile=-?/etc/herobids/autoscale-settings\.env' "${unit_file}" && continue
+      if write_if_changed "${SYSTEMD_DIR}/${unit}.service.d/${SETTINGS_DROPIN_NAME}" \
+        "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale-settings.env')"; then
+        CHANGES+=("installed ${unit}.service autoscale-settings.env drop-in")
+        AUTOSCALE_UNITS_CHANGED=true
+      fi
+    done
+  else
+    SETTINGS_FAILED=true
+  fi
+  if [[ "${SETTINGS_FAILED}" == "true" ]]; then
+    : > "${AUTOSCALE_SETTINGS_FAILED_MARKER}"
+  fi
+else
+  warn "${AUTOSCALE_SETTINGS_INPUT} missing; autoscale settings not converged (setup-control-plane.sh uploads it)"
+fi
+
 
 # ─── 4. Substitute the private IP into nomad.hcl ────────────────────────────
 
@@ -333,6 +398,11 @@ if [[ "${HCL_CHANGED}" == "true" || "${NOMAD_UNIT_CHANGED}" == "true" || "${LIVE
   fi
 fi
 log "leader ${LAST_LEADER}; advertise ${ADVERTISE_IP} verified."
+
+# Deferred from step 3d so the nomad.hcl patch and daemon-reload above ran.
+if [[ "${SETTINGS_FAILED}" == "true" ]]; then
+  die "autoscale settings not converged (fix the input or stale override above, then re-run)."
+fi
 
 # ─── 6. Raft peer address check (warning only, never restarts) ──────────────
 

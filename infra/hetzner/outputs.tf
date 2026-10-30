@@ -39,6 +39,30 @@ output "api_url" {
 
 # ── Nomad Cluster ─────────────────────────────────────────
 
+# Single source for demand-aware autoscale settings. The same rendered input
+# feeds first boot (cloud-init) and convergence (setup/converge scripts), so
+# both paths render identical /etc/herobids/autoscale-settings.env content.
+locals {
+  autoscale_settings = {
+    NOMAD_AUTOSCALE_DEMAND_ENABLED            = tostring(var.nomad_autoscale_demand_enabled)
+    NOMAD_SCALE_OUT_INCREMENT_MAX             = tostring(var.nomad_scale_out_increment_max)
+    NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS     = tostring(var.nomad_demand_consecutive_observations)
+    NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS = tostring(var.nomad_demand_observation_interval_seconds)
+    NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS   = tostring(var.nomad_node_provisioning_timeout_seconds)
+  }
+  autoscale_settings_input = "${join("\n", [for k, v in local.autoscale_settings : "${k}=${v}"])}\n"
+}
+
+output "autoscale_settings" {
+  description = "Effective demand-aware autoscale settings (KEY => value). Consumed by setup-control-plane.sh to converge /etc/herobids/autoscale-settings.env on existing hosts. Non-secret."
+  value       = local.autoscale_settings
+}
+
+output "autoscale_settings_input" {
+  description = "Rendered KEY=VALUE input for render-autoscale-settings.sh. Same content cloud-init writes on first boot."
+  value       = local.autoscale_settings_input
+}
+
 output "nomad_enabled" {
   value       = var.enable_nomad
   description = "Whether Nomad orchestration is provisioned for this environment"

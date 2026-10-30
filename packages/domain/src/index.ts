@@ -3,6 +3,7 @@ export * from './values/index.js';
 export * from './enums.js';
 export * from './models/index.js';
 export * from './ports/index.js';
+export * from './capacity/capacity-contract.js';
 export * from './config/index.js';
 export * from './agent-protocol.js';
 export * from './agent-goal.js';

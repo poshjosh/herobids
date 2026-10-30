@@ -174,6 +174,11 @@ run_converge() {
       NOMAD_HCL="${ROOT}/etc/nomad.d/nomad.hcl" \
       NOMAD_ACL_TOKEN_FILE="${ROOT}/etc/nomad.d/acl-token" \
       SYSTEMD_DIR="${ROOT}/etc/systemd/system" \
+      AUTOSCALE_SETTINGS_INPUT="${ROOT}/etc/herobids/autoscale-settings.input" \
+      AUTOSCALE_SETTINGS_RENDERER="${SCRIPTS_DIR}/render-autoscale-settings.sh" \
+      AUTOSCALE_SETTINGS_ENV="${ROOT}/etc/herobids/autoscale-settings.env" \
+      AUTOSCALE_SECRETS_FILE="${ROOT}/etc/herobids/autoscale.env" \
+      AUTOSCALE_SETTINGS_FAILED_MARKER="${ROOT}/etc/herobids/autoscale-settings.failed" \
       CONVERGE_TIMEOUT_SECS=2 CONVERGE_POLL_SECS=1 \
       "$@" bash "${CONVERGE}" 2>&1
   )" || RUN_EXIT=$?
@@ -449,6 +454,153 @@ test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════
 
+test_begin "converge-control-plane — autoscale settings (3d): render, invalid, stale override"
+
+# write_settings_input [INCREMENT_MAX] — the five-key input setup uploads.
+write_settings_input() {
+  mkdir -p "${ROOT}/etc/herobids"
+  printf '%s\n' \
+    'NOMAD_AUTOSCALE_DEMAND_ENABLED=false' \
+    "NOMAD_SCALE_OUT_INCREMENT_MAX=${1:-2}" \
+    'NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2' \
+    'NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60' \
+    'NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600' \
+    > "${ROOT}/etc/herobids/autoscale-settings.input"
+}
+
+new_root "settings"
+write_hcl "${STUB_PRIVATE_IP}"
+printf '%s\n' '[Service]' 'Type=oneshot' 'ExecStart=/opt/herobids/infra/hetzner/scripts/scale-out.sh' \
+  > "${ROOT}/etc/systemd/system/nomad-autoscale.service"
+printf '%s\n' '[Service]' 'Type=oneshot' 'EnvironmentFile=-/etc/herobids/autoscale-settings.env' \
+  > "${ROOT}/etc/systemd/system/nomad-scale-in.service"
+SETTINGS_ENV="${ROOT}/etc/herobids/autoscale-settings.env"
+SETTINGS_DROPIN="${ROOT}/etc/systemd/system/nomad-autoscale.service.d/10-autoscale-settings.conf"
+write_settings_input
+run_converge
+assert_eq "${RUN_EXIT}" "0" "fresh render: succeeds"
+assert_contains "${RUN_OUTPUT}" "autoscale settings written" "fresh render: writes the settings file"
+assert_eq "$(cat "${SETTINGS_ENV}")" "$(printf '%s\n' 'NOMAD_AUTOSCALE_DEMAND_ENABLED=false' \
+  'NOMAD_SCALE_OUT_INCREMENT_MAX=2' 'NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2' \
+  'NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60' 'NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600')" \
+  "fresh render: rendered content matches the input"
+assert_eq "$(cat "${SETTINGS_DROPIN}")" "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale-settings.env')" \
+  "fresh render: installs the drop-in on a unit without the hookup"
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-scale-in.service.d/10-autoscale-settings.conf" ]] && echo yes || echo no)" "no" \
+  "unit that already has the settings hookup: no settings drop-in"
+assert_contains "${CALLS}" "systemctl daemon-reload" "fresh render: daemon-reloads for the drop-in"
+
+SETTINGS_BEFORE="$(cat "${SETTINGS_ENV}")"
+run_converge
+assert_contains "${RUN_OUTPUT}" "already converged" "re-render with same input: no-op"
+assert_not_contains "${CALLS}" "systemctl daemon-reload" "re-render with same input: no daemon-reload"
+assert_eq "$(cat "${SETTINGS_ENV}")" "${SETTINGS_BEFORE}" "re-render with same input: settings file unchanged"
+
+write_settings_input 0
+run_converge
+assert_neq "${RUN_EXIT}" "0" "invalid input: converge fails"
+assert_contains "${RUN_OUTPUT}" "invalid value for NOMAD_SCALE_OUT_INCREMENT_MAX" "invalid input: names the bad key"
+assert_contains "${RUN_OUTPUT}" "autoscale settings not converged" "invalid input: says settings were not converged"
+assert_eq "$(cat "${SETTINGS_ENV}")" "${SETTINGS_BEFORE}" "invalid input: leaves the rendered file untouched"
+
+write_settings_input 2
+mkdir -p "${ROOT}/etc/systemd/system/nomad-autoscale.service.d"
+printf '%s\n' '[Service]' 'Environment=NOMAD_SCALE_OUT_INCREMENT_MAX=5' \
+  > "${ROOT}/etc/systemd/system/nomad-autoscale.service.d/90-stale.conf"
+run_converge
+assert_neq "${RUN_EXIT}" "0" "stale override: converge fails"
+assert_contains "${RUN_OUTPUT}" "stale override" "stale override: names the conflict"
+assert_eq "$(cat "${SETTINGS_ENV}")" "${SETTINGS_BEFORE}" "stale override: leaves the rendered file untouched"
+
+rm -f "${ROOT}/etc/systemd/system/nomad-autoscale.service.d/90-stale.conf"
+run_converge
+assert_eq "${RUN_EXIT}" "0" "stale override removed: converges again"
+
+new_root "settings-absent"
+write_hcl "${STUB_PRIVATE_IP}"
+run_converge
+assert_eq "${RUN_EXIT}" "0" "missing input: exits 0 (warn and skip)"
+assert_contains "${RUN_OUTPUT}" "autoscale settings not converged" "missing input: warns"
+assert_eq "$([[ -e "${ROOT}/etc/herobids/autoscale-settings.env" ]] && echo yes || echo no)" "no" \
+  "missing input: writes no settings file"
+
+new_root "settings-collision"
+write_hcl "${STUB_PRIVATE_IP}"
+write_settings_input
+printf '%s\n' 'NOMAD_SCALE_OUT_INCREMENT_MAX=4' > "${ROOT}/etc/herobids/autoscale.env"
+run_converge
+assert_neq "${RUN_EXIT}" "0" "secrets collision: converge fails"
+assert_contains "${RUN_OUTPUT}" "migrate it to the Terraform autoscale_settings input" "secrets collision: says to migrate the key"
+assert_contains "${RUN_OUTPUT}" "autoscale settings not converged" "secrets collision: says settings were not converged"
+assert_eq "$([[ -e "${ROOT}/etc/herobids/autoscale-settings.env" ]] && echo yes || echo no)" "no" \
+  "secrets collision: writes no settings file"
+assert_eq "$([[ -e "${ROOT}/etc/herobids/autoscale-settings.failed" ]] && echo yes || echo no)" "yes" \
+  "secrets collision: writes the failed marker"
+
+rm -f "${ROOT}/etc/herobids/autoscale.env"
+run_converge
+assert_eq "${RUN_EXIT}" "0" "secrets collision resolved: converges"
+assert_eq "$([[ -e "${ROOT}/etc/herobids/autoscale-settings.failed" ]] && echo yes || echo no)" "no" \
+  "secrets collision resolved: clears the failed marker"
+
+new_root "settings-deferred"
+write_stale_hcl
+write_settings_input 0
+run_converge
+assert_neq "${RUN_EXIT}" "0" "deferred 3d failure: converge still fails"
+assert_contains "${RUN_OUTPUT}" "autoscale settings not converged" "deferred 3d failure: says settings were not converged"
+assert_contains "$(cat "${ROOT}/etc/nomad.d/nomad.hcl")" "rpc  = \"${STUB_PRIVATE_IP}\"" \
+  "deferred 3d failure: private-IP patch still ran"
+assert_contains "${CALLS}" "systemctl daemon-reload" "deferred 3d failure: daemon-reload still ran"
+assert_eq "$([[ -e "${ROOT}/etc/herobids/autoscale-settings.failed" ]] && echo yes || echo no)" "yes" \
+  "deferred 3d failure: writes the failed marker"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "converge-control-plane — EnvironmentFile precedence matches cloud-init.yaml (H1)"
+
+# EnvironmentFile= paths of a unit from cloud-init.yaml, in file order.
+cloud_init_envfiles() {
+  awk -v unit="$1" '
+    $0 == "  - path: /etc/systemd/system/" unit ".service" { found = 1; next }
+    found && /content: \|/ { body = 1; next }
+    found && body && /^(  - |[^ ])/ { exit }
+    body { print }
+  ' "${HETZNER_DIR}/cloud-init.yaml" | sed -nE 's/^[[:space:]]*EnvironmentFile=-?//p'
+}
+
+# EnvironmentFile= paths converge yields for a unit: main unit lines first, then
+# drop-ins in lexical order (systemd applies drop-ins sorted by filename).
+converge_envfiles() {
+  sed -nE 's/^EnvironmentFile=-?//p' "${ROOT}/etc/systemd/system/$1.service"
+  find "${ROOT}/etc/systemd/system/$1.service.d" -name '*.conf' 2>/dev/null | LC_ALL=C sort |
+    while IFS= read -r dropin; do sed -nE 's/^EnvironmentFile=-?//p' "${dropin}"; done
+}
+
+PARITY_UNITS=(nomad-autoscale nomad-scale-in nomad-placement-failure-watcher)
+new_root "envfile-parity"
+write_hcl "${STUB_PRIVATE_IP}"
+write_settings_input
+for unit in "${PARITY_UNITS[@]}"; do
+  printf '%s\n' '[Service]' 'Type=oneshot' 'ExecStart=/bin/true' > "${ROOT}/etc/systemd/system/${unit}.service"
+done
+run_converge
+assert_eq "${RUN_EXIT}" "0" "parity: converge installs the drop-ins"
+for unit in "${PARITY_UNITS[@]}"; do
+  EXPECTED="$(cloud_init_envfiles "${unit}")"
+  ACTUAL="$(converge_envfiles "${unit}")"
+  assert_neq "${EXPECTED}" "" "parity ${unit}: cloud-init declares EnvironmentFile= lines"
+  assert_eq "${ACTUAL}" "${EXPECTED}" "parity ${unit}: converge order matches cloud-init"
+  assert_eq "$(printf '%s\n' "${EXPECTED}" | tail -1)" "/etc/herobids/autoscale-settings.env" \
+    "parity ${unit}: settings file is listed last (wins)"
+done
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
 test_begin "converge-control-plane — ACL check (bug 2026-10-08/003)"
 
 new_root "acl-on" "${STUB_PRIVATE_IP}"
@@ -634,6 +786,10 @@ run_setup() {
   SETUP_CALLS="$(cat "${SETUP_LOG}")"
 }
 
+SETTINGS_STUB_INPUT="$(printf '%s\n' 'NOMAD_AUTOSCALE_DEMAND_ENABLED=false' 'NOMAD_SCALE_OUT_INCREMENT_MAX=2' \
+  'NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2' 'NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60' \
+  'NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600')"
+
 run_setup STUB_TF_FAIL=true
 assert_neq "${SETUP_EXIT}" "0" "terraform error: exits non-zero (no silent skip)"
 assert_contains "${SETUP_OUTPUT}" "workspace 'staging'" "terraform error: names the workspace"
@@ -647,10 +803,13 @@ assert_contains "${SETUP_OUTPUT}" "skipping control-plane convergence" "nomad_en
 run_setup STUB_TF_nomad_enabled=maybe
 assert_neq "${SETUP_EXIT}" "0" "nomad_enabled not true/false: exits non-zero"
 
-run_setup STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24 PRIVATE_SUBNET=192.168.0.0/24
+run_setup STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24 PRIVATE_SUBNET=192.168.0.0/24 \
+  "STUB_TF_autoscale_settings_input=${SETTINGS_STUB_INPUT}"
 assert_eq "${SETUP_EXIT}" "0" "terraform path: succeeds"
 assert_contains "${SETUP_OUTPUT}" "from terraform output private_subnet_ip_range" "terraform path: prints the subnet source"
 assert_contains "${SETUP_CALLS}" "PRIVATE_SUBNET=10.0.0.0/24 " "terraform path: a stray PRIVATE_SUBNET does not override terraform"
+assert_contains "${SETUP_CALLS}" "render-autoscale-settings.sh" "terraform path: uploads the settings renderer"
+assert_contains "${SETUP_CALLS}" "/etc/herobids/autoscale-settings.input" "terraform path: uploads the settings input"
 # Regression (bug 2026-10-08/001): outputs must come from the env's own state key,
 # not whichever backend key was last init'ed locally.
 assert_contains "${SETUP_CALLS}" "-backend-config=key=herobids/staging/terraform.tfstate" "terraform path: inits the staging state key"
@@ -663,7 +822,8 @@ assert_contains "${FIRST_TF_CALL}" "terraform init " "terraform path: inits the 
 rm -rf "${SETUP_TF_DIR}/.terraform" "${SETUP_TF_DIR}/.terraform-envs"
 mkdir -p "${SETUP_TF_DIR}/.terraform"
 printf 'production' > "${SETUP_TF_DIR}/.terraform/environment"
-run_setup TF_WORKSPACE=production STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24
+run_setup TF_WORKSPACE=production STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24 \
+  "STUB_TF_autoscale_settings_input=${SETTINGS_STUB_INPUT}"
 assert_eq "${SETUP_EXIT}" "0" "stale shared workspace selection: staging read succeeds"
 assert_not_contains "${SETUP_OUTPUT}" "does not exist" "stale shared workspace selection: init does not see it"
 assert_contains "${SETUP_CALLS}" "terraform-data-dir .terraform-envs/staging" "stale shared workspace selection: uses the per-env data dir"
@@ -678,9 +838,15 @@ assert_contains "${SETUP_OUTPUT}" "TF_BACKEND_BUCKET" "no backend creds: names t
 assert_not_contains "${SETUP_CALLS}" "terraform" "no backend creds: never runs terraform against a stale backend"
 assert_not_contains "${SETUP_CALLS}" "ssh" "no backend creds: does not touch the server"
 
+run_setup STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24 STUB_TF_autoscale_settings_input=
+assert_neq "${SETUP_EXIT}" "0" "empty settings output on terraform path: exits non-zero"
+assert_contains "${SETUP_OUTPUT}" "autoscale_settings_input" "empty settings output on terraform path: names the output"
+assert_not_contains "${SETUP_CALLS}" "ssh" "empty settings output on terraform path: does not touch the server"
+
 run_setup STUB_TF_FAIL=true HEROBIDS_NOMAD_ENABLED=true HEROBIDS_PRIVATE_SUBNET=10.0.0.0/24
 assert_eq "${SETUP_EXIT}" "0" "overrides: runs without terraform state"
 assert_contains "${SETUP_OUTPUT}" "from HEROBIDS_PRIVATE_SUBNET" "overrides: prints the subnet source"
+assert_contains "${SETUP_OUTPUT}" "autoscale settings NOT converged" "overrides: warns that autoscale settings were not converged"
 assert_contains "${SETUP_CALLS}" "PRIVATE_SUBNET=10.0.0.0/24 DOCKER_BRIDGE_SUBNET=172.18.0.0/16" "overrides: remote gets PRIVATE_SUBNET"
 
 run_setup STUB_TF_FAIL=true HEROBIDS_NOMAD_ENABLED=true

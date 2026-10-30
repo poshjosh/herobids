@@ -274,6 +274,58 @@ variable "agent_memory_reservation_mb" {
   }
 }
 
+# ── Demand-Aware Scale-Out (P1: gate off by default) ──────
+
+variable "nomad_autoscale_demand_enabled" {
+  type        = bool
+  description = "Feature flag: enable demand-aware scale-out (capacity-blocked workloads). Off by default; when false the autoscaler keeps its existing memory/slot-threshold behaviour."
+  default     = false
+}
+
+variable "nomad_scale_out_increment_max" {
+  type        = number
+  description = "Maximum agent nodes added by one demand-aware scale-out decision."
+  default     = 2
+
+  validation {
+    condition     = var.nomad_scale_out_increment_max >= 1 && var.nomad_scale_out_increment_max <= 999999999 && floor(var.nomad_scale_out_increment_max) == var.nomad_scale_out_increment_max
+    error_message = "nomad_scale_out_increment_max must be a whole number >= 1."
+  }
+}
+
+variable "nomad_demand_consecutive_observations" {
+  type        = number
+  description = "Consecutive autoscaler observations that must show capacity-blocked demand before a demand-aware scale-out is taken."
+  default     = 2
+
+  validation {
+    condition     = var.nomad_demand_consecutive_observations >= 1 && var.nomad_demand_consecutive_observations <= 999999999 && floor(var.nomad_demand_consecutive_observations) == var.nomad_demand_consecutive_observations
+    error_message = "nomad_demand_consecutive_observations must be a whole number >= 1."
+  }
+}
+
+variable "nomad_demand_observation_interval_seconds" {
+  type        = number
+  description = "Seconds between demand observations recorded by the autoscaler."
+  default     = 60
+
+  validation {
+    condition     = var.nomad_demand_observation_interval_seconds >= 1 && var.nomad_demand_observation_interval_seconds <= 999999999 && floor(var.nomad_demand_observation_interval_seconds) == var.nomad_demand_observation_interval_seconds
+    error_message = "nomad_demand_observation_interval_seconds must be a whole number >= 1."
+  }
+}
+
+variable "nomad_node_provisioning_timeout_seconds" {
+  type        = number
+  description = "Seconds a newly provisioned agent node may take to register with Nomad before the scale-out attempt is treated as failed."
+  default     = 600
+
+  validation {
+    condition     = var.nomad_node_provisioning_timeout_seconds >= 1 && var.nomad_node_provisioning_timeout_seconds <= 999999999 && floor(var.nomad_node_provisioning_timeout_seconds) == var.nomad_node_provisioning_timeout_seconds
+    error_message = "nomad_node_provisioning_timeout_seconds must be a whole number >= 1."
+  }
+}
+
 # ── Scale-In Configuration (Phase 7) ──────────────────────
 
 variable "enable_scale_in" {
