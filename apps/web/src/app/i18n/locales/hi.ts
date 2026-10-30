@@ -611,7 +611,8 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.title': '{name} के साथ चैट करें',
   'agentDetail.conversation.placeholder': 'अपने एजेंट को संदेश लिखें',
   'agentDetail.conversation.send': 'भेजें',
-  'agentDetail.conversation.empty': 'अभी तक कोई संदेश नहीं।',
+  'agentDetail.chat.details': 'विवरण',
+  'agents.detail.backToChat': 'चैट पर वापस',
   'agentDetail.conversation.notRunning': 'बात करने के लिए अपना एजेंट शुरू करें।',
   'agentDetail.conversation.attach': 'दस्तावेज़ संलग्न करें',
   'agentDetail.conversation.removeAttachment': 'दस्तावेज़ हटाएँ',
@@ -1033,6 +1034,8 @@ export const messages: Record<string, string> = {
   // Web Push opt-in (081 W8)
   'notifications.block.title': "सूचनाएं",
   'notifications.block.intro': "सूचनाएं आपके एजेंट्स को आपसे चैट करने देती हैं।",
+  'notifications.crossChannel.text': "आप Telegram पर संदेश शुरू करके वेब पर जारी रख सकते हैं, और इसका उल्टा भी।",
+  'notifications.crossChannel.dismiss': "छिपाएं",
   'notifications.block.telegramTitle': "Telegram सूचनाएं (अनुशंसित)",
   'push.optIn.title': "ब्राउज़र सूचनाएं",
   'push.optIn.enable': 'सूचनाएँ चालू करें',

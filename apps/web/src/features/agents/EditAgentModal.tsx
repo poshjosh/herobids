@@ -726,7 +726,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               <AgentConnectionField
                 connectionIds={form.connectionIds ?? []}
                 onChange={(ids) => setForm((prev) => ({ ...prev, connectionIds: ids }))}
-                oauthReturnTo={`/agents/${agentId}?edit=1&oauthReturn=1`}
+                oauthReturnTo={`/agents/${agentId}/details?edit=1&oauthReturn=1`}
                 onBeforeOAuthRedirect={() => {
                   const { pendingFiles: _, ...serializableForm } = form;
                   saveEditAgentOAuthDraft({

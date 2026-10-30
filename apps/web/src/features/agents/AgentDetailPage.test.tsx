@@ -235,9 +235,9 @@ function renderDetail(opts: {
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <IntlProvider locale="en" messages={messages}>
-        <MemoryRouter initialEntries={['/agents/agent-1']}>
+        <MemoryRouter initialEntries={['/agents/agent-1/details']}>
           <Routes>
-            <Route path="/agents/:id" element={<AgentDetailPage />} />
+            <Route path="/agents/:id/details" element={<AgentDetailPage />} />
           </Routes>
         </MemoryRouter>
       </IntlProvider>

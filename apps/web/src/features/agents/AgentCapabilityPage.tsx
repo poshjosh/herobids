@@ -138,7 +138,7 @@ export function AgentCapabilityPage() {
       <PageHeader
         title={intl.formatMessage({ id: 'agents.capabilityPage.title' }, { capability: capabilityFamilyLabel })}
         subtitle={intl.formatMessage({ id: 'agents.capabilityPage.subtitle' }, { agent: agent.name })}
-        action={<Button variant="ghost" onClick={() => navigate(`/agents/${agent.id}`)}>{intl.formatMessage({ id: 'agents.capabilityPage.backToAgent' })}</Button>}
+        action={<Button variant="ghost" onClick={() => navigate(`/agents/${agent.id}/details`)}>{intl.formatMessage({ id: 'agents.capabilityPage.backToAgent' })}</Button>}
       />
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>

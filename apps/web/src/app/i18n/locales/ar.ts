@@ -611,7 +611,8 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.title': 'الدردشة مع {name}',
   'agentDetail.conversation.placeholder': 'اكتب رسالة إلى وكيلك',
   'agentDetail.conversation.send': 'إرسال',
-  'agentDetail.conversation.empty': 'لا توجد رسائل بعد.',
+  'agentDetail.chat.details': 'التفاصيل',
+  'agents.detail.backToChat': 'العودة إلى الدردشة',
   'agentDetail.conversation.notRunning': 'ابدأ وكيلك للتحدث معه.',
   'agentDetail.conversation.attach': 'إرفاق مستند',
   'agentDetail.conversation.removeAttachment': 'إزالة المستند',
@@ -1033,6 +1034,8 @@ export const messages: Record<string, string> = {
   // Web Push opt-in (081 W8)
   'notifications.block.title': "الإشعارات",
   'notifications.block.intro': "تتيح لك الإشعارات التحدث مع وكلائك.",
+  'notifications.crossChannel.text': "يمكنك بدء الرسائل على تيليغرام ومتابعتها على الويب، والعكس صحيح.",
+  'notifications.crossChannel.dismiss': "إخفاء",
   'notifications.block.telegramTitle': "إشعارات تيليغرام (موصى به)",
   'push.optIn.title': "إشعارات المتصفح",
   'push.optIn.enable': 'تفعيل الإشعارات',

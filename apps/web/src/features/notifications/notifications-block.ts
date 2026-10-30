@@ -41,6 +41,25 @@ export function shouldRecordSubscription(input: { pushAvailable: boolean; browse
   return input.pushAvailable && input.browserSubscribed && input.savedPushEnabled !== true;
 }
 
+const CROSS_CHANNEL_NOTICE_KEY = 'notifications-cross-channel-notice-dismissed';
+
+/** The cross-channel note is dismissed for good on this browser, not just for the session. */
+export function readCrossChannelNoticeDismissed(): boolean {
+  try {
+    return window.localStorage.getItem(CROSS_CHANNEL_NOTICE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function rememberCrossChannelNoticeDismissed(): void {
+  try {
+    window.localStorage.setItem(CROSS_CHANNEL_NOTICE_KEY, '1');
+  } catch {
+    // Storage can be unavailable (private mode). The note then reappears on the next visit.
+  }
+}
+
 const DISMISSED_KEY = 'notifications-block-dismissed';
 
 export function readDismissedForSession(): boolean {

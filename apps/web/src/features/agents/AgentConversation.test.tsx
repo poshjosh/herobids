@@ -31,7 +31,6 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.title': 'Chat with {name}',
   'agentDetail.conversation.placeholder': 'Message your agent',
   'agentDetail.conversation.send': 'Send',
-  'agentDetail.conversation.empty': 'No messages yet.',
   'agentDetail.conversation.starting': 'Starting your agent…',
   'agentDetail.conversation.startingSlow': 'Still starting… this usually takes under a minute.',
   'agentDetail.conversation.startingStuck': 'This is taking longer than expected.',
@@ -118,7 +117,6 @@ describe('AgentConversationView', () => {
     const html = render({ messages });
 
     expect(html).toContain('Watching ETH.');
-    expect(html).not.toContain('No messages yet.');
   });
 
   it('titles the card with the agent name', () => {
@@ -287,8 +285,8 @@ describe('AgentConversationView', () => {
     expect(render({ canSend: true, showIntro: false })).not.toContain('just like you would a human employee');
   });
 
-  it('shows the empty state when there are no messages', () => {
-    expect(render({ messages: [] })).toContain('No messages yet.');
+  it('renders no message rows when there are no messages', () => {
+    expect(render({ messages: [] })).not.toContain('data-author=');
   });
 
   it('shows only the time for messages from today and the date for older ones', () => {

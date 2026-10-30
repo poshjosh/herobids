@@ -218,9 +218,7 @@ export function AgentConversationView({
       )}
       {loadFailed && messages.length === 0 ? (
         <p role="alert" style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.loadError' })}</p>
-      ) : messages.length === 0 && !isAwaitingReply ? (
-        <p style={HINT_STYLE}>{intl.formatMessage({ id: 'agentDetail.conversation.empty' })}</p>
-      ) : (
+      ) : messages.length === 0 && !isAwaitingReply ? null : (
         <div ref={listRef} style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto', overflowX: 'hidden' }}>
           {onLoadEarlier && (
             <div style={{ display: 'flex', justifyContent: 'center' }}>

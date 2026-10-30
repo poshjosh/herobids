@@ -10,7 +10,9 @@ import { ConnectTelegram } from './ConnectTelegram.js';
 import { PushOptIn } from './PushOptIn.js';
 import { telegramDisconnectBody } from './telegram-connect.js';
 import {
+  readCrossChannelNoticeDismissed,
   readDismissedForSession,
+  rememberCrossChannelNoticeDismissed,
   rememberDismissedForSession,
   resolveNotificationsBlock,
   shouldRecordSubscription,
@@ -25,6 +27,17 @@ const introStyle: CSSProperties = {
   fontSize: '0.8125rem',
   color: 'var(--color-text)',
   lineHeight: '1.5',
+};
+const noticeStyle: CSSProperties = { ...introStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' };
+const noticeDismissStyle: CSSProperties = {
+  flexShrink: 0,
+  background: 'none',
+  border: 'none',
+  cursor: 'pointer',
+  padding: '0 4px',
+  color: 'var(--color-text-muted)',
+  fontSize: '0.8125rem',
+  textDecoration: 'underline',
 };
 const rowStyle: CSSProperties = { borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginTop: '16px' };
 const closeStyle: CSSProperties = {
@@ -55,6 +68,7 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
   const qc = useQueryClient();
   const [dismissed, setDismissed] = useState(readDismissedForSession);
   const [browserSubscribed, setBrowserSubscribed] = useState(false);
+  const [crossChannelNoticeDismissed, setCrossChannelNoticeDismissed] = useState(readCrossChannelNoticeDismissed);
   const recorded = useRef(false);
 
   const meQuery = useQuery({
@@ -126,6 +140,11 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
     setDismissed(true);
   };
 
+  const handleDismissCrossChannelNotice = () => {
+    rememberCrossChannelNoticeDismissed();
+    setCrossChannelNoticeDismissed(true);
+  };
+
   return (
     <Card style={{ position: 'relative', ...style }}>
       {view.showCancel && (
@@ -142,6 +161,15 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
 
       <h3 style={{ ...headingStyle, fontSize: '1rem' }}>{intl.formatMessage({ id: 'notifications.block.title' })}</h3>
       <p style={introStyle}>{intl.formatMessage({ id: 'notifications.block.intro' })}</p>
+
+      {!crossChannelNoticeDismissed && (
+        <div role="note" style={noticeStyle}>
+          <span>{intl.formatMessage({ id: 'notifications.crossChannel.text' })}</span>
+          <button type="button" onClick={handleDismissCrossChannelNotice} style={noticeDismissStyle}>
+            {intl.formatMessage({ id: 'notifications.crossChannel.dismiss' })}
+          </button>
+        </div>
+      )}
 
       {view.showTelegram && (
         <section style={rowStyle}>

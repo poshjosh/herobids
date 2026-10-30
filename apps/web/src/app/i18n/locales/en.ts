@@ -692,7 +692,8 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.title': 'Chat with {name}',
   'agentDetail.conversation.placeholder': 'Message your agent',
   'agentDetail.conversation.send': 'Send',
-  'agentDetail.conversation.empty': 'No messages yet.',
+  'agentDetail.chat.details': 'Details',
+  'agents.detail.backToChat': 'Back to chat',
   'agentDetail.conversation.notRunning': 'Start your agent to talk to it.',
   'agentDetail.conversation.attach': 'Attach document',
   'agentDetail.conversation.removeAttachment': 'Remove document',
@@ -1038,6 +1039,8 @@ export const messages: Record<string, string> = {
   // Web Push opt-in (081 W8)
   'notifications.block.title': "Notifications",
   'notifications.block.intro': "Notifications allow your agents to chat with you.",
+  'notifications.crossChannel.text': "You can start messages on Telegram and continue on the Web, and vice versa.",
+  'notifications.crossChannel.dismiss': "Dismiss",
   'notifications.block.telegramTitle': "Telegram Notifications (recommended)",
   'push.optIn.title': "Browser Notifications",
   'push.optIn.enable': 'Turn on notifications',

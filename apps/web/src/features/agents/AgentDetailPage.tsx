@@ -11,7 +11,6 @@ import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, formatSkillSelection, listSelectableSkills, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
-import { AgentConversation } from './AgentConversation.js';
 import { PeerThreads } from './PeerThreads.js';
 import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
@@ -35,16 +34,6 @@ export function AgentDetailPage() {
 
   // Auto-open edit modal when returning from OAuth (detected via edit=1 URL param)
   const handledEditParamRef = useRef(false);
-
-  // Set when returning from an approved connection request; read once so stripping the param does not reset the conversation.
-  const [connectionRequestId] = useState(() => new URLSearchParams(location.search).get('connected'));
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    if (!params.has('connected')) return;
-    params.delete('connected');
-    const search = params.toString();
-    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true });
-  }, [location.pathname, location.search, navigate]);
 
   useEffect(() => {
     if (handledEditParamRef.current) return;
@@ -293,6 +282,9 @@ export function AgentDetailPage() {
         subtitle={formatObjectivePreview(objective, 40)}
         action={
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <Button variant="ghost" onClick={() => navigate(`/agents/${agent.id}`)}>
+              {intl.formatMessage({ id: 'agents.detail.backToChat' })}
+            </Button>
             {(agent.status === 'stopped' || agent.status === 'crashed') && (
               <Button variant="secondary" onClick={() => setIsEditing(true)}>
                 {intl.formatMessage({ id: 'agents.detail.editConfig' })}
@@ -404,8 +396,6 @@ export function AgentDetailPage() {
           </details>
         </Card>
 
-        <AgentConversation key={id} agentId={id ?? ''} agentName={agent.name} status={agent.status} connectionRequestId={connectionRequestId} />
-
         <PeerThreads key={`peer-${id}`} agentId={id ?? ''} agentName={agent.name} />
 
         <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
@@ -494,7 +484,7 @@ export function AgentDetailPage() {
                       setLocalConnectionIds(connectionIds);
                       connectionsMutation.mutate(connectionIds);
                     }}
-                    oauthReturnTo={`/agents/${id}?oauthReturn=1`}
+                    oauthReturnTo={`/agents/${id}/details?oauthReturn=1`}
                   />
                 </div>
                 {capabilitySaving && (
