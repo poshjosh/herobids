@@ -1333,6 +1333,7 @@ Done:
 - DB startup integration: 17 of 17 passed.
 - `pnpm test:integration`: 11 files, 135 passed.
 - Infra shell suites: `run-all.sh` and `check-nomad-capacity.test.sh` passed.
+- Re-run 2026-10-31 ~12:19 (local only): `infra/hetzner/scripts/tests/run-all.sh` exit 0. 24 suites passed, 0 failed, 0 SKIP lines. Nothing on staging or production was touched.
 - Fixture shadow: `test-capacity-controller.sh`, `test-capacity-readonly.sh`, `test-capacity-inventory.sh`, and `test-capacity-demand.sh` all exit 0, with no failure markers in the logs.
 - Empty-pool replay, read-only, synthetic fixtures: declared 0 gives rc 2, blocked, `empty_inventory`. Declared 1 gives rc 2, blocked, `empty_inventory` and `partial_apply`.
 

@@ -132,6 +132,33 @@ assert_eq "${RC}" "0" "down orphan Nomad node does not block"
 assert_eq "$(field '.stale_nomad_down_count')" "1" "down orphan is reported as stale_nomad_down_count"
 assert_eq "$(blockers)" "" "down orphan raises no blocker"
 
+reconcile_case cloud-control-plane.json nomad-healthy.json 2
+assert_eq "${RC}" "0" "control plane with role=control-plane is not an ownership mismatch"
+assert_eq "$(blockers)" "" "control plane with role=control-plane raises no blocker"
+assert_eq "$(field '.managed_count')" "2" "control plane is not counted as a managed agent"
+
+cloud_unlabelled="$(jq '.[2].labels.role = "worker"' "${FX}/cloud-control-plane.json")"
+RC=0
+OUT="$(capacity_reconcile "${cloud_unlabelled}" "$(cat "${FX}/nomad-healthy.json")" 2 synthetic synth "${NOW}")" || RC=$?
+assert_eq "${RC}" "2" "owned server without the control-plane role is still blocked"
+assert_contains "$(blockers)" "ownership_mismatch" "owned server with another role raises ownership_mismatch"
+
+reconcile_case cloud-private-agents.json nomad-renamed-by-ip.json 2
+assert_eq "${RC}" "0" "Nomad node renamed but matching a server private IP is consistent"
+assert_eq "$(field '.servers[0].nomad')" "ready" "server matched to its renamed Nomad node by private IP is ready"
+assert_eq "$(field '.ready_count')" "2" "IP-matched node counts toward ready servers"
+assert_eq "$(blockers)" "" "IP-matched node is not reported as an orphan"
+
+reconcile_case cloud-private-agents.json nomad-stale-down-and-renamed.json 2
+assert_eq "$(field '.servers[0].nomad')" "ready" "live IP-matched node is preferred over a stale down node with the same name"
+assert_eq "$(blockers)" "" "stale down node with a server name and a live renamed node raise no blocker"
+
+reconcile_case cloud-private-agents.json nomad-renamed-and-orphan.json 2
+assert_eq "${RC}" "2" "live node matching neither name nor private IP is still blocked"
+assert_contains "$(blockers)" "orphan_nomad_node" "unmatched live node still raises orphan_nomad_node"
+assert_eq "$(field '.ready_count')" "2" "renamed node matched by IP still counts as ready beside an orphan"
+
+
 test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════

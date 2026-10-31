@@ -215,6 +215,7 @@ resource "hcloud_server" "default" {
   labels = {
     app         = "herobids"
     environment = var.environment
+    role        = "control-plane"
   }
 
   # prevent_destroy protects against accidental teardown in ALL environments.

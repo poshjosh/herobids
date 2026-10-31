@@ -21,6 +21,10 @@
 #      ReadWritePaths= drop-in to each autoscale unit that lacks it. Without
 #      this, ProtectSystem=strict blocks the in-flight record on control
 #      planes created from older cloud-init.
+#   3c3. Adds a NOMAD_AUTOSCALE_NODE_POOL= drop-in (value AUTOSCALE_NODE_POOL,
+#      default: hostname, which cloud-init sets to server_name) to each
+#      autoscale unit that lacks the variable. Without it the capacity guard
+#      checks the default pool and blocks scale-out.
 #   3d. Renders /etc/herobids/autoscale-settings.env from the Terraform-derived
 #      input (same renderer as cloud-init first boot) and adds an
 #      EnvironmentFile= drop-in for the settings file to each autoscale unit
@@ -56,6 +60,7 @@
 #                          (default /etc/herobids/autoscale.env).
 #   AUTOSCALE_STATE_DIR    Durable in-flight record directory (default
 #                          /var/lib/herobids-autoscale).
+#   AUTOSCALE_NODE_POOL    Agent pool the autoscale units guard (default: hostname).
 #   AUTOSCALE_SETTINGS_FAILED_MARKER  Written when settings fail to render,
 #                          removed on success (default
 #                          /etc/herobids/autoscale-settings.failed).
@@ -75,6 +80,9 @@ AUTOSCALE_SETTINGS_ENV="${AUTOSCALE_SETTINGS_ENV:-/etc/herobids/autoscale-settin
 AUTOSCALE_SECRETS_FILE="${AUTOSCALE_SECRETS_FILE:-/etc/herobids/autoscale.env}"
 AUTOSCALE_SETTINGS_FAILED_MARKER="${AUTOSCALE_SETTINGS_FAILED_MARKER:-/etc/herobids/autoscale-settings.failed}"
 AUTOSCALE_STATE_DIR="${AUTOSCALE_STATE_DIR:-/var/lib/herobids-autoscale}"
+# Pool the autoscale units guard (the agent node_pool). cloud-init sets the
+# hostname to server_name, so the hostname is the default.
+AUTOSCALE_NODE_POOL="${AUTOSCALE_NODE_POOL:-$(hostname)}"
 NOMAD_LOCAL_ADDR="http://127.0.0.1:4646"
 PRIVATE_IP_UNIT_NAME="nomad-private-ip.service"
 
@@ -91,6 +99,8 @@ die() { echo "${LOG_PREFIX} ERROR: $*" >&2; exit 1; }
 [[ -n "${PRIVATE_SUBNET}" ]] || die "PRIVATE_SUBNET is required (e.g. 10.0.0.0/24)."
 [[ "${PRIVATE_SUBNET}" =~ ${CIDR_REGEX} ]] || die "PRIVATE_SUBNET '${PRIVATE_SUBNET}' is not an IPv4 CIDR."
 [[ "${DOCKER_BRIDGE_SUBNET}" =~ ${CIDR_REGEX} ]] || die "DOCKER_BRIDGE_SUBNET '${DOCKER_BRIDGE_SUBNET}' is not an IPv4 CIDR."
+[[ "${AUTOSCALE_NODE_POOL}" =~ ^[a-z0-9][a-z0-9-]*$ ]] \
+  || die "AUTOSCALE_NODE_POOL '${AUTOSCALE_NODE_POOL}' is not a valid pool name (set AUTOSCALE_NODE_POOL to the agent server_name)."
 
 if [[ ! -f "${NOMAD_HCL}" ]]; then
   log "${NOMAD_HCL} not found (enable_nomad off?) — nothing to converge."
@@ -279,6 +289,27 @@ for unit in "${AUTOSCALE_UNITS[@]}"; do
     0) CHANGES+=("installed ${unit}.service state-dir drop-in"); AUTOSCALE_UNITS_CHANGED=true ;;
     1) ;;
     *) die "could not write the ${unit} state-dir drop-in; systemd was not reloaded." ;;
+  esac
+done
+
+# ─── 3c3. Autoscale units guard the agent pool ──────────────────────────────
+# Units from older cloud-init lack NOMAD_AUTOSCALE_NODE_POOL, so they fall back
+# to the default pool (herobids). The capacity guard then inspects an empty
+# pool and blocks scale-out. Current cloud-init sets the variable; this drop-in
+# covers existing hosts.
+
+NODE_POOL_DROPIN_NAME="15-autoscale-node-pool.conf"
+for unit in nomad-autoscale nomad-scale-in; do
+  unit_file="${SYSTEMD_DIR}/${unit}.service"
+  [[ -f "${unit_file}" ]] || continue
+  grep -Eq '^Environment=NOMAD_AUTOSCALE_NODE_POOL=' "${unit_file}" && continue
+  rc=0
+  write_if_changed "${SYSTEMD_DIR}/${unit}.service.d/${NODE_POOL_DROPIN_NAME}" \
+    "$(printf '%s\n' '[Service]' "Environment=NOMAD_AUTOSCALE_NODE_POOL=${AUTOSCALE_NODE_POOL}")" || rc=$?
+  case "${rc}" in
+    0) CHANGES+=("installed ${unit}.service node-pool drop-in (${AUTOSCALE_NODE_POOL})"); AUTOSCALE_UNITS_CHANGED=true ;;
+    1) ;;
+    *) die "could not write the ${unit} node-pool drop-in; systemd was not reloaded." ;;
   esac
 done
 

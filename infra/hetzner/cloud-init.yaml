@@ -187,6 +187,8 @@ write_files:
       Environment=NOMAD_SCALE_OUT_COOLDOWN_SECONDS=${scale_out_cooldown_seconds}
       Environment=NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT=${scale_out_memory_threshold_pct}
       Environment=NOMAD_SCALE_OUT_SLOT_THRESHOLD=${scale_out_slot_threshold}
+      # Pool the capacity guard owns. Must match the agent node_pool (server_name).
+      Environment=NOMAD_AUTOSCALE_NODE_POOL=${server_name}
       Environment=NOMAD_SCALE_OUT_INCREMENT=${scale_out_increment}
       Environment=NOMAD_AGENT_MEMORY_RESERVATION_MB=${agent_memory_reservation_mb}
       Environment=HEROBIDS_ENV=${environment}
@@ -280,6 +282,7 @@ write_files:
       Environment=NOMAD_ADDR=http://127.0.0.1:4646
       Environment=HEROBIDS_ENV=${environment}
       Environment=TERRAFORM_DIR=/opt/herobids/infra/hetzner
+      Environment=NOMAD_AUTOSCALE_NODE_POOL=${server_name}
       Environment=ENABLE_SCALE_IN=${enable_scale_in}
       Environment=NOMAD_SCALE_IN_MAX_NODES_PER_RUN=${scale_in_max_nodes_per_run}
       Environment=NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS=${scale_in_drain_deadline_seconds}

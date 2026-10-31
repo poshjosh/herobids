@@ -204,6 +204,7 @@ run_converge() {
       AUTOSCALE_SECRETS_FILE="${ROOT}/etc/herobids/autoscale.env" \
       AUTOSCALE_SETTINGS_FAILED_MARKER="${ROOT}/etc/herobids/autoscale-settings.failed" \
       AUTOSCALE_STATE_DIR="${ROOT}/var/lib/herobids-autoscale" \
+      AUTOSCALE_NODE_POOL=herobids-staging \
       CONVERGE_TIMEOUT_SECS=2 CONVERGE_POLL_SECS=1 \
       "$@" bash "${CONVERGE}" 2>&1
   )" || RUN_EXIT=$?
@@ -574,6 +575,48 @@ MKDIR_LINE="$(grep -n 'mkdir -p "${AUTOSCALE_STATE_DIR}"' "${CONVERGE}" | cut -d
 RELOAD_LINE="$(grep -n '^  systemctl daemon-reload$' "${CONVERGE}" | cut -d: -f1)"
 assert_eq "$([[ -n "${MKDIR_LINE}" && -n "${RELOAD_LINE}" && "${MKDIR_LINE}" -lt "${RELOAD_LINE}" ]] && echo yes || echo no)" "yes" \
   "state dir is created before daemon-reload"
+
+test_end || SUITE_FAILED=1
+
+test_begin "converge-control-plane — node pool drop-in (3c3)"
+
+POOL_DROPIN="15-autoscale-node-pool.conf"
+
+new_root "node-pool"
+write_hcl "${STUB_PRIVATE_IP}"
+printf '%s\n' '[Service]' 'Type=oneshot' 'ExecStart=/opt/herobids/infra/hetzner/scripts/scale-out.sh' \
+  > "${ROOT}/etc/systemd/system/nomad-autoscale.service"
+run_converge
+assert_eq "${RUN_EXIT}" "0" "node pool: converge succeeds on a unit without the pool"
+assert_eq "$(cat "${ROOT}/etc/systemd/system/nomad-autoscale.service.d/${POOL_DROPIN}")" \
+  "$(printf '%s\n' '[Service]' 'Environment=NOMAD_AUTOSCALE_NODE_POOL=herobids-staging')" \
+  "node pool: drop-in sets the configured pool"
+assert_contains "${CALLS}" "systemctl daemon-reload" "node pool: daemon-reloads for the drop-in"
+
+run_converge
+assert_not_contains "${RUN_OUTPUT}" "node-pool drop-in" "node pool: re-run does not rewrite the drop-in"
+
+run_converge AUTOSCALE_NODE_POOL=Bad_Pool
+assert_neq "${RUN_EXIT}" "0" "node pool: invalid pool name exits non-zero"
+assert_contains "${RUN_OUTPUT}" "is not a valid pool name" "node pool: invalid pool name is reported"
+assert_not_contains "${CALLS}" "systemctl daemon-reload" "node pool: invalid pool name stops before daemon-reload"
+
+new_root "node-pool-cloud-init"
+write_hcl "${STUB_PRIVATE_IP}"
+printf '%s\n' '[Service]' 'Type=oneshot' 'Environment=NOMAD_AUTOSCALE_NODE_POOL=herobids-staging' \
+  > "${ROOT}/etc/systemd/system/nomad-autoscale.service"
+run_converge
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-autoscale.service.d/${POOL_DROPIN}" ]] && echo yes || echo no)" "no" \
+  "node pool: unit that already sets the pool gets no drop-in"
+
+test_end || SUITE_FAILED=1
+
+test_begin "converge-control-plane — node pool matches cloud-init.yaml (static)"
+
+assert_eq "$(grep -c 'Environment=NOMAD_AUTOSCALE_NODE_POOL=${server_name}' "${HETZNER_DIR}/cloud-init.yaml")" "2" \
+  "cloud-init.yaml: both autoscale units set the pool to server_name"
+assert_contains "${CONVERGE_TEXT}" 'Environment=NOMAD_AUTOSCALE_NODE_POOL=${AUTOSCALE_NODE_POOL}' \
+  "converge writes the pool drop-in with the configured pool"
 
 test_end || SUITE_FAILED=1
 

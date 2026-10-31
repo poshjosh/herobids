@@ -89,7 +89,8 @@ capacity_fetch_cloud_servers() {
     # jq exits 0 on empty input, so an empty or truncated body must be
     # rejected here rather than read as an empty inventory.
     jq -e '.servers | type == "array"' <<< "${body}" >/dev/null || return 1
-    items="$(jq -c '[.servers[] | {id, name, status, labels, address: (.public_net.ipv4.ip // null)}]' \
+    items="$(jq -c '[.servers[] | {id, name, status, labels, address: (.public_net.ipv4.ip // null),
+      private_address: (.private_net[0].ip // null)}]' \
       <<< "${body}")" || return 1
     pages+="${items}"$'\n'
 
@@ -138,21 +139,24 @@ def nomad_state($node):
 | ($cloud | map(select(owned))) as $owned
 | ($owned | map(select(.status == "deleting"))) as $deleting
 | ($owned | map(select(.status != "deleting"))) as $live
-| ($live | map(select(shaped | not))) as $foreign
+| ($live | map(select((shaped | not) and (.labels.role != "control-plane")))) as $foreign
 | ($live | map(select(shaped)) | map(. + {index: index_of})) as $managed
 | ($managed | map(. as $s | {
     name: $s.name, id: $s.id, address: $s.address, cloud_status: $s.status, index: $s.index,
-    nomad: nomad_state(([$nomad[] | select(.Name == $s.name)] | first) // null)
+    nomad: nomad_state(([$nomad[] | select(.Name == $s.name or ($s.private_address != null and .Address == $s.private_address))]
+      | sort_by(.Status == "down") | first) // null)
   }) | sort_by(.index)) as $servers
 | ($servers | length) as $n
 | ($servers | map(.index) | sort) as $indices
 | [range(1; $n + 1)] as $expected
 | ($servers | map(.name)) as $names
+| ($managed | map(.private_address) | map(select(. != null))) as $privs
 | [$nomad[]
     | select((.Name | type) == "string")
     | select(.Name | test("^" + $pool + "-agent-[0-9]+$"))
     | . as $node
-    | select(($names | any(. == $node.Name)) | not)] as $orphans
+    | select(($names | any(. == $node.Name)) | not)
+    | select(($privs | any(. == $node.Address)) | not)] as $orphans
 | ($orphans | map(select(.Status != "down")) | length) as $orphan_live
 | ($orphans | map(select(.Status == "down")) | length) as $orphan_down
 | ($inflight.server_ids // []) as $sids

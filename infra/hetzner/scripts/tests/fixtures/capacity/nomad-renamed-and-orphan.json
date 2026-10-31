@@ -1,0 +1,5 @@
+[
+  {"ID":"00000000-0000-4000-8000-000000000011","Name":"synth-agent-9","Address":"10.9.0.11","Status":"ready","SchedulingEligibility":"eligible","NodeClass":"agent"},
+  {"ID":"00000000-0000-4000-8000-000000000002","Name":"synth-agent-2","Address":"10.9.0.12","Status":"ready","SchedulingEligibility":"eligible","NodeClass":"agent"},
+  {"ID":"00000000-0000-4000-8000-000000000031","Name":"synth-agent-7","Address":"10.9.0.77","Status":"ready","SchedulingEligibility":"eligible","NodeClass":"agent"}
+]

@@ -1,0 +1,4 @@
+[
+  {"id":90000001,"name":"synth-agent-1","status":"running","labels":{"app":"herobids","environment":"synthetic","role":"agent","node_pool":"synth"},"address":"192.0.2.11","private_address":"10.9.0.11"},
+  {"id":90000002,"name":"synth-agent-2","status":"running","labels":{"app":"herobids","environment":"synthetic","role":"agent","node_pool":"synth"},"address":"192.0.2.12","private_address":"10.9.0.12"}
+]
