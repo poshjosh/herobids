@@ -11,19 +11,24 @@
 # Runs ON the server. Suitable for cron at 2am or ad-hoc remote invocation.
 #
 # Usage:
-#   maintenance-restart.sh [--skip-deploy] [--include-live] [--start-stopped] [--start-interval=N]
+#   maintenance-restart.sh [--skip-deploy] [--include-live] [--start-stopped] [--restart-running] [--start-interval=N]
 #
 # Options:
 #   --skip-deploy   Skip code pull and image rebuild — restart agents on the
 #                   current herobids-agent image without touching the deployment.
 #   --include-live  Also restart agents with execution_mode='live'.
 #                   Skipped by default — live agents may hold open positions.
-#   --start-stopped Also start agents whose status is 'stopped' or 'crashed' and
-#                   that have no active session. Runs after the API is healthy.
+#   --start-stopped Start agents whose status is 'stopped' or 'crashed' and that
+#                   have no active session. Runs after the API is healthy.
 #                   Live-mode agents are skipped unless --include-live is given.
+#                   Running agents are left alone unless --restart-running is given.
+#   --restart-running
+#                   With --start-stopped, also stop and restart running agents
+#                   (the normal restart behaviour). Without it, running agents
+#                   keep their current image.
 #   --start-interval=N
-#                   Wait N seconds between agent starts (default 0 = no pause).
-#                   Applies to the restart step and to --start-stopped.
+#                   Wait N seconds between agent starts. Default 0, except
+#                   --start-stopped defaults to 30. --start-stopped refuses N < 30.
 #
 # Environment:
 #   DEPLOY_REF      Git ref to deploy in the deploy step (default: origin/main).
@@ -57,15 +62,17 @@ COMPOSE_FILES="-f docker-compose.yaml -f ${COMPOSE_OVERLAY}"
 DO_DEPLOY=true
 INCLUDE_LIVE=false
 START_STOPPED=false
-START_INTERVAL=0
+RESTART_RUNNING=false
+START_INTERVAL=""
 DEPLOY_DONE=false
 PREV_GIT_SHA=""
 
 for arg in "$@"; do
   case "$arg" in
-    --skip-deploy)   DO_DEPLOY=false ;;
-    --include-live)  INCLUDE_LIVE=true ;;
-    --start-stopped) START_STOPPED=true ;;
+    --skip-deploy)     DO_DEPLOY=false ;;
+    --include-live)    INCLUDE_LIVE=true ;;
+    --start-stopped)   START_STOPPED=true ;;
+    --restart-running) RESTART_RUNNING=true ;;
     --start-interval=*)
       START_INTERVAL="${arg#--start-interval=}"
       [[ "${START_INTERVAL}" =~ ^[0-9]+$ ]] || { echo "--start-interval needs a whole number of seconds, got '${START_INTERVAL}'" >&2; exit 1; }
@@ -76,6 +83,13 @@ for arg in "$@"; do
     *) echo "Unknown option: $arg" >&2; exit 1 ;;
   esac
 done
+
+# --start-stopped paces starts at 30 seconds or more. Other runs default to no pause.
+if [[ "${START_STOPPED}" == "true" ]]; then
+  START_INTERVAL="${START_INTERVAL:-30}"
+  [[ ${START_INTERVAL} -ge 30 ]] || { echo "--start-stopped needs --start-interval of at least 30 seconds, got ${START_INTERVAL}." >&2; exit 1; }
+fi
+START_INTERVAL="${START_INTERVAL:-0}"
 
 cd "$ROOT"
 
@@ -226,6 +240,13 @@ if [[ -n "${AGENT_ID_OUTPUT}" ]]; then
 fi
 
 AGENT_COUNT=${#AGENT_IDS[@]}
+
+# --start-stopped only starts agents. Running agents are restarted only with --restart-running.
+if [[ "${START_STOPPED}" == "true" && "${RESTART_RUNNING}" == "false" && ${AGENT_COUNT} -gt 0 ]]; then
+  warn "${AGENT_COUNT} running agent(s) left untouched; they keep their current image (--start-stopped without --restart-running)."
+  AGENT_IDS=()
+  AGENT_COUNT=0
+fi
 
 # Report skipped live agents
 if [[ "${INCLUDE_LIVE}" == "false" ]]; then

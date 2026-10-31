@@ -36,7 +36,7 @@ ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 "ls -d /opt/herobids/infr
 - infra/hetzner/scripts/push.sh --env staging 
 - infra/hetzner/deploy.sh --env staging 138.199.172.202 --env-file infra/hetzner/.env.staging
 - infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy --include-live
-- infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy --start-stopped --start-interval=10  # also starts stopped/crashed agents (all owners), 10 s between starts
+- infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy --start-stopped --start-interval=30  # starts stopped/crashed agents (all owners), 30 s minimum between starts; running agents are left alone (add --restart-running to also restart them)
 - DEPLOY_REF=origin/feat/safe-capacity-p9-staging infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy  # run the feature-branch copy of the script
 - infra/hetzner/scripts/reset-and-run.sh --env staging 138.199.172.202 --env-file .env.ops.staging
 - HEROBIDS_ENV=staging  scripts/shell/ops/download-eval-reports.sh

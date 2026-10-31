@@ -6,7 +6,7 @@
 # streams output back to your terminal.
 #
 # Usage:
-#   infra/hetzner/scripts/maintenance-restart-from-local.sh [--env <staging|production>] [--skip-deploy] [--include-live] [--start-stopped] [--start-interval=N] [--yes|-y] [<server-ip>]
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh [--env <staging|production>] [--skip-deploy] [--include-live] [--start-stopped] [--restart-running] [--start-interval=N] [--yes|-y] [<server-ip>]
 #
 # Options:
 #   --env <name>     Target environment: staging or production (default: production).
@@ -14,6 +14,8 @@
 #   --include-live   Also restart live-mode agents (skipped by default).
 #   --start-stopped  Also start stopped and crashed agents that have no active session.
 #                    Live agents are still skipped unless --include-live is given.
+#                    Running agents are left alone unless --restart-running is given.
+#   --restart-running  With --start-stopped, also stop and restart running agents.
 #   --start-interval=N
 #                    Pause N seconds between agent starts (default 0).
 #   --yes|-y         Skip confirmation prompt.
@@ -52,7 +54,7 @@ SKIP_CONFIRM=false
 
 for arg in "$@"; do
   case "$arg" in
-    --skip-deploy|--include-live|--start-stopped) REMOTE_ARGS+=("$arg") ;;
+    --skip-deploy|--include-live|--start-stopped|--restart-running) REMOTE_ARGS+=("$arg") ;;
     --start-interval=*) REMOTE_ARGS+=("$arg") ;;
     --yes|-y)  SKIP_CONFIRM=true ;;
     --help|-h)
