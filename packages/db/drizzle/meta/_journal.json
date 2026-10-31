@@ -617,6 +617,13 @@
       "when": 1793009157994,
       "tag": "0087_agent_last_start_refusal",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1793423969583,
+      "tag": "0088_superb_firelord",
+      "breakpoints": true
     }
   ]
 }

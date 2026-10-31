@@ -7,6 +7,7 @@ import type {
   RuntimeTerminationHandler,
   RuntimeTerminationEvent,
   RuntimeError,
+  RuntimeStartupObservation,
   RuntimeStatus,
 } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -86,6 +87,10 @@ interface NomadJob {
   ID: string;
   Name: string;
   Status: string;
+  Meta?: Record<string, string>;
+  Version?: number;
+  /** Nanoseconds since epoch. */
+  SubmitTime?: number;
   JobSummary?: {
     Children?: {
       Dead: number;
@@ -98,6 +103,8 @@ interface NomadJob {
 interface NomadAllocation {
   ID: string;
   JobID: string;
+  JobVersion?: number;
+  NodeID?: string;
   TaskGroup: string;
   ClientStatus: string;
   DesiredStatus: string;
@@ -127,6 +134,12 @@ const AGENT_JOB_PREFIX = 'agent-';
 
 function agentJobId(agentId: string): string {
   return `${AGENT_JOB_PREFIX}${agentId}`;
+}
+
+function nanosToDate(nanos: unknown): Date | null {
+  if (typeof nanos !== 'number' || !Number.isFinite(nanos) || nanos <= 0) return null;
+  const date = new Date(nanos / 1_000_000);
+  return Number.isFinite(date.getTime()) ? date : null;
 }
 
 function agentIdFromJobId(jobId: string): string | null {
@@ -574,6 +587,104 @@ export class NomadRuntimeAdapter implements RuntimePort {
         code: RUNTIME_ERROR_CODES.INSPECT_FAILED,
         message: error instanceof Error ? error.message : 'Nomad inspect failed',
         context: { runtimeId },
+      });
+    }
+  }
+
+  /**
+   * Placement is judged only from allocations of the current job version
+   * (matching JobVersion). `inspect` deliberately does not apply this rule.
+   */
+  async observeStartup(
+    runtimeId: string,
+    sessionId: string,
+  ): Promise<{ ok: true; data: RuntimeStartupObservation } | { ok: false; error: RuntimeError }> {
+    const jobId = toJobId(runtimeId);
+    try {
+      const job = await this.fetchJob(jobId);
+      if (!job) {
+        return err({
+          code: RUNTIME_ERROR_CODES.NOT_FOUND,
+          message: `Nomad job ${jobId} not found`,
+          context: { runtimeId, jobId },
+        });
+      }
+      if (job.Meta?.['herobids.sessionId'] !== sessionId) {
+        return err({
+          code: RUNTIME_ERROR_CODES.NOT_FOUND,
+          message: `Nomad job ${jobId} is not registered for session ${sessionId}`,
+          context: { runtimeId, jobId, sessionId },
+        });
+      }
+
+      const registeredAt = nanosToDate(job.SubmitTime);
+      if (job.SubmitTime === undefined || !registeredAt) {
+        return err({
+          code: RUNTIME_ERROR_CODES.INSPECT_FAILED,
+          message: `Nomad job ${jobId} has an invalid SubmitTime`,
+          context: { runtimeId, jobId },
+        });
+      }
+      if (typeof job.Version !== 'number' || !Number.isInteger(job.Version) || job.Version < 0) {
+        return err({
+          code: RUNTIME_ERROR_CODES.INSPECT_FAILED,
+          message: `Nomad job ${jobId} has an invalid Version`,
+          context: { runtimeId, jobId },
+        });
+      }
+
+      const allocations = await this.fetchJobAllocations(jobId);
+      const placements: Array<{ allocationId: string; nodeId: string; createTime: number; placedAt: Date }> = [];
+      for (const alloc of allocations) {
+        const nodeId = alloc.NodeID;
+        if (
+          !nodeId ||
+          alloc.DesiredStatus !== 'run' ||
+          (alloc.ClientStatus !== 'pending' && alloc.ClientStatus !== 'running') ||
+          alloc.JobVersion !== job.Version
+        ) {
+          continue;
+        }
+        const placedAt = nanosToDate(alloc.CreateTime);
+        if (!placedAt) {
+          return err({
+            code: RUNTIME_ERROR_CODES.INSPECT_FAILED,
+            message: `Nomad allocation ${alloc.ID} has an invalid CreateTime`,
+            context: { runtimeId, jobId, allocationId: alloc.ID },
+          });
+        }
+        placements.push({ allocationId: alloc.ID, nodeId, createTime: alloc.CreateTime, placedAt });
+      }
+
+      if (placements.length === 0) {
+        // fetchJobAllocations maps 404 to [], so re-check the job to avoid reporting a purged job as queued.
+        if (!(await this.fetchJob(jobId))) {
+          return err({
+            code: RUNTIME_ERROR_CODES.NOT_FOUND,
+            message: `Nomad job ${jobId} not found`,
+            context: { runtimeId, jobId },
+          });
+        }
+        return ok({ kind: 'queued', registeredAt });
+      }
+
+      placements.sort((a, b) =>
+        a.createTime !== b.createTime
+          ? a.createTime - b.createTime
+          : a.allocationId < b.allocationId ? -1 : a.allocationId > b.allocationId ? 1 : 0,
+      );
+      const earliest = placements[0]!;
+      return ok({
+        kind: 'placed',
+        placedAt: earliest.placedAt,
+        allocationId: earliest.allocationId,
+        nodeId: earliest.nodeId,
+      });
+    } catch (error) {
+      return err({
+        code: RUNTIME_ERROR_CODES.INSPECT_FAILED,
+        message: error instanceof Error ? error.message : 'Nomad startup observation failed',
+        context: { runtimeId, sessionId },
       });
     }
   }

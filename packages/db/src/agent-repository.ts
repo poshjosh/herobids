@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, or, desc, inArray, asc, ne, isNull, lte, sql } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, notInArray, asc, ne, isNull, gt, lte, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from './index.js';
 import {
@@ -704,6 +704,39 @@ export class AgentRepository {
     }).where(and(
       eq(agentRuntimeSessions.id, sessionId),
       inArray(agentRuntimeSessions.status, ['starting', 'launching']),
+    )).returning({ id: agentRuntimeSessions.id });
+
+    return updated.length > 0;
+  }
+
+  /** Record scheduler registration once, while the session is not terminal.
+   * Returns false when already recorded or the session has ended. */
+  async markRuntimeRegistered(sessionId: string, registeredAt: Date): Promise<boolean> {
+    const updated = await this.db.update(agentRuntimeSessions).set({
+      runtimeRegisteredAt: registeredAt,
+    }).where(and(
+      eq(agentRuntimeSessions.id, sessionId),
+      isNull(agentRuntimeSessions.runtimeRegisteredAt),
+      notInArray(agentRuntimeSessions.status, ['stopped', 'crashed']),
+    )).returning({ id: agentRuntimeSessions.id });
+
+    return updated.length > 0;
+  }
+
+  /** Record the earliest observed placement. Replaces an existing placement only when
+   * `placedAt` is strictly earlier, so re-observation or allocation replacement cannot move it later.
+   * Returns false when the observation did not change the stored placement or the session has ended. */
+  async recordFirstPlacement(sessionId: string, placedAt: Date, allocationId: string): Promise<boolean> {
+    const updated = await this.db.update(agentRuntimeSessions).set({
+      firstPlacedAt: placedAt,
+      placementAllocationId: allocationId,
+    }).where(and(
+      eq(agentRuntimeSessions.id, sessionId),
+      notInArray(agentRuntimeSessions.status, ['stopped', 'crashed']),
+      or(
+        isNull(agentRuntimeSessions.firstPlacedAt),
+        gt(agentRuntimeSessions.firstPlacedAt, placedAt),
+      ),
     )).returning({ id: agentRuntimeSessions.id });
 
     return updated.length > 0;

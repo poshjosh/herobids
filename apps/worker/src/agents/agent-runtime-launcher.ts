@@ -5,11 +5,13 @@ import type {
   RuntimeDescriptor,
   RuntimePort,
   RuntimeResourceProfile,
+  RuntimeStartupObservation,
   DocumentStore,
   RuntimeDocumentMaterializer,
   RuntimeError,
+  Result,
 } from '@herobids/domain';
-import { ok, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { ok, err, runtimeError, RUNTIME_ERROR_CODES, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import { sanitizeFilename } from '@herobids/documents';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { DockerRuntimeAdapter } from './docker-runtime-adapter.js';
@@ -682,6 +684,17 @@ export class AgentRuntimeLauncher {
     for (const sessionId of [...this.runtimes.keys()]) {
       await this.stop(sessionId);
     }
+  }
+
+  /**
+   * Observe scheduler startup state for a runtime. Adapters without support return
+   * INSPECT_FAILED, so callers never mistake an unsupported runtime for queued demand.
+   */
+  async observeStartup(runtimeId: string, sessionId: string): Promise<Result<RuntimeStartupObservation, RuntimeError>> {
+    if (!this.port.observeStartup) {
+      return err(runtimeError(RUNTIME_ERROR_CODES.INSPECT_FAILED, 'Runtime does not support startup observation'));
+    }
+    return this.port.observeStartup(runtimeId, sessionId);
   }
 
   /**

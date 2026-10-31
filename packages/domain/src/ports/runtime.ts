@@ -128,6 +128,17 @@ export function runtimeError(
   return { code, message, context };
 }
 
+// ── Startup Observation ─────────────────────────────────────────────────────
+
+/**
+ * What the scheduler reports about a runtime's startup for one session.
+ * `queued`: registered but not yet placed on a node. `placed`: an allocation
+ * for the current registration has been assigned to a node.
+ */
+export type RuntimeStartupObservation =
+  | { kind: 'queued'; registeredAt?: Date }
+  | { kind: 'placed'; placedAt: Date; allocationId: string; nodeId?: string };
+
 // ── The Port ────────────────────────────────────────────────────────────────
 
 import type { Result } from '../result.js';
@@ -181,4 +192,15 @@ export interface RuntimePort {
    * Optional: only adapters that hold long-lived resources need to implement this.
    */
   shutdown?(): Promise<void>;
+
+  /**
+   * Observe whether a session's runtime has been placed on a node yet.
+   * Optional: schedulers without placement semantics (Docker, stub) omit it.
+   * Returns NOT_FOUND when the runtime or its session identity does not exist,
+   * and INSPECT_FAILED when the scheduler cannot be queried (never `queued`).
+   */
+  observeStartup?(
+    runtimeId: string,
+    sessionId: string,
+  ): Promise<Result<RuntimeStartupObservation, RuntimeError>>;
 }

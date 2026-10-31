@@ -22,6 +22,12 @@ export const agentRuntimeSessions = pgTable('agent_runtime_sessions', {
   stoppedAt: timestamp('stopped_at', { withTimezone: true }),
   /** SHA-256 hex of the per-runtime agent API key. The raw key is never stored. */
   apiKeyHash: text('api_key_hash'),
+  /** When the runtime was registered with the scheduler (job submitted). Set once. */
+  runtimeRegisteredAt: timestamp('runtime_registered_at', { withTimezone: true }),
+  /** Earliest observed placement on a node. Only moves earlier. */
+  firstPlacedAt: timestamp('first_placed_at', { withTimezone: true }),
+  /** Scheduler allocation that produced firstPlacedAt. */
+  placementAllocationId: text('placement_allocation_id'),
 }, (t) => [
   index('idx_agent_runtime_sessions_agent_id').on(t.agentId),
   index('idx_agent_runtime_sessions_status').on(t.status),
