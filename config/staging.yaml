@@ -129,6 +129,14 @@ agentRuntime:
 browserPool:
   url: ""
 
+# Staging activates the capacity-aware start gate so a start waits for Nomad
+# capacity (up to 10 min) instead of failing at the 60 s legacy timeout.
+# Production stays on default.yaml (disabled) until the rollout is approved.
+worker:
+  agents:
+    capacityAwareStart:
+      enabled: true
+
 
 alerts:
   email:

@@ -74,6 +74,29 @@ describe('worker.agents.capacityAwareStart config', () => {
     });
   });
 
+  it('enables the gate for staging via the real staging.yaml overlay, keeping default budgets', () => {
+    const realDefaults = parseYaml(readFileSync(resolve(MONOREPO_CONFIG_DIR, 'default.yaml'), 'utf8')) as Record<string, unknown>;
+    const realStaging = parseYaml(readFileSync(resolve(MONOREPO_CONFIG_DIR, 'staging.yaml'), 'utf8')) as Record<string, unknown>;
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + stringifyYaml({
+      auth: { publicBaseUrl: 'https://staging.openaidom.com' },
+      worker: realDefaults['worker'],
+    }));
+    writeFileSync(resolve(tmpDir, 'staging.yaml'), stringifyYaml({ worker: realStaging['worker'] }));
+    const previousEnv = process.env['NODE_ENV'];    process.env['NODE_ENV'] = 'staging';
+    try {
+      const config = loadConfig(tmpDir);
+
+      expect(config.worker.agents.capacityAwareStart).toEqual({
+        enabled: true,
+        capacityWaitTimeoutMs: 600_000,
+        placedStartTimeoutMs: 120_000,
+      });
+    } finally {
+      if (previousEnv === undefined) delete process.env['NODE_ENV'];
+      else process.env['NODE_ENV'] = previousEnv;
+    }
+  });
+
   it('parses an explicit enabled gate and custom budgets', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), workerYaml(`      enabled: true
       capacityWaitTimeoutMs: 300000
