@@ -487,6 +487,7 @@ demand_scale_out() {
   if ! (cd "${TERRAFORM_DIR}" && terraform apply -input=false "${plan_file}" >/dev/null); then
     demand_attempt_failed "Terraform apply" "scale_out_failed" "Terraform apply of the saved plan failed while scaling from ${managed} to ${target} agent nodes."
   fi
+  sync_tfvars_node_count "${target}"
 
   if ! capacity_observe_after_apply "${NOMAD_AUTOSCALE_INFLIGHT_FILE}" "${HEROBIDS_ENV}" "${NOMAD_AUTOSCALE_NODE_POOL}" "${baseline_ids}"; then
     demand_log "WARNING: could not record the new server IDs; the in-flight record stays pending until it expires."
@@ -730,6 +731,8 @@ if tf_apply_var "agent_node_count=${NEW_COUNT}"; then
   log "=== Scale-out successful ==="
   log "  Agent nodes: ${CURRENT_COUNT} → ${NEW_COUNT}"
   log "  Reason:      ${SCALE_REASON}"
+
+  sync_tfvars_node_count "${NEW_COUNT}"
 
   # Record the observed server IDs so readiness counts only these (H5).
   if ! capacity_observe_after_apply "${NOMAD_AUTOSCALE_INFLIGHT_FILE}" "${HEROBIDS_ENV}" "${NOMAD_AUTOSCALE_NODE_POOL}" "${BASELINE_IDS}"; then

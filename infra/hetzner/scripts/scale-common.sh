@@ -329,6 +329,35 @@ write_node_count() {
   log "Node count written: ${count}"
 }
 
+# sync_tfvars_node_count <count> — set agent_node_count in <env>.tfvars to the
+# count just applied, so a manual Terraform run plans the live count. Called
+# after every successful scale apply. Dies on failure: the nodes have already
+# changed, so the operator must see it.
+sync_tfvars_node_count() {
+  local count="$1"
+  local tfvars_file="${TERRAFORM_DIR}/${HEROBIDS_ENV}.tfvars"
+  local tmp
+
+  [[ "${count}" =~ ^[0-9]+$ ]] || die "Cannot record agent_node_count '${count}': not a node count." 1
+  [[ -f "${tfvars_file}" ]] || die "Cannot record agent_node_count=${count}: ${tfvars_file} not found. Set it by hand before any manual Terraform run." 1
+
+  # mktemp creates the file 0600, so the swap below keeps the secret-bearing file private.
+  tmp="$(mktemp "${tfvars_file}.XXXXXX")" || die "Cannot create a temp file next to ${tfvars_file}." 1
+  if ! awk -v n="${count}" '
+      /^[[:space:]]*agent_node_count[[:space:]]*=/ { if (!done) { print "agent_node_count = " n; done = 1 }; next }
+      { print }
+      END { if (!done) print "agent_node_count = " n }
+    ' "${tfvars_file}" > "${tmp}"; then
+    rm -f "${tmp}"
+    die "Cannot rewrite ${tfvars_file} with agent_node_count=${count}." 1
+  fi
+  if ! mv -f "${tmp}" "${tfvars_file}"; then
+    rm -f "${tmp}"
+    die "Cannot replace ${tfvars_file} with agent_node_count=${count}." 1
+  fi
+  log "Recorded agent_node_count=${count} in ${tfvars_file}"
+}
+
 # max_agent_nodes — returns the configured max_agent_nodes from env vars.
 max_agent_nodes() {
   tf_var "max_agent_nodes"

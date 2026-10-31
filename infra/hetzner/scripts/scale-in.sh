@@ -553,6 +553,8 @@ if tf_apply_plan "${plan_file}"; then
     die "Scale-in applied (${CURRENT_COUNT} → ${NEW_COUNT}), but Terraform state could not be synced. Before the next scale-out, run 'terraform plan -refresh-only' for ${HEROBIDS_ENV} and check it changes only the agent firewall record. Manual check required." 1
   fi
 
+  sync_tfvars_node_count "${NEW_COUNT}"
+
   # Diagnostic cache only; the next run reads the count from the capacity guard.
   write_node_count "${NEW_COUNT}"
 

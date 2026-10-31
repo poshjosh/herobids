@@ -148,6 +148,8 @@ reset_run() {
   OUT="${TEST_TMPDIR}/out-$1.txt"
   rm -rf "${RUN}"
   mkdir -p "${RUN}/terraform"
+  # Live runs record the applied count in the tfvars file, so the fixture needs one.
+  printf 'agent_node_count = 0\n' > "${RUN}/terraform/staging.tfvars"
   echo "0" > "${RUN}/node-count"
   echo "1" > "${RUN}/failure-count"
   touch "${RUN}/http-calls" "${RUN}/mutation-calls" "${RUN}/capacity-calls" "${RUN}/alerts"
