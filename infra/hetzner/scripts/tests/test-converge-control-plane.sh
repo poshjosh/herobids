@@ -620,6 +620,65 @@ assert_contains "${CONVERGE_TEXT}" 'Environment=NOMAD_AUTOSCALE_NODE_POOL=${AUTO
 
 test_end || SUITE_FAILED=1
 
+test_begin "converge-control-plane — scale-in flag drop-in (3c4)"
+
+SCALE_IN_DROPIN="16-scale-in-flag.conf"
+
+new_root "scale-in-flag"
+write_hcl "${STUB_PRIVATE_IP}"
+# Mirrors cloud-init at first boot: the flag is baked in and is stale on existing hosts.
+printf '%s\n' '[Service]' 'Type=oneshot' 'Environment=ENABLE_SCALE_IN=true' \
+  'ExecStart=/opt/herobids/infra/hetzner/scripts/scale-in.sh' \
+  > "${ROOT}/etc/systemd/system/nomad-scale-in.service"
+run_converge ENABLE_SCALE_IN_VALUE=false
+assert_eq "${RUN_EXIT}" "0" "scale-in flag: converge succeeds"
+assert_eq "$(cat "${ROOT}/etc/systemd/system/nomad-scale-in.service.d/${SCALE_IN_DROPIN}")" \
+  "$(printf '%s\n' '[Service]' 'Environment=ENABLE_SCALE_IN=false')" \
+  "scale-in flag: drop-in pins ENABLE_SCALE_IN=false over the baked-in true"
+assert_contains "${CALLS}" "systemctl daemon-reload" "scale-in flag: daemon-reloads for the drop-in"
+
+run_converge ENABLE_SCALE_IN_VALUE=false
+assert_not_contains "${RUN_OUTPUT}" "scale-in flag drop-in" "scale-in flag: re-run does not rewrite the drop-in"
+
+run_converge ENABLE_SCALE_IN_VALUE=true
+assert_eq "$(grep -c 'ENABLE_SCALE_IN=true' "${ROOT}/etc/systemd/system/nomad-scale-in.service.d/${SCALE_IN_DROPIN}")" "1" \
+  "scale-in flag: a changed value rewrites the drop-in"
+
+run_converge ENABLE_SCALE_IN_VALUE=yes
+assert_neq "${RUN_EXIT}" "0" "scale-in flag: a non-boolean value exits non-zero"
+assert_contains "${RUN_OUTPUT}" "must be true or false" "scale-in flag: invalid value is reported"
+assert_not_contains "${CALLS}" "systemctl daemon-reload" "scale-in flag: invalid value stops before daemon-reload"
+
+new_root "scale-in-flag-unset"
+write_hcl "${STUB_PRIVATE_IP}"
+printf '%s\n' '[Service]' 'Type=oneshot' 'Environment=ENABLE_SCALE_IN=true' \
+  > "${ROOT}/etc/systemd/system/nomad-scale-in.service"
+run_converge
+assert_eq "${RUN_EXIT}" "0" "scale-in flag: unset value still converges"
+assert_contains "${RUN_OUTPUT}" "scale-in flag is not converged" "scale-in flag: unset value is reported, not guessed"
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-scale-in.service.d/${SCALE_IN_DROPIN}" ]] && echo yes || echo no)" "no" \
+  "scale-in flag: unset value writes no drop-in"
+
+new_root "scale-in-flag-absent-unit"
+write_hcl "${STUB_PRIVATE_IP}"
+run_converge ENABLE_SCALE_IN_VALUE=false
+assert_eq "${RUN_EXIT}" "0" "scale-in flag: absent unit does not fail converge"
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-scale-in.service.d/${SCALE_IN_DROPIN}" ]] && echo yes || echo no)" "no" \
+  "scale-in flag: absent unit gets no drop-in"
+
+test_end || SUITE_FAILED=1
+
+test_begin "converge-control-plane — scale-in flag wiring (static)"
+
+assert_contains "$(cat "${SCRIPTS_DIR}/setup-control-plane.sh")" "terraform_output -raw enable_scale_in" \
+  "setup reads the enable_scale_in Terraform output"
+assert_contains "$(cat "${SCRIPTS_DIR}/setup-control-plane.sh")" "ENABLE_SCALE_IN_VALUE=\${ENABLE_SCALE_IN_VALUE}" \
+  "setup passes the flag to the remote converge"
+assert_contains "$(cat "${HETZNER_DIR}/outputs.tf")" 'output "enable_scale_in"' \
+  "outputs.tf exposes enable_scale_in"
+
+test_end || SUITE_FAILED=1
+
 # ═════════════════════════════════════════════════════════════════════════════
 
 test_begin "converge-control-plane — autoscale settings (3d): render, invalid, stale override"
@@ -1019,6 +1078,7 @@ run_setup() {
     -u TF_BACKEND_DYNAMODB_TABLE \
     PATH="${SETUP_BIN}:${PATH}" SETUP_LOG="${SETUP_LOG}" HEROBIDS_SSH_KEY="/dev/null" \
     TF_DIR="${SETUP_TF_DIR}" TF_BACKEND_BUCKET=test-bucket TF_BACKEND_REGION=eu-central-1 \
+    STUB_TF_enable_scale_in=false \
     "$@" bash "${SETUP}" --env staging 203.0.113.10 2>&1)" || SETUP_EXIT=$?
   SETUP_CALLS="$(cat "${SETUP_LOG}")"
 }
@@ -1039,6 +1099,11 @@ assert_contains "${SETUP_OUTPUT}" "skipping control-plane convergence" "nomad_en
 
 run_setup STUB_TF_nomad_enabled=maybe
 assert_neq "${SETUP_EXIT}" "0" "nomad_enabled not true/false: exits non-zero"
+
+run_setup STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24 STUB_TF_enable_scale_in=maybe \
+  "STUB_TF_autoscale_settings_input=${SETTINGS_STUB_INPUT}"
+assert_neq "${SETUP_EXIT}" "0" "enable_scale_in not true/false: exits non-zero (fail closed)"
+assert_contains "${SETUP_OUTPUT}" "enable_scale_in" "enable_scale_in not true/false: names the output"
 
 run_setup STUB_TF_nomad_enabled=true STUB_TF_private_subnet_ip_range=10.0.0.0/24 PRIVATE_SUBNET=192.168.0.0/24 \
   "STUB_TF_autoscale_settings_input=${SETTINGS_STUB_INPUT}"

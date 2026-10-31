@@ -157,6 +157,8 @@ output "agent_memory_reservation_mb" {
 
 # ── Scale-In Configuration (Phase 7) ──────────────────────
 
+# Read by setup-control-plane.sh and written into the nomad-scale-in drop-in on
+# the control plane: the flag baked into cloud-init at boot never updates later.
 output "enable_scale_in" {
   description = "Whether nightly scale-in is enabled"
   value       = var.enable_scale_in

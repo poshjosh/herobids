@@ -143,6 +143,21 @@ if [[ -z "${AUTOSCALE_SETTINGS_INPUT_VALUE}" ]]; then
   fi
 fi
 
+# Scale-in flag: converge pins nomad-scale-in to this value. Terraform mode must
+# have the output, since a guessed value could re-enable deletes; override mode
+# warns and leaves the unit's flag unchanged.
+ENABLE_SCALE_IN_VALUE="$(terraform_output -raw enable_scale_in 2>/dev/null || true)"
+if [[ "${ENABLE_SCALE_IN_VALUE}" != "true" && "${ENABLE_SCALE_IN_VALUE}" != "false" ]]; then
+  if [[ -n "${HEROBIDS_NOMAD_ENABLED:-}" ]]; then
+    echo "WARNING: terraform output enable_scale_in unavailable; scale-in flag NOT converged." >&2
+    ENABLE_SCALE_IN_VALUE=""
+  else
+    echo "ERROR: Could not read a true/false terraform output enable_scale_in (workspace ${HEROBIDS_ENV})." >&2
+    echo "  Run 'terraform apply' (or refresh) for workspace ${HEROBIDS_ENV}; the output must exist before converging." >&2
+    exit 1
+  fi
+fi
+
 # ─── Upload and run ──────────────────────────────────────────────────────────
 
 echo "==> [${HEROBIDS_ENV}] Converging control plane ${SERVER_IP} (private ${PRIVATE_SUBNET} from ${PRIVATE_SUBNET_SOURCE}; bridge ${DOCKER_BRIDGE_SUBNET})..."
@@ -161,7 +176,7 @@ fi
 # Inputs are validated CIDRs above, so plain interpolation is safe here.
 RC=0
 ssh ${SSH_OPTS} "root@${SERVER_IP}" \
-  "PRIVATE_SUBNET=${PRIVATE_SUBNET} DOCKER_BRIDGE_SUBNET=${DOCKER_BRIDGE_SUBNET} ${REMOTE_SCRIPT}" || RC=$?
+  "PRIVATE_SUBNET=${PRIVATE_SUBNET} DOCKER_BRIDGE_SUBNET=${DOCKER_BRIDGE_SUBNET} ENABLE_SCALE_IN_VALUE=${ENABLE_SCALE_IN_VALUE} ${REMOTE_SCRIPT}" || RC=$?
 
 if [[ ${RC} -ne 0 ]]; then
   echo "ERROR: control-plane convergence failed on ${SERVER_IP} (exit ${RC})." >&2

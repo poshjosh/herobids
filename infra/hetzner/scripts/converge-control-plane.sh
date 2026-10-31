@@ -25,6 +25,9 @@
 #      default: hostname, which cloud-init sets to server_name) to each
 #      autoscale unit that lacks the variable. Without it the capacity guard
 #      checks the default pool and blocks scale-out.
+#   3c4. Writes a scale-in flag drop-in for nomad-scale-in that pins
+#      ENABLE_SCALE_IN to ENABLE_SCALE_IN_VALUE (true | false, from the
+#      Terraform enable_scale_in output). cloud-init's copy is fixed at boot.
 #   3d. Renders /etc/herobids/autoscale-settings.env from the Terraform-derived
 #      input (same renderer as cloud-init first boot) and adds an
 #      EnvironmentFile= drop-in for the settings file to each autoscale unit
@@ -61,6 +64,8 @@
 #   AUTOSCALE_STATE_DIR    Durable in-flight record directory (default
 #                          /var/lib/herobids-autoscale).
 #   AUTOSCALE_NODE_POOL    Agent pool the autoscale units guard (default: hostname).
+#   ENABLE_SCALE_IN_VALUE  true | false for nomad-scale-in (default: unset, which
+#                          skips the flag). setup-control-plane.sh sets it.
 #   AUTOSCALE_SETTINGS_FAILED_MARKER  Written when settings fail to render,
 #                          removed on success (default
 #                          /etc/herobids/autoscale-settings.failed).
@@ -101,6 +106,10 @@ die() { echo "${LOG_PREFIX} ERROR: $*" >&2; exit 1; }
 [[ "${DOCKER_BRIDGE_SUBNET}" =~ ${CIDR_REGEX} ]] || die "DOCKER_BRIDGE_SUBNET '${DOCKER_BRIDGE_SUBNET}' is not an IPv4 CIDR."
 [[ "${AUTOSCALE_NODE_POOL}" =~ ^[a-z0-9][a-z0-9-]*$ ]] \
   || die "AUTOSCALE_NODE_POOL '${AUTOSCALE_NODE_POOL}' is not a valid pool name (set AUTOSCALE_NODE_POOL to the agent server_name)."
+# Optional: empty means the scale-in flag is not managed on this run.
+ENABLE_SCALE_IN_VALUE="${ENABLE_SCALE_IN_VALUE:-}"
+[[ -z "${ENABLE_SCALE_IN_VALUE}" || "${ENABLE_SCALE_IN_VALUE}" == "true" || "${ENABLE_SCALE_IN_VALUE}" == "false" ]] \
+  || die "ENABLE_SCALE_IN_VALUE '${ENABLE_SCALE_IN_VALUE}' must be true or false."
 
 if [[ ! -f "${NOMAD_HCL}" ]]; then
   log "${NOMAD_HCL} not found (enable_nomad off?) — nothing to converge."
@@ -312,6 +321,27 @@ for unit in nomad-autoscale nomad-scale-in; do
     *) die "could not write the ${unit} node-pool drop-in; systemd was not reloaded." ;;
   esac
 done
+
+# ─── 3c4. Scale-in flag (nomad-scale-in only) ────────────────────────────────
+# cloud-init bakes ENABLE_SCALE_IN into the unit at first boot, and user_data is
+# ignored after that. This drop-in re-pins the flag from the Terraform output.
+# A later Environment= for the same key overrides the unit's value. It is not
+# skipped when the unit already sets the key, since that line is the stale one.
+if [[ -n "${ENABLE_SCALE_IN_VALUE}" ]]; then
+  SCALE_IN_UNIT_FILE="${SYSTEMD_DIR}/nomad-scale-in.service"
+  if [[ -f "${SCALE_IN_UNIT_FILE}" ]]; then
+    rc=0
+    write_if_changed "${SYSTEMD_DIR}/nomad-scale-in.service.d/16-scale-in-flag.conf" \
+      "$(printf '%s\n' '[Service]' "Environment=ENABLE_SCALE_IN=${ENABLE_SCALE_IN_VALUE}")" || rc=$?
+    case "${rc}" in
+      0) CHANGES+=("installed nomad-scale-in.service scale-in flag drop-in (ENABLE_SCALE_IN=${ENABLE_SCALE_IN_VALUE})"); AUTOSCALE_UNITS_CHANGED=true ;;
+      1) ;;
+      *) die "could not write the nomad-scale-in scale-in flag drop-in; systemd was not reloaded." ;;
+    esac
+  fi
+else
+  warn "ENABLE_SCALE_IN_VALUE not set; the nomad-scale-in flag is not converged on this run."
+fi
 
 # ─── 3d. Durable demand-aware autoscale settings ────────────────────────────
 # Same renderer and input format as cloud-init first boot, so a converged host
