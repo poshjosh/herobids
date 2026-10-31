@@ -1,11 +1,27 @@
 import { eq, and, lt, inArray, notInArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentRuntimeSessions } from '@herobids/db';
+import { RUNTIME_ERROR_CODES } from '@herobids/domain';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
+import {
+  computeCapacityStartupDeadline,
+  type StartupObservationOutcome,
+} from './agent-startup-deadlines.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('agent-health-monitor');
+
+/** Re-evaluations after a lost expiry claim, so a placement or stop racing the claim is seen in the same sweep. */
+const MAX_STARTUP_EVALUATION_ATTEMPTS = 3;
+
+interface LaunchingSessionFacts {
+  id: string;
+  agentId: string;
+  startedAt: Date;
+  runtimeRegisteredAt: Date | null;
+  firstPlacedAt: Date | null;
+}
 
 export interface HealthMonitorConfig {
   /** Interval between health checks (ms). Default: 10000 */
@@ -14,6 +30,15 @@ export interface HealthMonitorConfig {
   heartbeatTimeoutMs: number;
   /** Budget from session creation to first heartbeat before a start is failed (ms). Default: 60000 */
   startTimeoutMs: number;
+  /**
+   * P6: capacity-aware startup. Applies only when enabled AND the runtime observes startup
+   * (Nomad). Otherwise the legacy startTimeoutMs budget governs every starting session.
+   */
+  capacityAwareStart: {
+    enabled: boolean;
+    capacityWaitTimeoutMs: number;
+    placedStartTimeoutMs: number;
+  };
   /**
    * Called when the health monitor finds a terminal session in DB that still has
    * an in-memory runtime handle. This is the controlling path for user-initiated
@@ -31,6 +56,11 @@ const DEFAULT_CONFIG: HealthMonitorConfig = {
   checkIntervalMs: 10_000,
   heartbeatTimeoutMs: 30_000,
   startTimeoutMs: 60_000,
+  capacityAwareStart: {
+    enabled: false,
+    capacityWaitTimeoutMs: 600_000,
+    placedStartTimeoutMs: 120_000,
+  },
 };
 
 /**
@@ -42,6 +72,7 @@ const DEFAULT_CONFIG: HealthMonitorConfig = {
 export class AgentHealthMonitor {
   private timer?: ReturnType<typeof setInterval>;
   private readonly config: HealthMonitorConfig;
+  private launchingSweepInFlight = false;
 
   constructor(
     private readonly db: Database,
@@ -83,16 +114,23 @@ export class AgentHealthMonitor {
         await this.sessionManager.markUnhealthy(session.id);
       }
 
+      const capacityAware = this.isCapacityAwareStartEnabled();
       const staleStartingSessions = await this.db.select()
         .from(agentRuntimeSessions)
         .where(and(
-          inArray(agentRuntimeSessions.status, ['starting', 'launching']),
+          // Launching sessions under capacity-aware startup are governed by the deadline sweep below.
+          inArray(agentRuntimeSessions.status, capacityAware ? ['starting'] : ['starting', 'launching']),
           lt(agentRuntimeSessions.startedAt, startThreshold),
         ));
 
       for (const session of staleStartingSessions) {
         logger.warn({ sessionId: session.id, agentId: session.agentId, startedAt: session.startedAt }, 'Stale agent start detected');
         await this.sessionManager.handleStartTimeout(session.id);
+      }
+
+      if (capacityAware) {
+        // Fire-and-forget: a slow scheduler call must not delay heartbeat or stop checks above or below.
+        void this.sweepLaunchingSessions();
       }
 
       // Clean up in-memory runtime handles for sessions that are now stopped/crashed in DB.
@@ -144,5 +182,123 @@ export class AgentHealthMonitor {
     } catch (err) {
       logger.error({ err }, 'Health check failed');
     }
+  }
+
+  private isCapacityAwareStartEnabled(): boolean {
+    return this.config.capacityAwareStart.enabled && this.runtimeLauncher?.supportsStartupObservation() === true;
+  }
+
+  /** Evaluates every launching session once. Non-reentrant so a slow scheduler cannot pile up sweeps. */
+  private async sweepLaunchingSessions(): Promise<void> {
+    if (this.launchingSweepInFlight) return;
+    this.launchingSweepInFlight = true;
+    try {
+      const launching = await this.db.select({ id: agentRuntimeSessions.id })
+        .from(agentRuntimeSessions)
+        .where(eq(agentRuntimeSessions.status, 'launching'));
+      for (const row of launching) {
+        await this.evaluateLaunchingSession(row.id);
+      }
+    } catch (err) {
+      logger.error({ err }, 'Launching session startup sweep failed');
+    } finally {
+      this.launchingSweepInFlight = false;
+    }
+  }
+
+  private async evaluateLaunchingSession(sessionId: string): Promise<void> {
+    try {
+      for (let attempt = 0; attempt < MAX_STARTUP_EVALUATION_ATTEMPTS; attempt++) {
+        let session = await this.loadLaunchingSession(sessionId);
+        if (!session) return;
+
+        let outcome: StartupObservationOutcome = 'not_observed';
+        if (session.runtimeRegisteredAt === null || session.firstPlacedAt === null) {
+          outcome = await this.observeAndRecordStartup(session);
+          // Re-read so the deadline is computed from what the repository now holds, including a stop that won.
+          session = await this.loadLaunchingSession(sessionId);
+          if (!session) return;
+        }
+
+        const deadline = computeCapacityStartupDeadline(
+          session,
+          this.config.capacityAwareStart,
+          this.config.startTimeoutMs,
+          outcome,
+        );
+        if (Date.now() < deadline.atMs) return;
+
+        const expired = await this.sessionManager.expireStartupDeadline(
+          session.agentId,
+          session.id,
+          {
+            status: 'launching',
+            runtimeRegisteredAt: session.runtimeRegisteredAt,
+            firstPlacedAt: session.firstPlacedAt,
+          },
+          deadline.reason,
+        );
+        if (expired) {
+          logger.warn({ sessionId, agentId: session.agentId, reason: deadline.reason }, 'Agent startup deadline expired');
+          return;
+        }
+        // The claim lost to a placement, heartbeat, or stop. Loop to re-read and re-evaluate.
+      }
+    } catch (err) {
+      logger.warn({ err, sessionId }, 'Launching session startup evaluation failed; will retry on next sweep');
+    }
+  }
+
+  private async loadLaunchingSession(sessionId: string): Promise<LaunchingSessionFacts | null> {
+    const [row] = await this.db.select({
+        id: agentRuntimeSessions.id,
+        agentId: agentRuntimeSessions.agentId,
+        startedAt: agentRuntimeSessions.startedAt,
+        runtimeRegisteredAt: agentRuntimeSessions.runtimeRegisteredAt,
+        firstPlacedAt: agentRuntimeSessions.firstPlacedAt,
+      })
+      .from(agentRuntimeSessions)
+      .where(and(
+        eq(agentRuntimeSessions.id, sessionId),
+        eq(agentRuntimeSessions.status, 'launching'),
+      ));
+    return row ?? null;
+  }
+
+  /**
+   * Inspects the scheduler and records registration or the earliest placement. Failures change no
+   * facts and never extend a deadline; the caller derives the deadline from the outcome.
+   */
+  private async observeAndRecordStartup(session: LaunchingSessionFacts): Promise<StartupObservationOutcome> {
+    const launcher = this.runtimeLauncher;
+    if (!launcher) return 'inspect_failed';
+
+    const observed = await launcher.observeStartup(session.agentId, session.id);
+    if (!observed.ok) {
+      if (observed.error.code === RUNTIME_ERROR_CODES.NOT_FOUND) {
+        return 'not_found';
+      }
+      logger.warn(
+        { sessionId: session.id, agentId: session.agentId, code: observed.error.code },
+        'Scheduler startup observation failed; startup deadline unchanged',
+      );
+      return 'inspect_failed';
+    }
+
+    const observation = observed.data;
+    if (observation.kind === 'queued') {
+      if (session.runtimeRegisteredAt === null) {
+        await this.sessionManager.recordRuntimeRegistered(session.id, observation.registeredAt ?? session.startedAt);
+      }
+    } else {
+      // A placed job was necessarily registered. Its placement time is an upper bound for registration.
+      if (session.runtimeRegisteredAt === null) {
+        await this.sessionManager.recordRuntimeRegistered(session.id, observation.placedAt);
+      }
+      if (session.firstPlacedAt === null || observation.placedAt < session.firstPlacedAt) {
+        await this.sessionManager.recordFirstPlacement(session.id, observation.placedAt, observation.allocationId);
+      }
+    }
+    return 'observed';
   }
 }

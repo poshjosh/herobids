@@ -129,4 +129,88 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
       expect(session.placementAllocationId).toBeNull();
     });
   });
+
+  describe('expireStartingSession (atomic startup expiry claim)', () => {
+    it('claims a starting session whose startup facts are unchanged', async () => {
+      expect(await repo.expireStartingSession(sessionId, T2, {
+        status: 'starting', runtimeRegisteredAt: null, firstPlacedAt: null,
+      })).toBe(true);
+
+      expect((await readSession()).status).toBe('stopped');
+    });
+
+    it('claims a launching session whose registration matches', async () => {
+      await setStatus('launching');
+      await repo.markRuntimeRegistered(sessionId, T1);
+
+      expect(await repo.expireStartingSession(sessionId, T2, {
+        status: 'launching', runtimeRegisteredAt: T1, firstPlacedAt: null,
+      })).toBe(true);
+      expect((await readSession()).status).toBe('stopped');
+    });
+
+    it('fails when a placement landed after the claimant observed the session', async () => {
+      await setStatus('launching');
+      await repo.markRuntimeRegistered(sessionId, T1);
+      await repo.recordFirstPlacement(sessionId, T1, 'alloc-a');
+
+      expect(await repo.expireStartingSession(sessionId, T2, {
+        status: 'launching', runtimeRegisteredAt: T1, firstPlacedAt: null,
+      })).toBe(false);
+
+      const session = await readSession();
+      expect(session.status).toBe('launching');
+      expect(session.firstPlacedAt?.toISOString()).toBe(T1.toISOString());
+    });
+
+    it('fails when registration changed after the claimant observed the session', async () => {
+      await setStatus('launching');
+
+      await repo.markRuntimeRegistered(sessionId, T1);
+
+      expect(await repo.expireStartingSession(sessionId, T2, {
+        status: 'launching', runtimeRegisteredAt: null, firstPlacedAt: null,
+      })).toBe(false);
+      expect((await readSession()).status).toBe('launching');
+    });
+
+    it('fails when a heartbeat already made the session running', async () => {
+      expect(await repo.markSessionRunning(sessionId, T1)).toBe(true);
+
+      expect(await repo.expireStartingSession(sessionId, T2, {
+        status: 'starting', runtimeRegisteredAt: null, firstPlacedAt: null,
+      })).toBe(false);
+      expect((await readSession()).status).toBe('running');
+    });
+
+    it('allows only one of two concurrent claims to succeed', async () => {
+      const expected = { status: 'starting' as const, runtimeRegisteredAt: null, firstPlacedAt: null };
+
+      const results = await Promise.all([
+        repo.expireStartingSession(sessionId, T1, expected),
+        repo.expireStartingSession(sessionId, T2, expected),
+      ]);
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      expect((await readSession()).status).toBe('stopped');
+    });
+  });
+
+  describe('stop is not resurrected', () => {
+    it('keeps a stopped session stopped against late registration, placement, and heartbeat', async () => {
+      await setStatus('launching');
+      expect(await repo.expireStartingSession(sessionId, T1, {
+        status: 'launching', runtimeRegisteredAt: null, firstPlacedAt: null,
+      })).toBe(true);
+
+      expect(await repo.markRuntimeRegistered(sessionId, T2)).toBe(false);
+      expect(await repo.recordFirstPlacement(sessionId, T2, 'alloc-late')).toBe(false);
+      expect(await repo.markSessionRunning(sessionId, T2)).toBe(false);
+
+      const session = await readSession();
+      expect(session.status).toBe('stopped');
+      expect(session.runtimeRegisteredAt).toBeNull();
+      expect(session.firstPlacedAt).toBeNull();
+    });
+  });
 });

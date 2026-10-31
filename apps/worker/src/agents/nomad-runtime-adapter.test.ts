@@ -127,6 +127,57 @@ function startupAdapter(job: Reply, allocations: Reply = { body: [] }): NomadRun
   return new NomadRuntimeAdapter({ ...baseAdapter, nomadClient });
 }
 
+describe('NomadRuntimeAdapter.stop session guard', () => {
+  function stopAdapter(jobReply: Reply) {
+    const request = vi.fn(async (_path: string, options: { method: string }) =>
+      options.method === 'DELETE'
+        ? new Response(null, { status: 200 })
+        : jsonResponse(jobReply.body, jobReply.status ?? 200));
+    const nomadClient = { request } as unknown as NomadClient;
+    return { adapter: new NomadRuntimeAdapter({ ...baseAdapter, nomadClient }), request };
+  }
+
+  const deleteCalls = (request: ReturnType<typeof vi.fn>) =>
+    request.mock.calls.filter(([, options]) => options.method === 'DELETE');
+
+  it('refuses to purge a job that belongs to a different session', async () => {
+    const { adapter, request } = stopAdapter({ body: jobFixture });
+
+    const result = await adapter.stop('agent-agent-1', { sessionId: 'session-2' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe(RUNTIME_ERROR_CODES.SESSION_MISMATCH);
+    expect(deleteCalls(request)).toHaveLength(0);
+  });
+
+  it('purges the job when its session matches', async () => {
+    const { adapter, request } = stopAdapter({ body: jobFixture });
+
+    const result = await adapter.stop('agent-agent-1', { sessionId: 'session-1' });
+
+    expect(result.ok).toBe(true);
+    expect(deleteCalls(request)).toHaveLength(1);
+  });
+
+  it('treats an absent job as already stopped without a purge', async () => {
+    const { adapter, request } = stopAdapter({ status: 404, body: {} });
+
+    const result = await adapter.stop('agent-agent-1', { sessionId: 'session-1' });
+
+    expect(result.ok).toBe(true);
+    expect(deleteCalls(request)).toHaveLength(0);
+  });
+
+  it('keeps the unconditional purge when no session is supplied', async () => {
+    const { adapter, request } = stopAdapter({ body: jobFixture });
+
+    const result = await adapter.stop('agent-agent-1');
+
+    expect(result.ok).toBe(true);
+    expect(deleteCalls(request)).toHaveLength(1);
+  });
+});
+
 describe('NomadRuntimeAdapter.observeStartup', () => {
   it('reports queued with the registration time when no allocation exists', async () => {
     const adapter = startupAdapter({ body: jobFixture });

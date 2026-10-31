@@ -9,6 +9,7 @@ import type {
   RuntimeError,
   RuntimeStartupObservation,
   RuntimeStatus,
+  RuntimeStopOptions,
 } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
 import { RUNTIME_ERROR_CODES } from '@herobids/domain';
@@ -458,9 +459,26 @@ export class NomadRuntimeAdapter implements RuntimePort {
 
   async stop(
     runtimeId: string,
+    options?: RuntimeStopOptions,
   ): Promise<{ ok: true; data: void } | { ok: false; error: RuntimeError }> {
     const jobId = toJobId(runtimeId);
     try {
+      // Stable job IDs are per agent, not per session: a stale session must not purge a newer session's job.
+      if (options?.sessionId !== undefined) {
+        const job = await this.fetchJob(jobId);
+        if (!job) {
+          this.knownAllocations.delete(jobId);
+          this.knownAllocations.delete(runtimeId);
+          return ok(undefined);
+        }
+        if (job.Meta?.['herobids.sessionId'] !== options.sessionId) {
+          return err({
+            code: RUNTIME_ERROR_CODES.SESSION_MISMATCH,
+            message: `Nomad job ${jobId} belongs to a different session; purge skipped`,
+            context: { runtimeId, jobId, sessionId: options.sessionId },
+          });
+        }
+      }
       // DELETE with purge=true stops the job and removes it from Nomad state
       const response = await this.nomadRequest(
         this._jobPath(jobId, { purge: 'true' }),

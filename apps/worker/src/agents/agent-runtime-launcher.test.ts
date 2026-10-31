@@ -169,6 +169,86 @@ describe('AgentRuntimeLauncher — stub mode heartbeats (bug-012 regression)', (
   });
 });
 
+describe('AgentRuntimeLauncher — stop passes sessionId only under the P6 gate', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeObservingPort(): StubRuntimeAdapter {
+    const port = new StubRuntimeAdapter();
+    (port as unknown as { observeStartup: unknown }).observeStartup = vi.fn();
+    return port;
+  }
+
+  it('gate off: stop() calls the port with the runtime ID only (legacy single-argument call)', async () => {
+    const port = new StubRuntimeAdapter();
+    const stopSpy = vi.spyOn(port, 'stop');
+    const launcher = new AgentRuntimeLauncher({ port });
+    await launcher.launch(BASE_LAUNCH);
+
+    await launcher.stop(BASE_LAUNCH.sessionId);
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    expect(stopSpy.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('gate off with an observing port: still no sessionId is passed', async () => {
+    const port = makeObservingPort();
+    const stopSpy = vi.spyOn(port, 'stop');
+    const launcher = new AgentRuntimeLauncher({ port, capacityAwareStartEnabled: false });
+    await launcher.launch(BASE_LAUNCH);
+
+    await launcher.stop(BASE_LAUNCH.sessionId);
+
+    expect(stopSpy.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('gate on but port without observeStartup: no sessionId is passed', async () => {
+    const port = new StubRuntimeAdapter();
+    const stopSpy = vi.spyOn(port, 'stop');
+    const launcher = new AgentRuntimeLauncher({ port, capacityAwareStartEnabled: true });
+    await launcher.launch(BASE_LAUNCH);
+
+    await launcher.stop(BASE_LAUNCH.sessionId);
+
+    expect(stopSpy.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('gate on: stop() passes { sessionId } so the adapter can refuse another session\'s job', async () => {
+    const port = makeObservingPort();
+    const stopSpy = vi.spyOn(port, 'stop');
+    const launcher = new AgentRuntimeLauncher({ port, capacityAwareStartEnabled: true });
+    await launcher.launch(BASE_LAUNCH);
+
+    await launcher.stop(BASE_LAUNCH.sessionId);
+
+    expect(stopSpy.mock.calls[0]).toEqual([expect.any(String), { sessionId: BASE_LAUNCH.sessionId }]);
+  });
+
+  it('gate on, missing handle: stop-by-session-lookup passes { sessionId } to the port', async () => {
+    const port = makeObservingPort();
+    const stopSpy = vi.spyOn(port, 'stop');
+    const agentRepo = { getSession: vi.fn().mockResolvedValue({ agentId: 'agent-1' }) } as any;
+    const launcher = new AgentRuntimeLauncher({ port, agentRepo, capacityAwareStartEnabled: true });
+
+    await launcher.stop('sess-unknown');
+
+    expect(stopSpy).toHaveBeenCalledWith('agent-1', { sessionId: 'sess-unknown' });
+  });
+
+  it('gate off, missing handle: stop-by-session-lookup passes only the agentId', async () => {
+    const port = new StubRuntimeAdapter();
+    const stopSpy = vi.spyOn(port, 'stop');
+    const agentRepo = { getSession: vi.fn().mockResolvedValue({ agentId: 'agent-1' }) } as any;
+    const launcher = new AgentRuntimeLauncher({ port, agentRepo });
+
+    await launcher.stop('sess-unknown');
+
+    expect(stopSpy.mock.calls[0]).toHaveLength(1);
+    expect(stopSpy).toHaveBeenCalledWith('agent-1');
+  });
+});
+
 describe('AgentRuntimeLauncher — agent key redaction', () => {
   afterEach(() => {
     vi.clearAllMocks();

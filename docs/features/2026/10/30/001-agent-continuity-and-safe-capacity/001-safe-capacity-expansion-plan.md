@@ -757,7 +757,7 @@ Stages describe dependencies, not mandatory separate services/files.
 | P3 | Correct demand collection, classification and per-node resource/fit calculations | P0, P1 | Real-shape namespace/diagnostic/dedup/fragmentation/CPU fixtures pass | DONE (pure library and per-node fit; fixtures UNVERIFIED; see Outstanding Issues) |
 | P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests | DONE (demand mode disabled; activation blocked by H2, H3, H4, M4 in P4 Outstanding Issues) |
 | P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved | DONE (uncommitted; see P5 outstanding issues) |
-| P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | PENDING |
+| P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | DONE (uncommitted; see P6 outstanding issues) |
 | P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection | PENDING |
 | P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow | PENDING |
 | P9 | Obtain explicit staging mutation approval, deploy/migrate and execute controlled staging scenarios | P8 | Section 12 acceptance evidence; production still disabled | PENDING |
@@ -1220,4 +1220,38 @@ Deferred MEDIUM/LOW:
 - Final-round fix (review 2 LOW-1): `NOMAD_SCALE_OUT_INCREMENT_MAX` is validated only when `NOMAD_AUTOSCALE_DEMAND_ENABLED=true`, so an unused out-of-range value no longer aborts legacy runs. Covered by `test-capacity-numeric-env.sh`.
 - Open LOWs from review 2 (not fixed): (a) legacy `write_node_count` still runs before `touch_cooldown` (same as HEAD; align later); (b) the streak counter regex `[1-9][0-9]{0,5}` caps at 999999, so a longer streak wedges the controller (saturate or widen); (c) the `CAPACITY_STDERR` temp file leaks on signal (add a trap); (d) a partial-apply pending record is conservative and may block recovery.
 - The remaining LOW items (6, 8–10 in the review) are the Deferred entries above and remain open. Their owner notes are: the cloud-init units must be confirmed disabled before enabling demand mode; the `.BlockedEval` keyword must be checked against Nomad 1.9.7; `--safety-net` needs a test before use; `NOMAD_TOKEN` in curl argv is a pre-existing exposure to fix before production rollout.
+
+### P6 (capacity-aware startup deadlines, atomic expiry, session-safe cleanup)
+
+Implemented (uncommitted; not yet code-reviewed): the health monitor sweeps `starting` and `launching` sessions through `observeStartup` when `worker.agents.capacityAwareStart.enabled` is true and the runtime supports observation. The pure deadline rules are in `agent-startup-deadlines.ts`. Expiry is `AgentRepository.expireStartingSession`, a single conditional UPDATE that requires the expected status, `runtime_registered_at`, and `first_placed_at`. The session manager records registration after a successful submit (`markRuntimeRegistered`), and the stop path purges only a job whose Meta `herobids.sessionId` matches (`RuntimeStopOptions.sessionId`, `SESSION_MISMATCH`).
+
+Gate: when the flag is off, or the runtime has no `observeStartup`, the legacy `startTimeoutMs` path runs unchanged, including the `starting`+`launching` legacy query.
+
+Deviations from the contract:
+- `expireStartupDeadline` accepts any `StartupDeadlineReason` (it was `start_timeout` only). The monitor needs the other reasons.
+- A registered job that the scheduler reports as NOT_FOUND expires at once with `observation_failure`. An unregistered session with an unconfirmed state gets the absolute bound, not the legacy 60s, so a submitted but unrecorded job is not killed early.
+
+Tests: `agent-startup-deadlines.test.ts` (pure rules), `agent-health-monitor-capacity.test.ts` (fake clock: gate, queue and boot deadlines, overall bound, inspection failure, earlier placement, stop and claim races, non-overlap), `nomad-runtime-adapter.test.ts` (stop session guard), and `agent-repository-startup.integration.test.ts` (real Postgres: atomic claim, placement and heartbeat losing races, stop not resurrected).
+
+Open risks:
+- The Nomad purge has a TOCTOU window between the Meta check and the DELETE. Nomad DELETE has no index precondition.
+- The Nomad field shapes remain UNVERIFIED (P9 gate), so P6 adds no new reliance beyond P5.
+- The `waiting_for_capacity`/`booting` subphase is not computed or projected (P7).
+- Inspection-failure warnings log on every sweep.
+
+Review rework (P6 still uncommitted):
+
+- MEDIUM, fixed: with `capacityAwareStart.enabled=false` the launcher stop passed `{ sessionId }`, which added a Nomad GET and a possible `SESSION_MISMATCH` before DELETE. The launcher now passes the option only when the startup-observation gate is active (same condition as the gated deadline logic). Gate-off stop issues the same port calls as f08709f5. Tests: `agent-runtime-launcher.test.ts`, describe "stop passes sessionId only under the P6 gate".
+- HIGH, test gap, fixed: `agent-session-manager-startup.test.ts` (new, 12 tests) covers the expiry claim (a false repository claim leaves the runtime, agent and events untouched; the claim receives the expected status and facts; the successful claimant stops the runtime, marks the agent stopped and emits the failure event once; `start_timeout` emits no startup guardrail; a lost second claim repeats nothing). It also covers the post-submit `markRuntimeRegistered` hook (called after a successful submit; not called on submit failure, gate off, or non-observing port; a session stopped or crashed during the submit is not resurrected and its job is stopped; a live session already registered by another writer is kept). The Nomad stop refusal on a mismatched Meta `herobids.sessionId` is covered in `nomad-runtime-adapter.test.ts` ("refuses to purge a job that belongs to a different session").
+
+DECISION (user-approved, option A): for an unregistered launching session whose inspection fails, the 12-minute overall bound (`startedAt + capacityWaitTimeoutMs + placedStartTimeoutMs`) applies, not the legacy 60s. Rationale: a job that was submitted but whose registration was not recorded (for example after a worker crash) must not be stopped early. The stop path still purges any matching job it finds. Gate-off keeps the legacy 60s. Implemented in `agent-startup-deadlines.ts`, which is unchanged in this rework.
+
+Coverage: the crash-during-slow-submit orphan (review MEDIUM 4) is covered by the expiry path. An unregistered launching session expires at its overall bound, and `stop()` purges any matching job found by agentId.
+
+RESIDUAL (HIGH, accepted, P9 to revisit): the Nomad DELETE purge has no precondition, so a check-then-delete window exists between the Meta `herobids.sessionId` check and the DELETE. A restart that submits a newer job for the same agent inside that window could have that job purged. Mitigation options to evaluate in P9 (for example, a Nomad job-version or index precondition on DELETE, or re-verifying the Meta before purge and treating a mismatch as a recoverable error).
+
+LOW residuals:
+
+- The placement timestamp is not validated against `startedAt`.
+- The health monitor single-flight is per process. Multi-replica sweeps are protected by the atomic expiry claim, so at most one claimant stops the runtime and emits the failure event.
 

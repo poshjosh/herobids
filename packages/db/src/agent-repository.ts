@@ -709,6 +709,35 @@ export class AgentRepository {
     return updated.length > 0;
   }
 
+  /** Atomically expire a startup deadline. The claim succeeds only while the session still has the
+   * status and startup facts the deadline was computed from, so a placement or heartbeat that lands
+   * after the evaluation makes the claim fail and the caller must re-evaluate. */
+  async expireStartingSession(
+    sessionId: string,
+    stoppedAt: Date,
+    expected: {
+      status: 'starting' | 'launching';
+      runtimeRegisteredAt: Date | null;
+      firstPlacedAt: Date | null;
+    },
+  ): Promise<boolean> {
+    const updated = await this.db.update(agentRuntimeSessions).set({
+      status: 'stopped',
+      stoppedAt,
+    }).where(and(
+      eq(agentRuntimeSessions.id, sessionId),
+      eq(agentRuntimeSessions.status, expected.status),
+      expected.runtimeRegisteredAt === null
+        ? isNull(agentRuntimeSessions.runtimeRegisteredAt)
+        : eq(agentRuntimeSessions.runtimeRegisteredAt, expected.runtimeRegisteredAt),
+      expected.firstPlacedAt === null
+        ? isNull(agentRuntimeSessions.firstPlacedAt)
+        : eq(agentRuntimeSessions.firstPlacedAt, expected.firstPlacedAt),
+    )).returning({ id: agentRuntimeSessions.id });
+
+    return updated.length > 0;
+  }
+
   /** Record scheduler registration once, while the session is not terminal.
    * Returns false when already recorded or the session has ended. */
   async markRuntimeRegistered(sessionId: string, registeredAt: Date): Promise<boolean> {

@@ -117,6 +117,7 @@ export const RUNTIME_ERROR_CODES = {
   TIMEOUT: 'runtime.timeout',
   NOT_FOUND: 'runtime.not_found',
   ALREADY_EXISTS: 'runtime.already_exists',
+  SESSION_MISMATCH: 'runtime.session_mismatch',
 } as const;
 
 /** Helper to construct a {@link RuntimeError} with a known error code. */
@@ -139,6 +140,10 @@ export type RuntimeStartupObservation =
   | { kind: 'queued'; registeredAt?: Date }
   | { kind: 'placed'; placedAt: Date; allocationId: string; nodeId?: string };
 
+export interface RuntimeStopOptions {
+  sessionId?: string;
+}
+
 // ── The Port ────────────────────────────────────────────────────────────────
 
 import type { Result } from '../result.js';
@@ -158,8 +163,12 @@ export interface RuntimePort {
   /** Launch a new agent runtime. Returns a handle for tracking. */
   launch(config: RuntimeLaunchConfig): Promise<Result<RuntimeHandle, RuntimeError>>;
 
-  /** Gracefully stop a runtime by its scheduler-assigned ID. */
-  stop(runtimeId: string): Promise<Result<void, RuntimeError>>;
+  /**
+   * Gracefully stop a runtime by its scheduler-assigned ID. When `sessionId` is
+   * given, adapters that key runtimes by a stable ID (Nomad job per agent) must
+   * refuse with SESSION_MISMATCH if the live runtime belongs to another session.
+   */
+  stop(runtimeId: string, options?: RuntimeStopOptions): Promise<Result<void, RuntimeError>>;
 
   /** Forcefully kill a runtime (no grace period). */
   kill(runtimeId: string): Promise<Result<void, RuntimeError>>;

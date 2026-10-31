@@ -424,6 +424,7 @@ const agentRuntimeLauncher = await (async () => {
       envConfig,
       documentsRepo,
       documentStore,
+      capacityAwareStartEnabled: appConfig.worker.agents.capacityAwareStart.enabled,
       // Document materialization is skipped for Nomad — remote nodes
       // don't expose a Docker putArchive API from the worker.
     });
@@ -756,6 +757,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   healthCheckIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
   budgets: appConfig.agentRuntime.defaultBudgets,
   streamSubscribe: async (agentId: string) => agentStreamSubscribeFn?.(agentId),
+  capacityAwareStartEnabled: appConfig.worker.agents.capacityAwareStart.enabled,
   onAgentStatusChange: (agentId, userId, status) => {
     userEventPublisher.publishAgentStatus(userId, agentId, status as 'starting' | 'active' | 'stopped' | 'crashed').catch((err) => {
       logger.error({ err, agentId }, 'Failed to publish agent status event');
@@ -890,6 +892,7 @@ const agentHealthMonitor = new AgentHealthMonitor(
       agentActorLifecycle.stop(agentId, 'terminal_cleanup', sessionId),
     checkIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
     startTimeoutMs: appConfig.worker.agents.startTimeoutMs,
+    capacityAwareStart: appConfig.worker.agents.capacityAwareStart,
   },
   agentRuntimeLauncher,
 );

@@ -6,6 +6,7 @@ import type {
   RuntimePort,
   RuntimeResourceProfile,
   RuntimeStartupObservation,
+  RuntimeStopOptions,
   DocumentStore,
   RuntimeDocumentMaterializer,
   RuntimeError,
@@ -166,6 +167,12 @@ export interface AgentRuntimeLauncherConfig {
    * When absent, document materialization is skipped.
    */
   documentMaterializer?: RuntimeDocumentMaterializer;
+  /**
+   * P6 gate (worker.agents.capacityAwareStart.enabled). When true and the port observes
+   * startup, stop() passes the session ID so the adapter can refuse to purge another session's job.
+   * When false, stop() calls the port exactly as before P6.
+   */
+  capacityAwareStartEnabled?: boolean;
 }
 
 // ── Launcher ────────────────────────────────────────────────────────────────
@@ -205,8 +212,10 @@ export class AgentRuntimeLauncher {
   private readonly documentsRepo?: AgentDocumentsRepository;
   private readonly documentStore?: DocumentStore;
   private readonly documentMaterializer?: RuntimeDocumentMaterializer;
+  private readonly capacityAwareStartEnabled: boolean;
 
   constructor(config?: AgentRuntimeLauncherConfig) {
+    this.capacityAwareStartEnabled = config?.capacityAwareStartEnabled === true;
     this.redis = config?.redis;
     this.streamKeyPrefix = config?.streamKeyPrefix ?? 'agent:inbound:';
     this.heartbeatIntervalMs = config?.heartbeatIntervalMs ?? 5_000;
@@ -631,9 +640,9 @@ export class AgentRuntimeLauncher {
           return;
         }
         if (session) {
-          const result = await this.port.stop(session.agentId);
+          const result = await this.port.stop(session.agentId, ...this.stopOptionsFor(sessionId));
           if (!result.ok) {
-            logger.warn({ error: result.error, sessionId }, 'Failed to stop agent runtime with missing handle');
+            this.logStopFailure(result.error, sessionId, 'Failed to stop agent runtime with missing handle');
           } else {
             logger.info({ sessionId, agentId: session.agentId }, 'Agent runtime stopped (handle was missing, stopped by agentId)');
           }
@@ -648,13 +657,30 @@ export class AgentRuntimeLauncher {
       this.heartbeatTimers.delete(sessionId);
     }
 
-    const result = await this.port.stop(handle.containerId);
+    const result = await this.port.stop(handle.containerId, ...this.stopOptionsFor(sessionId));
     if (!result.ok) {
-      logger.warn({ error: result.error, sessionId }, 'Port stop returned error');
+      this.logStopFailure(result.error, sessionId, 'Port stop returned error');
     }
 
     this.runtimes.delete(sessionId);
     logger.info({ sessionId, containerId: handle.containerId }, 'Agent runtime stopped');
+  }
+
+  /**
+   * Extra port arguments for a session-scoped stop. Empty (legacy single-argument call) unless the
+   * P6 gate is on and the port observes startup, so gate-off stops issue the same port calls as before P6.
+   */
+  private stopOptionsFor(sessionId: string): [RuntimeStopOptions] | [] {
+    return this.capacityAwareStartEnabled && this.supportsStartupObservation() ? [{ sessionId }] : [];
+  }
+
+  private logStopFailure(error: RuntimeError, sessionId: string, message: string): void {
+    if (error.code === RUNTIME_ERROR_CODES.SESSION_MISMATCH) {
+      // The scheduler job now belongs to a newer session; this session's runtime is already gone.
+      logger.info({ sessionId }, 'Skipped runtime purge: scheduler job belongs to another session');
+      return;
+    }
+    logger.warn({ error, sessionId }, message);
   }
 
   /**
@@ -690,6 +716,10 @@ export class AgentRuntimeLauncher {
    * Observe scheduler startup state for a runtime. Adapters without support return
    * INSPECT_FAILED, so callers never mistake an unsupported runtime for queued demand.
    */
+  supportsStartupObservation(): boolean {
+    return typeof this.port.observeStartup === 'function';
+  }
+
   async observeStartup(runtimeId: string, sessionId: string): Promise<Result<RuntimeStartupObservation, RuntimeError>> {
     if (!this.port.observeStartup) {
       return err(runtimeError(RUNTIME_ERROR_CODES.INSPECT_FAILED, 'Runtime does not support startup observation'));

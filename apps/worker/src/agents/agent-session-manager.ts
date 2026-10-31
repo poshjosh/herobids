@@ -24,6 +24,14 @@ import { createLogger } from '../logger.js';
 import { cleanupEphemeralAgentRedisState } from './agent-ephemeral-redis-cleanup.js';
 import { isCrashLaunchBlocked, recordCrashEvent, shouldFireCrashLoopAlert } from './agent-crash-loop-guard.js';
 import type { CrashLoopGuardConfig } from './agent-crash-loop-guard.js';
+import type { StartupDeadlineReason } from './agent-startup-deadlines.js';
+
+const STARTUP_EXPIRY_MESSAGES: Record<StartupDeadlineReason, string> = {
+  start_timeout: 'Agent runtime failed to start — the runtime did not connect within the expected window.',
+  queue_deadline: 'Agent runtime was not placed on capacity before the capacity wait expired.',
+  boot_deadline: 'Agent runtime was placed on capacity but did not connect before the boot window expired.',
+  observation_failure: 'Agent runtime startup could not be confirmed with the scheduler before the startup deadline.',
+};
 
 const logger = createLogger('agent-session-manager');
 
@@ -48,6 +56,8 @@ export interface AgentSessionManagerConfig {
    * monitor's startup timeout fires and stops the agent.
    */
   streamSubscribe?: (agentId: string) => Promise<void>;
+  /** P6: record scheduler registration after launch and honour stop requests during launch. */
+  capacityAwareStartEnabled?: boolean;
   /**
    * Called when an agent's status changes (best-effort, non-blocking).
    * Used to publish real-time UI events to the user's event channel.
@@ -547,6 +557,17 @@ export class AgentSessionManager {
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
           agentApiKey,
         });
+        if (this.isCapacityAwareStartEnabled()) {
+          const registered = await this.agentRepo.markRuntimeRegistered(session.id, new Date());
+          if (!registered) {
+            // A stop that landed during a slow launch must not be resurrected; reclaim the job we just submitted.
+            const current = await this.agentRepo.getSession(session.id);
+            if (current && (current.status === 'stopped' || current.status === 'crashed')) {
+              await this.runtimeLauncher.stop(session.id);
+              continue;
+            }
+          }
+        }
         await this.agentRepo.updateAgent(session.agentId, { lastStartRefusal: null }).catch((clearErr: unknown) => {
           logger.warn({ clearErr, agentId: session.agentId }, 'Failed to clear last start refusal after launch');
         });
@@ -965,29 +986,89 @@ export class AgentSessionManager {
       return;
     }
 
+    await this.finishStartupExpiry(session.agentId, sessionId, 'start_timeout');
+  }
+
+  /** P6: whether capacity-aware startup is active for this manager (gate on and Nomad-style observation). */
+  isCapacityAwareStartEnabled(): boolean {
+    return this.config.capacityAwareStartEnabled === true && this.runtimeLauncher.supportsStartupObservation();
+  }
+
+  /** P6: record scheduler registration. NULL-only and stop-aware in the repository. */
+  async recordRuntimeRegistered(sessionId: string, registeredAt: Date): Promise<void> {
+    await this.readyPromise;
+    const recorded = await this.agentRepo.markRuntimeRegistered(sessionId, registeredAt);
+    if (recorded) {
+      logger.info({ sessionId, registeredAt }, 'Agent runtime registered with scheduler');
+    }
+  }
+
+  /** P6: record the earliest observed placement. Monotonic in the repository. */
+  async recordFirstPlacement(sessionId: string, placedAt: Date, allocationId: string): Promise<void> {
+    await this.readyPromise;
+    const recorded = await this.agentRepo.recordFirstPlacement(sessionId, placedAt, allocationId);
+    if (recorded) {
+      logger.info({ sessionId, placedAt, allocationId }, 'Agent runtime first placement recorded');
+    }
+  }
+
+  /**
+   * P6: expire a launching session whose startup deadline passed. The claim only succeeds while the
+   * session still has the status and startup facts the deadline was computed from. Returns false when
+   * the claim lost a race (stop, heartbeat, or placement), so the caller must re-evaluate.
+   */
+  async expireStartupDeadline(
+    agentId: string,
+    sessionId: string,
+    expected: {
+      status: 'launching';
+      runtimeRegisteredAt: Date | null;
+      firstPlacedAt: Date | null;
+    },
+    reason: StartupDeadlineReason,
+  ): Promise<boolean> {
+    await this.readyPromise;
+    const expired = await this.agentRepo.expireStartingSession(sessionId, new Date(), expected);
+    if (!expired) {
+      return false;
+    }
+    await this.finishStartupExpiry(agentId, sessionId, reason);
+    return true;
+  }
+
+  /** Shared tail for a claimed startup expiry: stop the runtime, persist agent state, and notify. */
+  private async finishStartupExpiry(agentId: string, sessionId: string, reason: StartupDeadlineReason): Promise<void> {
     await this.runtimeLauncher.stop(sessionId);
-    await this.agentRepo.updateAgent(session.agentId, { status: 'stopped' });
+    await this.agentRepo.updateAgent(agentId, { status: 'stopped' });
 
     // Clean up ephemeral runtime keys (do NOT decrement agent:sessions:count —
     // a timed-out session may never have reached first-boot heartbeat).
     if (this.redis) {
-      await cleanupEphemeralAgentRedisState(this.redis, session.agentId);
+      await cleanupEphemeralAgentRedisState(this.redis, agentId);
     }
 
-    logger.warn({ sessionId, agentId: session.agentId }, 'Agent session start timed out');
+    logger.warn({ sessionId, agentId, reason }, 'Agent session start timed out');
     // Notify real-time event stream (best-effort)
     if (this.config.onAgentStatusChange) {
-      const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
+      const agent = await this.agentRepo.getAgent(agentId).catch(() => null);
       if (agent) {
         // Start-timeout persists 'stopped' in the DB; emit the same status so UI is consistent.
-        this.config.onAgentStatusChange(session.agentId, agent.userId, 'stopped');
+        this.config.onAgentStatusChange(agentId, agent.userId, 'stopped');
       }
     }
 
+    if (reason !== 'start_timeout') {
+      await this.eventPublisher.emitGuardrailTriggered(agentId, {
+        scope: 'agent_guardrail',
+        code: `startup.${reason}`,
+        message: STARTUP_EXPIRY_MESSAGES[reason],
+      });
+    }
+
     this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, {
-      agentId: session.agentId,
+      agentId,
       sessionId,
-      message: 'Agent runtime failed to start — the runtime did not connect within the expected window.',
+      message: STARTUP_EXPIRY_MESSAGES[reason],
     }).catch((err: unknown) => logger.warn({ err }, 'Failed to send platform start-timeout alert'));
   }
 
