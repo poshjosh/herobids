@@ -83,13 +83,82 @@ write_files:
         http = "__PRIVATE_IP__"
       }
 
+  # Hetzner attaches the private network after the server is created, so the
+  # NIC can be missing on first boot. This script reads the NIC MAC and address
+  # from metadata and writes netplan, so the private IP exists on every boot.
+  - path: /usr/local/sbin/herobids-private-net.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      META=http://169.254.169.254/hetzner/v1/metadata/private-networks
+      DATA=""
+      for _ in $(seq 1 60); do
+        DATA="$(curl -fsS -m 5 "$META" 2>/dev/null || true)"
+        if echo "$DATA" | grep -q mac_address; then break; fi
+        sleep 5
+      done
+      if ! echo "$DATA" | grep -q mac_address; then
+        echo "herobids-private-net: no private network in metadata" >&2
+        exit 1
+      fi
+      MAC="$(echo "$DATA" | awk '/mac_address:/{print $2; exit}')"
+      IP="$(echo "$DATA" | awk '/^- ip:/{print $3; exit}')"
+      NET="$(echo "$DATA" | awk '/^  network:/{print $2; exit}')"
+      GW="$(echo "$DATA" | awk '/^  gateway:/{print $2; exit}')"
+      PREFIX="$(echo "$DATA" | awk '/^  subnet:/{print $2; exit}' | cut -d/ -f2)"
+      cat > /etc/netplan/60-herobids-private.yaml <<EOF
+      network:
+        version: 2
+        ethernets:
+          herobids-private:
+            match:
+              macaddress: "$MAC"
+            dhcp4: false
+            addresses:
+              - $IP/$PREFIX
+            routes:
+              - to: $NET
+                via: $GW
+      EOF
+      chmod 600 /etc/netplan/60-herobids-private.yaml
+      netplan generate
+      netplan apply
+      for _ in $(seq 1 60); do
+        if ip -4 addr show | grep -q " $IP/"; then
+          echo "herobids-private-net: $IP configured on $MAC"
+          exit 0
+        fi
+        sleep 2
+      done
+      echo "herobids-private-net: $IP not configured on any interface" >&2
+      exit 1
+
+  - path: /etc/systemd/system/herobids-private-net.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Configure Hetzner private network NIC from metadata
+      Wants=network-online.target
+      After=network-online.target
+      Before=nomad-private-ip.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      TimeoutStartSec=600
+      ExecStart=/usr/local/sbin/herobids-private-net.sh
+
+      [Install]
+      WantedBy=multi-user.target
+
   - path: /etc/systemd/system/nomad-private-ip.service
     permissions: '0644'
     content: |
       [Unit]
       Description=Resolve Hetzner private IP and patch Nomad advertise before start
-      Wants=network-online.target
-      After=network-online.target
+      Wants=network-online.target herobids-private-net.service
+      After=network-online.target herobids-private-net.service
 
       [Service]
       Type=oneshot
@@ -398,11 +467,13 @@ runcmd:
   # The private-network IP substitution is handled by the per-boot
   # nomad-private-ip.service (ExecStartPre dependency), NOT by this one-shot
   # runcmd step — cloud-init runcmd runs only on first boot, and the NIC is
-  # not always up by then. The unit re-resolves on every boot, so a reboot
-  # (or late-attached NIC) self-heals without manual sed.
+  # not always up by then. herobids-private-net.service configures the NIC
+  # from metadata on every boot, before nomad-private-ip.service runs.
   - systemctl daemon-reload
+  - systemctl enable herobids-private-net.service
   - systemctl enable nomad-private-ip.service
   - systemctl enable nomad
+  - systemctl start herobids-private-net.service || true
   - systemctl start nomad-private-ip.service || true
   - systemctl start nomad
 
