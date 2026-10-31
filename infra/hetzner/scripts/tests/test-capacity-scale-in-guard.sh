@@ -562,6 +562,26 @@ WRITE_LINE="$(grep -n 'write_node_count "${NEW_COUNT}"' "${SCALE_IN}" | head -1 
 assert_success "the state sync runs after the scale-in apply" test -n "${SYNC_LINE}" -a -n "${APPLY_LINE}" -a "${SYNC_LINE:-0}" -gt "${APPLY_LINE:-0}"
 assert_success "the state sync runs before the node count is written" test -n "${WRITE_LINE}" -a "${SYNC_LINE:-0}" -lt "${WRITE_LINE:-0}"
 
+# Remaining-slot arithmetic (plan P9-d). Two nodes, one drained; slots are the smaller of
+# free memory and free CPU over one 256/256 agent reservation.
+SLOT_BINS='{"ready_nodes":2,"free_slots":0,"bins":[{"id":"cand","kind":"actual","free_memory_mb":3584,"free_cpu_mhz":3800},{"id":"keep","kind":"actual","free_memory_mb":3000,"free_cpu_mhz":3000}]}'
+assert_eq "$(scale_in_remaining_slots '["cand"]' "${SLOT_BINS}" 256 256)" "11" "remaining node with room gives its own slot count"
+assert_eq "$(scale_in_remaining_slots '["keep"]' "${SLOT_BINS}" 256 256)" "14" "the drained node's own bin is excluded, not the other"
+assert_eq "$(scale_in_remaining_slots '["cand"]' '{"bins":[{"id":"cand","free_memory_mb":0,"free_cpu_mhz":0},{"id":"keep","free_memory_mb":300,"free_cpu_mhz":4000}]}' 256 256)" "1" "a nearly full remaining node counts one slot"
+assert_eq "$(scale_in_remaining_slots '["cand"]' '{"bins":[{"id":"cand","free_memory_mb":0,"free_cpu_mhz":0},{"id":"keep","free_memory_mb":3000,"free_cpu_mhz":500}]}' 256 256)" "1" "CPU-bound remaining node is limited by CPU"
+assert_eq "$(scale_in_remaining_slots '["cand"]' '{"bins":[{"id":"cand","free_memory_mb":800,"free_cpu_mhz":800}]}' 256 256)" "0" "no remaining node gives zero slots"
+assert_eq "$(scale_in_remaining_slots '["cand"]' '{"bins":[{"id":"cand","free_memory_mb":800,"free_cpu_mhz":800},{"id":"keep","free_memory_mb":800,"free_cpu_mhz":800}]}' 256 256)" "3" "exactly the scale-out threshold of three slots is reported as three"
+
+REFUSE_LINE="$(grep -n 'scale_in_remaining_slots "' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+DRY_LINE="$(grep -n 'Dry-run exit' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+DRAIN_LINE="$(grep -n 'Processing node' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+assert_success "the remaining-slot check runs before the dry-run exit" test -n "${REFUSE_LINE}" -a -n "${DRY_LINE}" -a "${REFUSE_LINE:-0}" -lt "${DRY_LINE:-0}"
+assert_success "the remaining-slot check runs before any node is drained" test -n "${DRAIN_LINE}" -a "${REFUSE_LINE:-0}" -lt "${DRAIN_LINE:-0}"
+
+COOLDOWN_LINE="$(grep -n '^  if ! touch_cooldown' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+assert_success "scale-in records the scale-out cooldown after the apply" test -n "${COOLDOWN_LINE}" -a -n "${APPLY_LINE}" -a "${COOLDOWN_LINE:-0}" -gt "${APPLY_LINE:-0}"
+assert_success "the cooldown is recorded before the state sync" test -n "${COOLDOWN_LINE}" -a "${COOLDOWN_LINE:-0}" -lt "${SYNC_LINE:-0}"
+
 test_end || SUITE_FAILED=1
 
 echo ""

@@ -381,6 +381,25 @@ scale_in_clear_deferrals
 log "Nodes to drain this run: ${RUN_LEN} (suffixes ${CURRENT_COUNT} down to $(( CURRENT_COUNT - RUN_LEN + 1 )))."
 log "Max to drain:     ${NOMAD_SCALE_IN_MAX_NODES_PER_RUN}"
 
+# ─── Remaining capacity must clear the scale-out threshold ────────────────────
+# Scale-out adds a node when free slots fall below NOMAD_SCALE_OUT_SLOT_THRESHOLD. A scale-in
+# that leaves less than that is reversed by the next scale-out tick, so it is refused here.
+DRAIN_IDS_JSON="$(printf '%s\n' "${CAND_ID[@]:0:${RUN_LEN}}" | jq -R . | jq -sc .)"
+if ! BINS_OUT="$("${SCRIPT_DIR}/check-nomad-capacity.sh" --bins-json)"; then
+  die "Could not read Nomad capacity before scale-in. Scale-in refused, nothing deleted." 1
+fi
+REMAINING_SLOTS="$(scale_in_remaining_slots "${DRAIN_IDS_JSON}" "${BINS_OUT}" \
+  "${NOMAD_AGENT_MEMORY_RESERVATION_MB}" "${NOMAD_AGENT_CPU_RESERVATION_MHZ}")" \
+  || die "Could not compute remaining slots before scale-in. Scale-in refused, nothing deleted." 1
+if ! [[ "${REMAINING_SLOTS}" =~ ^[0-9]+$ ]]; then
+  die "Remaining slot count was not a number (${REMAINING_SLOTS}). Scale-in refused, nothing deleted." 1
+fi
+if [[ "${REMAINING_SLOTS}" -lt "${NOMAD_SCALE_OUT_SLOT_THRESHOLD}" ]]; then
+  log "Scale-in deferred: the remaining nodes would have ${REMAINING_SLOTS} free slot(s), below the scale-out threshold of ${NOMAD_SCALE_OUT_SLOT_THRESHOLD}. The next scale-out would add a node back. Nothing deleted."
+  exit 0
+fi
+log "Free slots left after removal: ${REMAINING_SLOTS} (scale-out threshold: ${NOMAD_SCALE_OUT_SLOT_THRESHOLD})."
+
 
 # ─── Dry-run exit (no lock taken, no Terraform calls) ─────────────────────────
 
@@ -546,6 +565,12 @@ if tf_apply_plan "${plan_file}"; then
   log "=== Scale-in successful ==="
   log "  Agent nodes: ${CURRENT_COUNT} → ${NEW_COUNT}"
   log "  Removed:      ${#DRAIN_OK[@]} node(s)"
+
+  # Start the cooldown now, so the scale-out timer does not re-add the node straight away.
+  # The nodes are already gone, so a failure to write the timestamp is only a warning.
+  if ! touch_cooldown; then
+    log "WARNING: could not record the scale-out cooldown. Check ${NOMAD_AUTOSCALE_COOLDOWN_FILE} before relying on it."
+  fi
 
   # The nodes are already destroyed, so a failure here cannot be rolled back.
   # Stop and say what to check; the failure counter is left as it was.

@@ -117,3 +117,30 @@ Also observed: `nomad-scale-in.service` has `ENABLE_SCALE_IN=true`. The roadmap 
 - **Stale count in the server's tfvars (found, fixed).** Staging's `/opt/herobids/infra/hetzner/staging.tfvars` said `agent_node_count = 1` while two agents ran. A manual `terraform apply -var-file` would have planned to remove the second agent. Permanent fix in `0147f9e5`: scale-out and scale-in record the applied count in the tfvars file after each successful apply (`sync_tfvars_node_count`). Deployed. Approved one-time correction on the server: the line changed from 1 to 2, backup `/root/backups/staging.tfvars-20261031T203558Z`, mode 0600. No Terraform run, no state or node change.
 - **Verification.** Read-only refresh-only plan on staging: "No changes". Shell suites for the scale-in guard, tfvars sync, settings renderer, and converge all pass.
 - **Not yet proven.** The firewall sync and the tfvars sync have not run after a real scale-in. The next scale-in on staging is the proof.
+
+## Scale-in proof attempt and reversal (2026-10-31, night)
+
+This record covers what happened, not a decision.
+
+- **Stopped session.** The security-auditor session `e193f8e7` was on `-agent-2`. It blocked the drain for about 8 minutes. On your instruction it was stopped: Nomad job `agent-11d3ec90-…` was deleted (eval `1bb6783c`), and the DB session was set to `stopped`. Its work was lost.
+- **Demand-off window.** `NOMAD_AUTOSCALE_DEMAND_ENABLED` was set to `false` in `/etc/herobids/autoscale-settings.input` (backup `/root/backups/autoscale-settings.input-20261031T210704Z`) and converged, so scale-in could run.
+- **Dry run (21:09).** Selected suffix 2, plan 2 to 1, no changes.
+- **Real scale-in, first run (21:09).** Refused with a Terraform state lock error (`Who root@herobids-staging`). No process held the lock, and I did not force-unlock. Nothing changed.
+- **Real scale-in, second run (21:10).** Exit 0. Drained `1d7ddf75`, destroyed Hetzner 173827316 (old agent-2), logged "Terraform state synced (agent firewall record)" and "Recorded agent_node_count=1".
+- **Reversal (21:10:49Z).** The legacy scale-out saw one node at 94% memory and 0 free slots. Demand was off, so it ran with no cooldown. It created Hetzner 173843852 (new agent-2, 10.0.0.3) and recorded `agent_node_count=2` at 21:11:21. The cluster ended at 2 nodes, and the scale-in did not hold.
+- **Root cause (two gaps).**
+  1. `scale-in.sh` does not check that the remaining nodes can carry current allocations.
+  2. `scale-out.sh` has no cooldown against a scale-in that just finished. Scale-in and scale-out share the lock, but the next timer tick ran two seconds after the lock was released.
+  Scale-in also refuses to run while demand mode is on, so the proof can only run with demand off, which re-triggers the legacy scale-out.
+- **Restored.** Demand mode was set back to `true` in `/etc/herobids/autoscale-settings.input` (timestamped copy `/root/backups/autoscale-settings.input-restore-*`) and converged, exit 0. The autoscale log now shows the demand-aware path and a cooldown after the scale-out.
+- **Stale node purged.** Nomad `1d7ddf75` (down, ineligible, server gone) was purged with `POST /v1/node/<uuid>/purge`, HTTP 200.
+- **Replacement joined.** Nomad `61a04027` (`herobids-staging-agent-2`, 10.0.0.3) is ready and eligible. Nomad now lists agent-2 and agent-3 (`714f26cc`, 10.0.0.5).
+- **Not proven.** The firewall and tfvars syncs still have not been proven on a real scale-in. The refresh-only plan has not been re-run since the replacement.
+- **Stopped-session cleanup.** Nothing was done to the 8 stopped operator agents or the Oso agent.
+
+### Code fixes for the two gaps (2026-10-31, night, uncommitted)
+
+- **Gap 1, remaining capacity.** `scale-in.sh` now reads the Nomad snapshot (`check-nomad-capacity.sh --bins-json`) and counts the free slots the remaining nodes would have. If that is below `NOMAD_SCALE_OUT_SLOT_THRESHOLD` (default 3), it logs "Scale-in deferred" and exits 0 with nothing deleted. The check runs before the dry-run exit and before any drain. The count is `scale_in_remaining_slots` in `scale-in-guard.sh`.
+- **Gap 2, cooldown.** After a successful scale-in apply, `scale-in.sh` writes the scale-out cooldown stamp (`touch_cooldown`), before the state sync. A failure to write it only logs a warning.
+- **Tests.** `test-capacity-scale-in-guard.sh` (19 pass: slot arithmetic and ordering). `test-capacity-readonly.sh` (its `check-nomad-capacity.sh` stub now answers `--bins-json`; new case: a scale-in with no remaining capacity defers and changes nothing). Full `run-all.sh` passes with zero failures.
+- **Not done.** The fixes are not deployed to staging and not committed. The 2 to 1 proof has not been re-run. Unverified: whether the demand controller honours the cooldown.

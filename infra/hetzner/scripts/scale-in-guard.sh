@@ -14,6 +14,8 @@
 #   scale_in_new_count_ok C N MIN true only when MIN <= N < C.
 #   scale_in_names_unique         stdin: one name per line. Empty input is valid;
 #                                 an empty or repeated name fails.
+#   scale_in_remaining_slots      Free agent slots left on the ready nodes not being
+#                                 drained, from check-nomad-capacity --bins-json.
 
 # Terraform indices are 0-based; the server name suffix is index + 1 (main.tf).
 # Only count-based agent resources are allowed to change, and only as deletes.
@@ -77,6 +79,19 @@ scale_in_new_count_ok() {
 }
 
 # scale_in_names_unique — reads one name per line. Empty input is valid.
+# scale_in_remaining_slots DRAIN_IDS_JSON BINS_JSON MEM_RESERVATION_MB CPU_RESERVATION_MHZ
+#   Prints the scheduling slots left on the ready nodes that are not being drained.
+#   DRAIN_IDS_JSON is a JSON array of Nomad node IDs. BINS_JSON is the output of
+#   check-nomad-capacity.sh --bins-json. Each node's slots are the smaller of its
+#   free memory and free CPU divided by one agent reservation, as in capacity_node_slots.
+# shellcheck disable=SC2016  # the jq program is intentionally single-quoted
+scale_in_remaining_slots() {
+  jq -r --argjson drain "$1" --argjson m "$3" --argjson c "$4" \
+    '[.bins[] | select(.id as $id | ($drain | any(. == $id)) | not)
+      | ([(.free_memory_mb / $m | floor), (.free_cpu_mhz / $c | floor)] | min)] | add // 0' \
+    <<< "$2"
+}
+
 # scale_in_refresh_plan_ok — reads a refresh-only plan (terraform show -json) on
 # stdin. Passes only when nothing but the agent firewall record would change:
 # no resource action other than no-op/read, and no drift outside

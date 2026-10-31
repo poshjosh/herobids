@@ -103,6 +103,21 @@ chmod +x "${MOCK_BIN}/curl"
 cat > "${SCRIPTS_COPY}/check-nomad-capacity.sh" <<'EOF'
 #!/usr/bin/env bash
 echo "check-nomad-capacity $*" >> "${MOCK_LOG_DIR}/capacity-calls"
+if [[ "${1:-}" == "--bins-json" ]]; then
+  # Two ready nodes with room for many slots, or none when CAPACITY_BINS_MODE=tight.
+  if [[ "${CAPACITY_BINS_MODE:-ample}" == "tight" ]]; then
+    FREE_MEM=100; FREE_CPU=100
+  else
+    FREE_MEM=4096; FREE_CPU=4000
+  fi
+  jq -nc --argjson m "${FREE_MEM}" --argjson c "${FREE_CPU}" '{
+    ready_nodes: 2, free_slots: 0,
+    bins: [
+      {id: "00000000-0000-4000-8000-000000000001", kind: "agent", free_memory_mb: $m, free_cpu_mhz: $c},
+      {id: "00000000-0000-4000-8000-000000000002", kind: "agent", free_memory_mb: $m, free_cpu_mhz: $c}
+    ]}'
+  exit 0
+fi
 case "${CAPACITY_STUB_MODE:-scale}" in
   scale)    printf 'free_memory_mb=50\nfree_memory_pct=5\nfree_slots=0\nready_nodes=2\n' ;;
   no-ready) exit 2 ;;
@@ -159,6 +174,7 @@ run_script() {
     AWS_ACCESS_KEY_ID=synthetic-key-id \
     AWS_SECRET_ACCESS_KEY=synthetic-secret \
     CAPACITY_STUB_MODE="${STUB_MODE}" \
+    CAPACITY_BINS_MODE="${BINS_MODE:-ample}" \
     MOCK_LOG_DIR="${RUN}" \
     MOCK_NODES_FIXTURE="${MOCK_NODES_FIXTURE}" \
     "$@"
@@ -258,6 +274,25 @@ assert_eq "$(cat "${RUN}/mutation-calls")" "" "dry-run calls no terraform, hclou
 assert_eq "$(grep -cv '^GET ' "${RUN}/http-calls" || true)" "0" "dry-run makes no non-GET HTTP request"
 assert_contains "$(cat "${RUN}/http-calls")" "GET http://nomad.synthetic.invalid:4646/v1/nodes" \
   "dry-run reads the node list (read-only)"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Scale-in refusal: the remaining node cannot hold the scale-out threshold
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "capacity read-only: scale-in is deferred when remaining capacity is below the threshold"
+
+reset_run scalein-tight
+BEFORE="$(snapshot)"
+RC=0
+BINS_MODE=tight run_script bash "${SCRIPTS_COPY}/scale-in.sh" --dry-run > "${OUT}" 2>&1 || RC=$?
+
+assert_eq "${RC}" "0" "deferred scale-in exits 0"
+assert_contains "$(cat "${OUT}")" "Scale-in deferred" "refusal names the remaining-capacity reason"
+assert_eq "$(grep -c "Processing node\|\[DRY-RUN\] Would drain" "${OUT}" || true)" "0" "no node is selected for draining"
+assert_eq "$(snapshot)" "${BEFORE}" "deferred scale-in leaves every state file unchanged"
+assert_eq "$(cat "${RUN}/mutation-calls")" "" "deferred scale-in calls no terraform, hcloud or mail binary"
 
 test_end || SUITE_FAILED=1
 
