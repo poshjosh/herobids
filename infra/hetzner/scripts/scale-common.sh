@@ -122,6 +122,10 @@ validate_scale_numeric_env() {
   # nomad_scale_out_increment_max in variables.tf (1..2).
   if [ "${NOMAD_AUTOSCALE_DEMAND_ENABLED:-}" = "true" ]; then
     require_uint NOMAD_SCALE_OUT_INCREMENT_MAX "${NOMAD_SCALE_OUT_INCREMENT_MAX}" 1 2
+    # acquire_lock uses exec {fd}, which needs bash >= 4.1. Refuse here, before any side effect.
+    if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 1) )); then
+      die "NOMAD_AUTOSCALE_DEMAND_ENABLED=true needs bash >= 4.1 for the exec-fd lock; this shell is bash ${BASH_VERSION}." 2
+    fi
   fi
   require_uint NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS "${NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS}" 1 86400
   require_uint NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS "${NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS}" 1 100

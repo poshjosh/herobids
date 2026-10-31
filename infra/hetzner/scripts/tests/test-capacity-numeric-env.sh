@@ -39,10 +39,14 @@ test_end || SUITE_FAILED=1
 
 test_begin "numeric env: the demand batch cap is 2; the legacy increment keeps its HEAD bound"
 
-assert_eq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=true NOMAD_SCALE_OUT_INCREMENT_MAX=2 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
-  "demand increment max 2 is accepted"
-assert_eq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=true NOMAD_SCALE_OUT_INCREMENT_MAX=1 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
-  "demand increment max 1 is accepted"
+# Demand mode is refused below bash 4.1 (covered by the startup-guard test below), so the
+# demand-accepted range checks run only where demand mode can start.
+if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 1) )); then
+  assert_eq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=true NOMAD_SCALE_OUT_INCREMENT_MAX=2 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+    "demand increment max 2 is accepted"
+  assert_eq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=true NOMAD_SCALE_OUT_INCREMENT_MAX=1 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+    "demand increment max 1 is accepted"
+fi
 assert_neq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=true NOMAD_SCALE_OUT_INCREMENT_MAX=3 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
   "demand increment max 3 is refused in demand mode"
 assert_eq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=false NOMAD_SCALE_OUT_INCREMENT_MAX=5 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
@@ -107,6 +111,25 @@ assert_contains "${RESULT}" "NOMAD_SCALE_OUT_COOLDOWN_SECONDS='soon'" "scale-out
 
 RESULT="$(run_entry NOMAD_SCALE_IN_MAX_NODES_PER_RUN "11" scale-in.sh)"
 assert_eq "${RESULT%%|*}" "2" "scale-in.sh: refuses 11 nodes per run with exit 2"
+
+test_end || SUITE_FAILED=1
+
+# demand_startup_status — prints 0 when startup validation accepts demand mode, else the exit status.
+demand_startup_status() {
+  ( NOMAD_AUTOSCALE_DEMAND_ENABLED=true validate_scale_numeric_env ) >/dev/null 2>&1 && echo 0 || echo $?
+}
+
+test_begin "numeric env: demand mode is refused at startup on bash < 4.1 (exec-fd lock)"
+
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 1) )); then
+  assert_eq "$(demand_startup_status)" "2" "bash ${BASH_VERSION}: demand mode exits 2 before any side effect"
+  assert_contains "$( (NOMAD_AUTOSCALE_DEMAND_ENABLED=true validate_scale_numeric_env) 2>&1 || true)" \
+    "needs bash >= 4.1" "bash ${BASH_VERSION}: the refusal names the requirement"
+else
+  assert_eq "$(demand_startup_status)" "0" "bash ${BASH_VERSION}: the guard does not refuse demand mode"
+fi
+assert_eq "$( (validate_scale_numeric_env) >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+  "legacy mode (demand off) is accepted on every bash version"
 
 test_end || SUITE_FAILED=1
 
