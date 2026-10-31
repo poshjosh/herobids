@@ -1,0 +1,71 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/evaluations shape. UNVERIFIED against live Nomad 1.9.7 (no live capture in scope A). One job per demand class: capacity_blocked (memory and CPU exhaustion), not_capacity_remediable (template mismatch, larger than template, quota, every node filtered), unclassified (unrecognised dimension), already_assigned (nothing queued).",
+  "asks": [
+    {"namespace": "herobids-agents", "jobId": "job-memory", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-cpu", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-mismatch", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": false},
+    {"namespace": "herobids-agents", "jobId": "job-too-large", "taskGroup": "agent", "memory_mb": 8192, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-quota", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-filtered", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-disk", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-assigned", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true}
+  ],
+  "evaluations": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c1", "Namespace": "herobids-agents", "JobID": "job-memory",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "BlockedEval": "00000000-0000-4000-8000-0000000000c9",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": {"NodesEvaluated": 3, "NodesFiltered": 0, "NodesExhausted": 3, "ClassExhausted": null, "DimensionExhausted": {"memory": 3}, "QuotaExhausted": null}},
+      "ModifyIndex": 10
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c2", "Namespace": "herobids-agents", "JobID": "job-cpu",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": {"NodesEvaluated": 3, "NodesFiltered": 0, "NodesExhausted": 2, "ClassExhausted": null, "DimensionExhausted": {"cpu": 2}, "QuotaExhausted": null}},
+      "ModifyIndex": 11
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c3", "Namespace": "herobids-agents", "JobID": "job-mismatch",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": {"NodesEvaluated": 3, "NodesFiltered": 3, "NodesExhausted": 0, "ClassFiltered": {"general": 3}, "DimensionExhausted": null, "QuotaExhausted": null}},
+      "ModifyIndex": 12
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c4", "Namespace": "herobids-agents", "JobID": "job-too-large",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": {"NodesEvaluated": 3, "NodesFiltered": 0, "NodesExhausted": 3, "DimensionExhausted": {"memory": 3}, "QuotaExhausted": null}},
+      "ModifyIndex": 13
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c5", "Namespace": "herobids-agents", "JobID": "job-quota",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": {"NodesEvaluated": 0, "NodesFiltered": 0, "NodesExhausted": 0, "DimensionExhausted": null, "QuotaExhausted": ["cpu"]}},
+      "ModifyIndex": 14
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c6", "Namespace": "herobids-agents", "JobID": "job-filtered",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": {"NodesEvaluated": 3, "NodesFiltered": 3, "NodesExhausted": 0, "ConstraintFiltered": {"${node.class} = gpu": 3}, "DimensionExhausted": null, "QuotaExhausted": null}},
+      "ModifyIndex": 15
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c7", "Namespace": "herobids-agents", "JobID": "job-disk",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": {"NodesEvaluated": 3, "NodesFiltered": 0, "NodesExhausted": 2, "DimensionExhausted": {"disk": 2}, "QuotaExhausted": null}},
+      "ModifyIndex": 16
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c8", "Namespace": "herobids-agents", "JobID": "job-assigned",
+      "Status": "complete", "StatusDescription": "",
+      "QueuedAllocations": {"agent": 0},
+      "ModifyIndex": 17
+    }
+  ]
+}

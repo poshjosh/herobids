@@ -1,0 +1,33 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/node/{id} and /v1/node/{id}/allocations shapes. UNVERIFIED against live Nomad 1.9.7 (no live capture in scope A). Covers: a running agent (current AllocatedResources shape), an assigned agent still pending (counts as occupying), a running Browserless reservation in the default namespace (non-agent, counts), a running legacy-shape agent with no AllocatedResources (Resources.Memory and Resources.Cpu fallback), and a reserved-memory figure. Expected allocated 2304 MB and 1280 MHz; free 1536 MB and 2720 MHz.",
+  "node": {
+    "ID": "00000000-0000-4000-8000-000000000031", "Name": "agent-pend-1", "Datacenter": "dc1",
+    "NodeClass": "agent", "Status": "ready", "SchedulingEligibility": "eligible", "Drain": false,
+    "Meta": {"node_pool": "agent"},
+    "NodeResources": {"Cpu": {"CpuShares": 4000}, "Memory": {"MemoryMB": 4096}},
+    "ReservedResources": {"Cpu": {"CpuShares": 0}, "Memory": {"MemoryMB": 256}}
+  },
+  "allocations": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000b1", "Namespace": "herobids-agents", "JobID": "agent-pend-a",
+      "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "running",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 256}, "Memory": {"MemoryMB": 512}}}}
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000b2", "Namespace": "herobids-agents", "JobID": "agent-pend-b",
+      "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "pending",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 256}, "Memory": {"MemoryMB": 512}}}}
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000b3", "Namespace": "default", "JobID": "browserless",
+      "TaskGroup": "browserless", "DesiredStatus": "run", "ClientStatus": "running",
+      "AllocatedResources": {"Tasks": {"browserless": {"Cpu": {"CpuShares": 512}, "Memory": {"MemoryMB": 1024}}}}
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000b4", "Namespace": "herobids-agents", "JobID": "agent-pend-legacy",
+      "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "running",
+      "AllocatedResources": null,
+      "Resources": {"Cpu": {"CpuShares": 256}, "Memory": {"MemoryMB": 256}}
+    }
+  ]
+}

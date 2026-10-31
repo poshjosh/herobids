@@ -117,6 +117,32 @@ and no calls to Hetzner, Nomad, or Terraform backends):
 - The autoscale dry-run and maintenance restart scripts were not run.
 - Baseline phase timings were not measured.
 
+## P3 demand and per-node fit fixtures (UNVERIFIED)
+
+Added for `capacity-demand.sh` and its suite `test-capacity-demand.sh`. All of these are SYNTHETIC
+and UNVERIFIED against live Nomad 1.9.7. No live capture was taken in scope A. Before P4 relies on
+any of these shapes, check them against the owner's sanitized staging capture.
+
+- `demand-namespace-evaluations.json`: `herobids-agents` evaluations, with a default-namespace job
+  that must be ignored, and three evaluations for one task group that must count once.
+- `demand-classes.json`: one job per demand class, covering memory and CPU exhaustion, template
+  mismatch, larger than template, quota, every node filtered, an unknown dimension, and nothing queued.
+- `demand-diagnostics-missing.json`: nil, empty and null `FailedTGAllocs`, and a BlockedEval-only job.
+  All must classify as unclassified.
+- `demand-canceled-newest.json`: SYNTHETIC and UNVERIFIED. A live blocked evaluation with a lower
+  ModifyIndex than a newer canceled evaluation of the same job, which must still produce a row. A
+  job with only a canceled evaluation must produce no row.
+- `node-fragmentation.json`: two nodes, each with 400 MB free. The total is 800 MB, but no single node
+  fits a 512 MB slot.
+- `node-cpu-shortage.json`: spare RAM with only 400 MHz free.
+- `node-assigned-pending.json`: running, assigned-pending, non-agent and legacy-shape allocations, with
+  reserved memory.
+- `node-terminal.json`: complete, failed and lost allocations, which must hold no capacity.
+
+Assumed shapes that are unverified: `FailedTGAllocs` keys (`DimensionExhausted`, `NodesExhausted`,
+`NodesFiltered`, `QuotaExhausted`), `NodeResources.Cpu.CpuShares`, `ReservedResources`, and the
+`AllocatedResources.Tasks` and legacy `Resources` allocation fields.
+
 ## Not covered (deferred)
 
 - Demand fit and the eval-driven controller (P3 and P4). These fixtures do not exercise them.

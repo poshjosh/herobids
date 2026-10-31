@@ -754,7 +754,7 @@ Stages describe dependencies, not mandatory separate services/files.
 | P0 | Re-read source/history, preserve memory fix, capture sanitized API fixtures and effective config; record baseline phase timings | None | Fixtures cover namespace, blocked diagnostics, assigned pending allocations, cloud inventory and node resources | DONE (local, scope A; live capture and phase timings outstanding) |
 | P1 | Define validated config, shared snapshot/decision contract, disabled gates and durable convergence renderer | P0 | Fresh-boot/convergence parity, invalid-input and stale-override tests | DONE (gates off; see Outstanding Issues) |
 | P2 | Implement reconciled managed inventory, durable state, in-flight/readiness accounting and read-only mode | P1 | Zero/stale-cache/down/unjoined/partial-apply/reboot tests; no mutation in dry-run | DONE (read-only; see Outstanding Issues) |
-| P3 | Correct demand collection, classification and per-node resource/fit calculations | P0, P1 | Real-shape namespace/diagnostic/dedup/fragmentation/CPU fixtures pass | PENDING |
+| P3 | Correct demand collection, classification and per-node resource/fit calculations | P0, P1 | Real-shape namespace/diagnostic/dedup/fragmentation/CPU fixtures pass | DONE (pure library and per-node fit; fixtures UNVERIFIED; see Outstanding Issues) |
 | P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests | PENDING |
 | P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved | PENDING |
 | P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | PENDING |
@@ -1112,3 +1112,19 @@ Review rounds 1–4 raised CRITICAL/HIGH findings that were fixed in rework. The
 - Security hygiene: a real-looking `hcloud_token` is present in a gitignored `*.tfvars` in the working tree. It was not printed. Rotate it if that file has ever been shared.
 - Pre-existing: `_ssh_opts.sh` aborts silently under pipefail when `ssh_public_key_path` is missing.
 - Residual: a transient orphan block can occur after scale-in destroy until the Nomad heartbeat timeout (fails closed).
+
+### P3 (demand fit)
+
+Review rounds 1–3 raised one CRITICAL and four HIGH findings in round 1, two HIGH in round 2, and none at HIGH+ in round 3. All were fixed in rework (canceled-representative order, missing Namespace refused, node-pool filter, planner range checks, array guard, node identity, integer figures, non-negative reservations, detail-object ready/eligible check). The items below are the remaining MEDIUM/LOW findings and deferrals.
+
+- MEDIUM (defer to P4): `ready == 0` maps to `capacity_blocked`, which could hide a dead cluster. P4 must cross-check the ready-node count against inventory.
+- MEDIUM (defer to P4): the controller does not yet supply asks. Classification is unusable until P4 sources them.
+- MEDIUM (defer to P4): in-flight scale-out bins are not subtracted from fit, so pending nodes can be double-counted until P4.
+- MEDIUM (product decision): `_CAPACITY_PLAN_FIT_JQ` first-fit is O(n²) (1000 items 0.07 s, 3000 items 0.40 s) with no total-items cap. Set the cap in P4.
+- MEDIUM (noted): each agent-class candidate costs one extra `GET /v1/node/<id>` per run. Fetch failures are fatal.
+- LOW: a canceled representative is excluded from representative selection but kept in `evaluation_ids` for audit.
+- LOW: `occupies` ignores `DesiredStatus`, so a pending allocation with desired `stop` still counts as occupying. Conservative; document in P4.
+- LOW: `unknown` allocation status counts as occupying. Conservative, unverified against Nomad 1.9.7.
+- LOW (pre-existing): `NOMAD_TOKEN` is passed in curl argv via `-H` in `scale-common.sh` `nomad_api`, visible to `ps`. Move to a curl config on stdin in a later hardening package.
+- Behaviour change: `check-nomad-capacity.sh` maps any invalid `NOMAD_SCALE_*` knob to exit 1, not 2. Exit 2 is reserved for a genuine zero-ready state.
+- Unverified against live systems: every fixture is SYNTHETIC/UNVERIFIED. Nomad 1.9.7 `FailedTGAllocs` keys, `NodeResources.Cpu.CpuShares`, `ReservedResources`, `AllocatedResources.Tasks` versus legacy `Resources`, `NodeClass` on `/v1/nodes` stubs, and the 256 MHz per-agent CPU reservation are assumptions.

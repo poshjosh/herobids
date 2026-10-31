@@ -1,0 +1,27 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/node/{id} and /v1/node/{id}/allocations shapes. UNVERIFIED against live Nomad 1.9.7 (no live capture in scope A). CPU shortage with spare RAM: 3712 MB free but only 400 MHz free, so a 512 MHz slot does not fit even though memory would allow seven.",
+  "node": {
+    "ID": "00000000-0000-4000-8000-000000000021", "Name": "agent-cpu-1", "Datacenter": "dc1",
+    "NodeClass": "agent", "Status": "ready", "SchedulingEligibility": "eligible", "Drain": false,
+    "Meta": {"node_pool": "agent"},
+    "NodeResources": {"Cpu": {"CpuShares": 4000}, "Memory": {"MemoryMB": 4096}},
+    "ReservedResources": {"Cpu": {"CpuShares": 0}, "Memory": {"MemoryMB": 0}}
+  },
+  "allocations": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000a1", "Namespace": "herobids-agents", "JobID": "agent-cpu-a",
+      "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "running",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 1200}, "Memory": {"MemoryMB": 128}}}}
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000a2", "Namespace": "herobids-agents", "JobID": "agent-cpu-b",
+      "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "running",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 1200}, "Memory": {"MemoryMB": 128}}}}
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000a3", "Namespace": "herobids-agents", "JobID": "agent-cpu-c",
+      "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "running",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 1200}, "Memory": {"MemoryMB": 128}}}}
+    }
+  ]
+}

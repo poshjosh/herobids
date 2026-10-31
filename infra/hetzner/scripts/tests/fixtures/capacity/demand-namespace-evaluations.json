@@ -1,0 +1,85 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/evaluations shape. UNVERIFIED against live Nomad 1.9.7 (no live capture in scope A). Covers namespace selection (the default-namespace evaluation must be ignored) and deduplication (three evaluations for one task group must count its queued allocations once, from the newest non-canceled evaluation: 2, not 2 + 2 + 5).",
+  "asks": [
+    {"namespace": "herobids-agents", "jobId": "agent-job-a", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "default", "jobId": "default-job", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true}
+  ],
+  "evaluations": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000d0",
+      "Namespace": "default",
+      "JobID": "default-job",
+      "Priority": 50,
+      "Type": "service",
+      "TriggeredBy": "job-register",
+      "Status": "blocked",
+      "StatusDescription": "created to place remaining allocations",
+      "BlockedEval": "00000000-0000-4000-8000-0000000000d9",
+      "QueuedAllocations": {"agent": 9},
+      "FailedTGAllocs": {
+        "agent": {
+          "NodesEvaluated": 3, "NodesFiltered": 0, "NodesAvailable": {"dc1": 3},
+          "ClassFiltered": null, "ConstraintFiltered": null,
+          "NodesExhausted": 3, "ClassExhausted": null, "DimensionExhausted": {"memory": 3},
+          "QuotaExhausted": null, "Scores": null, "AllocationTime": 41000, "CoalescedFailures": 0
+        }
+      },
+      "ModifyIndex": 300
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000e1",
+      "Namespace": "herobids-agents",
+      "JobID": "agent-job-a",
+      "Priority": 50,
+      "Type": "service",
+      "TriggeredBy": "job-register",
+      "Status": "blocked",
+      "StatusDescription": "created to place remaining allocations",
+      "BlockedEval": "00000000-0000-4000-8000-0000000000b1",
+      "QueuedAllocations": {"agent": 2},
+      "FailedTGAllocs": {
+        "agent": {
+          "NodesEvaluated": 3, "NodesFiltered": 0, "NodesAvailable": {"dc1": 3},
+          "ClassFiltered": null, "ConstraintFiltered": null,
+          "NodesExhausted": 3, "ClassExhausted": null, "DimensionExhausted": {"memory": 3},
+          "QuotaExhausted": null, "Scores": null, "AllocationTime": 41000, "CoalescedFailures": 0
+        }
+      },
+      "ModifyIndex": 100
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000e2",
+      "Namespace": "herobids-agents",
+      "JobID": "agent-job-a",
+      "Priority": 50,
+      "Type": "service",
+      "TriggeredBy": "node-update",
+      "Status": "blocked",
+      "StatusDescription": "created to place remaining allocations",
+      "BlockedEval": "00000000-0000-4000-8000-0000000000b2",
+      "QueuedAllocations": {"agent": 2},
+      "FailedTGAllocs": {
+        "agent": {
+          "NodesEvaluated": 3, "NodesFiltered": 0, "NodesAvailable": {"dc1": 3},
+          "ClassFiltered": null, "ConstraintFiltered": null,
+          "NodesExhausted": 3, "ClassExhausted": null, "DimensionExhausted": {"memory": 3},
+          "QuotaExhausted": null, "Scores": null, "AllocationTime": 38000, "CoalescedFailures": 0
+        }
+      },
+      "ModifyIndex": 200
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000e3",
+      "Namespace": "herobids-agents",
+      "JobID": "agent-job-a",
+      "Priority": 50,
+      "Type": "service",
+      "TriggeredBy": "job-register",
+      "Status": "canceled",
+      "StatusDescription": "superseded by a newer evaluation",
+      "QueuedAllocations": {"agent": 5},
+      "FailedTGAllocs": null,
+      "ModifyIndex": 150
+    }
+  ]
+}

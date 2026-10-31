@@ -1,0 +1,39 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/evaluations shape. UNVERIFIED against live Nomad 1.9.7 (no live capture in scope A). A nil or empty FailedTGAllocs is not proof of exhaustion, and a BlockedEval ID with a generic StatusDescription is not a reason. All four jobs must classify as unclassified, never capacity_blocked.",
+  "asks": [
+    {"namespace": "herobids-agents", "jobId": "job-nil", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-empty", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-null-tg", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "job-blocked-only", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true}
+  ],
+  "evaluations": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000a1", "Namespace": "herobids-agents", "JobID": "job-nil",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": null,
+      "ModifyIndex": 20
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000a2", "Namespace": "herobids-agents", "JobID": "job-empty",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": {}},
+      "ModifyIndex": 21
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000a3", "Namespace": "herobids-agents", "JobID": "job-null-tg",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 1},
+      "FailedTGAllocs": {"agent": null},
+      "ModifyIndex": 22
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000a4", "Namespace": "herobids-agents", "JobID": "job-blocked-only",
+      "Status": "blocked", "StatusDescription": "created to place remaining allocations",
+      "BlockedEval": "00000000-0000-4000-8000-0000000000a9",
+      "QueuedAllocations": {"agent": 1},
+      "ModifyIndex": 23
+    }
+  ]
+}

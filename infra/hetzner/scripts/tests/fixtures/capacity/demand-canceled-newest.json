@@ -1,0 +1,55 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/evaluations shape. UNVERIFIED against live Nomad 1.9.7 (no live capture in scope A). The canceled evaluation for live-job has the highest ModifyIndex (300). It must not hide the live blocked evaluation (ModifyIndex 100), so live-job still gives a capacity_blocked row with queued 2. canceled-only-job has nothing live and must give no row.",
+  "asks": [
+    {"namespace": "herobids-agents", "jobId": "live-job", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true},
+    {"namespace": "herobids-agents", "jobId": "canceled-only-job", "taskGroup": "agent", "memory_mb": 512, "cpu_mhz": 256, "placement_matches_template": true}
+  ],
+  "evaluations": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000f1",
+      "Namespace": "herobids-agents",
+      "JobID": "live-job",
+      "Priority": 50,
+      "Type": "service",
+      "TriggeredBy": "job-register",
+      "Status": "blocked",
+      "StatusDescription": "created to place remaining allocations",
+      "QueuedAllocations": {"agent": 2},
+      "FailedTGAllocs": {
+        "agent": {
+          "NodesEvaluated": 3, "NodesFiltered": 0, "NodesAvailable": {"dc1": 3},
+          "ClassFiltered": null, "ConstraintFiltered": null,
+          "NodesExhausted": 3, "ClassExhausted": null, "DimensionExhausted": {"memory": 3},
+          "QuotaExhausted": null, "Scores": null, "AllocationTime": 41000, "CoalescedFailures": 0
+        }
+      },
+      "ModifyIndex": 100
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000f2",
+      "Namespace": "herobids-agents",
+      "JobID": "live-job",
+      "Priority": 50,
+      "Type": "service",
+      "TriggeredBy": "job-deregister",
+      "Status": "canceled",
+      "StatusDescription": "superseded by a newer evaluation",
+      "QueuedAllocations": {"agent": 7},
+      "FailedTGAllocs": null,
+      "ModifyIndex": 300
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000f3",
+      "Namespace": "herobids-agents",
+      "JobID": "canceled-only-job",
+      "Priority": 50,
+      "Type": "service",
+      "TriggeredBy": "job-deregister",
+      "Status": "canceled",
+      "StatusDescription": "stopped",
+      "QueuedAllocations": {"agent": 4},
+      "FailedTGAllocs": null,
+      "ModifyIndex": 80
+    }
+  ]
+}

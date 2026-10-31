@@ -1,0 +1,37 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/node/{id} and /v1/node/{id}/allocations shapes. UNVERIFIED against live Nomad 1.9.7 (no live capture in scope A). Fragmentation: two agent nodes each with 400 MB free. Together they hold 800 MB, which divided by a 512 MB slot gives 1, but no single node fits a slot, so the correct per-node result is 0.",
+  "nodes": [
+    {
+      "node": {
+        "ID": "00000000-0000-4000-8000-000000000011", "Name": "agent-frag-1", "Datacenter": "dc1",
+        "NodeClass": "agent", "Status": "ready", "SchedulingEligibility": "eligible", "Drain": false,
+        "Meta": {"node_pool": "agent"},
+        "NodeResources": {"Cpu": {"CpuShares": 4000}, "Memory": {"MemoryMB": 2048}},
+        "ReservedResources": {"Cpu": {"CpuShares": 0}, "Memory": {"MemoryMB": 0}}
+      },
+      "allocations": [
+        {
+          "ID": "00000000-0000-4000-8000-0000000000f1", "Namespace": "herobids-agents", "JobID": "agent-frag-a",
+          "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "running",
+          "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 256}, "Memory": {"MemoryMB": 1648}}}}
+        }
+      ]
+    },
+    {
+      "node": {
+        "ID": "00000000-0000-4000-8000-000000000012", "Name": "agent-frag-2", "Datacenter": "dc1",
+        "NodeClass": "agent", "Status": "ready", "SchedulingEligibility": "eligible", "Drain": false,
+        "Meta": {"node_pool": "agent"},
+        "NodeResources": {"Cpu": {"CpuShares": 4000}, "Memory": {"MemoryMB": 2048}},
+        "ReservedResources": {"Cpu": {"CpuShares": 0}, "Memory": {"MemoryMB": 0}}
+      },
+      "allocations": [
+        {
+          "ID": "00000000-0000-4000-8000-0000000000f2", "Namespace": "herobids-agents", "JobID": "agent-frag-b",
+          "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "running",
+          "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 256}, "Memory": {"MemoryMB": 1648}}}}
+        }
+      ]
+    }
+  ]
+}

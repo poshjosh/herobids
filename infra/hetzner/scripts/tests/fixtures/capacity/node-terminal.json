@@ -1,0 +1,32 @@
+{
+  "_comment": "SYNTHETIC. Modelled on the Nomad /v1/node/{id} and /v1/node/{id}/allocations shapes. UNVERIFIED against live Nomad 1.9.7 (no live capture in scope A). Terminal allocations (complete, failed, lost) hold no capacity and must be excluded. Only the one running agent counts: 512 MB and 256 MHz allocated, leaving 3584 MB and 3744 MHz free.",
+  "node": {
+    "ID": "00000000-0000-4000-8000-000000000041", "Name": "agent-term-1", "Datacenter": "dc1",
+    "NodeClass": "agent", "Status": "ready", "SchedulingEligibility": "eligible", "Drain": false,
+    "Meta": {"node_pool": "agent"},
+    "NodeResources": {"Cpu": {"CpuShares": 4000}, "Memory": {"MemoryMB": 4096}},
+    "ReservedResources": {"Cpu": {"CpuShares": 0}, "Memory": {"MemoryMB": 0}}
+  },
+  "allocations": [
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c1", "Namespace": "herobids-agents", "JobID": "agent-term-live",
+      "TaskGroup": "agent", "DesiredStatus": "run", "ClientStatus": "running",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 256}, "Memory": {"MemoryMB": 512}}}}
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c2", "Namespace": "herobids-agents", "JobID": "agent-term-done",
+      "TaskGroup": "agent", "DesiredStatus": "stop", "ClientStatus": "complete",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 2000}, "Memory": {"MemoryMB": 2048}}}}
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c3", "Namespace": "herobids-agents", "JobID": "agent-term-failed",
+      "TaskGroup": "agent", "DesiredStatus": "stop", "ClientStatus": "failed",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 1000}, "Memory": {"MemoryMB": 1024}}}}
+    },
+    {
+      "ID": "00000000-0000-4000-8000-0000000000c4", "Namespace": "herobids-agents", "JobID": "agent-term-lost",
+      "TaskGroup": "agent", "DesiredStatus": "stop", "ClientStatus": "lost",
+      "AllocatedResources": {"Tasks": {"agent": {"Cpu": {"CpuShares": 512}, "Memory": {"MemoryMB": 512}}}}
+    }
+  ]
+}

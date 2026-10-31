@@ -13,6 +13,7 @@
 # Environment variables (all optional, defaults below):
 #   NOMAD_ADDR                          Nomad server HTTP API base URL (default: http://127.0.0.1:4646)
 #   NOMAD_AGENT_MEMORY_RESERVATION_MB   Scheduling memory reservation per agent slot (default: 256)
+#   NOMAD_AGENT_CPU_RESERVATION_MHZ     Scheduling CPU reservation per agent slot, in Nomad scheduler units (default: 256)
 #   NOMAD_SCALE_OUT_COOLDOWN_SECONDS    Minimum seconds between scale-out operations (default: 300)
 #   NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT Free memory % below which we scale out (default: 20)
 #   NOMAD_SCALE_OUT_SLOT_THRESHOLD      Free slots below which we scale out (default: 3)
@@ -36,6 +37,8 @@ set -euo pipefail
 
 NOMAD_ADDR="${NOMAD_ADDR:-http://127.0.0.1:4646}"
 NOMAD_AGENT_MEMORY_RESERVATION_MB="${NOMAD_AGENT_MEMORY_RESERVATION_MB:-256}"
+# Matches the cpuShares the agent job requests (nomad-runtime-adapter.ts default).
+NOMAD_AGENT_CPU_RESERVATION_MHZ="${NOMAD_AGENT_CPU_RESERVATION_MHZ:-256}"
 NOMAD_SCALE_OUT_COOLDOWN_SECONDS="${NOMAD_SCALE_OUT_COOLDOWN_SECONDS:-300}"
 NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT="${NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT:-20}"
 NOMAD_SCALE_OUT_SLOT_THRESHOLD="${NOMAD_SCALE_OUT_SLOT_THRESHOLD:-3}"
@@ -91,6 +94,7 @@ require_uint() {
 #   Validates the numeric operator knobs this library and its callers use in arithmetic.
 validate_scale_numeric_env() {
   require_uint NOMAD_AGENT_MEMORY_RESERVATION_MB "${NOMAD_AGENT_MEMORY_RESERVATION_MB}" 1 100000
+  require_uint NOMAD_AGENT_CPU_RESERVATION_MHZ "${NOMAD_AGENT_CPU_RESERVATION_MHZ}" 1 100000
   require_uint NOMAD_SCALE_OUT_COOLDOWN_SECONDS "${NOMAD_SCALE_OUT_COOLDOWN_SECONDS}" 0 86400
   require_uint NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT "${NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT}" 0 100
   require_uint NOMAD_SCALE_OUT_SLOT_THRESHOLD "${NOMAD_SCALE_OUT_SLOT_THRESHOLD}" 0 1000
