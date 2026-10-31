@@ -77,6 +77,41 @@ scale_in_new_count_ok() {
 }
 
 # scale_in_names_unique — reads one name per line. Empty input is valid.
+# scale_in_refresh_plan_ok — reads a refresh-only plan (terraform show -json) on
+# stdin. Passes only when nothing but the agent firewall record would change:
+# no resource action other than no-op/read, and no drift outside
+# hcloud_firewall.agent. A destroyed server stays listed in that firewall's
+# attachments until the state is refreshed. Anything else is refused.
+# shellcheck disable=SC2016  # the jq program is intentionally single-quoted
+_SCALE_IN_REFRESH_JQ='
+  ([ (.resource_changes // [])[]
+     | select((.change.actions != ["no-op"]) and (.change.actions != ["read"]))
+     | "unexpected change: \(.address) \(.change.actions | join(","))" ]
+   + [ (.resource_drift // [])[]
+     | select(.address | test("^hcloud_firewall\\.agent\\[[0-9]+\\]$") | not)
+     | "unexpected drift: \(.address)" ])
+  | .[]'
+
+scale_in_refresh_plan_ok() {
+  local plan_json violations line
+  plan_json="$(cat)"
+  if [[ -z "${plan_json}" ]]; then
+    echo "  - refresh-only plan JSON is empty" >&2
+    return 1
+  fi
+  if ! violations="$(printf '%s' "${plan_json}" | jq -r "${_SCALE_IN_REFRESH_JQ}")"; then
+    echo "  - refresh-only plan JSON could not be parsed" >&2
+    return 1
+  fi
+  if [[ -n "${violations}" ]]; then
+    while IFS= read -r line; do
+      echo "  - ${line}" >&2
+    done <<< "${violations}"
+    return 1
+  fi
+  return 0
+}
+
 scale_in_names_unique() {
   local name seen=$'\n'
   while IFS= read -r name || [[ -n "${name}" ]]; do

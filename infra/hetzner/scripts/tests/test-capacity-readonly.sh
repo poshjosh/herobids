@@ -36,8 +36,14 @@ cp "${SCRIPTS_DIR}"/*.sh "${SCRIPTS_COPY}/"
 # to the run's environment and to the pool the scripts derive from
 # TF_VAR_server_name, so the live gate sees a healthy staging pool.
 MOCK_CLOUD_FIXTURE="${TEST_TMPDIR}/cloud-api-staging.json"
-jq '{servers: [.[] | .labels.environment = "staging" | .labels.node_pool = "synth"],
+jq '{servers: [to_entries[] | (.value | .labels.environment = "staging" | .labels.node_pool = "synth")
+       + {private_net: [{ip: "10.0.0.\(.key + 2)"}]}],
      meta: {pagination: {next_page: null}}}' "${FX}/cloud-healthy.json" > "${MOCK_CLOUD_FIXTURE}"
+
+# Scale-in refuses nodes with unreadable or duplicate addresses. Real Nomad
+# nodes always report one, so give each synthetic node its own address.
+MOCK_NODES_FIXTURE="${TEST_TMPDIR}/nomad-healthy-addressed.json"
+jq '[to_entries[] | .value + {Address: "10.0.0.\(.key + 2)"}]' "${FX}/nomad-healthy.json" > "${MOCK_NODES_FIXTURE}"
 
 # Every mutating binary records its call and does nothing else.
 for tool in terraform hcloud sendmail mail; do
@@ -152,7 +158,7 @@ run_script() {
     AWS_SECRET_ACCESS_KEY=synthetic-secret \
     CAPACITY_STUB_MODE="${STUB_MODE}" \
     MOCK_LOG_DIR="${RUN}" \
-    MOCK_NODES_FIXTURE="${FX}/nomad-healthy.json" \
+    MOCK_NODES_FIXTURE="${MOCK_NODES_FIXTURE}" \
     "$@"
 }
 

@@ -509,11 +509,49 @@ fi
 
 # ─── Terraform apply ──────────────────────────────────────────────────────────
 
+# scale_in_sync_state <new_count> — after the scale-in apply, Terraform still
+# lists the destroyed server in the agent firewall's attachments. Without a
+# refresh the next scale-out refuses on drift. The refresh is state-only and is
+# applied only if scale_in_refresh_plan_ok passes.
+scale_in_sync_state() {
+  local new_count="$1" refresh_file tfvars_file json
+  local -a args
+  refresh_file="${SCALE_IN_TMP_DIR}/scale-in-refresh.tfplan"
+  tfvars_file="${TERRAFORM_DIR}/${HEROBIDS_ENV}.tfvars"
+  args=(-input=false "-out=${refresh_file}")
+  if [[ -f "${tfvars_file}" ]]; then
+    args+=("-var-file=${tfvars_file}")
+  fi
+  args+=(-var "agent_node_count=${new_count}")
+
+  tf_use_env_data_dir
+  if ! (cd "${TERRAFORM_DIR}" && terraform plan -refresh-only "${args[@]}" >/dev/null); then
+    log "ERROR: refresh-only plan failed after scale-in."
+    return 1
+  fi
+  json="$(cd "${TERRAFORM_DIR}" && terraform show -json "${refresh_file}" 2>/dev/null)" || json=""
+  if ! printf '%s' "${json}" | scale_in_refresh_plan_ok; then
+    log "ERROR: refresh-only plan after scale-in would change more than the firewall record. Not applied."
+    return 1
+  fi
+  if ! tf_apply_plan "${refresh_file}"; then
+    log "ERROR: applying the refresh-only plan after scale-in failed."
+    return 1
+  fi
+  log "  Terraform state synced (agent firewall record)."
+}
+
 if tf_apply_plan "${plan_file}"; then
   log ""
   log "=== Scale-in successful ==="
   log "  Agent nodes: ${CURRENT_COUNT} → ${NEW_COUNT}"
   log "  Removed:      ${#DRAIN_OK[@]} node(s)"
+
+  # The nodes are already destroyed, so a failure here cannot be rolled back.
+  # Stop and say what to check; the failure counter is left as it was.
+  if ! scale_in_sync_state "${NEW_COUNT}"; then
+    die "Scale-in applied (${CURRENT_COUNT} → ${NEW_COUNT}), but Terraform state could not be synced. Before the next scale-out, run 'terraform plan -refresh-only' for ${HEROBIDS_ENV} and check it changes only the agent firewall record. Manual check required." 1
+  fi
 
   # Diagnostic cache only; the next run reads the count from the capacity guard.
   write_node_count "${NEW_COUNT}"

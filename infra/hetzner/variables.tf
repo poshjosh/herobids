@@ -326,6 +326,31 @@ variable "nomad_node_provisioning_timeout_seconds" {
   }
 }
 
+# Size of one new agent node, used by demand-aware scale-out to decide how many
+# nodes a blocked job needs. Must match agent_node_server_type; the defaults are
+# the cx23 Nomad-allocatable capacity (the only type in use).
+variable "nomad_node_template_memory_mb" {
+  type        = number
+  description = "Memory (MB) of one new agent node, for demand-aware scale-out. Must match agent_node_server_type."
+  default     = 3819
+
+  validation {
+    condition     = var.nomad_node_template_memory_mb >= 1 && var.nomad_node_template_memory_mb <= 100000 && floor(var.nomad_node_template_memory_mb) == var.nomad_node_template_memory_mb
+    error_message = "nomad_node_template_memory_mb must be a whole number from 1 to 100000."
+  }
+}
+
+variable "nomad_node_template_cpu_mhz" {
+  type        = number
+  description = "CPU (MHz) of one new agent node, for demand-aware scale-out. Must match agent_node_server_type."
+  default     = 4000
+
+  validation {
+    condition     = var.nomad_node_template_cpu_mhz >= 1 && var.nomad_node_template_cpu_mhz <= 100000 && floor(var.nomad_node_template_cpu_mhz) == var.nomad_node_template_cpu_mhz
+    error_message = "nomad_node_template_cpu_mhz must be a whole number from 1 to 100000."
+  }
+}
+
 # ── Scale-In Configuration (Phase 7) ──────────────────────
 
 variable "enable_scale_in" {

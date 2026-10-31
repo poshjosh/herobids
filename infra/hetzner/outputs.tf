@@ -49,6 +49,8 @@ locals {
     NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS     = tostring(var.nomad_demand_consecutive_observations)
     NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS = tostring(var.nomad_demand_observation_interval_seconds)
     NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS   = tostring(var.nomad_node_provisioning_timeout_seconds)
+    NOMAD_NODE_TEMPLATE_MEMORY_MB             = tostring(var.nomad_node_template_memory_mb)
+    NOMAD_NODE_TEMPLATE_CPU_MHZ               = tostring(var.nomad_node_template_cpu_mhz)
   }
   autoscale_settings_input = "${join("\n", [for k, v in local.autoscale_settings : "${k}=${v}"])}\n"
 }

@@ -86,15 +86,28 @@ Also observed: `nomad-scale-in.service` has `ENABLE_SCALE_IN=true`. The roadmap 
 - Scale-out dry-run from the restored branch: exit 0, managed 1, max 3, candidate 2, no changes.
 - Nomad: only `browser-pool` job. Agent node `-agent-3` ready, `-agent-1` and `-agent-2` stale `down`. Agents were not restarted.
 
+## Scale-out proof and fixes (2026-10-31, later)
+
+- **Scale-in proven (2 to 1).** Approved. Nine agent jobs on the two extra nodes were stopped through the app's stop path first. Plan: 2 destroys, nothing else. Exit 0.
+- **Start of a stopped agent.** `wise-falcon` was started with guarded SQL and landed on the surviving node. The `--start-stopped` restart path was refused: the wrapper fetches the script from `origin/main`, which does not have the flag. Nothing was changed by that attempt.
+- **Stale node purge.** The down Nomad entry for `-agent-2` (`65dff029…`) was purged after confirming zero allocations. Approved.
+- **Gate fix.** The capacity-aware start gate was OFF on staging. Without it, a placement that failed on a full node made the demand classifier withhold scale-out. Enabled in `config/staging.yaml` (commit `31a00ea3`) and deployed with `DEPLOY_REF=origin/feat/safe-capacity-p9-staging`.
+- **Refused run.** The first live scale-out was refused by the drift check (saved plan showed drift; nothing applied). Cause: Terraform state still listed the scaled-in server in `hcloud_firewall.agent[0]`.
+- **Firewall-record fix.** Manual fix, approved: a state-only refresh-only apply, then a re-plan with `agent_node_count=2` showed creates only. Code fix in `scale-in.sh` (`scale_in_sync_state`, predicate `scale_in_refresh_plan_ok` in `scale-in-guard.sh`) so the record is synced after each scale-in. Not yet verified against a real refresh-only plan on staging.
+- **Successful add (1 to 2).** Approved. `herobids-staging-agent-2` (10.0.0.3) joined Nomad as ready. The re-queued security-auditor ran on it.
+- **Timers.** Approved. `nomad-autoscale.timer` enabled and active, with demand mode on. `nomad-scale-in.timer` enabled with no schedule, so scale-in stays manual. `nomad-placement-failure-watcher.timer` disabled.
+- **Settings drop risk.** Neither tfvars set demand mode, so a converge would have re-uploaded the Terraform default `false`. Fix in `variables.tf`, `outputs.tf`, `staging.tfvars`, and `render-autoscale-settings.sh`. Not yet deployed. Migration needs approval (see the P9 record).
+- **Test fix.** `test-capacity-readonly.sh` had 3 failing scale-in dry-run assertions, present on this branch since `146baed8`. Cause: the synthetic Nomad nodes have no private address, so the new duplicate-address check refused them. The check is unchanged. The test now gives each synthetic node its own address. The full infra suite passes (`run-all.sh`, exit 0).
+
 ## Still open
 
 - Name mismatch (above). Requires approval before any live change.
 - Stale Nomad `down` entries `-agent-1` (`db4e22b4-efbd-b70c-d3ca-d0f173da7e55`) and `-agent-2` (`1525bbd6-95d6-d91c-e221-7f9038d000d0`) were **purged** on 2026-10-31 after confirming zero allocations and user approval. Nomad node list now shows only `herobids-staging-agent-3` (`714f26cc`, 10.0.0.5, ready).
 - Purge note: `POST /v1/node/<full-36-char-uuid>/purge` (short IDs return 500 "UUID must be 36 characters").
-- Capacity blocker: the original sole node had 3.5 of 3.7 GiB allocated, so further agent starts failed with `DimensionExhausted: memory`. **Resolved 2026-10-31** by applying the create-only plan (approved by the user): Hetzner `herobids-staging-agent-2` (cx23, fsn1, private network) was added and joined Nomad as `ready`/`eligible` with 3819 MB and 4000 MHz. Agent starts not yet re-tested on it.
+- Capacity blocker: the original sole node had 3.5 of 3.7 GiB allocated, so further agent starts failed with `DimensionExhausted: memory`. **Resolved 2026-10-31** by applying the create-only plan (approved by the user): Hetzner `herobids-staging-agent-2` (cx23, fsn1, private network) was added and joined Nomad as `ready`/`eligible` with 3819 MB and 4000 MHz. Agent starts re-tested on it: yes, `wise-falcon` (see the section above). *(Superseded.)*
 - Plan-ordering and provider-lock fixes that made the create-only plan work: `72d74635` (`-var-file` before `-var agent_node_count`), `bfef2f08` (linux_amd64 checksum in the lock file).
 - API image predates the P-series code. Deployed 2026-10-31 (see Staging deploy below). Migrations 0088 and 0089 applied.
 - P8 live shadow GETs against staging. Single-pass read-only checks ran 2026-10-31 (see the plan's P8 record). The multi-tick demand comparison (§12.2) has not run.
-- Timers stay inactive. `000-roadmap.md` and `010-objectives.md` say they stay stopped until the gates pass. The user's earlier "approve turning on the timers" conflicts with this. Not enabled.
+- Timers stay inactive. `000-roadmap.md` and `010-objectives.md` say they stay stopped until the gates pass. The user's earlier "approve turning on the timers" conflicts with this. Not enabled. *(Superseded 2026-10-31: the scale-out timer is now on for staging. See the section above.)*
 - Oso (owned by the user's brother) stays stopped. Not started.
 - 8 stopped agents on the operator's account are not started.

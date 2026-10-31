@@ -789,7 +789,7 @@ Stages describe dependencies, not mandatory separate services/files.
 | P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | DONE (uncommitted; see P6 outstanding issues) |
 | P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection | DONE (app and scale-in halves; see P7 and §8 records; scale-in endpoints and fields still UNVERIFIED until P9) |
 | P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow | PARTIAL (local validation, H3 runbook, fixture shadow and live read-only shadow DONE 2026-10-31; multi-tick demand comparison NOT run; see P8 record) |
-| P9 | Obtain explicit staging mutation approval, deploy/migrate and execute controlled staging scenarios | P8 | Section 12 acceptance evidence; production still disabled | PENDING |
+| P9 | Obtain explicit staging mutation approval, deploy/migrate and execute controlled staging scenarios | P8 | Section 12 acceptance evidence; production still disabled | PARTIAL: staging scale-in (2 to 1) and scale-out (1 to 2) proven; demand-mode scale-out timer on, scale-in manual; production unchanged. See the P9 record |
 
 Do not activate the new infrastructure controller before the waiting lifecycle
 and configuration convergence are available. Conversely, do not enable long
@@ -1357,4 +1357,35 @@ Findings:
 - Staging zero-node gap, DECIDED: staging floor raised to 1 (user choice). Reason: at `min_agent_nodes = 0`, scale-in can drain the pool, and `empty_inventory` then blocks scale-out. Repo templates (`environment.tfvars.example`, `setup-auto-scaling.md`) carry the reason. The gitignored local `staging.tfvars` is set to 1. The live control plane still reads its floor from `TF_VAR_min_agent_nodes` in its own environment, so the live change is an approved P9 step, not done. Scale-from-empty stays deferred (H3).
 - Stale test reference (pre-existing, not changed). Root `package.json` `test:integration` lists `packages/db/src/journal-pg.integration.test.ts`, which does not exist. Vitest skips it silently.
 - Local P0–P7 commits are not pushed. `maintenance-restart-from-local.sh` deploys `origin/main`, so it cannot pick up local-only work.
+
+### P9 (staging activation)
+
+Status: PARTIAL. Staging scale-in and scale-out are proven live on `herobids-staging`. The scale-out timer is on in demand mode. Scale-in stays manual. Production was not changed and its gate and demand mode stay OFF. Operator-approved changes only.
+
+Done, on the server (2026-10-31):
+
+- Create-only node added (approved). Hetzner `herobids-staging-agent-2` (10.0.0.3, cx23, fsn1) joined Nomad as ready.
+- Scale-in proof, 2 to 1 (approved). Nine agent jobs were stopped first through the app's stop path. Terraform's plan was 2 destroys, nothing else. Exit 0.
+- Start of stopped agent `wise-falcon` (guarded SQL). It landed on the surviving node. The earlier `--start-stopped` restart path was refused ("Unknown option") because the wrapper fetches the script from `origin/main`. No change was made by that attempt.
+- Stale Nomad node purge (approved). The down entry for `-agent-2` was purged after confirming zero allocations.
+- Capacity-aware start gate enabled on staging (`config/staging.yaml`, commit `31a00ea3`). Without it, a placement that failed on a full node made the demand classifier withhold scale-out.
+- Scale-out refused once by the drift check (approved change, nothing applied). Cause: Terraform state still listed the scaled-in server in `hcloud_firewall.agent[0]`. Fixed by a state-only refresh-only apply, then a re-plan with `agent_node_count=2` showing creates only.
+- Live scale-out 1 to 2 (approved). `herobids-staging-agent-2` joined, and the queued security-auditor job ran on it.
+- Demand mode on, and `nomad-autoscale.timer` enabled and active (approved). `nomad-scale-in.timer` enabled with no schedule. `nomad-placement-failure-watcher.timer` disabled.
+
+Fixes in the repo (this branch, pending commit and push):
+
+- Sub-item P9-a, firewall record after scale-in. `scale-in.sh` now runs a state-only refresh-only sync after each successful scale-in (`scale_in_sync_state`, before the count is written). A predicate in `scale-in-guard.sh` (`scale_in_refresh_plan_ok`) allows only no-op changes and drift on `hcloud_firewall.agent[N]`, and refuses anything else. Applies go through `tf_apply_plan`. Tests: `test-capacity-scale-in-guard.sh` (7 predicate cases, 2 ordering assertions). Unverified: the predicate was written against the documented `terraform show -json` shape and fixtures only. It has not been checked against a real refresh-only plan on staging. Verify on the next scale-in before relying on it.
+- Sub-item P9-b, demand settings kept through converge. Neither tfvars set demand mode, so the Terraform default `false` would be re-uploaded by `setup-control-plane.sh` and a converge would silently turn demand off. Demand mode and the two template sizes are now Terraform inputs (`variables.tf`, `outputs.tf`, `staging.tfvars` sets demand to true). `render-autoscale-settings.sh` accepts and requires the template keys. Tests: `test-render-autoscale-settings.sh`, `test-converge-control-plane.sh` (34 pass).
+- Test fix, `test-capacity-readonly.sh`. This suite had 3 scale-in dry-run failures ("Duplicate or unreadable agent node names"). Cause: commit `146baed8` added an address-uniqueness check, and the synthetic Nomad nodes have no address, so they counted as duplicates. The check was not weakened. The suite now gives each synthetic node its own private address in both the Nomad and cloud fixtures. The shared fixture is unchanged for the other suites.
+
+Migration caveat (not yet run on staging, needs approval): the renderer refuses template keys present in `/etc/herobids/autoscale.env`. Before the next converge on staging, remove `NOMAD_NODE_TEMPLATE_MEMORY_MB` and `NOMAD_NODE_TEMPLATE_CPU_MHZ` from that env file, refresh `/etc/herobids/autoscale-settings.input` from Terraform, then converge. Production's `.input` gains the same keys on its next upload. Harmless while demand is off.
+
+Open:
+
+- Scale-in is still manual. A demand-aware scale-in does not exist yet.
+- Nomad node `herobids-staging-agent-3` (10.0.0.5) is the Hetzner server named `herobids-staging-agent-1`. Name matching in scale-in therefore needs the private-IP fallback. Keep it recorded; do not rename without approval.
+- Production `TF_VAR_location=fsn1` is on the server but not applied through Terraform. Production gate and demand stay OFF until separately approved.
+- Pre-existing and unrelated: `docs/runbooks/useful-commands.md` documents `--start-stopped`, which is not on `origin/main`.
+- Credentials printed on the production host earlier should be rotated.
 

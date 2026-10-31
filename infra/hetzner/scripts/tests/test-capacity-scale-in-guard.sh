@@ -534,6 +534,36 @@ DRY_RUN=false
 
 test_end || SUITE_FAILED=1
 
+# ═════════════════════════════════════════════════════════════════════════════
+# Post-scale-in state refresh: only the agent firewall record may change
+# ═════════════════════════════════════════════════════════════════════════════
+
+REFRESH_FIREWALL_DRIFT='{"resource_changes":[{"address":"hcloud_firewall.agent[0]","change":{"actions":["no-op"]}}],"resource_drift":[{"address":"hcloud_firewall.agent[0]","change":{"actions":["update"]}}]}'
+REFRESH_NO_DRIFT='{"resource_changes":[],"resource_drift":[]}'
+REFRESH_SERVER_DRIFT='{"resource_changes":[{"address":"hcloud_server.agent[0]","change":{"actions":["no-op"]}}],"resource_drift":[{"address":"hcloud_server.agent[0]","change":{"actions":["update"]}}]}'
+REFRESH_CREATE='{"resource_changes":[{"address":"hcloud_server.agent[2]","change":{"actions":["create"]}}],"resource_drift":[]}'
+REFRESH_FIREWALL_AND_DELETE='{"resource_changes":[{"address":"hcloud_server.agent[1]","change":{"actions":["delete"]}}],"resource_drift":[{"address":"hcloud_firewall.agent[0]","change":{"actions":["update"]}}]}'
+
+refresh_ok() { printf '%s' "$1" | scale_in_refresh_plan_ok 2>/dev/null; }
+
+test_begin "scale-in refresh: only the agent firewall record may change"
+
+assert_success "a firewall-only drift is accepted" refresh_ok "${REFRESH_FIREWALL_DRIFT}"
+assert_success "a refresh with no drift is accepted" refresh_ok "${REFRESH_NO_DRIFT}"
+assert_failure "server drift is refused" refresh_ok "${REFRESH_SERVER_DRIFT}"
+assert_failure "a create in the refresh plan is refused" refresh_ok "${REFRESH_CREATE}"
+assert_failure "a delete alongside firewall drift is refused" refresh_ok "${REFRESH_FIREWALL_AND_DELETE}"
+assert_failure "an empty plan is refused" refresh_ok ""
+assert_failure "malformed plan JSON is refused" refresh_ok "{not json"
+
+SYNC_LINE="$(grep -n 'scale_in_sync_state "' "${SCALE_IN}" | tail -1 | cut -d: -f1 || true)"
+APPLY_LINE="$(grep -n 'if tf_apply_plan' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+WRITE_LINE="$(grep -n 'write_node_count "${NEW_COUNT}"' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+assert_success "the state sync runs after the scale-in apply" test -n "${SYNC_LINE}" -a -n "${APPLY_LINE}" -a "${SYNC_LINE:-0}" -gt "${APPLY_LINE:-0}"
+assert_success "the state sync runs before the node count is written" test -n "${WRITE_LINE}" -a "${SYNC_LINE:-0}" -lt "${WRITE_LINE:-0}"
+
+test_end || SUITE_FAILED=1
+
 echo ""
 echo "═══ Capacity scale-in guard suite complete ═══"
 exit "${SUITE_FAILED:-0}"

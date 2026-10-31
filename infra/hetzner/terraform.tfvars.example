@@ -76,6 +76,9 @@ git_repo_url = "git@github.com:your-org/herobids.git"  # required
 # min_agent_nodes         = 0         # Scale-in floor
 # max_agent_nodes         = 5         # Scale-out ceiling
 # agent_node_server_type  = "cpx21"   # Hetzner instance type for agent nodes
+# nomad_autoscale_demand_enabled = false  # true = scale-out runs automatically when jobs cannot be placed
+# nomad_node_template_memory_mb  = 3819   # Usable memory of one agent node (must match agent_node_server_type)
+# nomad_node_template_cpu_mhz    = 4000   # Usable CPU of one agent node (must match agent_node_server_type)
 
 # ── Admin Alerting (Phase 8) ───────────────────────────────
 

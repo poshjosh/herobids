@@ -683,7 +683,7 @@ test_end || SUITE_FAILED=1
 
 test_begin "converge-control-plane — autoscale settings (3d): render, invalid, stale override"
 
-# write_settings_input [INCREMENT_MAX] — the five-key input setup uploads.
+# write_settings_input [INCREMENT_MAX] — the seven-key input setup uploads.
 write_settings_input() {
   mkdir -p "${ROOT}/etc/herobids"
   printf '%s\n' \
@@ -692,6 +692,8 @@ write_settings_input() {
     'NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2' \
     'NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60' \
     'NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600' \
+    'NOMAD_NODE_TEMPLATE_MEMORY_MB=3819' \
+    'NOMAD_NODE_TEMPLATE_CPU_MHZ=4000' \
     > "${ROOT}/etc/herobids/autoscale-settings.input"
 }
 
@@ -709,7 +711,8 @@ assert_eq "${RUN_EXIT}" "0" "fresh render: succeeds"
 assert_contains "${RUN_OUTPUT}" "autoscale settings written" "fresh render: writes the settings file"
 assert_eq "$(cat "${SETTINGS_ENV}")" "$(printf '%s\n' 'NOMAD_AUTOSCALE_DEMAND_ENABLED=false' \
   'NOMAD_SCALE_OUT_INCREMENT_MAX=2' 'NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2' \
-  'NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60' 'NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600')" \
+  'NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60' 'NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600' \
+  'NOMAD_NODE_TEMPLATE_MEMORY_MB=3819' 'NOMAD_NODE_TEMPLATE_CPU_MHZ=4000')" \
   "fresh render: rendered content matches the input"
 assert_eq "$(cat "${SETTINGS_DROPIN}")" "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale-settings.env')" \
   "fresh render: installs the drop-in on a unit without the hookup"
@@ -1085,7 +1088,7 @@ run_setup() {
 
 SETTINGS_STUB_INPUT="$(printf '%s\n' 'NOMAD_AUTOSCALE_DEMAND_ENABLED=false' 'NOMAD_SCALE_OUT_INCREMENT_MAX=2' \
   'NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2' 'NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60' \
-  'NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600')"
+  'NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600' 'NOMAD_NODE_TEMPLATE_MEMORY_MB=3819' 'NOMAD_NODE_TEMPLATE_CPU_MHZ=4000')"
 
 run_setup STUB_TF_FAIL=true
 assert_neq "${SETUP_EXIT}" "0" "terraform error: exits non-zero (no silent skip)"

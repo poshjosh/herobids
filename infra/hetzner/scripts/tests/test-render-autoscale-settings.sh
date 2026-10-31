@@ -32,6 +32,8 @@ NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60
 NOMAD_AUTOSCALE_DEMAND_ENABLED=false
 NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600
 NOMAD_SCALE_OUT_INCREMENT_MAX=2
+NOMAD_NODE_TEMPLATE_MEMORY_MB=3819
+NOMAD_NODE_TEMPLATE_CPU_MHZ=4000
 EOF
 
 EXPECTED_DEFAULT_OUTPUT="NOMAD_AUTOSCALE_DEMAND_ENABLED=false
@@ -39,6 +41,8 @@ NOMAD_SCALE_OUT_INCREMENT_MAX=2
 NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2
 NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60
 NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600
+NOMAD_NODE_TEMPLATE_MEMORY_MB=3819
+NOMAD_NODE_TEMPLATE_CPU_MHZ=4000
 "
 
 # Run the renderer and capture its exit code without tripping set -e. The
@@ -83,11 +87,13 @@ assert_contains "$(cat "${TEST_TMPDIR}/last-stdout")" "unchanged" "re-running wi
 # Input order must not change the rendered bytes.
 REORDERED_INPUT="${TEST_TMPDIR}/reordered.input"
 cat > "${REORDERED_INPUT}" << 'EOF'
+NOMAD_NODE_TEMPLATE_CPU_MHZ=4000
 NOMAD_SCALE_OUT_INCREMENT_MAX=2
 NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600
 NOMAD_AUTOSCALE_DEMAND_ENABLED=false
 NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60
 NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2
+NOMAD_NODE_TEMPLATE_MEMORY_MB=3819
 EOF
 REORDER_OUT="${TEST_TMPDIR}/reorder/autoscale-settings.env"
 run_renderer --input "${REORDERED_INPUT}" --output "${REORDER_OUT}" || true
@@ -121,6 +127,8 @@ NOMAD_SCALE_OUT_INCREMENT_MAX=2
 NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS=2
 NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS=60
 NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS=600
+NOMAD_NODE_TEMPLATE_MEMORY_MB=3819
+NOMAD_NODE_TEMPLATE_CPU_MHZ=4000
 "
 
 assert_rejected "unknown key" "${VALID_LINES}UNKNOWN_KEY=1
@@ -130,6 +138,12 @@ assert_rejected "duplicate key" "${VALID_LINES}NOMAD_SCALE_OUT_INCREMENT_MAX=3
 assert_rejected "missing required key" "NOMAD_AUTOSCALE_DEMAND_ENABLED=false
 NOMAD_SCALE_OUT_INCREMENT_MAX=2
 " "missing required key"
+assert_rejected "missing template memory key" "$(printf '%s' "${VALID_LINES}" | grep -v TEMPLATE_MEMORY_MB)
+" "missing required key 'NOMAD_NODE_TEMPLATE_MEMORY_MB'"
+assert_rejected "missing template cpu key" "$(printf '%s' "${VALID_LINES}" | grep -v TEMPLATE_CPU_MHZ)
+" "missing required key 'NOMAD_NODE_TEMPLATE_CPU_MHZ'"
+assert_rejected "zero template memory" "$(printf '%s' "${VALID_LINES}" | sed 's/TEMPLATE_MEMORY_MB=3819/TEMPLATE_MEMORY_MB=0/')
+" "invalid value for NOMAD_NODE_TEMPLATE_MEMORY_MB"
 assert_rejected "malformed line (no =)" "${VALID_LINES}garbage
 " "expected KEY=VALUE"
 assert_rejected "lowercase key" "${VALID_LINES}nomad_scale_out_increment_max=2
@@ -219,6 +233,15 @@ assert_neq "${rc}" "0" "secrets-file collision fails"
 assert_contains "$(cat "${TEST_TMPDIR}/last-stderr")" "migrate" "collision message tells the operator to migrate"
 assert_contains "$(cat "${TEST_TMPDIR}/last-stderr")" "NOMAD_SCALE_OUT_INCREMENT_MAX" "collision message names the key"
 assert_failure "no settings file written on secrets collision" test -e "${COLLIDE_OUT}"
+
+# A template size left in the secrets file would silently override the rendered value.
+printf 'NOMAD_NODE_TEMPLATE_MEMORY_MB=4096\n' > "${SECRETS}"
+rc=0
+run_renderer --input "${DEFAULT_INPUT}" --output "${COLLIDE_OUT}" --secrets-file "${SECRETS}" || rc=$?
+assert_neq "${rc}" "0" "template size in the secrets file fails"
+assert_contains "$(cat "${TEST_TMPDIR}/last-stderr")" "NOMAD_NODE_TEMPLATE_MEMORY_MB" "template collision message names the key"
+assert_failure "no settings file written on template collision" test -e "${COLLIDE_OUT}"
+
 
 # Non-allowlisted secrets (and an absent file) must not block rendering.
 printf 'HCLOUD_TOKEN=x\n' > "${SECRETS}"
