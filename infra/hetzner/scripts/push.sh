@@ -15,6 +15,8 @@
 # Environment:
 #   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
 #                  Can also be set via --env flag.
+#   DEPLOY_REF     Git ref the server checkout is reset to (default: origin/main).
+#                  Set to a feature branch (e.g. origin/feat/...) to deploy it to staging.
 #
 # Examples:
 #   ./push.sh 1.2.3.4
@@ -28,6 +30,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
 source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
+DEPLOY_REF="${DEPLOY_REF:-origin/main}"
 
 # ─── Parse environment flag first ────────────────────────────────────────────
 
@@ -70,7 +73,7 @@ fi
 
 if [[ "${SKIP_CONFIRM}" != "true" ]]; then
   echo "Deploying to ${SERVER_IP}..."
-  echo "This will: git reset --hard, rebuild agent image, restart all services."
+  echo "This will: git reset --hard ${DEPLOY_REF}, rebuild agent image, restart all services."
   read -rp "Continue? [y/N] " CONFIRM
   if [[ ! "$CONFIRM" =~ ^[Yy] ]]; then
     echo "Aborted."
@@ -84,7 +87,7 @@ echo "==> Deploying to ${SERVER_IP} (${HEROBIDS_ENV})..."
 
 # Pass HEROBIDS_ENV and COMPOSE_OVERLAY into the heredoc so the server-side
 # commands use the correct compose files.
-ssh ${SSH_OPTS} "root@${SERVER_IP}" HEROBIDS_ENV="${HEROBIDS_ENV}" COMPOSE_OVERLAY="${COMPOSE_OVERLAY}" bash -s << 'DEPLOY'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" HEROBIDS_ENV="${HEROBIDS_ENV}" COMPOSE_OVERLAY="${COMPOSE_OVERLAY}" DEPLOY_REF="${DEPLOY_REF}" bash -s << 'DEPLOY'
 set -euo pipefail
 cd /opt/herobids
 
@@ -99,7 +102,7 @@ if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; th
 fi
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pulling latest code..."
-git fetch --all && git reset --hard origin/main
+git fetch --all && git reset --hard "${DEPLOY_REF}"
 
 # NPM_TOKEN — GitHub PAT with read:packages scope for @poshjosh/contracts.
 # The migrate/api/worker/web images pull @poshjosh/contracts from npm.pkg.github.com

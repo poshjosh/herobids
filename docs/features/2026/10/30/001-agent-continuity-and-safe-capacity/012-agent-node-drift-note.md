@@ -49,7 +49,7 @@ Scope: staging only. Production was not touched.
 - Applied on staging with `setup-control-plane.sh --env staging`. Converge installed the node-pool drop-ins for both units and did not restart Nomad.
 - Verified on staging (read-only dry-run): the guard now reads pool `herobids-staging`. `empty_inventory` is gone.
 
-## Remaining scale-out blockers (decision needed)
+## Remaining scale-out blockers (resolved 2026-10-31; see Resolution)
 
 1. `ownership_mismatch`: control plane `167421976` has labels `app` and `environment` only. The guard counts any owned server that is not `role=agent` as foreign.
 2. `orphan_nomad_node`: live Nomad node `herobids-staging-agent-3` (hostname `-agent-3`, public IP 178.105.68.146, 0 running allocations) matches the pool pattern but no cloud server has that name. Hetzner `173731633` (IP 178.105.68.146) is named `herobids-staging-agent-1`. The mismatch came from the earlier state-surgery rename.
@@ -64,3 +64,24 @@ Also observed: `nomad-scale-in.service` has `ENABLE_SCALE_IN=true`. The roadmap 
 - Gate 1 (drift identified and recorded): **met by this note.**
 - Gate 2 (replacement guard implemented and tested): run-all.sh passed locally (24 suites, 0 failed).
 - Gate 3 (milestone-1 gates): **not met**. Pending P9 scenarios.
+
+## Resolution (2026-10-31)
+
+- **Ownership (`ownership_mismatch`).** Control plane `167421976` now carries `role=control-plane`. Applied with `provision.sh` (1 changed). The guard ignores `role=control-plane` servers. Branch commit `08cf41b3`.
+- **Orphan Nomad node (`orphan_nomad_node`).** Decision: match by IP. Deviation: Nomad `/v1/nodes` reports the private address, so matching uses private IP (not public IP). One `GET /v1/nodes` call is kept. Name OR private-IP match, preferring non-down entries. Tests: `test-capacity-inventory.sh` (123 pass).
+- **Name mismatch still open.** Hetzner `173731633` is `herobids-staging-agent-1` and Nomad shows `herobids-staging-agent-3`. Scale-in selects nodes by exact Nomad name, so it skips this node until names match. Fail-safe, not fixed. A live node-identity change needs approval.
+- **Scale-in flag.** Decision: keep scale-in OFF on staging (read from the user's "true" answer; not separately confirmed). Cloud-init bakes `ENABLE_SCALE_IN=true` into the unit at first boot, and `user_data` is ignored after that. Fix: converge step 3c4 writes `nomad-scale-in.service.d/16-scale-in-flag.conf` from the Terraform output `enable_scale_in`. Setup fails closed on a non true/false value. Commit `34fc0648`. Tests: `test-converge-control-plane.sh` (316 pass).
+- **Terraform output.** A duplicate `enable_scale_in` output was introduced and removed before commit. The existing bool output is kept with a comment.
+- **Server sync and converge.** `/opt/herobids` is at `34fc0648` on `feat/safe-capacity-p9-staging`. Leftover `.terraform.lock.hcl` edit and `staging.tfvars.bak-20261031T074913Z` are kept untouched. `setup-control-plane.sh --env staging 138.199.172.202` exit 0. Verified: unit `ENABLE_SCALE_IN=false`, drop-in present, `nomad-scale-in` and `nomad-autoscale` timers enabled but inactive, `nomad` active.
+- **Scale-out dry-run.** Passes (exit 0) at `34fc0648`: managed agent nodes 1, max 3, candidate new count 2, no changes. Note: the dry-run needs `/etc/herobids/autoscale.env` and `autoscale-settings.env` sourced as well as the unit `Environment=`. `HCLOUD_TOKEN` is in the env file. Without it the guard refuses with "cloud inventory unavailable". This is expected fail-closed behaviour. The dry-run does not evaluate live capacity thresholds.
+- **Production (report only).** Production shares the Hetzner project and token. Its control plane probably has the same missing `role=control-plane` label. Not changed.
+
+## Still open
+
+- Name mismatch (above). Requires approval before any live change.
+- Stale Nomad `down` entries `-agent-1` and `-agent-2`. Purge after confirming no allocations.
+- API image predates the P-series code. Deploy not yet done.
+- P8 live shadow GETs against staging. Not yet run.
+- Timers stay inactive. `000-roadmap.md` and `010-objectives.md` say they stay stopped until the gates pass. The user's earlier "approve turning on the timers" conflicts with this. Not enabled.
+- Oso (owned by the user's brother) stays stopped. Not started.
+- 8 stopped agents on the operator's account are not started.
