@@ -11,13 +11,21 @@
 # Runs ON the server. Suitable for cron at 2am or ad-hoc remote invocation.
 #
 # Usage:
-#   maintenance-restart.sh [--skip-deploy] [--include-live]
+#   maintenance-restart.sh [--skip-deploy] [--include-live] [--start-stopped]
 #
 # Options:
 #   --skip-deploy   Skip code pull and image rebuild — restart agents on the
 #                   current herobids-agent image without touching the deployment.
 #   --include-live  Also restart agents with execution_mode='live'.
 #                   Skipped by default — live agents may hold open positions.
+#   --start-stopped Also start agents whose status is 'stopped' or 'crashed' and
+#                   that have no active session. Runs after the API is healthy.
+#                   Live-mode agents are skipped unless --include-live is given.
+#
+# Environment:
+#   DEPLOY_REF      Git ref to deploy in the deploy step (default: origin/main).
+#                   Set it when the server runs a non-main branch, or the reset
+#                   moves the checkout back to main.
 #
 # Cron (server-side, 2am every Sunday — edit /etc/cron.d/herobids or crontab):
 #   0 2 * * 0 root /opt/herobids/infra/hetzner/scripts/maintenance-restart.sh \
@@ -45,13 +53,15 @@ COMPOSE_FILES="-f docker-compose.yaml -f ${COMPOSE_OVERLAY}"
 
 DO_DEPLOY=true
 INCLUDE_LIVE=false
+START_STOPPED=false
 DEPLOY_DONE=false
 PREV_GIT_SHA=""
 
 for arg in "$@"; do
   case "$arg" in
-    --skip-deploy)  DO_DEPLOY=false ;;
-    --include-live) INCLUDE_LIVE=true ;;
+    --skip-deploy)   DO_DEPLOY=false ;;
+    --include-live)  INCLUDE_LIVE=true ;;
+    --start-stopped) START_STOPPED=true ;;
     --help|-h)
       sed -n '2,/^set /p' "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -251,7 +261,7 @@ if [[ "${DO_DEPLOY}" == "true" ]]; then
 
   PREV_GIT_SHA=$(git rev-parse HEAD)
   git fetch --all
-  git reset --hard origin/main
+  git reset --hard "${DEPLOY_REF:-origin/main}"
   ok "Code updated to $(git rev-parse --short HEAD) (was ${PREV_GIT_SHA:0:7})."
 
   # NPM_TOKEN — GitHub PAT with read:packages scope for @poshjosh/contracts.
@@ -353,6 +363,61 @@ if [[ $AGENT_COUNT -gt 0 ]]; then
   log "  Running agent containers: ${RUNNING}"
 else
   log "Step 5 — No agents to restart."
+fi
+
+# ─── Step 6: Start stopped and crashed agents (optional) ─────────────────────
+# Agents with no active session are not touched unless --start-stopped is given.
+# Like Step 5, this writes the DB directly. It does not run the API start checks
+# (model selection). An agent without a usable model will fail to launch.
+
+if [[ "${START_STOPPED}" == "true" ]]; then
+  log "Step 6 — Starting stopped and crashed agents..."
+
+  START_ID_OUTPUT="$(agent_ids "SELECT a.id
+     FROM agents a
+     WHERE a.status IN ('stopped','crashed')
+       AND NOT EXISTS (
+         SELECT 1 FROM agent_runtime_sessions s
+          WHERE s.agent_id = a.id
+            AND s.status NOT IN ('stopped','crashed'))
+       ${LIVE_FILTER}")"
+
+  START_IDS=()
+  if [[ -n "${START_ID_OUTPUT}" ]]; then
+    mapfile -t START_IDS <<< "${START_ID_OUTPUT}"
+  fi
+
+  if [[ ${#START_IDS[@]} -eq 0 ]]; then
+    ok "No stopped or crashed agents to start."
+  else
+    log "  Found ${#START_IDS[@]} agent(s) to start."
+    for id in "${START_IDS[@]}"; do log "  ${id}"; done
+
+    IN_LIST=$(printf "'%s'," "${START_IDS[@]}" | sed 's/,$//')
+
+    STARTED=$(PG -c "
+      WITH claimed AS (
+        UPDATE agents
+           SET status = 'starting'
+         WHERE id IN (${IN_LIST})
+           AND status IN ('stopped','crashed')
+        RETURNING id
+      ),
+      new_sessions AS (
+        INSERT INTO agent_runtime_sessions (id, agent_id, status)
+        SELECT gen_random_uuid(), c.id, 'starting'
+        FROM claimed c
+        RETURNING agent_id
+      )
+      SELECT count(*) FROM new_sessions;
+    " | tr -d ' \n')
+
+    ok "${STARTED:-0} agent session(s) queued to start."
+    log "  Worker reconcile launches containers within a few seconds."
+    sleep 8
+    RUNNING=$(docker ps --filter label=herobids.role=agent --format "{{.Names}}" | wc -l | tr -d ' ')
+    log "  Running agent containers: ${RUNNING}"
+  fi
 fi
 
 echo ""

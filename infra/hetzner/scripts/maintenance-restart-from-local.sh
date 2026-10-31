@@ -6,22 +6,28 @@
 # streams output back to your terminal.
 #
 # Usage:
-#   infra/hetzner/scripts/maintenance-restart-from-local.sh [--env <staging|production>] [--skip-deploy] [--include-live] [--yes|-y] [<server-ip>]
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh [--env <staging|production>] [--skip-deploy] [--include-live] [--start-stopped] [--yes|-y] [<server-ip>]
 #
 # Options:
 #   --env <name>     Target environment: staging or production (default: production).
 #   --skip-deploy    Skip code pull and image rebuild — restart agents on current image.
 #   --include-live   Also restart live-mode agents (skipped by default).
+#   --start-stopped  Also start stopped and crashed agents that have no active session.
+#                    Live agents are still skipped unless --include-live is given.
 #   --yes|-y         Skip confirmation prompt.
 #   <server-ip>      Override server IP (auto-detected from Terraform if omitted).
 #
 # Environment:
 #   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
+#   DEPLOY_REF     Git ref to run and deploy (default: origin/main). Use the feature
+#                  branch ref (for example origin/feat/my-branch) to test unmerged
+#                  changes on staging.
 #
 # Examples:
 #   infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging    # staging maintenance
 #   infra/hetzner/scripts/maintenance-restart-from-local.sh                  # deploy + restart agents
 #   infra/hetzner/scripts/maintenance-restart-from-local.sh --skip-deploy    # restart agents only
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh --skip-deploy --start-stopped  # also start stopped/crashed agents
 #   infra/hetzner/scripts/maintenance-restart-from-local.sh --yes            # no confirmation prompt
 #   infra/hetzner/scripts/maintenance-restart-from-local.sh --yes 1.2.3.4    # explicit IP, no prompt
 
@@ -44,7 +50,7 @@ SKIP_CONFIRM=false
 
 for arg in "$@"; do
   case "$arg" in
-    --skip-deploy|--include-live) REMOTE_ARGS+=("$arg") ;;
+    --skip-deploy|--include-live|--start-stopped) REMOTE_ARGS+=("$arg") ;;
     --yes|-y)  SKIP_CONFIRM=true ;;
     --help|-h)
       sed -n '2,/^set /p' "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \{0,1\}//'
@@ -88,18 +94,20 @@ echo "==> Connecting to ${SERVER_IP} (${HEROBIDS_ENV})..."
 echo ""
 
 # ─── Sync latest script then run it ─────────────────────────────────────────
-# Fetch and check out only maintenance-restart.sh from origin/main so the
+# Fetch and check out only maintenance-restart.sh from DEPLOY_REF so the
 # latest version runs, without a full reset that belongs to the script itself.
 
+DEPLOY_REF="${DEPLOY_REF:-origin/main}"
+
 # shellcheck disable=SC2086
-ssh ${SSH_OPTS} "root@${SERVER_IP}" HEROBIDS_ENV="${HEROBIDS_ENV}" bash -s -- "${REMOTE_ARGS[@]+"${REMOTE_ARGS[@]}"}" << 'REMOTE'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" HEROBIDS_ENV="${HEROBIDS_ENV}" DEPLOY_REF="${DEPLOY_REF}" bash -s -- "${REMOTE_ARGS[@]+"${REMOTE_ARGS[@]}"}" << 'REMOTE'
 set -euo pipefail
 cd /opt/herobids
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Environment: ${HEROBIDS_ENV}"
-echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)]      Syncing maintenance-restart.sh from origin/main..."
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)]      Syncing maintenance-restart.sh from ${DEPLOY_REF}..."
 git fetch --all --quiet
-git checkout origin/main -- infra/hetzner/scripts/maintenance-restart.sh
+git checkout "${DEPLOY_REF}" -- infra/hetzner/scripts/maintenance-restart.sh
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] OK   Script up to date."
 echo ""
 

@@ -227,8 +227,8 @@ infra/hetzner/
     ├── reset.sh                    # Wipe DB, Redis, Caddy; fresh start
     ├── reset-and-run.sh            # Nuclear reset + full provision
     ├── create-agents.sh            # Create agents on a OpenAIdom instance
-    ├── maintenance-restart.sh              # Server-side agent container restart
-    ├── maintenance-restart-from-local.sh   # Run maintenance restart from local machine
+    ├── maintenance-restart.sh              # Server-side agent restart (--skip-deploy, --include-live, --start-stopped)
+    ├── maintenance-restart-from-local.sh   # Run maintenance restart from local machine (forwards flags; DEPLOY_REF selects the script ref)
     ├── scale-common.sh             # Autoscale shared functions (Nomad API, cooldown, flock, logging)
     ├── check-nomad-capacity.sh     # Poll Nomad cluster and compute free headroom
     ├── scale-out.sh                # Main autoscale loop: evaluate + provision agent nodes
