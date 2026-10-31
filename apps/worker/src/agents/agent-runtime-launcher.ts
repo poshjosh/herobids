@@ -790,7 +790,8 @@ export class AgentRuntimeLauncher {
   registerRecoveredRuntime(agentId: string, sessionId: string): void {
     if (this.runtimes.has(sessionId)) return;
     const handle: LauncherRuntimeHandle = {
-      containerId: `recovered-${sessionId}`,
+      // The adapter derives the Nomad job ID from this value, so it must be the agentId, not a session-scoped placeholder.
+      containerId: agentId,
       agentId,
       sessionId,
       startedAt: new Date().toISOString(),

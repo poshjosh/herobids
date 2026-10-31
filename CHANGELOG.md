@@ -13,6 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The agent image build log is kept in full on failure, and the agent-browser install is retried.
 - A scale-in no longer removes an agent node when the remaining nodes would have fewer free slots than the scale-out threshold. The scale-in is deferred and nothing is deleted. Previously, the next scale-out added the node back.
 - A successful scale-in starts the scale-out cooldown, so scale-out does not re-add a node straight after it was removed.
+- Stopping an agent whose runtime was recovered after a worker restart now purges its Nomad job. Previously the stop used a placeholder ID, Nomad answered 404, and the job kept running while the agent showed as stopped.
 
 ## v0.8.5 - 2026-10-28
 

@@ -236,6 +236,28 @@ describe('AgentRuntimeLauncher — stop passes sessionId only under the P6 gate'
     expect(stopSpy).toHaveBeenCalledWith('agent-1', { sessionId: 'sess-unknown' });
   });
 
+  it('gate on, recovered handle: stop() targets the agent job by agentId with { sessionId }', async () => {
+    const port = makeObservingPort();
+    const stopSpy = vi.spyOn(port, 'stop');
+    const launcher = new AgentRuntimeLauncher({ port, capacityAwareStartEnabled: true });
+    launcher.registerRecoveredRuntime('agent-1', 'sess-recovered');
+
+    await launcher.stop('sess-recovered');
+
+    expect(stopSpy).toHaveBeenCalledWith('agent-1', { sessionId: 'sess-recovered' });
+  });
+
+  it('gate off, recovered handle: stop() targets the agent job by agentId only', async () => {
+    const port = new StubRuntimeAdapter();
+    const stopSpy = vi.spyOn(port, 'stop');
+    const launcher = new AgentRuntimeLauncher({ port });
+    launcher.registerRecoveredRuntime('agent-1', 'sess-recovered');
+
+    await launcher.stop('sess-recovered');
+
+    expect(stopSpy).toHaveBeenCalledWith('agent-1');
+  });
+
   it('gate off, missing handle: stop-by-session-lookup passes only the agentId', async () => {
     const port = new StubRuntimeAdapter();
     const stopSpy = vi.spyOn(port, 'stop');
