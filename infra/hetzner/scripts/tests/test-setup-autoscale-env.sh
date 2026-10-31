@@ -303,6 +303,15 @@ assert_contains "$(cat "${SCRIPTS_DIR}/setup-autoscale-env.sh")" \
 assert_contains "$(cat "${SCRIPTS_DIR}/setup-autoscale-env.sh")" \
   'umask 077 && rm -f /etc/nomad.d/acl-token && cat > /etc/nomad.d/acl-token && chmod 0600 /etc/nomad.d/acl-token' \
   "the Nomad ACL token is written under umask 077, after rm -f, and chmod 0600 follows"
+assert_contains "$(cat "${SCRIPTS_DIR}/setup-autoscale-env.sh")" \
+  "s|~/.ssh/|/etc/herobids/|g" \
+  "the server-side tfvars key paths point at /etc/herobids (ProtectHome hides /root)"
+assert_contains "$(cat "${SCRIPTS_DIR}/setup-autoscale-env.sh")" \
+  'scp ${SSH_OPTS} "${SSH_PUB_KEY_PATH}" "root@${SERVER_IP}:/etc/herobids/' \
+  "the SSH public key is uploaded to /etc/herobids"
+assert_not_contains "$(cat "${SCRIPTS_DIR}/setup-autoscale-env.sh")" \
+  '/root/.ssh' \
+  "setup-autoscale-env.sh never writes keys under /root"
 
 test_end || SUITE_FAILED=1
 

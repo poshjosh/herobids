@@ -184,7 +184,9 @@ This produces `10.0` for staging and `10.1` for production, making the regex mat
 
 **Root cause:** The `staging.tfvars` file uses `~/.ssh/herobids_deploy_key.pub` for `ssh_public_key_path`. This works on the operator's machine where `~` expands to the home directory. On the server, `~` resolves to `/root` but the `file()` function doesn't expand `~` — it treats it as a literal path segment.
 
-**Fix:** When uploading `staging.tfvars` to the server (via `setup-autoscale-env.sh`), the `ssh_public_key_path` should use an absolute path (`/root/.ssh/herobids_deploy_key.pub`). The operator must also upload the public key file to the server. Both are now handled by `setup-autoscale-env.sh`.
+**Fix:** When uploading `staging.tfvars` to the server (via `setup-autoscale-env.sh`), the `ssh_public_key_path` should use an absolute path under `/etc/herobids/` (`/etc/herobids/herobids_deploy_key.pub`). The operator must also upload the public key file to the server. Both are now handled by `setup-autoscale-env.sh`.
+
+**Why not `/root`:** The autoscale units run with `ProtectHome=true`, which hides `/root` from them. A key under `/root/.ssh` fails inside the unit even though it's there. Keep server-side keys in `/etc/herobids`.
 
 ---
 
