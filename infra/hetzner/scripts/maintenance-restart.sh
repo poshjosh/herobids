@@ -11,7 +11,7 @@
 # Runs ON the server. Suitable for cron at 2am or ad-hoc remote invocation.
 #
 # Usage:
-#   maintenance-restart.sh [--skip-deploy] [--include-live] [--start-stopped]
+#   maintenance-restart.sh [--skip-deploy] [--include-live] [--start-stopped] [--start-interval=N]
 #
 # Options:
 #   --skip-deploy   Skip code pull and image rebuild — restart agents on the
@@ -21,6 +21,9 @@
 #   --start-stopped Also start agents whose status is 'stopped' or 'crashed' and
 #                   that have no active session. Runs after the API is healthy.
 #                   Live-mode agents are skipped unless --include-live is given.
+#   --start-interval=N
+#                   Wait N seconds between agent starts (default 0 = no pause).
+#                   Applies to the restart step and to --start-stopped.
 #
 # Environment:
 #   DEPLOY_REF      Git ref to deploy in the deploy step (default: origin/main).
@@ -54,6 +57,7 @@ COMPOSE_FILES="-f docker-compose.yaml -f ${COMPOSE_OVERLAY}"
 DO_DEPLOY=true
 INCLUDE_LIVE=false
 START_STOPPED=false
+START_INTERVAL=0
 DEPLOY_DONE=false
 PREV_GIT_SHA=""
 
@@ -62,6 +66,10 @@ for arg in "$@"; do
     --skip-deploy)   DO_DEPLOY=false ;;
     --include-live)  INCLUDE_LIVE=true ;;
     --start-stopped) START_STOPPED=true ;;
+    --start-interval=*)
+      START_INTERVAL="${arg#--start-interval=}"
+      [[ "${START_INTERVAL}" =~ ^[0-9]+$ ]] || { echo "--start-interval needs a whole number of seconds, got '${START_INTERVAL}'" >&2; exit 1; }
+      ;;
     --help|-h)
       sed -n '2,/^set /p' "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -104,6 +112,35 @@ agent_ids() {
   raw="$(PG -v ON_ERROR_STOP=1 -c "$1")" \
     || die "Agent query failed; no agents were stopped. Check the SQL against the current schema."
   printf '%s\n' "$raw" | tr -d ' ' | grep -v '^$' || true
+}
+
+# Queues one session start per agent, pausing START_INTERVAL seconds between agents.
+# Sets QUEUED_COUNT. Not run in a subshell, so the logs stay on the terminal.
+queue_agent_starts() {
+  local id n raw
+  QUEUED_COUNT=0
+  for id in "$@"; do
+    if [[ ${QUEUED_COUNT} -gt 0 && ${START_INTERVAL} -gt 0 ]]; then
+      log "  Waiting ${START_INTERVAL}s before the next start..."
+      sleep "${START_INTERVAL}"
+    fi
+    raw="$(PG -v ON_ERROR_STOP=1 -c "
+      WITH claimed AS (
+        UPDATE agents SET status = 'starting'
+         WHERE id = '${id}' AND status IN ('stopped','crashed')
+        RETURNING id
+      ),
+      new_sessions AS (
+        INSERT INTO agent_runtime_sessions (id, agent_id, status)
+        SELECT gen_random_uuid(), c.id, 'starting' FROM claimed c
+        RETURNING agent_id
+      )
+      SELECT count(*) FROM new_sessions;")" \
+      || die "Failed to queue start for agent ${id}."
+    n="$(printf '%s' "${raw}" | tr -d ' \n')"
+    QUEUED_COUNT=$((QUEUED_COUNT + ${n:-0}))
+    log "  Queued ${id}"
+  done
 }
 
 # ─── Rollback ────────────────────────────────────────────────────────────────
@@ -335,26 +372,8 @@ done
 if [[ $AGENT_COUNT -gt 0 ]]; then
   log "Step 5 — Restarting ${AGENT_COUNT} agent(s)..."
 
-  IN_LIST=$(printf "'%s'," "${AGENT_IDS[@]}" | sed 's/,$//')
-
-  RESTARTED=$(PG -c "
-    WITH restarted AS (
-      UPDATE agents
-         SET status = 'starting'
-       WHERE id IN (${IN_LIST})
-         AND status = 'stopped'
-      RETURNING id
-    ),
-    new_sessions AS (
-      INSERT INTO agent_runtime_sessions (id, agent_id, status)
-      SELECT gen_random_uuid(), r.id, 'starting'
-      FROM restarted r
-      RETURNING agent_id
-    )
-    SELECT count(*) FROM new_sessions;
-  " | tr -d ' \n')
-
-  ok "${RESTARTED:-0} agent session(s) queued for restart."
+  queue_agent_starts "${AGENT_IDS[@]}"
+  ok "${QUEUED_COUNT} agent session(s) queued for restart."
   log "  Worker reconcile launches containers within a few seconds."
 
   # Brief pause then confirm containers are starting
@@ -390,35 +409,16 @@ if [[ "${START_STOPPED}" == "true" ]]; then
   if [[ ${#START_IDS[@]} -eq 0 ]]; then
     ok "No stopped or crashed agents to start."
   else
-    log "  Found ${#START_IDS[@]} agent(s) to start."
-    for id in "${START_IDS[@]}"; do log "  ${id}"; done
-
-    IN_LIST=$(printf "'%s'," "${START_IDS[@]}" | sed 's/,$//')
-
-    STARTED=$(PG -c "
-      WITH claimed AS (
-        UPDATE agents
-           SET status = 'starting'
-         WHERE id IN (${IN_LIST})
-           AND status IN ('stopped','crashed')
-        RETURNING id
-      ),
-      new_sessions AS (
-        INSERT INTO agent_runtime_sessions (id, agent_id, status)
-        SELECT gen_random_uuid(), c.id, 'starting'
-        FROM claimed c
-        RETURNING agent_id
-      )
-      SELECT count(*) FROM new_sessions;
-    " | tr -d ' \n')
-
-    ok "${STARTED:-0} agent session(s) queued to start."
+    log "  Found ${#START_IDS[@]} agent(s) to start (interval ${START_INTERVAL}s)."
+    queue_agent_starts "${START_IDS[@]}"
+    ok "${QUEUED_COUNT} agent session(s) queued to start."
     log "  Worker reconcile launches containers within a few seconds."
     sleep 8
     RUNNING=$(docker ps --filter label=herobids.role=agent --format "{{.Names}}" | wc -l | tr -d ' ')
     log "  Running agent containers: ${RUNNING}"
   fi
 fi
+
 
 echo ""
 ok "=== Maintenance restart complete ==="
