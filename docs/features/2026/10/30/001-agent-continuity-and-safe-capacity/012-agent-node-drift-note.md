@@ -91,7 +91,7 @@ Also observed: `nomad-scale-in.service` has `ENABLE_SCALE_IN=true`. The roadmap 
 - Name mismatch (above). Requires approval before any live change.
 - Stale Nomad `down` entries `-agent-1` and `-agent-2`. Purge after confirming no allocations.
 - API image predates the P-series code. Deployed 2026-10-31 (see Staging deploy below). Migrations 0088 and 0089 applied.
-- P8 live shadow GETs against staging. Not yet run.
+- P8 live shadow GETs against staging. Single-pass read-only checks ran 2026-10-31 (see the plan's P8 record). The multi-tick demand comparison (§12.2) has not run.
 - Timers stay inactive. `000-roadmap.md` and `010-objectives.md` say they stay stopped until the gates pass. The user's earlier "approve turning on the timers" conflicts with this. Not enabled.
 - Oso (owned by the user's brother) stays stopped. Not started.
 - 8 stopped agents on the operator's account are not started.

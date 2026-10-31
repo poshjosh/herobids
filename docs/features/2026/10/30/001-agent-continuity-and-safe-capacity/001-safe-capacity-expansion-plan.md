@@ -788,7 +788,7 @@ Stages describe dependencies, not mandatory separate services/files.
 | P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved | DONE (uncommitted; see P5 outstanding issues) |
 | P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | DONE (uncommitted; see P6 outstanding issues) |
 | P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection | DONE (app and scale-in halves; see P7 and §8 records; scale-in endpoints and fields still UNVERIFIED until P9) |
-| P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow | PARTIAL (local validation, H3 runbook and fixture shadow DONE; live shadow GETs NOT run and need approval; see P8 record) |
+| P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow | PARTIAL (local validation, H3 runbook, fixture shadow and live read-only shadow DONE 2026-10-31; multi-tick demand comparison NOT run; see P8 record) |
 | P9 | Obtain explicit staging mutation approval, deploy/migrate and execute controlled staging scenarios | P8 | Section 12 acceptance evidence; production still disabled | PENDING |
 
 Do not activate the new infrastructure controller before the waiting lifecycle
@@ -1322,7 +1322,7 @@ Open risks:
 
 ### P8 (documentation, local validation, fixture shadow)
 
-Status: PARTIAL. Local validation and the fixture shadow are complete. Live shadow (§12.2 GETs against staging) is not run and needs explicit approval. Nothing touched staging or production in P8.
+Status: PARTIAL. Local validation, the fixture shadow, and the live read-only shadow are complete. The live shadow ran on 2026-10-31 after owner approval. Nothing was written to staging or production, and no Terraform plan was run. Live decisions are still not demand-driven (see Live shadow below). Production was not touched.
 
 Done:
 
@@ -1337,9 +1337,19 @@ Done:
 - Fixture shadow: `test-capacity-controller.sh`, `test-capacity-readonly.sh`, `test-capacity-inventory.sh`, and `test-capacity-demand.sh` all exit 0, with no failure markers in the logs.
 - Empty-pool replay, read-only, synthetic fixtures: declared 0 gives rc 2, blocked, `empty_inventory`. Declared 1 gives rc 2, blocked, `empty_inventory` and `partial_apply`.
 
+Live shadow (2026-10-31, staging, read-only, run on `138.199.172.202` at `02917bc9`):
+
+- `check-nomad-capacity.sh --json`: exit 0. 1 ready node, free 491 MB of 3819 MB, 1 free agent slot, 256 MB per-slot reservation.
+- `scale-out.sh --dry-run`: exit 0. Managed 1, max 3, candidate 2. It reports "live capacity thresholds not evaluated", so this is a candidate count, not a demand verdict. No changes made.
+- `scale-in.sh --dry-run`: exit 2 ("Nothing to do"). Scale-in is disabled (`ENABLE_SCALE_IN=false`), so no candidates were evaluated.
+- Namespace check (watcher note 3, resolved). `/v1/evaluations` with no namespace is treated as `default` and returns 3 evaluations. `namespace=herobids-agents` returns 5. `namespace=*` returns 8. The watcher must pass `namespace=herobids-agents` explicitly. Read-only test: the unscoped call would miss the agent evaluations.
+- Demand snapshot: all 5 `herobids-agents` evaluations are `complete`. No blocked evaluations. 5 agent service jobs are running. All 6 allocations are `running`.
+- Nodes: `herobids-staging-agent-3` ready and eligible at `10.0.0.5`. `-agent-1` and `-agent-2` are `down` and still show private address `10.0.0.3`. The Hetzner server `173731633` is named `-agent-1` and has private `10.0.0.5`. This matches the private-IP matching in the guard. The name mismatch is kept as a known blocker, per the owner's decision.
+- Shadow state: no controller state was written. No cooldown or alert counters were touched.
+
 Not done:
 
-- Live shadow GETs against staging. Not run, pending approval. The fixtures are synthetic and labelled UNVERIFIED, so they check decision logic only, not live Nomad or Hetzner shapes.
+- Multi-tick shadow comparison against demand over an idle period, a pending-work period, and a full cooldown (§12.2 last bullet). Not started. It needs a separately named shadow state directory.
 - The H3 runbook's live steps. Not executed.
 
 Findings:
