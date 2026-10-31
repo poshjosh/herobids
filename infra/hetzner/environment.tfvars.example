@@ -69,7 +69,7 @@ app_domain = "staging.openaidom.com"  # or "openaidom.com"
 # ── Agent Node Pool ───────────────────────────────────────
 
 # agent_node_count        = 0    # autoscaler adjusts at runtime
-# min_agent_nodes         = 0    # allow scale-in to 0
+# min_agent_nodes         = 1    # scale-in floor. Keep >= 1: at 0, scale-in can empty the pool and scale-out refuses (empty_inventory). See docs/auto-scaling/manual-recovery-empty-pool.md
 # max_agent_nodes         = 3    # small pool for staging
 # agent_node_server_type  = "cpx22"
 

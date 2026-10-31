@@ -49,7 +49,7 @@ nomad_version = "1.9.7"
 
 # Agent Node Pool
 agent_node_count       = 0    # start with 0, provision nodes when ready to test
-min_agent_nodes        = 0    # staging only — production uses 1 (never scale to zero); see production-notes.md
+min_agent_nodes        = 1    # both environments use 1. At 0, scale-in can empty the pool and scale-out refuses (empty_inventory); see manual-recovery-empty-pool.md and production-notes.md
 max_agent_nodes        = 3    # staging default; production uses a larger pool, see production.tfvars
 agent_node_server_type = "cpx22"
 ```
@@ -266,6 +266,8 @@ The guard does not clear these on its own. Work through them in order:
 4. **Verify.** Run `scale-out.sh --dry-run` again. It must not print `pool blocked`. If it still does, read the new reasons and repeat from step 1.
 
 The guard only clears a record after the pool reconciles, and it still refuses if an unjoined server remains. Clearing the record therefore never hides a problem.
+
+If the pool has no managed servers at all (`empty_inventory`), the guard refuses every scale action, and this section does not apply. Follow [manual-recovery-empty-pool.md](./manual-recovery-empty-pool.md).
 
 ---
 

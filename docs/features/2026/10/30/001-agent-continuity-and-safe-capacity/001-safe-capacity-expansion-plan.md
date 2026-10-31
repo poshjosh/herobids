@@ -788,7 +788,7 @@ Stages describe dependencies, not mandatory separate services/files.
 | P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved | DONE (uncommitted; see P5 outstanding issues) |
 | P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | DONE (uncommitted; see P6 outstanding issues) |
 | P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection | DONE (app and scale-in halves; see P7 and §8 records; scale-in endpoints and fields still UNVERIFIED until P9) |
-| P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow | PENDING |
+| P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow | PARTIAL (local validation, H3 runbook and fixture shadow DONE; live shadow GETs NOT run and need approval; see P8 record) |
 | P9 | Obtain explicit staging mutation approval, deploy/migrate and execute controlled staging scenarios | P8 | Section 12 acceptance evidence; production still disabled | PENDING |
 
 Do not activate the new infrastructure controller before the waiting lifecycle
@@ -1225,7 +1225,7 @@ Deferred MEDIUM/LOW (not closed in P4):
 OPEN items (not closed in P4). Owner-action notes are required before any activation:
 
 - OPEN HIGH, H2 (activation blocker, values measured, rollout step pending): production node-template values were measured read-only from `herobids-production` (Nomad API `/v1/nodes` and `/v1/node/<id>`, plus Terraform state for the server type). There is one agent, `herobids-production-agent-1`, type `cx23`, location `fsn1`. Allocatable memory is 3819 MB (total 3819, reserved 0). Allocatable CPU is 4000 MHz (total 4000, reserved 0). The measured values are `NOMAD_NODE_TEMPLATE_MEMORY_MB=3819` and `NOMAD_NODE_TEMPLATE_CPU_MHZ=4000`. They were written to `/etc/herobids/autoscale.env` on `herobids-production` with owner approval, in place and not through `setup-autoscale-env.sh`. That script regenerates the whole file from a fixed key set and would drop them. The existing six keys were preserved (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `NOMAD_TOKEN`, `TF_BACKEND_BUCKET`, `TF_BACKEND_DYNAMODB_TABLE`, `TF_BACKEND_REGION`). The file is mode 600, and the pre-write backup is `/etc/herobids/autoscale.env.bak-h2-20261031044523`. Demand mode stays disabled, and no daemon-reload was run, because the unit reads `EnvironmentFile` at start. Open design question: `NOMAD_NODE_TEMPLATE_*` is not yet in the `render-autoscale-settings.sh` allowlist or the Terraform `autoscale_settings` output.
-- OPEN HIGH, H3 (decided: option A, fail closed). With floor 1 and zero managed servers, `empty_inventory` fails closed, and scale-from-empty is not implemented. Recovery from a fully empty pool is manual. The tested manual recovery runbook is a P8 deliverable. A bootstrap path with its own cap and approval is deferred and is not required for activation.
+- OPEN HIGH, H3 (decided: option A, fail closed). With floor 1 and zero managed servers, `empty_inventory` fails closed, and scale-from-empty is not implemented. Recovery from a fully empty pool is manual. The runbook is written at `infra/hetzner/docs/auto-scaling/manual-recovery-empty-pool.md` and is rehearsed against the synthetic empty-pool fixtures only (P8). Its live steps are NOT executed. A bootstrap path with its own cap and approval is deferred and is not required for activation.
 - OPEN HIGH, H4 (non-mutating staging capture done, rollout BLOCKER found): `terraform init` and `plan -refresh=false` were run read-only against staging (`TF_VAR_location=fsn1`). Nothing was applied. The extracted shape is 7 no-op, plus 2 `delete+create` actions. These are `hcloud_server.agent[0]` (replace on `user_data`) and `hcloud_server_network.agent[0]` (replace on `server_id`, as a consequence). Only agent resources change. The P4 create-only allowlist correctly rejects this plan, so scale-out on staging fails closed. ROOT CAUSE FOUND (read-only). Commit `dfae457a` (2026-10-30, "Fix agent start timeout") added a `docker pull` pre-pull block to `cloud-init-nomad-client.yaml`. The provider stores `hcloud_server.agent[0].user_data` as the base64 of its SHA-1 (28 characters). Its hex digest is `6e863c58…` and equals the SHA-1 of the template as it was BEFORE `dfae457a`, rendered with the current inputs. The HEAD template renders to `3bf24ca4…`, so the digest differs. The template inputs are unchanged. `hcloud_server.agent` has no `ignore_changes` on `user_data`, unlike the control plane, so any template change replaces every agent. P1–P4 did not cause this (P1 changed only the control-plane `hcloud_server.default`). Production has the same mismatch: its state digest `6f9097c6…` matches the pre-`dfae457a` template, and HEAD renders to `a32b945e…`. So a routine `provision.sh` apply on either environment would replace the agent. A read-only plan of a patched copy, with `ignore_changes = [user_data]` on `hcloud_server.agent`, shows zero non-no-op changes on both staging and production. Trade-off: existing agents no longer pick up template changes on apply, so template rollouts need an explicit, drained `-replace`. Owner decision needed before the repo change is committed or any apply runs. Do not fix it by removing state or using `-target`. The fixture shape is only partly verified: the `resource_changes` `actions` and `address` paths were confirmed against this real capture. The `change.after_unknown`, prior state, and `labels.environment` assumptions are still open.
 
 ### P5 (startup observation, DB facts, race guards)
@@ -1319,4 +1319,31 @@ Open risks:
 - Repository getters return full rows (L1). Narrowing is deferred.
 - Scale-in coordination (the other half of P7) is recorded in §8, with its own unverified items.
 - API integration: verified after the local dev DB was migrated to head and a local Redis was started. The full API suite passes (2004 pass, 0 fail, 252 skipped).
+
+### P8 (documentation, local validation, fixture shadow)
+
+Status: PARTIAL. Local validation and the fixture shadow are complete. Live shadow (§12.2 GETs against staging) is not run and needs explicit approval. Nothing touched staging or production in P8.
+
+Done:
+
+- H3 runbook: `infra/hetzner/docs/auto-scaling/manual-recovery-empty-pool.md`. It covers detection, pausing timers, a create-only saved-plan review, apply, joining, and rollback. Linked from `setup-auto-scaling.md` ("Clearing a blocked scale guard").
+- `lessons-learnt.md` item 5 status updated. The `agent_node_count` seed was removed from `cloud-init.yaml`, and the control plane has `ignore_changes = [user_data]`.
+- §12.1 build: `tsc --build` passed for domain, db, and worker.
+- §12.1 unit: targeted run, 5 files, 184 passed.
+- DB startup integration: 17 of 17 passed.
+- `pnpm test:integration`: 11 files, 135 passed.
+- Infra shell suites: `run-all.sh` and `check-nomad-capacity.test.sh` passed.
+- Fixture shadow: `test-capacity-controller.sh`, `test-capacity-readonly.sh`, `test-capacity-inventory.sh`, and `test-capacity-demand.sh` all exit 0, with no failure markers in the logs.
+- Empty-pool replay, read-only, synthetic fixtures: declared 0 gives rc 2, blocked, `empty_inventory`. Declared 1 gives rc 2, blocked, `empty_inventory` and `partial_apply`.
+
+Not done:
+
+- Live shadow GETs against staging. Not run, pending approval. The fixtures are synthetic and labelled UNVERIFIED, so they check decision logic only, not live Nomad or Hetzner shapes.
+- The H3 runbook's live steps. Not executed.
+
+Findings:
+
+- Staging zero-node gap, DECIDED: staging floor raised to 1 (user choice). Reason: at `min_agent_nodes = 0`, scale-in can drain the pool, and `empty_inventory` then blocks scale-out. Repo templates (`environment.tfvars.example`, `setup-auto-scaling.md`) carry the reason. The gitignored local `staging.tfvars` is set to 1. The live control plane still reads its floor from `TF_VAR_min_agent_nodes` in its own environment, so the live change is an approved P9 step, not done. Scale-from-empty stays deferred (H3).
+- Stale test reference (pre-existing, not changed). Root `package.json` `test:integration` lists `packages/db/src/journal-pg.integration.test.ts`, which does not exist. Vitest skips it silently.
+- Local P0–P7 commits are not pushed. `maintenance-restart-from-local.sh` deploys `origin/main`, so it cannot pick up local-only work.
 

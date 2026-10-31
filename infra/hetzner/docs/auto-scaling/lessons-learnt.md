@@ -75,7 +75,7 @@ client {
 
 **Workaround:** Set `prevent_destroy = false` temporarily, or use `-target` to isolate changes (though `-target` didn't help here due to dependency chains).
 
-**Status:** Known design issue. The autoscaler manages this file at runtime. The seed value in cloud-init is only useful at first boot. A proper fix would remove `agent_node_count` from the cloud-init template.
+**Status:** Resolved in `cloud-init.yaml`, which seeds the file with a literal `0` and no longer embeds `agent_node_count`. The control plane also has `ignore_changes = [user_data]` in `main.tf`. The autoscaler manages this file at runtime. The seed value is only useful at first boot. The workaround above is historical. Verify against the current `main.tf` before relying on it.
 
 ---
 
