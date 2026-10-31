@@ -282,8 +282,11 @@ resource "hcloud_server" "agent" {
 
   # Agent nodes are cattle — safe to destroy and recreate.
   # Only prevent_destroy in production if explicitly protecting capacity.
+  # user_data is ignored so a cloud-init template change does not replace live agents.
+  # Roll existing agents explicitly with `terraform apply -replace`.
   lifecycle {
     prevent_destroy = false
+    ignore_changes  = [user_data]
   }
 }
 
