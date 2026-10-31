@@ -370,7 +370,9 @@ runcmd:
   # ── Pre-pull agent image ─────────────────────────────────
   # Removes the image pull from every agent start. Best-effort: if the pull
   # fails, Nomad still pulls on first placement.
-  - docker pull ghcr.io/poshjosh/herobids-agent:latest || logger -t cloud-init "WARNING: agent image pre-pull failed; Nomad will pull on first placement"
+  # Quoted: the unquoted `: ` inside the message parses as a YAML mapping,
+  # which makes cloud-init reject the whole runcmd list.
+  - 'docker pull ghcr.io/poshjosh/herobids-agent:latest || logger -t cloud-init "WARNING: agent image pre-pull failed; Nomad will pull on first placement"'
 
   # ── Install Nomad ────────────────────────────────────────
   - wget -O- https://apt.releases.hashicorp.com/gpg 2>/dev/null | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
