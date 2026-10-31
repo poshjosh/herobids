@@ -76,11 +76,21 @@ Also observed: `nomad-scale-in.service` has `ENABLE_SCALE_IN=true`. The roadmap 
 - **Scale-out dry-run.** Passes (exit 0) at `34fc0648`: managed agent nodes 1, max 3, candidate new count 2, no changes. Note: the dry-run needs `/etc/herobids/autoscale.env` and `autoscale-settings.env` sourced as well as the unit `Environment=`. `HCLOUD_TOKEN` is in the env file. Without it the guard refuses with "cloud inventory unavailable". This is expected fail-closed behaviour. The dry-run does not evaluate live capacity thresholds.
 - **Production (report only).** Production shares the Hetzner project and token. Its control plane probably has the same missing `role=control-plane` label. Not changed.
 
+## Staging deploy (2026-10-31)
+
+- `deploy.sh --env staging` ran. Its step 4 (`push.sh`) ran `git reset --hard origin/main`, which replaced the server's feature-branch infra scripts with main's. The server stash `stash@{0}` holds the lock-file hash line that reset removed. Recoverable with `git stash pop` on the server.
+- Fix: [push.sh](/Users/chinomso.ikwuagwu/dev_ai/herobids/infra/hetzner/scripts/push.sh) takes `DEPLOY_REF` (default `origin/main`). Committed as `02917bc9` on `feat/safe-capacity-p9-staging`.
+- Re-deployed with `DEPLOY_REF=origin/feat/safe-capacity-p9-staging`. Server HEAD is `02917bc9`.
+- Verified: `herobids-api-1` healthy; migrate exited 0 (its Postgres NOTICEs are not errors); `runtime_registered_at`, `first_placed_at`, `placement_allocation_id`, `startup_failure_reason` exist in `agent_runtime_sessions`; the journal's newest entry is `0089`. Public `https://staging.openaidom.com/api/health` returns 200. Web returns 200.
+- Scale-in still `ENABLE_SCALE_IN=false`. Both timers enabled, inactive.
+- Scale-out dry-run from the restored branch: exit 0, managed 1, max 3, candidate 2, no changes.
+- Nomad: only `browser-pool` job. Agent node `-agent-3` ready, `-agent-1` and `-agent-2` stale `down`. Agents were not restarted.
+
 ## Still open
 
 - Name mismatch (above). Requires approval before any live change.
 - Stale Nomad `down` entries `-agent-1` and `-agent-2`. Purge after confirming no allocations.
-- API image predates the P-series code. Deploy not yet done.
+- API image predates the P-series code. Deployed 2026-10-31 (see Staging deploy below). Migrations 0088 and 0089 applied.
 - P8 live shadow GETs against staging. Not yet run.
 - Timers stay inactive. `000-roadmap.md` and `010-objectives.md` say they stay stopped until the gates pass. The user's earlier "approve turning on the timers" conflicts with this. Not enabled.
 - Oso (owned by the user's brother) stays stopped. Not started.
