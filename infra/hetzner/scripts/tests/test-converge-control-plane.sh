@@ -649,10 +649,20 @@ assert_contains "${RUN_OUTPUT}" "autoscale settings not converged" "missing inpu
 assert_eq "$([[ -e "${ROOT}/etc/herobids/autoscale-settings.env" ]] && echo yes || echo no)" "no" \
   "missing input: writes no settings file"
 
+new_root "settings-missing-demand"
+write_hcl "${STUB_PRIVATE_IP}"
+mkdir -p "${ROOT}/etc/herobids"
+printf '%s\n' 'NOMAD_AUTOSCALE_DEMAND_ENABLED=true' > "${ROOT}/etc/herobids/autoscale-settings.env"
+run_converge
+assert_neq "${RUN_EXIT}" "0" "missing input with demand enabled: converge fails (7g)"
+assert_contains "${RUN_OUTPUT}" "demand-aware mode is enabled" "missing input with demand enabled: says why"
+assert_eq "$([[ -e "${ROOT}/etc/herobids/autoscale-settings.failed" ]] && echo yes || echo no)" "yes" \
+  "missing input with demand enabled: writes the failed marker"
+
 new_root "settings-collision"
 write_hcl "${STUB_PRIVATE_IP}"
 write_settings_input
-printf '%s\n' 'NOMAD_SCALE_OUT_INCREMENT_MAX=4' > "${ROOT}/etc/herobids/autoscale.env"
+printf '%s\n' 'NOMAD_SCALE_OUT_INCREMENT_MAX=2' > "${ROOT}/etc/herobids/autoscale.env"
 run_converge
 assert_neq "${RUN_EXIT}" "0" "secrets collision: converge fails"
 assert_contains "${RUN_OUTPUT}" "migrate it to the Terraform autoscale_settings input" "secrets collision: says to migrate the key"

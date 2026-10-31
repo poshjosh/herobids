@@ -37,6 +37,27 @@ test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════
 
+test_begin "numeric env: the demand batch cap is 2; the legacy increment keeps its HEAD bound"
+
+assert_eq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=true NOMAD_SCALE_OUT_INCREMENT_MAX=2 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+  "demand increment max 2 is accepted"
+assert_eq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=true NOMAD_SCALE_OUT_INCREMENT_MAX=1 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+  "demand increment max 1 is accepted"
+assert_neq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=true NOMAD_SCALE_OUT_INCREMENT_MAX=3 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+  "demand increment max 3 is refused in demand mode"
+assert_eq "$(NOMAD_AUTOSCALE_DEMAND_ENABLED=false NOMAD_SCALE_OUT_INCREMENT_MAX=5 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+  "an unused demand max of 5 does not abort a legacy-mode run"
+assert_eq "$(NOMAD_SCALE_OUT_INCREMENT=3 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+  "legacy increment 3 is still accepted (the gate-disabled path is unchanged)"
+assert_eq "$(NOMAD_SCALE_OUT_INCREMENT=100 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+  "legacy increment 100 is still accepted (HEAD upper bound)"
+assert_neq "$(NOMAD_SCALE_OUT_INCREMENT=101 validate_scale_numeric_env >/dev/null 2>&1 && echo 0 || echo $?)" "0" \
+  "legacy increment 101 is refused"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
 test_begin "numeric env: non-integers, out-of-range values and leading zeros are refused"
 
 for value in "" "abc" "-1" "1.5" "08" " 5" "0x10" "1e3" "+5" "101" "1000000000"; do
@@ -75,7 +96,7 @@ run_entry() {
 test_begin "numeric env: entry scripts refuse a bad knob at load time, before any side effect"
 
 RESULT="$(run_entry NOMAD_AGENT_MEMORY_RESERVATION_MB "a[\$(touch ${MARKER})]" check-nomad-capacity.sh)"
-assert_eq "${RESULT%%|*}" "2" "check-nomad-capacity.sh: refuses the subscript attack with exit 2"
+assert_eq "${RESULT%%|*}" "1" "check-nomad-capacity.sh: refuses the subscript attack with exit 1"
 assert_contains "${RESULT}" "NOMAD_AGENT_MEMORY_RESERVATION_MB=" "check-nomad-capacity.sh: names the variable"
 assert_eq "$([[ -e "${MARKER}" ]] && echo present || echo absent)" "absent" \
   "check-nomad-capacity.sh: the injected value never executes"
@@ -85,6 +106,8 @@ assert_eq "${RESULT%%|*}" "2" "scale-out.sh: refuses a non-integer cooldown with
 assert_contains "${RESULT}" "NOMAD_SCALE_OUT_COOLDOWN_SECONDS='soon'" "scale-out.sh: names the bad value"
 
 RESULT="$(run_entry NOMAD_SCALE_IN_MAX_NODES_PER_RUN "11" scale-in.sh)"
-assert_eq "${RESULT%%|*}" "2" test_end || SUITE_FAILED=1
+assert_eq "${RESULT%%|*}" "2" "scale-in.sh: refuses 11 nodes per run with exit 2"
+
+test_end || SUITE_FAILED=1
 
 exit "${SUITE_FAILED:-0}"

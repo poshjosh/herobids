@@ -17,7 +17,11 @@
 #   NOMAD_SCALE_OUT_COOLDOWN_SECONDS    Minimum seconds between scale-out operations (default: 300)
 #   NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT Free memory % below which we scale out (default: 20)
 #   NOMAD_SCALE_OUT_SLOT_THRESHOLD      Free slots below which we scale out (default: 3)
-#   NOMAD_SCALE_OUT_INCREMENT           Number of nodes to add per scale-out event (default: 1)
+#   NOMAD_SCALE_OUT_INCREMENT           Number of nodes to add per scale-out event, legacy policy (default: 1; 1..100)
+#   NOMAD_SCALE_OUT_INCREMENT_MAX       Batch cap per demand-aware scale-out event (default: 2; 1..2)
+#   NOMAD_AUTOSCALE_DEMAND_ENABLED      Enables demand-aware scale-out (default: false; legacy policy when false)
+#   NOMAD_NODE_TEMPLATE_MEMORY_MB       Memory of one new agent node, demand mode only (no default; required when enabled)
+#   NOMAD_NODE_TEMPLATE_CPU_MHZ         CPU of one new agent node, demand mode only (no default; required when enabled)
 #   NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS Readiness deadline for a scale-out request (default: 600)
 #   NOMAD_AUTOSCALE_NODE_POOL           Node pool / server name prefix this autoscaler owns (default: TF_VAR_server_name, then herobids)
 #   NOMAD_AUTOSCALE_LOCKFILE            Path to flock lock file (default: /var/run/nomad-autoscale.lock)
@@ -43,8 +47,22 @@ NOMAD_SCALE_OUT_COOLDOWN_SECONDS="${NOMAD_SCALE_OUT_COOLDOWN_SECONDS:-300}"
 NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT="${NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT:-20}"
 NOMAD_SCALE_OUT_SLOT_THRESHOLD="${NOMAD_SCALE_OUT_SLOT_THRESHOLD:-3}"
 NOMAD_SCALE_OUT_INCREMENT="${NOMAD_SCALE_OUT_INCREMENT:-1}"
+# Batch cap per demand-aware scale-out event (plan 7d). Matches nomad_scale_out_increment_max.
+NOMAD_SCALE_OUT_INCREMENT_MAX="${NOMAD_SCALE_OUT_INCREMENT_MAX:-2}"
 # Seconds a scale-out may wait for its new nodes to become ready before the record expires.
 NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS="${NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS:-600}"
+# Demand-aware mode (plan 5.1/7). Disabled by default; the legacy policy stays in force.
+NOMAD_AUTOSCALE_DEMAND_ENABLED="${NOMAD_AUTOSCALE_DEMAND_ENABLED:-false}"
+NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS="${NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS:-2}"
+NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS="${NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS:-60}"
+NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS="${NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS:-600}"
+# No default: a guessed template would simulate placement against the wrong node size.
+NOMAD_NODE_TEMPLATE_MEMORY_MB="${NOMAD_NODE_TEMPLATE_MEMORY_MB:-}"
+NOMAD_NODE_TEMPLATE_CPU_MHZ="${NOMAD_NODE_TEMPLATE_CPU_MHZ:-}"
+# Nomad namespace that hosts the agent jobs whose demand the controller reads.
+NOMAD_AGENT_NAMESPACE="${NOMAD_AGENT_NAMESPACE:-herobids-agents}"
+# Distinct from the success cooldown: rate-limits retries after a failed scale-out.
+NOMAD_SCALE_OUT_FAILURE_BACKOFF_SECONDS="${NOMAD_SCALE_OUT_FAILURE_BACKOFF_SECONDS:-300}"
 # Node pool (and server name prefix) whose servers this autoscaler owns.
 NOMAD_AUTOSCALE_NODE_POOL="${NOMAD_AUTOSCALE_NODE_POOL:-${TF_VAR_server_name:-herobids}}"
 NOMAD_AUTOSCALE_LOCKFILE="${NOMAD_AUTOSCALE_LOCKFILE:-/var/run/nomad-autoscale.lock}"
@@ -98,9 +116,41 @@ validate_scale_numeric_env() {
   require_uint NOMAD_SCALE_OUT_COOLDOWN_SECONDS "${NOMAD_SCALE_OUT_COOLDOWN_SECONDS}" 0 86400
   require_uint NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT "${NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT}" 0 100
   require_uint NOMAD_SCALE_OUT_SLOT_THRESHOLD "${NOMAD_SCALE_OUT_SLOT_THRESHOLD}" 0 1000
+  # Legacy fixed increment: bound unchanged from HEAD (1..100). The demand-mode batch cap is separate.
   require_uint NOMAD_SCALE_OUT_INCREMENT "${NOMAD_SCALE_OUT_INCREMENT}" 1 100
+  # Demand-mode batch cap only, so legacy runs never reject an unused value. Mirrors
+  # nomad_scale_out_increment_max in variables.tf (1..2).
+  if [ "${NOMAD_AUTOSCALE_DEMAND_ENABLED:-}" = "true" ]; then
+    require_uint NOMAD_SCALE_OUT_INCREMENT_MAX "${NOMAD_SCALE_OUT_INCREMENT_MAX}" 1 2
+  fi
   require_uint NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS "${NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS}" 1 86400
+  require_uint NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS "${NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS}" 1 100
+  require_uint NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS "${NOMAD_DEMAND_OBSERVATION_INTERVAL_SECONDS}" 1 86400
+  require_uint NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS "${NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS}" 1 86400
+  require_uint NOMAD_SCALE_OUT_FAILURE_BACKOFF_SECONDS "${NOMAD_SCALE_OUT_FAILURE_BACKOFF_SECONDS}" 0 86400
   require_uint NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS "${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS}" 1 86400
+}
+
+# demand_mode_enabled
+#   Prints nothing; returns 0 when demand-aware mode is on, 1 when off. Any value other
+#   than exactly true or false exits 2, so a typo can never silently select the legacy policy.
+demand_mode_enabled() {
+  case "${NOMAD_AUTOSCALE_DEMAND_ENABLED}" in
+    true) return 0 ;;
+    false) return 1 ;;
+    *) die "NOMAD_AUTOSCALE_DEMAND_ENABLED='${NOMAD_AUTOSCALE_DEMAND_ENABLED}' must be exactly true or false." 2 ;;
+  esac
+}
+
+# validate_demand_template_env
+#   Demand mode only. The node template must be set explicitly; it is what the
+#   controller simulates placement against.
+validate_demand_template_env() {
+  if [[ -z "${NOMAD_NODE_TEMPLATE_MEMORY_MB}" || -z "${NOMAD_NODE_TEMPLATE_CPU_MHZ}" ]]; then
+    die "NOMAD_NODE_TEMPLATE_MEMORY_MB and NOMAD_NODE_TEMPLATE_CPU_MHZ are required when NOMAD_AUTOSCALE_DEMAND_ENABLED=true." 2
+  fi
+  require_uint NOMAD_NODE_TEMPLATE_MEMORY_MB "${NOMAD_NODE_TEMPLATE_MEMORY_MB}" 1 100000
+  require_uint NOMAD_NODE_TEMPLATE_CPU_MHZ "${NOMAD_NODE_TEMPLATE_CPU_MHZ}" 1 100000
 }
 
 # parse_capacity_output TEXT
@@ -324,6 +374,14 @@ touch_cooldown() {
   mkdir -p "${dir}"
   date +%s > "${NOMAD_AUTOSCALE_COOLDOWN_FILE}"
   log "Cooldown timestamp recorded: $(cat "${NOMAD_AUTOSCALE_COOLDOWN_FILE}")"
+}
+
+# record_scale_success TARGET — called only after a successful apply (M2). The cooldown is
+# recorded FIRST: the infrastructure has already changed, so a failure to write the node count
+# afterwards must not leave the cooldown unrecorded and allow an immediate second scale-out.
+record_scale_success() {
+  touch_cooldown
+  write_node_count "$1"
 }
 
 # ─── Lock helpers ─────────────────────────────────────────────────────────────

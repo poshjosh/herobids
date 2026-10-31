@@ -416,7 +416,19 @@ assert_eq "$(rc_of capacity_plan_fit 4096 4000 <<<"${big_count}")" "5" "a count 
 
 zero_count='{"bins":[],"items":[{"key":"a","memory_mb":512,"cpu_mhz":256,"count":0}]}'
 OUT="$(capacity_plan_fit 4096 4000 <<<"${zero_count}")"
-assert_eq "$(jq -r '.new_nodes_needed' <<<"${OUT}")" "0" "a count of zero is valid and needs no node"
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "plan fit: the item cap is enforced with exit 1, never silently truncated"
+
+AT_CAP="$(jq -nc '{bins:[],items:[range(500) | {key:("k" + tostring), memory_mb:512, cpu_mhz:256, count:1}]}')"
+assert_eq "$(rc_of capacity_plan_fit 4096 4000 <<<"${AT_CAP}")" "0" "exactly 500 items are accepted"
+
+OVER_CAP="$(jq -nc '{bins:[],items:[range(501) | {key:("k" + tostring), memory_mb:512, cpu_mhz:256, count:1}]}')"
+assert_eq "$(rc_of capacity_plan_fit 4096 4000 <<<"${OVER_CAP}")" "1" "501 items exit 1"
+OVER_OUT="$(capacity_plan_fit 4096 4000 <<<"${OVER_CAP}" 2>/dev/null || true)"
+assert_eq "${OVER_OUT}" "" "501 items print no partial result"
 
 test_end || SUITE_FAILED=1
 

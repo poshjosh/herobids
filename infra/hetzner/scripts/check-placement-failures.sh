@@ -7,6 +7,10 @@
 # within a time window, triggers scale-out.sh with --bypass-cooldown --force
 # to provision additional capacity immediately.
 #
+# In demand-aware mode (NOMAD_AUTOSCALE_DEMAND_ENABLED=true) this script is a
+# read-only observer (plan 5.1): it reports the unresolved backlog and exits. It never
+# calls scale-out.sh, never bypasses the controller cooldown and writes no state.
+#
 # Usage:
 #   check-placement-failures.sh [--help] [--dry-run]
 #
@@ -15,7 +19,7 @@
 #   --dry-run   Compute failure count and show what would happen without scaling.
 #
 # Exit codes:
-#   0  No action needed, or safety-net scale-out triggered successfully.
+#   0  No action needed, observed in demand mode, or safety-net scale-out triggered successfully.
 #   1  Configuration or runtime error.
 #
 # Environment (see scale-common.sh for shared defaults):
@@ -74,15 +78,21 @@ cluster cannot place new workloads. When the failure count exceeds the
 configured threshold within the lookback window, triggers scale-out with
 --bypass-cooldown --force to immediately provision additional agent nodes.
 
+With NOMAD_AUTOSCALE_DEMAND_ENABLED=true this script is an observer only: it
+reports the blocked backlog and exits 0. The demand-aware scale-out controller
+owns all capacity increases, so this script never triggers scale-out and does
+not write its cooldown state.
+
 Configuration (env vars):
   NOMAD_PLACEMENT_FAILURE_WINDOW_SECONDS  Lookback window (default: 300).
   NOMAD_PLACEMENT_FAILURE_THRESHOLD       Blocked evals to trigger (default: 5).
   NOMAD_PLACEMENT_FAILURE_COOLDOWN_SECONDS Min between safety-net triggers (default: 600).
   NOMAD_PLACEMENT_FAILURE_STATE_FILE      State tracking file.
+  NOMAD_AUTOSCALE_DEMAND_ENABLED          true selects observer mode (default: false).
 
 Exit codes:
-  0  No action needed, or safety-net triggered successfully.
-  1  Runtime error.
+  0  No action needed, observed in demand mode, or safety-net triggered successfully.
+  1  Runtime or configuration error.
 EOF
   exit 0
 fi
@@ -151,7 +161,7 @@ log "Fetching evaluations from Nomad..."
 # The evaluations API returns all evaluations. We filter client-side by time
 # and status. Use a reasonably large set — Nomad keeps evals for a limited
 # time (typically last 1000 or 24h depending on config).
-EVALS_JSON="$(nomad_api GET "/v1/evaluations" 2>/dev/null || echo "[]")"
+EVALS_JSON="$(nomad_api GET "/v1/evaluations?namespace=${NOMAD_AGENT_NAMESPACE}" 2>/dev/null || echo "[]")"
 if [[ -z "${EVALS_JSON}" || "${EVALS_JSON}" == "[]" ]]; then
   log "No evaluations returned from Nomad API — cluster may be idle. Nothing to do."
   exit 0
@@ -207,6 +217,18 @@ if [[ "${BLOCKED_COUNT}" -gt 0 ]]; then
   echo "${BLOCKED_EVALS}" | jq -r '.[:3][] | "    EvalID=\(.ID) JobID=\(.JobID) Reason=\(.BlockedEval // "unknown")"' 2>/dev/null | while IFS= read -r line; do
     log "${line}"
   done
+fi
+
+# ─── Demand-aware observer (plan 5.1) ─────────────────────────────────────────
+
+# The controller in scale-out.sh is the only capacity writer in demand mode. This
+# exit comes before the threshold, cooldown, state and trigger steps, so observation
+# cannot start a second scale-out or write the safety-net cooldown file.
+if demand_mode_enabled; then
+  log ""
+  log "OBSERVER (demand-aware mode): ${BLOCKED_COUNT} blocked resource evaluation(s) in the last ${NOMAD_PLACEMENT_FAILURE_WINDOW_SECONDS}s."
+  log "  The capacity controller owns scale-out; this watcher took no action and wrote no state."
+  exit 0
 fi
 
 # ─── Evaluate threshold ───────────────────────────────────────────────────────

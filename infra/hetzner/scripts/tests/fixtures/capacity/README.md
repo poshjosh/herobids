@@ -151,3 +151,23 @@ Assumed shapes that are unverified: `FailedTGAllocs` keys (`DimensionExhausted`,
 - Real Nomad 1.9.7 field shapes for `/v1/nodes`. The P2 fixtures are from memory.
 - HCLOUD_TOKEN availability on the autoscale host. It is not provisioned by the autoscale units, so the
   live cloud fetch cannot run there until that is resolved.
+
+## P4 controller fixtures (SYNTHETIC, UNVERIFIED)
+
+- `plan-create-agent.json`: SYNTHETIC and UNVERIFIED. A hand-written approximation of
+  `terraform show -json` for a saved plan with create-only `hcloud_server.agent[2]` and
+  `hcloud_server_network.agent[2]`. The shape (`resource_changes`, `actions`, `address`, `index`)
+  is assumed, not captured from a real `terraform init` or `plan`. Tests use it only through a stubbed
+  `terraform`. Do not use it as evidence of real plan output. The H1 allowlist checks `change.after`
+  for `hcloud_server.agent[2]` (server_type `cpx21`, location `nbg1`, labels.environment `staging`, name
+  `herobids-agent-3`) and for the network attachment (`network_id` = the prior-state `hcloud_network.private[0]`,
+  `server_id` null with `after_unknown` true). These values are the fixture's own and are not verified against
+  real Hetzner or Terraform output (H4).
+- `synthetic-staging-tfvars.txt`: SYNTHETIC and UNVERIFIED. Named `.txt` because the repo `.gitignore` ignores `*.tfvars`, which would drop it from a commit. Used by the `--force` block of
+  `test-capacity-scale-out-demand.sh` as `${TF_DIR}/staging.tfvars`. It sets `environment`, `server_name` and
+  `agent_node_server_type` only. It deliberately omits `location`, so the test supplies `TF_VAR_location=nbg1`,
+  which the controller requires (no `variables.tf` fallback). The real `staging.tfvars` does not set `location`
+  either; the autoscale environment must export `TF_VAR_location` and `TF_VAR_server_name` (rollout requirement).
+- `fake-capacity-api.py` (tests directory, not a fixture): a 127.0.0.1 fake of the Hetzner `/v1/servers`
+  and Nomad `/v1/nodes` and `/v1/evaluations` endpoints. It serves the synthetic `cloud-healthy.json` and
+  `nomad-healthy.json` fixtures with the environment rewritten to `staging`. It is a mock, not a capture.

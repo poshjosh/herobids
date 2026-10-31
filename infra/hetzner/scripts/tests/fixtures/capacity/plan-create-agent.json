@@ -1,0 +1,65 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.0",
+  "resource_drift": [],
+  "prior_state": {
+    "format_version": "1.0",
+    "values": {
+      "root_module": {
+        "resources": [
+          {
+            "address": "hcloud_network.private[0]",
+            "mode": "managed",
+            "type": "hcloud_network",
+            "name": "private",
+            "index": 0,
+            "values": {
+              "id": "4242",
+              "name": "herobids-net",
+              "labels": { "app": "herobids", "environment": "staging" }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "hcloud_server.agent[2]",
+      "mode": "managed",
+      "type": "hcloud_server",
+      "name": "agent",
+      "index": 2,
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "name": "herobids-agent-3",
+          "server_type": "cpx21",
+          "location": "nbg1",
+          "labels": { "app": "herobids", "role": "agent", "node_pool": "herobids", "environment": "staging" }
+        },
+        "after_unknown": { "id": true, "ipv4_address": true, "network": true }
+      }
+    },
+    {
+      "address": "hcloud_server_network.agent[2]",
+      "mode": "managed",
+      "type": "hcloud_server_network",
+      "name": "agent",
+      "index": 2,
+      "change": {
+        "actions": ["create"],
+        "after": { "network_id": "4242", "server_id": null },
+        "after_unknown": { "id": true, "server_id": true }
+      }
+    },
+    {
+      "address": "hcloud_server.agent[0]",
+      "mode": "managed",
+      "type": "hcloud_server",
+      "name": "agent",
+      "index": 0,
+      "change": { "actions": ["no-op"] }
+    }
+  ]
+}

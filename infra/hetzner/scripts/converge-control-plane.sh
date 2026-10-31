@@ -324,7 +324,15 @@ if [[ -f "${AUTOSCALE_SETTINGS_INPUT}" ]]; then
     : > "${AUTOSCALE_SETTINGS_FAILED_MARKER}"
   fi
 else
-  warn "${AUTOSCALE_SETTINGS_INPUT} missing; autoscale settings not converged (setup-control-plane.sh uploads it)"
+  # A host whose last rendered settings enabled demand mode must not silently lose its
+  # settings input: the units would keep running a policy this script can no longer re-render.
+  if [[ -f "${AUTOSCALE_SETTINGS_ENV}" ]] && grep -Eq '^NOMAD_AUTOSCALE_DEMAND_ENABLED=true$' "${AUTOSCALE_SETTINGS_ENV}"; then
+    SETTINGS_FAILED=true
+    : > "${AUTOSCALE_SETTINGS_FAILED_MARKER}"
+    warn "${AUTOSCALE_SETTINGS_INPUT} missing while demand-aware mode is enabled; autoscale settings not converged (setup-control-plane.sh uploads it)"
+  else
+    warn "${AUTOSCALE_SETTINGS_INPUT} missing; autoscale settings not converged (setup-control-plane.sh uploads it)"
+  fi
 fi
 
 

@@ -83,6 +83,8 @@ is_allowed_key() {
 is_valid_value() {
   case "$1" in
     NOMAD_AUTOSCALE_DEMAND_ENABLED) [[ "$2" == "true" || "$2" == "false" ]] ;;
+    # Batch cap per decision; matches the bound in scale-common.sh and variables.tf.
+    NOMAD_SCALE_OUT_INCREMENT_MAX) [[ "$2" =~ ^[12]$ ]] ;;
     *) [[ "$2" =~ ^[1-9][0-9]{0,8}$ ]] ;;
   esac
 }

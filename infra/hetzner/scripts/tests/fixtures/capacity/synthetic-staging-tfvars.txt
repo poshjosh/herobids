@@ -1,0 +1,8 @@
+# SYNTHETIC test fixture for the --force end-to-end test. Not a real environment file.
+# Named .txt (not .tfvars) because the repo .gitignore ignores *.tfvars; the test copies it to
+# a temp staging.tfvars. Mirrors the layout of infra/hetzner/staging.tfvars: environment,
+# server_name and agent_node_server_type are set here; location is deliberately absent (it is
+# supplied as TF_VAR_location by the autoscale environment), so both lookup paths are exercised.
+environment             = "staging"
+server_name             = "herobids"
+agent_node_server_type  = "cpx21"

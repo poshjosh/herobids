@@ -42,18 +42,22 @@ fi
 # ─── Parse arguments ──────────────────────────────────────────────────────────
 
 OUTPUT_JSON=false
+BINS_JSON=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)
-      echo "Usage: $0 [--help] [--dry-run] [--json]"
+      echo "Usage: $0 [--help] [--dry-run] [--json] [--bins-json]"
       echo ""
       echo "Poll Nomad API and compute free cluster headroom."
       echo ""
       echo "Options:"
-      echo "  --help     Show this help message."
-      echo "  --dry-run  Log what would be done without side effects."
-      echo "  --json     Output results as JSON."
+      echo "  --help       Show this help message."
+      echo "  --dry-run    Log what would be done without side effects."
+      echo "  --json       Output results as JSON."
+      echo "  --bins-json  Output one JSON object {ready_nodes, free_slots, bins} from a single"
+      echo "               Nomad snapshot, for the demand-aware controller. Zero ready nodes"
+      echo "               prints ready_nodes 0 with empty bins and exits 2."
       echo ""
       echo "Environment variables (see scale-common.sh for defaults):"
       echo "  NOMAD_ADDR                        Nomad server HTTP API base URL."
@@ -66,6 +70,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --json)
       OUTPUT_JSON=true
+      shift
+      ;;
+    --bins-json)
+      BINS_JSON=true
       shift
       ;;
     -*)
@@ -88,6 +96,9 @@ log "  Dry run:      ${DRY_RUN:-false}"
 # In dry-run mode, skip API calls and report "unknown" rather than zeros.
 # Zeros would look like a real "no capacity" reading to callers.
 if [[ "${DRY_RUN:-false}" == "true" ]]; then
+  if [[ "${BINS_JSON}" == "true" ]]; then
+    die "--bins-json needs live reads; it cannot be used with --dry-run." 1
+  fi
   log "[DRY-RUN] Skipping Nomad API calls; capacity values are unknown."
   if [[ "${OUTPUT_JSON}" == "true" ]]; then
     echo '{"free_memory_mb": "unknown", "free_slots": "unknown", "total_memory_mb": "unknown", "free_memory_pct": "unknown", "ready_nodes": "unknown", "agent_memory_reservation_mb": '"${NOMAD_AGENT_MEMORY_RESERVATION_MB}"', "dry_run": true}'
@@ -163,7 +174,9 @@ log "  Ready nodes: ${READY_COUNT}"
 
 if [[ "${READY_COUNT}" -eq 0 ]]; then
   log "WARNING: No ready Nomad client nodes found. Cluster has no capacity for agent placement."
-  if [[ "${OUTPUT_JSON}" == "true" ]]; then
+  if [[ "${BINS_JSON}" == "true" ]]; then
+    echo '{"ready_nodes": 0, "free_slots": 0, "bins": []}'
+  elif [[ "${OUTPUT_JSON}" == "true" ]]; then
     echo '{"free_memory_mb": 0, "free_slots": 0, "total_memory_mb": 0, "free_memory_pct": 0, "ready_nodes": 0, "agent_memory_reservation_mb": '"${NOMAD_AGENT_MEMORY_RESERVATION_MB}"'}'
   else
     echo "free_memory_mb=0"
@@ -181,6 +194,7 @@ fi
 TOTAL_MEMORY_MB=0
 TOTAL_FREE_MEMORY_MB=0
 FREE_SLOTS=0
+NODE_BINS_JSON="[]"
 
 for ((idx = 0; idx < READY_COUNT; idx++)); do
   node_id="${READY_NODE_IDS[idx]}"
@@ -208,6 +222,11 @@ for ((idx = 0; idx < READY_COUNT; idx++)); do
   TOTAL_MEMORY_MB=$(( TOTAL_MEMORY_MB + node_mem_mb ))
   TOTAL_FREE_MEMORY_MB=$(( TOTAL_FREE_MEMORY_MB + free_mem_mb ))
 
+  # Per-node bin for the demand controller's simulated placement (plan 5.6).
+  NODE_BINS_JSON="$(jq -c --arg id "${node_id}" --argjson m "${free_mem_mb}" --argjson c "${free_cpu_mhz}" \
+    '. + [{id: $id, kind: "actual", free_memory_mb: ([0, $m] | max), free_cpu_mhz: ([0, $c] | max)}]' \
+    <<< "${NODE_BINS_JSON}")" || die "Node ${node_id}: could not build the capacity bin. Refusing to report capacity." 1
+
   log "  Node ${node_id}: mem total=${node_mem_mb}MB reserved=${reserved_mem_mb}MB allocated=${allocated_mem_mb}MB free=${free_mem_mb}MB; cpu total=${node_cpu_mhz} allocated=${allocated_cpu_mhz} free=${free_cpu_mhz}; slots=${node_slots}"
 done
 
@@ -224,6 +243,13 @@ log "  Ready nodes:           ${READY_COUNT}"
 log "──────────────────────────────────────────"
 
 # ─── Output ───────────────────────────────────────────────────────────────────
+
+# One snapshot for the demand controller: bins, slots and ready count from the same reads.
+if [[ "${BINS_JSON}" == "true" ]]; then
+  jq -cn --argjson r "${READY_COUNT}" --argjson s "${FREE_SLOTS}" --argjson b "${NODE_BINS_JSON}" \
+    '{ready_nodes: $r, free_slots: $s, bins: $b}'
+  exit 0
+fi
 
 if [[ "${OUTPUT_JSON}" == "true" ]]; then
   cat <<EOF

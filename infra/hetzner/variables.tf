@@ -288,8 +288,8 @@ variable "nomad_scale_out_increment_max" {
   default     = 2
 
   validation {
-    condition     = var.nomad_scale_out_increment_max >= 1 && var.nomad_scale_out_increment_max <= 999999999 && floor(var.nomad_scale_out_increment_max) == var.nomad_scale_out_increment_max
-    error_message = "nomad_scale_out_increment_max must be a whole number >= 1."
+    condition     = var.nomad_scale_out_increment_max >= 1 && var.nomad_scale_out_increment_max <= 2 && floor(var.nomad_scale_out_increment_max) == var.nomad_scale_out_increment_max
+    error_message = "nomad_scale_out_increment_max must be a whole number from 1 to 2 (the per-decision batch cap)."
   }
 }
 

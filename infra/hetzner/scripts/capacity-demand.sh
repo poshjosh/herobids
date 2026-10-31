@@ -24,10 +24,21 @@
 #       kind:   "actual" (a ready node) or "viable" (in-flight, can still take work). New nodes
 #               come only from the template; a "new" input bin is refused.
 #       items:  memory_mb and cpu_mhz are integers from 1; count is an integer from 0 to 100000.
+#               The sum of counts is capped at CAPACITY_PLAN_FIT_MAX_ITEMS (500); a larger
+#               request exits 1 rather than being truncated.
 #       prints: {"placed_existing", "placed_on_new_nodes", "new_nodes_needed", "unplaceable"}
 #       First-fit decreasing: items sorted by memory, then CPU, then key. Existing bins
 #       are tried in [kind, id] order, then hypothetical nodes built from the template.
 #       Cluster-wide free figures are never divided into slots.
+#
+# Allocation occupancy: an allocation occupies its node when ClientStatus is pending, running
+# or unknown. DesiredStatus is ignored on purpose. An allocation the scheduler has asked to
+# stop but that is still running keeps its share counted, so fit errs toward needing more
+# capacity, never less.
+
+# Total items (after expanding counts) one capacity_plan_fit call may place. The first-fit
+# scan is quadratic in this number, so the cap bounds the work per scale decision.
+CAPACITY_PLAN_FIT_MAX_ITEMS=500
 
 _DEMAND_CLASSIFY_JQ='
 def dimension_names: (.DimensionExhausted // {}) | keys;
@@ -207,8 +218,22 @@ capacity_node_slots() {
 }
 
 # capacity_plan_fit TEMPLATE_MEMORY_MB TEMPLATE_CPU_MHZ
+# Input is read once so the total item count can be capped before the quadratic
+# first-fit runs. Over the cap: explicit message and exit 1.
 capacity_plan_fit() {
   require_uint TEMPLATE_MEMORY_MB "$1" 1 100000
   require_uint TEMPLATE_CPU_MHZ "$2" 1 100000
-  jq -c --argjson tmem "$1" --argjson tcpu "$2" "${_CAPACITY_PLAN_FIT_JQ}"
+  local input total
+  input="$(cat)"
+  # Only well-formed counts are summed; malformed ones are left for the main
+  # validator, which refuses them with its own exit code.
+  total="$(jq -r 'if (.items | type) == "array"
+                  then [.items[] | select((.count | type) == "number" and .count >= 0
+                          and .count <= 100000 and .count == (.count | floor)) | .count] | add // 0
+                  else 0 end' <<< "${input}")" || return 1
+  if (( total > CAPACITY_PLAN_FIT_MAX_ITEMS )); then
+    echo "capacity_plan_fit: ${total} items exceed the cap of ${CAPACITY_PLAN_FIT_MAX_ITEMS}; refusing" >&2
+    return 1
+  fi
+  jq -c --argjson tmem "$1" --argjson tcpu "$2" "${_CAPACITY_PLAN_FIT_JQ}" <<< "${input}"
 }

@@ -755,7 +755,7 @@ Stages describe dependencies, not mandatory separate services/files.
 | P1 | Define validated config, shared snapshot/decision contract, disabled gates and durable convergence renderer | P0 | Fresh-boot/convergence parity, invalid-input and stale-override tests | DONE (gates off; see Outstanding Issues) |
 | P2 | Implement reconciled managed inventory, durable state, in-flight/readiness accounting and read-only mode | P1 | Zero/stale-cache/down/unjoined/partial-apply/reboot tests; no mutation in dry-run | DONE (read-only; see Outstanding Issues) |
 | P3 | Correct demand collection, classification and per-node resource/fit calculations | P0, P1 | Real-shape namespace/diagnostic/dedup/fragmentation/CPU fixtures pass | DONE (pure library and per-node fit; fixtures UNVERIFIED; see Outstanding Issues) |
-| P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests | PENDING |
+| P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests | DONE (demand mode disabled; activation blocked by H2, H3, H4, M4 in P4 Outstanding Issues) |
 | P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved | PENDING |
 | P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | PENDING |
 | P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection | PENDING |
@@ -1128,3 +1128,78 @@ Review rounds 1–3 raised one CRITICAL and four HIGH findings in round 1, two H
 - LOW (pre-existing): `NOMAD_TOKEN` is passed in curl argv via `-H` in `scale-common.sh` `nomad_api`, visible to `ps`. Move to a curl config on stdin in a later hardening package.
 - Behaviour change: `check-nomad-capacity.sh` maps any invalid `NOMAD_SCALE_*` knob to exit 1, not 2. Exit 2 is reserved for a genuine zero-ready state.
 - Unverified against live systems: every fixture is SYNTHETIC/UNVERIFIED. Nomad 1.9.7 `FailedTGAllocs` keys, `NodeResources.Cpu.CpuShares`, `ReservedResources`, `AllocatedResources.Tasks` versus legacy `Resources`, `NodeClass` on `/v1/nodes` stubs, and the 256 MHz per-agent CPU reservation are assumptions.
+
+### P4 (controller)
+
+Scope: single demand-aware controller in `scale-out.sh` (gate `NOMAD_AUTOSCALE_DEMAND_ENABLED`, default `false`), `capacity-controller.sh`, observer mode in `check-placement-failures.sh`, dry-run in `scale-out.sh`, and the saved-plan allowlist. Tests: `test-capacity-controller.sh`, `test-capacity-observer.sh`, `test-capacity-scale-out-demand.sh`, plus the `converge-control-plane` 7g case.
+
+Decisions taken:
+
+- 7a (ready==0): `check-nomad-capacity.sh` exit 2 is cross-checked against the reconciled inventory. A disagreement on ready nodes fails closed (exit 1, no mutation). Both zero with managed nodes present is `dead_pool`, which allows recovery capacity only. Both zero with no managed nodes is `capacity_blocked`.
+- 7b (asks): the controller sources asks from `demand_classify`. Classification is usable only when it is mature. Otherwise backlog and headroom are excluded.
+- 7c (in-flight): viable in-flight scale-out bins are subtracted from fit. The floor deficit is simulated as template-sized bins in the same fit, so no increment is calculated independently.
+- 7d (increment bounds, M3): only the demand-mode batch cap `NOMAD_SCALE_OUT_INCREMENT_MAX` is bounded to 1..2, in `scale-common.sh` (`validate_scale_numeric_env`), `render-autoscale-settings.sh` (`^[12]$`) and `variables.tf` (`nomad_scale_out_increment_max`, `<= 2`). Default 2. The legacy `NOMAD_SCALE_OUT_INCREMENT` keeps its HEAD bound (1..100 in `scale-common.sh`, `scale_out_increment >= 1` in `variables.tf`) so the gate-disabled path is unchanged. `require_uint` is kept. The one fixture that used `4` (`test-converge-control-plane.sh`) now uses `2`. No `.example` file references the bound.
+- 7e (fit cap): `CAPACITY_PLAN_FIT_MAX_ITEMS=500`. Exceeding it exits 1. It is not silently truncated. Tested.
+- 7f (`occupies`): ignores `DesiredStatus`. This is conservative and is documented in the `capacity-demand.sh` header.
+- 7g (missing `autoscale-settings.input` on an existing control plane): FATAL when demand-aware mode is enabled, WARNING only when it is disabled. "Enabled" is read from the last rendered `autoscale-settings.env`. If that file has `NOMAD_AUTOSCALE_DEMAND_ENABLED=true` and the input is missing, converge sets the failed marker and exits non-zero at the end of step 3d (the private-IP patch and daemon-reload still run). Otherwise the warning is unchanged. Production config is not changed. Tested in `test-converge-control-plane.sh`. Known gap: a host that never rendered demand mode stays warning-only.
+- 7h (malformed-output alert): streak-gated behaviour is unchanged. The streak is one global counter, not per job. This is an approximation, to be revisited if the alert is noisy.
+
+Defaults and rules:
+
+- Demand mode is disabled everywhere. Nothing in production enables it.
+- Success cooldown is 300 s. Failure backoff is a separate 300 s. A corrupt backoff record fails closed.
+- Add = `min(uncovered, increment_max, remaining)`, where `remaining = max(0, cap - live_managed)`. Zero additions is a logged no-op, not an apply.
+- Percent-only pressure never triggers headroom. Headroom needs usable classification, a sized item and `headroom_pressure`.
+- Deleting servers count toward the cap (conservative).
+- `CONTROLLER_MAX_DEMAND_JOBS=200`.
+- `--force` adds at most one node, only when the computed add is zero and remaining headroom exists. It never bypasses cooldown or failure backoff, and it obeys the cap, the lock and the Terraform checks.
+- `--bypass-cooldown` and `--safety-net` exit 1 with an explicit message in demand-aware mode. No hidden second policy. `--safety-net` has no dedicated test yet.
+- Live path order: lock, then `tf_init_backend` (existing backend only), then `terraform workspace select` (existing workspace only, never create), then gate and inventory, then `terraform plan -out` under a `umask 077` temp dir, then `terraform show -json` (piped, never written or logged), then the allowlist, then `terraform apply` on the exact saved plan. No `-auto-approve`, no `-target`.
+- Allowlist: only create actions on `hcloud_server.agent[i]` and `hcloud_server_network.agent[i]`, with indices exactly `[CUR, CUR+EXP)`, and `CUR+EXP <= cap`. Any drift, delete, replace, update, unrelated create, or protected-resource change rejects the plan. Output-only changes do not authorise anything.
+- Dry-run: calls no `terraform` command. Writes no state, cooldown or count cache. Exits 1 when state is missing. Identifies itself as dry-run in all output.
+- Watcher in demand mode: observer only. Logs `OBSERVER`, exits 0, writes no cooldown and calls no scale-out. The namespace bug (`?namespace=${NOMAD_AGENT_NAMESPACE}`) is fixed.
+- Synthetic fixtures are documented as SYNTHETIC and UNVERIFIED in `tests/fixtures/capacity/README.md`.
+
+Test-harness and pre-existing findings:
+
+- `test_end` was passed as an assertion argument in `test-capacity-numeric-env.sh`, which hid a failure. Fixed.
+- `require_uint` (`scale-common.sh`) accepts only 9-digit values, so epoch NOW values were rejected. Pre-existing. The controller uses `_controller_require_epoch` and the shared validator is unchanged.
+- `_CONTROLLER_PREP_JQ` needed parentheses around `(A) - (B)` for jq 1.7.1. The brew jq 1.8.1 accepted it, so the test passing under brew alone was misleading. The controller and scale-out suites pass with `PATH=/usr/bin:/bin:/opt/homebrew/bin` (jq 1.7.1 first) as well.
+- `acquire_lock` uses `exec {fd}>` (bash ≥4.1). Under `/bin/bash` 3.2 the live lock and gate sections of `test-capacity-scale-out-demand.sh` SKIP. Pre-existing, MEDIUM.
+
+Rework round (H1, M2, M3, LOW-7) — FIXED:
+
+- H1 (HIGH, FIXED): the saved-plan allowlist (`controller_plan_allowlist`, `_CONTROLLER_ALLOWLIST_JQ`) now checks `change.after` on every accepted `hcloud_server.agent[i]` and `hcloud_server_network.agent[i]` create. It fails closed on a null `after`, on an unknown checked field, and on a missing field. Checked: `server_type`, `labels.environment`, `location`, the agent name for the index, `network_id`, and the prior-state network's environment label. Expected values come from the tfvars literal, or `TF_VAR_<name>` if the tfvars file lacks the key (`controller_tf_input`). Nothing falls back to `variables.tf` defaults. Documented exception: `hcloud_server_network.server_id` may be unknown (the server is created in the same plan); a known `server_id` on a create is rejected. Tests (`test-capacity-controller.sh`): the `allowlist H1:` series, including "rejects a server of the wrong type", "rejects a server with the wrong environment label", "rejects a server in the wrong location", "rejects a network attachment to the wrong network", "rejects a server create with a null after", "rejects an unknown server_type on a checked field"; each asserts rc 1. The positive case "allowlist H1: accepts the create with the expected shape (documented server_id exception included)" passes. Mutation: removing each checked guard fails a test (m1–m10, m13 killed). m11 and m12 (the empty-input and prior-network-presence jq guards) survive: the bash empty-value checks and the equality checks reject the same inputs, so they are redundant layers, not untested behaviour.
+- M2 (MEDIUM, FIXED): the demand success path calls `record_scale_success` (`scale-common.sh`), which runs `touch_cooldown` before `write_node_count`. A count-write failure after a successful apply still leaves the cooldown. The in-flight record semantics are unchanged. Tests (`test-capacity-scale-out-demand.sh`): "M2: a node-count write failure after a successful apply still records the cooldown" and "the cooldown file exists after the count-write failure"; call-order guards "scale-out.sh records the success through record_scale_success (cooldown first)" and "scale-out.sh no longer calls write_node_count before the cooldown". Mutation m14 (write before touch) killed. Note: the M2 test is unit-level (it sources `scale-common.sh` and fails `write_node_count`); it does not run the full demand script.
+- M3 (MEDIUM, FIXED): legacy `NOMAD_SCALE_OUT_INCREMENT` and `scale_out_increment` are back to HEAD (1..100 and `>= 1`). Only the demand batch cap is 1..2. Tests (`test-capacity-numeric-env.sh`): "legacy increment 3 is still accepted (the gate-disabled path is unchanged)", "legacy increment 100 is still accepted (HEAD upper bound)", "legacy increment 101 is refused", "demand increment max 3 is refused", "demand increment max 2 is accepted", "demand increment max 1 is accepted". Mutations m15 (legacy bound narrowed) and m16 (demand bound widened) killed.
+- LOW-7 (FIXED): `_controller_require_epoch` and the failure-file read use the same grammar as `require_uint` (`^(0|[1-9][0-9]{0,9})$`) with the 9999999999 bound. Tests: "epoch: a current 10-digit epoch is accepted", "epoch: the 10-digit upper bound is accepted", "epoch: a leading zero is rejected (same grammar as require_uint)", "epoch: an 11-digit value is rejected". Mutation m13 (both guards removed) killed.
+- Caller wiring: `scale-out.sh` computes the four expected values before the plan (a `die` inside the pipeline would not stop the caller), then passes them to the allowlist. Mutation m17 (wrong expected server name) killed by the `--force` block.
+
+Rollout requirements that follow from H1:
+
+- The autoscale environment must export `TF_VAR_server_name` and `TF_VAR_location` unless the tfvars file sets them as literals. The controller fails closed otherwise. `staging.tfvars` and `production.tfvars` do not set `location`.
+- Owner decision (not implemented): whether `location` and `server_name` should fall back to the `variables.tf` defaults. The current design deliberately does not.
+
+Deferred MEDIUM/LOW (not closed in P4):
+
+- MEDIUM: the watcher keyword filter (~194–195 in `check-placement-failures.sh`) matches `.BlockedEval`, which is likely never matched. Unverified against Nomad 1.9.7. Deferred.
+- MEDIUM: `cloud-init.yaml` still enables the scale-out and watcher units. Observer mode in the script keeps the watcher non-writing, but the unit files are not changed in P4. Rollout must confirm this before enabling demand mode.
+- MEDIUM: `write_node_count` (`scale-common.sh`) runs after apply. If it fails, the script exits 1 after a mutation. Partly mitigated by M2 (the cooldown is now recorded first), but the count file can still be stale. Open.
+- MEDIUM: unjoined pending servers are counted as viable. Imprecise.
+- MEDIUM: the bin-count check may fail closed on drained or ineligible ready nodes. Conservative; this may block recovery in some states.
+- MEDIUM: `placement_matches_template` is true only with no constraints, affinities or spreads. Datacenter matching is unverified.
+- MEDIUM: `gate rc 2 with add>0` currently defers with exit 0. Confirm whether that is intended.
+- MEDIUM: the `--safety-net` message has no dedicated test.
+- LOW: `require_uint` 9-digit limit (pre-existing, see above).
+- LOW: the `NOMAD_TOKEN` curl argv exposure (pre-existing, carried from P3).
+- UNVERIFIED: the `terraform show -json` shape (`resource_changes`, `actions`, `address`, `index`), the env-dir layout (`${TF_DATA_DIR}/terraform.tfstate`, `${TF_DATA_DIR}/environment`), and `NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS` (defined elsewhere). Must be checked against a real init before demand mode is enabled.
+OPEN items (not closed in P4). Owner-action notes are required before any activation:
+
+- OPEN HIGH, H2 (activation blocker): production node-template values (`NOMAD_NODE_TEMPLATE_MEMORY_MB`, `NOMAD_NODE_TEMPLATE_CPU_MHZ`) are uncalibrated. Owner action: calibrate from measured production agent allocatable resources, render the values, and keep demand mode disabled until that is done.
+- OPEN HIGH, H3 (owner decision before activation): scale-from-empty. With floor 1 and zero managed servers, `empty_inventory` fails closed, so a fully empty pool cannot recover in P4. Not implemented, by decision. Owner action: decide between a bootstrap path for zero managed servers (with its own cap and approval) and accepting fail-closed with manual recovery. Demand mode must not be activated before this decision.
+- OPEN HIGH, H4 (verification required in P8/P9): the `terraform show -json` shape (`resource_changes`, `actions`, `address`, `index`, `change.after`, `change.after_unknown`, prior state) and the env-dir layout (`${TF_DATA_DIR}/terraform.tfstate`, `${TF_DATA_DIR}/environment`) are unverified against a real init. The fixtures `plan-create-agent.json` and `synthetic-staging-tfvars.txt` are SYNTHETIC (the latter is `.txt` because `*.tfvars` is gitignored). The `labels.environment` on the real `hcloud_network` is also assumed. Owner action: approve a non-mutating capture in P8/P9, then re-check the fixture shape and the allowlist paths against it. Until then the allowlist is verified against synthetic plans only.
+- OPEN MEDIUM, M4 (rollout requirement): `acquire_lock` uses `exec {fd}`, which needs bash >= 4.1. Under `/bin/bash` 3.2 the lock fails closed, and the live-lock and `--force` assertions in `test-capacity-scale-out-demand.sh` SKIP, so bash 3.2 has no live-gate coverage. Owner action: run demand mode only under bash >= 4.1, and confirm the host shell before enabling it.
+- Final-round fix (review 2 LOW-1): `NOMAD_SCALE_OUT_INCREMENT_MAX` is validated only when `NOMAD_AUTOSCALE_DEMAND_ENABLED=true`, so an unused out-of-range value no longer aborts legacy runs. Covered by `test-capacity-numeric-env.sh`.
+- Open LOWs from review 2 (not fixed): (a) legacy `write_node_count` still runs before `touch_cooldown` (same as HEAD; align later); (b) the streak counter regex `[1-9][0-9]{0,5}` caps at 999999, so a longer streak wedges the controller (saturate or widen); (c) the `CAPACITY_STDERR` temp file leaks on signal (add a trap); (d) a partial-apply pending record is conservative and may block recovery.
+- The remaining LOW items (6, 8–10 in the review) are the Deferred entries above and remain open. Their owner notes are: the cloud-init units must be confirmed disabled before enabling demand mode; the `.BlockedEval` keyword must be checked against Nomad 1.9.7; `--safety-net` needs a test before use; `NOMAD_TOKEN` in curl argv is a pre-existing exposure to fix before production rollout.
+
