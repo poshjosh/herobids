@@ -93,10 +93,10 @@ Also observed: `nomad-scale-in.service` has `ENABLE_SCALE_IN=true`. The roadmap 
 - **Stale node purge.** The down Nomad entry for `-agent-2` (`65dff029…`) was purged after confirming zero allocations. Approved.
 - **Gate fix.** The capacity-aware start gate was OFF on staging. Without it, a placement that failed on a full node made the demand classifier withhold scale-out. Enabled in `config/staging.yaml` (commit `31a00ea3`) and deployed with `DEPLOY_REF=origin/feat/safe-capacity-p9-staging`.
 - **Refused run.** The first live scale-out was refused by the drift check (saved plan showed drift; nothing applied). Cause: Terraform state still listed the scaled-in server in `hcloud_firewall.agent[0]`.
-- **Firewall-record fix.** Manual fix, approved: a state-only refresh-only apply, then a re-plan with `agent_node_count=2` showed creates only. Code fix in `scale-in.sh` (`scale_in_sync_state`, predicate `scale_in_refresh_plan_ok` in `scale-in-guard.sh`) so the record is synced after each scale-in. Not yet verified against a real refresh-only plan on staging.
+- **Firewall-record fix.** Manual fix, approved: a state-only refresh-only apply, then a re-plan with `agent_node_count=2` showed creates only. Code fix in `scale-in.sh` (`scale_in_sync_state`, predicate `scale_in_refresh_plan_ok` in `scale-in-guard.sh`, commit `c34da864`) so the record is synced after each scale-in. Checked 2026-10-31 after deploy: a read-only refresh-only plan on staging reports "No changes". Not yet proven by a real scale-in.
 - **Successful add (1 to 2).** Approved. `herobids-staging-agent-2` (10.0.0.3) joined Nomad as ready. The re-queued security-auditor ran on it.
 - **Timers.** Approved. `nomad-autoscale.timer` enabled and active, with demand mode on. `nomad-scale-in.timer` enabled with no schedule, so scale-in stays manual. `nomad-placement-failure-watcher.timer` disabled.
-- **Settings drop risk.** Neither tfvars set demand mode, so a converge would have re-uploaded the Terraform default `false`. Fix in `variables.tf`, `outputs.tf`, `staging.tfvars`, and `render-autoscale-settings.sh`. Not yet deployed. Migration needs approval (see the P9 record).
+- **Settings drop risk.** Neither tfvars set demand mode, so a converge would have re-uploaded the Terraform default `false`. Fix in `variables.tf`, `outputs.tf`, `staging.tfvars`, and `render-autoscale-settings.sh` (commit `c34da864`). Deployed and migrated on staging 2026-10-31 after approval. Verified: demand on, template sizes 3819 and 4000.
 - **Test fix.** `test-capacity-readonly.sh` had 3 failing scale-in dry-run assertions, present on this branch since `146baed8`. Cause: the synthetic Nomad nodes have no private address, so the new duplicate-address check refused them. The check is unchanged. The test now gives each synthetic node its own address. The full infra suite passes (`run-all.sh`, exit 0).
 
 ## Still open
@@ -111,3 +111,9 @@ Also observed: `nomad-scale-in.service` has `ENABLE_SCALE_IN=true`. The roadmap 
 - Timers stay inactive. `000-roadmap.md` and `010-objectives.md` say they stay stopped until the gates pass. The user's earlier "approve turning on the timers" conflicts with this. Not enabled. *(Superseded 2026-10-31: the scale-out timer is now on for staging. See the section above.)*
 - Oso (owned by the user's brother) stays stopped. Not started.
 - 8 stopped agents on the operator's account are not started.
+
+## Follow-up (2026-10-31, evening)
+
+- **Stale count in the server's tfvars (found, fixed).** Staging's `/opt/herobids/infra/hetzner/staging.tfvars` said `agent_node_count = 1` while two agents ran. A manual `terraform apply -var-file` would have planned to remove the second agent. Permanent fix in `0147f9e5`: scale-out and scale-in record the applied count in the tfvars file after each successful apply (`sync_tfvars_node_count`). Deployed. Approved one-time correction on the server: the line changed from 1 to 2, backup `/root/backups/staging.tfvars-20261031T203558Z`, mode 0600. No Terraform run, no state or node change.
+- **Verification.** Read-only refresh-only plan on staging: "No changes". Shell suites for the scale-in guard, tfvars sync, settings renderer, and converge all pass.
+- **Not yet proven.** The firewall sync and the tfvars sync have not run after a real scale-in. The next scale-in on staging is the proof.
