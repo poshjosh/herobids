@@ -195,6 +195,8 @@ else
   assert_contains "$(cat "${OUT}")" "Decision: add=1 target=3" "--force adds exactly one node"
   assert_eq "$(calls_matching '^terraform plan .*agent_node_count=3')" "1" \
     "--force plans agent_node_count=3 (never above the cap)"
+  assert_eq "$(calls_matching '^terraform plan .*-var-file=.*agent_node_count=3')" "1" \
+    "--force plan puts -var-file before -var so the target count is not overridden"
   assert_eq "$(calls_matching '^terraform apply -input=false ')" "1" \
     "--force applies the saved plan file"
   assert_eq "$(calls_matching 'auto-approve')" "0" "apply never uses -auto-approve"

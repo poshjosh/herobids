@@ -459,10 +459,13 @@ demand_scale_out() {
   if [[ "${exp_environment}" != "${HEROBIDS_ENV}" ]]; then
     die "Terraform environment '${exp_environment}' does not match HEROBIDS_ENV '${HEROBIDS_ENV}'; refusing." 1
   fi
-  plan_args=(-input=false "-out=${plan_file}" -var "agent_node_count=${target}")
+  plan_args=(-input=false "-out=${plan_file}")
   if [[ -f "${var_file}" ]]; then
     plan_args+=("-var-file=${var_file}")
   fi
+  # Terraform applies command-line values in order, so -var must come after -var-file or the
+  # file's agent_node_count silently wins and the plan adds nothing.
+  plan_args+=(-var "agent_node_count=${target}")
 
   demand_log "Planning agent_node_count ${managed} -> ${target}."
   if ! (cd "${TERRAFORM_DIR}" && terraform plan "${plan_args[@]}" >/dev/null); then
