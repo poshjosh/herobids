@@ -106,7 +106,9 @@ write_files:
       IP="$(echo "$DATA" | awk '/^- ip:/{print $3; exit}')"
       NET="$(echo "$DATA" | awk '/^  network:/{print $2; exit}')"
       GW="$(echo "$DATA" | awk '/^  gateway:/{print $2; exit}')"
-      PREFIX="$(echo "$DATA" | awk '/^  subnet:/{print $2; exit}' | cut -d/ -f2)"
+      # Hetzner private networks route through the gateway. A /24 address would
+      # make the subnet on-link and ARP for peers directly, which gets no reply.
+      # networkd needs the gateway itself as a link-scope host route first.
       cat > /etc/netplan/60-herobids-private.yaml <<EOF
       network:
         version: 2
@@ -116,10 +118,13 @@ write_files:
               macaddress: "$MAC"
             dhcp4: false
             addresses:
-              - $IP/$PREFIX
+              - $IP/32
             routes:
+              - to: $GW/32
+                scope: link
               - to: $NET
                 via: $GW
+                on-link: true
       EOF
       chmod 600 /etc/netplan/60-herobids-private.yaml
       netplan generate
