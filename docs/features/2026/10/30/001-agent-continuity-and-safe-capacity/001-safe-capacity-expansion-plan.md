@@ -1097,8 +1097,8 @@ The implementing agent's final report must state:
 
 Review rounds 1–4 raised CRITICAL/HIGH findings that were fixed in rework. The final review (round 5) found no CRITICAL or HIGH. The items below are the remaining MEDIUM/LOW findings and deferrals.
 
-- MEDIUM: `setup-autoscale-env.sh` dry-run redaction (~152) does not mask `AWS_ACCESS_KEY_ID`. Add it to the alternation.
-- MEDIUM: operator-set `NOMAD_SCALE_OUT_*`, `NOMAD_SCALE_OUT_COOLDOWN_SECONDS`, `NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS` and `NOMAD_AGENT_MEMORY_RESERVATION_MB` are used in arithmetic (`scale-out.sh` ~164, 315, 321, 344; `check-nomad-capacity.sh` ~187–188) without validation. Only `NOMAD_SCALE_OUT_INCREMENT` is checked. Validate each at config load. Raise to HIGH if env input is in the threat model.
+- FIXED (pre-P3): `setup-autoscale-env.sh` dry-run redaction now masks `AWS_ACCESS_KEY_ID` as well (covered by `test-setup-autoscale-env.sh`).
+- FIXED (pre-P3): operator-set numeric knobs are validated before any arithmetic. `require_uint` and `validate_scale_numeric_env` in `scale-common.sh` run at load in `scale-out.sh`, `scale-in.sh` and `check-nomad-capacity.sh`. Covered by `test-capacity-numeric-env.sh`. The increment upper bound of 100 is still provisional; P4 tightens it to the batch cap of 2.
 - MEDIUM (question): a malformed capacity output exits 1 and alerts only at the streak threshold, so the first malformed output is silent apart from the exit code. Decide whether it should alert immediately.
 - LOW: ACL token write (`setup-autoscale-env.sh` ~206) uses `rm -f` then `cat >`, not tmp plus `mv` like the other two writes.
 - LOW: the `write_if_changed` failed-write matrix covers mkdir only for 3c and the state dir. Add mkdir cases for 3a, 3b and 3d.

@@ -64,6 +64,8 @@ fi
 
 ENABLE_SCALE_IN="${ENABLE_SCALE_IN:-false}"
 NOMAD_SCALE_IN_MAX_NODES_PER_RUN="${NOMAD_SCALE_IN_MAX_NODES_PER_RUN:-1}"
+require_uint NOMAD_SCALE_IN_MAX_NODES_PER_RUN "${NOMAD_SCALE_IN_MAX_NODES_PER_RUN}" 1 10
+validate_scale_numeric_env
 
 # ─── Parse arguments ──────────────────────────────────────────────────────────
 

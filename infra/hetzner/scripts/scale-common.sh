@@ -73,6 +73,32 @@ die() {
   exit "${code}"
 }
 
+# require_uint NAME VALUE MIN MAX
+#   Exits 2 unless VALUE is a plain decimal integer in [MIN, MAX]. Checked before
+#   any arithmetic: bash evaluates array subscripts in arithmetic, so an unchecked
+#   operator value can run commands.
+require_uint() {
+  local name="$1"
+  local value="$2"
+  local min="$3"
+  local max="$4"
+  if [[ ! "${value}" =~ ^(0|[1-9][0-9]{0,8})$ ]] || (( value < min || value > max )); then
+    die "${name}='${value}' must be an integer from ${min} to ${max}." 2
+  fi
+}
+
+# validate_scale_numeric_env
+#   Validates the numeric operator knobs this library and its callers use in arithmetic.
+validate_scale_numeric_env() {
+  require_uint NOMAD_AGENT_MEMORY_RESERVATION_MB "${NOMAD_AGENT_MEMORY_RESERVATION_MB}" 1 100000
+  require_uint NOMAD_SCALE_OUT_COOLDOWN_SECONDS "${NOMAD_SCALE_OUT_COOLDOWN_SECONDS}" 0 86400
+  require_uint NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT "${NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT}" 0 100
+  require_uint NOMAD_SCALE_OUT_SLOT_THRESHOLD "${NOMAD_SCALE_OUT_SLOT_THRESHOLD}" 0 1000
+  require_uint NOMAD_SCALE_OUT_INCREMENT "${NOMAD_SCALE_OUT_INCREMENT}" 1 100
+  require_uint NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS "${NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS}" 1 86400
+  require_uint NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS "${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS}" 1 86400
+}
+
 # parse_capacity_output TEXT
 #   Reads check-nomad-capacity.sh key=value output into CAP_* variables. Nothing
 #   is evaluated. Any line that is not key=value, any key outside the allowlist,

@@ -50,6 +50,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scale-common.sh"
 source "${SCRIPT_DIR}/alert-common.sh"
 source "${SCRIPT_DIR}/capacity-inventory.sh"
+validate_scale_numeric_env
 
 # ─── Parse arguments ──────────────────────────────────────────────────────────
 

@@ -215,6 +215,8 @@ assert_contains "${OUT}" "AWS_SECRET_ACCESS_KEY=<redacted>" "dry-run: shows the 
 assert_contains "${OUT}" "NOMAD_TOKEN=<redacted>" "dry-run: shows the Nomad token line as redacted"
 assert_not_contains "${OUT}" "test-token-not-real" "dry-run: does not print the token"
 assert_not_contains "${OUT}" "test-aws-secret-not-real" "dry-run: does not print the AWS secret"
+assert_contains "${OUT}" "AWS_ACCESS_KEY_ID=<redacted>" "dry-run: shows the AWS access key line as redacted"
+assert_not_contains "${OUT}" "test-aws-key-not-real" "dry-run: does not print the AWS access key ID"
 assert_not_contains "${OUT}" "test-nomad-token-not-real" "dry-run: does not print the Nomad token"
 assert_eq "$(cat "${LAYOUT}/calls.log")" "" "dry-run: makes no ssh or scp calls"
 

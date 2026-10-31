@@ -149,7 +149,7 @@ HCLOUD_TOKEN=${HCLOUD_TOKEN}"
 if [[ "${DRY_RUN}" == "true" ]]; then
   echo "[dry-run] Would upload to /etc/herobids/autoscale.env:"
   echo "---"
-  printf '%s\n' "${ENV_CONTENT}" | sed -E 's/^(AWS_SECRET_ACCESS_KEY|NOMAD_TOKEN|HCLOUD_TOKEN)=.*/\1=<redacted>/'
+  printf '%s\n' "${ENV_CONTENT}" | sed -E 's/^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|NOMAD_TOKEN|HCLOUD_TOKEN)=.*/\1=<redacted>/'
   echo "---"
   echo "[dry-run] Would set permissions to 0600 on /etc/herobids/autoscale.env"
   echo "[dry-run] Would run systemctl daemon-reload"
