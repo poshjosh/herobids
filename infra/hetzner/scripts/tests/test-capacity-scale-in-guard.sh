@@ -311,6 +311,24 @@ assert_contains "$(cat "${SCALE_IN}")" 'source "${SCRIPT_DIR}/scale-in-guard.sh"
 
 test_end || SUITE_FAILED=1
 
+test_begin "scale-in guard: the tfvars file is passed before the node count, so the count is not overridden"
+
+VARFILE_LINE="$(grep -n 'plan_args+=("-var-file=' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+COUNT_LINE="$(grep -n 'plan_args+=(-var "agent_node_count=' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+assert_eq "$(( ${VARFILE_LINE:-0} > 0 && ${COUNT_LINE:-0} > ${VARFILE_LINE:-0} ))" "1" \
+  "-var-file is added before -var agent_node_count in the saved-plan arguments"
+
+test_end || SUITE_FAILED=1
+
+test_begin "scale-in guard: a node is matched by private address, with name as fallback only"
+
+assert_contains "$(cat "${SCALE_IN}")" 'private_address // ""' "the gate snapshot carries the private address"
+assert_contains "$(cat "${SCALE_IN}")" '"\(.Name)|\(.Address)|\(.ID)"' "eligible nodes are keyed with their Nomad address"
+assert_contains "$(cat "${SCALE_IN}")" 'scale_in_names_unique; } \' "the address keys are checked for uniqueness too"
+assert_not_contains "$(cat "${SCALE_IN}")" 'map_name}" == "${snap_name}" ]]; then' "a node is no longer matched by name alone"
+
+test_end || SUITE_FAILED=1
+
 test_begin "scale-in guard: a timed-out drain is never destroyed"
 
 TIMEOUT_BLOCK="$(awk '/if ! wait_for_drain_complete/{on=1} on{print} on && /^  fi$/{exit}' "${SCALE_IN}")"

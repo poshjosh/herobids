@@ -304,13 +304,15 @@ NODES_JSON="$(nomad_api GET "/v1/nodes" || true)"
 if [[ -z "${NODES_JSON}" ]]; then
   die "Failed to list eligible agent nodes." 1
 fi
-ELIGIBLE_MAP="$(jq -r '.[] | select(.Status == "ready" and .SchedulingEligibility == "eligible" and .NodeClass == "agent") | "\(.Name)|\(.ID)"' <<< "${NODES_JSON}")" || {
+ELIGIBLE_MAP="$(jq -r '.[] | select(.Status == "ready" and .SchedulingEligibility == "eligible" and .NodeClass == "agent") | "\(.Name)|\(.Address)|\(.ID)"' <<< "${NODES_JSON}")" || {
   die "Failed to parse eligible agent nodes." 1
 }
 
-# M3: a name must identify one server and one node, or the name match is ambiguous.
+# M3: a name must identify one server and one node, or the match is ambiguous. Private
+# addresses are checked the same way, since they are the primary match key.
 if ! { jq -r '.servers[].name' <<< "${GATE_OUT}" | scale_in_names_unique; } \
-  || ! { printf '%s' "${ELIGIBLE_MAP}" | cut -d'|' -f1 | scale_in_names_unique; }; then
+  || ! { printf '%s' "${ELIGIBLE_MAP}" | cut -d'|' -f1 | scale_in_names_unique; } \
+  || ! { printf '%s' "${ELIGIBLE_MAP}" | cut -d'|' -f2 | scale_in_names_unique; }; then
   die "Duplicate or unreadable agent node names — scale-in refused." 1
 fi
 
@@ -330,14 +332,20 @@ NOW="$(date +%s)"
 RUN_INPUT=""
 for ((s=CURRENT_COUNT; s>CURRENT_COUNT-LIMIT; s--)); do
   row="$(jq -r --argjson s "${s}" \
-    '[.servers[] | select(.index == $s)] | if length == 1 then "\(.[0].name)|\(.[0].nomad)" else "|" end' \
+    '[.servers[] | select(.index == $s)] | if length == 1 then "\(.[0].name)|\(.[0].nomad)|\(.[0].private_address // "")" else "||" end' \
     <<< "${GATE_OUT}")"
-  snap_name="${row%%|*}"
-  snap_nomad="${row#*|}"
+  IFS='|' read -r snap_name snap_nomad snap_addr <<< "${row}"
+  # Match by private address, the identity capacity-inventory uses. Hetzner and Nomad can
+  # name the same machine differently, so the name is only a fallback when no address is known.
   node_id=""
-  if [[ "${snap_nomad}" == "ready" && -n "${snap_name}" ]]; then
-    while IFS='|' read -r map_name map_id; do
-      if [[ "${map_name}" == "${snap_name}" ]]; then
+  if [[ "${snap_nomad}" == "ready" ]]; then
+    while IFS='|' read -r map_name map_addr map_id; do
+      if [[ -n "${snap_addr}" ]]; then
+        [[ "${map_addr}" == "${snap_addr}" ]] && matched=1 || matched=0
+      else
+        [[ -n "${snap_name}" && "${map_name}" == "${snap_name}" ]] && matched=1 || matched=0
+      fi
+      if [[ "${matched}" -eq 1 ]]; then
         node_id="${map_id}"
         break
       fi
@@ -472,11 +480,13 @@ done
 
 SCALE_IN_TMP_DIR="$(umask 077; mktemp -d)"
 plan_file="${SCALE_IN_TMP_DIR}/scale-in.tfplan"
-plan_args=(-input=false "-out=${plan_file}" -var "agent_node_count=${NEW_COUNT}")
+plan_args=(-input=false "-out=${plan_file}")
 tfvars_file="${TERRAFORM_DIR}/${HEROBIDS_ENV}.tfvars"
 if [[ -f "${tfvars_file}" ]]; then
   plan_args+=("-var-file=${tfvars_file}")
 fi
+# Terraform applies command-line values in order; the count must come after the file.
+plan_args+=(-var "agent_node_count=${NEW_COUNT}")
 
 if ! (cd "${TERRAFORM_DIR}" && terraform plan "${plan_args[@]}" >/dev/null); then
   log "ERROR: terraform plan failed. Agent node count unchanged at ${CURRENT_COUNT}."

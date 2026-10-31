@@ -142,7 +142,8 @@ def nomad_state($node):
 | ($live | map(select((shaped | not) and (.labels.role != "control-plane")))) as $foreign
 | ($live | map(select(shaped)) | map(. + {index: index_of})) as $managed
 | ($managed | map(. as $s | {
-    name: $s.name, id: $s.id, address: $s.address, cloud_status: $s.status, index: $s.index,
+    name: $s.name, id: $s.id, address: $s.address, private_address: $s.private_address,
+    cloud_status: $s.status, index: $s.index,
     nomad: nomad_state(([$nomad[] | select(.Name == $s.name or ($s.private_address != null and .Address == $s.private_address))]
       | sort_by(.Status == "down") | first) // null)
   }) | sort_by(.index)) as $servers

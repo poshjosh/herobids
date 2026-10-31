@@ -89,7 +89,10 @@ Also observed: `nomad-scale-in.service` has `ENABLE_SCALE_IN=true`. The roadmap 
 ## Still open
 
 - Name mismatch (above). Requires approval before any live change.
-- Stale Nomad `down` entries `-agent-1` and `-agent-2`. Purge after confirming no allocations.
+- Stale Nomad `down` entries `-agent-1` (`db4e22b4-efbd-b70c-d3ca-d0f173da7e55`) and `-agent-2` (`1525bbd6-95d6-d91c-e221-7f9038d000d0`) were **purged** on 2026-10-31 after confirming zero allocations and user approval. Nomad node list now shows only `herobids-staging-agent-3` (`714f26cc`, 10.0.0.5, ready).
+- Purge note: `POST /v1/node/<full-36-char-uuid>/purge` (short IDs return 500 "UUID must be 36 characters").
+- Capacity blocker: the original sole node had 3.5 of 3.7 GiB allocated, so further agent starts failed with `DimensionExhausted: memory`. **Resolved 2026-10-31** by applying the create-only plan (approved by the user): Hetzner `herobids-staging-agent-2` (cx23, fsn1, private network) was added and joined Nomad as `ready`/`eligible` with 3819 MB and 4000 MHz. Agent starts not yet re-tested on it.
+- Plan-ordering and provider-lock fixes that made the create-only plan work: `72d74635` (`-var-file` before `-var agent_node_count`), `bfef2f08` (linux_amd64 checksum in the lock file).
 - API image predates the P-series code. Deployed 2026-10-31 (see Staging deploy below). Migrations 0088 and 0089 applied.
 - P8 live shadow GETs against staging. Single-pass read-only checks ran 2026-10-31 (see the plan's P8 record). The multi-tick demand comparison (§12.2) has not run.
 - Timers stay inactive. `000-roadmap.md` and `010-objectives.md` say they stay stopped until the gates pass. The user's earlier "approve turning on the timers" conflicts with this. Not enabled.
