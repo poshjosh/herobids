@@ -1100,13 +1100,34 @@ export interface Agent {
   childAgentLimit?: number;
   createdAt: string;
   updatedAt: string;
-  activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
+  activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string; startupProgress?: AgentStartupProgress | null } | null;
 }
+
+/** Phase of a starting session the user can see. Mirrors `StartupProgress['phase']` in @herobids/domain. */
+export type AgentStartupProgressPhase = 'waiting_for_capacity' | 'booting';
+
+/** Deadline a starting session is measured against. Mirrors `StartupProgress['reason']` in @herobids/domain. */
+export type AgentStartupProgressReason = 'queue_deadline' | 'boot_deadline';
+
+export interface AgentStartupProgress {
+  phase: AgentStartupProgressPhase;
+  deadline: string;
+  reason: AgentStartupProgressReason;
+}
+
+/**
+ * Why the worker stopped a starting session. Mirrors `StartupDeadlineReason` in @herobids/domain.
+ * Null when the session was not stopped during startup.
+ */
+export type AgentStartupFailureReason = 'start_timeout' | 'queue_deadline' | 'boot_deadline' | 'observation_failure';
 
 /** One run of an agent (GET /agents/:id/sessions), oldest first. */
 export interface AgentRuntimeSession {
   id: string;
   startedAt: string;
+  status?: string;
+  stoppedAt?: string | null;
+  startupFailureReason?: AgentStartupFailureReason | null;
 }
 
 export interface AgentArtifact {

@@ -29,8 +29,9 @@
 # Environment variables:
 #   INJECT_DRAIN_TIMEOUT=true     Makes wait_for_drain_complete always return 1
 #                                 (simulates a node that never finishes draining)
-#   INJECT_TF_APPLY_FAILURE=true  Makes tf_apply_var always return 1
-#                                 (simulates a Terraform apply failure)
+#   INJECT_TF_APPLY_FAILURE=true  Makes tf_apply_var and tf_apply_plan always return 1
+#                                 (simulates a Terraform apply failure, on both the
+#                                 scale-out and scale-in apply paths)
 #
 # Both hooks:
 #   - Log clearly that injection is active (grep for "[STAGING-HOOK]")
@@ -69,7 +70,7 @@ fi
 # ─── Terraform apply failure injection (V5) ───────────────────────────────────
 
 if [[ "${INJECT_TF_APPLY_FAILURE:-}" == "true" ]]; then
-  echo "[STAGING-HOOK] Terraform apply failure injection ACTIVE — tf_apply_var will always fail." >&2
+  echo "[STAGING-HOOK] Terraform apply failure injection ACTIVE — tf_apply_var and tf_apply_plan will always fail." >&2
 
   if declare -f tf_apply_var >/dev/null 2>&1; then
     eval "_original_$(declare -f tf_apply_var)"
@@ -78,6 +79,17 @@ if [[ "${INJECT_TF_APPLY_FAILURE:-}" == "true" ]]; then
   tf_apply_var() {
     echo "[STAGING-HOOK] Simulating Terraform apply failure (injected failure)." >&2
     log "ERROR: [STAGING-HOOK] Terraform apply failed (injected by staging-hooks.sh)."
+    return 1
+  }
+
+  # Scale-in applies a saved plan through tf_apply_plan; inject there too.
+  if declare -f tf_apply_plan >/dev/null 2>&1; then
+    eval "_original_$(declare -f tf_apply_plan)"
+  fi
+
+  tf_apply_plan() {
+    echo "[STAGING-HOOK] Simulating Terraform apply failure for plan ${1:-<none>} (injected failure)." >&2
+    log "ERROR: [STAGING-HOOK] Terraform plan apply failed (injected by staging-hooks.sh)."
     return 1
   }
 fi

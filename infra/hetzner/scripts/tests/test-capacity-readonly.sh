@@ -79,6 +79,10 @@ case " $* " in *" -K - "*) cat >/dev/null ;; esac
 case "${url}" in
   */v1/nodes) cat "${MOCK_NODES_FIXTURE}" ;;
   */v1/servers*) cat "${MOCK_CLOUD_FIXTURE}" ;;
+  # An idle node (no allocations) and a node record long past the grace window,
+  # so H5 does not defer the drain decision.
+  */v1/node/*/allocations) echo "[]" ;;
+  */v1/node/*) echo '{"StatusUpdatedAt":1000}' ;;
   *) echo "[]" ;;
 esac
 # nomad_api asks curl to append the HTTP status code after the body.

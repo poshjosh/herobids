@@ -122,10 +122,6 @@ validate_scale_numeric_env() {
   # nomad_scale_out_increment_max in variables.tf (1..2).
   if [ "${NOMAD_AUTOSCALE_DEMAND_ENABLED:-}" = "true" ]; then
     require_uint NOMAD_SCALE_OUT_INCREMENT_MAX "${NOMAD_SCALE_OUT_INCREMENT_MAX}" 1 2
-    # acquire_lock uses exec {fd}, which needs bash >= 4.1. Refuse here, before any side effect.
-    if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 1) )); then
-      die "NOMAD_AUTOSCALE_DEMAND_ENABLED=true needs bash >= 4.1 for the exec-fd lock; this shell is bash ${BASH_VERSION}." 2
-    fi
   fi
   require_uint NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS "${NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS}" 1 86400
   require_uint NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS "${NOMAD_DEMAND_CONSECUTIVE_OBSERVATIONS}" 1 100
@@ -133,6 +129,8 @@ validate_scale_numeric_env() {
   require_uint NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS "${NOMAD_NODE_PROVISIONING_TIMEOUT_SECONDS}" 1 86400
   require_uint NOMAD_SCALE_OUT_FAILURE_BACKOFF_SECONDS "${NOMAD_SCALE_OUT_FAILURE_BACKOFF_SECONDS}" 0 86400
   require_uint NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS "${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS}" 1 86400
+  require_uint NOMAD_SCALE_IN_NODE_GRACE_SECONDS "${NOMAD_SCALE_IN_NODE_GRACE_SECONDS}" 0 86400
+  require_uint NOMAD_SCALE_IN_DEFERRAL_ALERT_AFTER "${NOMAD_SCALE_IN_DEFERRAL_ALERT_AFTER}" 1 100
 }
 
 # demand_mode_enabled
@@ -227,7 +225,7 @@ nomad_api() {
     -X "${method}" \
     ${auth_args[@]+"${auth_args[@]}"} \
     "${url}" \
-    "$@" 2>&1)" || {
+    ${@+"$@"} 2>&1)" || {
     log "ERROR: curl failed for ${method} ${url}: ${response}"
     return 1
   }
@@ -401,19 +399,20 @@ acquire_lock() {
   lock_dir="$(dirname "${lockfile}")"
   mkdir -p "${lock_dir}"
 
-  # Open a new fd for the lock
-  exec {NOMAD_AUTOSCALE_LOCK_FD}>"${lockfile}"
+  # Fixed fd 9: `exec {fd}` needs bash >= 4.1, and macOS /bin/bash is 3.2.
+  NOMAD_AUTOSCALE_LOCK_FD=9
+  exec 9>"${lockfile}"
 
   if [[ "${timeout}" -gt 0 ]]; then
     if ! flock -w "${timeout}" "${NOMAD_AUTOSCALE_LOCK_FD}" 2>/dev/null; then
       log "ERROR: Could not acquire lock ${lockfile} within ${timeout}s timeout."
-      exec {NOMAD_AUTOSCALE_LOCK_FD}>&-
+      exec 9>&-
       return 1
     fi
   else
     if ! flock -n "${NOMAD_AUTOSCALE_LOCK_FD}" 2>/dev/null; then
       log "Lock ${lockfile} is held by another process — skipping."
-      exec {NOMAD_AUTOSCALE_LOCK_FD}>&-
+      exec 9>&-
       return 1
     fi
   fi
@@ -426,7 +425,7 @@ acquire_lock() {
 release_lock() {
   if [[ -n "${NOMAD_AUTOSCALE_LOCK_FD:-}" ]]; then
     flock -u "${NOMAD_AUTOSCALE_LOCK_FD}" 2>/dev/null || true
-    exec {NOMAD_AUTOSCALE_LOCK_FD}>&- 2>/dev/null || true
+    exec 9>&- 2>/dev/null || true
     log "Lock released."
   fi
 }
@@ -604,6 +603,14 @@ tf_apply_var() {
   terraform apply "${apply_args[@]}"
 }
 
+# tf_apply_plan <plan_file> — apply a saved, already-validated plan. This is the
+# only apply seam scale-in uses, so failure-injection hooks can wrap it.
+tf_apply_plan() {
+  local plan_file="$1"
+  tf_use_env_data_dir
+  (cd "${TERRAFORM_DIR}" && terraform apply -input=false "${plan_file}" >/dev/null)
+}
+
 # ─── Nomad node helpers (Phase 7) ─────────────────────────────────────────────
 #
 # These helpers are used by both check-placement-failures.sh (safety net) and
@@ -612,6 +619,10 @@ tf_apply_var() {
 
 # NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS — max time to wait for drain to complete
 NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS="${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS:-600}"
+# NOMAD_SCALE_IN_NODE_GRACE_SECONDS — a node must be registered this long before scale-in may remove it
+NOMAD_SCALE_IN_NODE_GRACE_SECONDS="${NOMAD_SCALE_IN_NODE_GRACE_SECONDS:-600}"
+# NOMAD_SCALE_IN_DEFERRAL_ALERT_AFTER — consecutive deferrals with the top node down or unjoined before an alert
+NOMAD_SCALE_IN_DEFERRAL_ALERT_AFTER="${NOMAD_SCALE_IN_DEFERRAL_ALERT_AFTER:-3}"
 
 # list_eligible_agent_nodes — returns newline-separated Nomad node IDs for all
 # ready, eligible agent nodes (excluding the Nomad server if it runs a client).
@@ -628,29 +639,38 @@ list_eligible_agent_nodes() {
   echo "${nodes_json}" | jq -r '.[] | select(.Status == "ready" and .SchedulingEligibility == "eligible" and .NodeClass == "agent") | .ID'
 }
 
-# node_is_idle <node_id> — returns 0 if the node has zero non-terminal
-# allocations (running or pending), 1 otherwise.
-node_is_idle() {
+# _nomad_running_alloc_count <node_id> — prints the count of non-terminal allocations
+# (running or pending). Fails closed: returns 1 unless the API call succeeds, the body
+# is a JSON array, and jq yields a plain integer. Never prints a default.
+_nomad_running_alloc_count() {
   local node_id="$1"
 
   local allocs_json
-  allocs_json="$(nomad_api GET "/v1/node/${node_id}/allocations" || echo "[]")"
+  allocs_json="$(nomad_api GET "/v1/node/${node_id}/allocations")" || return 1
+
+  local count
+  count="$(echo "${allocs_json}" | jq -r 'if type == "array" then [.[] | select(.ClientStatus == "running" or .ClientStatus == "pending")] | length else error("allocations response is not an array") end' 2>/dev/null)" || return 1
+  [[ "${count}" =~ ^[0-9]+$ ]] || return 1
+
+  echo "${count}"
+}
+
+# node_is_idle <node_id> — returns 0 only when the node is positively known to have zero
+# non-terminal allocations. Any read or parse failure returns 1 (not idle): an unreadable
+# node must never look drainable.
+node_is_idle() {
+  local node_id="$1"
 
   local running_count
-  running_count="$(echo "${allocs_json}" | jq -r '[.[] | select(.ClientStatus == "running" or .ClientStatus == "pending")] | length' 2>/dev/null || echo "0")"
+  running_count="$(_nomad_running_alloc_count "${node_id}")" || return 1
 
   [[ "${running_count}" -eq 0 ]]
 }
 
-# node_running_alloc_count <node_id> — returns the count of non-terminal
-# allocations (running or pending) on the given node.
+# node_running_alloc_count <node_id> — prints the count of non-terminal allocations
+# (running or pending). Returns 1 on any read or parse failure; prints nothing then.
 node_running_alloc_count() {
-  local node_id="$1"
-
-  local allocs_json
-  allocs_json="$(nomad_api GET "/v1/node/${node_id}/allocations" || echo "[]")"
-
-  echo "${allocs_json}" | jq -r '[.[] | select(.ClientStatus == "running" or .ClientStatus == "pending")] | length' 2>/dev/null || echo "0"
+  _nomad_running_alloc_count "$1"
 }
 
 # mark_node_ineligible <node_id> — set a node's scheduling eligibility to
@@ -715,7 +735,11 @@ wait_for_drain_complete() {
 
   while [[ ${elapsed} -lt ${timeout_seconds} ]]; do
     local running
-    running="$(node_running_alloc_count "${node_id}")" || running=0
+    # A read failure is not evidence of drain: keep polling until the timeout (fail closed).
+    if ! running="$(node_running_alloc_count "${node_id}")"; then
+      log "  Node ${node_id}: allocation read failed; not treating as drained (${elapsed}s elapsed)..."
+      running=-1
+    fi
 
     if [[ "${running}" -eq 0 ]]; then
       log "Node ${node_id} fully drained after ${elapsed}s."
@@ -776,5 +800,49 @@ mark_node_eligible() {
     log "ERROR: Failed to re-mark node ${node_id} as eligible."
     return 1
   }
-  log "Node ${node_id} re-marked eligible (terraform apply failed)."
+  log "Node ${node_id} re-marked eligible."
+}
+
+# clear_node_drain <node_id> — removes the drain so the node can take work again.
+# UNVERIFIED: the exact endpoint and the {"DrainSpec": null} body are unverified
+# against a live Nomad until P9. Failure is returned, never hidden.
+clear_node_drain() {
+  local node_id="$1"
+
+  if is_dry_run; then
+    log "[DRY-RUN] Would clear drain on node ${node_id}."
+    return 0
+  fi
+
+  nomad_api POST "/v1/node/${node_id}/drain" \
+    -H "Content-Type: application/json" \
+    -d '{"DrainSpec": null}' > /dev/null || {
+    log "ERROR: Failed to clear drain on node ${node_id}."
+    return 1
+  }
+  log "Node ${node_id} drain cleared."
+}
+
+# restore_node_schedulable <node_id> — clears the drain, then re-marks eligible.
+# Drain must be cleared first: Nomad refuses eligibility changes while draining.
+restore_node_schedulable() {
+  local node_id="$1"
+
+  clear_node_drain "${node_id}" || return 1
+  mark_node_eligible "${node_id}" || return 1
+}
+
+# node_ready_for_grace <node_id> <now_epoch> — succeeds only when the node has
+# been registered longer than NOMAD_SCALE_IN_NODE_GRACE_SECONDS. StatusUpdatedAt
+# is a proxy for registration time (UNVERIFIED until P9). An unknown or unreadable
+# timestamp fails closed: the caller must defer.
+node_ready_for_grace() {
+  local node_id="$1" now="$2"
+
+  local node_json since
+  node_json="$(nomad_api GET "/v1/node/${node_id}" || true)"
+  [[ -n "${node_json}" ]] || return 1
+  since="$(jq -r '.StatusUpdatedAt // empty' <<< "${node_json}" 2>/dev/null || true)"
+  [[ "${since}" =~ ^[0-9]+$ ]] || return 1
+  (( since > 0 && now - since >= NOMAD_SCALE_IN_NODE_GRACE_SECONDS ))
 }

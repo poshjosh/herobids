@@ -88,6 +88,20 @@ describe('worker.agents.capacityAwareStart config', () => {
     });
   });
 
+  it('wires the API and the worker to the same capacityAwareStart config key (M5)', () => {
+    // Guards against the two processes drifting onto different config keys. The API hands the whole
+    // capacityAwareStart object to sessionRoutes; the worker reads its .enabled flag. If either
+    // reference is renamed or pointed elsewhere, this fails.
+    // Known divergence (covered in agent-health-monitor-capacity.test.ts, "legacy path when the runtime
+    // cannot observe startup"): the worker also requires runtimeLauncher.supportsStartupObservation(),
+    // which the API cannot check. The API therefore gates on enabled alone.
+    const apiSource = readFileSync(new URL('../../api/src/index.ts', import.meta.url), 'utf8');
+    const workerSource = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+
+    expect(apiSource).toMatch(/sessionRoutes\(app, db, appConfig\.worker\.agents\.capacityAwareStart\)/);
+    expect(workerSource).toMatch(/appConfig\.worker\.agents\.capacityAwareStart\.enabled/);
+  });
+
   it('rejects a non-boolean enabled value', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), workerYaml(`      enabled: "yes"`));
 

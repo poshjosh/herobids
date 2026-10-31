@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentRuntimeSessions, agents } from '@herobids/db';
-import { agentRuntimeSessionPublicColumns } from '../services/agent-runtime-session-projection.js';
+import { agentRuntimeSessionReadColumns, toPublicRuntimeSession, type StartupProgressGate } from '../services/agent-runtime-session-projection.js';
 
-export async function sessionRoutes(app: FastifyInstance, db: Database): Promise<void> {
+export async function sessionRoutes(app: FastifyInstance, db: Database, startupProgressGate: StartupProgressGate | null = null): Promise<void> {
   // GET /sessions — list agent runtime sessions for the authenticated user.
   // Scope: agent runtime sessions only. Bot lifecycle events are served via
   // GET /bots/:id/sessions (derived from journal events).
@@ -24,30 +24,30 @@ export async function sessionRoutes(app: FastifyInstance, db: Database): Promise
       ? and(eq(agentRuntimeSessions.agentId, request.query.agentId), inArray(agentRuntimeSessions.agentId, agentIds))
       : inArray(agentRuntimeSessions.agentId, agentIds);
 
-    const sessions = await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
+    const sessions = await db.select(agentRuntimeSessionReadColumns).from(agentRuntimeSessions)
       .where(baseWhere)
       .orderBy(desc(agentRuntimeSessions.startedAt))
       .limit(limit)
       .offset(offset);
 
-    return reply.send({ sessions, limit, offset });
+    return reply.send({ sessions: sessions.map((row) => toPublicRuntimeSession(row, startupProgressGate)), limit, offset });
   });
 
   // GET /sessions/:id — single session, scoped to authenticated user
   app.get<{ Params: { id: string } }>('/sessions/:id', async (request, reply) => {
     const { id } = request.params;
 
-    const [session] = await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
+    const [row] = await db.select(agentRuntimeSessionReadColumns).from(agentRuntimeSessions)
       .where(eq(agentRuntimeSessions.id, id))
       .limit(1);
 
-    if (!session) return reply.status(404).send({ error: 'not_found' });
+    if (!row) return reply.status(404).send({ error: 'not_found' });
 
     const [agent] = await db.select({ id: agents.id }).from(agents)
-      .where(and(eq(agents.id, session.agentId), eq(agents.userId, request.userId)));
+      .where(and(eq(agents.id, row.agentId), eq(agents.userId, request.userId)));
 
     if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-    return reply.send({ session });
+    return reply.send({ session: toPublicRuntimeSession(row, startupProgressGate) });
   });
 }

@@ -1,13 +1,9 @@
 import { eq, and, lt, inArray, notInArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentRuntimeSessions } from '@herobids/db';
-import { RUNTIME_ERROR_CODES } from '@herobids/domain';
+import { RUNTIME_ERROR_CODES, computeCapacityStartupDeadline, type StartupObservationOutcome } from '@herobids/domain';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
-import {
-  computeCapacityStartupDeadline,
-  type StartupObservationOutcome,
-} from './agent-startup-deadlines.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('agent-health-monitor');
@@ -128,9 +124,10 @@ export class AgentHealthMonitor {
         await this.sessionManager.handleStartTimeout(session.id);
       }
 
-      if (capacityAware) {
+      if (capacityAware && this.runtimeLauncher) {
         // Fire-and-forget: a slow scheduler call must not delay heartbeat or stop checks above or below.
-        void this.sweepLaunchingSessions();
+        // The launcher is passed explicitly: capacity-aware startup is only enabled when one is wired.
+        void this.sweepLaunchingSessions(this.runtimeLauncher);
       }
 
       // Clean up in-memory runtime handles for sessions that are now stopped/crashed in DB.
@@ -188,8 +185,13 @@ export class AgentHealthMonitor {
     return this.config.capacityAwareStart.enabled && this.runtimeLauncher?.supportsStartupObservation() === true;
   }
 
-  /** Evaluates every launching session once. Non-reentrant so a slow scheduler cannot pile up sweeps. */
-  private async sweepLaunchingSessions(): Promise<void> {
+  /**
+   * Evaluates every launching session once. Non-reentrant so a slow scheduler cannot pile up sweeps.
+   * Display lag (M4): a session whose job is missing is only expired on a sweep, so the user-visible
+   * stop can trail the real deadline by up to one sweep interval. The lag is bounded by one sweep
+   * and is accepted; the deadline itself is still enforced from the persisted facts.
+   */
+  private async sweepLaunchingSessions(launcher: AgentRuntimeLauncher): Promise<void> {
     if (this.launchingSweepInFlight) return;
     this.launchingSweepInFlight = true;
     try {
@@ -197,7 +199,7 @@ export class AgentHealthMonitor {
         .from(agentRuntimeSessions)
         .where(eq(agentRuntimeSessions.status, 'launching'));
       for (const row of launching) {
-        await this.evaluateLaunchingSession(row.id);
+        await this.evaluateLaunchingSession(row.id, launcher);
       }
     } catch (err) {
       logger.error({ err }, 'Launching session startup sweep failed');
@@ -206,7 +208,7 @@ export class AgentHealthMonitor {
     }
   }
 
-  private async evaluateLaunchingSession(sessionId: string): Promise<void> {
+  private async evaluateLaunchingSession(sessionId: string, launcher: AgentRuntimeLauncher): Promise<void> {
     try {
       for (let attempt = 0; attempt < MAX_STARTUP_EVALUATION_ATTEMPTS; attempt++) {
         let session = await this.loadLaunchingSession(sessionId);
@@ -214,7 +216,7 @@ export class AgentHealthMonitor {
 
         let outcome: StartupObservationOutcome = 'not_observed';
         if (session.runtimeRegisteredAt === null || session.firstPlacedAt === null) {
-          outcome = await this.observeAndRecordStartup(session);
+          outcome = await this.observeAndRecordStartup(session, launcher);
           // Re-read so the deadline is computed from what the repository now holds, including a stop that won.
           session = await this.loadLaunchingSession(sessionId);
           if (!session) return;
@@ -269,10 +271,10 @@ export class AgentHealthMonitor {
    * Inspects the scheduler and records registration or the earliest placement. Failures change no
    * facts and never extend a deadline; the caller derives the deadline from the outcome.
    */
-  private async observeAndRecordStartup(session: LaunchingSessionFacts): Promise<StartupObservationOutcome> {
-    const launcher = this.runtimeLauncher;
-    if (!launcher) return 'inspect_failed';
-
+  private async observeAndRecordStartup(
+    session: LaunchingSessionFacts,
+    launcher: AgentRuntimeLauncher,
+  ): Promise<StartupObservationOutcome> {
     const observed = await launcher.observeStartup(session.agentId, session.id);
     if (!observed.ok) {
       if (observed.error.code === RUNTIME_ERROR_CODES.NOT_FOUND) {

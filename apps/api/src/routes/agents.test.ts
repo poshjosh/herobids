@@ -361,6 +361,9 @@ vi.mock('./agents.js', async (importOriginal) => {
         args[7],
         args[8],
         stagedSaga,
+        args[10],
+        args[11],
+        args[12],
       );
     },
   };
@@ -2830,6 +2833,152 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
     expect(res.json()).toMatchObject({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
     // Four SELECTs: agent lookup + session lookup + skill assignment lookup + chat addresses lookup.
     expect(db.select).toHaveBeenCalledTimes(4);
+  });
+
+  it('exposes startupProgress for a starting session and never the placement or key fields', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const startedAt = new Date('2026-10-30T10:00:00.000Z');
+    const agent = { id: 'agent-1', status: 'starting', userId: TEST_USER_ID, modelPolicy: null, skillIds: [] };
+    const session = {
+      id: 'session-7',
+      status: 'starting',
+      agentId: 'agent-1',
+      startedAt,
+      lastHeartbeatAt: null,
+      stoppedAt: null,
+      runtimeRegisteredAt: new Date(startedAt.getTime() + 1_000),
+      firstPlacedAt: null,
+      placementAllocationId: 'alloc-secret-123',
+      apiKeyHash: 'hash-secret-456',
+    };
+    const { db } = buildGetAgentDb(agent, session);
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, {
+      enabled: true,
+      capacityWaitTimeoutMs: 600_000,
+      placedStartTimeoutMs: 120_000,
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().activeSession.startupProgress).toEqual({
+      phase: 'waiting_for_capacity',
+      deadline: new Date(startedAt.getTime() + 600_000).toISOString(),
+      reason: 'queue_deadline',
+    });
+    for (const key of ['placementAllocationId', 'placement_allocation_id', 'firstPlacedAt', 'first_placed_at', 'runtimeRegisteredAt', 'runtime_registered_at', 'apiKeyHash', 'api_key_hash']) {
+      expect(res.body).not.toContain(`"${key}"`);
+    }
+    expect(res.body).not.toContain('alloc-secret-123');
+    expect(res.body).not.toContain('hash-secret-456');
+  });
+
+  it('GET /agents/:id/sessions exposes startupProgress and no placement or key fields', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const startedAt = new Date('2026-10-30T10:00:00.000Z');
+    const queue: unknown[][] = [
+      [{ id: 'agent-1', userId: TEST_USER_ID }],
+      [{
+        id: 'session-7',
+        status: 'starting',
+        agentId: 'agent-1',
+        startedAt,
+        lastHeartbeatAt: null,
+        stoppedAt: null,
+        runtimeRegisteredAt: new Date(startedAt.getTime() + 1_000),
+        firstPlacedAt: null,
+        placementAllocationId: 'alloc-secret-123',
+        apiKeyHash: 'hash-secret-456',
+      }],
+    ];
+    const db: any = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockImplementation(() => ({
+          where: vi.fn().mockImplementation(() => {
+            const rows = queue.shift() ?? [];
+            return Object.assign(Promise.resolve(rows), { orderBy: vi.fn().mockReturnValue(Promise.resolve(rows)) });
+          }),
+        })),
+      })),
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, {
+      enabled: true,
+      capacityWaitTimeoutMs: 600_000,
+      placedStartTimeoutMs: 120_000,
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1/sessions' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()[0].startupProgress.phase).toBe('waiting_for_capacity');
+    for (const key of ['placementAllocationId', 'placement_allocation_id', 'firstPlacedAt', 'first_placed_at', 'runtimeRegisteredAt', 'runtime_registered_at', 'apiKeyHash', 'api_key_hash']) {
+      expect(res.body).not.toContain(`"${key}"`);
+    }
+    expect(res.body).not.toContain('alloc-secret-123');
+    expect(res.body).not.toContain('hash-secret-456');
+  });
+
+  it('GET /agents/:id/sessions exposes startupFailureReason only as a bounded enum per run', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const startedAt = new Date('2026-10-30T10:00:00.000Z');
+    const stoppedRun = (id: string, reason: unknown) => ({
+      id,
+      status: 'stopped',
+      agentId: 'agent-1',
+      startedAt,
+      lastHeartbeatAt: null,
+      stoppedAt: new Date(startedAt.getTime() + 60_000),
+      runtimeRegisteredAt: null,
+      firstPlacedAt: null,
+      placementAllocationId: 'alloc-secret-123',
+      apiKeyHash: 'hash-secret-456',
+      startupFailureReason: reason,
+    });
+    const queue: unknown[][] = [
+      [{ id: 'agent-1', userId: TEST_USER_ID }],
+      [
+        stoppedRun('run-1', 'start_timeout'),
+        stoppedRun('run-2', 'queue_deadline'),
+        stoppedRun('run-3', 'boot_deadline'),
+        stoppedRun('run-4', 'observation_failure'),
+        stoppedRun('run-5', 'raw-internal-token-xyz'),
+        stoppedRun('run-6', null),
+      ],
+    ];
+    const db: any = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockImplementation(() => ({
+          where: vi.fn().mockImplementation(() => {
+            const rows = queue.shift() ?? [];
+            return Object.assign(Promise.resolve(rows), { orderBy: vi.fn().mockReturnValue(Promise.resolve(rows)) });
+          }),
+        })),
+      })),
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, {
+      enabled: true,
+      capacityWaitTimeoutMs: 600_000,
+      placedStartTimeoutMs: 120_000,
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1/sessions' });
+
+    expect(res.statusCode).toBe(200);
+    const reasons = res.json().map((run: { startupFailureReason: unknown }) => run.startupFailureReason);
+    expect(reasons).toEqual(['start_timeout', 'queue_deadline', 'boot_deadline', 'observation_failure', null, null]);
+    expect(res.body).not.toContain('raw-internal-token-xyz');
+    expect(res.body).not.toContain('startup_failure_reason');
+    expect(res.body).not.toContain('alloc-secret-123');
+    expect(res.body).not.toContain('hash-secret-456');
   });
 
   it('returns 404 when the agent is not found', async () => {

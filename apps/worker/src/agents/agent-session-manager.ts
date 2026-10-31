@@ -24,7 +24,7 @@ import { createLogger } from '../logger.js';
 import { cleanupEphemeralAgentRedisState } from './agent-ephemeral-redis-cleanup.js';
 import { isCrashLaunchBlocked, recordCrashEvent, shouldFireCrashLoopAlert } from './agent-crash-loop-guard.js';
 import type { CrashLoopGuardConfig } from './agent-crash-loop-guard.js';
-import type { StartupDeadlineReason } from './agent-startup-deadlines.js';
+import type { StartupDeadlineReason } from '@herobids/domain';
 
 const STARTUP_EXPIRY_MESSAGES: Record<StartupDeadlineReason, string> = {
   start_timeout: 'Agent runtime failed to start — the runtime did not connect within the expected window.',
@@ -981,7 +981,7 @@ export class AgentSessionManager {
       return;
     }
 
-    const timedOut = await this.agentRepo.markSessionStartTimedOut(sessionId, new Date());
+    const timedOut = await this.agentRepo.markSessionStartTimedOut(sessionId, new Date(), 'start_timeout');
     if (!timedOut) {
       return;
     }
@@ -1028,7 +1028,7 @@ export class AgentSessionManager {
     reason: StartupDeadlineReason,
   ): Promise<boolean> {
     await this.readyPromise;
-    const expired = await this.agentRepo.expireStartingSession(sessionId, new Date(), expected);
+    const expired = await this.agentRepo.expireStartingSession(sessionId, new Date(), expected, reason);
     if (!expired) {
       return false;
     }

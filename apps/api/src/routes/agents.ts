@@ -90,7 +90,7 @@ import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agen
 import { startCreatedChild } from '../agents/child-start.js';
 import { CONVERSATION_TURN_EVENT_WINDOW, deriveSubjectTurnState, TURN_EVENT_TYPES } from '../services/agent-conversation-turn.js';
 import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
-import { agentRuntimeSessionPublicColumns } from '../services/agent-runtime-session-projection.js';
+import { agentRuntimeSessionPublicColumns, agentRuntimeSessionReadColumns, toPublicRuntimeSession, type StartupProgressGate } from '../services/agent-runtime-session-projection.js';
 import { cloneAgentAsLive } from '../services/agent-go-live-service.js';
 import { buildBlueprintDetail } from './blueprints.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
@@ -614,6 +614,7 @@ export async function agentRoutes(
   nonTradingDefaultTickIntervalMs: number = DEFAULT_NON_TRADING_TICK_INTERVAL_MS,
   // Agent-created agents (001-agent-creating-agents §3): rate, depth and the child-create ceiling.
   agentCreation: AgentCreationConfig = AgentCreationConfigSchema.parse({}),
+  startupProgressGate: StartupProgressGate | null = null,
 ): Promise<void> {
   const approvalRepo = new DecisionApprovalRepository(db);
   const stagedProfileReconciliationSaga = profileReconciliationSaga ?? new TradingProfileReconciliationSaga(
@@ -1429,7 +1430,7 @@ export async function agentRoutes(
     // Include active session (starting/launching/running/unhealthy).
     // Do not return lingering sessions for stopped/crashed agents — any such session is stale.
     const isTerminalState = agent.status === 'stopped' || agent.status === 'crashed';
-    const [session] = isTerminalState ? [] : await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
+    const [session] = isTerminalState ? [] : await db.select(agentRuntimeSessionReadColumns).from(agentRuntimeSessions)
       .where(and(
         eq(agentRuntimeSessions.agentId, id),
         inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
@@ -1437,7 +1438,7 @@ export async function agentRoutes(
       .orderBy(desc(agentRuntimeSessions.startedAt));
 
     const skillIds = await listSkillIdsForAgent(db, id);
-    const [agentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), activeSession: session ?? null }]);
+    const [agentOut] = await withAgentChatAddresses(db, request.userId, [{ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), activeSession: session ? toPublicRuntimeSession(session, startupProgressGate) : null }]);
     return reply.send(agentOut);
   });
 
@@ -2868,11 +2869,11 @@ export async function agentRoutes(
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    const sessions = await db.select(agentRuntimeSessionPublicColumns).from(agentRuntimeSessions)
+    const sessions = await db.select(agentRuntimeSessionReadColumns).from(agentRuntimeSessions)
       .where(eq(agentRuntimeSessions.agentId, id))
       .orderBy(agentRuntimeSessions.startedAt);
 
-    return reply.send(sessions);
+    return reply.send(sessions.map((row) => toPublicRuntimeSession(row, startupProgressGate)));
   });
 
   // Get recent decisions initiated by this agent directly or through its bots.

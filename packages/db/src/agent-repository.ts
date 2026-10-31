@@ -18,7 +18,7 @@ import {
   type AgentStartRefusal,
 } from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
-import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type UnifiedAgentConfig, type ProvidersYaml, TechnicalConfigSchema, IntelligenceConfigSchema, type ChatAddress, type ChatAddressValue, type ChatProvider, isUserAgentChannel } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type UnifiedAgentConfig, type ProvidersYaml, TechnicalConfigSchema, IntelligenceConfigSchema, type ChatAddress, type ChatAddressValue, type ChatProvider, isUserAgentChannel, type StartupDeadlineReason } from '@herobids/domain';
 
 // --- Helpers ---
 
@@ -697,10 +697,15 @@ export class AgentRepository {
     return this.markSessionEnded(sessionId, 'stopped', stoppedAt);
   }
 
-  async markSessionStartTimedOut(sessionId: string, stoppedAt: Date): Promise<boolean> {
+  async markSessionStartTimedOut(
+    sessionId: string,
+    stoppedAt: Date,
+    startupFailureReason: StartupDeadlineReason,
+  ): Promise<boolean> {
     const updated = await this.db.update(agentRuntimeSessions).set({
       status: 'stopped',
       stoppedAt,
+      startupFailureReason,
     }).where(and(
       eq(agentRuntimeSessions.id, sessionId),
       inArray(agentRuntimeSessions.status, ['starting', 'launching']),
@@ -711,7 +716,8 @@ export class AgentRepository {
 
   /** Atomically expire a startup deadline. The claim succeeds only while the session still has the
    * status and startup facts the deadline was computed from, so a placement or heartbeat that lands
-   * after the evaluation makes the claim fail and the caller must re-evaluate. */
+   * after the evaluation makes the claim fail and the caller must re-evaluate. The bounded reason is
+   * written in the same statement as the stop, so the stop and its reason cannot diverge. */
   async expireStartingSession(
     sessionId: string,
     stoppedAt: Date,
@@ -720,10 +726,12 @@ export class AgentRepository {
       runtimeRegisteredAt: Date | null;
       firstPlacedAt: Date | null;
     },
+    startupFailureReason: StartupDeadlineReason,
   ): Promise<boolean> {
     const updated = await this.db.update(agentRuntimeSessions).set({
       status: 'stopped',
       stoppedAt,
+      startupFailureReason,
     }).where(and(
       eq(agentRuntimeSessions.id, sessionId),
       eq(agentRuntimeSessions.status, expected.status),

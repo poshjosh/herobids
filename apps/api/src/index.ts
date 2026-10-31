@@ -374,7 +374,7 @@ await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClie
 await connectionsOauthRoutes(app, db, appConfig, appConfig.plans, { redis: redisClient, saga: profileReconciliationSaga, budgets: appConfig.agentRuntime.defaultBudgets });
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs, appConfig.agentCreation);
+await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentCostEstimates, redisClient, appConfig.agentRuntime.llm.modelDefaults, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga, appConfig.agentRuntime.nonTradingDefaults.tickIntervalMs, appConfig.agentCreation, appConfig.worker.agents.capacityAwareStart);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
@@ -389,7 +389,7 @@ await dashboardRoutes(app, db, appConfig.plans, tradingBackendClient, tradingBac
 // Billing routes — always registered; the summary endpoint is needed even when
 // billing is disabled so the web UI can render the "not enabled" state.
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
-await sessionRoutes(app, db);
+await sessionRoutes(app, db, appConfig.worker.agents.capacityAwareStart);
 await pushRoutes(app, { store: new PushSubscriptionRepository(db), publicConfig: resolvePushPublicConfig(appConfig.messaging.notifications) });
 await blueprintRoutes(app, db, new BlueprintExecutionCapabilityAdapter(providersYaml), appConfig.plans, tradingBackendClient, tradingBackendTimeoutMs, profileReconciliationSaga);
 await agentInteractivityRoutes(app, db, redisClient, telegramChat, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, profileReconciliationSaga, appConfig.agentCreation, conversationDeps);

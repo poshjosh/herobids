@@ -46,13 +46,14 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
   });
 
   async function readSession() {
-    const [row] = await scratch.sql`SELECT status, runtime_registered_at, first_placed_at, placement_allocation_id
+    const [row] = await scratch.sql`SELECT status, runtime_registered_at, first_placed_at, placement_allocation_id, startup_failure_reason
       FROM agent_runtime_sessions WHERE id = ${sessionId}`;
     return {
       status: row.status as string,
       runtimeRegisteredAt: row.runtime_registered_at as Date | null,
       firstPlacedAt: row.first_placed_at as Date | null,
       placementAllocationId: row.placement_allocation_id as string | null,
+      startupFailureReason: row.startup_failure_reason as string | null,
     };
   }
 
@@ -134,9 +135,10 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
     it('claims a starting session whose startup facts are unchanged', async () => {
       expect(await repo.expireStartingSession(sessionId, T2, {
         status: 'starting', runtimeRegisteredAt: null, firstPlacedAt: null,
-      })).toBe(true);
+      }, 'queue_deadline')).toBe(true);
 
       expect((await readSession()).status).toBe('stopped');
+      expect((await readSession()).startupFailureReason).toBe('queue_deadline');
     });
 
     it('claims a launching session whose registration matches', async () => {
@@ -145,7 +147,7 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
 
       expect(await repo.expireStartingSession(sessionId, T2, {
         status: 'launching', runtimeRegisteredAt: T1, firstPlacedAt: null,
-      })).toBe(true);
+      }, 'observation_failure')).toBe(true);
       expect((await readSession()).status).toBe('stopped');
     });
 
@@ -156,7 +158,7 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
 
       expect(await repo.expireStartingSession(sessionId, T2, {
         status: 'launching', runtimeRegisteredAt: T1, firstPlacedAt: null,
-      })).toBe(false);
+      }, 'boot_deadline')).toBe(false);
 
       const session = await readSession();
       expect(session.status).toBe('launching');
@@ -170,7 +172,7 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
 
       expect(await repo.expireStartingSession(sessionId, T2, {
         status: 'launching', runtimeRegisteredAt: null, firstPlacedAt: null,
-      })).toBe(false);
+      }, 'queue_deadline')).toBe(false);
       expect((await readSession()).status).toBe('launching');
     });
 
@@ -179,7 +181,7 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
 
       expect(await repo.expireStartingSession(sessionId, T2, {
         status: 'starting', runtimeRegisteredAt: null, firstPlacedAt: null,
-      })).toBe(false);
+      }, 'start_timeout')).toBe(false);
       expect((await readSession()).status).toBe('running');
     });
 
@@ -187,8 +189,8 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
       const expected = { status: 'starting' as const, runtimeRegisteredAt: null, firstPlacedAt: null };
 
       const results = await Promise.all([
-        repo.expireStartingSession(sessionId, T1, expected),
-        repo.expireStartingSession(sessionId, T2, expected),
+        repo.expireStartingSession(sessionId, T1, expected, 'start_timeout'),
+        repo.expireStartingSession(sessionId, T2, expected, 'start_timeout'),
       ]);
 
       expect(results.filter(Boolean)).toHaveLength(1);
@@ -201,7 +203,7 @@ describe.skipIf(!BASE_URL)('AgentRepository startup facts (integration)', () => 
       await setStatus('launching');
       expect(await repo.expireStartingSession(sessionId, T1, {
         status: 'launching', runtimeRegisteredAt: null, firstPlacedAt: null,
-      })).toBe(true);
+      }, 'observation_failure')).toBe(true);
 
       expect(await repo.markRuntimeRegistered(sessionId, T2)).toBe(false);
       expect(await repo.recordFirstPlacement(sessionId, T2, 'alloc-late')).toBe(false);

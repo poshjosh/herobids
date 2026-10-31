@@ -62,7 +62,7 @@ assert_eq "$(grep -cE 'cat .*(tfstate|node_count|\.count)' "${SCALE_IN}" || true
 
 test_end || SUITE_FAILED=1
 
-test_begin "scale-in wiring: the gate reports the managed count for a healthy pool"
+test_begin "scale-in wiring: the gate reads the managed count from cloud and refuses an unjoined pool"
 
 rm -f "${GATE_FILE}"
 fresh_gate "${GATE_FILE}" 2000 false
@@ -82,10 +82,10 @@ assert_contains "${BLOCKED_BRANCH}" "exit 1" "the blocked branch exits 1"
 assert_not_contains "${BLOCKED_BRANCH}" "tf_apply" "the blocked branch does not run terraform"
 assert_not_contains "${BLOCKED_BRANCH}" "drain" "the blocked branch does not drain nodes"
 
-GATE_LINE="$(grep -n 'capacity_scale_gate "' "${SCALE_IN}" | head -1 | cut -d: -f1)"
+GATE_LINE="$(grep -n 'capacity_scale_gate "' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
 DRAIN_LINE="$(grep -n 'drain_node "' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
-TF_LINE="$(grep -n 'tf_apply_var "agent_node_count' "${SCALE_IN}" | head -1 | cut -d: -f1)"
-assert_eq "$(( GATE_LINE < DRAIN_LINE && GATE_LINE < TF_LINE ))" "1" \
+TF_LINE="$(grep -n 'tf_apply_plan "' "${SCALE_IN}" | head -1 | cut -d: -f1 || true)"
+assert_eq "$(( ${GATE_LINE:-0} > 0 && GATE_LINE < ${DRAIN_LINE:-0} && GATE_LINE < ${TF_LINE:-0} ))" "1" \
   "the gate call precedes every drain and terraform apply"
 
 test_end || SUITE_FAILED=1
@@ -101,15 +101,19 @@ assert_contains "$(jq -r '.blockers | join(",")' <<< "${GATE_OUT}")" "readiness_
 test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════
-# New count: current minus the drained nodes, clamped at the minimum
+# New count: current minus the drained nodes, refused outside [MIN, CURRENT)
 # ═════════════════════════════════════════════════════════════════════════════
 
-test_begin "scale-in wiring: the new count is current minus drained"
+test_begin "scale-in wiring: the new count is current minus drained and goes through scale_in_new_count_ok"
 
 assert_contains "$(grep '^NEW_COUNT=' "${SCALE_IN}")" 'NEW_COUNT=$(( CURRENT_COUNT - ${#DRAIN_OK[@]} ))' \
   "NEW_COUNT is CURRENT_COUNT minus the drained node count"
-assert_eq "$(grep -c 'NEW_COUNT=${MIN_COUNT}$' "${SCALE_IN}" || true)" "1" \
-  "NEW_COUNT is clamped to MIN_COUNT when the drain would go below it"
+assert_eq "$(grep -c 'NEW_COUNT=${MIN_COUNT}' "${SCALE_IN}" || true)" "0" \
+  "NEW_COUNT is never overwritten with MIN_COUNT"
+assert_contains "$(cat "${SCALE_IN}")" 'scale_in_new_count_ok "${CURRENT_COUNT}" "${NEW_COUNT}" "${MIN_COUNT}"' \
+  "the planned count is checked by scale_in_new_count_ok before the plan is saved"
+assert_eq "$(grep -c 'would go below min_agent_nodes' "${SCALE_IN}" || true)" "0" \
+  "the old inline clamp message is gone"
 
 test_end || SUITE_FAILED=1
 

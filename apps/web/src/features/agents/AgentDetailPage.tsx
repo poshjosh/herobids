@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ApiError, agents as agentsApi, skills as skillsApi, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
+import { ApiError, agents as agentsApi, skills as skillsApi, type AgentArtifact, type AgentRuntimeSession, type AgentStartupFailureReason, type AgentStartupProgressPhase, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel, SECTION_TITLE_STYLE, FieldLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { SkillPicker } from './SkillPicker.js';
@@ -18,6 +18,26 @@ import { AgentDeleteDialog } from './AgentDeleteDialog.js';
 import { ChildAgentAllowanceCard } from './ChildAgentAllowanceCard.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
+
+// Typed message-id maps for the startup view. Every id is a literal, so a missing or misspelled
+// key fails type-checking here instead of rendering a raw id at runtime.
+const STARTUP_PROGRESS_LABEL_IDS = {
+  waiting_for_capacity: 'agents.detail.startupProgress.waiting_for_capacity',
+  booting: 'agents.detail.startupProgress.booting',
+} as const satisfies Record<AgentStartupProgressPhase, string>;
+
+const STARTUP_FAILURE_MESSAGE_IDS = {
+  start_timeout: 'agents.detail.startupFailure.start_timeout',
+  queue_deadline: 'agents.detail.startupFailure.queue_deadline',
+  boot_deadline: 'agents.detail.startupFailure.boot_deadline',
+  observation_failure: 'agents.detail.startupFailure.observation_failure',
+} as const satisfies Record<AgentStartupFailureReason, string>;
+
+/** Failure reason of the most recent run (runs are oldest first), or null when it did not fail during startup. */
+function latestStartupFailureReason(runs: AgentRuntimeSession[] | undefined): AgentStartupFailureReason | null {
+  return runs?.[runs.length - 1]?.startupFailureReason ?? null;
+}
+
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -257,6 +277,8 @@ export function AgentDetailPage() {
     enabled: !!id,
     refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
+  const startupFailureReason = latestStartupFailureReason(sessionsQuery.data);
+
 
   if (query.isLoading) return <PageShell><LoadingRows count={5} /></PageShell>;
   if (query.isError) return <PageShell><ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} /></PageShell>;
@@ -347,6 +369,12 @@ export function AgentDetailPage() {
         <Card>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.status} />} />
+            {agent.activeSession?.startupProgress && (
+              <KV label={intl.formatMessage({ id: 'agents.detail.startupProgress' })} value={intl.formatMessage({ id: STARTUP_PROGRESS_LABEL_IDS[agent.activeSession.startupProgress.phase] })} />
+            )}
+            {!agent.activeSession && startupFailureReason && (
+              <KV label={intl.formatMessage({ id: 'agents.detail.startupFailure' })} value={intl.formatMessage({ id: STARTUP_FAILURE_MESSAGE_IDS[startupFailureReason] })} />
+            )}
             <KV label={intl.formatMessage({ id: 'common.created' })} value={<RelativeTime timestamp={agent.createdAt} />} />
             <KV label={intl.formatMessage({ id: 'common.updated' })} value={<RelativeTime timestamp={agent.updatedAt} />} />
           </div>

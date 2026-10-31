@@ -8,6 +8,19 @@ function sortedKeys(catalog: Record<string, string>): string[] {
   return Object.keys(catalog).sort();
 }
 
+/**
+ * Two-way key drift between a locale and English. `missing` are English keys the locale lacks;
+ * `extra` are locale keys English does not define. Both must be empty for the catalogs to be aligned.
+ */
+function keyDrift(english: Record<string, string>, locale: Record<string, string>): { missing: string[]; extra: string[] } {
+  const englishSet = new Set(Object.keys(english));
+  const localeSet = new Set(Object.keys(locale));
+  return {
+    missing: sortedKeys(english).filter((key) => !localeSet.has(key)),
+    extra: sortedKeys(locale).filter((key) => !englishSet.has(key)),
+  };
+}
+
 // Error codes the API returns for Telegram linking. localizeApiError uses the code as the message id.
 const TELEGRAM_LINK_ERROR_CODES = [
   'auth.telegram_link.rate_limited',
@@ -15,11 +28,16 @@ const TELEGRAM_LINK_ERROR_CODES = [
 ] as const;
 
 describe('locale catalogs', () => {
-  it('keep Arabic and Hindi keys aligned with English', () => {
-    const englishKeys = sortedKeys(enMessages);
+  it('keep Arabic and Hindi keys aligned with English in both directions', () => {
+    // Asserting the drift object (not just equal key arrays) names the offending keys on failure.
+    expect(keyDrift(enMessages, arMessages)).toEqual({ missing: [], extra: [] });
+    expect(keyDrift(enMessages, hiMessages)).toEqual({ missing: [], extra: [] });
+  });
 
-    expect(sortedKeys(arMessages)).toEqual(englishKeys);
-    expect(sortedKeys(hiMessages)).toEqual(englishKeys);
+  it('report every key a locale is missing or has extra', () => {
+    const english = { 'a.one': 'A', 'a.two': 'B' };
+    const locale = { 'a.one': 'A', 'a.three': 'C' };
+    expect(keyDrift(english, locale)).toEqual({ missing: ['a.two'], extra: ['a.three'] });
   });
 
   it('translate every Telegram link API error code in all locales', () => {

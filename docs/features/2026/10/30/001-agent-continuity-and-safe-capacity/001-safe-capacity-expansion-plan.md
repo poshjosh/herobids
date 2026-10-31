@@ -744,6 +744,35 @@ This is not a scale-in redesign, but it shares inventory, locks and state:
   lock facilities; document manual maintenance locking. Do not disable remote
   state locks or use local cached counts to work around lock contention.
 
+Scale-in status (P7, local tests only, nothing run against infrastructure):
+
+- Fail-closed node reads (C1): unreadable, unparseable or empty Nomad responses
+  count as not idle, so the node is deferred and never deleted.
+- Saved-plan binding (H1): every Terraform snapshot name must match a Nomad node
+  name exactly. The drain loop re-checks the live name before draining. Unproven
+  bindings are refused.
+- Apply seam (H2): scale-in applies through `tf_apply_plan`, which the
+  `INJECT_TF_APPLY_FAILURE` hook overrides. The failure branch restores drained nodes.
+- Demand gate (approved H4): scale-in exits 0 with a deferral while
+  `NOMAD_AUTOSCALE_DEMAND_ENABLED` is true.
+- New-node grace (approved H5): a candidate must be idle and registered longer
+  than `NOMAD_SCALE_IN_NODE_GRACE_SECONDS` (default 600). Unknown age defers.
+- Deferral alert (approved M1): consecutive deferrals are counted in
+  `${NOMAD_AUTOSCALE_STATE_DIR}/scale-in-deferrals`. An alert fires at
+  `NOMAD_SCALE_IN_DEFERRAL_ALERT_AFTER` (default 3). A successful scale-in resets it.
+- Count bounds (M2): NEW outside [MIN, CURRENT) is refused, not clamped.
+  Duplicate or blank node names are refused (M3).
+- Restore/undrain clears the drain with `POST /v1/node/{id}/drain` and body
+  `{"DrainSpec": null}`, then sets eligibility. The exact endpoint and body are
+  UNVERIFIED until P9 (no live Nomad call has been made). A failed clear or
+  eligibility change is recorded and the run ends in an error.
+- Node registration age uses the Nomad node `StatusUpdatedAt` as a proxy. This
+  is UNVERIFIED until P9. An unknown or unreadable time defers deletion.
+- The saved-plan binding assumes the terraform show JSON `change.before.name`
+  for `hcloud_server` deletes. This is UNVERIFIED until P9.
+- Scale-in refuses to delete while `NOMAD_AUTOSCALE_DEMAND_ENABLED` is true. The
+  equivalence of this flag to the worker's demand config is UNVERIFIED.
+
 ## 9. Implementation work packages and dependencies
 
 Complete small coherent changes. Check off work only when its tests pass.
@@ -758,7 +787,7 @@ Stages describe dependencies, not mandatory separate services/files.
 | P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests | DONE (demand mode disabled; activation blocked by H2, H3, H4, M4 in P4 Outstanding Issues) |
 | P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved | DONE (uncommitted; see P5 outstanding issues) |
 | P6 | Wire session/health deadlines, cancellation, restart recovery and session-safe cleanup | P5 | Fake-clock and real-DB race tests; original session survives slow placement | DONE (uncommitted; see P6 outstanding issues) |
-| P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection | PENDING |
+| P7 | Wire safe API/status/UI progress, reasons, config plumbing and scale-in coordination | P2, P4, P6 | Contract/UI tests and exact-drained-suffix protection | DONE (app and scale-in halves; see P7 and §8 records; scale-in endpoints and fields still UNVERIFIED until P9) |
 | P8 | Update documentation, run local integration/validation and complete shadow acceptance | P4, P6, P7 | Check output and evidence with no infrastructure writes in shadow | PENDING |
 | P9 | Obtain explicit staging mutation approval, deploy/migrate and execute controlled staging scenarios | P8 | Section 12 acceptance evidence; production still disabled | PENDING |
 
@@ -1254,4 +1283,40 @@ LOW residuals:
 
 - The placement timestamp is not validated against `startedAt`.
 - The health monitor single-flight is per process. Multi-replica sweeps are protected by the atomic expiry claim, so at most one claimant stops the runtime and emits the failure event.
+
+### P7 (app half: startup progress, failure reason, UI, config plumbing)
+
+Implemented and committed. This record covers the app half. Scale-in coordination is recorded in §8.
+
+Shipped:
+
+- Pure progress and deadline rules in `packages/domain/src/capacity/agent-startup-deadlines.ts`. `computeStartupProgress` takes explicit inputs. Missing data (undefined placement, heartbeat, registration or startedAt) yields null, never `booting` (M2). Non-starting statuses (`running`, `unhealthy`, `stopped`, `crashed`) return null, with and without the gate (M3). Tests in `agent-startup-progress.test.ts`.
+- Persisted failure reason (H1). Migration `packages/db/drizzle/0089_agent_startup_failure_reason.sql` adds one nullable text column, `agent_runtime_sessions.startup_failure_reason`. Only the worker writes it, through `markSessionStartTimedOut` (`start_timeout`) and `expireStartingSession` (`queue_deadline`, `boot_deadline`, `observation_failure`), in the same conditional UPDATE as the status change.
+- Public exposure is a safe enum only. `toPublicRuntimeSession` returns `startupFailureReason` only if it passes `isStartupDeadlineReason`, otherwise null. Internal keys (`apiKeyHash`, `runtimeRegisteredAt`, `firstPlacedAt`, `placementAllocationId`) are never projected. The public column set used by analytics and dashboard routes excludes the failure column. Tests: `sessions.test.ts` (`startupFailureReason`, each reason, unknown value does not leak) and `agents.test.ts` (per-run enum on `GET /agents/:id/sessions`).
+- The web detail page shows a localized message per reason (en, ar, hi keys under `agents.detail.startupFailure`), taken from the latest run of `GET /agents/:id/sessions`, and only when no active session exists. `GET /agents/:id` suppresses terminal sessions, so the sessions endpoint is the source. Render tests cover each reason, null, most-recent run, and active-session suppression.
+- Typed i18n maps (`as const satisfies`) replace the dynamic key (L2). The catalog-consistency test asserts ar and hi against en in both directions.
+- Worker dead guard removed. The launcher is threaded explicitly through the sweep (L3).
+
+Findings and dispositions:
+
+- H1 (HIGH), fixed: failure reason persisted (0089) and shown to the user, with no-leak tests.
+- M2, fixed: explicit inputs; undefined and null are distinct and yield null progress. Unit tests.
+- M3, fixed: domain tests for every non-starting status.
+- M4, fixed (documented): missing-job display lag. A job removed out of band is shown as `booting` until the next health sweep observes `not_found` and expires the session. The lag is bounded by one sweep interval (`worker.agents.healthCheckIntervalMs`, passed to the monitor as `checkIntervalMs`). Recorded as a comment above `sweepLaunchingSessions` in `agent-health-monitor.ts`. No behaviour change.
+- M5, fixed (test, with an open divergence): the API and worker both read the `worker.agents.capacityAwareStart` config key. A source-level test guards both references. The divergence is open. The worker also requires `runtimeLauncher.supportsStartupObservation()` (monitor and session manager), which the API cannot check. The API gates on `enabled` alone, so for a launcher that cannot observe, the API may show `startupProgress` for a session the worker does not enforce. The worker-side behaviour is pinned by the "legacy path when the runtime cannot observe startup" test. Open risk, not fixed.
+- M1, deferred: realtime progress events (SSE or push) are NOT built in P7. Progress is polled from the session projection. Revisit only if polling latency is a user problem.
+- L1, deferred: repository getters still return full rows. Narrowing them changes return types used by the worker and sweep code (`apiKeyHash`, `placementAllocationId`). The public exposure is controlled at the projection, and the no-leak route tests cover it, so narrowing is not cheap enough for this rework.
+- L2, fixed: typed maps and a two-way parity check.
+- L3, fixed: dead `if (!launcher)` guard removed; the launcher is passed explicitly.
+
+Verification: `tsc --noEmit` clean for domain, db, worker, api, web. The DB integration test `agent-repository-startup.integration.test.ts` runs 17 of 17 against local Postgres with `--no-file-parallelism`, including the migration. Worker capacity tests 19 of 19. The full-suite failures seen under parallel load (API route timeouts, worker tool timeouts and env-drift, web i18n date formatting) pass when rerun alone or serially, so they are load-related, not logic regressions.
+
+Open risks:
+
+- M5 divergence: API gate versus worker observation gate (above).
+- Realtime progress deferred (M1). Progress lags by up to one sweep interval.
+- Missing-job display lag, bounded by one sweep (M4).
+- Repository getters return full rows (L1). Narrowing is deferred.
+- Scale-in coordination (the other half of P7) is recorded in §8, with its own unverified items.
+- API integration: verified after the local dev DB was migrated to head and a local Redis was started. The full API suite passes (2004 pass, 0 fail, 252 skipped).
 

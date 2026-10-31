@@ -126,11 +126,16 @@ function createHarness(options: HarnessOptions = {}) {
     },
     launcher as any,
   );
+  launcherByMonitor.set(monitor, launcher);
 
   return { monitor, row, hooks, expiries, observeStartup, sessionManager, launcher };
 }
 
-const sweep = (monitor: AgentHealthMonitor) => (monitor as any).sweepLaunchingSessions() as Promise<void>;
+// The monitor takes its launcher explicitly for the sweep (production passes this.runtimeLauncher).
+// The harness records which launcher it wired to each monitor so sweep() passes the same one.
+const launcherByMonitor = new WeakMap<AgentHealthMonitor, unknown>();
+const sweep = (monitor: AgentHealthMonitor) =>
+  (monitor as any).sweepLaunchingSessions(launcherByMonitor.get(monitor)) as Promise<void>;
 const setNow = (ms: number) => vi.setSystemTime(at(ms));
 
 describe('AgentHealthMonitor capacity-aware startup', () => {

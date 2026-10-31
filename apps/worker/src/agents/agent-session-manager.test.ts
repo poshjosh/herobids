@@ -519,7 +519,7 @@ describe('AgentSessionManager', () => {
 
     await manager.handleStartTimeout('sess-1');
 
-    expect(agentRepo.markSessionStartTimedOut).toHaveBeenCalledWith('sess-1', expect.any(Date));
+    expect(agentRepo.markSessionStartTimedOut).toHaveBeenCalledWith('sess-1', expect.any(Date), 'start_timeout');
     expect(runtimeLauncher.stop).toHaveBeenCalledWith('sess-1');
     expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { status: 'stopped' });
   });

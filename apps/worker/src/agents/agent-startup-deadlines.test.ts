@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeCapacityStartupDeadline, type StartupDeadlineFacts } from './agent-startup-deadlines.js';
+import { computeCapacityStartupDeadline, type StartupDeadlineFacts } from '@herobids/domain';
 
 const STARTED = new Date('2026-10-30T10:00:00.000Z');
 const STARTED_MS = STARTED.getTime();

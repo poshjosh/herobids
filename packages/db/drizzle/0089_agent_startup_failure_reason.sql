@@ -1,0 +1,1 @@
+ALTER TABLE "agent_runtime_sessions" ADD COLUMN "startup_failure_reason" text;

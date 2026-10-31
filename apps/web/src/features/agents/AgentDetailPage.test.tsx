@@ -4,7 +4,7 @@ import { IntlProvider } from 'react-intl';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
-import type { Agent, CapabilityReadiness, Skill } from '../../lib/api-client.js';
+import type { Agent, AgentStartupProgressPhase, AgentStartupProgressReason, CapabilityReadiness, Skill } from '../../lib/api-client.js';
 
 // The detail page pulls in a session, an event stream, and heavy child panels.
 // Mock the boundaries so the test can focus on the generic capabilities list.
@@ -165,12 +165,14 @@ const ALL_SKILLS: Skill[] = [
 function renderDetail(opts: {
   agentSkillIds: string[];
   readinessFamilies: string[];
+  agent?: Agent;
+  sessions?: unknown[];
 }): string {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
 
-  queryClient.setQueryData(['agents', 'agent-1'], makeAgent(opts.agentSkillIds));
+  queryClient.setQueryData(['agents', 'agent-1'], opts.agent ?? makeAgent(opts.agentSkillIds));
   queryClient.setQueryData(['skills'], { skills: ALL_SKILLS });
   queryClient.setQueryData(['agents', 'agent-1', 'capability-readiness'], {
     agentId: 'agent-1',
@@ -181,7 +183,7 @@ function renderDetail(opts: {
   queryClient.setQueryData(['agents', 'agent-1', 'prompt'], null);
   queryClient.setQueryData(['agents', 'agent-1', 'messages'], []);
   queryClient.setQueryData(['agents', 'agent-1', 'artifacts'], []);
-  queryClient.setQueryData(['agents', 'agent-1', 'sessions'], []);
+  queryClient.setQueryData(['agents', 'agent-1', 'sessions'], opts.sessions ?? []);
   // Inline capability-setup block + AgentConnectionField queries. Seeding them
   // lets the connection picker render its options from cache during the sync
   // static render (an unseeded query would render the "loading" branch, and its
@@ -267,6 +269,128 @@ describe('AgentDetailPage header', () => {
     expect(actionAt).toBeGreaterThan(-1);
     expect(html.slice(actionAt, actionAt + 400)).toContain(messages['agents.detail.backToChat']);
     expect(html.slice(html.indexOf('</h1>'), actionAt)).not.toContain('<p');
+  });
+});
+
+describe('AgentDetailPage startup progress', () => {
+  function startingAgent(startupProgress: { phase: AgentStartupProgressPhase; deadline: string; reason: AgentStartupProgressReason } | null): Agent {
+    return {
+      ...makeAgent([]),
+      status: 'starting',
+      activeSession: {
+        id: 'session-1',
+        status: 'starting',
+        lastHeartbeatAt: '2026-10-30T10:00:00.000Z',
+        startedAt: '2026-10-30T10:00:00.000Z',
+        startupProgress,
+      },
+    };
+  }
+
+  it('shows the Waiting for capacity label and keeps Stop visible while starting', () => {
+    const html = renderDetail({
+      agentSkillIds: [],
+      readinessFamilies: [],
+      agent: startingAgent({ phase: 'waiting_for_capacity', deadline: '2026-10-30T10:10:00.000Z', reason: 'queue_deadline' }),
+    });
+
+    expect(html).toContain(messages['agents.detail.startupProgress']);
+    expect(html).toContain(messages['agents.detail.startupProgress.waiting_for_capacity']);
+    expect(html).not.toContain(messages['agents.detail.startupProgress.booting']);
+    expect(html).toContain(`>${messages['agents.detail.stop']}</button>`);
+  });
+
+  it('shows the Booting label when the session is placed', () => {
+    const html = renderDetail({
+      agentSkillIds: [],
+      readinessFamilies: [],
+      agent: startingAgent({ phase: 'booting', deadline: '2026-10-30T10:02:00.000Z', reason: 'boot_deadline' }),
+    });
+
+    expect(html).toContain(messages['agents.detail.startupProgress.booting']);
+    expect(html).not.toContain(messages['agents.detail.startupProgress.waiting_for_capacity']);
+    expect(html).toContain(`>${messages['agents.detail.stop']}</button>`);
+  });
+
+  it('omits the startup label when no startup progress is present', () => {
+    const html = renderDetail({
+      agentSkillIds: [],
+      readinessFamilies: [],
+      agent: startingAgent(null),
+    });
+
+    expect(html).not.toContain(messages['agents.detail.startupProgress.waiting_for_capacity']);
+    expect(html).not.toContain(messages['agents.detail.startupProgress.booting']);
+    expect(html).toContain(`>${messages['agents.detail.stop']}</button>`);
+  });
+});
+
+describe('AgentDetailPage startup failure reason', () => {
+  const STOPPED_AGENT: Agent = { ...makeAgent([]), status: 'stopped', activeSession: null };
+
+  function stoppedRun(reason: string | null) {
+    return {
+      id: 'session-0',
+      startedAt: '2026-10-30T10:00:00.000Z',
+      status: 'stopped',
+      stoppedAt: '2026-10-30T10:05:00.000Z',
+      startupFailureReason: reason,
+    };
+  }
+
+  it.each([
+    ['start_timeout', 'agents.detail.startupFailure.start_timeout'],
+    ['queue_deadline', 'agents.detail.startupFailure.queue_deadline'],
+    ['boot_deadline', 'agents.detail.startupFailure.boot_deadline'],
+    ['observation_failure', 'agents.detail.startupFailure.observation_failure'],
+  ] as const)('renders the localized message for the %s reason and not the raw token', (reason, messageId) => {
+    const html = renderDetail({
+      agentSkillIds: [],
+      readinessFamilies: [],
+      agent: STOPPED_AGENT,
+      sessions: [stoppedRun(reason)],
+    });
+
+    expect(html).toContain(messages['agents.detail.startupFailure']);
+    expect(html).toContain(messages[messageId]);
+    expect(html).not.toContain(reason);
+  });
+
+  it('renders no failure label when the last run did not fail during startup', () => {
+    const html = renderDetail({
+      agentSkillIds: [],
+      readinessFamilies: [],
+      agent: STOPPED_AGENT,
+      sessions: [stoppedRun(null)],
+    });
+
+    expect(html).not.toContain(messages['agents.detail.startupFailure']);
+  });
+
+  it('shows the reason of the most recent run only', () => {
+    const html = renderDetail({
+      agentSkillIds: [],
+      readinessFamilies: [],
+      agent: STOPPED_AGENT,
+      sessions: [stoppedRun('queue_deadline'), stoppedRun(null)],
+    });
+
+    expect(html).not.toContain(messages['agents.detail.startupFailure.queue_deadline']);
+  });
+
+  it('does not show a stale failure while a new run is active', () => {
+    const html = renderDetail({
+      agentSkillIds: [],
+      readinessFamilies: [],
+      agent: {
+        ...makeAgent([]),
+        status: 'starting',
+        activeSession: { id: 'session-2', status: 'starting', lastHeartbeatAt: '2026-10-30T10:06:00.000Z', startedAt: '2026-10-30T10:06:00.000Z', startupProgress: null },
+      },
+      sessions: [stoppedRun('boot_deadline')],
+    });
+
+    expect(html).not.toContain(messages['agents.detail.startupFailure']);
   });
 });
 

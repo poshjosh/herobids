@@ -83,220 +83,146 @@ test_end || SUITE_FAILED=1
 # Scale-in drain loop — DRAIN_OK exclusion logic
 # ═════════════════════════════════════════════════════════════════════════════
 
-test_begin "scale-in drain loop — timed-out nodes excluded from DRAIN_OK"
+SCALE_IN="${SCRIPTS_DIR}/scale-in.sh"
+source "${SCRIPTS_DIR}/scale-in-guard.sh"
 
-# This test simulates the drain loop from scale-in.sh by calling the
-# relevant functions with mocked Nomad API operations. We verify that
-# DRAIN_OK contains only successfully-drained nodes.
+# ═════════════════════════════════════════════════════════════════════════════
+# The shipped drain loop, extracted from scale-in.sh and run unchanged. Only the
+# Nomad calls are stubbed. CALLS records what the loop asked for, in order.
+# ═════════════════════════════════════════════════════════════════════════════
 
-# We run the drain loop inline (not in subshells) so we can inspect
-# DRAIN_OK directly. The loop logic is copied from scale-in.sh.
+DRAIN_LOOP_SRC="$(awk '/^declare -a DRAIN_OK=\(\)/{on=1} on{print} on && /^done$/{exit}' "${SCALE_IN}")"
+# shellcheck disable=SC2034  # read by the eval'd drain loop extracted from scale-in.sh
+NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS=5
+log() { :; }
+CALLS=""
+node_is_idle() { CALLS+="idle:$1 "; [[ "${IDLE_FAIL:-}" != "$1" ]]; }
+node_name() { if [[ "${NAME_MISMATCH:-}" == "$1" ]]; then echo "other-host"; else echo "name-$1"; fi; }
+mark_node_ineligible() { CALLS+="inel:$1 "; [[ "${INEL_FAIL:-}" != "$1" ]]; }
+drain_node() { CALLS+="drain:$1 "; [[ "${DRAIN_FAIL:-}" != "$1" ]]; }
+wait_for_drain_complete() { CALLS+="wait:$1 "; [[ "${WAIT_FAIL:-}" != "$1" ]]; }
+scale_in_restore_node() { CALLS+="restore:$1 "; }
 
-# --- Single node: times out → DRAIN_OK is empty ---
-
-mark_node_ineligible() { return 0; }
-drain_node() { return 0; }
-mark_node_eligible() { return 0; }
-wait_for_drain_complete() { return 1; }
-
-declare -a DRAIN_OK=()
-_VERIFIED=("timeout-node-1")
-
-for node_id in "${_VERIFIED[@]}"; do
-  if ! mark_node_ineligible "${node_id}"; then continue; fi
-  if ! drain_node "${node_id}" 5; then continue; fi
-  if ! wait_for_drain_complete "${node_id}" 5; then
-    mark_node_eligible "${node_id}" || true
-    continue
-  fi
-  DRAIN_OK+=("${node_id}")
-done
-
-assert_eq "${#DRAIN_OK[@]}" "0" \
-  "timed-out node is excluded from DRAIN_OK"
-
-# --- Single node: drains successfully → DRAIN_OK has 1 ---
-
-wait_for_drain_complete() { return 0; }
-
-DRAIN_OK=()
-_VERIFIED=("success-node-1")
-
-for node_id in "${_VERIFIED[@]}"; do
-  if ! mark_node_ineligible "${node_id}"; then continue; fi
-  if ! drain_node "${node_id}" 5; then continue; fi
-  if ! wait_for_drain_complete "${node_id}" 5; then
-    mark_node_eligible "${node_id}" || true
-    continue
-  fi
-  DRAIN_OK+=("${node_id}")
-done
-
-assert_eq "${#DRAIN_OK[@]}" "1" \
-  "successfully drained node is in DRAIN_OK"
-assert_eq "${DRAIN_OK[0]}" "success-node-1" \
-  "DRAIN_OK contains the correct node ID"
-
-# --- Mixed: node A drains, node B times out → only node A in DRAIN_OK ---
-
-wait_for_drain_complete() {
-  local nid="$1"
-  if [[ "${nid}" == "node-A-ok" ]]; then return 0; fi
-  return 1
+# set_candidates ID... sets the selected suffix top-down, as scale-in.sh builds it.
+set_candidates() {
+  local n=0 id
+  CAND_ID=(); CAND_SUFFIX=(); CAND_NAME=()
+  for id in "$@"; do
+    CAND_ID+=("${id}"); CAND_SUFFIX+=("${n}"); CAND_NAME+=("name-${id}"); n=$(( n + 1 ))
+  done
+  # shellcheck disable=SC2034  # read by the eval'd drain loop extracted from scale-in.sh
+  RUN_LEN=${#CAND_ID[@]}
+  CALLS=""; IDLE_FAIL=""; NAME_MISMATCH=""; INEL_FAIL=""; DRAIN_FAIL=""; WAIT_FAIL=""
 }
 
-DRAIN_OK=()
-_VERIFIED=("node-A-ok" "node-B-timeout")
+# drained_list prints DRAIN_OK space-separated; the bash 3.2-safe form tolerates an empty array.
+drained_list() {
+  local out="" x
+  for x in ${DRAIN_OK[@]+"${DRAIN_OK[@]}"}; do out+="${out:+ }${x}"; done
+  printf '%s' "${out}"
+}
 
-for node_id in "${_VERIFIED[@]}"; do
-  if ! mark_node_ineligible "${node_id}"; then continue; fi
-  if ! drain_node "${node_id}" 5; then continue; fi
-  if ! wait_for_drain_complete "${node_id}" 5; then
-    mark_node_eligible "${node_id}" || true
-    continue
-  fi
-  DRAIN_OK+=("${node_id}")
-done
+test_begin "scale-in drain loop: a node that times out stops the run and is restored, never deleted"
 
-assert_eq "${#DRAIN_OK[@]}" "1" \
-  "mixed scenario: only 1 node in DRAIN_OK"
-assert_eq "${DRAIN_OK[0]}" "node-A-ok" \
-  "mixed scenario: successful node is in DRAIN_OK"
+set_candidates a b c
+WAIT_FAIL=b
+eval "${DRAIN_LOOP_SRC}"
+assert_eq "$(drained_list)" "a" "only the node drained before the timeout is kept"
+assert_contains "${CALLS}" "restore:b " "the timed-out node is restored to schedulable"
+assert_not_contains "${CALLS}" "drain:c" "the node after the timeout is not drained"
 
-# --- All candidates time out → DRAIN_OK is empty ---
+test_end || SUITE_FAILED=1
 
-wait_for_drain_complete() { return 1; }
+test_begin "scale-in drain loop: every candidate that drains is kept in suffix order"
 
-DRAIN_OK=()
-_VERIFIED=("node-X" "node-Y" "node-Z")
+set_candidates a b c
+eval "${DRAIN_LOOP_SRC}"
+assert_eq "$(drained_list)" "a b c" "all three drained nodes are kept in order"
+assert_not_contains "${CALLS}" "restore:" "a clean run restores nothing"
 
-for node_id in "${_VERIFIED[@]}"; do
-  if ! mark_node_ineligible "${node_id}"; then continue; fi
-  if ! drain_node "${node_id}" 5; then continue; fi
-  if ! wait_for_drain_complete "${node_id}" 5; then
-    mark_node_eligible "${node_id}" || true
-    continue
-  fi
-  DRAIN_OK+=("${node_id}")
-done
+test_end || SUITE_FAILED=1
 
-assert_eq "${#DRAIN_OK[@]}" "0" \
-  "all-timeout scenario: DRAIN_OK is empty"
+test_begin "scale-in drain loop: an idle check that cannot prove idle stops before any drain"
 
-# --- mark_node_ineligible fails → node skipped entirely ---
+set_candidates a b c
+IDLE_FAIL=b
+eval "${DRAIN_LOOP_SRC}"
+assert_eq "$(drained_list)" "a" "only the node before the unproven one is kept"
+assert_not_contains "${CALLS}" "drain:b" "a node that is not proven idle is not drained"
+assert_not_contains "${CALLS}" "drain:c" "nothing after it is drained"
 
-mark_node_ineligible() { return 1; }
-wait_for_drain_complete() { return 0; }
+test_end || SUITE_FAILED=1
 
-DRAIN_OK=()
-_VERIFIED=("failed-ineligible-node")
+test_begin "scale-in drain loop: a live name that no longer matches the server stops the run"
 
-for node_id in "${_VERIFIED[@]}"; do
-  if ! mark_node_ineligible "${node_id}"; then continue; fi
-  if ! drain_node "${node_id}" 5; then continue; fi
-  if ! wait_for_drain_complete "${node_id}" 5; then
-    mark_node_eligible "${node_id}" || true
-    continue
-  fi
-  DRAIN_OK+=("${node_id}")
-done
+set_candidates a b
+NAME_MISMATCH=b
+eval "${DRAIN_LOOP_SRC}"
+assert_eq "$(drained_list)" "a" "the mismatched node is not kept"
+assert_not_contains "${CALLS}" "inel:b" "the mismatched node is not marked ineligible"
+assert_not_contains "${CALLS}" "drain:b" "the mismatched node is not drained"
 
-assert_eq "${#DRAIN_OK[@]}" "0" \
-  "node skipped when mark_node_ineligible fails"
+test_end || SUITE_FAILED=1
 
-# --- drain_node fails → node skipped ---
+test_begin "scale-in drain loop: a node that cannot be marked ineligible is not drained"
 
-mark_node_ineligible() { return 0; }
-drain_node() { return 1; }
+set_candidates a b
+INEL_FAIL=a
+eval "${DRAIN_LOOP_SRC}"
+assert_eq "$(drained_list)" "" "no node is kept when the first cannot be marked"
+assert_not_contains "${CALLS}" "drain:a" "the unmarked node is not drained"
 
-DRAIN_OK=()
-_VERIFIED=("failed-drain-node")
+test_end || SUITE_FAILED=1
 
-for node_id in "${_VERIFIED[@]}"; do
-  if ! mark_node_ineligible "${node_id}"; then continue; fi
-  if ! drain_node "${node_id}" 5; then continue; fi
-  if ! wait_for_drain_complete "${node_id}" 5; then
-    mark_node_eligible "${node_id}" || true
-    continue
-  fi
-  DRAIN_OK+=("${node_id}")
-done
+test_begin "scale-in drain loop: a failed drain start is restored and stops the run"
 
-assert_eq "${#DRAIN_OK[@]}" "0" \
-  "node skipped when drain_node fails"
+set_candidates a b
+DRAIN_FAIL=a
+eval "${DRAIN_LOOP_SRC}"
+assert_eq "$(drained_list)" "" "no node is kept when the drain fails to start"
+assert_contains "${CALLS}" "restore:a " "the node whose drain failed to start is restored"
+assert_not_contains "${CALLS}" "drain:b" "the run stops, so the next node is not drained"
+
+test_end || SUITE_FAILED=1
+
+test_begin "scale-in: an empty drain set exits before terraform is reached"
+
+EMPTY_BLOCK="$(awk '/^if \[\[ "\$\{#DRAIN_OK\[@\]\}" -eq 0 \]\]; then/{on=1} on{print} on && /^fi$/{exit}' "${SCALE_IN}")"
+assert_contains "${EMPTY_BLOCK}" "exit 1" "no drained node exits non-zero"
+assert_not_contains "${EMPTY_BLOCK}" "tf_apply" "no drained node skips terraform"
+
+test_end || SUITE_FAILED=1
+
+test_begin "scale-in restore: a failed restore is recorded so the run ends in a visible failure"
+
+# The real helper, extracted from scale-in.sh, with only the Nomad restore stubbed.
+RESTORE_SRC="$(awk '/^scale_in_restore_node\(\) \{/{on=1} on{print} on && /^}$/{exit}' "${SCALE_IN}")"
+eval "${RESTORE_SRC}"
+restore_node_schedulable() { return "${RESTORE_RC:-0}"; }
+send_alert() { :; }
+alert_failure() { return 0; }
+
+SCALE_IN_RESTORE_FAILED=0
+RESTORE_RC=0
+scale_in_restore_node "a" >/dev/null 2>&1
+assert_eq "${SCALE_IN_RESTORE_FAILED}" "0" "a successful restore records no failure"
+
+RESTORE_RC=1
+scale_in_restore_node "a" >/dev/null 2>&1
+assert_eq "${SCALE_IN_RESTORE_FAILED}" "1" "a failed restore is recorded, not hidden"
 
 test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Scale-in shrink count — derives from DRAIN_OK only
+# New count: current minus drained, refused outside [MIN, CURRENT) (no clamp)
 # ═════════════════════════════════════════════════════════════════════════════
 
-test_begin "scale-in shrink count — based on DRAIN_OK size"
+test_begin "scale-in new count: a target below min is refused, never clamped up to min"
 
-# The shrink formula from scale-in.sh:
-#   NEW_COUNT = CURRENT_COUNT - ${#DRAIN_OK[@]}
-#   if NEW_COUNT < MIN_COUNT then NEW_COUNT = MIN_COUNT
-
-# --- 2 candidates, 1 drains → shrink by 1 ---
-
-CURRENT_COUNT=5
-MIN_COUNT=2
-DRAIN_OK=("node-ok")
-
-NEW_COUNT=$(( CURRENT_COUNT - ${#DRAIN_OK[@]} ))
-if [[ ${NEW_COUNT} -lt ${MIN_COUNT} ]]; then
-  NEW_COUNT=${MIN_COUNT}
-fi
-
-assert_eq "${NEW_COUNT}" "4" \
-  "shrinks by 1 when 1 of 2 nodes drains"
-
-# --- All timeout → DRAIN_OK empty → terraform skipped ---
-
-CURRENT_COUNT=5
-MIN_COUNT=2
-DRAIN_OK=()
-
-if [[ ${#DRAIN_OK[@]} -eq 0 ]]; then
-  _SKIP="true"
-else
-  _SKIP="false"
-  NEW_COUNT=$(( CURRENT_COUNT - ${#DRAIN_OK[@]} ))
-  if [[ ${NEW_COUNT} -lt ${MIN_COUNT} ]]; then
-    NEW_COUNT=${MIN_COUNT}
-  fi
-fi
-
-assert_eq "${_SKIP}" "true" \
-  "all-timeout: terraform apply is skipped"
-
-# --- Shrink respects min_agent_nodes floor ---
-
-CURRENT_COUNT=3
-MIN_COUNT=3
-DRAIN_OK=("node-1")
-
-NEW_COUNT=$(( CURRENT_COUNT - ${#DRAIN_OK[@]} ))
-if [[ ${NEW_COUNT} -lt ${MIN_COUNT} ]]; then
-  NEW_COUNT=${MIN_COUNT}
-fi
-
-assert_eq "${NEW_COUNT}" "3" \
-  "shrink clamped to min_agent_nodes"
-
-# --- Multiple successful drains → shrinks by that count ---
-
-CURRENT_COUNT=8
-MIN_COUNT=2
-DRAIN_OK=("node-a" "node-b" "node-c")
-
-NEW_COUNT=$(( CURRENT_COUNT - ${#DRAIN_OK[@]} ))
-if [[ ${NEW_COUNT} -lt ${MIN_COUNT} ]]; then
-  NEW_COUNT=${MIN_COUNT}
-fi
-
-assert_eq "${NEW_COUNT}" "5" \
-  "shrinks by 3 when 3 nodes drain successfully"
+assert_failure "removing 1 of 3 at min 3 is refused, not clamped to 3" scale_in_new_count_ok 3 2 3
+assert_success "removing 1 of 5 at min 2 is accepted" scale_in_new_count_ok 5 4 2
+assert_success "removing 3 of 8 at min 2 is accepted" scale_in_new_count_ok 8 5 2
+assert_failure "removing nothing is refused" scale_in_new_count_ok 3 3 2
 
 test_end || SUITE_FAILED=1
 

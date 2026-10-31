@@ -28,6 +28,12 @@ export const agentRuntimeSessions = pgTable('agent_runtime_sessions', {
   firstPlacedAt: timestamp('first_placed_at', { withTimezone: true }),
   /** Scheduler allocation that produced firstPlacedAt. */
   placementAllocationId: text('placement_allocation_id'),
+  /**
+   * Bounded startup-failure enum (start_timeout, queue_deadline, boot_deadline, observation_failure)
+   * written only when the worker expires a starting session. Null otherwise. Only the enum is
+   * exposed to clients; the column is never a free-form message.
+   */
+  startupFailureReason: text('startup_failure_reason'),
 }, (t) => [
   index('idx_agent_runtime_sessions_agent_id').on(t.agentId),
   index('idx_agent_runtime_sessions_status').on(t.status),

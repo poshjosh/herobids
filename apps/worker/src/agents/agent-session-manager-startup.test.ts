@@ -158,6 +158,7 @@ describe('AgentSessionManager P6 startup expiry', () => {
       'sess-1',
       new Date('2026-10-30T10:15:00.000Z'),
       launchingClaim,
+      'observation_failure',
     );
   });
 
