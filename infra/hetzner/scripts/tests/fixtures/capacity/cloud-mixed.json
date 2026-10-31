@@ -1,0 +1,37 @@
+[
+  {
+    "id": 90000001,
+    "name": "synth-agent-1",
+    "status": "running",
+    "labels": {"app": "herobids", "environment": "synthetic", "role": "agent", "node_pool": "synth"},
+    "address": "192.0.2.11"
+  },
+  {
+    "id": 90000002,
+    "name": "synth-agent-2",
+    "status": "running",
+    "labels": {"app": "herobids", "environment": "synthetic", "role": "agent", "node_pool": "synth"},
+    "address": "192.0.2.12"
+  },
+  {
+    "id": 90000003,
+    "name": "synth-agent-3",
+    "status": "initializing",
+    "labels": {"app": "herobids", "environment": "synthetic", "role": "agent", "node_pool": "synth"},
+    "address": "192.0.2.13"
+  },
+  {
+    "id": 90000004,
+    "name": "synth-agent-4",
+    "status": "deleting",
+    "labels": {"app": "herobids", "environment": "synthetic", "role": "agent", "node_pool": "synth"},
+    "address": "192.0.2.14"
+  },
+  {
+    "id": 90000099,
+    "name": "other-agent-1",
+    "status": "running",
+    "labels": {"app": "herobids", "environment": "production", "role": "agent", "node_pool": "other"},
+    "address": "192.0.2.99"
+  }
+]

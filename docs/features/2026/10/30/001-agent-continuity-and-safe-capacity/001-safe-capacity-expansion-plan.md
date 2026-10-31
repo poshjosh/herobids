@@ -753,7 +753,7 @@ Stages describe dependencies, not mandatory separate services/files.
 |---|---|---|---|---|
 | P0 | Re-read source/history, preserve memory fix, capture sanitized API fixtures and effective config; record baseline phase timings | None | Fixtures cover namespace, blocked diagnostics, assigned pending allocations, cloud inventory and node resources | DONE (local, scope A; live capture and phase timings outstanding) |
 | P1 | Define validated config, shared snapshot/decision contract, disabled gates and durable convergence renderer | P0 | Fresh-boot/convergence parity, invalid-input and stale-override tests | DONE (gates off; see Outstanding Issues) |
-| P2 | Implement reconciled managed inventory, durable state, in-flight/readiness accounting and read-only mode | P1 | Zero/stale-cache/down/unjoined/partial-apply/reboot tests; no mutation in dry-run | PENDING |
+| P2 | Implement reconciled managed inventory, durable state, in-flight/readiness accounting and read-only mode | P1 | Zero/stale-cache/down/unjoined/partial-apply/reboot tests; no mutation in dry-run | DONE (read-only; see Outstanding Issues) |
 | P3 | Correct demand collection, classification and per-node resource/fit calculations | P0, P1 | Real-shape namespace/diagnostic/dedup/fragmentation/CPU fixtures pass | PENDING |
 | P4 | Implement single controller, floor/headroom/backlog composition, caps/cooldown, saved-plan allowlist and watcher observer mode | P2, P3 | Mock end-to-end decisions and protected-resource rejection tests | PENDING |
 | P5 | Add optional runtime startup observation, additive DB facts/migration and repository race guards | P0, P1 | Adapter/DB tests; old statuses and non-Nomad behaviour preserved | PENDING |
@@ -1092,3 +1092,23 @@ The implementing agent's final report must state:
 - LOW: converge skips steps 6-7 after a settings failure; document in the converge header.
 - Scope (M3/M4 from review 1): only five settings are wired and nothing consumes them yet. The remaining section 7 keys (namespace, datacenter, pool, fingerprint, state dir, min/max cross-check) are deferred to P2/P4. Consumers land in P2.
 - Known residual: if a main unit already has the settings `EnvironmentFile=` line and a secrets drop-in is added later, converge's skip logic could diverge from cloud-init order. No released unit has this shape.
+
+### P2 (inventory and state, read-only mode)
+
+Review rounds 1–4 raised CRITICAL/HIGH findings that were fixed in rework. The final review (round 5) found no CRITICAL or HIGH. The items below are the remaining MEDIUM/LOW findings and deferrals.
+
+- MEDIUM: `setup-autoscale-env.sh` dry-run redaction (~152) does not mask `AWS_ACCESS_KEY_ID`. Add it to the alternation.
+- MEDIUM: operator-set `NOMAD_SCALE_OUT_*`, `NOMAD_SCALE_OUT_COOLDOWN_SECONDS`, `NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS` and `NOMAD_AGENT_MEMORY_RESERVATION_MB` are used in arithmetic (`scale-out.sh` ~164, 315, 321, 344; `check-nomad-capacity.sh` ~187–188) without validation. Only `NOMAD_SCALE_OUT_INCREMENT` is checked. Validate each at config load. Raise to HIGH if env input is in the threat model.
+- MEDIUM (question): a malformed capacity output exits 1 and alerts only at the streak threshold, so the first malformed output is silent apart from the exit code. Decide whether it should alert immediately.
+- LOW: ACL token write (`setup-autoscale-env.sh` ~206) uses `rm -f` then `cat >`, not tmp plus `mv` like the other two writes.
+- LOW: the `write_if_changed` failed-write matrix covers mkdir only for 3c and the state dir. Add mkdir cases for 3a, 3b and 3d.
+- LOW: several setup-autoscale-env tests assert literal command text. Behavioural checks would survive refactors better.
+- LOW: die messages for converge sites 3a–3d do not warn that earlier steps may already have changed the host.
+- Pre-existing: `check-nomad-capacity.sh` (~137–145) counts nodes that fail detail or lack `MemoryMB` in ready totals but skips them from memory totals.
+- Deferred to P4: saved-plan apply and JSON inspection; DECLARED comes from the in-flight record rather than Terraform state; cap headroom after expiry (M9); `scale-out.sh` still uses `terraform apply -auto-approve -var agent_node_count=N`.
+- Deferred to P4 or owner decision: orphan and deleting semantics for multi-pool (owned servers of another pool fail closed; confirm).
+- Deferred: dry-run log lines are not labelled as dry-run (L6); the parser's lowercase keys (`free_memory_mb`) deviate from the uppercase form suggested in review.
+- Unverified against live systems: Hetzner label and name formats; the Nomad node-name to server-name join; Nomad 1.9.7 `/v1/nodes` response shapes; GNU `stat` and `ln` (only macOS tested); `/var/run` tmpfs on target hosts; systemd `ReadWritePaths` behaviour; whether the operator environment provides `HCLOUD_TOKEN` or `hcloud_token` in `<env>.tfvars`.
+- Security hygiene: a real-looking `hcloud_token` is present in a gitignored `*.tfvars` in the working tree. It was not printed. Rotate it if that file has ever been shared.
+- Pre-existing: `_ssh_opts.sh` aborts silently under pipefail when `ssh_public_key_path` is missing.
+- Residual: a transient orphan block can occur after scale-in destroy until the Nomad heartbeat timeout (fails closed).

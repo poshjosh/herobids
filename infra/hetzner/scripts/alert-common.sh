@@ -172,6 +172,13 @@ _write_failure_count() {
 #
 # Returns 0 if threshold crossed, 1 otherwise.
 alert_failure() {
+  # Dry-run must not mutate state, and must not signal an alert: the callers
+  # send one when this returns 0.
+  if [[ "${DRY_RUN:-false}" == "true" ]]; then
+    log "[DRY-RUN] Failure not recorded and no alert sent."
+    return 1
+  fi
+
   local current; current="$(_read_failure_count)"
   local new_count=$(( current + 1 ))
   _write_failure_count "${new_count}"

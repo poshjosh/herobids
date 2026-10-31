@@ -24,6 +24,11 @@
 #   3  Already at max_agent_nodes.
 #   4  Lock held by another process (non-blocking).
 #
+# The Terraform count is derived under the lock from the capacity guard
+# (capacity-inventory.sh: cloud + Nomad reconcile, including down servers).
+# The node-count cache is diagnostic only. Any guard blocker refuses the
+# scale-out (exit 1). A scale-out still in its readiness window is skipped (exit 0).
+#
 # Environment (see scale-common.sh for full list and defaults):
 #   NOMAD_ADDR                          Nomad server HTTP API base URL.
 #   NOMAD_AGENT_MEMORY_RESERVATION_MB   Memory reservation per agent slot.
@@ -33,6 +38,9 @@
 #   NOMAD_SCALE_OUT_INCREMENT           Nodes to add per scale-out event (default: 1).
 #   NOMAD_AUTOSCALE_LOCKFILE            Path to flock lock file.
 #   NOMAD_AUTOSCALE_COOLDOWN_FILE       Path to cooldown timestamp file.
+#   NOMAD_AUTOSCALE_NODE_POOL           Nomad/Hetzner node pool managed by this autoscaler.
+#   NOMAD_AUTOSCALE_INFLIGHT_FILE       In-flight scale-out record (readiness window).
+#   NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS  Readiness window for a scale-out.
 #   TERRAFORM_DIR                       Path to Terraform working directory.
 #   TF_CLI_ARGS                         Extra args passed to terraform (e.g., -var-file).
 
@@ -41,6 +49,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scale-common.sh"
 source "${SCRIPT_DIR}/alert-common.sh"
+source "${SCRIPT_DIR}/capacity-inventory.sh"
 
 # ─── Parse arguments ──────────────────────────────────────────────────────────
 
@@ -110,8 +119,8 @@ Configuration (env vars, see scale-common.sh for defaults):
   TERRAFORM_DIR                         Terraform working directory.
 
 Exit codes:
-  0  Success or no action needed.
-  1  Configuration or runtime error.
+  0  Success, no action needed, or a scale-out still in its readiness window.
+  1  Configuration, runtime, or capacity-guard refusal.
   2  No ready Nomad client nodes.
   3  Already at max_agent_nodes.
   4  Lock held by another process.
@@ -130,26 +139,87 @@ log "  Force:         ${FORCE}"
 log "  Bypass cooldown: ${BYPASS_COOLDOWN}"
 log ""
 
+if [[ ! "${NOMAD_SCALE_OUT_INCREMENT}" =~ ^[1-9][0-9]*$ ]]; then
+  die "NOMAD_SCALE_OUT_INCREMENT must be a positive integer (got: '${NOMAD_SCALE_OUT_INCREMENT}')." 1
+fi
+
 # Initialize Terraform with S3 backend and select the correct workspace.
-# This replaces the old local terraform.tfstate pre-flight check.
-tf_ensure_ready
+# Skipped in dry-run: init and workspace selection are not read-only.
+tf_ensure_env
+
+if ! is_dry_run; then
+  tf_ensure_ready
+
+  # Take the lock before any count decision (M7). Dry-run takes no lock and
+  # creates no lockfile.
+  if ! acquire_lock "${NOMAD_AUTOSCALE_LOCKFILE}" 0; then
+    log "Another autoscale operation is in progress — skipping."
+    exit 4
+  fi
+  trap 'release_lock' EXIT
+
+  # Cooldown is re-checked under the lock to prevent a TOCTOU race between
+  # concurrent scale-out invocations.
+  if [[ "${BYPASS_COOLDOWN}" != "true" ]]; then
+    if ! check_cooldown_expired "${NOMAD_SCALE_OUT_COOLDOWN_SECONDS}"; then
+      log "Cooldown has not expired (checked under lock) — skipping scale-out."
+      log "Use --bypass-cooldown to override (safety-net path)."
+      exit 0
+    fi
+  else
+    log "Cooldown bypassed (--bypass-cooldown)."
+  fi
+fi
 
 # ─── Get current state ────────────────────────────────────────────────────────
 
-log "Reading current Terraform state..."
+log "Reading state under the capacity guard (C1)..."
 
-CURRENT_COUNT="$(current_agent_node_count)"
+# The count is the reconciled managed count, never the node-count cache or a
+# Nomad-only fallback. Any blocker refuses the scale-out.
+GATE_MUTATE=true
+if is_dry_run; then
+  GATE_MUTATE=false
+fi
+
+GATE_RC=0
+GATE_OUT="$(capacity_scale_gate "${HEROBIDS_ENV}" "${NOMAD_AUTOSCALE_NODE_POOL}" "$(date +%s)" "${GATE_MUTATE}")" || GATE_RC=$?
+
+case "${GATE_RC}" in
+  0) ;;
+  2)
+    log "A scale-out is still in flight (readiness window open) — skipping."
+    exit 0
+    ;;
+  3)
+    log "Capacity guard BLOCKED scale-out: $(jq -c '.blockers' <<< "${GATE_OUT}")"
+    if is_dry_run; then
+      log "[DRY-RUN] Scale-out would be refused."
+      exit 0
+    fi
+    if alert_failure; then
+      send_alert "scale_out_capacity_blocked" "Capacity guard refused scale-out for pool ${NOMAD_AUTOSCALE_NODE_POOL}. Blockers: $(jq -c '.blockers' <<< "${GATE_OUT}")"
+    fi
+    exit 1
+    ;;
+  *)
+    log "Capacity guard could not read state (exit ${GATE_RC}) — refusing scale-out."
+    if ! is_dry_run && alert_failure; then
+      send_alert "scale_out_capacity_guard_failed" "Capacity guard could not read cloud or Nomad state (exit ${GATE_RC}). Scale-out refused."
+    fi
+    exit 1
+    ;;
+esac
+
+CURRENT_COUNT="$(jq -r '.managed_count' <<< "${GATE_OUT}")"
+BASELINE_IDS="$(jq -c '[.servers[].id]' <<< "${GATE_OUT}")"
 MAX_COUNT="$(max_agent_nodes)"
 
-log "  Current agent nodes: ${CURRENT_COUNT}"
+log "  Managed agent nodes: ${CURRENT_COUNT}"
 log "  Max agent nodes:     ${MAX_COUNT}"
 
-# Validate the counts are sensible
-if [[ -z "${CURRENT_COUNT}" ]]; then
-  die "Could not determine current agent_node_count from Terraform state." 1
-fi
-if [[ -z "${MAX_COUNT}" ]]; then
-  die "Could not determine max_agent_nodes from Terraform state." 1
+if [[ ! "${MAX_COUNT}" =~ ^[0-9]+$ ]]; then
+  die "max_agent_nodes is not a number: '${MAX_COUNT}'." 1
 fi
 
 # ─── Check max cap ────────────────────────────────────────────────────────────
@@ -161,6 +231,17 @@ if [[ ${NEW_COUNT} -gt ${MAX_COUNT} ]]; then
   exit 3
 fi
 
+# Dry-run stops before the capacity read: live free-capacity values are unknown
+# in dry-run, so no threshold decision is claimed.
+if is_dry_run; then
+  log ""
+  log "[DRY-RUN] Candidate scale-out (live capacity thresholds not evaluated):"
+  log "[DRY-RUN]   Managed agent_node_count: ${CURRENT_COUNT}"
+  log "[DRY-RUN]   Candidate new count:      ${NEW_COUNT}"
+  log "[DRY-RUN] No changes made."
+  exit 0
+fi
+
 # ─── Check Nomad capacity ─────────────────────────────────────────────────────
 
 log ""
@@ -168,9 +249,10 @@ log "Checking Nomad cluster capacity..."
 
 # Call check-nomad-capacity.sh once; capture stdout (key=value lines) for parsing,
 # and forward stderr (log lines) to our own stderr.
-CAPACITY_STDERR="$(mktemp)"
-CAPACITY_VARS="$("${SCRIPT_DIR}/check-nomad-capacity.sh" 2>"${CAPACITY_STDERR}")"
-CAPACITY_EXIT_CODE=$?
+CAPACITY_STDERR="$(mktemp)" || die "Could not create a temp file for capacity output." 1
+CAPACITY_EXIT_CODE=0
+# The || keeps set -e from aborting before the exit code is captured (H2).
+CAPACITY_VARS="$("${SCRIPT_DIR}/check-nomad-capacity.sh" 2>"${CAPACITY_STDERR}")" || CAPACITY_EXIT_CODE=$?
 # Forward the capacity script's log output to our log
 while IFS= read -r line; do
   [[ -n "${line}" ]] && log "[capacity] ${line}"
@@ -197,13 +279,20 @@ elif [[ ${CAPACITY_EXIT_CODE} -ne 0 ]]; then
   die "Capacity check failed with exit code ${CAPACITY_EXIT_CODE}." 1
 fi
 
-# Source the capacity variables
-eval "${CAPACITY_VARS}"
+# Parse the capacity output strictly. Nothing from it is evaluated; a malformed
+# line or a missing key refuses the scale-out.
+if ! parse_capacity_output "${CAPACITY_VARS}"; then
+  if alert_failure; then
+    send_alert "scale_out_capacity_output_malformed" "Nomad capacity output (check-nomad-capacity.sh) was malformed or incomplete. Scale-out refused."
+  fi
 
-FREE_MEMORY_MB="${free_memory_mb:-0}"
-FREE_SLOTS="${free_slots:-0}"
-FREE_MEMORY_PCT="${free_memory_pct:-0}"
-READY_NODES="${ready_nodes:-0}"
+  die "Capacity output was malformed or incomplete; refusing scale-out." 1
+fi
+
+FREE_MEMORY_MB="${CAP_FREE_MEMORY_MB}"
+FREE_SLOTS="${CAP_FREE_SLOTS}"
+FREE_MEMORY_PCT="${CAP_FREE_MEMORY_PCT}"
+READY_NODES="${CAP_READY_NODES}"
 
 log ""
 log "Capacity snapshot:"
@@ -250,54 +339,10 @@ fi
 log ""
 log "Scale-out needed: ${SCALE_REASON}"
 
-# ─── Dry-run exit ─────────────────────────────────────────────────────────────
-
-if is_dry_run; then
-  log ""
-  log "[DRY-RUN] Would scale out:"
-  log "[DRY-RUN]   Current agent_node_count: ${CURRENT_COUNT}"
-  log "[DRY-RUN]   New agent_node_count:     ${NEW_COUNT}"
-  log "[DRY-RUN]   Terraform would run: terraform apply -auto-approve -var agent_node_count=${NEW_COUNT}"
-  log "[DRY-RUN] No changes made."
-  exit 0
-fi
-
-# ─── Acquire lock ─────────────────────────────────────────────────────────────
-
-if ! acquire_lock "${NOMAD_AUTOSCALE_LOCKFILE}" 0; then
-  log "Another autoscale operation is in progress — skipping."
-  exit 4
-fi
-
-# Ensure lock is released on exit
-trap 'release_lock' EXIT
-
-# ─── Re-check cooldown inside lock (TOCTOU guard) ─────────────────────────────
-#
-# The cooldown is checked again here after acquiring the lock to prevent a
-# TOCTOU race: two concurrent scale-out invocations could both pass the
-# initial cooldown check, then one acquires the lock and scales out, and
-# the second acquires the lock immediately after and scales out again
-# without waiting for the cooldown. Re-checking under the lock prevents this.
-
-if [[ "${BYPASS_COOLDOWN}" != "true" ]]; then
-  if ! check_cooldown_expired "${NOMAD_SCALE_OUT_COOLDOWN_SECONDS}"; then
-    log "Cooldown has not expired (re-checked under lock) — skipping scale-out."
-    log "Use --bypass-cooldown to override (safety-net path)."
-    exit 0
-  fi
-else
-  log "Cooldown bypassed (--bypass-cooldown)."
-fi
-
-# ─── Re-read current count under lock (defensive) ─────────────────────────────
-
-# Re-read to guard against a stale read from before the lock was acquired.
-CURRENT_COUNT="$(current_agent_node_count)"
-NEW_COUNT=$(( CURRENT_COUNT + NOMAD_SCALE_OUT_INCREMENT ))
-if [[ ${NEW_COUNT} -gt ${MAX_COUNT} ]]; then
-  log "Already at or above max_agent_nodes (${CURRENT_COUNT}/${MAX_COUNT}) — skipping."
-  exit 3
+# Record the in-flight scale-out before the apply (H5). Only servers observed
+# after this point may satisfy its readiness window.
+if ! capacity_inflight_begin "${NOMAD_AUTOSCALE_INFLIGHT_FILE}" "${HEROBIDS_ENV}" "${NOMAD_AUTOSCALE_NODE_POOL}" "${NEW_COUNT}" "${CURRENT_COUNT}" "$(date +%s)" "${NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS}"; then
+  die "Could not record the in-flight scale-out; refusing to apply." 1
 fi
 
 # ─── Terraform apply ──────────────────────────────────────────────────────────
@@ -313,7 +358,12 @@ if tf_apply_var "agent_node_count=${NEW_COUNT}"; then
   log "  Agent nodes: ${CURRENT_COUNT} → ${NEW_COUNT}"
   log "  Reason:      ${SCALE_REASON}"
 
-  # Persist the new count so current_agent_node_count() picks it up
+  # Record the observed server IDs so readiness counts only these (H5).
+  if ! capacity_observe_after_apply "${NOMAD_AUTOSCALE_INFLIGHT_FILE}" "${HEROBIDS_ENV}" "${NOMAD_AUTOSCALE_NODE_POOL}" "${BASELINE_IDS}"; then
+    log "WARNING: could not record the new server IDs; the in-flight record stays pending until it expires."
+  fi
+
+  # Diagnostic only: the node-count cache is never read for decisions (C1).
   write_node_count "${NEW_COUNT}"
 
   # Update cooldown timestamp

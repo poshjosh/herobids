@@ -1,0 +1,16 @@
+[
+  {
+    "id": 90000001,
+    "name": "synth-agent-1",
+    "status": "running",
+    "labels": {"app": "herobids", "environment": "synthetic", "role": "agent", "node_pool": "synth"},
+    "address": "192.0.2.11"
+  },
+  {
+    "id": 90000002,
+    "name": "synth-agent-2",
+    "status": "running",
+    "labels": {"app": "herobids", "environment": "synthetic", "role": "worker", "node_pool": "synth"},
+    "address": "192.0.2.12"
+  }
+]

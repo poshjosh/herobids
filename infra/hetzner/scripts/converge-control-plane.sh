@@ -17,6 +17,10 @@
 #      nomad.service drop-in (After=/Requires=) unless the main unit has both.
 #   3c. Adds an EnvironmentFile=-/etc/herobids/autoscale.env drop-in to each
 #      autoscale unit whose unit file lacks it (daemon-reload only).
+#   3c2. Creates /var/lib/herobids-autoscale (root, 0750) and adds a
+#      ReadWritePaths= drop-in to each autoscale unit that lacks it. Without
+#      this, ProtectSystem=strict blocks the in-flight record on control
+#      planes created from older cloud-init.
 #   3d. Renders /etc/herobids/autoscale-settings.env from the Terraform-derived
 #      input (same renderer as cloud-init first boot) and adds an
 #      EnvironmentFile= drop-in for the settings file to each autoscale unit
@@ -50,6 +54,8 @@
 #                          /etc/herobids/autoscale-settings.env).
 #   AUTOSCALE_SECRETS_FILE      Secrets file the renderer checks for collisions
 #                          (default /etc/herobids/autoscale.env).
+#   AUTOSCALE_STATE_DIR    Durable in-flight record directory (default
+#                          /var/lib/herobids-autoscale).
 #   AUTOSCALE_SETTINGS_FAILED_MARKER  Written when settings fail to render,
 #                          removed on success (default
 #                          /etc/herobids/autoscale-settings.failed).
@@ -68,6 +74,7 @@ AUTOSCALE_SETTINGS_RENDERER="${AUTOSCALE_SETTINGS_RENDERER:-/usr/local/sbin/hero
 AUTOSCALE_SETTINGS_ENV="${AUTOSCALE_SETTINGS_ENV:-/etc/herobids/autoscale-settings.env}"
 AUTOSCALE_SECRETS_FILE="${AUTOSCALE_SECRETS_FILE:-/etc/herobids/autoscale.env}"
 AUTOSCALE_SETTINGS_FAILED_MARKER="${AUTOSCALE_SETTINGS_FAILED_MARKER:-/etc/herobids/autoscale-settings.failed}"
+AUTOSCALE_STATE_DIR="${AUTOSCALE_STATE_DIR:-/var/lib/herobids-autoscale}"
 NOMAD_LOCAL_ADDR="http://127.0.0.1:4646"
 PRIVATE_IP_UNIT_NAME="nomad-private-ip.service"
 
@@ -140,16 +147,18 @@ if [[ ${UFW_ADDED} -gt 0 ]]; then
 fi
 
 # write_if_changed <path> <content> — writes content (mode 0644) only if it
-# differs from what is on disk. Returns 0 if written, 1 if unchanged.
+# differs from what is on disk. Returns 0 if written, 1 if unchanged, 2 if a
+# write failed. Callers run it outside `if`: set -e is off inside a function
+# used as an `if` condition, so every step below checks its own status.
 write_if_changed() {
   local path="$1" content="$2" candidate="${WORK_DIR}/candidate"
-  printf '%s\n' "${content}" > "${candidate}"
+  printf '%s\n' "${content}" > "${candidate}" || return 2
   if [[ -f "${path}" ]] && cmp -s "${candidate}" "${path}"; then
     return 1
   fi
-  mkdir -p "$(dirname "${path}")"
-  cp "${candidate}" "${path}"
-  chmod 0644 "${path}"
+  mkdir -p "$(dirname "${path}")" || return 2
+  cp "${candidate}" "${path}" || return 2
+  chmod 0644 "${path}" || return 2
   return 0
 }
 
@@ -194,10 +203,13 @@ PRIVATE_IP_UNIT_CONTENT="${PRIVATE_IP_UNIT_CONTENT//@NOMAD_HCL@/${NOMAD_HCL}}"
 
 PRIVATE_IP_UNIT_VERB="installed"
 [[ -f "${PRIVATE_IP_UNIT}" ]] && PRIVATE_IP_UNIT_VERB="updated"
-if write_if_changed "${PRIVATE_IP_UNIT}" "${PRIVATE_IP_UNIT_CONTENT}"; then
-  CHANGES+=("${PRIVATE_IP_UNIT_VERB} ${PRIVATE_IP_UNIT_NAME}")
-  PRIVATE_IP_UNIT_CHANGED=true
-fi
+rc=0
+write_if_changed "${PRIVATE_IP_UNIT}" "${PRIVATE_IP_UNIT_CONTENT}" || rc=$?
+case "${rc}" in
+  0) CHANGES+=("${PRIVATE_IP_UNIT_VERB} ${PRIVATE_IP_UNIT_NAME}"); PRIVATE_IP_UNIT_CHANGED=true ;;
+  1) ;;
+  *) die "could not write ${PRIVATE_IP_UNIT}; systemd was not reloaded." ;;
+esac
 
 # ─── 3b. nomad.service ordering/dependency on nomad-private-ip ───────────────
 
@@ -211,10 +223,13 @@ main_unit_has_dependency() {
 }
 
 if ! main_unit_has_dependency; then
-  if write_if_changed "${DROPIN}" "$(printf '%s\n' '[Unit]' 'After=nomad-private-ip.service' 'Requires=nomad-private-ip.service')"; then
-    CHANGES+=("installed nomad.service drop-in")
-    NOMAD_UNIT_CHANGED=true
-  fi
+  rc=0
+  write_if_changed "${DROPIN}" "$(printf '%s\n' '[Unit]' 'After=nomad-private-ip.service' 'Requires=nomad-private-ip.service')" || rc=$?
+  case "${rc}" in
+    0) CHANGES+=("installed nomad.service drop-in"); NOMAD_UNIT_CHANGED=true ;;
+    1) ;;
+    *) die "could not write ${DROPIN}; systemd was not reloaded." ;;
+  esac
 fi
 
 # ─── 3c. Autoscale units load /etc/herobids/autoscale.env ───────────────────
@@ -230,11 +245,41 @@ for unit in "${AUTOSCALE_UNITS[@]}"; do
   unit_file="${SYSTEMD_DIR}/${unit}.service"
   [[ -f "${unit_file}" ]] || continue
   grep -Eq '^EnvironmentFile=-?/etc/herobids/autoscale\.env' "${unit_file}" && continue
-  if write_if_changed "${SYSTEMD_DIR}/${unit}.service.d/${AUTOSCALE_ENV_DROPIN_NAME}" \
-    "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env')"; then
-    CHANGES+=("installed ${unit}.service autoscale.env drop-in")
-    AUTOSCALE_UNITS_CHANGED=true
-  fi
+  rc=0
+  write_if_changed "${SYSTEMD_DIR}/${unit}.service.d/${AUTOSCALE_ENV_DROPIN_NAME}" \
+    "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env')" || rc=$?
+  case "${rc}" in
+    0) CHANGES+=("installed ${unit}.service autoscale.env drop-in"); AUTOSCALE_UNITS_CHANGED=true ;;
+    1) ;;
+    *) die "could not write the ${unit} autoscale.env drop-in; systemd was not reloaded." ;;
+  esac
+done
+
+# ─── 3c2. Autoscale state dir + ReadWritePaths (in-flight record) ───────────
+# ProtectSystem=strict makes the state dir read-only unless a unit lists it in
+# ReadWritePaths=. Units from older cloud-init list neither the dir nor the
+# path, so the in-flight record could not be written. The dir must exist before
+# daemon-reload: systemd fails a unit's mount namespace on a missing path.
+
+if [[ ! -d "${AUTOSCALE_STATE_DIR}" ]]; then
+  CHANGES+=("created ${AUTOSCALE_STATE_DIR}")
+fi
+mkdir -p "${AUTOSCALE_STATE_DIR}" && chmod 0750 "${AUTOSCALE_STATE_DIR}" \
+  || die "could not create ${AUTOSCALE_STATE_DIR} with mode 0750. Earlier steps may already have changed this host; fix the cause and re-run."
+
+STATE_DIR_DROPIN_NAME="20-autoscale-state-dir.conf"
+for unit in "${AUTOSCALE_UNITS[@]}"; do
+  unit_file="${SYSTEMD_DIR}/${unit}.service"
+  [[ -f "${unit_file}" ]] || continue
+  grep -Eq "^ReadWritePaths=.*${AUTOSCALE_STATE_DIR//./\\.}([[:space:]]|\$)" "${unit_file}" && continue
+  rc=0
+  write_if_changed "${SYSTEMD_DIR}/${unit}.service.d/${STATE_DIR_DROPIN_NAME}" \
+    "$(printf '%s\n' '[Service]' "ReadWritePaths=${AUTOSCALE_STATE_DIR}")" || rc=$?
+  case "${rc}" in
+    0) CHANGES+=("installed ${unit}.service state-dir drop-in"); AUTOSCALE_UNITS_CHANGED=true ;;
+    1) ;;
+    *) die "could not write the ${unit} state-dir drop-in; systemd was not reloaded." ;;
+  esac
 done
 
 # ─── 3d. Durable demand-aware autoscale settings ────────────────────────────
@@ -263,11 +308,14 @@ if [[ -f "${AUTOSCALE_SETTINGS_INPUT}" ]]; then
       unit_file="${SYSTEMD_DIR}/${unit}.service"
       [[ -f "${unit_file}" ]] || continue
       grep -Eq '^EnvironmentFile=-?/etc/herobids/autoscale-settings\.env' "${unit_file}" && continue
-      if write_if_changed "${SYSTEMD_DIR}/${unit}.service.d/${SETTINGS_DROPIN_NAME}" \
-        "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale-settings.env')"; then
-        CHANGES+=("installed ${unit}.service autoscale-settings.env drop-in")
-        AUTOSCALE_UNITS_CHANGED=true
-      fi
+      rc=0
+      write_if_changed "${SYSTEMD_DIR}/${unit}.service.d/${SETTINGS_DROPIN_NAME}" \
+        "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale-settings.env')" || rc=$?
+      case "${rc}" in
+        0) CHANGES+=("installed ${unit}.service autoscale-settings.env drop-in"); AUTOSCALE_UNITS_CHANGED=true ;;
+        1) ;;
+        *) die "could not write the ${unit} autoscale-settings drop-in; systemd was not reloaded." ;;
+      esac
     done
   else
     SETTINGS_FAILED=true

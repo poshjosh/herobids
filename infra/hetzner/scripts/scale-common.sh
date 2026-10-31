@@ -7,7 +7,7 @@
 #   - nomad_api() — curl wrapper for the Nomad HTTP API
 #   - tf_var() — read an autoscale variable from environment (prefers TF_VAR_<name>)
 #   - check_cooldown_expired() / touch_cooldown() — cooldown file management
-#   - current_agent_node_count() — current count from local state file (with Nomad API fallback)
+#   - current_agent_node_count() — DIAGNOSTIC ONLY (cache, then non-down Nomad count); never a scale decision input
 #   - max_agent_nodes() / min_agent_nodes() — configured limits from env vars
 #
 # Environment variables (all optional, defaults below):
@@ -17,10 +17,14 @@
 #   NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT Free memory % below which we scale out (default: 20)
 #   NOMAD_SCALE_OUT_SLOT_THRESHOLD      Free slots below which we scale out (default: 3)
 #   NOMAD_SCALE_OUT_INCREMENT           Number of nodes to add per scale-out event (default: 1)
+#   NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS Readiness deadline for a scale-out request (default: 600)
+#   NOMAD_AUTOSCALE_NODE_POOL           Node pool / server name prefix this autoscaler owns (default: TF_VAR_server_name, then herobids)
 #   NOMAD_AUTOSCALE_LOCKFILE            Path to flock lock file (default: /var/run/nomad-autoscale.lock)
 #   NOMAD_AUTOSCALE_COOLDOWN_FILE       Path to cooldown timestamp file (default: /var/run/nomad-autoscale-last-scale-out)
 #   NOMAD_AUTOSCALE_LOG_FILE            Log file path (default: /var/log/nomad-autoscale.log)
 #   NOMAD_AUTOSCALE_NODE_COUNT_FILE     Path to cached agent_node_count file (default: /var/run/nomad-autoscale-node-count)
+#   NOMAD_AUTOSCALE_STATE_DIR           Durable state directory (default: /var/lib/herobids-autoscale)
+#   NOMAD_AUTOSCALE_INFLIGHT_FILE       In-flight provisioning record (default: <state dir>/inflight.json)
 #   TERRAFORM_DIR                       Path to Terraform working directory (default: /opt/herobids/infra/hetzner)
 #
 #   TF_VAR_max_agent_nodes              Max agent nodes (also settable as NOMAD_MAX_AGENT_NODES)
@@ -36,10 +40,17 @@ NOMAD_SCALE_OUT_COOLDOWN_SECONDS="${NOMAD_SCALE_OUT_COOLDOWN_SECONDS:-300}"
 NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT="${NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT:-20}"
 NOMAD_SCALE_OUT_SLOT_THRESHOLD="${NOMAD_SCALE_OUT_SLOT_THRESHOLD:-3}"
 NOMAD_SCALE_OUT_INCREMENT="${NOMAD_SCALE_OUT_INCREMENT:-1}"
+# Seconds a scale-out may wait for its new nodes to become ready before the record expires.
+NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS="${NOMAD_SCALE_OUT_READY_TIMEOUT_SECONDS:-600}"
+# Node pool (and server name prefix) whose servers this autoscaler owns.
+NOMAD_AUTOSCALE_NODE_POOL="${NOMAD_AUTOSCALE_NODE_POOL:-${TF_VAR_server_name:-herobids}}"
 NOMAD_AUTOSCALE_LOCKFILE="${NOMAD_AUTOSCALE_LOCKFILE:-/var/run/nomad-autoscale.lock}"
 NOMAD_AUTOSCALE_COOLDOWN_FILE="${NOMAD_AUTOSCALE_COOLDOWN_FILE:-/var/run/nomad-autoscale-last-scale-out}"
 NOMAD_AUTOSCALE_LOG_FILE="${NOMAD_AUTOSCALE_LOG_FILE:-/var/log/nomad-autoscale.log}"
 NOMAD_AUTOSCALE_NODE_COUNT_FILE="${NOMAD_AUTOSCALE_NODE_COUNT_FILE:-/var/run/nomad-autoscale-node-count}"
+# Durable state survives reboot (/var/run is tmpfs). Holds the in-flight provisioning record.
+NOMAD_AUTOSCALE_STATE_DIR="${NOMAD_AUTOSCALE_STATE_DIR:-/var/lib/herobids-autoscale}"
+NOMAD_AUTOSCALE_INFLIGHT_FILE="${NOMAD_AUTOSCALE_INFLIGHT_FILE:-${NOMAD_AUTOSCALE_STATE_DIR}/inflight.json}"
 TERRAFORM_DIR="${TERRAFORM_DIR:-/opt/herobids/infra/hetzner}"
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
@@ -60,6 +71,51 @@ die() {
   local code="${2:-1}"
   log "FATAL: ${msg}"
   exit "${code}"
+}
+
+# parse_capacity_output TEXT
+#   Reads check-nomad-capacity.sh key=value output into CAP_* variables. Nothing
+#   is evaluated. Any line that is not key=value, any key outside the allowlist,
+#   any non-integer value (including leading zeros or more than nine digits), any
+#   free_memory_pct above 100, any repeated key, or a missing required key returns
+#   1 and leaves every CAP_* variable empty.
+CAPACITY_OUTPUT_LINE_RE='^([a-z_]+)=([0-9a-z_]+)$'
+CAPACITY_OUTPUT_NUMBER_RE='^(0|[1-9][0-9]{0,8})$'
+CAPACITY_OUTPUT_KEYS=" free_memory_mb free_slots total_memory_mb free_memory_pct ready_nodes agent_memory_reservation_mb "
+_clear_capacity_vars() {
+  CAP_FREE_MEMORY_MB="" CAP_FREE_SLOTS="" CAP_FREE_MEMORY_PCT="" CAP_READY_NODES=""
+}
+parse_capacity_output() {
+  local text="$1" line key value seen=" "
+  _clear_capacity_vars
+  while IFS= read -r line; do
+    [[ -z "${line}" ]] && continue
+    if [[ ! "${line}" =~ ${CAPACITY_OUTPUT_LINE_RE} ]]; then
+      _clear_capacity_vars
+      return 1
+    fi
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    if [[ " ${CAPACITY_OUTPUT_KEYS} " != *" ${key} "* || "${seen}" == *" ${key} "* \
+      || ! "${value}" =~ ${CAPACITY_OUTPUT_NUMBER_RE} \
+      || ( "${key}" == free_memory_pct && "${value}" -gt 100 ) ]]; then
+      _clear_capacity_vars
+      return 1
+    fi
+    seen="${seen}${key} "
+    case "${key}" in
+      free_memory_mb)  CAP_FREE_MEMORY_MB="${value}" ;;
+      free_slots)      CAP_FREE_SLOTS="${value}" ;;
+      free_memory_pct) CAP_FREE_MEMORY_PCT="${value}" ;;
+      ready_nodes)     CAP_READY_NODES="${value}" ;;
+      *) ;;
+    esac
+  done <<< "${text}"
+  if [[ -z "${CAP_FREE_MEMORY_MB}" || -z "${CAP_FREE_SLOTS}" \
+    || -z "${CAP_FREE_MEMORY_PCT}" || -z "${CAP_READY_NODES}" ]]; then
+    _clear_capacity_vars
+    return 1
+  fi
 }
 
 # ─── Nomad API ────────────────────────────────────────────────────────────────
@@ -141,10 +197,13 @@ tf_var() {
   die "Cannot read variable '${var_name}': neither ${tf_var_name} nor ${nomad_var_name} is set."
 }
 
-# current_agent_node_count — returns the current agent_node_count.
+# current_agent_node_count — DIAGNOSTIC ONLY. Never use this value for a scale
+# decision or as the Terraform agent_node_count (C1): the cache and the
+# non-down Nomad fallback can both undercount or go stale. Scale decisions
+# derive the count from capacity_reconcile under the autoscale lock.
 #
-# Reads from NOMAD_AUTOSCALE_NODE_COUNT_FILE (updated after each successful
-# terraform apply). Falls back to counting Nomad client nodes via the API.
+# Reads from NOMAD_AUTOSCALE_NODE_COUNT_FILE (written after each apply).
+# Falls back to counting non-down Nomad client nodes via the API.
 current_agent_node_count() {
   # 1. Try the local state file (fastest, no network)
   if [[ -f "${NOMAD_AUTOSCALE_NODE_COUNT_FILE}" ]]; then

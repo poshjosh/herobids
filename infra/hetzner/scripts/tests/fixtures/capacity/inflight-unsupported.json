@@ -1,0 +1,9 @@
+{
+  "_synthetic": true,
+  "schema_version": 2,
+  "environment": "synthetic",
+  "pool": "synth",
+  "target_count": 3,
+  "requested_epoch": 1000,
+  "deadline_epoch": 1600
+}

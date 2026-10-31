@@ -27,10 +27,34 @@ Conventions:
 | `nomad-node-allocations.json` | Current-shape running agent (`AllocatedResources.Tasks`). Legacy-shape running agent (`Resources.Memory`). Assigned-pending agent still downloading its image (`AllocatedResources` is null; see Assumptions). Running Browserless reservation in the `default` namespace. Failed allocation replaced by a running one (`NextAllocation` / `PreviousAllocation`). |
 | `cloud-inventory.json` | Four servers: healthy, healthy, down (joined but Nomad `down`), and unjoined (present in cloud, absent from Nomad). |
 
+P2 fixtures (synthetic, unverified against Nomad 1.9.7; server names are `synth-agent-N` in pool `synth`,
+environment `synthetic`):
+
+| File | Covers |
+| --- | --- |
+| `cloud-empty.json` | No managed servers (zero case). |
+| `cloud-healthy.json` | Two managed agent servers, both `running`. |
+| `cloud-mixed.json` | Running, initializing, and deleting agent servers, plus an other-environment server that must be ignored. |
+| `cloud-gap.json` | Non-contiguous indices (1 and 3), which must block. |
+| `cloud-mismatch.json` | A same-env server with `role=worker` instead of `agent`, which fails the ownership shape check. |
+| `cloud-page-1.json`, `cloud-page-2.json` | One inventory split across two pages (pagination). |
+| `nomad-empty.json` | Empty node list (zero Nomad nodes). |
+| `nomad-healthy.json` | Two ready, eligible agent nodes that match `cloud-healthy.json`. |
+| `nomad-mixed.json` | One ready and one down agent node, plus a non-agent node. |
+| `nomad-joined-not-ready.json` | One agent node ready but ineligible, and one still initializing. |
+| `nomad-orphan-live.json`, `nomad-orphan-down.json` | A live or down `synth-agent-9` with no cloud server. |
+| `nomad-not-array.json` | A JSON object instead of an array, which must be treated as a fetch error. |
+| `inflight-corrupt.json`, `inflight-unsupported.json`, `inflight-other-env.json` | Corrupt, unsupported-version, and other-environment in-flight records. |
+
 ## Consumers
 
-Nothing consumes these fixtures yet. A grep of `infra/hetzner/scripts` finds no reference outside this
-README to `fixtures/capacity`. No scaling logic was added in P0.
+- `tests/test-capacity-inventory.sh` (P2 reconcile and fetch), `tests/test-capacity-inflight-state.sh`
+  (durable in-flight state, reboot), and `tests/test-capacity-readonly.sh` (dry-run mutation guard, which
+  serves `nomad-healthy.json` as the `/v1/nodes` response). Each suite's header and `FX` references list
+  the exact files it reads.
+- Nothing in the live scale path reads these files. The P2 library (`scripts/capacity-inventory.sh`) is
+  not yet called by `scale-out.sh` or `scale-in.sh`. That wiring is P4.
+- No scaling logic was added in P0.
 
 ## Shapes exercised (observations for later packages, not fixed in P0)
 
@@ -93,10 +117,11 @@ and no calls to Hetzner, Nomad, or Terraform backends):
 - The autoscale dry-run and maintenance restart scripts were not run.
 - Baseline phase timings were not measured.
 
-## Not covered (deferred to P2/P3)
+## Not covered (deferred)
 
-- Noncontiguous addresses.
-- Unexpected labelled nodes.
-- Ownership mismatch (an agent node not owned by `herobids-agents`).
-- Duplicate or queued evaluations.
-- Inconsistent summary vs detail (for example a node summary that disagrees with its detail).
+- Demand fit and the eval-driven controller (P3 and P4). These fixtures do not exercise them.
+- Live Hetzner label and name formats, and whether a Nomad node `Name` equals the Hetzner server name.
+  The join in `capacity-inventory.sh` assumes it does. This is unverified.
+- Real Nomad 1.9.7 field shapes for `/v1/nodes`. The P2 fixtures are from memory.
+- HCLOUD_TOKEN availability on the autoscale host. It is not provisioned by the autoscale units, so the
+  live cloud fetch cannot run there until that is resolved.

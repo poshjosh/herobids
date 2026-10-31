@@ -1,0 +1,23 @@
+[
+  {
+    "ID": "00000000-0000-4000-8000-000000000001",
+    "Name": "synth-agent-1",
+    "NodeClass": "agent",
+    "Status": "ready",
+    "SchedulingEligibility": "eligible"
+  },
+  {
+    "ID": "00000000-0000-4000-8000-000000000002",
+    "Name": "synth-agent-2",
+    "NodeClass": "agent",
+    "Status": "ready",
+    "SchedulingEligibility": "eligible"
+  },
+  {
+    "ID": "00000000-0000-4000-8000-000000000009",
+    "Name": "synth-agent-9",
+    "NodeClass": "agent",
+    "Status": "down",
+    "SchedulingEligibility": "ineligible"
+  }
+]

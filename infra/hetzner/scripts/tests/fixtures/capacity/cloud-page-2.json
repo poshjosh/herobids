@@ -1,0 +1,14 @@
+{
+  "_synthetic": true,
+  "servers": [
+    {
+      "id": 90000003,
+      "name": "synth-agent-3",
+      "status": "running",
+      "labels": {"app": "herobids", "environment": "synthetic", "role": "agent", "node_pool": "synth"},
+      "public_net": {"ipv4": {"ip": "192.0.2.13"}},
+      "server_type": {"name": "synthetic-type"}
+    }
+  ],
+  "meta": {"pagination": {"page": 2, "per_page": 2, "previous_page": 1, "next_page": null, "last_page": 2, "total_entries": 3}}
+}

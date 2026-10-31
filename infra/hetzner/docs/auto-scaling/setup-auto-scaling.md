@@ -245,6 +245,30 @@ Proceed with the 11-step runbook at `docs/features/2026/07/08/004-orchestration/
 
 ---
 
+## Clearing a blocked scale guard
+
+A scale action is refused with `pool blocked: <reasons>` when the pool has an unjoined server (a cloud server that has not registered with Nomad). Two reasons mean this:
+
+- `readiness_deadline_exceeded`: an in-flight record exists but its deadline has passed.
+- `unjoined_without_record`: an unjoined server exists and no in-flight record covers it.
+
+The guard does not clear these on its own. Work through them in order:
+
+1. **Find the server.** Run `scale-out.sh --dry-run`. It is read-only and prints the blocker reasons. Find the server that is in Hetzner but not in `nomad node status`.
+2. **Decide on that server.** Either fix its Nomad client join, or remove it through the normal path (`scale-in.sh`, or the provisioning destroy path) once you have confirmed it serves no work.
+3. **Clear the in-flight record, only if it is expired and nothing is scaling.** Take the same lock the scale scripts use, so the command fails fast instead of waiting behind a running action:
+
+   ```bash
+   sudo flock -n /var/run/nomad-autoscale.lock -c 'rm -f /var/lib/herobids-autoscale/inflight.json'
+   ```
+
+   Skip this step if the record was never written (`unjoined_without_record`). Do not delete a record that is still pending: wait for it to expire or for the server to join.
+4. **Verify.** Run `scale-out.sh --dry-run` again. It must not print `pool blocked`. If it still does, read the new reasons and repeat from step 1.
+
+The guard only clears a record after the pool reconciles, and it still refuses if an unjoined server remains. Clearing the record therefore never hides a problem.
+
+---
+
 ## Quick Reference
 
 See [useful-commands.md](./useful-commands.md) for the full day-2 command

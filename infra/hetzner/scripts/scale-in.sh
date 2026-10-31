@@ -25,6 +25,11 @@
 #   3  Already at min_agent_nodes.
 #   4  Lock held by another process.
 #
+# The node count comes from the capacity guard (capacity-inventory.sh), read
+# under the autoscale lock from cloud and Nomad state. The node-count cache is
+# never used for a scale decision. A blocked guard refuses scale-in (exit 1); a
+# pending scale-out in flight skips scale-in (exit 0).
+#
 # Environment (see scale-common.sh for full list):
 #   ENABLE_SCALE_IN                      Feature flag: true to enable (default: false).
 #   NOMAD_ADDR                           Nomad server HTTP API base URL.
@@ -40,6 +45,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scale-common.sh"
 source "${SCRIPT_DIR}/alert-common.sh"
+source "${SCRIPT_DIR}/capacity-inventory.sh"
 
 # ─── Staging failure-injection hooks (optional, staging only) ──────────────────
 # Setting STAGING_HOOKS=true auto-sources staging-hooks.sh, which overrides
@@ -133,13 +139,57 @@ log ""
 
 # Initialize Terraform with S3 backend and select the correct workspace.
 # This replaces the old local terraform.tfstate pre-flight check.
-tf_ensure_ready
+# Skipped in dry-run: init and workspace selection are not read-only.
+tf_ensure_env
 
-# ─── Get current state ────────────────────────────────────────────────────────
+if ! is_dry_run; then
+  tf_ensure_ready
 
-log "Reading current state..."
+  # Take the lock before any count decision (M7). Dry-run takes no lock and
+  # creates no lockfile.
+  if ! acquire_lock "${NOMAD_AUTOSCALE_LOCKFILE}" 0; then
+    log "Another autoscale operation is in progress — skipping."
+    exit 4
+  fi
+  trap 'release_lock' EXIT
+fi
 
-CURRENT_COUNT="$(current_agent_node_count)"
+# ─── Capacity guard (C1): the count comes from cloud and Nomad state ─────────
+
+log "Reading current state under capacity guard..."
+
+GATE_MUTATE=true
+if is_dry_run; then
+  GATE_MUTATE=false
+fi
+
+GATE_RC=0
+GATE_OUT="$(capacity_scale_gate "${HEROBIDS_ENV}" "${NOMAD_AUTOSCALE_NODE_POOL}" "$(date +%s)" "${GATE_MUTATE}")" || GATE_RC=$?
+
+case "${GATE_RC}" in
+  0) ;;
+  2)
+    log "A scale-out is still in flight (readiness window open) — scale-in skipped."
+    exit 0
+    ;;
+  3)
+    log "Capacity guard BLOCKED scale-in: $(jq -c '.blockers' <<< "${GATE_OUT}")"
+    if is_dry_run; then
+      log "[DRY-RUN] Scale-in would be refused."
+      exit 0
+    fi
+    if alert_failure; then
+      send_alert "scale_in_capacity_blocked" "Capacity guard refused scale-in for pool ${NOMAD_AUTOSCALE_NODE_POOL}. Blockers: $(jq -c '.blockers' <<< "${GATE_OUT}")"
+    fi
+    exit 1
+    ;;
+  *)
+    log "ERROR: Capacity guard could not read cloud, Nomad or in-flight state (rc=${GATE_RC}). Scale-in refused."
+    exit 1
+    ;;
+esac
+
+CURRENT_COUNT="$(jq -r '.managed_count' <<< "${GATE_OUT}")"
 MIN_COUNT="$(min_agent_nodes)"
 
 log "  Current agent nodes: ${CURRENT_COUNT}"
@@ -238,7 +288,7 @@ fi
 
 log "Nodes to drain this run: ${NODES_TO_DRAIN}"
 
-# ─── Dry-run exit (before lock) ───────────────────────────────────────────────
+# ─── Dry-run exit (no lock taken) ─────────────────────────────────────────────
 
 if is_dry_run; then
   log ""
@@ -254,19 +304,10 @@ if is_dry_run; then
   exit 0
 fi
 
-# ─── Acquire lock ─────────────────────────────────────────────────────────────
+# ─── Re-check headroom under lock ─────────────────────────────────────────────
+# The lock was taken before the capacity guard, so CURRENT_COUNT is already
+# current. Recompute headroom from it.
 
-# Use the same lock as scale-out to prevent concurrent terraform operations.
-if ! acquire_lock "${NOMAD_AUTOSCALE_LOCKFILE}" 0; then
-  log "Another autoscale operation is in progress — skipping."
-  exit 4
-fi
-
-trap 'release_lock' EXIT
-
-# ─── Re-read state under lock (defensive) ─────────────────────────────────────
-
-CURRENT_COUNT="$(current_agent_node_count)"
 MAX_REMOVABLE=$(( CURRENT_COUNT - MIN_COUNT ))
 if [[ ${MAX_REMOVABLE} -le 0 ]]; then
   log "Under lock: already at min_agent_nodes (${CURRENT_COUNT}/${MIN_COUNT}) — skipping."
@@ -366,7 +407,7 @@ if tf_apply_var "agent_node_count=${NEW_COUNT}"; then
   log "  Agent nodes: ${CURRENT_COUNT} → ${NEW_COUNT}"
   log "  Removed:      ${#DRAIN_OK[@]} node(s)"
 
-  # Persist the new count
+  # Diagnostic cache only; the next run reads the count from the capacity guard.
   write_node_count "${NEW_COUNT}"
 
   # Clear failure count — successful scale-in resets the alert streak

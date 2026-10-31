@@ -127,6 +127,30 @@ cat > "${MOCK_BIN}/sleep" <<'STUB'
 exit 0
 STUB
 
+cat > "${MOCK_BIN}/cp" <<'STUB'
+#!/usr/bin/env bash
+# Passes through to the real cp unless STUB_FAIL_CP_GLOB is the destination.
+last=""
+for a in "$@"; do last="${a}"; done
+if [[ -n "${STUB_FAIL_CP_GLOB:-}" && "${last}" == "${STUB_FAIL_CP_GLOB}" ]]; then
+  echo "cp: injected failure for ${last}" >&2
+  exit 1
+fi
+exec /bin/cp "$@"
+STUB
+
+cat > "${MOCK_BIN}/chmod" <<'STUB'
+#!/usr/bin/env bash
+# Passes through to the real chmod unless STUB_FAIL_CHMOD_GLOB is the target.
+last=""
+for a in "$@"; do last="${a}"; done
+if [[ -n "${STUB_FAIL_CHMOD_GLOB:-}" && "${last}" == "${STUB_FAIL_CHMOD_GLOB}" ]]; then
+  echo "chmod: injected failure for ${last}" >&2
+  exit 1
+fi
+exec /bin/chmod "$@"
+STUB
+
 chmod +x "${MOCK_BIN}"/*
 
 # ─── Fixture helpers ──────────────────────────────────────────────────────────
@@ -179,6 +203,7 @@ run_converge() {
       AUTOSCALE_SETTINGS_ENV="${ROOT}/etc/herobids/autoscale-settings.env" \
       AUTOSCALE_SECRETS_FILE="${ROOT}/etc/herobids/autoscale.env" \
       AUTOSCALE_SETTINGS_FAILED_MARKER="${ROOT}/etc/herobids/autoscale-settings.failed" \
+      AUTOSCALE_STATE_DIR="${ROOT}/var/lib/herobids-autoscale" \
       CONVERGE_TIMEOUT_SECS=2 CONVERGE_POLL_SECS=1 \
       "$@" bash "${CONVERGE}" 2>&1
   )" || RUN_EXIT=$?
@@ -442,13 +467,113 @@ assert_eq "$(cat "${DROPIN_DIR}/10-autoscale-env.conf" 2>/dev/null)" \
   "$(printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env')" "missing EnvironmentFile: installs the drop-in"
 assert_contains "${CALLS}" "systemctl daemon-reload" "missing EnvironmentFile: daemon-reloads"
 assert_eq "${NOMAD_RESTARTS}" "0" "missing EnvironmentFile: does not restart nomad"
-assert_eq "$([[ -d "${ROOT}/etc/systemd/system/nomad-scale-in.service.d" ]] && echo yes || echo no)" "no" \
-  "unit that already has EnvironmentFile: no drop-in"
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-scale-in.service.d/10-autoscale-env.conf" ]] && echo yes || echo no)" "no" \
+  "unit that already has EnvironmentFile: no env drop-in"
 assert_eq "$([[ -d "${ROOT}/etc/systemd/system/nomad-placement-failure-watcher.service.d" ]] && echo yes || echo no)" "no" \
   "absent unit: no drop-in"
 run_converge
 assert_contains "${RUN_OUTPUT}" "already converged" "drop-in: second run is a no-op"
 assert_not_contains "${CALLS}" "systemctl daemon-reload" "drop-in: second run does not daemon-reload"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "converge-control-plane — autoscale state dir + ReadWritePaths (3c2)"
+
+# perm_of <path> — octal mode (GNU stat, then BSD stat).
+perm_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+
+STATE_UNITS=(nomad-autoscale nomad-scale-in nomad-placement-failure-watcher)
+new_root "state-dir"
+write_hcl "${STUB_PRIVATE_IP}"
+STATE_DIR="${ROOT}/var/lib/herobids-autoscale"
+run_converge # patch nomad.hcl first so the case below does not restart nomad for an advertise change
+rm -rf "${STATE_DIR}" "${ROOT}/state/calls.log"
+# Older control plane: units with EnvironmentFile= but no state dir in ReadWritePaths.
+for unit in "${STATE_UNITS[@]}"; do
+  printf '%s\n' '[Service]' 'Type=oneshot' 'EnvironmentFile=-/etc/herobids/autoscale.env' 'ExecStart=/bin/true' \
+    > "${ROOT}/etc/systemd/system/${unit}.service"
+done
+run_converge
+assert_eq "${RUN_EXIT}" "0" "older control plane: succeeds"
+assert_eq "$(perm_of "${STATE_DIR}")" "750" "older control plane: creates the state dir with mode 0750"
+for unit in "${STATE_UNITS[@]}"; do
+  assert_eq "$(cat "${ROOT}/etc/systemd/system/${unit}.service.d/20-autoscale-state-dir.conf" 2>/dev/null)" \
+    "$(printf '%s\n' '[Service]' "ReadWritePaths=${STATE_DIR}")" "older control plane: ${unit} gets the ReadWritePaths drop-in"
+done
+assert_contains "${CALLS}" "systemctl daemon-reload" "older control plane: daemon-reloads"
+assert_eq "${NOMAD_RESTARTS}" "0" "older control plane: does not restart nomad"
+run_converge
+assert_contains "${RUN_OUTPUT}" "already converged" "state dir: second run is a no-op"
+assert_not_contains "${CALLS}" "systemctl daemon-reload" "state dir: second run does not daemon-reload"
+
+new_root "state-dir-cloud-init"
+write_hcl "${STUB_PRIVATE_IP}"
+mkdir -p "${ROOT}/var/lib/herobids-autoscale"
+# cloud-init-created control plane: the state dir is already in ReadWritePaths.
+printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env' \
+  "ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner ${ROOT}/var/lib/herobids-autoscale" \
+  > "${ROOT}/etc/systemd/system/nomad-scale-in.service"
+run_converge
+assert_eq "${RUN_EXIT}" "0" "already listed: succeeds"
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-scale-in.service.d/20-autoscale-state-dir.conf" ]] && echo yes || echo no)" "no" \
+  "already listed: no state-dir drop-in"
+assert_eq "$([[ -d "${ROOT}/etc/systemd/system/nomad-autoscale.service.d" ]] && echo yes || echo no)" "no" \
+  "absent unit: no drop-in"
+
+new_root "state-dir-blocked"
+write_hcl "${STUB_PRIVATE_IP}"
+mkdir -p "${ROOT}/var/lib"
+printf 'not a directory\n' > "${ROOT}/var/lib/herobids-autoscale"
+printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env' 'ExecStart=/bin/true' \
+  > "${ROOT}/etc/systemd/system/nomad-autoscale.service"
+run_converge
+assert_neq "${RUN_EXIT}" "0" "state dir blocked by a file: fails loudly"
+assert_contains "${RUN_OUTPUT}" "could not create" "state dir blocked by a file: names the failure"
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-autoscale.service.d/20-autoscale-state-dir.conf" ]] && echo yes || echo no)" "no" \
+  "state dir blocked by a file: writes no drop-in"
+assert_not_contains "${CALLS}" "systemctl" "state dir blocked by a file: runs no systemctl"
+assert_eq "${NOMAD_RESTARTS}" "0" "state dir blocked by a file: does not restart nomad"
+
+new_root "dropin-write-fails"
+write_hcl "${STUB_PRIVATE_IP}"
+printf '%s\n' '[Service]' 'Type=oneshot' 'ExecStart=/bin/true' \
+  > "${ROOT}/etc/systemd/system/nomad-autoscale.service"
+# A file where the drop-in directory belongs makes the helper's mkdir fail.
+printf 'not a directory\n' > "${ROOT}/etc/systemd/system/nomad-autoscale.service.d"
+run_converge
+assert_neq "${RUN_EXIT}" "0" "autoscale.env drop-in write fails: exits non-zero"
+assert_contains "${RUN_OUTPUT}" "could not write the nomad-autoscale autoscale.env drop-in" \
+  "autoscale.env drop-in write fails: names the failure"
+assert_not_contains "${CALLS}" "systemctl daemon-reload" "autoscale.env drop-in write fails: daemon-reload is not run"
+assert_eq "${NOMAD_RESTARTS}" "0" "autoscale.env drop-in write fails: does not restart nomad"
+
+new_root "state-dropin-write-fails"
+write_hcl "${STUB_PRIVATE_IP}"
+printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env' 'ExecStart=/bin/true' \
+  > "${ROOT}/etc/systemd/system/nomad-autoscale.service"
+printf 'not a directory\n' > "${ROOT}/etc/systemd/system/nomad-autoscale.service.d"
+run_converge
+assert_neq "${RUN_EXIT}" "0" "state-dir drop-in write fails: exits non-zero"
+assert_contains "${RUN_OUTPUT}" "could not write the nomad-autoscale state-dir drop-in" \
+  "state-dir drop-in write fails: names the failure"
+assert_not_contains "${CALLS}" "systemctl daemon-reload" "state-dir drop-in write fails: daemon-reload is not run"
+
+test_end || SUITE_FAILED=1
+
+test_begin "converge-control-plane — state dir step matches cloud-init.yaml (static)"
+
+CONVERGE_TEXT="$(cat "${CONVERGE}")"
+assert_contains "${CONVERGE_TEXT}" "AUTOSCALE_UNITS=(nomad-autoscale nomad-scale-in nomad-placement-failure-watcher)" \
+  "converge covers the three autoscale units"
+assert_contains "${CONVERGE_TEXT}" 'chmod 0750 "${AUTOSCALE_STATE_DIR}"' "converge creates the state dir with mode 0750"
+assert_eq "$(grep -c 'ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner /var/lib/herobids-autoscale' "${HETZNER_DIR}/cloud-init.yaml")" "3" \
+  "cloud-init.yaml: all three autoscale units list the state dir in ReadWritePaths"
+MKDIR_LINE="$(grep -n 'mkdir -p "${AUTOSCALE_STATE_DIR}"' "${CONVERGE}" | cut -d: -f1)"
+RELOAD_LINE="$(grep -n '^  systemctl daemon-reload$' "${CONVERGE}" | cut -d: -f1)"
+assert_eq "$([[ -n "${MKDIR_LINE}" && -n "${RELOAD_LINE}" && "${MKDIR_LINE}" -lt "${RELOAD_LINE}" ]] && echo yes || echo no)" "yes" \
+  "state dir is created before daemon-reload"
 
 test_end || SUITE_FAILED=1
 
@@ -554,6 +679,65 @@ assert_contains "$(cat "${ROOT}/etc/nomad.d/nomad.hcl")" "rpc  = \"${STUB_PRIVAT
 assert_contains "${CALLS}" "systemctl daemon-reload" "deferred 3d failure: daemon-reload still ran"
 assert_eq "$([[ -e "${ROOT}/etc/herobids/autoscale-settings.failed" ]] && echo yes || echo no)" "yes" \
   "deferred 3d failure: writes the failed marker"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "converge-control-plane — write_if_changed cp and chmod failures (3a-3d)"
+
+# setup_write_site <site> <root-name> — a fresh root whose run reaches exactly one
+# write_if_changed call. Sets WF_TARGET (its destination) and WF_MESSAGE (the die
+# message printed when that write fails).
+setup_write_site() {
+  new_root "$2"
+  write_hcl "${STUB_PRIVATE_IP}"
+  local unit_dir="${ROOT}/etc/systemd/system"
+  case "$1" in
+    3a)
+      WF_TARGET="${unit_dir}/nomad-private-ip.service" ;;
+    3b)
+      WF_TARGET="${unit_dir}/nomad.service.d/10-private-ip.conf" ;;
+    3c)
+      printf '%s\n' '[Service]' 'ExecStart=/bin/true' > "${unit_dir}/nomad-autoscale.service"
+      WF_TARGET="${unit_dir}/nomad-autoscale.service.d/10-autoscale-env.conf" ;;
+    3c2)
+      printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/herobids/autoscale.env' 'ExecStart=/bin/true' \
+        > "${unit_dir}/nomad-autoscale.service"
+      WF_TARGET="${unit_dir}/nomad-autoscale.service.d/20-autoscale-state-dir.conf" ;;
+    3d)
+      printf '%s\n' '[Service]' 'ExecStart=/bin/true' > "${unit_dir}/nomad-autoscale.service"
+      write_settings_input
+      WF_TARGET="${unit_dir}/nomad-autoscale.service.d/10-autoscale-settings.conf" ;;
+  esac
+  case "$1" in
+    3a|3b) WF_MESSAGE="could not write ${WF_TARGET}; systemd was not reloaded." ;;
+    3c) WF_MESSAGE="could not write the nomad-autoscale autoscale.env drop-in; systemd was not reloaded." ;;
+    3c2) WF_MESSAGE="could not write the nomad-autoscale state-dir drop-in; systemd was not reloaded." ;;
+    3d) WF_MESSAGE="could not write the nomad-autoscale autoscale-settings drop-in; systemd was not reloaded." ;;
+  esac
+}
+
+for site in 3a 3b 3c 3c2 3d; do
+  for tool in cp chmod; do
+    if [[ "${tool}" == "cp" ]]; then stub_var=STUB_FAIL_CP_GLOB; else stub_var=STUB_FAIL_CHMOD_GLOB; fi
+    label="${site} ${tool}"
+
+    setup_write_site "${site}" "wfail-${site}-${tool}"
+    run_converge "${stub_var}=${WF_TARGET}"
+    assert_neq "${RUN_EXIT}" "0" "${label} failure: exits non-zero"
+    assert_contains "${RUN_OUTPUT}" "injected failure for ${WF_TARGET}" \
+      "${label} failure: the injected ${tool} failure fires on the target"
+    assert_contains "${RUN_OUTPUT}" "${WF_MESSAGE}" "${label} failure: dies with the exact message"
+    assert_not_contains "${CALLS}" "systemctl" "${label} failure: no systemctl call"
+
+    # Positive control: the same site with no injected failure converges and reloads.
+    setup_write_site "${site}" "wfail-${site}-${tool}-control"
+    run_converge "${stub_var}=${TEST_TMPDIR}/no-such-path"
+    assert_eq "${RUN_EXIT}" "0" "${label} control: converges without the injected failure"
+    assert_contains "${CALLS}" "systemctl daemon-reload" "${label} control: daemon-reload runs"
+  done
+done
 
 test_end || SUITE_FAILED=1
 

@@ -77,18 +77,18 @@ log "  Nomad API:    ${NOMAD_ADDR}"
 log "  Agent memory: ${NOMAD_AGENT_MEMORY_RESERVATION_MB} MB/slot"
 log "  Dry run:      ${DRY_RUN:-false}"
 
-# In dry-run mode, skip API calls and output zero values.
-# This allows testing script syntax and flow without a running Nomad cluster.
+# In dry-run mode, skip API calls and report "unknown" rather than zeros.
+# Zeros would look like a real "no capacity" reading to callers.
 if [[ "${DRY_RUN:-false}" == "true" ]]; then
-  log "[DRY-RUN] Skipping Nomad API calls."
+  log "[DRY-RUN] Skipping Nomad API calls; capacity values are unknown."
   if [[ "${OUTPUT_JSON}" == "true" ]]; then
-    echo '{"free_memory_mb": 0, "free_slots": 0, "total_memory_mb": 0, "free_memory_pct": 0, "ready_nodes": 0, "agent_memory_reservation_mb": '"${NOMAD_AGENT_MEMORY_RESERVATION_MB}"'}'
+    echo '{"free_memory_mb": "unknown", "free_slots": "unknown", "total_memory_mb": "unknown", "free_memory_pct": "unknown", "ready_nodes": "unknown", "agent_memory_reservation_mb": '"${NOMAD_AGENT_MEMORY_RESERVATION_MB}"', "dry_run": true}'
   else
-    echo "free_memory_mb=0"
-    echo "free_slots=0"
-    echo "total_memory_mb=0"
-    echo "free_memory_pct=0"
-    echo "ready_nodes=0"
+    echo "free_memory_mb=unknown"
+    echo "free_slots=unknown"
+    echo "total_memory_mb=unknown"
+    echo "free_memory_pct=unknown"
+    echo "ready_nodes=unknown"
     echo "agent_memory_reservation_mb=${NOMAD_AGENT_MEMORY_RESERVATION_MB}"
   fi
   echo "[DRY-RUN] dry_run=true"
@@ -137,10 +137,10 @@ TOTAL_FREE_MEMORY_MB=0
 
 for node_id in "${READY_NODE_IDS[@]}"; do
   # Get node details (resources)
-  node_json="$(nomad_api GET "/v1/node/${node_id}" || {
+  if ! node_json="$(nomad_api GET "/v1/node/${node_id}")"; then
     log "WARNING: Failed to fetch details for node ${node_id} — skipping."
     continue
-  })"
+  fi
 
   # Total memory on the node (Nomad sees this as allocatable)
   node_mem_mb="$(echo "${node_json}" | jq -r '.NodeResources.Memory.MemoryMB // 0')"

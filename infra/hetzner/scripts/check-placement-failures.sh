@@ -257,7 +257,7 @@ if "${SCALE_OUT_SCRIPT}" --bypass-cooldown --force; then
   clear_failure_count
   exit 0
 else
-  local scale_out_exit=$?
+  scale_out_exit=$?
   log "WARNING: Safety-net scale-out exited with code ${scale_out_exit}."
   log "Placement failures may persist until additional capacity is provisioned."
 

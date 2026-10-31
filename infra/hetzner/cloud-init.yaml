@@ -232,11 +232,12 @@ write_files:
       # Security hardening: restrict privileges while allowing terraform state writes.
       # ProtectSystem=strict mounts /usr, /boot, /etc read-only.
       # /opt/herobids (where terraform runs) remains writable.
+      # /var/lib/herobids-autoscale holds the durable in-flight provisioning record.
       NoNewPrivileges=true
       PrivateTmp=true
       ProtectSystem=strict
       ProtectHome=true
-      ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner
+      ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner /var/lib/herobids-autoscale
 
       [Install]
       WantedBy=multi-user.target
@@ -319,7 +320,7 @@ write_files:
       PrivateTmp=true
       ProtectSystem=strict
       ProtectHome=true
-      ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner
+      ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner /var/lib/herobids-autoscale
 
   - path: /etc/systemd/system/nomad-scale-in.timer
     permissions: '0644'
@@ -393,7 +394,7 @@ write_files:
       PrivateTmp=true
       ProtectSystem=strict
       ProtectHome=true
-      ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner
+      ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner /var/lib/herobids-autoscale
 
   - path: /etc/systemd/system/nomad-placement-failure-watcher.timer
     permissions: '0644'
@@ -526,14 +527,19 @@ runcmd:
         logger -t cloud-init "INFO: /etc/herobids/autoscale.env not found — terraform init deferred to first autoscale run."
       fi
 
-      # The autoscale node count file is seeded with 0 at first boot.
-      # The autoscaler reads the actual count from the Nomad API on first run
-      # (via current_agent_node_count() fallback) and updates this file after
-      # each successful terraform apply. This avoids embedding agent_node_count
+      # The autoscale node count file is seeded with 0 at first boot. It is a
+      # diagnostic cache only: the autoscaler derives the Terraform count from
+      # the capacity guard (cloud + Nomad reconcile) under its lock, and
+      # updates this file after each successful terraform apply.
+      # This avoids embedding agent_node_count
       # in user_data, which would force control-plane replacement on every
       # node count change (see IMPORTANT-TODO.md).
       mkdir -p /var/run
       echo "0" > /var/run/nomad-autoscale-node-count
+
+      # Durable autoscale state (in-flight provisioning record) survives reboot.
+      mkdir -p /var/lib/herobids-autoscale
+      chmod 0750 /var/lib/herobids-autoscale
 
       # Seed the alert failure count file (Phase 8).
       # Initialized to 0 — the autoscaler increments it on failures and
