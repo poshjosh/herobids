@@ -58,3 +58,12 @@ infra/hetzner/scripts/logs.sh --env production 167.233.213.107 api
 ssh -i ~/.ssh/herobids_deploy_key root@167.233.213.107 'docker inspect --format "{{json .State.Health}}" herobids-api-1'
 ssh -i ~/.ssh/herobids_deploy_key root@167.233.213.107 'docker exec herobids-api-1 node -e "fetch(\"http://127.0.0.1:3000/health\").then(r=>console.log(r.status)).catch(console.error)"'
 ```
+
+prune docker on remote
+
+ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 'docker builder prune -f'
+
+ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 'docker image prune -f'
+
+ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 \
+  'journalctl --disk-usage; du -sh /var/log/* 2>/dev/null | sort -h | tail -10'
