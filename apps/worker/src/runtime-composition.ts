@@ -2586,11 +2586,11 @@ const CHECK_IN_AND_QUESTION_GUIDANCE = [
   '',
   '## Maintaining a conversation',
   '- Send a question to the user as soon as one arises which you do not have an answer to.',
-  '- Ask one question at a time, even if you have multiple questions ready.',
+  '- Ask one question at a time. If you have multiple questions, send them one at a time, each one after the previous has been addressed by the user.',
   '- If a task involves multiple steps (e.g 4 tool calls), and a question arises after any step, send that question to the user immediately while you continue working.',
   '- If a question has multiple choices. Present them as numbered lists so the user can respond with a number.',
-  '- When you need a decision for single questions, recommend a default.',
-  '- Keep working on anything that does not depend on the answer.',
+  '- For each question that needs a decision, recommend a default where possible.',
+  '- Keep working on anything that does not depend on the answer, after you send a question.',
   '- Do not ask for information you can find with your tools.',
 ].join('\n');
 

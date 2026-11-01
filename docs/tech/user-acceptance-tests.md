@@ -88,6 +88,20 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 | MC-15 | Quick trading setup — success dismiss | Click "Done" on the success banner | Banner disappears; setup card returns to default state | — | |
 | MC-16 | Quick trading setup — validation | Submit form with empty provider or label | Submit button disabled; form cannot be submitted | ✅ | 2026-07-07: "Connect AI agent" button disabled until label is filled (provider has a default selection) |
 | MC-17 | Quick trading setup — API error | Submit with invalid secrets | ErrorBanner shown inside modal; modal stays open | ✅ | 2026-07-07: "secret is required for hyperliquid." error shown inline in dialog; dialog stays open |
+| MC-18 | Chat picker label sits left of the dropdown | Open the agents page on desktop, then on a narrow mobile viewport (≤ 640 px) | Shows "Chat with" followed by the agent dropdown on the same line. On mobile the dropdown may wrap below the label only when there is no room beside it | — | |
+| MC-19 | Chat picker preselects the last-used agent | Chat with agent B on the agents page; reload the page | The dropdown shows agent B and its conversation is open | — | |
+| MC-20 | Chat picker preselects the first running agent when none is remembered | Clear local storage (or use a new browser); open the agents page | The dropdown shows the first running agent and its conversation is open. No placeholder option is listed | — | |
+| MC-21 | Chat picker falls back when the remembered agent was deleted | Remember agent B in the picker; delete agent B; open the agents page | The dropdown shows another agent (first running, else first) and its conversation is open. No error is shown | — | |
+
+### 3a. Agent reminders and preferences (chat with the agent)
+
+Run these in chat with a running agent. They check the agent-side behaviour, not the page.
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| RM-01 | Repeat below the minimum is rejected with the range | Ask the agent to remind you every 5 minutes | The agent reports the rejection and the allowed range in minutes (currently 15 to 44640). It does not invent a minimum. No reminder is stored | — | |
+| RM-02 | Repeat at the minimum is accepted | Ask the agent to remind you every 15 minutes, starting in 2 minutes | The agent confirms a repeating reminder; `list_reminders` shows it with a 15-minute interval | — | |
+| RM-03 | Preferences are saved and reused | Tell the agent a preference (e.g. "reply in short bullet points"); wait for the next tick or restart the agent; ask it for a status update | The agent saved the preference under `prefs/user` (check with `get_memory`) and follows it after the restart | — | |
 
 ---
 

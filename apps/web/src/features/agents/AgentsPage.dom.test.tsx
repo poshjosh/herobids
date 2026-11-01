@@ -85,6 +85,7 @@ const chatAgentId = () => screen.getByTestId('chat').getAttribute('data-agent');
 describe('AgentsPage chat box', () => {
   beforeEach(() => {
     localStorage.clear();
+    localStorage.setItem(CHAT_KEY, 'agent-active');
     vi.mocked(agentsApi.list).mockResolvedValue(AGENTS);
   });
 
@@ -95,7 +96,8 @@ describe('AgentsPage chat box', () => {
     delete (window as { matchMedia?: unknown }).matchMedia;
   });
 
-  it('lists every agent and defaults to the first agent that can take messages', async () => {
+  it('lists every agent and preselects the first running agent when nothing is remembered', async () => {
+    localStorage.removeItem(CHAT_KEY);
     renderPage();
     await screen.findByTestId('chat');
 
@@ -111,7 +113,7 @@ describe('AgentsPage chat box', () => {
     expect(chatAgentId()).toBe('agent-second');
   });
 
-  it('falls back when the remembered agent no longer exists', async () => {
+  it('falls back to the first running agent when the remembered agent no longer exists', async () => {
     localStorage.setItem(CHAT_KEY, 'deleted-agent');
     renderPage();
     await screen.findByTestId('chat');

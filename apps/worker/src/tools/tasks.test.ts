@@ -156,7 +156,7 @@ describe('task tools', () => {
         ctx,
       );
       expect(result.success).toBe(false);
-      expect(result.error).toBe('reminder.invalid_interval');
+      expect(result.error).toMatch(/^reminder\.invalid_interval: .*between \d+ and \d+ minutes/);
     });
 
     it('rejects a repeat above the operator maximum', async () => {
@@ -166,7 +166,7 @@ describe('task tools', () => {
         ctx,
       );
       expect(result.success).toBe(false);
-      expect(result.error).toBe('reminder.invalid_interval');
+      expect(result.error).toMatch(/^reminder\.invalid_interval: .*between \d+ and \d+ minutes/);
     });
 
     it('stores repeatEveryMs and anchorAt for a repeating reminder', async () => {

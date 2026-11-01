@@ -312,7 +312,7 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'وكلاء الذكاء الاصطناعي',
-  'agents.chat.selectAgent': 'الوكيل',
+  'agents.chat.selectAgent': 'الدردشة مع',
   'agents.statusOverview': 'نظرة عامة على الحالة',
   'agents.marketplace.useAgent': 'استخدم هذا الوكيل',
   'agents.createAgent': 'إنشاء',
@@ -635,7 +635,7 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.queuedHint': 'ستُسلَّم رسالتك فور أن يصبح وكيلك جاهزًا.',
   'agentDetail.conversation.thinking': '{name} يكتب…',
   'agentDetail.conversation.connectionApproved': 'تمت الموافقة على الاتصال. {name} يستأنف من حيث توقف…',
-  'agentDetail.conversation.intro': 'أخبر وكيلك بما تريد عبر الدردشة معه على Telegram (إذا كان مُعدًّا) أو مباشرةً هنا، تمامًا كما تتحدث مع موظف أو مساعد شخصي.',
+  'agentDetail.conversation.intro': 'التبديل بسهولة بين Telegram ودردشة الويب مع البقاء في المحادثة نفسها',
   'agentDetail.conversation.introClose': 'إغلاق',
   'agentDetail.conversation.fromPlatform': 'تنبيه أمان',
   'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',

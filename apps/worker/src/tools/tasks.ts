@@ -124,14 +124,30 @@ const completeTaskTool: AgentTool = {
 
 // --- schedule_reminder ---
 
-const ScheduleReminderParamsSchema = z.object({
-  message: z.string().min(1).max(500).describe('Reminder message that will be injected into your context at trigger time'),
-  triggerAt: z.string().datetime().describe('Absolute trigger datetime in ISO 8601 UTC format (must be in the future). For a repeating reminder this is the first occurrence.'),
-  repeatEveryMinutes: z.number().int().positive().optional().describe('If set, the reminder repeats on this interval (in minutes). Bounded by the operator minimum and maximum.'),
-  key: z.string().regex(REMINDER_KEY_PATTERN).optional().describe('Stable identifier for this reminder. Scheduling again with the same key replaces the existing reminder.'),
-});
+function repeatBoundsMinutes(reminders: ReminderConfig): { minMinutes: number; maxMinutes: number } {
+  return {
+    minMinutes: Math.ceil(reminders.minRepeatIntervalMs / MINUTE_MS),
+    maxMinutes: Math.floor(reminders.maxRepeatIntervalMs / MINUTE_MS),
+  };
+}
+
+function buildScheduleReminderParamsSchema(reminders: ReminderConfig) {
+  const { minMinutes, maxMinutes } = repeatBoundsMinutes(reminders);
+  return z.object({
+    message: z.string().min(1).max(500).describe('Reminder message that will be injected into your context at trigger time'),
+    triggerAt: z.string().datetime().describe('Absolute trigger datetime in ISO 8601 UTC format (must be in the future). For a repeating reminder this is the first occurrence.'),
+    repeatEveryMinutes: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(`If set, the reminder repeats on this interval in minutes. Allowed range: ${minMinutes} to ${maxMinutes} minutes. Values outside this range are rejected.`),
+    key: z.string().regex(REMINDER_KEY_PATTERN).optional().describe('Stable identifier for this reminder. Scheduling again with the same key replaces the existing reminder.'),
+  });
+}
 
 function buildScheduleReminderTool(reminders: ReminderConfig): AgentTool {
+  const ScheduleReminderParamsSchema = buildScheduleReminderParamsSchema(reminders);
   return {
     name: 'schedule_reminder',
     description:
@@ -158,7 +174,12 @@ function buildScheduleReminderTool(reminders: ReminderConfig): AgentTool {
           repeatEveryMs < reminders.minRepeatIntervalMs ||
           repeatEveryMs > reminders.maxRepeatIntervalMs
         ) {
-          return { success: false, error: 'reminder.invalid_interval', fault: false };
+          const { minMinutes, maxMinutes } = repeatBoundsMinutes(reminders);
+          return {
+            success: false,
+            error: `reminder.invalid_interval: repeatEveryMinutes ${repeatEveryMinutes} is outside the allowed range. It must be between ${minMinutes} and ${maxMinutes} minutes. Use a value in that range or schedule a one-shot reminder.`,
+            fault: false,
+          };
         }
       }
 

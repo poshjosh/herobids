@@ -84,6 +84,11 @@ Use memory to remember information across ticks/sessions. For example, if you ne
 - Use \`list_memory_keys\` to list all stored memory keys.
 - Use \`delete_memory\` to remove one or more memory keys.
 
+User preferences (how the user wants you to work, e.g. language, tone, report format, risk limits, notification channel, reminder times):
+- When the user states or changes a preference, save it right away with \`set_memory\` under the key \`prefs/user\`. Store one compact JSON object of { key: value } pairs, with a short \`note\` for each value and \`updatedAt\`. Keep existing entries and overwrite only the ones that changed.
+- At the start of every tick/session, before any other work, read \`prefs/user\` with \`get_memory\` and follow it. If the key is missing, there are no saved preferences yet.
+- Do not keep preferences only in conversation: they must survive restarts.
+
 Use tasks to manage your work. You can:
 - Use \`create_task\` to create a durable task with a title, optional notes, and optional due datetime.
 - Use \`list_tasks\` to list your current tasks and their status.
@@ -164,15 +169,20 @@ export const CHILD_AGENT_MANAGEMENT_SKILL: SkillDefinition = {
   description: 'Create, list, inspect, pause, stop, message and delete the child agents you created.',
   instructions: `You can create child agents and manage the ones you created.
 
-- Call \`list_child_agents\` first to get the IDs of your children. Do not guess IDs.
 - Use \`create_child_agent\` only when a separate, focused goal needs its own agent. The child starts when you create it. Pass \`start: false\` to create it stopped.
 - A retry of \`create_child_agent\` with the same name returns the existing child with \`duplicate: true\`. Nothing is created or started again, so do not create another child to retry.
-- Use \`get_child_agent_status\`, \`pause_child_agent\`, \`stop_child_agent\` and \`message_child_agent\` only on your direct children.
-- A child's \`lastStartRefusal\` (shown by \`list_child_agents\` and \`get_child_agent_status\`) means the platform refused to launch it after a start, for example for credit or a usage limit. Its \`code\` and \`message\` say why. You cannot start a child yourself: it stays stopped until the user starts it. Tell the user the reason and do not keep checking or create a new child to retry. \`lastStartRefusal\` is null when the last launch succeeded.
 - Use \`delete_child_agent\` only on a direct child you no longer need. Deletion is permanent. The child must have no children of its own. A running child is stopped first. Pass \`stopFirst: false\` to refuse the delete while the child runs instead.
 
-- Only create child agents when necessary. One example is complex tasks that cannot be handled effectively by a single agent.
-- You are solely responsible for the child agents you create, unless the user explicitly takes over their management.
+Each tick/session check the child agents you have and manage them. For example, if need communicate with each child agent to guide them towards their goal(s).
+- Call \`list_child_agents\` first to get the IDs of your children. Do not guess IDs.
+- Use \`get_child_agent_status\`, \`pause_child_agent\`, \`stop_child_agent\` and \`message_child_agent\` only on your direct children.
+- A child's \`lastStartRefusal\` (shown by \`list_child_agents\` and \`get_child_agent_status\`) means the platform refused to launch it after a start, for example for credit or a usage limit. Its \`code\` and \`message\` say why. You cannot start a child yourself: it stays stopped until the user starts it. Tell the user the reason and do not keep checking or create a new child to retry. \`lastStartRefusal\` is null when the last launch succeeded.
+
+- Only create child agents when necessary. Examples of when creating one or more child agents may be necessary: 
+  - Complex tasks that are best split into sub-tasks, each handled by a different agent. 
+  - You are already handling a task, then one or more new tasks arise, that require separate attention.
+  - Tasks that require continuous attention over extended periods may be better handled by a dedicated child agent. You become responsible for ensuring the child agent remains active and focused on assigned task(s). It also leaves you free to receive and assign new tasks.
+- You are solely responsible for the child agents you create, unless the user instructs otherwise.
 - Give child agents clear, achievable and verifiable objectives.
 - Guide your child agents to achieve their objectives(s). 
 - Maintain communication with child agents. Also require each child agent to maintain communication with you.
@@ -434,7 +444,7 @@ export const LONG_RUNNING_TASK_SKILL: SkillDefinition = {
   slug: 'system/long-running-task',
   name: 'Long-Running Task',
   description: 'Make steady progress on goals that span many ticks/sessions: split the work into recorded units, keep progress in durable tasks and memory, and resume after a restart.',
-  instructions: `You can work on goals that cannot be finished in one tick/session: they have several steps, or they need ongoing monitoring. Your conversation memory may be incomplete or lost between ticks (a runtime restart clears it completely), so durable state is the only thing you can trust to carry your progress. Re-read durable state instead of relying on what you think you remember. Work in small, finished, recorded units.
+  instructions: `You can work on goals that cannot be finished in one tick/session: they have several steps, or they need ongoing monitoring/attention over an extended period. Your conversation memory may be incomplete or lost between ticks (a runtime restart clears it completely), so durable state is the only thing you can trust to carry your progress. Re-read durable state instead of relying on what you think you remember. Work in small, finished, recorded units.
 
 Pick a short campaign name (lowercase, no spaces) for the goal, unless the goal gives one, and use it in every key and task title below as <campaign>.
 

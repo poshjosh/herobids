@@ -38,7 +38,7 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.queuedHint': 'Your message will be delivered as soon as your agent is ready.',
   'agentDetail.conversation.thinking': '{name} is thinking…',
   'agentDetail.conversation.connectionApproved': 'Connection approved. {name} is picking up where you left off…',
-  'agentDetail.conversation.intro': 'Tell your agent what to do by chatting with it on Telegram (if configured) or directly here, just like you would a human employee or personal assistant.',
+  'agentDetail.conversation.intro': 'Easily switch between Telegram and web chat while on the same conversation',
   'agentDetail.conversation.introClose': 'Close',
   'agentDetail.conversation.fromPlatform': 'Safety alert',
   'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',
@@ -279,9 +279,9 @@ describe('AgentConversationView', () => {
   });
 
   it('shows the post-start intro only when the agent can receive messages and it has not been dismissed', () => {
-    expect(render({ canSend: true, showIntro: true })).toContain('just like you would a human employee');
-    expect(render({ canSend: false, showIntro: true })).not.toContain('just like you would a human employee');
-    expect(render({ canSend: true, showIntro: false })).not.toContain('just like you would a human employee');
+    expect(render({ canSend: true, showIntro: true })).toContain('Easily switch between Telegram and web chat');
+    expect(render({ canSend: false, showIntro: true })).not.toContain('Easily switch between Telegram and web chat');
+    expect(render({ canSend: true, showIntro: false })).not.toContain('Easily switch between Telegram and web chat');
   });
 
   it('renders no message rows when there are no messages', () => {

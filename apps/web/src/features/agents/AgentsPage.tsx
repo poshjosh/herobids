@@ -78,10 +78,11 @@ export function AgentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.isSuccess, items.length]);
 
-  // Falls back to the first running agent when nothing is remembered or the remembered agent no longer exists.
+  // Preselects the last agent chatted with, else the first running agent, else the first agent.
   const chatAgent = items.find((agent) => agent.id === chatAgentId)
     ?? items.find((agent) => isAgentConversable(agent.status))
-    ?? items[0];
+    ?? items[0]
+    ?? null;
 
   const selectChatAgent = (id: string) => {
     setChatAgentId(id);
@@ -113,29 +114,31 @@ export function AgentsPage() {
       />
 
       {/* ── Chat with an agent ──────────────────────────────────── */}
-      {chatAgent && (
+      {items.length > 0 && (
         <section style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            <label htmlFor="agents-chat-select">{intl.formatMessage({ id: 'agents.chat.selectAgent' })}</label>
             <select
               id="agents-chat-select"
-              aria-label={intl.formatMessage({ id: 'agents.chat.selectAgent' })}
-              value={chatAgent.id}
+              value={chatAgent?.id ?? ''}
               onChange={(event) => selectChatAgent(event.target.value)}
-              style={inputStyle}
+              style={{ ...inputStyle, width: 'auto', flex: '1 1 220px', maxWidth: '100%' }}
             >
               {items.map((agent) => (
                 <option key={agent.id} value={agent.id}>{agent.name}</option>
               ))}
             </select>
           </div>
-          <AgentConversation
-            key={chatAgent.id}
-            agentId={chatAgent.id}
-            agentName={chatAgent.name}
-            status={chatAgent.status}
-            initialDraft={chatDrafts[chatAgent.id] ?? ''}
-            onDraftChange={(value) => setChatDrafts((drafts) => ({ ...drafts, [chatAgent.id]: value }))}
-          />
+          {chatAgent && (
+            <AgentConversation
+              key={chatAgent.id}
+              agentId={chatAgent.id}
+              agentName={chatAgent.name}
+              status={chatAgent.status}
+              initialDraft={chatDrafts[chatAgent.id] ?? ''}
+              onDraftChange={(value) => setChatDrafts((drafts) => ({ ...drafts, [chatAgent.id]: value }))}
+            />
+          )}
         </section>
       )}
 

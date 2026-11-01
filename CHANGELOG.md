@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Agents save user preferences (language, tone, report format, limits) under the memory key `prefs/user` and read them at the start of every tick or session, so they survive restarts.
+
+### Changed
+
+- The agents page chat picker shows a "Chat with" label to the left of the agent dropdown, on desktop and mobile. It preselects the agent you last chatted with, otherwise the first running agent.
+- When a repeating reminder is outside the allowed range, `schedule_reminder` now says which range is allowed (currently 15 to 44640 minutes) instead of returning only `reminder.invalid_interval`. The tool description shows the same range.
+
 ### Fixed
 
 - The agent capacity check read a memory field that Nomad no longer fills in, so it reported the agent node as empty and autoscaling never added a node. It now reads `AllocatedResources`, and it stops with an error when a running allocation reports no memory figure. See [bug report 002](docs/bug-reports/2026/10/30/002-capacity-check-reads-empty-allocation-memory-no-autoscale.md).

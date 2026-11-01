@@ -310,7 +310,7 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'AI Agents',
-  'agents.chat.selectAgent': 'Agent',
+  'agents.chat.selectAgent': 'Chat with',
   'agents.statusOverview': 'Status overview',
   'agents.marketplace.useAgent': 'Use this agent',
   'agents.createAgent': 'Create',
@@ -716,7 +716,7 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.queuedHint': 'Your message will be delivered as soon as your agent is ready.',
   'agentDetail.conversation.thinking': '{name} is thinking…',
   'agentDetail.conversation.connectionApproved': 'Connection approved. {name} is picking up where you left off…',
-  'agentDetail.conversation.intro': 'Tell your agent what to do by chatting with it on Telegram (if configured) or directly here, just like you would a human employee or personal assistant.',
+  'agentDetail.conversation.intro': 'Easily switch between Telegram and web chat while on the same conversation',
   'agentDetail.conversation.introClose': 'Close',
   'agentDetail.conversation.fromPlatform': 'Safety alert',
   'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',

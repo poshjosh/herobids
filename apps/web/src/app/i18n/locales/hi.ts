@@ -312,7 +312,7 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'AI एजेंट',
-  'agents.chat.selectAgent': 'एजेंट',
+  'agents.chat.selectAgent': 'इसके साथ चैट करें',
   'agents.statusOverview': 'स्थिति का सारांश',
   'agents.marketplace.useAgent': 'इस एजेंट का उपयोग करें',
   'agents.createAgent': 'बनाएं',
@@ -635,7 +635,7 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.queuedHint': 'आपका संदेश एजेंट के तैयार होते ही पहुंचा दिया जाएगा।',
   'agentDetail.conversation.thinking': '{name} सोच रहा है…',
   'agentDetail.conversation.connectionApproved': 'कनेक्शन स्वीकृत हुआ। {name} वहीं से आगे बढ़ रहा है जहां उसने छोड़ा था…',
-  'agentDetail.conversation.intro': 'अपने एजेंट को बताएं कि क्या करना है, Telegram (यदि कॉन्फ़िगर है) पर या सीधे यहां चैट करके, ठीक वैसे ही जैसे आप किसी कर्मचारी या निजी सहायक से बात करते हैं।',
+  'agentDetail.conversation.intro': 'उसी बातचीत में रहते हुए Telegram और वेब चैट के बीच आसानी से स्विच करें',
   'agentDetail.conversation.introClose': 'बंद करें',
   'agentDetail.conversation.fromPlatform': 'सुरक्षा चेतावनी',
   'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',
