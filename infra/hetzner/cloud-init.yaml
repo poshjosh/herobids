@@ -36,7 +36,7 @@ write_files:
   - path: /etc/cron.d/herobids-backup
     permissions: '0644'
     content: |
-      # Daily Postgres backup with 14-day retention
+      # Daily Postgres backup; dumps older than 7 days are pruned by herobids-disk-maintenance
       0 3 * * * root docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/${compose_overlay} exec -T postgres pg_dump -U herobids herobids > /opt/herobids-backup/herobids-$(date +\%Y\%m\%d).sql 2>> /var/log/herobids-backup.log || logger -t herobids-backup "pg_dump failed"
 
   - path: /etc/systemd/system/herobids.service
@@ -491,6 +491,10 @@ runcmd:
 
   # ── Setup backup directory ───────────────────────────────
   - mkdir -p /opt/herobids-backup
+
+  # ── Disk maintenance (build cache, journal, 7-day retention) ─
+  - install -m 0755 /opt/herobids/infra/hetzner/scripts/disk-maintenance.sh /usr/local/sbin/herobids-disk-maintenance
+  - /usr/local/sbin/herobids-disk-maintenance --install
 
   # ── Enable systemd service (don't start — .env needed) ───
   - systemctl daemon-reload
