@@ -62,7 +62,7 @@ vi.mock('./AgentActivityTimeline.js', () => ({
   AgentActivityTimeline: () => <div>timeline</div>,
 }));
 
-import { AgentDetailPage } from './AgentDetailPage.js';
+import { AgentDetails } from './AgentDetailPage.js';
 
 function makeAgent(skillIds: string[]): Agent {
   return {
@@ -237,9 +237,9 @@ function renderDetail(opts: {
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <IntlProvider locale="en" messages={messages}>
-        <MemoryRouter initialEntries={['/agents/agent-1/details']}>
+        <MemoryRouter initialEntries={['/agents/agent-1']}>
           <Routes>
-            <Route path="/agents/:id/details" element={<AgentDetailPage />} />
+            <Route path="/agents/:id" element={<AgentDetails agentId="agent-1" />} />
           </Routes>
         </MemoryRouter>
       </IntlProvider>
@@ -261,14 +261,12 @@ function renderedFamilyLabels(html: string): string[] {
   return families;
 }
 
-describe('AgentDetailPage header', () => {
-  it('shows Back to chat in the header and no objective line under the agent name', () => {
+describe('AgentDetails section', () => {
+  it('renders under the chat without its own page header or Back to chat button', () => {
     const html = renderDetail({ agentSkillIds: [], readinessFamilies: [] });
-    const actionAt = html.indexOf('class="page-header-action"');
 
-    expect(actionAt).toBeGreaterThan(-1);
-    expect(html.slice(actionAt, actionAt + 400)).toContain(messages['agents.detail.backToChat']);
-    expect(html.slice(html.indexOf('</h1>'), actionAt)).not.toContain('<p');
+    expect(html).not.toContain('class="page-header-action"');
+    expect(html).not.toContain('Back to chat');
   });
 });
 

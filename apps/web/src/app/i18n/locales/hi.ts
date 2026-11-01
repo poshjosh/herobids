@@ -622,8 +622,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.send': 'भेजें',
   'agentDetail.conversation.chatWith': '{name} के साथ चैट करें',
   'agentDetail.conversation.startToChat': 'चैट करने के लिए {name} शुरू करें',
-  'agentDetail.chat.details': 'विवरण',
-  'agents.detail.backToChat': 'चैट पर वापस',
   'agentDetail.conversation.attach': 'दस्तावेज़ संलग्न करें',
   'agentDetail.conversation.removeAttachment': 'दस्तावेज़ हटाएँ',
   'agentDetail.conversation.attachmentTooLarge': 'यह फ़ाइल 10 MB से बड़ी है।',

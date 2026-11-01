@@ -92,6 +92,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 | MC-19 | Chat picker preselects the last-used agent | Chat with agent B on the agents page; reload the page | The dropdown shows agent B and its conversation is open | — | |
 | MC-20 | Chat picker preselects the first running agent when none is remembered | Clear local storage (or use a new browser); open the agents page | The dropdown shows the first running agent and its conversation is open. No placeholder option is listed | — | |
 | MC-21 | Chat picker falls back when the remembered agent was deleted | Remember agent B in the picker; delete agent B; open the agents page | The dropdown shows another agent (first running, else first) and its conversation is open. No error is shown | — | |
+| MC-22 | Chat box quick actions are visible on desktop and mobile | Open the agents page on desktop, then on a mobile viewport (≤ 640 px) | Edit and the start/pause/stop icons appear at the top right of the chat box on both sizes, without hover | — | |
 
 ### 3a. Agent reminders and preferences (chat with the agent)
 
@@ -275,6 +276,7 @@ Route: `/agents/new` — dedicated page for agent creation (form only; guided ch
 |----|-----------|-------|----------|--------|-------|
 | AG-D01 | Default mode is form | Navigate to `/agents/new` | The create form is shown. The card header "Create AI agent" is the only title; it is not a heading element. URL remains `/agents/new`. | — | 2026-10-16: checked against the code. The page uses no `PageHeader`, so there is no `<h1>`. The form is the only mode. |
 | AG-D02 | Retired 2026-10-15 | — | The `?ui=chat` mode and the mode toggle were removed (Wave 3 plan 004). Former AG-D02–AG-D07 no longer apply. | — | |
+| AG-20 | Details sit under the chat on the agent page | Open `/agents/:id` for a running agent; scroll below the chat | No Details or Back to chat button in the header. Status, Objective, Capabilities, Health, Activity, Artifacts and the rest of the agent details render below the chat box. Opening `/agents/:id/details` redirects to `/agents/:id`, and Edit from the chat icons opens the edit form | — | |
 
 ---
 

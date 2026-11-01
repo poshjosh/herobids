@@ -622,8 +622,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.send': 'إرسال',
   'agentDetail.conversation.chatWith': 'الدردشة مع {name}',
   'agentDetail.conversation.startToChat': 'ابدأ {name} للدردشة معه',
-  'agentDetail.chat.details': 'التفاصيل',
-  'agents.detail.backToChat': 'العودة إلى الدردشة',
   'agentDetail.conversation.attach': 'إرفاق مستند',
   'agentDetail.conversation.removeAttachment': 'إزالة المستند',
   'agentDetail.conversation.attachmentTooLarge': 'هذا الملف أكبر من 10 ميغابايت.',

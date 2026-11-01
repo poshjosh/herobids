@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ApiError, agents as agentsApi, skills as skillsApi, type AgentArtifact, type AgentRuntimeSession, type AgentStartupFailureReason, type AgentStartupProgressPhase, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel, SECTION_TITLE_STYLE, FieldLabel } from '../../lib/ui.js';
+import { Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel, SECTION_TITLE_STYLE, FieldLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { SkillPicker } from './SkillPicker.js';
 import { AgentConnectionField } from './AgentConnectionField.js';
@@ -39,8 +39,9 @@ function latestStartupFailureReason(runs: AgentRuntimeSession[] | undefined): Ag
 }
 
 
-export function AgentDetailPage() {
-  const { id } = useParams<{ id: string }>();
+/** Agent details, configuration and runtime panels. Rendered under the agent chat on the agent page. */
+export function AgentDetails({ agentId }: { agentId: string }) {
+  const id = agentId;
   const intl = useIntl();
   const navigate = useNavigate();
   const location = useLocation();
@@ -280,10 +281,10 @@ export function AgentDetailPage() {
   const startupFailureReason = latestStartupFailureReason(sessionsQuery.data);
 
 
-  if (query.isLoading) return <PageShell><LoadingRows count={5} /></PageShell>;
-  if (query.isError) return <PageShell><ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} /></PageShell>;
+  if (query.isLoading) return <LoadingRows count={5} />;
+  if (query.isError) return <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />;
 
-  if (!agent) return <PageShell><ErrorState message={intl.formatMessage({ id: 'agents.detail.notFound' })} /></PageShell>;
+  if (!agent) return <ErrorState message={intl.formatMessage({ id: 'agents.detail.notFound' })} />;
 
   const objective = extractAgentObjective(agent.prompt);
   const operatorContextItems: string[] = [
@@ -298,15 +299,7 @@ export function AgentDetailPage() {
       ? intl.formatMessage({ id: 'agents.detail.runtimeAlert.unhealthy' })
       : null;
   return (
-    <PageShell>
-      <PageHeader
-        title={agent.name}
-        action={
-          <Button variant="secondary" onClick={() => navigate(`/agents/${agent.id}`)}>
-            {intl.formatMessage({ id: 'agents.detail.backToChat' })}
-          </Button>
-        }
-      />
+    <>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
             {(agent.status === 'stopped' || agent.status === 'crashed') && (
               <Button variant="secondary" onClick={() => setIsEditing(true)}>
@@ -511,7 +504,7 @@ export function AgentDetailPage() {
                       setLocalConnectionIds(connectionIds);
                       connectionsMutation.mutate(connectionIds);
                     }}
-                    oauthReturnTo={`/agents/${id}/details?oauthReturn=1`}
+                    oauthReturnTo={`/agents/${id}?oauthReturn=1`}
                   />
                 </div>
                 {capabilitySaving && (
@@ -825,6 +818,6 @@ export function AgentDetailPage() {
             )}
         </Card>
       </div>
-    </PageShell>
+    </>
   );
 }

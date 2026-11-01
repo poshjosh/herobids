@@ -703,8 +703,6 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.send': 'Send',
   'agentDetail.conversation.chatWith': 'Chat with {name}',
   'agentDetail.conversation.startToChat': 'Start {name} to chat with it',
-  'agentDetail.chat.details': 'Details',
-  'agents.detail.backToChat': 'Back to chat',
   'agentDetail.conversation.attach': 'Attach document',
   'agentDetail.conversation.removeAttachment': 'Remove document',
   'agentDetail.conversation.attachmentTooLarge': 'That file is larger than 10 MB.',

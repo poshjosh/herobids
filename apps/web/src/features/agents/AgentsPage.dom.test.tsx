@@ -25,8 +25,10 @@ vi.mock('./AgentConversation.js', async (importOriginal) => {
       agentId: string;
       initialDraft?: string;
       onDraftChange?: (value: string) => void;
+      composerActions?: React.ReactNode;
     }) => (
       <div data-testid="chat" data-agent={props.agentId}>
+        {props.composerActions}
         <textarea
           aria-label="chat draft"
           value={props.initialDraft ?? ''}
@@ -37,6 +39,7 @@ vi.mock('./AgentConversation.js', async (importOriginal) => {
   };
 });
 
+vi.mock('./AgentQuickActions.js', () => ({ AgentQuickActions: () => <div data-testid="quick-actions" /> }));
 vi.mock('./AgentHierarchyList.js', () => ({ AgentHierarchyList: () => <div>hierarchy</div> }));
 vi.mock('../notifications/NotificationsBlock.js', () => ({ NotificationsBlock: () => null }));
 vi.mock('../blueprints/BlueprintBrowse.js', () => ({ BlueprintBrowse: () => null }));
@@ -147,11 +150,18 @@ describe('AgentsPage chat box', () => {
     expect((screen.getByLabelText('chat draft') as HTMLTextAreaElement).value).toBe('sell BTC');
   });
 
+  it('shows the agent quick actions in the chat box on every screen size', async () => {
+    renderPage();
+    await screen.findByTestId('chat');
+
+    expect(screen.getByTestId('quick-actions')).toBeTruthy();
+  });
+
   it('has no Details button next to the chat picker', async () => {
     renderPage();
     await screen.findByTestId('chat');
 
-    expect(screen.queryByRole('button', { name: text('agentDetail.chat.details') })).toBeNull();
+    expect(screen.queryByRole('button', { name: /details/i })).toBeNull();
   });
 
   it('hides the search box on desktop until there are more than five agents', async () => {

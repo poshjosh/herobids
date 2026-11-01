@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router';
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, LoadingRows, ErrorState, Button } from '../../lib/ui.js';
+import { PageShell, PageHeader, LoadingRows, ErrorState } from '../../lib/ui.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { AgentConversation } from './AgentConversation.js';
 import { AgentQuickActions } from './AgentQuickActions.js';
+import { AgentDetails } from './AgentDetailPage.js';
 
-/** The agent's chat. Details, configuration and runtime panels live on the details page. */
+/** The agent's chat, with its details, configuration and runtime panels below. */
 export function AgentChatPage() {
   const { id } = useParams<{ id: string }>();
   const intl = useIntl();
@@ -50,14 +51,7 @@ export function AgentChatPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title={agent.name}
-        action={
-          <Button variant="secondary" onClick={() => navigate(`/agents/${agent.id}/details`)}>
-            {intl.formatMessage({ id: 'agentDetail.chat.details' })}
-          </Button>
-        }
-      />
+      <PageHeader title={agent.name} />
       <AgentConversation
         key={id}
         agentId={id ?? ''}
@@ -66,6 +60,16 @@ export function AgentChatPage() {
         connectionRequestId={connectionRequestId}
         composerActions={<AgentQuickActions agentId={agent.id} status={agent.status} />}
       />
+      <div style={{ marginTop: '24px' }}>
+        <AgentDetails agentId={agent.id} />
+      </div>
     </PageShell>
   );
+}
+
+/** Keeps old `/agents/:id/details` links working by sending them to the agent page, query string included. */
+export function AgentDetailsRedirect() {
+  const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  return <Navigate to={{ pathname: `/agents/${id}`, search: location.search }} replace />;
 }

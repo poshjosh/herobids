@@ -9,6 +9,7 @@ import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow
 import type { BlueprintSummary } from '../../lib/api-client.js';
 import { AgentHierarchyList } from './AgentHierarchyList.js';
 import { AgentConversation, isAgentConversable } from './AgentConversation.js';
+import { AgentQuickActions } from './AgentQuickActions.js';
 import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
@@ -135,6 +136,7 @@ export function AgentsPage() {
               agentId={chatAgent.id}
               agentName={chatAgent.name}
               status={chatAgent.status}
+              composerActions={<AgentQuickActions agentId={chatAgent.id} status={chatAgent.status} />}
               initialDraft={chatDrafts[chatAgent.id] ?? ''}
               onDraftChange={(value) => setChatDrafts((drafts) => ({ ...drafts, [chatAgent.id]: value }))}
             />
