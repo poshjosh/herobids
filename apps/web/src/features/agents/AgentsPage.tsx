@@ -117,13 +117,13 @@ export function AgentsPage() {
       {/* ── Chat with an agent ──────────────────────────────────── */}
       {items.length > 0 && (
         <section style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
-            <label htmlFor="agents-chat-select">{intl.formatMessage({ id: 'agents.chat.selectAgent' })}</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'nowrap', marginBottom: '12px' }}>
+            <label htmlFor="agents-chat-select" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{intl.formatMessage({ id: 'agents.chat.selectAgent' })}</label>
             <select
               id="agents-chat-select"
               value={chatAgent?.id ?? ''}
               onChange={(event) => selectChatAgent(event.target.value)}
-              style={{ ...inputStyle, width: 'auto', flex: '1 1 220px', maxWidth: '100%' }}
+              style={{ ...inputStyle, width: 'auto', flex: '1 1 0', minWidth: 0, maxWidth: '100%' }}
             >
               {items.map((agent) => (
                 <option key={agent.id} value={agent.id}>{agent.name}</option>
