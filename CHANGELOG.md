@@ -13,6 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - The agents page chat picker shows a "Chat with" label to the left of the agent dropdown, on desktop and mobile. It preselects the agent you last chatted with, otherwise the first running agent.
+- The web app background is a flat dark slate (`#020817`) instead of the animated aurora gradient. The aurora orbs and dot-grid overlay are removed. Panel and sidebar surfaces (`--color-surface-1`) and borders (`--color-border`) use the lipdubber dark palette. Surfaces 0 and 2 to 4 use the lipdubber dark background and blue-slate tones, so grey fills in inputs, secondary buttons and pills are blue-tinted. Muted text uses lipdubber's muted foreground for better readability. Brand tokens are unchanged.
 - When a repeating reminder is outside the allowed range, `schedule_reminder` now says which range is allowed (currently 15 to 44640 minutes) instead of returning only `reminder.invalid_interval`. The tool description shows the same range.
 
 ### Fixed

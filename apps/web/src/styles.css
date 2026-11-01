@@ -2,69 +2,11 @@
 @plugin "@tailwindcss/typography";
 
 /* ─── Global background ──────────────────────────────────────────────────────
- * Every page shares a living "aurora" field: a deep space base gradient with
- * slow-drifting, hue-shifting light orbs (body::before) and a fine dot-grid +
- * vignette texture (body::after). The landing page layers cinematic artwork on
- * top of this same field so the whole site feels like one continuous scene.
+ * Flat slate background, matching lipdubber's dark background token.
  * ──────────────────────────────────────────────────────────────────────────── */
 
 body {
-  background:
-    radial-gradient(ellipse 120% 90% at 50% -10%, rgba(99, 91, 255, 0.10) 0%, transparent 55%),
-    linear-gradient(165deg, #05080f 0%, #0a1022 34%, #0d1628 66%, #060a15 100%);
-  background-attachment: fixed;
-}
-
-/* Drifting aurora orbs — the heartbeat of the background.
- * Oversized (inset: -25%) so the drift/scale animation never exposes an edge. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: -25%;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 42% 38% at 18% 20%, rgba(124, 104, 255, 0.32) 0%, transparent 62%),
-    radial-gradient(ellipse 38% 42% at 84% 26%, rgba(72, 56, 234, 0.28) 0%, transparent 62%),
-    radial-gradient(ellipse 48% 40% at 68% 82%, rgba(56, 132, 246, 0.26) 0%, transparent 62%),
-    radial-gradient(ellipse 44% 44% at 28% 86%, rgba(158, 92, 255, 0.24) 0%, transparent 62%),
-    radial-gradient(ellipse 34% 30% at 50% 52%, rgba(88, 120, 255, 0.16) 0%, transparent 60%);
-  filter: blur(26px) saturate(125%);
-  animation:
-    aurora-drift 30s ease-in-out infinite alternate,
-    aurora-hue 48s linear infinite alternate;
-  will-change: transform, filter;
-}
-
-/* Fine dot-grid + soft vignette for depth and focus. */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image:
-    radial-gradient(rgba(255, 255, 255, 0.055) 0.5px, transparent 0.5px),
-    radial-gradient(ellipse 90% 80% at 50% 40%, transparent 55%, rgba(3, 6, 14, 0.55) 100%);
-  background-size: 32px 32px, cover;
-}
-
-@keyframes aurora-drift {
-  0%   { transform: translate3d(-3%, -2%, 0) scale(1.06) rotate(0deg); }
-  50%  { transform: translate3d(3%,  2%, 0) scale(1.14) rotate(3deg); }
-  100% { transform: translate3d(-2%, 3%, 0) scale(1.08) rotate(-2deg); }
-}
-
-@keyframes aurora-hue {
-  from { filter: blur(26px) saturate(125%) hue-rotate(0deg); }
-  to   { filter: blur(26px) saturate(140%) hue-rotate(26deg); }
-}
-
-/* Respect reduced-motion — hold the aurora perfectly still. */
-@media (prefers-reduced-motion: reduce) {
-  body::before {
-    animation: none;
-  }
+  background: #020817;
 }
 
 @theme {
@@ -92,15 +34,15 @@ body::after {
   --color-brand-dim: var(--brand-accent-dim);
   --color-brand-subtle: oklch(25.7% 0.086 281);
 
-  --color-surface-0: oklch(11% 0.015 260);
-  --color-surface-1: var(--brand-primary);
-  --color-surface-2: oklch(20% 0.015 260);
-  --color-surface-3: oklch(26% 0.015 260);
-  --color-surface-4: oklch(32% 0.015 260);
+  --color-surface-0: hsl(222.2 84% 4.9%);
+  --color-surface-1: hsl(222.2 84% 7%);
+  --color-surface-2: hsl(217.2 32.6% 20%);
+  --color-surface-3: hsl(217.2 32.6% 24%);
+  --color-surface-4: hsl(217.2 32.6% 30%);
 
   --color-text-primary: oklch(95% 0.005 260);
-  --color-text-secondary: oklch(80% 0.01 260);
-  --color-text-muted: oklch(65% 0.01 260);
+  --color-text-secondary: oklch(82% 0.01 260);
+  --color-text-muted: hsl(215 20.2% 75%);
 
   --color-danger: oklch(62% 0.22 25);
   --color-danger-subtle: oklch(25% 0.1 25);
@@ -109,7 +51,7 @@ body::after {
   --color-success: oklch(65% 0.18 142);
   --color-success-subtle: oklch(25% 0.08 142);
 
-  --color-border: oklch(28% 0.01 260);
+  --color-border: hsl(217.2 32.6% 24%);
   --color-border-subtle: oklch(22% 0.01 260);
 }
 
