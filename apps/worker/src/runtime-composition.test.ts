@@ -174,7 +174,7 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('by 09:00 in the user\'s local timezone');
     expect(prompt).toContain('Send only one check-in per day.');
     expect(prompt).toContain('## Maintaining a conversation');
-    expect(prompt).toContain('Ask one question at a time, even if you have multiple questions ready.');
+    expect(prompt).toContain('Ask one question at a time. If you have multiple questions, send them one at a time');
     expect(prompt).toContain('Core Platform');
     expect(prompt).not.toContain('To call a tool, output a JSON object');
     expect(prompt).not.toContain('{"tool": "<tool_name>", "args": {...}}');

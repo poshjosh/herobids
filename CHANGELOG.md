@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.6 - 2026-11-01
+
 ### Added
 
 - Agents save user preferences (language, tone, report format, limits) under the memory key `prefs/user` and read them at the start of every tick or session, so they survive restarts.

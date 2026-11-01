@@ -41,10 +41,12 @@ test.describe('Journey 5: Agent start / stop lifecycle', () => {
     // Navigate to agent details page — agent is stopped, Start button should be visible.
     // Start and Stop live on the details page; the /agents/:id page is the chat only.
     await page.goto(`/agents/${agentId}/details`);
-    await expect(page.getByRole('button', { name: /^start$/i })).toBeVisible({ timeout: 5000 });
+    // The icon-only quick action also carries title="Start", so match the labelled button by text.
+    const startButton = page.locator('button', { hasText: /^Start$/ });
+    await expect(startButton).toBeVisible({ timeout: 5000 });
 
     // Start the agent via the UI button
-    await page.getByRole('button', { name: /^start$/i }).click();
+    await startButton.click();
 
     // Status should transition to 'starting'
     await expect(page.getByText(/starting/i).first()).toBeVisible({ timeout: 10_000 });

@@ -46,12 +46,18 @@ test.describe('Journey 3: Chat with an agent on the agent detail page', () => {
 
     // A stopped agent cannot be chatted with; start it. While it is starting
     // the composer is enabled and the message is queued for delivery.
-    await page.getByRole('button', { name: /^start$/i }).click();
+    // Match the labelled button by text; the icon-only quick action also has title="Start".
+    // Wait for the start request to complete before navigating, or the navigation aborts it.
+    await Promise.all([
+      page.waitForResponse((res) => res.request().method() === 'POST' && res.url().endsWith(`/api/agents/${agentId}/start`) && res.ok()),
+      page.locator('button', { hasText: /^Start$/ }).click(),
+    ]);
 
     await page.goto(`/agents/${agentId}`);
 
-    // The composer is labelled "Chat with <agent>" once the agent runs.
-    const composer = page.getByLabel(`Chat with ${AGENT_NAME}`, { exact: true });
+    // The composer is labelled "Chat with <agent>" once the agent runs, and
+    // "Start <agent> to chat with it" while it is starting or stopped.
+    const composer = page.getByRole('textbox', { name: new RegExp(`(Chat with|Start) ${AGENT_NAME}`) });
     await expect(composer).toBeEnabled({ timeout: 10_000 });
 
     const userMessage = `Hello from journey 3 ${Date.now()}`;
