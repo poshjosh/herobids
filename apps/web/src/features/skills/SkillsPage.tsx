@@ -527,7 +527,7 @@ export function SkillsPage() {
               placeholder={intl.formatMessage({ id: 'skills.searchPlaceholder', defaultMessage: 'Search skills…' })}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ ...inputStyle, padding: '8px 12px', fontSize: '0.875rem' }}
+              style={{ ...inputStyle, padding: '8px 12px', fontSize: '0.875rem', background: '#E4E7EC', color: 'var(--brand-primary)' }}
             />
           </div>
           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>

@@ -35,6 +35,12 @@ describe('NotificationsBlock', () => {
     expect(render('page', LINKED)).toBe('');
   });
 
+  it('does not show the removed optional note on the page', () => {
+    const html = render('page', UNLINKED);
+    expect(html).not.toContain('set up notifications later');
+    expect(messages).not.toHaveProperty('notifications.block.optionalNote');
+  });
+
   it('always shows the block in settings, with Disconnect when linked and no cancel button', () => {
     const html = render('settings', LINKED);
     expect(html).toContain(messages['notifications.block.title']);

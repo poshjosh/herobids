@@ -193,7 +193,7 @@ export function AgentsPage() {
                     onChange={(event) => setSearchQuery(event.target.value)}
                     placeholder={intl.formatMessage({ id: 'agents.tree.search' })}
                     aria-label={intl.formatMessage({ id: 'agents.tree.search' })}
-                    style={inputStyle}
+                    style={{ ...inputStyle, background: '#E4E7EC', color: 'var(--brand-primary)' }}
                   />
                 </div>
               )}

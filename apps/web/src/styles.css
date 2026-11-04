@@ -764,11 +764,16 @@ textarea:not(:placeholder-shown) {
   gap: 12px;
 }
 
+/* Same 1200px max width and 32px side padding as .page-shell-responsive, so the chat input matches /onboarding. */
 .try-page-scroll {
   flex: 1;
   min-height: 0;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   overflow-y: auto;
-  padding: 24px 16px;
+  padding: 24px 32px;
+  box-sizing: border-box;
 }
 
 .try-page-message-row {
@@ -822,11 +827,15 @@ textarea:not(:placeholder-shown) {
   padding: 10px 14px;
   border-radius: 8px;
   border: 1px solid var(--color-border);
-  background-color: var(--color-surface-2);
-  color: var(--color-text-primary);
+  background-color: #E4E7EC;
+  color: var(--brand-primary);
   font-size: 0.9375rem;
   line-height: 1.4;
   font-family: inherit;
+}
+
+.try-page-input::placeholder {
+  color: #667085;
 }
 
 .try-page-send-btn {
@@ -903,7 +912,7 @@ textarea:not(:placeholder-shown) {
   }
 
   .try-page-scroll {
-    padding: 16px 12px;
+    padding: 16px;
   }
 
   .try-page-bubble {

@@ -88,7 +88,7 @@ export function SkillPicker({ selectedSkillIds, onChange, initialSkills, loading
         placeholder={intl.formatMessage({ id: 'agents.skillPicker.searchPlaceholder', defaultMessage: 'Search skills\u2026' })}
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
-        style={{ ...inputStyle, padding: '6px 10px', fontSize: '0.8125rem', borderRadius: '6px' }}
+        style={{ ...inputStyle, padding: '6px 10px', fontSize: '0.8125rem', borderRadius: '6px', background: '#E4E7EC', color: 'var(--brand-primary)' }}
       />
       <div
         style={{

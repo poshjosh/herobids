@@ -832,7 +832,7 @@ export function ToolTagPicker({
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={searchPlaceholder}
               autoFocus
-              style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '0.8125rem' }}
+              style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '0.8125rem', background: '#E4E7EC', color: 'var(--brand-primary)' }}
               onKeyDown={handleDropdownKeyDown}
             />
           </div>

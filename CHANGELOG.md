@@ -6,6 +6,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.7 - 2026-11-04
+
+### Added
+
+- New users are taken through an onboarding chat at `/onboarding` after they sign in from `/try`. The chat asks for an agent name, then shows timed messages while the agent starts. The messages cover the agent's capabilities, Telegram setup, the cross-channel continuity of Telegram and the web, how to view agents on the AI Agents page, and how to open the sidebar on mobile. Each message appears at a fixed time (2 to 37 seconds). Once the agent is active, the timed messages stop and the user is redirected to the AI Agents page after a short "Redirecting" notice. A "Still starting" line shows after the last timed message until then.
+- If the agent is not active after 60 seconds, or its start request fails, the onboarding page shows a warning with a spinner: "Your agent is taking longer than expected to start. You may still check your agent", and a "Go to my agents" button. The support ticket and email are deferred; see `docs/features/pending/000-support-ticket-email/001-plan.md`.
+- The onboarding "edit" message shows the real play, pause, edit and stop icons, which are shared with the agents page through `AgentActionIcons`.
+- After the last timed onboarding message, a "Still starting {name}. This can take up to a minute." line replaces the typing indicator until the agent is active.
+- The onboarding timeline pauses after the Telegram and notifications setup message. It resumes when the user clicks "Connect Telegram" or "Turn on notifications", or selects "Skip". The remaining messages then follow 5 seconds apart.
+
+### Changed
+
+- "New user? Create account" on the login page opens `/try`. The sign-up mode and its username field are removed from the login page.
+- The Notifications form shows "Optional" to the right of "Browser Notifications", as it does for "Telegram Notifications (recommended)".
+- Search inputs on the agents, skills and picker pages use the same background as the chat input (`#E4E7EC`).
+- The chat input and its paperclip, character counter and remove control are darker, so the paperclip is no longer faint on white.
+- The `/try` chat input has the same width as the `/onboarding` chat input.
+- The Activity Timeline on `/agents/<id>` is collapsed by default. Select its heading to expand it.
+
+### Removed
+
+- The onboarding agent chat and its "Go to my agents" hand-over are removed from `/onboarding`. The page redirects to `/agents` once the agent is active. The retry button for a failed start is also removed; the warning is shown instead.
+- The cross-channel notice ("You can start messages on Telegram and continue on the Web, and vice versa.") is removed from the Notifications form, together with its translations in English, Arabic and Hindi. The same sentence still appears in the onboarding chat.
+- The "Optional. You can create your agent now and set up notifications later." note is removed from the Notifications form, together with its translations in English, Arabic and Hindi. The "Optional" tags beside each section stay.
+
+### Fixed
+
+- After onboarding creates the agent, the cached agents list is refreshed. Previously, "Go to my agents" could open `/agents` showing the create-agent form, because the empty list cached before creation was reused.
+- The onboarding redirect to `/agents` no longer shows a stale status. Each status check writes the agent into the cached agents list, and the list is refetched before the redirect. Previously `/agents` could show the agent as `stopped` (play button, disabled chat input) for about 30 seconds after the agent had become `active`.
+
 ## v0.8.6 - 2026-11-01
 
 ### Added

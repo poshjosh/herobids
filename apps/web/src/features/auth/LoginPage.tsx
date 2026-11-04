@@ -20,8 +20,6 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [newUser, setNewUser] = useState(false);
-  const [username, setUsername] = useState('');
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -41,7 +39,7 @@ export function LoginPage() {
     setPending(true);
     setPageState('sendingLoginLink');
     try {
-      await auth.sendLoginLink(email, newUser && username ? username : undefined);
+      await auth.sendLoginLink(email);
       setPageState('loginLinkSent');
     } catch (err) {
       setError(localizeApiError(intl, err, 'auth.error.default'));
@@ -88,7 +86,7 @@ export function LoginPage() {
     setPending(true);
     setPageState('resendingLoginLink');
     try {
-      await auth.sendLoginLink(email, newUser && username ? username : undefined);
+      await auth.sendLoginLink(email);
       setPageState('loginLinkSent');
     } catch (err) {
       setError(localizeApiError(intl, err, 'auth.error.default'));
@@ -148,24 +146,6 @@ export function LoginPage() {
   return (
     <PageShell>
       <form onSubmit={(e) => { void handlePasswordSignIn(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        {/* Username field — shown for new users */}
-        {newUser && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="login-username" style={{ fontSize: '0.8125rem', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
-              {intl.formatMessage({ id: 'auth.username.label' })}
-            </label>
-            <input
-              id="login-username"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder={intl.formatMessage({ id: 'auth.username.placeholder' })}
-              autoComplete="username"
-              style={inputStyle}
-            />
-          </div>
-        )}
-
         {/* Email field */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <label htmlFor="login-email" style={{ fontSize: '0.8125rem', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
@@ -264,9 +244,7 @@ export function LoginPage() {
                   opacity: pending || !email ? 0.5 : 1,
                 }}
               >
-                {newUser
-                  ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
-                  : intl.formatMessage({ id: isMobile ? 'auth.sendLoginLink.mobile' : 'auth.sendLoginLink' })}
+                {intl.formatMessage({ id: isMobile ? 'auth.sendLoginLink.mobile' : 'auth.sendLoginLink' })}
               </button>
               <button
                 type="submit"
@@ -310,9 +288,7 @@ export function LoginPage() {
               >
                 {pending && pageState === 'sendingLoginLink'
                   ? intl.formatMessage({ id: 'common.loading' })
-                  : newUser
-                    ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
-                    : intl.formatMessage({ id: isMobile ? 'auth.sendLoginLink.mobile' : 'auth.sendLoginLink' })}
+                  : intl.formatMessage({ id: isMobile ? 'auth.sendLoginLink.mobile' : 'auth.sendLoginLink' })}
               </button>
               <button
                 type="button"
@@ -333,14 +309,11 @@ export function LoginPage() {
             </>
           )}
         </div>
-        {/* New user / Existing user toggle */}
+        {/* New users are sent to the chat-based onboarding on /try */}
         <div style={{ textAlign: 'center', marginTop: '-2px' }}>
           <button
             type="button"
-            onClick={() => {
-              if (newUser) { setNewUser(false); setUsername(''); setError(null); }
-              else { setNewUser(true); setError(null); }
-            }}
+            onClick={() => navigate('/try')}
             style={{
               background: 'none',
               border: 'none',
@@ -351,7 +324,7 @@ export function LoginPage() {
               padding: '4px 0',
             }}
           >
-            {intl.formatMessage({ id: newUser ? 'auth.existingUser' : 'auth.newUser' })}
+            {intl.formatMessage({ id: 'auth.newUser' })}
           </button>
         </div>
       </form>

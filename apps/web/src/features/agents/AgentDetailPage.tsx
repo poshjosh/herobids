@@ -801,21 +801,33 @@ export function AgentDetails({ agentId }: { agentId: string }) {
         </Card>
 
         <Card>
-          <SectionLabel prominent>{intl.formatMessage({ id: 'agents.detail.activityTimeline', defaultMessage: 'Activity Timeline' })}</SectionLabel>
-          {activityFeedQuery.isError
-            ? (
-              <ErrorState
-                message={localizeApiError(intl, activityFeedQuery.error, 'common.errorTitle')}
-                onRetry={() => void activityFeedQuery.refetch()}
-              />
-            )
-            : (
-              <AgentActivityTimeline
-                entries={(activityFeedQuery.data?.entries ?? []) as AgentActivityEntry[]}
-                isLoading={activityFeedQuery.isLoading}
-                isEmpty={activityFeedQuery.isSuccess && (activityFeedQuery.data?.entries.length ?? 0) === 0}
-              />
-            )}
+          <details>
+            <summary
+              style={{
+                ...SECTION_TITLE_STYLE,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {intl.formatMessage({ id: 'agents.detail.activityTimeline', defaultMessage: 'Activity Timeline' })}
+            </summary>
+            <div style={{ marginTop: '12px' }}>
+              {activityFeedQuery.isError
+                ? (
+                  <ErrorState
+                    message={localizeApiError(intl, activityFeedQuery.error, 'common.errorTitle')}
+                    onRetry={() => void activityFeedQuery.refetch()}
+                  />
+                )
+                : (
+                  <AgentActivityTimeline
+                    entries={(activityFeedQuery.data?.entries ?? []) as AgentActivityEntry[]}
+                    isLoading={activityFeedQuery.isLoading}
+                    isEmpty={activityFeedQuery.isSuccess && (activityFeedQuery.data?.entries.length ?? 0) === 0}
+                  />
+                )}
+            </div>
+          </details>
         </Card>
       </div>
     </>

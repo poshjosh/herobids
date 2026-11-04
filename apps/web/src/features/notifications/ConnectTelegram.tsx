@@ -99,7 +99,8 @@ function releaseTab(tabRef: { current: Window | null }) {
  * then polls /auth/me until the bot has bound the chat. Connected state is derived
  * from the ['me'] query, so every consumer of that query stays in sync.
  */
-export function ConnectTelegram() {
+/** onConnectStart fires when the user starts connecting, so a host page can continue after the user acts. */
+export function ConnectTelegram({ onConnectStart }: { onConnectStart?: () => void } = {}) {
   const intl = useIntl();
   const queryClient = useQueryClient();
   const meQuery = useQuery({
@@ -161,6 +162,7 @@ export function ConnectTelegram() {
   }, []);
 
   function handleConnect() {
+    onConnectStart?.();
     flowRef.current?.abort();
     // A previous attempt's blank tab would otherwise be orphaned when tabRef is overwritten.
     releaseTab(tabRef);

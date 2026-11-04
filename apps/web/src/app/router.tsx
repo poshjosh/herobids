@@ -10,6 +10,7 @@ import { ConnectionsPage } from '../features/connections/ConnectionsPage.js';
 import { BillingPage } from '../features/billing/BillingPage.js';
 import { AgentsPage } from '../features/agents/AgentsPage.js';
 import { CreateAgentPage } from '../features/agents/CreateAgentPage.js';
+import { OnboardingPage } from '../features/onboarding/OnboardingPage.js';
 
 import { AgentChatPage, AgentDetailsRedirect } from '../features/agents/AgentChatPage.js';
 import { AgentCapabilityPage } from '../features/agents/AgentCapabilityPage.js';
@@ -48,6 +49,7 @@ export const router = createBrowserRouter([
       { path: '/mission-control', element: <Navigate to="/agents" replace /> },
       { path: '/agents', element: <AgentsPage /> },
       { path: '/agents/new', element: <CreateAgentPage /> },
+      { path: '/onboarding', element: <OnboardingPage /> },
       { path: '/agents/:id', element: <AgentChatPage /> },
       { path: '/agents/:id/details', element: <AgentDetailsRedirect /> },
       { path: '/agents/:agentId/capabilities/:family', element: <AgentCapabilityPage /> },

@@ -328,7 +328,7 @@ export function AgentConversationView({
         style={{
           border: '1.5px solid var(--input-border-color)',
           borderRadius: '10px',
-          background: 'var(--color-surface-3)',
+          background: '#E4E7EC',
           overflow: 'hidden',
           opacity: canCompose ? 1 : 0.6,
         }}
@@ -353,7 +353,7 @@ export function AgentConversationView({
             padding: '12px 14px',
             background: 'transparent',
             border: 'none',
-            color: 'var(--color-text-primary)',
+            color: 'var(--brand-primary)',
             fontSize: '0.9375rem',
             outline: 'none',
             resize: 'vertical',
@@ -369,7 +369,7 @@ export function AgentConversationView({
               type="button"
               onClick={onRemoveAttachment}
               aria-label={intl.formatMessage({ id: 'agentDetail.conversation.removeAttachment' })}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '2px 4px' }}>
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467', padding: '2px 4px' }}>
               ×
             </button>
           </div>
@@ -402,12 +402,12 @@ export function AgentConversationView({
               title={intl.formatMessage({ id: 'agentDetail.conversation.attach' })}
               disabled={!canCompose}
               onClick={() => fileInputRef.current?.click()}
-              style={{ background: 'none', border: 'none', cursor: canCompose ? 'pointer' : 'default', color: 'var(--color-text-muted)', padding: '4px', display: 'inline-flex' }}>
+              style={{ background: 'none', border: 'none', cursor: canCompose ? 'pointer' : 'default', color: '#475467', padding: '4px', display: 'inline-flex' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
               </svg>
             </button>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{draft.length}/{maxChars}</span>
+            <span style={{ fontSize: '0.75rem', color: '#475467' }}>{draft.length}/{maxChars}</span>
           </div>
           <Button onClick={onSend} disabled={!canCompose || trimmed.length === 0}>
             {intl.formatMessage({ id: 'agentDetail.conversation.send' })}

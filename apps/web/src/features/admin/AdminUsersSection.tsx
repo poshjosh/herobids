@@ -39,7 +39,7 @@ export function AdminUsersSection({ users, onPromote, onRevoke, mutationPending 
           placeholder="Filter by email or name…"
           value={filter}
           onChange={(e) => handleFilterChange(e.target.value)}
-          style={{ ...inputStyle, flex: 1, padding: '6px 10px', borderRadius: '6px', fontSize: '0.8125rem' }}
+          style={{ ...inputStyle, flex: 1, padding: '6px 10px', borderRadius: '6px', fontSize: '0.8125rem', background: '#E4E7EC', color: 'var(--brand-primary)' }}
         />
         <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{visible.length} users</span>
       </div>

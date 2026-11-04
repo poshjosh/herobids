@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi } from '../../lib/api-client.js';
 import { canPauseAgent, canStopAgent } from './agent-display.js';
+import { EditIcon, PauseIcon, PlayIcon, StopIcon } from './AgentActionIcons.js';
 
 const ICON_BUTTON_STYLE: CSSProperties = {
   display: 'inline-flex',
@@ -75,9 +76,7 @@ export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
         disabled={anyActionPending}
         onClick={(e) => handleAction(e, () => navigate(`/agents/${agentId}?edit=1`))}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-        </svg>
+        <EditIcon />
       </button>
 
       {(canStart || canResume) && (
@@ -88,9 +87,7 @@ export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
           disabled={anyActionPending}
           onClick={(e) => handleAction(e, () => (canStart ? startMutation : resumeMutation).mutate())}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-            <polygon points="5 3 19 12 5 21 5 3" />
-          </svg>
+          <PlayIcon />
         </button>
       )}
 
@@ -102,10 +99,7 @@ export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
           disabled={anyActionPending}
           onClick={(e) => handleAction(e, () => pauseMutation.mutate())}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-            <rect x="6" y="4" width="4" height="16" rx="1" />
-            <rect x="14" y="4" width="4" height="16" rx="1" />
-          </svg>
+          <PauseIcon />
         </button>
       )}
 
@@ -117,9 +111,7 @@ export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
           disabled={anyActionPending}
           onClick={(e) => handleAction(e, () => stopMutation.mutate())}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-            <rect x="4" y="4" width="16" height="16" rx="2" />
-          </svg>
+          <StopIcon />
         </button>
       )}
     </>

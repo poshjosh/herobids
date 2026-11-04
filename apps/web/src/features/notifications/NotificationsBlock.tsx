@@ -10,9 +10,7 @@ import { ConnectTelegram } from './ConnectTelegram.js';
 import { PushOptIn } from './PushOptIn.js';
 import { telegramDisconnectBody } from './telegram-connect.js';
 import {
-  readCrossChannelNoticeDismissed,
   readDismissedForSession,
-  rememberCrossChannelNoticeDismissed,
   rememberDismissedForSession,
   resolveNotificationsBlock,
   shouldRecordSubscription,
@@ -27,17 +25,6 @@ const introStyle: CSSProperties = {
   fontSize: '0.8125rem',
   color: 'var(--color-text)',
   lineHeight: '1.5',
-};
-const noticeStyle: CSSProperties = { ...introStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' };
-const noticeDismissStyle: CSSProperties = {
-  flexShrink: 0,
-  background: 'none',
-  border: 'none',
-  cursor: 'pointer',
-  padding: '0 4px',
-  color: 'var(--color-text-muted)',
-  fontSize: '0.8125rem',
-  textDecoration: 'underline',
 };
 const rowStyle: CSSProperties = { borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginTop: '16px' };
 const closeStyle: CSSProperties = {
@@ -64,7 +51,6 @@ const optionalTagStyle: CSSProperties = {
   fontWeight: 500,
   verticalAlign: 'middle',
 };
-const optionalNoteStyle: CSSProperties = { margin: '0 0 12px', fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' };
 
 function OptionalTag() {
   const intl = useIntl();
@@ -74,18 +60,21 @@ function OptionalTag() {
 interface NotificationsBlockProps {
   variant: NotificationsBlockVariant;
   style?: CSSProperties;
+  /** Fires when the user starts a Telegram connect or turns on browser notifications. */
+  onSetupAction?: () => void;
+  /** Fires once the block has no more setup to show: cancelled, or a channel is now set up. */
+  onSettled?: () => void;
 }
 
 /**
  * Telegram and browser notification setup. Settings shows it with the current state.
  * Other pages show it only until a channel is set up (see resolveNotificationsBlock).
  */
-export function NotificationsBlock({ variant, style }: NotificationsBlockProps) {
+export function NotificationsBlock({ variant, style, onSetupAction, onSettled }: NotificationsBlockProps) {
   const intl = useIntl();
   const qc = useQueryClient();
   const [dismissed, setDismissed] = useState(readDismissedForSession);
   const [browserSubscribed, setBrowserSubscribed] = useState(false);
-  const [crossChannelNoticeDismissed, setCrossChannelNoticeDismissed] = useState(readCrossChannelNoticeDismissed);
   const recorded = useRef(false);
 
   const meQuery = useQuery({
@@ -145,6 +134,17 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
     dismissed,
   });
 
+  // Settled means the profile has loaded and there is nothing left to set up. This also covers a block that was already
+  // settled on mount. Fires once.
+  const settled = meQuery.isSuccess && !view.show;
+  const settledNotified = useRef(false);
+  useEffect(() => {
+    if (settled && !settledNotified.current) {
+      settledNotified.current = true;
+      onSettled?.();
+    }
+  }, [settled, onSettled]);
+
   if (!view.show) return null;
 
   const handleBrowserChoice = (enabled: boolean) => {
@@ -155,11 +155,6 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
   const handleCancel = () => {
     rememberDismissedForSession();
     setDismissed(true);
-  };
-
-  const handleDismissCrossChannelNotice = () => {
-    rememberCrossChannelNoticeDismissed();
-    setCrossChannelNoticeDismissed(true);
   };
 
   return (
@@ -178,16 +173,6 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
 
       <h3 style={{ ...headingStyle, fontSize: '1rem' }}>{intl.formatMessage({ id: 'notifications.block.title' })}</h3>
       <p style={introStyle}>{intl.formatMessage({ id: 'notifications.block.intro' })}</p>
-      {variant === 'page' && <p style={optionalNoteStyle}>{intl.formatMessage({ id: 'notifications.block.optionalNote' })}</p>}
-
-      {!crossChannelNoticeDismissed && (
-        <div role="note" style={noticeStyle}>
-          <span>{intl.formatMessage({ id: 'notifications.crossChannel.text' })}</span>
-          <button type="button" onClick={handleDismissCrossChannelNotice} style={noticeDismissStyle}>
-            {intl.formatMessage({ id: 'notifications.crossChannel.dismiss' })}
-          </button>
-        </div>
-      )}
 
       {view.showTelegram && (
         <section style={rowStyle}>
@@ -196,7 +181,7 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
             <ErrorBanner message={localizeApiError(intl, disconnectTelegram.error, 'common.errorTitle')} />
           )}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <ConnectTelegram />
+            <ConnectTelegram onConnectStart={onSetupAction} />
             {variant === 'settings' && telegramLinked && (
               <Button
                 variant="secondary"
@@ -213,8 +198,7 @@ export function NotificationsBlock({ variant, style }: NotificationsBlockProps) 
 
       {view.showBrowser && (
         <section style={rowStyle}>
-          <div><OptionalTag /></div>
-          <PushOptIn embedded onChange={handleBrowserChoice} />
+          <PushOptIn embedded onChange={handleBrowserChoice} onEnableStart={onSetupAction} titleAdornment={<OptionalTag />} />
         </section>
       )}
     </Card>

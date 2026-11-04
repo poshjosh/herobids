@@ -67,12 +67,12 @@ async function settle(ms = 0) {
   });
 }
 
-function renderConnect() {
+function renderConnect(onConnectStart?: () => void) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const result = render(
     <QueryClientProvider client={queryClient}>
       <IntlProvider locale="en" messages={messages} defaultLocale="en">
-        <ConnectTelegram />
+        <ConnectTelegram onConnectStart={onConnectStart} />
       </IntlProvider>
     </QueryClientProvider>,
   );
@@ -121,6 +121,19 @@ describe('ConnectTelegram (DOM)', () => {
     expect(screen.getByRole('status').textContent).toContain(CONNECTING);
     expect(screen.getByRole('link', { name: OPEN_TELEGRAM }).getAttribute('href')).toBe(LINK_URL);
     expect(screen.queryByRole('button', { name: CONNECT })).toBeNull();
+  });
+
+  it('calls onConnectStart when the user clicks connect', async () => {
+    const tab = makeTab();
+    vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    const onConnectStart = vi.fn();
+    renderConnect(onConnectStart);
+    await settle();
+
+    clickConnect();
+    await settle();
+
+    expect(onConnectStart).toHaveBeenCalledTimes(1);
   });
 
   it('poll resolves linked: shows connected and writes the linked profile to the me cache', async () => {

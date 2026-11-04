@@ -16,6 +16,8 @@ export interface PushOptInViewProps {
   onClearAndRetry: () => void;
   /** Renders without its own card, for use inside a parent card. */
   embedded?: boolean;
+  /** Rendered inside the heading, after the title. */
+  titleAdornment?: React.ReactNode;
 }
 
 const headingStyle: React.CSSProperties = { margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' };
@@ -28,7 +30,7 @@ function errorMessageId(errorCode: string): string {
 }
 
 /** Presentational only. Each state is a separate render, so the copy can be tested without a browser. */
-export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onClearAndRetry, embedded = false }: PushOptInViewProps) {
+export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onClearAndRetry, embedded = false, titleAdornment }: PushOptInViewProps) {
   const intl = useIntl();
   const t = (id: string) => intl.formatMessage({ id });
 
@@ -93,7 +95,7 @@ export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onC
 
   const content = (
     <>
-      <h3 style={headingStyle}>{t('push.optIn.title')}</h3>
+      <h3 style={headingStyle}>{t('push.optIn.title')}{titleAdornment}</h3>
       {errorCode !== null && <ErrorBanner message={t(errorMessageId(errorCode))} />}
       {body}
       {action}
@@ -104,7 +106,7 @@ export function PushOptInView({ state, busy, errorCode, onEnable, onDisable, onC
 
 /** Opt-in for Web Push on this device. Renders nothing when the server has the feature off. */
 /** onChange reports the saved-by-user choice: true after a successful subscribe, false after turning off. */
-export function PushOptIn({ onChange, embedded = false }: { onChange?: (enabled: boolean) => void; embedded?: boolean } = {}) {
+export function PushOptIn({ onChange, onEnableStart, embedded = false, titleAdornment }: { onChange?: (enabled: boolean) => void; onEnableStart?: () => void; embedded?: boolean; titleAdornment?: React.ReactNode } = {}) {
   const config = useQuery({
     queryKey: ['push', 'config'],
     queryFn: () => push.config(),
@@ -160,7 +162,11 @@ export function PushOptIn({ onChange, embedded = false }: { onChange?: (enabled:
       busy={busy}
       errorCode={errorCode}
       embedded={embedded}
-      onEnable={() => void runAction(enableAndReport, PUSH_ERROR_CODES.subscribeFailed)}
+      titleAdornment={titleAdornment}
+      onEnable={() => {
+        onEnableStart?.();
+        void runAction(enableAndReport, PUSH_ERROR_CODES.subscribeFailed);
+      }}
       onDisable={() => void runAction(async () => {
         await disablePush(createBrowserPushDeps());
         onChange?.(false);
