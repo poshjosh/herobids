@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lt, lte, or, sql, desc } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like, lt, lte, or, sql, desc } from 'drizzle-orm';
 import {
   CONVERSATION_DELIVERY_FROM,
   CONVERSATION_ERROR_CODES,
@@ -11,6 +11,7 @@ import {
   type ListUserAgentThreadInput,
   type MarkConversationDeliveryInput,
   type FindConversationMessageInput,
+  type FindThreadMessageByRefInput,
   type RefuseDroppedPeerConversationMessageInput,
   type RequeueUndeliveredMessageInput,
   type PeerThreadSummary,
@@ -319,6 +320,27 @@ export class ConversationRepository implements ConversationStore {
     }
   }
 
+  async findThreadMessageByRef(input: FindThreadMessageByRefInput): Promise<Result<ConversationMessage[], ConversationError>> {
+    try {
+      // A full UUID carries hyphens; a short ref is 8 hex characters.
+      const isFull = input.ref.includes('-');
+      const rows = await this.db
+        .select({ message: conversationMessages })
+        .from(conversationMessages)
+        .innerJoin(conversations, eq(conversations.id, conversationMessages.conversationId))
+        .where(and(
+          eq(conversationMessages.conversationId, input.conversationId),
+          eq(conversations.ownerUserId, input.ownerUserId),
+          // The conversation filter narrows the scan to one thread before the id match, which keeps the prefix lookup cheap.
+          isFull ? eq(conversationMessages.id, input.ref) : like(conversationMessages.id, `${escapeLikePattern(input.ref)}%`),
+        ))
+        .limit(2);
+      return ok(rows.map((row) => toConversationMessage(row.message)));
+    } catch (error) {
+      return storeFailed(error);
+    }
+  }
+
   async listUserAgentThread(input: ListUserAgentThreadInput): Promise<Result<ConversationMessage[], ConversationError>> {
     try {
       const rows = await this.db
@@ -340,6 +362,11 @@ export class ConversationRepository implements ConversationStore {
       return storeFailed(error);
     }
   }
+}
+
+/** Escapes LIKE metacharacters, so a ref is matched as plain text whatever it contains. */
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 /**

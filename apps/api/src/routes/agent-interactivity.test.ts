@@ -764,6 +764,8 @@ describe('POST /agents/:id/message', () => {
     expect(redis.xadd).toHaveBeenCalledTimes(1);
     const envelope = JSON.parse(vi.mocked(redis.xadd).mock.calls[0]?.[6] as string) as Record<string, unknown>;
     expect(envelope).toMatchObject({ messageId: CLIENT_ID, type: 'user.message', initiatorType: 'user', initiatorId: TEST_USER_ID, payload: { message: 'Hello agent' } });
+    // The stored row's queuedAt, so the agent times the message by the platform clock.
+    expect(envelope['queuedAt']).toBe(conversations.store.messages[0]?.queuedAt.toISOString());
     expect(redis.xadd).toHaveBeenCalledWith(
       `agent:outbound:${AGENT_ID}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', expect.any(String),
     );

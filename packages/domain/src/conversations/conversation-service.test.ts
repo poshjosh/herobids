@@ -38,6 +38,7 @@ function setup() {
     findMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage())),
     refuseDroppedPeerMessage: vi.fn(async () => ok<ConversationMessage | null>(storedMessage({ deliveryStatus: 'refused', deliveryDetail: 'paused' }))),
     listUserAgentThread: vi.fn(async () => ok([storedMessage()])),
+    findThreadMessageByRef: vi.fn(async () => ok<ConversationMessage[]>([])),
   } satisfies ConversationStore;
   let counter = 0;
   const service = new ConversationService({
@@ -630,3 +631,74 @@ describe('ConversationService peer thread reads', () => {
     expect(store.listUserAgentThread).not.toHaveBeenCalled();
   });
 });
+
+describe('ConversationService thread reads', () => {
+  const ID = '0c1d2e3f-aaaa-4bbb-8ccc-000000000001';
+  const OTHER_ID = '0c1d2e3f-aaaa-4bbb-8ccc-000000000002';
+
+  it('resolves a short ref to the message and reads the page before its (createdAt, id) cursor', async () => {
+    const { store, service } = setup();
+    const anchorAt = new Date('2026-10-25T09:00:00.000Z');
+    store.findThreadMessageByRef.mockResolvedValueOnce(ok([storedMessage({ id: ID, createdAt: anchorAt })]));
+
+    const result = await service.getThreadMessage({ ownerUserId: 'u1', agentId: 'a1', ref: '#0C1D2E3F' });
+
+    expect(result).toEqual(ok(expect.objectContaining({ id: ID })));
+    expect(store.findThreadMessageByRef).toHaveBeenCalledWith({ conversationId: userAgentConversationId('a1'), ownerUserId: 'u1', ref: '0c1d2e3f' });
+  });
+
+  it('reports an ambiguous short ref with the full ids of the matches', async () => {
+    const { store, service } = setup();
+    store.findThreadMessageByRef.mockResolvedValueOnce(ok([storedMessage({ id: ID }), storedMessage({ id: OTHER_ID })]));
+
+    const result = await service.getThreadMessage({ ownerUserId: 'u1', agentId: 'a1', ref: '0c1d2e3f' });
+
+    expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.ambiguousMessageRef, context: { matches: [ID, OTHER_ID] } } });
+  });
+
+  it('refuses a ref that is not a short or full id, before it reaches the store', async () => {
+    const { store, service } = setup();
+
+    const result = await service.getThreadMessage({ ownerUserId: 'u1', agentId: 'a1', ref: '%' });
+
+    expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.invalidMessage } });
+    expect(store.findThreadMessageByRef).not.toHaveBeenCalled();
+  });
+
+  it('reads an unknown ref as absent, not as an error', async () => {
+    const { service } = setup();
+
+    expect(await service.getThreadMessage({ ownerUserId: 'u1', agentId: 'a1', ref: 'deadbeef' })).toEqual(ok(null));
+  });
+
+  it('pages back from a ref: reads one row more than the page, and reports hasMore without it', async () => {
+    const { store, service } = setup();
+    const anchorAt = new Date('2026-10-25T09:00:00.000Z');
+    store.findThreadMessageByRef.mockResolvedValueOnce(ok([storedMessage({ id: ID, createdAt: anchorAt })]));
+    const rows = [1, 2, 3].map((n) => storedMessage({ id: `old-${n}`, createdAt: new Date(anchorAt.getTime() - n) }));
+    store.listUserAgentThread.mockResolvedValueOnce(ok(rows.reverse()));
+
+    const result = await service.listThreadPage({ ownerUserId: 'u1', agentId: 'a1', before: '0c1d2e3f', limit: 2 });
+
+    expect(store.listUserAgentThread).toHaveBeenCalledWith(expect.objectContaining({ limit: 3, before: anchorAt, beforeId: ID }));
+    expect(result).toEqual(ok({ messages: [expect.objectContaining({ id: 'old-2' }), expect.objectContaining({ id: 'old-1' })], hasMore: true }));
+  });
+
+  it('reports no older messages when the store returns no more than the page', async () => {
+    const { store, service } = setup();
+    store.listUserAgentThread.mockResolvedValueOnce(ok([storedMessage({ id: 'only' })]));
+
+    const result = await service.listThreadPage({ ownerUserId: 'u1', agentId: 'a1', limit: 3 });
+
+    expect(result).toEqual(ok({ messages: [expect.objectContaining({ id: 'only' })], hasMore: false }));
+  });
+
+  it('answers not found when the before ref names no message', async () => {
+    const { service } = setup();
+
+    const result = await service.listThreadPage({ ownerUserId: 'u1', agentId: 'a1', before: 'deadbeef' });
+
+    expect(result).toMatchObject({ ok: false, error: { code: CONVERSATION_ERROR_CODES.messageNotFound } });
+  });
+});
+

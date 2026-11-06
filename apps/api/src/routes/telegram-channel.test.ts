@@ -319,7 +319,12 @@ describe('ChatInboundRouter redelivery', () => {
       ok: true,
       data: { message: { id: input.id ?? 'random', deliveryStatus: existing?.deliveryStatus ?? 'queued' }, created: existing ? false : true },
     }));
-    const conversations = { recordUserMessage, markDelivery: vi.fn(async () => ({ ok: true, data: {} })) };
+    const conversations = {
+      recordUserMessage,
+      markDelivery: vi.fn(async () => ({ ok: true, data: {} })),
+      isStuckQueued: vi.fn(() => false),
+      retryUndeliveredMessage: vi.fn(async () => ({ ok: true, data: null })),
+    };
     const log = { warn: vi.fn(), error: vi.fn() };
     const deps = { redis, conversations: conversations as never, log, resolveReply: vi.fn(async () => null), listAgents: vi.fn(async () => agents), sendText };
     return { xadd, sendText, recordUserMessage, conversations, log, deps };
@@ -365,6 +370,17 @@ describe('ChatInboundRouter redelivery', () => {
     const [id] = recordedIds(recordUserMessage);
     expect(xadd).toHaveBeenCalledWith('agent:outbound:agent-1', 'MAXLEN', '~', expect.any(Number), '*', 'envelope', expect.stringContaining(`"messageId":"${id}"`));
     expect(conversations.markDelivery).toHaveBeenCalledWith({ messageId: id, status: 'sent' });
+  });
+
+  it('claims a stuck queued replay and publishes it with the claimed queuedAt', async () => {
+    const claimedAt = new Date('2026-11-06T20:00:00.000Z');
+    const { xadd, recordUserMessage, conversations, deps } = setup({ created: false, deliveryStatus: 'queued' });
+    conversations.isStuckQueued.mockReturnValue(true);
+    conversations.retryUndeliveredMessage.mockResolvedValue({ ok: true, data: { queuedAt: claimedAt } } as never);
+    await new ChatInboundRouter().dispatch(messageWithId('hello', 7), 'owner-1', deps);
+    const [id] = recordedIds(recordUserMessage);
+    expect(conversations.retryUndeliveredMessage).toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: 'owner-1', agentId: 'agent-1', messageId: id }));
+    expect(xadd).toHaveBeenCalledWith('agent:outbound:agent-1', 'MAXLEN', '~', expect.any(Number), '*', 'envelope', expect.stringContaining(`"queuedAt":"${claimedAt.toISOString()}"`));
   });
 
   it('does not retry a replay whose row already ended as failed, and tells the user', async () => {

@@ -555,8 +555,9 @@ describe('SendMessagePayloadSchema', () => {
     expect(keys).toContain('subject');
     expect(keys).toContain('messageClass');
     expect(keys).toContain('contextRef');
+    expect(keys).toContain('messageId');
     expect(keys).not.toContain('emailDelivery');
-    expect(keys).toHaveLength(4);
+    expect(keys).toHaveLength(5);
   });
 
   it('silently strips unknown keys like emailDelivery (Zod default behavior)', () => {

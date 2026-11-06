@@ -67,6 +67,8 @@ export const MessageEnvelopeSchema = z.object({
   botId: z.string().optional(),
   type: z.string().min(1),
   createdAt: z.string().datetime(),
+  /** For a user message: when the stored row entered the queue (its clock is the platform's). The Conversation window orders by it. */
+  queuedAt: z.string().datetime().optional(),
   payload: z.record(z.unknown()),
   traceId: z.string().optional(),
   sequence: z.number().int().optional(),
@@ -168,6 +170,8 @@ export const SendMessagePayloadSchema = z.object({
    * - reminder: time-based or scheduled reminder intended to prompt action
    */
   messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
+  /** Platform-internal: the id the worker gave this message. Not in the model-facing params, so the model cannot set it. */
+  messageId: z.string().uuid().optional(),
 });
 
 export type SendMessagePayload = z.infer<typeof SendMessagePayloadSchema>;

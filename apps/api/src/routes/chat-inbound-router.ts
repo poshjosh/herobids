@@ -14,7 +14,7 @@ interface RoutableAgent {
 interface ChatInboundDependencies {
   redis: Redis;
   /** Records each inbound user message in the agent's conversation before it is published (CH2W P3). */
-  conversations: Pick<ConversationService, 'recordUserMessage' | 'markDelivery'>;
+  conversations: Pick<ConversationService, 'recordUserMessage' | 'markDelivery' | 'isStuckQueued' | 'retryUndeliveredMessage'>;
   log?: {
     warn: (context: Record<string, unknown>, message: string) => void;
     error: (context: Record<string, unknown>, message: string) => void;
@@ -62,11 +62,18 @@ export class ChatInboundRouter {
   }
 
   /** Publishes to the agent without recording a conversation row: for platform-composed notices, not user text. */
-  async deliver(agentId: string, userId: string, messageText: string, redis: Redis, messageId: string = crypto.randomUUID()): Promise<void> {
+  async deliver(
+    agentId: string,
+    userId: string,
+    messageText: string,
+    redis: Redis,
+    messageId: string = crypto.randomUUID(),
+    queuedAt: Date = new Date(),
+  ): Promise<void> {
     const envelope = {
       schemaVersion: 'v1', messageId, correlationId: crypto.randomUUID(),
       initiatorType: 'user', initiatorId: userId, agentId, type: 'user.message',
-      createdAt: new Date().toISOString(), payload: { message: messageText },
+      createdAt: new Date().toISOString(), queuedAt: queuedAt.toISOString(), payload: { message: messageText },
     };
     await redis.xadd(`agent:outbound:${agentId}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
   }
@@ -106,18 +113,25 @@ export class ChatInboundRouter {
       return unavailable;
     }
     const messageId = recorded.data.message.id;
+    let queuedAt = recorded.data.message.queuedAt;
     if (!recorded.data.created) {
       // A redelivered message. Already sent: the agent has it. Queued: an earlier attempt stopped before it was
       // marked, so publish under the same id. Any other state is final and is not retried.
-      const { deliveryStatus } = recorded.data.message;
-      if (deliveryStatus === 'sent') return { ok: true };
-      if (deliveryStatus !== 'queued') {
-        deps.log?.warn({ agentId: agent.agentId, deliveryStatus }, 'chat inbound redelivery of a message that is not queued');
+      const stored = recorded.data.message;
+      if (stored.deliveryStatus === 'sent') return { ok: true };
+      if (stored.deliveryStatus !== 'queued') {
+        deps.log?.warn({ agentId: agent.agentId, deliveryStatus: stored.deliveryStatus }, 'chat inbound redelivery of a message that is not queued');
         return unavailable;
+      }
+      // A stuck row is claimed, as the web route's retry does, so it is published with a fresh queuedAt. When another
+      // redelivery claimed it first, the row's own queuedAt stands.
+      if (deps.conversations.isStuckQueued(stored)) {
+        const claimed = await deps.conversations.retryUndeliveredMessage({ ownerUserId: userId, agentId: agent.agentId, messageId, sender: { type: 'user' } });
+        if (claimed.ok && claimed.data) queuedAt = claimed.data.queuedAt;
       }
     }
     try {
-      await this.deliver(agent.agentId, userId, messageText, deps.redis, messageId);
+      await this.deliver(agent.agentId, userId, messageText, deps.redis, messageId, queuedAt);
     } catch (error) {
       deps.log?.warn({ agentId: agent.agentId, error: error instanceof Error ? error.name : 'NonError' }, 'chat inbound message publish failed');
       const marked = await deps.conversations.markDelivery({ messageId, status: 'failed', detail: 'publish_failed' });

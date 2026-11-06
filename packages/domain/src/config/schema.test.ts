@@ -430,6 +430,9 @@ describe('AgentRuntimePolicySchema', () => {
       expect(pe.wakeEmphasis.enabled).toBe(true);
       expect(pe.activityTimeline.enabled).toBe(true);
       expect(pe.activityTimeline.maxEvents).toBe(10);
+      expect(pe.conversation.enabled).toBe(true);
+      expect(pe.conversation.maxMessages).toBe(8);
+      expect(pe.conversation.olderMessageMaxChars).toBe(500);
     }
   });
 
@@ -471,6 +474,20 @@ describe('AgentRuntimePolicySchema', () => {
       promptEnrichment: { queuedSignals: { max: 0 } },
     });
     expect(result.success).toBe(false);
+  });
+
+  it('promptEnrichment conversation bounds: maxMessages 2 to 30, olderMessageMaxChars 100 to 2000', () => {
+    const parse = (conversation: Record<string, number>) => AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      promptEnrichment: { conversation },
+    }).success;
+
+    expect(parse({ maxMessages: 2 })).toBe(true);
+    expect(parse({ maxMessages: 30 })).toBe(true);
+    expect(parse({ maxMessages: 1 })).toBe(false);
+    expect(parse({ maxMessages: 31 })).toBe(false);
+    expect(parse({ olderMessageMaxChars: 99 })).toBe(false);
+    expect(parse({ olderMessageMaxChars: 2001 })).toBe(false);
   });
 
   it('promptEnrichment activityTimeline maxEvents rejects 2 (min 3)', () => {

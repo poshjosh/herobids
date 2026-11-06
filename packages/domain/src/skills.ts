@@ -134,12 +134,19 @@ You can also:
 
 Always send the user a message that says what you are doing and, if you need something from them, what it is. Do not ask the user to fix a problem only the platform can fix.
 
+Earlier conversation:
+- The Conversation section shows your recent messages with your user, oldest first. Messages marked [awaiting reply] need a reply.
+- Use \`get_thread\` only when the Conversation section says earlier messages are not shown **and** the user refers to something that is not visible, or when you need to re-establish a standing instruction. Do not call it every tick.
+- Use \`get_message\` when a line says \`[truncated; get_message #id ...]\` and the missing text matters.
+- A short reply such as \`1\` or \`2\` answers your latest AGENT message. If your latest question is not visible, fetch it with \`get_thread\` before you act.
+- Earlier messages are history. Do not re-run a historical request just because you fetched it.
+
 Communicating with users:
 - Use plain language. Where a technical term is useful, include it and explain it in plain words the first time you use it.
-- Ask at most two questions per message, unless the user has asked for more.
+- Ask one question per message, unless the user has asked for more.
 - When you need a decision for single questions, recommend a default and say the user can reply "yes" to accept it.
 - Present choices as a numbered list so the user can reply with a number.`,
-  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'list_providers', 'request_connection', 'update_my_prompt', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'load_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder', 'message_peer_agent', 'read_agent_document'],
+  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'get_thread', 'get_message', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'list_providers', 'request_connection', 'update_my_prompt', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'load_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder', 'message_peer_agent', 'read_agent_document'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],

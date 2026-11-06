@@ -168,8 +168,10 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `get_funding_rates` | `external:trading` | Perpetual-market data. |
 | `get_market_overview` | `external:trading` | Trading market overview. |
 | `get_memory` | `core` | Generic agent memory operation. |
+| `get_message` | `core` | Base-skill read of one conversation message by id. |
 | `get_price` | `external:trading` | Trading price data. |
 | `get_risk_limits` | `external:trading` | Effective trading risk limits. |
+| `get_thread` | `core` | Base-skill read of earlier conversation messages. |
 | `get_schema` | `core` | Shared schema introspection. |
 | `list_app_docs` | `core` | Platform documentation access. |
 | `list_bots` | `external:trading` | Trading bot lifecycle. |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDocumentNoticeText } from './agent-document-notice.js';
+import { buildDocumentNoticeText, parseDocumentNoticeText } from './agent-document-notice.js';
 import { checkUploadable } from './agent-document-service.js';
 
 describe('buildDocumentNoticeText', () => {
@@ -16,6 +16,31 @@ describe('buildDocumentNoticeText', () => {
     const text = buildDocumentNoticeText({ documentId: 'doc-2', filename: 'notes.txt' });
 
     expect(text).not.toContain('Caption');
+  });
+});
+
+describe('parseDocumentNoticeText', () => {
+  it('reads the web shape: the user text, then the notice whose caption repeats it', () => {
+    const text = `My CV is attached\n\n${buildDocumentNoticeText({ documentId: 'doc-1', filename: 'cv.pdf', caption: 'My CV is attached' })}`;
+
+    expect(parseDocumentNoticeText(text)).toEqual({ userText: 'My CV is attached', filename: 'cv.pdf', documentId: 'doc-1' });
+  });
+
+  it('reads the chat shape: the notice alone, with the caption as the user text', () => {
+    const text = buildDocumentNoticeText({ documentId: 'doc-2', filename: 'cv.pdf', caption: 'Please review' });
+
+    expect(parseDocumentNoticeText(text)).toEqual({ userText: 'Please review', filename: 'cv.pdf', documentId: 'doc-2' });
+  });
+
+  it('gives empty user text when there is neither text nor caption', () => {
+    const text = buildDocumentNoticeText({ documentId: 'doc-3', filename: 'notes.txt' });
+
+    expect(parseDocumentNoticeText(text)).toEqual({ userText: '', filename: 'notes.txt', documentId: 'doc-3' });
+  });
+
+  it('returns null for text that is not a notice', () => {
+    expect(parseDocumentNoticeText('Hello')).toBeNull();
+    expect(parseDocumentNoticeText('User sent document `a.pdf` (document id `x`).')).toBeNull();
   });
 });
 

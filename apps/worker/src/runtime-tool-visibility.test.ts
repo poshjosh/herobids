@@ -302,8 +302,8 @@ describe('tool-visibility budget for base + web-access + email + programming (WP
 
   it("the unique tool set fits within careful's maxVisibleToolSchemas", () => {
     const uniqueTools = new Set(resolvedSkills.flatMap((skill) => skill.requiredTools));
-    // base(25: 23 + message_peer_agent + read_agent_document; the child tools moved to child-agent-management) + web-access(+4 unique) + email(+1) + programming(+2) = 32.
-    expect(uniqueTools.size).toBe(32);
+    // base(27: 23 + message_peer_agent + read_agent_document + get_thread + get_message; the child tools moved to child-agent-management) + web-access(+4 unique) + email(+1) + programming(+2) = 34.
+    expect(uniqueTools.size).toBe(34);
     expect(uniqueTools.size).toBeLessThanOrEqual(careful.maxVisibleToolSchemas);
   });
 
@@ -326,5 +326,28 @@ describe('tool-visibility budget for base + web-access + email + programming (WP
         expect(visible).toContain(tool);
       }
     }
+  });
+
+  it('get_thread and get_message stay visible under the lowest preset cap with the largest skill set', () => {
+    const lowestCap = Math.min(...Object.values(AGENT_STYLE_RUNTIME_DEFAULTS).map((style) => style.maxVisibleToolSchemas));
+    const descriptor: RuntimeDescriptor = {
+      ...makeDescriptor(resolvedSkills.map((skill) => ({ id: skill.id, tools: skill.requiredTools }))),
+      budgets: { ...makeDescriptor([]).budgets, maxVisibleToolSchemas: lowestCap },
+    };
+    const visible = createRuntimeToolVisibilityController(() => descriptor, new Set()).allowedTools();
+
+    expect(visible).toContain('get_thread');
+    expect(visible).toContain('get_message');
+  });
+
+  it('get_thread and get_message are hidden when the database is down', () => {
+    expect(DATABASE_DEPENDENT_TOOLS.has('get_thread')).toBe(true);
+    expect(DATABASE_DEPENDENT_TOOLS.has('get_message')).toBe(true);
+    const descriptor = makeDescriptor([{ id: 'base', tools: BASE_SKILL.requiredTools }]);
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+    controller.setDependencyAvailability('database', false);
+
+    expect(controller.allowedTools()).not.toContain('get_thread');
+    expect(controller.allowedTools()).not.toContain('get_message');
   });
 });

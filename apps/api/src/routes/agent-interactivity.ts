@@ -603,6 +603,7 @@ export async function agentInteractivityRoutes(
       agentId: id,
       type: isCreatorMessage ? 'agent.user.message' : 'user.message',
       createdAt: new Date().toISOString(),
+      queuedAt: stored.queuedAt.toISOString(),
       payload: { message: payloadMessage },
     };
     try {

@@ -1,4 +1,5 @@
-import { err, type Result } from '../result.js';
+import { err, ok, type Result } from '../result.js';
+import { parseMessageRef } from './message-ref.js';
 import type { ConversationStore } from '../ports/conversation-store.js';
 import {
   CONVERSATION_CHANNELS,
@@ -129,6 +130,26 @@ export interface ListThreadInput {
   /** Cursor: `createdAt` and `id` of the oldest row of the previous page. Pass both or neither. */
   before?: Date;
   beforeId?: string;
+}
+
+export interface ThreadMessageLookupInput {
+  ownerUserId: string;
+  agentId: string;
+  /** A short (8-hex, optionally `#`-prefixed) or full message id. */
+  ref: string;
+}
+
+export interface ThreadPageInput {
+  ownerUserId: string;
+  agentId: string;
+  /** Return messages older than this message ref. */
+  before?: string;
+  limit?: number;
+}
+
+export interface ThreadPage {
+  messages: ConversationMessage[];
+  hasMore: boolean;
 }
 
 export interface ConversationServiceDeps {
@@ -425,6 +446,58 @@ export class ConversationService {
       now,
       staleBefore: this.staleBefore(now),
     });
+  }
+
+  /**
+   * One message of the agent's own user thread, by short or full id. Null when there is none. A short id that matches
+   * more than one message is an error listing them, so the caller can ask for the full id.
+   */
+  async getThreadMessage(input: ThreadMessageLookupInput): Promise<Result<ConversationMessage | null, ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.agentId);
+    if (checked) return checked;
+    const ref = parseMessageRef(input.ref);
+    if (ref === null) return invalid(CONVERSATION_ERROR_CODES.invalidMessage, 'invalid_message_ref');
+    const found = await this.store.findThreadMessageByRef({
+      conversationId: userAgentConversationId(input.agentId),
+      ownerUserId: input.ownerUserId,
+      ref,
+    });
+    if (!found.ok) return found;
+    const [only, ...others] = found.data;
+    if (others.length > 0) {
+      return invalid(
+        CONVERSATION_ERROR_CODES.ambiguousMessageRef,
+        'ambiguous_message_ref',
+        { matches: found.data.map((message) => message.id) },
+      );
+    }
+    return ok(only ?? null);
+  }
+
+  /**
+   * A page of the agent's own user thread, oldest first, that ends just before `before` (a message ref) when given.
+   * `hasMore` tells whether older messages exist. Reads one row more than the page to know that.
+   */
+  async listThreadPage(input: ThreadPageInput): Promise<Result<ThreadPage, ConversationError>> {
+    const checked = this.checkIdentity(input.ownerUserId, input.agentId) ?? this.checkLimit(input.limit);
+    if (checked) return checked;
+    const limit = Math.min(input.limit ?? this.limits.threadDefaultPageSize, this.limits.threadMaxPageSize);
+    let cursor: { before: Date; beforeId: string } | null = null;
+    if (input.before !== undefined) {
+      const anchor = await this.getThreadMessage({ ownerUserId: input.ownerUserId, agentId: input.agentId, ref: input.before });
+      if (!anchor.ok) return anchor;
+      if (anchor.data === null) return invalid(CONVERSATION_ERROR_CODES.messageNotFound, 'before_message_not_found');
+      cursor = { before: anchor.data.createdAt, beforeId: anchor.data.id };
+    }
+    const rows = await this.listThreadBy({
+      ownerUserId: input.ownerUserId,
+      agentId: input.agentId,
+      limit: limit + 1,
+      ...(cursor ?? {}),
+    }, userAgentConversationId(input.agentId));
+    if (!rows.ok) return rows;
+    const hasMore = rows.data.length > limit;
+    return ok({ messages: hasMore ? rows.data.slice(1) : rows.data, hasMore });
   }
 
   /** Newest `limit` rows before the cursor, oldest first. A thread that does not exist reads as empty. */

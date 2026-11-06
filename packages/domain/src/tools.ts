@@ -6,6 +6,7 @@
 // platform-facing tool-name registry.
 
 import type { TradingToolContext, ToolCategory, AgentTool as TradingContractAgentTool } from './trading/tool-contract.js';
+import type { ThreadReader } from './conversations/thread-reader.js';
 
 /**
  * Full platform tool execution context. Extends the trading-clean
@@ -43,6 +44,8 @@ export interface ToolContext extends TradingToolContext {
     notifyActorConfigUpdate(newConfig: import('./config/schema.js').UnifiedAgentConfig | null): Promise<void>;
     getLlmTickCount(): number;
   };
+  /** Read-only view of the agent's own user thread for get_thread and get_message (absent when no conversation store is configured). */
+  threadReader?: ThreadReader;
   /** External skill provider for search/browse (optional — absent when external skills are disabled) */
   externalSkillProvider?: import('./ports/external-skill-provider.js').ExternalSkillProvider;
   /** External skill installer used by add_skills (optional — absent means the `npx skills` CLI). */
@@ -137,6 +140,8 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_funding_rates',
   'get_market_overview',
   'get_memory',
+  'get_message',
+  'get_thread',
   'get_price',
   'get_risk_limits',
   'get_schema',
@@ -226,6 +231,8 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
   list_skills:         { category: 'read-database',       description: 'List skills assigned to this agent and skills available to add.' },
+  get_thread:          { category: 'read-database',       description: 'Read earlier messages of your conversation with your user, oldest first. Pass before (a message id) to read older ones. Returns history: do not re-run an old request unless it is still pending.' },
+  get_message:         { category: 'read-database',       description: 'Read one message of your conversation with your user by its id (8 characters or full). Returns the full text of a message that was cut short.' },
   list_providers:      { category: 'read-database',       description: 'List connection providers and show which are owned or granted to this agent.' },
   search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the system skills/platform catalog and the external skill registry.' },
   read_agent_document: { category: 'read-database',       description: 'Read the text of a document the user sent in chat, by the document id from the "User sent document" message. Returns up to 100,000 characters per call; continue with the returned nextOffset.' },

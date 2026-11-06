@@ -147,3 +147,23 @@ describe('publish_artifact', () => {
     expect(ctx.publishToInbound).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('send_message message id', () => {
+  it('publishes a worker-generated message id in the payload and returns its short form', async () => {
+    const publishToInbound = vi.fn(async (_type: string, _payload: Record<string, unknown>) => undefined);
+    const result = await sendMessageTool.execute({ body: 'hello' }, makeCtx({ publishToInbound }));
+
+    const payload = publishToInbound.mock.calls[0]![1] as { messageId: string };
+    expect(payload.messageId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(result).toMatchObject({ success: true, data: { ok: true, messageId: payload.messageId.slice(0, 8) } });
+  });
+
+  it('does not accept a model-supplied message id', async () => {
+    const publishToInbound = vi.fn(async (_type: string, _payload: Record<string, unknown>) => undefined);
+    await sendMessageTool.execute({ body: 'hello', messageId: '11111111-1111-4111-8111-111111111111' }, makeCtx({ publishToInbound }));
+
+    const payload = publishToInbound.mock.calls[0]![1] as { messageId: string };
+    expect(payload.messageId).not.toBe('11111111-1111-4111-8111-111111111111');
+  });
+});
+

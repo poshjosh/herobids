@@ -131,6 +131,47 @@ describe.skipIf(!BASE_URL)('ConversationRepository (integration)', () => {
     });
   });
 
+  describe('thread reads by message ref', () => {
+    const FULL_A = 'a3f9c1d2-0000-4000-8000-000000000001';
+    const FULL_B = 'a3f9c1d2-0000-4000-8000-000000000002';
+    const CONVERSATION = 'user_agent:agent-1';
+
+    it('finds a message by its exact full id and by its 8-character prefix, within the owner\'s thread', async () => {
+      await user('agent-1', 'first', FULL_A);
+
+      const byFull = await repo.findThreadMessageByRef({ conversationId: CONVERSATION, ownerUserId: 'user-1', ref: FULL_A });
+      const byShort = await repo.findThreadMessageByRef({ conversationId: CONVERSATION, ownerUserId: 'user-1', ref: 'a3f9c1d2' });
+
+      expect(byFull).toMatchObject({ ok: true, data: [{ id: FULL_A, body: 'first' }] });
+      expect(byShort).toMatchObject({ ok: true, data: [{ id: FULL_A }] });
+    });
+
+    it('returns two rows when a short prefix matches two messages, so the caller can report ambiguity', async () => {
+      await user('agent-1', 'one', FULL_A);
+      await user('agent-1', 'two', FULL_B);
+
+      const result = await repo.findThreadMessageByRef({ conversationId: CONVERSATION, ownerUserId: 'user-1', ref: 'a3f9c1d2' });
+
+      expect(result.ok && result.data.map((m) => m.id).sort()).toEqual([FULL_A, FULL_B]);
+    });
+
+    it('does not read another owner\'s thread, even with the right id', async () => {
+      await user('agent-1', 'private', FULL_A);
+
+      const result = await repo.findThreadMessageByRef({ conversationId: CONVERSATION, ownerUserId: 'user-2', ref: FULL_A });
+
+      expect(result).toEqual({ ok: true, data: [] });
+    });
+
+    it('treats LIKE wildcards in a ref as plain text, so a wildcard never matches a message', async () => {
+      await user('agent-1', 'hello', FULL_A);
+
+      const result = await repo.findThreadMessageByRef({ conversationId: CONVERSATION, ownerUserId: 'user-1', ref: '%' });
+
+      expect(result).toEqual({ ok: true, data: [] });
+    });
+  });
+
   describe('recordUserAgentMessage', () => {
     it('creates the conversation with the owner and the agent as participants on the first message', async () => {
       const result = await user('agent-1', 'hello');

@@ -1,11 +1,14 @@
 import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, SkillDefinition } from '@herobids/domain';
 import type { RegimeResult } from '@poshjosh/contracts';
-import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, JOB_CHANGE_GUIDANCE, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, JOB_CHANGE_GUIDANCE, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES, shortMessageId } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines, formatInterval } from './prompt-timing-context.js';
 import type { HybridPricingIdentity, PositionIndicatorUpdate, SwapExecutionIdentity, SymbolFetchOutcome, WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from '@poshjosh/contracts';
 import type { CoverageEvaluationResult } from './position-coverage.js';
+import { isAwaitingEntry, truncateHeadTail, type ConversationWindowEntry } from './conversation-window.js';
+import { parseDocumentNoticeText } from '@herobids/documents/agent-document-notice';
+import { isUserMessageType } from './tick-gate-state.js';
 import { fmtUsd } from './fmt.js';
 import type { ReminderRecord } from './reminders/reminder-record.js';
 
@@ -415,12 +418,39 @@ export interface EconomicEventView {
   sources: string[];
 }
 
+/** Longest reminder message shown in a list or an event line; the full text is in the "now due" block and `list_reminders`. */
+const REMINDER_LIST_MESSAGE_MAX_CHARS = 120;
+
+/** A reminder message on one line, cut on a word boundary with an ellipsis when it is longer than `maxChars`. */
+export function summarizeReminderMessage(message: string, maxChars = REMINDER_LIST_MESSAGE_MAX_CHARS): { text: string; cut: boolean } {
+  const oneLine = message.replace(/\s+/g, ' ').trim();
+  if (oneLine.length <= maxChars) return { text: oneLine, cut: false };
+  let end = maxChars;
+  const lastSpace = oneLine.lastIndexOf(' ', maxChars);
+  if (lastSpace >= maxChars * 0.6) end = lastSpace;
+  const lastUnit = oneLine.charCodeAt(end - 1);
+  if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) end -= 1;
+  return { text: `${oneLine.slice(0, end).trimEnd()}…`, cut: true };
+}
+
 export type ActivityTimelineEvent =
   | { kind: 'USER'; text: string; timestamp: number }
   /** A message written by another agent of the same user (A2A MVP). Never counted as the user's. */
   | { kind: 'PEER'; fromAgentId: string; fromAgentName: string; text: string; timestamp: number }
-  | { kind: 'MEMORY'; key: string; value: string; timestamp: number }
+  /** A memory write. Only the key is shown in the prompt; the agent reads the value from its memory. */
+  | { kind: 'MEMORY'; action: 'set' | 'delete'; key: string; timestamp: number }
   | { kind: 'DECISION'; text: string; timestamp: number };
+
+/**
+ * Adds a memory write to the timeline. An earlier write to the same key is dropped, so repeated writes to one key take
+ * one slot and the timeline keeps room for other events.
+ */
+export function pushMemoryTimelineEvent(
+  timeline: ActivityTimelineEvent[],
+  event: Extract<ActivityTimelineEvent, { kind: 'MEMORY' }>,
+): ActivityTimelineEvent[] {
+  return [...timeline.filter((existing) => !(existing.kind === 'MEMORY' && existing.key === event.key)), event];
+}
 
 export interface RuntimeSessionMetrics {
   decisionsSubmitted: number;
@@ -459,8 +489,12 @@ export interface RuntimeSessionMetrics {
   agentMemory: Record<string, { value: unknown; updatedAt?: string }> | null;
   /** Queued wake signals received between ticks. Drained at tick start. */
   queuedWakeSignals: RuntimeQueuedWakeSignal[];
-  /** Chronological activity timeline interleaving user messages, memory writes, and decisions. */
+  /** Chronological activity timeline interleaving peer messages, memory writes, and decisions. */
   activityTimeline: ActivityTimelineEvent[];
+  /** The Conversation window: user and agent messages, oldest first. Own buffer, separate from `activityTimeline`. */
+  conversationWindow: ConversationWindowEntry[];
+  /** True once an entry has been dropped from `conversationWindow` (or hydration found older rows than it holds). */
+  hasEarlierMessages: boolean;
   /** Position coverage evaluation from structured watch metadata (purpose, instrument, coverage links). */
   positionCoverage: CoverageEvaluationResult | null;
   /** Pending market-monitor context-only events (no agent.wake). Accumulated between ticks. */
@@ -515,6 +549,7 @@ export interface PromptEnrichmentPolicy {
   queuedSignals: { enabled: boolean; max: number };
   wakeEmphasis: { enabled: boolean };
   activityTimeline: { enabled: boolean; maxEvents: number };
+  conversation: { enabled: boolean; maxMessages: number; olderMessageMaxChars: number };
 }
 
 export interface RuntimeContextProvider {
@@ -953,36 +988,36 @@ function computePerformanceSummary(state: RuntimeCompositionState): string {
   const elapsedHours = Math.max(0, (Date.now() - state.sessionStartMs) / 3_600_000);
   const llmCost = state.metrics.sessionCosts.llmCostUsd;
   const serverCost = elapsedHours * state.metrics.sessionCosts.estimatedServerCostUsdPerHour;
-  const netPnlUsd = state.metrics.performance.netPnlUsd
-    ?? ((state.metrics.portfolio.realizedPnlUsd ?? 0) + (state.metrics.portfolio.unrealizedPnlUsd ?? 0));
-  const netAfterCosts = netPnlUsd - llmCost - serverCost;
-  const winRate = state.metrics.performance.winRate;
-  const startingCapital = state.metrics.performance.startingCapitalUsd;
-  const pnlReturnPct = startingCapital && startingCapital > 0 ? (netPnlUsd / startingCapital) * 100 : null;
-  const riskAdjustedReturn = state.metrics.performance.riskAdjustedReturn
-    ?? (pnlReturnPct !== null && elapsedHours > 0 ? pnlReturnPct / Math.sqrt(elapsedHours) : null);
-  const drawdownPct = state.metrics.performance.drawdownPct ?? state.metrics.portfolio.drawdownPct;
-
-  const pnlScore = pnlReturnPct === null ? 0.5 : Math.max(0, Math.min(1, (pnlReturnPct + 5) / 10));
-  const winRateScore = winRate === null ? 0.5 : Math.max(0, Math.min(1, winRate / 100));
-  const riskAdjustedScore = riskAdjustedReturn === null ? 0.5 : Math.max(0, Math.min(1, (riskAdjustedReturn + 1) / 3));
-  const drawdownScore = drawdownPct === null ? 0.5 : Math.max(0, Math.min(1, 1 - Math.abs(drawdownPct) / 10));
-  const weightedScore = (pnlScore * 0.4) + (winRateScore * 0.2) + (riskAdjustedScore * 0.2) + (drawdownScore * 0.2);
-  const performanceScore = Math.max(1, Math.min(10, Math.round(weightedScore * 10)));
   const durationMinutes = Math.round((Date.now() - state.sessionStartMs) / 60_000);
   const durationLabel = durationMinutes >= 60
     ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`
     : `${durationMinutes}m`;
-
-  return [
+  const lines = [
     '## Performance Summary',
-    `Net P&L (after estimated costs): ${formatCurrency(netAfterCosts)}`,
     `LLM cost this session: ${formatCurrency(llmCost)}`,
     `Estimated server cost: ${formatCurrency(serverCost)}`,
-    `Win rate: ${winRate === null ? 'unavailable' : `${winRate.toFixed(0)}%`}`,
     `Session duration: ${durationLabel}`,
-    `Performance score: ${performanceScore}/10`,
-  ].join('\n');
+  ];
+
+  // Same gate as the other trading context providers: the trading family is ready or granted.
+  // Trading metrics only make sense for an agent that trades; other agents would see meaningless zeros.
+  const tradingFamilyAvailable = Boolean(
+    state.runtimeDescriptor.readinessByFamily['trading'] || state.runtimeDescriptor.grantedConnectionsByFamily['trading'],
+  );
+  if (tradingFamilyAvailable) {
+    const netPnlUsd = state.metrics.performance.netPnlUsd
+      ?? ((state.metrics.portfolio.realizedPnlUsd ?? 0) + (state.metrics.portfolio.unrealizedPnlUsd ?? 0));
+    const netAfterCosts = netPnlUsd - llmCost - serverCost;
+    const winRate = state.metrics.performance.winRate;
+    const drawdownPct = state.metrics.performance.drawdownPct ?? state.metrics.portfolio.drawdownPct;
+    lines.push(
+      `Net P&L (after estimated costs): ${formatCurrency(netAfterCosts)}`,
+      `Win rate: ${winRate === null ? 'unavailable' : `${winRate.toFixed(0)}%`}`,
+      `Drawdown: ${drawdownPct === null ? 'unavailable' : `${Math.abs(drawdownPct).toFixed(1)}%`}`,
+    );
+  }
+
+  return lines.join('\n');
 }
 
 /**
@@ -1163,13 +1198,12 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     preserveWhenTrimmed: true,
     build: (state) => {
       const readinessLines = Object.entries(state.runtimeDescriptor.readinessByFamily);
+      if (readinessLines.length === 0) return null;
       return {
         id: 'readinessSummary',
         title: 'Capability Readiness',
         provider: 'readiness-summary',
-        content: readinessLines.length === 0
-          ? 'No capability families are configured yet.'
-          : readinessLines.map(([family, readiness]) => renderReadinessLine(family, readiness)).join('\n'),
+        content: readinessLines.map(([family, readiness]) => renderReadinessLine(family, readiness)).join('\n'),
       };
     },
   },
@@ -1229,12 +1263,15 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         return null;
       }
 
+      let anyShortened = false;
       const lines = reminders.map((r) => {
         const parts: string[] = [];
         if (r.key !== undefined) {
           parts.push(`[${r.key}]`);
         }
-        parts.push(r.message);
+        const message = summarizeReminderMessage(r.message);
+        anyShortened ||= message.cut;
+        parts.push(message.text);
         const suffix: string[] = [];
         if (r.repeatEveryMs !== undefined) {
           suffix.push(`repeats every ${formatInterval(r.repeatEveryMs)}`);
@@ -1249,6 +1286,9 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       const hidden = state.metrics.scheduledRemindersTotal - reminders.length;
       if (hidden > 0) {
         lines.push(`…and ${hidden} more (use list_reminders)`);
+      }
+      if (anyShortened) {
+        lines.push('Long messages are shortened here; use list_reminders for the full text.');
       }
 
       return {
@@ -1302,7 +1342,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         const ts = new Date(e.timestamp).toISOString().substring(11, 16); // HH:MM
         if (e.kind === 'USER') return `${ts} [USER] ${e.text}`;
         if (e.kind === 'PEER') return formatPeerLine(e);
-        if (e.kind === 'MEMORY') return `${ts} [MEMORY] ${e.key}: ${e.value}`;
+        if (e.kind === 'MEMORY') return `${ts} [MEMORY] ${e.action} ${e.key}`;
         /* DECISION */ return `${ts} [DECISION] ${e.text}`;
       });
 
@@ -1709,14 +1749,15 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     requiredFamilies: [],
     trimOrder: 5,
     preserveWhenTrimmed: false,
-    build: (state) => ({
-      id: 'recentEvents',
-      title: 'Recent Events',
-      provider: 'recent-events',
-      content: state.metrics.recentEvents.length === 0
-        ? 'No recent platform events.'
-        : state.metrics.recentEvents.map((event) => `${event.createdAt}: ${event.summary}`).join('\n'),
-    }),
+    build: (state) => {
+      if (state.metrics.recentEvents.length === 0) return null;
+      return {
+        id: 'recentEvents',
+        title: 'Recent Events',
+        provider: 'recent-events',
+        content: state.metrics.recentEvents.map((event) => `${event.createdAt}: ${event.summary}`).join('\n'),
+      };
+    },
   },
   {
     id: 'managed-bots',
@@ -1851,6 +1892,8 @@ export function createRuntimeCompositionState(
       agentMemory: null,
       queuedWakeSignals: [],
       activityTimeline: [],
+      conversationWindow: [],
+      hasEarlierMessages: false,
       positionCoverage: null,
       pendingMarketContext: [],
       macroEvents: null,
@@ -2228,7 +2271,8 @@ export function applyRuntimeMessage(
       state.metrics.currentReminder = toRuntimeReminderContext(wakeId, requestedAt, ctx);
       state.metrics.currentMarketWake = null;
       const summary = `Reminder: ${ctx.message}`;
-      pushRecentEvent(state, type, summary);
+      // The full text is in the reminder block; the event line only names the reminder.
+      pushRecentEvent(state, type, `Reminder fired: ${ctx.key ?? summarizeReminderMessage(ctx.message).text}`);
       return summary;
     }
 
@@ -2444,7 +2488,8 @@ export function applyRuntimeMessage(
   }
 
   const summary = `Platform message: ${type}`;
-  pushRecentEvent(state, type, summary);
+  // A user message has no content here and the Conversation section shows it; it would only crowd out real events.
+  if (!isUserMessageType(type)) pushRecentEvent(state, type, summary);
   return summary;
 }
 
@@ -2594,38 +2639,83 @@ const CHECK_IN_AND_QUESTION_GUIDANCE = [
   '- Do not ask for information you can find with your tools.',
 ].join('\n');
 
+/** Stamp for a window header: `HH:MM`, or `MM-DD HH:MM` when the window spans more than one UTC day. */
+function formatConversationStamp(timestamp: number, withDate: boolean): string {
+  const iso = new Date(timestamp).toISOString();
+  return withDate ? `${iso.substring(5, 10)} ${iso.substring(11, 16)}` : iso.substring(11, 16);
+}
+
 /**
- * Build the `## Conversation` section: the boss dialogue split by the `answeredUpToTs` marker
- * into an "awaiting reply" set and an answered-context set. Derived from the USER events already
- * captured in `state.metrics.activityTimeline`. Returns null when there are no user messages.
- *
- * Gated on the same `activityTimeline.enabled` policy the timeline provider uses: USER events are
- * only captured when that enrichment is active, so when it is disabled there is nothing to render
- * and gating keeps the two views consistent.
+ * One window entry as lines: a header, then the body with every continuation line indented, so no body line can
+ * start a header. Older entries are cut to `maxChars` with a pointer to `get_message`.
+ */
+function formatConversationEntry(
+  entry: ConversationWindowEntry,
+  options: { full: boolean; maxChars: number; answeredUpToTs: number | null; withDate: boolean },
+): string[] {
+  const ref = shortMessageId(entry.id);
+  // A document notice is platform text appended to the user's words: show the words, then the attachment on its own line.
+  const notice = entry.kind === 'USER' ? parseDocumentNoticeText(entry.text) : null;
+  const userText = notice ? notice.userText : entry.text;
+  const shown = options.full ? { text: userText, cut: false } : truncateHeadTail(userText, options.maxChars);
+  const text = shown.cut ? `${shown.text} [truncated; get_message #${ref} for full text]` : shown.text;
+  const label = isAwaitingEntry(entry, options.answeredUpToTs) ? ' [awaiting reply]' : '';
+  // Every line break a model or a parser could treat as a line end, so a body cannot start a header.
+  const [firstLine = '', ...restLines] = text.split(/\r\n|[\r\n\u0085\u2028\u2029]/);
+  const stamp = formatConversationStamp(entry.timestamp, options.withDate);
+  const header = `#${ref} ${stamp} [${entry.kind}]${label} ${firstLine}`.trimEnd();
+  const attachment = notice
+    ? [`  attachment: ${notice.filename} (document id ${notice.documentId}; read it with read_agent_document)`]
+    : [];
+  return [header, ...indentBodyLines(restLines), ...attachment];
+}
+
+/** Indents continuation lines two spaces; a blank line stays empty and a run of blank lines becomes one. */
+function indentBodyLines(lines: string[]): string[] {
+  const indented: string[] = [];
+  let previousBlank = false;
+  for (const line of lines) {
+    const blank = line.trim() === '';
+    if (!blank || !previousBlank) indented.push(blank ? '' : `  ${line}`);
+    previousBlank = blank;
+  }
+  while (indented[indented.length - 1] === '') indented.pop();
+  return indented;
+}
+
+/**
+ * Build the `## Conversation` section from `state.metrics.conversationWindow`, plus the PEER block. Returns null when
+ * there is nothing to show. Gated on the `conversation` policy, which is only passed when the prompt style is enriched.
  */
 export function buildConversationSection(state: RuntimeCompositionState, policy?: PromptEnrichmentPolicy): string | null {
-  if (!policy?.activityTimeline.enabled) return null;
+  if (!policy?.conversation.enabled) return null;
 
   const marker = state.metrics.answeredUpToTs;
-  const userEvents = state.metrics.activityTimeline.filter((e): e is Extract<ActivityTimelineEvent, { kind: 'USER' }> => e.kind === 'USER');
+  const entries = state.metrics.conversationWindow;
   const peerEvents = state.metrics.activityTimeline.filter((e): e is Extract<ActivityTimelineEvent, { kind: 'PEER' }> => e.kind === 'PEER');
-  if (userEvents.length === 0 && peerEvents.length === 0) return null;
+  if (entries.length === 0 && peerEvents.length === 0) return null;
 
-  const formatLine = (event: Extract<ActivityTimelineEvent, { kind: 'USER' }>): string => {
-    const ts = new Date(event.timestamp).toISOString().substring(11, 16); // HH:MM
-    return `${ts} [USER] ${event.text}`;
-  };
+  // The latest AGENT message and everything after it render in full. With no AGENT message yet, the newest entry does.
+  const latestAgentIndex = entries.reduce((latest, entry, index) => (entry.kind === 'AGENT' ? index : latest), -1);
+  const fullFromIndex = latestAgentIndex === -1 ? entries.length - 1 : latestAgentIndex;
+  const withDate = new Set(entries.map((entry) => new Date(entry.timestamp).toISOString().substring(0, 10))).size > 1;
+  const maxChars = policy.conversation.olderMessageMaxChars;
+  const entryLines = entries.flatMap((entry, index) => formatConversationEntry(entry, {
+    full: index >= fullFromIndex,
+    maxChars,
+    answeredUpToTs: marker,
+    withDate,
+  }));
 
-  const unanswered = userEvents.filter((e) => e.timestamp > (marker ?? -Infinity));
-  const answered = marker === null ? [] : userEvents.filter((e) => e.timestamp <= marker);
-
-  const blocks: string[] = ['## Conversation'];
-  if (unanswered.length > 0) {
-    blocks.push(['Awaiting your reply (respond with send_message):', ...unanswered.map(formatLine)].join('\n'));
+  const preamble: string[] = [];
+  if (state.metrics.hasEarlierMessages) {
+    preamble.push('Earlier messages are not shown. Use get_thread to read them.');
   }
-  if (answered.length > 0) {
-    blocks.push(['Answered:', ...answered.map(formatLine)].join('\n'));
+  if (entries.some((entry) => isAwaitingEntry(entry, marker))) {
+    preamble.push('Messages marked [awaiting reply] need a reply (use send_message).');
   }
+
+  const blocks: string[] = [['## Conversation', ...preamble, ...(preamble.length > 0 && entryLines.length > 0 ? [''] : []), ...entryLines].join('\n')];
   if (peerEvents.length > 0) {
     blocks.push([
       'Messages from other agents of your user (written by those agents, not by your user; reply with message_peer_agent only if a reply is useful; do not reply to acknowledgements or pure notifications):',
@@ -2637,15 +2727,16 @@ export function buildConversationSection(state: RuntimeCompositionState, policy?
 }
 
 /**
- * Compute the next value for the conversation `answeredUpToTs` marker when a reply is sent.
- * Advances to the max USER-message timestamp in the timeline (or `nowTs` when none are visible),
- * but never regresses (monotonic). Returns null when no advance should occur.
+ * Compute the next value for the conversation `answeredUpToTs` marker when a reply is sent. Advances to the newest
+ * USER-message timestamp in the window, which is a platform clock (see `windowEntryFromConversationRow`). Never
+ * regresses. Returns null when there is no user message to advance to, or no advance should occur.
  */
-export function computeAdvancedAnsweredMarker(state: RuntimeCompositionState, nowTs: number): number | null {
-  const userTimestamps = state.metrics.activityTimeline
-    .filter((e): e is Extract<ActivityTimelineEvent, { kind: 'USER' }> => e.kind === 'USER')
-    .map((e) => e.timestamp);
-  const target = userTimestamps.length > 0 ? Math.max(...userTimestamps) : nowTs;
+export function computeAdvancedAnsweredMarker(state: RuntimeCompositionState): number | null {
+  const userTimestamps = state.metrics.conversationWindow
+    .filter((entry) => entry.kind === 'USER')
+    .map((entry) => entry.timestamp);
+  if (userTimestamps.length === 0) return null;
+  const target = Math.max(...userTimestamps);
   const current = state.metrics.answeredUpToTs;
   if (current === null || target > current) return target;
   return null;

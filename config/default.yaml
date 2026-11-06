@@ -458,6 +458,10 @@ agentRuntime:
     activityTimeline:
       enabled: true
       maxEvents: 10              # max events shown in timeline (oldest → newest)
+    conversation:
+      enabled: true              # Conversation section: user and agent messages, chronological
+      maxMessages: 8             # answered context kept in the window (USER + AGENT)
+      olderMessageMaxChars: 500  # render cap for messages before the latest AGENT message
   failureBackoff:
     backoffThreshold: 3        # consecutive failures before doubling tick interval
     maxFailures: 5             # consecutive failures before agent shutdown

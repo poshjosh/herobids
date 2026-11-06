@@ -14,7 +14,8 @@ import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
-import { createDatabase, AgentRepository, skills, skillRevisions, agentSkills, agentConnections, connections } from '@herobids/db';
+import { createDatabase, AgentRepository, ConversationRepository, skills, skillRevisions, agentSkills, agentConnections, connections } from '@herobids/db';
+import { ConversationService, MessagingConversationsSchema, isFullMessageId } from '@herobids/domain';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel, RegimeParams } from '@herobids/domain';
@@ -52,8 +53,10 @@ import {
   computeMarketEventDigest,
   bufferWakeEnvelope,
   drainNewestWakeIntoMarketWake,
+  pushMemoryTimelineEvent,
   recordRuntimeEvent,
   takeConnectionWakes,
+  type ActivityTimelineEvent,
   type RuntimeActiveWatch,
   type RuntimeActiveWatchSummary,
   type RuntimeCompositionState,
@@ -74,6 +77,8 @@ import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailur
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState, isUserMessageType, timelineEventForUserMessage } from './tick-gate-state.js';
+import { sentMessageRefFromToolResult, trimConversationWindow, userMessageQueuedAt, windowEntryFromConversationRow, type ConversationWindowEntry } from './conversation-window.js';
+import { createThreadReader } from './conversation-thread-reader.js';
 import { resolveReplyDelivery } from './fallback-reply.js';
 import { createPauseStateTracker, HeldMessageQueue, PAUSED_TICK_GATE, PAUSED_TICK_REASON, resolvePausedTickDelay, resolvePausedWakeAction, runPauseGatedTick } from './runtime-pause.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
@@ -885,6 +890,20 @@ const WAKE_SIGNAL_POLL_MS = agentRuntimePolicy.wake.pollMs;
 const DATABASE_URL = process.env['DATABASE_URL'];
 const db = DATABASE_URL ? createDatabase(DATABASE_URL) : null;
 const agentRepo = db ? new AgentRepository(db) : null;
+// The Conversation store: hydrates the window after a restart and backs get_thread / get_message. Reads use the schema
+// defaults, which match config/default.yaml; the owner is bound here, so no tool can read another user's thread.
+const conversationService = db && agentConfig.userId
+  ? new ConversationService({
+    store: new ConversationRepository(db),
+    limits: MessagingConversationsSchema.parse({}),
+    newId: () => crypto.randomUUID(),
+    now: () => new Date(),
+  })
+  : null;
+const conversationReader = conversationService && agentConfig.userId
+  ? createThreadReader({ service: conversationService, ownerUserId: agentConfig.userId, agentId: AGENT_ID! })
+  : undefined;
+let conversationWindowHydrated = false;
 if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
   for (const tool of DATABASE_DEPENDENT_TOOLS) {
@@ -1395,6 +1414,79 @@ async function refreshVenueIntelligence(): Promise<void> {
 
   recordVenueSignals(runtimeState, signals);
   logMarketDataTelemetry();
+}
+
+// ── Conversation window ──────────────────────────────────────────────
+function conversationWindowEnabled(): boolean {
+  return agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.conversation.enabled;
+}
+
+/** Adds an entry to the Conversation window, trims it to the policy, and skips an id the window already holds. */
+function appendConversationEntry(entry: ConversationWindowEntry): void {
+  const metrics = runtimeState.metrics;
+  // A hydrated window can already hold the message this tick captured from the stream.
+  if (metrics.conversationWindow.some((existing) => existing.id === entry.id)) return;
+  metrics.conversationWindow.push(entry);
+  const trimmed = trimConversationWindow(
+    metrics.conversationWindow,
+    metrics.answeredUpToTs,
+    agentRuntimePolicy.promptEnrichment.conversation.maxMessages,
+  );
+  metrics.conversationWindow = trimmed.entries;
+  if (trimmed.evicted) metrics.hasEarlierMessages = true;
+}
+
+function pushAgentConversationEntry(id: string, body: string): void {
+  if (!conversationWindowEnabled()) return;
+  appendConversationEntry({ id, kind: 'AGENT', text: body, timestamp: Date.now() });
+}
+
+/**
+ * When a user message became deliverable, from the envelope's `queuedAt` (the platform clock). Falls back to the worker
+ * clock only for a message published before the envelope carried it.
+ */
+function userMessageCaptureTime(message: Record<string, unknown>): number {
+  const queuedAt = userMessageQueuedAt(message);
+  if (queuedAt !== null) return queuedAt;
+  logger.warn({ type: message['type'] }, 'User message has no queuedAt; the window uses the worker clock');
+  return Date.now();
+}
+
+/** The window id of a user message: the stored row id the envelope carries, so the window and the store agree. */
+function userMessageWindowId(message: Record<string, unknown>): string {
+  const envelopeId = message['messageId'];
+  if (typeof envelopeId === 'string' && isFullMessageId(envelopeId)) return envelopeId;
+  logger.warn({ type: message['type'] }, 'User message has no stored id; the window uses a generated one');
+  return crypto.randomUUID();
+}
+
+/**
+ * Loads the window from the conversation store once per process, so a restart keeps the context. Reads one row more
+ * than the window holds, to know whether older messages exist. Fail-soft: on error the window starts empty.
+ */
+async function hydrateConversationWindow(): Promise<void> {
+  if (!conversationService || !agentConfig.userId) return;
+  const maxMessages = agentRuntimePolicy.promptEnrichment.conversation.maxMessages;
+  try {
+    const page = await conversationService.listThread({
+      ownerUserId: agentConfig.userId,
+      agentId: AGENT_ID!,
+      limit: maxMessages + 1,
+    });
+    if (!page.ok) {
+      logger.warn({ code: page.error.code }, 'Failed to hydrate the conversation window; starting empty');
+      return;
+    }
+    const hasEarlierMessages = page.data.length > maxMessages;
+    const visibleRows = hasEarlierMessages ? page.data.slice(1) : page.data;
+    runtimeState.metrics.conversationWindow = visibleRows.flatMap((row) => {
+      const entry = windowEntryFromConversationRow(row, AGENT_ID!);
+      return entry ? [entry] : [];
+    });
+    runtimeState.metrics.hasEarlierMessages = hasEarlierMessages;
+  } catch (err) {
+    logger.warn({ err }, 'Failed to hydrate the conversation window; starting empty');
+  }
 }
 
 async function publishToInbound(type: string, payload: Record<string, unknown>): Promise<void> {
@@ -1919,6 +2011,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     externalBackend: externalBackendRead,
     externalBackendWrite,
     agentPlatform: agentPlatformClient,
+    threadReader: conversationReader,
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),
@@ -2855,10 +2948,10 @@ async function runActiveTick(): Promise<void> {
     }
 
     // ── Conversation state: hydrate the answered-up-to marker ─────────────
-    // Gated on the same activityTimeline enrichment the Conversation section reuses.
+    // Gated on the conversation enrichment the Conversation section reads.
     // Warn-and-continue: a hydrate failure must not crash the tick — the marker
     // simply stays null (worst case is one duplicate reply, per the plan's risk note).
-    if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
+    if (conversationWindowEnabled()) {
       const conversationAnsweredKey = `agent:conversation:answered_at:${AGENT_ID}`;
       try {
         const raw = await redis.get(conversationAnsweredKey);
@@ -2873,15 +2966,26 @@ async function runActiveTick(): Promise<void> {
       }
     }
 
-    // ── Activity timeline: capture user messages ──────────────────────────
-    if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
+    // ── Conversation window: hydrate once per process, then capture user messages ──
+    if (conversationWindowEnabled() && !conversationWindowHydrated) {
+      conversationWindowHydrated = true;
+      await hydrateConversationWindow();
+    }
+
+    // The user.message envelope carries its text at payload.message (not a top-level `content`); empty messages are skipped.
+    // A user's message goes to the Conversation window. A message written by another agent is a PEER entry, which stays
+    // in the activity timeline, so it is never shown, or counted as answered, as the user's.
+    if (agentRuntimePolicy.promptStyle === 'enriched') {
       const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
       for (const message of incomingMessages) {
-        if (isUserMessageType(message['type'])) {
-          // The user.message envelope carries its text at payload.message (not a top-level `content`); empty messages are skipped.
-          // A message written by another agent is tagged as a peer's, so it is never shown as the user's.
-          const event = timelineEventForUserMessage(message, Date.now());
-          if (event) runtimeState.metrics.activityTimeline.push(event);
+        if (!isUserMessageType(message['type'])) continue;
+        const event = timelineEventForUserMessage(message, Date.now());
+        if (!event) continue;
+        if (event.kind === 'USER' && conversationWindowEnabled()) {
+          appendConversationEntry({ id: userMessageWindowId(message), kind: 'USER', text: event.text, timestamp: userMessageCaptureTime(message) });
+        } else if (agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
+          // PEER always lands here. A USER message lands here only when the window is off, so it still reaches the prompt.
+          runtimeState.metrics.activityTimeline.push(event);
         }
       }
       while (runtimeState.metrics.activityTimeline.length > maxEvents) {
@@ -4123,13 +4227,14 @@ async function runActiveTick(): Promise<void> {
     });
 
     let judgeSentReply = false;
+    // The DECISION entry this tick pushed, kept so a plain-text reply delivered afterwards can take it back out.
+    const judgeDecision: { event: ActivityTimelineEvent | null } = { event: null };
     // Advances the answered-up-to marker after a successful reply. Monotonic: never regresses.
     const advanceAnsweredMarker = (): void => {
-      if (!(agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled)) return;
-      // The target is the max USER-message timestamp in the timeline; if none are
-      // visible, fall back to Date.now() so a reply with no pending message
-      // still moves the marker forward harmlessly.
-      const nextMarker = computeAdvancedAnsweredMarker(runtimeState, Date.now());
+      if (!conversationWindowEnabled()) return;
+      // The target is the newest USER-message timestamp in the window. With none
+      // visible there is nothing to advance to, so the marker stays where it is.
+      const nextMarker = computeAdvancedAnsweredMarker(runtimeState);
       if (nextMarker === null) return;
       runtimeState.metrics.answeredUpToTs = nextMarker;
       // Persist asynchronously; a write failure must not fail the tick —
@@ -4203,13 +4308,16 @@ async function runActiveTick(): Promise<void> {
               judgeResponseHistory.shift();
             }
             // ── Activity timeline: capture judge decisions ─────────────────
-            if (agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
+            // A tick that already sent the user a message has said it in the Conversation section; its closing text
+            // would repeat that message, cut short.
+            if (agentRuntimePolicy.promptEnrichment.activityTimeline.enabled && !judgeSentReply) {
               const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
               // Truncate to a brief summary — first 200 chars
               const summary = assistantResponse.length > 200
                 ? assistantResponse.slice(0, 200) + '…'
                 : assistantResponse;
-              runtimeState.metrics.activityTimeline.push({ kind: 'DECISION', text: summary, timestamp: Date.now() });
+              judgeDecision.event = { kind: 'DECISION', text: summary, timestamp: Date.now() };
+              runtimeState.metrics.activityTimeline.push(judgeDecision.event);
               while (runtimeState.metrics.activityTimeline.length > maxEvents) {
                 runtimeState.metrics.activityTimeline.shift();
               }
@@ -4234,12 +4342,12 @@ async function runActiveTick(): Promise<void> {
           ) {
             const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
             const key = typeof toolCall.args['key'] === 'string' ? toolCall.args['key'] : 'unknown';
-            const value = toolCall.name === 'delete_memory'
-              ? '(deleted)'
-              : typeof toolCall.args['value'] === 'string'
-                ? toolCall.args['value'].slice(0, 100)
-                : JSON.stringify(toolCall.args['value'] ?? '').slice(0, 100);
-            runtimeState.metrics.activityTimeline.push({ kind: 'MEMORY', key, value, timestamp: Date.now() });
+            runtimeState.metrics.activityTimeline = pushMemoryTimelineEvent(runtimeState.metrics.activityTimeline, {
+              kind: 'MEMORY',
+              action: toolCall.name === 'delete_memory' ? 'delete' : 'set',
+              key,
+              timestamp: Date.now(),
+            });
             while (runtimeState.metrics.activityTimeline.length > maxEvents) {
               runtimeState.metrics.activityTimeline.shift();
             }
@@ -4247,6 +4355,11 @@ async function runActiveTick(): Promise<void> {
           if (toolCall.name === 'send_message' && !toolResultIndicatesFailure(toolResult)) {
             judgeSentReply = true;
             if (activeTick) activeTick.replied = true;
+            // The agent's own message joins the Conversation window; the result carries its short ref.
+            const sentRef = sentMessageRefFromToolResult(toolResult);
+            if (sentRef && typeof toolCall.args['body'] === 'string') {
+              pushAgentConversationEntry(sentRef, toolCall.args['body']);
+            }
             // Conversation state: a successful send_message marks all user messages up to
             // this tick as answered (coarse single-marker; see plan "Conversation state").
             advanceAnsweredMarker();
@@ -4279,7 +4392,9 @@ async function runActiveTick(): Promise<void> {
       let deliveredCount = 0;
       for (const body of delivery.bodies) {
         try {
-          await publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, { body });
+          const messageId = crypto.randomUUID();
+          await publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, { body, messageId });
+          pushAgentConversationEntry(messageId, body);
           deliveredCount += 1;
         } catch (err: unknown) {
           logger.warn({ err, agentId: AGENT_ID, tickId }, 'Failed to deliver fallback reply');
@@ -4288,6 +4403,11 @@ async function runActiveTick(): Promise<void> {
       if (deliveredCount > 0) {
         judgeSentReply = true;
         if (activeTick) activeTick.replied = true;
+        // The reply is now in the Conversation section; its DECISION entry would repeat it.
+        if (judgeDecision.event) {
+          const delivered = judgeDecision.event;
+          runtimeState.metrics.activityTimeline = runtimeState.metrics.activityTimeline.filter((event) => event !== delivered);
+        }
         advanceAnsweredMarker();
         logger.info({
           agentId: AGENT_ID,

@@ -553,6 +553,8 @@ export class AgentMessageBroker {
       throw new Error('conversation_store_not_configured');
     }
     const recorded = await this.conversations.recordAgentMessage({
+      // The worker's id, so the stored row matches the Conversation window; a broker redelivery reuses the row.
+      ...(payload.messageId ? { id: payload.messageId } : {}),
       ownerUserId: agent.userId,
       agentId: agent.id,
       channel: 'web',

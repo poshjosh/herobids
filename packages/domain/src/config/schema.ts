@@ -1474,6 +1474,14 @@ export const AgentRuntimeConfigSchema = z.object({
       enabled: z.boolean().default(true),
       maxEvents: z.number().int().min(3).max(30).default(10),
     }).default({}),
+    /** The Conversation section: a dedicated USER + AGENT message window, separate from the activity timeline. */
+    conversation: z.object({
+      enabled: z.boolean().default(true),
+      /** Answered context kept in the window (USER + AGENT messages). */
+      maxMessages: z.number().int().min(2).max(30).default(8),
+      /** Render cap for messages before the latest AGENT message. */
+      olderMessageMaxChars: z.number().int().min(100).max(2000).default(500),
+    }).default({}),
   }).default({}),
   contextDiff: z.object({
     fullContextEveryTicks: z.number().int().min(1).default(10),

@@ -331,4 +331,18 @@ describe('bubbleAuthor', () => {
     expect(bubbleAuthor({ senderType: 'agent', senderId: 'other' }, 'agent-1')).toBe('parent');
     expect(bubbleAuthor({ senderType: 'platform', senderId: null }, 'agent-1')).toBe('platform');
   });
+
+  it('shows the attached document name in dark text on the light composer', () => {
+    const html = render({ attachment: new File(['notes'], 'brief.txt', { type: 'text/plain' }) });
+
+    const chip = /<div style="([^"]*)"><span[^>]*>brief\.txt<\/span>/.exec(html);
+    expect(chip?.[1]).toContain('color:var(--brand-primary)');
+    expect(html).toContain('Remove document');
+  });
+
+  it('puts the delivery tick beside the message time, in the same row, not below it', () => {
+    const html = render({ messages: [{ ...userMessage, deliveryStatus: 'sent', receivedByAgent: true }], onRetryMessage: vi.fn() });
+
+    expect(html).toMatch(/<div style="[^"]*"><time[^>]*>[^<]*<\/time><span[^>]*role="img"[^>]*>✓✓<\/span><\/div>/);
+  });
 });

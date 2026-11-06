@@ -46,6 +46,7 @@ export const CONVERSATION_ERROR_CODES = {
   ownerMismatch: 'conversation.owner_mismatch',
   messageIdConflict: 'conversation.message_id_conflict',
   messageNotFound: 'conversation.message_not_found',
+  ambiguousMessageRef: 'conversation.ambiguous_message_ref',
   storeFailed: 'conversation.store_failed',
 } as const;
 

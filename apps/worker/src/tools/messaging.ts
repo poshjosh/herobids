@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, shortMessageId } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 // --- send_message ---
@@ -24,14 +25,16 @@ const sendMessageTool: AgentTool = {
       return { success: false, error: `Invalid send_message parameters: ${parsed.error.message}`, fault: false };
     }
     const { body, subject, messageClass, contextRef } = parsed.data;
+    const messageId = randomUUID();
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, {
       body,
       subject,
+      messageId,
       ...(messageClass ? { messageClass } : {}),
       ...(contextRef ? { contextRef } : {}),
     });
 
-    return { success: true, data: { ok: true, note: 'message queued for delivery' } };
+    return { success: true, data: { ok: true, messageId: shortMessageId(messageId), note: 'message queued for delivery' } };
   },
 };
 

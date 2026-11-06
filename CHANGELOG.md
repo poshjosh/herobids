@@ -6,12 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.9 - 2026-11-06
+
 ### Added
 
+- The agent's judge prompt has a Conversation section: the user's and the agent's messages, oldest first, with the latest question shown in full and unanswered messages marked `[awaiting reply]`. A short reply such as `2` now shows the question it answers.
+- Agents can read their own conversation with the `get_thread` and `get_message` tools. Each message has a short id shown in the prompt (`#xxxxxxxx`). Both tools read only the agent's own user thread.
+- `promptEnrichment.conversation` (`enabled`, `maxMessages`, `olderMessageMaxChars`) sets the Conversation section's size.
 - Sent web chat messages show a status tick: one tick when the message is sent, and two ticks once a runtime tick has taken it into the agent's input. Two ticks do not mean the model has read or replied to the message.
 
 ### Changed
 
+- The Performance Summary no longer shows a performance score. Net P&L, win rate and drawdown appear only for agents with a trading connection. Cost and session duration appear for all agents.
+- The user's messages leave the Activity Timeline and appear in the Conversation section. Messages from other agents stay in the Activity Timeline.
+- In the Conversation section, a cut older message keeps its beginning and its end (where a question usually is), cut on word boundaries. Blank lines inside a message render as empty lines. A document sent in chat shows as an `attachment:` line after the user's words.
+- The Capability Readiness section is hidden when no capability family is configured. Recent Events no longer lists user messages, and is hidden when empty. Memory writes in the Activity Timeline show the key only (`set prefs/user`), not a cut-off value. A decision entry is not added when the same tick sent the user a message.
+- A reminder's full text now appears once per tick, in the "now due" block. The scheduled-reminders list shortens each message to about 120 characters and points to `list_reminders`, and Recent Events shows `Reminder fired: <key>` instead of the whole message.
+- A repeat write to the same memory key replaces its earlier Activity Timeline entry, so repeated writes take one slot.
+- The base skill tells agents to ask one question per message, matching the conversation rules in the system prompt.
 - The agent runtime acknowledges an outbound message only after the tick that handles it completes. A message is no longer lost when a read is discarded, a tick fails, or the agent restarts. A failed message is retried. After five failed ticks it is moved to a dead-letter stream (`agent:outbound-dead:<agentId>`).
 - A paused agent holds its user messages in memory until it resumes. A restart while paused replays them.
 - The runtime logs each outbound read. It also logs a re-read when a user message flagged by the wake signal is missing from the tick.

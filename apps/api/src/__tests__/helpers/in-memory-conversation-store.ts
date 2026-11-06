@@ -132,6 +132,15 @@ export class InMemoryConversationStore implements ConversationStore {
     return ok(found ?? null);
   }
 
+  async findThreadMessageByRef(input: Parameters<ConversationStore['findThreadMessageByRef']>[0]) {
+    if (this.failWith) return err({ code: this.failWith, message: 'conversation_store_failed' });
+    if (this.owners.get(input.conversationId) !== input.ownerUserId) return ok([]);
+    const found = this.messages
+      .filter((message) => message.conversationId === input.conversationId && message.id.startsWith(input.ref))
+      .slice(0, 2);
+    return ok(found);
+  }
+
   async listUserAgentThread(input: Parameters<ConversationStore['listUserAgentThread']>[0]) {
     if (this.owners.get(input.conversationId) !== input.ownerUserId) return ok([]);
     const rows = this.messages

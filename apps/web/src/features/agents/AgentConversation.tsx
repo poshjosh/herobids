@@ -271,26 +271,28 @@ export function AgentConversationView({
                     </div>
                   )}
                   <div><Linkify text={message.body} /></div>
-                  <time
-                    dateTime={message.createdAt}
-                    title={intl.formatDate(message.createdAt, { dateStyle: 'full', timeStyle: 'medium' })}
-                    style={{ display: 'block', fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px', textAlign: fromUser ? 'end' : 'start' }}
-                  >
-                    {formatMessageTime(intl, message.createdAt)}
-                  </time>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: fromUser ? 'flex-end' : 'flex-start', gap: '4px', marginTop: '4px' }}>
+                    <time
+                      dateTime={message.createdAt}
+                      title={intl.formatDate(message.createdAt, { dateStyle: 'full', timeStyle: 'medium' })}
+                      style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}
+                    >
+                      {formatMessageTime(intl, message.createdAt)}
+                    </time>
+                    {/* One tick: sent. Two ticks: a runtime tick has taken the message into its input. Beside the time, not below it. */}
+                    {fromUser && message.deliveryStatus === 'sent' && message.receivedByAgent !== undefined && (
+                      <span
+                        role="img"
+                        aria-label={intl.formatMessage({ id: message.receivedByAgent === true ? 'agentDetail.conversation.receivedByAgent' : 'agentDetail.conversation.sentToAgent' })}
+                        style={{ fontSize: '0.75rem', lineHeight: 1, color: message.receivedByAgent === true ? 'var(--color-brand, #2563eb)' : 'var(--color-text-muted)', letterSpacing: '-0.15em' }}
+                      >
+                        {message.receivedByAgent === true ? '✓✓' : '✓'}
+                      </span>
+                    )}
+                  </div>
                   {sending && (
                     <div role="status" style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textAlign: 'end' }}>
                       {intl.formatMessage({ id: 'agentDetail.conversation.sending' })}
-                    </div>
-                  )}
-                  {fromUser && message.deliveryStatus === 'sent' && message.receivedByAgent !== undefined && (
-                    // One tick: sent. Two ticks: a runtime tick has taken the message into its input.
-                    <div
-                      role="img"
-                      aria-label={intl.formatMessage({ id: message.receivedByAgent === true ? 'agentDetail.conversation.receivedByAgent' : 'agentDetail.conversation.sentToAgent' })}
-                      style={{ fontSize: '0.75rem', lineHeight: 1, color: message.receivedByAgent === true ? 'var(--color-brand, #2563eb)' : 'var(--color-text-muted)', textAlign: 'end', letterSpacing: '-0.15em' }}
-                    >
-                      {message.receivedByAgent === true ? '✓✓' : '✓'}
                     </div>
                   )}
                   {notDelivered && (
@@ -373,7 +375,8 @@ export function AgentConversationView({
           }}
         />
         {attachment && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px 0', fontSize: '0.8125rem' }}>
+          // The composer surface is light, so the chip sets its own dark text colour rather than inheriting the theme's light text.
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px 0', fontSize: '0.8125rem', color: 'var(--brand-primary)' }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachment.name}</span>
             <button
               type="button"

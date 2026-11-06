@@ -93,6 +93,13 @@ export interface FindConversationMessageInput {
   senderId: string | null;
 }
 
+export interface FindThreadMessageByRefInput {
+  conversationId: string;
+  ownerUserId: string;
+  /** Lowercase: a full UUID, or an 8-hex short ref. */
+  ref: string;
+}
+
 export interface ListUserAgentThreadInput {
   conversationId: string;
   ownerUserId: string;
@@ -155,6 +162,11 @@ export interface ConversationStore {
   refuseDroppedPeerMessage(input: RefuseDroppedPeerConversationMessageInput): Promise<Result<ConversationMessage | null, ConversationError>>;
   /** The sender's own message by id in the owner's conversation; null when there is none (another sender's or owner's rows are not read). */
   findMessage(input: FindConversationMessageInput): Promise<Result<ConversationMessage | null, ConversationError>>;
+  /**
+   * Up to two messages of the owner's conversation whose id is `ref`: an exact id, or an id that starts with an
+   * 8-hex short ref. Two rows mean the prefix is ambiguous. The caller has already checked the ref's format.
+   */
+  findThreadMessageByRef(input: FindThreadMessageByRefInput): Promise<Result<ConversationMessage[], ConversationError>>;
   /**
    * Newest `limit` rows before the (created_at, id) cursor, in ascending order, in one query. Empty when the owner has
    * no such thread. Reads any conversation by id, so it serves peer threads too.
