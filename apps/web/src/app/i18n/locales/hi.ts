@@ -639,6 +639,8 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',
   'agentDetail.conversation.fromParentAgent': 'पैरेंट एजेंट',
   'agentDetail.conversation.sending': 'भेजा जा रहा है…',
+  'agentDetail.conversation.sentToAgent': 'भेजा गया',
+  'agentDetail.conversation.receivedByAgent': 'एजेंट ने प्राप्त किया',
   'agentDetail.conversation.notSent': 'भेजा नहीं गया',
   'agentDetail.conversation.loadEarlier': 'पुराने संदेश दिखाएँ',
   'agentDetail.conversation.loadError': 'बातचीत लोड नहीं हो सकी।',

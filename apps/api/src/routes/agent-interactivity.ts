@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { requireDirectChildOfActingAgent, requireUserCaller } from '../plugins/auth.js';
 import { consumeTokenBucketToken } from '../services/token-bucket.js';
+import { userMessageReceiptState } from '../services/user-message-receipt.js';
 import { eq, and, asc, isNull } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, chatAddresses, agentSkills, recordAgentAuditEvent, resolveSkillAssignmentsForUser, setChatAddress, syncAgentSkillAssignmentsInTx, isChatAddressClaimedByOtherUser, clearChatSuppression, users } from '@herobids/db';
@@ -666,8 +667,20 @@ export async function agentInteractivityRoutes(
       return reply.status(failure.status).send(failure.body);
     }
     const oldest = thread.data[0];
+    // Whether the agent's runtime has read each sent user message. A failed lookup leaves the state unknown (null).
+    const receipts = await userMessageReceiptState(
+      db,
+      id,
+      thread.data.filter((message) => message.senderType === 'user' && message.deliveryStatus === 'sent'),
+    ).catch((err: unknown) => {
+      request.log.warn({ err }, 'user message receipt lookup failed');
+      return new Map<string, boolean | null>();
+    });
     return reply.send({
-      messages: thread.data.map((message) => toConversationResponse(message, conversations.service.isStuckQueued(message))),
+      messages: thread.data.map((message) => ({
+        ...toConversationResponse(message, conversations.service.isStuckQueued(message)),
+        receivedByAgent: receipts.get(message.id) ?? null,
+      })),
       // A full page may have older rows behind it; a short page is the start of the thread.
       nextCursor: oldest && thread.data.length >= pageSize ? encodeConversationCursor(oldest) : null,
       maxMessageChars: conversations.limits.userMessageMaxChars,

@@ -64,7 +64,7 @@ Use the existing instance-to-agent outbound stream pattern as the first transpor
 Current path:
 - stream: `agent:outbound:{agentId}`
 - publisher: `apps/worker/src/agents/instance-event-publisher.ts`
-- consumer: `apps/worker/src/agents/outbound-message-reader.ts`
+- consumer: `apps/worker/src/agents/outbound-inbox.ts`
 
 v1 recommendation:
 - extend the protocol with market-monitor event types

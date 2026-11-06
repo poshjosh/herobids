@@ -1166,6 +1166,8 @@ export interface AgentConversationMessage {
   createdAt: string;
   /** A `queued` row old enough that its publish is presumed lost; sending the same id again re-publishes it. */
   stuck?: boolean;
+  /** For a sent user message: whether the agent's runtime has read it yet. Null when unknown or not applicable. */
+  receivedByAgent?: boolean | null;
 }
 
 export interface AgentConversationPage {

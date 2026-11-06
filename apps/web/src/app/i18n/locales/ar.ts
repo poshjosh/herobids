@@ -639,6 +639,8 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',
   'agentDetail.conversation.fromParentAgent': 'الوكيل الأصلي',
   'agentDetail.conversation.sending': 'جارٍ الإرسال…',
+  'agentDetail.conversation.sentToAgent': 'تم الإرسال',
+  'agentDetail.conversation.receivedByAgent': 'استلمها الوكيل',
   'agentDetail.conversation.notSent': 'لم تُرسَل',
   'agentDetail.conversation.loadEarlier': 'عرض الرسائل الأقدم',
   'agentDetail.conversation.loadError': 'تعذّر تحميل المحادثة.',

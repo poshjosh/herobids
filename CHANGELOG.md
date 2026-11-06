@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Sent web chat messages show a status tick: one tick when the message is sent, and two ticks once a runtime tick has taken it into the agent's input. Two ticks do not mean the model has read or replied to the message.
+
+### Changed
+
+- The agent runtime acknowledges an outbound message only after the tick that handles it completes. A message is no longer lost when a read is discarded, a tick fails, or the agent restarts. A failed message is retried. After five failed ticks it is moved to a dead-letter stream (`agent:outbound-dead:<agentId>`).
+- A paused agent holds its user messages in memory until it resumes. A restart while paused replays them.
+- The runtime logs each outbound read. It also logs a re-read when a user message flagged by the wake signal is missing from the tick.
+- Adds an index on `agent_messages` (`agent_id`, `type`, `created_at`) for the receipt lookup (migration `0090_stiff_solo`). The index is built without `CONCURRENTLY`, so it locks writes on `agent_messages` while it builds.
+
 ## v0.8.7 - 2026-11-04
 
 ### Added

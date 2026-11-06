@@ -21,7 +21,7 @@ import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersY
 import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
-import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';
+import { compareStreamIds, OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, OutboundInbox, readGroupLastDeliveredId, settleTick, tickOutcome, type OutboundEntry, type TickOutcome } from './agents/outbound-inbox.js';
 import { createAgentPlatformClientFromEnv } from './agents/agent-platform-client.js';
 import { PeerReceiveGate, isPeerEnvelope } from './agents/peer-receive-gate.js';
 import { CREATE_CHILD_AGENT_TOOL_NAME, CREATOR_TOOL_NAMES, isCreateChildAgentExposed, isCreatorToolExposed } from './tools/agent-creation.js';
@@ -1531,64 +1531,87 @@ async function sendHeartbeat(status: 'starting' | 'ready' | 'busy' | 'degraded',
   }
 }
 
-// At startup, claim any entries in the PEL that were delivered to a previous
-// container incarnation (different PID → different consumer name) but never
-// acknowledged before that container died. We steal entries idle > 30 s and
-// ACK them immediately. The agent will receive fresh context on its first tick;
-// stale snapshots / feedback from the previous run do not need to be replayed.
-async function drainStalePendingEntries(): Promise<void> {
-  const IDLE_THRESHOLD_MS = 30_000;
-  let cursor = '0-0';
-  let recovered = 0;
-
-  // Ensure the group exists before claiming.
-  await redis.xgroup('CREATE', OUTBOUND_STREAM, CONSUMER_GROUP, '0', 'MKSTREAM').catch((err: unknown) => {
-    if (err instanceof Error && !err.message.includes('BUSYGROUP')) throw err;
-  });
-
-  for (;;) {
-    const result = await redis.xautoclaim(
-      OUTBOUND_STREAM, CONSUMER_GROUP, CONSUMER_NAME,
-      IDLE_THRESHOLD_MS, cursor, 'COUNT', 100,
-    ) as [string, Array<[string, string[]]>, string[]];
-
-    const [nextCursor, entries] = result;
-
-    for (const [msgId] of entries) {
-      await redis.xack(OUTBOUND_STREAM, CONSUMER_GROUP, msgId).catch(() => { /* ignore */ });
-      recovered++;
-    }
-
-    if (nextCursor === '0-0') break;
-    cursor = nextCursor;
-  }
-
-  if (recovered > 0) {
-    logger.warn({ recovered }, 'ACKed stale pending entries from previous container incarnation');
-  }
+// At startup, take over entries a previous process left pending (a restart gives a new consumer name). They are claimed,
+// not acknowledged, so the first tick reads them. Entries that process had handed to a tick and not yet acknowledged are
+// replayed. User messages it had completed are skipped by their handled marker.
+async function claimStalePendingEntries(): Promise<void> {
+  await outboundInbox.claimStalePending();
 }
 
 // Read pending messages from the outbound stream (platform → agent).
 //
 // IMPORTANT — two-consumer-group semantics: this drains the `agent-runtime`
 // consumer group on the SAME `agent:outbound:<id>` stream that the
-// `agent-market-wake` group polls continuously (see pollWakeSignals). Redis
-// Streams delivers each message to only ONE consumer group. When the wake
-// group consumes an `agent.wake` first, this group never sees it — so the
-// wake context must be buffered by the wake group and drained into
-// `currentMarketWake` at tick start (see runTick), not re-read here.
+// `agent-market-wake` group polls continuously (see pollWakeSignals). Each group
+// keeps its own cursor and receives every entry, so this group also reads an
+// `agent.wake` that the wake group consumed. The wake group buffers its envelope
+// for the next tick (see runTick).
 // See docs/tech/agents/wake-signal-and-technical-scan.md.
-async function readOutboundMessages(): Promise<Array<Record<string, unknown>>> {
-  return readAgentOutboundMessages(redis, {
-    outboundStream: OUTBOUND_STREAM,
-    consumerGroup: CONSUMER_GROUP,
-    consumerName: CONSUMER_NAME,
-    blockMs: OUTBOUND_READ_BLOCK_MS,
-    // Drain backlog in one read so user messages / current market context are
-    // never left buried behind older entries (which would keep the tick gated
-    // as context_unchanged and never surface the user message to the LLM).
-    maxDrain: 200,
+const HANDLED_MARKER_TTL_SECONDS = 86400;
+// Failed ticks an outbound entry may take before it is dead-lettered.
+const OUTBOUND_MAX_ATTEMPTS = 5;
+
+// The runtime's consumer of the outbound stream. Entries are acknowledged only after the tick that took them completes
+// (see settleTick), so a read whose result is discarded is not lost.
+const outboundInbox = new OutboundInbox(redis, {
+  outboundStream: OUTBOUND_STREAM,
+  consumerGroup: CONSUMER_GROUP,
+  consumerName: CONSUMER_NAME,
+  handledKeyPrefix: `agent:outbound-handled:${AGENT_ID}:`,
+  handledTtlSeconds: HANDLED_MARKER_TTL_SECONDS,
+  attemptsKey: `agent:outbound-attempts:${AGENT_ID}`,
+  deadLetterStream: `agent:outbound-dead:${AGENT_ID}`,
+  maxAttempts: OUTBOUND_MAX_ATTEMPTS,
+  // Drain backlog in one read so user messages / current market context are never left buried behind older entries.
+  maxDrain: 200,
+});
+
+async function readOutboundMessages(blockMs: number = OUTBOUND_READ_BLOCK_MS): Promise<OutboundEntry[]> {
+  return outboundInbox.fetch(blockMs);
+}
+
+/** Resolves to `fallback` after `ms`. The underlying promise keeps running; its result is only used if it wins. */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
   });
+  return Promise.race([promise, budget]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Reads the outbound stream within the tick's time budget. A read that overruns the budget resolves to [] and the tick
+ * goes on without it. Its entries were never handed to a tick, so they stay pending and the next read returns them.
+ */
+async function readOutboundWithinBudget(): Promise<OutboundEntry[]> {
+  const read = readOutboundMessages();
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  let budgetExceeded = false;
+  const budget = new Promise<OutboundEntry[]>((resolve) => {
+    budgetTimer = setTimeout(() => {
+      budgetExceeded = true;
+      resolve([]);
+    }, OUTBOUND_READ_TIMEOUT_MS);
+  });
+  try {
+    const result = await Promise.race([read, budget]);
+    if (budgetExceeded) {
+      logger.warn({ budgetMs: OUTBOUND_READ_TIMEOUT_MS }, 'Outbound read exceeded tick budget; tick proceeds without it');
+      read.then((late) => {
+        if (late.length > 0) {
+          logger.warn({
+            count: late.length,
+            streamIds: late.map((entry) => entry.streamId).slice(0, 5),
+          }, 'Late outbound read result left pending for the next read');
+        }
+      }, () => { /* failure is surfaced by the read's own caller */ });
+      return result;
+    }
+    outboundInbox.handOff(result);
+    return result;
+  } finally {
+    clearTimeout(budgetTimer);
+  }
 }
 
 async function ensureWakeSignalConsumerGroup(): Promise<void> {
@@ -1619,12 +1642,10 @@ function requestWakeDrivenTick(reason: string): void {
 // Polls the `agent-market-wake` consumer group on the outbound stream.
 //
 // IMPORTANT — two-consumer-group semantics: this group polls continuously and
-// races the `agent-runtime` group (drained once per tick by readOutboundMessages)
-// for the same `agent.wake` messages. Redis Streams delivers each message to
-// only ONE consumer group. When this group wins the race, the runtime group
-// never sees the wake — so we MUST buffer the full wake envelope here and drain
-// it into `currentMarketWake` at tick start (see runTick). The wake context is
-// never re-read from the stream; it is carried in `pendingWakeSignalBuffer`.
+// runs alongside the `agent-runtime` group (read once per tick by readOutboundMessages).
+// Each group receives every `agent.wake` on its own cursor. The wake context is
+// buffered here (`pendingWakeSignalBuffer`) and drained into `currentMarketWake`
+// at tick start (see runTick), so it does not depend on the runtime group's read.
 // See docs/tech/agents/wake-signal-and-technical-scan.md.
 async function pollWakeSignals(): Promise<void> {
   if (!running || wakePollInFlight) {
@@ -1668,7 +1689,10 @@ async function pollWakeSignals(): Promise<void> {
             } else if (pausedWakeAction === 'flag_user_message') {
               // A paused agent's key is refused, so the stop switch cannot be read for a peer message now. It is held and checked
               // when the resumed tick consumes it (DEC-56), and that tick is a full evaluation anyway, so it is not flagged here.
-              if (!isPeerEnvelope(envelope)) pendingUserMessage = true;
+              if (!isPeerEnvelope(envelope)) {
+                pendingUserMessage = true;
+                rememberPendingUserMessageStreamId(msgId);
+              }
             } else if (envelope['type'] === 'agent.wake') {
               // Suppress wake-driven ticks when circuit breaker is in cooldown
               if (sessionCircuitBreaker.isOpen() && sessionCircuitBreaker.state !== 'TERMINATED') {
@@ -1678,10 +1702,8 @@ async function pollWakeSignals(): Promise<void> {
                 continue;
               }
 
-              // Redis Streams delivers each message to only ONE consumer group.
-              // The wake group may consume an `agent.wake` before the runtime
-              // group ever sees it, so the wake context must be buffered here
-              // (not re-read) to be visible to the tick. Always buffer the full
+              // The wake group buffers the wake context for the tick that follows,
+              // because the runtime group reads the stream on its own schedule. Always buffer the full
               // wake envelope regardless of promptStyle — the enrichment gating
               // below applies only to how it is rendered in the prompt, not to
               // whether currentMarketWake is set.
@@ -1702,6 +1724,7 @@ async function pollWakeSignals(): Promise<void> {
               // sets hasWakeSignal and bypasses the context_hash gate regardless
               // of the runtime group's cursor position, then schedule the tick.
               pendingUserMessage = true;
+              rememberPendingUserMessageStreamId(msgId);
               requestWakeDrivenTick('Received user message between ticks');
             }
           } catch {
@@ -2330,11 +2353,25 @@ let wakePollInFlight = false;
 // context_hash gate (hasWakeSignal) even if readOutboundMessages has not yet
 // reached the user.message entry. See docs/tech/agents/wake-signal-and-technical-scan.md.
 let pendingUserMessage = false;
+// Set when the tick in progress hit a runtime failure (see handleRuntimeFailure). Reset at the start of each tick.
+let tickFailedThisTick = false;
+// Stream entry IDs of the user messages the wake poll saw (diagnostic only; cleared with the flag).
+let pendingUserMessageStreamIds: string[] = [];
+const PENDING_USER_MESSAGE_IDS_MAX = 50;
+
+function rememberPendingUserMessageStreamId(streamId: string): void {
+  pendingUserMessageStreamIds.push(streamId);
+  if (pendingUserMessageStreamIds.length > PENDING_USER_MESSAGE_IDS_MAX) {
+    pendingUserMessageStreamIds.splice(0, pendingUserMessageStreamIds.length - PENDING_USER_MESSAGE_IDS_MAX);
+  }
+}
 
 async function handleRuntimeFailure(
   source: Parameters<typeof classifyRuntimeError>[0],
   error: unknown,
 ): Promise<void> {
+  // Every failure branch of a tick comes through here, and none of them rethrow. This flag tells the tick settlement.
+  tickFailedThisTick = true;
   const previewClassification = classifyRuntimeError(source, error);
   logger.error({ classification: previewClassification, err: error }, 'Agent runtime failure classified');
 
@@ -2424,7 +2461,7 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
     wakePending = false;
     void (async () => {
       try {
-        await runTick();
+        await settleTick(outboundInbox, runTick);
       } catch (err) {
         logger.error({ err }, 'Uncaught error in tick — continuing');
       } finally {
@@ -2567,8 +2604,9 @@ import { buildAssessmentReviewMessage } from './assessment-review-message.js';
  * tick_skipped event. Does not touch tickCount, backoff, circuit breaker, the
  * tick interval, previousContextHash, or send a 'busy' heartbeat.
  */
-async function runTick(): Promise<void> {
-  await runPauseGatedTick({
+async function runTick(): Promise<TickOutcome> {
+  tickFailedThisTick = false;
+  const pauseState = await runPauseGatedTick({
     tracker: pauseTracker,
     heldMessages: heldPausedMessages,
     runActiveTick: async ({ resumed }) => {
@@ -2580,10 +2618,7 @@ async function runTick(): Promise<void> {
     },
     isSessionExpired: () => sandboxEnforcer.isExpired(SESSION_ID!),
     shutdownExpired: () => shutdown('wall_clock_expired'),
-    readOutboundMessages: () => Promise.race([
-      readOutboundMessages(),
-      new Promise<Array<Record<string, unknown>>>((resolve) => setTimeout(() => resolve([]), OUTBOUND_READ_TIMEOUT_MS)),
-    ]),
+    readOutboundMessages: async () => (await readOutboundWithinBudget()).map((entry) => entry.envelope),
     emitPausedSkip: () => emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
       tickId: crypto.randomUUID(),
       reason: PAUSED_TICK_REASON,
@@ -2601,6 +2636,7 @@ async function runTick(): Promise<void> {
     onHeldOverflow: (droppedOverflow) => logger.warn({ droppedOverflow, heldSize: heldPausedMessages.size }, 'Held-message queue overflow while paused — dropped oldest non-priority messages'),
     onPausedReadError: (err) => logger.warn({ err }, 'Failed to read outbound messages while paused'),
   });
+  return tickOutcome({ paused: pauseState === 'paused', failed: tickFailedThisTick });
 }
 
 /** Runs one active tick and emits agent.tick.completed for the tick it started, including on failure. */
@@ -2659,10 +2695,34 @@ async function runActiveTick(): Promise<void> {
 
   try {
     // Read incoming platform messages (context snapshots, decisions, etc.)
-    const freshMessages = await Promise.race([
-      readOutboundMessages(),
-      new Promise<Array<Record<string, unknown>>>((resolve) => setTimeout(() => resolve([]), OUTBOUND_READ_TIMEOUT_MS)),
-    ]);
+    const freshEntries = await readOutboundWithinBudget();
+    let freshMessages = freshEntries.map((entry) => entry.envelope);
+    // The wake poll saw a user message, but this read did not return one. Read once more without blocking, bounded by the
+    // budget. The diagnostic shows whether the group pointer had passed the message, or the message had not yet been read.
+    if (pendingUserMessage && !freshMessages.some((message) => isUserMessageType(message['type']))) {
+      const seenStreamIds = [...pendingUserMessageStreamIds];
+      const pointerBefore = await withTimeout(readGroupLastDeliveredId(redis, OUTBOUND_STREAM, CONSUMER_GROUP), OUTBOUND_READ_TIMEOUT_MS, null);
+      const rereadEntries = await withTimeout(
+        readOutboundMessages(0).catch((err: unknown) => {
+          logger.warn({ err }, 'Re-read after flagged user message failed');
+          return [] as OutboundEntry[];
+        }),
+        OUTBOUND_READ_TIMEOUT_MS,
+        [] as OutboundEntry[],
+      );
+      outboundInbox.handOff(rereadEntries);
+      const pointerAfter = await withTimeout(readGroupLastDeliveredId(redis, OUTBOUND_STREAM, CONSUMER_GROUP), OUTBOUND_READ_TIMEOUT_MS, null);
+      const reread = rereadEntries.map((entry) => entry.envelope);
+      logger.warn({
+        seenStreamIds,
+        pointerBefore,
+        pointerAfter,
+        seenAtOrBeforePointerBefore: pointerBefore === null ? null : seenStreamIds.map((id) => compareStreamIds(id, pointerBefore) <= 0),
+        rereadCount: reread.length,
+        rereadUserMessages: reread.filter((message) => isUserMessageType(message['type'])).length,
+      }, 'User message flagged by wake poll but missing from tick read; re-read');
+      freshMessages = [...freshMessages, ...reread];
+    }
     // Messages held during a pause go first, in original order, so this tick
     // processes them exactly as if it had read them itself (bug 2026-10-05/001).
     // Peer messages are checked against the owner's stop switch here, as they are consumed (DEC-56), including any held through a pause.
@@ -2712,9 +2772,9 @@ async function runActiveTick(): Promise<void> {
     );
 
     // ── Drain buffered wake into currentMarketWake ────────────────────────
-    // Redis Streams delivers each message to only ONE consumer group. When the
-    // wake group consumed the `agent.wake`, the runtime group never sees it, so
-    // `currentMarketWake` would otherwise stay null and the tick would log
+    // Each consumer group receives every entry, but the runtime group reads only
+    // once per tick, so the wake buffered by the wake group is drained here.
+    // Without it `currentMarketWake` would otherwise stay null and the tick would log
     // "timer tick without wake signal" and skip LLM dispatch. Drain the newest
     // buffered wake envelope here (if the runtime group did not already set
     // currentMarketWake) so wake-driven ticks always see their wake context.
@@ -2907,6 +2967,7 @@ async function runActiveTick(): Promise<void> {
     // runtime group's cursor has not yet reached the user.message entry.
     const hasPendingUserMessage = pendingUserMessage;
     pendingUserMessage = false;
+    pendingUserMessageStreamIds = [];
     // First tick after resume: force a full evaluation (treated like a buffered wake).
     const isResumedFullEvaluation = resumedPendingFullEvaluation;
     resumedPendingFullEvaluation = false;
@@ -4376,7 +4437,7 @@ async function main(): Promise<void> {
   const checkedSessionId = SESSION_ID!;
   armCrashHandlers(checkedAgentId, checkedSessionId);
 
-  await drainStalePendingEntries();
+  await claimStalePendingEntries();
   await ensureWakeSignalConsumerGroup();
   startWakeSignalPolling();
 
@@ -4437,7 +4498,7 @@ async function main(): Promise<void> {
 
   tickInFlight = true;
   try {
-    await runTick();
+    await settleTick(outboundInbox, runTick);
   } finally {
     tickInFlight = false;
     scheduleNextTick(effectiveTickIntervalMs);

@@ -116,3 +116,34 @@ Logs at info level on the runtime do not distinguish these cases.
 
 - `herobids-skills-api-1`: 85 `Validation FAILED - not saving data` entries since 2026-10-28, e.g. `Skill count dropped by 71.1% (34311 → 9911)`. Separate data-integrity issue.
 - `herobids-worker-1`: `evaluateAgentWatches: no ownerId — skipping` (WARN) about every 5 s for agent `bc033fb5-478f-4fa7-ae10-94b2f6023a8a`. Separate issue.
+
+## Update 2026-11-06 — same failure on agent `bb11883d` ("Job searcher"), still OPEN
+
+- **Agent:** `bb11883d-253a-43a8-b8d3-ec96eb8f5605`, namespace `herobids-agents`, allocation `961cb3be` (running since 2026-11-05 21:33 UTC).
+- **Messages affected:** four web user messages, `conversation_messages` created 10:29:25.098, 10:30:26.868, 10:30:48.958 and 10:31:06.925 UTC, all `delivery_status = sent`.
+- **Ticks that missed them:** `agent.tick.started` at 10:29:25, 10:30:27, 10:30:49 and 10:31:07, each with `userMessageIds: []`. The runtime logged `Received user message between ticks` and `Escalated to judge … reason: user_message` for each, but the context was built without the text (`diff`, about 172 tokens). The agent replied "no new messages from you" three times.
+- **Recovery:** the four messages stayed unread by group `agent-runtime` until 10:33:55 UTC, when one tick delivered all five at once. Messages sent after that were read within about 1 s.
+- **Read timing:** the tick-start log (`Agent tick starting`) to `Processing market wake signal` took about 200 ms. The 2 s race timeout did not fire, so candidate 2 does not explain this incident.
+- **Connection:** heartbeats (`publishToInbound`) use the same `redis` client as the outbound read and were published every 5 s throughout 10:29 to 10:33. The connection was not stalled, which weakens candidate 3.
+- **Errors:** no warn or error line in the runtime log for 10:28 to 10:35 UTC.
+- **Open question:** candidate 1 (null or error swallowed) is not supported, since the read returned entries. The open question is why a non-empty `XREADGROUP '>'` returned entries that excluded messages the wake group had already seen.
+- **Implemented (not yet deployed to staging), 2026-11-06:**
+  - **Settlement by tick outcome.** `apps/worker/src/agents/outbound-inbox.ts` (`OutboundInbox`, `settleTick`, `tickOutcome`). A read returns entries without acknowledging them. The tick takes them with `handOff`. The tick then settles with one of three outcomes:
+    - `completed`: marks handed user messages handled, then acknowledges them.
+    - `failed`: releases them, so the next read returns them again. Each failure counts against the entry. After `maxAttempts` (5) failed ticks the entry is copied to `agent:outbound-dead:<id>` and acknowledged.
+    - `held`: a paused tick keeps its entries in memory and does not acknowledge them. The next tick that completes settles them.
+  - **Failures count as failures.** Every runtime failure goes through `handleRuntimeFailure`, which now sets `tickFailedThisTick`. A tick with a failure settles as `failed`, including LLM and tool failures that do not throw.
+  - **Replay after restart.** At startup, `claimStalePending` takes over every pending entry owned by a different consumer name, with no idle threshold, without acknowledging it. A user message whose tick completed carries a handled marker (24 h), so its replay is acknowledged and skipped.
+  - **Read-level logging.** One `Outbound read` line per fetch. A tick read over budget logs `Outbound read exceeded tick budget`. A late result logs its stream IDs, which stay pending for the next read.
+  - **Diagnostic re-read.** When the wake flag is set but the tick read has no user message, the tick re-reads once without blocking, bounded by the tick budget, and logs the seen IDs, the group pointer before and after, and the re-read result. The lookups are bounded too.
+  - **Receipts.** `GET /agents/:id/conversation` returns `receivedByAgent` for each sent user message. Its history start is the agent's creation time, since no code path prunes `agent_messages`. The web shows one tick for a sent message while it is `false` or `null`, and two ticks once it is `true`. The delivery status is unchanged. Migration `0090_stiff_solo` adds an `(agent_id, type, created_at)` index.
+  - **Tests.** Unit: 21 inbox tests, including `held`, dead-lettering, claiming, `tickOutcome` and `settleTick`. Real Redis (`OUTBOUND_INBOX_TEST_REDIS_URL`): 6 tests, including a held hand-over replayed after restart, a failed tick replayed, a poison entry dead-lettered, and a restart taking over another consumer's entries. The worker suite, the API receipt tests and the type-checks pass.
+  - **Docs.** Living feature docs that named the deleted reader now point to `outbound-inbox.ts`. The ack-before-return row in the continuation plan is marked resolved. Historical bug reports, plans and tasks are left as written.
+- **Known residual risks:**
+  - A crash between the reply and the handled marker can replay a user message, so the agent may reply twice.
+  - A tick that fails after a reply was sent is retried, which can also repeat that reply.
+  - A paused tick's held entries are in memory. A crash while paused replays them from Redis, as intended, but a held message can still be dropped by the held-queue overflow policy.
+  - Gate skips (regime, circuit breaker) still drop user messages, as before.
+  - The migration builds its index without `CONCURRENTLY`, so it locks writes on `agent_messages` (heartbeats write there every 5 s) while it builds. Check the build time on staging before production.
+  - `agent.ts` has no direct test harness. The outcome decision is covered by `tickOutcome`, and the flag is set in one place, but the wiring itself is verified only by code review until staging.
+- **Interpretation guide for the re-read log:** if `seenAtOrBeforePointerBefore` is true and the re-read is empty, the group pointer had already passed the message (skipped). If it is false and the re-read returns the message, the message was only late. The bug stays OPEN until the cause is confirmed and the fix is verified on staging.

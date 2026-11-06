@@ -19,7 +19,7 @@ import { PEER_RATE_WINDOW_MS, RedisPeerRateLimiter } from '../../agents/peer-rat
 import { RedisPeerWakePublisher } from '../../agents/peer-wake-publisher.js';
 import { messagePeerAgentTool } from '../../tools/peer-messaging.js';
 import { extractPeerOrigin, isEarlyTickTriggerType } from '../../tick-gate-state.js';
-import { readOutboundMessages } from '../../agents/outbound-message-reader.js';
+import { OutboundInbox } from '../../agents/outbound-inbox.js';
 import { PeerReceiveGate } from '../../agents/peer-receive-gate.js';
 
 const SKIP = !process.env['DATABASE_URL'] || !process.env['REDIS_URL'];
@@ -305,9 +305,17 @@ describe.skipIf(SKIP)('Peer messaging: tool to broker to stream (integration)', 
     const stateFromDb = (userId: string, read: () => Promise<boolean> = () => agentRepo.isPeerMessagingPaused(userId)): PeerMessagingStatePort => ({
       getPeerMessagingState: async () => ok({ paused: await read() }),
     });
-    const consume = (agentId: string) => readOutboundMessages(redis, {
-      outboundStream: `agent:outbound:${agentId}`, consumerGroup: 'agent-runtime', consumerName: 'test', blockMs: 50,
-    });
+    /** Reads, hands to a tick and completes it: the entries are acknowledged, as the runtime's tick does. */
+    const consume = async (agentId: string) => {
+      const inbox = new OutboundInbox(redis, {
+        outboundStream: `agent:outbound:${agentId}`, consumerGroup: 'agent-runtime', consumerName: 'test',
+        handledKeyPrefix: `test:handled:${agentId}:`, handledTtlSeconds: 60,
+      });
+      const entries = await inbox.fetch(50);
+      inbox.handOff(entries);
+      await inbox.completeTick('completed');
+      return entries.map((entry) => entry.envelope);
+    };
     const nullLog = { warn: () => undefined };
     // No cache and no backoff, so each check reads the owner's row and a failed read is retried straight away.
     const GATE_OPTIONS = { cacheMs: 0, readRetries: 1, retryBackoffMs: 0 };

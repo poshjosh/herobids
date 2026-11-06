@@ -43,4 +43,6 @@ export const agentMessages = pgTable('agent_messages', {
   index('idx_agent_messages_type').on(t.type),
   index('idx_agent_messages_actor_id').on(t.actorId),
   index('idx_agent_messages_created_at').on(t.createdAt),
+  // Tick receipts for a conversation read: one agent's ticks in a time window.
+  index('idx_agent_messages_agent_type_created').on(t.agentId, t.type, t.createdAt),
 ]);

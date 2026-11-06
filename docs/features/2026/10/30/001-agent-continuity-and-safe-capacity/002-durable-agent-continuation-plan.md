@@ -52,7 +52,7 @@ These are code observations, not deployed behavior:
 | Source | Observation and implementation consequence |
 |---|---|
 | [agent.ts](../../../../../../apps/worker/src/agent.ts), conversation state and `shutdown` | Histories/wake buffer are process-local; shutdown drains at most 8,000 ms then continues even if a tick remains active. Add regular durable commits and distinct resumable termination semantics; do not rely solely on exit. |
-| [outbound-message-reader.ts](../../../../../../apps/worker/src/agents/outbound-message-reader.ts), `readOutboundMessages` | `xreadgroup` is followed by `xack` before returning messages. Return delivery identity and transfer durable ownership before ack; support pending-entry reclaim. |
+| [outbound-inbox.ts](../../../../../../apps/worker/src/agents/outbound-inbox.ts), `OutboundInbox` | **Resolved.** Entries are acknowledged only when their tick settles as `completed`. `failed` releases them for the next read, `held` keeps them handed over while paused. Pending entries are re-read first, a restart takes over the previous consumer's entries, and an entry that fails `maxAttempts` ticks is dead-lettered. |
 | [agent-message-broker.ts](../../../../../../apps/worker/src/agents/agent-message-broker.ts), `processInbound` | Message-ID deduplication and active-session gate exist. Reuse/strengthen transaction and replay semantics; they are not yet proof of attempt fencing across every effect path. |
 | [agent-runtime-sessions.ts](../../../../../../packages/db/src/schema/agent-runtime-sessions.ts) | Partial unique active-agent index and session API-key hash exist; comment currently equates session to container. Explicit attempt/epoch semantics need compatible migration. |
 | [nomad-runtime-adapter.ts](../../../../../../apps/worker/src/agents/nomad-runtime-adapter.ts), `buildNomadJobSpec` | Stable `agent-<id>` job, `herobids.sessionId` metadata, restart attempts zero and no persistent workspace volume. Allocation replacement is not state restoration or attempt identity. |
@@ -204,7 +204,7 @@ flag in the old process is not fencing.
    **Depends on:** task 2; no successor effect activation before fencing proof.
 4. **Commit regular progress and durable message handoff.** Modify
    [agent.ts](../../../../../../apps/worker/src/agent.ts) history/wake/tick
-   boundaries and [reader](../../../../../../apps/worker/src/agents/outbound-message-reader.ts)
+   boundaries and [reader](../../../../../../apps/worker/src/agents/outbound-inbox.ts)
    return/ack contract. Commit input ownership and continuation atomically where
    possible before `xack`; reclaim pending entries after loss and deduplicate
    across replay. On store failure, stop acknowledging/starting unsafe new work,

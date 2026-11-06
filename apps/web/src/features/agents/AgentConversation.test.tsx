@@ -44,6 +44,8 @@ const englishMessages: Record<string, string> = {
   'agentDetail.conversation.fromOpenAIdom': 'OpenAIdom',
   'agentDetail.conversation.fromParentAgent': 'Parent agent',
   'agentDetail.conversation.sending': 'Sending…',
+  'agentDetail.conversation.sentToAgent': 'Sent',
+  'agentDetail.conversation.receivedByAgent': 'Received by the agent',
   'agentDetail.conversation.notSent': 'Not sent',
   'agentDetail.conversation.loadEarlier': 'Show earlier messages',
   'agentDetail.conversation.loadError': 'Could not load the conversation.',
@@ -210,6 +212,30 @@ describe('AgentConversationView', () => {
 
     expect(html).toContain('Not sent');
     expect(html).not.toContain('Retry');
+  });
+
+  it('shows one tick on a sent user message that no runtime tick has taken yet', () => {
+    const html = render({ messages: [{ ...userMessage, deliveryStatus: 'sent', receivedByAgent: false }], onRetryMessage: vi.fn() });
+
+    expect(html).toContain('aria-label="Sent"');
+    expect(html).toContain('✓');
+    expect(html).not.toContain('✓✓');
+  });
+
+  it('shows two ticks once a runtime tick has taken the message', () => {
+    const html = render({ messages: [{ ...userMessage, deliveryStatus: 'sent', receivedByAgent: true }], onRetryMessage: vi.fn() });
+
+    expect(html).toContain('aria-label="Received by the agent"');
+    expect(html).toContain('✓✓');
+  });
+
+  it('shows one tick when the receipt state is unknown, and no tick when the API does not report it', () => {
+    const unknown = render({ messages: [{ ...userMessage, deliveryStatus: 'sent', receivedByAgent: null }], onRetryMessage: vi.fn() });
+    const notReported = render({ messages: [{ ...userMessage, deliveryStatus: 'sent' }], onRetryMessage: vi.fn() });
+
+    expect(unknown).toContain('aria-label="Sent"');
+    expect(notReported).not.toContain('aria-label="Sent"');
+    expect(notReported).not.toContain('aria-label="Received by the agent"');
   });
 
   it('shows a delivered or not-applicable user message without a status marker', () => {

@@ -283,6 +283,16 @@ export function AgentConversationView({
                       {intl.formatMessage({ id: 'agentDetail.conversation.sending' })}
                     </div>
                   )}
+                  {fromUser && message.deliveryStatus === 'sent' && message.receivedByAgent !== undefined && (
+                    // One tick: sent. Two ticks: a runtime tick has taken the message into its input.
+                    <div
+                      role="img"
+                      aria-label={intl.formatMessage({ id: message.receivedByAgent === true ? 'agentDetail.conversation.receivedByAgent' : 'agentDetail.conversation.sentToAgent' })}
+                      style={{ fontSize: '0.75rem', lineHeight: 1, color: message.receivedByAgent === true ? 'var(--color-brand, #2563eb)' : 'var(--color-text-muted)', textAlign: 'end', letterSpacing: '-0.15em' }}
+                    >
+                      {message.receivedByAgent === true ? '✓✓' : '✓'}
+                    </div>
+                  )}
                   {notDelivered && (
                     <div role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', fontSize: '0.75rem', color: 'var(--color-danger, #c0392b)' }}>
                       <span>{intl.formatMessage({ id: 'agentDetail.conversation.notSent' })}</span>

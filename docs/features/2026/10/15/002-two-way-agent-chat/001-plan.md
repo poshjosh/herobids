@@ -189,7 +189,7 @@ Recorded 2026-10-25 (CH2W slice 1) from the code at commit `2062b0eb` (C1). Path
 | Web | `apps/web/src/lib/api-client.ts` ~1108 (`AgentOutboundMessage`) and ~1339 (`messages`), `apps/web/src/features/agents/AgentConversation.tsx` (~17, ~96, ~327) | The only web caller; used by `AgentDetailPage.tsx` | New read and component (P2) |
 | Script | `scripts/ts/run-connection-cycle.ts` ~78 | `GET /agents/{id}/messages?limit=50` | New read (P2) |
 
-Not readers: `apps/worker/src/agents/outbound-message-reader.ts`, `runtime-pause.ts`, `agent.ts` `readOutboundMessages`. They read the Redis stream `agent:outbound:{id}` and share only a name. `notification_deliveries.event_key` is `{agentId}:{messageId}` by value, with no foreign key, so it follows the new row id unchanged.
+Not readers: `apps/worker/src/agents/outbound-inbox.ts`, `runtime-pause.ts`, `agent.ts` `readOutboundMessages`. They read the Redis stream `agent:outbound:{id}` and share only a name. `notification_deliveries.event_key` is `{agentId}:{messageId}` by value, with no foreign key, so it follows the new row id unchanged.
 
 ### 10.4 Tests that touch the table
 

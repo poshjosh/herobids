@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
-import { OUTBOUND_READ_BLOCK_MS, readOutboundMessages } from '../../agents/outbound-message-reader.js';
+import { OUTBOUND_READ_BLOCK_MS, OutboundInbox } from '../../agents/outbound-inbox.js';
 
 const SKIP = !process.env['REDIS_URL'];
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
@@ -39,13 +39,14 @@ describe.skipIf(SKIP)('Worker: outbound message reader integration', () => {
     const streamKey = `agent:outbound:${crypto.randomUUID()}`;
     createdStreams.push(streamKey);
 
-    const readPromise = readOutboundMessages(redis, {
+    const inbox = new OutboundInbox(redis, {
       outboundStream: streamKey,
       consumerGroup: 'agent-runtime',
       consumerName: `consumer-${crypto.randomUUID()}`,
-      blockMs: OUTBOUND_READ_BLOCK_MS,
-      count: 10,
+      handledKeyPrefix: `test:handled:${streamKey}:`,
+      handledTtlSeconds: 60,
     });
+    const readPromise = inbox.fetch(OUTBOUND_READ_BLOCK_MS);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
     const startedAt = Date.now();
@@ -53,8 +54,8 @@ describe.skipIf(SKIP)('Worker: outbound message reader integration', () => {
 
     const timeoutMs = OUTBOUND_READ_BLOCK_MS + 3000;
     const outcome = await Promise.race([
-      Promise.all([readPromise, xaddPromise]).then(([messages, streamId]) => ({
-        messages,
+      Promise.all([readPromise, xaddPromise]).then(([entries, streamId]) => ({
+        messages: entries,
         streamId,
         elapsedMs: Date.now() - startedAt,
       })),

@@ -1,0 +1,1 @@
+CREATE INDEX "idx_agent_messages_agent_type_created" ON "agent_messages" USING btree ("agent_id","type","created_at");

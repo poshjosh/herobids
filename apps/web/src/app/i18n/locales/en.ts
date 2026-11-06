@@ -721,6 +721,8 @@ export const messages: Record<string, string> = {
   'agentDetail.conversation.fromParentAgent': 'Parent agent',
   'agentDetail.conversation.sending': 'Sending…',
   'agentDetail.conversation.notSent': 'Not sent',
+  'agentDetail.conversation.sentToAgent': 'Sent',
+  'agentDetail.conversation.receivedByAgent': 'Received by the agent',
   'agentDetail.conversation.loadEarlier': 'Show earlier messages',
   'agentDetail.conversation.loadError': 'Could not load the conversation.',
   'settings.peerMessaging.title': 'Agent-to-agent messaging',

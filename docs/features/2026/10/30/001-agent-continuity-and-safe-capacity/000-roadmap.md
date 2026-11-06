@@ -146,7 +146,7 @@ Local source observations on 2026-10-30:
   `buildNomadJobSpec` has no persistent workspace volume and uses restart
   attempts zero. Job ID `agent-<id>` and `herobids.sessionId` metadata do not
   identify a unique runtime attempt.
-- [outbound reader](../../../../../../apps/worker/src/agents/outbound-message-reader.ts)
+- [outbound inbox](../../../../../../apps/worker/src/agents/outbound-inbox.ts)
   acknowledges stream entries before returning them for processing.
   [Broker](../../../../../../apps/worker/src/agents/agent-message-broker.ts)
   message-ID deduplication and active-session gating already exist; strengthen

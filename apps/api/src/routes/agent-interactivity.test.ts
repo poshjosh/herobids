@@ -1014,7 +1014,7 @@ describe('GET /agents/:id/conversation', () => {
     const body = res.json() as { messages: Array<Record<string, unknown>>; nextCursor: string | null };
     expect(body.messages.map((message) => message['body'])).toEqual(['m1', 'm2']);
     expect(Object.keys(body.messages[0] ?? {}).sort()).toEqual([
-      'body', 'channel', 'createdAt', 'deliveryStatus', 'id', 'messageClass', 'senderId', 'senderType', 'stuck', 'subject',
+      'body', 'channel', 'createdAt', 'deliveryStatus', 'id', 'messageClass', 'receivedByAgent', 'senderId', 'senderType', 'stuck', 'subject',
     ]);
     expect(body.nextCursor).toBeNull();
     expect((res.json() as { maxMessageChars: number }).maxMessageChars).toBe(4000);
