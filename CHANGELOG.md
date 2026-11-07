@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.11 - 2026-11-07
+
+### Changed
+
+- Revert Nomad cap_add change; agents fail to boot on staging. Reverts the NET_ADMIN/SYS_ADMIN job spec and allow_caps cloud-init from ffc77878. Keeps the fault-text change and bug reports 001 and 002.
+
 ## v0.8.10 - 2026-11-07
 
 ### Fixed
