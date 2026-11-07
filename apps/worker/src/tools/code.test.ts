@@ -383,6 +383,7 @@ console.log(exists ? 'found' : 'not found');
       expect(result.errorCode).toBe('execute_code.sandbox_infrastructure_error');
       expect(result.error).toContain('Sandbox infrastructure error (non-recoverable)');
       expect(result.error).toContain('mount --make-shared');
+      expect(result.error).toContain('do not save this to memory');
     } finally {
       vi.doUnmock('node:child_process');
       vi.doUnmock('node:fs/promises');

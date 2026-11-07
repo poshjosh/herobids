@@ -204,8 +204,8 @@ const executeShellTool: AgentTool = {
         errorOwner: 'platform',
         error:
           'Sandbox infrastructure error (non-recoverable): the execute_shell sandbox ' +
-          'is misconfigured in this container. Do NOT retry — record this limitation ' +
-          `in memory. Detail: ${stderr.slice(0, 300)}`,
+          'is misconfigured in this container. Do NOT retry. Tell the user that shell execution ' +
+          `is unavailable; do not save this to memory. Detail: ${stderr.slice(0, 300)}`,
         retryable: false,
         fault: false,
       };
