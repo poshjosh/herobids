@@ -182,7 +182,6 @@ export interface NomadJobSpec {
           labels: Array<Record<string, string>>;
           network_mode?: string;
           pids_limit?: number;
-          cap_add?: string[];
         };
         Resources: {
           MemoryMB: number;
@@ -263,8 +262,6 @@ export function buildNomadJobSpec(
                 // network_mode only included when set
                 ...(adapterConfig.dockerNetwork ? { network_mode: adapterConfig.dockerNetwork } : {}),
                 pids_limit: maxProcesses,
-                // scripts/sandbox-exec.sh needs these; the Nomad client must list them in plugin "docker" allow_caps.
-                cap_add: ['NET_ADMIN', 'SYS_ADMIN'],
               } as NomadJobSpec['Job']['TaskGroups'][0]['Tasks'][0]['Config'],
               Resources: {
                 MemoryMB: effectiveMemoryReservationMb, // soft scheduling reservation (from resourceProfiles in config/default.yaml)
