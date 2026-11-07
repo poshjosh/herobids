@@ -15,6 +15,7 @@
 #   HEROBIDS_ENV          Deployment environment: staging | production (default: production).
 #
 # Scripts that accept --env can call parse_env_flag() to set HEROBIDS_ENV.
+# Ad-hoc ssh: set HEROBIDS_ENV BEFORE sourcing this file. The key is resolved at source time.
 # When using --env, it MUST be the first argument (before any other flags):
 #   Correct:   script.sh --env staging --skip-deploy
 #   Incorrect: script.sh --skip-deploy --env staging

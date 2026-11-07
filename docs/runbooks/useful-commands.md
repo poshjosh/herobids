@@ -28,6 +28,14 @@ ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 \
   'curl https://api.staging.traderton.com/health/ready'
 ```
 
+> **SSH key warning:** `infra/hetzner/scripts/_ssh_opts.sh` picks the SSH key when it is sourced, and defaults to production. If you source it yourself to run ad-hoc `ssh`, set `HEROBIDS_ENV=staging` before sourcing. Setting it afterwards keeps the production key, and staging rejects it with `Permission denied (publickey,password)`. Scripts that take `--env` are not affected, because `parse_env_flag` re-resolves the key.
+>
+> ```sh
+> export HEROBIDS_ENV=staging
+> source infra/hetzner/scripts/_ssh_opts.sh
+> ssh ${SSH_OPTS} root@138.199.172.202 'hostname'
+> ```
+
 ```sh
 ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 "ls -d /opt/herobids/infra/hetzner/.terraform-envs/staging 2>&1 && echo 'exists' || echo 'not yet'"
 ```
