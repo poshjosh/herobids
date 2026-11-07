@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.10 - 2026-11-07
+
 ### Fixed
 
 - docs/bug-reports/2026/11/07/001-nomad-agent-tasks-missing-sandbox-caps.md
