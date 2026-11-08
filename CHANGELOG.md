@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.8.12 - 2026-11-08
+
 ### Fixed
 
 - Browser pool is unreachable on staging: the service registered the node's public address, which agent-node UFW blocks, so `browse_interactive` timed out and the admin Browser Pool panel was empty. The pool now uses static port 3100 on the `private` host network, agent nodes allow that port from the private subnet and the agent Docker bridge, and the control plane routes the worker to it. Converge applies the control-plane rule. Existing staging nodes need the manual steps in the bug report. The job spec gains an explicit `update` block (max_parallel 1, auto-revert) so a redeploy releases static port 3100 first. Staging was patched manually on 2026-11-08; the redeploy test is pending. See docs/bug-reports/2026/11/08/001-browser-pool-registered-on-public-address-blocked-by-ufw.md
