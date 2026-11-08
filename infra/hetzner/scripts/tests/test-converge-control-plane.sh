@@ -272,7 +272,8 @@ assert_eq "${NOMAD_RESTARTS}" "1" "restarts nomad exactly once"
 assert_eq "$(cat "${ROOT}/state/nomad-live-ip")" "${STUB_PRIVATE_IP}" "running nomad now advertises the private IP"
 assert_contains "${CALLS}" "ufw allow from 10.0.0.0/24 to any port 5432 proto tcp" "asserts private-subnet Postgres rule"
 assert_contains "${CALLS}" "ufw allow from 172.18.0.0/16 to any port 4648 proto tcp" "asserts bridge Serf rule"
-assert_eq "$(wc -l < "${ROOT}/state/ufw-rules" | tr -d ' ')" "8" "asserts exactly 8 ufw rules"
+assert_contains "${CALLS}" "ufw route allow from 172.18.0.0/16 to 10.0.0.0/24 port 3100 proto tcp" "asserts bridge-to-pool routed rule"
+assert_eq "$(wc -l < "${ROOT}/state/ufw-rules" | tr -d ' ')" "9" "asserts exactly 9 ufw rules"
 assert_contains "${CALLS}" "nomad server members" "verifies server members"
 assert_not_contains "${RUN_OUTPUT}" "secret-token" "never prints the ACL token"
 assert_not_contains "${RUN_OUTPUT}" "WARNING: Raft" "no Raft warning when the peer matches"
@@ -617,6 +618,29 @@ assert_eq "$(grep -c 'Environment=NOMAD_AUTOSCALE_NODE_POOL=${server_name}' "${H
   "cloud-init.yaml: both autoscale units set the pool to server_name"
 assert_contains "${CONVERGE_TEXT}" 'Environment=NOMAD_AUTOSCALE_NODE_POOL=${AUTOSCALE_NODE_POOL}' \
   "converge writes the pool drop-in with the configured pool"
+
+test_end || SUITE_FAILED=1
+
+test_begin "converge-control-plane — browser-pool network rules match cloud-init and the job (static)"
+
+NOMAD_CLIENT_CLOUD_INIT="${HETZNER_DIR}/cloud-init-nomad-client.yaml"
+BROWSER_POOL_JOB="${REPO_ROOT}/infra/nomad/browser-pool.nomad.hcl"
+assert_eq "$(grep -cF 'ufw route allow from 172.18.0.0/16 to ${private_subnet} port 3100 proto tcp' "${HETZNER_DIR}/cloud-init.yaml")" "1" \
+  "cloud-init.yaml: worker bridge routed to pool port 3100"
+assert_eq "$(grep -cF 'ufw allow from ${private_subnet} to any port 3100 proto tcp' "${NOMAD_CLIENT_CLOUD_INIT}")" "1" \
+  "agent cloud-init: private subnet allowed on pool port 3100"
+assert_eq "$(grep -cF 'ufw allow from 172.17.0.0/16 to any port 3100 proto tcp' "${NOMAD_CLIENT_CLOUD_INIT}")" "1" \
+  "agent cloud-init: agent docker bridge allowed on pool port 3100"
+assert_eq "$(grep -cF 'ufw route allow from 172.17.0.0/16 to ${private_subnet} port 3100 proto tcp' "${NOMAD_CLIENT_CLOUD_INIT}")" "1" \
+  "agent cloud-init: agent containers routed to pool port 3100 on other nodes"
+assert_eq "$(grep -cF 'host_network "private"' "${NOMAD_CLIENT_CLOUD_INIT}")" "1" \
+  "agent cloud-init: nomad client declares the private host network"
+assert_contains "$(cat "${BROWSER_POOL_JOB}")" 'static       = 3100' "browser-pool job: static port 3100"
+assert_contains "$(cat "${BROWSER_POOL_JOB}")" 'max_parallel     = 1' "browser-pool job: explicit update strategy"
+assert_contains "$(cat "${BROWSER_POOL_JOB}")" 'auto_revert      = true' "browser-pool job: auto-revert on failed update"
+assert_contains "$(cat "${BROWSER_POOL_JOB}")" 'host_network = "private"' "browser-pool job: binds the private host network"
+assert_contains "$(cat "${SCRIPTS_DIR}/converge-control-plane.sh")" 'BROWSER_POOL_PORT="${BROWSER_POOL_PORT:-3100}"' \
+  "converge: browser-pool port default matches the job"
 
 test_end || SUITE_FAILED=1
 

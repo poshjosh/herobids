@@ -439,6 +439,10 @@ runcmd:
   # Allow agent nodes on the private network to reach shared services
   - ufw allow from ${private_subnet} to any port 5432 proto tcp
   - ufw allow from ${private_subnet} to any port 6379 proto tcp
+  # Worker container (Docker bridge 172.18.0.0/16) reaches the browser-pool on
+  # agent nodes (static port 3100). Traffic is routed, so UFW's routed default
+  # deny applies. Keep the bridge subnet in sync with docker-compose.yaml.
+  - ufw route allow from 172.18.0.0/16 to ${private_subnet} port 3100 proto tcp
   - ufw --force enable
 
   # ── Enable fail2ban ──────────────────────────────────────

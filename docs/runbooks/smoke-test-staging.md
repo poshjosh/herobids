@@ -11,9 +11,20 @@ cd infra/hetzner
 ./scripts/smoke-test.sh --env staging
 ```
 
-Expected: 13 passed, 0 failed, 3 skipped. Exit code 0.
+Expected: 14 passed, 0 failed, 3 skipped. Exit code 0. (Check 7 is the browser pool.)
 
 If any check fails, the script prints the specific failure and the command to diagnose it (typically `./scripts/logs.sh --env staging -- <service>`).
+
+### Browser pool (check 7)
+
+Check 7 runs `scripts/smoke-test-browser-pool.sh` and covers Nomad registration on the private address, control-plane and ready-agent-node reachability, a session round trip, and the admin health snapshot. It can run alone:
+
+```bash
+cd infra/hetzner
+./scripts/smoke-test-browser-pool.sh --env staging <control-plane-ip>
+```
+
+If it fails, see [bug 2026/11/08 001](../bug-reports/2026/11/08/001-browser-pool-registered-on-public-address-blocked-by-ufw.md).
 
 ## Manual Checks
 

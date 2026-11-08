@@ -209,6 +209,18 @@ for wh in /billing/webhook/creem /billing/webhook/stripe; do
   fi
 done
 
+# ─── Check 7: Browser pool reachability ──────────────────────────────────────
+
+echo "── 7. Browser Pool ──"
+
+# Separate script so it can run alone: checks Nomad registration, control-plane
+# and agent-node reachability, a session round trip, and the admin health snapshot.
+if "${SCRIPT_DIR}/smoke-test-browser-pool.sh" --env "${HEROBIDS_ENV}" "${SERVER_IP}"; then
+  pass "Browser pool — reachable from control plane and every ready agent node (details above)"
+else
+  fail "Browser pool" "one or more checks failed (details above; see docs/bug-reports/2026/11/08)"
+fi
+
 # ─── Skipped checks ──────────────────────────────────────────────────────────
 
 echo ""

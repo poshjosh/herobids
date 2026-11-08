@@ -51,6 +51,13 @@ write_files:
           retry_interval = "5s"
         }
 
+        # Named network for services that must register the private address
+        # (browser-pool, bug 2026/11/08 001). The default host network stays the
+        # public NIC, so other tasks and node registration are unchanged.
+        host_network "private" {
+          cidr = "${private_subnet}"
+        }
+
         meta {
           environment = "${environment}"
           node_pool   = "${node_pool}"
@@ -462,6 +469,17 @@ runcmd:
   - ufw default deny incoming
   - ufw default allow outgoing
   - ufw allow 22/tcp
+  # browser-pool (static port 3100, see infra/nomad/browser-pool.nomad.hcl).
+  # Private subnet: other nodes, the control plane, and this node's own host.
+  # Docker bridge 172.17.0.0/16: agent containers on this node reach the pool
+  # on the host address. Routed rule: agent containers on this node reach a
+  # pool running on another node (FORWARD, which UFW denies by default).
+  # These rules assume agent containers use Nomad's default bridge (docker0), which is
+  # what the agent job specs use while nomad.dockerNetwork is empty. If that changes,
+  # update these rules. smoke-test-browser-pool.sh (check 5) fails on any other network.
+  - ufw allow from ${private_subnet} to any port 3100 proto tcp
+  - ufw allow from 172.17.0.0/16 to any port 3100 proto tcp
+  - ufw route allow from 172.17.0.0/16 to ${private_subnet} port 3100 proto tcp
   - ufw --force enable
 
   # ── Enable fail2ban ──────────────────────────────────────

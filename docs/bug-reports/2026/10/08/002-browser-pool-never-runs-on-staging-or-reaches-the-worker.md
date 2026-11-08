@@ -48,3 +48,7 @@ The worker resolves the browser-pool address once at startup. If the allocation 
 
 The job reserves 2048 MB on the agent node (3.7 GiB on cpx21), which leaves about 6 agent
 slots of 256 MB before autoscaling adds a node.
+
+## Follow-up (2026-11-08)
+
+The untested path above was tested. The worker now resolves the pool, but Nomad registers it at the node's public address, which the agent node's UFW blocks. Since 2026-10-31 the pool has run on a node with the firewall enabled, so `browse_interactive` times out and the admin panel is empty. See [2026/11/08/001](../../11/08/001-browser-pool-registered-on-public-address-blocked-by-ufw.md) for the fix and [2026/11/08/002](../../11/08/002-no-staging-check-for-browser-pool.md) for the missing test.

@@ -74,6 +74,7 @@ set -euo pipefail
 
 PRIVATE_SUBNET="${PRIVATE_SUBNET:-}"
 DOCKER_BRIDGE_SUBNET="${DOCKER_BRIDGE_SUBNET:-172.18.0.0/16}"
+BROWSER_POOL_PORT="${BROWSER_POOL_PORT:-3100}"
 NOMAD_HCL="${NOMAD_HCL:-/etc/nomad.d/nomad.hcl}"
 NOMAD_ACL_TOKEN_FILE="${NOMAD_ACL_TOKEN_FILE:-/etc/nomad.d/acl-token}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
@@ -155,12 +156,23 @@ ufw_allow() {
   fi
 }
 
+# Routed rule: the worker (bridge) reaches browser-pool on agent nodes.
+ufw_route_allow() {
+  local source="$1" dest="$2" port="$3" output
+  output="$(ufw route allow from "${source}" to "${dest}" port "${port}" proto tcp)"
+  if [[ "${output}" != *"Skipping"* ]]; then
+    UFW_ADDED=$((UFW_ADDED + 1))
+    log "ufw route: ${source} -> ${dest}:${port}/tcp: ${output}"
+  fi
+}
+
 for port in 4646 4647 4648 5432 6379; do
   ufw_allow "${PRIVATE_SUBNET}" "${port}"
 done
 for port in 4646 4647 4648; do
   ufw_allow "${DOCKER_BRIDGE_SUBNET}" "${port}"
 done
+ufw_route_allow "${DOCKER_BRIDGE_SUBNET}" "${PRIVATE_SUBNET}" "${BROWSER_POOL_PORT}"
 if [[ ${UFW_ADDED} -gt 0 ]]; then
   CHANGES+=("added ${UFW_ADDED} ufw rule(s)")
 fi
