@@ -70,6 +70,21 @@ describe('buildNomadJobSpec', () => {
     expect(task.Config).not.toHaveProperty('env');
   });
 
+  it('omits cap_add when sandbox caps are disabled', () => {
+    const spec = buildNomadJobSpec(baseLaunch, { ...baseAdapter, sandboxCapsEnabled: false });
+    const config = spec.Job.TaskGroups[0]!.Tasks[0]!.Config;
+
+    expect(config).not.toHaveProperty('cap_add');
+  });
+
+  it('requests NET_ADMIN and SYS_ADMIN when sandbox caps are enabled', () => {
+    const spec = buildNomadJobSpec(baseLaunch, { ...baseAdapter, sandboxCapsEnabled: true });
+    const config = spec.Job.TaskGroups[0]!.Tasks[0]!.Config;
+
+    expect(config.cap_add).toEqual(['NET_ADMIN', 'SYS_ADMIN']);
+    expect(config).not.toHaveProperty('privileged');
+  });
+
   it('uses the registry-qualified image and the agent namespace', () => {
     const spec = buildNomadJobSpec(baseLaunch, baseAdapter);
     const config = spec.Job.TaskGroups[0]!.Tasks[0]!.Config;

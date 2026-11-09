@@ -1,6 +1,6 @@
 # 001 — Nomad Agent Tasks Missing Sandbox Capabilities (execute_code / execute_shell fail on staging)
 
-- **Status:** Reverted (cap change) on `main`. Agents failed to boot with it; see [002](./002-staging-agents-fail-boot-after-cap-change-reverted.md). Re-apply after node rollout.
+- **Status:** Cap code re-applied behind `nomad.sandboxCapsEnabled` (default off). Not enabled anywhere yet. Enable on staging only after replacement nodes exist and the old nodes are gone. See [002](./002-staging-agents-fail-boot-after-cap-change-reverted.md).
 - **Severity:** High
 - **Date:** 2026-11-07
 - **Summary:** On staging, `execute_code` and `execute_shell` fail for agents with `sandbox_infrastructure_error`: `mount --make-shared /var/run/netns failed: Operation not permitted`. The Nomad runtime never granted `NET_ADMIN` or `SYS_ADMIN` to agent tasks. Bug report 010 fixed this for Docker mode only.

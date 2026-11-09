@@ -1672,6 +1672,12 @@ export const NomadConfigSchema = z.object({
   /** Docker network for agent tasks. Leave empty for Nomad's default bridge network. */
   dockerNetwork: z.string().nullable().optional(),
   /**
+   * Request NET_ADMIN and SYS_ADMIN for agent tasks so execute_code and execute_shell
+   * sandboxes can create a network namespace. Only enable once every Nomad client allows
+   * these capabilities (cloud-init `allow_caps`). Override: NOMAD_SANDBOX_CAPS_ENABLED
+   */
+  sandboxCapsEnabled: z.boolean().default(false),
+  /**
    * Interval (ms) between termination polls.
    * The adapter polls Nomad allocation statuses to detect agent crashes.
    * Default: 30_000 (30 seconds).

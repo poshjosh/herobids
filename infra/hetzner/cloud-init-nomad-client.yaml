@@ -76,6 +76,14 @@ write_files:
       plugin "docker" {
         config {
           allow_privileged = false
+          # Nomad's default allow_caps plus the two caps the agent sandbox needs
+          # (scripts/sandbox-exec.sh). Allowed here; jobs only request them when
+          # nomad.sandboxCapsEnabled is on.
+          allow_caps = [
+            "audit_write", "chown", "dac_override", "fowner", "fsetid", "kill",
+            "mknod", "net_bind_service", "setfcap", "setgid", "setpcap", "setuid",
+            "sys_chroot", "net_admin", "sys_admin",
+          ]
           volumes {
             enabled = true
           }

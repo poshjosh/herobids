@@ -404,6 +404,9 @@ const agentRuntimeLauncher = await (async () => {
       namespace: appConfig.nomad.namespace,
       agentImage: process.env['NOMAD_AGENT_IMAGE'] ?? appConfig.nomad.agentImage,
       dockerNetwork: appConfig.nomad.dockerNetwork!,
+      sandboxCapsEnabled: process.env['NOMAD_SANDBOX_CAPS_ENABLED'] !== undefined
+        ? process.env['NOMAD_SANDBOX_CAPS_ENABLED'] === 'true'
+        : appConfig.nomad.sandboxCapsEnabled,
       defaultResources: {
         memoryLimitMb: defaultResources.memoryLimitMb,
         cpuShares: defaultResources.cpuShares,

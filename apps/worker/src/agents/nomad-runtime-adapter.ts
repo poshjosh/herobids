@@ -60,6 +60,8 @@ export interface NomadRuntimeAdapterConfig {
   agentImage: string;
   /** Docker network for agent tasks. */
   dockerNetwork?: string;
+  /** Request NET_ADMIN and SYS_ADMIN for agent tasks (see NomadConfigSchema.sandboxCapsEnabled). */
+  sandboxCapsEnabled?: boolean;
   /** Default resource profile applied when not specified per-tier. */
   defaultResources: {
     memoryLimitMb: number;
@@ -182,6 +184,7 @@ export interface NomadJobSpec {
           labels: Array<Record<string, string>>;
           network_mode?: string;
           pids_limit?: number;
+          cap_add?: string[];
         };
         Resources: {
           MemoryMB: number;
@@ -262,6 +265,8 @@ export function buildNomadJobSpec(
                 // network_mode only included when set
                 ...(adapterConfig.dockerNetwork ? { network_mode: adapterConfig.dockerNetwork } : {}),
                 pids_limit: maxProcesses,
+                // Only when enabled: every client must allow these in plugin "docker" allow_caps.
+                ...(adapterConfig.sandboxCapsEnabled ? { cap_add: ['NET_ADMIN', 'SYS_ADMIN'] } : {}),
               } as NomadJobSpec['Job']['TaskGroups'][0]['Tasks'][0]['Config'],
               Resources: {
                 MemoryMB: effectiveMemoryReservationMb, // soft scheduling reservation (from resourceProfiles in config/default.yaml)

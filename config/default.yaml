@@ -375,6 +375,7 @@ nomad:
   namespace: herobids-agents             # namespace for agent job isolation
   agentImage: ghcr.io/poshjosh/herobids-agent:latest  # Docker image for agent tasks; override: NOMAD_AGENT_IMAGE
   dockerNetwork:                         # Docker network for agent tasks (empty = Nomad default bridge)
+  sandboxCapsEnabled: false              # request NET_ADMIN/SYS_ADMIN for agent sandboxes; only after all clients allow them; override: NOMAD_SANDBOX_CAPS_ENABLED
   terminationPollIntervalMs: 30000       # how often to poll Nomad for agent allocation crashes (ms)
   requestTimeoutMs: 10000                # Nomad HTTP API request timeout (ms)
 
