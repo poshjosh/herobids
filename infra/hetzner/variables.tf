@@ -171,6 +171,19 @@ variable "agent_node_count" {
   }
 }
 
+# Replacement pool for sandboxed agents. Its nodes boot with cloud-init allow_caps,
+# so they can run jobs with NET_ADMIN/SYS_ADMIN. Existing agent nodes do not allow them.
+variable "agent_caps_node_count" {
+  type        = number
+  description = "Number of agent nodes built with allow_caps (NET_ADMIN/SYS_ADMIN for sandboxes). Replacement pool; default 0."
+  default     = 0
+
+  validation {
+    condition     = var.agent_caps_node_count >= 0
+    error_message = "agent_caps_node_count must be >= 0."
+  }
+}
+
 variable "min_agent_nodes" {
   type        = number
   description = "Minimum number of agent nodes (scale-in floor). Enforced by the nightly scale-in routine."

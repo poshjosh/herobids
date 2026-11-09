@@ -300,4 +300,55 @@ resource "hcloud_server_network" "agent" {
   # Let Hetzner auto-assign private IPs from the subnet.
 }
 
+# ── Agent Caps Node Pool (sandbox replacement) ────────────
+# Same template as hcloud_server.agent, named agent-caps-N so it can run beside the
+# old pool. Existing nodes are drained and removed once agents have moved.
+
+resource "hcloud_server" "agent_caps" {
+  count       = var.enable_nomad ? var.agent_caps_node_count : 0
+  name        = "${var.server_name}-agent-caps-${count.index + 1}"
+  server_type = var.agent_node_server_type
+  location    = var.location
+  image       = var.image
+
+  ssh_keys     = [hcloud_ssh_key.default.id]
+  firewall_ids = var.enable_nomad ? [hcloud_firewall.agent[0].id] : []
+
+  public_net {
+    ipv4_enabled = true
+    ipv6_enabled = false
+  }
+
+  user_data = templatefile("${path.module}/cloud-init-nomad-client.yaml", {
+    server_name              = "${var.server_name}-agent-caps-${count.index + 1}"
+    environment              = var.environment
+    nomad_server_addr        = hcloud_server_network.control_plane[0].ip
+    node_pool                = var.server_name
+    node_index               = 100 + count.index
+    nomad_version            = var.nomad_version
+    private_subnet           = var.subnet_ip_range
+    control_plane_private_ip = hcloud_server_network.control_plane[0].ip
+    ghcr_username            = var.ghcr_username
+    ghcr_token               = var.ghcr_token
+  })
+
+  labels = {
+    app         = "herobids"
+    environment = var.environment
+    role        = "agent"
+    node_pool   = var.server_name
+  }
+
+  lifecycle {
+    prevent_destroy = false
+    ignore_changes  = [user_data]
+  }
+}
+
+resource "hcloud_server_network" "agent_caps" {
+  count      = var.enable_nomad ? var.agent_caps_node_count : 0
+  server_id  = hcloud_server.agent_caps[count.index].id
+  network_id = hcloud_network.private[0].id
+}
+
 
