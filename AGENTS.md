@@ -156,6 +156,8 @@ See [Agent Mode Purity](./docs/tech/agents/runtime-boundary-and-message-contract
 
 - If your changes affect skills, read: [Skill authoring guide](./docs/tech/agents/skill-authoring.md) — conventions for writing skills and a JSON template for `POST /skills`
 
+- If your changes affect agent runtimes (Nomad job specs, node capabilities, sandbox requirements, node pools, or agent relaunches), read: [Agent runtime rollout guide](./docs/tech/agents/agent-runtime-rollout-guide.md) — ship node config before job requests, ship dark behind a flag, and verify the full chain on one target before moving agents
+
 - If your changes affect `infra/hetzner` (deploy scripts, Terraform, autoscaler), read: [Infra lessons](./infra/hetzner/docs/auto-scaling/lessons-learnt.md) and the [infra docs index](./infra/hetzner/docs/README.md). Terraform always runs in the env's own data dir, `TF_DATA_DIR=.terraform-envs/<env>`, never the shared `.terraform/` (lesson #21).
 
 ## Best Practices
