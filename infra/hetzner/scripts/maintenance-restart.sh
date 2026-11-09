@@ -295,14 +295,24 @@ if [[ $AGENT_COUNT -gt 0 ]]; then
   "
   ok "DB: sessions and agents marked stopped."
 
-  # Stop containers (SIGTERM, then SIGKILL after 10 s)
+  # Stop containers by the herobids.agentId label (SIGTERM, then SIGKILL after 10 s).
+  # Matching by name does not work on the Nomad runtime, which names containers
+  # agent-<allocId>. The Docker backend sets the same label.
+  STOPPED=0
   for AGENT_ID in "${AGENT_IDS[@]}"; do
-    CONTAINER="herobids-agent-${AGENT_ID}"
-    log "  Stopping ${CONTAINER}..."
-    docker stop "${CONTAINER}" 2>/dev/null \
-      || warn "  ${CONTAINER} not running or already stopped — skipping."
+    mapfile -t AGENT_CONTAINERS < <(docker ps -q --filter "label=herobids.agentId=${AGENT_ID}")
+    if [[ ${#AGENT_CONTAINERS[@]} -eq 0 ]]; then
+      warn "  No running container for agent ${AGENT_ID} — nothing to stop."
+      continue
+    fi
+    log "  Stopping container(s) for agent ${AGENT_ID}..."
+    if docker stop "${AGENT_CONTAINERS[@]}" >/dev/null; then
+      STOPPED=$((STOPPED + ${#AGENT_CONTAINERS[@]}))
+    else
+      warn "  docker stop failed for agent ${AGENT_ID}."
+    fi
   done
-  ok "Containers stopped."
+  ok "Containers stopped: ${STOPPED} (of ${AGENT_COUNT} agent(s))."
 fi
 
 # If deploying, install an ERR trap so any unexpected failure during the build

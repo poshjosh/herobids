@@ -1,5 +1,7 @@
 # Browser Automation
 
+> See also: [Browser Pool — Current State](../../architecture/browser-pool.md) for the pool deployment, networking, and known limits.
+
 Agents have two browser automation paths: the platform `browse_interactive` tool and the `agent-browser` CLI. Both connect to a shared Browserless pool over CDP — no Chrome runs inside agent containers.
 
 ## Architecture

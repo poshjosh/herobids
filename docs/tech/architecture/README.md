@@ -46,3 +46,4 @@ Additional architecture documents:
 - [Market Data Architecture](./market-data.md) — current-state source of truth for provider wiring, source selection, caching, and degradation behavior
 - [Security Architecture](./security.md) — threat model, trust boundaries, defense-in-depth principles, and mitigation catalogue
 - [Observability](./observability.md) — external-backend invocation metrics: the `MetricsSink` seam, the structured-log default sink, latency budgets, and the readiness-item mapping
+- [Browser Pool](./browser-pool.md) — current state of the Nomad browser pool (staging): topology, wiring, verification, known limits, and what is not built yet

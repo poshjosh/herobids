@@ -1,8 +1,21 @@
 # Browser-Pool Autoscaling
 
-**Status:** Draft
+**Status:** Draft (partly superseded, see status update)
 **Created:** 2026-08-31
 **Area:** Infrastructure, browser-pool, Nomad orchestration
+
+---
+
+## Status update (2026-11-08)
+
+This plan is still a draft. Its Phase 1 has not started. Since it was written:
+
+- **Static port.** The job now uses static port `3100` on the private network ([bug 2026/11/08 001](../../../bug-reports/2026/11/08/001-browser-pool-registered-on-public-address-blocked-by-ufw.md)). That allows one allocation per node. This plan never mentions ports, so it must be reconciled with [Plan 003](../003-browser-pool-scale-foundations/001-plan.md) before Phase 1.
+- **Count is not preserved.** RQ3 is still open. `push.sh` re-submits the job with the file's `count`.
+- **No `scaling` block, no Terraform variables, no autoscale script** exist yet (tasks 1.1–1.4 are not done).
+- **One URL for agents.** Multi-instance resolution (RQ2, `service-registry.ts`) is not implemented.
+
+Current state: [browser-pool.md](../../../tech/architecture/browser-pool.md). Foundations: [Plan 003](../003-browser-pool-scale-foundations/001-plan.md). Goal: [Plan 004](../004-browser-pool-scale-to-thousands/001-plan.md).
 
 ---
 
