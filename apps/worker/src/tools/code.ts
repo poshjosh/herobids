@@ -121,6 +121,9 @@ const codeExecuteTool: AgentTool = {
         }
       }
 
+      // execute_code runs as root in every permission mode, so the UID-based egress rules
+      // do not restrict it. It still goes through sandbox-exec.sh so a container without
+      // the rules refuses to run code, the same as shell commands.
       const hasSandbox = await access(SANDBOX_SCRIPT).then(() => true).catch(() => false);
       usedSandbox = hasSandbox;
 
@@ -154,10 +157,6 @@ const codeExecuteTool: AgentTool = {
             // Neither is a secret — safe to pass through the sandbox boundary.
             HOME: '/home/agent',
             ...(process.env['AGENT_BROWSER_CONFIG'] ? { AGENT_BROWSER_CONFIG: process.env['AGENT_BROWSER_CONFIG'] } : {}),
-            // SANDBOX_ALLOWED_HOSTS is read by sandbox-exec.sh to add iptables allow
-            // rules for specific IPs (e.g. the browser pool). Without it the sandbox
-            // blocks all RFC 1918 traffic and agent-browser CDP connections time out.
-            ...(process.env['SANDBOX_ALLOWED_HOSTS'] ? { SANDBOX_ALLOWED_HOSTS: process.env['SANDBOX_ALLOWED_HOSTS'] } : {}),
           }
           : process.env,
       });

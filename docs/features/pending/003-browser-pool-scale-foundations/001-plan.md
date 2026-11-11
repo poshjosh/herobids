@@ -1,6 +1,8 @@
 # Browser Pool — Scale Foundations
 
-**Status:** Draft. Not started.
+**Status:** Draft. Not started. Mostly superseded by [Plan 005, dedicated browser tier](../005-browser-pool-dedicated-tier/001-plan.md) (2026-11-11).
+**Superseded:** Phase 1 (dynamic port) is dropped: one instance per machine, so static port 3100 stays. Phase 3 (count preservation) is obsolete: the job becomes `system`, one allocation per browser node, so there is no count to preserve. Phase 2 (multi-instance selection in the worker and agents) is replaced by a Hetzner load balancer as one stable agent-facing address; Phase 2 is kept only as the fallback (Option A) if Plan 005's front-door spike fails.
+**Still valid:** Phase 4 (gate checks every instance). Plan 005 extends it to also check the front door. The "redeploy test for static port release" in the Decision section is not meaningful: a same-spec resubmit is applied in place. Plan 005 Phase 4 replaces it with a destructive-update test.
 **Created:** 2026-11-08
 **Area:** Infrastructure, browser-pool, worker, Nomad
 **Depends on:** the staging fix in [bug 2026/11/08 001](../../../bug-reports/2026/11/08/001-browser-pool-registered-on-public-address-blocked-by-ufw.md)

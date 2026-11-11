@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
-# sandbox-allowlist-smoke-test.sh — Smoke test for the SANDBOX_ALLOWED_HOSTS
-# mechanism in sandbox-exec.sh.
+# sandbox-allowlist-smoke-test.sh — Smoke test for the UID-based egress rules
+# (scripts/sandbox-egress.sh) and the SANDBOX_ALLOWED_HOSTS allowlist.
 #
-# Verifies that the sandbox allowlist correctly punches targeted holes in the
-# RFC 1918 block for operator-configured internal services (e.g. Browserless).
+# The sandbox no longer creates a network namespace. The entrypoint installs iptables
+# rules at container start that reject private networks for the agent user only.
+# Commands are run the same way the worker runs standard-mode commands:
+#   sandbox-exec.sh sudo -u agent sh -c '<command>'
 #
 # Tests:
-#   1. Without SANDBOX_ALLOWED_HOSTS, sandbox blocks access to a Docker-network
-#      IP (simulated internal service on RFC 1918).
-#   2. With SANDBOX_ALLOWED_HOSTS=<target-ip>, sandbox allows access to that IP.
-#   3. With SANDBOX_ALLOWED_HOSTS=<target-ip>, other RFC 1918 addresses are
-#      still blocked.
+#   0. With NET_ADMIN, the entrypoint installs the egress rules (marker present).
+#   1. Standard command, no allowlist: the browser-pool IP is rejected.
+#   2. Standard command, SANDBOX_ALLOWED_HOSTS=<browser-pool IP>: reachable.
+#   3. Standard command, allowlist set: an unlisted RFC 1918 IP is still rejected.
+#   4. Root command, no allowlist: the browser-pool IP is reachable. Root is not
+#      restricted by these rules. This is intended (full mode, execute_code).
+#   5. Without NET_ADMIN: the marker is absent and sandbox-exec.sh refuses with
+#      exit 97 ("sandbox egress rules not active in this container").
+#
+# Not covered: fail-closed boot when a rule fails to install. That needs a container
+# where iptables fails on purpose. Check it by hand if the entrypoint changes.
 #
 # Usage:
 #   scripts/shell/tests/sandbox-allowlist-smoke-test.sh
@@ -25,8 +33,8 @@
 #   SKIP_POOL_START      Set to 1 to skip auto-starting browser-pool (assume it's up)
 #   AGENT_IMAGE          Agent image to use (default: herobids-agent:latest)
 #
-# The test runs inside a container with CAP_NET_ADMIN and CAP_SYS_ADMIN
-# (required by sandbox-exec.sh for network namespace creation).
+# Test containers get CAP_NET_ADMIN only. CAP_SYS_ADMIN is not granted: the
+# sandbox no longer needs it.
 #
 # Exit code: 0 if all checks pass, 1 if any check fails.
 
@@ -171,70 +179,120 @@ fi
 log "Docker network: ${DOCKER_NETWORK}"
 log "browser-pool IP: ${BROWSER_POOL_IP}"
 
-# Pick a decoy IP that is definitely not assigned to any container on the network.
-# Use an address in 172.16.0.0/12 that is far from the Docker-assigned range.
+# Decoy: an RFC 1918 address with no container on the network.
 DECOY_IP="172.31.255.254"
 log "Decoy (unreachable RFC 1918) IP: ${DECOY_IP}"
 
+# Shared pattern for "the connection was refused or blocked".
+BLOCKED_PATTERN="BLOCKED|refused|reject|unreachable|timed out|can't connect|bad address|reset"
+
+# Runs a command in a fresh agent container with NET_ADMIN only.
+# Usage: run_in_container [-e VAR=value ...] -- <shell command>
+run_in_container() {
+  local env_args=()
+  while [[ $# -gt 0 && "$1" != "--" ]]; do
+    env_args+=(-e "$1")
+    shift
+  done
+  shift # drop --
+  docker run --rm \
+    --network "${DOCKER_NETWORK}" \
+    --cap-add NET_ADMIN \
+    "${env_args[@]+"${env_args[@]}"}" \
+    "${AGENT_IMAGE}" \
+    sh -c "$1" 2>&1 || true
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# Test 1: Without SANDBOX_ALLOWED_HOSTS, sandbox blocks browser-pool IP
+# Test 0: NET_ADMIN makes the entrypoint install the egress rules
 # ═══════════════════════════════════════════════════════════════════════════════
 
-log "── Test 1: sandbox blocks RFC 1918 without allowlist ──"
+log "── Test 0: entrypoint installs egress rules when NET_ADMIN is granted ──"
 
-# Run sandbox-exec.sh inside the agent container without SANDBOX_ALLOWED_HOSTS.
-# Attempt to curl the browser-pool IP — should be rejected by iptables.
-TEST1_OUTPUT=$(docker run --rm \
-  --network "${DOCKER_NETWORK}" \
-  --cap-add NET_ADMIN \
-  --cap-add SYS_ADMIN \
-  "${AGENT_IMAGE}" \
-  sh -c "sandbox-exec.sh sh -c 'wget -q -T 5 -O - http://${BROWSER_POOL_IP}:3000/json/version 2>&1 || echo BLOCKED'" 2>&1) || true
+TEST0_OUTPUT=$(run_in_container -- 'test -f /run/herobids/sandbox-egress-ready && echo MARKER_OK')
 
-if echo "${TEST1_OUTPUT}" | grep -qi "BLOCKED\|refused\|reject\|unreachable\|timed out\|can't connect\|bad address\|reset"; then
-  check_pass "sandbox blocks browser-pool IP (${BROWSER_POOL_IP}) without SANDBOX_ALLOWED_HOSTS"
+if echo "${TEST0_OUTPUT}" | grep -q "MARKER_OK"; then
+  check_pass "egress marker present with NET_ADMIN"
 else
-  check_fail "sandbox did NOT block browser-pool IP without allowlist. Output: $(echo "${TEST1_OUTPUT}" | tail -3)"
+  check_fail "egress marker missing with NET_ADMIN. Output: $(echo "${TEST0_OUTPUT}" | tail -3)"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Test 2: With SANDBOX_ALLOWED_HOSTS, sandbox allows browser-pool IP
+# Test 1: standard command, no allowlist: browser-pool IP is rejected
 # ═══════════════════════════════════════════════════════════════════════════════
 
-log "── Test 2: sandbox allows allowlisted IP ──"
+log "── Test 1: standard command blocked from RFC 1918 without allowlist ──"
 
-TEST2_OUTPUT=$(docker run --rm \
-  --network "${DOCKER_NETWORK}" \
-  --cap-add NET_ADMIN \
-  --cap-add SYS_ADMIN \
-  -e "SANDBOX_ALLOWED_HOSTS=${BROWSER_POOL_IP}" \
-  "${AGENT_IMAGE}" \
-  sh -c "sandbox-exec.sh sh -c 'wget -q -T 10 -O - http://${BROWSER_POOL_IP}:3000/json/version 2>&1'" 2>&1) || true
+TEST1_OUTPUT=$(run_in_container -- \
+  "sandbox-exec.sh sudo -u agent sh -c 'wget -q -T 5 -O - http://${BROWSER_POOL_IP}:3000/json/version 2>&1 || echo BLOCKED'")
 
-if echo "${TEST2_OUTPUT}" | grep -qi "Browser\|webSocketDebuggerUrl\|Chrome"; then
-  check_pass "sandbox allows browser-pool IP (${BROWSER_POOL_IP}) when in SANDBOX_ALLOWED_HOSTS"
+if echo "${TEST1_OUTPUT}" | grep -qiE "${BLOCKED_PATTERN}"; then
+  check_pass "standard command blocked from browser-pool IP (${BROWSER_POOL_IP}) without allowlist"
 else
-  check_fail "sandbox did NOT allow browser-pool IP with allowlist. Output: $(echo "${TEST2_OUTPUT}" | tail -5)"
+  check_fail "standard command reached browser-pool IP without allowlist. Output: $(echo "${TEST1_OUTPUT}" | tail -3)"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Test 3: With SANDBOX_ALLOWED_HOSTS, other RFC 1918 IPs are still blocked
+# Test 2: standard command, allowlisted browser-pool IP is reachable
 # ═══════════════════════════════════════════════════════════════════════════════
 
-log "── Test 3: non-allowlisted RFC 1918 IP still blocked ──"
+log "── Test 2: standard command reaches allowlisted IP ──"
 
-TEST3_OUTPUT=$(docker run --rm \
-  --network "${DOCKER_NETWORK}" \
-  --cap-add NET_ADMIN \
-  --cap-add SYS_ADMIN \
-  -e "SANDBOX_ALLOWED_HOSTS=${BROWSER_POOL_IP}" \
-  "${AGENT_IMAGE}" \
-  sh -c "sandbox-exec.sh sh -c 'wget -q -T 5 -O - http://${DECOY_IP}:80/ 2>&1 || echo BLOCKED'" 2>&1) || true
+TEST2_OUTPUT=$(run_in_container "SANDBOX_ALLOWED_HOSTS=${BROWSER_POOL_IP}" -- \
+  "sandbox-exec.sh sudo -u agent sh -c 'wget -q -T 10 -O - http://${BROWSER_POOL_IP}:3000/json/version 2>&1'")
 
-if echo "${TEST3_OUTPUT}" | grep -qi "BLOCKED\|refused\|reject\|unreachable\|timed out\|can't connect\|bad address\|reset"; then
-  check_pass "sandbox still blocks non-allowlisted RFC 1918 IP (${DECOY_IP})"
+if echo "${TEST2_OUTPUT}" | grep -qiE "Browser|webSocketDebuggerUrl|Chrome"; then
+  check_pass "standard command reaches browser-pool IP (${BROWSER_POOL_IP}) when allowlisted"
 else
-  check_fail "sandbox did NOT block decoy RFC 1918 IP (${DECOY_IP}). Output: $(echo "${TEST3_OUTPUT}" | tail -3)"
+  check_fail "standard command could not reach allowlisted IP. Output: $(echo "${TEST2_OUTPUT}" | tail -5)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 3: standard command, allowlist set: an unlisted RFC 1918 IP is still rejected
+# ═══════════════════════════════════════════════════════════════════════════════
+
+log "── Test 3: standard command still blocked from unlisted RFC 1918 IP ──"
+
+TEST3_OUTPUT=$(run_in_container "SANDBOX_ALLOWED_HOSTS=${BROWSER_POOL_IP}" -- \
+  "sandbox-exec.sh sudo -u agent sh -c 'wget -q -T 5 -O - http://${DECOY_IP}:80/ 2>&1 || echo BLOCKED'")
+
+if echo "${TEST3_OUTPUT}" | grep -qiE "${BLOCKED_PATTERN}"; then
+  check_pass "standard command still blocked from unlisted RFC 1918 IP (${DECOY_IP})"
+else
+  check_fail "standard command reached unlisted RFC 1918 IP (${DECOY_IP}). Output: $(echo "${TEST3_OUTPUT}" | tail -3)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 4: root command is not restricted (intended; full mode and execute_code)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+log "── Test 4: root command reaches RFC 1918 (not restricted by design) ──"
+
+TEST4_OUTPUT=$(run_in_container -- \
+  "sandbox-exec.sh sh -c 'wget -q -T 10 -O - http://${BROWSER_POOL_IP}:3000/json/version 2>&1'")
+
+if echo "${TEST4_OUTPUT}" | grep -qiE "Browser|webSocketDebuggerUrl|Chrome"; then
+  check_pass "root command reaches browser-pool IP (rules are UID-scoped)"
+else
+  check_fail "root command could not reach browser-pool IP. Output: $(echo "${TEST4_OUTPUT}" | tail -5)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 5: without NET_ADMIN, sandbox-exec.sh refuses to run commands
+# ═══════════════════════════════════════════════════════════════════════════════
+
+log "── Test 5: no NET_ADMIN means commands are refused (exit 97) ──"
+
+TEST5_OUTPUT=$(docker run --rm \
+  --network "${DOCKER_NETWORK}" \
+  "${AGENT_IMAGE}" \
+  sh -c "sandbox-exec.sh true; echo EXIT=\$?" 2>&1 || true)
+
+if echo "${TEST5_OUTPUT}" | grep -q "sandbox egress rules not active in this container" \
+  && echo "${TEST5_OUTPUT}" | grep -q "EXIT=97"; then
+  check_pass "commands refused without NET_ADMIN (exit 97)"
+else
+  check_fail "commands not refused without NET_ADMIN. Output: $(echo "${TEST5_OUTPUT}" | tail -3)"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════

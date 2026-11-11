@@ -327,7 +327,9 @@ export class DockerAgentManager {
         CpuShares: effectiveCpuShares,
         Tmpfs: { '/tmp': `size=${effectiveTempStorageMb}m,noexec` },
         PidsLimit: effectiveMaxProcesses,
-        CapAdd: ['NET_ADMIN', 'SYS_ADMIN'],
+        // NET_ADMIN only: scripts/sandbox-egress.sh installs iptables rules at container start.
+        // SYS_ADMIN was removed with the per-command network namespace it supported.
+        CapAdd: ['NET_ADMIN'],
         RestartPolicy: { Name: 'no' },
       },
       Labels: labels,

@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The agent details page (`/agents/:id`) no longer shows the chat box. The agent details (status, objective, capabilities, health, activity and artifacts) render directly below the page header. A "Back to Agents" button sits at the top right of the header and returns to the AI agents page (`/agents`).
 - Nomad agent tasks can request `NET_ADMIN` and `SYS_ADMIN` so the `execute_code` and `execute_shell` sandboxes can create a network namespace. Off by default (`nomad.sandboxCapsEnabled`, override `NOMAD_SANDBOX_CAPS_ENABLED`). Enable only after every Nomad client allows these capabilities.
 - Nomad client cloud-init allows `net_admin` and `sys_admin` in the docker plugin. Existing clients need this applied by a node replacement.
 

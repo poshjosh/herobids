@@ -231,7 +231,7 @@ describe('DockerAgentManager — stop failure recovery', () => {
 describe('DockerAgentManager — sandbox capabilities (bug #10)', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it('grants NET_ADMIN and SYS_ADMIN to agent containers', async () => {
+  it('grants only NET_ADMIN to agent containers (egress rules, no namespace)', async () => {
     const fetchMock = makeFetchForStart();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -248,7 +248,7 @@ describe('DockerAgentManager — sandbox capabilities (bug #10)', () => {
       HostConfig?: { CapAdd?: string[] };
     };
 
-    expect(body.HostConfig?.CapAdd).toEqual(['NET_ADMIN', 'SYS_ADMIN']);
+    expect(body.HostConfig?.CapAdd).toEqual(['NET_ADMIN']);
   });
 });
 

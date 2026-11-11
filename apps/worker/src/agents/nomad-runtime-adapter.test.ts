@@ -70,6 +70,16 @@ describe('buildNomadJobSpec', () => {
     expect(task.Config).not.toHaveProperty('env');
   });
 
+  it('passes container env through to the task, including SANDBOX_ALLOWED_HOSTS', () => {
+    // The entrypoint reads SANDBOX_ALLOWED_HOSTS at container start to allowlist the
+    // browser pool. If Nomad drops it, the pool is blocked by the egress rules.
+    const launch = { ...baseLaunch, env: { ...baseLaunch.env, SANDBOX_ALLOWED_HOSTS: '10.0.0.5' } };
+    const spec = buildNomadJobSpec(launch, baseAdapter);
+    const task = spec.Job.TaskGroups[0]!.Tasks[0]!;
+
+    expect(task.Env).toMatchObject({ SANDBOX_ALLOWED_HOSTS: '10.0.0.5' });
+  });
+
   it('omits cap_add when sandbox caps are disabled', () => {
     const spec = buildNomadJobSpec(baseLaunch, { ...baseAdapter, sandboxCapsEnabled: false });
     const config = spec.Job.TaskGroups[0]!.Tasks[0]!.Config;
@@ -77,11 +87,11 @@ describe('buildNomadJobSpec', () => {
     expect(config).not.toHaveProperty('cap_add');
   });
 
-  it('requests NET_ADMIN and SYS_ADMIN when sandbox caps are enabled', () => {
+  it('requests only NET_ADMIN when sandbox caps are enabled', () => {
     const spec = buildNomadJobSpec(baseLaunch, { ...baseAdapter, sandboxCapsEnabled: true });
     const config = spec.Job.TaskGroups[0]!.Tasks[0]!.Config;
 
-    expect(config.cap_add).toEqual(['NET_ADMIN', 'SYS_ADMIN']);
+    expect(config.cap_add).toEqual(['NET_ADMIN']);
     expect(config).not.toHaveProperty('privileged');
   });
 

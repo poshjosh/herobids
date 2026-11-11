@@ -2,7 +2,7 @@
 # Agent runtime image — lean container for agent reasoning loop.
 # Built from monorepo root: docker build -f docker/Dockerfile.agent -t herobids-agent:latest .
 # Does NOT include bot actor, BullMQ worker, or trading engine code.
-# Network sandboxing tools are included for sandbox-exec.sh.
+# Network tools are included for sandbox-egress.sh.
 
 FROM node:22-alpine AS base
 RUN corepack enable
@@ -29,8 +29,9 @@ RUN echo "inject-workspace-packages=true" >> .npmrc && \
     pnpm --filter @herobids/worker deploy --prod /deploy/agent
     
 # ── runtime image ─────────────────────────────────────────────────────────────
-# Installs network sandboxing tools required by scripts/sandbox-exec.sh.
-# CAP_NET_ADMIN is required at container run-time for namespace creation.
+# Installs the iptables tools used by scripts/sandbox-egress.sh (run at container start).
+# CAP_NET_ADMIN is required at run-time to install the egress rules. CAP_SYS_ADMIN is not
+# needed: the sandbox no longer creates a network namespace.
 FROM node:22-alpine AS runtime
 
 RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip git sudo
@@ -45,10 +46,11 @@ RUN for attempt in 1 2 3; do \
       echo "agent-browser install attempt $attempt failed; retrying in 10s"; sleep 10; \
     done
 
-# Non-root agent user with passwordless sudo for full permission level.
-# The container still starts as root because sandbox-exec.sh requires
-# CAP_NET_ADMIN for network namespace creation. The execute_shell tool
-# drops to the 'agent' user for standard mode and stays root for full mode.
+# Non-root agent user with passwordless sudo. This is intentional: full permission
+# mode is root access by design. Standard mode runs commands as 'agent' via
+# `sudo -u agent`. Because 'agent' can sudo, the UID-based egress rules are a
+# guardrail, not a security boundary (see scripts/sandbox-egress.sh).
+# The container starts as root so the entrypoint can install the egress rules.
 RUN adduser -D -h /home/agent agent && \
     echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
     chmod 0440 /etc/sudoers.d/agent
@@ -57,9 +59,11 @@ WORKDIR /app/apps/worker
 
 COPY --from=build /app/config /app/config
 COPY --from=deploy /deploy/agent ./
-# Copy the sandbox script so code_execute can call it inside the container
+# Sandbox gate used by execute_shell and execute_code, and the egress rule installer
+# that the entrypoint runs when the container has NET_ADMIN.
 COPY scripts/sandbox-exec.sh /usr/local/bin/sandbox-exec.sh
-RUN chmod +x /usr/local/bin/sandbox-exec.sh
+COPY scripts/sandbox-egress.sh /usr/local/bin/sandbox-egress.sh
+RUN chmod +x /usr/local/bin/sandbox-exec.sh /usr/local/bin/sandbox-egress.sh
 
 # Agent entrypoint — writes runtime config (e.g. agent-browser CDP), then execs CMD.
 COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh

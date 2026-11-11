@@ -279,7 +279,8 @@ Route: `/agents/new` — dedicated page for agent creation (form only; guided ch
 |----|-----------|-------|----------|--------|-------|
 | AG-D01 | Default mode is form | Navigate to `/agents/new` | The create form is shown. The card header "Create AI agent" is the only title; it is not a heading element. URL remains `/agents/new`. | — | 2026-10-16: checked against the code. The page uses no `PageHeader`, so there is no `<h1>`. The form is the only mode. |
 | AG-D02 | Retired 2026-10-15 | — | The `?ui=chat` mode and the mode toggle were removed (Wave 3 plan 004). Former AG-D02–AG-D07 no longer apply. | — | |
-| AG-20 | Details sit under the chat on the agent page | Open `/agents/:id` for a running agent; scroll below the chat | No Details or Back to chat button in the header. Status, Objective, Capabilities, Health, Activity, Artifacts and the rest of the agent details render below the chat box. Opening `/agents/:id/details` redirects to `/agents/:id`, and Edit from the chat icons opens the edit form | — | |
+| AG-20 | Agent details page shows no chat box | Open `/agents/:id` for any agent | The chat box is gone. Status, Objective, Capabilities, Health, Activity, Artifacts and the rest of the agent details render directly below the page header. No message composer or Send button is shown. Opening `/agents/:id/details` still redirects to `/agents/:id`. | — | 2026-11-10: chat box (AgentConversation) removed from the agent details page. |
+| AG-21 | Back to Agents button | Open `/agents/:id`; click the "Back to Agents" button at the top right of the header | The button sits at the top right next to the agent name. Clicking it navigates to `/agents` (the AI agents page). | — | 2026-11-10: added. |
 
 ---
 

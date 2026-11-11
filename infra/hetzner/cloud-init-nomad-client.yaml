@@ -76,13 +76,16 @@ write_files:
       plugin "docker" {
         config {
           allow_privileged = false
-          # Nomad's default allow_caps plus the two caps the agent sandbox needs
-          # (scripts/sandbox-exec.sh). Allowed here; jobs only request them when
-          # nomad.sandboxCapsEnabled is on.
+          # Nomad's default allow_caps plus NET_ADMIN, which the agent sandbox needs to
+          # install egress rules (scripts/sandbox-egress.sh). Jobs only request it when
+          # nomad.sandboxCapsEnabled is on. SYS_ADMIN is deliberately not listed: the
+          # sandbox no longer needs it, and Docker's AppArmor profile blocks mount anyway.
+          # Nodes built before this change still list sys_admin; it is harmless because
+          # no job requests it, and those nodes are retired.
           allow_caps = [
             "audit_write", "chown", "dac_override", "fowner", "fsetid", "kill",
             "mknod", "net_bind_service", "setfcap", "setgid", "setpcap", "setuid",
-            "sys_chroot", "net_admin", "sys_admin",
+            "sys_chroot", "net_admin",
           ]
           volumes {
             enabled = true

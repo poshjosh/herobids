@@ -188,16 +188,15 @@ export function buildAgentEnv(
     // agent-browser reads cdp from AGENT_BROWSER_CONFIG or --cdp flag.
     //
     // IMPORTANT: Use the pre-resolved IP (not the Docker hostname) for the CDP URL.
-    // The sandbox network namespace (sandbox-exec.sh) replaces Docker's DNS with
-    // public nameservers (8.8.8.8), so Docker-internal hostnames like "browser-pool"
-    // are unresolvable inside the sandbox. The resolved IP is already allowlisted
-    // in SANDBOX_ALLOWED_HOSTS for the same reason.
+    // The egress rules (sandbox-egress.sh) match IP addresses, not names, and Docker-internal
+    // hostnames like "browser-pool" do not resolve on Nomad's default bridge. The resolved IP
+    // is therefore allowlisted in SANDBOX_ALLOWED_HOSTS, which the entrypoint reads at start.
     const browserUrl = new URL(config.browserPoolUrl);
     const sandboxHost = config.browserPoolResolvedHost ?? browserUrl.hostname;
     const cdpUrl = `ws://${sandboxHost}:${browserUrl.port || '3000'}`;
     envOut['AGENT_BROWSER_CDP_URL'] = cdpUrl;
 
-    // Use pre-resolved IP for sandbox allowlist (Docker hostnames can't resolve inside sandbox).
+    // Use the pre-resolved IP for the egress allowlist (the rules match addresses, not names).
     // Fall back to hostname extraction if no pre-resolved value (e.g. when URL is already an IP).
     envOut['SANDBOX_ALLOWED_HOSTS'] = sandboxHost;
   }

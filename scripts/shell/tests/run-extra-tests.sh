@@ -582,7 +582,7 @@ if tier_enabled 4; then
   run_script "browser-pool-agent-browser-smoke (CLI → Browserless → CDP)" \
     "${TESTS_DIR}/browser-pool-agent-browser-smoke-test.sh"
 
-  run_script "sandbox-allowlist-smoke (SANDBOX_ALLOWED_HOSTS iptables)" \
+  run_script "sandbox-egress-smoke (UID egress rules + SANDBOX_ALLOWED_HOSTS)" \
     "${TESTS_DIR}/sandbox-allowlist-smoke-test.sh"
   # Last in Tier 4: it restarts the worker (PAUSE_TEST_RESTART_WORKER=0 skips that step).
   run_script "agent-pause (pause → no ticks/wakes → worker restart → resume)" \

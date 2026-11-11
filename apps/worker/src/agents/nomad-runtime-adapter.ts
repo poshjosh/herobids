@@ -265,8 +265,10 @@ export function buildNomadJobSpec(
                 // network_mode only included when set
                 ...(adapterConfig.dockerNetwork ? { network_mode: adapterConfig.dockerNetwork } : {}),
                 pids_limit: maxProcesses,
-                // Only when enabled: every client must allow these in plugin "docker" allow_caps.
-                ...(adapterConfig.sandboxCapsEnabled ? { cap_add: ['NET_ADMIN', 'SYS_ADMIN'] } : {}),
+                // Only when enabled: every client must allow NET_ADMIN in plugin "docker" allow_caps.
+                // NET_ADMIN only, not SYS_ADMIN: the sandbox installs iptables rules at container
+                // start (scripts/sandbox-egress.sh) and no longer creates a network namespace.
+                ...(adapterConfig.sandboxCapsEnabled ? { cap_add: ['NET_ADMIN'] } : {}),
               } as NomadJobSpec['Job']['TaskGroups'][0]['Tasks'][0]['Config'],
               Resources: {
                 MemoryMB: effectiveMemoryReservationMb, // soft scheduling reservation (from resourceProfiles in config/default.yaml)

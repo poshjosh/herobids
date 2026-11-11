@@ -453,6 +453,7 @@ export const messages: Record<string, string> = {
   'agents.controls.dailyLlmTokenBudget': 'ميزانية رموز الذكاء الاصطناعي اليومية',
   'agents.controls.estimatedDailySpend': 'الإنفاق اليومي المقدر للذكاء الاصطناعي: ~${amount}',
   'agents.detail.notFound': 'لم يتم العثور على وكيل الذكاء الاصطناعي',
+  'agents.detail.backToAgents': 'العودة إلى الوكلاء',
   'agents.detail.runtimeAlert.crashed': 'تعطل وكيل الذكاء الاصطناعي. توقّف التشغيل بشكل غير متوقع. راجع النشاط الأخير وجاهزية القدرات أدناه.',
   'agents.detail.runtimeAlert.unhealthy': 'تشغيل وكيل الذكاء الاصطناعي غير سليم. نبضات القلب مفقودة والعامل يتعافى.',
   'agents.detail.fundingBanner.text': 'قد تحتاج محفظة التداول الخاصة بك إلى تمويل قبل بدء التداول الفعلي.',

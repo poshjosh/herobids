@@ -147,7 +147,7 @@ export function ConnectionsPage() {
         title={intl.formatMessage({ id: 'nav.connections' })}
         subtitle={intl.formatMessage({ id: 'connections.subtitle' })}
         action={
-          <Button onClick={() => setSetupState({ step: 'setup' })}>
+          <Button variant="primary" size="sm" onClick={() => setSetupState({ step: 'setup' })}>
             {intl.formatMessage({ id: 'connections.addConnection' })}
           </Button>
         }

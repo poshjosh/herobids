@@ -129,7 +129,10 @@ const executeShellTool: AgentTool = {
       usedSandbox = hasSandbox;
 
       // Build the shell command:
-      // - All levels are wrapped with sandbox-exec.sh for network isolation.
+      // - All levels go through sandbox-exec.sh, which refuses to run unless the egress
+      //   rules are active (installed at container start by sandbox-egress.sh).
+      // - Standard mode is restricted to private networks for the agent user. Full mode
+      //   runs as root and is intentionally not restricted, so it can change those rules.
       // - Standard mode drops to the non-root 'agent' user for the inner command.
       // - Full mode runs as root (container's default user) — no sudo needed.
       let shellCmd: string;
@@ -154,10 +157,6 @@ const executeShellTool: AgentTool = {
             // Neither is a secret — safe to pass through the sandbox boundary.
             HOME: '/home/agent',
             ...(process.env['AGENT_BROWSER_CONFIG'] ? { AGENT_BROWSER_CONFIG: process.env['AGENT_BROWSER_CONFIG'] } : {}),
-            // SANDBOX_ALLOWED_HOSTS is read by sandbox-exec.sh to add iptables allow
-            // rules for specific IPs (e.g. the browser pool). Without it the sandbox
-            // blocks all RFC 1918 traffic and agent-browser CDP connections time out.
-            ...(process.env['SANDBOX_ALLOWED_HOSTS'] ? { SANDBOX_ALLOWED_HOSTS: process.env['SANDBOX_ALLOWED_HOSTS'] } : {}),
           }
           : process.env,
       });

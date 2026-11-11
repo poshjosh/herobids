@@ -17,4 +17,18 @@ if [ -n "${AGENT_BROWSER_CDP_URL:-}" ]; then
   printf '{"cdp":"%s"}\n' "$AGENT_BROWSER_CDP_URL" > /root/.agent-browser/config.json
 fi
 
+# Install the UID-based egress rules when this container has NET_ADMIN (bit 12 of
+# CapEff). Without NET_ADMIN the rules cannot be installed, so sandbox-exec.sh
+# refuses to run commands. This is a deliberate choice: a container that cannot
+# protect its sandbox should say so rather than run unrestricted.
+# The capability is read from /proc rather than an env flag, so the check matches
+# what the kernel actually granted, not what the job spec asked for.
+cap_eff=$(awk '/^CapEff/ {print $2}' /proc/self/status 2>/dev/null)
+if [ -n "$cap_eff" ] && [ $(( 0x$cap_eff >> 12 & 1 )) -eq 1 ]; then
+  /usr/local/bin/sandbox-egress.sh || {
+    echo "entrypoint: sandbox egress rules failed to install; refusing to start" >&2
+    exit 1
+  }
+fi
+
 exec "$@"

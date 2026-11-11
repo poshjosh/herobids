@@ -1,6 +1,9 @@
 # Browser Pool — Scale to Thousands
 
-**Status:** Draft. Target is not yet confirmed (see Open questions).
+**Status:** Draft. Kept as the long-term target and gated on measurement. Delivery moves to [Plan 005, dedicated browser tier](../005-browser-pool-dedicated-tier/001-plan.md) (2026-11-11). The target is still unconfirmed (see Open questions).
+**Updated interpretation (owner, 2026-11-11):** about 100k users, about 10k active users and about 10k agents at a time, and roughly 1,000 to 3,000 concurrent browser sessions at about 1 GB each. These are guesses. The 1 GB figure is unmeasured and pre-launch traffic is only external test users on staging, so do not size from either.
+**Superseded:** the Nomad-count scaling path in Phase 1 and the "agent nodes carry browsers" model in Phase 2. Browsers run on a dedicated, auto-scaled node pool (cx23 growing to cx53), as a `system` job behind a load balancer. Phase 3 (session-aware scale-in) and Phase 4 (security) carry into Plan 005 Phases 5 and 6.
+**Pulled forward:** Phase 0 (measure). It becomes Plan 005 Phase 1: always-on recording of sessions, queue, rejections and memory, plus a staging load test for real GB per session.
 **Created:** 2026-11-08
 **Area:** Infrastructure, browser-pool, Nomad, agent-node autoscaling
 **Depends on:** [Plan 003 — scale foundations](../003-browser-pool-scale-foundations/001-plan.md)

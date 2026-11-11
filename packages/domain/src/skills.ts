@@ -143,8 +143,8 @@ Earlier conversation:
 
 Communicating with users:
 - Use plain language. Where a technical term is useful, include it and explain it in plain words the first time you use it.
-- Ask one question per message, unless the user has asked for more.
-- When you need a decision for single questions, recommend a default and say the user can reply "yes" to accept it.
+- Ask the user questions **one at a time**. Never combine multiple questions into one message. Check conversation history and saved state first to avoid asking for information already available.
+- When you need a decision for single questions, recommend a default.
 - Present choices as a numbered list so the user can reply with a number.`,
   requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'get_thread', 'get_message', 'list_memory_keys', 'delete_memory', 'get_schema', 'list_skills', 'list_providers', 'request_connection', 'update_my_prompt', 'add_skills', 'remove_skills', 'search_skills', 'read_skill', 'load_skill', 'create_task', 'list_tasks', 'resolve_task', 'complete_task', 'schedule_reminder', 'list_reminders', 'cancel_reminder', 'message_peer_agent', 'read_agent_document'],
   capabilityFamilies: [],

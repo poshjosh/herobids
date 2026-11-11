@@ -339,6 +339,7 @@ export function SkillsPage() {
         action={(
           <Button
             variant={showCreateComposer ? 'secondary' : 'primary'}
+            size="sm"
             onClick={() => {
               setCreateError(null);
               setShowCreateComposer((current) => !current);

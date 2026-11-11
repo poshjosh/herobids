@@ -1,32 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, LoadingRows, ErrorState } from '../../lib/ui.js';
+import { PageShell, PageHeader, LoadingRows, ErrorState, Button } from '../../lib/ui.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { AgentConversation } from './AgentConversation.js';
-import { AgentQuickActions } from './AgentQuickActions.js';
 import { AgentDetails } from './AgentDetailPage.js';
 
-/** The agent's chat, with its details, configuration and runtime panels below. */
+/** The agent's details, configuration and runtime panels. */
 export function AgentChatPage() {
   const { id } = useParams<{ id: string }>();
   const intl = useIntl();
   const navigate = useNavigate();
-  const location = useLocation();
   const qc = useQueryClient();
-
-  // Set when returning from an approved connection request; read once so stripping the param does not reset the conversation.
-  const [connectionRequestId] = useState(() => new URLSearchParams(location.search).get('connected'));
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    if (!params.has('connected')) return;
-    params.delete('connected');
-    const search = params.toString();
-    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true });
-  }, [location.pathname, location.search, navigate]);
 
   const handleEvent = useCallback((event: UserEvent) => {
     if (event.type === 'agent.status' && event.agentId === id) {
@@ -51,18 +38,15 @@ export function AgentChatPage() {
 
   return (
     <PageShell>
-      <PageHeader title={agent.name} />
-      <AgentConversation
-        key={id}
-        agentId={id ?? ''}
-        agentName={agent.name}
-        status={agent.status}
-        connectionRequestId={connectionRequestId}
-        composerActions={<AgentQuickActions agentId={agent.id} status={agent.status} />}
+      <PageHeader
+        title={agent.name}
+        action={
+          <Button variant="primary" size="sm" onClick={() => navigate('/agents')}>
+            {intl.formatMessage({ id: 'agents.detail.backToAgents' })}
+          </Button>
+        }
       />
-      <div style={{ marginTop: '24px' }}>
-        <AgentDetails agentId={agent.id} />
-      </div>
+      <AgentDetails agentId={agent.id} />
     </PageShell>
   );
 }

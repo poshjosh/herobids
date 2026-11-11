@@ -453,6 +453,7 @@ export const messages: Record<string, string> = {
   'agents.controls.dailyLlmTokenBudget': 'दैनिक LLM टोकन बजट',
   'agents.controls.estimatedDailySpend': 'अनुमानित दैनिक LLM व्यय: ~${amount}',
   'agents.detail.notFound': 'AI एजेंट नहीं मिला',
+  'agents.detail.backToAgents': 'एजेंट पर वापस जाएं',
   'agents.detail.runtimeAlert.crashed': 'AI एजेंट क्रैश हो गया। रनटाइम अप्रत्याशित रूप से रुक गया। नीचे हाल की गतिविधि और क्षमता तैयारी देखें।',
   'agents.detail.runtimeAlert.unhealthy': 'AI एजेंट रनटाइम अस्वस्थ है। हार्टबीट गायब हैं और वर्कर रिकवर कर रहा है।',
   'agents.detail.fundingBanner.text': 'लाइव ट्रेडिंग से पहले आपके ट्रेडिंग वॉलेट में धनराशि की आवश्यकता हो सकती है।',

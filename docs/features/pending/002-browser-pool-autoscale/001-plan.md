@@ -1,6 +1,9 @@
 # Browser-Pool Autoscaling
 
-**Status:** Draft (partly superseded, see status update)
+**Status:** Draft. Partly superseded by [Plan 005, dedicated browser tier](../005-browser-pool-dedicated-tier/001-plan.md) (2026-11-11).
+**Superseded:** the Nomad scale API, the `scaling` block, count preservation on deploy (D2, D7, D8, Phase 1 tasks 1.1 and 1.6) and the two-level model (D1). Plan 005 scales by adding and removing dedicated browser machines, and runs the job as `system`, so there is no task-group count to scale or preserve. Also superseded: per-session instance selection in application code (D4, RQ2, task 1.5). Plan 005 puts a load balancer in front of the machines and keeps this as the fallback (Option A) only if the front-door spike fails.
+**Still valid:** `/pressure` as the demand signal (D3, RQ1), scale-out thresholds and cooldown ideas (D5, D6), reuse of `scale-common.sh` and `alert-common.sh`, and session-aware scale-in (Phase 3). Plan 005 Phase 5 builds on these.
+**Corrections:** the adapter is `apps/worker/src/tools/browserless-adapter.ts` and runs inside the agent process, not `packages/venues/`. The placement-failure watcher reads only the agent namespace, so the "level 2" fallback would not have seen `browser-pool`.
 **Created:** 2026-08-31
 **Area:** Infrastructure, browser-pool, Nomad orchestration
 
