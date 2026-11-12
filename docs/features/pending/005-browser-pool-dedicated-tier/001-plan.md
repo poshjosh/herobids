@@ -1,5 +1,7 @@
 # Browser Pool: Dedicated Auto-Scaled Tier
 
+> **Tracked in the [autoscaling program](../../2026/11/11/001-autoscaling-program/README.md), milestone M3.** This document is the design reference. Its phases become feature plans in M3, drafted when needed. Once a phase is adopted into an M3 feature plan, that plan is the progress record and this document's checkboxes stop being updated.
+
 **Status:** Draft. Not started. Plan only; nothing in this file has been implemented or applied.
 **Created:** 2026-11-11
 **Area:** Infrastructure, browser-pool, Nomad, Hetzner, Terraform, worker, agent runtime

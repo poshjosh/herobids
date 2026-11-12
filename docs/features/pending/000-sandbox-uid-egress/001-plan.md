@@ -1,8 +1,10 @@
 # Sandbox Egress Rules by UID (Replaces Network Namespace)
 
+> **Tracked in the [autoscaling program](../../2026/11/11/001-autoscaling-program/README.md), milestone M2** (agent tier ready for scale: retiring the old nodes and moving the browser pool). Phase 4 of this plan depends on the browser-pool move in Plan 005 Phases 2 and 3.
+
 **Status:** Code written and unit-tested locally; not built into an image, not deployed
 **Estimated effort:** 2–3 days engineering, plus a staged rollout on staging
-**Dependencies:** [Bug 2026/11/09 001](../../../../bug-reports/2026/11/09/001-sandbox-mount-blocked-by-apparmor-on-nomad.md), [rollout plan](../000-staged-agent-node-rollout/001-plan.md), [incident learnings](../000-staged-agent-node-rollout/002-learnings-and-state.md)
+**Dependencies:** [Bug 2026/11/09 001](../../../bug-reports/2026/11/09/001-sandbox-mount-blocked-by-apparmor-on-nomad.md), [rollout plan](../000-staged-agent-node-rollout/001-plan.md), [incident learnings](../000-staged-agent-node-rollout/002-learnings-and-state.md)
 
 ## Summary
 
@@ -117,7 +119,7 @@ Existing caps nodes (`agent-caps-1`, `agent-caps-2`) keep `sys_admin` in `allow_
 
 - [ ] Set `NOMAD_AGENT_IMAGE` to the pinned `sha-` tag in `/opt/herobids/.env`. Restart the worker.
 - [ ] Set `NOMAD_SANDBOX_CAPS_ENABLED=true`. Restart the worker.
-- [ ] Relaunch Job searcher (`bb11883d`) with the [relaunch procedure](../../../../tech/agents/agent-runtime-rollout-guide.md#7-agent-relaunch). This also removes its `SYS_ADMIN`.
+- [ ] Relaunch Job searcher (`bb11883d`) with the [relaunch procedure](../../../tech/agents/agent-runtime-rollout-guide.md#7-agent-relaunch). This also removes its `SYS_ADMIN`.
 - [ ] Verify: job spec has only `NET_ADMIN`; placed on a caps node; boot within 120 s; session `running`; one `execute_shell` succeeds; no `sandbox_infrastructure_error`.
 
 **Gate:** all pass. On failure, flag off and relaunch.
@@ -143,7 +145,7 @@ Relaunch before draining. A drain moves running allocations with their old spec.
 
 ### Phase 7 — Cleanup
 
-- [ ] Update [tool-access-and-sandboxing.md](../../../../tech/agents/tool-access-and-sandboxing.md) and [permission-levels.md](../../../../tech/agents/tools/permission-levels.md): UID design, full mode's lack of network block, `execute_code` running as root, and the sudo limitation.
+- [ ] Update [tool-access-and-sandboxing.md](../../../tech/agents/tool-access-and-sandboxing.md) and [permission-levels.md](../../../tech/agents/tools/permission-levels.md): UID design, full mode's lack of network block, `execute_code` running as root, and the sudo limitation.
 - [ ] Mark bug reports 2026/11/07 001 and 002, and 2026/11/09 001, Fixed with evidence.
 - [ ] Add a CHANGELOG entry.
 

@@ -4,6 +4,8 @@
 **Last reviewed:** 2026-11-11
 **Purpose:** the backlog of decisions we know we must make, in dependency order, so that each is made once, with the right inputs, and nothing is decided by accident.
 
+**Work that carries these decisions is tracked in the [autoscaling program](../features/2026/11/11/001-autoscaling-program/README.md).** Open decisions that block a plan are linked from that plan.
+
 **Tier** is defined in [06-decision-method.md](./06-decision-method.md): T0 just decide, T1 short note, T2 brief and decision agent. **Owner input** marks a value judgment the evidence cannot supply.
 
 ## Backlog
@@ -16,7 +18,8 @@
 | OD-12 | **Stop agents over their hard billing limit (C-13): mechanics.** Scope (all agents of a hard-limited account), grace period, notification, behaviour of trading agents with open positions, restart on top-up, what the meter does after stop | T2 | Owner decided C-13 on 2026-11-11; a plan must carry it | OD-13, P-08, INV-S1, INV-S2, A-22 | A capacity or lifecycle plan | Partly (grace period, user messaging) | not yet written; needs a plan |
 | OD-13 | **Traderton:** what a trading agent's actor and running bots do when its container is stopped. Today stopping a session stops both (T-09) | T2 (Traderton-owned; no trading logic is decided in herobids, INV-L2) | C-13 would stop trading agents | T-09, P-08 | OD-12 | Traderton owner | not yet written |
 | OD-07 | Agent-node sizing path and network topology: node sizes (cx23 to cx53), memory and CPU reservation, one or several private networks, quotas. Sized for the resident count (C-12) | T2 | About 700 small nodes is infeasible; sizes decide cost and network limits | A-05, A-08, A-09, A-23, OD-09, OD-04 | OD-01 | No | not yet written |
-| OD-01 | Autoscaling architecture: scope of a shared kit for agent nodes, browser pool and Traderton; language; sequencing; adoption level per tier | T2 | Plan 005 Phase 5 is about to build a second autoscaler | C-07, A-19, A-21, OD-09 | Plan 005 Phase 5 | No | [briefs/001](./briefs/001-autoscaling-architecture.md) |
+| OD-01 | Autoscaling architecture: scope of a shared kit for agent nodes, browser pool and Traderton; language; sequencing; adoption level per tier | T2 | Plan 005 Phase 5 is about to build a second autoscaler. Homework done 2026-11-11 (see the program's M1 reference); two owner facts open in the program inbox I-002 | C-07, A-19, A-21, OD-09 | Program F1.2, F1.3, Plan 005 Phase 5 | No | [briefs/001](./briefs/001-autoscaling-architecture.md) |
+| OD-15 | How the autoscaler's ownership guard treats the caps pool (`-agent-caps-N`), which it currently refuses as foreign, blocking staging scale-out (INV-O6) | T2 | Staging autoscale-out is refused every minute | F1.1 reproduction (A3), P-03 | Program F1.1 phase D | No | to be written (program F1.1 task B1) |
 | OD-02 | Traderton scaling path: vertical first, API/worker split, cells with leases on a central database | T2 | 5,000 trading agents against per-IP venue limits | A-06, A-07, A-13, A-14, INV-S1, INV-L3 | OD-01 (adoption level for Traderton) | No | not yet written |
 | OD-05 | Browser front door go or no-go, after the spike | T2 | Decides Option A or B (C-03) | Plan 005 spike S1 to S8 (A-15) | Plan 005 Phases 3 and 4 | No | after the spike |
 | OD-06 | Browser pool authentication and session isolation | T2 | Without a token, any container on the network may list or attach to other sessions (unverified) | INV-X2, Plan 005 Phase 6 | Plan 005 Phase 6 | Partly (security stance) | not yet written |

@@ -1,5 +1,7 @@
 # Sandbox Capabilities Rollout: Learnings and Current State
 
+> **Tracked in the [autoscaling program](../../2026/11/11/001-autoscaling-program/README.md), milestone M2.** Reference and lessons. Note: staging autoscale-out is currently refused because the caps pool does not match the ownership guard's name shape (program M1, F1.1).
+
 **Status:** Working record. Snapshot taken 2026-11-09 ~09:20 CET.
 **Read with:** [001-plan.md](./001-plan.md) (the rollout plan, partly superseded by this document).
 

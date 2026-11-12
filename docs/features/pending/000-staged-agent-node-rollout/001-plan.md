@@ -1,5 +1,7 @@
 # Staged Agent Node Rollout (Sandbox Capabilities)
 
+> **Tracked in the [autoscaling program](../../2026/11/11/001-autoscaling-program/README.md), milestone M2.** This document stays as a reference. Its remaining work becomes feature plans in M2, drafted when M2 starts.
+
 **Status:** Proposed
 **Estimated effort:** ~5–7 days engineering, plus staged rollout windows
 **Dependencies:** [Bug 001](../../../bug-reports/2026/11/07/001-nomad-agent-tasks-missing-sandbox-caps.md), [Bug 002](../../../bug-reports/2026/11/07/002-staging-agents-fail-boot-after-cap-change-reverted.md)
