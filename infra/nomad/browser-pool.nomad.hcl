@@ -67,19 +67,21 @@ job "browser-pool" {
         ports = ["http"]
       }
 
-      # Sized for a dedicated cx33 (4 vCPU / 8 GB), leaving headroom for the OS and Nomad.
-      # Starting point ~1 GB and ~0.5 vCPU per concurrent session; tune MAX_CONCURRENT_SESSIONS,
-      # QUEUE_LENGTH and resources from the Phase 4.4 load-test measurement before relying on them.
+      # Sized for a dedicated cx23 (2 vCPU / 4 GB; ~3819 MB / 4000 MHz usable), leaving
+      # headroom for the OS and Nomad. Starting point ~1 GB and ~0.5 vCPU per concurrent
+      # session; tune MAX_CONCURRENT_SESSIONS, QUEUE_LENGTH and resources from the Phase 4.4
+      # load-test measurement before relying on them. When the browser node is switched to a
+      # larger type (switch tooling), raise these together.
       env {
-        MAX_CONCURRENT_SESSIONS = "6"
+        MAX_CONCURRENT_SESSIONS = "2"
         TIMEOUT                 = "60000"
-        QUEUE_LENGTH            = "12"
+        QUEUE_LENGTH            = "6"
         DEFAULT_LAUNCH_ARGS     = "[\"--no-sandbox\",\"--disable-dev-shm-usage\"]"
       }
 
       resources {
-        memory = 6144
-        cpu    = 3500
+        memory = 3000
+        cpu    = 3000
       }
     }
 

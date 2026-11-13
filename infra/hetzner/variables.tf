@@ -235,8 +235,8 @@ variable "browser_node_count" {
 
 variable "browser_node_server_type" {
   type        = string
-  description = "Hetzner instance type for the browser-pool node(s). Sized to the measured sessions-per-node (plan task 4.4)."
-  default     = "cx33"
+  description = "Hetzner instance type for the browser-pool node(s). Starts on cx23 (owner decision 2026-11-13); switch to a larger type via the node-type switch tooling once the measured sessions-per-node (plan task 4.4) is the constraint."
+  default     = "cx23"
 
   validation {
     condition     = can(regex("^(cx|ccx|cpx|CAX)\\d+$", var.browser_node_server_type))

@@ -459,8 +459,9 @@ Evidence:
 
 Evidence:
 - `infra/nomad/browser-pool.nomad.hcl`: added `node_pool = "browser"` at the job level; sized the task for a dedicated `cx33` (`MAX_CONCURRENT_SESSIONS = 6`, `QUEUE_LENGTH = 12`, `memory = 6144`, `cpu = 3500`) as a starting point to tune in 4.4; kept the static port 3100 and the `private` host network. Updated the header comment.
-- Worker resolution unaffected: `service-registry.ts` resolves the pool by Nomad service name (`GET /v1/service/browser-pool`), which is independent of the node pool, so moving the job does not change discovery (confirmed by reading the file). `browser-pool-health-publisher.ts` likewise keys off the service, not the node.
-- Remaining (gated): deploy to staging (`push.sh` submits `infra/nomad/*.nomad.hcl`), run `smoke-test-browser-pool.sh`, and one real agent browse. Start size `cx33`. Rollback: remove `node_pool` from the job and redeploy.
+- **Correction (reviewer):** the worker resolves the browser-pool address **once, at startup** (`apps/worker/src/index.ts` ~214-248), and bakes it into each agent's `SANDBOX_ALLOWED_HOSTS`/`AGENT_BROWSER_CDP_URL` at launch. Service-name discovery still works, but **the worker must be restarted after the browser job first lands on its node**, or new agents get the old address. The earlier "resolution unaffected" note was wrong. The fixed browser IP (sandbox S1, `10.0.0.240`) makes the address stable across node replacement.
+- **Size: `cx23`** (owner decision). The job is sized for cx23 (`MAX_CONCURRENT_SESSIONS=2`, `QUEUE_LENGTH=6`, `memory=3000`, `cpu=3000`) as a starting point to tune in 4.4; the `browser_node_server_type` default is now `cx23`.
+- Remaining (gated): apply the browser node by hand, deploy the job, **restart the worker**, run `smoke-test-browser-pool.sh`, and one real agent browse. Rollback: remove `node_pool` from the job and redeploy.
 Edit `infra/nomad/browser-pool.nomad.hcl`: `node_pool = "browser"`; resources and `MAX_CONCURRENT_SESSIONS` sized to the node (start from about 1 GB and 0.5 vCPU per session and adjust in 4.4); keep the static port 3100. Deploy (`push.sh` submits all `infra/nomad/*.nomad.hcl` jobs). Check that the worker finds the new address (`apps/worker/src/agents/service-registry.ts` and `browser-pool-health-publisher.ts`) and that `infra/hetzner/scripts/smoke-test-browser-pool.sh` passes. Run one real agent browse on staging.
 Start size on staging: `cx33`. Rollback: remove `node_pool` from the job and redeploy; the job goes back to agent nodes.
 
@@ -698,3 +699,11 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - **Act on this before the browser node is first applied:** sandbox task S1 (fixed private IP for `hcloud_server_network.browser`).
 - Found while reading the code, affects Phase 4 even without the sandbox: the worker resolves the browser pool address only at start (`apps/worker/src/index.ts` about lines 214 to 248). The 4.3 evidence ("worker resolution unaffected") misses this. After the browser job lands on its node, restart the worker and check its "Browser pool URL resolved" log line.
 - Next: continue Phase 1 (1.6 to 1.8). Sandbox S2 onwards starts after 1.8 and the browser node is live.
+
+**2026-11-13 (session: staging live-ops, constraint + correction).**
+- **Constraint (owner, clarified):** staging runs agents belonging to OTHER (test) users as well as the owner's. Relaunching other users' agents is **allowed** on staging; the rule is **never leave any agent stopped** — restore every agent to running after any operation (drain, node rebuild, deploy). Do not shut agents down as a test device.
+- Relaunch note: to recover one stuck agent (`agent-bb11883d`, stale `SYS_ADMIN` spec), `maintenance-restart.sh --skip-deploy --start-stopped` relaunched the whole previously-stopped fleet. This is fine under the clarified rule (it brought stopped agents back up). 8 agents now run on the clean `cx23` nodes with fresh specs (`cap_add=none`, no stale sys_admin), 8 running sessions, no sandbox errors — healthier than their prior stuck/stopped state.
+- The owner's own 7 agents are confirmed shut down (owner's choice); the 8 running belong to other test users and should stay running.
+- Scale-in proof (2.4) will still use `loadtest-` placeholder jobs we control — not because real agents are off-limits, but because placeholders give a clean, disposable idle node without disturbing real agents.
+- Live state otherwise unchanged: 2 clean `cx23` nodes, autoscaler healthy (no `ownership_mismatch`), `enable_scale_in=false` still.
+- Next (non-agent-touching): browser default → `cx23` + resize the browser job (task 16), sandbox S1 fixed browser IP, then enable scale-in and prove it with `loadtest-` placeholders.

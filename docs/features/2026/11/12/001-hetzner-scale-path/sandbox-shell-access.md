@@ -87,11 +87,10 @@ If a check fails twice and you do not know why, stop and report to the reviewer.
 **S0 Read.** Status: `todo`.
 The files in section 2, the three bug reports, `docs/tech/agents/agent-runtime-rollout-guide.md` section 7 (relaunch), `docs/tech/agents/tool-access-and-sandboxing.md`, `docs/tech/agents/tools/permission-levels.md`.
 
-**S1 Fixed private IP for the browser node.** Status: `todo`. **Do this before the browser node is first created on staging** (main plan 4.2/4.3 apply). If it already exists, the attachment is replaced once (fine on staging).
-- In `infra/hetzner/main.tf`, set `ip = cidrhost(var.subnet_ip_range, 240 + count.index)` on `hcloud_server_network.browser`. `browser_node_count` is capped at 10, so this stays inside 240 to 249. Confirm both environments use a `/24` subnet (`subnet_ip_range`), and that nothing already holds `.240` (Hetzner assigns from the bottom).
-- Note for the cx23↔cx53 switch tooling (main plan): replacing the browser node must destroy the old attachment before creating the new one, because both cannot hold the same IP. Write that into the switch runbook.
-- After the browser job runs on that node: restart the worker, then check its log for "Browser pool URL resolved" with the fixed IP.
-- Tests: `terraform validate`, `fmt`. Expected plan (node not yet created): create `hcloud_server.browser[0]` and `hcloud_server_network.browser[0]` with `ip = 10.0.0.240`, firewall `apply_to` update. Nothing else.
+**S1 Fixed private IP for the browser node.** Status: `done (code)` — applied live in main-plan 4.2/4.3.
+- `infra/hetzner/main.tf`: `hcloud_server_network.browser` now sets `ip = cidrhost(var.subnet_ip_range, 240 + count.index)`. Both environments use a `/24` subnet (`10.0.0.0/24`, production explicit, staging via the `variables.tf` default); live staging IPs are .2/.3/.4, so `.240` is free. `browser_node_count` is capped at 10 → .240–.249. `terraform validate` + `fmt` clean. Comment records the destroy-before-create ordering for the switch tooling.
+- Expected plan when the browser node is first applied (node not yet created): create `hcloud_server.browser[0]` + `hcloud_server_network.browser[0]` with `ip = 10.0.0.240`, firewall `apply_to` update. Nothing else.
+- After the browser job runs on that node: restart the worker, then check its log for "Browser pool URL resolved" with `10.0.0.240`.
 Rollback: remove the `ip` line; the next replace gets an automatic address.
 
 **S2 Find and pin the image.** Status: `todo`.

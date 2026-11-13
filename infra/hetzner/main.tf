@@ -419,6 +419,14 @@ resource "hcloud_server_network" "browser" {
   count      = var.enable_nomad ? var.browser_node_count : 0
   server_id  = hcloud_server.browser[count.index].id
   network_id = hcloud_network.private[0].id
+  # Fixed private IP so the browser pool keeps a stable address across node replacement
+  # (sandbox plan S1). The worker resolves the browser pool address once at startup and
+  # bakes it into each agent's SANDBOX_ALLOWED_HOSTS / AGENT_BROWSER_CDP_URL, so a moving
+  # address would strand agents. browser_node_count is capped at 10, so .240–.249 stay
+  # clear of the auto-assigned low addresses (servers get .2, .3, …). On a node replace the
+  # old attachment must be destroyed before the new one is created (both can't hold the IP);
+  # the switch tooling/runbook handles that ordering.
+  ip = cidrhost(var.subnet_ip_range, 240 + count.index)
 }
 
 
