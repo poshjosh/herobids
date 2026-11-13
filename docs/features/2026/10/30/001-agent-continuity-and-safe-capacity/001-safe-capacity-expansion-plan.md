@@ -755,6 +755,12 @@ Scale-in status (P7, local tests only, nothing run against infrastructure):
   `INJECT_TF_APPLY_FAILURE` hook overrides. The failure branch restores drained nodes.
 - Demand gate (approved H4): scale-in exits 0 with a deferral while
   `NOMAD_AUTOSCALE_DEMAND_ENABLED` is true.
+  **SUPERSEDED 2026-11-12 (Hetzner scale-path plan task 2.2):** the unconditional
+  H4 early exit was replaced by a demand check. Scale-in now proceeds under the lock
+  and defers only when the agent namespace has queued/blocked work, or the demand
+  read is unreadable or ambiguous (fail closed). See
+  `docs/features/2026/11/12/001-hetzner-scale-path/plan.md` task 2.2 and
+  `scale_in_demand_defers` in `scale-in.sh`.
 - New-node grace (approved H5): a candidate must be idle and registered longer
   than `NOMAD_SCALE_IN_NODE_GRACE_SECONDS` (default 600). Unknown age defers.
 - Deferral alert (approved M1): consecutive deferrals are counted in

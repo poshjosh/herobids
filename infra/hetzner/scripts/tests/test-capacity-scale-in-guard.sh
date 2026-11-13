@@ -457,21 +457,13 @@ assert_contains "${APPLY_BLOCK}" "scale_in_clear_deferrals" "a successful plan a
 test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Demand mode refusal (H4), run as a subprocess; nothing reaches Terraform or Nomad
+# Demand-mode scale-in: the old H4 early exit is replaced by a demand check
+# (Hetzner scale-path plan task 2.2). Scale-in now proceeds under the lock and
+# defers only when the agent namespace has queued/blocked work, or the read is
+# ambiguous (fail closed). An invalid demand flag still fails closed outright.
 # ═════════════════════════════════════════════════════════════════════════════
 
-test_begin "scale-in guard: demand mode exits 0 before any drain or terraform call"
-
-H4_RC=0
-H4_OUT="$(ENABLE_SCALE_IN=true NOMAD_AUTOSCALE_DEMAND_ENABLED=true \
-  NOMAD_AUTOSCALE_STATE_DIR="${TEST_TMPDIR}/h4-state" \
-  NOMAD_AUTOSCALE_LOG_FILE="${TEST_TMPDIR}/h4.log" \
-  NOMAD_AUTOSCALE_LOCKFILE="${TEST_TMPDIR}/h4.lock" \
-  "${BASH}" "${SCALE_IN}" 2>&1)" || H4_RC=$?
-assert_eq "${H4_RC}" "0" "demand mode exits 0 so the nightly timer stays green"
-assert_contains "${H4_OUT}" "demand mode is on" "the refusal is logged"
-assert_not_contains "${H4_OUT}" "drain" "demand mode never drains a node"
-assert_not_contains "${H4_OUT}" "terraform" "demand mode never reaches Terraform"
+test_begin "scale-in guard: an invalid demand flag still fails closed (exit 2), no scale-in"
 
 H4_RC=0
 H4_OUT="$(ENABLE_SCALE_IN=true NOMAD_AUTOSCALE_DEMAND_ENABLED=maybe \
@@ -481,6 +473,74 @@ H4_OUT="$(ENABLE_SCALE_IN=true NOMAD_AUTOSCALE_DEMAND_ENABLED=maybe \
   "${BASH}" "${SCALE_IN}" 2>&1)" || H4_RC=$?
 assert_eq "${H4_RC}" "2" "an invalid demand flag fails closed (exit 2), it does not scale in"
 assert_not_contains "${H4_OUT}" "drain" "an invalid demand flag never drains a node"
+
+# The old early exit is gone and the new demand check is wired into the main flow.
+SCALE_IN_TEXT="$(cat "${SCALE_IN}")"
+assert_not_contains "${SCALE_IN_TEXT}" "Capacity demand mode is on (NOMAD_AUTOSCALE_DEMAND_ENABLED=true) — scale-in deferred" \
+  "the old unconditional demand early-exit log line is removed"
+assert_contains "${SCALE_IN_TEXT}" "scale_in_demand_defers" "the demand check function exists"
+assert_contains "${SCALE_IN_TEXT}" "if scale_in_demand_defers" "the main flow calls the demand check"
+assert_contains "${SCALE_IN_TEXT}" "validate_demand_template_env" "demand mode validates the node template"
+
+test_end || SUITE_FAILED=1
+
+# ─── Unit tests of scale_in_demand_defers, extracted from the shipped script ──
+# The function reads demand via controller_fetch_demand and classifies it via
+# demand_classify. The test stubs those two plus log so no network is touched.
+
+test_begin "scale-in guard: scale_in_demand_defers proceeds, defers and fails closed"
+
+eval "$(awk '/^scale_in_demand_defers\(\) \{/{on=1} on{print} on && /^}$/{exit}' "${SCALE_IN}")"
+
+# Minimal environment the function reads. The real log() (from scale-common.sh) is kept so
+# later tests that depend on it are unaffected; only the two demand readers are stubbed, then
+# restored at the end of the block.
+DEMAND_MODE=true
+NOMAD_AGENT_NAMESPACE=herobids-agents
+NOMAD_NODE_TEMPLATE_MEMORY_MB=32000
+NOMAD_NODE_TEMPLATE_CPU_MHZ=64000
+
+# Clean read, nothing queued → proceed (return 1).
+controller_fetch_demand() { echo '{"evaluations":[],"asks":[]}'; }
+demand_classify() { echo '{"namespace":"herobids-agents","rows":[],"queued_allocs_by_class":{"capacity_blocked":0,"not_capacity_remediable":0,"unclassified":0,"already_assigned":0}}'; }
+DEFERS_RC=0; scale_in_demand_defers 1 || DEFERS_RC=$?
+assert_eq "${DEFERS_RC}" "1" "demand on, no backlog → proceed (return 1)"
+
+# Backlog present → defer (return 0).
+demand_classify() { echo '{"namespace":"herobids-agents","rows":[{}],"queued_allocs_by_class":{"capacity_blocked":2,"not_capacity_remediable":0,"unclassified":0,"already_assigned":0}}'; }
+DEFERS_RC=0; scale_in_demand_defers 1 || DEFERS_RC=$?
+assert_eq "${DEFERS_RC}" "0" "demand on, backlog → defer (return 0)"
+
+# only already_assigned queued → proceed (that is not unplaced work).
+demand_classify() { echo '{"namespace":"herobids-agents","rows":[{}],"queued_allocs_by_class":{"capacity_blocked":0,"not_capacity_remediable":0,"unclassified":0,"already_assigned":5}}'; }
+DEFERS_RC=0; scale_in_demand_defers 1 || DEFERS_RC=$?
+assert_eq "${DEFERS_RC}" "1" "demand on, only already-assigned queued → proceed"
+
+# Demand read fails → fail closed (defer).
+controller_fetch_demand() { return 1; }
+DEFERS_RC=0; scale_in_demand_defers 1 || DEFERS_RC=$?
+assert_eq "${DEFERS_RC}" "0" "demand read failure fails closed → defer"
+
+# Classification fails → fail closed (defer).
+controller_fetch_demand() { echo '{"evaluations":[],"asks":[]}'; }
+demand_classify() { return 1; }
+DEFERS_RC=0; scale_in_demand_defers 1 || DEFERS_RC=$?
+assert_eq "${DEFERS_RC}" "0" "classification failure fails closed → defer"
+
+# Unreadable ready count → fail closed (defer).
+demand_classify() { echo '{"queued_allocs_by_class":{"capacity_blocked":0,"not_capacity_remediable":0,"unclassified":0,"already_assigned":0}}'; }
+DEFERS_RC=0; scale_in_demand_defers "not-a-number" || DEFERS_RC=$?
+assert_eq "${DEFERS_RC}" "0" "an unreadable ready count fails closed → defer"
+
+# Demand mode off → never defers here (return 1), so legacy checks run.
+DEMAND_MODE=false
+DEFERS_RC=0; scale_in_demand_defers 1 || DEFERS_RC=$?
+assert_eq "${DEFERS_RC}" "1" "demand mode off → function does not defer (legacy path)"
+
+# Restore the real demand readers (they were stubbed above) so later tests use the shipped code.
+source "${SCRIPTS_DIR}/capacity-demand.sh"
+source "${SCRIPTS_DIR}/capacity-controller.sh"
+DEMAND_MODE=false
 
 test_end || SUITE_FAILED=1
 

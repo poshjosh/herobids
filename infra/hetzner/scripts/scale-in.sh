@@ -48,6 +48,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scale-common.sh"
 source "${SCRIPT_DIR}/alert-common.sh"
 source "${SCRIPT_DIR}/capacity-inventory.sh"
+source "${SCRIPT_DIR}/capacity-demand.sh"
+source "${SCRIPT_DIR}/capacity-controller.sh"
 source "${SCRIPT_DIR}/scale-in-guard.sh"
 
 # ─── Staging failure-injection hooks (optional, staging only) ──────────────────
@@ -106,7 +108,8 @@ Safety rules:
   - Mark candidate nodes ineligible first.
   - Drain only idle nodes; wait for in-flight work to complete.
   - Stop at min_agent_nodes.
-  - Refuse (defer, exit 0) while demand-aware mode is on.
+  - Under demand-aware mode, defer (exit 0) only while the agent namespace has queued/blocked
+    work, or the demand read is unreadable or ambiguous (fail closed); otherwise proceed.
   - Delete only nodes registered longer than NOMAD_SCALE_IN_NODE_GRACE_SECONDS.
   - Bind each deleted server to the Nomad node it was drained as; refuse if unproven.
 
@@ -134,12 +137,58 @@ if [[ "${ENABLE_SCALE_IN}" != "true" ]]; then
   exit 2
 fi
 
-# Demand-aware mode owns capacity decisions, so scale-in must not delete a node
-# while it is on. A deferral (exit 0) keeps the nightly timer green.
+# Demand-aware mode owns capacity decisions. Rather than refuse scale-in outright
+# (the old "H4" early exit; see docs/features/2026/10/30/001-agent-continuity-and-safe-capacity
+# /001-safe-capacity-expansion-plan.md §8 and the Hetzner scale-path plan task 2.2), scale-in
+# proceeds under the lock and defers only when there is live demand the pool must keep capacity
+# for. DEMAND_MODE is read here so an invalid flag still fails closed (demand_mode_enabled exits 2),
+# and the actual demand read happens after the capacity guard, which supplies the ready count and
+# already skips a scale-out in flight.
+DEMAND_MODE=false
 if demand_mode_enabled; then
-  log "Capacity demand mode is on (NOMAD_AUTOSCALE_DEMAND_ENABLED=true) — scale-in deferred, nothing deleted."
-  exit 0
+  DEMAND_MODE=true
+  # Demand mode simulates placement against a node template; a missing template means the
+  # demand read cannot be trusted, so fail closed exactly as scale-out does.
+  validate_demand_template_env
 fi
+
+# scale_in_demand_defers READY_COUNT — 0 (defer) when demand mode shows unplaced work in the
+# agent namespace, or when the demand read is unreadable or ambiguous (fail closed). 1 (proceed)
+# only when demand mode is off, or on with a clean read and no queued work. The ready count comes
+# from the capacity guard snapshot so the classification matches what scale-out sees.
+scale_in_demand_defers() {
+  local ready="$1" demand classified queued
+  [[ "${DEMAND_MODE}" == "true" ]] || return 1
+  if ! [[ "${ready}" =~ ^[0-9]+$ ]]; then
+    log "Scale-in deferred: demand mode is on but the ready-node count is unreadable — failing closed, nothing deleted."
+    return 0
+  fi
+  if ! demand="$(controller_fetch_demand "${NOMAD_AGENT_NAMESPACE}")"; then
+    log "Scale-in deferred: demand mode is on but the demand read failed — failing closed, nothing deleted."
+    return 0
+  fi
+  if ! classified="$(printf '%s' "${demand}" \
+      | demand_classify "${NOMAD_AGENT_NAMESPACE}" "${ready}" \
+          "${NOMAD_NODE_TEMPLATE_MEMORY_MB}" "${NOMAD_NODE_TEMPLATE_CPU_MHZ}")"; then
+    log "Scale-in deferred: demand mode is on but the demand classification failed — failing closed, nothing deleted."
+    return 0
+  fi
+  # Any queued allocation that is not already assigned is unplaced work. If the totals cannot be
+  # summed the read is ambiguous, so fail closed.
+  queued="$(jq -r '[.queued_allocs_by_class.capacity_blocked,
+                    .queued_allocs_by_class.not_capacity_remediable,
+                    .queued_allocs_by_class.unclassified] | add' <<< "${classified}" 2>/dev/null)" || queued=""
+  if ! [[ "${queued}" =~ ^[0-9]+$ ]]; then
+    log "Scale-in deferred: demand mode is on but the queued-work total is unreadable — failing closed, nothing deleted."
+    return 0
+  fi
+  if (( queued > 0 )); then
+    log "Capacity demand mode is on and ${queued} allocation(s) are queued or blocked in ${NOMAD_AGENT_NAMESPACE} — scale-in deferred, nothing deleted."
+    return 0
+  fi
+  log "Capacity demand mode is on but no allocation is queued or blocked in ${NOMAD_AGENT_NAMESPACE} — scale-in may proceed."
+  return 1
+}
 
 # ─── Pre-flight checks ────────────────────────────────────────────────────────
 
@@ -279,6 +328,18 @@ if ! [[ "${CURRENT_COUNT}" =~ ^[0-9]+$ ]]; then
 fi
 if [[ -z "${MIN_COUNT}" ]]; then
   die "Could not determine min_agent_nodes." 1
+fi
+
+# ─── Demand check (replaces the old H4 early exit) ────────────────────────────
+# Under demand mode, defer rather than delete a node while the agent namespace has unplaced
+# work. The capacity gate above already returns "pending" (and this script skips) when a
+# scale-out is in flight, so a deferral here means live backlog or an unreadable/ambiguous
+# read. The ready count comes from the gate snapshot.
+if [[ "${DEMAND_MODE}" == "true" ]]; then
+  READY_COUNT="$(jq -r '.ready_count' <<< "${GATE_OUT}")"
+  if scale_in_demand_defers "${READY_COUNT}"; then
+    exit 0
+  fi
 fi
 
 # ─── Check minimum ────────────────────────────────────────────────────────────
