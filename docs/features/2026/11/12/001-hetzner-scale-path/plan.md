@@ -548,8 +548,8 @@ Before launch there is little traffic, so these are checked by hand weekly until
 
 | Gate | Status | Notes |
 |---|---|---|
-| R1 (staging done, before production) | not ready | |
-| R2 (all done) | not ready | |
+| R1 (staging done, before production) | not ready | **Code/config surface complete on `feat/hetzner-scale-path` (7 commits), all tests + lint + build green.** Still required before R1 can be `ready for review`: the gated live staging work — Phase 1 (rebuild the pool on `cx53`, remove the caps pool + drifted `agent-3`), 1.5 node-template measurement, 2.4/3.6 live proofs, 3.4 live confirm, the browser-node apply (4.2/4.3 deploy), and Phase 5 ramp (5.2–5.4). These need Terraform applies, server deletes, and the load test, which are owner-gated per §2.3. |
+| R2 (all done) | not ready | After R1 + production (Phase 7) + Traderton (Phase 8) + close-out (Phase 9). |
 
 ---
 
@@ -594,3 +594,17 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - Verified: worker build passes (fake agent compiles to `dist/loadtest/fake-agent.js`, the path the register script uses); all three shell scripts `shellcheck`-clean.
 - Gated: running the ramps (5.2–5.4), the browser ceiling measurement (4.4), and the synthetic-row seeding all need the live environment and are owner-gated.
 - Next: final verify pass (lint + build across packages, shell suites), then the plan writeup + R1 scope summary (task 11).
+
+**2026-11-13 (session close: code/config surface complete).**
+- Done this session (branch `feat/hetzner-scale-path`, 7 commits off `main@b317176e`):
+  - 1.1 + Phase 0 read-only inventory/reproduction/prices (staging) — `4c69819a`.
+  - 2.2 demand-aware scale-in (replaces H4) + tests — `a28ea566`.
+  - 2.3 converge the nightly scale-in timer schedule + activation — `d2229b18`.
+  - 3.3 `createDatabase` pool options + small agent pool + test — `81683435`.
+  - 3.4 Redis `maxclients`/`nofile` pinned; Postgres hold documented — `0880211d`.
+  - 4.1/4.2/4.3 dedicated browser Nomad node pool + guard exemption + job move — `2e8247fa`.
+  - 4.4/5.1 fake-agent runtime + load-test scripts — `98e58f33`.
+- Final verify (all green): `pnpm lint` (tsc --noEmit, whole workspace); `pnpm build` (whole workspace); `infra/hetzner/scripts/tests/run-all.sh`; `check-nomad-capacity.test.sh`; `packages/db` `create-database.test.ts`; `shellcheck -x` clean on every changed script; `terraform validate`/`fmt` clean.
+- Plan corrections recorded from live read-only evidence: the pool is `herobids-staging` and the caps pool is the sole `ownership_mismatch` cause (0.5); the scale-in timer had a valid schedule but was left inactive, not scheduleless (2.3).
+- **Gated remainder (owner / live environment), per §2.3** — all require Terraform applies, server drains/deletes, timer changes on live hosts, load tests (EUR budget), resizes, the Hetzner console limits request (0.4), and the production/Traderton/close-out phases: Phase 1 (1.2–1.8), 2.4, 3.1 full/3.2/3.5/3.6, 3.4 live confirm, 4.2/4.3 apply+smoke, Phase 5 (5.2–5.4), Phase 0.2 production, and Phases 6–9. The code and scripts those steps use are in place and tested; each step's exact gated commands and expected Terraform plans are in the task text above.
+- Next: hand to the owner to run the gated staging steps, then set R1 to `ready for review`.
