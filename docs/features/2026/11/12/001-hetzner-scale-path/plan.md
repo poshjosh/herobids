@@ -235,11 +235,32 @@ Evidence:
 - Bug report written at `docs/bug-reports/2026/11/12/001-staging-autoscale-blocked-by-ownership-mismatch.md` with the read-only evidence from 0.5.
 - Script roles (from `deploy.sh` header): app deploy = `push.sh --env <env> --yes` (git pull → build → compose up); autoscale settings/secrets = `setup-autoscale-env.sh --env <env>`; control-plane converge (Nomad advertise, UFW, systemd drop-ins) = `setup-control-plane.sh` / `converge-control-plane.sh`; full orchestrated deploy = `deploy.sh --env <env>`.
 
-**1.2 Pause the autoscaler.** Status: `todo`.
+**1.2 Pause the autoscaler.** Status: `done` (2026-11-13). `systemctl stop nomad-autoscale.timer nomad-scale-in.timer` — both now `inactive` (confirmed). Prior state: `nomad-autoscale.timer` active (restart at 1.8), `nomad-scale-in.timer` already inactive. Local/server `agent_node_count` both 2 (in sync).
 On staging: `systemctl stop nomad-autoscale.timer nomad-scale-in.timer`. Sync local `agent_node_count` with the server copy (section 2.7).
 Rollback: `systemctl start nomad-autoscale.timer` (and `nomad-scale-in.timer` if it was active).
 
-**1.3 Write the move plan.** Status: `todo`.
+**1.3 Write the move plan.** Status: `done` (concrete plan from live state 2026-11-13).
+
+Live mapping (authoritative, from Terraform state + Nomad + cloud):
+| Cloud server | TF address | Nomad node (id) | eligibility | running agent allocs | action |
+|---|---|---|---|---|---|
+| herobids-staging (10.0.0.2) | `hcloud_server.default` | — | — | — | keep (control plane) |
+| herobids-staging-agent-1 (10.0.0.5) | `hcloud_server.agent[0]` | `herobids-staging-agent-3` (714f26cc) | ineligible | 3 | **replace as cx53** (1.4); purge old node 714f26cc |
+| herobids-staging-agent-2 (10.0.0.3) | `hcloud_server.agent[1]` | `herobids-staging-agent-2` (9fed1a12) | ineligible | 3 | **destroy** when count→1 (1.4); purge node |
+| herobids-staging-agent-caps-1 (10.0.0.4) | `hcloud_server.agent_caps[0]` | `herobids-staging-agent-caps-1` (ae9393db) | eligible | 1 | holds agents during rebuild; **destroy** (1.6) |
+| herobids-staging-agent-caps-2 (10.0.0.6) | `hcloud_server.agent_caps[1]` | `herobids-staging-agent-caps-2` (690b36fc) | eligible | 0 | holds agents during rebuild; **destroy** (1.6) |
+
+Important live facts:
+- `staging.tfvars` is **gitignored** (per-env server file), so it is the server's own live config, not overwritten by `git reset`. It currently has `agent_node_count=2`, `agent_node_server_type=cx23`, `enable_scale_in=false`, `nomad_autoscale_demand_enabled=true`, and **no `agent_caps_node_count`** line → caps count defaults to 0 while state holds 2 caps servers. The caps pool is thus already "orphaned" between config (0) and state (2); removing it in 1.6 reconciles that.
+- The drifted Nomad node `agent-3` is the same machine as cloud `agent[0]`; there is **no** extra cloud server outside state (1.7 is just a Nomad node purge of 714f26cc after the rebuild, not a cloud delete).
+- Free-profile agents are 256 MB / 256 MHz; caps nodes are cx23 (~3819 MB / 4000 MHz, ~14 agents each), so all ~7 agents fit on the two caps nodes during the rebuild.
+
+Move sequence:
+1. Drain `agent[0]` (714f26cc) and `agent[1]` (9fed1a12) so their 6 allocs move to the eligible caps nodes.
+2. Set `agent_node_server_type=cx53`, `agent_node_count=1`; targeted `-replace` of `agent[0]` (drops `agent[1]`). Agents stay on caps nodes.
+3. Measure the new node template (1.5).
+4. Drain the caps nodes so agents move to the new `agent[0]=cx53`.
+5. Remove the caps pool (1.6) and purge the stale `agent-3` Nomad node (1.7).
 From the mapping in 0.2, write in the evidence which nodes go, which stay for now, and where the agents move. The usual shape:
 1. Make sure there is room for every agent on the nodes that stay for now (usually the caps nodes).
 2. Drain every old-pool node (`nomad node drain -enable -deadline 10m -yes <node-id>`). Agents restart on the remaining nodes. That restart is expected and acceptable.
@@ -608,3 +629,10 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - Plan corrections recorded from live read-only evidence: the pool is `herobids-staging` and the caps pool is the sole `ownership_mismatch` cause (0.5); the scale-in timer had a valid schedule but was left inactive, not scheduleless (2.3).
 - **Gated remainder (owner / live environment), per §2.3** — all require Terraform applies, server drains/deletes, timer changes on live hosts, load tests (EUR budget), resizes, the Hetzner console limits request (0.4), and the production/Traderton/close-out phases: Phase 1 (1.2–1.8), 2.4, 3.1 full/3.2/3.5/3.6, 3.4 live confirm, 4.2/4.3 apply+smoke, Phase 5 (5.2–5.4), Phase 0.2 production, and Phases 6–9. The code and scripts those steps use are in place and tested; each step's exact gated commands and expected Terraform plans are in the task text above.
 - Next: hand to the owner to run the gated staging steps, then set R1 to `ready for review`.
+
+**2026-11-13 (session: staging live-ops, start).**
+- Owner approved all staging work. Pushed `feat/hetzner-scale-path` to origin (owner ran `git push`, blocked for the agent by policy).
+- 1.2: paused both autoscale timers on staging. Deployed the branch to the server via `git reset --hard origin/feat/hetzner-scale-path` in `/opt/herobids` (was on `feat/safe-capacity-p9-staging`); the new scale-in demand check, converge timer step, browser guard exemption and `main.tf` browser resource are now on the server. Did NOT run `push.sh`'s nomad-job submission, to avoid making the `node_pool=browser` browser-pool job unplaceable before the browser node exists; the full converge is deferred to 1.8.
+- Terraform-state init recipe (server): `set -a; . /etc/herobids/autoscale.env; set +a` to export AWS creds, then `terraform init -reconfigure -backend-config bucket/key=herobids/staging/.../region` with `TF_DATA_DIR=.terraform-envs/staging`.
+- Learned: `staging.tfvars` is gitignored (live server config). It has no `agent_caps_node_count` line → caps count defaults to 0 while state holds 2 caps servers; `enable_scale_in=false`. Running agent allocs are split across `agent[0]`(714f26cc, 3), `agent[1]`(9fed1a12, 3), `caps-1`(1), `caps-2`(0); the two main-pool Nomad nodes are ineligible but still running allocs.
+- Next: drain `agent[0]`+`agent[1]` onto caps, then the targeted cx53 replace (1.4).
