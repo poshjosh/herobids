@@ -109,7 +109,7 @@ Done when every K row matches. **Any surprise stops the rollout.**
 - **C2** (only current-template nodes): `nomad node status` shows only `herobids-staging-agent-1`/`-2` (both Nomad 1.9.7), both created in Phase 1; no older node remains.
 - **C3** (browser pool at fixed IP + worker restarted): browser pool runs at `10.0.0.240`; worker log `Browser pool URL resolved: http://10.0.0.240:3100` after restart. Done in main-plan 4.2/4.3.
 
-**S5 Turn it on for new launches.** Status: `todo`.
+**S5 Turn it on for new launches.** Status: `done`. Added `NOMAD_SANDBOX_CAPS_ENABLED=true` and `NOMAD_AGENT_IMAGE=ghcr.io/poshjosh/herobids-agent:sha-b317176e…` to local `infra/hetzner/.env.staging`; uploaded via `setup-env.sh --env staging`; added the missing `NOMAD_AGENT_IMAGE` doc line to `infra/hetzner/.env.environment.example`. **Also had to rebuild the worker image** (it was stale and still added SYS_ADMIN) — see the S6 rollout note. Worker now reports both values set and launches jobs with `cap_add:["NET_ADMIN"]` + the pinned image. Rollback: set the flag `false` in `.env.staging`, re-upload, relaunch.
 - In the env file the deploy uses for staging (`infra/hetzner/.env.staging`, gitignored, passed with `--env-file`): `NOMAD_SANDBOX_CAPS_ENABLED=true` and `NOMAD_AGENT_IMAGE=<pinned tag>`. Do not edit only the server copy; a later deploy would overwrite it (lesson 10).
 - If either variable is missing from `infra/hetzner/.env.environment.example`, add it there with a comment in the same commit (`NOMAD_AGENT_IMAGE` is missing today; `NOMAD_SANDBOX_CAPS_ENABLED` is present).
 - Deploy, then confirm inside the worker container that exactly these two values are set (print only these two).
@@ -161,12 +161,16 @@ S2 done: the `sha-<commit>` tag exists and pulls; `sandbox-exec.sh` is the marke
 
 **Job and container (S6).**
 
+**STAGING canary** — agent `08965056-2c21-44cd-8258-ea9b477544e9`, relaunched after S5, on `herobids-staging-agent-1`, 2026-11-13.
+
 | Row | Check | Expected | Result |
 |---|---|---|---|
-| J1 | `nomad job inspect -namespace=herobids-agents agent-<id>` | `cap_add = ["NET_ADMIN"]` only; image is the pinned tag | |
-| J2 | `CapEff` in the agent container | bit 12 (`NET_ADMIN`) set; bit 21 (`SYS_ADMIN`) not set | |
-| J3 | Marker in the agent container | exists | |
-| J4 | Session status and boot time | `running`, within the placed start timeout | |
+| J1 | `nomad job inspect … agent-<id>` | `cap_add = ["NET_ADMIN"]` only; image is the pinned tag | **PASS** — `cap_add:["NET_ADMIN"]`, image `…:sha-b317176e…` |
+| J2 | `CapEff` in the agent container | bit 12 (`NET_ADMIN`) set; bit 21 (`SYS_ADMIN`) not set | **PASS** — `CapEff=0xa80415fb` → bit12 set, bit21 clear |
+| J3 | Marker in the agent container | exists | **PASS** — `/run/herobids/sandbox-egress-ready` present |
+| J4 | Session status and boot time | `running`, within the placed start timeout | **PASS** — alloc `running` on agent-1 |
+
+**Rollout note (found during S6):** the worker container image on staging was stale (built 2026-11-09, before the NET_ADMIN-only change `62f3efeb`). With the flag on, the stale worker added `[NET_ADMIN, SYS_ADMIN]`, so the first relaunch **failed** (nodes allow only `net_admin`). Fix: rebuilt the worker image from the branch (`docker compose up -d --build worker`); the relaunch then produced `cap_add:["NET_ADMIN"]`. Lesson: turning on `NOMAD_SANDBOX_CAPS_ENABLED` requires the worker to be running the NET_ADMIN-only build, not just the config flag.
 
 **Through the agent's tools (S6).** Exact command, mode, raw tool result.
 
