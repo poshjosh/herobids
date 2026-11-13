@@ -356,7 +356,9 @@ Keep the deferral counter and alert behaviour. The kill switch stays `enable_sca
 Tests: add cases to the scale-in guard and wiring tests: demand on and no backlog → proceeds; demand on and backlog → defers; demand read fails → defers; demand off → unchanged behaviour. Update the text-matching tests that refer to the removed early exit.
 Record the decision in the plan's log: "H4 early exit replaced by a demand check (2026-11-12, this plan)". Update the comment in `scale-in.sh` and the section of `001-safe-capacity-expansion-plan.md` that describes H4 with a one-line pointer here.
 
-**2.3 Make sure the nightly timer has a schedule on both environments.** Status: `done` (code + tests; live converge + the `list-timers` check are gated on a staging deploy).
+**2.3 Make sure the nightly timer has a schedule on both environments.** Status: `done` on staging (code + live converge proven). Production still gated behind R1.
+
+**Live proof (staging, 2026-11-13):** ran `converge-control-plane.sh` with `SCALE_IN_TIME_UTC=3`; it logged `installed nomad-scale-in.timer schedule drop-in (OnCalendar=*-*-* 3:00:00); started nomad-scale-in.timer`. `systemctl list-timers` now shows the next nightly run (`Sat 2026-11-14 03:02:41 UTC`), and `nomad-scale-in.timer` is `active` — fixing the inactive-timer symptom. The `enable_scale_in` flag was flipped to `true` (output-only Terraform apply, 0 resource changes) and re-converged so the unit carries `Environment=ENABLE_SCALE_IN=true`.
 
 **Correction to the plan's premise (verified read-only, staging, 2026-11-13):** staging's `nomad-scale-in.timer` is **not** "enabled with no schedule". Its unit file has a valid `OnCalendar=*-*-* 3:00:00`, `Persistent=true`, and `UnitFileState=enabled`. The real gap is that the timer is **inactive** (`ActiveState=inactive`, `NextElapseUSecRealtime=` empty, `LastTriggerUSec=2026-10-31 03:03:36 UTC`): it was stopped during the earlier P9 work and never restarted, so `list-timers` shows no next run and nightly scale-in never fires.
 
@@ -374,7 +376,19 @@ Fix (converge-managed so it survives and does not depend only on cloud-init, les
 
 Done when (remaining, gated): after a staging converge (`setup-control-plane.sh`/`deploy.sh`), both environments show the next nightly run in `systemctl list-timers`. Staging converge pending a deploy; production is behind R1.
 
-**2.4 Deploy and prove on staging.** Status: `todo`.
+**2.4 Deploy and prove on staging.** Status: `in progress` (demand-check + idle/grace deferral proven live; the actual idle-node removal is waiting out the 10-min new-node grace, using `loadtest-` placeholders so no real agent is touched).
+
+Evidence so far (live, 2026-11-13):
+- Enabled scale-in: set `enable_scale_in = true` in the server `staging.tfvars`; applied the output-only change (0 resource changes, `enable_scale_in` output false→true); re-ran converge → `nomad-scale-in.service` drop-in now `Environment=ENABLE_SCALE_IN=true`, and `nomad-scale-in.timer` is **active** with next run `Sat 2026-11-14 03:02:41 UTC` (step 3e live).
+- **Demand-check path proven:** a scale-in run logs `"Capacity demand mode is on but no allocation is queued or blocked in herobids-agents — scale-in may proceed."` — i.e. it proceeds past the old H4 early exit (the task 2.2 change), then applies the normal idle/grace/slot checks.
+- **Idle-only + grace safety proven:** with real agents on `agent-1`/`agent-2` (busy) it deferred ("top node … not idle"); after driving a scale-out to 3 nodes with 20 `loadtest-` placeholders then purging them, `agent-3` is idle (0 allocs) but scale-in still defers ("not … past its grace period") because the node is <600 s old. Correct conservative behavior.
+- Real agents never drained for the test; placeholders (`loadtest-`) created/removed the disposable 3rd node. Lock contention with the scale-out timer is handled (exit 4 "lock held — skipping").
+- **Idle-node removal proven (live):** once `agent-3` passed the 600 s grace (`StatusUpdatedAt` age > 600), the scale-in run logged `=== Scaling in: 3 → 2 agent nodes ===` → drained + destroyed `agent-3` → `=== Scale-in successful === Removed: 1 node(s)` → `Terraform state synced (agent firewall record)` (the automatic refresh-only reconcile) → `Recorded agent_node_count=2 in staging.tfvars`. Purged the down `agent-3` Nomad node afterwards.
+- **No re-creation:** scale-in wrote the cooldown stamp; over the next ~2+ min the scale-out timer held (`no_demand, cooldown_active`), 2 nodes remained. **All 8 real agents stayed `running` throughout** — none drained for the test.
+- `StatusUpdatedAt` as the grace proxy (plan's "UNVERIFIED until P9") is now verified live: it ages correctly but refreshes on node status changes, biasing conservative (a just-settled node waits a little longer) — acceptable.
+- Backlog-defer path: covered by the guard unit tests (demand on + queued work → defers) and the live run's "may proceed" with no backlog; not re-forced live (would need refilling the pool, disproportionate).
+
+Status: `done`.
 Deploy the branch to staging. With placeholders running so the pool has 2 nodes, stop the placeholders, wait past the grace period, then trigger one run with `systemctl start nomad-scale-in.service`. Confirm it removed the highest-index idle node, synced Terraform state ("Terraform state synced" in the log), wrote the new `agent_node_count`, and that scale-out did not re-create the node over the next 10 minutes. Then confirm a run with a queued placeholder defers.
 Done when: both behaviours are in the evidence.
 
@@ -707,3 +721,10 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - Scale-in proof (2.4) will still use `loadtest-` placeholder jobs we control — not because real agents are off-limits, but because placeholders give a clean, disposable idle node without disturbing real agents.
 - Live state otherwise unchanged: 2 clean `cx23` nodes, autoscaler healthy (no `ownership_mismatch`), `enable_scale_in=false` still.
 - Next (non-agent-touching): browser default → `cx23` + resize the browser job (task 16), sandbox S1 fixed browser IP, then enable scale-in and prove it with `loadtest-` placeholders.
+
+**2026-11-13 (session: staging live-ops, scale-in proven).**
+- Browser node defaulted to `cx23` + job resized; sandbox S1 fixed browser IP (`10.0.0.240`) added to `main.tf` (commit 16452689).
+- 2.3 live: enabled `enable_scale_in` (output-only apply), converged → scale-in timer scheduled (3 AM) and active; unit flag `ENABLE_SCALE_IN=true`.
+- 2.4 live: proved demand-aware scale-in end-to-end using `loadtest-` placeholders (never touching real agents): drove scale-out 2→3 with 20 placeholders, purged them, waited out the 600 s grace, then scale-in removed the idle `agent-3` (3→2), synced state, wrote `agent_node_count=2`, and did not re-create it (cooldown). All 8 real agents stayed running. Placeholders fully cleaned up; down node purged.
+- Local branch is 4 commits ahead of origin (needs an owner `git push` before the browser-node apply, which requires the new `main.tf` on the server).
+- Next: (needs push) deploy the browser/sandbox code to the server, apply the browser node on `cx23`, restart the worker, smoke test (4.2/4.3); then Phase 4b sandbox rollout; switch tooling + alert; then gated cx53/load-test on the Hetzner limit raise.
