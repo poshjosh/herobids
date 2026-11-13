@@ -16,6 +16,11 @@ authority on order, the manual judgement points, and rollback.
 
 ---
 
+> **Status (2026-11-13):** the cx53 switch has NOT been run live yet — it is **deferred**
+> pending the Hetzner shared-core limit raise (an earlier `cx53` apply failed with
+> `shared core limit exceeded`). The script, runbook and tests are ready. Raise the limit
+> (plan task 0.4), then follow this runbook. Owner todo.
+
 ## 0. Before you start (do not skip)
 
 1. **Raise the Hetzner limit first if switching UP.** The Hetzner project is shared

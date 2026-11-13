@@ -190,7 +190,10 @@ Evidence (Hetzner `GET /v1/server_types`, `fsn1` gross prices, 2026-11-13):
 
 `cx53` is available in `fsn1` (EUR 0.0563/hr ≈ EUR 35/mo), so the plan's target node type stands — no fallback needed.
 
-**0.4 Hetzner limits (owner action).** Status: `blocked` (owner). The project limits are only visible in the Hetzner console; the owner must check and, if needed, request the increase with the text in the plan. Does not block Phases 1–4; decides the Phase 5 load-test size.
+**0.4 Hetzner limits (owner action).** Status: `owner todo` (deferred 2026-11-13). The project limits are only visible in the Hetzner console. The `cx53` apply failed with `shared core limit exceeded`, so the shared-vCPU cap is the binding limit. **Decision:** request **150 servers + 150 Primary IPv4 + ~1,500 vCPU** (launch-ready; production is ~85 `cx53` ≈ 1,360 vCPU, +staging/Traderton/headroom). Console text:
+> We run a container platform on Hetzner Cloud and are preparing for launch. Please raise this project's limits to 150 servers and 150 Primary IPv4 addresses (and any vCPU or memory caps accordingly). We expect up to about 100 servers in production plus short load tests on staging.
+
+Until raised, all `cx53` work is blocked: the Phase 5 load test and the cx53 switch test. A minimal bump (~+32 vCPU, i.e. 2 `cx53`) is enough to run just the switch test if the full raise is not wanted yet.
 
 **0.5 Reproduce the staging block from data (read-only).** Status: `done`.
 
@@ -429,7 +432,7 @@ Evidence:
 **3.4 Server limits.** Status: `partial` (Redis pinned + nofile in code; Postgres `max_connections` deliberately deferred to the 3.6 resize + 5.3 measurement; live confirm gated).
 - Redis (`docker-compose.yaml`): `maxclients` pinned explicitly to `10000` (was the image default) and `ulimits.nofile` set to 11000 soft/hard (must exceed `maxclients`). `maxmemory` stays 512 MB. 10000 covers >2x the agent fan-out this control plane is sized for (2 Redis clients per agent).
 - Postgres: `max_connections` left at the image default (100) **on purpose**. Raising it costs ~10 MB of backend memory per connection, which the current `cx23` control plane (3819 MB, shared with Redis+worker+api) cannot absorb. The primary agent-fan-out mitigation is the small per-agent pool from 3.3. `max_connections` must be raised together with the 3.6 control-plane resize and the 5.3 measurement, and with PgBouncer if the pool caps are not enough. A comment in the compose postgres block records this so it is not raised in isolation.
-- Live confirm (`SHOW max_connections`, `CONFIG GET maxclients`) after a staging deploy is gated. Compose validated locally (`docker compose config -q` OK).
+- **Live confirm (staging, 2026-11-13, done):** after `git reset --hard origin/feat/hetzner-scale-path` on the server and `docker compose up -d redis`: `CONFIG GET maxclients` = `10000` (now explicitly pinned), the Redis container `ulimit -n` = `11000` (above maxclients), and Postgres `SHOW max_connections` = `100` (unchanged, as documented). Compose validated locally earlier (`docker compose config -q` OK).
 Rollback: revert the compose change and redeploy (a container restart).
 
 **3.5 PgBouncer, only if 3.2 says so.** Status: `blocked on 3.2` (decision needs the Phase 5 load-test numbers; not built speculatively, per the plan).
@@ -505,6 +508,14 @@ Order with the rest of this plan:
 Done when every S task is `done` with its section 7 evidence. Part of R1.
 
 ### Phase 5: Load test on staging (1 to 2 days)
+
+> **DEFERRED 2026-11-13 (owner).** Two preconditions are not met today: (a) the Hetzner
+> shared-core limit is not yet raised (task 0.4 — the `cx53` apply fails with
+> `shared core limit exceeded`), and (b) the EUR ~50 load-test budget is not available right
+> now. The load-test code is ready (`scripts/loadtest/*`, `apps/worker/src/loadtest/fake-agent.ts`,
+> all committed and tested). Resume when both the limit is raised and the budget is available.
+> **Owner todo:** raise the limit (0.4), then run Phase 5 (and the cx53 switch test) — see
+> `infra/hetzner/docs/runbooks/switch-node-type.md` for the switch, and tasks 5.1–5.4 below.
 
 Goal: show that the autoscaler adds nodes at its normal rate and removes them afterwards, and that the control plane holds the per-agent load, at the largest scale the Hetzner limit and the budget allow (target: 10,000 agents, about 85 nodes).
 
@@ -759,3 +770,9 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - Phase 4b S8 done: documented the NET_ADMIN-only UID-egress design + limitations in `tool-access-and-sandboxing.md` and `tools/permission-levels.md` (corrected the inaccurate "all levels network-isolated" claim — root/`execute_code`/full bypass the UID-scoped rules), marked the three sandbox bug reports fixed, updated CHANGELOG. **Phase 4b complete (S0–S8) on staging.**
 - Switch tooling (task 17) done: `infra/hetzner/scripts/switch-node-type.sh` (runs on the control plane; stops timers → sets tfvars type → `-replace` plan with a protected-resource guard + confirmation phrase → apply → firewall refresh-only → prints the template re-measure / worker-restart steps → restarts timers; refuses any plan touching `hcloud_server.default`/network/volumes; warns about the shared-core limit) + runbook `infra/hetzner/docs/runbooks/switch-node-type.md` + tests `tests/test-switch-node-type.sh` (8 pass, in `run-all.sh`). shellcheck clean.
 - Next: task 18 (email alert at the ~60-node/~750-agent switch trigger) + test it fires. Then gated cx53 switch test + load test on the Hetzner limit raise; Phase 6 + R1.
+
+**2026-11-13 (session: compose limits live + cx53 work deferred).**
+- Owner pushed the branch (origin at `a14a1e45`). Deployed the compose change to the server; confirmed live: Redis `maxclients=10000` (now explicitly pinned), container `nofile=11000`, Postgres `max_connections=100` (unchanged). Task 3.4 live-confirm done.
+- **Deferred (owner): the cx53 switch test (task 19 / switch runbook) and the Phase 5 load test.** Reasons: Hetzner shared-core limit not yet raised (0.4), and no EUR ~50 budget today. All code is ready and tested; resume when the limit is raised and budget is available. Recorded the deferral in Phase 5, the switch runbook header, and 0.4.
+- **Owner todo (single source):** `docs/features/2026/11/12/001-hetzner-scale-path/plan.md` — task 0.4 (raise Hetzner limit to 150 servers / 150 IPv4 / ~1,500 vCPU), Phase 5 (load test), and `infra/hetzner/docs/runbooks/switch-node-type.md` (cx53 switch, run after the limit raise).
+- Next: Phase 6 write-up (results/triggers tables with everything measured so far; load-test rows marked deferred), then set R1 ready for review with the deferrals called out.
