@@ -118,10 +118,19 @@ Do not start production work (Phase 7) until R1 says `passed`. Traderton work (P
 
 ## 3. Target settings (end state)
 
+> **Node type: `cx23` everywhere (owner decision 2026-11-13).** Both the agent and browser
+> pools, on **staging and production**, run on `cx23` until a single coordinated switch moves
+> *everything* to `cx53`. That switch is deferred until the Hetzner shared-core limit is raised
+> (task 0.4) and is run with `infra/hetzner/scripts/switch-node-type.sh` per the
+> [switch runbook](../../../../infra/hetzner/docs/runbooks/switch-node-type.md). Do NOT set any
+> pool to `cx53` before then — a `cx53` apply fails with `shared core limit exceeded` after
+> destroying the old node. The cx23 node template is `3819` MB / `4000` MHz (measured).
+
 | Setting | Where | Staging | Production |
 |---|---|---|---|
-| `agent_node_server_type` | `<env>.tfvars` | `cx53` | `cx53` |
-| `nomad_node_template_memory_mb`, `nomad_node_template_cpu_mhz` | `<env>.tfvars` | measured on a live `cx53` (task 1.5) | same values |
+| `agent_node_server_type` | `<env>.tfvars` | **`cx23`** | **`cx23`** |
+| `browser_node_server_type` | `<env>.tfvars` | **`cx23`** | **`cx23`** |
+| `nomad_node_template_memory_mb`, `nomad_node_template_cpu_mhz` | `<env>.tfvars` | `3819` / `4000` (cx23, measured task 1.5) | `3819` / `4000` (same) |
 | `agent_node_count` | `<env>.tfvars` | 1 after cleanup (the autoscaler changes it) | 1 (the autoscaler changes it) |
 | `min_agent_nodes` / `max_agent_nodes` | `<env>.tfvars` | 1 / 3 (raised only during the load test) | 1 / 20 (owner may change; 20 nodes hold about 2,400 agents and cost about EUR 600 a month at most) |
 | `agent_caps_node_count` | `staging.tfvars` | 0, then the resource is removed | not used |
@@ -132,7 +141,7 @@ Do not start production work (Phase 7) until R1 says `passed`. Traderton work (P
 | Agent Postgres pool | code (task 3.3) | small pool with idle timeout | same |
 | Redis `maxclients`, Postgres `max_connections` | `docker-compose*.yaml` | from measurements (task 3.4) | same |
 | Browser node | Terraform (task 4.2) | 1 dedicated node | 1 dedicated node |
-| Control plane size | `server_type` in tfvars | resized for the load test, then back | unchanged unless measurements require; resize trigger recorded |
+| Control plane size | `server_type` in tfvars | unchanged (resize only for the deferred load test, task 3.6, then back) | unchanged (resize trigger recorded for when cx53/10k work starts) |
 | Browser node private IP | `main.tf` (sandbox plan S1) | fixed, `cidrhost(subnet, 240)` | same |
 | `NOMAD_SANDBOX_CAPS_ENABLED` | `infra/hetzner/.env.<env>` | `true` (sandbox plan S5) | `true` (P3) |
 | `NOMAD_AGENT_IMAGE` | `infra/hetzner/.env.<env>` | pinned `sha-<commit>` tag, probed (S2, S3) | pinned, probed (P2) |
@@ -560,10 +569,10 @@ Production is pre-launch: a few minutes of downtime is acceptable. Read `product
 Merge the branch to `main` (fast-forward or a merge commit, no force push). Wait for the agent image build. Set `capacityAwareStart.enabled: true` in `config/production.yaml` (same as staging) in this merge. Deploy to production with the flow chosen in 1.1. Confirm health and the worker log.
 
 **7.2 Pause and rebuild the node pool.** Status: `todo`.
-Stop the autoscale timers. Sync `agent_node_count`. In `production.tfvars`: `agent_node_server_type = "cx53"`, the template values from 1.5, `max_agent_nodes = 20`, `nomad_autoscale_demand_enabled = true`, `enable_scale_in = true`, `browser_node_count = 1`, `browser_node_server_type` from 4.4. Plan with `-replace='hcloud_server.agent[0]'`.
-Expected plan: replace `hcloud_server.agent[0]` and its network attachment; create `hcloud_server.browser[0]` and its network attachment; firewall `apply_to` updates; no change to `hcloud_server.default` other than `keep_disk` if task 3.6 added it. Anything else: stop.
-Apply. Agents on the old node stop; Nomad places them on the new node. Check every agent is `running`; relaunch any that are not (section 2.1 guide). Live-mode trading agents: record them before, confirm them after.
-Rollback: type back to `cx23`, plan with replace again.
+**Node type: `cx23` (owner decision — everything stays on `cx23` until the coordinated cx53 switch; see §3).** Stop the autoscale timers. Sync `agent_node_count`. In `production.tfvars`: `agent_node_server_type = "cx23"`, `browser_node_server_type = "cx23"`, `nomad_node_template_memory_mb = 3819`, `nomad_node_template_cpu_mhz = 4000`, `max_agent_nodes = 20`, `nomad_autoscale_demand_enabled = true`, `enable_scale_in = true`, `browser_node_count = 1`. Plan with `-replace='hcloud_server.agent[0]'`.
+Expected plan: replace `hcloud_server.agent[0]` and its network attachment; create `hcloud_server.browser[0]` and its network attachment (fixed IP `cidrhost(subnet, 240)`); firewall `apply_to` updates; **no change to `hcloud_server.default`**. Anything else: stop. (On `cx23` the replace fits the Hetzner limit; do NOT set `cx53` here — that is the later coordinated switch, gated on 0.4.)
+Apply. Agents on the old node stop; Nomad places them on the new node. Check every agent is `running`; relaunch any that are not (section 2.1 guide) — and do not leave any agent stopped. Live-mode trading agents: record them before, confirm them after. After the browser job lands, **restart the worker** (it resolves the browser address at startup).
+Rollback: a `cx23` node can be replaced again at any time; agents restart on the remaining nodes.
 
 **7.3 Limits and settings.** Status: `todo`.
 Confirm Postgres and Redis limits from 3.4 are live. Upload settings (`setup-autoscale-env.sh --env production`) and converge. Confirm the rendered settings show demand mode on and the template values. Start the timers. Read 10 runs of the autoscale log.
@@ -788,3 +797,8 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - Filled §6 Results with everything measured on `cx23` (usable 3819 MB/4000 MHz; ~14 free / ~3 pro agents per node; scale-out/in evidence; Redis/Postgres limits; projected cx53 densities and ~EUR 0.47 (cx23)/~EUR 0.29 (cx53) per agent/month). Marked the load-test / cx53 / browser-ceiling / Traderton rows deferred or not-started.
 - Set **R1 = ready for review** with two explicit deferrals (cx53 switch test + Phase 5 load test — both gated on the Hetzner limit raise; the load test also on the EUR 50 budget). All code complete and tested; staging behaviour proven live for Phases 1–4b + switch tooling + alert.
 - Summary for the reviewer (Kiro) / owner is in this entry and §8. Next owner actions: raise the Hetzner limit (0.4), then run the cx53 switch (switch runbook) and Phase 5; production (Phase 7) waits on R1 passing.
+
+**2026-11-13 (session: everything-on-cx23 decision; branch merged to main).**
+- Owner decision: **both agent and browser pools, staging AND production, stay on `cx23` until a single coordinated switch moves everything to `cx53`.** Corrected §3 target table (agent + browser = cx23 both envs; template 3819/4000; control plane unchanged) with a note, and task 7.2 (production rebuilds on cx23, not cx53; explicit "do not set cx53 here"). Committed tfvars carry no hard-coded cx53 (variables.tf default is cx23; per-env tfvars gitignored).
+- The branch is merged to `main`. No committed config sets cx53; a production deploy on cx23 cannot hit the shared-core trap.
+- Production (Phase 7) and Traderton (Phase 8) remain owner-gated: Phase 7 waits on R1; Phase 8 waits on the owner's explicit greenlight.
