@@ -23,7 +23,15 @@ agentRuntime:
 # resolves here. Empty = resolve via Nomad service discovery at worker startup.
 browserPool:
   url: ""
-      
+
+# Capacity-aware start gate: a start waits for Nomad capacity (up to 10 min)
+# instead of failing at the 60 s legacy timeout. Enabled in production as part
+# of the Hetzner scale-path rollout (Phase 7, Step 1).
+worker:
+  agents:
+    capacityAwareStart:
+      enabled: true
+
 # Operator configuration — self-documenting reference.
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
 #
