@@ -15,14 +15,26 @@
 #     infra/hetzner/cloud-init-nomad-client.yaml and BROWSER_POOL_PORT in
 #     infra/hetzner/scripts/converge-control-plane.sh. Keep them equal.
 #
+# Node pool (plan task 4.2/4.3):
+#   - The job runs in the dedicated Nomad node pool "browser" (node_pool below), so it only
+#     lands on the browser node and never shares a node with agents. The browser node is
+#     Terraform-managed (hcloud_server.browser, var.browser_node_count/server_type) and not
+#     autoscaled; capacity is one number.
+#
 # Scaling:
 #   - A static port allows one instance per node. Adding `count` instances needs
 #     one port per instance (see the autoscale plan) before scaling out.
 #   - Increase `MAX_CONCURRENT_SESSIONS` per instance (and bump memory accordingly;
-#     ~1 GB per concurrent session is a reasonable starting point).
+#     ~1 GB per concurrent session is a reasonable starting point), sized to the node.
 
 job "browser-pool" {
   type = "service"
+
+  # Pin the browser pool to its dedicated node pool (plan task 4.2/4.3). The browser
+  # node's Nomad client registers node_pool = "browser"; agent jobs stay in the "default"
+  # pool, so agents and the browser pool never share a node. The job sets no namespace, so
+  # it stays in "default" and the agent demand reader (herobids-agents only) ignores it.
+  node_pool = "browser"
 
   group "browser" {
     count = 1
@@ -55,16 +67,19 @@ job "browser-pool" {
         ports = ["http"]
       }
 
+      # Sized for a dedicated cx33 (4 vCPU / 8 GB), leaving headroom for the OS and Nomad.
+      # Starting point ~1 GB and ~0.5 vCPU per concurrent session; tune MAX_CONCURRENT_SESSIONS,
+      # QUEUE_LENGTH and resources from the Phase 4.4 load-test measurement before relying on them.
       env {
-        MAX_CONCURRENT_SESSIONS = "2"
+        MAX_CONCURRENT_SESSIONS = "6"
         TIMEOUT                 = "60000"
-        QUEUE_LENGTH            = "10"
+        QUEUE_LENGTH            = "12"
         DEFAULT_LAUNCH_ARGS     = "[\"--no-sandbox\",\"--disable-dev-shm-usage\"]"
       }
 
       resources {
-        memory = 2048
-        cpu    = 500
+        memory = 6144
+        cpu    = 3500
       }
     }
 

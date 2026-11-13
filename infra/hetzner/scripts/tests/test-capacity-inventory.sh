@@ -143,6 +143,24 @@ OUT="$(capacity_reconcile "${cloud_unlabelled}" "$(cat "${FX}/nomad-healthy.json
 assert_eq "${RC}" "2" "owned server without the control-plane role is still blocked"
 assert_contains "$(blockers)" "ownership_mismatch" "owned server with another role raises ownership_mismatch"
 
+# Browser node (plan task 4.2): role=browser is exempt from the ownership check, next to
+# control-plane. A browser server joins its own Nomad node pool and is not a managed agent.
+cloud_browser="$(jq '.[2] = {name: "synth-browser-1", status: "running",
+  labels: {app: "herobids", environment: "synthetic", role: "browser", node_pool: "synth"}}' \
+  "${FX}/cloud-control-plane.json")"
+RC=0
+OUT="$(capacity_reconcile "${cloud_browser}" "$(cat "${FX}/nomad-healthy.json")" 2 synthetic synth "${NOW}")" || RC=$?
+assert_eq "${RC}" "0" "browser node with role=browser is not an ownership mismatch"
+assert_not_contains "$(blockers)" "ownership_mismatch" "browser node raises no ownership_mismatch"
+assert_eq "$(field '.managed_count')" "2" "browser node is not counted as a managed agent"
+
+# An unknown role is still foreign, even alongside the browser exemption.
+cloud_unknown_role="$(jq '.[2].labels.role = "scraper"' "${FX}/cloud-control-plane.json")"
+RC=0
+OUT="$(capacity_reconcile "${cloud_unknown_role}" "$(cat "${FX}/nomad-healthy.json")" 2 synthetic synth "${NOW}")" || RC=$?
+assert_eq "${RC}" "2" "an owned server with an unknown role is still blocked"
+assert_contains "$(blockers)" "ownership_mismatch" "unknown role still raises ownership_mismatch"
+
 reconcile_case cloud-private-agents.json nomad-renamed-by-ip.json 2
 assert_eq "${RC}" "0" "Nomad node renamed but matching a server private IP is consistent"
 assert_eq "$(field '.servers[0].nomad')" "ready" "server matched to its renamed Nomad node by private IP is ready"

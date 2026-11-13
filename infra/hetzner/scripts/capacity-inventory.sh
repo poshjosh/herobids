@@ -139,7 +139,7 @@ def nomad_state($node):
 | ($cloud | map(select(owned))) as $owned
 | ($owned | map(select(.status == "deleting"))) as $deleting
 | ($owned | map(select(.status != "deleting"))) as $live
-| ($live | map(select((shaped | not) and (.labels.role != "control-plane")))) as $foreign
+| ($live | map(select((shaped | not) and (.labels.role != "control-plane") and (.labels.role != "browser")))) as $foreign
 | ($live | map(select(shaped)) | map(. + {index: index_of})) as $managed
 | ($managed | map(. as $s | {
     name: $s.name, id: $s.id, address: $s.address, private_address: $s.private_address,

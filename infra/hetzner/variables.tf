@@ -217,6 +217,33 @@ variable "agent_node_server_type" {
   }
 }
 
+# ── Browser Node ──────────────────────────────────────────
+# The browser pool runs on its own Nomad node (pool/class "browser") so agents never
+# share it. Not autoscaled: capacity is these two numbers (see docs/features Hetzner
+# scale-path plan, Phase 4). Apply by hand; the agent autoscaler ignores the browser pool.
+
+variable "browser_node_count" {
+  type        = number
+  description = "Number of dedicated browser-pool nodes to provision. Default 0 (feature off). Set to 1 to run the browser pool on its own node."
+  default     = 0
+
+  validation {
+    condition     = var.browser_node_count >= 0 && var.browser_node_count <= 10
+    error_message = "browser_node_count must be between 0 and 10."
+  }
+}
+
+variable "browser_node_server_type" {
+  type        = string
+  description = "Hetzner instance type for the browser-pool node(s). Sized to the measured sessions-per-node (plan task 4.4)."
+  default     = "cx33"
+
+  validation {
+    condition     = can(regex("^(cx|ccx|cpx|CAX)\\d+$", var.browser_node_server_type))
+    error_message = "browser_node_server_type must be a valid Hetzner instance type (e.g., cx33, ccx23)."
+  }
+}
+
 # ── Autoscale Configuration ───────────────────────────────
 
 variable "scale_out_cooldown_seconds" {

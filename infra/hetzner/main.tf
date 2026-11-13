@@ -272,6 +272,11 @@ resource "hcloud_server" "agent" {
     control_plane_private_ip = hcloud_server_network.control_plane[0].ip
     ghcr_username            = var.ghcr_username
     ghcr_token               = var.ghcr_token
+    # Agent-node defaults: node_class "agent" and an empty Nomad node_pool (so the
+    # client stays in the "default" pool, exactly as before this template gained the
+    # inputs). These must render the agent cloud-init byte-for-byte unchanged.
+    node_class      = "agent"
+    nomad_node_pool = ""
   })
 
   labels = {
@@ -330,6 +335,8 @@ resource "hcloud_server" "agent_caps" {
     control_plane_private_ip = hcloud_server_network.control_plane[0].ip
     ghcr_username            = var.ghcr_username
     ghcr_token               = var.ghcr_token
+    node_class               = "agent"
+    nomad_node_pool          = ""
   })
 
   labels = {
@@ -348,6 +355,69 @@ resource "hcloud_server" "agent_caps" {
 resource "hcloud_server_network" "agent_caps" {
   count      = var.enable_nomad ? var.agent_caps_node_count : 0
   server_id  = hcloud_server.agent_caps[count.index].id
+  network_id = hcloud_network.private[0].id
+}
+
+# ── Browser Node (dedicated Nomad node pool) ──────────────
+# Runs the browser pool (Browserless) on its own node so agents never share it.
+# It joins a separate Nomad node_pool ("browser") and node_class ("browser"); agent
+# jobs stay in the default pool, so the agent autoscaler (which counts class "agent"
+# nodes and reads only the herobids-agents namespace) ignores it. role = "browser" is
+# exempted from the capacity guard's ownership check (capacity-inventory.sh), so a
+# browser server never raises ownership_mismatch. Not autoscaled: capacity is one
+# number (browser_node_count / browser_node_server_type). Reuses the agent firewall
+# (port 3100 is already open to the private network there).
+
+resource "hcloud_server" "browser" {
+  count       = var.enable_nomad ? var.browser_node_count : 0
+  name        = "${var.server_name}-browser-${count.index + 1}"
+  server_type = var.browser_node_server_type
+  location    = var.location
+  image       = var.image
+
+  ssh_keys     = [hcloud_ssh_key.default.id]
+  firewall_ids = var.enable_nomad ? [hcloud_firewall.agent[0].id] : []
+
+  public_net {
+    ipv4_enabled = true
+    ipv6_enabled = false
+  }
+
+  user_data = templatefile("${path.module}/cloud-init-nomad-client.yaml", {
+    server_name              = "${var.server_name}-browser-${count.index + 1}"
+    environment              = var.environment
+    nomad_server_addr        = hcloud_server_network.control_plane[0].ip
+    node_pool                = var.server_name
+    node_index               = count.index
+    nomad_version            = var.nomad_version
+    private_subnet           = var.subnet_ip_range
+    control_plane_private_ip = hcloud_server_network.control_plane[0].ip
+    ghcr_username            = var.ghcr_username
+    ghcr_token               = var.ghcr_token
+    # Isolate the browser node: its own Nomad node_class and node_pool so agent jobs
+    # (default pool) never land here and the browser job targets it explicitly.
+    node_class      = "browser"
+    nomad_node_pool = "browser"
+  })
+
+  labels = {
+    app         = "herobids"
+    environment = var.environment
+    role        = "browser"
+    node_pool   = var.server_name
+  }
+
+  # Like agent nodes: cattle, and user_data is ignored so a template change does not
+  # replace a live browser node. Roll it explicitly with `terraform apply -replace`.
+  lifecycle {
+    prevent_destroy = false
+    ignore_changes  = [user_data]
+  }
+}
+
+resource "hcloud_server_network" "browser" {
+  count      = var.enable_nomad ? var.browser_node_count : 0
+  server_id  = hcloud_server.browser[count.index].id
   network_id = hcloud_network.private[0].id
 }
 

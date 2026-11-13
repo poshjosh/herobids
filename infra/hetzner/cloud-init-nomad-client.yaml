@@ -5,11 +5,15 @@
 #   ${server_name}        — Agent node hostname (e.g. herobids-agent-1)
 #   ${environment}        — Deployment environment: staging | production
 #   ${nomad_server_addr}  — Private IP of the Nomad server (control-plane host)
-#   ${node_pool}          — Node pool name (matches var.server_name)
+#   ${node_pool}          — node_pool meta label (matches var.server_name)
 #   ${node_index}         — Zero-based index within the node pool
 #   ${nomad_version}      — Nomad version to install
 #   ${private_subnet}     — Private network subnet CIDR for UFW rules
 #   ${control_plane_private_ip} — Control-plane private IP for Redis health reporting
+#   ${node_class}         — Nomad client node_class (default "agent"; "browser" for the browser node)
+#   ${nomad_node_pool}    — Nomad client node_pool. Empty (the agent default) renders no
+#                           node_pool line, so agent nodes stay in the "default" pool exactly
+#                           as before. Set to "browser" to isolate the browser node's pool.
 
 package_update: true
 package_upgrade: true
@@ -41,7 +45,10 @@ write_files:
       client {
         enabled = true
 
-        node_class = "agent"
+        node_class = "${node_class}"
+%{ if nomad_node_pool != "" ~}
+        node_pool = "${nomad_node_pool}"
+%{ endif ~}
 
         servers = ["${nomad_server_addr}:4647"]
 

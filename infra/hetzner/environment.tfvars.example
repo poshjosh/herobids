@@ -73,6 +73,11 @@ app_domain = "staging.openaidom.com"  # or "openaidom.com"
 # max_agent_nodes         = 3    # small pool for staging
 # agent_node_server_type  = "cpx22"
 
+# ── Browser Node ──────────────────────────────────────────
+# Dedicated node for the browser pool (own Nomad pool/class "browser"). Not autoscaled.
+# browser_node_count       = 0       # 0 = off; 1 = run the browser pool on its own node
+# browser_node_server_type = "cx33"  # size to the measured sessions-per-node (plan 4.4)
+
 # ── Autoscale Configuration ───────────────────────────────
 # Staging uses tighter thresholds for faster validation:
 
