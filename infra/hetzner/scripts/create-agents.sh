@@ -66,11 +66,13 @@ SECURITY_AUDIT_PROMPT="$(<"$SECURITY_AUDIT_PROMPT_FILE")"
 TESTER_TICK_INTERVAL_MS="${TESTER_TICK_INTERVAL_MS:-86400000}"
 EXTERNAL_TESTER_PROMPT_FILE="${EXTERNAL_TESTER_PROMPT_FILE:-${REPO_ROOT}/docs/agents/prompts/external-skills-tester-prompt.md}"
 SYSTEM_TESTER_PROMPT_FILE="${SYSTEM_TESTER_PROMPT_FILE:-${REPO_ROOT}/docs/agents/prompts/system-skills-tester-prompt.md}"
-for prompt_file in "$EXTERNAL_TESTER_PROMPT_FILE" "$SYSTEM_TESTER_PROMPT_FILE"; do
+SANDBOX_TESTER_PROMPT_FILE="${SANDBOX_TESTER_PROMPT_FILE:-${REPO_ROOT}/docs/agents/prompts/sandbox-tester-prompt.md}"
+for prompt_file in "$EXTERNAL_TESTER_PROMPT_FILE" "$SYSTEM_TESTER_PROMPT_FILE" "$SANDBOX_TESTER_PROMPT_FILE"; do
   [[ -f "$prompt_file" ]] || die "Tester prompt not found: ${prompt_file}"
 done
 EXTERNAL_TESTER_PROMPT="$(<"$EXTERNAL_TESTER_PROMPT_FILE")"
 SYSTEM_TESTER_PROMPT="$(<"$SYSTEM_TESTER_PROMPT_FILE")"
+SANDBOX_TESTER_PROMPT="$(<"$SANDBOX_TESTER_PROMPT_FILE")"
 
 # ─── Trading agent definitions ───────────────────────────────────────────────
 
@@ -518,6 +520,26 @@ SYSTEM_TESTER_ID="$(create_agent "system-skills-tester" "$(jq -n \
       capital: "1000"
     }')")"
 
+# sandbox-tester — verifies the sandbox egress rules on the container (no skills; built-in shell/code tools)
+SANDBOX_TESTER_ID="$(create_agent "sandbox-tester" "$(jq -n \
+    --arg name "sandbox-tester" \
+    --arg prompt "$SANDBOX_TESTER_PROMPT" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg lightModel "$AGENT_LIGHT_MODEL" \
+    --arg heavyModel "$AGENT_HEAVY_MODEL" \
+    --arg tickIntervalMs "$TESTER_TICK_INTERVAL_MS" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      provider: $provider,
+      lightModel: $lightModel,
+      heavyModel: $heavyModel,
+      skillIds: [],
+      tickIntervalMs: ($tickIntervalMs | tonumber),
+      runtimePolicyOverrides: { maxHoldDurationMs: 0 },
+      capital: "1000"
+    }')")"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Step 5 — Summary
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -529,4 +551,5 @@ log_ok "tintel           → id=${TINTEL_ID}  connection=Hyperliquid (${HYPERLIQ
 log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
 log_ok "external-skills-tester → id=${EXTERNAL_TESTER_ID}  connection=Hyperliquid (run-once)"
 log_ok "system-skills-tester → id=${SYSTEM_TESTER_ID}  (run-once)"
+log_ok "sandbox-tester   → id=${SANDBOX_TESTER_ID}  (run-once)"
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."

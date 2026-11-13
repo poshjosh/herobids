@@ -69,6 +69,11 @@ SYSTEM_TESTER_NAME="system-skills-tester"
 SYSTEM_TESTER_SKILL_IDS='[]'
 SYSTEM_TESTER_PROMPT_FILE="${REPO_ROOT}/docs/agents/prompts/system-skills-tester-prompt.md"
 
+# sandbox-tester — verifies the agent sandbox egress rules on the container (no skills; uses built-in shell/code tools)
+SANDBOX_TESTER_NAME="sandbox-tester"
+SANDBOX_TESTER_SKILL_IDS='[]'
+SANDBOX_TESTER_PROMPT_FILE="${REPO_ROOT}/docs/agents/prompts/sandbox-tester-prompt.md"
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -503,6 +508,14 @@ else
   SYSTEM_TESTER_ID="$(create_non_trading_agent "$SYSTEM_TESTER_NAME" "$SYSTEM_TESTER_PROMPT" "$SYSTEM_TESTER_SKILL_IDS" "$TESTER_TICK_INTERVAL_MS")"
 fi
 
+if [[ ! -f "$SANDBOX_TESTER_PROMPT_FILE" ]]; then
+  log_warn "Sandbox tester prompt not found at ${SANDBOX_TESTER_PROMPT_FILE} — skipping sandbox-tester"
+  SANDBOX_TESTER_ID="(skipped)"
+else
+  SANDBOX_TESTER_PROMPT="$(<"$SANDBOX_TESTER_PROMPT_FILE")"
+  SANDBOX_TESTER_ID="$(create_non_trading_agent "$SANDBOX_TESTER_NAME" "$SANDBOX_TESTER_PROMPT" "$SANDBOX_TESTER_SKILL_IDS" "$TESTER_TICK_INTERVAL_MS")"
+fi
+
 # ---------------------------------------------------------------------------
 # Step 5 — Summary
 # ---------------------------------------------------------------------------
@@ -514,5 +527,5 @@ log_ok "tintel           → id=${TINTEL_ID}  connection=Hyperliquid (${HYPERLIQ
 log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
 log_ok "external-skills-tester → id=${EXTERNAL_TESTER_ID}  connection=Hyperliquid (run-once)"
 log_ok "system-skills-tester → id=${SYSTEM_TESTER_ID}  (run-once)"
-log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."
+log_ok "sandbox-tester   → id=${SANDBOX_TESTER_ID}  (run-once)"
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."

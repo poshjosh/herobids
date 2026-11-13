@@ -339,6 +339,8 @@ scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/external-skills-tester-prompt.
   die "Failed to upload external-skills-tester-prompt.md to server."
 scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/system-skills-tester-prompt.md" "root@${SERVER_IP}:/tmp/system-skills-tester-prompt.md" || \
   die "Failed to upload system-skills-tester-prompt.md to server."
+scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/sandbox-tester-prompt.md" "root@${SERVER_IP}:/tmp/sandbox-tester-prompt.md" || \
+  die "Failed to upload sandbox-tester-prompt.md to server."
 
 # Build agent env overrides
 AGENT_ENV_VARS=(
@@ -349,6 +351,7 @@ AGENT_ENV_VARS=(
   "SECURITY_AUDIT_PROMPT_FILE=/tmp/security-audit-prompt.md"
   "EXTERNAL_TESTER_PROMPT_FILE=/tmp/external-skills-tester-prompt.md"
   "SYSTEM_TESTER_PROMPT_FILE=/tmp/system-skills-tester-prompt.md"
+  "SANDBOX_TESTER_PROMPT_FILE=/tmp/sandbox-tester-prompt.md"
 )
 
 log_info "Running create-agents.sh on server..."
@@ -378,7 +381,7 @@ log_ok "Agent created."
 # ─── Cleanup server temp files ───────────────────────────────────────────────
 
 log_info "Cleaning up server temp files..."
-ssh ${SSH_OPTS} "root@${SERVER_IP}" 'rm -f /tmp/herobids-setup.env /tmp/create-agents.sh /tmp/security-audit-prompt.md /tmp/external-skills-tester-prompt.md /tmp/system-skills-tester-prompt.md' || true
+ssh ${SSH_OPTS} "root@${SERVER_IP}" 'rm -f /tmp/herobids-setup.env /tmp/create-agents.sh /tmp/security-audit-prompt.md /tmp/external-skills-tester-prompt.md /tmp/system-skills-tester-prompt.md /tmp/sandbox-tester-prompt.md' || true
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Summary

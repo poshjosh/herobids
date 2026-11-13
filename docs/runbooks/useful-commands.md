@@ -1,13 +1,3 @@
-You are an LLM agent created to test the sandbox on the local container you are running on. Here are 4 tests to run:
-
-1. A1 (public egress works): "run a shell command to fetch https://example.com and report the HTTP status" — expect it works (200 / connects).
-2. A2 (private blocked, standard mode): "run a shell command to open a TCP connection to 10.0.0.2 port 5432 with a 5s timeout and report whether it connects" — expect blocked/refused.
-3. A3 (browser pool reachable): "run a shell command to GET http://10.0.0.240:3100/pressure" — expect JSON.
-4. A8 (execute_code runs as root): "run code that prints the process uid (process.getuid() or os.getuid())" — expect 0.
-
-Please run the above for tests and report the result/s for each.
-
-
 # Herobids useful commands
 
 - production ip - 167.233.213.107
@@ -51,12 +41,17 @@ ssh -i ~/.ssh/herobids_deploy_key root@138.199.172.202 "ls -d /opt/herobids/infr
 ```
 
 - infra/hetzner/scripts/setup-env.sh --env staging --file infra/hetzner/.env.staging
-- infra/hetzner/scripts/push.sh --env staging 
-- infra/hetzner/deploy.sh --env staging 138.199.172.202 --env-file infra/hetzner/.env.staging
-- infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --start-stopped # --skip-deploy --include-live
-- infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy --start-stopped --start-interval=30  # starts stopped/crashed agents (all owners), 30 s minimum between starts; running agents are left alone (add --restart-running to also restart them)
+
+- infra/hetzner/scripts/push.sh --env staging   # app only: git pull + build + compose up. Does NOT converge the control plane (autoscaler/Nomad/UFW config).
+
+- infra/hetzner/deploy.sh --env staging 138.199.172.202 --env-file infra/hetzner/.env.staging  # full chain incl. setup-control-plane.sh (converge). Use this when infra/autoscaler/control-plane config or .env changed, since hcloud_server.default ignores user_data and only converge keeps it current.
+
+- infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy --start-stopped --start-interval=30 --restart-running --include-live
+
 - DEPLOY_REF=origin/feat/safe-capacity-p9-staging infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging --skip-deploy  # run the feature-branch copy of the script
+
 - infra/hetzner/scripts/reset-and-run.sh --env staging 138.199.172.202 --env-file .env.ops.staging
+
 - HEROBIDS_ENV=staging  scripts/shell/ops/download-eval-reports.sh
 
 ```sh
