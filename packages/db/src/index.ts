@@ -8,8 +8,30 @@ interface ClosableDatabaseClient {
   end(options?: { timeout?: number }): Promise<void>;
 }
 
-export function createDatabase(connectionString: string) {
-  const client = postgres(connectionString);
+/**
+ * Connection-pool options for {@link createDatabase}. A subset of the `postgres`
+ * library's options, exposed so a process that runs at high fan-out (one agent
+ * container per agent, thousands at scale) can cap how many Postgres connections
+ * it holds. Omit the field to keep the library default.
+ */
+export interface CreateDatabaseOptions {
+  /** Maximum connections in the pool. `postgres` default is 10. */
+  max?: number;
+  /** Seconds a connection may sit idle before it is closed. `postgres` default keeps it open. */
+  idleTimeoutSeconds?: number;
+}
+
+export function createDatabase(connectionString: string, options: CreateDatabaseOptions = {}) {
+  // Only pass through options the caller set, so an omitted field leaves the
+  // library default untouched (today's behaviour for every existing caller).
+  const clientOptions: { max?: number; idle_timeout?: number } = {};
+  if (options.max !== undefined) {
+    clientOptions.max = options.max;
+  }
+  if (options.idleTimeoutSeconds !== undefined) {
+    clientOptions.idle_timeout = options.idleTimeoutSeconds;
+  }
+  const client = postgres(connectionString, clientOptions);
   return drizzle(client, { schema });
 }
 

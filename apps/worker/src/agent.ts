@@ -888,7 +888,18 @@ const WAKE_SIGNAL_POLL_MS = agentRuntimePolicy.wake.pollMs;
 // ---------------------------------------------------------------------------
 
 const DATABASE_URL = process.env['DATABASE_URL'];
-const db = DATABASE_URL ? createDatabase(DATABASE_URL) : null;
+// One agent runs in its own container, and the platform runs up to ~10,000 at once.
+// With the postgres default pool of 10 per process, that would be ~100,000 potential
+// connections against a control-plane Postgres whose default max_connections is 100.
+// An agent's DB use is light and bursty (bot tool reads, conversation hydration), so a
+// small pool with a short idle timeout keeps the steady-state connection count far lower
+// without hurting a single agent. Starting values; tune from the Phase 3.1 measurements.
+// Kept as constants here (there is no agent-side operator-config path in this process).
+const AGENT_DB_POOL_MAX = 2;
+const AGENT_DB_IDLE_TIMEOUT_SECONDS = 30;
+const db = DATABASE_URL
+  ? createDatabase(DATABASE_URL, { max: AGENT_DB_POOL_MAX, idleTimeoutSeconds: AGENT_DB_IDLE_TIMEOUT_SECONDS })
+  : null;
 const agentRepo = db ? new AgentRepository(db) : null;
 // The Conversation store: hydrates the window after a restart and backs get_thread / get_message. Reads use the schema
 // defaults, which match config/default.yaml; the owner is bound here, so no tool can read another user's thread.

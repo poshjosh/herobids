@@ -328,7 +328,13 @@ Done when: both behaviours are in the evidence.
 
 Goal: know what each agent costs the control plane, and fix the limits that would break before 10,000 agents.
 
-**3.1 Measure on staging (read-only).** Status: `todo`.
+**3.1 Measure on staging (read-only).** Status: `partial` (baseline captured read-only; the per-heartbeat DB/worker-CPU breakdown and the 1k/5k/10k projection need the Phase 5 load test).
+
+Evidence (read-only, staging, 2026-11-13, 7 running agent jobs):
+- Postgres: `max_connections = 100`; 19 total connections; by `application_name`: `postgres.js` = 13, blank/internal = 5, `psql` = 1. So with 7 agents the `postgres.js` clients (agents + worker + api) sit at 13. User `herobids`, db `herobids`.
+- Redis: `maxclients = 10000`, `maxmemory = 536870912` (512 MB), `connected_clients = 24`.
+- Control plane: 3819 MB total, ~1991 MB available.
+- Full per-agent heartbeat DB/Redis work and worker CPU per 100 agents: to be measured during the Phase 5 ramp (needs load, not available from a read-only snapshot). The projection table at 1k/5k/10k is filled in 5.3.
 With the normal staging agents running:
 - Postgres: `SELECT application_name, client_addr, state, count(*) FROM pg_stat_activity GROUP BY 1,2,3;` and `SHOW max_connections;`. Work out connections per agent at idle and while it is working (watch an agent during a tick).
 - Redis: `INFO clients`, `CLIENT LIST` (count per client address), `INFO memory`, `CONFIG GET maxclients`.
@@ -344,8 +350,13 @@ Write the decision in the evidence, using these rules:
 - Heartbeats: if the worker cannot handle the projected rate within 50% of its CPU, the first fix is a longer heartbeat interval. Change it together with every timeout that depends on it (search for `heartbeatIntervalMs` and the health monitor's thresholds).
 - Nomad: projected server memory at 10,000 jobs must leave 30% free on the control plane.
 
-**3.3 Small Postgres pool for agents.** Status: `todo`.
-Add an optional options argument to `createDatabase` in `packages/db/src/index.ts` (pool `max`, `idle_timeout`), keeping today's behaviour when it is omitted. In `apps/worker/src/agent.ts`, pass a small pool for the agent (start with `max: 2`, `idle_timeout: 30` seconds; adjust from 3.1). Make the values operator config if a config path for agent-side settings already exists; otherwise constants in one place with a comment. Tests: the agent's options are passed through; omitted options leave the default.
+**3.3 Small Postgres pool for agents.** Status: `done` (code + tests).
+
+Evidence:
+- `packages/db/src/index.ts`: `createDatabase(connectionString, options?)` now accepts `CreateDatabaseOptions { max?, idleTimeoutSeconds? }`. Only set fields are forwarded (`max`, `idle_timeout`), so an omitted field keeps the `postgres` library default — every existing caller is unchanged.
+- `apps/worker/src/agent.ts`: the agent's own `createDatabase(DATABASE_URL, …)` now passes `max: 2`, `idleTimeoutSeconds: 30`, held as named constants `AGENT_DB_POOL_MAX` / `AGENT_DB_IDLE_TIMEOUT_SECONDS` with a comment (there is no agent-side operator-config path in this process). These are starting values to tune from 3.1/5.3.
+- Tests: `packages/db/src/create-database.test.ts` (3 cases) — no options → `{}` (default preserved); both options → `{ max, idle_timeout }`; partial options forwarded individually. All pass.
+- Build: `pnpm --filter @herobids/db build` and `pnpm --filter @herobids/worker build` both succeed.
 
 **3.4 Server limits.** Status: `todo`.
 Set Postgres `max_connections` and Redis `maxclients` (and `ulimits.nofile` for the Redis container) in `docker-compose.yaml` or the env overlays, to the values from 3.2. If Postgres needs more shared memory for more connections, set it. Deploy to staging and confirm with `SHOW max_connections` and `CONFIG GET maxclients`.
