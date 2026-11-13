@@ -37,3 +37,17 @@
 1. Unit test: `buildNomadJobSpec` includes `cap_add: ['NET_ADMIN', 'SYS_ADMIN']` and no `privileged` key.
 2. Existing `shell.test.ts`, `code.test.ts`, `tool-errors.test.ts`, `agent-broker-platform-fault.test.ts` pass.
 3. On a Nomad client after the change: `nomad job inspect agent-<id>` shows `cap_add`, and `grep CapEff /proc/self/status` inside the agent container includes the `NET_ADMIN` and `SYS_ADMIN` bits. `execute_shell` runs a command without the fault.
+
+
+---
+
+## Resolved — 2026-11-13 (Hetzner scale-path, Phase 4b)
+
+Fixed as part of the sandbox rollout in
+[docs/features/2026/11/12/001-hetzner-scale-path/sandbox-shell-access.md](../../../features/2026/11/12/001-hetzner-scale-path/sandbox-shell-access.md).
+Agent jobs now request `cap_add: ["NET_ADMIN"]` (only, not `SYS_ADMIN`) when
+`nomad.sandboxCapsEnabled=true`, and every agent-class node's cloud-init `allow_caps`
+includes `net_admin`. Proven live on staging: a relaunched agent shows
+`CapEff` bit 12 (NET_ADMIN) set, the egress marker present, and the egress rules
+installed (`sandbox-egress: rules installed for user agent (uid 1001)`). See the
+sub-plan §7 for the acceptance evidence.

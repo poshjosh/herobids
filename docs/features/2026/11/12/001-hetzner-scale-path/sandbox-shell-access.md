@@ -125,7 +125,12 @@ Done when every J and A row matches. On any failure: flag off, relaunch the cana
 Relaunch the remaining staging agents in groups (two, then three, then the rest). Skip live-mode trading agents (`agents.unified_config.execution.mode`) and list them for the owner. After each group: every agent `running`, heartbeats on time, no `sandbox_infrastructure_error` in its fault events. Note: draining a node moves an agent with its **old** job settings, so only a relaunch picks up the flag.
 Done when every non-live staging agent's job has `cap_add = ["NET_ADMIN"]`, uses the pinned tag, and A9 holds for all of them.
 
-**S8 Docs.** Status: `todo`.
+**S8 Docs.** Status: `done`.
+- `docs/tech/agents/tool-access-and-sandboxing.md`: corrected the "network isolation regardless of permission level" claim (the rules match the `agent` UID only; root/`execute_code`/`full` bypass them), and added an "Egress rule design and limitations" section with the live iptables rule set and the four accepted limitations (sudo, root unrestricted, loopback, DATABASE_URL in env).
+- `docs/tech/agents/tools/permission-levels.md`: fixed the Restricted/Standard/Full network rows to reflect UID-scoping (execute_code=root unrestricted; standard execute_shell restricted; full unrestricted).
+- Marked the three bug reports fixed with resolution notes: `2026/11/07/001`, `2026/11/07/002`, `2026/11/09/001`.
+- CHANGELOG `[Unreleased]`: replaced the stale "NET_ADMIN + SYS_ADMIN / network namespace" entry with the NET_ADMIN-only UID-egress design, plus the browser node, demand-aware scale-in, `NOMAD_AGENT_IMAGE`, and DB/Redis pool entries.
+- The superseded pointer on `docs/features/pending/000-sandbox-uid-egress/001-plan.md` was already added when the sub-plan was created.
 - Update `docs/tech/agents/tool-access-and-sandboxing.md` and `docs/tech/agents/tools/permission-levels.md` with the UID design and the section 3 limitations, in plain words.
 - Mark the three bug reports in section 2 fixed, each linking to section 7 of this file.
 - Add a superseded pointer at the top of `docs/features/pending/000-sandbox-uid-egress/001-plan.md` if it is not there yet.

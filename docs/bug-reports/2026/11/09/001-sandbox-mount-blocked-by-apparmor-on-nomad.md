@@ -47,3 +47,15 @@ Do not weaken AppArmor, and do not extend `SYS_ADMIN`. Replace the network names
 ## Lessons
 
 See [agent-runtime-rollout-guide.md §2](../../../../tech/agents/agent-runtime-rollout-guide.md#2-sandbox-requirements). Granting a capability is not a test. Check the LSM profile and run the probe in a throwaway container first.
+
+
+---
+
+## Resolved — 2026-11-13 (Hetzner scale-path, Phase 4b)
+
+Resolved by design change rather than by weakening AppArmor: the sandbox no longer
+creates a network namespace (which needed `SYS_ADMIN` + a `mount` that `docker-default`
+AppArmor denies). The current design installs iptables **owner rules** for the agent UID
+using `NET_ADMIN` only — no namespace, no `mount`, no AppArmor change. Proven live on
+staging (egress rules install cleanly; private ranges blocked for the agent user). See
+[sandbox-shell-access.md](../../../features/2026/11/12/001-hetzner-scale-path/sandbox-shell-access.md).

@@ -9,8 +9,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - The agent details page (`/agents/:id`) no longer shows the chat box. The agent details (status, objective, capabilities, health, activity and artifacts) render directly below the page header. A "Back to Agents" button sits at the top right of the header and returns to the AI agents page (`/agents`).
-- Nomad agent tasks can request `NET_ADMIN` and `SYS_ADMIN` so the `execute_code` and `execute_shell` sandboxes can create a network namespace. Off by default (`nomad.sandboxCapsEnabled`, override `NOMAD_SANDBOX_CAPS_ENABLED`). Enable only after every Nomad client allows these capabilities.
-- Nomad client cloud-init allows `net_admin` and `sys_admin` in the docker plugin. Existing clients need this applied by a node replacement.
+- Agent shell sandbox now uses **`NET_ADMIN` only** (no `SYS_ADMIN`, no network namespace): `scripts/sandbox-egress.sh` installs iptables owner rules scoped to the agent user (UID 1001) that reject RFC 1918 / link-local egress while allowing public internet, DNS resolvers and `SANDBOX_ALLOWED_HOSTS` (e.g. the browser pool). Off by default (`nomad.sandboxCapsEnabled`, override `NOMAD_SANDBOX_CAPS_ENABLED`); enable only after every Nomad agent client allows `net_admin`. `full` mode and `execute_code` run as root and are not network-restricted (documented limitation). Proven on staging.
+- `NOMAD_AGENT_IMAGE` operator env var: pins the agent runtime image the worker launches to an immutable `ghcr.io/poshjosh/herobids-agent:sha-<commit>` tag (unset = `:latest`).
+- Nomad client cloud-init allows `net_admin` in the docker plugin `allow_caps` (`sys_admin` removed). Existing clients need this applied by a node replacement.
+
+### Added
+
+- Dedicated browser-pool Nomad node (`hcloud_server.browser`, `browser_node_count`/`browser_node_server_type`, default `cx23`) in its own Nomad node pool/class `browser`, with a fixed private IP (`cidrhost(subnet, 240)`), so the browser pool never shares a node with agents and keeps a stable address across replacement. Not autoscaled.
+- Demand-aware scale-in: `scale-in.sh` now proceeds under demand mode and defers only when the agent namespace has queued/blocked work (replacing the old unconditional defer); `converge-control-plane.sh` pins and activates the nightly `nomad-scale-in.timer` schedule.
+- Optional connection-pool options on `createDatabase` (`max`, `idleTimeoutSeconds`); the agent runtime uses a small pool (max 2). Redis `maxclients` pinned to 10000 with a matching `nofile` ulimit.
 
 ## v0.8.12 - 2026-11-08
 

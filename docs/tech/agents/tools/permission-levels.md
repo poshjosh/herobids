@@ -22,7 +22,7 @@ All three levels run inside the same isolated Docker container. The container is
 
 - `execute_code` only (JS/Python via `sandbox-exec.sh`).
 - No general shell access.
-- Network restricted to public internet (RFC 1918 blocked, cloud metadata blocked).
+- `execute_code` runs as **root**, so the egress rules (which match the `agent` UID only) do **not** restrict it — code can reach private addresses. Network isolation applies to the `agent` user used by `standard`-mode `execute_shell`, not to `execute_code`. See "Egress rule design and limitations" in [tool-access-and-sandboxing.md](../tool-access-and-sandboxing.md).
 - Cannot install system packages.
 - Filesystem scoped to workspace + sandbox directory.
 
@@ -30,7 +30,7 @@ All three levels run inside the same isolated Docker container. The container is
 
 - Everything in Restricted, plus `execute_shell`.
 - Shell commands run as the non-root `agent` user (via `sudo -u agent`).
-- Same sandbox network restrictions as Restricted.
+- `execute_shell` egress is restricted: the iptables owner rules block RFC 1918 / link-local for the `agent` UID, allowing public internet, DNS and `SANDBOX_ALLOWED_HOSTS` only. (`execute_code` here still runs as root and is not restricted — see Restricted.)
 - Can install user-level packages (`npm install`, `pip install`).
 - Can interact with git, run build tools, use standard dev tooling.
 - Working directory validated to stay inside the workspace.
@@ -42,7 +42,7 @@ All three levels run inside the same isolated Docker container. The container is
 - Can install system packages (`apk add`, `apt install`).
 - Can bind ports, run servers, modify container-level config.
 - Filesystem: entire container filesystem — `execute_shell` allows absolute paths and paths outside workspace.
-- Network: **same as Standard**. The sandbox wraps tool execution at all levels because agent containers have `DATABASE_URL` and `REDIS_URL` with full platform credentials. Unrestricted network is deferred until a follow-up removes direct DB/Redis credentials from agent containers.
+- Network: **not restricted**. `full`-mode shell runs as root, and the egress rules match the `agent` UID only, so root bypasses them and can reach private addresses. (Standard-mode `execute_shell` runs as the `agent` user and *is* blocked from private ranges.) The rules are a guard against accidental private access by the standard agent user — not a security boundary; the container is the boundary. Agent containers still carry `DATABASE_URL`/`REDIS_URL`; removing those is a deferred follow-up. See "Egress rule design and limitations" in [tool-access-and-sandboxing.md](../tool-access-and-sandboxing.md).
 
 ## `execute_shell` Tool
 

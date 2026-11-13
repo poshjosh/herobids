@@ -57,3 +57,17 @@ After the revert commit is on `main`:
 1. Wait for the `build-push-agent` workflow to finish (it publishes `ghcr.io/poshjosh/herobids-agent:latest`).
 2. Deploy to staging: `infra/hetzner/scripts/push.sh --env staging --yes`.
 3. Restart stopped agents once the deploy is healthy.
+
+
+---
+
+## Resolved — 2026-11-13 (Hetzner scale-path, Phase 4b)
+
+The boot-failure risk (flag on while a node did not allow the capability) is addressed:
+Phase 1 rebuilt every staging agent node from the current cloud-init template (which
+allows `net_admin`), so turning on `NOMAD_SANDBOX_CAPS_ENABLED=true` no longer strands
+agents. A related live catch during rollout: the worker **image** must carry the
+NET_ADMIN-only code (`62f3efeb`) — a stale worker still added `SYS_ADMIN` and the first
+relaunch failed on nodes that (correctly) do not allow it; rebuilding the worker image
+fixed it. Preconditions C1–C3 and the rollout are recorded in
+[sandbox-shell-access.md](../../../features/2026/11/12/001-hetzner-scale-path/sandbox-shell-access.md).

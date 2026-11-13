@@ -178,7 +178,7 @@ Agent containers support three permission levels that control tool visibility an
 | `standard` | **Yes** | `execute_code` + `execute_shell` | Non-root `agent` user |
 | `full` | No | `execute_code` + `execute_shell` | Root (via passwordless `sudo`) |
 
-All three levels use `sandbox-exec.sh` for network isolation during tool execution. The sandbox blocks RFC 1918 addresses and cloud metadata endpoints regardless of permission level. This protects platform services (Postgres, Redis, docker-proxy) that share the Docker network.
+All three levels run commands through `sandbox-exec.sh`, which refuses to run anything unless the egress rules are installed (fail-closed; see "Egress rule design and limitations" below). The egress rules block RFC 1918 addresses and cloud metadata endpoints **for the non-root `agent` user (UID 1001) only**. This protects platform services (Postgres, Redis, docker-proxy) that share the private network from the `standard`-level agent user. Root-run commands (`full` level, and all `execute_code`) are **not** network-restricted — see the limitations below.
 
 The user selects a permission level when creating or editing an agent. The platform gates tool visibility at startup via `permanentlyExcludedTools` in the `RuntimeToolVisibilityController` — `restricted` agents never see `execute_shell`.
 
@@ -212,3 +212,29 @@ The sandbox script inserts `iptables -A OUTPUT -d <host> -j ACCEPT` rules **befo
 The worker resolves the `browserPool.url` hostname to an IP at container startup and passes it via `SANDBOX_ALLOWED_HOSTS`. If `browserPool.enabled` is false, no allowlist is injected and the sandbox behaves identically to previous versions.
 
 This mechanism is intentionally narrow: it allows specific infrastructure endpoints, not broad network access. The agent still cannot reach Postgres, Redis, or other platform services unless explicitly allowlisted by the operator.
+
+## Egress rule design and limitations
+
+On Nomad, the egress rules are installed once per container at start by `scripts/sandbox-egress.sh` (run by `agent-entrypoint.sh` when the container has `NET_ADMIN`), which writes the marker `/run/herobids/sandbox-egress-ready`. `sandbox-exec.sh` refuses every command with exit 97 until that marker exists, so a container that could not install the rules fails closed. Enabling this on Nomad requires `nomad.sandboxCapsEnabled=true` (env `NOMAD_SANDBOX_CAPS_ENABLED`) so agent jobs request `cap_add: ["NET_ADMIN"]`, and every agent-class node must allow `net_admin` in the docker plugin `allow_caps` (the current cloud-init template does). **`SYS_ADMIN` is not used** — the design installs iptables owner rules and does not create a network namespace.
+
+The rules are a single chain matched by owner UID. As verified live (`iptables-save` inside an agent container):
+
+```
+-A OUTPUT -m owner --uid-owner 1001 -j HEROBIDS_SANDBOX_EGRESS
+-A HEROBIDS_SANDBOX_EGRESS -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A HEROBIDS_SANDBOX_EGRESS -d <resolver IPs> -j ACCEPT
+-A HEROBIDS_SANDBOX_EGRESS -d <SANDBOX_ALLOWED_HOSTS /32> -j ACCEPT   # e.g. the browser pool
+-A HEROBIDS_SANDBOX_EGRESS -d 10.0.0.0/8      -j REJECT --reject-with icmp-port-unreachable
+-A HEROBIDS_SANDBOX_EGRESS -d 172.16.0.0/12   -j REJECT
+-A HEROBIDS_SANDBOX_EGRESS -d 192.168.0.0/16  -j REJECT
+-A HEROBIDS_SANDBOX_EGRESS -d 169.254.0.0/16  -j REJECT
+```
+
+**What this gives, and what it does not (accepted limitations — these are controls against accidental access, not a security boundary):**
+
+1. The rules match **only UID 1001 (the `agent` user)**. `standard`-mode `execute_shell` runs as that user and is blocked from private ranges. **`full` mode and all `execute_code` run as root (UID 0) and are not restricted** — root can reach private addresses. This is by design.
+2. The `agent` user has passwordless `sudo` (`docker/Dockerfile.agent`), so a `standard`-mode command can run `sudo iptables -F` and remove the rules. The rules prevent *accidental* private access; they are **not** an escape-proof boundary. The container remains the security boundary.
+3. Loopback is not blocked (Docker's DNS resolver lives there).
+4. Every agent container has the platform `DATABASE_URL` in its environment — a separate, pre-existing concern, out of scope here, tracked as a follow-up security item.
+
+See [the Hetzner scale-path sandbox sub-plan](../../features/2026/11/12/001-hetzner-scale-path/sandbox-shell-access.md) for the rollout and the live acceptance evidence.
