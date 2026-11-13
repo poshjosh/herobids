@@ -1,0 +1,506 @@
+# Hetzner Scale Path: agent autoscaling to 10,000 agents
+
+**Start here.** This one file is the whole plan. You (the implementing agent) need nothing from earlier conversations.
+**Created:** 2026-11-12. **Owner:** the project owner. **Reviewer:** Kiro (a separate agent session). **Verified against:** `herobids` commit `b317176e`, read-only.
+**Replaces:** the autoscaling program in [`docs/features/2026/11/11/001-autoscaling-program/`](../../11/001-autoscaling-program/README.md). Do not follow that folder's process (journal, inbox, decision briefs, milestones). Use it only as background reading. Deleting it waits for the owner.
+
+---
+
+## 1. Why this plan exists (read once)
+
+The company is one engineer working with LLM agents. Speed matters, and so does quality. The rule for this plan is:
+
+> **How carefully we work depends on how hard a mistake is to undo.** Easy to undo: just do it, test it, roll back if needed. Hard to undo: stop and check.
+
+Targets (the "100k-user envelope"):
+
+| Tier | Target | What this plan delivers |
+|---|---|---|
+| Agent containers (one long-running Docker container per agent, on Nomad nodes) | about 10,000 running at once | Automatic scale-out and scale-in, proven under load |
+| Browser pool (Browserless, used by agents to browse) | up to 200 concurrent sessions | A dedicated node, measured capacity per node, resized by changing one number. **Not** autoscaled |
+| Traderton (separate repo, trading service, one VM) | about 5,000 trading agents | One load test that shows whether one VM holds 5,000. **Not** autoscaled |
+
+Agents stay running all the time (owner decision C-12: starting a stopped agent is slow). So capacity follows the number of agents, not their activity.
+
+### What is wrong today
+
+1. **Staging scale-out is refused every minute** with `ownership_mismatch` in `/var/log/nomad-autoscale.log` on the staging control plane. The guard (`infra/hetzner/scripts/capacity-inventory.sh`, the `_CAPACITY_RECONCILE_JQ` program, about lines 120 to 210) treats any live `role=agent` server whose name is not `<pool>-agent-<N>` as foreign. Staging has a temporary second pool named `herobids-staging-agent-caps-<N>` (`infra/hetzner/main.tf`, resource `hcloud_server.agent_caps`), built for a sandbox fix that is now deferred. There is also a server called `herobids-staging-agent-3` that earlier notes say is not in Terraform state. Notes about which Hetzner server maps to which Nomad node disagree, so **the live inventory is the truth** (task 0.2).
+2. **Nodes are small.** `agent_node_server_type = "cx23"` (2 vCPU, 4 GB). About 14 agents fit per node, so 10,000 agents would need about 715 nodes. A Hetzner private network holds at most 100 servers ([Hetzner docs](https://docs.hetzner.com/networking/networks/overview/)). With `cx53` (16 vCPU, 32 GB) about 120 fit, so about 85 nodes.
+3. **Scale-in never runs while demand mode is on.** `scale-in.sh` (about line 139) exits early with "scale-in deferred" whenever `NOMAD_AUTOSCALE_DEMAND_ENABLED=true`. Demand mode is the scale-out mode we use. So today nodes are never removed automatically.
+4. **Each agent can open up to 10 Postgres connections.** `packages/db/src/index.ts` calls `postgres(connectionString)` with no options; the `postgres` library's default pool size is 10. Postgres runs with its default `max_connections` (100). Each agent also opens 2 Redis clients (`apps/worker/src/agent.ts` about lines 868 and 876). Redis runs with its default `maxclients` (10,000) and `--maxmemory 512mb` (`docker-compose.yaml`). Each agent sends a heartbeat every 5 s (`config/default.yaml`, `heartbeatIntervalMs: 5000`); at 10,000 agents that is 2,000 messages a second into the worker.
+5. **Production** has one `cx23` agent node, `max_agent_nodes = 9`, demand mode off, and the capacity-aware start gate off (`config/default.yaml`, `capacityAwareStart.enabled: false`; only `config/staging.yaml` turns it on). With the gate off, an agent start must finish in 60 s, but a new node takes minutes. So production cannot start an agent that needs a new node.
+6. **The browser pool** is one Nomad job (`infra/nomad/browser-pool.nomad.hcl`): `count = 1`, static port 3100, 2 GB, `MAX_CONCURRENT_SESSIONS = "2"`. It runs on any agent node.
+
+### What this plan does not do
+
+- No browser autoscaler, no load balancer in front of several browser instances.
+- No Traderton autoscaler or multi-instance design. If one VM cannot hold 5,000, record that; the design is Traderton's next piece of work.
+- No sandbox fix (agents running shell with network rules). The rebuilt nodes use the current cloud-init template, which already allows the needed capability, so the sandbox needs no node work later.
+- No shared autoscaling library or repo, no TypeScript rewrite of the autoscaler, no Nomad Autoscaler plugin, no tier profiles.
+- No guard rewrite beyond the one-line exemption in task 4.2.
+- No hibernation or stopping of idle agents.
+
+If you find yourself building something on this list, stop and ask.
+
+---
+
+## 2. How to work
+
+### 2.1 Before you start
+
+Read these once. They are short and each comes from a real incident:
+- `AGENTS.md` (repo root): rules for code, tests, env files, Terraform.
+- `infra/hetzner/README.md`: environments, Terraform workspaces, `TF_DATA_DIR`.
+- `infra/hetzner/docs/auto-scaling/lessons-learnt.md`: all of it. Lessons 8, 9, 10, 12, 13, 20 and 21 apply directly.
+- `infra/hetzner/docs/auto-scaling/useful-commands.md`: SSH, Nomad and log commands.
+- `infra/hetzner/docs/auto-scaling/setup-auto-scaling.md`, section "Clearing a blocked scale guard".
+- `infra/hetzner/docs/runbooks/production-notes.md` before any production step.
+- `docs/tech/agents/agent-runtime-rollout-guide.md` section 7 (how to relaunch an agent).
+
+### 2.2 What you may do without asking
+
+Because the product is pre-launch, you have **standing approval** for everything this plan lists, on staging at any time and on production after review gate R1 passes (section 2.4). That includes:
+- Commits on the branch `feat/hetzner-scale-path`, pushing it, and deploying it to staging with `DEPLOY_REF=origin/feat/hetzner-scale-path infra/hetzner/scripts/push.sh --env staging --yes` (or `deploy.sh`, see task 1.1).
+- Terraform applies, **only** from a saved plan whose changes match the "expected plan" written in the task exactly. Always: `cd infra/hetzner && export TF_DATA_DIR=.terraform-envs/<env>`, then `terraform plan -var-file=<env>.tfvars -out=/tmp/<name>.tfplan`, then `terraform show -no-color /tmp/<name>.tfplan`, read it, then `terraform apply /tmp/<name>.tfplan`.
+- Draining, purging and deleting the servers and Nomad nodes named in task 1.3's mapping table.
+- Stopping and starting the autoscale timers, editing tfvars (local and server copies), changing config files, resizing servers listed in this plan, and running the load tests within the budget below.
+- Restarting staging and production agents (they recover by being relaunched; see section 2.1).
+
+**Budget for load tests:** up to EUR 50 of extra Hetzner spend in total, and nothing extra left running at the end. Hetzner bills by the hour; one `cx53` costs roughly EUR 0.05 an hour (check with the API, task 0.3).
+
+### 2.3 When you must stop and ask the owner
+
+Stop, write the question in the plan's log (section 9), and tell the owner in plain words when:
+1. A Terraform plan shows **any** destroy, replace or update that the task's "expected plan" does not list. Above all: a replace or destroy of `hcloud_server.default` (the control plane, which holds the database), of `hcloud_network`, of any volume, or of anything labelled `app=traderton`.
+2. An action would delete data: the database, Redis data, Terraform state, S3 objects, a user's agent.
+3. You would need to read, print, rotate or create a secret that this plan does not mention. Never print tokens or passwords in logs, commits or the plan.
+4. Spending would pass the budget, or the Hetzner limit stops a step.
+5. The same approach failed twice and you do not know why. Diagnose first; do not keep patching.
+6. A change would affect Traderton production, or Traderton code beyond the load-test script in Phase 8.
+7. You are about to build something from "What this plan does not do".
+
+### 2.4 Review gates (the reviewer is Kiro)
+
+There are two. At each one, stop, set the gate's status to `ready for review` in section 8, and give a short summary in chat: what changed, the commits, the evidence, and anything you are unsure of.
+
+- **R1, before production:** after Phases 1 to 6 are done on staging.
+- **R2, at the end:** after Phases 7 to 9.
+
+Do not start production work (Phase 7) until R1 says `passed`. Traderton work (Phase 8) does not wait for R1.
+
+### 2.5 Quality bar (never skip)
+
+- Read the code before you change it. Search `docs/bug-reports/` and `git log -- <file>` for the files you touch.
+- Shell changes: run `infra/hetzner/scripts/tests/run-all.sh` **and** `infra/hetzner/scripts/tests/check-nomad-capacity.test.sh` (the second is not run by the first). Run `shellcheck` on changed scripts. Several tests check the text of `scale-in.sh` and `scale-out.sh`; update those tests in the same commit when you change the text.
+- TypeScript changes: focused Vitest tests for the changed behaviour, then `pnpm lint` and `pnpm build`.
+- Env variables: if you add or change one, update the matching `.example` file in the same commit (`AGENTS.md`). New Terraform variables go in `infra/hetzner/environment.tfvars.example` with a one-line comment.
+- One logical change per commit. Commit messages say what and why.
+
+### 2.6 How to record progress
+
+- Each task below has a status: `todo`, `doing`, `done`, `blocked`. Update it in this file as you go.
+- `done` means the "Done when" check passed on the real system, with **evidence** written under the task (a command and its key output, a log line, a commit hash). A written file alone is not done.
+- Append a short entry to the log (section 9) at the end of each session and at each gate: what you did, what you learned, what is next.
+- If you learn a fact that contradicts this plan, fix the plan text and note it in the log.
+
+### 2.7 Tools and access
+
+- Local machine (macOS): `terraform`, `jq`, `shellcheck` are installed. `nomad` and `hcloud` are **not**. Run `nomad` commands on the control plane over SSH (`useful-commands.md`). For Hetzner, use the HTTP API with `curl` the way `capacity-inventory.sh` does (token passed on stdin, never on the command line), or install `hcloud` with Homebrew (`brew install hcloud`, mention it in the log).
+- SSH keys: staging `~/.ssh/herobids_deploy_key`, production `~/.ssh/herobids_deploy_key_prod`.
+- The Hetzner token is the `hcloud_token` line in the gitignored `infra/hetzner/<env>.tfvars`. Terraform backend credentials are in the gitignored `.env.ops.<env>` files at the repo root (check key names only, never print values).
+- `infra/hetzner/<env>.tfvars` is gitignored and exists in two copies: your local one and the server's `/opt/herobids/infra/hetzner/<env>.tfvars`. The autoscaler writes `agent_node_count` into the server copy after each scale action. **Before any manual Terraform run, stop the autoscale timer and make the local `agent_node_count` equal to the server's.** After the run, upload the local file with `infra/hetzner/scripts/setup-autoscale-env.sh --env <env>` (read its header first; it also renders autoscale settings).
+- Autoscale timers on the control plane: `nomad-autoscale.timer` (scale-out, every 60 s) and `nomad-scale-in.timer` (nightly). Stop with `systemctl stop nomad-autoscale.timer`; start with `systemctl start nomad-autoscale.timer`.
+- The agent image is built by GitHub Actions on every push to `main` (`.github/workflows/build-push-agent.yml`) as `ghcr.io/poshjosh/herobids-agent:latest` and `:sha-<commit>`. A branch push does not build an image. If staging needs agent-image changes before merge, ask the reviewer how to proceed.
+
+---
+
+## 3. Target settings (end state)
+
+| Setting | Where | Staging | Production |
+|---|---|---|---|
+| `agent_node_server_type` | `<env>.tfvars` | `cx53` | `cx53` |
+| `nomad_node_template_memory_mb`, `nomad_node_template_cpu_mhz` | `<env>.tfvars` | measured on a live `cx53` (task 1.5) | same values |
+| `agent_node_count` | `<env>.tfvars` | 1 after cleanup (the autoscaler changes it) | 1 (the autoscaler changes it) |
+| `min_agent_nodes` / `max_agent_nodes` | `<env>.tfvars` | 1 / 3 (raised only during the load test) | 1 / 20 (owner may change; 20 nodes hold about 2,400 agents and cost about EUR 600 a month at most) |
+| `agent_caps_node_count` | `staging.tfvars` | 0, then the resource is removed | not used |
+| `nomad_autoscale_demand_enabled` | `<env>.tfvars` | `true` | `true` |
+| `enable_scale_in` | `<env>.tfvars` | `true` | `true` |
+| `scale_out_cooldown_seconds` | `<env>.tfvars` | 300 | 300 |
+| `capacityAwareStart.enabled` | `config/<env>.yaml` | `true` (already) | `true` |
+| Agent Postgres pool | code (task 3.3) | small pool with idle timeout | same |
+| Redis `maxclients`, Postgres `max_connections` | `docker-compose*.yaml` | from measurements (task 3.4) | same |
+| Browser node | Terraform (task 4.2) | 1 dedicated node | 1 dedicated node |
+| Control plane size | `server_type` in tfvars | resized for the load test, then back | unchanged unless measurements require; resize trigger recorded |
+
+---
+
+## 4. Phases and tasks
+
+Rough effort: about 7 to 9 working days in total. Phases 1 to 3 come first. Phase 4 and Phase 8 can run in parallel with them.
+
+### Phase 0: Read and take stock (read-only, about half a day)
+
+**0.1 Read** the files in section 2.1. Status: `done` (section 2.1 files and the referenced guard/scale-in code read before any change).
+
+**0.2 Live inventory, staging and production.** Status: `done` (staging). Production: `todo` (read-only, pending; safe to run the same GET-only reads with the production key).
+
+Evidence (staging, read-only, 2026-11-13, control plane `138.199.172.202`):
+
+Mapping table (Hetzner server ↔ Terraform address ↔ Nomad node ↔ what runs on it):
+
+| Hetzner server (id) | private IP | TF address | Nomad node name (id) | class / eligibility | role in cleanup |
+|---|---|---|---|---|---|
+| herobids-staging (167421976) | 10.0.0.2 | `hcloud_server.default` | — (control plane, not a client) | — | keep |
+| herobids-staging-agent-1 (173731633) | 10.0.0.5 | `hcloud_server.agent[0]` | `herobids-staging-agent-3` (714f26cc) **name drift** | agent / ineligible (drained) | rebuild as `cx53` (1.4) |
+| herobids-staging-agent-2 (173858368) | 10.0.0.3 | `hcloud_server.agent[1]` | `herobids-staging-agent-2` (9fed1a12) | agent / ineligible (drained) | destroyed when count→1 (1.4) |
+| herobids-staging-agent-caps-1 (175258516) | 10.0.0.4 | `hcloud_server.agent_caps[0]` | `herobids-staging-agent-caps-1` (ae9393db) | agent / eligible | destroy (1.6) |
+| herobids-staging-agent-caps-2 (175258517) | 10.0.0.6 | `hcloud_server.agent_caps[1]` | `herobids-staging-agent-caps-2` (690b36fc) | agent / eligible | destroy (1.6) |
+
+Notes:
+- The Nomad node named `herobids-staging-agent-3` maps to the Hetzner server `herobids-staging-agent-1` by private IP (10.0.0.5). There is no Nomad node literally named `herobids-staging-agent-1`. Live inventory is the truth: this is the drifted node the plan's §1 note warned about. Its purge is handled in task 1.7.
+- The eligible agent nodes are currently the two caps nodes; `agent-1`/`agent-2`'s Nomad nodes are `ineligible` (drained earlier).
+- Settings: `server_name = "herobids-staging"`, `agent_node_count = 2`, `min_agent_nodes = 1`, `max_agent_nodes = 3`, `agent_node_server_type = "cx23"`, `NOMAD_AUTOSCALE_DEMAND_ENABLED=true`. The autoscaler resolves the pool from `TF_VAR_server_name` → `herobids-staging` (`scale-common.sh:67`).
+- `systemctl list-timers 'nomad-*'`: only `nomad-autoscale.timer` is active (every ~60 s). `nomad-scale-in.timer` did not appear in the active list — to be confirmed in task 2.3.
+- Autoscale log: `ownership_mismatch` every tick; failure count at 4553/3.
+- Control plane: 2 vCPU, 3819 MB RAM (≈ `cx23`/`cx22`), up 47 days, load avg 0.44.
+
+> **TODO for the owner / a live session:** run the same read-only inventory for **production** with `~/.ssh/herobids_deploy_key_prod` against `167.233.213.107`, and fill the production mapping table here. Not done in this pass because it was not needed for the code changes and the plan treats production as gated behind R1.
+
+**0.3 Prices and server types.** Status: `done`.
+
+Evidence (Hetzner `GET /v1/server_types`, `fsn1` gross prices, 2026-11-13):
+
+| type | vCPU | RAM | disk | EUR/hr | EUR/mo | in fsn1 |
+|---|---|---|---|---|---|---|
+| cx23 | 2 | 4 GB | 40 GB | 0.0105 | 6.53 | yes |
+| cx33 | 4 | 8 GB | 80 GB | 0.0162 | 10.10 | yes |
+| cx43 | 8 | 16 GB | 160 GB | 0.0305 | 19.03 | yes |
+| cx53 | 16 | 32 GB | 320 GB | 0.0563 | 35.09 | yes |
+| ccx13 | 2 | 8 GB | 80 GB | 0.0820 | 51.16 | yes |
+| ccx23 | 4 | 16 GB | 160 GB | 0.1640 | 102.33 | yes |
+| ccx33 | 8 | 32 GB | 240 GB | 0.2641 | 164.80 | yes |
+| ccx43 | 16 | 64 GB | 360 GB | 0.5263 | 328.43 | yes |
+| ccx53 | 32 | 128 GB | 600 GB | 1.0175 | 634.85 | yes |
+| ccx63 | 48 | 192 GB | 960 GB | 1.6277 | 1015.65 | yes |
+
+`cx53` is available in `fsn1` (EUR 0.0563/hr ≈ EUR 35/mo), so the plan's target node type stands — no fallback needed.
+
+**0.4 Hetzner limits (owner action).** Status: `blocked` (owner). The project limits are only visible in the Hetzner console; the owner must check and, if needed, request the increase with the text in the plan. Does not block Phases 1–4; decides the Phase 5 load-test size.
+
+**0.5 Reproduce the staging block from data (read-only).** Status: `done`.
+
+Evidence (read-only `capacity_reconcile` with pool `herobids-staging`, 2026-11-13):
+```
+blockers:        ["ownership_mismatch"]
+managed servers: ["herobids-staging-agent-1","herobids-staging-agent-2"]
+```
+The only servers in `$foreign` are `herobids-staging-agent-caps-1` and `herobids-staging-agent-caps-2` (role=agent, name does not match `^herobids-staging-agent-[0-9]+$`). Cause = the deferred caps pool, exactly as §1 describes. No change to Phase 1 needed. (A reconcile run with the default pool `herobids` instead of the resolved `herobids-staging` additionally reports `empty_inventory`; that is an artefact of passing the wrong pool, not the live condition.)
+
+
+For each environment, record in the evidence:
+- Hetzner servers with labels `app=herobids,environment=<env>`: name, id, server type, `role` and `node_pool` labels, private IP, status.
+- `terraform state list` (with `TF_DATA_DIR=.terraform-envs/<env>`). Which servers are in state and at which address (`hcloud_server.agent[0]`, `hcloud_server.agent_caps[1]`, ...).
+- `nomad node status -verbose` on the control plane: node name, id, address, class, eligibility, drain, status; and the allocations on each node (`nomad node status <id>`), including the browser pool.
+- Agent jobs in namespace `herobids-agents` and the node each runs on. Note any live-mode trading agents (`agents.unified_config.execution.mode`).
+- Local and server `agent_node_count` in `<env>.tfvars`.
+- `systemctl list-timers 'nomad-*'` and the last 20 lines of `/var/log/nomad-autoscale.log`.
+- Control-plane server type, and `free -m`, `nproc`, `uptime` on it.
+
+Write a mapping table: Hetzner server name and id ↔ Terraform address (or "not in state") ↔ Nomad node name and id ↔ what runs on it.
+Done when: both tables are in the evidence and every row is accounted for.
+
+**0.3 Prices and server types.** Status: `todo`.
+From the Hetzner API (`GET /v1/server_types`), record for `cx23`, `cx33`, `cx43`, `cx53`, and the `ccx` types: vCPU, memory, disk, hourly and monthly price in `fsn1`, and whether `fsn1` offers it (lesson 6: a type was once discontinued there).
+Done when: the table is in the evidence and `cx53` is available in `fsn1`. If it is not, pick the largest shared `cx` type that is, and note it in the log.
+
+**0.4 Hetzner limits (owner action).** Status: `todo`.
+The Hetzner project is shared by herobids staging, herobids production and Traderton. Its limits are only visible in the Hetzner console. Ask the owner to check the console's Limits page and, if needed, to request an increase with this text:
+> We run a container platform on Hetzner Cloud and are preparing for launch. Please raise this project's limits to 150 servers and 150 Primary IPv4 addresses (and any vCPU or memory caps accordingly). We expect up to about 100 servers in production plus short load tests on staging.
+
+Record the current and granted limits. This task does not block Phases 1 to 4. It decides the size of the load test (Phase 5).
+
+**0.5 Reproduce the staging block from data (read-only).** Status: `todo`.
+On the staging control plane, source the autoscaler's environment (`/etc/herobids/autoscale.env` and `/etc/herobids/autoscale-settings.env`) and the scripts, and call the read-only fetch functions and `capacity_reconcile` from `capacity-inventory.sh`. Read each function first and confirm it only makes GET requests. **Do not run `scale-out.sh --dry-run`**: it is not guaranteed read-only (it initialises Terraform first).
+Done when: the evidence shows the exact `blockers` array and which servers are in `$foreign`. If the cause is not the caps pool or `agent-3`, stop and note it in the log, then adjust Phase 1 before you run it.
+
+### Phase 1: One clean agent pool on staging (about 1 day)
+
+Goal: staging ends with one pool of `herobids-staging-agent-<N>` servers on `cx53`, all in Terraform state, all named the same in Hetzner and Nomad, no caps pool, no stray servers, all agents running, and an autoscale log with no blockers.
+
+**1.1 Branch and bug report.** Status: `done`.
+Create branch `feat/hetzner-scale-path`. File a short bug report at `docs/bug-reports/2026/11/12/001-staging-autoscale-blocked-by-ownership-mismatch.md` (symptom, the evidence from 0.5, cause, fix = this phase). Read the header of `infra/hetzner/deploy.sh` and note in the log which script you will use for each kind of change (app deploy, autoscale settings, control-plane converge).
+
+Evidence:
+- Branch `feat/hetzner-scale-path` created off `main` at `b317176e`.
+- Bug report written at `docs/bug-reports/2026/11/12/001-staging-autoscale-blocked-by-ownership-mismatch.md` with the read-only evidence from 0.5.
+- Script roles (from `deploy.sh` header): app deploy = `push.sh --env <env> --yes` (git pull → build → compose up); autoscale settings/secrets = `setup-autoscale-env.sh --env <env>`; control-plane converge (Nomad advertise, UFW, systemd drop-ins) = `setup-control-plane.sh` / `converge-control-plane.sh`; full orchestrated deploy = `deploy.sh --env <env>`.
+
+**1.2 Pause the autoscaler.** Status: `todo`.
+On staging: `systemctl stop nomad-autoscale.timer nomad-scale-in.timer`. Sync local `agent_node_count` with the server copy (section 2.7).
+Rollback: `systemctl start nomad-autoscale.timer` (and `nomad-scale-in.timer` if it was active).
+
+**1.3 Write the move plan.** Status: `todo`.
+From the mapping in 0.2, write in the evidence which nodes go, which stay for now, and where the agents move. The usual shape:
+1. Make sure there is room for every agent on the nodes that stay for now (usually the caps nodes).
+2. Drain every old-pool node (`nomad node drain -enable -deadline 10m -yes <node-id>`). Agents restart on the remaining nodes. That restart is expected and acceptable.
+3. Rebuild the main pool as one `cx53` node (task 1.4).
+4. Drain the caps nodes so agents move to the new node.
+5. Remove the caps nodes (task 1.6) and any server outside Terraform state (task 1.7).
+Done when: the move plan names every server and Nomad node from the mapping.
+
+**1.4 Rebuild `agent[0]` as `cx53`.** Status: `todo`.
+In local `staging.tfvars`: `agent_node_server_type = "cx53"`, `agent_node_count = 1`. The caps servers read the same `agent_node_server_type` variable, so an untargeted plan would also resize the caps nodes that now carry the agents. Limit this one plan to the main pool:
+`terraform plan -var-file=staging.tfvars -replace='hcloud_server.agent[0]' -target='hcloud_server.agent' -target='hcloud_server_network.agent' -out=/tmp/agent-pool.tfplan`
+(`-replace` because a resize keeps the old cloud-init; we want the current template.)
+Expected plan: replace `hcloud_server.agent[0]` and `hcloud_server_network.agent[0]`; destroy `hcloud_server.agent[1]` and `hcloud_server_network.agent[1]` if they exist in state. Nothing else. Anything else: stop (section 2.3). `-target` is used only here and in 1.6; task 1.6 ends with a full plan.
+Apply. Wait for the new node to show `ready` and `eligible` in `nomad node status`, class `agent`. If its private network is missing, see lesson 12.
+Done when: `herobids-staging-agent-1` is a `cx53`, ready, and the Hetzner name equals the Nomad name.
+Rollback: set the type back to `cx23` and plan again; a `cx53` can be replaced at any time. Agents restart on the remaining nodes.
+
+**1.5 Measure the node template.** Status: `todo`.
+On the control plane: `curl` the Nomad API `GET /v1/node/<id>` for the new node (use the token in `/etc/nomad.d/acl-token`, do not print it). Record `NodeResources.Memory.MemoryMB`, `NodeResources.Cpu.CpuShares`, and `ReservedResources`. Usable = total minus reserved. Compare with how `capacity-demand.sh` and `check-nomad-capacity.sh` compute node capacity, so the template means the same thing as the defaults `3819` / `4000` did for `cx23`.
+Set `nomad_node_template_memory_mb` and `nomad_node_template_cpu_mhz` in both tfvars files to those values. Update the comments on those variables in `infra/hetzner/variables.tf` (they say the defaults are for `cx23`) and `environment.tfvars.example`.
+Done when: values recorded; agents per node computed for the free/starter profile (256 MB, 256 CPU; `config/default.yaml` `resourceProfiles`) and for pro (1024 MB, 512 CPU).
+
+**1.6 Remove the caps pool.** Status: `todo`.
+Drain both caps nodes. Confirm every agent job is running on `agent-1` (or on the new pool if more nodes were needed). Set `agent_caps_node_count = 0`.
+Plan with `-target='hcloud_server.agent_caps' -target='hcloud_server_network.agent_caps'`. Expected plan: destroy `hcloud_server.agent_caps[0]`, `[1]` and their `hcloud_server_network.agent_caps[*]`. Nothing else.
+Apply. Then purge their Nomad nodes once they show `down` with zero allocations (`nomad node purge` via the API, as earlier runs did; check `useful-commands.md`).
+In a separate commit, delete the `agent_caps` resources and the `agent_caps_node_count` variable from `main.tf`, `variables.tf`, the tfvars files and `environment.tfvars.example`.
+Then run a **full, untargeted** plan. Expected: "No changes", or only a refresh of `hcloud_firewall.agent[0]`'s attached servers. If it is only that refresh, run `terraform apply -refresh-only` (the same pattern `scale-in.sh` uses, see `scale_in_refresh_plan_ok` in `scale-in-guard.sh`). Anything else: stop. The autoscaler refuses to run while state and the cloud disagree, so this step must be clean before 1.8.
+Done when: no caps server in Hetzner, Nomad or state.
+
+**1.7 Remove servers outside Terraform state.** Status: `todo`.
+For each herobids staging server that is not in state (for example `herobids-staging-agent-3`): confirm it has zero allocations, drain it, delete it through the Hetzner API (`DELETE /v1/servers/<id>`), and purge its Nomad node. Record the id before you delete.
+Done when: every live `app=herobids,environment=staging` server is the control plane or in state as `hcloud_server.agent[i]`.
+
+**1.8 Resume and prove.** Status: `todo`.
+Upload tfvars and settings (`setup-autoscale-env.sh --env staging`). Start `nomad-autoscale.timer`. Read the autoscale log for at least 10 runs.
+Then a small live check: register placeholder jobs (see section 5.1) that need one more node than `agent-1` can hold. Watch scale-out create `agent-2` within its normal rate. Stop the placeholders. Scale-in is proven later (Phase 2).
+Done when: 10 consecutive runs without `blocked` or `ownership_mismatch`; the placeholder test added exactly the expected node; every real agent is `running`; the bug report is updated with this evidence and marked fixed.
+
+### Phase 2: Scale-in that works with demand mode (about 1 day)
+
+Goal: nodes are removed automatically when they are idle and not needed, while demand mode stays on.
+
+**2.1 Understand the current guard.** Status: `todo`.
+Read `scale-in.sh`, `scale-in-guard.sh`, and the scale-in sections of `docs/features/2026/10/30/001-agent-continuity-and-safe-capacity/001-safe-capacity-expansion-plan.md` (section 8 and the P9 record) and `012-agent-node-drift-note.md`. The early exit for demand mode was added on purpose ("H4") to avoid scale-in fighting scale-out. Scale-in since gained: a check that the remaining nodes keep at least `NOMAD_SCALE_OUT_SLOT_THRESHOLD` free slots, a cooldown stamp that stops scale-out right after a scale-in, a new-node grace period, idle-only candidates, and the highest-index-only rule.
+
+**2.2 Replace the early exit with a demand check.** Status: `todo`.
+When demand mode is on, scale-in must:
+1. Take the lock as it does today.
+2. Read demand with the same functions the controller uses (`controller_fetch_demand` and `demand_classify` in `capacity-controller.sh` / `capacity-demand.sh`).
+3. **Defer (exit 0, nothing deleted)** if any allocation is queued or blocked in the agent namespace, if the demand read fails or is ambiguous (fail closed), or if a scale-out is in flight (already handled).
+4. Otherwise continue with the existing checks unchanged.
+Keep the deferral counter and alert behaviour. The kill switch stays `enable_scale_in = false`.
+Tests: add cases to the scale-in guard and wiring tests: demand on and no backlog → proceeds; demand on and backlog → defers; demand read fails → defers; demand off → unchanged behaviour. Update the text-matching tests that refer to the removed early exit.
+Record the decision in the plan's log: "H4 early exit replaced by a demand check (2026-11-12, this plan)". Update the comment in `scale-in.sh` and the section of `001-safe-capacity-expansion-plan.md` that describes H4 with a one-line pointer here.
+
+**2.3 Make sure the nightly timer has a schedule on both environments.** Status: `todo`.
+Earlier notes say staging's `nomad-scale-in.timer` was "enabled with no schedule". Check both environments (`systemctl cat nomad-scale-in.timer`, `systemctl list-timers`). The schedule comes from cloud-init (`OnCalendar` from `scale_in_time_utc`), and existing control planes ignore cloud-init changes (lesson 20). If a timer has no schedule, add a converge step in `converge-control-plane.sh` that writes a drop-in with `OnCalendar` from `scale_in_time_utc`, with a test in `test-converge-control-plane.sh`.
+Done when: both environments show the next nightly run in `systemctl list-timers`.
+
+**2.4 Deploy and prove on staging.** Status: `todo`.
+Deploy the branch to staging. With placeholders running so the pool has 2 nodes, stop the placeholders, wait past the grace period, then trigger one run with `systemctl start nomad-scale-in.service`. Confirm it removed the highest-index idle node, synced Terraform state ("Terraform state synced" in the log), wrote the new `agent_node_count`, and that scale-out did not re-create the node over the next 10 minutes. Then confirm a run with a queued placeholder defers.
+Done when: both behaviours are in the evidence.
+
+### Phase 3: Control-plane limits per agent (about 1 day)
+
+Goal: know what each agent costs the control plane, and fix the limits that would break before 10,000 agents.
+
+**3.1 Measure on staging (read-only).** Status: `todo`.
+With the normal staging agents running:
+- Postgres: `SELECT application_name, client_addr, state, count(*) FROM pg_stat_activity GROUP BY 1,2,3;` and `SHOW max_connections;`. Work out connections per agent at idle and while it is working (watch an agent during a tick).
+- Redis: `INFO clients`, `CLIENT LIST` (count per client address), `INFO memory`, `CONFIG GET maxclients`.
+- Worker: CPU and memory of the worker container (`docker stats --no-stream`), and how heartbeats are handled: read `AgentMessageBroker.processInbound` and `sessionManager.handleHeartbeat` in `apps/worker/src/agents/` and write down the database and Redis work done per heartbeat.
+- Nomad server memory (`ps -o rss` of the nomad process) and job count.
+- Control plane: `free -m`, load average, open file limits for the Postgres, Redis and worker containers.
+Done when: a table "per agent: Postgres connections, Redis clients, DB writes per heartbeat, worker CPU per 100 agents" is in the evidence, with the projected value at 1,000, 5,000 and 10,000 agents.
+
+**3.2 Decide the fixes.** Status: `todo`.
+Write the decision in the evidence, using these rules:
+- Postgres: the projected peak at 10,000 must stay below 70% of `max_connections`, and `max_connections` must fit the control plane's memory (about 10 MB per connection is a safe planning figure). If small per-agent pools plus a higher `max_connections` cannot meet that, add PgBouncer in transaction mode (task 3.5).
+- Redis: `maxclients` at least twice the projected clients, and the container's open-file limit above `maxclients`. `maxmemory` at least twice the projected use.
+- Heartbeats: if the worker cannot handle the projected rate within 50% of its CPU, the first fix is a longer heartbeat interval. Change it together with every timeout that depends on it (search for `heartbeatIntervalMs` and the health monitor's thresholds).
+- Nomad: projected server memory at 10,000 jobs must leave 30% free on the control plane.
+
+**3.3 Small Postgres pool for agents.** Status: `todo`.
+Add an optional options argument to `createDatabase` in `packages/db/src/index.ts` (pool `max`, `idle_timeout`), keeping today's behaviour when it is omitted. In `apps/worker/src/agent.ts`, pass a small pool for the agent (start with `max: 2`, `idle_timeout: 30` seconds; adjust from 3.1). Make the values operator config if a config path for agent-side settings already exists; otherwise constants in one place with a comment. Tests: the agent's options are passed through; omitted options leave the default.
+
+**3.4 Server limits.** Status: `todo`.
+Set Postgres `max_connections` and Redis `maxclients` (and `ulimits.nofile` for the Redis container) in `docker-compose.yaml` or the env overlays, to the values from 3.2. If Postgres needs more shared memory for more connections, set it. Deploy to staging and confirm with `SHOW max_connections` and `CONFIG GET maxclients`.
+Rollback: revert the compose change and redeploy (a container restart).
+
+**3.5 PgBouncer, only if 3.2 says so.** Status: `todo`.
+Add a PgBouncer service in transaction mode, point agent containers' `DATABASE_URL` at it, keep the API and worker on direct Postgres, and set `prepare: false` for the agent's client (required by transaction pooling). Update `.env*.example` files for any new variable. If 3.2 says it is not needed, mark this task `done` with "not needed" and the numbers.
+
+**3.6 Control-plane size for 10,000 agents.** Status: `todo`.
+From the measurements, pick the smallest server type whose projected memory and CPU at 10,000 agents stay below 60%. Record it as the production resize trigger (section 7). Resize staging's control plane to it for the load test (Phase 5):
+- Add `keep_disk = true` to `hcloud_server.default` in `main.tf` first, so the server can be resized back down later. Check the provider docs for the pinned provider version (`~> 1.49`) that the argument exists and what it does.
+- Set `server_type` in `staging.tfvars`. **Expected plan: one in-place update of `hcloud_server.default` (server type, and `keep_disk`).** If the plan says replace or destroy for `hcloud_server.default`, **stop**: that would destroy the database.
+- Expect a few minutes of downtime. Afterwards check the app health, `nomad server members`, the worker, and that agents reconnect.
+Rollback: set the old type and apply (works because the disk was kept).
+
+### Phase 4: Browser pool on a dedicated node (about 1 day, can run in parallel)
+
+Goal: the browser pool runs on its own node, we know how many sessions a node holds, and changing capacity is one number.
+
+**4.1 Decide the shape.** Status: `todo`.
+Use a Nomad node pool so agents never land on the browser node: the browser node's Nomad client sets `node_pool = "browser"` and `node_class = "browser"`; the browser job sets `node_pool = "browser"`. Agent jobs stay in the default node pool with no change. Nomad creates a node pool automatically when a client registers in it ([Nomad docs](https://docs.hashicorp.com/nomad/docs/govern/use-node-pools)). Check that both Nomad versions in use support node pools (1.6 or later).
+Why the agent autoscaler is not affected: it counts only Nomad nodes with class `agent` (`check-nomad-capacity.sh`) and servers named `<pool>-agent-<N>`, and its demand reader only reads the `herobids-agents` namespace (`controller_fetch_demand` in `capacity-controller.sh`), while the browser job has no namespace set (so it is in `default`). Confirm each of these by reading the code before you rely on it. Do not move the browser job into `herobids-agents`: a queued browser allocation would then look like agent demand.
+
+**4.2 Terraform and the one guard change.** Status: `todo`.
+- Add `nomad_node_pool` and `node_class` inputs to `cloud-init-nomad-client.yaml` with defaults that render agent nodes byte-for-byte as today (prove it by rendering the template for an agent node before and after and diffing).
+- Add `hcloud_server.browser` and `hcloud_server_network.browser` with `count = var.browser_node_count` (default 0), type `var.browser_node_server_type`, name `<server_name>-browser-<N>`, labels `app`, `environment`, `role = "browser"`, `node_pool = <server_name>`, the same firewall as agent nodes (port 3100 is already open to the private network), and `ignore_changes = [user_data]` like agent nodes. Add both variables to `variables.tf` and `environment.tfvars.example`.
+- In `_CAPACITY_RECONCILE_JQ` (`capacity-inventory.sh`), exempt `role == "browser"` from `$foreign`, next to the existing `control-plane` exemption. Add tests: a browser server does not raise `ownership_mismatch`; an unknown role still does.
+- The scale-out allowlist (`capacity-controller.sh`) refuses any plan with changes outside the agent pool. That is correct: apply the browser node by hand once (expected plan: create browser server and network, firewall `apply_to` update), and afterwards the autoscaler's plans contain no browser changes.
+
+**4.3 Move the job.** Status: `todo`.
+Edit `infra/nomad/browser-pool.nomad.hcl`: `node_pool = "browser"`; resources and `MAX_CONCURRENT_SESSIONS` sized to the node (start from about 1 GB and 0.5 vCPU per session and adjust in 4.4); keep the static port 3100. Deploy (`push.sh` submits all `infra/nomad/*.nomad.hcl` jobs). Check that the worker finds the new address (`apps/worker/src/agents/service-registry.ts` and `browser-pool-health-publisher.ts`) and that `infra/hetzner/scripts/smoke-test-browser-pool.sh` passes. Run one real agent browse on staging.
+Start size on staging: `cx33`. Rollback: remove `node_pool` from the job and redeploy; the job goes back to agent nodes.
+
+**4.4 Browser load test.** Status: `todo`.
+Write `scripts/loadtest/browser-sessions.*` (TypeScript or shell, your choice; reuse a library already in the repo if one fits, otherwise justify the dependency in the commit). It opens N concurrent CDP sessions against the pool, and each session loops: open a typical page, take a snapshot, click, wait 5 to 15 s (agents think between actions). Ramp N in steps (2, 5, 10, 20, ...). At each step record `/pressure` (`running`, `queued`, `recentlyRejected`, CPU, memory), node CPU and memory, and p95 time per action.
+The ceiling for a node is the highest N where nothing is rejected or queued for more than 10 s and p95 stays under 2x the 2-session value. Test on `cx33`, then on the largest shared type (resize by changing `browser_node_server_type`) to see how it scales.
+Done when: sessions per vCPU and per GB are recorded; the server type (and count of such nodes) that 200 sessions would need is computed; `MAX_CONCURRENT_SESSIONS` and `QUEUE_LENGTH` are set from the measurement; the node is resized back to the size current use needs.
+If no single node can hold 200 sessions, record it; that is the trigger for building a multi-instance browser pool later (section 7). Do not build it.
+
+### Phase 5: Load test on staging (1 to 2 days)
+
+Goal: show that the autoscaler adds nodes at its normal rate and removes them afterwards, and that the control plane holds the per-agent load, at the largest scale the Hetzner limit and the budget allow (target: 10,000 agents, about 85 nodes).
+
+**5.1 Fake agents.** Status: `todo`.
+Build a fake agent: a small Node process that behaves like an idle agent towards the control plane. It must use the same libraries and settings as `apps/worker/src/agent.ts`: the same Redis client options and count (2), the same Postgres client settings (after task 3.3), heartbeats every `heartbeatIntervalMs` through the same message path (`publishToInbound` and the message types in `@herobids/domain`), and a light database query at the rate measured in 3.1.
+Heartbeats are handled by `sessionManager.handleHeartbeat`. Read it. If it does real work only for known sessions, the fake agents need real agent and session rows. Create them for a synthetic user with a clear marker (for example names starting `loadtest-`), on **staging only**, with a cleanup script that deletes exactly those rows and nothing else.
+Run each fake agent as its own Nomad job in namespace `herobids-agents`, with job ID `loadtest-<n>` (**never** `agent-<n>`: the worker manages `agent-` jobs and may stop unknown ones; confirm by reading `nomad-runtime-adapter.ts` `list` and `reconcile`). Copy the resource block from a real agent job (`nomad job inspect agent-<id>`): `MemoryMB` 256, `MemoryMaxMB` 512, `CPU` 256 for the free profile. No constraints, affinities or spreads (the demand reader ignores constrained jobs). Pass connection settings as job environment variables; the job specs are visible to anyone with Nomad read access, so purge every `loadtest-` job at the end.
+Recommended packaging: compile the fake agent into the agent image (for example `apps/worker/src/loadtest/fake-agent.ts`) and run it with a command override, so new nodes pull the real image (realistic start time) and no new build pipeline is needed. This means merging it to `main` before the test; ask the reviewer if you prefer a branch-only route.
+Also write `scripts/loadtest/register-fake-agents.sh` (register N jobs at a bounded rate through the Nomad API) and `scripts/loadtest/cleanup.sh` (stop and purge every `loadtest-` job, run `nomad system gc`, delete synthetic rows).
+
+**5.2 Prepare.** Status: `todo`.
+Control plane resized (task 3.6). Fixes from Phase 3 deployed. Set `max_agent_nodes` on staging to the test size (limited by the Hetzner limit minus everything else running in the project, and by the budget). Keep `scale_out_cooldown_seconds = 300` so the test shows the real ramp. Upload settings. Record a baseline (section 3.1 measurements) and the state of real staging agents.
+
+**5.3 Ramp.** Status: `todo`.
+Steps: 100, 1,000, 2,500, 5,000, 10,000 fake agents (stop at the largest your node limit allows). At each step, wait until all are placed, then record for 15 minutes:
+- Autoscaler: time from first blocked placement to node ready, nodes added per decision, total nodes against the expected `ceil(fake agents / agents per node)`, any refusal or blocker in the log.
+- Control plane: Postgres connections against `max_connections`, Redis clients against `maxclients`, Redis memory, worker CPU and heartbeat handling (no growing backlog in the inbound stream), Nomad server memory and leader stability, control-plane memory and load.
+- Real staging agents: still `running`, heartbeats on time, one chat or tick works.
+**Stop the ramp** (go to 5.4) if any of these passes 80% of its limit, the worker falls more than two heartbeat intervals behind, the Nomad leader changes, or real agents degrade. That point is the finding; record it.
+
+**5.4 Ramp down and scale-in.** Status: `todo`.
+Run `cleanup.sh`. Temporarily raise `scale_in_max_nodes_per_run` on staging (for example to 10) and trigger `nomad-scale-in.service` repeatedly until the pool is back at `min_agent_nodes`. Confirm each run removed only idle highest-index nodes and that scale-out did not re-create them. Restore `scale_in_max_nodes_per_run`, `max_agent_nodes = 3`, and the control-plane size (task 3.6 rollback). Check no `loadtest-` job, synthetic row or extra server is left.
+Done when: the evidence has the table per step, the cost spent, and "nothing left running".
+
+### Phase 6: Write up staging results (about 2 hours)
+
+**6.1** Fill in section 7 (triggers) and section 6 (results) with numbers. Status: `todo`.
+**6.2** Set R1 to `ready for review` (section 8) and summarise in chat. Status: `todo`.
+
+### Phase 7: Production (after R1 passes, about half a day to a day)
+
+Production is pre-launch: a few minutes of downtime is acceptable. Read `production-notes.md` first. Use the production SSH key and `TF_DATA_DIR=.terraform-envs/production`.
+
+**7.1 Merge and deploy code.** Status: `todo`.
+Merge the branch to `main` (fast-forward or a merge commit, no force push). Wait for the agent image build. Set `capacityAwareStart.enabled: true` in `config/production.yaml` (same as staging) in this merge. Deploy to production with the flow chosen in 1.1. Confirm health and the worker log.
+
+**7.2 Pause and rebuild the node pool.** Status: `todo`.
+Stop the autoscale timers. Sync `agent_node_count`. In `production.tfvars`: `agent_node_server_type = "cx53"`, the template values from 1.5, `max_agent_nodes = 20`, `nomad_autoscale_demand_enabled = true`, `enable_scale_in = true`, `browser_node_count = 1`, `browser_node_server_type` from 4.4. Plan with `-replace='hcloud_server.agent[0]'`.
+Expected plan: replace `hcloud_server.agent[0]` and its network attachment; create `hcloud_server.browser[0]` and its network attachment; firewall `apply_to` updates; no change to `hcloud_server.default` other than `keep_disk` if task 3.6 added it. Anything else: stop.
+Apply. Agents on the old node stop; Nomad places them on the new node. Check every agent is `running`; relaunch any that are not (section 2.1 guide). Live-mode trading agents: record them before, confirm them after.
+Rollback: type back to `cx23`, plan with replace again.
+
+**7.3 Limits and settings.** Status: `todo`.
+Confirm Postgres and Redis limits from 3.4 are live. Upload settings (`setup-autoscale-env.sh --env production`) and converge. Confirm the rendered settings show demand mode on and the template values. Start the timers. Read 10 runs of the autoscale log.
+
+**7.4 Small production proof.** Status: `todo`.
+Register placeholder jobs (`loadtest-` prefix, no database rows needed; a sleeping container with the agent resource shape) that need one more node. Watch scale-out add `agent-2`. Remove them, wait past the grace period, trigger scale-in once, and watch it remove `agent-2`. Clean up.
+Done when: both are in the evidence and production is back to one agent node plus the browser node.
+
+**7.5 Browser pool on production.** Status: `todo`.
+Confirm the browser job runs on the browser node and the smoke test passes.
+
+### Phase 8: Traderton capacity test (1 to 2 days, can run in parallel, staging only)
+
+Traderton is a separate repo: `/Users/chinomso.ikwuagwu/dev_ai/traderton`. Follow its `AGENTS.md`. Trading logic stays in Traderton; this phase only measures.
+
+**8.1 Read.** Status: `todo`.
+Traderton `AGENTS.md`, `infra/hetzner/README.md`, and the "Load-Test Expectations" section of `docs/features/initial/007-operational-readiness.md` (it already defines what to measure and when the test passes). Find how a trading agent becomes an actor (the boundary's agent actor code in `packages/boundary/src/` and the registry in `packages/worker/src/composition/create-trading-runtime.ts`).
+
+**8.2 Write the test in the Traderton repo.** Status: `todo`.
+A script that, through the boundary with staging credentials, creates N trading agents in **paper** execution mode, and exercises `submit_decision` and a read tool (for example `get_price` or `list_positions`) at a realistic rate. Commit it on a Traderton branch. Cleanup must remove every test agent and actor it created.
+Never place live orders. Watch for venue rate limiting (HTTP 429 or venue errors): if it appears, stop the ramp and record the agent count; that is the per-IP limit, which a bigger VM does not fix.
+
+**8.3 Run.** Status: `todo`.
+Resize Traderton's **staging** VM to a large shared type through its own Terraform flow (`plan-apply.sh`, its per-env data dir; expected plan: one in-place update of the server type; anything else, stop). Ramp 100, 500, 1,000, 2,500, 5,000. Record the metrics from 007 plus process CPU, event-loop lag, memory and connections at each step.
+Resize back afterwards.
+Done when: the evidence says the largest N that passed, what limit stopped it (CPU of one Node process, memory, database, venue limits), and whether one VM holds 5,000.
+
+### Phase 9: Close out (about half a day)
+
+**9.1 Unit cost.** Status: `todo`. Using prices from 0.3 and densities from 1.5 and 4.4: cost per agent per month (agent node price / agents per node, plus control-plane share at 10,000), and cost per browser session slot per month. Write them in section 6.
+**9.2 Registers.** Status: `todo`. In `docs/decisions/04-assumptions-and-limitations.md`, update only the rows whose facts you measured (node density A-23, control-plane load A-24, browser memory A-04, network limit A-08, prices A-09) with the new value and "verified 2026-11-xx, this plan". In `docs/decisions/03-decision-register.md`, add one line: C-07 (shared autoscaling repo) deferred until Traderton needs to scale out (owner, 2026-11-12).
+**9.3 Docs.** Status: `todo`. Update `infra/hetzner/docs/auto-scaling/setup-auto-scaling.md` for the new node type, scale-in under demand mode, and the browser node. Add a CHANGELOG entry.
+**9.4** Set R2 to `ready for review`. Ask the owner whether the old program folder (`docs/features/2026/11/11/001-autoscaling-program/`) may be deleted. Status: `todo`.
+
+---
+
+## 5. Placeholder and fake-agent rules (used by Phases 1, 2, 5, 7)
+
+1. Job IDs start with `loadtest-`. Never `agent-`.
+2. Namespace `herobids-agents`. Same resource block as a free-profile agent. No constraints, affinities or spreads.
+3. No secrets in placeholder jobs. Fake agents (Phase 5) carry staging connection settings only, and are purged at the end.
+4. Every test ends with `scripts/loadtest/cleanup.sh` and a check that nothing is left.
+
+---
+
+## 6. Results (fill in)
+
+| Measure | Value | Evidence |
+|---|---|---|
+| Usable memory and CPU per `cx53` node | | 1.5 |
+| Agents per node (free / pro) | | 1.5 |
+| Nodes for 10,000 free agents | | 1.5 |
+| Scale-out rate observed (nodes per hour) | | 5.3 |
+| Largest fake-agent count held, and what limited it | | 5.3 |
+| Postgres connections per agent, before and after fixes | | 3.1, 5.3 |
+| Redis clients per agent | | 3.1 |
+| Control-plane type needed for 10,000 agents | | 3.6 |
+| Browser sessions per node (by type), and nodes for 200 | | 4.4 |
+| Traderton: largest trading-agent count on one VM, and the limit | | 8.3 |
+| Cost per agent per month | | 9.1 |
+| Cost per browser session slot per month | | 9.1 |
+| Load-test spend | | 5.4 |
+
+---
+
+## 7. Triggers: when to act next (fill in numbers)
+
+Before launch there is little traffic, so these are checked by hand weekly until real use passes about 30% of a ceiling; then add an alert.
+
+| Tier | Resize when | Build scale-out when |
+|---|---|---|
+| Agents | n/a (autoscaled). Raise `max_agent_nodes` when the pool reaches 80% of it | Pool would pass about 90 nodes (the private network holds 100 servers): plan a second network or bigger nodes |
+| Control plane | Projected use at current agent count passes 60% of memory or CPU on the current type | n/a |
+| Browser pool | `/pressure` shows `queued > 0` for several minutes, any `recentlyRejected`, or running sessions above 70% of `MAX_CONCURRENT_SESSIONS` | Use passes 50% of what the largest acceptable single node holds |
+| Traderton | Active trading agents pass 70% of the measured ceiling, or VM CPU stays above 70% | Use passes 50% of the ceiling, or venue rate limits appear |
+
+---
+
+## 8. Review gates
+
+| Gate | Status | Notes |
+|---|---|---|
+| R1 (staging done, before production) | not ready | |
+| R2 (all done) | not ready | |
+
+---
+
+## 9. Log
+
+Append one short entry per session, newest at the bottom: date and time, what you did, what you learned, what is next, what blocks you.
+
+**2026-11-13 (session: code/config pass).**
+- Did: created branch `feat/hetzner-scale-path` off `main@b317176e`. Ran read-only Phase 0 investigation over SSH against staging (`138.199.172.202`): live cloud + Nomad inventory, reconcile reproduction, Hetzner price table. Wrote the bug report (task 1.1). Updated tasks 0.1, 0.2 (staging), 0.3, 0.5 to `done` with evidence; 0.4 `blocked` (owner), 0.2 production `todo`.
+- Learned: the pool name is `herobids-staging` (from `TF_VAR_server_name`), and the two `herobids-staging-agent-caps-*` servers are the sole `$foreign` set that raises `ownership_mismatch`. The Nomad node `herobids-staging-agent-3` maps to the Hetzner server `agent-1` (10.0.0.5) — name drift, handled by task 1.7. `cx53` is available in `fsn1`. Staging failure count is at 4553. `nomad-scale-in.timer` is not in the active timer list (confirm in 2.3). The owner confirmed SSH is straightforward via `docs/runbooks/useful-commands.md`.
+- Scope decision (agreed with owner): this session does option 1 — the reversible code/config/test surface on the branch. All live Terraform applies, server drains/deletes, timer stops on live hosts, the two load tests, control-plane/Traderton resizes, the Hetzner console limits request, and the R1/R2 gates stay gated on owner confirmation. Read-only live reads (Phase 0, verification reads) are fine.
+- Next (code): task 2.2 (scale-in demand check), 2.3 (timer schedule converge), 3.3 (agent Postgres pool), 3.4 (server limits), 4.2 (browser node + guard exemption), 4.3 (browser job), 4.4/5.1 (load-test scripts + fake agent). Then run test suites, lint, build.
+- Blocks: none for the code work. Production inventory (0.2) and the console limits (0.4) need the owner / a live production session.
