@@ -358,12 +358,16 @@ Evidence:
 - Tests: `packages/db/src/create-database.test.ts` (3 cases) — no options → `{}` (default preserved); both options → `{ max, idle_timeout }`; partial options forwarded individually. All pass.
 - Build: `pnpm --filter @herobids/db build` and `pnpm --filter @herobids/worker build` both succeed.
 
-**3.4 Server limits.** Status: `todo`.
-Set Postgres `max_connections` and Redis `maxclients` (and `ulimits.nofile` for the Redis container) in `docker-compose.yaml` or the env overlays, to the values from 3.2. If Postgres needs more shared memory for more connections, set it. Deploy to staging and confirm with `SHOW max_connections` and `CONFIG GET maxclients`.
+**3.4 Server limits.** Status: `partial` (Redis pinned + nofile in code; Postgres `max_connections` deliberately deferred to the 3.6 resize + 5.3 measurement; live confirm gated).
+- Redis (`docker-compose.yaml`): `maxclients` pinned explicitly to `10000` (was the image default) and `ulimits.nofile` set to 11000 soft/hard (must exceed `maxclients`). `maxmemory` stays 512 MB. 10000 covers >2x the agent fan-out this control plane is sized for (2 Redis clients per agent).
+- Postgres: `max_connections` left at the image default (100) **on purpose**. Raising it costs ~10 MB of backend memory per connection, which the current `cx23` control plane (3819 MB, shared with Redis+worker+api) cannot absorb. The primary agent-fan-out mitigation is the small per-agent pool from 3.3. `max_connections` must be raised together with the 3.6 control-plane resize and the 5.3 measurement, and with PgBouncer if the pool caps are not enough. A comment in the compose postgres block records this so it is not raised in isolation.
+- Live confirm (`SHOW max_connections`, `CONFIG GET maxclients`) after a staging deploy is gated. Compose validated locally (`docker compose config -q` OK).
 Rollback: revert the compose change and redeploy (a container restart).
 
-**3.5 PgBouncer, only if 3.2 says so.** Status: `todo`.
-Add a PgBouncer service in transaction mode, point agent containers' `DATABASE_URL` at it, keep the API and worker on direct Postgres, and set `prepare: false` for the agent's client (required by transaction pooling). Update `.env*.example` files for any new variable. If 3.2 says it is not needed, mark this task `done` with "not needed" and the numbers.
+**3.5 PgBouncer, only if 3.2 says so.** Status: `blocked on 3.2` (decision needs the Phase 5 load-test numbers; not built speculatively, per the plan).
+Reasoning so far: the arithmetic alone says PgBouncer is very likely required at the 10,000 target — even a `max: 1` agent pool × 10,000 agents = 10,000 possible backends, two orders of magnitude over a sane Postgres `max_connections` for any affordable control plane. But the agent DB connection is optional (bot tool access) and the 30 s idle timeout closes connections between ticks, so the *steady-state* count may be far lower than the ceiling. 3.2 must pick the fix from the measured steady-state at 1k/5k/10k (5.3). If the measured peak stays under 70% of a feasible `max_connections`, the pool caps alone suffice; otherwise add PgBouncer in transaction mode (agent `DATABASE_URL` → PgBouncer, `prepare: false`; API/worker stay on direct Postgres; update `.env*.example`). Decision deferred to 3.2 with the 5.3 numbers.
+
+**3.2 Decide the fixes.** Status: `blocked on 3.1/5.3`. The decision rules (Postgres < 70% of `max_connections`, Redis `maxclients` ≥ 2× clients, heartbeat/Nomad headroom) need the per-agent steady-state and the 1k/5k/10k projection from the Phase 5 ramp. The interim code choices (small agent pool 3.3; Redis pinned 3.4) are directionally safe; the final numeric decision and the PgBouncer call are made here once 5.3 runs.
 
 **3.6 Control-plane size for 10,000 agents.** Status: `todo`.
 From the measurements, pick the smallest server type whose projected memory and CPU at 10,000 agents stay below 60%. Record it as the production resize trigger (section 7). Resize staging's control plane to it for the load test (Phase 5):
@@ -547,3 +551,10 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - Learned (corrects the plan): staging's `nomad-scale-in.timer` already has a valid schedule and is `enabled`, but it is **inactive** (stopped since 2026-10-31, never restarted). So the symptom is a stopped timer, not a missing schedule; step 3e fixes both by converge-starting it.
 - Verified: `test-converge-control-plane.sh` (all pass incl. new 3e block), `tests/run-all.sh` (all suites pass), `shellcheck -x` clean on converge + setup.
 - Next: task 3.3 (agent Postgres pool in `@herobids/db` + worker wiring + Vitest). Then 3.4 (compose limits) and the Phase 4 browser work.
+
+**2026-11-13 (session: code/config pass, cont. 3).**
+- Did: task 3.3 — `createDatabase` optional pool options + small agent pool (max 2, idle 30s) + Vitest (commit `81683435`). Task 3.4 — pinned Redis `maxclients=10000` + `nofile` 11000 in `docker-compose.yaml`; left Postgres `max_connections` at 100 with a comment explaining it waits for the 3.6 resize + 5.3 measurement (raising it now would risk OOM on the `cx23` control plane).
+- Read-only baseline (staging, 7 agents): Postgres `max_connections=100`, 19 conns (`postgres.js`=13); Redis `maxclients=10000`, 24 clients, 512 MB; control plane 3819 MB, ~1991 MB free. Recorded in 3.1.
+- Decisions: 3.2 and 3.5 (PgBouncer) are blocked on the Phase 5 numbers — the agent pool cap is the interim mitigation; PgBouncer is very likely needed at 10k but is not built speculatively (plan rule).
+- Verified: `docker compose config -q` OK; db + worker builds pass; `create-database.test.ts` passes.
+- Next: Phase 4 — task 4.2 (browser TF node + cloud-init node_pool/class inputs + the `role==browser` guard exemption + tests), 4.3 (browser-pool.nomad.hcl node pool), 4.4/5.1 (load-test scripts + fake agent).

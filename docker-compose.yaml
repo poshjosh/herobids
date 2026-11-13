@@ -3,6 +3,13 @@ services:
     image: postgres:17-alpine
     ports:
       - '5432:5432'
+    # max_connections is left at the image default (100) on purpose. The primary
+    # mitigation for the agent fan-out is the small per-agent pool (max 2) added in
+    # packages/db createDatabase. Raising max_connections costs ~10 MB of backend
+    # memory each, which this cx23 control plane (3819 MB, shared with Redis + worker
+    # + api) cannot absorb; it must be raised together with the 3.6 control-plane
+    # resize and, if the Phase 5 measurement shows the pool caps are not enough, with
+    # a PgBouncer transaction pool (plan 3.2/3.4/3.5). Do not raise it here in isolation.
     environment:
       POSTGRES_USER: herobids
       POSTGRES_PASSWORD: herobids
@@ -28,7 +35,16 @@ services:
     # fix — agent stream growth is bounded at the application layer via MAXLEN
     # (see AGENT_STREAM_MAXLEN in packages/domain/src/agent-protocol.ts).
     # See docs/bug-reports/2026/07/15/001-redis-agent-outbound-streams-unbounded-memory-exhaustion.md.
-    command: ['redis-server', '--maxmemory', '512mb', '--maxmemory-policy', 'allkeys-lru']
+    # maxclients is pinned explicitly (the image default is already 10000) so the
+    # ceiling is visible and reviewable: each agent opens 2 Redis clients, so 10000
+    # covers well over 2x the agent fan-out this control plane is sized for. Revisit
+    # from the Phase 5 load-test measurement before raising the agent cap (plan 3.2/3.4).
+    # nofile must sit above maxclients or Redis refuses connections at the OS limit.
+    command: ['redis-server', '--maxmemory', '512mb', '--maxmemory-policy', 'allkeys-lru', '--maxclients', '10000']
+    ulimits:
+      nofile:
+        soft: 11000
+        hard: 11000
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
