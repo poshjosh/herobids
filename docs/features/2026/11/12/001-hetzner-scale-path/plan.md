@@ -283,7 +283,7 @@ Done when: 10 consecutive runs without `blocked` or `ownership_mismatch`; the pl
 
 Goal: nodes are removed automatically when they are idle and not needed, while demand mode stays on.
 
-**2.1 Understand the current guard.** Status: `todo`.
+**2.1 Understand the current guard.** Status: `done`. Read `scale-in.sh`, `scale-in-guard.sh`, `capacity-inventory.sh`, `capacity-demand.sh`, `capacity-controller.sh`, and the scale-in records in the safe-capacity plan. The H4 early exit, the remaining-slot threshold, the cooldown stamp, the new-node grace, idle-only candidates and the highest-index-only rule are all accounted for in the 2.2 change.
 Read `scale-in.sh`, `scale-in-guard.sh`, and the scale-in sections of `docs/features/2026/10/30/001-agent-continuity-and-safe-capacity/001-safe-capacity-expansion-plan.md` (section 8 and the P9 record) and `012-agent-node-drift-note.md`. The early exit for demand mode was added on purpose ("H4") to avoid scale-in fighting scale-out. Scale-in since gained: a check that the remaining nodes keep at least `NOMAD_SCALE_OUT_SLOT_THRESHOLD` free slots, a cooldown stamp that stops scale-out right after a scale-in, a new-node grace period, idle-only candidates, and the highest-index-only rule.
 
 **2.2 Replace the early exit with a demand check.** Status: `done` (code + tests; live proof 2.4 is gated on a staging deploy).
@@ -302,9 +302,23 @@ Keep the deferral counter and alert behaviour. The kill switch stays `enable_sca
 Tests: add cases to the scale-in guard and wiring tests: demand on and no backlog → proceeds; demand on and backlog → defers; demand read fails → defers; demand off → unchanged behaviour. Update the text-matching tests that refer to the removed early exit.
 Record the decision in the plan's log: "H4 early exit replaced by a demand check (2026-11-12, this plan)". Update the comment in `scale-in.sh` and the section of `001-safe-capacity-expansion-plan.md` that describes H4 with a one-line pointer here.
 
-**2.3 Make sure the nightly timer has a schedule on both environments.** Status: `todo`.
-Earlier notes say staging's `nomad-scale-in.timer` was "enabled with no schedule". Check both environments (`systemctl cat nomad-scale-in.timer`, `systemctl list-timers`). The schedule comes from cloud-init (`OnCalendar` from `scale_in_time_utc`), and existing control planes ignore cloud-init changes (lesson 20). If a timer has no schedule, add a converge step in `converge-control-plane.sh` that writes a drop-in with `OnCalendar` from `scale_in_time_utc`, with a test in `test-converge-control-plane.sh`.
-Done when: both environments show the next nightly run in `systemctl list-timers`.
+**2.3 Make sure the nightly timer has a schedule on both environments.** Status: `done` (code + tests; live converge + the `list-timers` check are gated on a staging deploy).
+
+**Correction to the plan's premise (verified read-only, staging, 2026-11-13):** staging's `nomad-scale-in.timer` is **not** "enabled with no schedule". Its unit file has a valid `OnCalendar=*-*-* 3:00:00`, `Persistent=true`, and `UnitFileState=enabled`. The real gap is that the timer is **inactive** (`ActiveState=inactive`, `NextElapseUSecRealtime=` empty, `LastTriggerUSec=2026-10-31 03:03:36 UTC`): it was stopped during the earlier P9 work and never restarted, so `list-timers` shows no next run and nightly scale-in never fires.
+
+Evidence:
+```
+systemctl is-enabled nomad-scale-in.timer → enabled
+systemctl is-active  nomad-scale-in.timer → inactive
+systemctl show … ActiveState=inactive, NextElapseUSecRealtime= (empty), LastTriggerUSec=Sat 2026-10-31 03:03:36 UTC
+```
+
+Fix (converge-managed so it survives and does not depend only on cloud-init, lesson 20):
+- `converge-control-plane.sh` gained step **3e**: when `SCALE_IN_TIME_UTC` (0-23) is set and the `nomad-scale-in.timer` unit exists, it writes drop-in `17-scale-in-schedule.conf` pinning the schedule (`OnCalendar=` empty to clear the additive base, then `OnCalendar=*-*-* H:00:00`), then **enables and starts** the timer (and restarts it when the schedule changed) so `list-timers` always shows the next run. A set value runs on every converge, so a stopped timer is restarted even when the drop-in is unchanged. Absent unit / unset value → warn, no change. Out-of-range hour → fail fast.
+- `setup-control-plane.sh` reads the `scale_in_time_utc` Terraform output (non-fatal; warns if unavailable) and passes `SCALE_IN_TIME_UTC` to the remote converge, mirroring the `enable_scale_in` flow.
+- Tests: 17 new assertions in `test-converge-control-plane.sh` (drop-in content, enable+start of an inactive timer, no re-start when active, schedule-change restart, hour-24 rejection, unset/absent handling, and static wiring of the setup read + pass-through). The full converge suite and `run-all.sh` pass; `shellcheck -x` clean on both scripts.
+
+Done when (remaining, gated): after a staging converge (`setup-control-plane.sh`/`deploy.sh`), both environments show the next nightly run in `systemctl list-timers`. Staging converge pending a deploy; production is behind R1.
 
 **2.4 Deploy and prove on staging.** Status: `todo`.
 Deploy the branch to staging. With placeholders running so the pool has 2 nodes, stop the placeholders, wait past the grace period, then trigger one run with `systemctl start nomad-scale-in.service`. Confirm it removed the highest-index idle node, synced Terraform state ("Terraform state synced" in the log), wrote the new `agent_node_count`, and that scale-out did not re-create the node over the next 10 minutes. Then confirm a run with a queued placeholder defers.
@@ -510,3 +524,15 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - Scope decision (agreed with owner): this session does option 1 — the reversible code/config/test surface on the branch. All live Terraform applies, server drains/deletes, timer stops on live hosts, the two load tests, control-plane/Traderton resizes, the Hetzner console limits request, and the R1/R2 gates stay gated on owner confirmation. Read-only live reads (Phase 0, verification reads) are fine.
 - Next (code): task 2.2 (scale-in demand check), 2.3 (timer schedule converge), 3.3 (agent Postgres pool), 3.4 (server limits), 4.2 (browser node + guard exemption), 4.3 (browser job), 4.4/5.1 (load-test scripts + fake agent). Then run test suites, lint, build.
 - Blocks: none for the code work. Production inventory (0.2) and the console limits (0.4) need the owner / a live production session.
+
+**2026-11-13 (session: code/config pass, cont.).**
+- Did: task 2.2 — replaced the scale-in H4 demand early exit with `scale_in_demand_defers` (demand read + classify, fail closed), sourced `capacity-demand.sh`/`capacity-controller.sh` into `scale-in.sh`, rewrote the guard tests, updated the H4 cross-reference in the safe-capacity plan §8. Commit `a28ea566`.
+- Decision recorded: **H4 early exit replaced by a demand check (2026-11-12, this plan).** Scale-in defers under demand mode only when the agent namespace has queued/blocked work or the demand read is ambiguous (fail closed); otherwise it proceeds under the lock.
+- Verified: `tests/run-all.sh` (all suites pass), `tests/check-nomad-capacity.test.sh` (all checks pass), `shellcheck -x scale-in.sh` clean.
+- Next: task 2.3 (nightly timer schedule via converge drop-in + test).
+
+**2026-11-13 (session: code/config pass, cont. 2).**
+- Did: task 2.3 — added converge step 3e (`converge-control-plane.sh`) that pins `nomad-scale-in.timer`'s `OnCalendar` from `SCALE_IN_TIME_UTC` and enables+starts the timer; wired `setup-control-plane.sh` to read the `scale_in_time_utc` output and pass it through; added 17 converge tests. Also marked 2.1 done.
+- Learned (corrects the plan): staging's `nomad-scale-in.timer` already has a valid schedule and is `enabled`, but it is **inactive** (stopped since 2026-10-31, never restarted). So the symptom is a stopped timer, not a missing schedule; step 3e fixes both by converge-starting it.
+- Verified: `test-converge-control-plane.sh` (all pass incl. new 3e block), `tests/run-all.sh` (all suites pass), `shellcheck -x` clean on converge + setup.
+- Next: task 3.3 (agent Postgres pool in `@herobids/db` + worker wiring + Vitest). Then 3.4 (compose limits) and the Phase 4 browser work.

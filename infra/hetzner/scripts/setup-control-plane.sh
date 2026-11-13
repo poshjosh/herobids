@@ -158,6 +158,15 @@ if [[ "${ENABLE_SCALE_IN_VALUE}" != "true" && "${ENABLE_SCALE_IN_VALUE}" != "fal
   fi
 fi
 
+# Scale-in timer schedule: converge pins nomad-scale-in.timer's OnCalendar to this
+# UTC hour and ensures the timer is active. A missing value only skips the schedule
+# (the timer keeps whatever cloud-init baked in), so this is a warning, not fatal.
+SCALE_IN_TIME_UTC_VALUE="$(terraform_output -raw scale_in_time_utc 2>/dev/null || true)"
+if [[ ! "${SCALE_IN_TIME_UTC_VALUE}" =~ ^([0-9]|1[0-9]|2[0-3])$ ]]; then
+  echo "WARNING: terraform output scale_in_time_utc unavailable or out of range; scale-in timer schedule NOT converged." >&2
+  SCALE_IN_TIME_UTC_VALUE=""
+fi
+
 # ─── Upload and run ──────────────────────────────────────────────────────────
 
 echo "==> [${HEROBIDS_ENV}] Converging control plane ${SERVER_IP} (private ${PRIVATE_SUBNET} from ${PRIVATE_SUBNET_SOURCE}; bridge ${DOCKER_BRIDGE_SUBNET})..."
@@ -176,7 +185,7 @@ fi
 # Inputs are validated CIDRs above, so plain interpolation is safe here.
 RC=0
 ssh ${SSH_OPTS} "root@${SERVER_IP}" \
-  "PRIVATE_SUBNET=${PRIVATE_SUBNET} DOCKER_BRIDGE_SUBNET=${DOCKER_BRIDGE_SUBNET} ENABLE_SCALE_IN_VALUE=${ENABLE_SCALE_IN_VALUE} ${REMOTE_SCRIPT}" || RC=$?
+  "PRIVATE_SUBNET=${PRIVATE_SUBNET} DOCKER_BRIDGE_SUBNET=${DOCKER_BRIDGE_SUBNET} ENABLE_SCALE_IN_VALUE=${ENABLE_SCALE_IN_VALUE} SCALE_IN_TIME_UTC=${SCALE_IN_TIME_UTC_VALUE} ${REMOTE_SCRIPT}" || RC=$?
 
 if [[ ${RC} -ne 0 ]]; then
   echo "ERROR: control-plane convergence failed on ${SERVER_IP} (exit ${RC})." >&2

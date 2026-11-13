@@ -705,6 +705,81 @@ test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════
 
+test_begin "converge-control-plane — scale-in timer schedule drop-in (3e)"
+
+SCHED_DROPIN="17-scale-in-schedule.conf"
+# Mirrors cloud-init: a timer unit with a baked-in schedule.
+write_scale_in_timer() {
+  printf '%s\n' '[Unit]' 'Description=Nomad Scale-In Timer' \
+    '[Timer]' 'OnCalendar=*-*-* 3:00:00' 'Persistent=true' 'Unit=nomad-scale-in.service' \
+    '[Install]' 'WantedBy=timers.target' \
+    > "${ROOT}/etc/systemd/system/nomad-scale-in.timer"
+}
+
+new_root "scale-in-schedule"
+write_hcl "${STUB_PRIVATE_IP}"
+write_scale_in_timer
+# The timer starts inactive and disabled — the staging symptom (valid OnCalendar, not running).
+run_converge SCALE_IN_TIME_UTC=5
+assert_eq "${RUN_EXIT}" "0" "scale-in schedule: converge succeeds"
+assert_eq "$(cat "${ROOT}/etc/systemd/system/nomad-scale-in.timer.d/${SCHED_DROPIN}")" \
+  "$(printf '%s\n' '[Timer]' 'OnCalendar=' 'OnCalendar=*-*-* 5:00:00')" \
+  "scale-in schedule: drop-in clears then re-pins OnCalendar to the configured hour"
+assert_contains "${CALLS}" "systemctl enable --quiet nomad-scale-in.timer" "scale-in schedule: timer is enabled"
+assert_contains "${CALLS}" "systemctl start nomad-scale-in.timer" "scale-in schedule: inactive timer is started"
+assert_contains "${CALLS}" "systemctl daemon-reload" "scale-in schedule: daemon-reloads for the drop-in"
+
+# Re-run on a converged host: drop-in unchanged, timer already enabled+active → no rewrite, no start.
+run_converge SCALE_IN_TIME_UTC=5
+assert_not_contains "${RUN_OUTPUT}" "schedule drop-in" "scale-in schedule: re-run does not rewrite the drop-in"
+assert_not_contains "${CALLS}" "systemctl start nomad-scale-in.timer" "scale-in schedule: an active timer is not started again"
+
+# A changed hour rewrites the drop-in and restarts the active timer to apply it.
+run_converge SCALE_IN_TIME_UTC=4
+assert_eq "$(grep -c 'OnCalendar=\*-\*-\* 4:00:00' "${ROOT}/etc/systemd/system/nomad-scale-in.timer.d/${SCHED_DROPIN}")" "1" \
+  "scale-in schedule: a changed hour rewrites the drop-in"
+assert_contains "${CALLS}" "systemctl restart nomad-scale-in.timer" "scale-in schedule: a changed schedule restarts the active timer"
+
+# Out-of-range hour is refused before any change.
+run_converge SCALE_IN_TIME_UTC=24
+assert_neq "${RUN_EXIT}" "0" "scale-in schedule: hour 24 exits non-zero"
+assert_contains "${RUN_OUTPUT}" "must be a UTC hour from 0 to 23" "scale-in schedule: invalid hour is reported"
+
+# Unset value: schedule not converged, no drop-in, warning only.
+new_root "scale-in-schedule-unset"
+write_hcl "${STUB_PRIVATE_IP}"
+write_scale_in_timer
+run_converge
+assert_eq "${RUN_EXIT}" "0" "scale-in schedule: unset value still converges"
+assert_contains "${RUN_OUTPUT}" "SCALE_IN_TIME_UTC not set" "scale-in schedule: unset value is reported, not guessed"
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-scale-in.timer.d/${SCHED_DROPIN}" ]] && echo yes || echo no)" "no" \
+  "scale-in schedule: unset value writes no drop-in"
+
+# Absent timer unit: a set value warns but does not fail converge.
+new_root "scale-in-schedule-absent-unit"
+write_hcl "${STUB_PRIVATE_IP}"
+run_converge SCALE_IN_TIME_UTC=3
+assert_eq "${RUN_EXIT}" "0" "scale-in schedule: absent timer unit does not fail converge"
+assert_contains "${RUN_OUTPUT}" "not found; the scale-in timer schedule is not converged" \
+  "scale-in schedule: absent timer unit is reported"
+assert_eq "$([[ -e "${ROOT}/etc/systemd/system/nomad-scale-in.timer.d/${SCHED_DROPIN}" ]] && echo yes || echo no)" "no" \
+  "scale-in schedule: absent timer unit gets no drop-in"
+
+test_end || SUITE_FAILED=1
+
+test_begin "converge-control-plane — scale-in timer schedule wiring (static)"
+
+assert_contains "$(cat "${SCRIPTS_DIR}/setup-control-plane.sh")" "terraform_output -raw scale_in_time_utc" \
+  "setup reads the scale_in_time_utc Terraform output"
+assert_contains "$(cat "${SCRIPTS_DIR}/setup-control-plane.sh")" "SCALE_IN_TIME_UTC=\${SCALE_IN_TIME_UTC_VALUE}" \
+  "setup passes the schedule hour to the remote converge"
+assert_contains "$(cat "${HETZNER_DIR}/outputs.tf")" 'output "scale_in_time_utc"' \
+  "outputs.tf exposes scale_in_time_utc"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+
 test_begin "converge-control-plane — autoscale settings (3d): render, invalid, stale override"
 
 # write_settings_input [INCREMENT_MAX] — the seven-key input setup uploads.

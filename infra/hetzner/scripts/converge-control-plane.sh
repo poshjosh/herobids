@@ -28,6 +28,11 @@
 #   3c4. Writes a scale-in flag drop-in for nomad-scale-in that pins
 #      ENABLE_SCALE_IN to ENABLE_SCALE_IN_VALUE (true | false, from the
 #      Terraform enable_scale_in output). cloud-init's copy is fixed at boot.
+#   3e. Writes a schedule drop-in for nomad-scale-in.timer pinning OnCalendar
+#      from SCALE_IN_TIME_UTC (the Terraform scale_in_time_utc output), then
+#      enables and starts the timer so list-timers always shows the next run.
+#      cloud-init's schedule is fixed at boot and a stopped timer never resumes
+#      on its own.
 #   3d. Renders /etc/herobids/autoscale-settings.env from the Terraform-derived
 #      input (same renderer as cloud-init first boot) and adds an
 #      EnvironmentFile= drop-in for the settings file to each autoscale unit
@@ -66,6 +71,9 @@
 #   AUTOSCALE_NODE_POOL    Agent pool the autoscale units guard (default: hostname).
 #   ENABLE_SCALE_IN_VALUE  true | false for nomad-scale-in (default: unset, which
 #                          skips the flag). setup-control-plane.sh sets it.
+#   SCALE_IN_TIME_UTC      UTC hour 0-23 for the nightly scale-in timer (default:
+#                          unset, which skips the schedule). setup-control-plane.sh
+#                          sets it from the scale_in_time_utc Terraform output.
 #   AUTOSCALE_SETTINGS_FAILED_MARKER  Written when settings fail to render,
 #                          removed on success (default
 #                          /etc/herobids/autoscale-settings.failed).
@@ -111,6 +119,13 @@ die() { echo "${LOG_PREFIX} ERROR: $*" >&2; exit 1; }
 ENABLE_SCALE_IN_VALUE="${ENABLE_SCALE_IN_VALUE:-}"
 [[ -z "${ENABLE_SCALE_IN_VALUE}" || "${ENABLE_SCALE_IN_VALUE}" == "true" || "${ENABLE_SCALE_IN_VALUE}" == "false" ]] \
   || die "ENABLE_SCALE_IN_VALUE '${ENABLE_SCALE_IN_VALUE}' must be true or false."
+# Optional: empty means the scale-in timer schedule is not managed on this run.
+# A crontab-style UTC hour (0-23), the same shape as the scale_in_time_utc Terraform var.
+SCALE_IN_TIME_UTC="${SCALE_IN_TIME_UTC:-}"
+if [[ -n "${SCALE_IN_TIME_UTC}" ]]; then
+  [[ "${SCALE_IN_TIME_UTC}" =~ ^([0-9]|1[0-9]|2[0-3])$ ]] \
+    || die "SCALE_IN_TIME_UTC '${SCALE_IN_TIME_UTC}' must be a UTC hour from 0 to 23."
+fi
 
 if [[ ! -f "${NOMAD_HCL}" ]]; then
   log "${NOMAD_HCL} not found (enable_nomad off?) — nothing to converge."
@@ -355,6 +370,38 @@ else
   warn "ENABLE_SCALE_IN_VALUE not set; the nomad-scale-in flag is not converged on this run."
 fi
 
+# ─── 3e. Nightly scale-in timer schedule (nomad-scale-in.timer only) ─────────
+# cloud-init bakes the OnCalendar schedule into the timer at first boot and
+# user_data is ignored after that (lesson 20). A control plane created from older
+# cloud-init — or one whose timer was stopped during an incident and never
+# restarted — can end up with the timer inactive, so list-timers shows no next
+# run and nightly scale-in never fires. This drop-in re-pins the schedule from the
+# Terraform scale_in_time_utc output and then ensures the timer is enabled AND
+# started, so the next nightly run is always scheduled.
+#
+# A timer drop-in's OnCalendar= is additive, so the base unit's schedule is cleared
+# with an empty OnCalendar= line before the new one, giving exactly one schedule.
+TIMER_STARTED=false
+if [[ -n "${SCALE_IN_TIME_UTC}" ]]; then
+  SCALE_IN_TIMER_UNIT="nomad-scale-in.timer"
+  SCALE_IN_TIMER_FILE="${SYSTEMD_DIR}/${SCALE_IN_TIMER_UNIT}"
+  if [[ -f "${SCALE_IN_TIMER_FILE}" ]]; then
+    rc=0
+    write_if_changed "${SYSTEMD_DIR}/${SCALE_IN_TIMER_UNIT}.d/17-scale-in-schedule.conf" \
+      "$(printf '%s\n' '[Timer]' 'OnCalendar=' "OnCalendar=*-*-* ${SCALE_IN_TIME_UTC}:00:00")" || rc=$?
+    case "${rc}" in
+      0) CHANGES+=("installed ${SCALE_IN_TIMER_UNIT} schedule drop-in (OnCalendar=*-*-* ${SCALE_IN_TIME_UTC}:00:00)"); AUTOSCALE_UNITS_CHANGED=true ;;
+      1) ;;
+      *) die "could not write the ${SCALE_IN_TIMER_UNIT} schedule drop-in; systemd was not reloaded." ;;
+    esac
+    TIMER_STARTED=true
+  else
+    warn "${SCALE_IN_TIMER_FILE} not found; the scale-in timer schedule is not converged on this run."
+  fi
+else
+  warn "SCALE_IN_TIME_UTC not set; the nomad-scale-in.timer schedule is not converged on this run."
+fi
+
 # ─── 3d. Durable demand-aware autoscale settings ────────────────────────────
 # Same renderer and input format as cloud-init first boot, so a converged host
 # and a freshly booted one resolve identical settings. The settings take effect
@@ -431,6 +478,29 @@ if [[ "${NOMAD_UNIT_CHANGED}" == "true" || "${PRIVATE_IP_UNIT_CHANGED}" == "true
 fi
 systemctl is-enabled --quiet "${PRIVATE_IP_UNIT_NAME}" \
   || systemctl enable --quiet "${PRIVATE_IP_UNIT_NAME}"
+
+# The nightly scale-in timer must be enabled AND active, or list-timers shows no next
+# run (the staging symptom: a valid OnCalendar but an inactive timer). This runs on
+# every converge, even when the drop-in was unchanged, so a stopped timer is restarted.
+# Done after daemon-reload so the new OnCalendar is loaded before the timer starts.
+if [[ "${TIMER_STARTED}" == "true" ]]; then
+  if ! systemctl is-enabled --quiet "${SCALE_IN_TIMER_UNIT}"; then
+    systemctl enable --quiet "${SCALE_IN_TIMER_UNIT}" || warn "could not enable ${SCALE_IN_TIMER_UNIT}."
+    CHANGES+=("enabled ${SCALE_IN_TIMER_UNIT}")
+  fi
+  if ! systemctl is-active --quiet "${SCALE_IN_TIMER_UNIT}"; then
+    if systemctl start "${SCALE_IN_TIMER_UNIT}"; then
+      CHANGES+=("started ${SCALE_IN_TIMER_UNIT}")
+    else
+      warn "could not start ${SCALE_IN_TIMER_UNIT}; the next nightly scale-in may not be scheduled."
+    fi
+  elif [[ "${AUTOSCALE_UNITS_CHANGED}" == "true" ]]; then
+    # An active timer keeps its old OnCalendar until restarted; restart so the new
+    # schedule takes effect. restart on a timer does not trigger the service.
+    systemctl restart "${SCALE_IN_TIMER_UNIT}" \
+      || warn "could not restart ${SCALE_IN_TIMER_UNIT} to apply the new schedule."
+  fi
+fi
 
 # Only `start` (never `restart`): with nomad.service Requires= this unit, a
 # restart would propagate to Nomad. nomad.hcl is already patched, so the
