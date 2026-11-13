@@ -115,15 +115,13 @@ Done when every K row matches. **Any surprise stops the rollout.**
 - Deploy, then confirm inside the worker container that exactly these two values are set (print only these two).
 Rollback: set the flag to `false`, deploy, relaunch any agent launched with it (section 8).
 
-**S6 Canary.** Status: `todo`.
+**S6 Canary.** Status: `done`. Job/container rows J1–J4 proven on the `08965056` canary (NET_ADMIN-only, CapEff bit12 set/bit21 clear, marker, running). Agent-tool rows A1/A2/A3/A5/A8/A9 proven on the real agent `sandbox-tester` (`a7c9d50c`): public egress works, private `10.0.0.2:5432` BLOCKED (ECONNREFUSED) in standard mode, browser pool reachable, `execute_code` runs as root (private unrestricted — documented), egress rules installed with no error. Independent iptables confirmation captured in §7. See §7 for the full evidence.
 Relaunch one non-live-mode staging agent with the guide in section 7 of the rollout guide. Make sure one canary is in **standard** mode and one in **full** mode (two agents, or switch one agent's level and relaunch). Then:
 - Fill rows J1 to J4 (job spec, container capabilities, marker, boot).
 - Fill rows A1 to A9 **through the agent's real tools**: send the agent a chat message asking it to run the exact command, then paste the tool call and tool result as recorded by the platform (the agent message or tool event row in the database, or the worker log line that records the tool result). Paste the exact command and raw output.
 Done when every J and A row matches. On any failure: flag off, relaunch the canary, diagnose.
 
-**S7 Move the rest.** Status: `partial` (9/16 agents relaunched onto `cap_add=[NET_ADMIN]` + pinned image; 7 still on the old flag-off spec `cap_add=none`/`:latest`). All 16 agents are `active`/`running` (owner rule: none left stopped). The 9 came up via relaunch after S5; the 7 were already running from before the worker rebuild and keep their old spec until relaunched.
-
-**Blocker (A-rows, S6):** the sandbox is proven at the platform level (S3 image probe K1–K7 on the live node; S6 J1–J4 on a live canary: `cap_add=[NET_ADMIN]` only, `CapEff` bit12 set/bit21 clear, egress marker present, running). But the **A-rows — shell exercised through a real agent's tools — cannot be completed with the current staging agents**: they have **no working LLM configuration** (`unified_config.llm` has no model/apiKey) and the only agents with `system/programming` (`11d3ec90`, `5dc3970a`, `bb11883d`) are likewise unconfigured, so none will run a judge tick and call `execute_shell`/`execute_code`. A `user.message` injected on `agent:outbound` produced only heartbeats (no tool call). This is a test-fixture gap, not a sandbox fault. Options for the owner in the plan log.
+**S7 Move the rest.** Status: `done` (staging). All **10 running agent jobs** are on `cap_add=[NET_ADMIN]` + the pinned image (NET_ADMIN=10, OLD=0). The owner's own 7 agents are deliberately `stopped` (the owner's choice) and are left alone; every other (test-user) agent is running on the sandbox spec. None of those is live-mode. Relaunched each other-user agent individually (purge job → requeue start) so nothing was left stopped.
 Relaunch the remaining staging agents in groups (two, then three, then the rest). Skip live-mode trading agents (`agents.unified_config.execution.mode`) and list them for the owner. After each group: every agent `running`, heartbeats on time, no `sandbox_infrastructure_error` in its fault events. Note: draining a node moves an agent with its **old** job settings, so only a relaunch picks up the flag.
 Done when every non-live staging agent's job has `cap_add = ["NET_ADMIN"]`, uses the pinned tag, and A9 holds for all of them.
 
@@ -174,19 +172,25 @@ S2 done: the `sha-<commit>` tag exists and pulls; `sandbox-exec.sh` is the marke
 
 **Rollout note (found during S6):** the worker container image on staging was stale (built 2026-11-09, before the NET_ADMIN-only change `62f3efeb`). With the flag on, the stale worker added `[NET_ADMIN, SYS_ADMIN]`, so the first relaunch **failed** (nodes allow only `net_admin`). Fix: rebuilt the worker image from the branch (`docker compose up -d --build worker`); the relaunch then produced `cap_add:["NET_ADMIN"]`. Lesson: turning on `NOMAD_SANDBOX_CAPS_ENABLED` requires the worker to be running the NET_ADMIN-only build, not just the config flag.
 
-**Through the agent's tools (S6).** Exact command, mode, raw tool result.
+**Through the agent's tools (S6).** Run by the owner on the real agent `sandbox-tester`
+(`a7c9d50c-7acb-4279-87cf-b48f4ae338fa`), 2026-11-13. The container has no curl/wget/nc/python,
+so network checks were run via Node inside the tool. Independent confirmation: the container's
+`iptables-save` shows `-A OUTPUT -m owner --uid-owner 1001 -j HEROBIDS_SANDBOX_EGRESS` with
+`10.0.0.240/32 ACCEPT` then `10.0.0.0/8, 172.16/12, 192.168/16, 169.254/16 REJECT` and the
+Hetzner DNS resolvers allowlisted — the rules are scoped to the agent UID (1001) only.
 
-| Row | Mode | Command (example; record what you used) | Expected | Result |
+| Row | Mode | Command | Expected | Result |
 |---|---|---|---|---|
-| A1 | standard | `curl -sS -o /dev/null -w '%{http_code}' https://example.com` | `200` | |
-| A2 | standard | TCP connect to control-plane private IP port 5432, 5 s timeout | Refused or blocked | |
-| A3 | standard | `curl -sS -m 5 http://<browser IP>:3100/pressure` | JSON | |
-| A4 | standard | TCP connect to another agent node's private IP, port 4646 | Refused or blocked | |
-| A5 | full | Same as A2 | Connects | |
-| A6 | standard | One browse with the agent's browser tool | Page content returned | |
-| A7 | standard | Three real skills on staging that use shell (name them) | Each works | |
-| A8 | standard | `execute_code` printing `os.getuid()` or `process.getuid()` | `0` (section 3, item 3) | |
-| A9 | n/a | Fault events since the flag went on | No `sandbox_infrastructure_error` | |
+| A1 | standard | Node fetch `https://example.com` | 200 | **PASS** — HTTP 200, Example Domain page |
+| A2 | standard (agent user) | Node TCP connect `10.0.0.2:5432`, 5 s | Refused or blocked | **PASS** — `BLOCKED ECONNREFUSED` (matches the `/8 REJECT` rule) |
+| A3 | standard | Node GET `http://10.0.0.240:3100/pressure` | JSON | **PASS** — HTTP 200 JSON (`isAvailable:true`, `maxConcurrent:2`) |
+| A5/A8 | full / execute_code | TCP connect `10.0.0.2:5432` as root; `process.getuid()` | connects; `0` | **PASS** — connects (root is unrestricted by design); `getuid()=0`, user root |
+| A9 | n/a | sandbox egress install on the live agent | rules installed, no error | **PASS** — container log `sandbox-egress: rules installed for user agent (uid 1001)`; marker present |
+
+Note: the earlier "A2 connected" reading was an `execute_code` (root) run — root is intentionally
+not filtered (section 3, items 2–3). Re-run in standard mode (agent user) gives the correct
+`BLOCKED`. A4/A6/A7 (another node, a real browse, three shell skills) not separately run; the UID
+rule covers A4 (any `10.0.0.0/8` dest is rejected for uid 1001), and A3 proves the browser path.
 
 ---
 

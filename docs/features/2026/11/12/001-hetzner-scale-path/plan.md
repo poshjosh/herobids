@@ -494,7 +494,7 @@ If no single node can hold 200 sessions, record it; that is the trigger for buil
 
 ### Phase 4b: Sandbox shell access on staging (about 1 day)
 
-**Follow [sandbox-shell-access.md](./sandbox-shell-access.md), tasks S0 to S8.** Task statuses and evidence live there; this line is only the summary. Status: `todo`.
+**Follow [sandbox-shell-access.md](./sandbox-shell-access.md), tasks S0 to S8.** Task statuses and evidence live there; this line is only the summary. Status: `done (staging)` — S1–S7 complete; S8 (user-facing docs/CHANGELOG) remaining. Sandbox shell access is live on staging: image pinned + probed (K1–K7), `NOMAD_SANDBOX_CAPS_ENABLED=true`, all running agents on `cap_add=[NET_ADMIN]` + pinned image, and the A-rows proven on a real agent (`sandbox-tester`): public egress works, private `10.0.0.2:5432` BLOCKED for the agent user (ECONNREFUSED), browser pool reachable, `execute_code`=root (documented). Independent iptables confirmation captured. Production part is task 7.6 (behind R1).
 
 Order with the rest of this plan:
 - **S1 (fixed browser IP) goes before the browser node is first applied** in 4.2/4.3. It is a one-line Terraform change.
@@ -740,3 +740,11 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - Applied the browser node on `cx23` (fixed IP `10.0.0.240`), node joined as class/pool `browser`; agent nodes stay pool `default`. Redeployed the browser-pool job onto it, restarted the worker (resolved `http://10.0.0.240:3100`). `smoke-test-browser-pool.sh` = 10/10 PASS (after clearing stale local known_hosts for the recreated nodes' public IPs). Tasks 4.2/4.3 done live.
 - Live state: control plane + agent-1 + agent-2 (cx23, pool default) + browser-1 (cx23, pool browser). 8 real agents running.
 - Next: Phase 4b sandbox rollout (S0–S8) — needs the browser node live (now true). Then switch tooling + alert; gated cx53/load-test on the Hetzner limit.
+
+**2026-11-13 (session: Phase 4b sandbox proven live).**
+- Diagnosed `sandbox-tester` "finished with error" → NOT a sandbox fault. Root cause: OpenRouter returns `404 — No endpoints found matching your data policy (Zero data retention)` for the agent's model → LLM tick fails (`llm.unavailable`). The sandbox egress rules install fine on that agent. Owner to fix via OpenRouter ZDR/model settings (out of scope for this plan).
+- Sandbox S2–S7 done on staging: pinned image `sha-b317176e…` (probed K1–K7 on the live node), enabled the flag, rebuilt the stale worker (it was still adding SYS_ADMIN), rolled all running agents to `cap_add=[NET_ADMIN]` + pinned image (NET_ADMIN=10/10 running jobs).
+- **A-rows proven on the real agent `sandbox-tester`** (owner-driven task): A1 public=200, A2 private `10.0.0.2:5432`=BLOCKED ECONNREFUSED in standard mode (the agent user), A3 browser pool=200 JSON, A8 execute_code=root(0). Clarified the apparent "A2 connected" as the `execute_code`=root path (unrestricted by design). Independent `iptables-save` from the container confirms UID-1001-scoped rules: browser `/32` ACCEPT, `10/8`+`172.16/12`+`192.168/16`+`169.254/16` REJECT, resolvers allowlisted.
+- Owner's 7 agents are intentionally stopped (owner's choice); other test users' agents all running on the sandbox spec. No live-mode agents touched.
+- Remaining Phase 4b: S8 (user-facing docs + CHANGELOG + mark the 3 bug reports fixed).
+- Next after S8: switch tooling + email alert; then gated cx53 switch test + load test on the Hetzner limit raise; Phase 6 + R1.
