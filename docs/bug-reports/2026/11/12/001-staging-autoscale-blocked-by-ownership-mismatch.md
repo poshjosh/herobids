@@ -93,5 +93,26 @@ pool, as laid out in Phase 1 of the
 purge any Nomad node outside Terraform state (including the drifted `agent-3` node),
 then resume the autoscaler and confirm 10 consecutive clean runs.
 
-This report will be updated with the post-fix log evidence when task 1.8 completes on
-the live system.
+## Fixed (live, 2026-11-13)
+
+Phase 1 of the scale-path plan was executed on staging:
+- Rebuilt the main agent pool as one clean `herobids-staging-agent-1` (on `cx23`, per the
+  owner's node-type decision), removed the `agent_caps` pool (both servers destroyed via a
+  targeted Terraform plan), and purged the stale `down` Nomad nodes (the two caps nodes and
+  the drifted `agent-3`/`agent-2`).
+- Reconciled the benign `hcloud_firewall.agent[0]` attachment drift with
+  `terraform apply -refresh-only` (0 resource changes), which the scale-out allowlist requires.
+- Resumed `nomad-autoscale.timer`.
+
+Evidence after the fix:
+- A full untargeted `terraform plan` reports **No changes**.
+- The capacity guard reconciles cleanly: `[demand] Managed=1 active=1 … ready=1`, no
+  `ownership_mismatch`.
+- A real demand-driven scale-out succeeded: `[demand] === Scale-out successful: 1 -> 2 agent
+  nodes (backlog, headroom) ===`; `agent_node_count=2` written to `staging.tfvars`.
+- Steady state: two clean nodes `herobids-staging-agent-1`/`-2` (ready, eligible, names match
+  the Hetzner servers), all agent jobs `running`, 0 blocked evaluations.
+- The autoscale log shows consecutive clean ticks (no_demand/cooldown no-ops), no blockers.
+
+Root cause (the deferred `agent_caps` pool tripping the ownership check) is resolved by removing
+the caps pool. Status: **fixed**.

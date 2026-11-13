@@ -1,6 +1,6 @@
 # Sandbox Egress Rules by UID (Replaces Network Namespace)
 
-> **Tracked in the [autoscaling program](../../2026/11/11/001-autoscaling-program/README.md), milestone M2** (agent tier ready for scale: retiring the old nodes and moving the browser pool). Phase 4 of this plan depends on the browser-pool move in Plan 005 Phases 2 and 3.
+> **Superseded on 2026-11-13** by [sandbox-shell-access.md](../../2026/11/12/001-hetzner-scale-path/sandbox-shell-access.md), part of the Hetzner scale path plan. Do not follow this plan's phases. It stays as background for the design and its decisions.
 
 **Status:** Code written and unit-tested locally; not built into an image, not deployed
 **Estimated effort:** 2–3 days engineering, plus a staged rollout on staging
