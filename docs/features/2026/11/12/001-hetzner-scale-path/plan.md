@@ -618,23 +618,30 @@ Done when: the evidence says the largest N that passed, what limit stopped it (C
 
 ---
 
-## 6. Results (fill in)
+## 6. Results
+
+Staging runs on **`cx23`** (owner decision). `cx53` figures are the planning projection
+(price/spec table, 0.3); the cx53 node-template values are measured live when the switch
+runs (deferred — see 0.4 / Phase 5).
 
 | Measure | Value | Evidence |
 |---|---|---|
-| Usable memory and CPU per `cx53` node | | 1.5 |
-| Agents per node (free / pro) | | 1.5 |
-| Nodes for 10,000 free agents | | 1.5 |
-| Scale-out rate observed (nodes per hour) | | 5.3 |
-| Largest fake-agent count held, and what limited it | | 5.3 |
-| Postgres connections per agent, before and after fixes | | 3.1, 5.3 |
-| Redis clients per agent | | 3.1 |
-| Control-plane type needed for 10,000 agents | | 3.6 |
-| Browser sessions per node (by type), and nodes for 200 | | 4.4 |
-| Traderton: largest trading-agent count on one VM, and the limit | | 8.3 |
-| Cost per agent per month | | 9.1 |
-| Cost per browser session slot per month | | 9.1 |
-| Load-test spend | | 5.4 |
+| Usable memory/CPU per node (**cx23, live**) | 3819 MB / 4000 MHz (reserved 0) | 1.5 measured |
+| Usable memory/CPU per **cx53** | ~32 GB / 16 vCPU (projected; measure on switch) | 0.3 / deferred |
+| Agents per node, cx23 (free / pro) | ~14 / ~3 (memory-bound) | 1.5 measured |
+| Agents per node, cx53 (free / pro) | ~120 / ~30 (projected) | 0.3 / deferred |
+| Nodes for 10,000 free agents | ~715 on cx23 (over the 100/network cap) → **~85 on cx53** | 1.5 / 0.3 |
+| Scale-out rate observed | 1→2 and 2→3, each in one ~60 s tick + ~2 min node boot; no flapping | 1.8 / 2.4 live |
+| Scale-in observed | removes idle highest-index node after the 600 s grace; no re-create | 2.4 live |
+| Largest fake-agent count held, and the limit | **deferred** (Phase 5) | 5.3 |
+| Postgres connections per agent | pool capped `max: 2` (was 10); 13 `postgres.js` conns at 7 agents baseline | 3.1 / 3.3 live |
+| Redis clients per agent | 2; `maxclients` 10000, `nofile` 11000 | 3.1 / 3.4 live |
+| Control-plane type for 10,000 agents | **deferred** (needs 5.3) | 3.6 |
+| Browser sessions per node, and nodes for 200 | start `MAX_CONCURRENT_SESSIONS=2` on cx23; ceiling **deferred** | 4.4 |
+| Traderton: largest per-VM trading-agent count | **not started** (Phase 8) | 8.3 |
+| Cost per agent per month | cx23 ~EUR 0.47; cx53 ~EUR 0.29 (projected) | 0.3 / 9.1 |
+| Cost per browser session slot per month | deferred (needs 4.4) | 4.4 / 9.1 |
+| Load-test spend | EUR 0 (load test deferred) | 5.4 |
 
 ---
 
@@ -656,8 +663,8 @@ Before launch there is little traffic, so these are checked by hand weekly until
 
 | Gate | Status | Notes |
 |---|---|---|
-| R1 (staging done, before production) | not ready | **Code/config surface complete on `feat/hetzner-scale-path` (7 commits), all tests + lint + build green.** Still required before R1 can be `ready for review`: the gated live staging work — Phase 1 (rebuild the pool on `cx53`, remove the caps pool + drifted `agent-3`), 1.5 node-template measurement, 2.4/3.6 live proofs, 3.4 live confirm, the browser-node apply (4.2/4.3 deploy), and Phase 5 ramp (5.2–5.4). These need Terraform applies, server deletes, and the load test, which are owner-gated per §2.3. |
-| R2 (all done) | not ready | After R1 + production (Phase 7) + Traderton (Phase 8) + close-out (Phase 9). |
+| R1 (staging done, before production) | **ready for review (with 2 explicit deferrals)** | **Proven live on staging (all on `cx23`, owner decision):** Phase 1 — one clean agent pool, caps pool removed, `ownership_mismatch` fixed, full plan = No changes. Phase 2 — scale-out (1→2, 2→3) and demand-aware scale-in (3→2, idle-node removal after grace, no re-create) proven live; nightly timer scheduled+active. Phase 3 — agent Postgres pool capped (`max 2`); Redis `maxclients 10000` + `nofile 11000` live; Postgres `max_connections 100` (documented). Phase 4 — browser pool on its own `cx23` node, isolated pool, fixed IP `10.0.0.240`, smoke test 10/10. Phase 4b — sandbox shell access live (NET_ADMIN-only UID egress), A-rows proven on a real agent, docs/bug-reports/CHANGELOG done. Plus the cx23↔cx53 switch tooling+runbook and the switch email alert (live-fire tested). All shell suites + `pnpm lint`/`build` green; shellcheck clean. **Deferred to the owner (do NOT block R1 review, but note them): (1) the `cx53` switch test and (2) the Phase 5 load test** — both need the Hetzner shared-core limit raised (0.4) and the load test needs the EUR ~50 budget. Code for both is complete and tested; the control-plane resize (3.6) and the 10k/density/browser-ceiling numbers (6) come from those runs. |
+| R2 (all done) | not ready | After R1 + the two deferred staging runs (cx53 switch test, Phase 5) + production (Phase 7, incl. task 7.6 sandbox) + Traderton (Phase 8) + close-out (Phase 9). |
 
 ---
 
@@ -776,3 +783,8 @@ Append one short entry per session, newest at the bottom: date and time, what yo
 - **Deferred (owner): the cx53 switch test (task 19 / switch runbook) and the Phase 5 load test.** Reasons: Hetzner shared-core limit not yet raised (0.4), and no EUR ~50 budget today. All code is ready and tested; resume when the limit is raised and budget is available. Recorded the deferral in Phase 5, the switch runbook header, and 0.4.
 - **Owner todo (single source):** `docs/features/2026/11/12/001-hetzner-scale-path/plan.md` — task 0.4 (raise Hetzner limit to 150 servers / 150 IPv4 / ~1,500 vCPU), Phase 5 (load test), and `infra/hetzner/docs/runbooks/switch-node-type.md` (cx53 switch, run after the limit raise).
 - Next: Phase 6 write-up (results/triggers tables with everything measured so far; load-test rows marked deferred), then set R1 ready for review with the deferrals called out.
+
+**2026-11-13 (session: Phase 6 write-up, R1 ready for review).**
+- Filled §6 Results with everything measured on `cx23` (usable 3819 MB/4000 MHz; ~14 free / ~3 pro agents per node; scale-out/in evidence; Redis/Postgres limits; projected cx53 densities and ~EUR 0.47 (cx23)/~EUR 0.29 (cx53) per agent/month). Marked the load-test / cx53 / browser-ceiling / Traderton rows deferred or not-started.
+- Set **R1 = ready for review** with two explicit deferrals (cx53 switch test + Phase 5 load test — both gated on the Hetzner limit raise; the load test also on the EUR 50 budget). All code complete and tested; staging behaviour proven live for Phases 1–4b + switch tooling + alert.
+- Summary for the reviewer (Kiro) / owner is in this entry and §8. Next owner actions: raise the Hetzner limit (0.4), then run the cx53 switch (switch runbook) and Phase 5; production (Phase 7) waits on R1 passing.
