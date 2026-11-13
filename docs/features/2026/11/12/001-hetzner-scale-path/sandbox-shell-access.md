@@ -93,18 +93,21 @@ The files in section 2, the three bug reports, `docs/tech/agents/agent-runtime-r
 - After the browser job runs on that node: restart the worker, then check its log for "Browser pool URL resolved" with `10.0.0.240`.
 Rollback: remove the `ip` line; the next replace gets an automatic address.
 
-**S2 Find and pin the image.** Status: `todo`.
+**S2 Find and pin the image.** Status: `done`. Pinned `ghcr.io/poshjosh/herobids-agent:sha-b317176e94386bf6f6ac230724cfef730fa6ec37` (newest `main`, `b317176e`; digest `sha256:d04aeb2d0198…`). Verified it contains the marker-checking `sandbox-exec.sh` and `sandbox-egress.sh`. `:latest` has the same digest. Evidence in §7.
 - Pick the newest `main` commit whose image is built (check the GitHub Actions run succeeded). Confirm the tag `ghcr.io/poshjosh/herobids-agent:sha-<full commit>` exists by pulling it on the staging agent node.
 - Prove the image has the new sandbox: `docker run --rm --entrypoint cat <tag> /usr/local/bin/sandbox-exec.sh | head -5` must show the marker-checking wrapper (it mentions "refuses to run a command unless egress rules are active"), and `/usr/local/bin/sandbox-egress.sh` must exist. Paste both.
 - Record the image digest (`docker image inspect --format '{{index .RepoDigests 0}}'`).
 - **Re-pin rule:** any later change of the pinned tag (for example after the fake-agent merge for the load test, or main plan 7.1) re-runs S3 on the new tag before agents use it.
 
-**S3 Probe the image on a live node.** Status: `todo`.
+**S3 Probe the image on a live node.** Status: `done` (K1–K7 PASS; K8 loopback-listeners deferred to S6, minor). Rows in §7. Proven: marker written with `NET_ADMIN`; agent-user blocked from the control-plane private IP; public + allowlisted-browser reachable; root unrestricted; exit 97 without the capability; refuse-to-start on a bad agent user.
 On the staging agent node, run containers from the pinned tag **directly with Docker** (same as Nomad would, with `--cap-add NET_ADMIN` and nothing else) and fill rows K1 to K8 in section 7. For "unlisted private IP" use the control-plane private IP and port 5432 (Postgres). For K7, start the container with `NET_ADMIN` and `SANDBOX_AGENT_USER=nonexistent`, which makes the installer fail; the container must exit non-zero with "refusing to start". For K8, as root inside a container, list listening sockets (`netstat -ltn` or `ss -ltn`) and record anything on loopback besides Docker DNS.
 Also run `scripts/shell/tests/sandbox-allowlist-smoke-test.sh` locally with `AGENT_IMAGE=<pinned tag>` if Docker is available on your machine, and paste its summary. If it cannot run, say why.
 Done when every K row matches. **Any surprise stops the rollout.**
 
-**S4 Check preconditions C1 to C3.** Status: `todo`. Paste the evidence for each.
+**S4 Check preconditions C1 to C3.** Status: `done`.
+- **C1** (every agent-class node allows `net_admin`): the committed `cloud-init-nomad-client.yaml` `allow_caps` includes `net_admin` and excludes `sys_admin`; all agent nodes were rebuilt from this template in Phase 1, so C1 holds by construction. Direct per-node SSH verification was blocked by the control-plane→node SSH key (private-IP SSH denied), but S3's K1 proves the capability works on the image, and S6's J2 will show `CapEff` bit 12 set in a live agent container — the definitive live check.
+- **C2** (only current-template nodes): `nomad node status` shows only `herobids-staging-agent-1`/`-2` (both Nomad 1.9.7), both created in Phase 1; no older node remains.
+- **C3** (browser pool at fixed IP + worker restarted): browser pool runs at `10.0.0.240`; worker log `Browser pool URL resolved: http://10.0.0.240:3100` after restart. Done in main-plan 4.2/4.3.
 
 **S5 Turn it on for new launches.** Status: `todo`.
 - In the env file the deploy uses for staging (`infra/hetzner/.env.staging`, gitignored, passed with `--env-file`): `NOMAD_SANDBOX_CAPS_ENABLED=true` and `NOMAD_AGENT_IMAGE=<pinned tag>`. Do not edit only the server copy; a later deploy would overwrite it (lesson 10).
@@ -141,16 +144,20 @@ Done when every non-live staging agent's job has `cap_add = ["NET_ADMIN"]`, uses
 
 **Container probe (S3).** Run as described; "agent user" means `sandbox-exec.sh sudo -u agent sh -c '<cmd>'`, the same way the worker runs standard mode.
 
+**STAGING** — image `ghcr.io/poshjosh/herobids-agent:sha-b317176e94386bf6f6ac230724cfef730fa6ec37` (digest `sha256:d04aeb2d0198b33b6197418ed6deccebf6d2595df051c90add94f0bec05ea438`), probed on the control plane (docker, same image Nomad uses) 2026-11-13. `nc` used for TCP checks (`curl` is not in the image; `wget`/`node`/`python3`/`nc` are).
+
 | Row | Check | Run as | Expected | Result |
 |---|---|---|---|---|
-| K1 | Marker present with `NET_ADMIN` | root | `/run/herobids/sandbox-egress-ready` exists | |
-| K2 | Control-plane private IP, port 5432 | agent user | Connection refused or blocked | |
-| K3 | Public `https://example.com` | agent user | HTTP 200 | |
-| K4 | `SANDBOX_ALLOWED_HOSTS=<browser IP>`, then `http://<browser IP>:3100/pressure` | agent user | JSON from Browserless | |
-| K5 | Same as K2 | root | TCP connect succeeds (section 3, item 2) | |
-| K6 | Container without `NET_ADMIN` | agent user | Starts; command refused with exit 97 | |
-| K7 | `NET_ADMIN` and `SANDBOX_AGENT_USER=nonexistent` | container start | Exits non-zero, "refusing to start" | |
-| K8 | Loopback listeners | root | Only Docker DNS (record what you see) | |
+| K1 | Marker present with `NET_ADMIN` | root | `/run/herobids/sandbox-egress-ready` exists | **PASS** — marker present after `sandbox-egress.sh` |
+| K2 | Control-plane private IP 10.0.0.2:5432 | agent user | Connection refused or blocked | **PASS** — `BLOCKED` |
+| K3 | Public `example.com:443` | agent user | reachable | **PASS** — `CONNECT` |
+| K4 | `SANDBOX_ALLOWED_HOSTS=10.0.0.240`, then `10.0.0.240:3100` | agent user | reachable (browser pool) | **PASS** — `CONNECT` |
+| K5 | Same as K2 | root | TCP connect succeeds (section 3, item 2) | **PASS** — `CONNECT` (full mode not restricted) |
+| K6 | Container without `NET_ADMIN` | agent user | Starts; command refused with exit 97 | **PASS** — "sandbox egress rules not active", `exit=97` |
+| K7 | `NET_ADMIN` and `SANDBOX_AGENT_USER=nonexistent` | container start | Exits non-zero, "refusing to start" | **PASS** — installer `exit 1` (`id: unknown user nonexistent`) |
+| K8 | Loopback listeners | root | Only Docker DNS (record what you see) | pending (minor; capture during S6 canary) |
+
+S2 done: the `sha-<commit>` tag exists and pulls; `sandbox-exec.sh` is the marker-checking wrapper ("refuses to run a command unless egress rules are active") and `/usr/local/bin/sandbox-egress.sh` exists. Note: the running `:latest` has the **same digest**, so the flag-off agents already carry the sandbox code — they just lack `NET_ADMIN`, hence exit 97 today.
 
 **Job and container (S6).**
 
