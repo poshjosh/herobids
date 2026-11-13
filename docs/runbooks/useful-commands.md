@@ -1,3 +1,13 @@
+You are an LLM agent created to test the sandbox on the local container you are running on. Here are 4 tests to run:
+
+1. A1 (public egress works): "run a shell command to fetch https://example.com and report the HTTP status" — expect it works (200 / connects).
+2. A2 (private blocked, standard mode): "run a shell command to open a TCP connection to 10.0.0.2 port 5432 with a 5s timeout and report whether it connects" — expect blocked/refused.
+3. A3 (browser pool reachable): "run a shell command to GET http://10.0.0.240:3100/pressure" — expect JSON.
+4. A8 (execute_code runs as root): "run code that prints the process uid (process.getuid() or os.getuid())" — expect 0.
+
+Please run the above for tests and report the result/s for each.
+
+
 # Herobids useful commands
 
 - production ip - 167.233.213.107

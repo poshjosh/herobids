@@ -65,6 +65,7 @@ Rule: an R2 or R3 decision (see [06-decision-method.md](./06-decision-method.md)
 | L-11 | Redis runs with `maxmemory 512mb` and `allkeys-lru` and no data volume, so it may evict any key, including agent memory and reminders | `docker-compose.yaml:23-37` | State that must survive loss of a container is not safe in Redis today. Candidate invariant INV-N4 (owner decides) |
 | L-12 | The runtime billing meter runs inside the agent container; a stopped container stops metering | `apps/worker/src/agent.ts:951-966,2611,4615` | Any change to when containers run changes revenue (relevant to C-13) |
 | L-13 | Stopping an agent session also stops its Traderton trading actor and running bots | T-09 | Stopping trading agents (C-13) needs a Traderton-side decision (OD-13) |
+| L-14 | herobids and Traderton use the **same Hetzner project** today (owner, 2026-11-11). Their resources are told apart by labels: herobids servers carry `app=herobids`, Traderton's carry `app=traderton` | Owner; Traderton `infra/hetzner/main.tf:84,95,103`; herobids `capacity-inventory.sh:87` | Any shared autoscaling tool must select servers by those labels and never act on a server without the right `app` label. Project-level quotas and the account are shared. Whether the shared project is acceptable for legal separation (INV-L3) is the owner's call |
 
 ## Maintenance
 

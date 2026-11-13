@@ -137,6 +137,17 @@ A requester writes a brief that a stranger can decide from. The requester does t
 7. **No lean.** If you find yourself writing "obviously" or "the best option", delete it.
 8. **State the cost of delay,** so the agent can weigh "decide later".
 
+## 3a. Writing for the owner
+
+IDs (`OD-03`, `C-13`, `A-22`, `INV-O6`) are labels, not explanations. In chat and in anything the owner reads:
+
+1. Say it in plain words first; the ID may follow in brackets.
+2. Never use an ID without expanding it in the same message.
+3. Lead with the outcome. Each ask is complete on its own: what it is, why it matters, the exact question, your recommendation, and what happens under each answer.
+4. In documents, a reference to an ID carries a few words saying what it is.
+
+The same rules appear in the autoscaling program's conventions (section 11).
+
 ## 4. Definition of a good Decision Record
 
 Before returning, the agent checks that:

@@ -10,7 +10,7 @@ The autoscaler's safety logic (ownership guard, plan checks, state and alert iso
 
 Why this is first: staging autoscale-out is refused every minute today (`ownership_mismatch`, see [F1.1](./f1-1-tier-aware-guard/plan.md)), and every other tier (browser nodes, caps pool) hits the same guard.
 
-## Exit checks (proposed; frozen once the owner confirms the program, inbox I-001)
+## Exit checks (proposed; they freeze once the owner approves the program's location and organisation, owner-inbox item I-001)
 
 1. **Staging is unblocked.** With the caps servers present, the staging autoscale log shows no `ownership_mismatch` for 10 consecutive timer runs, and no server is created or destroyed outside the bounds (max 3 agent nodes).
 2. **Agent behaviour is byte-identical.** Golden outputs (reconcile snapshots, allowlist and plan-validate verdicts, resolved defaults) are unchanged for the agent profile. `tests/run-all.sh` and `check-nomad-capacity.test.sh` pass.
@@ -42,7 +42,7 @@ Why this is first: staging autoscale-out is refused every minute today (`ownersh
 | ID | Question | Status | Blocks |
 |---|---|---|---|
 | OD-15 | How should the guard treat the caps pool (`herobids-staging-agent-caps-N`)? | open; brief 003 to be written in F1.1 | F1.1 phase D |
-| OD-01 | Shared kit: scope, language, repository timing | open; homework done, two owner facts in inbox I-002 | F1.2, F1.3 |
+| OD-01 | Shared kit: scope, language, repository timing | open; homework done; two facts needed from the owner (owner-inbox item I-002: Hetzner project sharing, engineering capacity) | F1.2, F1.3 |
 
 ## Risks
 

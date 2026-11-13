@@ -126,3 +126,15 @@ A central risk document would duplicate these and drift (INV-P3). If a risk cros
 - When a plan supersedes an older document, add a pointer in the old one. Do not delete without the owner's approval.
 - State the commit and environment a fact was verified against. Facts about staging and production differ.
 - If you find a stale statement, fix it or flag it in the journal. Do not rely on it.
+
+## 11. Talking to the owner (chat and documents)
+
+IDs (`I-001`, `OD-15`, `F1.1`, `C-13`) are labels for finding things. They are not explanations. The owner reads a message once and must understand it without opening any file.
+
+1. **Say it in plain words first.** State what you need or what happened. The ID may follow in brackets, never replace the words.
+2. **Never use an ID you have not expanded in the same message.** If you write "I-001", the same message says what it is.
+3. **Lead with the outcome,** not the structure. What changed, what it means for the owner, what the owner must do.
+4. **Every ask is complete on its own:** what it is, why it matters, the exact question, your recommendation with the reason, and what happens under each answer.
+5. **In documents, every reference to an ID carries a few words saying what it is,** for example "owner-inbox item I-001 (approve the program's folder location)". A bare "see I-001" is a defect.
+6. **One topic per ask.** Do not bundle unrelated questions under one label.
+7. **Short.** A table only for comparisons. No internal jargon without a definition.

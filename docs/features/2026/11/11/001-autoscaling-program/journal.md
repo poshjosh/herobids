@@ -8,4 +8,4 @@ Done: created this program folder (entry point, milestones, conventions, inbox, 
 Decided: C-12 (no hibernation) and C-13 (stop over-limit agents) recorded earlier today; execution-approval list confirmed by the owner (every staging change needs approval, read-only does not). No new decisions
 Learned: staging autoscale-out is refused every minute with `ownership_mismatch`; the caps pool names (`-agent-caps-N`) do not match the guard's shape; start times on staging are median 6.4 s, p90 20.0 s, worst 333.5 s (A-22); the community Nomad Autoscaler Hetzner plugin provisions servers directly (outside Terraform); the control plane has no Node runtime
 Next action: F1.1 task A2 (capture golden outputs), then A3 (reproduce the block locally)
-Blocked on: nothing. Inbox I-001 (confirm this structure) and I-002 (two owner facts) are open and do not block F1.1 phases A to C
+Blocked on: nothing. Two owner items are open and do not block F1.1 phases A to C: I-001 (approve where the program lives and how it is organised) and I-002 (two facts: Hetzner project sharing and engineering capacity)

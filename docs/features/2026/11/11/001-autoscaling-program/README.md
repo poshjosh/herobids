@@ -1,5 +1,7 @@
 # Autoscaling Program: Entry Point
 
+> **Superseded on 2026-11-12** by [the Hetzner scale path plan](../../12/001-hetzner-scale-path/plan.md). Do not follow this folder's process. It stays as background reading until the owner approves deleting it.
+
 **Start here.** Hand this file to an agent and it can start or continue the work.
 **Created:** 2026-11-11. **Owner:** the project owner. **State lives in:** [milestones.md](./milestones.md), the active milestone folder, and [journal.md](./journal.md).
 
