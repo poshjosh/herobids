@@ -1,6 +1,6 @@
 # Bug Report: Durable tool results (loaded skills, docs, schemas) are silently deleted by stale tool-result truncation
 
-- **Status:** OPEN
+- **Status:** FIXED
 - **Severity:** High
 - **Date:** 2026-11-14
 - **Summary:** An agent assigned the external `job-search` skill did not follow it: it never created the skill's durable-state files (the search ledger `search/search-ledger.json`, the run-state file `search/run-state.json`, and the report-state file `reports/report-state.json`), and it ran a discovery batch (the skill's Step 3, Discover Opportunities) before establishing the persistent storage and schedules the skill requires first — Step 0 mandates verifying persistent storage and a configured scheduler as prerequisites, and the skill's Search Rotation / Continuity sections require the durable-state files and scheduled runs before continuous discovery. It also did not validate lead sites. The agent self-reported that the skill text "was cut off and some of it was unavailable" when it loaded the skill. The mechanism is the stale tool-result truncation in the structured tool loop: a `read_skill` result (15665 bytes, ~15.3 KB) is silently sliced to 500 chars once it is more than 3 turns old within the same tool loop, and the back half of the skill — where the ledger/run-state/report-state setup and the later Procedure Steps live — is thrown away. The truncation applies to every tool result equally and logs nothing, so run logs do not show it happened.
@@ -70,15 +70,13 @@ Tool messages are emitted in the same file with `toolName` and `addedAtTurn` alr
 
 ## Fix
 
-> OPEN — the code lands in a separate task. Planned approach:
+A message-level **pin** flag on tool messages now exempts durable tool results from stale-truncation:
 
-Add a message-level **pin** flag on tool messages so durable tool results are exempt from stale-truncation:
+1. Added an optional `pinned?: boolean` to the `tool` message variant of `LlmMessage` (`packages/llm/src/llm-provider.ts:63` — the `role: 'tool'` line), alongside the existing `addedAtTurn`.
+2. In the stale-truncation block (`structured-tool-loop.ts:84-93`), the loop skips any message with `pinned === true`.
+3. At the tool-message emit site (`structured-tool-loop.ts:173-180`), `pinned: true` is set when `toolCall.name` is one of the durable tools (listed in `DURABLE_TOOL_NAMES`).
 
-1. Add an optional `pinned?: boolean` to the `tool` message variant of `LlmMessage` (`packages/llm/src/llm-provider.ts:63` — the `role: 'tool'` line), alongside the existing `addedAtTurn`.
-2. In the stale-truncation block (`structured-tool-loop.ts:84-93`), skip any message with `pinned === true`.
-3. At the tool-message emit site (`structured-tool-loop.ts:173-180`), set `pinned: true` when `toolCall.name` is one of the durable tools.
-
-**The 6 durable tools to exempt** (verified registered tool names):
+**The 6 durable tools exempted** (verified registered tool names):
 
 | Tool | File | Why durable |
 |---|---|---|
@@ -93,15 +91,24 @@ Add a message-level **pin** flag on tool messages so durable tool results are ex
 
 ## Files Changed
 
-> OPEN — to be filled when the fix lands. Expected:
-
-- `packages/llm/src/llm-provider.ts` — add `pinned?: boolean` to the `tool` message variant.
-- `apps/worker/src/structured-tool-loop.ts` — skip pinned messages in the stale-truncation block; set `pinned` on emit for the 6 durable tools.
-- `CHANGELOG.md`
+- `packages/llm/src/llm-provider.ts` — added `pinned?: boolean` to the `tool` `LlmMessage` variant.
+- `apps/worker/src/structured-tool-loop.ts` — added `DURABLE_TOOL_NAMES`; the truncation block skips pinned messages; the emit site sets `pinned`.
+- `apps/worker/src/structured-tool-loop.test.ts` — added behavioural tests (pinned survives, non-pinned truncated) and a drift-guard test.
+- `CHANGELOG.md` — Unreleased/Fixed entry.
 
 ## Verification
 
-> To be completed when the fix lands (this report is OPEN). Will cover: a loaded large skill (`job-search`, 15665 bytes / ~15.3 KB) survives a long tool loop intact while a transient tool result in the same loop is still truncated; `pnpm lint`; and a re-run of the `job-searcher` agent confirming it creates the durable-state files (search ledger / run-state / report-state) and sets up the required persistent storage and schedules before running discovery.
+**Done:**
+
+- `pnpm lint` passes (`tsc --noEmit`, exit 0).
+- `vitest run src/structured-tool-loop.test.ts` → 14 tests pass, including:
+  - a ~15 KB pinned `read_skill` result survives a loop well past the retention window;
+  - a non-durable `list_positions` result in the same loop is still truncated to `maxStaleChars` + `'...[truncated]'`;
+  - a drift-guard test asserting every `DURABLE_TOOL_NAMES` entry is a known registered agent tool (`isKnownAgentToolName`).
+
+**Not done (follow-up):**
+
+- A live re-run of the `job-searcher` agent against the running stack — to confirm it now creates the durable-state files (search ledger / run-state / report-state) and sets up persistence/schedules before discovery — was **not** performed in this change. It requires the running local stack and is left as a follow-up verification.
 
 ## Outstanding Issues
 

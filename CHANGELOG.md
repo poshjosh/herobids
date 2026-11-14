@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Durable tool results (loaded skills, docs, schemas, full documents, full-text messages) are no longer silently truncated by the structured tool loop's stale-result truncation. A message-level `pinned` flag now exempts the 6 durable tools (`read_skill`, `load_skill`, `read_app_docs`, `get_schema`, `read_agent_document`, `get_message`) from truncation; previously a long `read_skill` body was sliced to ~500 chars once stale, so agents lost skill instructions mid-task. Status: FIXED. See docs/bug-reports/2026/11/14/002-durable-tool-results-deleted-by-stale-truncation.md
+
 ## v0.9.0 - 2026-11-14
 
 ### Removed
