@@ -20,6 +20,9 @@ const ICON_BUTTON_STYLE: CSSProperties = {
   transition: 'background 0.15s, color 0.15s',
 };
 
+export const PAUSE_TOOLTIP = 'Pauses AI activity. Costs greatly reduced. Restart is instant.';
+export const STOP_TOOLTIP = 'Pause + Clears temporary files. Costs go down to zero.';
+
 interface AgentQuickActionsProps {
   agentId: string;
   status: string;
@@ -95,7 +98,8 @@ export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
         <button
           type="button"
           style={ICON_BUTTON_STYLE}
-          title="Pause"
+          title={PAUSE_TOOLTIP}
+          aria-label="Pause"
           disabled={anyActionPending}
           onClick={(e) => handleAction(e, () => pauseMutation.mutate())}
         >
@@ -107,7 +111,8 @@ export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
         <button
           type="button"
           style={{ ...ICON_BUTTON_STYLE, color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
-          title="Stop"
+          title={STOP_TOOLTIP}
+          aria-label="Stop"
           disabled={anyActionPending}
           onClick={(e) => handleAction(e, () => stopMutation.mutate())}
         >

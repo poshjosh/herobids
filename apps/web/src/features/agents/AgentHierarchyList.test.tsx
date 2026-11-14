@@ -83,8 +83,8 @@ function childOf(status: Agent['status']): Agent {
   return makeAgent({ id: 'child-1', name: 'Child', status, parentAgentId: 'parent-1', depth: 1, creatorId: 'parent-1', creatorType: 'agent' });
 }
 
-const PAUSE_ICON = 'title="Pause"';
-const STOP_ICON = 'title="Stop"';
+const PAUSE_ICON = 'aria-label="Pause"';
+const STOP_ICON = 'aria-label="Stop"';
 
 describe('AgentHierarchyList child actions', () => {
   beforeEach(() => {
