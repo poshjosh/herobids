@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Rescaled the agent style ladder (`careful`/`balanced`/`bold`) up one notch so agents get more context/token headroom by default. The new `careful` uses the former `balanced` budgets, the new `balanced` (and the operator default) uses the former `bold` budgets, and the new `bold` doubles the former `bold` context/token budgets (clamped to `RUNTIME_POLICY_CEILINGS`; `deepThinkingTokens` clamps to 32768). Only context/budget fields moved — cost preset, tick interval, daily spend, escalation policy, reasoning level and hold duration carry through the shift unchanged.
+
+### Added
+
+- The structured tool loop now emits a `logger.info` ("Truncated stale tool result") at both the scout and judge loops whenever a stale tool result is truncated, with tool name, original/retained length and turn age. This surfaces the previously-silent truncation (bug 002) and gives per-tick visibility into context pressure (lessons-from-previous-project #9). Durable (pinned) tool results are exempt and never reported; each truncation is reported at most once.
+
 ### Fixed
 
 - Durable tool results (loaded skills, docs, schemas, full documents, full-text messages) are no longer silently truncated by the structured tool loop's stale-result truncation. A message-level `pinned` flag now exempts the 6 durable tools (`read_skill`, `load_skill`, `read_app_docs`, `get_schema`, `read_agent_document`, `get_message`) from truncation; previously a long `read_skill` body was sliced to ~500 chars once stale, so agents lost skill instructions mid-task. Status: FIXED. See docs/bug-reports/2026/11/14/002-durable-tool-results-deleted-by-stale-truncation.md
