@@ -1,15 +1,19 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { IntlProvider } from 'react-intl';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
-import { AgentQuickActions, PAUSE_TOOLTIP, STOP_TOOLTIP } from './AgentQuickActions.js';
+import { messages } from '../../app/i18n/locales/en.js';
+import { AgentQuickActions } from './AgentQuickActions.js';
 
 function renderActions(status: string): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter>
-        <AgentQuickActions agentId="agent-1" status={status} />
-      </MemoryRouter>
+      <IntlProvider locale="en" messages={messages}>
+        <MemoryRouter>
+          <AgentQuickActions agentId="agent-1" status={status} />
+        </MemoryRouter>
+      </IntlProvider>
     </QueryClientProvider>,
   );
 }
@@ -35,8 +39,8 @@ describe('AgentQuickActions', () => {
   it('explains the cost and restart effect of Pause and Stop in their tooltips', () => {
     const html = renderActions('active');
 
-    expect(html).toContain(`title="${PAUSE_TOOLTIP}"`);
-    expect(html).toContain(`title="${STOP_TOOLTIP}"`);
+    expect(html).toContain(`title="${messages['agents.detail.pauseTooltip']}"`);
+    expect(html).toContain(`title="${messages['agents.detail.stopTooltip']}"`);
   });
 
   it('offers Resume through the Start button for a paused agent', () => {

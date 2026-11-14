@@ -312,7 +312,7 @@ export function AgentDetails({ agentId }: { agentId: string }) {
               </Button>
             )}
             {agent.status === 'active' && (
-              <Button variant="secondary" onClick={() => pauseMutation.mutate()} disabled={pauseMutation.isPending}>
+              <Button variant="secondary" title={intl.formatMessage({ id: 'agents.detail.pauseTooltip' })} onClick={() => pauseMutation.mutate()} disabled={pauseMutation.isPending}>
                 {intl.formatMessage({ id: 'agents.detail.pause' })}
               </Button>
             )}
@@ -322,7 +322,7 @@ export function AgentDetails({ agentId }: { agentId: string }) {
               </Button>
             )}
             {canStop && (
-              <Button variant="danger" onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
+              <Button variant="danger" title={intl.formatMessage({ id: 'agents.detail.stopTooltip' })} onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
                 {stopMutation.isPending ? intl.formatMessage({ id: 'agents.detail.stopping' }) : intl.formatMessage({ id: 'agents.detail.stop' })}
               </Button>
             )}

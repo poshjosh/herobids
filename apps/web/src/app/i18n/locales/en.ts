@@ -495,6 +495,8 @@ export const messages: Record<string, string> = {
   'agents.detail.resume': 'Resume',
   'agents.detail.stopping': 'Stopping…',
   'agents.detail.stop': 'Stop',
+  'agents.detail.pauseTooltip': 'Pauses AI activity. Costs greatly reduced. Restart is instant.',
+  'agents.detail.stopTooltip': 'Pause + Clears temporary files. Costs go down to zero.',
   'agents.detail.deleting': 'Deleting…',
   'agents.delete.title': 'Delete AI agent',
   'agents.delete.scope.subtree': 'Delete this agent and all of its child agents',

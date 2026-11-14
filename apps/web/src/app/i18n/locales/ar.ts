@@ -464,6 +464,8 @@ export const messages: Record<string, string> = {
   'agents.detail.resume': 'استئناف',
   'agents.detail.stopping': 'جارٍ الإيقاف…',
   'agents.detail.stop': 'إيقاف',
+  'agents.detail.pauseTooltip': 'يوقف نشاط الذكاء الاصطناعي مؤقتًا. تنخفض التكاليف كثيرًا. إعادة التشغيل فورية.',
+  'agents.detail.stopTooltip': 'إيقاف مؤقت + مسح الملفات المؤقتة. تنخفض التكاليف إلى الصفر.',
   'agents.detail.deleting': 'جارٍ الحذف…',
   'agents.delete.title': 'حذف الوكيل',
   'agents.delete.scope.subtree': 'حذف هذا الوكيل وجميع الوكلاء الفرعيين التابعين له',

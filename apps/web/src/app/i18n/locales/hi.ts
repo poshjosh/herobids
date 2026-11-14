@@ -464,6 +464,8 @@ export const messages: Record<string, string> = {
   'agents.detail.resume': 'फिर शुरू करें',
   'agents.detail.stopping': 'रोक जा रहा है…',
   'agents.detail.stop': 'रोकें',
+  'agents.detail.pauseTooltip': 'AI गतिविधि को रोकता है। लागत बहुत कम हो जाती है। फिर से शुरू करना तुरंत होता है।',
+  'agents.detail.stopTooltip': 'रोकें + अस्थायी फ़ाइलें साफ़ करता है। लागत शून्य हो जाती है।',
   'agents.detail.deleting': 'हटाया जा रहा है…',
   'agents.delete.title': 'AI एजेंट हटाएँ',
   'agents.delete.scope.subtree': 'इस एजेंट और उसके सभी चाइल्ड एजेंट हटाएँ',

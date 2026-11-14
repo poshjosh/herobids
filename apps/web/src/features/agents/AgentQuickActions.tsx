@@ -1,4 +1,5 @@
 import type { CSSProperties, MouseEvent } from 'react';
+import { useIntl } from 'react-intl';
 import { useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi } from '../../lib/api-client.js';
@@ -20,9 +21,6 @@ const ICON_BUTTON_STYLE: CSSProperties = {
   transition: 'background 0.15s, color 0.15s',
 };
 
-export const PAUSE_TOOLTIP = 'Pauses AI activity. Costs greatly reduced. Restart is instant.';
-export const STOP_TOOLTIP = 'Pause + Clears temporary files. Costs go down to zero.';
-
 interface AgentQuickActionsProps {
   agentId: string;
   status: string;
@@ -30,6 +28,7 @@ interface AgentQuickActionsProps {
 
 /** Edit, start or resume, pause, and stop buttons for one agent. Used on agent rows and above the agent chat. */
 export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
+  const intl = useIntl();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -98,8 +97,8 @@ export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
         <button
           type="button"
           style={ICON_BUTTON_STYLE}
-          title={PAUSE_TOOLTIP}
-          aria-label="Pause"
+          title={intl.formatMessage({ id: 'agents.detail.pauseTooltip' })}
+          aria-label={intl.formatMessage({ id: 'agents.detail.pause' })}
           disabled={anyActionPending}
           onClick={(e) => handleAction(e, () => pauseMutation.mutate())}
         >
@@ -111,8 +110,8 @@ export function AgentQuickActions({ agentId, status }: AgentQuickActionsProps) {
         <button
           type="button"
           style={{ ...ICON_BUTTON_STYLE, color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
-          title={STOP_TOOLTIP}
-          aria-label="Stop"
+          title={intl.formatMessage({ id: 'agents.detail.stopTooltip' })}
+          aria-label={intl.formatMessage({ id: 'agents.detail.stop' })}
           disabled={anyActionPending}
           onClick={(e) => handleAction(e, () => stopMutation.mutate())}
         >

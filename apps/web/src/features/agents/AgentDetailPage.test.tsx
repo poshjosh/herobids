@@ -270,6 +270,15 @@ describe('AgentDetails section', () => {
   });
 });
 
+describe('AgentDetailPage lifecycle buttons', () => {
+  it('explains the cost effect of Pause and Stop in their tooltips', () => {
+    const html = renderDetail({ agentSkillIds: [], readinessFamilies: [], agent: { ...makeAgent([]), status: 'active' } });
+
+    expect(html).toContain(`title="${messages['agents.detail.pauseTooltip']}"`);
+    expect(html).toContain(`title="${messages['agents.detail.stopTooltip']}"`);
+  });
+});
+
 describe('AgentDetailPage startup progress', () => {
   function startingAgent(startupProgress: { phase: AgentStartupProgressPhase; deadline: string; reason: AgentStartupProgressReason } | null): Agent {
     return {
