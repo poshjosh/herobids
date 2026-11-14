@@ -229,23 +229,26 @@ describe('resolveStyleDefaults', () => {
   });
 
   describe('formatStyleSummary', () => {
-    it('produces a fallback summary for careful (no pricing)', () => {
+    it('returns just the style name (no cost clause) for careful without pricing', () => {
       const summary = formatStyleSummary('careful', 'Careful');
-      expect(summary).toContain('Careful, enforces a limit of $10/day');
+      expect(summary).toBe('Careful');
+      expect(summary).not.toContain('/day');
       expect(summary).not.toContain('turns');
     });
 
-    it('produces a fallback summary for balanced (no pricing)', () => {
+    it('returns just the style name (no cost clause) for balanced without pricing', () => {
       const summary = formatStyleSummary('balanced', 'Balanced');
-      expect(summary).toContain('Balanced, enforces a limit of $30/day');
+      expect(summary).toBe('Balanced');
+      expect(summary).not.toContain('/day');
     });
 
-    it('produces a fallback summary for bold (no pricing)', () => {
+    it('returns just the style name (no cost clause) for bold without pricing', () => {
       const summary = formatStyleSummary('bold', 'Bold');
-      expect(summary).toContain('Bold, enforces a limit of $30/day');
+      expect(summary).toBe('Bold');
+      expect(summary).not.toContain('/day');
     });
 
-    it('computes estimated cost when full pricing is provided', () => {
+    it('computes an estimated cost (not an enforced limit) when full pricing is provided', () => {
       // economy input=$0.08, output=$0.15; premium input=$1.00, output=$2.00 (per 1M tokens)
       const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0.08,
@@ -253,7 +256,8 @@ describe('resolveStyleDefaults', () => {
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toMatch(/Careful, enforces a limit of \$[\d.]+\/day/);
+      expect(summary).toMatch(/^Careful, ~\$[\d.]+\/day estimated$/);
+      expect(summary).not.toContain('enforces a limit');
       expect(summary).not.toContain('turns');
     });
 
@@ -268,8 +272,8 @@ describe('resolveStyleDefaults', () => {
       const boldSummary = formatStyleSummary('bold', 'Bold', pricing);
       const carefulSummary = formatStyleSummary('careful', 'Careful', pricing);
       // Bold should cost more than careful
-      const boldCost = Number(boldSummary.match(/\$([\d.]+)\/day/)![1]);
-      const carefulCost = Number(carefulSummary.match(/\$([\d.]+)\/day/)![1]);
+      const boldCost = Number(boldSummary.match(/~\$([\d.]+)\/day/)![1]);
+      const carefulCost = Number(carefulSummary.match(/~\$([\d.]+)\/day/)![1]);
       expect(boldCost).toBeGreaterThan(carefulCost);
     });
 
@@ -281,52 +285,52 @@ describe('resolveStyleDefaults', () => {
         premiumOutputUsdPer1M: 2.00,
       }, 900_000);
       // 15-min cadence (96 ticks/day) yields a different cost than default 10-min (144 ticks/day)
-      expect(summary).toMatch(/Balanced, enforces a limit of \$[\d.]+\/day/);
+      expect(summary).toMatch(/^Balanced, ~\$[\d.]+\/day estimated$/);
     });
 
     it('handles non-whole-minute cadence override without pricing without crashing', () => {
       const summary = formatStyleSummary('balanced', 'Balanced', undefined, 90_000);
-      expect(summary).toContain('Balanced, enforces a limit of $30/day');
+      expect(summary).toBe('Balanced');
     });
 
-    it('falls back when economy input price is 0', () => {
+    it('falls back to the bare style name when economy input price is 0', () => {
       const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0,
         economyOutputUsdPer1M: 0.15,
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('Careful, enforces a limit of $10/day');
+      expect(summary).toBe('Careful');
     });
 
-    it('falls back when economy output price is 0', () => {
+    it('falls back to the bare style name when economy output price is 0', () => {
       const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0,
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('Careful, enforces a limit of $10/day');
+      expect(summary).toBe('Careful');
     });
 
-    it('falls back when premium input price is 0', () => {
+    it('falls back to the bare style name when premium input price is 0', () => {
       const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
         premiumInputUsdPer1M: 0,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('Careful, enforces a limit of $10/day');
+      expect(summary).toBe('Careful');
     });
 
-    it('falls back when premium output price is 0', () => {
+    it('falls back to the bare style name when premium output price is 0', () => {
       const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 0,
       });
-      expect(summary).toContain('Careful, enforces a limit of $10/day');
+      expect(summary).toBe('Careful');
     });
   });
 

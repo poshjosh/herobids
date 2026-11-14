@@ -217,11 +217,12 @@ const STYLE_ESCALATION_RATES: Record<AgentStyleValue, number> = {
  * When full `pricing` (input + output for both models) is provided, the cost is
  * computed from real-data per-tick token estimates × model pricing × escalation rate.
  * Both input and output token costs are included — input tokens are 10–25× larger
- * than output tokens and dominate the estimate. The result is prefixed with "~" to
- * indicate it is an estimate.
+ * than output tokens and dominate the estimate. The result is an estimate, not an
+ * enforced cap, and is worded as such ("~$X.XX/day estimated").
  *
- * When `pricing` is omitted or incomplete, falls back to the hardcoded
- * dailySpendBudgetUsd from the style config (the user's budget target, not a cost estimate).
+ * When `pricing` is omitted or incomplete, returns just the style name with no cost
+ * clause. dailySpendBudgetUsd is a user budget target, not an enforced cap, so showing
+ * it as a "$X/day" limit would be misleading; we omit the clause rather than invent a number.
  */
 export function formatStyleSummary(
   style: AgentStyleValue,
@@ -229,7 +230,6 @@ export function formatStyleSummary(
   pricing?: ModelPricingInfo,
   tickIntervalMsOverride?: number | null,
 ): string {
-  const d = resolveStyleDefaults(style);
   const effectiveTickIntervalMs = resolveStyleTickIntervalMs(style, tickIntervalMsOverride);
 
   // Compute estimated daily cost if we have full model pricing (input + output for both models)
@@ -251,9 +251,10 @@ export function formatStyleSummary(
     const costPerTick = scoutCost + judgeCost;
     const dailyCost = costPerTick * ticksPerDay;
 
-    return `${styleName}, enforces a limit of $${dailyCost.toFixed(2)}/day`;
+    return `${styleName}, ~$${dailyCost.toFixed(2)}/day estimated`;
   }
 
-  // Fallback: show budget target
-  return `${styleName}, enforces a limit of $${d.dailySpendBudgetUsd}/day`;
+  // Fallback: no pricing available. Omit the cost clause entirely rather than
+  // present dailySpendBudgetUsd as an enforced "$X/day" limit (it is not).
+  return styleName;
 }
