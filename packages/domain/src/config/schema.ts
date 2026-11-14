@@ -311,7 +311,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
   careful: {
     costPreset: 'standard',
     tickIntervalMins: '30',
-    dailySpendBudgetUsd: '10',
+    dailySpendBudgetUsd: '1',
     openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
     scoutMaxTurns: 499,
     judgeMaxTurns: 9_999,
@@ -341,7 +341,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
   balanced: {
     costPreset: 'premium',
     tickIntervalMins: '10',
-    dailySpendBudgetUsd: '30',
+    dailySpendBudgetUsd: '5',
     openPositionEscalationToJudgePolicy: 'always',
     scoutMaxTurns: 499,
     judgeMaxTurns: 9_999,

@@ -32,7 +32,7 @@ Three styles define the baseline. All numeric values are backed by
 |-------|:-------:|:--------:|:----:|
 | **Cost preset** | standard | premium | premium |
 | **Tick interval** | 30 min | 10 min | 10 min |
-| **Daily spend budget** | $10 | $30 | $30 |
+| **Daily spend budget** | $1 | $5 | $30 |
 | **Escalation policy** | uncovered_or_triggered | always | always |
 | `scoutMaxTurns` | 499 | 499 | 499 |
 | `judgeMaxTurns` | 9 999 | 9 999 | 9 999 |

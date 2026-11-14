@@ -11,7 +11,7 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
 | **Default cost preset** | Minimal | Standard | Premium |
-| **Daily spend budget (default)** | $3 | $10 | $30 |
+| **Daily spend budget (default)** | $1 | $5 | $30 |
 | **Tick interval** | 90 min | 30 min | 10 min |
 | **Open position escalation** | Never | On missing coverage | Always |
 

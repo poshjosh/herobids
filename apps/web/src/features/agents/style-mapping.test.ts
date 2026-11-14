@@ -22,7 +22,7 @@ describe('resolveStyleDefaults', () => {
     const config = resolveStyleDefaults('careful');
     expect(config.costPreset).toBe('standard');
     expect(config.tickIntervalMins).toBe('30');
-    expect(config.dailySpendBudgetUsd).toBe('10');
+    expect(config.dailySpendBudgetUsd).toBe('1');
     expect(config.scoutMaxTurns).toBe(499);
     expect(config.judgeMaxTurns).toBe(9_999);
     expect(config.maxHistoryTokens).toBe(40_000);
@@ -34,7 +34,7 @@ describe('resolveStyleDefaults', () => {
     const config = resolveStyleDefaults('balanced');
     expect(config.costPreset).toBe('premium');
     expect(config.tickIntervalMins).toBe('10');
-    expect(config.dailySpendBudgetUsd).toBe('30');
+    expect(config.dailySpendBudgetUsd).toBe('5');
     expect(config.scoutMaxTurns).toBe(499);
     expect(config.judgeMaxTurns).toBe(9_999);
     expect(config.maxHistoryTokens).toBe(80_000);

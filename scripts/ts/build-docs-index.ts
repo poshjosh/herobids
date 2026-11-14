@@ -322,7 +322,7 @@ Risk styles determine default agent behavior. The user picks a style; the platfo
 Careful:
   - costPreset: standard
   - tickInterval: 30 minutes
-  - dailySpendBudget: $10/day
+  - dailySpendBudget: $1/day
   - openPositionEscalationToJudgePolicy: uncovered_or_triggered
   - scoutMaxTurns: 499, judgeMaxTurns: 9,999
   - scoutMaxTokens: 1,024, judgeMaxTokens: 4,096
@@ -333,7 +333,7 @@ Careful:
 Balanced:
   - costPreset: premium
   - tickInterval: 10 minutes
-  - dailySpendBudget: $30/day
+  - dailySpendBudget: $5/day
   - openPositionEscalationToJudgePolicy: always
   - scoutMaxTurns: 499, judgeMaxTurns: 9,999
   - scoutMaxTokens: 2,048, judgeMaxTokens: 8,192
