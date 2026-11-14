@@ -475,7 +475,7 @@ The platform charges based on usage:
 
 LLM costs:
 - Charged per token (input + output) at the provider's rate
-- Controlled by costPreset (minimal/standard/premium) and dailySpendBudgetUsd
+- Influenced by costPreset (minimal/standard/premium), which selects models; dailySpendBudgetUsd is a spend hint, not a cost control
 - Cost tracking is per-agent, visible in real-time
 
 Runtime costs:
@@ -483,7 +483,7 @@ Runtime costs:
 - Charged only while the agent is in "running" state
 
 Billing controls:
-- dailySpendBudgetUsd: Hard cap on daily LLM spend per agent
+- dailySpendBudgetUsd: A spend HINT/target, NOT a hard cap. It influences custom-preset tick cadence and the displayed cost estimate; it does not cap or pause spend. The hard cap is the account/plan spend-cap system.
 - costPreset: Controls which models are used (economy vs premium)
   - minimal: Uses cheapest available models
   - standard: Uses balanced cost/performance models
@@ -491,7 +491,7 @@ Billing controls:
 - maxBots: Limits concurrent bot count (runtime cost multiplier)
 
 Protective exits:
-- If dailySpendBudgetUsd is exhausted, the agent pauses automatically
+- When the account's plan-level spend cap (soft/hard) is reached, the agent pauses/stops on the next tick — enforced by the spend-cap system (canSpendNow), not dailySpendBudgetUsd
 - If dailyLossLimit is breached, trading is suspended
 - If maxDrawdownPct is exceeded, all positions are closed
 

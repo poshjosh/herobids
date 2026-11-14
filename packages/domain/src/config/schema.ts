@@ -303,6 +303,15 @@ export interface ResolvedAgentRuntimePolicy {
 export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgentRuntimePolicy & {
   costPreset: 'minimal' | 'standard' | 'premium';
   tickIntervalMins: string;
+  /**
+   * Spend HINT/target — NOT an enforced cap. Its only runtime effect is in
+   * `resolveAgentCostProfile` (cost-profile.ts): for the `custom` cost preset it
+   * seeds the tick cadence (deriveCustomTickIntervalMs) when no explicit
+   * tickIntervalMs is set. It also feeds the displayed cost estimate. It never
+   * caps or pauses spend. Real spend enforcement is the plan-level spend-cap
+   * system (usageBillingService.canSpendNow, soft/hard caps — ADR-006), which is
+   * what actually pauses/stops the agent.
+   */
   dailySpendBudgetUsd: string;
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   maxHoldDurationMs: number;

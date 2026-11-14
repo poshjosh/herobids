@@ -337,6 +337,7 @@ const CreateAgentSchema = z.object({
   lightModel: z.string().min(1).max(200).optional(),
   heavyModel: z.string().min(1).max(200).optional(),
   costPreset: CostPresetSchema.optional(),
+  // Spend HINT/target, not an enforced cap. See AGENT_STYLE_RUNTIME_DEFAULTS JSDoc in @herobids/domain config/schema.ts.
   dailySpendBudgetUsd: z.number().positive().optional(),
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).optional(),
   chatAddresses: ChatAddressesInputSchema.optional(),

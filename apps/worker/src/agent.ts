@@ -280,6 +280,7 @@ interface AgentConfig {
   lightModel?: string;
   heavyModel?: string;
   costPreset?: CostPreset;
+  /** Spend HINT/target, not an enforced cap. See AGENT_STYLE_RUNTIME_DEFAULTS JSDoc in @herobids/domain config/schema.ts. */
   dailySpendBudgetUsd?: number;
   dexWatchlistSymbols?: string[];
   /** @deprecated Use risk.dailyMaxLossPct (percent of equity) instead. USD-denominated loss limit. */
