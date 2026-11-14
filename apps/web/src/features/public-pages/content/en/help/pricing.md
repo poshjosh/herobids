@@ -49,16 +49,18 @@ Learn [how OpenAIdom keeps agent costs low](/docs/agents/how-agent-costs-are-kep
 
 ## Cost limits
 
-You can limit how much your agent spends per day on LLM. If you do not set a limit, the default limit depends on your agent's **style**:
+Your agent's **style** sets a default daily spend target that shapes how often it wakes up and how deeply it reasons. If you do not override it, the default depends on the style:
 
-| Style | Default daily limit | Tick interval | What it means |
+| Style | Default daily spend target | Tick interval | What it means |
 |---|---|---|---|
-| **Economy** | $3 | 90 min | Lowest cost. lower reasoning |
-| **Standard** | $10 | 30 min | Moderate cost. Moderate speed and reasoning |
-| **Premium** | $30 | 10 min | Highest cost. Fastest, deepest reasoning.  |
-| **Custom** | You set it | Derived from budget | Full control over your daily spend. |
+| **Careful** | $1 | 30 min | Lowest cost. Lower reasoning, longer gaps between ticks. |
+| **Balanced** | $5 | 10 min | Moderate cost. Moderate speed and reasoning. |
+| **Bold** | $30 | 10 min | Highest cost. Fastest, deepest reasoning. |
+| **Custom** | You set it | Derived from your settings | Full control over your daily spend target. |
 
-Your agent will typically use less than its daily limit/budget and will never exceed it. 
+The per-style value is a **spend target**, not a hard cap — it influences cadence and cost estimates, but it does not stop your agent once reached. Your agent will typically spend less than its target, though it can exceed it.
+
+To put a real ceiling on spending, use the account **spending caps** (soft and hard limits) described in [agent billing limits](/docs/agents/billing-limits). Those caps are what actually stop an agent when a limit is reached. 
 
 ## Related
 

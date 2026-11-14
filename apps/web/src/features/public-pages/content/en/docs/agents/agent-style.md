@@ -10,33 +10,37 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Default cost preset** | Minimal | Standard | Premium |
+| **Default cost preset** | Standard | Premium | Premium |
 | **Daily spend budget (default)** | $1 | $5 | $30 |
-| **Tick interval** | 90 min | 30 min | 10 min |
-| **Open position escalation** | Never | On missing coverage | Always |
+| **Tick interval** | 30 min | 10 min | 10 min |
+| **Open position escalation** | On missing coverage | Always | Always |
 
 ### Tool Turn Limits
 
+Turn caps are runaway-loop protection rather than behavioural tuning, so they are uniform across all styles.
+
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Scout max turns** | 10 | 30 | 100 |
-| **Judge max turns** | 25 | 75 | 300 |
+| **Scout max turns** | 499 | 499 | 499 |
+| **Judge max turns** | 9,999 | 9,999 | 9,999 |
 
 ### LLM Token Limits
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Scout max tokens** | 512 | 1,024 | 2,048 |
-| **Judge max tokens** | 2,048 | 4,096 | 8,192 |
-| **Light thinking tokens** | 1,024 | 2,048 | 4,096 |
-| **Deep thinking tokens** | 4,096 | 10,240 | 20,480 |
+| **Scout max tokens** | 1,024 | 2,048 | 4,096 |
+| **Judge max tokens** | 4,096 | 8,192 | 16,384 |
+| **Light thinking tokens** | 2,048 | 4,096 | 8,192 |
+| **Deep thinking tokens** | 10,240 | 20,480 | 32,768 ¹ |
+
+¹ Bold's deep thinking budget is clamped to the operator ceiling of 32,768 (the unclamped value would be 40,960).
 
 ### Reasoning
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
 | **Economy (scout) reasoning** | Medium | Medium | Medium |
-| **Judge reasoning** | Medium | Medium | High |
+| **Judge reasoning** | Medium | High | High |
 
 Economy models already keep costs low, so every style uses at least medium reasoning for the economy model.
 
@@ -44,27 +48,27 @@ Economy models already keep costs low, so every style uses at least medium reaso
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Allowed hours (UTC)** | 14–20 (US overlap) | All hours | All hours |
-| **Weekend pause** | ✅ Yes | ✅ Yes | ❌ No |
+| **Allowed hours (UTC)** | All hours | All hours | All hours |
+| **Weekend pause** | ❌ No | ❌ No | ❌ No |
 
 ### Context Budgets
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Max history messages** | 10 | 20 | 40 |
-| **Max history tokens** | 20,000 | 40,000 | 80,000 |
-| **Max recent tool messages** | 3 | 6 | 12 |
-| **Max tool result chars** | 2,000 | 4,000 | 8,000 |
-| **Max visible tool schemas** | 32 | 64 | 128 |
-| **Max context block chars** | 2,000 | 4,000 | 8,000 |
-| **Tool result full retention turns** | 2 | 3 | 5 |
-| **Tool result max stale chars** | 250 | 500 | 1,000 |
+| **Max history messages** | 20 | 40 | 80 |
+| **Max history tokens** | 40,000 | 80,000 | 160,000 |
+| **Max recent tool messages** | 6 | 12 | 24 |
+| **Max tool result chars** | 4,000 | 8,000 | 16,000 |
+| **Max visible tool schemas** | 64 | 128 | 256 |
+| **Max context block chars** | 4,000 | 8,000 | 16,000 |
+| **Tool result full retention turns** | 3 | 5 | 10 |
+| **Tool result max stale chars** | 500 | 1,000 | 2,000 |
 
 ### Scout Hold
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Max hold duration** | 450 min | 90 min | 10 min |
+| **Max hold duration** | 90 min | 10 min | 10 min |
 
 ## What each field means
 
@@ -78,9 +82,9 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 
 **Light / Deep thinking tokens** — How many tokens the model may use for internal chain-of-thought reasoning before producing a response. `lightThinkingTokens` applies when brief reasoning is sufficient; `deepThinkingTokens` applies when extended analysis is requested.
 
-**Allowed hours (UTC)** — The UTC hours during which the agent is permitted to act. An empty list means all hours are allowed. **Careful** restricts agent activity to 14:00–20:00 UTC (US session overlap).
+**Allowed hours (UTC)** — The UTC hours during which the agent is permitted to act. An empty list means all hours are allowed. All three styles default to all hours; restrict activity to a specific window by overriding this field.
 
-**Weekend pause** — When enabled, the agent suspends activity from Friday close to Monday open.
+**Weekend pause** — When enabled, the agent skips routine ticks over the weekend (Saturday 00:00 UTC through Sunday 12:00 UTC), but only while it has no open positions — ticks continue so it can manage existing positions.
 
 **Max history messages** — How many past conversation messages are included in each tick's context window.
 
@@ -102,9 +106,9 @@ See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge m
 
 ## Selecting a style
 
-- **Careful** — Long-horizon or cost-sensitive agents. Restricted to US session hours, weekday-only, shallow tool loops, compact context.
-- **Balanced** — General-purpose agents. Runs 24/7 weekdays, moderate tool depth, standard context.
-- **Bold** — High-frequency or time-sensitive agents. Runs 24/7 including weekends, deepest tool loops, largest context window.
+- **Careful** — Long-horizon or cost-sensitive agents. Longest tick interval, most compact context, and the longest scout hold window.
+- **Balanced** — General-purpose agents. Moderate context and standard token budgets.
+- **Bold** — High-frequency or time-sensitive agents. Largest token and context budgets. Runs 24/7 like the other styles.
 
 To go beyond a preset, select a base style and override individual fields in **Advanced Settings → Runtime Policy**.
 
