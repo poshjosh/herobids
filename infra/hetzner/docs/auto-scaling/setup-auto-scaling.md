@@ -51,8 +51,16 @@ nomad_version = "1.9.7"
 agent_node_count       = 0    # start with 0, provision nodes when ready to test
 min_agent_nodes        = 1    # both environments use 1. At 0, scale-in can empty the pool and scale-out refuses (empty_inventory); see manual-recovery-empty-pool.md and production-notes.md
 max_agent_nodes        = 3    # staging default; production uses a larger pool, see production.tfvars
-agent_node_server_type = "cpx22"
+agent_node_server_type = "cx23"   # owner decision 2026-11-13: cx23 for both envs until a coordinated cx53 switch (see the node-type-switch runbook)
 ```
+
+> **Node type (2026-11-13):** both environments run agent **and** browser nodes
+> on `cx23` until one coordinated switch to `cx53` (gated on raising the Hetzner
+> shared-core limit). Switch with `scripts/switch-node-type.sh` + the
+> [node-type switch runbook](../runbooks/switch-node-type.md); an email alert
+> (`check-node-type-switch.sh`) fires when the pool reaches ~60 nodes or ~750
+> active agents. Do not hand-edit `agent_node_server_type` on a live pool —
+> use the switch tooling.
 
 S3 backend credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TF_BACKEND_BUCKET`, etc.) and the Nomad ACL token are **not** set in tfvars. They go in a backend env file or shell environment variables:
 
@@ -268,6 +276,49 @@ The guard does not clear these on its own. Work through them in order:
 The guard only clears a record after the pool reconciles, and it still refuses if an unjoined server remains. Clearing the record therefore never hides a problem.
 
 If the pool has no managed servers at all (`empty_inventory`), the guard refuses every scale action, and this section does not apply. Follow [manual-recovery-empty-pool.md](./manual-recovery-empty-pool.md).
+
+---
+
+## Demand-aware scale-out and scale-in
+
+The autoscaler has two scale-out policies, selected by
+`nomad_autoscale_demand_enabled` (tfvars → rendered into
+`/etc/herobids/autoscale-settings.env` by converge):
+
+- **Legacy (flag off):** scales out on free-memory / free-slot thresholds.
+- **Demand-aware (flag on):** scales out when jobs are capacity-blocked
+  (cannot be placed), sized from the node template
+  (`nomad_node_template_memory_mb` / `_cpu_mhz` — the cx23 allocatable
+  3819 MB / 4000 MHz). Both environments run demand mode. The template values
+  must match `agent_node_server_type`; they are re-measured on the node-type
+  switch.
+
+**Scale-in** (`enable_scale_in = true`, nightly via `nomad-scale-in.timer` at
+`scale_in_time_utc`) drains the idle highest-index node after a grace period and
+never removes the pool below `min_agent_nodes`. Under demand mode it will not
+re-create a node it just removed unless real demand returns. It defers (does not
+remove) a node while any unjoined/booting server is in the pool.
+
+> These settings live in the per-env tfvars and are pushed to the control plane
+> by `setup-control-plane.sh` (converge) on every `deploy.sh`. The control plane
+> is frozen after first boot (`ignore_changes = [user_data]`), so convergence —
+> not cloud-init — is what keeps a running control plane's autoscaler settings
+> current. Deploy with `deploy.sh`, not `push.sh` alone, when these change.
+
+## Browser pool node
+
+The browser pool (`infra/nomad/browser-pool.nomad.hcl`) runs on its **own**
+dedicated node in the Nomad node pool `browser`, not on the agent nodes. Enable
+it with `browser_node_count = 1` in `<env>.tfvars` (`browser_node_server_type`
+defaults to `cx23`). The node gets a fixed private IP `10.0.0.240` so the worker
+can resolve it deterministically.
+
+- The agent autoscaler **ignores** the browser pool — it is applied by hand
+  (`terraform apply`), not autoscaled.
+- After the browser node is applied and the job lands on it, **restart the
+  worker** so it re-resolves the pool address at startup
+  (`Browser pool URL resolved: http://10.0.0.240:3100`).
+- Verify with `scripts/smoke-test-browser-pool.sh --env <env> <control-plane-ip>`.
 
 ---
 

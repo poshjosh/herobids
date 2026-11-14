@@ -119,6 +119,49 @@ die()  { echo "[$(ts)] FAIL $*" >&2; exit 1; }
 
 PG() { docker exec herobids-postgres-1 psql -U herobids -d herobids -t -q "$@"; }
 
+# ─── Runtime backend detection (Docker vs Nomad) ─────────────────────────────
+# On the Nomad runtime, `docker stop` kills the container but leaves the Nomad
+# job running, so Nomad reschedules the task from the EXISTING (pre-restart) job
+# spec — briefly running the agent on the old image / old browser-pool URL until
+# Step 5 re-registers it. Stopping the Nomad JOB (purge) instead removes it with
+# no reschedule, matching the worker's own stop path
+# (NomadRuntimeAdapter.stop → DELETE /v1/job/<id>?purge=true). Values are read
+# from the uploaded /opt/herobids/.env; namespace falls back to the config
+# default (packages/domain/src/config/schema.ts → nomad.namespace).
+RUNTIME_BACKEND="${RUNTIME_BACKEND:-$(grep -E '^RUNTIME_BACKEND=' "${ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')}"
+NOMAD_ADDR="${NOMAD_ADDR:-$(grep -E '^NOMAD_ADDR=' "${ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')}"
+NOMAD_TOKEN="${NOMAD_TOKEN:-$(grep -E '^NOMAD_TOKEN=' "${ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')}"
+NOMAD_AGENT_NAMESPACE="${NOMAD_AGENT_NAMESPACE:-$(grep -E '^NOMAD_NAMESPACE=' "${ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')}"
+NOMAD_AGENT_NAMESPACE="${NOMAD_AGENT_NAMESPACE:-herobids-agents}"
+export NOMAD_ADDR NOMAD_TOKEN
+
+# nomad_available — true only when the Nomad backend is selected, the CLI exists,
+# and the server answers. Used to pick the job-stop path; otherwise fall back to
+# docker stop (also the correct path for the Docker runtime).
+nomad_available() {
+  [[ "${RUNTIME_BACKEND}" == "nomad" ]] || return 1
+  command -v nomad >/dev/null 2>&1 || return 1
+  [[ -n "${NOMAD_ADDR}" ]] || return 1
+  nomad status >/dev/null 2>&1
+}
+
+# stop_agent_nomad_job <agentId> — purge the agent's Nomad job (no reschedule).
+# Returns 0 if the job was stopped or was already absent; 1 on a real error.
+stop_agent_nomad_job() {
+  local agent_id="$1"
+  local job_id="agent-${agent_id}"
+  local out
+  if out="$(nomad job stop -purge -namespace="${NOMAD_AGENT_NAMESPACE}" "${job_id}" 2>&1)"; then
+    return 0
+  fi
+  # A missing job is not an error (already stopped / never placed).
+  if printf '%s' "${out}" | grep -qiE 'no job|not found|404'; then
+    return 0
+  fi
+  warn "  nomad job stop failed for ${job_id}: ${out}"
+  return 1
+}
+
 # Runs a query that returns agent IDs, one per line. A failing query stops the script:
 # an empty result must mean "no agents", never "the query broke".
 agent_ids() {
@@ -295,24 +338,40 @@ if [[ $AGENT_COUNT -gt 0 ]]; then
   "
   ok "DB: sessions and agents marked stopped."
 
-  # Stop containers by the herobids.agentId label (SIGTERM, then SIGKILL after 10 s).
-  # Matching by name does not work on the Nomad runtime, which names containers
-  # agent-<allocId>. The Docker backend sets the same label.
-  STOPPED=0
-  for AGENT_ID in "${AGENT_IDS[@]}"; do
-    mapfile -t AGENT_CONTAINERS < <(docker ps -q --filter "label=herobids.agentId=${AGENT_ID}")
-    if [[ ${#AGENT_CONTAINERS[@]} -eq 0 ]]; then
-      warn "  No running container for agent ${AGENT_ID} — nothing to stop."
-      continue
-    fi
-    log "  Stopping container(s) for agent ${AGENT_ID}..."
-    if docker stop "${AGENT_CONTAINERS[@]}" >/dev/null; then
-      STOPPED=$((STOPPED + ${#AGENT_CONTAINERS[@]}))
-    else
-      warn "  docker stop failed for agent ${AGENT_ID}."
-    fi
-  done
-  ok "Containers stopped: ${STOPPED} (of ${AGENT_COUNT} agent(s))."
+  # Prefer stopping the Nomad JOB on the Nomad runtime (no reschedule of the
+  # stale spec). Fall back to stopping the container by the herobids.agentId
+  # label (SIGTERM, then SIGKILL after 10 s) — the correct path for the Docker
+  # backend. Matching by name does not work on Nomad (containers are named
+  # agent-<allocId>); the label is set by both backends.
+  if nomad_available; then
+    log "  Runtime backend: nomad — stopping agent jobs (purge) in namespace ${NOMAD_AGENT_NAMESPACE}."
+    STOPPED=0
+    for AGENT_ID in "${AGENT_IDS[@]}"; do
+      log "  Stopping Nomad job agent-${AGENT_ID}..."
+      if stop_agent_nomad_job "${AGENT_ID}"; then
+        STOPPED=$((STOPPED + 1))
+      fi
+    done
+    ok "Nomad agent jobs stopped: ${STOPPED} (of ${AGENT_COUNT} agent(s))."
+  else
+    [[ "${RUNTIME_BACKEND}" == "nomad" ]] \
+      && warn "  Nomad backend selected but the Nomad CLI/server is unavailable — falling back to docker stop (the stale-spec reschedule caveat applies)."
+    STOPPED=0
+    for AGENT_ID in "${AGENT_IDS[@]}"; do
+      mapfile -t AGENT_CONTAINERS < <(docker ps -q --filter "label=herobids.agentId=${AGENT_ID}")
+      if [[ ${#AGENT_CONTAINERS[@]} -eq 0 ]]; then
+        warn "  No running container for agent ${AGENT_ID} — nothing to stop."
+        continue
+      fi
+      log "  Stopping container(s) for agent ${AGENT_ID}..."
+      if docker stop "${AGENT_CONTAINERS[@]}" >/dev/null; then
+        STOPPED=$((STOPPED + ${#AGENT_CONTAINERS[@]}))
+      else
+        warn "  docker stop failed for agent ${AGENT_ID}."
+      fi
+    done
+    ok "Containers stopped: ${STOPPED} (of ${AGENT_COUNT} agent(s))."
+  fi
 fi
 
 # If deploying, install an ERR trap so any unexpected failure during the build

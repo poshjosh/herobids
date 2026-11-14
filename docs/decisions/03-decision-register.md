@@ -32,7 +32,7 @@ Owner statements are recorded as given. "Conditional" means the owner accepted s
 | C-04 | Move `browser-pool` to a caps node on staging now (stopgap), staging downtime accepted | Accepted | Owner: yes. Execution needs the capacity check in Plan 005 Phase 2 |
 | C-05 | Starting the Oso agent was acceptable. No owner scoping on the restart script for now | Accepted | Owner statement |
 | C-06 | Start on 4 GB machines and grow 4, 8, 16, 32 GB over time by replacing nodes, not resizing | Accepted | Owner: cost belief. Larger sizes gated on measured stability |
-| C-07 | Shared autoscaling kit lives in a separate, versioned repository | Accepted | Owner: "Yes" (2026-11-11). Scope, language and sequencing are open (OD-01) |
+| C-07 | Shared autoscaling kit lives in a separate, versioned repository | Accepted; **execution deferred** | Owner: "Yes" (2026-11-11). Scope, language and sequencing are open (OD-01). **Deferred until Traderton needs to scale out** (owner, 2026-11-12); the scale-path plan (2026/11/12/001) keeps the autoscaler in-repo until then |
 | C-08 | Kit core language: TypeScript, shell actuators stay at first | **Proposed** | Owner asked for a view; not ratified |
 | C-09 | Traderton scales out as worker "cells" (one VM, one public IP, bounded agents) on a central database, with leases and fencing | **Proposed** | Not ratified. Depends on measuring actors, subscriptions and venue limits (OD-02) |
 | C-10 | Browser target is 200 concurrent sessions (replaces the 1,000 to 3,000 guess) | Accepted | Owner estimate (A-03) |

@@ -18,6 +18,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Dedicated browser-pool Nomad node (`hcloud_server.browser`, `browser_node_count`/`browser_node_server_type`, default `cx23`) in its own Nomad node pool/class `browser`, with a fixed private IP (`cidrhost(subnet, 240)`), so the browser pool never shares a node with agents and keeps a stable address across replacement. Not autoscaled.
 - Demand-aware scale-in: `scale-in.sh` now proceeds under demand mode and defers only when the agent namespace has queued/blocked work (replacing the old unconditional defer); `converge-control-plane.sh` pins and activates the nightly `nomad-scale-in.timer` schedule.
 - Optional connection-pool options on `createDatabase` (`max`, `idleTimeoutSeconds`); the agent runtime uses a small pool (max 2). Redis `maxclients` pinned to 10000 with a matching `nofile` ulimit.
+- Auto-scaling setup guide (`infra/hetzner/docs/auto-scaling/setup-auto-scaling.md`) updated for the current design: `agent_node_server_type = cx23` (was the stale `cpx22`), demand-aware scale-out/scale-in, the dedicated browser-pool node, and the node-type-switch tooling/alert.
 
 ## v0.8.12 - 2026-11-08
 
