@@ -228,14 +228,14 @@ describe('validateCreateAgentForm', () => {
 
   // ── D9: skip-unchanged relaxes the maxHold-vs-tickInterval check ──────────
   describe('skip-unchanged (D9)', () => {
-    // careful style's maxHold is 450 min; a 24 h (1440 min) interval exceeds it.
+    // careful style's maxHold is 90 min; a 24 h (1440 min) interval exceeds it.
     const careful24h = {
       style: 'careful',
       requiresTradingSetup: false,
       venue: '',
       capital: '',
       tickIntervalMins: '1440',
-      runtimePolicyOverrides: { maxHoldDurationMs: 27_000_000 },
+      runtimePolicyOverrides: { maxHoldDurationMs: 5_400_000 },
     } as const;
 
     it('rejects a 24 h interval against careful max hold when skip-unchanged is on', () => {

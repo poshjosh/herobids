@@ -158,7 +158,7 @@ describe('AgentSessionManager', () => {
     }));
   });
 
-  it('includes the style-default active hours in the resolved runtime policy for a trading agent', async () => {
+  it('propagates the style-default active hours into the resolved runtime policy for a trading agent', async () => {
     const { manager, agentRepo, runtimeLauncher } = buildManager();
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
       { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
@@ -191,7 +191,8 @@ describe('AgentSessionManager', () => {
 
     const launchedConfig = (runtimeLauncher.launch as ReturnType<typeof vi.fn>).mock.calls[0]![0].agentConfig as Record<string, unknown>;
     const resolvedRuntimePolicy = launchedConfig['resolvedRuntimePolicy'] as { allowedHoursUtc: number[] };
-    expect(resolvedRuntimePolicy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    // careful's style-default hours are now [] (no restriction) after the ladder rescale.
+    expect(resolvedRuntimePolicy.allowedHoursUtc).toEqual([]);
   });
 
   it('drops the style-default active hours for a non-trading agent', async () => {

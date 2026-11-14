@@ -307,37 +307,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   maxHoldDurationMs: number;
 }> = {
+  // Ladder rescaled one notch upward: new careful = former balanced budgets.
   careful: {
-    costPreset: 'minimal',
-    tickIntervalMins: '90',
-    dailySpendBudgetUsd: '3',
-    openPositionEscalationToJudgePolicy: 'never',
-    scoutMaxTurns: 499,
-    judgeMaxTurns: 9_999,
-    scoutMaxTokens: 512,
-    judgeMaxTokens: 2_048,
-    lightThinkingTokens: 1_024,
-    deepThinkingTokens: 4_096,
-    scoutReasoning: 'medium',
-    judgeReasoning: 'medium',
-    adaptScoutReasoning: true,
-    adaptJudgeReasoning: true,
-    allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20],
-    weekendPause: false,
-    tradingSessions: null,
-    maxHistoryMessages: 10,
-    maxHistoryTokens: 20_000,
-    maxRecentToolMessages: 3,
-    maxToolResultChars: 2_000,
-    // Raised from 32: base plus the common system skills now expose 35 tools, including the 5 agent-platform tools.
-    maxVisibleToolSchemas: 40,
-    maxContextBlockChars: 2_000,
-    toolResultFullRetentionTurns: 2,
-    toolResultMaxStaleChars: 250,
-    maxHoldDurationMs: 27_000_000, // 450 min (5 × tick interval)
-    skipUnchangedTicks: true,
-  },
-  balanced: {
     costPreset: 'standard',
     tickIntervalMins: '30',
     dailySpendBudgetUsd: '10',
@@ -366,7 +337,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
     skipUnchangedTicks: true,
   },
-  bold: {
+  // new balanced = former bold budgets.
+  balanced: {
     costPreset: 'premium',
     tickIntervalMins: '10',
     dailySpendBudgetUsd: '30',
@@ -392,6 +364,37 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     maxContextBlockChars: 8_000,
     toolResultFullRetentionTurns: 5,
     toolResultMaxStaleChars: 1_000,
+    maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
+    skipUnchangedTicks: true,
+  },
+  // new bold = former bold with Category-A budget fields doubled, then clamped to RUNTIME_POLICY_CEILINGS.
+  // Non-Category-A (behavioral) fields carry former bold's values unchanged.
+  bold: {
+    costPreset: 'premium',
+    tickIntervalMins: '10',
+    dailySpendBudgetUsd: '30',
+    openPositionEscalationToJudgePolicy: 'always',
+    scoutMaxTurns: 499,
+    judgeMaxTurns: 9_999,
+    scoutMaxTokens: 4_096,
+    judgeMaxTokens: 16_384,
+    lightThinkingTokens: 8_192,
+    deepThinkingTokens: 32_768, // 20_480 × 2 = 40_960 exceeds ceiling 32_768 → clamped to ceiling
+    scoutReasoning: 'medium',
+    judgeReasoning: 'high',
+    adaptScoutReasoning: true,
+    adaptJudgeReasoning: true,
+    allowedHoursUtc: [],
+    weekendPause: false,
+    tradingSessions: null,
+    maxHistoryMessages: 80,
+    maxHistoryTokens: 160_000,
+    maxRecentToolMessages: 24,
+    maxToolResultChars: 16_000,
+    maxVisibleToolSchemas: 256,
+    maxContextBlockChars: 16_000,
+    toolResultFullRetentionTurns: 10,
+    toolResultMaxStaleChars: 2_000,
     maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
     skipUnchangedTicks: true,
   },

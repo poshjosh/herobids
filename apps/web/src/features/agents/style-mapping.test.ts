@@ -20,24 +20,24 @@ describe('resolveStyleDefaults', () => {
 
   it('returns correct config for careful style', () => {
     const config = resolveStyleDefaults('careful');
-    expect(config.costPreset).toBe('minimal');
-    expect(config.tickIntervalMins).toBe('90');
-    expect(config.dailySpendBudgetUsd).toBe('3');
-    expect(config.scoutMaxTurns).toBe(499);
-    expect(config.judgeMaxTurns).toBe(9_999);
-    expect(config.maxHistoryTokens).toBe(20_000);
-    expect(config.weekendPause).toBe(false);
-    expect(config.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
-  });
-
-  it('returns correct config for balanced style', () => {
-    const config = resolveStyleDefaults('balanced');
     expect(config.costPreset).toBe('standard');
     expect(config.tickIntervalMins).toBe('30');
     expect(config.dailySpendBudgetUsd).toBe('10');
     expect(config.scoutMaxTurns).toBe(499);
     expect(config.judgeMaxTurns).toBe(9_999);
     expect(config.maxHistoryTokens).toBe(40_000);
+    expect(config.weekendPause).toBe(false);
+    expect(config.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
+  });
+
+  it('returns correct config for balanced style', () => {
+    const config = resolveStyleDefaults('balanced');
+    expect(config.costPreset).toBe('premium');
+    expect(config.tickIntervalMins).toBe('10');
+    expect(config.dailySpendBudgetUsd).toBe('30');
+    expect(config.scoutMaxTurns).toBe(499);
+    expect(config.judgeMaxTurns).toBe(9_999);
+    expect(config.maxHistoryTokens).toBe(80_000);
     expect(config.weekendPause).toBe(false);
   });
 
@@ -48,7 +48,7 @@ describe('resolveStyleDefaults', () => {
     expect(config.dailySpendBudgetUsd).toBe('30');
     expect(config.scoutMaxTurns).toBe(499);
     expect(config.judgeMaxTurns).toBe(9_999);
-    expect(config.maxHistoryTokens).toBe(80_000);
+    expect(config.maxHistoryTokens).toBe(160_000);
     expect(config.weekendPause).toBe(false);
     expect(config.allowedHoursUtc).toEqual([]);
   });
@@ -127,12 +127,12 @@ describe('resolveStyleDefaults', () => {
   });
 
   describe('openPositionEscalationToJudgePolicy mapping', () => {
-    it('maps careful to never', () => {
-      expect(STYLE_CONFIG.careful.openPositionEscalationToJudgePolicy).toBe('never');
+    it('maps careful to uncovered_or_triggered', () => {
+      expect(STYLE_CONFIG.careful.openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
     });
 
-    it('maps balanced to uncovered_or_triggered', () => {
-      expect(STYLE_CONFIG.balanced.openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
+    it('maps balanced to always', () => {
+      expect(STYLE_CONFIG.balanced.openPositionEscalationToJudgePolicy).toBe('always');
     });
 
     it('maps bold to always', () => {
@@ -140,13 +140,13 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('resolveStyleDefaults includes the policy field for each style', () => {
-      expect(resolveStyleDefaults('careful').openPositionEscalationToJudgePolicy).toBe('never');
-      expect(resolveStyleDefaults('balanced').openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
+      expect(resolveStyleDefaults('careful').openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
+      expect(resolveStyleDefaults('balanced').openPositionEscalationToJudgePolicy).toBe('always');
       expect(resolveStyleDefaults('bold').openPositionEscalationToJudgePolicy).toBe('always');
     });
 
     it('resolveStyleDefaults returns balanced policy for unknown style', () => {
-      expect(resolveStyleDefaults('unknown' as AgentStyleValue).openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
+      expect(resolveStyleDefaults('unknown' as AgentStyleValue).openPositionEscalationToJudgePolicy).toBe('always');
     });
   });
 
@@ -164,25 +164,22 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('bold has the shortest maxHoldDurationMs (most aggressive hold timeout)', () => {
-      // careful: 450min (5× tick), balanced: 90min (3×), bold: 10min (1×)
+      // careful: 90min (3× tick), balanced: 10min (1×), bold: 10min (1×)
       expect(STYLE_CONFIG.bold.maxHoldDurationMs).toBeLessThan(STYLE_CONFIG.careful.maxHoldDurationMs);
     });
 
-    it('balanced has empty allowedHoursUtc (always allowed)', () => {
+    it('all styles have empty allowedHoursUtc (always allowed)', () => {
+      // After the ladder rescale, careful no longer restricts to US-overlap hours.
+      expect(STYLE_CONFIG.careful.allowedHoursUtc).toEqual([]);
       expect(STYLE_CONFIG.balanced.allowedHoursUtc).toEqual([]);
       expect(STYLE_CONFIG.bold.allowedHoursUtc).toEqual([]);
-    });
-
-    it('careful has restricted US overlap hours', () => {
-      expect(STYLE_CONFIG.careful.allowedHoursUtc.length).toBeGreaterThan(0);
-      expect(STYLE_CONFIG.careful.allowedHoursUtc).toContain(14);
-      expect(STYLE_CONFIG.careful.allowedHoursUtc).toContain(20);
     });
   });
 
   describe('derived cadence helpers', () => {
     it('uses the style tick interval when no override is given', () => {
-      expect(resolveStyleTickIntervalMs('balanced')).toBe(1_800_000);
+      // balanced tick is now 10 min (600_000 ms) after the ladder rescale.
+      expect(resolveStyleTickIntervalMs('balanced')).toBe(600_000);
     });
 
     it('uses an explicit tick interval override when present', () => {
@@ -190,7 +187,8 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('derives max hold from the effective tick interval', () => {
-      expect(deriveStyleMaxHoldDurationMs('balanced', 900_000)).toBe(2_700_000);
+      // balanced max-hold multiplier is now 1× its tick, so max hold tracks the tick 1:1.
+      expect(deriveStyleMaxHoldDurationMs('balanced', 900_000)).toBe(900_000);
     });
 
     it('clears the max-hold override when the derived value matches the style default', () => {
@@ -200,7 +198,7 @@ describe('resolveStyleDefaults', () => {
     it('stores an auto max-hold override when cadence differs from the style default', () => {
       expect(applyAutoMaxHoldOverride('balanced', { scoutMaxTurns: 50 }, 900_000)).toEqual({
         scoutMaxTurns: 50,
-        maxHoldDurationMs: 2_700_000,
+        maxHoldDurationMs: 900_000,
       });
     });
   });
@@ -213,14 +211,16 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('re-derives max hold when the tick outgrows a stored max hold', () => {
+      // balanced max-hold multiplier is 1×, so re-derivation tracks the tick 1:1.
       expect(reconcileMaxHoldOverride('balanced', { scoutMaxTurns: 50, maxHoldDurationMs: 600_000 }, 3_600_000)).toEqual({
         scoutMaxTurns: 50,
-        maxHoldDurationMs: 10_800_000,
+        maxHoldDurationMs: 3_600_000,
       });
     });
 
     it('stores no max-hold override when the style default already covers the tick', () => {
-      expect(reconcileMaxHoldOverride('balanced', null, 1_800_000)).toBeNull();
+      // balanced's default max hold (10 min) matches its 10-min tick, so it covers the style tick exactly.
+      expect(reconcileMaxHoldOverride('balanced', null, 600_000)).toBeNull();
     });
 
     it('leaves overrides unchanged when the tick is unknown', () => {
@@ -231,13 +231,13 @@ describe('resolveStyleDefaults', () => {
   describe('formatStyleSummary', () => {
     it('produces a fallback summary for careful (no pricing)', () => {
       const summary = formatStyleSummary('careful', 'Careful');
-      expect(summary).toContain('Careful, enforces a limit of $3/day');
+      expect(summary).toContain('Careful, enforces a limit of $10/day');
       expect(summary).not.toContain('turns');
     });
 
     it('produces a fallback summary for balanced (no pricing)', () => {
       const summary = formatStyleSummary('balanced', 'Balanced');
-      expect(summary).toContain('Balanced, enforces a limit of $10/day');
+      expect(summary).toContain('Balanced, enforces a limit of $30/day');
     });
 
     it('produces a fallback summary for bold (no pricing)', () => {
@@ -258,7 +258,7 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('computes higher cost for bold with same pricing', () => {
-      // bold has 10min ticks → 144 ticks/day + higher escalation rate (60% vs 5%)
+      // bold has 10min ticks → 144 ticks/day + higher escalation rate (60% vs careful's 20%)
       const pricing = {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
@@ -280,13 +280,13 @@ describe('resolveStyleDefaults', () => {
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       }, 900_000);
-      // 15-min cadence (96 ticks/day) yields a different cost than default 30-min (48 ticks/day)
+      // 15-min cadence (96 ticks/day) yields a different cost than default 10-min (144 ticks/day)
       expect(summary).toMatch(/Balanced, enforces a limit of \$[\d.]+\/day/);
     });
 
     it('handles non-whole-minute cadence override without pricing without crashing', () => {
       const summary = formatStyleSummary('balanced', 'Balanced', undefined, 90_000);
-      expect(summary).toContain('Balanced, enforces a limit of $10/day');
+      expect(summary).toContain('Balanced, enforces a limit of $30/day');
     });
 
     it('falls back when economy input price is 0', () => {
@@ -296,7 +296,7 @@ describe('resolveStyleDefaults', () => {
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('Careful, enforces a limit of $3/day');
+      expect(summary).toContain('Careful, enforces a limit of $10/day');
     });
 
     it('falls back when economy output price is 0', () => {
@@ -306,7 +306,7 @@ describe('resolveStyleDefaults', () => {
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('Careful, enforces a limit of $3/day');
+      expect(summary).toContain('Careful, enforces a limit of $10/day');
     });
 
     it('falls back when premium input price is 0', () => {
@@ -316,7 +316,7 @@ describe('resolveStyleDefaults', () => {
         premiumInputUsdPer1M: 0,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('Careful, enforces a limit of $3/day');
+      expect(summary).toContain('Careful, enforces a limit of $10/day');
     });
 
     it('falls back when premium output price is 0', () => {
@@ -326,7 +326,7 @@ describe('resolveStyleDefaults', () => {
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 0,
       });
-      expect(summary).toContain('Careful, enforces a limit of $3/day');
+      expect(summary).toContain('Careful, enforces a limit of $10/day');
     });
   });
 
@@ -429,8 +429,8 @@ describe('adaptive reasoning style defaults', () => {
 
 describe('resolveStyleTickIntervalMins (D10)', () => {
   it('keeps the style interval for a trading agent', () => {
-    expect(resolveStyleTickIntervalMins('careful', true)).toBe('90');
-    expect(resolveStyleTickIntervalMins('balanced', true)).toBe('30');
+    expect(resolveStyleTickIntervalMins('careful', true)).toBe('30');
+    expect(resolveStyleTickIntervalMins('balanced', true)).toBe('10');
     expect(resolveStyleTickIntervalMins('bold', true)).toBe('10');
   });
 

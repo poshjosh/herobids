@@ -173,12 +173,12 @@ describe('BotConfigSchema', () => {
 
 describe('AgentRuntimePolicySchema', () => {
   const REQUIRED_RUNTIME_BUDGETS = {
-    maxHistoryMessages: 20,
-    maxHistoryTokens: 40_000,
-    maxRecentToolMessages: 6,
-    maxToolResultChars: 4_000,
-    maxVisibleToolSchemas: 64,
-    maxContextBlockChars: 4_000,
+    maxHistoryMessages: 40,
+    maxHistoryTokens: 80_000,
+    maxRecentToolMessages: 12,
+    maxToolResultChars: 8_000,
+    maxVisibleToolSchemas: 128,
+    maxContextBlockChars: 8_000,
   };
 
   it('accepts the worker-forwarded llm subtree and applies defaults', () => {
@@ -1053,24 +1053,27 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
     const d = AGENT_STYLE_RUNTIME_DEFAULTS.careful;
     expect(d.scoutMaxTurns).toBe(499);
     expect(d.judgeMaxTurns).toBe(9_999);
-    expect(d.maxHistoryTokens).toBe(20_000);
+    expect(d.maxHistoryTokens).toBe(40_000);
     expect(d.weekendPause).toBe(false);
-    expect(d.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    expect(d.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
+    expect(d.costPreset).toBe('standard');
   });
 
   it('balanced has moderate defaults', () => {
     const d = AGENT_STYLE_RUNTIME_DEFAULTS.balanced;
     expect(d.scoutMaxTurns).toBe(499);
     expect(d.judgeMaxTurns).toBe(9_999);
-    expect(d.maxHistoryTokens).toBe(40_000);
+    expect(d.maxHistoryTokens).toBe(80_000);
+    expect(d.costPreset).toBe('premium');
   });
 
   it('bold has aggressive defaults', () => {
     const d = AGENT_STYLE_RUNTIME_DEFAULTS.bold;
     expect(d.scoutMaxTurns).toBe(499);
     expect(d.judgeMaxTurns).toBe(9_999);
-    expect(d.maxHistoryTokens).toBe(80_000);
+    expect(d.maxHistoryTokens).toBe(160_000);
     expect(d.weekendPause).toBe(false);
+    expect(d.costPreset).toBe('premium');
   });
 
   it('all defaults are within operator ceilings', () => {
@@ -1112,7 +1115,7 @@ describe('resolveAgentRuntimePolicy', () => {
     const resolved = resolveAgentRuntimePolicy('bold', null);
     expect(resolved.scoutMaxTurns).toBe(499);
     expect(resolved.judgeMaxTurns).toBe(9_999);
-    expect(resolved.maxHistoryTokens).toBe(80_000);
+    expect(resolved.maxHistoryTokens).toBe(160_000);
     expect(resolved.weekendPause).toBe(false);
   });
 
@@ -1139,13 +1142,13 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(resolved.weekendPause).toBe(false);
     // style defaults for non-overridden fields
     expect(resolved.judgeMaxTurns).toBe(9_999);
-    expect(resolved.maxHistoryMessages).toBe(20);
+    expect(resolved.maxHistoryMessages).toBe(40);
   });
 
   it('handles empty overrides object', () => {
     const resolved = resolveAgentRuntimePolicy('careful', {});
     expect(resolved.scoutMaxTurns).toBe(499);
-    expect(resolved.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
+    expect(resolved.maxHoldDurationMs).toBe(5_400_000);  // careful: 3 × tick interval (90 min)
   });
 });
 
@@ -1241,9 +1244,9 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS — reasoning', () => {
     expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.judgeReasoning).toBe('medium');
   });
 
-  it('balanced style has scoutReasoning=medium, judgeReasoning=medium', () => {
+  it('balanced style has scoutReasoning=medium, judgeReasoning=high', () => {
     expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.scoutReasoning).toBe('medium');
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.judgeReasoning).toBe('medium');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.judgeReasoning).toBe('high');
   });
 
   it('bold style has scoutReasoning=medium, judgeReasoning=high', () => {
@@ -1265,7 +1268,7 @@ describe('resolveAgentRuntimePolicy — reasoning', () => {
       judgeReasoning: null,
     });
     expect(resolved.scoutReasoning).toBe('medium'); // balanced default
-    expect(resolved.judgeReasoning).toBe('medium'); // balanced default
+    expect(resolved.judgeReasoning).toBe('high'); // balanced default
   });
 
   it('undefined override falls back to style default', () => {
@@ -1294,7 +1297,7 @@ describe('resolveAgentRuntimePolicy — reasoning', () => {
   it('falls back to balanced reasoning defaults when style is invalid', () => {
     const resolved = resolveAgentRuntimePolicy('aggressive', null);
     expect(resolved.scoutReasoning).toBe('medium'); // balanced default
-    expect(resolved.judgeReasoning).toBe('medium'); // balanced default
+    expect(resolved.judgeReasoning).toBe('high'); // balanced default
   });
 });
 
@@ -1767,12 +1770,12 @@ describe('AppConfigSchema — externalBackendObservability.latencyTargets', () =
     execution: {},
     agentRuntime: {
       defaultBudgets: {
-        maxHistoryMessages: 20,
-        maxHistoryTokens: 40000,
-        maxRecentToolMessages: 6,
-        maxToolResultChars: 4000,
-        maxVisibleToolSchemas: 64,
-        maxContextBlockChars: 4000,
+        maxHistoryMessages: 40,
+        maxHistoryTokens: 80000,
+        maxRecentToolMessages: 12,
+        maxToolResultChars: 8000,
+        maxVisibleToolSchemas: 128,
+        maxContextBlockChars: 8000,
       },
     },
   };
@@ -1815,12 +1818,12 @@ describe('AppConfigSchema — connectionRequests', () => {
     execution: {},
     agentRuntime: {
       defaultBudgets: {
-        maxHistoryMessages: 20,
-        maxHistoryTokens: 40000,
-        maxRecentToolMessages: 6,
-        maxToolResultChars: 4000,
-        maxVisibleToolSchemas: 64,
-        maxContextBlockChars: 4000,
+        maxHistoryMessages: 40,
+        maxHistoryTokens: 80000,
+        maxRecentToolMessages: 12,
+        maxToolResultChars: 8000,
+        maxVisibleToolSchemas: 128,
+        maxContextBlockChars: 8000,
       },
     },
   };
@@ -1869,12 +1872,12 @@ describe('AppConfigSchema — agentCreation', () => {
     execution: {},
     agentRuntime: {
       defaultBudgets: {
-        maxHistoryMessages: 20,
-        maxHistoryTokens: 40000,
-        maxRecentToolMessages: 6,
-        maxToolResultChars: 4000,
-        maxVisibleToolSchemas: 64,
-        maxContextBlockChars: 4000,
+        maxHistoryMessages: 40,
+        maxHistoryTokens: 80000,
+        maxRecentToolMessages: 12,
+        maxToolResultChars: 8000,
+        maxVisibleToolSchemas: 128,
+        maxContextBlockChars: 8000,
       },
     },
   };

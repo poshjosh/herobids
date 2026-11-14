@@ -30,25 +30,40 @@ Three styles define the baseline. All numeric values are backed by
 
 | Field | careful | balanced | bold |
 |-------|:-------:|:--------:|:----:|
-| **Cost preset** | minimal | standard | premium |
-| **Tick interval** | 90 min | 30 min | 10 min |
-| **Daily spend budget** | $3 | $10 | $30 |
-| **Escalation policy** | never | uncovered_or_triggered | always |
+| **Cost preset** | standard | premium | premium |
+| **Tick interval** | 30 min | 10 min | 10 min |
+| **Daily spend budget** | $10 | $30 | $30 |
+| **Escalation policy** | uncovered_or_triggered | always | always |
 | `scoutMaxTurns` | 499 | 499 | 499 |
 | `judgeMaxTurns` | 9 999 | 9 999 | 9 999 |
-| `scoutMaxTokens` | 512 | 1 024 | 2 048 |
-| `judgeMaxTokens` | 2 048 | 4 096 | 8 192 |
-| `lightThinkingTokens` | 1 024 | 2 048 | 4 096 |
-| `deepThinkingTokens` | 4 096 | 10 240 | 20 480 |
+| `scoutMaxTokens` | 1 024 | 2 048 | 4 096 |
+| `judgeMaxTokens` | 4 096 | 8 192 | 16 384 |
+| `lightThinkingTokens` | 2 048 | 4 096 | 8 192 |
+| `deepThinkingTokens` | 10 240 | 20 480 | 32 768 ¹ |
 | `scoutReasoning` | medium | medium | medium |
-| `judgeReasoning` | medium | medium | high |
+| `judgeReasoning` | medium | high | high |
 | `adaptScoutReasoning` | true | true | true |
 | `adaptJudgeReasoning` | true | true | true |
-| `allowedHoursUtc` | 14–20 | [] (all) | [] (all) |
+| `allowedHoursUtc` | [] (all) | [] (all) | [] (all) |
 | `weekendPause` | false | false | false |
-| `maxHistoryMessages` | 10 | 20 | 40 |
-| `maxHistoryTokens` | 20 000 | 40 000 | 80 000 |
-| `maxHoldDurationMs` | 27 000 000 | 5 400 000 | 600 000 |
+| `maxHistoryMessages` | 20 | 40 | 80 |
+| `maxHistoryTokens` | 40 000 | 80 000 | 160 000 |
+| `maxRecentToolMessages` | 6 | 12 | 24 |
+| `maxToolResultChars` | 4 000 | 8 000 | 16 000 |
+| `maxVisibleToolSchemas` | 64 | 128 | 256 |
+| `maxContextBlockChars` | 4 000 | 8 000 | 16 000 |
+| `toolResultFullRetentionTurns` | 3 | 5 | 10 |
+| `toolResultMaxStaleChars` | 500 | 1 000 | 2 000 |
+| `maxHoldDurationMs` | 5 400 000 | 600 000 | 600 000 |
+
+¹ new bold `deepThinkingTokens` would be 40 960 (former bold 20 480 × 2) but is
+clamped to the `deepThinkingTokens` ceiling of 32 768.
+
+The style ladder was rescaled one notch upward: careful now carries the former
+balanced budgets, balanced carries the former bold budgets, and bold carries the
+former bold budgets with its Category-A budget fields doubled (then clamped to
+the operator ceilings). Behavioral (non-budget) fields in bold are identical to
+balanced.
 
 A missing or invalid style falls back to **balanced**.
 

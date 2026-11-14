@@ -194,14 +194,21 @@ const SCOUT_INPUT_TOKENS_PER_TICK = 332_000;
 const JUDGE_OUTPUT_TOKENS_PER_TICK = 42_000;
 const JUDGE_INPUT_TOKENS_PER_TICK = 1_030_000;
 
-// Assumed escalation rates by style, derived from observed agent behaviour:
-// careful: scout holds ~95% of ticks (06/28 careful-agent-1: 4.1% escalation)
-// balanced: scout escalates ~20% of ticks
-// bold: scout escalates ~60% of ticks
+// Approximate escalation rates by style, used only for the display-only $/day cost
+// estimate below. These were originally derived from observed agent behaviour
+// (former careful ~0.05, former balanced ~0.20, former bold ~0.60).
+//
+// After the agent-style-ladder rescale the behavioural posture of each style
+// shifted up one notch — new careful now behaves like the former balanced
+// (escalation policy 'uncovered_or_triggered'), and new balanced/bold behave
+// like the former bold ('always'). We shift the rates the same way so the
+// estimate is not grossly wrong, rather than inventing new empirical numbers.
+// These remain approximate and should be re-derived from live telemetry when
+// available; they drive a display-only estimate, not any trading behaviour.
 const STYLE_ESCALATION_RATES: Record<AgentStyleValue, number> = {
-  careful: 0.05,
-  balanced: 0.20,
-  bold: 0.60,
+  careful: 0.20,  // shifted from former balanced posture
+  balanced: 0.60, // shifted from former bold posture
+  bold: 0.60,     // former bold posture, unchanged
 };
 
 /**

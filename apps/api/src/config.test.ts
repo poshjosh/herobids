@@ -21,12 +21,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
 marketData:
   birdeye:
     enabled: false

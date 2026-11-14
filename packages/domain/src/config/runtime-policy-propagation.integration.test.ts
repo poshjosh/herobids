@@ -25,49 +25,51 @@ describe('resolveAgentRuntimePolicy', () => {
     const policy = resolveAgentRuntimePolicy('bold', null);
     expect(policy.scoutMaxTurns).toBe(499);
     expect(policy.judgeMaxTurns).toBe(9_999);
-    expect(policy.scoutMaxTokens).toBe(2048);
-    expect(policy.judgeMaxTokens).toBe(8192);
-    expect(policy.lightThinkingTokens).toBe(4096);
-    expect(policy.deepThinkingTokens).toBe(20480);
-    expect(policy.maxHistoryTokens).toBe(80000);
-    expect(policy.maxHistoryMessages).toBe(40);
-    expect(policy.maxRecentToolMessages).toBe(12);
-    expect(policy.maxToolResultChars).toBe(8000);
-    expect(policy.maxVisibleToolSchemas).toBe(128);
-    expect(policy.maxContextBlockChars).toBe(8000);
-    expect(policy.toolResultFullRetentionTurns).toBe(5);
-    expect(policy.toolResultMaxStaleChars).toBe(1000);
+    expect(policy.scoutMaxTokens).toBe(4096);
+    expect(policy.judgeMaxTokens).toBe(16384);
+    expect(policy.lightThinkingTokens).toBe(8192);
+    expect(policy.deepThinkingTokens).toBe(32768);
+    expect(policy.maxHistoryTokens).toBe(160000);
+    expect(policy.maxHistoryMessages).toBe(80);
+    expect(policy.maxRecentToolMessages).toBe(24);
+    expect(policy.maxToolResultChars).toBe(16000);
+    expect(policy.maxVisibleToolSchemas).toBe(256);
+    expect(policy.maxContextBlockChars).toBe(16000);
+    expect(policy.toolResultFullRetentionTurns).toBe(10);
+    expect(policy.toolResultMaxStaleChars).toBe(2000);
     expect(policy.allowedHoursUtc).toEqual([]);
     expect(policy.weekendPause).toBe(false);
-    expect(policy.maxHoldDurationMs).toBe(600_000);  // bold: 1 × tick interval
+    expect(policy.maxHoldDurationMs).toBe(600_000);  // bold: 1 × tick interval (10 min)
   });
 
   it('resolves careful style with no overrides', () => {
     const policy = resolveAgentRuntimePolicy('careful', null);
     expect(policy.scoutMaxTurns).toBe(499);
     expect(policy.judgeMaxTurns).toBe(9_999);
-    expect(policy.scoutMaxTokens).toBe(512);
-    expect(policy.judgeMaxTokens).toBe(2048);
-    expect(policy.lightThinkingTokens).toBe(1024);
-    expect(policy.deepThinkingTokens).toBe(4096);
-    expect(policy.maxHistoryTokens).toBe(20000);
-    expect(policy.maxHistoryMessages).toBe(10);
-    expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    expect(policy.scoutMaxTokens).toBe(1024);
+    expect(policy.judgeMaxTokens).toBe(4096);
+    expect(policy.lightThinkingTokens).toBe(2048);
+    expect(policy.deepThinkingTokens).toBe(10240);
+    expect(policy.maxHistoryTokens).toBe(40000);
+    expect(policy.maxHistoryMessages).toBe(20);
+    expect(policy.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
     expect(policy.weekendPause).toBe(false);
-    expect(policy.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
+    expect(policy.maxHoldDurationMs).toBe(5_400_000);  // careful: 3 × tick interval (90 min)
   });
 
   it('resolves balanced style with no overrides', () => {
     const policy = resolveAgentRuntimePolicy('balanced', null);
     expect(policy.scoutMaxTurns).toBe(499);
     expect(policy.judgeMaxTurns).toBe(9_999);
-    expect(policy.scoutMaxTokens).toBe(1024);
-    expect(policy.judgeMaxTokens).toBe(4096);
-    expect(policy.maxHistoryTokens).toBe(40000);
-    expect(policy.maxHistoryMessages).toBe(20);
+    expect(policy.scoutMaxTokens).toBe(2048);
+    expect(policy.judgeMaxTokens).toBe(8192);
+    expect(policy.lightThinkingTokens).toBe(4096);
+    expect(policy.deepThinkingTokens).toBe(20480);
+    expect(policy.maxHistoryTokens).toBe(80000);
+    expect(policy.maxHistoryMessages).toBe(40);
     expect(policy.allowedHoursUtc).toEqual([]);
     expect(policy.weekendPause).toBe(false);
-    expect(policy.maxHoldDurationMs).toBe(5_400_000);  // balanced: 3 × tick interval
+    expect(policy.maxHoldDurationMs).toBe(600_000);  // balanced: 1 × tick interval (10 min)
   });
 
   it('falls back to balanced when style is undefined', () => {
@@ -111,7 +113,7 @@ describe('runtime policy override merging', () => {
     expect(policy.weekendPause).toBe(false);
     // balanced defaults for non-overridden fields
     expect(policy.judgeMaxTurns).toBe(9_999);
-    expect(policy.maxHistoryMessages).toBe(20);
+    expect(policy.maxHistoryMessages).toBe(40);
   });
 
   it('overrides can tighten careful defaults further', () => {
@@ -122,14 +124,14 @@ describe('runtime policy override merging', () => {
     expect(policy.scoutMaxTurns).toBe(5);
     expect(policy.maxHistoryTokens).toBe(5000);
     expect(policy.weekendPause).toBe(false);
-    expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    expect(policy.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
   });
 
   it('empty overrides object leaves all style defaults intact', () => {
     const policy = resolveAgentRuntimePolicy('careful', {});
     expect(policy.scoutMaxTurns).toBe(499);
-    expect(policy.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
-    expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    expect(policy.maxHoldDurationMs).toBe(5_400_000);  // careful: 3 × tick interval (90 min)
+    expect(policy.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
   });
 
   it('override to zero maxHoldDurationMs disables forced escalation', () => {
@@ -158,13 +160,14 @@ describe('resolveAgentRuntimePolicy — trading-capability hours (D6)', () => {
   });
 
   it('keeps style-default hours for a trading agent', () => {
+    // careful's style-default hours are now [] (no restriction) after the ladder rescale.
     const policy = resolveAgentRuntimePolicy('careful', null, { hasTradingCapability: true });
-    expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    expect(policy.allowedHoursUtc).toEqual([]);
   });
 
   it('keeps style-default hours when the option is omitted (unchanged behaviour)', () => {
     const policy = resolveAgentRuntimePolicy('careful', null);
-    expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    expect(policy.allowedHoursUtc).toEqual([]);
   });
 
   it('keeps creator-set hours for a non-trading agent', () => {
@@ -349,8 +352,8 @@ describe('style consistency', () => {
   });
 
   it('cost presets match expected mapping', () => {
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.costPreset).toBe('minimal');
-    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.costPreset).toBe('standard');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.costPreset).toBe('standard');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.costPreset).toBe('premium');
     expect(AGENT_STYLE_RUNTIME_DEFAULTS.bold.costPreset).toBe('premium');
   });
 });

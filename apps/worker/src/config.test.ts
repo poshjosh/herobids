@@ -20,12 +20,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
 `;
 
 const MINIMAL_MARKET_DATA_YAML = `
@@ -596,12 +596,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
 `);
 
       const config = loadConfig(tmpDir);
@@ -671,7 +671,7 @@ llm:
       expect(config.agentRuntime.contextDiff.fullContextEveryTicks).toBe(10);
       expect(config.agentRuntime.contextDiff.maxDiffTokens).toBe(200);
       expect(config.agentRuntime.contextDiff.maxChangedLines).toBe(12);
-      expect(config.agentRuntime.defaultBudgets.maxHistoryMessages).toBe(20);
+      expect(config.agentRuntime.defaultBudgets.maxHistoryMessages).toBe(40);
       expect(config.agentRuntime.sandboxDefaults.memoryMb).toBe(512);
       expect(config.agentRuntime.sandboxDefaults.cpuShares).toBe(256);
       expect(config.agentRuntime.tools.codeExecute.defaultTimeoutMs).toBe(60000);
@@ -692,12 +692,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
   failureBackoff:
     maxFailures: 10
   thinking:
@@ -727,12 +727,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
   thinking:
     drawdownThresholdPct: 5
 `);
@@ -754,12 +754,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
   contextDiff:
     maxChangedLines: 0
 `);
@@ -781,12 +781,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
   sandboxDefaults:
     memoryMb: 32
 `);
@@ -808,12 +808,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
   resourceProfiles:
     free:
       memoryLimitMb: 512
@@ -870,12 +870,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
   resourceProfiles:
     free:
       memoryLimitMb: 32
@@ -901,12 +901,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
   resourceProfiles:
     free:
       memoryLimitMb: 512
@@ -935,12 +935,12 @@ risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
   defaultBudgets:
-    maxHistoryMessages: 20
-    maxHistoryTokens: 40000
-    maxRecentToolMessages: 6
-    maxToolResultChars: 4000
-    maxVisibleToolSchemas: 64
-    maxContextBlockChars: 4000
+    maxHistoryMessages: 40
+    maxHistoryTokens: 80000
+    maxRecentToolMessages: 12
+    maxToolResultChars: 8000
+    maxVisibleToolSchemas: 128
+    maxContextBlockChars: 8000
 `);
 
       const config = loadConfig(tmpDir);

@@ -84,12 +84,12 @@ describe('AppConfigSchema billing cross-validation', () => {
     risk: { globalMaxDrawdownPct: 20, maxOpenPositions: 10, maxPositionSizePct: 25 },
     agentRuntime: {
       defaultBudgets: {
-        maxHistoryMessages: 20,
-        maxHistoryTokens: 40_000,
-        maxRecentToolMessages: 6,
-        maxToolResultChars: 4_000,
-        maxVisibleToolSchemas: 64,
-        maxContextBlockChars: 4_000,
+        maxHistoryMessages: 40,
+        maxHistoryTokens: 80_000,
+        maxRecentToolMessages: 12,
+        maxToolResultChars: 8_000,
+        maxVisibleToolSchemas: 128,
+        maxContextBlockChars: 8_000,
       },
     },
   };

@@ -1724,8 +1724,8 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       }],
       activeLinkRows: [{
         id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null,
-        modelPolicy: null, unifiedConfig: null, executionMode: 'paper', style: 'balanced', tickIntervalMs: 1_800_000,
-        runtimePolicyOverrides: { maxHoldDurationMs: 5_400_000 },
+        modelPolicy: null, unifiedConfig: null, executionMode: 'paper', style: 'balanced', tickIntervalMs: 600_000,
+        runtimePolicyOverrides: { maxHoldDurationMs: 600_000 },
       }],
       agentSkillRows: [],
     });
@@ -1743,7 +1743,8 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 
     expect(res.statusCode).toBe(200);
     const update = updateSets.find((set: Record<string, unknown>) => 'tickIntervalMs' in set);
-    expect(update).toMatchObject({ tickIntervalMs: 1_800_000, runtimePolicyOverrides: { maxHoldDurationMs: 5_400_000 } });
+    // balanced trading tick is now 10 min (600_000 ms); its 1× max-hold matches the tick.
+    expect(update).toMatchObject({ tickIntervalMs: 600_000, runtimePolicyOverrides: { maxHoldDurationMs: 600_000 } });
   });
 
   it('keeps a stored max hold that still covers the derived trading tick', async () => {
@@ -1755,7 +1756,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       }],
       activeLinkRows: [{
         id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['traderton/skills/crypto-trading'], toolPolicy: null,
-        modelPolicy: null, unifiedConfig: null, executionMode: 'paper', style: 'balanced', tickIntervalMs: 1_800_000,
+        modelPolicy: null, unifiedConfig: null, executionMode: 'paper', style: 'balanced', tickIntervalMs: 600_000,
         runtimePolicyOverrides: { maxHoldDurationMs: 7_200_000 },
       }],
       agentSkillRows: [],
@@ -1773,7 +1774,8 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 
     expect(res.statusCode).toBe(200);
     const update = updateSets.find((set: Record<string, unknown>) => 'tickIntervalMs' in set);
-    expect(update).toMatchObject({ tickIntervalMs: 1_800_000 });
+    // balanced trading tick is now 10 min (600_000 ms); the stored 7_200_000 max hold still covers it.
+    expect(update).toMatchObject({ tickIntervalMs: 600_000 });
     expect(update).not.toHaveProperty('runtimePolicyOverrides');
   });
 
