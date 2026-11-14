@@ -9,6 +9,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Rescaled the agent style ladder (`careful`/`balanced`/`bold`) up one notch so agents get more context/token headroom by default. The new `careful` uses the former `balanced` budgets, the new `balanced` (and the operator default) uses the former `bold` budgets, and the new `bold` doubles the former `bold` context/token budgets (clamped to `RUNTIME_POLICY_CEILINGS`; `deepThinkingTokens` clamps to 32768). Only context/budget fields moved — cost preset, tick interval, daily spend, escalation policy, reasoning level and hold duration carry through the shift unchanged.
+- Lowered the per-style default `dailySpendBudgetUsd` to `careful` $1, `balanced` $5, `bold` $30 (was $10/$30/$30). This value is a spend hint/target that influences custom-preset cadence and the displayed cost estimate; it does not cap spend.
+- The agent style summary in the create/edit form no longer shows a misleading "enforces a limit of $X/day" line. When model pricing is available it shows "~$X/day estimated"; otherwise it shows just the style name.
+
+### Fixed
+
+- The `minimal` and `custom` cost presets no longer silently downgrade the user-selected heavy (judge) model to the light model. `resolveAgentCostProfile` now always uses the configured heavy model for judge and narrative work, uniformly, with no minimal/low-cost special case.
+- Corrected misleading documentation that described `dailySpendBudgetUsd` as a hard cap that pauses the agent. It is now documented (JSDoc + help pages) as a spend hint; real spend enforcement is the plan-level spending caps (`canSpendNow`, ADR-006). Synced the public pricing and agent-style help pages to the current style ladder.
 
 ### Added
 
