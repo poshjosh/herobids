@@ -150,8 +150,8 @@ else
   ok "Created Bold agent: $agentId"
 
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
-  assert_eq "scoutMaxTurns"    "499"  "$(echo "$policy" | jq -r '.scoutMaxTurns')"
-  assert_eq "judgeMaxTurns"    "9999"  "$(echo "$policy" | jq -r '.judgeMaxTurns')"
+  assert_eq "scoutMaxTurns"    "50"  "$(echo "$policy" | jq -r '.scoutMaxTurns')"
+  assert_eq "judgeMaxTurns"    "500"  "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   # Bold = former bold budgets doubled (clamped to the operator ceilings).
   assert_eq "maxHistoryTokens" "160000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause"     "false" "$(echo "$policy" | jq -r '.weekendPause')"
@@ -174,8 +174,8 @@ else
   ok "Created Careful agent: $agentId"
 
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
-  assert_eq "scoutMaxTurns" "499" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
-  assert_eq "judgeMaxTurns" "9999" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
+  assert_eq "scoutMaxTurns" "50" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
+  assert_eq "judgeMaxTurns" "500" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryTokens" "40000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause" "false" "$(echo "$policy" | jq -r '.weekendPause')"
   assert_eq "maxHoldDurationMs" "5400000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
@@ -199,7 +199,7 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 
 log "── Test 3: Balanced + overrides ──"
-response=$(post_agent "$(echo "$BASE_PAYLOAD" | jq -c '. + {name:"e2e-rp-override",prompt:"test",style:"balanced",runtimePolicyOverrides:{scoutMaxTurns:50,maxHistoryTokens:10000,weekendPause:false}}')")
+response=$(post_agent "$(echo "$BASE_PAYLOAD" | jq -c '. + {name:"e2e-rp-override",prompt:"test",style:"balanced",runtimePolicyOverrides:{scoutMaxTurns:25,maxHistoryTokens:10000,weekendPause:false}}')")
 agentId=$(echo "$response" | jq -r '.id // empty')
 if [ -z "$agentId" ] || [ "$agentId" = "null" ]; then
   fail "Failed to create Balanced+override agent"
@@ -207,11 +207,11 @@ else
   ok "Created Balanced+override agent: $agentId"
 
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
-  assert_eq "scoutMaxTurns (override)"    "50"    "$(echo "$policy" | jq -r '.scoutMaxTurns')"
+  assert_eq "scoutMaxTurns (override)"    "25"    "$(echo "$policy" | jq -r '.scoutMaxTurns')"
   assert_eq "maxHistoryTokens (override)" "10000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause (override)"     "false" "$(echo "$policy" | jq -r '.weekendPause')"
   # Balanced defaults preserved for non-overridden fields
-  assert_eq "judgeMaxTurns (default)"     "9999"    "$(echo "$policy" | jq -r '.judgeMaxTurns')"
+  assert_eq "judgeMaxTurns (default)"     "500"    "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryMessages (default)" "40"   "$(echo "$policy" | jq -r '.maxHistoryMessages')"
 
   api DELETE "/agents/$agentId" > /dev/null
@@ -243,8 +243,8 @@ else
   ok "Created no-style agent: $agentId"
 
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
-  assert_eq "scoutMaxTurns" "499" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
-  assert_eq "judgeMaxTurns" "9999" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
+  assert_eq "scoutMaxTurns" "50" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
+  assert_eq "judgeMaxTurns" "500" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -275,10 +275,10 @@ response=$(update_agent "$agentId" '{
 }')
 policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
 scout=$(echo "$policy" | jq -r '.scoutMaxTurns // empty')
-if [ "$scout" = "499" ]; then
-  ok "Style updated to bold: scoutMaxTurns=499"
+if [ "$scout" = "50" ]; then
+  ok "Style updated to bold: scoutMaxTurns=50"
 else
-  fail "Style update failed: expected scoutMaxTurns=499, got $scout"
+  fail "Style update failed: expected scoutMaxTurns=50, got $scout"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════

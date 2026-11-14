@@ -107,11 +107,13 @@ effective = clamp(userOverride ?? operatorConfig ?? hardcodedDefault, ceiling)
 
 To remove the confusion and make the current (still-inverted) resolution
 **harmless** until this fix lands, all tiers were aligned to the same
-near-ceiling values so whichever tier wins produces the same numbers:
+values so whichever tier wins produces the same numbers. They were originally
+near-ceiling (499 / 9,999) and were lowered on 2026-11-14 to 50 / 500; see
+`DEFAULT_SCOUT_MAX_TURNS` and `DEFAULT_JUDGE_MAX_TURNS` in `schema.ts`.
 
-- `scoutMaxTurns`: ceiling 500; every style = 499; operator default
-  (`config/default.yaml` + schema) = 499.
-- `judgeMaxTurns`: ceiling 10,000; every style = 9,999; operator default = 9,999.
+- `scoutMaxTurns`: ceiling 500; every style = 50; operator default
+  (`config/default.yaml` + schema) = 50.
+- `judgeMaxTurns`: ceiling 10,000; every style = 500; operator default = 500.
 
 This is explicitly a stopgap: it does **not** fix the precedence; it only makes
 the duplicated homes agree. The real fix above still applies.

@@ -23,8 +23,8 @@ describe('resolveStyleDefaults', () => {
     expect(config.costPreset).toBe('standard');
     expect(config.tickIntervalMins).toBe('30');
     expect(config.dailySpendBudgetUsd).toBe('1');
-    expect(config.scoutMaxTurns).toBe(499);
-    expect(config.judgeMaxTurns).toBe(9_999);
+    expect(config.scoutMaxTurns).toBe(50);
+    expect(config.judgeMaxTurns).toBe(500);
     expect(config.maxHistoryTokens).toBe(40_000);
     expect(config.weekendPause).toBe(false);
     expect(config.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
@@ -35,8 +35,8 @@ describe('resolveStyleDefaults', () => {
     expect(config.costPreset).toBe('premium');
     expect(config.tickIntervalMins).toBe('10');
     expect(config.dailySpendBudgetUsd).toBe('5');
-    expect(config.scoutMaxTurns).toBe(499);
-    expect(config.judgeMaxTurns).toBe(9_999);
+    expect(config.scoutMaxTurns).toBe(50);
+    expect(config.judgeMaxTurns).toBe(500);
     expect(config.maxHistoryTokens).toBe(80_000);
     expect(config.weekendPause).toBe(false);
   });
@@ -46,8 +46,8 @@ describe('resolveStyleDefaults', () => {
     expect(config.costPreset).toBe('premium');
     expect(config.tickIntervalMins).toBe('10');
     expect(config.dailySpendBudgetUsd).toBe('30');
-    expect(config.scoutMaxTurns).toBe(499);
-    expect(config.judgeMaxTurns).toBe(9_999);
+    expect(config.scoutMaxTurns).toBe(50);
+    expect(config.judgeMaxTurns).toBe(500);
     expect(config.maxHistoryTokens).toBe(160_000);
     expect(config.weekendPause).toBe(false);
     expect(config.allowedHoursUtc).toEqual([]);

@@ -34,8 +34,8 @@ Three styles define the baseline. All numeric values are backed by
 | **Tick interval** | 30 min | 10 min | 10 min |
 | **Daily spend budget** | $1 | $5 | $30 |
 | **Escalation policy** | uncovered_or_triggered | always | always |
-| `scoutMaxTurns` | 499 | 499 | 499 |
-| `judgeMaxTurns` | 9 999 | 9 999 | 9 999 |
+| `scoutMaxTurns` | 50 | 50 | 50 |
+| `judgeMaxTurns` | 500 | 500 | 500 |
 | `scoutMaxTokens` | 1 024 | 2 048 | 4 096 |
 | `judgeMaxTokens` | 4 096 | 8 192 | 16 384 |
 | `lightThinkingTokens` | 2 048 | 4 096 | 8 192 |
@@ -79,17 +79,34 @@ and the operator value has no effect for a running agent.
 That precedence is **not** what we ultimately want (external operator config
 should beat hardcoded defaults, user overrides should beat operator config, all
 bounded by the ceiling). Until that is fixed, every tier has been **aligned to
-the same near-ceiling values** so whichever one wins produces identical numbers
-and nothing is silently contradictory:
+the same values** (`DEFAULT_SCOUT_MAX_TURNS` / `DEFAULT_JUDGE_MAX_TURNS` in
+`packages/domain/src/config/schema.ts`) so whichever one wins produces identical
+numbers and nothing is silently contradictory:
 
-- `scoutMaxTurns`: ceiling 500; all styles 499; operator `llm.scout.maxTurns` 499.
-- `judgeMaxTurns`: ceiling 10 000; all styles 9 999; operator `llm.judge.maxTurns` 9 999.
+- `scoutMaxTurns`: ceiling 500; all styles 50; operator `llm.scout.maxTurns` 50.
+- `judgeMaxTurns`: ceiling 10 000; all styles 500; operator `llm.judge.maxTurns` 500.
 
-**Why near-ceiling and uniform:** turn caps are runaway-loop protection, not
-behavioural tuning — the only cost of a high cap is spend, which the daily budget
-already governs, so agents are not cut off early. Turn budgets are therefore
-intentionally uniform across styles; only token/history/reasoning budgets stay
-graduated.
+**What the numbers mean in time.** A turn is one model call plus the tool calls it
+requests. At an assumed 20 seconds per turn:
+
+| Cap | Turns | Time at 20 s per turn |
+|-----|:-----:|-----------------------|
+| scout | 50 | 1 000 s, about 17 minutes |
+| judge | 500 | 10 000 s, about 2 hours 47 minutes |
+
+The real pace depends on the model and tools. On the local stack we saw about 4 s
+per turn on a hosted Haiku-class model and about 60 s per turn on a local 35B model
+served by Ollama (the judge cap is then about 8 hours). The cap counts turns, not
+time.
+
+**Why uniform:** turn caps are runaway-loop protection, not behavioural tuning, so
+they are the same across styles; only token/history/reasoning budgets stay
+graduated. The previous values (scout 499, judge 9 999) were effectively unlimited
+(a runaway judge loop could run for days). When the judge loop hits its cap it ends
+without a wrap-up step and the tick is reported as degraded
+(`llm.tool_loop_limit`), so the cap should sit well above normal run length. A
+per-agent override (`runtimePolicyOverrides.scoutMaxTurns` / `judgeMaxTurns`) can
+still raise or lower it, up to the ceilings above.
 
 The proper precedence-ladder fix is specified in
 [`docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md`](../../features/pending/000-runtime-turn-budget-precedence/001-plan.md).

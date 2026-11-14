@@ -17,12 +17,14 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 
 ### Tool Turn Limits
 
-Turn caps are runaway-loop protection rather than behavioural tuning, so they are uniform across all styles.
+Turn caps are runaway-loop protection rather than behavioural tuning, so they are uniform across all styles. A turn is one model call plus the tool calls it requests.
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Scout max turns** | 499 | 499 | 499 |
-| **Judge max turns** | 9,999 | 9,999 | 9,999 |
+| **Scout max turns** | 50 | 50 | 50 |
+| **Judge max turns** | 500 | 500 | 500 |
+
+At 20 seconds per turn, 50 scout turns is about 17 minutes and 500 judge turns is about 2 hours 47 minutes. Real pace depends on the model and tools.
 
 ### LLM Token Limits
 

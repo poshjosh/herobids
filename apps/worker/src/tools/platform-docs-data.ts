@@ -176,7 +176,7 @@ Careful:
   - tickInterval: 30 minutes
   - dailySpendBudget: $1/day
   - openPositionEscalationToJudgePolicy: uncovered_or_triggered
-  - scoutMaxTurns: 499, judgeMaxTurns: 9,999
+  - scoutMaxTurns: 50, judgeMaxTurns: 500
   - scoutMaxTokens: 1,024, judgeMaxTokens: 4,096
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
@@ -187,7 +187,7 @@ Balanced:
   - tickInterval: 10 minutes
   - dailySpendBudget: $5/day
   - openPositionEscalationToJudgePolicy: always
-  - scoutMaxTurns: 499, judgeMaxTurns: 9,999
+  - scoutMaxTurns: 50, judgeMaxTurns: 500
   - scoutMaxTokens: 2,048, judgeMaxTokens: 8,192
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
@@ -198,7 +198,7 @@ Bold:
   - tickInterval: 10 minutes
   - dailySpendBudget: $30/day
   - openPositionEscalationToJudgePolicy: always
-  - scoutMaxTurns: 499, judgeMaxTurns: 9,999
+  - scoutMaxTurns: 50, judgeMaxTurns: 500
   - scoutMaxTokens: 4,096, judgeMaxTokens: 16,384
   - allowedHoursUtc: all (24/7)
   - weekendPause: false
@@ -461,12 +461,14 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 
 ### Tool Turn Limits
 
-Turn caps are runaway-loop protection rather than behavioural tuning, so they are uniform across all styles.
+Turn caps are runaway-loop protection rather than behavioural tuning, so they are uniform across all styles. A turn is one model call plus the tool calls it requests.
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Scout max turns** | 499 | 499 | 499 |
-| **Judge max turns** | 9,999 | 9,999 | 9,999 |
+| **Scout max turns** | 50 | 50 | 50 |
+| **Judge max turns** | 500 | 500 | 500 |
+
+At 20 seconds per turn, 50 scout turns is about 17 minutes and 500 judge turns is about 2 hours 47 minutes. Real pace depends on the model and tools.
 
 ### LLM Token Limits
 

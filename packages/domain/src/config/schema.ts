@@ -141,19 +141,38 @@ export const ModelDefaultsSchema = z.object({
   heavyModel: z.string().min(1).optional(),
 }).optional();
 
+/**
+ * Default per-loop turn caps. One turn = one model call plus the tool calls it requests.
+ *
+ * Time equivalents assume 20 seconds per turn:
+ *   - scout: 50 turns  x 20 s =  1,000 s = about 17 minutes
+ *   - judge: 500 turns x 20 s = 10,000 s = about 2 hours 47 minutes
+ *
+ * The real pace depends on the model and the tools. Observed on the local stack:
+ * about 4 s per turn on a hosted Haiku-class model, about 60 s per turn on a local
+ * 35B model served by Ollama. At 60 s per turn the judge cap is about 8 hours.
+ *
+ * The cap counts turns, not time, so it is a safety net against runaway loops and
+ * not a run-length target. Reaching it ends the loop with no wrap-up step: the judge
+ * tick is reported as degraded (`llm.tool_loop_limit`). Both are well under the
+ * ceilings in RUNTIME_POLICY_CEILINGS, which stay the upper bound for per-agent overrides.
+ */
+export const DEFAULT_SCOUT_MAX_TURNS = 50;
+export const DEFAULT_JUDGE_MAX_TURNS = 500;
+
 const AgentRuntimeLlmScoutControlsSchema = z.object({
-  // Aligned to the scout turn ceiling-adjacent value (styles also default to 499)
-  // so every tier agrees until the precedence-ladder fix lands. See
+  // Same value as the style defaults (AGENT_STYLE_RUNTIME_DEFAULTS) so every tier agrees
+  // until the precedence-ladder fix lands. See
   // docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md.
-  maxTurns: z.number().int().min(1).default(499),
+  maxTurns: z.number().int().min(1).default(DEFAULT_SCOUT_MAX_TURNS),
   maxTokens: z.number().int().min(1).default(1_024),
   temperature: z.number().min(0).max(2).default(0),
 });
 const LlmJudgeConfigSchema = z.object({
-  // Aligned to the judge turn ceiling-adjacent value (styles also default to 9999)
-  // so every tier agrees until the precedence-ladder fix lands. See
+  // Same value as the style defaults (AGENT_STYLE_RUNTIME_DEFAULTS) so every tier agrees
+  // until the precedence-ladder fix lands. See
   // docs/features/pending/000-runtime-turn-budget-precedence/001-plan.md.
-  maxTurns: z.number().int().min(1).default(9_999),
+  maxTurns: z.number().int().min(1).default(DEFAULT_JUDGE_MAX_TURNS),
   temperature: z.number().min(0).max(2).default(0.3),
 });
 
@@ -322,8 +341,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     tickIntervalMins: '30',
     dailySpendBudgetUsd: '1',
     openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
-    scoutMaxTurns: 499,
-    judgeMaxTurns: 9_999,
+    scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
+    judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
     scoutMaxTokens: 1_024,
     judgeMaxTokens: 4_096,
     lightThinkingTokens: 2_048,
@@ -352,8 +371,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     tickIntervalMins: '10',
     dailySpendBudgetUsd: '5',
     openPositionEscalationToJudgePolicy: 'always',
-    scoutMaxTurns: 499,
-    judgeMaxTurns: 9_999,
+    scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
+    judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
     scoutMaxTokens: 2_048,
     judgeMaxTokens: 8_192,
     lightThinkingTokens: 4_096,
@@ -383,8 +402,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     tickIntervalMins: '10',
     dailySpendBudgetUsd: '30',
     openPositionEscalationToJudgePolicy: 'always',
-    scoutMaxTurns: 499,
-    judgeMaxTurns: 9_999,
+    scoutMaxTurns: DEFAULT_SCOUT_MAX_TURNS,
+    judgeMaxTurns: DEFAULT_JUDGE_MAX_TURNS,
     scoutMaxTokens: 4_096,
     judgeMaxTokens: 16_384,
     lightThinkingTokens: 8_192,

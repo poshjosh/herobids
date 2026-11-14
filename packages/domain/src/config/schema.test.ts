@@ -13,6 +13,8 @@ import {
   PermissionLevelSchema,
   RUNTIME_POLICY_CEILINGS,
   AGENT_STYLE_RUNTIME_DEFAULTS,
+  DEFAULT_SCOUT_MAX_TURNS,
+  DEFAULT_JUDGE_MAX_TURNS,
   resolveAgentRuntimePolicy,
   CapabilityModeSchema,
   HybridModeSchema,
@@ -193,10 +195,10 @@ describe('AgentRuntimePolicySchema', () => {
     if (result.success) {
       expect(result.data.llm.retry.maxRetries).toBe(4);
       expect(result.data.llm.scout.maxHoldDurationMs).toBeUndefined();
-      expect(result.data.llm.scout.maxTurns).toBe(499);
+      expect(result.data.llm.scout.maxTurns).toBe(50);
       expect(result.data.llm.scout.maxTokens).toBe(1_024);
       expect(result.data.llm.scout.temperature).toBe(0);
-      expect(result.data.llm.judge.maxTurns).toBe(9_999);
+      expect(result.data.llm.judge.maxTurns).toBe(500);
       expect(result.data.llm.judge.temperature).toBe(0.3);
       expect(result.data.llm.thinking.deepBudgetTokens).toBe(10_240);
       expect(result.data.wake.minIntervalMs).toBe(15_000);
@@ -1051,8 +1053,8 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
 
   it('careful has conservative defaults', () => {
     const d = AGENT_STYLE_RUNTIME_DEFAULTS.careful;
-    expect(d.scoutMaxTurns).toBe(499);
-    expect(d.judgeMaxTurns).toBe(9_999);
+    expect(d.scoutMaxTurns).toBe(50);
+    expect(d.judgeMaxTurns).toBe(500);
     expect(d.maxHistoryTokens).toBe(40_000);
     expect(d.weekendPause).toBe(false);
     expect(d.allowedHoursUtc).toEqual([]);  // careful no longer restricts hours
@@ -1061,21 +1063,29 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
 
   it('balanced has moderate defaults', () => {
     const d = AGENT_STYLE_RUNTIME_DEFAULTS.balanced;
-    expect(d.scoutMaxTurns).toBe(499);
-    expect(d.judgeMaxTurns).toBe(9_999);
+    expect(d.scoutMaxTurns).toBe(50);
+    expect(d.judgeMaxTurns).toBe(500);
     expect(d.maxHistoryTokens).toBe(80_000);
     expect(d.costPreset).toBe('premium');
   });
 
   it('bold has aggressive defaults', () => {
     const d = AGENT_STYLE_RUNTIME_DEFAULTS.bold;
-    expect(d.scoutMaxTurns).toBe(499);
-    expect(d.judgeMaxTurns).toBe(9_999);
+    expect(d.scoutMaxTurns).toBe(50);
+    expect(d.judgeMaxTurns).toBe(500);
     expect(d.maxHistoryTokens).toBe(160_000);
     expect(d.weekendPause).toBe(false);
     expect(d.costPreset).toBe('premium');
   });
 
+  it('every style uses the shared default turn caps, so the style and operator tiers agree', () => {
+    expect(DEFAULT_SCOUT_MAX_TURNS).toBe(50);
+    expect(DEFAULT_JUDGE_MAX_TURNS).toBe(500);
+    for (const style of ['careful', 'balanced', 'bold'] as const) {
+      expect(AGENT_STYLE_RUNTIME_DEFAULTS[style].scoutMaxTurns).toBe(DEFAULT_SCOUT_MAX_TURNS);
+      expect(AGENT_STYLE_RUNTIME_DEFAULTS[style].judgeMaxTurns).toBe(DEFAULT_JUDGE_MAX_TURNS);
+    }
+  });
   it('all defaults are within operator ceilings', () => {
     for (const style of ['careful', 'balanced', 'bold'] as const) {
       const d = AGENT_STYLE_RUNTIME_DEFAULTS[style];
@@ -1097,38 +1107,38 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
 describe('resolveAgentRuntimePolicy', () => {
   it('returns balanced defaults when style is undefined', () => {
     const resolved = resolveAgentRuntimePolicy(undefined, null);
-    expect(resolved.scoutMaxTurns).toBe(499);
-    expect(resolved.judgeMaxTurns).toBe(9_999);
+    expect(resolved.scoutMaxTurns).toBe(50);
+    expect(resolved.judgeMaxTurns).toBe(500);
   });
 
   it('returns balanced defaults when style is null', () => {
     const resolved = resolveAgentRuntimePolicy(null, null);
-    expect(resolved.scoutMaxTurns).toBe(499);
+    expect(resolved.scoutMaxTurns).toBe(50);
   });
 
   it('returns balanced defaults when style is invalid', () => {
     const resolved = resolveAgentRuntimePolicy('aggressive', null);
-    expect(resolved.scoutMaxTurns).toBe(499);
+    expect(resolved.scoutMaxTurns).toBe(50);
   });
 
   it('returns bold defaults for bold style', () => {
     const resolved = resolveAgentRuntimePolicy('bold', null);
-    expect(resolved.scoutMaxTurns).toBe(499);
-    expect(resolved.judgeMaxTurns).toBe(9_999);
+    expect(resolved.scoutMaxTurns).toBe(50);
+    expect(resolved.judgeMaxTurns).toBe(500);
     expect(resolved.maxHistoryTokens).toBe(160_000);
     expect(resolved.weekendPause).toBe(false);
   });
 
   it('returns careful defaults for careful style', () => {
     const resolved = resolveAgentRuntimePolicy('careful', null);
-    expect(resolved.scoutMaxTurns).toBe(499);
+    expect(resolved.scoutMaxTurns).toBe(50);
     expect(resolved.weekendPause).toBe(false);
   });
 
   it('overrides win over style defaults', () => {
     const resolved = resolveAgentRuntimePolicy('bold', { scoutMaxTurns: 25 });
     expect(resolved.scoutMaxTurns).toBe(25); // override wins
-    expect(resolved.judgeMaxTurns).toBe(9_999); // style default preserved
+    expect(resolved.judgeMaxTurns).toBe(500); // style default preserved
   });
 
   it('multiple overrides all win', () => {
@@ -1141,13 +1151,13 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(resolved.maxHistoryTokens).toBe(10_000);
     expect(resolved.weekendPause).toBe(false);
     // style defaults for non-overridden fields
-    expect(resolved.judgeMaxTurns).toBe(9_999);
+    expect(resolved.judgeMaxTurns).toBe(500);
     expect(resolved.maxHistoryMessages).toBe(40);
   });
 
   it('handles empty overrides object', () => {
     const resolved = resolveAgentRuntimePolicy('careful', {});
-    expect(resolved.scoutMaxTurns).toBe(499);
+    expect(resolved.scoutMaxTurns).toBe(50);
     expect(resolved.maxHoldDurationMs).toBe(5_400_000);  // careful: 3 × tick interval (90 min)
   });
 });

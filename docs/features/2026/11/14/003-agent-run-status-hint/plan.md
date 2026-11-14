@@ -1,81 +1,98 @@
-# Per-turn run-status hint for long-running agent ticks
+# Run-status hint for long-running agent runs (current time + run elapsed)
 
-Status: DRAFT (not started). Owner decision needed on the gate in "Decision gate".
+Status: DRAFT, not started. Slimmed on 2026-11-14 after reviewing live agents. Read
+"Will this solve the problem?" before approving the build.
 
 ## Problem
 
-Agents whose skill needs a long run (for example `openaidom/skills@job-search`) end each
-tick after a handful of tool calls, even though the skill allows far more.
+Agents whose skill needs a long run (for example `openaidom/skills@job-search`) do not
+work for as long as the skill allows. Two opposite failures were observed:
 
-Evidence, from agent `job-searcher` (`9e53f14b-2045-4854-b0e4-22d725ab8c99`, local compose,
-paused 2026-11-14 16:36 UTC, read from `agent_messages`):
+1. Under-running. `job-searcher` (old, `9e53f14b`, Haiku) ended each 5-minute discovery
+   tick after 5 to 10 model turns and 2 `search_web` calls, about 25 s of a 300 s interval.
+   `swift-hatch` (`0380f813`, Haiku, new skill text) did 5 to 6 web calls in its first two
+   scheduled runs (47 s, 44 s), then drifted back to 2 web calls and about 27 s by 20:35
+   and 20:40, while its own message said the coverage review was still due.
+2. Over-running. `job-searcher` (new, `a148c598`, local Ollama qwen3.6:35b) stayed in one
+   tick from 20:27:23 to past 20:48 (21+ minutes, about 28 model calls at 60 to 70 s each,
+   45 tool calls, no message to the user), against a skill run budget of 2.5 minutes. It
+   also wrote future timestamps (`completedAt 20:48:00Z` at 20:40:36).
 
-- 17 ticks. Every one ended with `agent.llm.completed.finishReason = "stop"` after 2 to 19
-  model turns (5 s to 106 s). The judge cap is `maxTurns: 9999`, so the cap never applied.
-- `runStructuredToolLoop` (`apps/worker/src/structured-tool-loop.ts`) exits only when the
-  model replies with no tool calls. There is no wall-clock limit and no per-tick tool cap.
-- A typical 5-minute "discovery run" was: restore state (about 5 calls), 2 `search_web`
-  calls, save state, `send_message`, stop. About 25 s of a 300 s interval.
-- The agent wrote its own reminder text "Run one bounded discovery batch (Step 5), save
-  results, then Step 8", so it scoped each run down itself.
-- After a user answer the tick wrote "Next I'll look for... and check it is still live" and
-  then stopped without doing it.
+Facts that frame the fix (read from `agent_messages` and code):
 
-Skill-side causes (ambiguous "bounded runs", no finish condition) are handled by the
-`job-search` skill change in `openaidom-skills` (CHANGELOG "Changed" entry, 2026-11-14).
-This plan covers the platform-side data the model lacks when deciding whether to continue.
+- Every finished tick ended with `finishReason: "stop"`: the model chose to stop.
+  `runStructuredToolLoop` exits only when the model returns no tool calls.
+- No platform limit is hit. Turn caps were 499 / 9,999 and are now 50 / 500 (changed
+  2026-11-14, `DEFAULT_SCOUT_MAX_TURNS` / `DEFAULT_JUDGE_MAX_TURNS`). They count turns, not
+  time, so they cap runaway loops and do not set run length.
+- The skill (`openaidom-skills`, "Run budget" guide) now defines a run time budget (half
+  the search interval, 1 to 30 minutes) and finish conditions. The agents read it: their
+  reminder text quotes the budget.
+- The model has no live clock. `Current time (UTC)` is written once into the system prompt
+  at tick start (`buildSystemPrompt`, `runtime-composition.ts`), so it is stale after the
+  first turn, and nothing reports how long the run has lasted. Agents fall back to
+  estimating the time, and the estimates are wrong (checkpoints dated 1 to 8 minutes ahead).
 
-### What the model cannot currently see
+## Will this solve the problem?
 
-- The system prompt is built once per tick (`buildSystemPrompt`, `runtime-composition.ts`),
-  so "Current time (UTC)" is frozen at tick start and goes stale within a long loop.
-- Nothing tells the model how long the tick has run, how many tool calls it has made, or how
-  long until the next scheduled wake. A skill that sets a run time budget (the
-  `job-search` skill uses half the search interval, 1 to 30 minutes) cannot be followed
-  without that data. The agent in the evidence above also
-  wrote timestamps such as `16:40:00Z` while the real time was about 16:35.
+Partly. State this plainly to avoid over-selling.
+
+- Over-running and wrong timestamps: likely helped. An agent that sees "this run has been
+  working for 6m10s" next to a 2.5-minute budget has what it needs to stop, and it stops
+  inventing times. Evidence: the qwen agent had no way to know it was at 20 minutes.
+- Under-running: uncertain, probably not enough on its own. swift-hatch stopped at about
+  20% of its budget with due work remaining. The cause looks like the model's tendency to
+  wrap up after a report-sized chunk of work, not missing information, because it knew its
+  start time (prompt) and the budget (skill). A "27s elapsed" line may nudge it to continue,
+  but nothing forces it to.
+
+So treat this as a cheap, low-risk experiment that fixes the clock, not as the fix for early
+stops. If stage B (below) shows early stops persist, the reliable remedy is a continuation
+guard (see "If this is not enough").
 
 ## Goals
 
-- Give the judge a small, factual, per-turn "run status" block: fresh time, tick elapsed,
-  turns used, tool calls used, time until the next scheduled reminder.
-- Keep it data only. No instruction, no limit. The skill or the creator supplies policy.
-- Add the same numbers to `agent.llm.completed` so before/after runs are measurable from
-  the database without log scraping.
-- Zero context growth: the hint is never persisted into the message list.
+- Give the judge a fresh, factual status line before each model call: current UTC time and
+  how long this run has been working. Nothing else in the line.
+- Keep it data only. No instruction and no limit: the skill supplies the budget.
+- Record elapsed time and tool-call count on `agent.llm.completed` so before/after runs can
+  be compared from the database.
+- No context growth: the line is never stored in the message history.
 
 ## Non-goals
 
-- No continuation guard, no `finish_run` tool, no nudge when the model stops (option 3 in
-  the investigation). Separate plan if this one is not enough.
+- No wall-clock cap on a run (decided: do not cap by minutes). `judgeMaxTurns` (500) and
+  `scoutMaxTurns` (50) stay the only run limits. `sandboxDefaults.maxWallClockMs` is a
+  whole-session limit that shuts the agent down; it stays 0 and is not used here.
+- No countdown to the next reminder and no reminder-list refresh. The prompt already shows
+  `Next scheduled reminder (UTC)`, and the skill budget is expressed as half the search
+  interval, which the agent knows. This removes `pickNextReminder` and the mid-tick Redis
+  re-read from the earlier draft.
+- No turn or tool-call count in the line (they are recorded for measurement only).
+- No continuation guard, no `finish_run` tool, no nudge when the model stops (separate plan).
 - No skill-declared budgets in frontmatter or `SkillDefinition`.
-- No change to `maxTurns`, the scout loop, reminder coordinator, or tool result truncation.
-- No change to the model, reasoning level, cost preset, or style defaults.
-- No new env var, so no `.example` change.
+- No change to the scout loop, reminder coordinator, tool-result truncation, model, or
+  reasoning level. No new env var, so no `.example` change.
 
 ## Rule fit
 
-- Agent Mode Purity (`docs/tech/agents/runtime-boundary-and-message-contract.md`): the
-  hint is the "Data" category (always provide; restricts nothing). It must not contain
-  imperative wording such as "continue" or "you should stop".
-- Configuration (`docs/best-practices/configuration.md`): operator-level, so it lives in
-  `config/default.yaml` and `AgentRuntimeConfigSchema`, validated by Zod at startup. No
-  literals in code.
-- Lessons #9 (context grows without bound): the hint is ephemeral (see Design 2).
-- `docs/best-practices/agent-runtime.md` "Cost Review Checklist" applies, because this
-  touches the tick loop. See Rollout.
+- Agent Mode Purity (`docs/tech/agents/runtime-boundary-and-message-contract.md`): the line
+  is the "Data" category (always provide; restricts nothing). No imperative wording.
+- Configuration (`docs/best-practices/configuration.md`): operator config in
+  `config/default.yaml` and `AgentRuntimeConfigSchema`, validated by Zod. No literals in code.
+- Lessons #9 (context grows without bound): the line is ephemeral, see Design 2.
+- `docs/best-practices/agent-runtime.md` "Cost Review Checklist" applies (touches the tick loop).
 
 ## Current state (verified by reading code)
 
 | Area | File | Fact |
 |---|---|---|
-| Loop | `apps/worker/src/structured-tool-loop.ts` | `onBeforeTurn` returns a string or `{message, toolChoice}`; the string is `messages.push`ed, so it is permanent. Only the scout loop passes it (`agent.ts` ~4095). The judge loop (`agent.ts` ~4263) passes none. |
-| Loop | same | `messages` is passed to `callLlmWithRetry` each turn; tool results are appended with `addedAtTurn`. No tool-call counter exists. |
-| Timing | `apps/worker/src/prompt-timing-context.ts` | `PromptTimingContext` has `currentTimeIso`, `nextReminderIso` (soonest reminder at tick start). Built once at `agent.ts` ~3793. |
-| Reminders | `agent.ts` ~2951, `reminders/reminder-schedule.ts` | `runtimeState.metrics.scheduledReminders` is loaded from Redis once per tick, sorted by `triggerAt`, capped by `promptMaxEntries`. `advanceRepeatingReminder` computes the next slot on the grid. |
-| Events | `agent.ts` ~4444 | `LLM_COMPLETED` carries `turnsUsed`, `finishReason`. No elapsed time, no tool-call count. |
-| Config | `packages/domain/src/config/schema.ts` `AgentRuntimeConfigSchema` (~1349); `AgentRuntimePolicySchema` (~1589) | Reaches the agent container as `AGENT_RUNTIME_CONFIG_JSON`, parsed by `parseAgentRuntimePolicy` (`agent.ts` ~387). |
-| Config | `config/default.yaml` `agentRuntime.reminders` (~692) | Has an uncommitted local change `minRepeatIntervalMs: 300000`. Not part of this work; do not stage it. |
+| Loop | `apps/worker/src/structured-tool-loop.ts` | `onBeforeTurn` returns a string or `{message, toolChoice}`; the string is `messages.push`ed, so it is permanent. Only the scout loop uses it (`agent.ts` ~4095). The judge loop (`agent.ts` ~4263) passes none. `messages` goes to `callLlmWithRetry` every turn. |
+| Timing | `apps/worker/src/prompt-timing-context.ts` | `currentTimeIso` is built once per tick (`agent.ts` ~3793). |
+| Tick start | `agent.ts` ~2786 | `const tickId = crypto.randomUUID()` marks tick start; no start timestamp is kept. |
+| Events | `agent.ts` ~4444; `packages/domain/src/agent-protocol.ts` | `LLM_COMPLETED` carries `turnsUsed`, `finishReason`; validated by `LlmCompletedPayloadSchema` (~720). No elapsed time, no tool-call count. |
+| Config | `schema.ts` `AgentRuntimeConfigSchema` (~1349), `AgentRuntimePolicySchema` | Reaches the agent container as `AGENT_RUNTIME_CONFIG_JSON`, parsed by `parseAgentRuntimePolicy` (`agent.ts` ~387). |
+| Config | `config/default.yaml` `agentRuntime.reminders` | Has an uncommitted local change `minRepeatIntervalMs: 300000`. Not part of this work; do not stage it. |
 
 ## Design
 
@@ -84,83 +101,56 @@ This plan covers the platform-side data the model lacks when deciding whether to
 ```ts
 export interface RunStatusInput {
   nowMs: number;
-  tickStartedAtMs: number;
-  turnsUsed: number;          // completed model turns in this loop
-  maxTurns: number;
-  toolCallsUsed: number;
-  nextReminder: { key?: string; atMs: number } | null;
+  runStartedAtMs: number;
 }
 export function formatRunStatusHint(input: RunStatusInput): string
-export function pickNextReminder(reminders: readonly ReminderRecord[], nowMs: number): { key?: string; atMs: number } | null
 ```
 
-Output is one line, facts only:
+Output is one line, facts only. "Run" matches the skill's wording ("run time budget",
+"invocation"); the word "tick" is internal and is not defined in the prompt.
 
 ```
-Run status: time (UTC) 2026-11-14T16:37:12Z; tick elapsed 2m17s; model turns 12 of 9999; tool calls 11; next scheduled reminder "js-discovery" at 16:40:21Z (in 3m09s)
+Run status: time (UTC) 2026-11-14T16:37:12Z; this run has been working for 2m17s
 ```
 
-- Omit the reminder clause when `nextReminder` is null.
-- Reuse `formatInterval` from `prompt-timing-context.ts` if its output suits; otherwise add a
-  small `formatElapsed` (m/s) in the new module. Do not widen `formatInterval`'s contract.
-- `pickNextReminder`: for each reminder, if `triggerAt > now` use it; if it is in the past and
-  repeating, use `advanceRepeatingReminder({ triggerAtMs, repeatEveryMs, nowMs }).nextTriggerAtMs`;
-  if it is in the past and one-shot, skip it. Return the earliest. This keeps the value correct
-  when a tick outlasts the reminder interval, without re-reading Redis.
+Elapsed is shown as `Xm Ys` under an hour and `Xh Ym` above. Add a small `formatElapsed`
+in the module; do not change `formatInterval`'s contract.
 
 ### 2. Ephemeral per-turn injection in the loop
 
 Add to `StructuredToolLoopOptions`:
 
 ```ts
-getTurnContext?: (info: {
-  turnIndex: number;
-  turnsRemaining: number;
-  toolCallsUsed: number;
-}) => string | undefined;
+getTurnContext?: (info: { turnIndex: number; toolCallsUsed: number }) => string | undefined;
 ```
 
-In the loop, count `toolCallsUsed` (sum of `toolCalls.length` after each turn). Before the
-LLM call, build the request messages as `[...messages, { role: 'user', content: ctx }]` when
-`getTurnContext` returns a string. Do not push it into `messages`.
+The loop counts `toolCallsUsed` (sum of `toolCalls.length` after each turn). Before the LLM
+call it builds the request messages as `[...messages, { role: 'user', content: ctx }]` when
+`getTurnContext` returns a string, and does not push it into `messages`.
 
-Why not reuse `onBeforeTurn`: its string is appended permanently. At about 60 tokens per turn
-over a 50-turn tick that is 3k tokens of noise resent every turn (lessons #9), and old copies
-of "time" would contradict the new one.
+Why not `onBeforeTurn`: its string is appended permanently. Over a long run that is one
+copy of the line per turn, resent every turn, and the old copies show outdated times.
 
-Cache note: the block is the last message and never persisted, so the cached prefix is
-unchanged. Confirm with `cachedInputTokens` before and after (see Verification).
-
-`onBeforeTurn` behaviour and the scout loop stay unchanged. The two options compose: an
-`onBeforeTurn` hint is still appended permanently, then the ephemeral block goes last.
+The line is the last message, so the cached prefix is unchanged. Confirm with
+`cachedInputTokens` (Verification). `onBeforeTurn` and the scout loop are unchanged.
 
 ### 3. Judge wiring in `agent.ts`
 
-- Record `tickStartedAtMs` at tick start (next to `const tickId`, ~2786).
+- Record `tickStartedAtMs = Date.now()` next to `const tickId` (~2786).
 - Pass `getTurnContext` to the judge `runStructuredToolLoop` only when
   `agentRuntimePolicy.runStatusHint.enabled` and `turnIndex >= minTurnsBeforeShown`. Turn
-  index 0 already has the tick-start system prompt, so the default skips it.
-- Inputs: `Date.now()`, `tickStartedAtMs`, `turnIndex`, `judgeLoopConfig.maxTurns`,
-  `toolCallsUsed` from the loop, `pickNextReminder(runtimeState.metrics.scheduledReminders, now)`.
-- Staleness fix: `scheduledReminders` is read once at tick start, so a reminder the agent
-  creates or cancels mid-tick is missing. In `onToolResult`, when `toolCall.name` is
-  `schedule_reminder` or `cancel_reminder` (confirm the exact cancel tool name in
-  `tools/tasks.ts`) and the result succeeded, re-run the existing reminder load routine (the
-  code at ~2951, extracted into a function if it is inline) before the next turn. If that
-  extraction is larger than expected, ship without it and label the clause "at tick start".
+  index 0 already has the tick-start time in the system prompt, so the default skips it.
+- The thunk calls `formatRunStatusHint({ nowMs: Date.now(), runStartedAtMs: tickStartedAtMs })`.
 
 ### 4. Observability
 
-Extend the `LLM_COMPLETED` payload for the judge phase with `elapsedMs` and `toolCallsUsed`.
-The payload is validated by `LlmCompletedPayloadSchema` (`packages/domain/src/agent-protocol.ts`,
-registered ~720). Add both fields there as optional so older agent images still validate. Check
-whether the schema is `.strict()` (it would reject unknown keys), and check the other readers:
-`agent-message-broker.ts` (audit-only, ~394) and `apps/api/src/routes/agent-activity-mapper.ts`
-(~26, reads `finishReason` and `phase`). Add a schema test for the new optional fields.
+Add optional `elapsedMs` and `toolCallsUsed` to the judge `LLM_COMPLETED` payload and to
+`LlmCompletedPayloadSchema`. Check whether the schema is `.strict()`, and check the other
+readers: `agent-message-broker.ts` (audit-only, ~394) and
+`apps/api/src/routes/agent-activity-mapper.ts` (~26, reads `finishReason` and `phase`).
+Optional fields keep older agent images valid. Add a schema test.
 
 ### 5. Config
-
-`AgentRuntimeConfigSchema`:
 
 ```ts
 runStatusHint: z.object({
@@ -173,98 +163,114 @@ runStatusHint: z.object({
 
 ```yaml
 runStatusHint:
-  enabled: true                # per-turn run-status block (time, elapsed, turns, tool calls, next reminder) for the judge loop
-  minTurnsBeforeShown: 1       # first judge turn that gets the block; 0 = from the very first turn
+  enabled: true              # per-turn run-status line (current UTC time, run elapsed) for the judge loop
+  minTurnsBeforeShown: 1     # first judge turn that gets the line; 0 = from the very first turn
 ```
 
-Schema default is `false` so a missing key never changes prompts; `default.yaml` turns it on
-for local dev. Staging and production stay off until the soak in Rollout.
+Schema default is `false`, so a missing key never changes prompts. `default.yaml` turns it on
+for local dev; staging and production stay off until the soak in Rollout.
 
 ## Work packages
 
-1. WP1, formatter: `run-status-hint.ts` + `run-status-hint.test.ts`.
-2. WP2, loop: `getTurnContext`, `toolCallsUsed` counter, tests in `structured-tool-loop.test.ts`.
-3. WP3, config: schema field, `default.yaml`, `schema.test.ts` defaults and refusal of bad types.
-4. WP4, wiring: `tickStartedAtMs`, judge `getTurnContext`, reminder refresh on reminder tools.
-5. WP5, observability: `elapsedMs`, `toolCallsUsed` on `LLM_COMPLETED`, plus type/schema updates.
-6. WP6, docs: short "Run status hint" section in `docs/best-practices/agent-runtime.md`
-   (what it is, that it is data not policy, cost note); `CHANGELOG.md` one line under Added.
+1. WP1: formatter and tests (`run-status-hint.ts`).
+2. WP2: loop `getTurnContext`, `toolCallsUsed` counter, tests in `structured-tool-loop.test.ts`.
+3. WP3: config schema field, `default.yaml`, `schema.test.ts`.
+4. WP4: wiring (`tickStartedAtMs`, judge `getTurnContext`).
+5. WP5: `elapsedMs` / `toolCallsUsed` on `LLM_COMPLETED`, schema and tests.
+6. WP6: docs: short "Run status line" section in `docs/best-practices/agent-runtime.md`
+   (data not policy, cost note); one `CHANGELOG.md` line under Added.
 
-WP1 to WP3 are independent. WP4 depends on WP1 to WP3. WP5 can go in parallel with WP4.
+WP1 to WP3 are independent. WP4 depends on WP1 to WP3. WP5 can run in parallel with WP4.
 
 ## Test plan
 
-Unit (behaviour-named, per repo convention):
+Unit (behaviour-named):
 
-- `formatRunStatusHint`: "includes elapsed time and tool-call count", "omits the reminder
-  clause when none is scheduled", "shows minutes and seconds for sub-hour elapsed".
-- `pickNextReminder`: "returns the earliest future reminder", "advances a past repeating
-  reminder to its next grid slot", "ignores a past one-shot reminder", "returns null for an
-  empty list".
+- Formatter: "includes the current UTC time and the elapsed run time", "shows minutes and
+  seconds under an hour", "shows hours and minutes above an hour".
 - Loop: "sends the turn context to the model on the turns that return one", "does not add the
-  turn context to the persisted message list" (assert call N's messages do not contain call
-  N-1's hint), "counts tool calls across turns", "behaves exactly as before when
-  getTurnContext is not provided".
-- Schema: defaults (`enabled: false`, `minTurnsBeforeShown: 1`), rejects negative
-  `minTurnsBeforeShown`.
-- Wording guard: a test asserting the formatted hint contains none of "should", "must",
-  "continue", "stop" so it cannot drift into policy (Agent Mode Purity).
+  turn context to the persisted message list" (call N's messages do not contain call N-1's
+  line), "counts tool calls across turns", "behaves exactly as before when getTurnContext is
+  not provided".
+- Schema: defaults (`enabled: false`, `minTurnsBeforeShown: 1`); rejects a negative
+  `minTurnsBeforeShown`; `LlmCompletedPayloadSchema` accepts the new optional fields.
+- Wording guard: the formatted line contains none of "should", "must", "continue", "stop"
+  so it cannot drift into policy.
 
-Verification commands: focused `vitest run` on the touched test files, then `pnpm lint`, then
-`pnpm test` and `pnpm build`, per `AGENTS.md`.
+Then focused `vitest run`, `pnpm lint`, `pnpm test`, `pnpm build` per `AGENTS.md`.
 
 ## Live verification (needs the local compose stack)
 
-Baseline, already captured from `job-searcher` before any change (skill unchanged):
-discovery ticks used 5 to 10 model turns, 25 to 65 s, 2 `search_web` calls; median about 9 turns.
+Baselines already captured (2026-11-14), same prompt and CV, skill text unchanged except
+as noted:
 
-Run in three stages on the same agent prompt and CV, resetting the agent between stages:
+| Agent | Model | Discovery runs |
+|---|---|---|
+| `job-searcher` (old) | Haiku, old skill | 5 to 10 turns, 25 to 65 s, 2 web calls |
+| `swift-hatch` | Haiku, new skill | 47 s / 6 web, 44 s / 5 web, then 27 s / 2 web, 28 s / 2 web |
+| `job-searcher` (new) | qwen3.6:35b local, new skill | one tick of 21+ min, about 28 model calls |
 
-- A: new `job-search` skill, hint disabled. Measures option 1 alone.
-- B: new skill plus hint enabled. Measures option 2's added effect.
+Stage A = new skill, line off (already running above). Stage B = new skill, line on, same
+model as A. Compare model per model: Haiku with Haiku, qwen with qwen. Do not compare across
+models. Use the `agent_messages` join on `payload->>'tickId'` for turns, duration, web calls
+per discovery tick, and, after WP5, `elapsedMs` and `toolCallsUsed`. Also compare:
 
-Query (from `agent_messages`, per `agent.tick.started` / `agent.tick.completed` /
-`agent.llm.completed` joined on `payload->>'tickId'`; after WP5 also read `elapsedMs` and
-`toolCallsUsed`). Compare: turns per discovery tick, tick duration, `search_web` +
-`browse_url` calls per discovery tick, whether unverified leads are opened in the same run,
-and `cachedInputTokens` per turn.
+- Do runs end near the skill budget instead of at 20% or 700% of it?
+- Are `completedAt` and checkpoint timestamps now within a few seconds of real time?
+- Are listed pending listings opened in the same run?
+- `cachedInputTokens` per turn (cache impact).
 
-Proposed success bar for B over A (adjust after seeing A): discovery ticks reach the skill's
-run time budget or exhaust due work (no "I'll do it next run" hand-offs), and cache-hit ratio
-drops by no more than a few percent. These thresholds are proposals, not measured targets.
+Proposed success bar for B over A (adjust after seeing A): Haiku runs reach the budget or
+exhaust due work; qwen runs stop within a small multiple of the budget; timestamps are
+accurate; cache-hit ratio drops by no more than a few percent. These are proposals, not
+measured targets.
 
 ## Decision gate
 
-Build this only if stage A (skill change alone) still leaves discovery ticks ending far below
-the skill's run budget. If A is enough, close this plan. Stage A needs no code.
+Stage A is partly in: the skill change lengthened Haiku's first runs but did not hold, and
+the qwen run overshoots. The clock gap is real in both. Build WP1 to WP5 if you want the
+clock fixed; do not expect it to fully fix early stops (see above).
+
+## If this is not enough: continuation guard (separate plan)
+
+If Haiku still stops at a fraction of the budget with due work in its own run-state, the
+reliable remedy is a guard in the loop, not more information:
+
+- A `finish_run` tool (`complete` / `waiting` / `blocked`, with a reason) and, in the
+  `toolCalls.length === 0` branch, a bounded number of "pending work remains, continue or
+  call finish_run" nudges when the agent has not called it.
+- It needs the budget to be known to the platform (skill metadata or creator config), a way
+  to enable it per skill, and the same Agent Mode Purity review, because it pushes back on
+  the agent's own decision. Not specified here.
 
 ## Risks and open items
 
-- Models may read a status line as pressure to stop or to continue. Wording is neutral and
-  guarded by a test; if stage B shows early stops increase, drop the turn/tool-count clause
-  and keep only time data.
-- Trailing user message after tool results: the scout loop already does this, but the judge
-  runs on other providers (OpenRouter/Anthropic, Ollama/qwen local). Verify each provider
-  adapter in `packages/llm` accepts it; add a provider test if any path differs.
+- The line may be read as pressure to stop or to continue. Wording is neutral and guarded by
+  a test. If stage B shows more early stops, remove the elapsed clause and keep only time.
+- Trailing user message after tool results: the scout loop already does it, but the judge
+  runs on other providers (OpenRouter/Anthropic, Ollama/qwen local). Verify each adapter in
+  `packages/llm` accepts it; add a provider test if any path differs.
 - Prompt-cache impact is expected to be nil (tail-only, ephemeral) but is unmeasured.
-- Cost: about 60 tokens per turn from turn 1 on every judge loop, including trading agents.
-  Negligible next to resent history, but run the agent-runtime "Cost Review Checklist".
-- Overlapping ticks (a reminder firing while a long tick runs) are not addressed here; the
-  reminder coordinator's behaviour in that case has not been checked and should be before
-  runs routinely approach the interval length.
+- Cost: about 30 tokens per turn from turn 1 on every judge loop, including trading agents.
+  Run the "Cost Review Checklist".
+- Overlapping runs: the qwen agent's 5-minute reminders fired while its tick was running. What
+  the reminder coordinator does then is unchecked (no queued wake record was found). Check it
+  before runs routinely approach the interval.
 - Long runs hit stale tool-result truncation sooner (balanced style: 3 turns, 500 chars; only
   6 tools are pinned). Posting text from `browse_url` may be cut mid-run. Out of scope here;
-  track as a follow-up if stage B shows validation quality dropping.
-- Open question: should a skill be able to declare its run budget so the platform can show
-  "budget remaining"? Deferred; this plan keeps the budget in skill text.
+  follow up if stage B shows validation quality dropping.
+- The qwen agent produced no user message in 21 minutes. A run that overshoots is silent to
+  the user; the skill's reporting rules do not cover that case.
+- Duplicate skill: `swift-hatch` had two `job-search` skills attached (`ext_5ed356...` and
+  `ext_54a85b...`). Cause unknown; check it does not affect the A/B.
 
 ## Rollout
 
-1. Merge with `enabled: false` in schema default; `default.yaml` true for local dev.
-2. Soak on staging with an override, compare tokens per tick and cache hits against the
+1. Merge with `enabled: false` in the schema default; `default.yaml` true for local dev.
+2. Soak on staging with an override; compare tokens per tick and cache hits against the
    Cost Review Checklist.
-3. Enable in production via operator config. Roll back by setting `enabled: false` (config
-   only, restart agents to pick it up, since the policy is passed at container start).
+3. Enable in production through operator config. Roll back with `enabled: false` (config
+   only; restart agents, because the policy is passed at container start).
 
 ## Acceptance criteria
 
@@ -272,5 +278,5 @@ the skill's run budget. If A is enough, close this plan. Stage A needs no code.
   and the persisted history contains none.
 - With the flag off, requests are byte-identical to today.
 - `agent.llm.completed` (judge) includes `elapsedMs` and `toolCallsUsed`.
-- `pnpm lint`, `pnpm test`, `pnpm build` pass; the new tests above exist and pass.
-- The live A/B comparison is recorded in this folder (`results.md`) before enabling in production.
+- `pnpm lint`, `pnpm test` and `pnpm build` pass; the tests above exist and pass.
+- The per-model A/B comparison is recorded in this folder (`results.md`) before production.
