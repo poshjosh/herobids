@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- Remove the chat UI run-scope filter now that the worker rehydrates conversation context on start, so the thread shows the full stored history.
+
 ### Changed
 
 - The agent details page (`/agents/:id`) no longer shows the chat box. The agent details (status, objective, capabilities, health, activity and artifacts) render directly below the page header. A "Back to Agents" button sits at the top right of the header and returns to the AI agents page (`/agents`).

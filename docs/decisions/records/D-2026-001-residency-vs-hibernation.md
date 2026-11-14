@@ -148,8 +148,8 @@ None. The facts the brief left open (A-22, billing stance, latency) were answere
 **Still to do:**
 
 - [ ] OD-13: add a Traderton decision-log reference when that decision is taken.
-- [ ] Fix the stale pending plan `docs/features/pending/000-agent-conversation-hydration/001-plan.md` (Phase 2 shipped in v0.8.9).
-- [ ] The web thread filter (`AgentConversation.tsx:479,543`) still hides messages before the latest run start, which is now unnecessary since hydration shipped. An existing defect, separate from this decision.
+- [x] Fix the stale pending plan (Phase 2 shipped in v0.8.9). Done: moved to `docs/features/2026/10/28/001-agent-conversation-hydration/001-plan.md` and marked both phases done.
+- [x] The web thread filter (`AgentConversation.tsx`) hid messages before the latest run start, unnecessary since hydration shipped. Done: the run-scope filter (`currentRunHistory`/`latestRunStartMs`) was removed; the thread now renders the full stored history.
 - [ ] Owner may adopt candidate INV-N4: state that must survive container loss lives in Postgres, or in a Redis configured not to evict and to persist (L-11).
 - [ ] A plan for OD-12 (C-13) is needed.
 

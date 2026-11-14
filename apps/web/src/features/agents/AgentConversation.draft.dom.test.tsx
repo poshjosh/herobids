@@ -24,7 +24,6 @@ vi.mock('../../lib/api-client.js', async (importOriginal) => {
 const COMPOSER_LABEL = 'Chat with Bot';
 
 function mockEmptyThread() {
-  vi.mocked(agentsApi.sessions).mockResolvedValue([]);
   vi.mocked(agentsApi.conversation).mockResolvedValue({ messages: [], nextCursor: null, maxMessageChars: 4000 });
   vi.mocked(agentsApi.conversationTurn).mockResolvedValue(null as never);
 }
