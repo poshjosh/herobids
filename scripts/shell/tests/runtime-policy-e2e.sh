@@ -152,7 +152,8 @@ else
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
   assert_eq "scoutMaxTurns"    "499"  "$(echo "$policy" | jq -r '.scoutMaxTurns')"
   assert_eq "judgeMaxTurns"    "9999"  "$(echo "$policy" | jq -r '.judgeMaxTurns')"
-  assert_eq "maxHistoryTokens" "80000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
+  # Bold = former bold budgets doubled (clamped to the operator ceilings).
+  assert_eq "maxHistoryTokens" "160000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause"     "false" "$(echo "$policy" | jq -r '.weekendPause')"
   assert_eq "maxHoldDurationMs" "600000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
 
@@ -164,7 +165,7 @@ fi
 # Test 2: Create Careful agent → verify conservative defaults
 # ═════════════════════════════════════════════════════════════════════════════
 
-log "── Test 2: Create Careful agent ──"
+log "── Test 2: Create Careful agent (former balanced budgets) ──"
 response=$(post_agent "$(echo "$BASE_PAYLOAD" | jq -c '. + {name:"e2e-rp-careful",prompt:"test",style:"careful"}')")
 agentId=$(echo "$response" | jq -r '.id // empty')
 if [ -z "$agentId" ] || [ "$agentId" = "null" ]; then
@@ -175,16 +176,17 @@ else
   policy=$(echo "$response" | jq '.resolvedRuntimePolicy')
   assert_eq "scoutMaxTurns" "499" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
   assert_eq "judgeMaxTurns" "9999" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
-  assert_eq "maxHistoryTokens" "20000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
+  assert_eq "maxHistoryTokens" "40000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause" "false" "$(echo "$policy" | jq -r '.weekendPause')"
-  assert_eq "maxHoldDurationMs" "27000000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
+  assert_eq "maxHoldDurationMs" "5400000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
 
-  # D6: style-default active hours (14–20 UTC for careful) apply ONLY to agents
-  # with trading capability. This agent has no skills → non-trading → the style
-  # hours are dropped and allowedHoursUtc resolves to empty (always-on). The
-  # creator can still set hours explicitly via runtimePolicyOverrides.
+  # No style restricts active hours any more (careful used to be 14–20 UTC), so
+  # allowedHoursUtc is empty (always-on) for every style. D6 still applies to
+  # trading-only style hours: if a style default is ever reintroduced, it must be
+  # dropped for a non-trading agent like this one. The creator can still set
+  # hours explicitly via runtimePolicyOverrides.
   hours=$(echo "$policy" | jq -r '.allowedHoursUtc | join(",")')
-  assert_eq "allowedHoursUtc (non-trading drops style hours)" "" "$hours"
+  assert_eq "allowedHoursUtc (always-on)" "" "$hours"
 
   # D9: skipUnchangedTicks defaults to false for a non-trading agent.
   assert_eq "skipUnchangedTicks (non-trading default)" "false" "$(echo "$policy" | jq -r '.skipUnchangedTicks')"
@@ -210,7 +212,7 @@ else
   assert_eq "weekendPause (override)"     "false" "$(echo "$policy" | jq -r '.weekendPause')"
   # Balanced defaults preserved for non-overridden fields
   assert_eq "judgeMaxTurns (default)"     "9999"    "$(echo "$policy" | jq -r '.judgeMaxTurns')"
-  assert_eq "maxHistoryMessages (default)" "20"   "$(echo "$policy" | jq -r '.maxHistoryMessages')"
+  assert_eq "maxHistoryMessages (default)" "40"   "$(echo "$policy" | jq -r '.maxHistoryMessages')"
 
   api DELETE "/agents/$agentId" > /dev/null
 fi
