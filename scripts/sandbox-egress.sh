@@ -29,7 +29,7 @@
 set -eu
 
 AGENT_USER=${SANDBOX_AGENT_USER:-agent}
-MARKER_DIR=/run/herobids
+MARKER_DIR=${SANDBOX_MARKER_DIR:-/run/herobids}
 MARKER="$MARKER_DIR/sandbox-egress-ready"
 CHAIN=HEROBIDS_SANDBOX_EGRESS
 
@@ -53,12 +53,36 @@ resolver_addresses() {
 }
 
 # SANDBOX_ALLOWED_HOSTS is a comma-separated list of IPs or CIDRs, for example
-# the browser pool on the Docker network. Entries with other characters are
-# dropped, as the previous script did, so nothing unexpected reaches iptables.
-allowed_addresses() {
+# the browser pool on the Docker network. Only IP addresses and CIDRs are used.
+# Anything else, such as a hostname like "browser-pool" that the worker could not
+# resolve, is skipped with a warning: iptables would try to resolve it and the
+# failure would stop the container from starting. A skipped entry stays blocked.
+IPV4_PATTERN='^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$'
+IPV6_PATTERN='^[0-9a-fA-F:]*:[0-9a-fA-F:.]*(/[0-9]{1,3})?$'
+
+allowed_entries() {
   [ -n "${SANDBOX_ALLOWED_HOSTS:-}" ] || return 0
-  printf '%s\n' "$SANDBOX_ALLOWED_HOSTS" | tr ',' '\n' | tr -d ' ' \
-    | grep -E '^[0-9a-zA-Z.:/-]+$' | filter_family "$1" || true
+  printf '%s\n' "$SANDBOX_ALLOWED_HOSTS" | tr ',' '\n' | tr -d ' ' | grep -v '^$' || true
+}
+
+is_address() {
+  printf '%s\n' "$1" | grep -Eq "$IPV4_PATTERN|$IPV6_PATTERN"
+}
+
+allowed_addresses() {
+  allowed_entries | while IFS= read -r entry; do
+    if is_address "$entry"; then
+      printf '%s\n' "$entry"
+    fi
+  done | filter_family "$1" || true
+}
+
+warn_ignored_entries() {
+  allowed_entries | while IFS= read -r entry; do
+    if ! is_address "$entry"; then
+      echo "sandbox-egress: ignoring SANDBOX_ALLOWED_HOSTS entry '$entry': not an IP address or CIDR, so it stays blocked" >&2
+    fi
+  done
 }
 
 # Private and link-local ranges. 172.16.0.0/12 includes the Docker bridge, which
@@ -95,6 +119,7 @@ add_rules() {
   done
 }
 
+warn_ignored_entries
 add_rules iptables 4
 add_rules ip6tables 6
 

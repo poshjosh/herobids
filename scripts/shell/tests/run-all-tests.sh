@@ -220,6 +220,10 @@ fi
 run_tier "Agent-bot LLM inheritance" \
   bash -c "cd '${ROOT}' && pnpm vitest run apps/worker/src/agents/agent-broker.test.ts -t 'manage_bot create_and_start.*LLM inheritance'"
 
+# ─── Step 1c: Sandbox egress script (stubbed iptables, no Docker) ─────────────
+# Bug 2026/11/14 001: a hostname in SANDBOX_ALLOWED_HOSTS must not stop an agent booting.
+run_tier "Sandbox egress rules" \
+  bash "${ROOT}/scripts/shell/tests/sandbox-egress-test.sh"
 # ─── Step 2: Ensure postgres + redis are up ──────────────────────────────────
 
 header "2 / Infrastructure: postgres + redis"
@@ -478,8 +482,11 @@ if [[ "${RUN_E2E}" == "true" ]]; then
   log "Waiting for the worker runtime launcher to be ready…"
   worker_ready=false
   for _ in $(seq 1 60); do
-    if docker compose -f "${ROOT}/docker-compose.yaml" logs worker 2>/dev/null \
-        | grep -q "Agent runtime launcher initialized"; then
+    # Read the logs into a variable first. Piping into `grep -q` makes grep exit at the first
+    # match, which breaks the pipe; with `pipefail` that reports failure even though the line
+    # was found, so the gate would never see it (bug 2026/11/14 001).
+    worker_logs="$(docker compose -f "${ROOT}/docker-compose.yaml" logs worker 2>/dev/null || true)"
+    if grep -q "Agent runtime launcher initialized" <<< "${worker_logs}"; then
       worker_ready=true
       break
     fi
@@ -489,9 +496,24 @@ if [[ "${RUN_E2E}" == "true" ]]; then
     ok "Worker runtime launcher is ready."
   else
     warn "Worker runtime launcher readiness log not seen after ~120s; running 6b anyway."
+    docker compose -f "${ROOT}/docker-compose.yaml" ps worker 2>&1 || true
+    docker compose -f "${ROOT}/docker-compose.yaml" logs worker --tail 30 2>&1 || true
   fi
-  CYCLE_LINK_TIMEOUT_MS="${CYCLE_LINK_TIMEOUT_MS:-300000}" \
-    bash "${ROOT}/scripts/shell/tests/connection-cycle-test.sh"
+  if CYCLE_LINK_TIMEOUT_MS="${CYCLE_LINK_TIMEOUT_MS:-300000}" \
+      bash "${ROOT}/scripts/shell/tests/connection-cycle-test.sh"; then
+    RESULTS+=("${GREEN}PASS${RESET}  Connection cycle")
+  else
+    RESULTS+=("${RED}FAIL${RESET}  Connection cycle")
+    OVERALL_EXIT=1
+    # The stack is torn down on exit, so capture what explains the failure now: the worker's
+    # recent log and the output of any agent container that exited at start.
+    warn "Connection cycle failed — worker log (last 60 lines):"
+    docker compose -f "${ROOT}/docker-compose.yaml" logs worker --tail 60 2>&1 || true
+    for agent_container in $(docker ps -aq --filter "name=herobids-agent-" --filter "status=exited"); do
+      warn "Exited agent container ${agent_container} — output (last 20 lines):"
+      docker logs --tail 20 "${agent_container}" 2>&1 || true
+    done
+  fi
 else
   header "6 / E2E tests (skipped)"
   warn "Pass --e2e to include Playwright end-to-end tests."

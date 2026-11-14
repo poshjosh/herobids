@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.9.0 - 2026-11-14
+
 ### Removed
 
 - Remove the chat UI run-scope filter now that the worker rehydrates conversation context on start, so the thread shows the full stored history.
@@ -17,6 +19,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `NOMAD_AGENT_IMAGE` operator env var: pins the agent runtime image the worker launches to an immutable `ghcr.io/poshjosh/herobids-agent:sha-<commit>` tag (unset = `:latest`).
 - Nomad client cloud-init allows `net_admin` in the docker plugin `allow_caps` (`sys_admin` removed). Existing clients need this applied by a node replacement.
 
+### Fixed
+- Agent container no longer refuses to start when `SANDBOX_ALLOWED_HOSTS` holds a hostname. On the local Docker stack the worker could not resolve `browser-pool`, `sandbox-egress.sh` passed that name to `iptables`, and the fail-closed entrypoint exited, so no agent booted and `run-all-tests.sh --e2e` failed at the connection cycle. The script now uses only IP addresses and CIDRs from the allowlist and warns about the rest, which stay blocked. `run-all-tests.sh` also had a worker-readiness gate that could never succeed (`grep -q` in a `pipefail` pipeline); it now reads the logs first, and on a connection-cycle failure it prints the worker and exited-agent logs before teardown. Status: FIXED. See docs/bug-reports/2026/11/14/001-agent-refuses-to-start-when-sandbox-allowlist-has-a-hostname.md
 ### Added
 
 - Add Telegram and multi-recipient autoscaler alerts
