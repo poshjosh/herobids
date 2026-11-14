@@ -170,13 +170,13 @@ ssh root@<ip> 'NOMAD_TOKEN=$(cat /etc/nomad.d/acl-token) nomad node status'
 
 Expected: one `alive`/`true` leader + at least one `ready` agent node.
 
-Test alert delivery (if SMTP configured):
+Test alert delivery (if SMTP or Telegram configured):
 
 ```sh
 ssh root@<ip> '/opt/herobids/infra/hetzner/scripts/send-alert.sh --test'
 ```
 
-Check your inbox for the test alert email.
+Check your inbox (and Telegram chat, if configured) for the test alert.
 
 ---
 

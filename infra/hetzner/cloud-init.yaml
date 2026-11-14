@@ -208,9 +208,11 @@ write_files:
       Environment=ALERT_SMTP_PORT=${alert_smtp_port}
       Environment=ALERT_SMTP_USE_TLS=${alert_smtp_use_tls}
       Environment=ALERT_FROM=${alert_from}
-      Environment=ALERT_TO=${alert_to}
+      Environment="ALERT_TO=${alert_to}"
       Environment=ALERT_SMTP_USER=${alert_smtp_user}
       Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
+      Environment=ALERT_TELEGRAM_BOT_TOKEN=${alert_telegram_bot_token}
+      Environment="ALERT_TELEGRAM_CHAT_IDS=${alert_telegram_chat_ids}"
 
       # TF_VAR_* env vars are automatically read by terraform.
       # These mirror the autoscale config so terraform apply picks them up.
@@ -301,9 +303,11 @@ write_files:
       Environment=ALERT_SMTP_PORT=${alert_smtp_port}
       Environment=ALERT_SMTP_USE_TLS=${alert_smtp_use_tls}
       Environment=ALERT_FROM=${alert_from}
-      Environment=ALERT_TO=${alert_to}
+      Environment="ALERT_TO=${alert_to}"
       Environment=ALERT_SMTP_USER=${alert_smtp_user}
       Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
+      Environment=ALERT_TELEGRAM_BOT_TOKEN=${alert_telegram_bot_token}
+      Environment="ALERT_TELEGRAM_CHAT_IDS=${alert_telegram_chat_ids}"
 
       # TF_VAR_* env vars for terraform (same as scale-out)
       Environment=TF_VAR_max_agent_nodes=${max_agent_nodes}
@@ -381,9 +385,11 @@ write_files:
       Environment=ALERT_SMTP_PORT=${alert_smtp_port}
       Environment=ALERT_SMTP_USE_TLS=${alert_smtp_use_tls}
       Environment=ALERT_FROM=${alert_from}
-      Environment=ALERT_TO=${alert_to}
+      Environment="ALERT_TO=${alert_to}"
       Environment=ALERT_SMTP_USER=${alert_smtp_user}
       Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
+      Environment=ALERT_TELEGRAM_BOT_TOKEN=${alert_telegram_bot_token}
+      Environment="ALERT_TELEGRAM_CHAT_IDS=${alert_telegram_chat_ids}"
 
       # Autoscale secrets loaded from deployed env file (see setup-autoscale-env.sh).
       # The - prefix makes the file optional — if missing, tf_backend_configured() handles it gracefully.

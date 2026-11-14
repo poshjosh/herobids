@@ -19,6 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add Telegram and multi-recipient autoscaler alerts
 - Agent node and browser pool usage visibility
 - Dedicated browser-pool Nomad node (`hcloud_server.browser`, `browser_node_count`/`browser_node_server_type`, default `cx23`) in its own Nomad node pool/class `browser`, with a fixed private IP (`cidrhost(subnet, 240)`), so the browser pool never shares a node with agents and keeps a stable address across replacement. Not autoscaled.
 - Demand-aware scale-in: `scale-in.sh` now proceeds under demand mode and defers only when the agent namespace has queued/blocked work (replacing the old unconditional defer); `converge-control-plane.sh` pins and activates the nightly `nomad-scale-in.timer` schedule.

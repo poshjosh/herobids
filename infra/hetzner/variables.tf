@@ -533,7 +533,7 @@ variable "alert_from" {
 
 variable "alert_to" {
   type        = string
-  description = "Recipient address for alert emails (the default admin)."
+  description = "Recipient address(es) for alert emails. Multiple addresses may be separated by commas, semicolons, or whitespace."
   default     = ""
 }
 
@@ -548,6 +548,19 @@ variable "alert_smtp_pass" {
   type        = string
   description = "SMTP auth password. Leave empty if SMTP relay does not require authentication. Must be paired with alert_smtp_user."
   sensitive   = true
+  default     = ""
+}
+
+variable "alert_telegram_bot_token" {
+  type        = string
+  description = "Telegram bot token used to deliver autoscaler alerts to Telegram. Leave empty to disable the Telegram channel. Must be paired with alert_telegram_chat_ids."
+  sensitive   = true
+  default     = ""
+}
+
+variable "alert_telegram_chat_ids" {
+  type        = string
+  description = "Telegram chat id(s) to notify for autoscaler alerts. Multiple ids may be separated by commas, semicolons, or whitespace. Requires alert_telegram_bot_token."
   default     = ""
 }
 

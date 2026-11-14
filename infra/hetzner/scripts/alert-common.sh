@@ -15,11 +15,15 @@
 #   - On threshold crossed (default: 3 consecutive), send alert email.
 #   - Rate-limit: don't send more than one alert per hour.
 #
-# SMTP approach:
-#   - Use `sendmail` binary (available on most Linux) or `curl` to SMTP relay.
-#   - Config via env vars: ALERT_SMTP_HOST, ALERT_SMTP_PORT, ALERT_FROM, ALERT_TO.
+# Delivery approach:
+#   - Email: `sendmail` binary (available on most Linux) or `curl` to SMTP relay.
+#   - Telegram: Bot API `sendMessage` via `curl` (optional, additive channel).
+#   - Config via env vars (see below).
 #   - Plain text email with structured subject: [herobids-{env}] Autoscale ALERT: {reason}
-#   - Fall back to `logger` if SMTP not configured.
+#   - Email and Telegram are independent, additive channels: when both are
+#     configured, an alert is delivered to both. Email falls back to `logger`
+#     if no SMTP transport is available; Telegram is skipped silently if not
+#     configured.
 #
 # Environment variables:
 #   ALERT_SMTP_HOST                  SMTP relay hostname (e.g. smtp.example.com).
@@ -28,10 +32,17 @@
 #   ALERT_SMTP_USER                  SMTP auth username (optional).
 #   ALERT_SMTP_PASS                  SMTP auth password (optional).
 #   ALERT_FROM                       From address for alert emails.
-#   ALERT_TO                         To address for alert emails (default admin).
+#   ALERT_TO                         Recipient address(es) for alert emails.
+#                                    Multiple addresses may be separated by
+#                                    commas, semicolons, or whitespace.
+#   ALERT_TELEGRAM_BOT_TOKEN         Telegram bot token for alert delivery
+#                                    (optional; enables the Telegram channel).
+#   ALERT_TELEGRAM_CHAT_IDS          Telegram chat id(s) to notify. Multiple
+#                                    ids may be separated by commas, semicolons,
+#                                    or whitespace.
 #   ALERT_FAILURE_THRESHOLD          Consecutive failures before alert (default: 3).
 #   ALERT_RATE_LIMIT_SECONDS         Min seconds between alerts (default: 3600).
-#   ALERT_SEND_RECOVERY              Send recovery email on resume (default: false).
+#   ALERT_SEND_RECOVERY              Send recovery alert on resume (default: false).
 #   HEROBIDS_ENV                     Environment name (staging/production).
 #   NOMAD_ADDR                       Nomad API base URL.
 #   NOMAD_AUTOSCALE_FAILURE_COUNT_FILE  Path to failure count state file.
@@ -85,6 +96,39 @@ _detect_mail() {
     return 0
   fi
   return 1
+}
+
+# _split_recipients <raw> — split a recipient list on commas, semicolons, or
+# whitespace and print one trimmed, non-empty entry per line.
+# Used for both email addresses (ALERT_TO) and Telegram chat ids.
+_split_recipients() {
+  local raw="${1:-}"
+  echo "${raw}" | tr ',;' '  ' | tr -s '[:space:]' '\n' | sed '/^$/d'
+}
+
+# _telegram_configured — returns 0 if the Telegram channel is configured
+# (bot token + at least one chat id), 1 otherwise.
+_telegram_configured() {
+  local has_chat_ids=false
+  if [[ -n "$(_split_recipients "${ALERT_TELEGRAM_CHAT_IDS:-}")" ]]; then
+    has_chat_ids=true
+  fi
+
+  if [[ -z "${ALERT_TELEGRAM_BOT_TOKEN:-}" ]]; then
+    if [[ "${has_chat_ids}" == "true" ]]; then
+      log "WARNING: ALERT_TELEGRAM_CHAT_IDS is set but ALERT_TELEGRAM_BOT_TOKEN is empty — skipping Telegram delivery."
+    fi
+    return 1
+  fi
+  if [[ "${has_chat_ids}" != "true" ]]; then
+    log "WARNING: ALERT_TELEGRAM_BOT_TOKEN is set but ALERT_TELEGRAM_CHAT_IDS is empty — skipping Telegram delivery."
+    return 1
+  fi
+  if ! command -v curl &>/dev/null; then
+    log "WARNING: Telegram configured but curl is unavailable — skipping Telegram delivery."
+    return 1
+  fi
+  return 0
 }
 
 # _smtp_configured — returns 0 if SMTP env vars are set, 1 otherwise.
@@ -328,7 +372,15 @@ _send_via_sendmail() {
   local subject="$1"
   local body="$2"
   local from="${ALERT_FROM:-herobids@localhost}"
-  local to="${ALERT_TO}"
+
+  # Comma-join all recipients for the To: header (sendmail -t reads recipients
+  # from the header).
+  local to
+  to="$(_split_recipients "${ALERT_TO}" | paste -sd ',' -)"
+  if [[ -z "${to}" ]]; then
+    log "ERROR: no recipients in ALERT_TO."
+    return 1
+  fi
 
   local sendmail_bin
   sendmail_bin="$(_detect_sendmail)" || {
@@ -361,7 +413,18 @@ _send_via_mail() {
   local subject="$1"
   local body="$2"
   local from="${ALERT_FROM:-herobids@localhost}"
-  local to="${ALERT_TO}"
+
+  # mail/mailx accepts multiple recipient address arguments.
+  local -a recipients=()
+  local addr
+  while IFS= read -r addr; do
+    [[ -n "${addr}" ]] && recipients+=("${addr}")
+  done < <(_split_recipients "${ALERT_TO}")
+
+  if [[ ${#recipients[@]} -eq 0 ]]; then
+    log "ERROR: no recipients in ALERT_TO."
+    return 1
+  fi
 
   local mail_bin
   mail_bin="$(_detect_mail)" || {
@@ -370,11 +433,11 @@ _send_via_mail() {
   }
 
   local ret=0
-  echo "${body}" | "${mail_bin}" -s "${subject}" -a "From: ${from}" "${to}"
+  echo "${body}" | "${mail_bin}" -s "${subject}" -a "From: ${from}" "${recipients[@]}"
   ret=$?
 
   if [[ ${ret} -eq 0 ]]; then
-    log "Alert email sent via mail to ${to}."
+    log "Alert email sent via mail to ${recipients[*]}."
   else
     log "ERROR: mail command failed with exit code ${ret}."
   fi
@@ -388,11 +451,25 @@ _send_via_curl_smtp() {
   local subject="$1"
   local body="$2"
   local from="${ALERT_FROM}"
-  local to="${ALERT_TO}"
   local host="${ALERT_SMTP_HOST}"
   local port="${ALERT_SMTP_PORT}"
   local user="${ALERT_SMTP_USER:-}"
   local pass="${ALERT_SMTP_PASS:-}"
+
+  # Parse recipients: one --mail-rcpt per address, comma-joined for the header.
+  local -a recipients=()
+  local addr
+  while IFS= read -r addr; do
+    [[ -n "${addr}" ]] && recipients+=("${addr}")
+  done < <(_split_recipients "${ALERT_TO}")
+
+  if [[ ${#recipients[@]} -eq 0 ]]; then
+    log "ERROR: no recipients in ALERT_TO."
+    return 1
+  fi
+
+  local to
+  to="$(IFS=','; echo "${recipients[*]}")"
 
   # Build the raw email message
   local raw_email
@@ -421,9 +498,13 @@ ${body}
     --connect-timeout 15
     --max-time 30
     --mail-from "${from}"
-    --mail-rcpt "${to}"
     --upload-file -
   )
+
+  # One --mail-rcpt per recipient (envelope recipients).
+  for addr in "${recipients[@]}"; do
+    curl_args+=(--mail-rcpt "${addr}")
+  done
 
   # Add TLS options
   if [[ "${proto}" == "smtps" ]]; then
@@ -455,24 +536,152 @@ ${body}
 }
 
 # _send_via_logger <subject> <body>
-# Fallback: log the alert to syslog when SMTP is not configured.
+# Fallback: log the alert to syslog when no delivery channel succeeded.
 _send_via_logger() {
   local subject="$1"
   local body="$2"
 
   if command -v logger &>/dev/null; then
     echo "${body}" | logger -t "nomad-autoscale-alert" -p user.err
-    log "Alert logged to syslog (SMTP not configured)."
+    log "Alert logged to syslog (no email or Telegram channel delivered it)."
   else
-    log "ALERT (SMTP not configured, logger unavailable): ${subject}"
+    log "ALERT (no email or Telegram channel delivered it, logger unavailable): ${subject}"
     log "${body}"
+  fi
+}
+
+# ─── Telegram sending ─────────────────────────────────────────────────────────
+
+# _telegram_send_to_chat <chat_id> <text>
+# Sends a plain-text message to a single Telegram chat via the Bot API.
+# Returns 0 on success, 1 on failure.
+_telegram_send_to_chat() {
+  local chat_id="$1"
+  local text="$2"
+  local token="${ALERT_TELEGRAM_BOT_TOKEN}"
+
+  # Telegram messages are capped at 4096 characters.
+  if [[ ${#text} -gt 4096 ]]; then
+    text="${text:0:4093}..."
+  fi
+
+  # The URL embeds the bot token, so pass it via a curl config on stdin rather
+  # than argv (argv is visible to other users through `ps`).
+  local response
+  response="$(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "${token}" |
+    curl -s --show-error \
+      --connect-timeout 15 --max-time 30 \
+      -X POST \
+      --config - \
+      --data-urlencode "chat_id=${chat_id}" \
+      --data-urlencode "text=${text}" \
+      --data-urlencode "disable_web_page_preview=true" 2>&1)" || {
+    log "ERROR: Telegram delivery to chat ${chat_id} failed (curl error): ${response//${token}/<token>}"
+    return 1
+  }
+
+  # The Bot API returns {"ok":true,...} on success.
+  if command -v jq &>/dev/null; then
+    local ok
+    ok="$(echo "${response}" | jq -r '.ok // false' 2>/dev/null || echo "false")"
+    if [[ "${ok}" == "true" ]]; then
+      log "Alert sent via Telegram to chat ${chat_id}."
+      return 0
+    fi
+    log "ERROR: Telegram delivery to chat ${chat_id} rejected: ${response}"
+    return 1
+  fi
+
+  # Fallback without jq: crude substring check.
+  if [[ "${response}" == *'"ok":true'* ]]; then
+    log "Alert sent via Telegram to chat ${chat_id}."
+    return 0
+  fi
+  log "ERROR: Telegram delivery to chat ${chat_id} rejected: ${response}"
+  return 1
+}
+
+# _send_via_telegram <subject> <body>
+# Sends the alert to every configured Telegram chat id. Returns 0 if at least
+# one chat received the message, 1 otherwise. No-op (returns 1) if Telegram is
+# not configured.
+_send_via_telegram() {
+  local subject="$1"
+  local body="$2"
+
+  if ! _telegram_configured; then
+    return 1
+  fi
+
+  # Lead with the subject so the chat shows the alert type at a glance.
+  local text="${subject}
+
+${body}"
+
+  local any_sent=1
+  local chat_id
+  while IFS= read -r chat_id; do
+    [[ -z "${chat_id}" ]] && continue
+    if _telegram_send_to_chat "${chat_id}" "${text}"; then
+      any_sent=0
+    fi
+  done < <(_split_recipients "${ALERT_TELEGRAM_CHAT_IDS}")
+
+  return ${any_sent}
+}
+
+# _deliver_alert <subject> <body>
+#
+# Deliver an alert over every configured channel. Email and Telegram are
+# independent, additive channels:
+#   - Email tries sendmail → mail/mailx → curl SMTP, stopping at the first that
+#     succeeds.
+#   - Telegram delivers to every configured chat id whenever a bot token and
+#     chat id(s) are set, regardless of the email outcome.
+#   - If neither channel delivered (not configured, or every attempt failed),
+#     the alert falls back to `logger` so a failure is never silent.
+_deliver_alert() {
+  local subject="$1"
+  local body="$2"
+
+  local email_sent=false
+
+  # ── Email channel (first transport wins) ──
+  if _detect_sendmail &>/dev/null && [[ -n "${ALERT_TO:-}" ]]; then
+    if _send_via_sendmail "${subject}" "${body}"; then
+      email_sent=true
+    fi
+  fi
+
+  if [[ "${email_sent}" != "true" ]] && _detect_mail &>/dev/null && [[ -n "${ALERT_TO:-}" ]]; then
+    if _send_via_mail "${subject}" "${body}"; then
+      email_sent=true
+    fi
+  fi
+
+  if [[ "${email_sent}" != "true" ]] && _smtp_configured; then
+    if _send_via_curl_smtp "${subject}" "${body}"; then
+      email_sent=true
+    fi
+  fi
+
+  # ── Telegram channel (additive, independent of email) ──
+  local telegram_sent=false
+  if _send_via_telegram "${subject}" "${body}"; then
+    telegram_sent=true
+  fi
+
+  # ── Fallback: only log to syslog if NOTHING was delivered ──
+  if [[ "${email_sent}" != "true" && "${telegram_sent}" != "true" ]]; then
+    _send_via_logger "${subject}" "${body}"
   fi
 }
 
 # send_alert <failure_type> <reason>
 #
-# Send an alert email for a scaling failure. Respects rate limits and
-# falls back to logger if SMTP is not configured.
+# Send an alert for a scaling failure over all configured channels (email and
+# Telegram). Respects rate limits and falls back to logger if no channel is
+# configured.
 #
 # Usage:
 #   send_alert "scale_out_failed" "Terraform apply exited with code 1."
@@ -490,33 +699,7 @@ send_alert() {
   local context
   context="$(build_alert_context "${failure_type}" "${reason}")"
 
-  local sent=false
-
-  # Try sendmail first (most common on Linux)
-  if _detect_sendmail &>/dev/null && [[ -n "${ALERT_TO:-}" ]]; then
-    if _send_via_sendmail "${subject}" "${context}"; then
-      sent=true
-    fi
-  fi
-
-  # Try mail/mailx
-  if [[ "${sent}" != "true" ]] && _detect_mail &>/dev/null && [[ -n "${ALERT_TO:-}" ]]; then
-    if _send_via_mail "${subject}" "${context}"; then
-      sent=true
-    fi
-  fi
-
-  # Try curl SMTP
-  if [[ "${sent}" != "true" ]] && _smtp_configured; then
-    if _send_via_curl_smtp "${subject}" "${context}"; then
-      sent=true
-    fi
-  fi
-
-  # Fallback to logger
-  if [[ "${sent}" != "true" ]]; then
-    _send_via_logger "${subject}" "${context}"
-  fi
+  _deliver_alert "${subject}" "${context}"
 
   # Record alert timestamp (rate limit)
   _touch_alert_sent
@@ -524,8 +707,9 @@ send_alert() {
 
 # send_recovery_alert
 #
-# Send a recovery notification email. Only called when ALERT_SEND_RECOVERY=true
-# and a previous failure streak has been cleared.
+# Send a recovery notification over all configured channels (email and
+# Telegram). Only called when ALERT_SEND_RECOVERY=true and a previous failure
+# streak has been cleared.
 send_recovery_alert() {
   local env="${HEROBIDS_ENV:-unknown}"
   local node_count="unknown"
@@ -549,27 +733,5 @@ Scaling operations are proceeding normally.
 Generated by herobids-nomad-autoscaler.
 "
 
-  local sent=false
-
-  if _detect_sendmail &>/dev/null && [[ -n "${ALERT_TO:-}" ]]; then
-    if _send_via_sendmail "${subject}" "${body}"; then
-      sent=true
-    fi
-  fi
-
-  if [[ "${sent}" != "true" ]] && _detect_mail &>/dev/null && [[ -n "${ALERT_TO:-}" ]]; then
-    if _send_via_mail "${subject}" "${body}"; then
-      sent=true
-    fi
-  fi
-
-  if [[ "${sent}" != "true" ]] && _smtp_configured; then
-    if _send_via_curl_smtp "${subject}" "${body}"; then
-      sent=true
-    fi
-  fi
-
-  if [[ "${sent}" != "true" ]]; then
-    _send_via_logger "${subject}" "${body}"
-  fi
+  _deliver_alert "${subject}" "${body}"
 }

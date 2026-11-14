@@ -12,13 +12,14 @@
 # Options:
 #   --type <type>     Failure type slug (e.g. scale_out_failed).
 #   --reason <text>   Human-readable reason for the alert.
-#   --test            Send a test alert to verify email delivery.
+#   --test            Send a test alert to verify email/Telegram delivery.
 #   --recovery        Send a test recovery alert.
-#   --dry-run         Print the email body to stdout instead of sending.
+#   --dry-run         Print the alert body to stdout instead of sending.
 #   --help            Show this help message.
 #
 # Environment (see alert-common.sh):
 #   ALERT_SMTP_HOST, ALERT_SMTP_PORT, ALERT_FROM, ALERT_TO, HEROBIDS_ENV
+#   ALERT_TELEGRAM_BOT_TOKEN, ALERT_TELEGRAM_CHAT_IDS (optional Telegram channel)
 #
 # Exit codes:
 #   0  Alert sent or dry-run completed.
@@ -90,17 +91,19 @@ Standalone alert sender for the Herobids autoscaler.
 Options:
   --type <type>     Failure type slug (e.g. scale_out_failed).
   --reason <text>   Human-readable reason for the alert.
-  --test            Send a test alert to verify email delivery.
+  --test            Send a test alert to verify email/Telegram delivery.
   --recovery        Send a test recovery alert.
-  --dry-run         Print the email body to stdout instead of sending.
+  --dry-run         Print the alert body to stdout instead of sending.
   --help            Show this help message.
 
 Environment:
-  ALERT_SMTP_HOST   SMTP relay hostname.
-  ALERT_SMTP_PORT   SMTP port (default: 587).
-  ALERT_FROM        From address for alerts.
-  ALERT_TO          To address (default admin).
-  HEROBIDS_ENV      Environment name (staging/production).
+  ALERT_SMTP_HOST            SMTP relay hostname.
+  ALERT_SMTP_PORT            SMTP port (default: 587).
+  ALERT_FROM                 From address for alerts.
+  ALERT_TO                   Recipient(s); comma/space-separate for multiple.
+  ALERT_TELEGRAM_BOT_TOKEN   Telegram bot token (optional channel).
+  ALERT_TELEGRAM_CHAT_IDS    Telegram chat id(s); comma/space-separate.
+  HEROBIDS_ENV               Environment name (staging/production).
 
 Exit codes:
   0  Alert sent or dry-run completed.

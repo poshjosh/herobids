@@ -20,7 +20,7 @@
 #   CURRENT_SMALL_TYPE           only alert while agent_node_server_type is this (default cx23).
 #   NODE_SWITCH_ALERT_FILE       rate-limit stamp (default /var/run/nomad-node-switch-last-alert).
 #   NODE_SWITCH_RATE_LIMIT_SECONDS  min seconds between reminders (default 86400 = daily).
-#   NOMAD_ADDR, NOMAD_TOKEN, ALERT_* (SMTP), HEROBIDS_ENV, TERRAFORM_DIR  as for the autoscaler.
+#   NOMAD_ADDR, NOMAD_TOKEN, ALERT_* (SMTP, Telegram), HEROBIDS_ENV, TERRAFORM_DIR  as for the autoscaler.
 
 set -euo pipefail
 
@@ -117,21 +117,8 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   exit 0
 fi
 
-# Reuse alert-common.sh senders (sendmail -> mail -> curl SMTP -> logger fallback).
-sent=false
-if _detect_sendmail &>/dev/null && [[ -n "${ALERT_TO:-}" ]]; then
-  _send_via_sendmail "${SUBJECT}" "${BODY}" && sent=true
-fi
-if [[ "${sent}" != "true" ]] && _detect_mail &>/dev/null && [[ -n "${ALERT_TO:-}" ]]; then
-  _send_via_mail "${SUBJECT}" "${BODY}" && sent=true
-fi
-if [[ "${sent}" != "true" ]] && _smtp_configured; then
-  _send_via_curl_smtp "${SUBJECT}" "${BODY}" && sent=true
-fi
-if [[ "${sent}" != "true" ]]; then
-  _send_via_logger "${SUBJECT}" "${BODY}"
-fi
-
+# Reuse alert-common.sh delivery (email and/or Telegram, logger fallback).
+_deliver_alert "${SUBJECT}" "${BODY}"
 mkdir -p "$(dirname "${NODE_SWITCH_ALERT_FILE}")"
 printf '%s\n' "${now}" > "${NODE_SWITCH_ALERT_FILE}"
 log "Switch reminder sent (${TRIGGER})."

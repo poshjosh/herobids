@@ -726,8 +726,11 @@ safety-net) runs at a time.
 
 ### Admin Alerting (Phase 8)
 
-The autoscaler sends email alerts to the default admin when repeated scaling failures
-occur, preventing silent cluster capacity degradation.
+The autoscaler sends alerts to the configured admin(s) when repeated scaling failures
+occur, preventing silent cluster capacity degradation. Alerts can be delivered to one
+or more email addresses and, optionally, to one or more Telegram chats. Email and
+Telegram are independent, additive channels: when both are configured, each alert is
+delivered to both.
 
 **Alert thresholds:**
 
@@ -772,37 +775,50 @@ occur, preventing silent cluster capacity degradation.
 └──────────────────────────────────────────────────────┘
 ```
 
-**SMTP configuration:**
+**Delivery channels:**
 
-Alerts are sent via one of three backends, tried in order:
+The email channel tries three backends, in order, stopping at the first success:
 
 1. `sendmail` (available with `bsd-mailx` package, installed by cloud-init)
 2. `mail` / `mailx` command
 3. `curl` SMTP relay (direct connection to an SMTP server)
 
-If none are configured, alerts fall back to `logger` (syslog).
+The Telegram channel (when configured) is delivered independently of email, to every
+configured chat id, via the Bot API `sendMessage` endpoint.
+
+If no channel delivers the alert, it falls back to `logger` (syslog) so a failure is
+never silent.
 
 | Variable | Default | Description |
 |---|---|---|
 | `alert_failure_threshold` | 3 | Consecutive failures before alert |
 | `alert_rate_limit_seconds` | 3600 | Min seconds between alerts (1 hour) |
-| `alert_send_recovery` | `"false"` | Send recovery email on resume |
+| `alert_send_recovery` | `"false"` | Send recovery alert on resume |
 | `alert_smtp_host` | `""` | SMTP relay hostname (empty = use sendmail/logger) |
 | `alert_smtp_port` | 587 | SMTP relay port |
 | `alert_smtp_use_tls` | `"true"` | Use TLS for SMTP connection |
 | `alert_from` | `""` | From address for alert emails |
-| `alert_to` | `""` | Recipient address (default admin) |
+| `alert_to` | `""` | Recipient email address(es); comma/space-separate for multiple |
+| `alert_telegram_bot_token` | `""` | Telegram bot token (empty = Telegram disabled) |
+| `alert_telegram_chat_ids` | `""` | Telegram chat id(s); comma/space-separate for multiple |
 
-**SMTP configuration example (terraform.tfvars):**
+Both `alert_to` and `alert_telegram_chat_ids` accept multiple recipients separated by
+commas, semicolons, or whitespace.
+
+**Configuration example (terraform.tfvars):**
 
 ```hcl
-# Mailgun or similar SMTP relay
+# Mailgun or similar SMTP relay — multiple email recipients
 alert_smtp_host     = "smtp.mailgun.org"
 alert_smtp_port     = 587
 alert_smtp_use_tls  = "true"
 alert_from          = "herobids-alerts@mg.yourdomain.com"
-alert_to            = "admin@yourdomain.com"
+alert_to            = "admin@yourdomain.com, oncall@yourdomain.com"
 alert_send_recovery = "true"
+
+# Optional Telegram channel (additive to email) — one or more chats
+alert_telegram_bot_token = "123456:ABC-DEF..."   # sensitive
+alert_telegram_chat_ids  = "-1001234567890, 987654321"
 ```
 
 **Testing alert delivery:**
