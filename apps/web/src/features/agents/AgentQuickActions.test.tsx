@@ -4,6 +4,7 @@ import { IntlProvider } from 'react-intl';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
+import { messages as arMessages } from '../../app/i18n/locales/ar.js';
 import { AgentQuickActions } from './AgentQuickActions.js';
 
 function renderActions(status: string): string {
@@ -41,6 +42,30 @@ describe('AgentQuickActions', () => {
 
     expect(html).toContain(`title="${messages['agents.detail.pauseTooltip']}"`);
     expect(html).toContain(`title="${messages['agents.detail.stopTooltip']}"`);
+  });
+
+  it('offers a Settings button for every agent status', () => {
+    for (const status of ['stopped', 'active', 'paused']) {
+      expect(renderActions(status)).toContain(`aria-label="${messages['agents.quickActions.settings']}"`);
+    }
+  });
+
+  it('translates the Settings, Edit and Start labels', () => {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <IntlProvider locale="ar" messages={arMessages}>
+          <MemoryRouter>
+            <AgentQuickActions agentId="agent-1" status="stopped" />
+          </MemoryRouter>
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
+    for (const id of ['agents.quickActions.settings', 'agents.detail.editConfig', 'agents.detail.start']) {
+      expect(html).toContain(`title="${arMessages[id]}"`);
+      expect(html).toContain(`aria-label="${arMessages[id]}"`);
+    }
+    expect(html).not.toContain('title="Edit"');
+    expect(html).not.toContain('title="Start"');
   });
 
   it('offers Resume through the Start button for a paused agent', () => {

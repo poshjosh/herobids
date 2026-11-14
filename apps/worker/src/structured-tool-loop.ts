@@ -73,6 +73,12 @@ export interface StructuredToolLoopOptions {
         toolChoice?: LlmRequest['toolChoice'];
       }
     | undefined;
+  /**
+   * Text sent to the model as a final `user` message for this turn's request only. Unlike an
+   * `onBeforeTurn` message it is never stored in the message list, so it adds nothing to the
+   * history that later turns resend. Return undefined to send nothing for the turn.
+   */
+  getTurnContext?: (info: { turnIndex: number }) => string | undefined;
   /** After this many retention turns, truncate older tool results to maxStaleChars. Omit to disable. */
   toolResultFullRetentionTurns?: number;
   /** Max chars to keep in a stale tool result (appends '...[truncated]'). */
@@ -159,11 +165,15 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
 
     turnsUsed = turnIndex + 1;
     const activeTools = options.getTools ? options.getTools() : options.tools;
+    const turnContext = options.getTurnContext?.({ turnIndex });
+    const requestMessages: LlmMessage[] = turnContext
+      ? [...messages, { role: 'user', content: turnContext, volatile: true }]
+      : messages;
     const turnResultWithRetry = await callLlmWithRetry(
       options.providerConfig,
       {
         ...options.requestBase,
-        messages,
+        messages: requestMessages,
         tools: activeTools,
         toolChoice: turnToolChoice,
       },

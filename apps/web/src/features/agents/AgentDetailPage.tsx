@@ -39,7 +39,7 @@ function latestStartupFailureReason(runs: AgentRuntimeSession[] | undefined): Ag
 }
 
 
-/** Agent details, configuration and runtime panels. Rendered under the agent chat on the agent page. */
+/** Agent details, configuration and runtime panels. Rendered on the agent settings page. */
 export function AgentDetails({ agentId }: { agentId: string }) {
   const id = agentId;
   const intl = useIntl();

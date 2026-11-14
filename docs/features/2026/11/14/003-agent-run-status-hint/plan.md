@@ -1,7 +1,9 @@
 # Run-status hint for long-running agent runs (current time + run elapsed)
 
-Status: DRAFT, not started. Slimmed on 2026-11-14 after reviewing live agents. Read
-"Will this solve the problem?" before approving the build.
+Status: IMPLEMENTED 2026-11-14 (WP1 to WP6), not committed, live A/B not yet run. Slimmed
+the same day after reviewing live agents. Read "Will this solve the problem?" before
+relying on it. The message text is the owner-approved one: `Current time is (UTC) ...; this
+run has been in progress for ...`.
 
 ## Problem
 
@@ -38,7 +40,7 @@ Facts that frame the fix (read from `agent_messages` and code):
 Partly. State this plainly to avoid over-selling.
 
 - Over-running and wrong timestamps: likely helped. An agent that sees "this run has been
-  working for 6m10s" next to a 2.5-minute budget has what it needs to stop, and it stops
+  in progress for 6m10s" next to a 2.5-minute budget has what it needs to stop, and it stops
   inventing times. Evidence: the qwen agent had no way to know it was at 20 minutes.
 - Under-running: uncertain, probably not enough on its own. swift-hatch stopped at about
   20% of its budget with due work remaining. The cause looks like the model's tendency to
@@ -106,33 +108,45 @@ export interface RunStatusInput {
 export function formatRunStatusHint(input: RunStatusInput): string
 ```
 
-Output is one line, facts only. "Run" matches the skill's wording ("run time budget",
-"invocation"); the word "tick" is internal and is not defined in the prompt.
+Output is one line, facts only, sent as a `user` message. "Run" matches the skill's wording
+("run time budget", "invocation"); the word "tick" is internal and is not defined in the
+prompt. No label such as "platform status" is added: the owner chose the plain form.
 
 ```
-Run status: time (UTC) 2026-11-14T16:37:12Z; this run has been working for 2m17s
+Current time is (UTC) 2026-11-14T20:31:02Z; this run has been in progress for 46s
 ```
 
-Elapsed is shown as `Xm Ys` under an hour and `Xh Ym` above. Add a small `formatElapsed`
-in the module; do not change `formatInterval`'s contract.
+Elapsed is `46s` under a minute, `2m17s` under an hour, `1h5m` above (module-local
+`formatElapsed`; `formatInterval`'s contract is unchanged). Milliseconds are dropped from the
+time. "Run start" is the tick start, so it includes any scout phase before the judge loop.
 
 ### 2. Ephemeral per-turn injection in the loop
 
 Add to `StructuredToolLoopOptions`:
 
 ```ts
-getTurnContext?: (info: { turnIndex: number; toolCallsUsed: number }) => string | undefined;
+getTurnContext?: (info: { turnIndex: number }) => string | undefined;
 ```
 
-The loop counts `toolCallsUsed` (sum of `toolCalls.length` after each turn). Before the LLM
-call it builds the request messages as `[...messages, { role: 'user', content: ctx }]` when
-`getTurnContext` returns a string, and does not push it into `messages`.
+Before the LLM call the loop builds the request messages as
+`[...messages, { role: 'user', content: ctx }]` when `getTurnContext` returns a string, and
+does not push it into `messages`. With no turn context the request uses `messages` unchanged.
+The loop does not count tool calls: `agent.ts` counts them in the judge `onToolResult`
+(`judgeToolCallsUsed`), which keeps the loop's result shape unchanged.
 
 Why not `onBeforeTurn`: its string is appended permanently. Over a long run that is one
 copy of the line per turn, resent every turn, and the old copies show outdated times.
 
-The line is the last message, so the cached prefix is unchanged. Confirm with
-`cachedInputTokens` (Verification). `onBeforeTurn` and the scout loop are unchanged.
+The line is the last message, but being last is not enough to keep the cached prefix. Anthropic's
+automatic caching (the top-level `cache_control` that `llm-provider.ts` sends) puts its breakpoint on
+the last block, which would be this line. Its hash changes every turn, so the entry is never read and
+the whole history would be billed at the full input rate. The loop therefore marks the message
+`volatile: true`, and `llm-provider.ts` puts an explicit `cache_control` on the message before it and
+drops the top-level one (OpenRouter Claude models and Anthropic native). Other models are unchanged:
+their caching is implicit and matches on leading tokens. If the previous message has no text to
+carry the marker (an assistant turn with only tool calls), the request falls back to the old
+top-level marker. Confirm with `cachedInputTokens` (Verification). `onBeforeTurn` and the scout loop
+are unchanged.
 
 ### 3. Judge wiring in `agent.ts`
 
@@ -145,10 +159,10 @@ The line is the last message, so the cached prefix is unchanged. Confirm with
 ### 4. Observability
 
 Add optional `elapsedMs` and `toolCallsUsed` to the judge `LLM_COMPLETED` payload and to
-`LlmCompletedPayloadSchema`. Check whether the schema is `.strict()`, and check the other
-readers: `agent-message-broker.ts` (audit-only, ~394) and
-`apps/api/src/routes/agent-activity-mapper.ts` (~26, reads `finishReason` and `phase`).
-Optional fields keep older agent images valid. Add a schema test.
+`LlmCompletedPayloadSchema`. The schema is not `.strict()`, so a parse would have stripped
+unknown keys; declaring the fields is what lets them reach `agent_messages`. The other
+readers (`agent-message-broker.ts`, audit-only; `agent-activity-mapper.ts`, reads
+`finishReason` and `phase`) are unaffected. Optional fields keep older agent images valid.
 
 ### 5. Config
 
@@ -168,7 +182,11 @@ runStatusHint:
 ```
 
 Schema default is `false`, so a missing key never changes prompts. `default.yaml` turns it on
-for local dev; staging and production stay off until the soak in Rollout.
+for local dev. Config resolves `default.yaml` then `config/{NODE_ENV}.yaml`, so
+`config/staging.yaml` and `config/production.yaml` each set `agentRuntime.runStatusHint.enabled:
+false` explicitly; without that they would inherit `true`. Flip staging to `true` to start the
+soak. The key reaches the agent container because `index.ts` spreads `appConfig.agentRuntime`
+into `AGENT_RUNTIME_CONFIG_JSON`.
 
 ## Work packages
 

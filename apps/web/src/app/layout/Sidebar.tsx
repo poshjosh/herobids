@@ -14,6 +14,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   // Rebuild only when locale changes, not on every route re-render.
   const NAV_ITEMS = useMemo(() => [
     { path: '/agents', label: intl.formatMessage({ id: 'nav.agents' }), icon: '⊡' },
+    { path: '/marketplace', label: intl.formatMessage({ id: 'nav.marketplace' }), icon: '◈' },
     { path: '/skills', label: intl.formatMessage({ id: 'nav.skills' }), icon: '✦' },
     { path: '/connections', label: intl.formatMessage({ id: 'nav.connections' }), icon: '⊟' },
     { path: '/billing', label: intl.formatMessage({ id: 'nav.billing' }), icon: '⊘' },

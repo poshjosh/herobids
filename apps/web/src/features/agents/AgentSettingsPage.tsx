@@ -7,9 +7,10 @@ import { PageShell, PageHeader, LoadingRows, ErrorState, Button } from '../../li
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { AgentDetails } from './AgentDetailPage.js';
+import { agentChatPath } from './agent-chat-path.js';
 
-/** The agent's details, configuration and runtime panels. */
-export function AgentChatPage() {
+/** The agent's settings: configuration, capabilities and runtime panels. The chat lives on the agents page. */
+export function AgentSettingsPage() {
   const { id } = useParams<{ id: string }>();
   const intl = useIntl();
   const navigate = useNavigate();
@@ -39,10 +40,10 @@ export function AgentChatPage() {
   return (
     <PageShell>
       <PageHeader
-        title={agent.name}
+        title={intl.formatMessage({ id: 'agents.settings.title' }, { name: agent.name })}
         action={
-          <Button variant="primary" size="sm" onClick={() => navigate('/agents')}>
-            {intl.formatMessage({ id: 'agents.detail.backToAgents' })}
+          <Button variant="primary" size="sm" onClick={() => navigate(agentChatPath(agent.id))}>
+            {intl.formatMessage({ id: 'agents.settings.backToChat' })}
           </Button>
         }
       />
@@ -51,7 +52,7 @@ export function AgentChatPage() {
   );
 }
 
-/** Keeps old `/agents/:id/details` links working by sending them to the agent page, query string included. */
+/** Keeps old `/agents/:id/details` links working by sending them to the settings page, query string included. */
 export function AgentDetailsRedirect() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();

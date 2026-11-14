@@ -122,6 +122,9 @@ agentRuntime:
       provider: openrouter                    # suggested provider in forms
       lightModel: xiaomi/mimo-v2.6-flash  # suggested economy (scout) model
       heavyModel: anthropic/claude-haiku-5.5    # suggested premium (judge) model
+  # Off until the soak starts; flip to true to run it (docs/features/2026/11/14/003-agent-run-status-hint/plan.md, Rollout).
+  runStatusHint:
+    enabled: false
                        
 # Browser pool runs as the Nomad job infra/nomad/browser-pool.nomad.hcl, not a
 # Compose service, so the default Compose URL (http://browser-pool:3000) never

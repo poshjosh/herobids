@@ -4,6 +4,7 @@ import { skills as skillsApi } from '../../lib/api-client.js';
 import { PageShell } from '../../lib/ui.js';
 import { listSelectableSkills } from './agent-display.js';
 import { CreateAgentFlow } from './CreateAgentFlow.js';
+import { agentChatPath } from './agent-chat-path.js';
 
 /** Dedicated page for creating a new AI agent. */
 export function CreateAgentPage() {
@@ -16,9 +17,13 @@ export function CreateAgentPage() {
   });
   const selectableSkills = listSelectableSkills(skillsQuery.data?.skills ?? []);
 
-  const handleCreated = (id: string) => {
-    void qc.invalidateQueries({ queryKey: ['agents'] });
-    navigate(`/agents/${id}`);
+  // Refetch before leaving, so the agents page already lists the new agent and opens its chat.
+  // Refetch only the agents list (not every ['agents', …] query) before leaving, so the
+  // agents page already lists the new agent and opens its chat. The create mutation
+  // awaits this promise, which keeps the Create button disabled until navigation.
+  const handleCreated = async (id: string) => {
+    await qc.refetchQueries({ queryKey: ['agents'], exact: true });
+    navigate(agentChatPath(id));
   };
 
   return (

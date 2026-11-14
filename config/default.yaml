@@ -699,6 +699,10 @@ agentRuntime:
   # Defaults applied to non-trading agents.
   nonTradingDefaults:
     tickIntervalMs: 86400000           # 24 h — default tick interval for non-trading agents
+  # Run-status line for the judge loop (data only, never stored in the history).
+  runStatusHint:
+    enabled: true                      # send "Current time is (UTC) ...; this run has been in progress for ..." as a final user message on each judge model call
+    minTurnsBeforeShown: 1             # first judge turn that gets the line (0 = every turn; turn 0 already has the tick-start time in the system prompt)
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents
 # when market conditions match their registered watches.

@@ -7,6 +7,7 @@ import { PageShell, LoadingRows } from '../../lib/ui.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { EditIcon, PauseIcon, PlayIcon, StopIcon } from '../agents/AgentActionIcons.js';
 import { NotificationsBlock } from '../notifications/NotificationsBlock.js';
+import { agentChatPath } from '../agents/agent-chat-path.js';
 import {
   ONBOARDING_AGENT_NAME_MAX_LENGTH,
   ONBOARDING_MESSAGE_TIMES,
@@ -67,7 +68,8 @@ const editMessageValues = {
 
 /**
  * Shown after login. Asks for an agent name, creates the agent, then keeps the user
- * engaged with timed messages until the agent is active and redirects to /agents.
+ * engaged with timed messages until the agent is active and opens its chat on /agents.
+ * Every user with no agents lands here; the full create form stays one link away.
  * Shows a stuck-agent warning if the agent does not start in time or the start request fails.
  */
 export function OnboardingPage() {
@@ -107,9 +109,9 @@ export function OnboardingPage() {
     if (resumeAt !== null || startedAt === null) return;
     setResumeAt(Date.now() - startedAt);
   }, [resumeAt, startedAt]);
-  // Always available once the warning shows, so the user can still reach their agents.
+  // Always available once the warning shows, so the user can still reach their agent's chat.
   const goToAgentsLink = (
-    <Link to="/agents" className="try-page-send-btn" style={{ marginTop: '12px' }}>
+    <Link to={agent ? agentChatPath(agent.id) : '/agents'} className="try-page-send-btn" style={{ marginTop: '12px' }}>
       {intl.formatMessage({ id: 'onboarding.goToAgents' })}
     </Link>
   );
@@ -154,12 +156,12 @@ export function OnboardingPage() {
     }
   }, [warned, status, startError, budgetExpired]);
 
-  // Short notice, then the agents page, which lists the agent.
+  // Short notice, then the new agent's chat on the agents page.
   useEffect(() => {
-    if (!redirecting) return;
-    const timer = window.setTimeout(() => navigate('/agents', { replace: true }), ONBOARDING_REDIRECT_DELAY_MS);
+    if (!redirecting || !agent) return;
+    const timer = window.setTimeout(() => navigate(agentChatPath(agent.id), { replace: true }), ONBOARDING_REDIRECT_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [redirecting, navigate]);
+  }, [redirecting, agent, navigate]);
 
   // Polls the agent's status: first at 5s, then every 3s. Stops once it is active or the page closes.
   useEffect(() => {
@@ -222,7 +224,7 @@ export function OnboardingPage() {
     setSubmitting(true);
     try {
       const created = await agentsApi.create({ name: trimmed });
-      // Without this, the cached empty list would send the user to the create form on /agents.
+      // Without this, the cached empty list would send the user from /agents back to onboarding.
       void queryClient.invalidateQueries({ queryKey: ['agents'] });
       setStartedAt(Date.now());
       setAgent(created);
@@ -264,6 +266,10 @@ export function OnboardingPage() {
           {nameError && <div className="try-page-error">{nameError}</div>}
           {createError && <div className="try-page-error">{createError}</div>}
         </form>
+        <p style={{ margin: '12px 0 0', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+          {intl.formatMessage({ id: 'onboarding.advancedSetupHint' })}{' '}
+          <Link to="/agents/new">{intl.formatMessage({ id: 'onboarding.advancedSetup' })}</Link>
+        </p>
       </PageShell>
     );
   }
@@ -305,7 +311,7 @@ export function OnboardingPage() {
       )}
 
       {redirecting && (
-        <div className="try-page-typing">{intl.formatMessage({ id: 'onboarding.redirecting' })}</div>
+        <div className="try-page-typing">{intl.formatMessage({ id: 'onboarding.redirecting' }, { name: agent.name })}</div>
       )}
 
       {warned && !redirecting && (

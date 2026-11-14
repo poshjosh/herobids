@@ -58,7 +58,10 @@ export interface LlmToolCall {
 }
 
 export type LlmMessage =
-  | { role: 'system' | 'user'; content: string }
+  // `volatile` marks a trailing message whose text changes on every request (for example a live clock).
+  // Prompt caching must end before it, because a cache entry that includes it can never be read again.
+  // Only honoured on the last message of a request, and only for Claude models.
+  | { role: 'system' | 'user'; content: string; volatile?: boolean }
   | { role: 'assistant'; content: string; toolCalls?: LlmToolCall[] }
   // `pinned` tool results are exempt from stale-result truncation: they carry durable
   // instructions/state (loaded skills, docs, schemas, full documents) the agent must keep following.
@@ -260,9 +263,12 @@ async function callOpenAiCompatibleProvider(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
+  const openAiMessages = toOpenAiMessages(request.messages);
+  // OpenRouter -> Claude: end the cache before a volatile trailing message, not on it.
+  const breakpointBeforeVolatileTail = isClaudeModel(config.model) && markOpenAiBreakpointBeforeVolatileTail(request.messages, openAiMessages);
   const requestBody: Record<string, unknown> = {
     model: config.model,
-    messages: toOpenAiMessages(request.messages),
+    messages: openAiMessages,
     max_tokens: request.maxTokens,
     temperature: request.temperature ?? 0,
   };
@@ -290,7 +296,8 @@ async function callOpenAiCompatibleProvider(
   // Top-level cache_control triggers automatic caching: system prompt + conversation
   // history up to the last cacheable block are cached at ~10% of normal input cost
   // on cache hits (5-minute TTL, refreshed on use).
-  if (config.provider === 'openrouter') {
+  // Skipped when an explicit breakpoint already ends the cache before a volatile tail (see LlmMessage.volatile).
+  if (config.provider === 'openrouter' && !breakpointBeforeVolatileTail) {
     requestBody['cache_control'] = { type: 'ephemeral' };
   }
 
@@ -430,13 +437,16 @@ async function callAnthropicProvider(
     reasoningBudgetTokens > 0 ? request.maxTokens + reasoningBudgetTokens : request.maxTokens;
   const temperature = isReasoningActive ? 1 : (request.temperature ?? 0);
 
+  const anthropicMessages = toAnthropicMessages(chatMessages);
   const requestBody: Record<string, unknown> = {
     model: config.model,
     max_tokens: maxTokens,
     temperature,
     ...(systemMessage ? { system: systemMessage.content } : {}),
-    messages: toAnthropicMessages(chatMessages),
-    cache_control: { type: 'ephemeral' },
+    messages: anthropicMessages,
+    // Automatic caching puts its breakpoint on the last block. When a volatile tail already has an
+    // explicit breakpoint before it, that automatic one would only cache a block that never repeats.
+    ...(anthropicMessages.some(hasCacheBreakpoint) ? {} : { cache_control: { type: 'ephemeral' } }),
   };
 
   if (request.tools && request.tools.length > 0 && request.toolChoice !== 'none') {
@@ -651,10 +661,55 @@ function toAnthropicMessages(messages: LlmMessage[]): Array<Record<string, unkno
       continue;
     }
 
+    if (message.role === 'user' && message.volatile && message === messages.at(-1)) {
+      markLastAnthropicBlockCacheable(normalized);
+    }
     appendAnthropicUserText(normalized, message.content);
   }
 
   return normalized;
+}
+
+const EPHEMERAL_CACHE_CONTROL = { type: 'ephemeral' } as const;
+
+function hasCacheBreakpoint(message: Record<string, unknown>): boolean {
+  const content = message['content'];
+  return Array.isArray(content) && content.some((block) => typeof block === 'object' && block !== null && 'cache_control' in block);
+}
+
+/**
+ * Ends the cache at the last block built so far, so a volatile message appended after it stays outside the cache.
+ * A plain-text message becomes a one-block message to carry the marker. Empty content cannot carry one.
+ */
+function markLastAnthropicBlockCacheable(messages: Array<Record<string, unknown>>): void {
+  const last = messages.at(-1);
+  if (!last) return;
+  const content = last['content'];
+  if (typeof content === 'string') {
+    if (content.length > 0) {
+      last['content'] = [{ type: 'text', text: content, cache_control: EPHEMERAL_CACHE_CONTROL }];
+    }
+    return;
+  }
+  const lastBlock = Array.isArray(content) ? content.at(-1) : undefined;
+  if (typeof lastBlock === 'object' && lastBlock !== null) {
+    (lastBlock as Record<string, unknown>)['cache_control'] = EPHEMERAL_CACHE_CONTROL;
+  }
+}
+
+/**
+ * OpenAI-format counterpart: puts the cache marker on the message just before a volatile last message.
+ * Returns true when the marker was placed, so the caller can drop the top-level (last-block) marker.
+ * Returns false (request unchanged) when there is no volatile tail or the previous message has no text to carry it.
+ */
+function markOpenAiBreakpointBeforeVolatileTail(source: LlmMessage[], formatted: Array<Record<string, unknown>>): boolean {
+  const tail = source.at(-1);
+  if (!tail || tail.role !== 'user' || !tail.volatile) return false;
+  const previous = formatted.at(-2);
+  const content = previous?.['content'];
+  if (!previous || typeof content !== 'string' || content.length === 0) return false;
+  previous['content'] = [{ type: 'text', text: content, cache_control: EPHEMERAL_CACHE_CONTROL }];
+  return true;
 }
 
 function appendAnthropicUserText(messages: Array<Record<string, unknown>>, text: string): void {

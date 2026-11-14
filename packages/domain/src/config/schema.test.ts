@@ -518,6 +518,34 @@ describe('AgentRuntimePolicySchema', () => {
     }
   });
 
+  it('leaves the run-status hint off by default and shows it from the second judge turn', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.runStatusHint).toEqual({ enabled: false, minTurnsBeforeShown: 1 });
+    }
+  });
+
+  it('accepts an enabled run-status hint and rejects a negative first turn', () => {
+    const enabled = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+      runStatusHint: { enabled: true, minTurnsBeforeShown: 0 },
+    });
+    const negative = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {},
+      runStatusHint: { minTurnsBeforeShown: -1 },
+    });
+
+    expect(enabled.success).toBe(true);
+    expect(negative.success).toBe(false);
+  });
+
   it('rejects reminders when minRepeatIntervalMs exceeds maxRepeatIntervalMs', () => {
     const result = AgentRuntimePolicySchema.safeParse({
       defaultBudgets: REQUIRED_RUNTIME_BUDGETS,

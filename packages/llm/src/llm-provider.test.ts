@@ -792,6 +792,134 @@ describe('callLlmProvider prompt caching', () => {
   });
 });
 
+describe('callLlmProvider prompt caching with a volatile trailing message', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  const openRouterConfig = (model: string): LlmProviderConfig => ({ provider: 'openrouter', model, maxTokens: 512, timeoutMs: 1_000 });
+  const toolTurn: LlmMessage[] = [
+    { role: 'system', content: 'system prompt' },
+    { role: 'user', content: 'do the task' },
+    { role: 'assistant', content: 'checking', toolCalls: [{ id: 'call_1', name: 'list_positions', args: {} }] },
+    { role: 'tool', toolCallId: 'call_1', content: '{"positions":[]}' },
+  ];
+  const clock: LlmMessage = { role: 'user', content: 'Current time is (UTC) 2026-11-14T20:31:02Z', volatile: true };
+
+  async function sendOpenRouter(model: string, messages: LlmMessage[]): Promise<Record<string, unknown>> {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 10, prompt_tokens: 8, completion_tokens: 2 },
+      model,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callLlmProvider(openRouterConfig(model), { messages, maxTokens: 512 });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    return JSON.parse(String(init.body)) as Record<string, unknown>;
+  }
+
+  async function sendAnthropic(messages: LlmMessage[]): Promise<Record<string, unknown>> {
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 8, output_tokens: 2 },
+      model: 'claude-sonnet-4-5',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callLlmProvider(
+      { provider: 'anthropic', model: 'claude-sonnet-4-5', maxTokens: 512, timeoutMs: 1_000 },
+      { messages, maxTokens: 512 },
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    return JSON.parse(String(init.body)) as Record<string, unknown>;
+  }
+
+  it('ends the cache on the message before the volatile one for OpenRouter Claude, with no top-level marker', async () => {
+    const body = await sendOpenRouter('anthropic/claude-sonnet-4-5', [...toolTurn, clock]);
+
+    const sent = body['messages'] as Array<Record<string, unknown>>;
+    expect(body['cache_control']).toBeUndefined();
+    expect(sent.at(-2)).toEqual({
+      role: 'tool',
+      content: [{ type: 'text', text: '{"positions":[]}', cache_control: { type: 'ephemeral' } }],
+      tool_call_id: 'call_1',
+    });
+    expect(sent.at(-1)).toEqual({ role: 'user', content: 'Current time is (UTC) 2026-11-14T20:31:02Z' });
+  });
+
+  it('keeps the top-level marker for OpenRouter Claude when no message is volatile', async () => {
+    const body = await sendOpenRouter('anthropic/claude-sonnet-4-5', toolTurn);
+
+    expect(body['cache_control']).toEqual({ type: 'ephemeral' });
+    expect(JSON.stringify(body['messages'])).not.toContain('"cache_control"');
+  });
+
+  it('leaves non-Claude OpenRouter requests as they were, even with a volatile message', async () => {
+    const body = await sendOpenRouter('xiaomi/mimo-v2.6-flash', [...toolTurn, clock]);
+
+    const sent = body['messages'] as Array<Record<string, unknown>>;
+    expect(body['cache_control']).toEqual({ type: 'ephemeral' });
+    expect(sent.at(-2)?.['content']).toBe('{"positions":[]}');
+  });
+
+  it('keeps the top-level marker when the message before the volatile one has no text to carry the marker', async () => {
+    const body = await sendOpenRouter('anthropic/claude-sonnet-4-5', [
+      { role: 'user', content: 'do the task' },
+      { role: 'assistant', content: '', toolCalls: [{ id: 'call_1', name: 'list_positions', args: {} }] },
+      clock,
+    ]);
+
+    expect(body['cache_control']).toEqual({ type: 'ephemeral' });
+    expect(JSON.stringify(body['messages'])).not.toContain('"cache_control"');
+  });
+
+  it('ignores a volatile message that is not the last one', async () => {
+    const body = await sendOpenRouter('anthropic/claude-sonnet-4-5', [...toolTurn, clock, { role: 'user', content: 'later' }]);
+
+    expect(body['cache_control']).toEqual({ type: 'ephemeral' });
+    expect(JSON.stringify(body['messages'])).not.toContain('"cache_control"');
+  });
+
+  it('ends the cache on the last tool result for Anthropic native, with the clock after it and no top-level marker', async () => {
+    const body = await sendAnthropic([...toolTurn, clock]);
+
+    const sent = body['messages'] as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+    expect(body['cache_control']).toBeUndefined();
+    expect(sent.at(-1)?.role).toBe('user');
+    expect(sent.at(-1)?.content).toEqual([
+      expect.objectContaining({ type: 'tool_result', tool_use_id: 'call_1', cache_control: { type: 'ephemeral' } }),
+      { type: 'text', text: 'Current time is (UTC) 2026-11-14T20:31:02Z' },
+    ]);
+  });
+
+  it('ends the cache on a plain user message for Anthropic native when the clock directly follows it', async () => {
+    const body = await sendAnthropic([{ role: 'system', content: 'system prompt' }, { role: 'user', content: 'do the task' }, clock]);
+
+    const sent = body['messages'] as Array<{ content: Array<Record<string, unknown>> }>;
+    expect(body['cache_control']).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.content).toEqual([
+      { type: 'text', text: 'do the task', cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: 'Current time is (UTC) 2026-11-14T20:31:02Z' },
+    ]);
+  });
+
+  it('keeps the top-level marker for Anthropic native when no message is volatile', async () => {
+    const body = await sendAnthropic(toolTurn);
+
+    expect(body['cache_control']).toEqual({ type: 'ephemeral' });
+    expect(JSON.stringify(body['messages'])).not.toContain('"cache_control"');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // toOpenAiMessages — message formatting
 // ---------------------------------------------------------------------------

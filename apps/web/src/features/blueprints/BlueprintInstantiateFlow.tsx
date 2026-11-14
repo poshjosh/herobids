@@ -25,7 +25,12 @@ interface EditsState {
 interface BlueprintInstantiateFlowProps {
   blueprint: BlueprintSummary;
   onClose: () => void;
-  onCreated?: (actorId: string) => void;
+  /**
+   * Called once the agent exists. A returned promise is awaited: the confirm step stays
+   * open with "Creating…" and the buttons disabled until it settles (e.g. navigation).
+   * Without this callback the flow shows its own success step.
+   */
+  onCreated?: (actorId: string) => void | Promise<void>;
 }
 
 export function BlueprintInstantiateFlow({
@@ -119,10 +124,12 @@ export function BlueprintInstantiateFlow({
         idempotencyKey,
       );
     },
+    // Returning the caller's promise keeps the mutation pending, so "Create agent" cannot be clicked again.
     onSuccess: (data) => {
       setCreatedActorId(data.actorId);
+      if (onCreated) return onCreated(data.actorId);
       setStep('success');
-      onCreated?.(data.actorId);
+      return undefined;
     },
     onError: (err: Error) => {
       setError(err.message);

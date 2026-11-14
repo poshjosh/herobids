@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntlProvider } from 'react-intl';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
 import { agents as agentsApi, type Agent } from '../../lib/api-client.js';
@@ -23,11 +23,12 @@ vi.mock('./AgentConversation.js', async (importOriginal) => {
     ...actual,
     AgentConversation: (props: {
       agentId: string;
+      connectionRequestId?: string | null;
       initialDraft?: string;
       onDraftChange?: (value: string) => void;
       composerActions?: React.ReactNode;
     }) => (
-      <div data-testid="chat" data-agent={props.agentId}>
+      <div data-testid="chat" data-agent={props.agentId} data-connection={props.connectionRequestId ?? ''}>
         {props.composerActions}
         <textarea
           aria-label="chat draft"
@@ -42,8 +43,6 @@ vi.mock('./AgentConversation.js', async (importOriginal) => {
 vi.mock('./AgentQuickActions.js', () => ({ AgentQuickActions: () => <div data-testid="quick-actions" /> }));
 vi.mock('./AgentHierarchyList.js', () => ({ AgentHierarchyList: () => <div>hierarchy</div> }));
 vi.mock('../notifications/NotificationsBlock.js', () => ({ NotificationsBlock: () => null }));
-vi.mock('../blueprints/BlueprintBrowse.js', () => ({ BlueprintBrowse: () => null }));
-vi.mock('../blueprints/BlueprintInstantiateFlow.js', () => ({ BlueprintInstantiateFlow: () => null }));
 vi.mock('../../lib/useEventStream.js', () => ({ useEventStream: () => undefined }));
 
 function text(id: string): string {
@@ -64,16 +63,22 @@ const AGENTS = [
   agent('agent-second', 'Second bot', 'active'),
 ];
 
-function renderPage() {
+/** Shows the current URL, so tests can check the page removed the chat parameters. */
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
+function renderPage(initialEntry = '/agents') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <IntlProvider locale="en" messages={messages}>
-        <MemoryRouter initialEntries={['/agents']}>
+        <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
-            <Route path="/agents" element={<AgentsPage />} />
-            <Route path="/agents/:id/details" element={<div>details page</div>} />
+            <Route path="/agents" element={<><AgentsPage /><LocationProbe /></>} />
             <Route path="/agents/new" element={<div>create page</div>} />
+            <Route path="/onboarding" element={<div>onboarding page</div>} />
           </Routes>
         </MemoryRouter>
       </IntlProvider>
@@ -197,13 +202,44 @@ describe('AgentsPage chat box', () => {
     expect(screen.getByRole('searchbox', { name: text('agents.tree.search') })).toBeTruthy();
   });
 
-  it('keeps the tabs and the rest of the page below the chat', async () => {
+  it('shows the agents list and the create button below the chat, with no marketplace tab', async () => {
     renderPage();
     await screen.findByTestId('chat');
-
-    expect(screen.getByRole('button', { name: 'My Agents' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Marketplace' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: text('agents.myAgents') })).toBeTruthy();
     expect(screen.getByText('hierarchy')).toBeTruthy();
     expect(screen.getByRole('button', { name: text('agents.create.title') })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Marketplace' })).toBeNull();
+  });
+
+  it('opens the chat of the agent named in the link, remembers it, and cleans the URL', async () => {
+    renderPage('/agents?agent=agent-second');
+    await screen.findByTestId('chat');
+    expect(chatAgentId()).toBe('agent-second');
+    expect(localStorage.getItem(CHAT_KEY)).toBe('agent-second');
+    expect(screen.getByTestId('location').textContent).toBe('/agents');
+  });
+
+  it('passes an approved connection request to the linked agent chat only', async () => {
+    renderPage('/agents?agent=agent-second&connected=req-1');
+    await screen.findByTestId('chat');
+    expect(screen.getByTestId('chat').getAttribute('data-connection')).toBe('req-1');
+    fireEvent.change(selectAgent(), { target: { value: 'agent-active' } });
+    expect(screen.getByTestId('chat').getAttribute('data-connection')).toBe('');
+  });
+
+  it('does not pass the approved connection request again when the user returns to that agent', async () => {
+    renderPage('/agents?agent=agent-second&connected=req-1');
+    await screen.findByTestId('chat');
+    fireEvent.change(selectAgent(), { target: { value: 'agent-active' } });
+    fireEvent.change(selectAgent(), { target: { value: 'agent-second' } });
+
+    expect(chatAgentId()).toBe('agent-second');
+    expect(screen.getByTestId('chat').getAttribute('data-connection')).toBe('');
+  });
+
+  it('sends users with no agents to the guided onboarding', async () => {
+    vi.mocked(agentsApi.list).mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByText('onboarding page')).toBeTruthy();
   });
 });

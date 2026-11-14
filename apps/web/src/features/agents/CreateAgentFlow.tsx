@@ -145,7 +145,8 @@ export function CreateAgentFlow({
   skillsLoading: boolean;
   skillsError: string | null;
   onClose: () => void;
-  onCreated: (id: string) => void;
+  /** A returned promise is awaited by the create mutation, so Create stays disabled until it settles. */
+  onCreated: (id: string) => void | Promise<void>;
 }) {
   const intl = useIntl();
   const qc = useQueryClient();
@@ -269,8 +270,8 @@ export function CreateAgentFlow({
     params.delete('error');
     params.delete('connectionId');
     const nextSearch = params.toString();
-    navigate(nextSearch ? `/agents?${nextSearch}` : '/agents', { replace: true });
-  }, [location.search, navigate, qc]);
+    navigate(nextSearch ? `${location.pathname}?${nextSearch}` : location.pathname, { replace: true });
+  }, [location.pathname, location.search, navigate, qc]);
   const tradingConnectionsQuery = useQuery({
     queryKey: ['capabilities', 'trading', 'connections'],
     queryFn: () => capabilitiesApi.tradingConnections(),
@@ -557,6 +558,7 @@ export function CreateAgentFlow({
 
       return agent;
     },
+    // Returning the promise keeps the mutation pending (Create disabled) until the caller has navigated.
     onSuccess: (agent) => onCreated(agent.id),
     onError: () => {
       setFormErrors((prev) => ({ ...prev, _form: localizeApiError(intl, mutation.error, 'common.errorTitle') }));
@@ -632,7 +634,7 @@ export function CreateAgentFlow({
   if (showSetup) {
     return (
       <ProviderSetupForm
-        oauthReturnTo="/agents?create=1&oauthReturn=1"
+        oauthReturnTo="/agents/new?oauthReturn=1"
         onBeforeOAuthRedirect={() => {
           const { pendingFiles: _pendingFiles, ...serializableIntent } = intent;
           saveCreateAgentOAuthDraft({

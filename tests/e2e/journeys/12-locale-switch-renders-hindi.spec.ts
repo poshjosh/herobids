@@ -9,7 +9,7 @@ test.describe('Journey 12: locale switch', () => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J12');
 
     // Create a minimal agent via API so the agents list page renders
-    // instead of redirecting to /agents/new (zero-agent redirect).
+    // instead of redirecting to /onboarding (zero-agent redirect).
     const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
     const createRes = await page.request.post('/api/agents', {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

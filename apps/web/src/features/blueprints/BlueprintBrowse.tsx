@@ -8,6 +8,7 @@ import {
 import { blueprints, auth, type BlueprintSummary } from '../../lib/api-client.js';
 import type { BlueprintBrowseParams } from '../../lib/blueprint-types.js';
 import { useBlueprintLike } from './hooks/useBlueprintLike.js';
+import { localizeApiError } from '../../lib/localize-api-error.js';
 
 interface BlueprintBrowseProps {
   /** Default kind filter. If not passed, shows "All". */
@@ -20,17 +21,17 @@ interface BlueprintBrowseProps {
   hideKindFilter?: boolean;
 }
 
-const SORT_OPTIONS: Array<{ value: BlueprintBrowseParams['sort']; label: string }> = [
-  { value: 'popular', label: 'Popular' },
-  { value: 'trending', label: 'Trending' },
-  { value: 'newest', label: 'Newest' },
-  { value: 'ranking', label: 'Ranking' },
+const SORT_OPTIONS: Array<{ value: BlueprintBrowseParams['sort']; labelId: string }> = [
+  { value: 'popular', labelId: 'marketplace.sort.popular' },
+  { value: 'trending', labelId: 'marketplace.sort.trending' },
+  { value: 'newest', labelId: 'marketplace.sort.newest' },
+  { value: 'ranking', labelId: 'marketplace.sort.ranking' },
 ];
 
-const KIND_TABS: Array<{ value: BlueprintBrowseParams['kind']; label: string }> = [
-  { value: undefined, label: 'All' },
-  { value: 'agent', label: 'Agents' },
-  { value: 'bot', label: 'Bots' },
+const KIND_TABS: Array<{ value: BlueprintBrowseParams['kind']; labelId: string }> = [
+  { value: undefined, labelId: 'marketplace.kind.all' },
+  { value: 'agent', labelId: 'marketplace.kind.agents' },
+  { value: 'bot', labelId: 'marketplace.kind.bots' },
 ];
 
 const pillStyle: React.CSSProperties = {
@@ -50,6 +51,7 @@ export function BlueprintBrowse({
   standalone = false,
   hideKindFilter = false,
 }: BlueprintBrowseProps) {
+  const intl = useIntl();
   const [kind, setKind] = useState<BlueprintBrowseParams['kind']>(defaultKind);
   const [sort, setSort] = useState<BlueprintBrowseParams['sort']>('popular');
   const [cursorStack, setCursorStack] = useState<Array<string | null>>([null]);
@@ -73,9 +75,9 @@ export function BlueprintBrowse({
 
   // If entitlements loaded and user lacks marketplace view, show a clean message
   if (!meQuery.isLoading && meQuery.data && canViewMarketplace === false) {
-    const message = 'Your plan does not include marketplace access. Upgrade your plan to browse blueprints.';
+    const message = intl.formatMessage({ id: 'marketplace.accessRestricted' });
     return standalone ? (
-      <PageShell><PageHeader title="Blueprint Marketplace" subtitle="Access restricted" /><ErrorState message={message} /></PageShell>
+      <PageShell><PageHeader title={intl.formatMessage({ id: 'marketplace.title' })} subtitle={intl.formatMessage({ id: 'marketplace.accessRestrictedTitle' })} /><ErrorState message={message} /></PageShell>
     ) : (
       <ErrorState message={message} />
     );
@@ -124,12 +126,12 @@ export function BlueprintBrowse({
           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
             {KIND_TABS.map((tab) => (
               <Button
-                key={tab.label}
+                key={tab.labelId}
                 variant={kind === tab.value ? 'primary' : 'secondary'}
                 size="sm"
                 onClick={() => handleKindChange(tab.value)}
               >
-                {tab.label}
+                {intl.formatMessage({ id: tab.labelId })}
               </Button>
             ))}
           </div>
@@ -142,7 +144,7 @@ export function BlueprintBrowse({
               size="sm"
               onClick={() => handleSortChange(opt.value)}
             >
-              {opt.label}
+              {intl.formatMessage({ id: opt.labelId })}
             </Button>
           ))}
         </div>
@@ -152,15 +154,15 @@ export function BlueprintBrowse({
       {query.isLoading && <LoadingRows count={4} />}
       {query.isError && (
         <ErrorState
-          message={(query.error as Error).message}
+          message={localizeApiError(intl, query.error, 'common.errorTitle')}
           onRetry={() => void query.refetch()}
         />
       )}
 
       {query.isSuccess && items.length === 0 && (
         <EmptyState
-          title="No blueprints found"
-          message="No published blueprints match your current filters. Try adjusting them or check back later."
+          title={intl.formatMessage({ id: 'marketplace.empty.title' })}
+          message={intl.formatMessage({ id: 'marketplace.empty.message' })}
         />
       )}
 
@@ -192,7 +194,7 @@ export function BlueprintBrowse({
         <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
           {canGoBack && (
             <Button variant="secondary" size="sm" onClick={handleGoBack}>
-              ← Previous
+              {intl.formatMessage({ id: 'marketplace.previous' })}
             </Button>
           )}
           {hasMore && (
@@ -202,7 +204,7 @@ export function BlueprintBrowse({
               onClick={handleLoadMore}
               disabled={query.isLoading}
             >
-              Load more
+              {intl.formatMessage({ id: 'marketplace.loadMore' })}
             </Button>
           )}
         </div>
@@ -214,8 +216,8 @@ export function BlueprintBrowse({
     return (
       <PageShell>
         <PageHeader
-          title="Blueprint Marketplace"
-          subtitle="Discover and deploy AI agents and trading bots from the community"
+          title={intl.formatMessage({ id: 'marketplace.title' })}
+          subtitle={intl.formatMessage({ id: 'marketplace.subtitle' })}
         />
         {content}
       </PageShell>
@@ -251,8 +253,8 @@ function BlueprintCard({
   const likeToggle = useBlueprintLike(blueprint.id, blueprint.isLikedByViewer);
 
   const likeLabel = blueprint.isLikedByViewer
-    ? intl.formatMessage({ id: 'skills.actions.unlike', defaultMessage: 'Unlike' })
-    : intl.formatMessage({ id: 'skills.actions.like', defaultMessage: 'Like' });
+    ? intl.formatMessage({ id: 'skills.actions.unlike' })
+    : intl.formatMessage({ id: 'skills.actions.like' });
 
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -280,7 +282,9 @@ function BlueprintCard({
             )}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-            {blueprint.kind === 'agent' ? '🤖 Agent' : '📈 Bot'}
+            {blueprint.kind === 'agent'
+              ? `🤖 ${intl.formatMessage({ id: 'marketplace.card.kindAgent' })}`
+              : `📈 ${intl.formatMessage({ id: 'marketplace.card.kindBot' })}`}
             {blueprint.strategyType && ` · ${blueprint.strategyType}`}
             {blueprint.venueType && ` · ${blueprint.venueType}`}
           </div>
@@ -292,7 +296,7 @@ function BlueprintCard({
 
       {/* Description */}
       <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-        {blueprint.description || 'No description'}
+        {blueprint.description || intl.formatMessage({ id: 'marketplace.card.noDescription' })}
       </div>
 
       {/* Tags */}
@@ -325,14 +329,14 @@ function BlueprintCard({
             <span style={{ marginLeft: '4px' }}>{blueprint.likeCount}</span>
           </Button>
         ) : (
-          <KV label="Likes" value={String(blueprint.likeCount)} />
+          <KV label={intl.formatMessage({ id: 'marketplace.card.likes' })} value={String(blueprint.likeCount)} />
         )}
-        <KV label="Copies" value={String(blueprint.forkCount)} />
+        <KV label={intl.formatMessage({ id: 'marketplace.card.copies' })} value={String(blueprint.forkCount)} />
       </div>
 
       {/* Like error feedback */}
       {likeToggle.error && (
-        <ErrorBanner message={(likeToggle.error as Error).message} />
+        <ErrorBanner message={localizeApiError(intl, likeToggle.error, 'common.errorTitle')} />
       )}
 
       {/* Action */}
@@ -341,8 +345,8 @@ function BlueprintCard({
           size="sm"
           variant="secondary"
           style={{ marginTop: '4px', alignSelf: 'flex-start' }}
-          aria-label={intl.formatMessage({ id: 'agents.marketplace.useAgent', defaultMessage: 'Use this agent' })}
-          title={intl.formatMessage({ id: 'agents.marketplace.useAgent', defaultMessage: 'Use this agent' })}
+          aria-label={intl.formatMessage({ id: 'agents.marketplace.useAgent' })}
+          title={intl.formatMessage({ id: 'agents.marketplace.useAgent' })}
           onClick={() => onUse(blueprint)}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>

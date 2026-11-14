@@ -5,6 +5,7 @@ import {
   PeerMessagePayloadSchema,
   PeerSendPayloadSchema,
   AgentWakePayloadSchema,
+  LlmCompletedPayloadSchema,
   TickCompletedPayloadSchema,
   TickStartedPayloadSchema,
   ReminderWakeContextSchema,
@@ -1006,6 +1007,24 @@ describe('tick turn events', () => {
   it('accepts only the defined outcomes for a tick completion', () => {
     expect(TickCompletedPayloadSchema.safeParse({ tickId: 'tick-1', outcome: 'replied' }).success).toBe(true);
     expect(TickCompletedPayloadSchema.safeParse({ tickId: 'tick-1', outcome: 'maybe' }).success).toBe(false);
+  });
+
+  describe('LlmCompletedPayloadSchema run length fields', () => {
+    const base = { tickId: 'tick-1', phase: 'judge' as const, model: 'm', turnsUsed: 7, finishReason: 'stop' };
+
+    it('keeps the elapsed time and tool-call count so they reach the stored event', () => {
+      const parsed = LlmCompletedPayloadSchema.parse({ ...base, elapsedMs: 46_000, toolCallsUsed: 9 });
+      expect(parsed.elapsedMs).toBe(46_000);
+      expect(parsed.toolCallsUsed).toBe(9);
+    });
+
+    it('still accepts a completion from an older runtime that does not report them', () => {
+      expect(LlmCompletedPayloadSchema.safeParse(base).success).toBe(true);
+    });
+
+    it('rejects a negative elapsed time', () => {
+      expect(LlmCompletedPayloadSchema.safeParse({ ...base, elapsedMs: -1 }).success).toBe(false);
+    });
   });
 });
 

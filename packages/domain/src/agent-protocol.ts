@@ -582,6 +582,10 @@ export const LlmCompletedPayloadSchema = z.object({
   phase: z.enum(['scout', 'judge']),
   model: z.string().min(1),
   turnsUsed: z.number().int().min(0),
+  /** Milliseconds from tick start to loop end. Judge phase only; absent on older agent images. */
+  elapsedMs: z.number().int().min(0).optional(),
+  /** Tool calls executed by the loop. Judge phase only; absent on older agent images. */
+  toolCallsUsed: z.number().int().min(0).optional(),
   finishReason: z.string().min(1),
   errorMessage: z.string().optional(),
   tokensUsed: z.number().int().min(0).optional(),

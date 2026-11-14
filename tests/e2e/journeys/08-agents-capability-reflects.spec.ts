@@ -58,9 +58,9 @@ test.describe('Journey 8: AI Agents page reflects enabled capability', () => {
     await page.goto('/agents');
     await expect(page.getByRole('heading', { name: /AI Agents/i })).toBeVisible({ timeout: 5_000 });
 
-    // The summary card now navigates to agent detail on click (no explicit
-    // "Open trading capability" button — capability config moved to detail page).
-    await page.getByText('Trading agent').click();
+    // Clicking a card opens the agent's chat. The card's Settings button opens the
+    // settings page, where capability config lives.
+    await page.locator('.agent-summary-card', { hasText: 'Trading agent' }).getByRole('button', { name: 'Settings' }).click();
     await expect(page).toHaveURL(new RegExp(`/agents/${agentId}$`), { timeout: 5_000 });
 
     // Open the capabilities section on the detail page and click the button there.

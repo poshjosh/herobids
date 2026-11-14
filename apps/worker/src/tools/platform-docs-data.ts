@@ -1446,15 +1446,17 @@ See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how t
 
 ## 3. Create your first agent
 
-1. Go to **AI Agents** in the sidebar.
-2. Click **Create AI agent**.
-3. Give it a name, or leave the name blank and we will pick one for you.
+1. Go to **AI Agents** in the sidebar. If you have no agents yet, you are asked to name your first one, and that is all you need to do. For more options, click **Use advanced setup**.
+2. If you already have agents, click **Create AI agent**.
+3. Give it a name, or keep the name we suggest.
 4. Choose where it reaches you. For now that is **In this app**.
 5. Optionally set billing caps from the **Billing** page to prevent surprise costs.
 
-## 4. Start your agent
+## 4. Chat with your agent
 
-A new agent starts stopped. Open it, add skills under **Capabilities** (for example web browsing or deal finder), then click **Start**. Once it runs, it talks to you in the **Chat with** card on the agent page (and on Telegram, if you linked it) and asks you for instructions.
+A new agent starts on its own, and the app opens its chat on the **AI Agents** page. Tell it what you want in the chat (it also reaches you on Telegram, if you linked it). To chat with another agent, pick it next to **Chat with** or click its card.
+
+To change an agent, click its gear icon to open its settings. Skills such as web browsing or deal finder are added under **Capabilities** while the agent is stopped; click **Start** afterwards.
 
 ## Where to go next
 
@@ -1463,7 +1465,7 @@ A new agent starts stopped. Open it, add skills under **Capabilities** (for exam
 - [Agent Style](/docs/agents/agent-style) — Understand how agent styles control cost and behavior.
 - [Agent Billing Limits](/docs/agents/billing-limits) — Set spending caps so you never get a surprise bill.
 - [Pricing](/help/pricing) — How OpenAIdom pricing works.`,
-    headings: ['1. Sign up', '2. Link Telegram (recommended)', '3. Create your first agent', '4. Start your agent', 'Where to go next'],
+    headings: ['1. Sign up', '2. Link Telegram (recommended)', '3. Create your first agent', '4. Chat with your agent', 'Where to go next'],
     tags: ['get-started', 'help'],
   },
   {

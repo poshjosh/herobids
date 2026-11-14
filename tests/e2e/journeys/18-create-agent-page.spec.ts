@@ -1,10 +1,11 @@
 /**
  * Journey 18: Create AI agent page.
  *
- * Verifies the create page after guided chat removal:
- *   1. The agents page has a "Create AI agent" button that opens /agents/new.
- *   2. The page offers a name, an objective and a Review step.
- *   3. There is no guided chat button.
+ * Verifies the create page:
+ *   1. A new user lands on the guided onboarding; its advanced setup link opens /agents/new.
+ *   2. The agents page has a "Create AI agent" button that opens /agents/new.
+ *   3. The page offers a name, an objective and a Review step.
+ *   4. There is no guided chat button.
  */
 
 import { test, expect } from '@playwright/test';
@@ -14,9 +15,11 @@ const EMAIL = `j18-${Date.now()}@e2e.local`;
 const PASSWORD = 'E2ePassword18!';
 
 test.describe('Journey 18: Create AI agent page', () => {
-  test('a new user lands on the create form', async ({ page }) => {
+  test('a new user lands on onboarding and can open the create form as advanced setup', async ({ page }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J18');
 
+    await expect(page).toHaveURL(/\/onboarding$/, { timeout: 10_000 });
+    await page.getByRole('link', { name: /^Use advanced setup$/ }).click();
     await expect(page).toHaveURL(/\/agents\/new$/, { timeout: 10_000 });
     await expect(page.locator('[data-field="name"] input')).toBeVisible();
     await page.locator('details summary', { hasText: 'Advanced Settings' }).click();

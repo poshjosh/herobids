@@ -7,6 +7,7 @@ import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 import { extractAgentObjective, formatCapabilityFamily, formatObjectivePreview, resolveCapabilityFamilies, resolveSelectedSkills } from './agent-display.js';
 import type { CreatorLabel } from './agent-tree.js';
 import { AgentQuickActions } from './AgentQuickActions.js';
+import { agentChatPath } from './agent-chat-path.js';
 
 /** Tree-only details. Omitted for the flat list, which renders exactly as before. */
 export interface AgentHierarchyMeta {
@@ -44,7 +45,8 @@ export function AgentSummaryCard({ agent, onOpen, hierarchy }: AgentSummaryCardP
       capabilityFamilies: getRuntimeFamiliesForProvider(connection.provider),
     })),
   );
-  const openAgent = onOpen ?? (() => navigate(`/agents/${agent.id}`));
+  // Opening an agent means chatting with it. Settings sit behind the gear in the quick actions.
+  const openAgent = onOpen ?? (() => navigate(agentChatPath(agent.id)));
 
   return (
     <Card

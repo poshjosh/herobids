@@ -104,8 +104,9 @@ export async function getAuthenticatedUserId(page: Page, request: APIRequestCont
 
 /**
  * Create an agent through the create form (name + objective, then Review and
- * Create), then add any skills on the agent detail page. The goal argument is
- * used as the objective, and its first 40 characters as the name.
+ * Create), then add any skills on the agent settings page. The goal argument is
+ * used as the objective, and its first 40 characters as the name. The agent id
+ * comes from the create response, since the app opens the chat on /agents.
  */
 export async function createAgent(
   page: Page,
@@ -118,16 +119,17 @@ export async function createAgent(
   await page.locator('details summary', { hasText: 'Advanced Settings' }).click();
   await page.locator('[data-field="goal"] textarea').fill(goal);
   await page.getByRole('button', { name: /^Review/ }).first().click();
-  await page.getByRole('button', { name: /^Create$/ }).click();
-
-  const agentUrlPattern = /\/agents\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
-  await page.waitForURL(agentUrlPattern, { timeout: 15_000 });
-
-  const match = page.url().match(agentUrlPattern);
-  if (!match?.[1]) {
-    throw new Error(`Could not determine agent id from URL: ${page.url()}`);
+  const [createResponse] = await Promise.all([
+    page.waitForResponse((res) => res.request().method() === 'POST' && new URL(res.url()).pathname === '/api/agents', { timeout: 15_000 }),
+    page.getByRole('button', { name: /^Create$/ }).click(),
+  ]);
+  if (!createResponse.ok()) {
+    throw new Error(`Failed to create agent: ${createResponse.status()} ${await createResponse.text()}`);
   }
-  const agentId = match[1];
+  const { id: agentId } = await createResponse.json() as { id: string };
+
+  // The app opens the new agent's chat on the agents page.
+  await page.waitForURL(/\/agents(\?agent=[^&]+)?$/, { timeout: 15_000 });
 
   const skillRefs = options.skillIds ?? (options.preset ? PRESET_SKILL_SLUGS[options.preset] ?? [] : []);
   if (skillRefs.length > 0) {

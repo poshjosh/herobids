@@ -30,6 +30,7 @@ import type { AgentAllowance } from '@herobids/domain';
 import { buildIncrementalContext, estimateTokens } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
+import { formatRunStatusHint } from './run-status-hint.js';
 import { parseReminderRecord, type ReminderRecord } from './reminders/reminder-record.js';
 import { buildToolResultMetadata } from './tool-result-metadata.js';
 import {
@@ -2784,6 +2785,7 @@ async function runActiveTick(): Promise<void> {
   }
 
   const tickId = crypto.randomUUID();
+  const tickStartedAtMs = Date.now();
   currentTickId = tickId;
 
   // ── 002: Preset-review wake state — set by the detection block below,
@@ -4263,6 +4265,7 @@ async function runActiveTick(): Promise<void> {
           logger.warn({ err }, 'Failed to persist conversation answered marker');
         });
     };
+    let judgeToolCallsUsed = 0;
     const judgeLoopResult = await runStructuredToolLoop({
       providerConfig: {
         provider: provider,
@@ -4284,6 +4287,16 @@ async function runActiveTick(): Promise<void> {
         ),
       },
       maxTurns: judgeLoopConfig.maxTurns,
+      // Fresh clock for this run: the system prompt's time is fixed at tick start. Sent for the request only.
+      getTurnContext: ({ turnIndex }) => {
+        const { enabled, minTurnsBeforeShown } = agentRuntimePolicy.runStatusHint;
+        if (!enabled || turnIndex < minTurnsBeforeShown) return undefined;
+        const runStatusLine = formatRunStatusHint({ nowMs: Date.now(), runStartedAtMs: tickStartedAtMs });
+        // Same level as 'LLM response received': the agent logger has no LOG_LEVEL support, so debug would never print.
+        // The line holds only the time and elapsed run time, nothing from the user or the conversation.
+        logger.info({ tickId, turnIndex, runStatusLine }, 'Run status line sent to model');
+        return runStatusLine;
+      },
       toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,
       toolResultMaxStaleChars: runtimeState.runtimeDescriptor.budgets.toolResultMaxStaleChars,
       initialMessages: messages,
@@ -4343,6 +4356,7 @@ async function runActiveTick(): Promise<void> {
         }
       },
       onToolResult: ({ toolCall, toolResult }) => {
+        judgeToolCallsUsed += 1;
         if (toolResult) {
           addToHistory('user', toolResult, { truncateToToolBudget: true });
           if (toolResultIndicatesFailure(toolResult)) {
@@ -4446,6 +4460,8 @@ async function runActiveTick(): Promise<void> {
       phase: 'judge',
       model: costProfile.heavyModel,
       turnsUsed: judgeLoopResult.ok ? judgeLoopResult.turnsUsed : 0,
+      elapsedMs: Date.now() - tickStartedAtMs,
+      toolCallsUsed: judgeToolCallsUsed,
       finishReason: !judgeLoopResult.ok ? 'error' : judgeLoopResult.terminatedByLimit ? 'turn_limit' : (hasPendingUserMessage && !judgeSentReply) ? 'stop_without_reply' : 'stop',
       errorMessage: !judgeLoopResult.ok ? judgeLoopResult.error.message : undefined,
     });

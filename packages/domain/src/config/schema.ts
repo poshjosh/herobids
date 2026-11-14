@@ -1603,6 +1603,16 @@ export const AgentRuntimeConfigSchema = z.object({
   reminders: RemindersConfigSchema.default({}),
   /** Defaults applied to non-trading agents (operator config). */
   nonTradingDefaults: AgentRuntimeNonTradingDefaultsSchema,
+  /**
+   * Run-status line for the judge loop. When enabled, every judge model call from
+   * `minTurnsBeforeShown` on is sent one extra final `user` message with the current UTC time and how long
+   * the run has been in progress (never stored in the history). Data only: it states no limit.
+   * Off by default so a missing key never changes prompts.
+   */
+  runStatusHint: z.object({
+    enabled: z.boolean().default(false),
+    minTurnsBeforeShown: z.number().int().min(0).default(1),
+  }).default({}),
 });
 
 export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({

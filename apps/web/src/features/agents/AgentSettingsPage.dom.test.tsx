@@ -2,14 +2,14 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntlProvider } from 'react-intl';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
 import type { Agent } from '../../lib/api-client.js';
 
 // The page fetches the agent and subscribes to the event stream. Mock those
 // boundaries, and stub the heavy details panel, so the test focuses on the
-// page shell: the Back to Agents button and the absence of the chat box.
+// page shell: the settings title, the Back to chat button and the absence of the chat box.
 const getAgent = vi.fn();
 
 vi.mock('../../lib/api-client.js', () => ({
@@ -34,13 +34,18 @@ vi.mock('./AgentConversation.js', () => ({
   formatMessageTime: () => '',
 }));
 
-import { AgentChatPage } from './AgentChatPage.js';
+import { AgentSettingsPage } from './AgentSettingsPage.js';
 
 function makeAgent(): Agent {
   return {
     id: 'agent-1',
     name: 'Test agent',
   } as unknown as Agent;
+}
+
+/** Shows the query string the agents page received, so tests can check which chat it was asked to open. */
+function AgentsPageProbe() {
+  return <div data-testid="agents-page">{useLocation().search}</div>;
 }
 
 function renderPage() {
@@ -51,8 +56,8 @@ function renderPage() {
       <IntlProvider locale="en" messages={messages}>
         <MemoryRouter initialEntries={['/agents/agent-1']}>
           <Routes>
-            <Route path="/agents/:id" element={<AgentChatPage />} />
-            <Route path="/agents" element={<div>Agents list</div>} />
+            <Route path="/agents/:id" element={<AgentSettingsPage />} />
+            <Route path="/agents" element={<AgentsPageProbe />} />
           </Routes>
         </MemoryRouter>
       </IntlProvider>
@@ -62,22 +67,23 @@ function renderPage() {
 
 afterEach(() => cleanup());
 
-describe('AgentChatPage', () => {
-  it('shows a Back to Agents button in the header that navigates to the agents list', async () => {
+describe('AgentSettingsPage', () => {
+  it('titles the page as the agent settings', async () => {
     renderPage();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Test agent · Settings' })).toBeTruthy();
+  });
 
-    const button = await screen.findByRole('button', { name: 'Back to Agents' });
+  it('shows a Back to chat button that opens this agent chat on the agents page', async () => {
+    renderPage();
+    const button = await screen.findByRole('button', { name: 'Back to chat' });
     fireEvent.click(button);
-
-    expect(await screen.findByText('Agents list')).toBeTruthy();
+    expect((await screen.findByTestId('agents-page')).textContent).toBe('?agent=agent-1');
   });
 
   it('does not render the chat box', async () => {
     renderPage();
-
     // Details render once the agent loads.
     await screen.findByTestId('agent-details');
-
     expect(screen.queryByTestId('agent-conversation')).toBeNull();
     // The chat composer's Send affordance must be gone too.
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();

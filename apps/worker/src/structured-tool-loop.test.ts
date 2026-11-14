@@ -651,6 +651,100 @@ describe('runStructuredToolLoop', () => {
     });
   });
 
+  describe('getTurnContext per-turn message', () => {
+    type Seen = Array<Array<{ role: string; content: string }>>;
+
+    /** Three turns: tool call, tool call, final answer. Returns what the model was sent each turn. */
+    async function runThreeTurns(getTurnContext?: (info: { turnIndex: number }) => string | undefined): Promise<Seen> {
+      const seen: Seen = [];
+      vi.mocked(callLlmWithRetry).mockImplementation(async (_config, request) => {
+        seen.push(request.messages.map((message) => ({ role: message.role, content: message.content })));
+        const toolCalls = seen.length < 3 ? [{ id: `call_${seen.length}`, name: 'list_positions', args: {} }] : [];
+        return {
+          result: {
+            ok: true,
+            data: { content: 'ok', toolCalls, model: 'test-model', provider: 'openai', tokensUsed: 1, latencyMs: 1, cached: false },
+          },
+          attempts: 1,
+          delaysMs: [],
+        };
+      });
+
+      await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [{ name: 'list_positions', description: 'List positions', inputSchema: { type: 'object' } }],
+        maxTurns: 5,
+        executeTool: async () => '{"positions":[]}',
+        getTurnContext,
+      });
+      return seen;
+    }
+
+    it('sends the turn context as the last message on every turn that returns one', async () => {
+      const seen = await runThreeTurns(({ turnIndex }) => `status turn ${turnIndex}`);
+
+      expect(seen).toHaveLength(3);
+      expect(seen.map((messages) => messages.at(-1))).toEqual([
+        { role: 'user', content: 'status turn 0' },
+        { role: 'user', content: 'status turn 1' },
+        { role: 'user', content: 'status turn 2' },
+      ]);
+    });
+
+    it('does not keep earlier turn context in the messages later turns resend', async () => {
+      const seen = await runThreeTurns(({ turnIndex }) => `status turn ${turnIndex}`);
+
+      const lastTurn = seen[2]?.map((message) => message.content) ?? [];
+      expect(lastTurn).toContain('status turn 2');
+      expect(lastTurn).not.toContain('status turn 0');
+      expect(lastTurn).not.toContain('status turn 1');
+    });
+
+    it('marks the turn context volatile so prompt caching ends before it', async () => {
+      const lastMessages: Array<Record<string, unknown> | undefined> = [];
+      vi.mocked(callLlmWithRetry).mockImplementation(async (_config, request) => {
+        lastMessages.push(request.messages.at(-1) as Record<string, unknown> | undefined);
+        return {
+          result: {
+            ok: true,
+            data: { content: 'ok', toolCalls: [], model: 'test-model', provider: 'openai', tokensUsed: 1, latencyMs: 1, cached: false },
+          },
+          attempts: 1,
+          delaysMs: [],
+        };
+      });
+
+      await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [],
+        maxTurns: 2,
+        executeTool: async () => '{}',
+        getTurnContext: () => 'status',
+      });
+
+      expect(lastMessages[0]).toEqual({ role: 'user', content: 'status', volatile: true });
+    });
+
+    it('sends nothing extra on turns where it returns undefined', async () => {
+      const seen = await runThreeTurns(({ turnIndex }) => (turnIndex >= 1 ? 'late status' : undefined));
+
+      expect(seen[0]?.map((message) => message.content)).toEqual(['hello']);
+      expect(seen[1]?.at(-1)).toEqual({ role: 'user', content: 'late status' });
+    });
+
+    it('sends exactly the same requests as before when it is not provided', async () => {
+      const withoutOption = await runThreeTurns();
+      const withUndefinedOption = await runThreeTurns(() => undefined);
+
+      expect(withUndefinedOption).toEqual(withoutOption);
+      expect(withoutOption[0]).toEqual([{ role: 'user', content: 'hello' }]);
+    });
+  });
+
   describe('stale tool result truncation', () => {
     it('truncates tool results only after the full retention window (age > retentionTurns)', async () => {
       // retentionTurns=3: ages 0-3 keep full results; age 4+ truncates.

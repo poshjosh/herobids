@@ -25,7 +25,7 @@ test.describe('Journey 7: Capability setup and readiness', () => {
   test('new user lands on AI Agents page without crashing', async ({ page }) => {
     await registerUser(page, EMPTY_STATE_EMAIL, PASSWORD, 'E2E User J7 Empty');
 
-    // New users with 0 agents are auto-redirected to /agents/new.
+    // New users with 0 agents are auto-redirected to /onboarding.
     // Create a minimal agent via API so the list page is accessible.
     const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
     const createRes = await page.request.post('/api/agents', {

@@ -67,6 +67,39 @@ Rules:
 
 Emitting spurious snapshots wastes tokens even without a wake signal because the context-hash gate relies on snapshots to detect change.
 
+## Run Status Line
+
+The system prompt's `Current time (UTC)` is written once, when the tick starts, so it is stale after the
+first turn of a long judge loop. With `agentRuntime.runStatusHint.enabled`, the judge loop sends one extra
+final `user` message on each model call from `minTurnsBeforeShown`:
+
+```
+Current time is (UTC) 2026-11-14T20:31:02Z; this run has been in progress for 46s
+```
+
+Rules:
+- Data only. The line states the time and elapsed run time. It carries no limit and no instruction; the
+  skill or the creator sets any run budget (Agent Mode Purity: data is always provided, constraints are not
+  injected).
+- Ephemeral. It is built per request in `runStructuredToolLoop` (`getTurnContext`) and never added to the
+  message list, so it does not grow the history that later turns resend (lessons #9). Do not move it to
+  `onBeforeTurn`, which stores its message permanently.
+- Off by default in the schema and in `staging.yaml` / `production.yaml`; on in `default.yaml` for local dev.
+  Rollout and the per-model A/B are in `docs/features/2026/11/14/003-agent-run-status-hint/plan.md`.
+- `agent.llm.completed` (judge) records `elapsedMs` and `toolCallsUsed` so run length can be compared from
+  `agent_messages` without reading logs.
+- Each time the line is sent, the agent container logs `Run status line sent to model` at `info` with
+  `tickId`, `turnIndex` and `runStatusLine` (`docker logs herobids-agent-<id>`). It is `info`, not `debug`,
+  because the agent logger has no level setting and `debug` would never print. The line holds no user or
+  conversation content.
+
+Caching: the line is sent as a `volatile` message. For Claude models `packages/llm` ends the prompt cache on
+the message before it and omits the top-level `cache_control`, because a cache entry that includes a
+per-turn changing block is never read again. Keep any future per-turn content after that breakpoint.
+
+Cost: about 30 input tokens per judge turn from the second turn on. Run the checklist below before enabling it
+in production.
+
 ## Cost Review Checklist
 
 Before merging any change that touches the tick loop, wake system, reconciler, or trading actor event emission:

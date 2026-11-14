@@ -2,7 +2,7 @@
  * Journey 14: Create an agent with a name and an objective.
  *
  * The create form takes a name and an objective, then Review and Create. The
- * new agent is stopped, the app opens its page, and Start brings it up.
+ * new agent starts automatically and the app opens its chat on the agents page.
  */
 
 import { test, expect } from '@playwright/test';
@@ -21,13 +21,18 @@ test.describe('Journey 14: create agent with a name only', () => {
     await page.locator('details summary', { hasText: 'Advanced Settings' }).click();
     await page.locator('[data-field="goal"] textarea').fill('Watch BTC and report daily.');
     await page.getByRole('button', { name: /^Review/ }).first().click();
-    await page.getByRole('button', { name: /^Create$/ }).click();
+    const [createResponse] = await Promise.all([
+      page.waitForResponse((res) => res.request().method() === 'POST' && new URL(res.url()).pathname === '/api/agents', { timeout: 15_000 }),
+      page.getByRole('button', { name: /^Create$/ }).click(),
+    ]);
+    const { id: agentId } = await createResponse.json() as { id: string };
 
-    await expect(page).toHaveURL(/\/agents\/[0-9a-f-]{36}$/, { timeout: 15_000 });
-    await expect(page.getByRole('heading', { name: 'Name only agent J14' })).toBeVisible({ timeout: 10_000 });
+    // The app opens the new agent's chat on the agents page.
+    await expect(page).toHaveURL(/\/agents$/, { timeout: 15_000 });
+    await expect(page.locator('#agents-chat-select option:checked')).toHaveText('Name only agent J14', { timeout: 10_000 });
 
-    // Creating an agent auto-starts it, so Stop is shown instead of Start. Stop lives on the details page.
-    await page.goto(`${new URL(page.url()).pathname}/details`);
+    // Creating an agent auto-starts it, so Stop is shown instead of Start. Stop lives on the settings page.
+    await page.goto(`/agents/${agentId}`);
     await expect(page.getByRole('button', { name: /^Stop$/ })).toBeVisible({ timeout: 15_000 });
   });
 });

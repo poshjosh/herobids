@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { IntlProvider } from 'react-intl';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
 import { agents as agentsApi, type Agent } from '../../lib/api-client.js';
@@ -45,6 +45,14 @@ const newAgent = {
   status: 'starting',
 } as unknown as Agent;
 
+/** The redirect notice for the test agent, named Alex. */
+const REDIRECTING_TEXT = t('onboarding.redirecting').replace('{name}', 'Alex');
+
+/** Stands in for the agents page and shows which chat it was asked to open. */
+function AgentsPageProbe() {
+  return <div data-testid="agents-page">{useLocation().search}</div>;
+}
+
 async function flush() {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
@@ -66,7 +74,8 @@ function renderPage(search = '') {
 
           <Routes>
             <Route path="/onboarding" element={<OnboardingPage />} />
-            <Route path="/agents" element={<div data-testid="agents-page" />} />
+            <Route path="/agents" element={<AgentsPageProbe />} />
+            <Route path="/agents/new" element={<div data-testid="create-form" />} />
           </Routes>
         </MemoryRouter>
       </IntlProvider>
@@ -122,6 +131,13 @@ describe('OnboardingPage', () => {
     expect(agentsApi.create).not.toHaveBeenCalled();
   });
 
+  it('offers the full create form as advanced setup next to the name question', async () => {
+    renderPage();
+    await flush();
+    fireEvent.click(screen.getByRole('link', { name: t('onboarding.advancedSetup') }));
+    expect(screen.getByTestId('create-form')).toBeTruthy();
+  });
+
   it('rejects reserved names without calling the API', async () => {
     renderPage();
     await flush();
@@ -138,7 +154,7 @@ describe('OnboardingPage', () => {
     expect(agentsApi.start).toHaveBeenCalledWith('agent-1');
   });
 
-  it('refreshes the cached agents list after create so /agents does not show the create form', async () => {
+  it('refreshes the cached agents list after create so /agents does not send the user back to onboarding', async () => {
     vi.mocked(agentsApi.list).mockResolvedValueOnce([]).mockResolvedValue([newAgent]);
     const { queryClient } = renderPage();
     await flush();
@@ -178,21 +194,21 @@ describe('OnboardingPage', () => {
     expect(screen.getByTestId('telegram-setup')).toBeTruthy();
   });
 
-  it('shows the redirect notice once the agent is active, then goes to the agents page', async () => {
+  it('shows the redirect notice once the agent is active, then opens the new agent chat', async () => {
     renderPage();
     await flush();
     vi.mocked(agentsApi.get).mockResolvedValue({ ...newAgent, status: 'active' });
     await submitName('Alex');
 
     await advance(4_000);
-    expect(screen.queryByText(t('onboarding.redirecting'))).toBeNull();
+    expect(screen.queryByText(REDIRECTING_TEXT)).toBeNull();
     await advance(1_000);
-    expect(screen.getByText(t('onboarding.redirecting'))).toBeTruthy();
+    expect(screen.getByText(REDIRECTING_TEXT)).toBeTruthy();
     expect(screen.queryByText(/is being created/)).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Go to my agents' })).toBeNull();
     expect(screen.queryByTestId('telegram-setup')).toBeNull();
     await advance(2_000);
-    expect(screen.getByTestId('agents-page')).toBeTruthy();
+    expect(screen.getByTestId('agents-page').textContent).toBe('?agent=agent-1');
   });
 
   it('shows the stuck warning with a spinner and the agents link at 60 seconds if the agent has not started', async () => {
@@ -205,8 +221,8 @@ describe('OnboardingPage', () => {
     const warning = screen.getByText(t('onboarding.stuckWarning'));
     expect(warning.querySelector('span[aria-hidden="true"]')).toBeTruthy();
     expect(screen.queryByText(/ticket/i)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Go to my agents' })).toBeTruthy();
-    expect(screen.queryByText(t('onboarding.redirecting'))).toBeNull();
+    expect(screen.getByRole('link', { name: 'Go to my agents' }).getAttribute('href')).toBe('/agents?agent=agent-1');
+    expect(screen.queryByText(REDIRECTING_TEXT)).toBeNull();
     await advance(90_000);
     expect(screen.getByText(t('onboarding.stuckWarning'))).toBeTruthy();
     expect(screen.queryByTestId('agents-page')).toBeNull();
@@ -244,7 +260,7 @@ describe('OnboardingPage', () => {
     await flush();
     await submitName('Alex');
     await advance(59_000);
-    expect(screen.queryByText(t('onboarding.redirecting'))).toBeNull();
+    expect(screen.queryByText(REDIRECTING_TEXT)).toBeNull();
     expect(screen.queryByTestId('chat')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Go to my agents' })).toBeNull();
   });
@@ -265,7 +281,7 @@ describe('OnboardingPage', () => {
     vi.mocked(agentsApi.get).mockResolvedValue({ ...newAgent, status: 'active' });
     await advance(3_000);
     expect(screen.queryByText('Still starting Alex. This can take up to a minute.')).toBeNull();
-    expect(screen.getByText(t('onboarding.redirecting'))).toBeTruthy();
+    expect(screen.getByText(REDIRECTING_TEXT)).toBeTruthy();
   });
 
   it('keeps polling after an error and redirects once the agent becomes active', async () => {
@@ -274,10 +290,10 @@ describe('OnboardingPage', () => {
     await flush();
     await submitName('Alex');
     await advance(5_000);
-    expect(screen.queryByText(t('onboarding.redirecting'))).toBeNull();
+    expect(screen.queryByText(REDIRECTING_TEXT)).toBeNull();
     vi.mocked(agentsApi.get).mockResolvedValue({ ...newAgent, status: 'active' });
     await advance(3_000);
-    expect(screen.getByText(t('onboarding.redirecting'))).toBeTruthy();
+    expect(screen.getByText(REDIRECTING_TEXT)).toBeTruthy();
   });
 
   // TEMP(onboarding-start-delay): tests for the test-only delay query parameter. Remove with the feature.
@@ -287,9 +303,9 @@ describe('OnboardingPage', () => {
     await flush();
     await submitName('Alex');
     await advance(8_000);
-    expect(screen.queryByText(t('onboarding.redirecting'))).toBeNull();
+    expect(screen.queryByText(REDIRECTING_TEXT)).toBeNull();
     await advance(3_000);
-    expect(screen.getByText(t('onboarding.redirecting'))).toBeTruthy();
+    expect(screen.getByText(REDIRECTING_TEXT)).toBeTruthy();
   });
 
   it('never reports active with onboardingStartDelay=never, so the warning shows after 60 seconds', async () => {
@@ -298,10 +314,10 @@ describe('OnboardingPage', () => {
     await flush();
     await submitName('Alex');
     await advance(59_000);
-    expect(screen.queryByText(t('onboarding.redirecting'))).toBeNull();
+    expect(screen.queryByText(REDIRECTING_TEXT)).toBeNull();
     await advance(2_000);
     expect(screen.getByText(t('onboarding.stuckWarning'))).toBeTruthy();
-    expect(screen.queryByText(t('onboarding.redirecting'))).toBeNull();
+    expect(screen.queryByText(REDIRECTING_TEXT)).toBeNull();
   });
 
   it('shows the create error and keeps the name form so the user can retry', async () => {
@@ -372,7 +388,7 @@ describe('OnboardingPage', () => {
       await advance(12_000);
       vi.mocked(agentsApi.get).mockResolvedValue({ ...newAgent, status: 'active' });
       await advance(3_000);
-      expect(screen.getByText(t('onboarding.redirecting'))).toBeTruthy();
+      expect(screen.getByText(REDIRECTING_TEXT)).toBeTruthy();
       expect(skipButton()).toBeNull();
       expect(screen.queryByRole('link', { name: 'Go to my agents' })).toBeNull();
     });

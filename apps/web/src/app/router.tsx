@@ -12,7 +12,8 @@ import { AgentsPage } from '../features/agents/AgentsPage.js';
 import { CreateAgentPage } from '../features/agents/CreateAgentPage.js';
 import { OnboardingPage } from '../features/onboarding/OnboardingPage.js';
 
-import { AgentChatPage, AgentDetailsRedirect } from '../features/agents/AgentChatPage.js';
+import { AgentSettingsPage, AgentDetailsRedirect } from '../features/agents/AgentSettingsPage.js';
+import { MarketplacePage } from '../features/marketplace/MarketplacePage.js';
 import { AgentCapabilityPage } from '../features/agents/AgentCapabilityPage.js';
 import { SkillsPage } from '../features/skills/SkillsPage.js';
 import { TryPage } from '../features/try/TryPage.js';
@@ -50,9 +51,10 @@ export const router = createBrowserRouter([
       { path: '/agents', element: <AgentsPage /> },
       { path: '/agents/new', element: <CreateAgentPage /> },
       { path: '/onboarding', element: <OnboardingPage /> },
-      { path: '/agents/:id', element: <AgentChatPage /> },
+      { path: '/agents/:id', element: <AgentSettingsPage /> },
       { path: '/agents/:id/details', element: <AgentDetailsRedirect /> },
       { path: '/agents/:agentId/capabilities/:family', element: <AgentCapabilityPage /> },
+      { path: '/marketplace', element: <MarketplacePage /> },
       { path: '/skills', element: <SkillsPage /> },
       { path: '/connections', element: <ConnectionsPage /> },
       { path: '/billing', element: <BillingPage /> },

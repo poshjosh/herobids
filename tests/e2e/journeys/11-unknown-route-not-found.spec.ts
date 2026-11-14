@@ -39,8 +39,8 @@ test.describe('Journey 11: Unknown route shows branded 404 page', () => {
     await expect(backButton).toBeVisible({ timeout: 5_000 });
 
     await backButton.click();
-    // A new user with no agents is redirected from /agents to the create form.
-    await expect(page).toHaveURL(/\/agents(\/new)?$/, { timeout: 5_000 });
+    // A new user with no agents is redirected from /agents to the guided onboarding.
+    await expect(page).toHaveURL(/\/(agents|onboarding)$/, { timeout: 5_000 });
   });
 
   test('deeply nested unknown route also shows 404 page', async ({ page }) => {
