@@ -4075,6 +4075,11 @@ async function runActiveTick(): Promise<void> {
         onRetry: ({ attempt, delayMs, classification }) => {
           logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout tool turn after backoff');
         },
+        // Surfaces the previously-silent stale-result truncation (bug 002) and
+        // gives per-tick visibility into context pressure (lesson #9).
+        onToolResultTruncated: ({ turnIndex, toolName, toolCallId, originalChars, retainedChars, ageTurns }) => {
+          logger.info({ phase: 'scout', turnIndex, toolName, toolCallId, originalChars, retainedChars, ageTurns }, 'Truncated stale tool result');
+        },
         onFailedAttempt: ({ turnIndex, attempt, classification }) => {
           if (classification.reasonCode === 'llm.timeout' || classification.reasonCode === 'llm.server_error') {
             usageBillingService?.recordFailedLlmCall({
@@ -4379,6 +4384,11 @@ async function runActiveTick(): Promise<void> {
       },
       onRetry: ({ attempt, delayMs, classification }) => {
         logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying judge LLM call after backoff');
+      },
+      // Surfaces the previously-silent stale-result truncation (bug 002) and
+      // gives per-tick visibility into context pressure (lesson #9).
+      onToolResultTruncated: ({ turnIndex, toolName, toolCallId, originalChars, retainedChars, ageTurns }) => {
+        logger.info({ phase: 'judge', turnIndex, toolName, toolCallId, originalChars, retainedChars, ageTurns }, 'Truncated stale tool result');
       },
       onFailedAttempt: ({ turnIndex, attempt, classification }) => {
         if (classification.reasonCode === 'llm.timeout' || classification.reasonCode === 'llm.server_error') {
