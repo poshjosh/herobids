@@ -138,10 +138,10 @@ Done when every non-live staging agent's job has `cap_add = ["NET_ADMIN"]`, uses
 
 ### Production (main plan task 7.6, after 7.2 and 7.5)
 
-**P1 Preconditions.** Status: `todo`. C1 to C3 on production (fixed browser IP is the same Terraform; confirm the IP and restart the worker after the browser job lands).
-**P2 Image.** Status: `todo`. Pin the tag built from the commit merged in main plan 7.1. If it differs from the staging tag, run S3 again on a production node (rows K1 to K7) and paste the results under a "production" heading.
-**P3 Turn on and canary.** Status: `todo`. Same as S5 and S6 with `infra/hetzner/.env.production`. Rows J1 to J4 and A1 to A6, A9 under a "production" heading.
-**P4 Move the rest.** Status: `todo`. Same as S7. Live-mode agents: list them and ask the owner before relaunching.
+**P1 Preconditions.** Status: `done`. C1: prod agent node (`178.105.68.146`) live `/etc/nomad.d/nomad.hcl` `allow_caps` includes `net_admin`, excludes `sys_admin` (only in comments); `node_class = "agent"`, `node_pool = "herobids-production"`. C2: `nomad node status` lists only `herobids-production-agent-1` (`fd425d8c`) and `-browser-1` (`2f8dc5e3`), both current. C3: browser pool at `10.0.0.240`; worker log `Browser pool URL resolved: http://10.0.0.240:3100` after the Step-2 restart. Evidence in §7.
+**P2 Image.** Status: `done`. Pinned `ghcr.io/poshjosh/herobids-agent:sha-b317176e94386bf6f6ac230724cfef730fa6ec37` (digest `sha256:d04aeb2d0198…`) — the **same** tag/digest probed on staging (S2/S3). Production `main@86c73da5` carries only docs/infra commits since `b317176e`, so the agent image is unchanged; pulled on the prod agent node and confirmed the identical digest, so the S3 probe carries over (no re-probe needed per the re-pin rule). Verified the image has the marker-checking `sandbox-exec.sh` and `sandbox-egress.sh`.
+**P3 Turn on and canary.** Status: `done`. Added `NOMAD_SANDBOX_CAPS_ENABLED=true` + `NOMAD_AGENT_IMAGE=<pinned>` to `infra/hetzner/.env.production` (gitignored); uploaded via `setup-env.sh --env production`. The worker already ran the NET_ADMIN-only build (rebuilt in main-plan 7.2), so a restart (`docker compose up -d worker`) was enough; it reports both values and resolved the browser pool. Canary: `sandbox-tester` (`654bb2bb-3d6f-4497-87ac-a0e897984c4d`), launched a Nomad job in `herobids-agents` (alloc `ae454a4e` on `fd425d8c`). J1–J4 and A1/A2/A3/A8/A9 all PASS — the A-rows ran **autonomously through the agent's own tools** and it published a "4 of 4 tests passed" report. Evidence in §7 (production block).
+**P4 Move the rest.** Status: `done`. No live-mode agents on production (every agent is `stopped`; execution mode is `shadow` or unset, none `live`). With the flag on, every future launch uses the sandbox spec, so there is nothing on the old spec to relaunch. The run-once canary was stopped after it completed. **Orphan purged (2026-11-13):** Nomad job `agent-610a1e3b-0b88-4284-9849-41acba574440` (submitted 2026-10-23, running on `:latest`) had **no `agents` DB row** — a pre-existing orphan (same class as the 2026-10-31 "stop path did not free the node" note) that was rescheduled onto the new agent node during the main-plan 7.2 replace. Confirmed 0 DB rows, then purged with `nomad job stop -purge -namespace=herobids-agents` + `nomad system gc`. The `herobids-agents` namespace now has no running jobs; no user data touched.
 
 ---
 
@@ -196,6 +196,31 @@ Note: the earlier "A2 connected" reading was an `execute_code` (root) run — ro
 not filtered (section 3, items 2–3). Re-run in standard mode (agent user) gives the correct
 `BLOCKED`. A4/A6/A7 (another node, a real browse, three shell skills) not separately run; the UID
 rule covers A4 (any `10.0.0.0/8` dest is rejected for uid 1001), and A3 proves the browser path.
+
+---
+
+**PRODUCTION** — image `ghcr.io/poshjosh/herobids-agent:sha-b317176e94386bf6f6ac230724cfef730fa6ec37` (digest `sha256:d04aeb2d0198…`, same as staging), 2026-11-13. Preconditions re-verified on production (P1); the image was not re-probed because the digest is identical to the staging-probed tag (P2). Canary agent `sandbox-tester` (`654bb2bb-3d6f-4497-87ac-a0e897984c4d`), Nomad job `agent-654bb2bb…` in namespace `herobids-agents`, alloc `ae454a4e` on `herobids-production-agent-1` (`fd425d8c`), container `e1fa2738589d`.
+
+**Job and container (P3, from `nomad job inspect` + `docker inspect`/`/proc/1/status`):**
+
+| Row | Check | Expected | Result |
+|---|---|---|---|
+| J1 | `cap_add` + image in the job spec | `["NET_ADMIN"]` only; pinned tag | **PASS** — `cap_add:["NET_ADMIN"]`, image `…:sha-b317176e…` |
+| J2 | `CapEff` in the agent container | bit 12 (`NET_ADMIN`) set; bit 21 (`SYS_ADMIN`) clear | **PASS** — `CapEff=00000000a80415fb` → bit12 set, bit21 clear |
+| J3 | Marker in the agent container | exists | **PASS** — `/run/herobids/sandbox-egress-ready` present |
+| J4 | Session status | `running` | **PASS** — alloc `running` on `fd425d8c` |
+
+**Through the agent's real tools (P3).** The canary ran the four tests **itself** (judge-phase tool calls on model `anthropic/claude-haiku-5.5`), then published a report artifact (`01b9fa3f…`, "Sandbox test report: 4 of 4 tests passed"). Raw tool results from the agent event stream (`agent.tool.result`):
+
+| Row | Mode | Tool call | Expected | Result |
+|---|---|---|---|---|
+| A1 | standard | `execute_shell` Node fetch `https://example.com` | 200 | **PASS** — `{"stdout":"HTTP 200\n","exitCode":0}` (274 ms) |
+| A2 | standard (agent user) | `execute_shell` Node TCP connect `10.0.0.2:5432`, 5 s | Refused or blocked | **PASS** — `{"stdout":"BLOCKED/ERROR ECONNREFUSED connect ECONNREFUSED 10.0.0.2:5432\n"}` |
+| A3 | standard | `execute_shell` Node GET `http://10.0.0.240:3100/pressure` | JSON | **PASS** — `{"stdout":"HTTP 200\n{… isAvailable …}"}` |
+| A8 | execute_code | `execute_code` `process.getuid()` | `0` | **PASS** — `{"stdout":"uid=0\n","exitCode":0}` (root, unrestricted by design) |
+| A9 | n/a | egress rules on the live agent (independent `iptables-save` from the container) | UID-scoped rules present | **PASS** — `-A OUTPUT -m owner --uid-owner 1001 -j HEROBIDS_SANDBOX_EGRESS`; `10.0.0.240/32 ACCEPT`; `10.0.0.0/8`, `172.16/12`, `192.168/16`, `169.254/16` REJECT; Hetzner DNS `185.12.64.1/.2` allowlisted; `agent` is uid 1001 |
+
+Production note (unlike staging): the LLM completed normally — no OpenRouter ZDR 404 — so the whole A-row run was autonomous (no owner-driven chat needed). The run-once canary was stopped after `agent.tick.completed`.
 
 ---
 

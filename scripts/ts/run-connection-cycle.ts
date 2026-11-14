@@ -16,7 +16,12 @@ const MESSAGE =
 const FOLLOW_UP =
   'Your connection is done. Now call get_account_summary and get_funding_info, then tell me the mode, the capital and the funding address. If a tool fails, tell me the exact error.';
 const POLL_MS = 5_000;
-const LINK_TIMEOUT_MS = 180_000;
+// Budget for the agent's first LLM tick to produce the connection link. The link
+// is driven by a real LLM tool call, so a cold worker (just started by
+// run-all-tests.sh / release.sh, before its first tick is warm) can legitimately
+// exceed the warm-run latency. Overridable so the cold release context can give
+// it more headroom without changing the warm standalone default.
+const LINK_TIMEOUT_MS = Number(process.env['CYCLE_LINK_TIMEOUT_MS'] ?? '180000');
 const REPLY_TIMEOUT_MS = 300_000;
 
 const REQUIRED_TOOLS = ['get_account_summary', 'get_funding_info'];

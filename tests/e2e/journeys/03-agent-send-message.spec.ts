@@ -41,7 +41,7 @@ test.describe('Journey 3: Chat with an agent on the agent detail page', () => {
     const { id: agentId } = await agentRes.json() as { id: string };
     const userId = await getAuthenticatedUserId(page, request);
 
-    // Start lives on the details page; the chat is on /agents/:id.
+    // Start lives on the details page; the chat composer is on /agents.
     await page.goto(`/agents/${agentId}/details`);
 
     // A stopped agent cannot be chatted with; start it. While it is starting
@@ -53,7 +53,13 @@ test.describe('Journey 3: Chat with an agent on the agent detail page', () => {
       page.locator('button', { hasText: /^Start$/ }).click(),
     ]);
 
-    await page.goto(`/agents/${agentId}`);
+    // The chat composer now lives on the AI Agents page (/agents), not the
+    // detail page: a "Chat with" dropdown picks the agent, the composer renders
+    // below it. (Agent detail page no longer shows the chat box.)
+    await page.goto('/agents');
+
+    // Pick this agent in the chat selector so its composer renders.
+    await page.locator('#agents-chat-select').selectOption(agentId);
 
     // The composer is labelled "Chat with <agent>" once the agent runs, and
     // "Start <agent> to chat with it" while it is starting or stopped.

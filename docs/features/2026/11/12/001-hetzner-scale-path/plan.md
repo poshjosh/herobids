@@ -584,8 +584,9 @@ Done when: both are in the evidence and production is back to one agent node plu
 **7.5 Browser pool on production.** Status: `todo`.
 Confirm the browser job runs on the browser node at its fixed IP and the smoke test passes. Restart the worker afterwards so it resolves the new address.
 
-**7.6 Sandbox on production.** Status: `todo`.
+**7.6 Sandbox on production.** Status: `done` (2026-11-13).
 Follow [sandbox-shell-access.md](./sandbox-shell-access.md), tasks P1 to P4, after 7.2 (the old production node is replaced) and 7.5. Done when every P task is `done` with its evidence. Part of R2.
+P1–P4 all `done`: NET_ADMIN-only sandbox live on production, same pinned image/digest as staging, J1–J4 + A1/A2/A3/A8/A9 proven on the real agent `sandbox-tester` (public egress works, private `10.0.0.2:5432` BLOCKED for the agent user, browser pool reachable, `execute_code`=root, UID-1001-scoped iptables confirmed). No live-mode agents to roll. Evidence in sandbox-shell-access.md §7 (production block). A pre-existing orphan Nomad job `agent-610a1e3b…` (no DB row) was found and purged (2026-11-13); the `herobids-agents` namespace now has no running jobs.
 
 ### Phase 8: Traderton capacity test (1 to 2 days, can run in parallel, staging only)
 

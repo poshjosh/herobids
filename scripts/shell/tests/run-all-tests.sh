@@ -469,7 +469,29 @@ if [[ "${RUN_E2E}" == "true" ]]; then
       bash -c "cd '${ROOT}/tests/e2e' && BASE_URL=http://localhost:5173 pnpm test"
   fi
   header "6b / Connection cycle (link, wake, wallet, account and funding tools)"
-  bash "${ROOT}/scripts/shell/tests/connection-cycle-test.sh"
+  # The cycle test's connection link is produced by the agent's first LLM tick,
+  # driven by the worker. The worker has no healthcheck, so gate on its log line
+  # that the runtime launcher is up before starting the test's 180s clock —
+  # otherwise a cold worker (just started above) races the timeout (passes when
+  # run standalone against a warm stack, times out here). Also give the cold run
+  # more headroom via CYCLE_LINK_TIMEOUT_MS.
+  log "Waiting for the worker runtime launcher to be ready…"
+  worker_ready=false
+  for _ in $(seq 1 60); do
+    if docker compose -f "${ROOT}/docker-compose.yaml" logs worker 2>/dev/null \
+        | grep -q "Agent runtime launcher initialized"; then
+      worker_ready=true
+      break
+    fi
+    sleep 2
+  done
+  if [[ "${worker_ready}" == "true" ]]; then
+    ok "Worker runtime launcher is ready."
+  else
+    warn "Worker runtime launcher readiness log not seen after ~120s; running 6b anyway."
+  fi
+  CYCLE_LINK_TIMEOUT_MS="${CYCLE_LINK_TIMEOUT_MS:-300000}" \
+    bash "${ROOT}/scripts/shell/tests/connection-cycle-test.sh"
 else
   header "6 / E2E tests (skipped)"
   warn "Pass --e2e to include Playwright end-to-end tests."
