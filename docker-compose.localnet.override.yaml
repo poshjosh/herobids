@@ -1,0 +1,13 @@
+
+# Local-only override to avoid a Docker subnet clash with another running stack
+# (lipdubber_infra occupies 172.18.0.0/16). Not committed; used only for local
+# visual verification of the admin dashboard.
+services:
+  worker:
+    environment:
+      DOCKER_NETWORK: herobids_default
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.0.0/16

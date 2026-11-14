@@ -4,6 +4,8 @@
  * per-server resource utilisation across the fleet.
  */
 
+import { z } from 'zod';
+
 export const SERVER_TYPES = ['control-plane', 'agent-server', 'browser-pool', 'trading'] as const;
 export type ServerType = typeof SERVER_TYPES[number];
 
@@ -33,6 +35,31 @@ export function serverHealthKeyPattern(): string {
 
 /** TTL for server health snapshots in Redis (seconds). Stale snapshots auto-expire. */
 export const SERVER_HEALTH_TTL_SECONDS = 60;
+
+/** Redis key for the cluster agent-capacity snapshot (single key; last writer wins). */
+export const CLUSTER_CAPACITY_KEY = 'herobids:cluster-capacity';
+
+/**
+ * Cluster agent-capacity snapshot written by the worker and read by the admin API.
+ * Mirrors the autoscaler's capacity figures. `maxAgentNodes` is operator-configured and
+ * shown for reference; the real scale-out ceiling is enforced by infrastructure.
+ *
+ * The schema is the validation boundary: the API `safeParse`s the Redis value before
+ * returning it, so a malformed or wrong-shaped snapshot reads as "not reporting" rather
+ * than rendering `undefined`/`NaN` in the UI. The type is inferred so the two cannot drift.
+ */
+export const ClusterCapacitySnapshotSchema = z.object({
+  readyAgentNodes: z.number(),
+  maxAgentNodes: z.number(),
+  freeSlots: z.number(),
+  freeMemoryMb: z.number(),
+  totalMemoryMb: z.number(),
+  agentMemoryReservationMb: z.number(),
+  agentCpuReservationMhz: z.number(),
+  updatedAt: z.string(),
+});
+
+export type ClusterCapacitySnapshot = z.infer<typeof ClusterCapacitySnapshotSchema>;
 
 /** Publish interval in milliseconds. A server that misses ~4 heartbeats disappears. */
 export const SERVER_HEALTH_PUBLISH_INTERVAL_MS = 15_000;

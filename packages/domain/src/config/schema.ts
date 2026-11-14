@@ -1685,6 +1685,33 @@ export const NomadConfigSchema = z.object({
   terminationPollIntervalMs: z.number().int().min(5_000).default(30_000),
   /** Nomad API request timeout in ms. Default: 10_000 (10 seconds). */
   requestTimeoutMs: z.number().int().min(1_000).default(10_000),
+  /**
+   * Scale-out ceiling for agent nodes, surfaced to the admin dashboard as the "max" the
+   * cluster can grow to. Mirror the infra autoscaler's `max_agent_nodes` (staging/production
+   * tfvars) — the dashboard shows this value, but the real ceiling is enforced by Terraform,
+   * not here. Override: NOMAD_MAX_AGENT_NODES
+   */
+  maxAgentNodes: z.number().int().min(0).default(3),
+  /**
+   * Memory (MB) reserved per agent slot, used to compute free agent slots from free node
+   * memory for the dashboard. Mirror the autoscaler's `agent_memory_reservation_mb`
+   * (NOMAD_AGENT_MEMORY_RESERVATION_MB); divergence from it makes the dashboard's free-slot
+   * figure disagree with the autoscaler's. Override: NOMAD_AGENT_MEMORY_RESERVATION_MB
+   */
+  agentMemoryReservationMb: z.number().int().min(1).default(256),
+  /**
+   * CPU (MHz, Nomad scheduler units) reserved per agent slot. Free slots are the smaller of
+   * the memory- and CPU-bound counts, matching the autoscaler's `capacity_node_slots`. Mirror
+   * `NOMAD_AGENT_CPU_RESERVATION_MHZ`. Override: NOMAD_AGENT_CPU_RESERVATION_MHZ
+   */
+  agentCpuReservationMhz: z.number().int().min(1).default(256),
+  /**
+   * Nomad `Meta.node_pool` an agent node must match to count toward the dashboard's agent
+   * fleet and capacity. Empty means do not filter by pool (single-pool clusters). Set it to
+   * the autoscaler's `NOMAD_AUTOSCALE_NODE_POOL` when several pools share one Nomad cluster,
+   * so other pools' nodes do not inflate the counts. Override: NOMAD_AUTOSCALE_NODE_POOL
+   */
+  nodePool: z.string().default(''),
 });
 
 export type NomadConfig = z.infer<typeof NomadConfigSchema>;

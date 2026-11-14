@@ -614,3 +614,95 @@ describe('GET /admin/servers', () => {
     expect(customRedis.scan).toHaveBeenCalledTimes(2);
   });
 });
+
+// ─── /admin/capacity ──────────────────────────────────────────────────────────
+
+describe('GET /admin/capacity', () => {
+  it('returns 403 for non-admin users', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, REGULAR_USER_ID, false);
+    await adminRoutes(app, db, mockRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/capacity' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns the capacity snapshot when present', async () => {
+    const snapshot = {
+      readyAgentNodes: 2,
+      maxAgentNodes: 5,
+      freeSlots: 6,
+      freeMemoryMb: 1800,
+      totalMemoryMb: 4096,
+      agentMemoryReservationMb: 256,
+      agentCpuReservationMhz: 256,
+      updatedAt: '2026-11-14T00:00:00.000Z',
+    };
+    const customRedis = {
+      ping: vi.fn().mockResolvedValue('PONG'),
+      get: vi.fn().mockImplementation((key: string) => (
+        key === 'herobids:cluster-capacity' ? Promise.resolve(JSON.stringify(snapshot)) : Promise.resolve(null)
+      )),
+      hgetall: vi.fn().mockResolvedValue({}),
+      scan: vi.fn().mockResolvedValue(['0', []]),
+    };
+
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    await adminRoutes(app, db, customRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/capacity' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ capacity: unknown }>().capacity).toMatchObject({ readyAgentNodes: 2, maxAgentNodes: 5, freeSlots: 6 });
+  });
+
+  it('returns null capacity when nothing is reporting', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    await adminRoutes(app, db, mockRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/capacity' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ capacity: unknown }>().capacity).toBeNull();
+  });
+
+  it('returns null capacity for a malformed snapshot', async () => {
+    const customRedis = {
+      ping: vi.fn().mockResolvedValue('PONG'),
+      get: vi.fn().mockResolvedValue('{not valid json'),
+      hgetall: vi.fn().mockResolvedValue({}),
+      scan: vi.fn().mockResolvedValue(['0', []]),
+    };
+
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    await adminRoutes(app, db, customRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/capacity' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ capacity: unknown }>().capacity).toBeNull();
+  });
+
+  it('returns null capacity for valid JSON of the wrong shape', async () => {
+    const customRedis = {
+      ping: vi.fn().mockResolvedValue('PONG'),
+      // Valid JSON, but not a capacity snapshot — must be rejected by safeParse, not rendered.
+      get: vi.fn().mockResolvedValue(JSON.stringify({ unexpected: 'shape' })),
+      hgetall: vi.fn().mockResolvedValue({}),
+      scan: vi.fn().mockResolvedValue(['0', []]),
+    };
+
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    await adminRoutes(app, db, customRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/capacity' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ capacity: unknown }>().capacity).toBeNull();
+  });
+});

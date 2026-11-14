@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NomadClient } from './nomad-client.js';
+import {
+  NomadClient,
+  isReadyNodeOfClass,
+  nodeMatchesPool,
+  countActiveAllocations,
+  readAgentNodes,
+} from './nomad-client.js';
 
 // Suppress logger output during tests.
 vi.mock('../logger.js', () => ({
@@ -115,5 +121,216 @@ describe('NomadClient.resolveAllServices', () => {
     const init = mockFetch.mock.calls[0]![1] as RequestInit;
     const headers = init.headers as Record<string, string>;
     expect(headers['X-Nomad-Token']).toBeUndefined();
+  });
+});
+
+describe('NomadClient node reads', () => {
+  const mockFetch = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>();
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', mockFetch);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function createClient(): NomadClient {
+    return new NomadClient({ addr: 'http://127.0.0.1:4646', timeoutMs: 5_000 });
+  }
+
+  describe('listNodes', () => {
+    it('returns the node array on success', async () => {
+      const nodes = [{ ID: 'n1', Status: 'ready' }, { ID: 'n2', Status: 'down' }];
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(nodes), { status: 200 }));
+
+      expect(await createClient().listNodes()).toEqual(nodes);
+    });
+
+    it('returns null (not []) on a non-ok response, so callers keep the prior reading', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('denied', { status: 403 }));
+      expect(await createClient().listNodes()).toBeNull();
+    });
+
+    it('returns null when the body is an error object, not an array', async () => {
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Permission denied' }), { status: 200 }));
+      expect(await createClient().listNodes()).toBeNull();
+    });
+
+    it('returns null when fetch throws', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      expect(await createClient().listNodes()).toBeNull();
+    });
+
+    it('returns an empty array when the cluster has no nodes', async () => {
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+      expect(await createClient().listNodes()).toEqual([]);
+    });
+  });
+
+  describe('getNode', () => {
+    it('returns the node object on success', async () => {
+      const node = { ID: 'n1', NodeClass: 'agent', NodeResources: { Memory: { MemoryMB: 4096 } } };
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(node), { status: 200 }));
+      expect(await createClient().getNode('n1')).toEqual(node);
+    });
+
+    it('returns null when the body is an array, not a node object', async () => {
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+      expect(await createClient().getNode('n1')).toBeNull();
+    });
+
+    it('returns null on a non-ok response', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('nope', { status: 500 }));
+      expect(await createClient().getNode('n1')).toBeNull();
+    });
+
+    it('URL-encodes the node id in the path', async () => {
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ ID: 'a/b' }), { status: 200 }));
+      await createClient().getNode('a/b');
+      expect(mockFetch.mock.calls[0]![0]).toBe('http://127.0.0.1:4646/v1/node/a%2Fb');
+    });
+  });
+
+  describe('getNodeAllocations', () => {
+    it('returns the allocation array on success', async () => {
+      const allocs = [{ ID: 'a1', ClientStatus: 'running' }];
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(allocs), { status: 200 }));
+      expect(await createClient().getNodeAllocations('n1')).toEqual(allocs);
+    });
+
+    it('returns null (not []) on error, so a failed read is never counted as zero', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('boom', { status: 500 }));
+      expect(await createClient().getNodeAllocations('n1')).toBeNull();
+    });
+
+    it('returns an empty array for a node with no allocations', async () => {
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+      expect(await createClient().getNodeAllocations('n1')).toEqual([]);
+    });
+  });
+});
+
+describe('isReadyNodeOfClass', () => {
+  it('matches a ready, eligible node of the class', () => {
+    expect(isReadyNodeOfClass({ ID: 'n1', Status: 'ready', SchedulingEligibility: 'eligible', NodeClass: 'agent' }, 'agent')).toBe(true);
+  });
+
+  it('rejects a node that is not ready', () => {
+    expect(isReadyNodeOfClass({ ID: 'n1', Status: 'down', SchedulingEligibility: 'eligible', NodeClass: 'agent' }, 'agent')).toBe(false);
+  });
+
+  it('rejects an ineligible node', () => {
+    expect(isReadyNodeOfClass({ ID: 'n1', Status: 'ready', SchedulingEligibility: 'ineligible', NodeClass: 'agent' }, 'agent')).toBe(false);
+  });
+
+  it('rejects a node of a different class', () => {
+    expect(isReadyNodeOfClass({ ID: 'n1', Status: 'ready', SchedulingEligibility: 'eligible', NodeClass: 'browser' }, 'agent')).toBe(false);
+  });
+});
+
+describe('countActiveAllocations', () => {
+  it('counts running, pending, and unknown allocations as occupying', () => {
+    expect(countActiveAllocations([
+      { ID: 'a', ClientStatus: 'running' },
+      { ID: 'b', ClientStatus: 'pending' },
+      { ID: 'c', ClientStatus: 'unknown' },
+    ])).toBe(3);
+  });
+
+  it('ignores completed, failed, and lost allocations', () => {
+    expect(countActiveAllocations([
+      { ID: 'a', ClientStatus: 'running' },
+      { ID: 'b', ClientStatus: 'complete' },
+      { ID: 'c', ClientStatus: 'failed' },
+      { ID: 'd', ClientStatus: 'lost' },
+    ])).toBe(1);
+  });
+
+  it('returns zero for no allocations', () => {
+    expect(countActiveAllocations([])).toBe(0);
+  });
+});
+
+describe('nodeMatchesPool', () => {
+  it('matches any node when the pool is empty (no filter)', () => {
+    expect(nodeMatchesPool({ ID: 'n1' }, '')).toBe(true);
+    expect(nodeMatchesPool({ ID: 'n1', Meta: { node_pool: 'anything' } }, '')).toBe(true);
+  });
+
+  it('matches only a node whose Meta.node_pool equals the configured pool', () => {
+    expect(nodeMatchesPool({ ID: 'n1', Meta: { node_pool: 'staging' } }, 'staging')).toBe(true);
+    expect(nodeMatchesPool({ ID: 'n1', Meta: { node_pool: 'production' } }, 'staging')).toBe(false);
+    expect(nodeMatchesPool({ ID: 'n1', Meta: null }, 'staging')).toBe(false);
+    expect(nodeMatchesPool({ ID: 'n1' }, 'staging')).toBe(false);
+  });
+});
+
+describe('readAgentNodes', () => {
+  const mockFetch = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>();
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', mockFetch);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function clientReturning(behavior: {
+    nodes: unknown;
+    detail?: (id: string) => unknown;
+    allocations?: (id: string) => unknown;
+  }): NomadClient {
+    const client = new NomadClient({ addr: 'http://127.0.0.1:4646' });
+    vi.spyOn(client, 'listNodes').mockResolvedValue(behavior.nodes as never);
+    vi.spyOn(client, 'getNode').mockImplementation(async (id: string) => (
+      (behavior.detail ? behavior.detail(id) : { ID: id, Name: id }) as never
+    ));
+    vi.spyOn(client, 'getNodeAllocations').mockImplementation(async (id: string) => (
+      (behavior.allocations ? behavior.allocations(id) : []) as never
+    ));
+    return client;
+  }
+
+  const readyAgent = (id: string) => ({ ID: id, Status: 'ready', SchedulingEligibility: 'eligible', NodeClass: 'agent' });
+
+  it('returns null when the node list is unavailable', async () => {
+    const client = clientReturning({ nodes: null });
+    expect(await readAgentNodes(client, '')).toBeNull();
+  });
+
+  it('returns null when any per-node read fails', async () => {
+    const client = clientReturning({
+      nodes: [readyAgent('n1'), readyAgent('n2')],
+      allocations: (id) => (id === 'n2' ? null : []),
+    });
+    expect(await readAgentNodes(client, '')).toBeNull();
+  });
+
+  it('keeps only ready agent-class nodes', async () => {
+    const client = clientReturning({
+      nodes: [
+        readyAgent('n1'),
+        { ID: 'b1', Status: 'ready', SchedulingEligibility: 'eligible', NodeClass: 'browser' },
+        { ID: 'd1', Status: 'down', SchedulingEligibility: 'eligible', NodeClass: 'agent' },
+      ],
+    });
+    const result = await readAgentNodes(client, '');
+    expect(result?.map((s) => s.detail.ID)).toEqual(['n1']);
+  });
+
+  it('applies the pool filter on the node detail', async () => {
+    const client = clientReturning({
+      nodes: [readyAgent('n1'), readyAgent('n2')],
+      detail: (id) => ({ ID: id, Meta: { node_pool: id === 'n1' ? 'staging' : 'production' } }),
+    });
+    const result = await readAgentNodes(client, 'staging');
+    expect(result?.map((s) => s.detail.ID)).toEqual(['n1']);
+  });
+
+  it('returns an empty array for a genuinely empty agent fleet', async () => {
+    const client = clientReturning({ nodes: [] });
+    expect(await readAgentNodes(client, '')).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ import { AdminUsersSection } from './AdminUsersSection.js';
 import { AdminBillingSection } from './AdminBillingSection.js';
 import { AdminRuntimeSection } from './AdminRuntimeSection.js';
 import { AdminServersSection } from './AdminServersSection.js';
+import { AdminCapacitySection } from './AdminCapacitySection.js';
 import { AdminMarketDataSection } from './AdminMarketDataSection.js';
 
 export function AdminPage() {
@@ -44,6 +45,12 @@ export function AdminPage() {
   const serversQuery = useQuery({
     queryKey: ['admin', 'servers'],
     queryFn: () => adminApi.servers(),
+    refetchInterval: 15_000,
+  });
+
+  const capacityQuery = useQuery({
+    queryKey: ['admin', 'capacity'],
+    queryFn: () => adminApi.capacity(),
     refetchInterval: 15_000,
   });
 
@@ -146,7 +153,19 @@ export function AdminPage() {
           ) : null}
         </section>
 
-        {/* 6. Market Data Provisioning */}
+        {/* 6. Cluster Capacity */}
+        <section>
+          <SectionHeading>Cluster Capacity</SectionHeading>
+          {capacityQuery.isPending ? (
+            <LoadingCard />
+          ) : capacityQuery.isError ? (
+            <ErrorCard message="Failed to load capacity data" onRetry={() => { void capacityQuery.refetch(); }} />
+          ) : capacityQuery.data ? (
+            <AdminCapacitySection data={capacityQuery.data} />
+          ) : null}
+        </section>
+
+        {/* 7. Market Data Provisioning */}
         <section>
           <SectionHeading>Market Data Provisioning</SectionHeading>
           {(marketDataOverviewQuery.isPending || marketDataProvidersQuery.isPending) ? (

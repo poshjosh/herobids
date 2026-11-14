@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { eq, count, sql, gte, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { users, agents, agentRuntimeSessions, billingWebhookEvents } from '@herobids/db';
-import type { MarketDataConfig, ServerHealthSnapshot } from '@herobids/domain';
-import { SERVER_TYPES, serverHealthKeyPattern } from '@herobids/domain';
+import type { MarketDataConfig, ServerHealthSnapshot, ClusterCapacitySnapshot } from '@herobids/domain';
+import { SERVER_TYPES, serverHealthKeyPattern, CLUSTER_CAPACITY_KEY, ClusterCapacitySnapshotSchema } from '@herobids/domain';
 import { checkPostgres, checkRedis, parseAppVersion, dockerSocketGetAgentContainers, getRunningContainerCount } from '../admin-utils.js';
 
 /** Options passed to adminRoutes for market-data provisioning endpoints. */
@@ -166,6 +166,24 @@ export async function adminRoutes(
     } while (cursor !== '0');
 
     return reply.send({ servers });
+  });
+
+  // GET /admin/capacity — cluster agent-capacity snapshot (null when not reporting,
+  // e.g. non-Nomad backend or stale/expired snapshot).
+  app.get('/admin/capacity', { preHandler: adminPreHandler }, async (_request, reply) => {
+    const raw = await redis.get(CLUSTER_CAPACITY_KEY);
+    let capacity: ClusterCapacitySnapshot | null = null;
+    if (raw) {
+      try {
+        // safeParse at the boundary: malformed JSON or a wrong shape reads as "not
+        // reporting" rather than rendering undefined/NaN in the UI.
+        const parsed = ClusterCapacitySnapshotSchema.safeParse(JSON.parse(raw));
+        capacity = parsed.success ? parsed.data : null;
+      } catch {
+        capacity = null;
+      }
+    }
+    return reply.send({ capacity });
   });
 
   // GET /admin/users — all users with agent counts (c4.7: bot counts removed)

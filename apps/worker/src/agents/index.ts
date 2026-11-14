@@ -20,8 +20,22 @@ export { DockerRuntimeAdapter } from './docker-runtime-adapter.js';
 export { StubRuntimeAdapter } from './stub-runtime-adapter.js';
 export { NomadRuntimeAdapter } from './nomad-runtime-adapter.js';
 export type { NomadRuntimeAdapterConfig, NomadAgentJobConfig } from './nomad-runtime-adapter.js';
-export { NomadClient } from './nomad-client.js';
-export type { NomadClientConfig } from './nomad-client.js';
+export {
+  NomadClient,
+  isReadyNodeOfClass,
+  nodeMatchesPool,
+  allocationOccupiesNode,
+  countActiveAllocations,
+  readAgentNodes,
+  AGENT_NODE_CLASS,
+} from './nomad-client.js';
+export type {
+  NomadClientConfig,
+  NomadNodeListEntry,
+  NomadNodeDetail,
+  NomadNodeAllocation,
+  AgentNodeSnapshot,
+} from './nomad-client.js';
 export { buildServiceRegistry } from './service-registry.js';
 export type { ServiceRegistry } from './service-registry.js';
 export { buildAgentEnv, buildAgentLabels, buildRuntimeLaunchConfig } from './runtime-lifecycle.js';

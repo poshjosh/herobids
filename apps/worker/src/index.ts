@@ -56,6 +56,8 @@ import { UserEventPublisher } from './user-event-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
 import type { TriggeredWatch } from './market-intelligence/index.js';
 import { BrowserPoolHealthPublisher } from './browser-pool-health-publisher.js';
+import { AgentServerHealthPublisher } from './agent-server-health-publisher.js';
+import { ClusterCapacityPublisher } from './cluster-capacity-publisher.js';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 /** Slash commands registered with the Telegram Bot API so they appear in the client command picker. */
 const TELEGRAM_AGENT_COMMANDS: Array<{ command: string; description: string }> = [
@@ -113,6 +115,8 @@ const redisClient = new Redis(redisConnection);
 let agentCleanupSubscriber: Redis | undefined;
 let approvalExecuteSubscriber: Redis | undefined;
 let browserPoolHealthPublisher: { stop(): void } | undefined;
+let agentServerHealthPublisher: { stop(): void } | undefined;
+let clusterCapacityPublisher: { stop(): void } | undefined;
 const workerId = `worker-${crypto.randomUUID().slice(0, 8)}`;
 
 const db = createDatabase(appConfig.database.url);
@@ -265,6 +269,32 @@ const agentRuntimeLauncher = await (async () => {
   });
   bpHealthPublisher.start();
   browserPoolHealthPublisher = bpHealthPublisher;
+
+  // Agent-server health publisher — reports per-node memory and agent allocation
+  // (container) counts from Nomad. No-op on non-Nomad backends (nomadClient undefined).
+  const agentHealthPublisher = new AgentServerHealthPublisher({
+    redis: redisClient,
+    nomadClient,
+    nodePool: appConfig.nomad.nodePool,
+    logger,
+    appVersion: workerAppVersion,
+  });
+  agentHealthPublisher.start();
+  agentServerHealthPublisher = agentHealthPublisher;
+
+  // Cluster capacity publisher — computes ready-nodes/free-slots/free-memory from Nomad
+  // and publishes a single snapshot for the admin dashboard. No-op on non-Nomad backends.
+  const capacityPublisher = new ClusterCapacityPublisher({
+    redis: redisClient,
+    nomadClient,
+    nodePool: appConfig.nomad.nodePool,
+    agentMemoryReservationMb: appConfig.nomad.agentMemoryReservationMb,
+    agentCpuReservationMhz: appConfig.nomad.agentCpuReservationMhz,
+    maxAgentNodes: appConfig.nomad.maxAgentNodes,
+    logger,
+  });
+  capacityPublisher.start();
+  clusterCapacityPublisher = capacityPublisher;
 
   // Shared env config used by both Docker and Nomad paths
   const envConfig = {
@@ -1178,6 +1208,8 @@ process.on('SIGTERM', async () => {
   clearInterval(pricingRefreshInterval);
   clearInterval(approvalExpiryInterval);
   browserPoolHealthPublisher?.stop();
+  agentServerHealthPublisher?.stop();
+  clusterCapacityPublisher?.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
@@ -1200,6 +1232,8 @@ process.on('SIGINT', async () => {
   clearInterval(pricingRefreshInterval);
   clearInterval(approvalExpiryInterval);
   browserPoolHealthPublisher?.stop();
+  agentServerHealthPublisher?.stop();
+  clusterCapacityPublisher?.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();

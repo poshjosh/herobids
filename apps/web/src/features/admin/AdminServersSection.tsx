@@ -1,5 +1,12 @@
 import type { AdminServersResponse, ServerHealthSnapshot } from '../../lib/api-client.js';
 import { Card, KV } from '../../lib/ui.js';
+import {
+  isBrowserNodeSaturated,
+  readBrowserPoolMetrics,
+  sessionUtilizationPct,
+  summarizeBrowserPool,
+} from './browser-pool-metrics.js';
+import { USAGE_DANGER_PCT, USAGE_WARNING_PCT } from './capacity-display.js';
 
 // ---------------------------------------------------------------------------
 // Shared helpers (local to this module — same as former AdminResourcesSection)
@@ -13,7 +20,7 @@ function fmtBytes(bytes: number): string {
 
 function UsageBar({ used, total, label }: { used: number; total: number; label?: string }) {
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-  const color = pct > 85 ? 'var(--color-danger)' : pct > 65 ? 'var(--color-warning)' : 'var(--color-success)';
+  const color = pct > USAGE_DANGER_PCT ? 'var(--color-danger)' : pct > USAGE_WARNING_PCT ? 'var(--color-warning)' : 'var(--color-success)';
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginBottom: '3px' }}>
@@ -64,10 +71,7 @@ function renderMetadata(serverType: string, metadata: Record<string, unknown>): 
       postgresStatus: 'Postgres',
       redisStatus: 'Redis',
     },
-    'agent-server': {
-      nomadAllocations: 'Allocations',
-      availableMemoryMb: 'Free Memory',
-    },
+    // agent-server renders its figures via AgentServerResourceBars, not this KV map.
     'browser-pool': {
       queuedRequests: 'Queued',
       recentlyRejected: 'Rejected',
@@ -77,19 +81,10 @@ function renderMetadata(serverType: string, metadata: Record<string, unknown>): 
 
   const typeLabels = labelMap[serverType] ?? {};
 
-  // browser-pool special: merge activeSessions / maxConcurrentSessions
   const kvPairs: { label: string; value: string }[] = [];
 
-  if (serverType === 'browser-pool') {
-    const active = metadata['activeSessions'];
-    const max = metadata['maxConcurrentSessions'];
-    if (active != null || max != null) {
-      kvPairs.push({ label: 'Sessions', value: `${active ?? '?'}/${max ?? '?'}` });
-    }
-  }
-
   for (const [key, value] of entries) {
-    // Skip already-handled browser-pool session fields
+    // Sessions and memory pressure are shown on the browser-pool resource bars, not as KVs.
     if (serverType === 'browser-pool' && (key === 'activeSessions' || key === 'maxConcurrentSessions' || key === 'memoryPressure')) continue;
 
     const label = typeLabels[key] ?? key;
@@ -155,7 +150,10 @@ function StandardResourceBars({ server }: { server: ServerHealthSnapshot }) {
 }
 
 function BrowserPoolResourceBars({ server }: { server: ServerHealthSnapshot }) {
-  const memPressure = server.metadata['memoryPressure'];
+  const metrics = readBrowserPoolMetrics(server.metadata);
+  const utilPct = sessionUtilizationPct(metrics);
+  const { activeSessions, maxConcurrentSessions, memoryPressure } = metrics;
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
       {/* CPU — cpuPressure maps to cpuPct */}
@@ -167,10 +165,26 @@ function BrowserPoolResourceBars({ server }: { server: ServerHealthSnapshot }) {
         )}
       </div>
 
+      {/* Sessions — a utilization bar when capacity is known, else the raw N/M text */}
+      <div>
+        {utilPct != null ? (
+          <>
+            <UsageBar used={activeSessions ?? 0} total={maxConcurrentSessions ?? 0} label="Sessions" />
+            <div style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+              {activeSessions} / {maxConcurrentSessions} ({utilPct}%)
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+            Sessions: {activeSessions ?? '?'}/{maxConcurrentSessions ?? '?'}
+          </div>
+        )}
+      </div>
+
       {/* Memory pressure (text, not a byte-based bar) */}
       <div>
         <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
-          Mem pressure: {memPressure != null ? `${memPressure}%` : '—'}
+          Mem pressure: {memoryPressure != null ? `${memoryPressure}%` : '—'}
         </div>
       </div>
     </div>
@@ -181,36 +195,88 @@ function BrowserPoolResourceBars({ server }: { server: ServerHealthSnapshot }) {
 // Server card
 // ---------------------------------------------------------------------------
 
+function AgentServerResourceBars({ server }: { server: ServerHealthSnapshot }) {
+  // Nomad reports a node's total memory but not its live used-memory, so memory is shown
+  // as total size (not a 0%-used bar, which would read as an idle node). CPU% is not
+  // available from Nomad either.
+  const allocations = server.metadata['nomadAllocations'];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+      <div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>CPU —</div>
+      </div>
+      <div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+          Node memory: {server.memory.totalBytes > 0 ? fmtBytes(server.memory.totalBytes) : '—'}
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+          Allocations: {typeof allocations === 'number' ? allocations : '—'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SaturatedBadge() {
+  return (
+    <span
+      style={{
+        fontSize: '0.625rem',
+        fontWeight: '600',
+        background: 'var(--color-danger)',
+        color: 'var(--color-on-danger, #fff)',
+        padding: '1px 8px',
+        borderRadius: '10px',
+        textTransform: 'uppercase',
+        letterSpacing: '0.03em',
+      }}
+    >
+      At capacity
+    </span>
+  );
+}
+
 function ServerCard({ server }: { server: ServerHealthSnapshot }) {
+  const saturated = server.serverType === 'browser-pool'
+    && isBrowserNodeSaturated(readBrowserPoolMetrics(server.metadata));
+
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       {/* Header: ID + hostname + version + uptime */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px' }}>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
           <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.8125rem', fontWeight: '600' }}>
             {server.serverId}
           </span>
           {server.hostname !== server.serverId && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
               {server.hostname}
             </span>
           )}
+          {saturated && <SaturatedBadge />}
         </div>
         <div style={{ display: 'flex', gap: '12px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
           <span>v{server.version}</span>
-          <span>Up {fmtUptime(server.uptimeSeconds)}</span>
+          {/* Nomad does not report node uptime, so agent-server uses 0 as a sentinel we hide. */}
+          {!(server.serverType === 'agent-server' && server.uptimeSeconds === 0) && (
+            <span>Up {fmtUptime(server.uptimeSeconds)}</span>
+          )}
         </div>
       </div>
 
-      {/* Resource bars — specialized layout for browser-pool */}
+      {/* Resource bars — specialized layouts for browser-pool and agent-server */}
       {server.serverType === 'browser-pool' ? (
         <BrowserPoolResourceBars server={server} />
+      ) : server.serverType === 'agent-server' ? (
+        <AgentServerResourceBars server={server} />
       ) : (
         <StandardResourceBars server={server} />
       )}
 
-      {/* Type-specific metadata */}
-      {renderMetadata(server.serverType, server.metadata)}
+      {/* Type-specific metadata — agent-server shows its figures in the bars above */}
+      {server.serverType !== 'agent-server' && renderMetadata(server.serverType, server.metadata)}
     </Card>
   );
 }
@@ -218,6 +284,27 @@ function ServerCard({ server }: { server: ServerHealthSnapshot }) {
 // ---------------------------------------------------------------------------
 // Main section component
 // ---------------------------------------------------------------------------
+
+function BrowserPoolSummaryLine({ servers }: { servers: ServerHealthSnapshot[] }) {
+  const summary = summarizeBrowserPool(servers);
+  if (summary.instanceCount === 0) return null;
+
+  const parts: string[] = [];
+  if (summary.utilizationPct != null) {
+    parts.push(`${summary.totalActiveSessions}/${summary.totalMaxSessions} sessions (${summary.utilizationPct}%)`);
+  } else {
+    parts.push(`${summary.totalActiveSessions} sessions`);
+  }
+  parts.push(`${summary.totalQueued} queued`);
+  parts.push(`${summary.totalRejected} rejected`);
+  parts.push(`${summary.availableCount}/${summary.instanceCount} available`);
+
+  return (
+    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+      {parts.join(' · ')}
+    </span>
+  );
+}
 
 export function AdminServersSection({ data }: { data: AdminServersResponse }) {
   return (
@@ -228,8 +315,8 @@ export function AdminServersSection({ data }: { data: AdminServersResponse }) {
 
         return (
           <div key={type}>
-            {/* Group heading with count badge */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            {/* Group heading with count badge, plus a pool summary for browser-pool */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
                 {label}
               </span>
@@ -245,6 +332,7 @@ export function AdminServersSection({ data }: { data: AdminServersResponse }) {
               >
                 {servers.length}
               </span>
+              {type === 'browser-pool' && <BrowserPoolSummaryLine servers={servers} />}
             </div>
 
             {servers.length === 0 ? (

@@ -1769,6 +1769,22 @@ export interface AdminServersResponse {
   servers: Record<string, ServerHealthSnapshot[]>;
 }
 
+/** Cluster agent-capacity snapshot (GET /admin/capacity). `capacity` is null when not reporting. */
+export interface ClusterCapacitySnapshot {
+  readyAgentNodes: number;
+  maxAgentNodes: number;
+  freeSlots: number;
+  freeMemoryMb: number;
+  totalMemoryMb: number;
+  agentMemoryReservationMb: number;
+  agentCpuReservationMhz: number;
+  updatedAt: string;
+}
+
+export interface AdminCapacityResponse {
+  capacity: ClusterCapacitySnapshot | null;
+}
+
 export interface AdminUserRow {
   id: string;
   email: string;
@@ -1863,6 +1879,7 @@ export interface AdminProviderRow {
 export const admin = {
   stats: () => request<AdminStatsResponse>('/admin/stats'),
   servers: () => request<AdminServersResponse>('/admin/servers'),
+  capacity: () => request<AdminCapacityResponse>('/admin/capacity'),
   users: (params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params?.limit !== undefined) qs.set('limit', String(params.limit));

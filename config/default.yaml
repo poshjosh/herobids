@@ -378,6 +378,10 @@ nomad:
   sandboxCapsEnabled: false              # request NET_ADMIN/SYS_ADMIN for agent sandboxes; only after all clients allow them; override: NOMAD_SANDBOX_CAPS_ENABLED
   terminationPollIntervalMs: 30000       # how often to poll Nomad for agent allocation crashes (ms)
   requestTimeoutMs: 10000                # Nomad HTTP API request timeout (ms)
+  maxAgentNodes: 3                       # scale-out ceiling shown on the admin dashboard; mirror infra max_agent_nodes; override: NOMAD_MAX_AGENT_NODES
+  agentMemoryReservationMb: 256          # memory per agent slot for dashboard free-slot math; mirror infra agent_memory_reservation_mb; override: NOMAD_AGENT_MEMORY_RESERVATION_MB
+  agentCpuReservationMhz: 256            # CPU (MHz) per agent slot for dashboard free-slot math; mirror infra agent_cpu_reservation_mhz; override: NOMAD_AGENT_CPU_RESERVATION_MHZ
+  nodePool: ""                           # Meta.node_pool an agent node must match (empty = no pool filter); set when pools share a cluster; override: NOMAD_AUTOSCALE_NODE_POOL
 
 # External Backend registry (Step 10 §1) — operator registration records, keyed by backendId.
 # Transport + trust metadata ONLY (ADR 015 §3). Parsed into ExternalBackendDefinition[].

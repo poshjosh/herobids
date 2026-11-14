@@ -85,6 +85,10 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Nomad
   NOMAD_TOKEN: { path: 'nomad.token', type: 'string' },
   NOMAD_ADDR: { path: 'nomad.addr', type: 'string' },
+  NOMAD_MAX_AGENT_NODES: { path: 'nomad.maxAgentNodes', type: 'number' },
+  NOMAD_AGENT_MEMORY_RESERVATION_MB: { path: 'nomad.agentMemoryReservationMb', type: 'number' },
+  NOMAD_AGENT_CPU_RESERVATION_MHZ: { path: 'nomad.agentCpuReservationMhz', type: 'number' },
+  NOMAD_AUTOSCALE_NODE_POOL: { path: 'nomad.nodePool', type: 'string' },
   // External backend `traderton` (P3-16) — targets the externalBackends.traderton
   // registry entry in default.yaml. The HMAC secret is NOT an override: the
   // entry's caller.hmacSecretRef names the env var (TRADERTON_BOUNDARY_HMAC_SECRET)

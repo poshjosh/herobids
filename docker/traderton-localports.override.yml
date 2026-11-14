@@ -1,0 +1,11 @@
+# Local-only host-port remap for the traderton xstack when 5433/6380 are taken
+# by another stack on this machine (lipdubber uses host 5433). Only remaps the
+# PUBLISHED host ports; the boundary still reaches its DB/redis by service name
+# over the compose network, so this is safe. Not committed.
+services:
+  postgres:
+    ports: !override
+      - "5434:5432"
+  redis:
+    ports: !override
+      - "6381:6379"
