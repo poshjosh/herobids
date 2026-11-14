@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { runStructuredToolLoop } from './structured-tool-loop.js';
+import { isKnownAgentToolName } from '@herobids/domain';
+import { DURABLE_TOOL_NAMES, runStructuredToolLoop } from './structured-tool-loop.js';
 import { callLlmWithRetry } from './runtime-errors.js';
 
 vi.mock('./runtime-errors.js', () => ({
@@ -742,5 +743,84 @@ describe('runStructuredToolLoop', () => {
         expect(toolMsgs[i]!.content).toBe('x'.repeat(100));
       }
     });
+
+    // Shared loop: turn 0 loads a durable skill (pinned, ~15 KB), turn 1 is a non-durable
+    // list_positions result, turns 2-4 are fillers, turn 5 ends. With retentionTurns=3 and
+    // maxStaleChars=20, at loop end both the skill (age 5) and the first list_positions (age 4)
+    // are past the window, so they exercise the pin exemption and the normal truncation together.
+    const runDurableVsTransientLoop = async () => {
+      const toolTurn = (id: string, name: string) => ({
+        result: {
+          ok: true as const,
+          data: {
+            content: `calling ${name}`,
+            toolCalls: [{ id, name, args: {} }],
+            model: 'test-model', provider: 'openai' as const, tokensUsed: 10, latencyMs: 5, cached: false,
+          },
+        },
+        attempts: 1, delaysMs: [],
+      });
+
+      vi.mocked(callLlmWithRetry)
+        .mockResolvedValueOnce(toolTurn('call_1', 'read_skill'))
+        .mockResolvedValueOnce(toolTurn('call_2', 'list_positions'))
+        .mockResolvedValueOnce(toolTurn('call_3', 'list_positions'))
+        .mockResolvedValueOnce(toolTurn('call_4', 'list_positions'))
+        .mockResolvedValueOnce(toolTurn('call_5', 'list_positions'))
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        });
+
+      await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [
+          { name: 'read_skill', description: 'Read a skill', inputSchema: { type: 'object' } },
+          { name: 'list_positions', description: 'List positions', inputSchema: { type: 'object' } },
+        ],
+        maxTurns: 6,
+        toolResultFullRetentionTurns: 3,
+        toolResultMaxStaleChars: 20,
+        executeTool: async (toolCall) => (toolCall.name === 'read_skill' ? 's'.repeat(15_000) : 'x'.repeat(100)),
+      });
+
+      const callArgs = vi.mocked(callLlmWithRetry).mock.calls;
+      return (callArgs[0]![1] as { messages: Array<{ role: string; content: string; toolName?: string }> }).messages;
+    };
+
+    it('does not truncate pinned durable tool results past the retention window', async () => {
+      const messages = await runDurableVsTransientLoop();
+      const skillMsg = messages.find(m => m.role === 'tool' && m.toolName === 'read_skill');
+
+      // The durable skill result (age 5 at loop end) survives intact despite far exceeding maxStaleChars.
+      expect(skillMsg!.content).toBe('s'.repeat(15_000));
+    });
+
+    it('still truncates non-durable tool results', async () => {
+      const messages = await runDurableVsTransientLoop();
+      const firstPositions = messages.find(m => m.role === 'tool' && m.toolName === 'list_positions');
+
+      // The oldest non-durable result (age 4 at loop end) is still truncated — guard against over-exemption.
+      expect(firstPositions!.content).toBe('x'.repeat(20) + '...[truncated]');
+    });
+  });
+});
+
+describe('DURABLE_TOOL_NAMES drift guard', () => {
+  // If a durable tool is renamed in the tool registry without updating this set,
+  // the pin exemption silently goes stale and the stale-result truncation bug returns.
+  it('every durable tool name is a known registered agent tool', () => {
+    for (const name of DURABLE_TOOL_NAMES) {
+      expect(isKnownAgentToolName(name), `"${name}" is not a registered agent tool name`).toBe(true);
+    }
   });
 });

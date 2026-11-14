@@ -109,3 +109,14 @@ Low-severity, non-blocking (recorded during review of the bug-report draft):
 
 - **[Bug report] Line-citation precision.** The per-tier `toolResultMaxStaleChars` citations (`schema.ts:335-336`, `364-365`, `393-394`) bracket the correct region but are off by ~1 line; the `toolResultMaxStaleChars` values sit at 335 / 364 / 393 and the `toolResultFullRetentionTurns` lines precede them (334 / 363 / 392). All quoted values are accurate; the ranges are cosmetic.
 - **[Bug report] Tool-count figure.** "76 distinct registered agent tools" is sourced from `TOOL_CATALOG` in `packages/domain/src/tools.ts` (asserted against the live registry); it is not load-bearing for the fix, which names the 6 durable tools explicitly.
+
+### Fix implementation — review outcomes
+
+The fix (message-level `pinned` flag + `DURABLE_TOOL_NAMES`) was reviewed. No critical/high issues. Resolved during implementation:
+
+- **[MEDIUM — resolved] Drift protection.** A unit test ("every durable tool name is a known registered agent tool") now asserts every entry in `DURABLE_TOOL_NAMES` satisfies `isKnownAgentToolName` from `@herobids/domain`, so renaming a tool without updating the set fails loudly instead of silently reintroducing the bug.
+
+Remaining LOW (non-blocking):
+
+- **[Fix] Test ordering assumption.** The two behavior tests use `.find()` first-match to pick the oldest message of a given tool; correct given the loop shape, but leans on message ordering. Could be tightened to filter-then-index. Low value.
+- **[Fix] Longer-term design option.** `DURABLE_TOOL_NAMES` could be promoted to a `durable` trait on `TOOL_CATALOG` in `@herobids/domain` so durability is modelled as tool metadata rather than a separate set. Deferred; the drift-guard test covers the immediate risk.

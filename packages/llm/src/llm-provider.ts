@@ -60,7 +60,9 @@ export interface LlmToolCall {
 export type LlmMessage =
   | { role: 'system' | 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: LlmToolCall[] }
-  | { role: 'tool'; content: string; toolCallId: string; toolName?: string; isError?: boolean; addedAtTurn?: number };
+  // `pinned` tool results are exempt from stale-result truncation: they carry durable
+  // instructions/state (loaded skills, docs, schemas, full documents) the agent must keep following.
+  | { role: 'tool'; content: string; toolCallId: string; toolName?: string; isError?: boolean; addedAtTurn?: number; pinned?: boolean };
 
 export type LlmToolChoice = 'auto' | 'none' | 'required';
 

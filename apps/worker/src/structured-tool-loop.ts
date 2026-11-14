@@ -3,6 +3,21 @@ import { stripReasoningContent } from '@herobids/llm';
 import { callLlmWithRetry } from './runtime-errors.js';
 import type { RuntimeFailureClassification } from './runtime-errors.js';
 
+/**
+ * Tool results that must survive stale-result truncation. These return durable
+ * instructions / schemas / full documents / a full-text escape-hatch message that the
+ * agent re-reads and acts on across a long tool loop; silently slicing them corrupts
+ * the agent's behaviour. Every other tool result is transient data that stays truncatable.
+ */
+export const DURABLE_TOOL_NAMES = new Set<string>([
+  'read_skill',
+  'load_skill',
+  'read_app_docs',
+  'get_schema',
+  'read_agent_document',
+  'get_message',
+]);
+
 export interface StructuredToolLoopOptions {
   providerConfig: LlmProviderConfig;
   requestBase: Omit<LlmRequest, 'messages' | 'tools' | 'toolChoice'>;
@@ -83,7 +98,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
     // still within the full-retention window and should NOT be truncated yet.
     if (options.toolResultFullRetentionTurns !== undefined && options.toolResultMaxStaleChars !== undefined) {
       for (const msg of messages) {
-        if (msg.role === 'tool' && msg.addedAtTurn !== undefined) {
+        if (msg.role === 'tool' && msg.pinned !== true && msg.addedAtTurn !== undefined) {
           const age = turnIndex - msg.addedAtTurn;
           if (age > options.toolResultFullRetentionTurns && msg.content.length > options.toolResultMaxStaleChars) {
             msg.content = msg.content.slice(0, options.toolResultMaxStaleChars) + '...[truncated]';
@@ -177,6 +192,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
         toolName: toolCall.name,
         isError: toolResult === null,
         addedAtTurn: turnIndex,
+        pinned: DURABLE_TOOL_NAMES.has(toolCall.name),
       });
     }
   }
