@@ -36,6 +36,9 @@ const PRESET_TICK_INTERVALS = {
 } as const;
 
 // Cost-per-tick estimates by usage tier (from agentCostEstimates config).
+// NOTE: these are hardcoded guesses, not per-model live pricing. A deferred plan
+// to replace them with live per-model cost (with fallback to these constants)
+// lives at docs/features/pending/000-live-cost-per-tick/001-plan.md.
 const COST_PER_TICK = { minimal: 0.12, standard: 0.21, premium: 0.31 };
 
 function deriveCustomTickIntervalMs(dailyBudgetUsd: number): number {
