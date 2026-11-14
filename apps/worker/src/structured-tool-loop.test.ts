@@ -812,6 +812,361 @@ describe('runStructuredToolLoop', () => {
       // The oldest non-durable result (age 4 at loop end) is still truncated — guard against over-exemption.
       expect(firstPositions!.content).toBe('x'.repeat(20) + '...[truncated]');
     });
+
+    it('notifies onToolResultTruncated when a stale tool result is truncated', async () => {
+      // retentionTurns=3, maxStaleChars=20: the first list_positions result (age 4 at loop
+      // end) is past the window and truncated, so the callback must fire for it.
+      vi.mocked(callLlmWithRetry)
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 1',
+              toolCalls: [{ id: 'call_1', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 2',
+              toolCalls: [{ id: 'call_2', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 3',
+              toolCalls: [{ id: 'call_3', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 4',
+              toolCalls: [{ id: 'call_4', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        });
+
+      const onToolResultTruncated = vi.fn();
+
+      const result = await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [{ name: 'list_positions', description: 'List positions', inputSchema: { type: 'object' } }],
+        maxTurns: 5,
+        toolResultFullRetentionTurns: 3,
+        toolResultMaxStaleChars: 20,
+        onToolResultTruncated,
+        executeTool: async () => 'x'.repeat(100),
+      });
+
+      expect(result.ok).toBe(true);
+
+      // Exactly one result ages past the window within this loop: call_1 at age 4.
+      expect(onToolResultTruncated).toHaveBeenCalledTimes(1);
+      expect(onToolResultTruncated).toHaveBeenCalledWith({
+        turnIndex: 4,
+        toolName: 'list_positions',
+        toolCallId: 'call_1',
+        // originalChars is the FULL pre-slice length; retainedChars is the configured cap.
+        originalChars: 100,
+        retainedChars: 20,
+        ageTurns: 4,
+      });
+    });
+
+    it('does not notify onToolResultTruncated for results within the retention window', async () => {
+      // retentionTurns=3 with one tool-producing turn (call_1) plus the final done turn:
+      // no result ever reaches age > 3, so nothing is truncated and the callback must not fire.
+      vi.mocked(callLlmWithRetry)
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 1',
+              toolCalls: [{ id: 'call_1', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        });
+
+      const onToolResultTruncated = vi.fn();
+
+      const result = await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [{ name: 'list_positions', description: 'List positions', inputSchema: { type: 'object' } }],
+        maxTurns: 5,
+        toolResultFullRetentionTurns: 3,
+        toolResultMaxStaleChars: 20,
+        onToolResultTruncated,
+        executeTool: async () => 'x'.repeat(100),
+      });
+
+      expect(result.ok).toBe(true);
+      expect(onToolResultTruncated).not.toHaveBeenCalled();
+    });
+
+    it('does not notify onToolResultTruncated for pinned durable tool results', async () => {
+      // retentionTurns=3, maxStaleChars=20. The read_skill result (durable, pinned) ages to 5
+      // but must survive intact; only the non-durable list_positions results truncate.
+      const toolTurn = (id: string, name: string) => ({
+        result: {
+          ok: true as const,
+          data: {
+            content: `calling ${name}`,
+            toolCalls: [{ id, name, args: {} }],
+            model: 'test-model', provider: 'openai' as const, tokensUsed: 10, latencyMs: 5, cached: false,
+          },
+        },
+        attempts: 1, delaysMs: [],
+      });
+
+      vi.mocked(callLlmWithRetry)
+        .mockResolvedValueOnce(toolTurn('call_1', 'read_skill'))
+        .mockResolvedValueOnce(toolTurn('call_2', 'list_positions'))
+        .mockResolvedValueOnce(toolTurn('call_3', 'list_positions'))
+        .mockResolvedValueOnce(toolTurn('call_4', 'list_positions'))
+        .mockResolvedValueOnce(toolTurn('call_5', 'list_positions'))
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        });
+
+      const onToolResultTruncated = vi.fn();
+
+      const result = await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [
+          { name: 'read_skill', description: 'Read a skill', inputSchema: { type: 'object' } },
+          { name: 'list_positions', description: 'List positions', inputSchema: { type: 'object' } },
+        ],
+        maxTurns: 6,
+        toolResultFullRetentionTurns: 3,
+        toolResultMaxStaleChars: 20,
+        onToolResultTruncated,
+        executeTool: async (toolCall) => (toolCall.name === 'read_skill' ? 's'.repeat(15_000) : 'x'.repeat(100)),
+      });
+
+      expect(result.ok).toBe(true);
+
+      // The durable read_skill result must never be reported as truncated.
+      const reportedCallIds = onToolResultTruncated.mock.calls.map((args) => (args[0] as { toolCallId: string }).toolCallId);
+      expect(reportedCallIds).not.toContain('call_1');
+      for (const args of onToolResultTruncated.mock.calls) {
+        expect((args[0] as { toolName: string | undefined }).toolName).not.toBe('read_skill');
+      }
+      // Positive guard: the first non-durable list_positions result (call_2, age 4 at loop end)
+      // DID truncate, so the callback must still fire for it. This catches a regression where
+      // the pin exemption silently suppresses the callback for every result.
+      expect(reportedCallIds).toContain('call_2');
+    });
+
+    it('does not notify when an aged result is under the stale-char limit', async () => {
+      // retentionTurns=3, maxStaleChars=20. The first result ages to 4 (past the window) but is
+      // only 10 chars, under the cap, so it is not truncated and the callback must not fire.
+      vi.mocked(callLlmWithRetry)
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 1',
+              toolCalls: [{ id: 'call_1', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 2',
+              toolCalls: [{ id: 'call_2', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 3',
+              toolCalls: [{ id: 'call_3', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 4',
+              toolCalls: [{ id: 'call_4', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        });
+
+      const onToolResultTruncated = vi.fn();
+
+      const result = await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [{ name: 'list_positions', description: 'List positions', inputSchema: { type: 'object' } }],
+        maxTurns: 5,
+        toolResultFullRetentionTurns: 3,
+        toolResultMaxStaleChars: 20,
+        onToolResultTruncated,
+        executeTool: async () => 'x'.repeat(10),
+      });
+
+      expect(result.ok).toBe(true);
+      expect(onToolResultTruncated).not.toHaveBeenCalled();
+    });
+
+    it('truncates and reports a stale result at most once across many subsequent turns', async () => {
+      // Idempotency guard. retentionTurns=3, maxStaleChars=20. call_1 is added at turn 0 and
+      // ages past the window at turn 4, where it truncates. The loop then continues for several
+      // more turns (maxTurns=9) with call_1 still in the message list. Because post-truncation
+      // content (maxStaleChars + '...[truncated]') stays longer than maxStaleChars, a naive gate
+      // would re-enter the block every turn, re-firing the callback and re-slicing. It must fire
+      // EXACTLY ONCE and leave the content as the single-truncation result.
+      const toolTurn = (id: string) => ({
+        result: {
+          ok: true as const,
+          data: {
+            content: 'calling list_positions',
+            toolCalls: [{ id, name: 'list_positions', args: {} }],
+            model: 'test-model', provider: 'openai' as const, tokensUsed: 10, latencyMs: 5, cached: false,
+          },
+        },
+        attempts: 1, delaysMs: [],
+      });
+
+      vi.mocked(callLlmWithRetry)
+        .mockResolvedValueOnce(toolTurn('call_1'))
+        .mockResolvedValueOnce(toolTurn('call_2'))
+        .mockResolvedValueOnce(toolTurn('call_3'))
+        .mockResolvedValueOnce(toolTurn('call_4'))
+        .mockResolvedValueOnce(toolTurn('call_5'))
+        .mockResolvedValueOnce(toolTurn('call_6'))
+        .mockResolvedValueOnce(toolTurn('call_7'))
+        .mockResolvedValueOnce(toolTurn('call_8'))
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        });
+
+      const onToolResultTruncated = vi.fn();
+
+      const result = await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [{ name: 'list_positions', description: 'List positions', inputSchema: { type: 'object' } }],
+        maxTurns: 9,
+        toolResultFullRetentionTurns: 3,
+        toolResultMaxStaleChars: 20,
+        onToolResultTruncated,
+        executeTool: async () => 'x'.repeat(100),
+      });
+
+      expect(result.ok).toBe(true);
+
+      // call_1 ages past the window at turn 4 and stays in the list through turns 5-8.
+      // It must be reported exactly once despite the extra turns.
+      const call1Reports = onToolResultTruncated.mock.calls.filter(
+        (args) => (args[0] as { toolCallId: string }).toolCallId === 'call_1',
+      );
+      expect(call1Reports).toHaveLength(1);
+      expect(call1Reports[0]![0]).toEqual({
+        turnIndex: 4,
+        toolName: 'list_positions',
+        toolCallId: 'call_1',
+        originalChars: 100,
+        retainedChars: 20,
+        ageTurns: 4,
+      });
+
+      // The stored content is the single-truncation result: sliced to the cap once with one
+      // marker — not doubly-marked and not re-sliced to something shorter.
+      const callArgs = vi.mocked(callLlmWithRetry).mock.calls;
+      const messages = (callArgs[0]![1] as { messages: Array<{ role: string; content: string; toolCallId?: string }> }).messages;
+      const call1Msg = messages.find((m) => m.role === 'tool' && m.toolCallId === 'call_1');
+      expect(call1Msg!.content).toBe('x'.repeat(20) + '...[truncated]');
+    });
   });
 });
 

@@ -57,6 +57,15 @@ export interface StructuredToolLoopOptions {
     attempt: number;
     classification: RuntimeFailureClassification;
   }) => void;
+  /** Called when a stale tool result is truncated, so callers can log/meter it. */
+  onToolResultTruncated?: (info: {
+    turnIndex: number;
+    toolName: string | undefined;
+    toolCallId: string;
+    originalChars: number;
+    retainedChars: number;
+    ageTurns: number;
+  }) => void;
   onBeforeTurn?: (info: { turnIndex: number; turnsRemaining: number }) =>
     | string
     | {
@@ -92,16 +101,42 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
   let lastToolCalls: LlmToolCall[] = [];
   let turnsUsed = 0;
 
+  // Tracks tool messages that have already been stale-truncated so each is
+  // truncated (and reported via onToolResultTruncated) AT MOST ONCE. Without
+  // this guard the post-truncation content (maxStaleChars + '...[truncated]')
+  // stays longer than maxStaleChars, so the message would re-enter the block
+  // every subsequent turn, re-firing the observability callback and redoing work.
+  const truncatedToolMessages = new WeakSet<LlmMessage>();
+
   for (let turnIndex = 0; turnIndex < options.maxTurns; turnIndex++) {
     // Truncate tool results from turns older than retentionTurns.
     // A result at exactly the retention boundary (age === retentionTurns) is
     // still within the full-retention window and should NOT be truncated yet.
     if (options.toolResultFullRetentionTurns !== undefined && options.toolResultMaxStaleChars !== undefined) {
       for (const msg of messages) {
-        if (msg.role === 'tool' && msg.pinned !== true && msg.addedAtTurn !== undefined) {
+        if (
+          msg.role === 'tool' &&
+          msg.pinned !== true &&
+          msg.addedAtTurn !== undefined &&
+          !truncatedToolMessages.has(msg)
+        ) {
           const age = turnIndex - msg.addedAtTurn;
           if (age > options.toolResultFullRetentionTurns && msg.content.length > options.toolResultMaxStaleChars) {
+            const originalChars = msg.content.length;
             msg.content = msg.content.slice(0, options.toolResultMaxStaleChars) + '...[truncated]';
+            truncatedToolMessages.add(msg);
+            // Notify callers so the previously-silent truncation is observable
+            // (bug 002) and context pressure is meterable per tick (lesson #9).
+            options.onToolResultTruncated?.({
+              turnIndex,
+              toolName: msg.toolName,
+              toolCallId: msg.toolCallId,
+              originalChars,
+              // Retained original-content length (= toolResultMaxStaleChars), EXCLUDING the
+              // appended '...[truncated]' marker — do not treat this as the final stored message length.
+              retainedChars: options.toolResultMaxStaleChars,
+              ageTurns: age,
+            });
           }
         }
       }
