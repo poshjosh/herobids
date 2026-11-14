@@ -69,9 +69,9 @@ SYSTEM_TESTER_NAME="system-skills-tester"
 SYSTEM_TESTER_SKILL_IDS='[]'
 SYSTEM_TESTER_PROMPT_FILE="${REPO_ROOT}/docs/agents/prompts/system-skills-tester-prompt.md"
 
-# sandbox-tester — verifies the agent sandbox egress rules on the container (no skills; uses built-in shell/code tools)
+# sandbox-tester — verifies the agent sandbox egress rules on the container (uses the system programming skill)
 SANDBOX_TESTER_NAME="sandbox-tester"
-SANDBOX_TESTER_SKILL_IDS='[]'
+SANDBOX_TESTER_SKILL_IDS='["programming"]'
 SANDBOX_TESTER_PROMPT_FILE="${REPO_ROOT}/docs/agents/prompts/sandbox-tester-prompt.md"
 
 # ---------------------------------------------------------------------------

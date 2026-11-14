@@ -520,7 +520,7 @@ SYSTEM_TESTER_ID="$(create_agent "system-skills-tester" "$(jq -n \
       capital: "1000"
     }')")"
 
-# sandbox-tester — verifies the sandbox egress rules on the container (no skills; built-in shell/code tools)
+# sandbox-tester — verifies the sandbox egress rules on the container (uses the system programming skill)
 SANDBOX_TESTER_ID="$(create_agent "sandbox-tester" "$(jq -n \
     --arg name "sandbox-tester" \
     --arg prompt "$SANDBOX_TESTER_PROMPT" \
@@ -534,7 +534,7 @@ SANDBOX_TESTER_ID="$(create_agent "sandbox-tester" "$(jq -n \
       provider: $provider,
       lightModel: $lightModel,
       heavyModel: $heavyModel,
-      skillIds: [],
+      skillIds: ["programming"],
       tickIntervalMs: ($tickIntervalMs | tonumber),
       runtimePolicyOverrides: { maxHoldDurationMs: 0 },
       capital: "1000"
