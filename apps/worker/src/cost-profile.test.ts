@@ -12,7 +12,7 @@ describe('resolveAgentCostProfile', () => {
     });
 
     expect(profile.lightModel).toBe('gpt-4.1-mini');
-    expect(profile.heavyModel).toBe('gpt-4.1-mini');
+    expect(profile.heavyModel).toBe('gpt-4.1');
     expect(profile.tickIntervalMs).toBe(5_400_000);
     expect(profile.enabledGates.adaptiveInterval).toBe(true);
   });
@@ -28,7 +28,22 @@ describe('resolveAgentCostProfile', () => {
     });
 
     expect(profile.tickIntervalMs).toBeGreaterThanOrEqual(300_000);
-    expect(profile.heavyModel).toBe(profile.lightModel);
+    expect(profile.heavyModel).toBe('anthropic/claude-sonnet-4-5');
+    expect(profile.heavyModel).not.toBe(profile.lightModel);
+  });
+
+  it('keeps the real heavy model for low-budget custom preset', () => {
+    const profile = resolveAgentCostProfile({
+      provider: 'openrouter',
+      heavyModel: 'anthropic/claude-sonnet-4-5',
+      lightModel: 'anthropic/claude-sonnet-4-5-mini',
+      costPreset: 'custom',
+      dailyBudgetUsd: 2,
+      baseTickIntervalMs: 900_000,
+    });
+
+    expect(profile.heavyModel).toBe('anthropic/claude-sonnet-4-5');
+    expect(profile.heavyModel).not.toBe(profile.lightModel);
   });
 
   it('uses configured scout default models for preset resolution', () => {
@@ -41,7 +56,7 @@ describe('resolveAgentCostProfile', () => {
     });
 
     expect(profile.lightModel).toBe('gpt-4o-mini');
-    expect(profile.heavyModel).toBe('gpt-4o-mini');
+    expect(profile.heavyModel).toBe('gpt-4.1');
   });
 
   it('explicit tickIntervalMs overrides minimal preset interval', () => {

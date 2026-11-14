@@ -86,7 +86,7 @@ describe('resolveNarrativeLlmConfig', () => {
     expect(result.model).toBe('claude-sonnet-4-5');
   });
 
-  it('cost preset downgrades heavy model to light model on minimal preset', async () => {
+  it('uses the real heavy model for narrative on minimal preset (no light-model downgrade)', async () => {
     const result = await resolveNarrativeLlmConfig(baseInput({
       agentModelPolicy: {
         provider: 'openai',
@@ -97,8 +97,12 @@ describe('resolveNarrativeLlmConfig', () => {
     }));
 
     expect(result.provider).toBe('openai');
-    // minimal preset uses light model as heavy model
-    expect(result.model).toBe('gpt-4o-mini');
+    // The minimal preset no longer downgrades the user-selected heavy model:
+    // the narrative/evaluation path shares resolveAgentCostProfile with the
+    // trading judge, and neither silently swaps the heavy model for the light
+    // model just because the agent is minimal/low-cost. Narrative uses the
+    // real heavy model.
+    expect(result.model).toBe('gpt-4o');
   });
 
   // ── Override rules ─────────────────────────────────────────────────────

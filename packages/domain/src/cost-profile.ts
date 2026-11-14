@@ -55,7 +55,8 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
       profile = {
         preset: 'minimal',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 3,
-        heavyModel: lightModel,
+        // Judge runs on heavyModel: always use the real heavy model, never the light model, so judge reasoning quality is not silently degraded.
+        heavyModel,
         lightModel,
         tickIntervalMs: PRESET_TICK_INTERVALS.minimal,
         enabledGates: { session: true, regime: true, contextHash: true, adaptiveInterval: true },
@@ -88,7 +89,8 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
       profile = {
         preset: 'custom',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 5,
-        heavyModel: (input.dailyBudgetUsd ?? 5) <= 3 ? lightModel : heavyModel,
+        // Judge runs on heavyModel: always use the real heavy model, never the light model, so judge reasoning quality is not silently degraded.
+        heavyModel,
         lightModel,
         tickIntervalMs: deriveCustomTickIntervalMs(input.dailyBudgetUsd ?? 5),
         enabledGates: { session: true, regime: true, contextHash: true, adaptiveInterval: true },
