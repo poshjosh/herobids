@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import type { AgentTool } from '@herobids/domain';
+import { FILE_MANAGEMENT_SKILL, LONG_RUNNING_TASK_SKILL, type AgentTool } from '@herobids/domain';
 import { filesystemTools } from './filesystem.js';
 import { webAccessTools } from './web-access.js';
 import { FILE_TOOL_PARAMS, findSignatureProblems, toolCall, toolSignature } from './tool-signature.js';
@@ -75,5 +77,20 @@ describe('signature drift', () => {
     expect(findSignatureProblems('read_file(path: "x", startLine: 3)')).toEqual([
       'read_file(path: "x", startLine: 3): unknown parameter "startLine"',
     ]);
+  });
+  describe('text drift', () => {
+    const docsDir = fileURLToPath(new URL('../../../../docs/tech/agents/tools/', import.meta.url));
+
+    it('keeps skill instructions free of unknown tool parameters', () => {
+      expect(findSignatureProblems(FILE_MANAGEMENT_SKILL.instructions)).toEqual([]);
+      expect(findSignatureProblems(LONG_RUNNING_TASK_SKILL.instructions)).toEqual([]);
+    });
+
+    it.each(['file-tools.md', 'README.md', 'audits/2026/06/001-tools-audit.md'])(
+      'keeps %s free of unknown tool parameters',
+      (file) => {
+        expect(findSignatureProblems(readFileSync(`${docsDir}${file}`, 'utf8'))).toEqual([]);
+      },
+    );
   });
 });

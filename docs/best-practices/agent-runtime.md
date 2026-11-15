@@ -108,3 +108,14 @@ Before merging any change that touches the tick loop, wake system, reconciler, o
 - Does this change emit `instance.context.snapshot` conditionally? Is the condition tight enough to prevent spurious emission on repeated error states?
 - Does this change introduce a new repeating failure mode (a loop that can run thousands of times)? Is that failure mode plumbed to the session circuit breaker?
 - Does the change pass `pnpm test` including the `SessionCircuitBreaker` unit tests?
+
+## File Tools And Read Limits
+
+The file tools (`read_file`, `read_file_lines`, `search_files`, `append_file`, `edit_file`, `list_files`, `delete_file`, `browse_url`) are bounded by operator config, not by literals in the tool code. See [File Tools](../tech/agents/tools/file-tools.md).
+
+- Every limit lives in `agentRuntime.tools.files` or `tools.webAccess` and is validated by Zod. Defaults live in the schema only. A value over its maximum returns an error that names the maximum; nothing is clamped silently.
+- A read returns at most one page (default 50,000 characters, max 500,000). The agent changes the size with `limit` or `maxChars`. A maximum page is about 125k tokens and can overflow a small-context model, so descriptions say so.
+- The workspace quota is soft, per tier, and enforced inside the container by the file tools. It is not a disk limit.
+- No tool deletes files automatically. A full web cache or workspace is reported to the agent, which frees space with `delete_file`.
+- Cost note: the four added file tool schemas and instruction lines are sent on every model call for agents with `file-management`. Measured sizes are in the feature [results](../features/2026/11/15/001-agent-file-tools/results.md). A change that adds a tool or lengthens a description must re-measure.
+- Tool results older than `toolResultFullRetentionTurns` are cut, and the marker states how much was kept. `maxToolResultChars` only limits the copy stored in history, not what the model sees in the current run.

@@ -274,6 +274,9 @@ Results
 | `file.reserved_path` | `checkReservedDir` refuses (write side) |
 | `file.not_found` | missing file or directory |
 | `file.is_directory` / `file.not_a_file` | path is a directory / not a regular file (FIFO, device) |
+| `file.not_a_directory` | `list_files` on a file (added in WP2) |
+| `file.not_text` | `edit_file` on a file that is not valid UTF-8, which an edit would corrupt (added in WP4) |
+| `file.delete_too_many` | recursive `delete_file` over `maxDeleteFiles` |
 | `file.too_large` | file larger than `maxFileBytes` on read, search or edit |
 | `file.write_too_large` | the write would take the file over `maxFileBytes` |
 | `file.content_too_long` | text over `writeMaxChars` |
@@ -424,7 +427,7 @@ params: {
 data: {
   path, startLine, endLine: number | null, totalLines,
   nextLine: number | null,      // pass back as `startLine`; null when done
-  truncated: boolean,           // true when nextLine !== null
+  truncated: boolean,           // nextLine !== null || lineCut (as built: a cut line is never "complete")
   lineCut?: true,               // one line was longer than the cap and was cut
   lineStartOffset?: number,     // only with lineCut: char offset of that line, for read_file
   content: string,              // lines exactly as in the file, original line endings kept
@@ -475,10 +478,14 @@ data: {
   The same lists are used by the quota walk (Design 8). An explicit `path` inside one of them is
   searched.
 - Hitting any limit returns the matches found so far with `incomplete: true`, the reason and where
-  it stopped. It is not an error. `max_matches` means "there may be more".
+  it stopped. It is not an error. As built, `max_matches` is reported only when a match beyond the
+  limit exists (exactly `maxMatches` matches is a complete result).
 - Literal search streams each file line by line (`StringDecoder`, carry the partial line) and uses
-  `indexOf` (lower-cased for `caseInsensitive`). A one-line 5 MiB JSON file is fine for literal
-  search (the whole line is one string).
+  `indexOf`. As built, `caseInsensitive` uses an escaped literal pattern with the `i` flag on the
+  main thread instead of lower-casing, because lower-casing can change a string's length and shift
+  the match index; an escaped literal cannot backtrack, so it needs no worker. One match is
+  reported per line (the first). A one-line 5 MiB JSON file is fine for literal search (the whole
+  line is one string).
 - Regex: the pattern is compiled on the main thread to give `search.invalid_pattern`. The main
   thread streams the lines. It sends batches of lines to one worker thread per call. The worker
   runs `RegExp.exec` and returns hit indexes. The main thread waits with the remaining deadline.
@@ -647,6 +654,7 @@ data: {
   nextOffset: number | null,    // only when savedTo is set
   savedTo?: string,             // "web-cache/<name>.txt"
   saveError?: string,           // the page was too long but could not be saved; says why and what to do
+  hint?: string,                // as built: present only with savedTo; the exact read_file call for the next page
   content: string,              // first page, last key
 }
 ```
@@ -895,7 +903,7 @@ The tool's `description` states the unit of every parameter and names its compan
 | WP4 | Write side | WP1 | DONE |
 | WP5 | `search_files` | WP1 | DONE |
 | WP6 | `browse_url` and web cache | WP1 | DONE |
-| WP7 | Docs and wrap-up | WP2 to WP6 | PENDING |
+| WP7 | Docs and wrap-up | WP2 to WP6 | DONE |
 
 Parallel after WP1: WP2, WP4, WP5 and WP6 touch mostly separate files and can run at the same
 time. Shared files with small, separate hunks: `filesystem.ts` (WP2, WP4), `tools.ts` and
@@ -928,8 +936,8 @@ tier value in the env; `RuntimeResourceProfile` carries the field.
 
 ### WP2. Read side
 
-1. `read_file`: new params and result; stream by characters; `file.*` codes; keep today's error
-   strings.
+1. `read_file`: new params and result; stream by characters; `file.*` codes. (As built, the error
+   strings come from `file-messages.ts` per Design 0a, not today's inline strings.)
 2. `read_file_lines` in a new module, re-exported from `filesystem.ts`.
 3. `list_files`: `offset`, `limit`, `totalEntries`, `nextOffset`, `truncated`.
 4. Tool descriptions (short, with the token-cost warning).
@@ -1436,3 +1444,8 @@ Status of each gate after the owner's review on 2026-11-15:
 - M: Cap and quota checks are not atomic across concurrent calls (slight overshoot); note under Known gaps in WP7.
 - M: With `sizeMb: 0`, a long page returns `truncated: true`, `nextOffset: null` and no `saveError`; agent cannot tell why the rest is missing.
 - L: Limit check runs before the capability check; byte-capped page can end in U+FFFD; new `hint` field must be documented in WP7; PDF memory near 1 MiB unverified (staging soak).
+
+### WP7. Docs and wrap-up
+- M: Platform-docs file-management entry is a hand-copied shorter version of `FILE_MANAGEMENT_SKILL.instructions`; not covered by drift test.
+- M: Drift test does not cover `agent-runtime.md`, `tool-access-and-sandboxing.md`, `permission-levels.md`.
+- L: Drift test uses relative doc path; platform-docs text points to a repo path the agent cannot read; `results.md` CHANGELOG wording; confirm `KNOWN_AGENT_TOOL_NAMES` reference in README.

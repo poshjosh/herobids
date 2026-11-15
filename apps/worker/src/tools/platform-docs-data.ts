@@ -1784,18 +1784,24 @@ Instructions:
     content: `
 File Management skill (id: file-management) — manage a per-agent workspace for intermediate files and outputs.
 
-Required tools: write_file, read_file, list_files, delete_file, stat_file.
+Required tools: write_file, append_file, edit_file, read_file, read_file_lines, search_files, list_files, delete_file, stat_file.
 
 Capability families: none.
 
 Binding requirements: none.
 
 Instructions:
-- Use write_file to create or overwrite a file under the agent workspace.
-- Use read_file to inspect file contents.
-- Use list_files to inspect workspace directories.
-- Use delete_file to remove files.
-- Use stat_file to check if a path exists, its type, and size.
+- You can create or overwrite a file with write_file(path, content) (up to 16,000 characters per call).
+- You can add text to the end of a file with append_file(path, content, ensureNewline?). Appending twice writes twice.
+- You can replace exact text with edit_file(path, oldText, newText, replaceAll?) without rewriting the file.
+- You can read a page of a file with read_file(path, offset?, limit?). It returns nextOffset when more remains.
+- You can read whole lines with read_file_lines(path, startLine?, limit?, maxChars?). It returns nextLine when more remains.
+- You can find text with search_files(path?, query, regex?, caseInsensitive?, maxMatches?, contextLines?). One match per line; literal unless regex is true.
+- You can inspect folders with list_files(path?, offset?, limit?).
+- You can remove files with delete_file(path, recursive?).
+- You can check a path with stat_file(path).
+- Long web pages that browse_url cuts are saved in web-cache/; read them with read_file.
+- Files up to 10 MiB can be opened; reads and searches return pieces, never the whole file at once. See the file tools reference (docs/tech/agents/tools/file-tools.md).
 
 Workspace rules:
 - Files persist across ticks in the same runtime.

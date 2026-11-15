@@ -136,6 +136,10 @@ Agent runtimes must run with:
 - bounded wall-clock execution per task or tool run
 - deterministic cleanup on timeout or policy violation
 
+The workspace folder has a soft, application-level disk quota per tier (`workspaceDiskMb`, passed to the container as `AGENT_WORKSPACE_QUOTA_MB`). The file tools refuse a write that would grow the workspace past it. It is not a hard limit: code run through `execute_code` or `execute_shell` is not stopped by it.
+
+The file tools also enforce their own limits, set in `agentRuntime.tools.files`: files up to 10 MiB, a per-call read cap (default 50,000 characters, max 500,000), a write cap of 16,000 characters per call and bounded search and list results. `browse_url` saves long pages to `web-cache/`, a plain workspace folder. The cache counts toward the quota, and no tool deletes anything automatically. Details and the error codes are in [File Tools](./tools/file-tools.md).
+
 Any code-execution feature must run without inheriting worker memory, host privileges, or secret-bearing mounts.
 
 Code execution should ship in the first agent release. In v1 it runs inside the agent container as a restricted local subprocess or sandbox, not as unconstrained execution inside the main agent process and not in a second dedicated code-execution container.

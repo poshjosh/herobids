@@ -15,6 +15,7 @@ All three levels run inside the same isolated Docker container. The container is
 | System packages (apk/apt) | No | No | Yes (root) |
 | Root access | No | No | Yes (sudo) |
 | Filesystem scope | Workspace + sandbox | Workspace + temp | Entire container |
+| File tools (`read_file`, `write_file`, `search_files`, ...) | Workspace only, within the soft quota | Workspace only, within the soft quota | Workspace only, within the soft quota |
 
 ## Level Details
 

@@ -189,3 +189,59 @@ Checks: focused tests (`web-access-browse.test.ts` 22 tests, `web-access.test.ts
 - Not verified live: real pages through Readability, the cache folder permissions in the container, and the stale hint in a real agent run.
 - `browse_url` prompt cost went up slightly (one more parameter and a longer description). The combined measure for all new schemas is left for WP7.
 - Not done here on purpose: docs, audit rows, CHANGELOG, platform docs index, skill instruction lines mentioning `web-cache/` (WP7).
+
+## WP7. Docs and wrap-up (done, not committed; status row stays PENDING)
+
+Checks: `tool-signature.test.ts` (20 tests, includes the new text drift tests); `pnpm lint`, `pnpm test` and `pnpm build` (results at the end of this section). No live stack, no infrastructure change, nothing staged or committed.
+
+### What was added or changed
+
+- `FILE_MANAGEMENT_SKILL.instructions` (`packages/domain/src/skills.ts`) rewritten in "You can..." style, one line per tool with its signature, plus one line about `web-cache/`. The hard-coded entry in `scripts/ts/build-docs-index.ts` was updated the same way (it also lacked the four new tools) and `platform-docs-data.ts` regenerated with `pnpm --filter @herobids/scripts run build-docs-index`; the diff is only the file-management entry.
+- New `docs/tech/agents/tools/file-tools.md` (visibility, tool table, result and paging fields, limits table with config keys, error table, quota, web cache, security notes, known gaps, not in scope) and `docs/tech/agents/tools/README.md` (page layout, error codes, message standard, signature style, discoverability, new-tool checklist).
+- Audit rows (`001-tools-audit.md`): updated `read_file`, `list_files`, `delete_file`, `browse_url`; added `read_file_lines`, `search_files`, `append_file`, `edit_file`, each with "Agent Has Info?".
+- `tool-access-and-sandboxing.md` ("Filesystem And Process Policy") and `permission-levels.md` (new file tools row) updated; new "File Tools And Read Limits" section in `docs/best-practices/agent-runtime.md`; `CHANGELOG.md` (one Added and one Changed entry).
+- Plan text brought in line with the build: `read_file_lines` `truncated`, `file.not_a_directory`, `file.not_text` and `file.delete_too_many` in the Design 0a code table, `browse_url` `hint` field, `search_files` case-insensitive handling and one match per line, `max_matches` semantics, WP2 step 1 wording.
+- New drift tests in `tool-signature.test.ts`: `findSignatureProblems` on both skills' instructions, `file-tools.md`, the tools `README.md` and the audit file.
+- Links: every relative link in the new and changed docs (including plan.md and results.md) resolves (checked with a script). `docs/best-practices/README.md` lists no tool docs, so it was not changed.
+
+### Prompt cost (measured)
+
+Method: temporary vitest test (deleted) building a `ToolRegistry` from `filesystemTools` and `webAccessTools`, then `JSON.stringify(getDefinitions(names))`. "Before" is commit `fae0d00c` (plan only, no WP code) in a temporary worktree (removed); "after" is the current tree. Characters, not tokens.
+
+| Item | Before | After | Change |
+|---|---|---|---|
+| `write_file` | 554 | 833 | +279 |
+| `read_file` | 458 | 848 | +390 |
+| `list_files` | 762 | 975 | +213 |
+| `delete_file` | 420 | 506 | +86 |
+| `stat_file` | 740 | 740 | 0 |
+| `append_file` (new) | 0 | 843 | +843 |
+| `edit_file` (new) | 0 | 1,027 | +1,027 |
+| `read_file_lines` (new) | 0 | 909 | +909 |
+| `search_files` (new) | 0 | 1,145 | +1,145 |
+| File tool schemas, total | 2,940 | 7,836 | +4,896 |
+| `browse_url` definition | 429 | 882 | +453 |
+| `file-management` instructions | 771 | 1,659 | +888 |
+| **Total** | 4,140 | 10,377 | **+6,237** |
+
+At 3.5 to 4 characters per token that is about 1,560 to 1,780 more tokens per model call for an agent with `file-management` and `web-access`; about 1,300 to 1,500 without `browse_url`. Against the 37.6k average per call in the baseline that is about 4 to 5% (the plan estimated 1,000 to 1,600 tokens for four tools and 3 to 4%). So the estimate was slightly low. Not measured: error and hint text (only sent on a result), the `long-running-task` skill (its instructions are unchanged by this work), tokenizer-exact counts.
+
+If the cost needs to come down, the first candidates are the `edit_file` and `search_files` descriptions and the `list_files` description (975 characters for a tool that did not need paging text).
+
+### Decisions and deviations
+
+1. The `file-management` instruction block now has signatures on every line (the plan asked for it). This made it 888 characters longer than a names-only version.
+2. The drift test reads docs by relative path from the test file (`../../../../docs/tech/agents/tools/`); it fails if a doc is moved.
+3. The audit "Agent Has Info?" for `read_file.path` and `delete_file.path` changed from **no** to **yes** because `list_files`, `search_files` and `browse_url` now give the agent a path source (Design 0c). The old rows said the agent had to know the path.
+4. `docs/best-practices/README.md` was left unchanged (it lists no tool docs).
+5. The plan's "Outstanding Issues" were not edited. The WP7-owned items are done (plan text, `hint` documented, known gaps listed). The rest stays open for the owner.
+
+### Known gaps recorded in `file-tools.md`
+
+Soft quota (not a disk limit, not enforced against `execute_code`); web-cache cap and quota check not atomic across concurrent calls; `append_file` not idempotent; ephemeral workspace; `write_file` and `append_file` not atomic; leftover `.write-*.tmp` files count toward the quota; symlink swap race unchanged; PDF extraction memory near 1 MiB unmeasured.
+
+### Unverified
+
+- No live run: the live checks in "Live verification and rollout" are for the owner.
+- Arabic and Hindi strings from WP3 still need native review.
+- Messages with call examples for paths of about 100 characters or more can pass the 350-character message cap (owner decision open from WP2).

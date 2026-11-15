@@ -251,15 +251,16 @@ export const FILE_MANAGEMENT_SKILL: SkillDefinition = {
   description: 'Manage a per-agent workspace for intermediate files and outputs.',
   instructions: `You have access to workspace file-management tools.
 
-- Use \`write_file\` to create or overwrite a file under the agent workspace (up to 16,000 characters per call).
-- Use \`append_file\` to add text to the end of a file in parts; appending twice writes twice.
-- Use \`edit_file\` to replace exact text in a file without rewriting it (oldText must match once, or set replaceAll).
-- Use \`read_file\` to read a page of a file (returns nextOffset when more remains).
-- Use \`read_file_lines\` to read whole lines of a large file from a line number (returns nextLine when more remains).
-- Use \`search_files\` to find text in a file or folder; it returns file, line and offset pointers, then read around a match with read_file_lines. Literal by default; set regex: true for a pattern.
-- Use \`list_files\` to inspect workspace directories and discover available files.
-- Use \`delete_file\` to remove files you no longer need; set recursive: true to remove a whole folder.
-- Use \`stat_file\` to check if a path exists, whether it is a file or directory, and its size before calling read_file, list_files, or delete_file.
+- You can create or overwrite a file with \`write_file(path, content)\` (up to 16,000 characters per call).
+- You can add text to the end of a file with \`append_file(path, content, ensureNewline?)\`. Appending twice writes twice.
+- You can replace exact text with \`edit_file(path, oldText, newText, replaceAll?)\` without rewriting the file. oldText must match once, or set replaceAll.
+- You can read a page of a file with \`read_file(path, offset?, limit?)\`. It returns nextOffset when more remains.
+- You can read whole lines of a large file with \`read_file_lines(path, startLine?, limit?, maxChars?)\`. It returns nextLine when more remains.
+- You can find text with \`search_files(path?, query, regex?, caseInsensitive?, maxMatches?, contextLines?)\`. It returns file, line and offset pointers, one match per line. Read around a match with read_file_lines. The search is literal unless regex is true.
+- You can inspect folders with \`list_files(path?, offset?, limit?)\`.
+- You can remove files with \`delete_file(path, recursive?)\`. Set recursive: true to remove a whole folder.
+- You can check a path with \`stat_file(path)\` (exists, file or folder, size) before reading, listing or deleting it.
+- Pages of long web pages are saved in web-cache/ when browse_url cuts them; read them with read_file.
 
 Workspace rules:
 - Workspace files persist across ticks in the same runtime.

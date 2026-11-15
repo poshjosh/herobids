@@ -89,9 +89,24 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 |------|-----|----------|-----------------|----------|
 | `write_file` | `path` | yes | **yes** | Agent chooses workspace-relative path |
 | `write_file` | `content` | yes | **yes** | Agent provides content |
-| `read_file` | `path` | yes | **no** | Must know the file path exists |
+| `read_file` | `path` | yes | **yes** | From `list_files`, `search_files` (`file`), `browse_url` (`savedTo`), or a name the agent chose earlier |
+| `read_file` | `offset` | no | **yes** | From `read_file` (`nextOffset`) or `search_files` (`offset`); default 0 |
+| `read_file` | `limit` | no | — | Characters per page; default 50,000, max 500,000 |
+| `read_file_lines` | `path` | yes | **yes** | Same sources as `read_file` |
+| `read_file_lines` | `startLine` | no | **yes** | From `search_files` (`line`), `read_file_lines` (`nextLine`), or `read_file` (`totalLines`); default 1 |
+| `read_file_lines` | `limit`, `maxChars` | no | — | Line count; character cap (default 50,000, max 500,000) |
+| `search_files` | `path` | no | — | Default: workspace root |
+| `search_files` | `query` | yes | **yes** | Agent composes the text or pattern |
+| `search_files` | `regex`, `caseInsensitive`, `maxMatches`, `contextLines` | no | — | Optional switches and limits |
+| `append_file` | `path` | yes | **yes** | Agent chooses a new or existing file |
+| `append_file` | `content`, `ensureNewline` | yes, no | **yes** | Agent provides the text; newline default true |
+| `edit_file` | `path` | yes | **yes** | Same sources as `read_file` |
+| `edit_file` | `oldText` | yes | **yes** | Copied from `read_file_lines` or `read_file` `content` |
+| `edit_file` | `newText`, `replaceAll` | yes, no | **yes** | Agent provides the replacement; `replaceAll` default false |
 | `list_files` | `path` | no | — | Default: "" (workspace root) |
-| `delete_file` | `path` | yes | **no** | Must know the file exists |
+| `list_files` | `offset`, `limit` | no | **yes** | `offset` from `list_files` (`nextOffset`); `limit` default 500, max 2,000 |
+| `delete_file` | `path` | yes | **yes** | From `list_files` or `stat_file` |
+| `delete_file` | `recursive` | no | — | Default false; true removes a folder and its contents |
 | `stat_file` | `path` | yes | **yes** | Agent knows paths from list_files; returns exists, isDir, size, mtime |
 
 ### Market Data Tools
@@ -138,6 +153,7 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 | `search_web` | `query` | yes | **yes** | Agent composes search query |
 | `search_web` | `maxResults` | no | — | Optional 1-10 |
 | `browse_url` | `url` | yes | **no** | Agent must know the URL to fetch |
+| `browse_url` | `limit` | no | — | Inline page size in characters; default 50,000, max 500,000. The rest is read from `savedTo` with `read_file` |
 | `read_document` | `url` | yes | **no** | Agent must know the document URL |
 
 ### Task Tools
