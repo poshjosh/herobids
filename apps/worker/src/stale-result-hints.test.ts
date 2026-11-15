@@ -17,4 +17,16 @@ describe('describeCutResult', () => {
     expect(describeCutResult({ toolName: 'list_positions', args: { path: 'a' }, originalContent: '{}' })).toBeUndefined();
     expect(describeCutResult({ toolName: undefined, args: {}, originalContent: '{}' })).toBeUndefined();
   });
+
+  it('adds the browse_url hint only when the page was saved', () => {
+    const saved = JSON.stringify({ url: 'https://a.example', savedTo: 'web-cache/a.example-abc.txt', content: 'x' });
+    const hint = describeCutResult({ toolName: 'browse_url', args: { url: 'https://a.example' }, originalContent: saved });
+    expect(hint).toContain('web-cache/a.example-abc.txt');
+    expect(hint).toContain('read_file_lines(path: "web-cache/a.example-abc.txt", startLine: 1, limit: 200)');
+    expect(describeCutResult({ toolName: 'browse_url', args: {}, originalContent: JSON.stringify({ url: 'https://a.example' }) })).toBeUndefined();
+  });
+
+  it('gives no browse_url hint when the old result is not JSON', () => {
+    expect(describeCutResult({ toolName: 'browse_url', args: {}, originalContent: 'browse_url failed: x' })).toBeUndefined();
+  });
 });

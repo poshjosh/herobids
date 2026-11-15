@@ -304,6 +304,16 @@ export function listCappedHint(shownCount: number, total: number, path: string, 
   return `Showing ${shownCount} of ${total}. Continue with ${toolCall('list_files', { path, offset: nextOffset })}.`;
 }
 
+/** The page could not be saved for a reason other than a full cache or workspace. */
+export function browseSaveFailedText(): string {
+  return `The page is longer than this result but could not be saved because of a file problem. Carry on with the first page, or call ${toolUse('browse_url', 'url')} again later.`;
+}
+
+/** Added to the cut marker of an old browse_url result that was saved to the web cache. */
+export function staleBrowseHint(savedTo: string): string {
+  return `The full page is saved at ${savedTo}. Read it with ${toolCall('read_file_lines', { path: savedTo, startLine: 1, limit: 200 })} or ${toolCall('read_file', { path: savedTo })}.`;
+}
+
 export function browseSaveErrorText(): string {
   return `The page is longer than this result and was not saved because the workspace or the web cache is full. Delete files you no longer need, for example old files in web-cache/, with ${toolUse('delete_file', 'path')}, then call ${toolUse('browse_url', 'url')} again with the same URL, or carry on with the first page.`;
 }

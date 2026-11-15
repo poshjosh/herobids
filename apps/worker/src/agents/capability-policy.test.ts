@@ -295,3 +295,13 @@ describe('buildCapabilityGrants — search_skills', () => {
     }));
   });
 });
+
+// ── browse_url fetch cap comes from config, not the grant ────────────────────
+
+describe('DEFAULT_CAPABILITY_GRANTS — browse_url', () => {
+  it('does not set maxResponseBytes, so the configured fetch cap applies', () => {
+    const grant = buildCapabilityPolicyEngine().getGrant('browse_url');
+    expect(grant).toBeDefined();
+    expect(grant?.limits?.maxResponseBytes).toBeUndefined();
+  });
+});

@@ -894,7 +894,7 @@ The tool's `description` states the unit of every parameter and names its compan
 | WP3 | Truncation marker | WP2 (hint targets) | DONE |
 | WP4 | Write side | WP1 | DONE |
 | WP5 | `search_files` | WP1 | DONE |
-| WP6 | `browse_url` and web cache | WP1 | PENDING |
+| WP6 | `browse_url` and web cache | WP1 | DONE |
 | WP7 | Docs and wrap-up | WP2 to WP6 | PENDING |
 
 Parallel after WP1: WP2, WP4, WP5 and WP6 touch mostly separate files and can run at the same
@@ -1430,3 +1430,9 @@ Status of each gate after the owner's review on 2026-11-15:
 - M: Single `incompleteReason` lets later reasons overwrite `max_depth`, hiding skipped deep folders.
 - L: No test for worker error/OOM path; no cap on concurrent regex workers; stat→open TOCTOU (consider `O_NOFOLLOW|O_NONBLOCK` + fstat); skipped binary/large files and huge readdir bounded only by deadline; update Design 3 text in WP7 (case-insensitive handling, one match per line).
 - Unverified: container image/worker start-up cost.
+
+### WP6. browse_url and web cache
+- M: `cacheFolderBytes` uses `join(root, dir)` rather than the resolved path; a symlinked `web-cache` could skew the size check. Add a test.
+- M: Cap and quota checks are not atomic across concurrent calls (slight overshoot); note under Known gaps in WP7.
+- M: With `sizeMb: 0`, a long page returns `truncated: true`, `nextOffset: null` and no `saveError`; agent cannot tell why the rest is missing.
+- L: Limit check runs before the capability check; byte-capped page can end in U+FFFD; new `hint` field must be documented in WP7; PDF memory near 1 MiB unverified (staging soak).

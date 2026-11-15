@@ -11,9 +11,7 @@ import { FILE_TOOL_PARAMS, findSignatureProblems, toolCall, toolSignature } from
  * The drift test below requires an entry to be REMOVED from this list as soon as the
  * tool's schema matches the map, so the guard cannot be forgotten.
  */
-const NOT_YET_IMPLEMENTED = new Set([
-  'browse_url', // WP6: limit
-]);
+const NOT_YET_IMPLEMENTED = new Set<string>([]);
 
 function schemaSignature(tool: AgentTool): string {
   const schema = tool.parametersSchema;

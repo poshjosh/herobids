@@ -122,7 +122,9 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     capability: 'browse_url',
     tier: 'direct',
     enabled: true,
-    limits: { maxPerMinute: 10, maxConcurrent: 3, timeoutMs: 20_000, maxResponseBytes: 512 * 1024 },
+    // No maxResponseBytes: a grant beats config, so the fetch cap comes from
+    // tools.webAccess.browseUrl.maxResponseBytes (a per-agent tool_policy can still set one).
+    limits: { maxPerMinute: 10, maxConcurrent: 3, timeoutMs: 20_000 },
   },
   {
     // execute_code runs locally inside the agent container (network-sandboxed by sandbox-exec.sh).

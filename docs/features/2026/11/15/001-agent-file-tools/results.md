@@ -156,3 +156,36 @@ Regex was attempted with the worker design and works, so none of the fallback cr
 - A 5 MiB single-line file is searched with a literal query in the test (about 40 ms, same test run).
 - Not verified: worker start-up cost in the container (not measured separately) and any live agent use. Prompt-cost measure of the new schema is left for WP7.
 - Not done here on purpose: `file-tools.md`, audit rows, CHANGELOG, platform docs index, signature drift check of skill instructions (WP7).
+
+## WP6. `browse_url` and the web cache (done, not committed; status row stays PENDING)
+
+Checks: focused tests (`web-access-browse.test.ts` 22 tests, `web-access.test.ts`, `web-access-denial-log.test.ts`, `stale-result-hints.test.ts`, `tool-signature.test.ts`, `capability-policy.test.ts`, `file-messages.test.ts`); `pnpm lint`, `pnpm test` (454 files passed, 8,667 tests passed, 48 files skipped as before) and `pnpm build` pass. No live stack, no infrastructure change, no automatic file deletion.
+
+### What was added
+
+- Default grant: `maxResponseBytes` removed from the `browse_url` grant (`capability-policy.ts`), so `tools.webAccess.browseUrl.maxResponseBytes` (1 MiB) now governs. A per-agent `tool_policy` still wins.
+- `browse_url` (`web-access.ts`): new `limit` param (coerced, `>= 1`; the maximum `readMaxChars` is checked in the body and gives `file.limit_too_large`, before the capability grant is used and before any fetch). Result key order: `url, title, truncated, sourceTruncated, totalChars, returnedChars, nextOffset, savedTo?, saveError?, hint?, content`. `truncated` now means "the inline text is cut"; the old meaning ("fetch cap hit") moved to `sourceTruncated`. Description states the units, the saved copy, companion tools (`toolUse`) and that page text is untrusted.
+- `web-cache.ts` (new): `webCacheFileName` (`<host-slug>-<sha256(finalUrl)[0..12]>.txt`) and `saveToWebCache`. Order: `sizeMb: 0` skips silently, cache cap (net growth for the same URL), workspace quota (`assertWithinQuota`), atomic write (`writeFileAtomic`). Nothing is ever deleted.
+- Messages (`file-messages.ts`): `browseSaveFailedText()` (non-capacity save failure), `staleBrowseHint(savedTo)`. The continue hint reuses `readFilePagedHint(savedTo, nextOffset)`. `browseSaveErrorText()` already existed from WP1.
+- `stale-result-hints.ts`: `browse_url` row. It parses the original result with a guarded `JSON.parse` and gives a hint only when `savedTo` is present.
+- `tool-signature.test.ts`: `browse_url` removed from `NOT_YET_IMPLEMENTED` (the set is now empty and kept for later use).
+- `read_document` shares the raised cap with no code change to its logic (it reads the same config key). Its fallback literal `512 * 1024` was replaced by the schema default (see 2).
+
+### Decisions and deviations
+
+1. When the page fits one page, `nextOffset` is `null` and nothing is written. When it does not fit and saving is skipped or fails, `nextOffset` is `null` too (it is only an offset into the saved file).
+2. The fetch-cap fallback literal in `browse_url` and `read_document` (`512 * 1024`) now comes from `WebAccessToolsConfigSchema.shape.browseUrl.parse(undefined)`, so the default lives only in the Zod schema (1 MiB). `search_web` is unchanged (still 256 KiB).
+3. A save failure that is not "cache or workspace full" (for example a permission error, or the cache path failing the workspace path check) is logged at warn level and returned as `saveError` using the new `browseSaveFailedText()`. The tool still succeeds with the first page. The plan names only the full-cache and quota cases; this keeps the other failures visible to the agent and in logs instead of failing the whole fetch.
+4. The cache folder size counts regular files directly inside `web-cache/` (non-recursive; the tool only writes there). A leftover `.write-<uuid>.tmp` from a crash counts, and the agent can delete it.
+5. Cached files are written by the runtime (root in the container) with default mode, so sandboxed code can read but not modify them. No chown (the plan asks for none).
+6. `limit` is validated before `checkAccess`/`recordStart`, so a bad limit does not use up a rate-limit slot. This differs from the other `browse_url` errors, which come after `recordStart`.
+7. The inline page is cut by code points (`sliceCodePoints`), so a surrogate pair is never split. A page cut by the byte cap (`Buffer.slice` + `toString`) can still end in U+FFFD, as before.
+8. `maxResponseBytes` is read at module load in `web-access.ts` (existing behaviour), so the config-cap test uses `vi.resetModules()` and a fresh import.
+9. No capability manifest row was added (no new tool).
+
+### Measured / unverified
+
+- Not measured: PDF text extraction memory for a PDF near 1 MiB (the test only checks that a 700 KiB response is fetched and returned; extraction fails on the zero-filled body and returns empty text). Plan says to measure during the staging soak.
+- Not verified live: real pages through Readability, the cache folder permissions in the container, and the stale hint in a real agent run.
+- `browse_url` prompt cost went up slightly (one more parameter and a longer description). The combined measure for all new schemas is left for WP7.
+- Not done here on purpose: docs, audit rows, CHANGELOG, platform docs index, skill instruction lines mentioning `web-cache/` (WP7).

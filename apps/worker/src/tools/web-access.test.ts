@@ -253,7 +253,7 @@ describe('browse_url tool', () => {
     expect(data.content.length).toBeGreaterThan(0);
   });
 
-  it('sets truncated=true when response body exceeds maxResponseBytes', async () => {
+  it('sets sourceTruncated=true (and truncated=false) when the fetch cap cuts a short page', async () => {
     vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
     vi.mocked(resolve6).mockResolvedValue([]);
 
@@ -288,8 +288,9 @@ describe('browse_url tool', () => {
     const result = await browseUrlTool.execute({ url: 'https://example.com/big' }, makeContext({ capabilityEngine }));
 
     expect(result.success).toBe(true);
-    const data = result.data as { truncated: boolean; content: string };
-    expect(data.truncated).toBe(true);
+    const data = result.data as { truncated: boolean; sourceTruncated: boolean; content: string };
+    expect(data.sourceTruncated).toBe(true);
+    expect(data.truncated).toBe(false);
     expect(Buffer.byteLength(data.content, 'utf8')).toBeLessThanOrEqual(256);
   });
 
