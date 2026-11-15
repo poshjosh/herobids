@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Fixed
+- `infra/hetzner/scripts/maintenance-restart.sh` no longer exits silently after the memory check. Since its runtime detection was added (`6aa925d7`, in v0.10.0) it read a `NOMAD_NAMESPACE` `.env` key that no environment has, and the grep miss under `set -euo pipefail` ended the script on every server. Missing `.env` keys now read as empty; the namespace comes from `NOMAD_AGENT_NAMESPACE` (default `herobids-agents`, matching `config/default.yaml`). With `RUNTIME_BACKEND=nomad` and Nomad unusable, the script now exits with the reason before stopping any agent, instead of marking agents stopped and falling back to a `docker stop` that cannot reach them. Test: `infra/hetzner/scripts/tests/test-maintenance-restart-runtime.sh`. See docs/bug-reports/2026/11/15/004-maintenance-restart-exits-silently-after-memory-check.md.
 
 ## v0.10.0 - 2026-11-15
 

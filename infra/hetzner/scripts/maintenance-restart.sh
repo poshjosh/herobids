@@ -34,6 +34,15 @@
 #   DEPLOY_REF      Git ref to deploy in the deploy step (default: origin/main).
 #                   Set it when the server runs a non-main branch, or the reset
 #                   moves the checkout back to main.
+#   RUNTIME_BACKEND, NOMAD_ADDR, NOMAD_TOKEN
+#                   Read from ${HEROBIDS_ROOT:-/opt/herobids}/.env when not set.
+#                   With RUNTIME_BACKEND=nomad, agents are stopped by purging
+#                   their Nomad jobs, and the script exits before stopping
+#                   anything if Nomad is unusable. Otherwise agent containers
+#                   are docker-stopped.
+#   NOMAD_AGENT_NAMESPACE
+#                   Nomad namespace of agent jobs (default: herobids-agents, the
+#                   config/default.yaml nomad.namespace value).
 #
 # Cron (server-side, 2am every Sunday — edit /etc/cron.d/herobids or crontab):
 #   0 2 * * 0 root /opt/herobids/infra/hetzner/scripts/maintenance-restart.sh \
@@ -125,13 +134,28 @@ PG() { docker exec herobids-postgres-1 psql -U herobids -d herobids -t -q "$@"; 
 # spec — briefly running the agent on the old image / old browser-pool URL until
 # Step 5 re-registers it. Stopping the Nomad JOB (purge) instead removes it with
 # no reschedule, matching the worker's own stop path
-# (NomadRuntimeAdapter.stop → DELETE /v1/job/<id>?purge=true). Values are read
-# from the uploaded /opt/herobids/.env; namespace falls back to the config
-# default (packages/domain/src/config/schema.ts → nomad.namespace).
-RUNTIME_BACKEND="${RUNTIME_BACKEND:-$(grep -E '^RUNTIME_BACKEND=' "${ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')}"
-NOMAD_ADDR="${NOMAD_ADDR:-$(grep -E '^NOMAD_ADDR=' "${ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')}"
-NOMAD_TOKEN="${NOMAD_TOKEN:-$(grep -E '^NOMAD_TOKEN=' "${ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')}"
-NOMAD_AGENT_NAMESPACE="${NOMAD_AGENT_NAMESPACE:-$(grep -E '^NOMAD_NAMESPACE=' "${ROOT}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')}"
+# (NomadRuntimeAdapter.stop → DELETE /v1/job/<id>?purge=true).
+#
+# RUNTIME_BACKEND / NOMAD_ADDR / NOMAD_TOKEN are read from the uploaded
+# /opt/herobids/.env (setup-env.sh) — the same file compose hands the worker via
+# env_file, so an unset RUNTIME_BACKEND means the worker is on its 'docker'
+# default too, and docker stop is the right path.
+#
+# The namespace is NOT read from .env: the worker takes it from operator config
+# (config/default.yaml → nomad.namespace) and has no env override for it, so a
+# .env key would let this script and the worker disagree. Override with
+# NOMAD_AGENT_NAMESPACE only if that config value was changed.
+#
+# env_file_value <KEY> — print KEY's value from .env, or nothing when it is unset.
+# Always returns 0: under `set -euo pipefail` a grep miss (exit 1) inside a
+# command substitution aborts the script with no message (bug report
+# 2026/11/15/004), and any key may legitimately be absent.
+env_file_value() {
+  { grep -E "^$1=" "${ROOT}/.env" 2>/dev/null || true; } | head -1 | cut -d= -f2- | tr -d '[:space:]'
+}
+RUNTIME_BACKEND="${RUNTIME_BACKEND:-$(env_file_value RUNTIME_BACKEND)}"
+NOMAD_ADDR="${NOMAD_ADDR:-$(env_file_value NOMAD_ADDR)}"
+NOMAD_TOKEN="${NOMAD_TOKEN:-$(env_file_value NOMAD_TOKEN)}"
 NOMAD_AGENT_NAMESPACE="${NOMAD_AGENT_NAMESPACE:-herobids-agents}"
 export NOMAD_ADDR NOMAD_TOKEN
 
@@ -143,6 +167,20 @@ nomad_available() {
   command -v nomad >/dev/null 2>&1 || return 1
   [[ -n "${NOMAD_ADDR}" ]] || return 1
   nomad status >/dev/null 2>&1
+}
+
+# nomad_unavailable_reason — one line saying why nomad_available failed while
+# RUNTIME_BACKEND=nomad. Always returns 0 (safe inside $(...) under set -e).
+nomad_unavailable_reason() {
+  if ! command -v nomad >/dev/null 2>&1; then
+    echo "the nomad CLI is not installed on this host"
+  elif [[ -z "${NOMAD_ADDR}" ]]; then
+    echo "NOMAD_ADDR is empty"
+  else
+    local out
+    out="$(nomad status 2>&1 || true)"
+    echo "'nomad status' failed against ${NOMAD_ADDR}: $(printf '%s' "${out}" | tail -n 1)"
+  fi
 }
 
 # stop_agent_nomad_job <agentId> — purge the agent's Nomad job (no reschedule).
@@ -321,6 +359,17 @@ fi
 if [[ $AGENT_COUNT -gt 0 ]]; then
   log "Step 2 — Stopping agents..."
 
+  # Pick the stop path BEFORE touching the DB. On the Nomad runtime the agents
+  # run on agent nodes (the control plane has `client { enabled = false }`), so
+  # docker stop here finds nothing: the DB would say "stopped" while the jobs
+  # keep running on the old image. Refuse instead of falling back.
+  STOP_VIA_NOMAD=false
+  if nomad_available; then
+    STOP_VIA_NOMAD=true
+  elif [[ "${RUNTIME_BACKEND}" == "nomad" ]]; then
+    die "RUNTIME_BACKEND=nomad but Nomad cannot be used: $(nomad_unavailable_reason). No agents were stopped. Check NOMAD_ADDR and NOMAD_TOKEN in ${ROOT}/.env (setup-env.sh uploads it)."
+  fi
+
   IN_LIST=$(printf "'%s'," "${AGENT_IDS[@]}" | sed 's/,$//')
 
   # Update DB first so that any heartbeats arriving while containers are still
@@ -338,12 +387,10 @@ if [[ $AGENT_COUNT -gt 0 ]]; then
   "
   ok "DB: sessions and agents marked stopped."
 
-  # Prefer stopping the Nomad JOB on the Nomad runtime (no reschedule of the
-  # stale spec). Fall back to stopping the container by the herobids.agentId
-  # label (SIGTERM, then SIGKILL after 10 s) — the correct path for the Docker
-  # backend. Matching by name does not work on Nomad (containers are named
-  # agent-<allocId>); the label is set by both backends.
-  if nomad_available; then
+  # Nomad runtime: stop the Nomad JOB (purge, so the stale spec is not
+  # rescheduled). Docker runtime: stop the container by the herobids.agentId
+  # label (SIGTERM, then SIGKILL after 10 s).
+  if [[ "${STOP_VIA_NOMAD}" == "true" ]]; then
     log "  Runtime backend: nomad — stopping agent jobs (purge) in namespace ${NOMAD_AGENT_NAMESPACE}."
     STOPPED=0
     for AGENT_ID in "${AGENT_IDS[@]}"; do
@@ -354,8 +401,6 @@ if [[ $AGENT_COUNT -gt 0 ]]; then
     done
     ok "Nomad agent jobs stopped: ${STOPPED} (of ${AGENT_COUNT} agent(s))."
   else
-    [[ "${RUNTIME_BACKEND}" == "nomad" ]] \
-      && warn "  Nomad backend selected but the Nomad CLI/server is unavailable — falling back to docker stop (the stale-spec reschedule caveat applies)."
     STOPPED=0
     for AGENT_ID in "${AGENT_IDS[@]}"; do
       mapfile -t AGENT_CONTAINERS < <(docker ps -q --filter "label=herobids.agentId=${AGENT_ID}")
@@ -398,7 +443,7 @@ if [[ "${DO_DEPLOY}" == "true" ]]; then
   # Source it from the uploaded /opt/herobids/.env (setup-env.sh) so both `docker
   # build` and `docker compose up --build` see it; never bake it into the image.
   if [[ -z "${NPM_TOKEN:-}" ]]; then
-    NPM_TOKEN="$(grep -E '^NPM_TOKEN=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+    NPM_TOKEN="$(env_file_value NPM_TOKEN)"
   fi
   if [[ -n "${NPM_TOKEN:-}" ]]; then
     export NPM_TOKEN
