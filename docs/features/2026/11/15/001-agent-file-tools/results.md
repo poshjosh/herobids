@@ -116,3 +116,43 @@ Checks: focused tests (`file-write-tools.test.ts`, 47 tests; `filesystem.test.ts
 - `chown` preservation cannot be proven in unit tests (runs as a normal user); the mode copy is tested. Live check needed in the container (root runtime, file made by user `agent`).
 - `delete_file` descriptions and the audit table row were not updated here (docs are WP7); the catalog text was.
 - Not done in WP4 on purpose: `file-tools.md`, audit rows, CHANGELOG, platform docs index (WP7).
+
+## WP5. `search_files` (done, not committed; status row stays PENDING)
+
+Checks: focused tests (`search-files.test.ts`, 42 tests, run three times with no flake; `file-messages.test.ts`, `tool-signature.test.ts`, `stale-result-hints.test.ts`); `pnpm lint`, `pnpm test` (453 files passed, 8,642 tests passed, 48 files skipped as before) and `pnpm build` pass.
+
+### Decision: regex ships (no literal-only fallback)
+
+Regex was attempted with the worker design and works, so none of the fallback criteria in Design 3 applies:
+- (a) The worker runs from an `eval: true` CommonJS string (`line-matcher.ts`), so there is no extra file to resolve. It runs under vitest here. The built `dist/tools/line-matcher.js` also runs under plain `node` (a regex matcher created and closed, worker count back to 0). Not checked: `tsx` dev and the agent container image (no live stack); it uses only `node:worker_threads`, so I expect no difference.
+- (b) `worker.terminate()` stopped `(a+)+$` on a 40-character line within the 400 ms test deadline (total test time about 400 ms), and the worker count returns to 0.
+- (c) The timeout test passed on all runs (3 repeated runs plus the first run), no flakiness.
+
+### What was added
+
+- `line-matcher.ts`: `createLiteralMatcher` (main thread) and `createRegexMatcher` (one worker per search, created on the first batch, `maxOldGenerationSizeMb` 64, terminated on timeout, error, exit or `close()`). `getActiveRegexWorkerCount()` for tests.
+- `search-scan.ts`: `SearchRun` (sorted depth-first walk, symlinks never followed, batching of 500 lines / 256 K characters, limits, context lines, match windows, character offsets).
+- `search-files.ts`: the tool, registered in `filesystemTools` (category `read-filesystem`, so the scout gets it with no code change).
+- Wiring: `KNOWN_AGENT_TOOL_NAMES`, `TOOL_CATALOG`, `FILE_MANAGEMENT_SKILL` (requiredTools plus one instruction line) and `LONG_RUNNING_TASK_SKILL.requiredTools`, both `WORKSPACE_CONTEXT_TOOL_NAMES` sets, `search_files` removed from `NOT_YET_IMPLEMENTED` in `tool-signature.test.ts`, a `search_files` row (`core`) in the capability manifest doc, and the `search_files` row in `stale-result-hints.ts` (`staleSearchHint()` in `file-messages.ts`).
+- Messages: `searchStopReason()` (plain-words reason for the incomplete hint), `staleSearchHint()`, and `limitTooLarge(..., { forSearch: true })`.
+
+### Decisions and deviations
+
+1. Case-insensitive literal search uses an escaped pattern with the `i` flag on the main thread, not `indexOf` on lower-cased text as Design 3 says. Lower-casing can change a string's length, which makes the match index wrong; the escaped literal cannot backtrack, so it needs no worker.
+2. One match is reported per line (the first). The plan's result shape has one `offset` and one `line` per match, and a second match on the same line would only repeat the pointer. Stated in the tool description.
+3. `max_matches` is only reported when a match beyond the limit exists (the search reads on to find it). `stoppedAt` is that extra match's line. With exactly `maxMatches` matches the result is complete. This differs from the plan's looser "there may be more".
+4. The text cap is `defaultResultChars` (8,000) when `maxMatches <= defaultMatches`, and `readDefaultChars` (50,000) when the agent asks for more. It counts the JSON size of each match; the "after" context lines are added later and can pass the cap by a few hundred characters. A single match is always returned even if it alone passes the cap.
+5. `query` length, `maxMatches`, `contextLines` and the regex pattern length are checked in the tool body against config (they are config values, so not in the static Zod schema). The first three return `file.limit_too_large` (new `forSearch` wording); a pattern that is too long returns `search.invalid_pattern` with the numbers. A multi-line query is refused by the Zod schema (`/^[^\r\n]+$/`).
+6. A worker error (for example out of memory) is reported as `regex_timeout` after a warn log. The plan's reason list has no separate value and the effect for the agent is the same (stop, narrow the pattern).
+7. Regex flags are `i` only (no `u`), so patterns that are valid JavaScript without the Unicode flag work. `.` can therefore match half of a surrogate pair; offsets are converted to code points so they stay correct.
+8. A start path that is a file larger than `maxFileBytes` returns `file.too_large` (more useful than a silent skip). Files over the limit found during a folder walk are skipped and counted in `skippedLarge`.
+9. A folder or file that cannot be read during the walk (vanished, permission denied) is skipped with a warn log; the search goes on. Only the start path's errors are returned to the agent (`fromFsError`).
+10. Lines split on `\n`; a trailing `\r` is removed from the returned text and from regex input so `$` works on CRLF files.
+11. `search_files` stale hint is one fixed string with no dependency on the call args (Design 10: "run again with a narrower query or path").
+
+### Measured / unverified
+
+- Catastrophic pattern `(a+)+$` on `a` x 40 + `b`: stopped at the 400 ms test deadline; worker count 0 afterwards.
+- A 5 MiB single-line file is searched with a literal query in the test (about 40 ms, same test run).
+- Not verified: worker start-up cost in the container (not measured separately) and any live agent use. Prompt-cost measure of the new schema is left for WP7.
+- Not done here on purpose: `file-tools.md`, audit rows, CHANGELOG, platform docs index, signature drift check of skill instructions (WP7).

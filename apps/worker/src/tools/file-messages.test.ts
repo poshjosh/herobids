@@ -142,6 +142,21 @@ describe('file messages', () => {
       expect(hint).toContain('max 200');
     });
 
+    it('describes each search stop reason in plain words with the real limits', () => {
+      const limits = { maxFiles: 500, maxDepth: 8 };
+      expect(messages.searchStopReason('max_files', limits)).toContain('500 files');
+      expect(messages.searchStopReason('max_depth', limits)).toContain('8 levels');
+      expect(messages.searchStopReason('regex_timeout', limits)).toContain('too long');
+      expect(messages.searchStopReason('deadline', limits)).toContain('time limit');
+    });
+    it('points a limit error on a search to a smaller value or a narrower search', () => {
+      const result = messages.limitTooLarge('maxMatches', 500, 200, { forSearch: true });
+      expect(result.error).toContain('search_files(path, query)');
+      expect(findSignatureProblems(result.error ?? '')).toEqual([]);
+    });
+    it('tells the agent to rerun a stale search narrower', () => {
+      expect(messages.staleSearchHint()).toBe('Run search_files(path, query) again with a narrower query or path.');
+    });
     it('continues a capped list with the next offset', () => {
       expect(messages.listCappedHint(500, 1200, 'notes', 500)).toContain('list_files(path: "notes", offset: 500)');
     });

@@ -13,6 +13,7 @@ import * as messages from './file-messages.js';
 import { readCharPage } from './file-text.js';
 import { checkWriteBudget, checkWriteChars, resolveWritableTarget } from './file-write.js';
 import { readFileLinesTool } from './read-file-lines.js';
+import { searchFilesTool } from './search-files.js';
 import { toolUse } from './tool-signature.js';
 import { getWorkspacePaths, ensureWorkspaceDirs, resolveWorkspacePath } from './workspace.js';
 
@@ -249,6 +250,7 @@ export const filesystemTools: AgentTool[] = [
   editFileTool,
   readFileTool,
   readFileLinesTool,
+  searchFilesTool,
   listFilesTool,
   deleteFileTool,
   statFileTool,

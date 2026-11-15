@@ -13,7 +13,6 @@ import { FILE_TOOL_PARAMS, findSignatureProblems, toolCall, toolSignature } from
  */
 const NOT_YET_IMPLEMENTED = new Set([
   'browse_url', // WP6: limit
-  'search_files', // WP5
 ]);
 
 function schemaSignature(tool: AgentTool): string {

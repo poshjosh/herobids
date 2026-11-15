@@ -179,6 +179,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'resolve_watch',
   'schedule_reminder',
   'search_app_docs',
+  'search_files',
   'search_skills',
   'search_tokens',
   'search_web',
@@ -304,6 +305,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   // read-filesystem
   read_file:           { category: 'read-filesystem',     description: 'Read a page of text from a file in the agent workspace (up to 10 MiB files, paged by characters).' },
   read_file_lines:     { category: 'read-filesystem',     description: 'Read whole lines of a file in the agent workspace starting at a line number, with a character cap per call.' },
+  search_files:        { category: 'read-filesystem',     description: 'Search text in a workspace file or folder. Returns pointers (file, line, character offset, the matching line), not whole files. Literal by default; regex is opt-in.' },
   list_files:          { category: 'read-filesystem',     description: 'List files and directories in the agent workspace.' },
   stat_file:           { category: 'read-filesystem',     description: 'Get metadata about a file/directory: exists, type, size, modification time.' },
   read_skill:          { category: 'read-filesystem',     description: "Load an external skill's full instructions by its ref. The prompt lists external skills by name and description; read_skill loads the one you need for the rest of the session." },

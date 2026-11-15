@@ -138,10 +138,17 @@ export function contentTooLong(
   );
 }
 
-export function limitTooLarge(name: string, value: number, max: number, options: { forList?: boolean } = {}): ToolResult {
+export function limitTooLarge(
+  name: string,
+  value: number,
+  max: number,
+  options: { forList?: boolean; forSearch?: boolean } = {},
+): ToolResult {
   const next = options.forList
     ? `Page through a long folder with ${toolUse('list_files', 'path', 'offset', 'limit')}.`
-    : `For large files use ${toolUse('read_file_lines', 'path', 'startLine', 'limit')} or ${toolUse('search_files', 'path', 'query')}.`;
+    : options.forSearch
+      ? `Use a smaller value, or narrow the search with ${toolUse('search_files', 'path', 'query')}.`
+      : `For large files use ${toolUse('read_file_lines', 'path', 'startLine', 'limit')} or ${toolUse('search_files', 'path', 'query')}.`;
   return agentError('file.limit_too_large', `${name} ${value} is above the maximum ${max}. ${next}`);
 }
 
@@ -266,8 +273,27 @@ export function staleReadHint(path: string): string {
   return `Read it again with ${toolCall('read_file_lines', { path, startLine: 1, limit: 200 })} or ${toolCall('read_file', { path })}.`;
 }
 
+/** Added to the cut marker of an old search_files result. */
+export function staleSearchHint(): string {
+  return `Run ${toolUse('search_files', 'path', 'query')} again with a narrower query or path.`;
+}
+
 export function searchMatchesHint(file: string, line: number): string {
   return `Read around a match with ${toolCall('read_file_lines', { path: file, startLine: Math.max(line - 5, 1), limit: 20 })}.`;
+}
+
+/** Plain-words reason for an incomplete search, used in `searchIncompleteHint`. */
+export function searchStopReason(reason: string, limits: { maxFiles: number; maxDepth: number }): string {
+  switch (reason) {
+    case 'max_matches': return 'more matches may exist';
+    case 'result_chars': return 'the result text limit was reached';
+    case 'max_files': return `the limit of ${limits.maxFiles} files per search was reached`;
+    case 'max_bytes': return 'the scan size limit was reached';
+    case 'deadline': return 'the time limit was reached';
+    case 'max_depth': return `some folders are deeper than ${limits.maxDepth} levels and were not searched`;
+    case 'regex_timeout': return 'the pattern took too long to run';
+    default: return reason;
+  }
 }
 
 export function searchIncompleteHint(reason: string, maxMatchesLimit: number): string {

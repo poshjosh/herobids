@@ -1,4 +1,4 @@
-import { staleReadHint } from './tools/file-messages.js';
+import { staleReadHint, staleSearchHint } from './tools/file-messages.js';
 
 export interface CutResultInfo {
   toolName: string | undefined;
@@ -14,10 +14,11 @@ const readHint: HintBuilder = ({ args }) => {
   return typeof path === 'string' && path.length > 0 ? staleReadHint(path) : undefined;
 };
 
-// search_files and browse_url rows are added with those tools (WP5, WP6).
+// The browse_url row is added with that tool (WP6).
 const HINTS_BY_TOOL: Readonly<Record<string, HintBuilder>> = {
   read_file: readHint,
   read_file_lines: readHint,
+  search_files: () => staleSearchHint(),
 };
 
 /** Hint for the cut marker of a stale tool result, or undefined when a re-read is not cheap. */

@@ -893,7 +893,7 @@ The tool's `description` states the unit of every parameter and names its compan
 | WP2 | Read side | WP1 | DONE |
 | WP3 | Truncation marker | WP2 (hint targets) | DONE |
 | WP4 | Write side | WP1 | DONE |
-| WP5 | `search_files` | WP1 | PENDING |
+| WP5 | `search_files` | WP1 | DONE |
 | WP6 | `browse_url` and web cache | WP1 | PENDING |
 | WP7 | Docs and wrap-up | WP2 to WP6 | PENDING |
 
@@ -1424,3 +1424,9 @@ Status of each gate after the owner's review on 2026-11-15:
 - M: `fromFsError` default branch echoes `error.message` (may leak absolute container paths); add ENOTDIR mapping and use the error code instead; add a test.
 - L: `z.boolean()` rejects string "true" (fails closed); crash leaves `.write-*.tmp` files counting toward quota; hard links broken by rename; no "deleted so far" count on partial `fs.rm` failure; `write_file` not atomic; check order cosmetic; small races accepted.
 - Unverified: `chown` preservation (needs live root run), peak memory for a 10 MiB edit.
+
+### WP5. search_files
+- M: `regex_timeout` is reported when the overall 3 s deadline elapses (includes worker start-up); use a distinct reason or `deadline`.
+- M: Single `incompleteReason` lets later reasons overwrite `max_depth`, hiding skipped deep folders.
+- L: No test for worker error/OOM path; no cap on concurrent regex workers; stat→open TOCTOU (consider `O_NOFOLLOW|O_NONBLOCK` + fstat); skipped binary/large files and huge readdir bounded only by deadline; update Design 3 text in WP7 (case-insensitive handling, one match per line).
+- Unverified: container image/worker start-up cost.

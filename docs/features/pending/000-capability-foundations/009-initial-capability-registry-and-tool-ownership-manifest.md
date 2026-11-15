@@ -206,6 +206,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `search_app_docs` | `core` | Platform documentation access. |
 | `search_skills` | `core` | Agent skill discovery. |
 | `search_tokens` | `external:trading` | Trading market discovery. |
+| `search_files` | `core` | Agent workspace operation. |
 | `search_web` | `general` | Reusable web-research expertise. |
 | `send_email` | `native:messaging` | Provider-linked message delivery. |
 | `send_message` | `native:messaging` | Brokered platform message delivery. |
