@@ -408,7 +408,7 @@ await skillsRoutes(app, db, appConfig.plans, (() => {
   }, app.log);
 })());
 await datasetRoutes(app, db, redisClient);
-await agentDocumentRoutes(app, db);
+await agentDocumentRoutes(app, db, redisClient, conversationDeps);
 // Agent trading-evidence exports source fills/journal/positions over the
 // Traderton read boundary, bound per-request to the requesting user's subject.
 // The read client is the same boundary client used for user-initiated writes.

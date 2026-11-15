@@ -1,14 +1,17 @@
 import type { FastifyInstance } from 'fastify';
+import type { Redis } from 'ioredis';
+import { resolve } from 'node:path';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '@herobids/db';
 import { agents, AgentDocumentsRepository } from '@herobids/db';
-import { AgentDocumentService, readAgentDocumentPage } from '@herobids/documents';
+import { AgentDocumentService, buildDocumentNoticeText, readAgentDocumentPage } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { errorPayload } from '../error-payload.js';
 import { requireSelfAgentOrUser } from '../plugins/auth.js';
-import { resolve } from 'node:path';
+import { createConversationRouteDeps, type ConversationRouteDeps } from './conversation-http.js';
+import { ChatInboundRouter } from './chat-inbound-router.js';
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -29,11 +32,60 @@ const uploadFileSchema = z.object({
 export async function agentDocumentRoutes(
   app: FastifyInstance,
   db: Database,
+  redisClient: Redis,
+  // The default is for tests only. The real caller (apps/api/src/index.ts) must pass the one shared
+  // `conversationDeps` it also gives agentInteractivityRoutes and peerThreadRoutes — otherwise this route
+  // builds its own ConversationService with schema-default limits instead of appConfig.messaging.conversations,
+  // and a second service instance where the rest of the app shares one.
+  conversationRouteDeps: ConversationRouteDeps = createConversationRouteDeps(db),
 ): Promise<void> {
   const repo = new AgentDocumentsRepository(db);
   const store = new LocalDocumentStore(AGENT_DOCUMENTS_DIR);
   const textExtractor = createDocumentTextExtractor();
   const service = new AgentDocumentService(store, textExtractor, repo);
+  const conversations = conversationRouteDeps.service;
+  const chatRouter = new ChatInboundRouter();
+
+  /**
+   * Tells the agent a document exists: records a short, human-readable row in the conversation (what the web
+   * thread shows the creator — "Uploaded cv.pdf", not a tool instruction), then publishes the full
+   * `read_agent_document` notice to the agent's inbound stream under that row's id, then marks the row's
+   * delivery. This mirrors the web-chat attachment path (`agent-interactivity.ts`): the stored row there is
+   * the user's own typed caption (or nothing), and the full notice text exists only in the published Redis
+   * envelope, never written back to the row. A record failure, or a publish failure (marked `failed` rather
+   * than left `queued`), is logged and swallowed — the document is already stored and extracted regardless.
+   *
+   * The caption is intentionally not shown to the agent a second time as a row body: `recorded.data.message.id`
+   * is reused as the published envelope's `messageId` (see `chat-inbound-router.ts`'s `deliver`), and the agent
+   * only ever reads the published text. A restart's `hydrateConversationWindow` rebuilds the window purely from
+   * stored rows, so after a restart only the caption reappears, not the full notice — the same way a restart
+   * loses the full notice text on the chat path too (confirmed in the bug report's investigation).
+   * Bug: docs/bug-reports/2026/11/15/003-agent-document-upload-via-control-plane-never-notifies-agent.md
+   */
+  async function notifyAgentOfDocument(agentId: string, userId: string, documentId: string, filename: string): Promise<void> {
+    const caption = `Uploaded ${filename}`;
+    const noticeText = buildDocumentNoticeText({ documentId, filename, caption });
+    const recorded = await conversations.recordUserMessage({ ownerUserId: userId, agentId, channel: 'web', body: caption });
+    if (!recorded.ok) {
+      app.log.warn({ agentId, documentId, code: recorded.error.code }, 'Failed to record document notice in agent conversation');
+      return;
+    }
+    const messageId = recorded.data.message.id;
+    try {
+      await chatRouter.deliver(agentId, userId, noticeText, redisClient, messageId, recorded.data.message.queuedAt);
+    } catch (err) {
+      app.log.warn({ err, agentId, documentId, messageId }, 'Failed to publish document notice to agent stream');
+      const marked = await conversations.markDelivery({ messageId, status: 'failed', detail: 'publish_failed' });
+      if (!marked.ok) app.log.warn({ agentId, documentId, code: marked.error.code }, 'could not mark document notice as failed');
+      return;
+    }
+    // One attempt, deliberately: the agent already has the notice (the publish above succeeded), so a failed
+    // mark here only means the thread shows "queued" a little longer, not that anything was lost. Telegram's
+    // `ChatInboundRouter.markSent` retries 3 times because it is the only record of "did the agent get this";
+    // that stronger guarantee isn't needed for a document upload's own row.
+    const marked = await conversations.markDelivery({ messageId, status: 'sent' });
+    if (!marked.ok) app.log.warn({ agentId, documentId, code: marked.error.code }, 'could not mark document notice as sent');
+  }
 
   // ── POST /agents/:id/documents ──────────────────────────────────────────
 
@@ -95,6 +147,9 @@ export async function agentDocumentRoutes(
         result.error.context,
       ));
     }
+
+    // Tell the agent this document exists — see notifyAgentOfDocument. Best-effort; the upload already succeeded.
+    await notifyAgentOfDocument(agentId, request.userId, result.data.id, result.data.originalFilename);
 
     return reply.status(201).send(result.data);
   });

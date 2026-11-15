@@ -61,7 +61,7 @@ export class ChatInboundRouter {
     return { kind: 'plain' as const, body: target?.body.trim() ?? text };
   }
 
-  /** Publishes to the agent without recording a conversation row: for platform-composed notices, not user text. */
+  /** Publishes an envelope to the agent's inbound stream. Does not record a row or mark delivery — the caller owns both. */
   async deliver(
     agentId: string,
     userId: string,

@@ -24,6 +24,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Documents uploaded through the create-agent or edit-agent file picker now notify the agent, the same way a chat attachment does; previously the file was stored and text-extracted but the agent was never told it existed. See docs/bug-reports/2026/11/15/003-agent-document-upload-via-control-plane-never-notifies-agent.md.
 - The `minimal` and `custom` cost presets no longer silently downgrade the user-selected heavy (judge) model to the light model. `resolveAgentCostProfile` now always uses the configured heavy model for judge and narrative work, uniformly, with no minimal/low-cost special case.
 - Corrected misleading documentation that described `dailySpendBudgetUsd` as a hard cap that pauses the agent. It is now documented (JSDoc + help pages) as a spend hint; real spend enforcement is the plan-level spending caps (`canSpendNow`, ADR-006). Synced the public pricing and agent-style help pages to the current style ladder.
 
