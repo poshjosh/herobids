@@ -1,6 +1,6 @@
 # Results: agent file tools
 
-## WP1. Foundation (done, not committed)
+## WP1. Foundation (done)
 
 Checks: focused tests pass; `pnpm lint`, `pnpm test` (448 files, 8,512 tests) and `pnpm build` pass.
 
@@ -33,7 +33,7 @@ Checks: focused tests pass; `pnpm lint`, `pnpm test` (448 files, 8,512 tests) an
 - `fromFsError` and the hint functions are not yet used by any tool (WP2 to WP6).
 - `AGENT_WORKSPACE_QUOTA_MB` reaching a real container was not checked (no live stack; launcher unit tests only).
 
-## WP2. Read side (done, not committed)
+## WP2. Read side (done)
 
 Checks: focused tests (`file-read-tools.test.ts`, 29 tests, plus updated `filesystem.test.ts`, `file-messages.test.ts`, `tool-signature.test.ts`); `pnpm lint`, `pnpm test` (449 files, 8,541 tests) and `pnpm build` pass.
 
@@ -61,7 +61,7 @@ Checks: focused tests (`file-read-tools.test.ts`, 29 tests, plus updated `filesy
 - No test for a folder vanishing mid-walk in `workspace-quota.ts` (race hard to stage); the per-directory ENOENT handling is covered only by the existing missing-root test.
 - Prompt-cost measure for the new schemas is left for WP7.
 
-## WP3. Truncation marker and `maxToolResultChars` documentation (done, not committed)
+## WP3. Truncation marker and `maxToolResultChars` documentation (done)
 
 Checks: focused tests (`structured-tool-loop.test.ts`, new `stale-result-hints.test.ts`, new `RuntimePolicySection.dom.test.tsx`); `pnpm lint`, `pnpm test` and `pnpm build` pass.
 
@@ -86,7 +86,7 @@ Checks: focused tests (`structured-tool-loop.test.ts`, new `stale-result-hints.t
 - Older docs that describe `...[truncated]` as history were left as the plan says.
 - No live check of the marker in a real agent run.
 
-## WP4. Write side (done, not committed)
+## WP4. Write side (done)
 
 Checks: focused tests (`file-write-tools.test.ts`, 47 tests; `filesystem.test.ts`, `tool-signature.test.ts`, `file-messages.test.ts`); `pnpm lint`, `pnpm test` (452 files, 8,597 tests) and `pnpm build` pass.
 
@@ -117,7 +117,7 @@ Checks: focused tests (`file-write-tools.test.ts`, 47 tests; `filesystem.test.ts
 - `delete_file` descriptions and the audit table row were not updated here (docs are WP7); the catalog text was.
 - Not done in WP4 on purpose: `file-tools.md`, audit rows, CHANGELOG, platform docs index (WP7).
 
-## WP5. `search_files` (done, not committed; status row stays PENDING)
+## WP5. `search_files` (done)
 
 Checks: focused tests (`search-files.test.ts`, 42 tests, run three times with no flake; `file-messages.test.ts`, `tool-signature.test.ts`, `stale-result-hints.test.ts`); `pnpm lint`, `pnpm test` (453 files passed, 8,642 tests passed, 48 files skipped as before) and `pnpm build` pass.
 
@@ -157,7 +157,7 @@ Regex was attempted with the worker design and works, so none of the fallback cr
 - Not verified: worker start-up cost in the container (not measured separately) and any live agent use. Prompt-cost measure of the new schema is left for WP7.
 - Not done here on purpose: `file-tools.md`, audit rows, CHANGELOG, platform docs index, signature drift check of skill instructions (WP7).
 
-## WP6. `browse_url` and the web cache (done, not committed; status row stays PENDING)
+## WP6. `browse_url` and the web cache (done)
 
 Checks: focused tests (`web-access-browse.test.ts` 22 tests, `web-access.test.ts`, `web-access-denial-log.test.ts`, `stale-result-hints.test.ts`, `tool-signature.test.ts`, `capability-policy.test.ts`, `file-messages.test.ts`); `pnpm lint`, `pnpm test` (454 files passed, 8,667 tests passed, 48 files skipped as before) and `pnpm build` pass. No live stack, no infrastructure change, no automatic file deletion.
 
@@ -190,7 +190,7 @@ Checks: focused tests (`web-access-browse.test.ts` 22 tests, `web-access.test.ts
 - `browse_url` prompt cost went up slightly (one more parameter and a longer description). The combined measure for all new schemas is left for WP7.
 - Not done here on purpose: docs, audit rows, CHANGELOG, platform docs index, skill instruction lines mentioning `web-cache/` (WP7).
 
-## WP7. Docs and wrap-up (done, not committed; status row stays PENDING)
+## WP7. Docs and wrap-up (done)
 
 Checks: `tool-signature.test.ts` (20 tests, includes the new text drift tests); `pnpm lint`, `pnpm test` and `pnpm build` (results at the end of this section). No live stack, no infrastructure change, nothing staged or committed.
 
@@ -245,3 +245,9 @@ Soft quota (not a disk limit, not enforced against `execute_code`); web-cache ca
 - No live run: the live checks in "Live verification and rollout" are for the owner.
 - Arabic and Hindi strings from WP3 still need native review.
 - Messages with call examples for paths of about 100 characters or more can pass the 350-character message cap (owner decision open from WP2).
+
+### Final verification (whole branch)
+- `pnpm lint`: pass (`tsc --noEmit`, exit 0).
+- `pnpm test`: pass, exit 0. 454 test files passed, 48 skipped; 8,673 tests passed, 767 skipped.
+- `pnpm build`: pass, exit 0 (web, documents, api, worker).
+- Two wiring tests were added to `apps/worker/src/tools/tool-registry.test.ts` (Test plan, "Wiring and drift"): the scout read-only list includes `read_file_lines` and `search_files` and excludes `append_file` and `edit_file`; the tool set for base + file-management + web-access + programming + email is 43 distinct tools, within the smallest `maxVisibleToolSchemas` (64, `careful` style). The 43 is the union of those skills' `requiredTools`; it is not the full registry.

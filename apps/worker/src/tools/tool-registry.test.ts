@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
-import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS, PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL } from '@herobids/domain';
+import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS, PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL, WEB_ACCESS_SKILL, EMAIL_SKILL, AGENT_STYLE_RUNTIME_DEFAULTS } from '@herobids/domain';
 import type { AgentTool, ToolContext } from '@herobids/domain';
 import { botManagementTools } from './bots.js';
 import { ToolRegistry, convertZodToJsonSchema } from './registry.js';
@@ -231,5 +231,21 @@ describe('convertZodToJsonSchema draft normalisation', () => {
     }
 
     expect(violations).toEqual([]);
+  });
+  it('scout read-only tool list includes read_file_lines and search_files and excludes append_file and edit_file', () => {
+    const names = createToolRegistry().getReadOnlyToolNames();
+    expect(names).toContain('read_file_lines');
+    expect(names).toContain('search_files');
+    expect(names).not.toContain('append_file');
+    expect(names).not.toContain('edit_file');
+  });
+  it('keeps base + file-management + web-access + programming + email tools within the smallest maxVisibleToolSchemas', () => {
+    const smallest = Math.min(...Object.values(AGENT_STYLE_RUNTIME_DEFAULTS).map((p) => p.maxVisibleToolSchemas));
+    const tools = new Set<string>();
+    for (const skill of [BASE_SKILL, FILE_MANAGEMENT_SKILL, WEB_ACCESS_SKILL, PROGRAMMING_SKILL, EMAIL_SKILL]) {
+      for (const tool of skill.requiredTools) tools.add(tool);
+    }
+    expect(smallest).toBe(64);
+    expect(tools.size).toBeLessThanOrEqual(smallest);
   });
 });

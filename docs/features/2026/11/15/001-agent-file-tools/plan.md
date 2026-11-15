@@ -1,7 +1,7 @@
 # Agent file tools: files up to 10 MiB without loading them into the model context
 
-Status: PLAN, not implemented. Written 2026-11-15. The 19 decisions below (1 to 16 from the
-interview, 17 to 19 added at the owner's request) were confirmed by the owner. A review on
+Status: IMPLEMENTED on branch `feat/agent-file-tools` (not merged). Written 2026-11-15. The 20 decisions below (1 to 16 from the
+interview, 17 to 19 added at the owner's request, 20 added later) were confirmed by the owner. A review on
 2026-11-15 added the fixes marked "Review fix" (see "Review fixes"). Facts about the code were read from the repo in this session and carry
 file and line references. Anything not confirmed is marked "unverified" and is collected in
 "Unverified items". Read "What this will and will not fix" before relying on it.
