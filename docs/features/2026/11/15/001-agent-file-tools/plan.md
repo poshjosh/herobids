@@ -293,7 +293,9 @@ Rule: every error and every limit-hit result says (1) what happened, with the nu
 it is not obvious, and (3) the exact next call, written with the tool signature. The next step is
 inside the `error` text (the model reads it; the failure JSON also carries `errorCode`). Also:
 
-- About 350 characters at most. Plain English. No stack traces. No absolute container paths: use
+- About 350 characters at most, not counting the agent-supplied path, which is always shown in full
+  and never shortened (owner decision, 2026-11-15: a callable path matters more than a short
+  message). Plain English. No stack traces. No absolute container paths: use
   workspace-relative paths. No file lists in messages (they cost tokens; the agent can call
   `list_files`).
 - `errorOwner: 'agent'` for anything the agent can fix, including EACCES. `errorOwner: 'platform'`
@@ -1141,7 +1143,8 @@ Messages (Design 0a; each tool WP adds the cases for its own codes)
   plain success have none"
 - "the hint key comes before the content key in the serialized result, so it survives the stale cut
   to 1,000 characters"
-- "every message is at most 350 characters for a long path, and contains no absolute container path"
+- "every message is at most 350 characters excluding the agent path (tested with a path of about 200
+  characters), shows the path in full, and contains no absolute container path"
 - "an IO error (EIO, ENOSPC) is errorOwner platform and says not to retry"
 - "EACCES is file.permission_denied with errorOwner agent and fault false, and does not notify the
   operator"
@@ -1416,7 +1419,7 @@ Status of each gate after the owner's review on 2026-11-15:
 - L: Legacy launcher path without envConfig does not set the quota env (theoretical).
 
 ### WP2. Read side
-- M: Long-path message test weakened (repeat 12 → 3) because full-path call examples exceed the ~350-char cap for paths of ~100+ chars. Owner decision on the cap needed.
+- RESOLVED: Long-path message cap. Owner chose option A: the 350 cap excludes the agent path, which is shown in full; test uses a ~200-char path.
 - M: Missing tests: multi-byte/emoji text straddling 64 KiB chunks; cut first line followed by more lines; `limit` with `maxChars`; "Later lines:" hint; string-typed args via Zod coercion.
 - M: Plan text stale: `truncated` for `read_file_lines` is `nextLine !== null || lineCut`; WP2 step 1 "keep today's error strings" is superseded by Design 0a; add `file.not_a_directory` to the Design 0a table.
 - M: Scout/context sets wiring for `read_file_lines` and `stat_file` not asserted in `scout-dispatch` / composition tests.

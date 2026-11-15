@@ -9,7 +9,6 @@ import type { QuotaFailure } from './workspace-quota.js';
  * build message strings inline.
  */
 
-const MAX_PATH_CHARS = 60;
 const BYTES_PER_MIB = 1024 * 1024;
 
 export type FileErrorCode =
@@ -38,11 +37,6 @@ export function formatMiB(bytes: number): string {
   return String(Math.round((bytes / BYTES_PER_MIB) * 100) / 100);
 }
 
-/** Keep long paths from blowing the message size; the tail is the useful part. */
-function shown(path: string): string {
-  return path.length <= MAX_PATH_CHARS ? path : `…${path.slice(-(MAX_PATH_CHARS - 1))}`;
-}
-
 function parentOf(path: string): string {
   const slash = path.lastIndexOf('/');
   return slash === -1 ? '' : path.slice(0, slash);
@@ -57,7 +51,7 @@ function agentError(code: FileErrorCode, error: string): ToolResult {
 export function pathInvalid(path: string): ToolResult {
   return agentError(
     'file.path_invalid',
-    `Path "${shown(path)}" is not allowed. Use a path relative to the workspace root, for example job-search/jobs.json, with no leading / and no "..". Check folders with ${toolCall('list_files', { path: '' })}.`,
+    `Path "${path}" is not allowed. Use a path relative to the workspace root, for example job-search/jobs.json, with no leading / and no "..". Check folders with ${toolCall('list_files', { path: '' })}.`,
   );
 }
 
@@ -70,12 +64,12 @@ export function reservedPath(): ToolResult {
 
 /** delete_file on the workspace root, `sandbox` or a platform folder. */
 export function reservedDeletePath(path: string): ToolResult {
-  return agentError('file.reserved_path', `${shown(path)} is managed by the platform and cannot be deleted.`);
+  return agentError('file.reserved_path', `${path} is managed by the platform and cannot be deleted.`);
 }
 
 export function notFound(path: string): ToolResult {
   const parent = parentOf(path);
-  let message = `File not found: ${shown(path)}. Check the name with ${toolCall('list_files', { path: parent })} or find it with ${toolUse('search_files', 'path', 'query')}.`;
+  let message = `File not found: ${path}. Check the name with ${toolCall('list_files', { path: parent })} or find it with ${toolUse('search_files', 'path', 'query')}.`;
   if (path.split('/')[0] === getWebCacheConfig().dir) {
     message += ` Cached pages are cleared when the agent restarts; call ${toolUse('browse_url', 'url')} again.`;
   }
@@ -98,14 +92,14 @@ export function deleteTooMany(path: string, max: number): ToolResult {
 }
 
 export function notAFile(path: string, action: 'read' | 'written' = 'read'): ToolResult {
-  return agentError('file.not_a_file', `${shown(path)} is not a regular file, so it cannot be ${action}.`);
+  return agentError('file.not_a_file', `${path} is not a regular file, so it cannot be ${action}.`);
 }
 
 /** edit_file on a file that is not valid UTF-8: rewriting it would corrupt the bytes. */
 export function notText(path: string): ToolResult {
   return agentError(
     'file.not_text',
-    `${shown(path)} is not valid UTF-8 text, so editing it would corrupt it. Replace it whole with ${toolUse('write_file', 'path', 'content')} or use another file.`,
+    `${path} is not valid UTF-8 text, so editing it would corrupt it. Replace it whole with ${toolUse('write_file', 'path', 'content')} or use another file.`,
   );
 }
 
@@ -113,14 +107,14 @@ export function tooLarge(path: string, sizeBytes: number, maxBytes: number, opti
   const what = options.forEdit ? 'too large to edit' : 'too large to open';
   return agentError(
     'file.too_large',
-    `${shown(path)} is ${formatMiB(sizeBytes)} MiB, ${what}; the limit is ${formatMiB(maxBytes)} MiB. Read part of it with ${toolUse('read_file_lines', 'path', 'startLine', 'limit')} or find text with ${toolUse('search_files', 'path', 'query')}.`,
+    `${path} is ${formatMiB(sizeBytes)} MiB, ${what}; the limit is ${formatMiB(maxBytes)} MiB. Read part of it with ${toolUse('read_file_lines', 'path', 'startLine', 'limit')} or find text with ${toolUse('search_files', 'path', 'query')}.`,
   );
 }
 
 export function writeTooLarge(path: string, resultingBytes: number, maxBytes: number): ToolResult {
   return agentError(
     'file.write_too_large',
-    `This write would make ${shown(path)} ${formatMiB(resultingBytes)} MiB; the limit is ${formatMiB(maxBytes)} MiB. Continue in a new file with ${toolUse('append_file', 'path', 'content')}.`,
+    `This write would make ${path} ${formatMiB(resultingBytes)} MiB; the limit is ${formatMiB(maxBytes)} MiB. Continue in a new file with ${toolUse('append_file', 'path', 'content')}.`,
   );
 }
 
@@ -155,7 +149,7 @@ export function limitTooLarge(
 export function notADirectory(path: string): ToolResult {
   return agentError(
     'file.not_a_directory',
-    `${shown(path)} is a file, not a directory. Read it with ${toolCall('read_file', { path })}.`,
+    `${path} is a file, not a directory. Read it with ${toolCall('read_file', { path })}.`,
   );
 }
 
@@ -168,7 +162,7 @@ export function quotaExceeded(failure: QuotaFailure): ToolResult {
   }
   const largest = failure.topDirs
     .slice(0, 3)
-    .map((dir) => `${shown(dir.name)}/ ${formatMiB(dir.bytes)} MiB`)
+    .map((dir) => `${dir.name}/ ${formatMiB(dir.bytes)} MiB`)
     .join(', ');
   const first = failure.topDirs[0]?.name;
   const folderStep = first === undefined
@@ -186,14 +180,14 @@ export function editTextNotFound(path: string, options: { crlfMismatch?: boolean
     : '';
   return agentError(
     'edit.text_not_found',
-    `oldText was not found in ${shown(path)}. Copy it exactly, including spaces and line endings, from ${toolUse('read_file_lines', 'path', 'startLine', 'limit')}, or locate it with ${toolUse('search_files', 'path', 'query')}.${crlf}`,
+    `oldText was not found in ${path}. Copy it exactly, including spaces and line endings, from ${toolUse('read_file_lines', 'path', 'startLine', 'limit')}, or locate it with ${toolUse('search_files', 'path', 'query')}.${crlf}`,
   );
 }
 
 export function editAmbiguousMatch(path: string, matchCount: number): ToolResult {
   return agentError(
     'edit.ambiguous_match',
-    `oldText matches ${matchCount} places in ${shown(path)}. Add more surrounding text to oldText, or set replaceAll: true. See where with ${toolUse('search_files', 'path', 'query')}.`,
+    `oldText matches ${matchCount} places in ${path}. Add more surrounding text to oldText, or set replaceAll: true. See where with ${toolUse('search_files', 'path', 'query')}.`,
   );
 }
 
@@ -212,7 +206,7 @@ export function invalidPattern(engineMessage: string): ToolResult {
 export function ioError(action: string, path: string, errno: string): ToolResult {
   return {
     success: false,
-    error: `A platform problem stopped ${action} on ${shown(path)} (${errno}). Do not retry; tell the user.`,
+    error: `A platform problem stopped ${action} on ${path} (${errno}). Do not retry; tell the user.`,
     errorCode: 'file.io_error',
     errorOwner: 'platform',
     retryable: false,
@@ -224,7 +218,7 @@ export function ioError(action: string, path: string, errno: string): ToolResult
 export function permissionDenied(path: string): ToolResult {
   return agentError(
     'file.permission_denied',
-    `Permission denied for ${shown(path)}. Choose another path, for example under notes/, or check the file with ${toolUse('stat_file', 'path')}.`,
+    `Permission denied for ${path}. Choose another path, for example under notes/, or check the file with ${toolUse('stat_file', 'path')}.`,
   );
 }
 

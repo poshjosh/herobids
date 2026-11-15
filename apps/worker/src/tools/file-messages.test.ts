@@ -5,7 +5,8 @@ import { findSignatureProblems } from './tool-signature.js';
 import type { QuotaFailure } from './workspace-quota.js';
 
 const MIB = 1024 * 1024;
-const LONG_PATH = `${'deeply/nested/folder/'.repeat(3)}file-with-a-long-name.json`;
+// About 200 characters, a realistic deeply nested path.
+const LONG_PATH = `${'deeply/nested/folder/'.repeat(9)}file-with-a-long-name.json`;
 const CONTAINER_ROOT = '/workspace';
 
 const quotaFailure: QuotaFailure = {
@@ -61,7 +62,7 @@ describe('file messages', () => {
     expect(findSignatureProblems(result.error ?? '')).toEqual([]);
   });
 
-  it('keeps every message under 350 characters for a long path, with no container path', () => {
+  it('keeps every message under 350 characters excluding the agent path, which is always shown in full', () => {
     const longCases: ToolResult[] = [
       messages.pathInvalid(LONG_PATH),
       messages.notFound(LONG_PATH),
@@ -77,9 +78,16 @@ describe('file messages', () => {
       messages.quotaExceeded(quotaFailure),
       messages.quotaExceeded({ ...quotaFailure, reason: 'walk_capped' }),
     ];
+    const parent = LONG_PATH.slice(0, LONG_PATH.lastIndexOf('/'));
     for (const result of longCases) {
-      expect(result.error!.length, result.error).toBeLessThanOrEqual(350);
-      expect(result.error).not.toContain(CONTAINER_ROOT);
+      const error = result.error!;
+      // The agent's own path (and its folder, used in list_files examples) does not count toward the cap.
+      const withoutPath = error.split(LONG_PATH).join('').split(parent).join('');
+      expect(withoutPath.length, error).toBeLessThanOrEqual(350);
+      expect(error).not.toContain(CONTAINER_ROOT);
+      // Call examples must stay callable: a message that names the path never shortens it.
+      if (error.includes('deeply')) expect(error).toContain(LONG_PATH.split('/')[0]!);
+      expect(error).not.toContain('…');
     }
   });
 
