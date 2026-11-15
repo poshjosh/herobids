@@ -890,7 +890,7 @@ The tool's `description` states the unit of every parameter and names its compan
 | WP | Scope | Depends on | Status |
 |---|---|---|---|
 | WP1 | Foundation | none | DONE |
-| WP2 | Read side | WP1 | PENDING |
+| WP2 | Read side | WP1 | DONE |
 | WP3 | Truncation marker | WP2 (hint targets) | PENDING |
 | WP4 | Write side | WP1 | PENDING |
 | WP5 | `search_files` | WP1 | PENDING |
@@ -1406,3 +1406,10 @@ Status of each gate after the owner's review on 2026-11-15:
 - L: `tool-signature` strict mode depends on `NODE_ENV === 'test'`.
 - L: `browseUrl.maxResponseBytes` default is 1 MiB before WP6 removes the 512 KiB grant literal.
 - L: Legacy launcher path without envConfig does not set the quota env (theoretical).
+
+### WP2. Read side
+- M: Long-path message test weakened (repeat 12 → 3) because full-path call examples exceed the ~350-char cap for paths of ~100+ chars. Owner decision on the cap needed.
+- M: Missing tests: multi-byte/emoji text straddling 64 KiB chunks; cut first line followed by more lines; `limit` with `maxChars`; "Later lines:" hint; string-typed args via Zod coercion.
+- M: Plan text stale: `truncated` for `read_file_lines` is `nextLine !== null || lineCut`; WP2 step 1 "keep today's error strings" is superseded by Design 0a; add `file.not_a_directory` to the Design 0a table.
+- M: Scout/context sets wiring for `read_file_lines` and `stat_file` not asserted in `scout-dispatch` / composition tests.
+- L: TOCTOU between `resolveWorkspacePath` and open; file growth after `stat`; coercion of `""`/`null` to 0; unused `ReadableFile.sizeBytes`; 5 s wall-clock 10 MiB test may flake; `list_files` reads the whole directory.

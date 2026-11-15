@@ -18,6 +18,7 @@ export type FileErrorCode =
   | 'file.not_found'
   | 'file.is_directory'
   | 'file.not_a_file'
+  | 'file.not_a_directory'
   | 'file.too_large'
   | 'file.write_too_large'
   | 'file.content_too_long'
@@ -73,7 +74,7 @@ export function reservedDeletePath(path: string): ToolResult {
 
 export function notFound(path: string): ToolResult {
   const parent = parentOf(path);
-  let message = `File not found: ${shown(path)}. Check the name with ${toolCall('list_files', { path: shown(parent) })} or find it with ${toolUse('search_files', 'path', 'query')}.`;
+  let message = `File not found: ${shown(path)}. Check the name with ${toolCall('list_files', { path: parent })} or find it with ${toolUse('search_files', 'path', 'query')}.`;
   if (path.split('/')[0] === getWebCacheConfig().dir) {
     message += ` Cached pages are cleared when the agent restarts; call ${toolUse('browse_url', 'url')} again.`;
   }
@@ -81,9 +82,9 @@ export function notFound(path: string): ToolResult {
 }
 
 export function isDirectory(path: string, options: { forDelete?: boolean } = {}): ToolResult {
-  let message = `${shown(path)} is a directory. List it with ${toolCall('list_files', { path: shown(path) })}.`;
+  let message = `That path is a directory. List it with ${toolCall('list_files', { path })}.`;
   if (options.forDelete) {
-    message += ` To delete it and everything inside it call ${toolCall('delete_file', { path: shown(path), recursive: true })}.`;
+    message += ` To delete it and everything inside it call ${toolCall('delete_file', { path, recursive: true })}.`;
   }
   return agentError('file.is_directory', message);
 }
@@ -91,7 +92,7 @@ export function isDirectory(path: string, options: { forDelete?: boolean } = {})
 export function deleteTooMany(path: string, fileCount: number, max: number): ToolResult {
   return agentError(
     'file.delete_too_many',
-    `This folder holds ${fileCount} files; the limit per call is ${max}. Delete its subfolders one at a time: list them with ${toolCall('list_files', { path: shown(path) })}, then ${toolCall('delete_file', { path: `${shown(path)}/<sub>`, recursive: true })}.`,
+    `This folder holds ${fileCount} files; the limit per call is ${max}. Delete subfolders one at a time: ${toolCall('list_files', { path })}, then ${toolCall('delete_file', { path: `${path}/<sub>`, recursive: true })}.`,
   );
 }
 
@@ -128,10 +129,17 @@ export function contentTooLong(
   );
 }
 
-export function limitTooLarge(name: string, value: number, max: number): ToolResult {
+export function limitTooLarge(name: string, value: number, max: number, options: { forList?: boolean } = {}): ToolResult {
+  const next = options.forList
+    ? `Page through a long folder with ${toolUse('list_files', 'path', 'offset', 'limit')}.`
+    : `For large files use ${toolUse('read_file_lines', 'path', 'startLine', 'limit')} or ${toolUse('search_files', 'path', 'query')}.`;
+  return agentError('file.limit_too_large', `${name} ${value} is above the maximum ${max}. ${next}`);
+}
+
+export function notADirectory(path: string): ToolResult {
   return agentError(
-    'file.limit_too_large',
-    `${name} ${value} is above the maximum ${max}. For large files use ${toolUse('read_file_lines', 'path', 'startLine', 'limit')} or ${toolUse('search_files', 'path', 'query')}.`,
+    'file.not_a_directory',
+    `${shown(path)} is a file, not a directory. Read it with ${toolCall('read_file', { path })}.`,
   );
 }
 
@@ -236,6 +244,12 @@ export function readFilePagedHint(path: string, nextOffset: number): string {
 
 export function readLinesPagedHint(path: string, nextLine: number): string {
   return `More lines remain. Continue with ${toolCall('read_file_lines', { path, startLine: nextLine })}.`;
+}
+
+/** A single line was longer than maxChars and was cut; continue inside it with read_file. */
+export function readLineCutHint(path: string, line: number, continueOffset: number, nextLine: number | null): string {
+  const more = nextLine === null ? '' : ` Later lines: ${toolCall('read_file_lines', { path, startLine: nextLine })}.`;
+  return `Line ${line} is longer than maxChars and was cut. Read the rest of it with ${toolCall('read_file', { path, offset: continueOffset })}.${more}`;
 }
 
 export function searchMatchesHint(file: string, line: number): string {

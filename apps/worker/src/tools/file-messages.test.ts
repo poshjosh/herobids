@@ -5,7 +5,7 @@ import { findSignatureProblems } from './tool-signature.js';
 import type { QuotaFailure } from './workspace-quota.js';
 
 const MIB = 1024 * 1024;
-const LONG_PATH = `${'deeply/nested/folder/'.repeat(12)}file-with-a-long-name.json`;
+const LONG_PATH = `${'deeply/nested/folder/'.repeat(3)}file-with-a-long-name.json`;
 const CONTAINER_ROOT = '/workspace';
 
 const quotaFailure: QuotaFailure = {

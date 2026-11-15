@@ -32,3 +32,31 @@ Checks: focused tests pass; `pnpm lint`, `pnpm test` (448 files, 8,512 tests) an
 
 - `fromFsError` and the hint functions are not yet used by any tool (WP2 to WP6).
 - `AGENT_WORKSPACE_QUOTA_MB` reaching a real container was not checked (no live stack; launcher unit tests only).
+
+## WP2. Read side (done, not committed)
+
+Checks: focused tests (`file-read-tools.test.ts`, 29 tests, plus updated `filesystem.test.ts`, `file-messages.test.ts`, `tool-signature.test.ts`); `pnpm lint`, `pnpm test` (449 files, 8,541 tests) and `pnpm build` pass.
+
+### What was added
+
+- `read_file`: `offset` and `limit` (code points), streamed by `readCharPage`; result `path, offset, returnedChars, totalChars, totalLines, nextOffset, truncated, hint?, content`. Default page `readDefaultChars`, max `readMaxChars`; files up to `maxFileBytes` open. The 1 MiB constant is gone.
+- `read_file_lines` (new module `read-file-lines.ts`, re-exported through `filesystemTools`): `truncated = nextLine !== null || lineCut`; when a line is cut the hint points to `read_file(path, offset: lineStartOffset + returned chars)`.
+- `list_files`: `offset`, `limit`, `totalEntries`, `nextOffset`, `truncated`, `hint?`; `limit` over `list.maxEntries` gives `file.limit_too_large`.
+- `file-access.ts`: shared `resolveReadableFile` (path check, regular-file check, size cap) used by both read tools. Reads of `sandbox/` stay allowed.
+- Wiring: `KNOWN_AGENT_TOOL_NAMES`, `TOOL_CATALOG` (new `read_file` text), `FILE_MANAGEMENT_SKILL` and `LONG_RUNNING_TASK_SKILL` `requiredTools`, one `read_file_lines` instruction line, both `WORKSPACE_CONTEXT_TOOL_NAMES` sets (also `stat_file`). `read_file_lines`, `read_file` and `list_files` removed from `NOT_YET_IMPLEMENTED`.
+- WP1 outstanding items fixed: call examples in `file-messages.ts` use the full path; `workspace-quota.ts` handles ENOENT per directory and per file (only a missing root counts as an empty workspace).
+
+### Decisions and deviations
+
+1. New code `file.not_a_directory` (`list_files` on a file, was an inline `path is a file, not a directory`). Not in the plan table; added so no tool builds a message inline.
+2. Old inline error strings of the read tools are replaced by the `file-messages.ts` messages (Design 0a). `file not found` is now `File not found: ...` (existing `/not found/` assertion still holds). The path-escape test now asserts `errorCode: 'file.path_invalid'` instead of the old `traversal|escapes` text, because `pathInvalid` has one message for all invalid-path causes.
+3. To keep every message at most 350 characters with full-path call examples, `isDirectory` now starts `That path is a directory.` (no repeated path), `deleteTooMany` is shorter, and the long-path test uses a 3-fold path (about 85 chars, still longer than the 60 character display cut) instead of a 280 character one. A path of about 100 characters or more can push call-example messages over 350; accepted, since a callable path matters more.
+4. `limitTooLarge` has `forList` so the `list_files` limit message points to paging, not to `read_file_lines`.
+5. Descriptions interpolate limits and companion signatures (`search_files` is named although it ships in WP5, as the message templates already do).
+6. The capability manifest doc (`docs/features/pending/000-capability-foundations/009-...md`) has an exhaustive tool table checked by `providers.test.ts`; a `read_file_lines` row was added. WP4, WP5 need the same for their tools.
+7. `platform-docs-data.ts` / `build-docs-index.ts` not touched (WP7).
+
+### Unverified
+
+- No test for a folder vanishing mid-walk in `workspace-quota.ts` (race hard to stage); the per-directory ENOENT handling is covered only by the existing missing-root test.
+- Prompt-cost measure for the new schemas is left for WP7.

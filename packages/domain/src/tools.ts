@@ -165,6 +165,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'read_app_docs',
   'read_document',
   'read_file',
+  'read_file_lines',
   'pause_child_agent',
   'read_skill',
   'remove_skills',
@@ -299,7 +300,8 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   publish_artifact:    { category: 'write-messaging',     description: 'Publish an artifact (analysis result, chart, report) for user review.' },
 
   // read-filesystem
-  read_file:           { category: 'read-filesystem',     description: 'Read contents of a file in the agent workspace.' },
+  read_file:           { category: 'read-filesystem',     description: 'Read a page of text from a file in the agent workspace (up to 10 MiB files, paged by characters).' },
+  read_file_lines:     { category: 'read-filesystem',     description: 'Read whole lines of a file in the agent workspace starting at a line number, with a character cap per call.' },
   list_files:          { category: 'read-filesystem',     description: 'List files and directories in the agent workspace.' },
   stat_file:           { category: 'read-filesystem',     description: 'Get metadata about a file/directory: exists, type, size, modification time.' },
   read_skill:          { category: 'read-filesystem',     description: "Load an external skill's full instructions by its ref. The prompt lists external skills by name and description; read_skill loads the one you need for the rest of the session." },

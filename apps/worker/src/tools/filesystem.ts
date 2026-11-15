@@ -1,15 +1,18 @@
 import { z } from 'zod';
-import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir, unlink, readdir, stat } from 'node:fs/promises';
+import { writeFile as fsWriteFile, mkdir, unlink, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { resolveReadableFile } from './file-access.js';
+import { getFileToolLimits } from './file-limits.js';
+import * as messages from './file-messages.js';
+import { readCharPage } from './file-text.js';
+import { readFileLinesTool } from './read-file-lines.js';
+import { toolUse } from './tool-signature.js';
 import { getWorkspacePaths, ensureWorkspaceDirs, resolveWorkspacePath, checkReservedDir } from './workspace.js';
 
 const logger = createLogger('tools:filesystem');
-
-// Maximum file size for read_file (1 MiB)
-const MAX_READ_BYTES = 1_048_576;
 
 // --- write_file ---
 
@@ -57,47 +60,53 @@ const writeFileTool: AgentTool = {
 
 // --- read_file ---
 
+const fileLimits = getFileToolLimits();
+
 const ReadFileParamsSchema = z.object({
   path: z.string().min(1).describe('Relative path within the workspace to read'),
+  offset: z.coerce.number().int().min(0).optional()
+    .describe('Character (not byte) position to start from. Default 0. Pass back nextOffset from the previous result to continue.'),
+  limit: z.coerce.number().int().min(1).optional()
+    .describe(`Number of characters to return. Default ${fileLimits.readDefaultChars}, maximum ${fileLimits.readMaxChars}. About 4 characters cost one token, so large values use a lot of context.`),
 });
 
 const readFileTool: AgentTool = {
   name: 'read_file',
-  description: 'Read the contents of a file in the agent workspace. Path is relative to the workspace root. Files in the sandbox directory can be read to inspect code execution outputs.',
+  description: `Read a page of text from a file in the agent workspace, up to ${fileLimits.maxFileBytes} bytes. Path is relative to the workspace root. Returns at most limit characters (default ${fileLimits.readDefaultChars}, max ${fileLimits.readMaxChars}) plus totalChars, totalLines and nextOffset for the next page. A large page can fill your context window: for big files prefer ${toolUse('read_file_lines', 'path', 'startLine', 'limit')} or ${toolUse('search_files', 'path', 'query')}. Files in the sandbox directory can be read to inspect code execution outputs.`,
   parametersSchema: ReadFileParamsSchema,
   parameters: convertZodToJsonSchema(ReadFileParamsSchema),
   category: 'read-filesystem',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { path: relativePath } = params as z.infer<typeof ReadFileParamsSchema>;
+    const { path: relativePath, offset = 0, limit = fileLimits.readDefaultChars } =
+      params as z.infer<typeof ReadFileParamsSchema>;
 
-    const paths = getWorkspacePaths(ctx.agentId);
-    await ensureWorkspaceDirs(paths);
-
-    const resolved = await resolveWorkspacePath(paths.root, relativePath);
-    if (!resolved.ok) {
-      return { success: false, error: resolved.error, retryable: false, fault: false };
+    if (limit > fileLimits.readMaxChars) {
+      return messages.limitTooLarge('limit', limit, fileLimits.readMaxChars);
     }
 
-    try {
-      const fileStat = await stat(resolved.absolutePath);
-      if (fileStat.isDirectory()) {
-        return { success: false, error: 'path is a directory; use list_files to inspect directories', retryable: false, fault: false };
-      }
-      if (fileStat.size > MAX_READ_BYTES) {
-        return { success: false, error: `file too large (${fileStat.size} bytes); max is ${MAX_READ_BYTES} bytes`, retryable: false, fault: false };
-      }
+    const file = await resolveReadableFile(ctx.agentId, relativePath, 'reading');
+    if (!file.ok) return file.result;
 
-      const content = await fsReadFile(resolved.absolutePath, 'utf8');
-      logger.debug({ agentId: ctx.agentId, path: relativePath, bytes: content.length }, 'read_file success');
-      return { success: true, data: { path: relativePath, content } };
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        return { success: false, error: `file not found: ${relativePath}`, retryable: false, fault: false };
-      }
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'read_file error');
-      return { success: false, error: `read_file failed: ${msg}`, retryable: false, fault: false };
+    try {
+      const page = await readCharPage(file.absolutePath, offset, limit);
+      logger.debug({ agentId: ctx.agentId, path: relativePath, chars: page.returnedChars }, 'read_file success');
+      return {
+        success: true,
+        data: {
+          path: relativePath,
+          offset,
+          returnedChars: page.returnedChars,
+          totalChars: page.totalChars,
+          totalLines: page.totalLines,
+          nextOffset: page.nextOffset,
+          truncated: page.nextOffset !== null,
+          ...(page.nextOffset !== null ? { hint: messages.readFilePagedHint(relativePath, page.nextOffset) } : {}),
+          content: page.content,
+        },
+      };
+    } catch (error) {
+      logger.warn({ agentId: ctx.agentId, path: relativePath, err: error instanceof Error ? error.message : String(error) }, 'read_file error');
+      return messages.fromFsError(error, { action: 'reading', path: relativePath });
     }
   },
 };
@@ -106,16 +115,24 @@ const readFileTool: AgentTool = {
 
 const ListFilesParamsSchema = z.object({
   path: z.string().optional().default('').describe('Relative directory path to list. Defaults to workspace root.'),
+  offset: z.coerce.number().int().min(0).optional().describe('Number of entries to skip. Default 0. Pass back nextOffset to continue.'),
+  limit: z.coerce.number().int().min(1).optional()
+    .describe(`Number of entries to return. Default ${fileLimits.list.defaultEntries}, maximum ${fileLimits.list.maxEntries}.`),
 });
 
 const listFilesTool: AgentTool = {
   name: 'list_files',
-  description: 'List files and directories in the agent workspace. Path is relative to the workspace root (default: root). Directories are returned with a trailing slash.',
+  description: `List files and directories in the agent workspace. Path is relative to the workspace root (default: root). Directories are returned with a trailing slash. Returns at most limit entries (default ${fileLimits.list.defaultEntries}, max ${fileLimits.list.maxEntries}) with totalEntries and nextOffset for the next page.`,
   parametersSchema: ListFilesParamsSchema,
   parameters: convertZodToJsonSchema(ListFilesParamsSchema),
   category: 'read-filesystem',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { path: relativePath } = params as z.infer<typeof ListFilesParamsSchema>;
+    const { path: relativePath, offset = 0, limit = fileLimits.list.defaultEntries } =
+      params as z.infer<typeof ListFilesParamsSchema>;
+
+    if (limit > fileLimits.list.maxEntries) {
+      return messages.limitTooLarge('limit', limit, fileLimits.list.maxEntries, { forList: true });
+    }
 
     const paths = getWorkspacePaths(ctx.agentId);
     await ensureWorkspaceDirs(paths);
@@ -128,28 +145,35 @@ const listFilesTool: AgentTool = {
       absolutePath = paths.root;
     } else {
       const resolved = await resolveWorkspacePath(paths.root, targetRelative);
-      if (!resolved.ok) {
-        return { success: false, error: resolved.error, retryable: false, fault: false };
-      }
+      if (!resolved.ok) return messages.pathInvalid(relativePath);
       absolutePath = resolved.absolutePath;
     }
 
     try {
       const entries = await readdir(absolutePath, { withFileTypes: true });
       const names = entries.map((e) => (e.isDirectory() ? `${e.name}/` : e.name)).sort();
-      logger.debug({ agentId: ctx.agentId, path: relativePath, count: names.length }, 'list_files success');
-      return { success: true, data: { path: relativePath || '/', entries: names } };
+      const page = names.slice(offset, offset + limit);
+      const reached = offset + page.length;
+      const nextOffset = reached < names.length ? reached : null;
+      logger.debug({ agentId: ctx.agentId, path: relativePath, count: page.length }, 'list_files success');
+      return {
+        success: true,
+        data: {
+          path: relativePath || '/',
+          totalEntries: names.length,
+          offset,
+          nextOffset,
+          truncated: nextOffset !== null,
+          ...(nextOffset !== null
+            ? { hint: messages.listCappedHint(page.length, names.length, relativePath, nextOffset) }
+            : {}),
+          entries: page,
+        },
+      };
     } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        return { success: false, error: `directory not found: ${relativePath}`, retryable: false, fault: false };
-      }
-      if (code === 'ENOTDIR') {
-        return { success: false, error: `path is a file, not a directory: ${relativePath}`, retryable: false, fault: false };
-      }
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'list_files error');
-      return { success: false, error: `list_files failed: ${msg}`, retryable: false, fault: false };
+      if ((err as NodeJS.ErrnoException).code === 'ENOTDIR') return messages.notADirectory(relativePath);
+      logger.warn({ agentId: ctx.agentId, path: relativePath, err: err instanceof Error ? err.message : String(err) }, 'list_files error');
+      return messages.fromFsError(err, { action: 'listing', path: relativePath });
     }
   },
 };
@@ -267,6 +291,7 @@ const statFileTool: AgentTool = {
 export const filesystemTools: AgentTool[] = [
   writeFileTool,
   readFileTool,
+  readFileLinesTool,
   listFilesTool,
   deleteFileTool,
   statFileTool,

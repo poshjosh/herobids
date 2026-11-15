@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs';
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { err, ok, type Result } from '@herobids/domain';
@@ -43,7 +44,15 @@ export async function getWorkspaceUsage(root: string): Promise<WorkspaceUsage> {
   let walkCapped = false;
 
   async function walk(dir: string, topDir: string | undefined): Promise<void> {
-    const entries = await readdir(dir, { withFileTypes: true });
+    let entries: Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      // Only a missing root means "empty workspace". A folder or file that vanished
+      // mid-walk (deleted by sandboxed code) is skipped on its own.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       if (walkCapped) return;
@@ -60,7 +69,13 @@ export async function getWorkspaceUsage(root: string): Promise<WorkspaceUsage> {
           walkCapped = true;
           return;
         }
-        const { size } = await lstat(join(dir, entry.name));
+        let size: number;
+        try {
+          ({ size } = await lstat(join(dir, entry.name)));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw error;
+        }
         fileCount++;
         usedBytes += size;
         if (topDir !== undefined) perTopDir.set(topDir, (perTopDir.get(topDir) ?? 0) + size);
@@ -68,12 +83,8 @@ export async function getWorkspaceUsage(root: string): Promise<WorkspaceUsage> {
     }
   }
 
-  try {
-    await walk(root, undefined);
-  } catch (error) {
-    // A workspace that does not exist yet is empty.
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
+  // A missing root (workspace not created yet) is handled by `walk` as an empty folder.
+  await walk(root, undefined);
 
   const topDirs = [...perTopDir.entries()]
     .map(([name, bytes]) => ({ name, bytes }))

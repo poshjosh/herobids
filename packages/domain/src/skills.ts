@@ -252,7 +252,8 @@ export const FILE_MANAGEMENT_SKILL: SkillDefinition = {
   instructions: `You have access to workspace file-management tools.
 
 - Use \`write_file\` to create or overwrite a file under the agent workspace.
-- Use \`read_file\` to inspect file contents.
+- Use \`read_file\` to read a page of a file (returns nextOffset when more remains).
+- Use \`read_file_lines\` to read whole lines of a large file from a line number (returns nextLine when more remains).
 - Use \`list_files\` to inspect workspace directories and discover available files.
 - Use \`delete_file\` to remove files you no longer need.
 - Use \`stat_file\` to check if a path exists, whether it is a file or directory, and its size before calling read_file, list_files, or delete_file.
@@ -262,7 +263,7 @@ Workspace rules:
 - Workspace files do not persist across runtime restarts.
 - The \`sandbox\` directory is reserved for code execution internals.
 - For data that must survive runtime restarts, memory tools from the base skill are the durable storage path.`,
-  requiredTools: ['write_file', 'read_file', 'list_files', 'delete_file', 'stat_file'],
+  requiredTools: ['write_file', 'read_file', 'read_file_lines', 'list_files', 'delete_file', 'stat_file'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -513,7 +514,7 @@ RULES
 - Keep every memory value compact (facts and short evidence excerpts, not page dumps).
 - If you are blocked on something only the user can provide, send a message saying exactly what you need, and keep working on the other units.
 - Send a brief progress message to the user every few units (done/total, notable findings), not on every tick. Do this except explicitly instructed otherwise.`,
-  requiredTools: ['write_file', 'read_file', 'list_files', 'delete_file', 'stat_file'],
+  requiredTools: ['write_file', 'read_file', 'read_file_lines', 'list_files', 'delete_file', 'stat_file'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],

@@ -190,6 +190,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `read_app_docs` | `core` | Platform documentation access. |
 | `read_document` | `general` | Reusable document-reading expertise. |
 | `read_file` | `core` | Agent workspace operation. |
+| `read_file_lines` | `core` | Agent workspace operation. |
 | `read_skill` | `core` | Agent skill instruction access. |
 | `remove_skills` | `core` | Agent skill assignment. |
 | `request_connection` | `core` | Agent-initiated connection request link. |

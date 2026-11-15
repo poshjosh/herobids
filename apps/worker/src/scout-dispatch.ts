@@ -10,9 +10,11 @@ export interface ScoutDecision {
 const SCOUT_WORKSPACE_CONTEXT_TOOL_NAMES = new Set([
   'execute_code',
   'read_file',
+  'read_file_lines',
   'list_files',
   'write_file',
   'delete_file',
+  'stat_file',
 ]);
 
 export function buildScoutSystemPrompt(params: {

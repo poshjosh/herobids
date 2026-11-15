@@ -919,9 +919,11 @@ function hasTradingCapability(runtimeDescriptor: RuntimeDescriptor): boolean {
 const WORKSPACE_CONTEXT_TOOL_NAMES = new Set([
   'execute_code',
   'read_file',
+  'read_file_lines',
   'list_files',
   'write_file',
   'delete_file',
+  'stat_file',
 ]);
 
 function hasVisibleWorkspacePathTooling(state: RuntimeCompositionState): boolean {

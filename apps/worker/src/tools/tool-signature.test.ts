@@ -12,11 +12,8 @@ import { FILE_TOOL_PARAMS, findSignatureProblems, toolCall, toolSignature } from
  * tool's schema matches the map, so the guard cannot be forgotten.
  */
 const NOT_YET_IMPLEMENTED = new Set([
-  'read_file', // WP2: offset, limit
-  'list_files', // WP2: offset, limit
   'delete_file', // WP4: recursive
   'browse_url', // WP6: limit
-  'read_file_lines', // WP2
   'search_files', // WP5
   'append_file', // WP4
   'edit_file', // WP4

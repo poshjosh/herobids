@@ -120,7 +120,7 @@ describe('filesystem tools', () => {
   it('rejects path traversal with ..', async () => {
     const result = await readTool.execute({ path: '../etc/passwd' }, ctx);
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/traversal|escapes/);
+    expect(result.errorCode).toBe('file.path_invalid');
   });
 
   it('rejects absolute paths', async () => {
