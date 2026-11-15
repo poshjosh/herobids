@@ -53,7 +53,8 @@ State this plainly to avoid over-selling.
 
 - Agents can open files up to 10 MiB (10,485,760 bytes) and work with them in pieces.
 - A lean tool set: extend `read_file`, add `read_file_lines`, `search_files`, `append_file` and
-  `edit_file`. Cap `list_files`. Change `browse_url`. No other new tools.
+  `edit_file`. Cap `list_files`. Add `recursive` to `delete_file`. Change `browse_url`. No other new
+  tools.
 - A per-call cap on what a read returns, so one call cannot flood the context.
 - A soft, per-tier workspace disk quota.
 - A truncation marker that says how much was cut and, where cheap, how to read it again.
@@ -118,6 +119,7 @@ State this plainly to avoid over-selling.
 | 17 | Message standard (owner request, 2026-11-15): every error and every limit-hit result says what happened (with the numbers) and the exact next call, written with the tool signature. The next step is inside the `error` text, because that is what the model reads. Success hints appear only on truncation, paging, incomplete or match results, never on a plain success. Example: disk full tells the agent to call `delete_file(path)`; a search result tells the agent how to read around a match with `read_file_lines`. | Design 0a; WP1 to WP6 |
 | 18 | One helper builds tool signatures from the Zod schemas (`toolSignature()`), so messages, tool descriptions and docs cannot drift when a parameter is renamed. A drift test fails if a message or a doc names an unknown tool or parameter. | Design 0b; WP1 |
 | 19 | Documentation as per the repo conventions: a new `file-tools.md`, a `tools/README.md` that writes the conventions down (none exists today), audit table rows with "Agent Has Info?", updates to the sandboxing and permission docs, signature-style skill instructions, platform docs index, `CHANGELOG.md`. | Design 0c; WP7 |
+| 20 | `delete_file` gets an optional `recursive` argument, default `false` (owner decision, 2026-11-15, after the review). With `recursive: true` it deletes a folder and everything in it, up to `maxDeleteFiles` files per call. No new tool. | Design 7a; WP4 |
 
 ### Where this plan interprets or adds to the decisions
 
@@ -150,12 +152,27 @@ The owner answered the 10 review questions. Recorded here so the sections above 
 | 4 | `read_document` cap: accept or split? | Accept: `read_document` and `browse_url` share the same setting (revisited 2026-11-15). | Gate 4 closed. One config key. PDF fetch cap rises to 1 MiB. Risk recorded. |
 | 5 | Remove the 512 KiB literal from the default `browse_url` grant? | Yes | Gate 5 approved. |
 | 6 | Skip `sandbox/` in the quota walk, and use an env var for the quota? | Yes to both | Confirmed in the interpretations table. |
-| 6r | Regex worker thread (owner, 2026-11-15) | Leave the final decision to the implementing agent: attempt regex; if too complex, fall back to literal search. | Design 3, WP5 step 4, risks, gate 6 and acceptance criteria updated. |
 | 7 | Nomad tmpfs spike | First approved ("you can run it"). Later withdrawn: the owner is not comfortable touching infrastructure and chose a simple MVP. | The spike and the tmpfs mount are removed from the plan. Gate 1 is closed. The spike was never run. |
-| 7b | Web cache design after the spike was dropped (owner, 2026-11-15) | Plain workspace folder, no mount. No tool deletes files on its own. If the cap or the quota is full, save nothing, return the first page plus a message telling the agent to free space with `delete_file` and call again. No memory fallback. | Design 9, config, WP6, tests, risks and gates rewritten. Option B is now the design; option C is not planned. |
 | 8 | Explicit 16,000-character `write_file` cap? | Yes | Unchanged (Design 6). |
 | 9 | Untrusted web text rule | OK | Design 9 text corrected: the wording comes from the job-search skill, not a platform rule. |
 | 10 | `cx23` disk size | About 40 GB | Recorded as owner-confirmed. |
+| 11 | `maxToolResultChars` (gate 3) | Document only, and add a UI hint: "Does not limit what the model sees in the current run. Only applies to the copy of each tool result kept in history." | Gate 3 closed. WP3 step 5 adds the help line in the three locale files and `RuntimePolicySection.tsx`. |
+| 12 | Regex worker thread (owner, 2026-11-15) | Leave the final decision to the implementing agent: attempt regex; if too complex, fall back to literal search. | Design 3, WP5 step 4, risks, gate 6 and acceptance criteria updated. |
+| 13 | Web cache design after the spike was dropped (owner, 2026-11-15) | Plain workspace folder, no mount. No tool deletes files on its own. If the cap or the quota is full, save nothing, return the first page plus a message telling the agent to free space with `delete_file` and call again. No memory fallback. | Design 9, config, WP6, tests, risks and gates rewritten. Option B is now the design; option C is not planned. |
+| 14 | `delete_file` `recursive` (owner, 2026-11-15, after the review) | Add `recursive: false` (default) to `delete_file` as part of this implementation, with the approved parameter description. | Decision 20, Design 7a, WP4 step 6, config `maxDeleteFiles`, messages, tests. The earlier Follow-up was removed. |
+
+### Review fixes (2026-11-15)
+
+A review of this plan against the code produced four fixes and some housekeeping. The owner approved
+applying them.
+
+| # | Finding | Fix in this plan |
+|---|---|---|
+| R1 | The disk-full message tells the agent to use `delete_file`, which removes one file at a time and cannot remove a folder. A folder with many files (for example `node_modules`) can hit the 2,000-file cap and block every write, and a restricted agent has no shell. | The quota walk skips dependency and platform folders (Design 8). The quota message names the three largest top-level folders so the cleanup is actionable. `delete_file` gets `recursive: true` (decision 20, Design 7a), so an agent without a shell can clear a folder. The messages name it (Design 0a). |
+| R2 | The quota walk counted platform-installed folders (`.agents`, `.claude`, `agent`), which hold installed skill copies. Root search would also return skill text as noise. | One config pair, `platformDirs` and `dependencyDirs`, is used by both the quota walk and the default search skip list. |
+| R3 | `browse_url` `truncated` meant "the source hit the fetch cap", while in `read_file` it means "more pages remain". A page cut inline could report `truncated: false`. | In `browse_url`, `truncated` now means "the inline text is cut". A new `sourceTruncated` field means "the fetch cap was hit" (Design 9). |
+| R4 | `errorOwner: 'platform'` notifies the operator (`agent-message-broker.ts:127`). EACCES is not a platform fault. | Platform ownership only for EIO and ENOSPC. EACCES becomes `file.permission_denied` with `errorOwner: 'agent'` (Design 0, 0a). |
+| R5 | Housekeeping: decision count, answers table order, no implementation instructions, no version-skew note. | Fixed. See "Implementation instructions" and the rollout notes. |
 
 No approval gate is open now.
 
@@ -207,7 +224,9 @@ No approval gate is open now.
   a plain workspace folder and the plan makes no infrastructure change.
 - F5. The soft quota needs a per-tier value inside the container. That is an env var, not the
   runtime config JSON.
-- F6. `sandbox/` must be left out of the quota walk (see interpretations).
+- F6. `sandbox/`, the installed-skill folders (`.agents`, `.claude`, `agent`) and dependency
+  folders (`node_modules`, `.git`) must be left out of the quota walk (see interpretations and
+  Review fixes R1, R2).
 - F7. Platform docs are regenerated by `pnpm build`, so the script is the source of truth.
 - F8. A new container env var must be added to `IGNORED_ENV_VARS` in `env-example-drift.test.ts`.
 
@@ -240,8 +259,10 @@ Results
   (`content`, `matches`) last. `JSON.stringify` keeps insertion order, so a result cut to 1,000
   characters by stale truncation still shows the path, range and `nextOffset`.
 - Failure: `{ success: false, error, errorCode, retryable: false, fault: false }`. `fault: false`
-  for content-level errors, so the tool circuit breaker does not trip. Unexpected IO errors (EIO,
-  EACCES, ENOSPC) use `fault: true` and `errorOwner: 'platform'`. Existing error strings of the
+  for content-level errors, so the tool circuit breaker does not trip. Real disk failures (EIO and
+  ENOSPC) use `fault: true` and `errorOwner: 'platform'`, which also notifies the operator
+  (`agent-message-broker.ts:127`). EACCES is not a platform fault: it is `file.permission_denied`
+  with `errorOwner: 'agent'` and `fault: false` (Review fix R4). Existing error strings of the
   current tools stay as the first sentence where tests match them; the `errorCode` and the
   next-step sentence are added (Design 0a).
 - Error codes (namespaced dot strings, like `validation.invalid_payload` and `skill.user_only`
@@ -258,6 +279,8 @@ Results
 | `file.content_too_long` | text over `writeMaxChars` |
 | `file.limit_too_large` | `limit` or `maxMatches` over the configured maximum |
 | `file.quota_exceeded` | write would pass the workspace quota, or the walk hit its file cap |
+| `file.permission_denied` | EACCES or EPERM on a path (agent-owned; not a platform fault) |
+| `file.io_error` | EIO or ENOSPC from the host disk (`errorOwner: 'platform'`, `fault: true`) |
 | `edit.text_not_found`, `edit.ambiguous_match`, `edit.no_change` | `edit_file` |
 | `search.invalid_pattern` | regex does not compile |
 
@@ -270,9 +293,10 @@ inside the `error` text (the model reads it; the failure JSON also carries `erro
 - About 350 characters at most. Plain English. No stack traces. No absolute container paths: use
   workspace-relative paths. No file lists in messages (they cost tokens; the agent can call
   `list_files`).
-- `errorOwner: 'agent'` for anything the agent can fix. `errorOwner: 'platform'` for real IO
-  failures (EIO, EACCES, and ENOSPC when the host disk is full), with a message that says not to
-  retry and to tell the user. Confirm how `agent.ts` builds `errorOwner` and `errorCode` into the
+- `errorOwner: 'agent'` for anything the agent can fix, including EACCES. `errorOwner: 'platform'`
+  only for real disk failures (EIO, and ENOSPC when the host disk is full): that notifies the
+  operator, and the base skill already tells the agent how to word a platform fault to the user
+  (briefly, no technical detail). The message for it says not to retry and to tell the user. Confirm how `agent.ts` builds `errorOwner` and `errorCode` into the
   failure JSON (`agent.ts:2349`) and set the fields the platform already uses.
 - Success results carry a `hint` only when it helps: a truncated page, an incomplete search, a
   search with matches, a capped list. Never on a plain success. `hint` is a short sentence. In
@@ -290,18 +314,21 @@ signatures; `<...>` is filled in at run time):
 | `file.path_invalid` | `Path "<path>" is not allowed. Use a path relative to the workspace root, for example job-search/jobs.json, with no leading / and no ... Check folders with list_files(path).` |
 | `file.reserved_path` | `'sandbox' is reserved for code execution. Write to another folder, for example notes/<name>.` |
 | `file.not_found` | `File not found: <path>. Check the name with list_files(path: "<parent>") or find it with search_files(path, query).` Under `web-cache/`, add: `Cached pages are cleared when the agent restarts; call browse_url(url) again.` |
-| `file.is_directory` | `<path> is a directory. List it with list_files(path: "<path>").` |
+| `file.is_directory` | `<path> is a directory. List it with list_files(path: "<path>"). For delete_file, to delete it and everything inside it call delete_file(path: "<path>", recursive: true).` (The second sentence only for `delete_file`.) |
+| `file.delete_too_many` | `<path> holds <n> files; the limit per call is <max>. Delete its subfolders one at a time: list them with list_files(path: "<path>"), then delete_file(path: "<path>/<sub>", recursive: true).` |
+| `file.reserved_path` (delete) | `<path> is managed by the platform and cannot be deleted.` (workspace root, `sandbox`, and the top-level `platformDirs`) |
 | `file.not_a_file` | `<path> is not a regular file, so it cannot be read.` |
 | `file.too_large` | `<path> is <size> MiB; the limit is <max> MiB. Read part of it with read_file_lines(path, startLine, limit) or find text with search_files(path, query).` (edit: `...too large to edit.`) |
 | `file.write_too_large` | `This write would make <path> <size> MiB; the limit is <max> MiB. Continue in a new file with append_file(path, content).` |
 | `file.content_too_long` | `Content is <n> characters; the limit per call is <max>. Split it and call append_file(path, content) once per part.` (for `write_file`: first part with write_file, the rest with append_file) |
 | `file.limit_too_large` | `limit <n> is above the maximum <max>. For large files use read_file_lines(path, startLine, limit) or search_files(path, query).` |
-| `file.quota_exceeded` | `The workspace is full (<used> of <quota> MiB used). Free space with delete_file(path); list candidates with list_files(path), for example old files in web-cache/. Then repeat this call.` Walk-cap variant: `The workspace has more than <cap> files, so its size cannot be measured. Delete files with delete_file(path).` |
+| `file.quota_exceeded` | `The workspace is full (<used> of <quota> MiB used; largest: <dir1>/ <n> MiB, <dir2>/ <n> MiB, <dir3>/ <n> MiB). Free space with delete_file(path), or delete_file(path: "<dir1>", recursive: true) for a whole folder; check a file's size with stat_file(path) and list a folder with list_files(path: "<dir1>"). Then repeat this call.` The three largest top-level folders come from the quota walk, which already has the totals. Walk-cap variant: `The workspace has more than <cap> files, so its size cannot be measured. Delete a folder you no longer need with delete_file(path: "<dir>", recursive: true); list folders with list_files(path).`  (Never suggest a folder in `platformDirs`.) |
 | `edit.text_not_found` | `oldText was not found in <path>. Copy it exactly, including spaces and line endings, from read_file_lines(path, startLine, limit), or locate it with search_files(path, query).` (If CRLF is the cause, say so.) |
 | `edit.ambiguous_match` | `oldText matches <n> places in <path>. Add more surrounding text to oldText, or set replaceAll: true. See where with search_files(path, query: oldText).` |
 | `edit.no_change` | `oldText and newText are the same, so nothing was changed.` |
 | `search.invalid_pattern` | `Invalid pattern: <engine message>. Fix it, or set regex: false to search for the text literally.` (Only if regex ships.) |
-| Real IO failure | `A platform problem stopped <action> on <path> (<code>). Do not retry; tell the user.` with `errorOwner: 'platform'`. |
+| `file.io_error` (EIO, ENOSPC) | `A platform problem stopped <action> on <path> (<code>). Do not retry; tell the user.` with `errorOwner: 'platform'`. |
+| `file.permission_denied` (EACCES) | `Permission denied for <path>. Choose another path, for example under notes/, or check the file with stat_file(path).` with `errorOwner: 'agent'`. |
 | `read_file` paged (hint) | `More text remains. Continue with read_file(path, offset: <nextOffset>) or search_files(path, query).` |
 | `read_file_lines` paged (hint) | `More lines remain. Continue with read_file_lines(path, startLine: <nextLine>).` |
 | `search_files` with matches (hint) | `Read around a match with read_file_lines(path: "<file>", startLine: <line - 5>, limit: 20).` |
@@ -443,8 +470,10 @@ data: {
   matching and counted in `skippedLongLines`. Binary files (a NUL byte in the first 8 KiB) are
   skipped and counted. Files over `maxFileBytes` are skipped and counted.
 - Walk: sorted names, depth first. Symlinks are never followed (even inside the workspace). Default
-  skipped directories (config `search.skipDirs`): `sandbox`, `node_modules`, `.git`. An explicit
-  `path` inside one of them is searched.
+  skipped directories are the shared lists in config `tools.files`: `platformDirs` (top level only:
+  `sandbox`, `.agents`, `.claude`, `agent`) and `dependencyDirs` (any depth: `node_modules`, `.git`).
+  The same lists are used by the quota walk (Design 8). An explicit `path` inside one of them is
+  searched.
 - Hitting any limit returns the matches found so far with `incomplete: true`, the reason and where
   it stopped. It is not an error. `max_matches` means "there may be more".
 - Literal search streams each file line by line (`StringDecoder`, carry the partial line) and uses
@@ -538,14 +567,59 @@ data:   { path, entries, totalEntries, offset, nextOffset: number | null, trunca
 
 - Same sort as today. `truncated` is true when `nextOffset !== null`.
 
+### 7a. `delete_file` (add `recursive`)
+
+```ts
+params: { path: string, recursive?: boolean /* default false */ }
+data:   { path, deleted: true, filesDeleted, bytesFreed }
+```
+
+Description of `recursive` (owner-approved wording; fill `<maxDeleteFiles>` from config when the
+description is built):
+
+> Set to true to delete a folder and everything inside it. This cannot be undone. Without it, a
+> folder path is refused. A folder with more than `<maxDeleteFiles>` files is refused; delete its
+> subfolders one at a time.
+
+The tool description becomes: "Delete a file from the agent workspace. With `recursive: true`,
+delete a folder and its contents. The sandbox directory is reserved and cannot be deleted."
+
+- `recursive: false` (default): exactly today's behaviour. A folder is refused with `file.is_directory`
+  and the message now names `recursive: true` (Design 0a).
+- `recursive: true` on a file: deletes the file, same as today (the flag only matters for folders).
+- `recursive: true` on a folder: first walk it (use `lstat`; do not follow symlinks) to count files
+  and sum sizes. If the count is over `tools.files.maxDeleteFiles` (default 5,000, config), refuse
+  with `file.delete_too_many` and delete nothing. Otherwise remove it with `fs.rm(..., { recursive:
+  true })`. A symlink inside the folder is removed as a link; its target is never touched. A path that
+  is itself a symlink is unlinked, never followed. Return `filesDeleted` and `bytesFreed`, so the
+  agent sees the space it freed.
+- Refused (`file.reserved_path`, message in Design 0a): the workspace root (path `""`, `.` or
+  anything that resolves to the root), `sandbox`, and the top-level `platformDirs` (`.agents`,
+  `.claude`, `agent`), because deleting them breaks the installed skills. This is the plan's default;
+  the owner can change the list in config.
+- Always call `resolveWorkspacePath` first, and check the resolved path again against the root
+  before `fs.rm`.
+- No quota check (deletes only free space). Log the call at `info` with the path and the count (the
+  agent runtime already logs tool calls).
+- Not atomic. If `fs.rm` fails half way, return `file.io_error` or `file.permission_denied` and say
+  how many files were deleted so far if known.
+- No automatic deletion elsewhere: this is still only the agent's own call (owner rule).
+
 ### 8. Workspace quota (soft)
 
 - New `apps/worker/src/tools/workspace-quota.ts`: `getWorkspaceUsage(root)` and
   `assertWithinQuota(root, addBytes)`.
-- Usage: walk the workspace, sum `lstat` sizes of regular files, do not follow symlinks, skip
-  `sandbox/`. Cap the walk at 2,000 files (an assumed default, `quotaWalkMaxFiles`). If the walk
-  hits the cap the usage is unknown, so the write fails with `file.quota_exceeded` and a message to
-  delete files. Loud failure, not a guess.
+- Usage: walk the workspace, sum `lstat` sizes of regular files, do not follow symlinks, skip the
+  `platformDirs` (top level only: `sandbox`, `.agents`, `.claude`, `agent`) and the `dependencyDirs`
+  (any depth: `node_modules`, `.git`). Both lists are config (`tools.files`) and are shared with
+  `search_files`. The platform dirs hold installed skill copies the platform put there; the
+  dependency dirs can hold thousands of files the agent cannot remove with `delete_file`. Also record
+  the total per top-level folder, so the quota message can name the three largest (Design 0a). Cap
+  the walk at 2,000 files (an assumed default, `quotaWalkMaxFiles`). If the walk hits the cap the
+  usage is unknown, so the write fails with `file.quota_exceeded` and the walk-cap message (Design
+  0a). Loud failure, not a guess. (Review fixes R1, R2.)
+- `delete_file` with `recursive: true` removes a folder (Design 7a), so the agent can always free
+  space without a shell. The quota messages name it.
 - Called before `write_file`, `append_file`, `edit_file` and the `browse_url` cache save. Not
   called by reads or `delete_file`.
 - The quota comes from `AGENT_WORKSPACE_QUOTA_MB`. If it is missing (stub or legacy path) the code
@@ -566,7 +640,9 @@ Params and result
 ```ts
 params: { url: string, limit?: number /* chars; default readDefaultChars; max readMaxChars */ }
 data: {
-  url, title, truncated,        // truncated keeps today's meaning: the source hit the fetch cap
+  url, title,
+  truncated: boolean,           // true when the inline text is cut (same meaning as in read_file)
+  sourceTruncated: boolean,     // true when the fetch cap was hit, so even savedTo is not the whole page
   totalChars, returnedChars,
   nextOffset: number | null,    // only when savedTo is set
   savedTo?: string,             // "web-cache/<name>.txt"
@@ -575,6 +651,11 @@ data: {
 }
 ```
 
+- Field meaning (Review fix R3): `truncated` means the inline `content` is shorter than the cleaned
+  text, exactly as in `read_file`. Today's `truncated` ("the source hit the fetch cap") moves to
+  `sourceTruncated`. `browse_url` has no `offset` parameter: `nextOffset` is an offset into the saved
+  file, so the continue hint is `read_file(path: "<savedTo>", offset: <nextOffset>)`. Update the
+  existing tests and any code that reads the old `truncated` (search for it before changing).
 - Fetch cap: 1 MiB (config `tools.webAccess.browseUrl.maxResponseBytes`) after removing the literal
   512 KiB from the default grant (F1). A page whose `Content-Length` is over the cap is still
   refused, as today.
@@ -704,6 +785,9 @@ data: {
       readMaxChars: 500000       # largest `limit` (read_file, browse_url) or `maxChars` (read_file_lines) an agent may ask for (about 125k tokens)
       writeMaxChars: 16000       # per-call text cap for write_file, append_file and edit_file
       quotaWalkMaxFiles: 2000    # files counted when summing workspace size; over this the write fails
+      maxDeleteFiles: 5000       # most files delete_file(recursive: true) removes in one call; a bigger folder is refused
+      platformDirs: [sandbox, .agents, .claude, agent]  # top-level folders the platform manages; skipped by the quota walk and by default searches
+      dependencyDirs: [node_modules, .git]              # folders skipped at any depth by the quota walk and by default searches
       list:
         defaultEntries: 500
         maxEntries: 2000
@@ -720,7 +804,6 @@ data: {
         maxQueryChars: 200
         maxRegexChars: 100
         regexLineMaxChars: 2000
-        skipDirs: [sandbox, node_modules, .git]
     webAccess:
       browseUrl:
         maxResponseBytes: 1048576  # 1 MiB (was 524288); the default grant no longer overrides it
@@ -738,6 +821,9 @@ export const FileToolsConfigSchema = z.object({
   readMaxChars: z.number().int().min(1).default(500_000),
   writeMaxChars: z.number().int().min(1).default(16_000),
   quotaWalkMaxFiles: z.number().int().min(1).default(2_000),
+  maxDeleteFiles: z.number().int().min(1).default(5_000),
+  platformDirs: z.array(z.string().min(1)).default(['sandbox', '.agents', '.claude', 'agent']),
+  dependencyDirs: z.array(z.string().min(1)).default(['node_modules', '.git']),
   list: z.object({ defaultEntries: z.number().int().min(1).default(500), maxEntries: z.number().int().min(1).default(2_000) }).default({}),
   search: z.object({ /* keys above with the same defaults */ }).default({}),
 }).default({}).refine((c) => c.readDefaultChars <= c.readMaxChars && c.list.defaultEntries <= c.list.maxEntries, { message: '...' });
@@ -769,6 +855,29 @@ Who reads what
 
 Restart note: policy is passed at container start. After a config change, restart the agents.
 
+## Implementation instructions
+
+For the implementer.
+
+- Read the whole plan first, including "Review fixes", "What this will and will not fix" and the
+  decision table. File and line references are pointers that will drift; confirm them in the code
+  before relying on them.
+- Work on a new branch. One atomic commit per work package (one logical change per commit). Do not
+  commit unless the owner asks; if the owner asks, do not push to `main`. Do not stage or touch
+  unrelated files.
+- Build in this order: WP1, then WP2. **Stop for owner review after WP2**, then WP3 and WP4. **Stop
+  for review after WP4.** Then WP5, WP6, WP7. Say which WPs you ran in parallel.
+- After each WP run the focused tests, then `pnpm lint`, `pnpm test` and `pnpm build`
+  (`AGENTS.md`). Do not skip the drift tests.
+- Write `results.md` in this folder as you go: decisions you took (for example regex shipped or fell
+  back to literal), deviations from the plan and why, measured numbers, and anything left
+  unverified.
+- If an approach fails twice, stop and explain (`AGENTS.md`). Do not add a dependency, change
+  infrastructure, or change behaviour that this plan marks as documentation-only without the owner's
+  approval.
+- Do not run the live stack or change the running agents yourself; the live checks are for the
+  owner (see "Live verification and rollout").
+
 ## Work packages
 
 Each WP is shippable and testable on its own. Run `pnpm lint` and the focused tests after each.
@@ -778,15 +887,15 @@ Rule for every WP that adds or changes a tool: all its errors and hints come fro
 The tool's `description` states the unit of every parameter and names its companion tools with
 `toolSignature()` (for example `read_file` points to `read_file_lines` and `search_files`).
 
-| WP | Scope | Depends on |
-|---|---|---|
-| WP1 | Foundation | none |
-| WP2 | Read side | WP1 |
-| WP3 | Truncation marker | WP2 (hint targets) |
-| WP4 | Write side | WP1 |
-| WP5 | `search_files` | WP1 |
-| WP6 | `browse_url` and web cache | WP1 |
-| WP7 | Docs and wrap-up | WP2 to WP6 |
+| WP | Scope | Depends on | Status |
+|---|---|---|---|
+| WP1 | Foundation | none | PENDING |
+| WP2 | Read side | WP1 | PENDING |
+| WP3 | Truncation marker | WP2 (hint targets) | PENDING |
+| WP4 | Write side | WP1 | PENDING |
+| WP5 | `search_files` | WP1 | PENDING |
+| WP6 | `browse_url` and web cache | WP1 | PENDING |
+| WP7 | Docs and wrap-up | WP2 to WP6 | PENDING |
 
 Parallel after WP1: WP2, WP4, WP5 and WP6 touch mostly separate files and can run at the same
 time. Shared files with small, separate hunks: `filesystem.ts` (WP2, WP4), `tools.ts` and
@@ -855,6 +964,9 @@ tier value in the env; `RuntimeResourceProfile` carries the field.
 3. Quota check in all three (net growth for overwrite and edit).
 4. Atomic write helper with mode and best-effort owner preservation.
 5. Wiring for `append_file` and `edit_file` (as WP2 step 5).
+6. `delete_file`: add `recursive` (default false), `maxDeleteFiles`, the protected paths and the new
+   messages (Design 7a). No wiring change (`delete_file` is already in the catalog, the skills and
+   the context sets); update its catalog description and the audit table row.
 
 ### WP5. `search_files`
 
@@ -905,7 +1017,7 @@ tier value in the env; `RuntimeResourceProfile` carries the field.
    the signature style, the discoverability rule (Design 0c), and how to keep the audit table up to
    date. Link it from `docs/best-practices/README.md` if that index lists tool docs.
 4. `docs/tech/agents/tools/audits/2026/06/001-tools-audit.md`: update the file-tool rows
-   (`read_file` args, `list_files` paging, `browse_url` `limit`) and add rows for `read_file_lines`,
+   (`read_file` args, `list_files` paging, `delete_file` `recursive`, `browse_url` `limit`) and add rows for `read_file_lines`,
    `search_files`, `append_file` and `edit_file` with the "Agent Has Info?" column (Design 0c).
 5. `docs/tech/agents/tool-access-and-sandboxing.md`, "Filesystem And Process Policy": add the
    soft workspace quota per tier, the file tool limits, and the web cache (a plain workspace folder,
@@ -936,6 +1048,17 @@ Unit tests are behaviour-named. Use a temp dir for `AGENT_WORKSPACE_ROOT`, as
 - "returns an empty page for an empty file", "returns an empty page for an offset past the end"
 - "rejects a limit above the maximum with file.limit_too_large", "accepts limit equal to the maximum"
 - "returns file.not_found for a missing file", "returns file.is_directory for a directory"
+
+`delete_file` (Design 7a)
+- "deletes a file exactly as before when recursive is not given", "refuses a folder with
+  file.is_directory and the message names recursive: true", "deletes a folder and its contents with
+  recursive: true and reports filesDeleted and bytesFreed", "recursive: true on a file deletes the
+  file", "refuses a folder with more files than maxDeleteFiles and deletes nothing", "does not follow
+  a symlink inside the folder and leaves its target untouched", "unlinks a symlink path without
+  touching its target", "refuses the workspace root, sandbox and the top-level platform dirs", "refuses
+  a path that escapes the workspace", "deletes nested folders", "frees quota so a refused write
+  succeeds afterwards", "the disk-full message names delete_file with recursive: true and a real
+  folder".
 - "refuses a path that escapes through a symlink", "refuses .. and absolute paths"
 - "reads a file under sandbox/" (existing behaviour kept)
 - "adds the restart hint when a web-cache file is missing"
@@ -959,8 +1082,10 @@ Unit tests are behaviour-named. Use a temp dir for `AGENT_WORKSPACE_ROOT`, as
   case insensitive on request", "cuts a long line to a window around the match", "returns context
   lines", "stops at maxMatches and sets incomplete max_matches", "caps result text at the default
   budget and at 50,000 when maxMatches is raised", "searches a single file path", "searches a
-  directory recursively in sorted order", "skips binary files and counts them", "skips sandbox and
-  node_modules by default", "does not follow symlinks", "rejects a multi-line query", "rejects a
+  directory recursively in sorted order", "skips binary files and counts them", "skips the platform
+  dirs (top level only) and the dependency dirs (any depth) by default", "searches a folder named
+  agent that is not at the top level", "searches inside a skipped dir when the path names it", "does
+  not follow symlinks", "rejects a multi-line query", "rejects a
   query over 200 characters", "returns incomplete max_files, max_bytes and deadline results with
   stoppedAt" (inject small limits and a fake clock), "skips files over 10 MiB".
 - Regex: "finds a regex match", "rejects an invalid pattern with search.invalid_pattern", "rejects a
@@ -987,8 +1112,11 @@ Unit tests are behaviour-named. Use a temp dir for `AGENT_WORKSPACE_ROOT`, as
   append_file", "counts net growth against the quota when overwriting".
 
 Quota
-- "sums regular files, skips sandbox, does not follow symlinks", "fails when the walk hits the file
-  cap", "fails the write that would pass the quota and allows one at the limit", "falls back to
+- "sums regular files, skips the platform dirs and the dependency dirs, does not follow symlinks",
+  "a top-level folder named agent is skipped but notes/agent is counted", "names the three largest
+  top-level folders in the quota message", "node_modules with thousands of files does not hit the
+  file cap", "fails when the walk hits the file cap and the message says delete_file removes one file
+  at a time", "fails the write that would pass the quota and allows one at the limit", "falls back to
   sandboxDefaults when the env var is missing", "counts web-cache".
 
 Messages (Design 0a; each tool WP adds the cases for its own codes)
@@ -1007,6 +1135,8 @@ Messages (Design 0a; each tool WP adds the cases for its own codes)
   to 1,000 characters"
 - "every message is at most 350 characters for a long path, and contains no absolute container path"
 - "an IO error (EIO, ENOSPC) is errorOwner platform and says not to retry"
+- "EACCES is file.permission_denied with errorOwner agent and fault false, and does not notify the
+  operator"
 - Signature drift: "every tool(...) signature in the messages, the tool descriptions,
   FILE_MANAGEMENT_SKILL.instructions and file-tools.md names a known tool and real parameters and
   matches toolSignature()"
@@ -1018,7 +1148,10 @@ Messages (Design 0a; each tool WP adds the cases for its own codes)
   totalChars and savedTo when it does not", "saved file holds the full cleaned text", "same URL
   overwrites the same file", "never deletes any file, also when the cache is full", "returns the
   page with saveError and saves nothing when the cache cap would be passed", "returns the page with
-  saveError and saves nothing when the quota would be passed", "saveError names delete_file and the
+  saveError and saves nothing when the quota would be passed", "truncated is true when the inline
+  text is cut even if the source was not capped", "sourceTruncated is true only when the fetch cap
+  was hit", "the continue hint names read_file with savedTo and nextOffset", "saveError names
+  delete_file and the
   web-cache folder", "saves again after the agent deleted a file and called again", "counts a
   re-save of the same URL at its net growth", "skips saving without an error when sizeMb is 0",
   "still blocks private hosts, http and unsafe redirects" (existing tests keep passing), "uses the
@@ -1118,6 +1251,17 @@ Rollback (config only; restart agents, because policy is passed at container sta
   calls `delete_file` fills the 50 MB cache cap, after which it still gets first pages and a clear
   message but no saved files. The workspace quota bounds total growth. If this proves annoying in the
   staging soak, the options are a larger `sizeMb` or a later, owner-approved cleanup rule.
+- Version skew (checked in the review): the runtime config schema is not strict at the root (the
+  only `.strict()` in that part of `schema.ts` is a nested placement-timeouts object), so an older
+  agent image given the new `tools.files` keys drops them instead of crashing. `getDefinitions`
+  skips tool names missing from an older image's registry. So an old image with the new skill
+  revision does not crash, but its prompt names tools it does not have, and a call returns
+  "unknown tool". Deploy the worker and the agent image together and restart agents (the plan
+  already says agents need a restart).
+- The quota fallback (`sandboxDefaults.workspaceDiskMb`, used when `AGENT_WORKSPACE_QUOTA_MB` is
+  missing, for example on the Docker legacy path where the manager builds its own env) ignores the
+  tier, so a pro agent would get the free value there. Acceptable (the launcher path sets the tier
+  value); note it in `results.md` if the legacy path is found to be used.
 - A repeat call after freeing space fetches the page again (one more request to the site). Accepted
   for the MVP; a single-slot memory cache is a small later add-on.
 - No infrastructure is touched, so there is no RAM or tmpfs risk from the web cache. The only
