@@ -207,3 +207,113 @@ describe('read_skill', () => {
     expect(String(data.message)).toContain('was not written');
   });
 });
+
+describe('read_skill on an already-loaded skill', () => {
+  const skillPath = () => join(workspaceRoot, '.agents', 'skills', SKILL_DIR, 'SKILL.md');
+
+  it('returns the body on the first call and no instructions on the second', async () => {
+    const session = makeSession(true);
+    const first = await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    expect(String((first.data as Record<string, unknown>).instructions)).toContain('BODY LINE ONE');
+
+    const second = await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    expect(second.success).toBe(true);
+    const data = second.data as Record<string, unknown>;
+    expect(data.loaded).toBe(true);
+    expect(data.available).toBe(true);
+    expect(data.alreadyLoaded).toBe(true);
+    expect(data).not.toHaveProperty('instructions');
+    expect(String(data.message)).toContain('refresh: true');
+  });
+
+  it('does not read SKILL.md from disk or run the installer on a repeat call', async () => {
+    const session = makeSession(true);
+    const installer = fakeInstaller({ writeSkill: true });
+    await readSkillTool.execute({ ref: REF }, makeCtx(session, installer));
+    // Removing the file proves the repeat call does not touch the disk: a read
+    // would fall into the install path.
+    await rm(skillPath());
+
+    const second = await readSkillTool.execute({ ref: REF }, makeCtx(session, installer));
+    expect((second.data as Record<string, unknown>).alreadyLoaded).toBe(true);
+    expect(installer.install).not.toHaveBeenCalled();
+    expect(session._loaded.get(REF)).toContain('BODY LINE ONE');
+  });
+
+  it('keeps the tool report fields on the repeat response', async () => {
+    const session = {
+      ...makeSession(true),
+      toolReportFor: () => ({
+        outcome: 'tools_exposed',
+        toolNames: ['get_price'],
+        droppedTools: [{ name: 'ghost_tool', reason: 'not_in_local_registry' }],
+      }),
+    };
+    await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    const second = await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    const data = second.data as Record<string, unknown>;
+    expect(data.alreadyLoaded).toBe(true);
+    expect(data.tools).toEqual(['get_price']);
+    expect(data.droppedTools).toEqual([{ name: 'ghost_tool', reason: 'not_in_local_registry' }]);
+    expect(String(data.toolNotice)).toContain('ghost_tool');
+  });
+
+  it('re-reads SKILL.md and updates the stored body when refresh is true', async () => {
+    const session = makeSession(true);
+    await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    await writeFile(skillPath(), '---\nname: crypto-trading\ndescription: trade\n---\nUPDATED BODY\n', 'utf-8');
+
+    const result = await readSkillTool.execute({ ref: REF, refresh: true }, makeCtx(session));
+    const data = result.data as Record<string, unknown>;
+    expect(data.loaded).toBe(true);
+    expect(data).not.toHaveProperty('alreadyLoaded');
+    expect(String(data.instructions)).toContain('UPDATED BODY');
+    expect(session._loaded.get(REF)).toContain('UPDATED BODY');
+  });
+
+  it('still installs a missing SKILL.md when refresh is true on a loaded skill', async () => {
+    const session = makeSession(true);
+    await readSkillTool.execute({ ref: REF }, makeCtx(session));
+    await rm(join(workspaceRoot, '.agents', 'skills', SKILL_DIR), { recursive: true, force: true });
+    const installer = fakeInstaller({ writeSkill: true });
+
+    const result = await readSkillTool.execute({ ref: REF, refresh: true }, makeCtx(session, installer));
+    expect(String((result.data as Record<string, unknown>).instructions)).toContain('INSTALLED BODY');
+    expect(installer.install).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads a different ref even when another skill is already loaded', async () => {
+    const otherRef = 'traderton/skills/other-skill';
+    const dir = join(workspaceRoot, '.agents', 'skills', 'other-skill');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'SKILL.md'), '---\nname: other-skill\ndescription: x\n---\nOTHER BODY\n', 'utf-8');
+    const session = { ...makeSession(true), assignedRefs: () => [REF, otherRef] };
+    await readSkillTool.execute({ ref: REF }, makeCtx(session));
+
+    const result = await readSkillTool.execute({ ref: otherRef }, makeCtx(session));
+    const data = result.data as Record<string, unknown>;
+    expect(data).not.toHaveProperty('alreadyLoaded');
+    expect(String(data.instructions)).toContain('OTHER BODY');
+  });
+
+  it('still rejects a not-assigned ref and still reports an unavailable skill', async () => {
+    const loadedSession = makeSession(true);
+    loadedSession.markLoaded('someone/else/skill', 'stale');
+    const notAssigned = await readSkillTool.execute({ ref: 'someone/else/skill' }, makeCtx(loadedSession));
+    expect(notAssigned.errorCode).toBe('skill.not_assigned');
+
+    const unavailableSession = makeSession(false);
+    unavailableSession.markLoaded(REF, 'old body');
+    const unavailable = await readSkillTool.execute({ ref: REF }, makeCtx(unavailableSession));
+    const data = unavailable.data as Record<string, unknown>;
+    expect(data.available).toBe(false);
+    expect(data).not.toHaveProperty('alreadyLoaded');
+  });
+
+  it('exposes refresh as an optional boolean in the tool JSON schema', () => {
+    const parameters = readSkillTool.parameters as { properties: Record<string, { type?: string | string[] }>; required?: string[] };
+    // The OpenAI target renders optionals as nullable, e.g. ['boolean', 'null'].
+    expect([parameters.properties['refresh']?.type].flat()).toContain('boolean');
+    expect(parameters.required ?? []).not.toContain('refresh');
+  });
+});

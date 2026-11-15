@@ -95,6 +95,37 @@ describe('load_skill', () => {
     expect(result.errorCode).toBe('skill.activation_pending');
   });
 
+  it('returns no instructions when the skill is assigned and already loaded', async () => {
+    assigned = [REF];
+    const ctx = makeCtx();
+    const first = await loadSkillTool.execute({ ref: REF }, ctx);
+    expect(String((first.data as Record<string, unknown>).instructions)).toContain('BODY LINE ONE');
+
+    const second = await loadSkillTool.execute({ ref: REF }, ctx);
+    expect(second.success).toBe(true);
+    const data = second.data as Record<string, unknown>;
+    expect(data.alreadyLoaded).toBe(true);
+    expect(data.added).toBe(false);
+    expect(data).not.toHaveProperty('instructions');
+    expect(addExecute).not.toHaveBeenCalled();
+  });
+
+  it('passes refresh through to read_skill and returns the re-read body', async () => {
+    assigned = [REF];
+    const ctx = makeCtx();
+    await loadSkillTool.execute({ ref: REF }, ctx);
+    await writeFile(
+      join(workspaceRoot, '.agents', 'skills', SKILL_DIR, 'SKILL.md'),
+      '---\nname: crypto-trading\ndescription: trade\n---\nUPDATED BODY\n',
+      'utf-8',
+    );
+
+    const result = await loadSkillTool.execute({ ref: REF, refresh: true }, ctx);
+    const data = result.data as Record<string, unknown>;
+    expect(data).not.toHaveProperty('alreadyLoaded');
+    expect(String(data.instructions)).toContain('UPDATED BODY');
+  });
+
   it('rejects a platform skill slug, since load_skill is for external skills only', async () => {
     const result = await loadSkillTool.execute({ ref: 'system/programming' }, makeCtx());
     expect(result.success).toBe(false);

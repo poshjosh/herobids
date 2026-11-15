@@ -76,6 +76,10 @@ function toolReportFields(
 
 const ReadSkillParamsSchema = z.object({
   ref: z.string().min(1).describe('The skill ref to load, e.g. "traderton/skills/crypto-trading", as listed in the prompt.'),
+  refresh: z
+    .boolean()
+    .optional()
+    .describe('Set true to re-read SKILL.md from disk even if the skill is already loaded this session. Default false.'),
 });
 
 /**
@@ -127,6 +131,23 @@ async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<Tool
     }
   }
 
+  // Already loaded this session: the body is in the system prompt (and the earlier
+  // tool result). Returning it again would add a never-truncated copy to the
+  // history each call, so return only the tool report unless `refresh` is set.
+  if (session?.isLoaded(ref) && parsed.data.refresh !== true) {
+    return {
+      success: true,
+      data: {
+        ref,
+        loaded: true,
+        available: true,
+        alreadyLoaded: true,
+        message: `Skill "${ref}" is already loaded this session; its instructions are already in your system prompt. Pass refresh: true to re-read SKILL.md from disk.`,
+        ...toolReportFields(session.toolReportFor?.(ref)),
+      },
+    };
+  }
+
   const workspaceRoot = getWorkspacePaths(ctx.agentId).root;
   let body = await readInstalledSkillBody(workspaceRoot, ref);
   if (body === null) {
@@ -158,7 +179,8 @@ async function executeReadSkill(params: unknown, ctx: ToolContext): Promise<Tool
       loaded: true,
       available: true,
       // The body is now in the system prompt for the rest of the session; also
-      // returned here so the agent can act on it this tick.
+      // returned here so the agent can act on it this tick. A repeat call for a
+      // loaded skill skips this (see the alreadyLoaded branch) unless refresh is set.
       instructions: body,
       ...toolReportFields(report),
     },
@@ -170,7 +192,8 @@ export const readSkillTool: AgentTool = {
   description:
     "Load an external skill's full instructions by its ref (e.g. \"traderton/skills/crypto-trading\"). " +
     'The prompt lists each external skill by name and description; call read_skill to load the one you need. ' +
-    'Once loaded, the skill stays available for the rest of the session.',
+    'Once loaded, the skill stays available for the rest of the session. ' +
+    'Calling it again for an already-loaded skill returns alreadyLoaded: true without the instructions; pass refresh: true to re-read SKILL.md.',
   parametersSchema: ReadSkillParamsSchema,
   parameters: convertZodToJsonSchema(ReadSkillParamsSchema),
   category: 'read-filesystem',

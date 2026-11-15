@@ -12,6 +12,10 @@ import { readSkillTool, checkSkillRefForRead } from './read-skill.js';
 
 const LoadSkillParamsSchema = z.object({
   ref: z.string().min(1).describe('The external skill ref, e.g. "traderton/skills/crypto-trading", as listed by search_skills.'),
+  refresh: z
+    .boolean()
+    .optional()
+    .describe('Set true to re-read SKILL.md from disk even if the skill is already loaded this session. Default false.'),
 });
 
 async function executeLoadSkill(params: unknown, ctx: ToolContext): Promise<ToolResult> {
@@ -36,7 +40,7 @@ async function executeLoadSkill(params: unknown, ctx: ToolContext): Promise<Tool
     addData = addResult.data as Record<string, unknown> | undefined;
   }
 
-  const readResult = await readSkillTool.execute({ ref: rawRef }, ctx);
+  const readResult = await readSkillTool.execute({ ref: rawRef, refresh: parsed.data.refresh }, ctx);
   if (!readResult.success) {
     if (readResult.errorCode === 'skill.not_assigned') {
       // The add succeeded but the assignment is not live in this session yet
@@ -66,7 +70,8 @@ export const loadSkillTool: AgentTool = {
   name: 'load_skill',
   description:
     'Add an external skill to this agent and load its full instructions in one call (same as add_skills then read_skill). ' +
-    'Use this when you need a skill now. The instructions stay available for the rest of the session.',
+    'Use this when you need a skill now. The instructions stay available for the rest of the session. ' +
+    'If the skill is already loaded, the instructions are not returned again (alreadyLoaded: true); pass refresh: true to re-read SKILL.md.',
   parametersSchema: LoadSkillParamsSchema,
   parameters: convertZodToJsonSchema(LoadSkillParamsSchema),
   category: 'write-database',

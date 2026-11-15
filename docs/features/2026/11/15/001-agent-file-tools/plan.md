@@ -7,7 +7,8 @@ file and line references. Anything not confirmed is marked "unverified" and is c
 
 Owner review answers were recorded the same day (see "Review answers"). The `browse_url` design
 was then simplified to an MVP with no infrastructure change (no tmpfs mount, no Nomad spike, no
-automatic file deletion; see Design 9). No approval gate is open. `read_document` shares the
+automatic file deletion; see Design 9). The owner then added a message standard and a
+documentation deliverable (decisions 17 to 19; Design 0a to 0c; WP7). No approval gate is open. `read_document` shares the
 `browse_url` fetch cap (owner decision), and `maxToolResultChars` is documented only, with a UI
 hint.
 
@@ -56,6 +57,10 @@ State this plainly to avoid over-selling.
 - A soft, per-tier workspace disk quota.
 - A truncation marker that says how much was cut and, where cheap, how to read it again.
 - Every tunable value is operator config validated by Zod. No new literals.
+- Every error and limit-hit result tells the agent what to do next, with the exact tool signature
+  (Design 0a).
+- The tools are documented to the repo conventions, and the conventions are written down
+  (Design 0c, WP7).
 
 ## Non-goals
 
@@ -109,6 +114,9 @@ State this plainly to avoid over-selling.
 | 14 | Skills wiring: new tools go into `file-management` and `long-running-task`; update catalog, known names, both `WORKSPACE_CONTEXT_TOOL_NAMES` sets, platform docs index, drift-guard tests, `CHANGELOG.md`. | Design 11 |
 | 15 | The job-search skill is out of scope. | Follow-ups |
 | 16 | Naming per `AGENTS.md`. Existing `ToolResult` shapes and namespaced error codes. Zod validation. `resolveWorkspacePath` and `checkReservedDir` on every path. | Design 0 |
+| 17 | Message standard (owner request, 2026-11-15): every error and every limit-hit result says what happened (with the numbers) and the exact next call, written with the tool signature. The next step is inside the `error` text, because that is what the model reads. Success hints appear only on truncation, paging, incomplete or match results, never on a plain success. Example: disk full tells the agent to call `delete_file(path)`; a search result tells the agent how to read around a match with `read_file_lines`. | Design 0a; WP1 to WP6 |
+| 18 | One helper builds tool signatures from the Zod schemas (`toolSignature()`), so messages, tool descriptions and docs cannot drift when a parameter is renamed. A drift test fails if a message or a doc names an unknown tool or parameter. | Design 0b; WP1 |
+| 19 | Documentation as per the repo conventions: a new `file-tools.md`, a `tools/README.md` that writes the conventions down (none exists today), audit table rows with "Agent Has Info?", updates to the sandboxing and permission docs, signature-style skill instructions, platform docs index, `CHANGELOG.md`. | Design 0c; WP7 |
 
 ### Where this plan interprets or adds to the decisions
 
@@ -233,8 +241,9 @@ Results
   characters by stale truncation still shows the path, range and `nextOffset`.
 - Failure: `{ success: false, error, errorCode, retryable: false, fault: false }`. `fault: false`
   for content-level errors, so the tool circuit breaker does not trip. Unexpected IO errors (EIO,
-  EACCES, ENOSPC) use `fault: true` and `errorOwner: 'platform'`. Keep the existing error strings of
-  the current tools (tests match them) and add `errorCode`.
+  EACCES, ENOSPC) use `fault: true` and `errorOwner: 'platform'`. Existing error strings of the
+  current tools stay as the first sentence where tests match them; the `errorCode` and the
+  next-step sentence are added (Design 0a).
 - Error codes (namespaced dot strings, like `validation.invalid_payload` and `skill.user_only`
   already in the repo):
 
@@ -251,6 +260,85 @@ Results
 | `file.quota_exceeded` | write would pass the workspace quota, or the walk hit its file cap |
 | `edit.text_not_found`, `edit.ambiguous_match`, `edit.no_change` | `edit_file` |
 | `search.invalid_pattern` | regex does not compile |
+
+#### 0a. Message standard (owner request, 2026-11-15)
+
+Rule: every error and every limit-hit result says (1) what happened, with the numbers, (2) why, if
+it is not obvious, and (3) the exact next call, written with the tool signature. The next step is
+inside the `error` text (the model reads it; the failure JSON also carries `errorCode`). Also:
+
+- About 350 characters at most. Plain English. No stack traces. No absolute container paths: use
+  workspace-relative paths. No file lists in messages (they cost tokens; the agent can call
+  `list_files`).
+- `errorOwner: 'agent'` for anything the agent can fix. `errorOwner: 'platform'` for real IO
+  failures (EIO, EACCES, and ENOSPC when the host disk is full), with a message that says not to
+  retry and to tell the user. Confirm how `agent.ts` builds `errorOwner` and `errorCode` into the
+  failure JSON (`agent.ts:2349`) and set the fields the platform already uses.
+- Success results carry a `hint` only when it helps: a truncated page, an incomplete search, a
+  search with matches, a capped list. Never on a plain success. `hint` is a short sentence. In
+  result key order it comes after the small metadata keys and before the big text key, so it
+  survives the stale-result cut to 1,000 characters (Design 10).
+- Messages come from one module, `apps/worker/src/tools/file-messages.ts`, one function per code.
+  The tools do not build message strings inline. Stale-result hints (Design 10), the `saveError`
+  text (Design 9) and the paging hints use the same module and the same helper (0b).
+
+Templates (the implementer may improve the wording, but must keep the three parts and the
+signatures; `<...>` is filled in at run time):
+
+| Code or result | Message the agent sees |
+|---|---|
+| `file.path_invalid` | `Path "<path>" is not allowed. Use a path relative to the workspace root, for example job-search/jobs.json, with no leading / and no ... Check folders with list_files(path).` |
+| `file.reserved_path` | `'sandbox' is reserved for code execution. Write to another folder, for example notes/<name>.` |
+| `file.not_found` | `File not found: <path>. Check the name with list_files(path: "<parent>") or find it with search_files(path, query).` Under `web-cache/`, add: `Cached pages are cleared when the agent restarts; call browse_url(url) again.` |
+| `file.is_directory` | `<path> is a directory. List it with list_files(path: "<path>").` |
+| `file.not_a_file` | `<path> is not a regular file, so it cannot be read.` |
+| `file.too_large` | `<path> is <size> MiB; the limit is <max> MiB. Read part of it with read_file_lines(path, startLine, limit) or find text with search_files(path, query).` (edit: `...too large to edit.`) |
+| `file.write_too_large` | `This write would make <path> <size> MiB; the limit is <max> MiB. Continue in a new file with append_file(path, content).` |
+| `file.content_too_long` | `Content is <n> characters; the limit per call is <max>. Split it and call append_file(path, content) once per part.` (for `write_file`: first part with write_file, the rest with append_file) |
+| `file.limit_too_large` | `limit <n> is above the maximum <max>. For large files use read_file_lines(path, startLine, limit) or search_files(path, query).` |
+| `file.quota_exceeded` | `The workspace is full (<used> of <quota> MiB used). Free space with delete_file(path); list candidates with list_files(path), for example old files in web-cache/. Then repeat this call.` Walk-cap variant: `The workspace has more than <cap> files, so its size cannot be measured. Delete files with delete_file(path).` |
+| `edit.text_not_found` | `oldText was not found in <path>. Copy it exactly, including spaces and line endings, from read_file_lines(path, startLine, limit), or locate it with search_files(path, query).` (If CRLF is the cause, say so.) |
+| `edit.ambiguous_match` | `oldText matches <n> places in <path>. Add more surrounding text to oldText, or set replaceAll: true. See where with search_files(path, query: oldText).` |
+| `edit.no_change` | `oldText and newText are the same, so nothing was changed.` |
+| `search.invalid_pattern` | `Invalid pattern: <engine message>. Fix it, or set regex: false to search for the text literally.` (Only if regex ships.) |
+| Real IO failure | `A platform problem stopped <action> on <path> (<code>). Do not retry; tell the user.` with `errorOwner: 'platform'`. |
+| `read_file` paged (hint) | `More text remains. Continue with read_file(path, offset: <nextOffset>) or search_files(path, query).` |
+| `read_file_lines` paged (hint) | `More lines remain. Continue with read_file_lines(path, startLine: <nextLine>).` |
+| `search_files` with matches (hint) | `Read around a match with read_file_lines(path: "<file>", startLine: <line - 5>, limit: 20).` |
+| `search_files` incomplete (hint) | `Search stopped: <reason>. Narrow it with path or query, or raise maxMatches (max <n>).` |
+| `list_files` capped (hint) | `Showing <n> of <total>. Continue with list_files(path, offset: <nextOffset>).` |
+| `browse_url` `saveError` | As Design 9, with the signatures: `...delete files with delete_file(path), for example in web-cache/, then call browse_url(url) again.` |
+
+#### 0b. Signature helper
+
+- `apps/worker/src/tools/tool-signature.ts`: `toolSignature(name)` returns
+  `read_file_lines(path, startLine?, limit?, maxChars?)` built from the tool's Zod parameters
+  (`?` marks optional). `toolCall(name, args)` returns an example such as
+  `read_file_lines(path: "jobs.json", startLine: 115, limit: 20)` and checks that `name` is a known
+  tool and every key is a real parameter. A wrong name or key throws in tests (and in production
+  falls back to the bare name; it never throws at run time).
+- Messages, tool descriptions and the stale-result hints use it. If using the tool registry causes an
+  import cycle, use each tool module's exported schema, or a static map guarded by the drift test
+  below. The implementer decides.
+- Text that cannot call the helper (system skill instructions in `packages/domain`, which has no
+  dependencies, and the markdown docs) is covered by a drift test in the worker: every
+  `tool(...)` signature in `FILE_MANAGEMENT_SKILL.instructions`, in `file-tools.md` and in the
+  templates above must match `toolSignature()` for a known tool.
+
+#### 0c. Discoverability rule (from the tools audit)
+
+No tool may require an argument the agent neither has nor can get. The audit table
+(`docs/tech/agents/tools/audits/2026/06/001-tools-audit.md`) gets rows for the new tools with the
+"Agent Has Info?" column. The sources are:
+
+| Tool and argument | Where the agent gets it |
+|---|---|
+| `read_file.path`, `read_file_lines.path`, `search_files.path`, `edit_file.path`, `delete_file.path` | `list_files`, `search_files` (`file`), `browse_url` (`savedTo`), or a name the agent chose earlier |
+| `read_file_lines.startLine` | `search_files` (`line`), `read_file_lines` (`nextLine`), `read_file` (`totalLines`) |
+| `read_file.offset` | `read_file` (`nextOffset`), `search_files` (`offset`) |
+| `edit_file.oldText` | `read_file_lines` (`content`) |
+| `append_file.path` | chosen by the agent (a new or existing file) |
+| `list_files.offset` | `list_files` (`nextOffset`) |
 
 Paths
 - Every tool calls `resolveWorkspacePath(root, path)`. Write tools also call `checkReservedDir`.
@@ -546,7 +634,9 @@ data: {
   `toolResultMaxStaleChars`. Do not pin file reads. Keep `onToolResultTruncated` (same fields).
 - New marker for every tool: `...[cut: kept 1,000 of 10,119 chars]` (numbers with thousands
   separators from `Intl.NumberFormat('en-US')`).
-- Optional hint after the sizes, only where a cheap re-read exists:
+- Optional hint after the sizes, only where a cheap re-read exists. The wording below is plain; the
+  real text is built with `toolSignature()` / `toolCall()` through `file-messages.ts` (Design 0a),
+  for example `Read it again with read_file_lines(path: "jobs.json", startLine: 1, limit: 200).`:
 
 | Tool | Hint (plain text) |
 |---|---|
@@ -683,6 +773,11 @@ Restart note: policy is passed at container start. After a config change, restar
 
 Each WP is shippable and testable on its own. Run `pnpm lint` and the focused tests after each.
 
+Rule for every WP that adds or changes a tool: all its errors and hints come from `file-messages.ts`
+(Design 0a), and the WP is not done until each of its error codes has a test (Test plan, "Messages").
+The tool's `description` states the unit of every parameter and names its companion tools with
+`toolSignature()` (for example `read_file` points to `read_file_lines` and `search_files`).
+
 | WP | Scope | Depends on |
 |---|---|---|
 | WP1 | Foundation | none |
@@ -713,6 +808,10 @@ time. Shared files with small, separate hunks: `filesystem.ts` (WP2, WP4), `tool
    `AGENT_WORKSPACE_QUOTA_MB` in `env` (move or extend the env build so it runs after the profile is
    resolved). `index.ts:348`: add `workspaceDiskMb` to `defaultResources`.
 8. `env-example-drift.test.ts`: add `AGENT_WORKSPACE_QUOTA_MB` to `IGNORED_ENV_VARS`.
+9. `apps/worker/src/tools/tool-signature.ts`: `toolSignature()` and `toolCall()` (Design 0b), and the
+   signature drift test.
+10. `apps/worker/src/tools/file-messages.ts`: one function per code in Design 0a, using the helper.
+    The tool WPs call it; no tool builds a message string inline.
 
 Tests: schema defaults and bounds; reader falls back to schema defaults when JSON lacks
 `tools.files`; quota walk (sum, cap, `sandbox/` skipped, symlinks not followed); launcher puts the
@@ -783,13 +882,42 @@ tier value in the env; `RuntimeResourceProfile` carries the field.
 
 ### WP7. Docs and wrap-up
 
-1. `file-management` instructions polish and the platform docs entry in
-   `scripts/ts/build-docs-index.ts`; regenerate.
-2. `CHANGELOG.md`.
-3. `docs/best-practices/agent-runtime.md`: a short "File tools and read limits" section (limits are
+1. `file-management` instructions in the repo's skill-writing style (`docs/tech/agents/skill-authoring.md`,
+   "Writing style"): "You can..." phrasing and one line per tool with its signature, for example
+   `read_file_lines(path, startLine?, limit?, maxChars?)`. Keep it short (prompt cost). Then the
+   platform docs entry in `scripts/ts/build-docs-index.ts`; regenerate.
+2. New `docs/tech/agents/tools/file-tools.md`, in the style of `agent-creation-tools.md`:
+   - source links (`filesystem.ts` and the new modules) and a link to this plan;
+   - visibility ("shown when": agents with `file-management`; scout gets the read tools);
+   - a tool table (`Tool | Input | What it does`) for all file tools and the `browse_url` page and
+     `web-cache` behaviour;
+   - parameter and result schemas, and the paging fields (`nextOffset`, `nextLine`, `truncated`);
+   - a limits table with the config key and default for each limit (read default and max, file
+     size, write cap, list, search, quota, web cache);
+   - an error table: code, when, and the next step the message gives (Design 0a);
+   - the workspace quota and the web cache (no automatic deletion, what happens when full);
+   - security notes: path rules, symlinks, reserved `sandbox/`, regex safety if it ships;
+   - "Known gaps" (soft quota, `append_file` not idempotent, ephemeral workspace) and "Not in MVP"
+     (`download_file`, hard disk limits);
+   - operator config (`tools.files`, `webCache`, `workspaceDiskMb`).
+3. New `docs/tech/agents/tools/README.md` that writes the conventions down, because none is written
+   today: the page layout above, the namespaced error code rule, the message standard (Design 0a),
+   the signature style, the discoverability rule (Design 0c), and how to keep the audit table up to
+   date. Link it from `docs/best-practices/README.md` if that index lists tool docs.
+4. `docs/tech/agents/tools/audits/2026/06/001-tools-audit.md`: update the file-tool rows
+   (`read_file` args, `list_files` paging, `browse_url` `limit`) and add rows for `read_file_lines`,
+   `search_files`, `append_file` and `edit_file` with the "Agent Has Info?" column (Design 0c).
+5. `docs/tech/agents/tool-access-and-sandboxing.md`, "Filesystem And Process Policy": add the
+   soft workspace quota per tier, the file tool limits, and the web cache (a plain workspace folder,
+   nothing deleted automatically). `docs/tech/agents/tools/permission-levels.md`: a note that file
+   tools are scoped to the workspace at every permission level and subject to the quota (the
+   "Filesystem scope" row).
+6. `CHANGELOG.md`.
+7. `docs/best-practices/agent-runtime.md`: a short "File tools and read limits" section (limits are
    operator config, per-call caps, the soft quota, the cost note).
-4. Tools audit table update (optional).
-5. Measure the prompt cost of the new schemas and instructions (see Test plan) and record it.
+8. Check every relative link in the new and changed docs resolves.
+9. Measure the prompt cost of the new schemas, instructions and messages (see Test plan) and record
+   it.
 
 ## Test plan
 
@@ -863,6 +991,28 @@ Quota
   cap", "fails the write that would pass the quota and allows one at the limit", "falls back to
   sandboxDefaults when the env var is missing", "counts web-cache".
 
+Messages (Design 0a; each tool WP adds the cases for its own codes)
+- "every error code in the table has a test that asserts the errorCode, the numbers in the message,
+  and at least one tool signature"
+- "disk full: file.quota_exceeded names the usage and tells the agent to call delete_file(path), and
+  after a delete the same call succeeds"
+- "file.too_large points to read_file_lines and search_files with their real parameter names"
+- "edit.ambiguous_match gives the match count and points to search_files"
+- "write_file content over the cap points to append_file"
+- "search_files with matches returns a hint with a read_file_lines call for the first match; an
+  incomplete search returns the reason and how to narrow it; a search with no matches has no hint"
+- "paged read_file, read_file_lines and list_files return a continue hint; the last page and a
+  plain success have none"
+- "the hint key comes before the content key in the serialized result, so it survives the stale cut
+  to 1,000 characters"
+- "every message is at most 350 characters for a long path, and contains no absolute container path"
+- "an IO error (EIO, ENOSPC) is errorOwner platform and says not to retry"
+- Signature drift: "every tool(...) signature in the messages, the tool descriptions,
+  FILE_MANAGEMENT_SKILL.instructions and file-tools.md names a known tool and real parameters and
+  matches toolSignature()"
+- "toolCall() throws in tests for an unknown tool or parameter and falls back to the bare name in
+  production"
+
 `browse_url` and the web cache
 - "returns the whole text inline when it fits one page and writes nothing", "returns the first page,
   totalChars and savedTo when it does not", "saved file holds the full cleaned text", "same URL
@@ -925,13 +1075,17 @@ new policy and skill revision):
    `append_file` / `edit_file` calls, and size of file-tool results.
 3. Check the logs for `Truncated stale tool result` and read the stored message: it should carry the
    new marker and, for file reads, the hint.
-4. Check whether results get saved. This is the open behavioural question. If it does not change,
+4. Read a sample of the real error and hint messages in `agent_messages` (tool results) for: a
+   missing file, an over-limit read, a search, a paged read, and a full workspace (lower
+   `workspaceDiskMb` locally to force it). Check that the agent follows the signature in the message
+   on its next call, and that it frees space and retries after a full-workspace message.
+5. Check whether results get saved. This is the open behavioural question. If it does not change,
    the follow-up is the skill (Follow-ups).
-5. Local Docker: `docker exec` into the agent container, browse a long page, and check that
+6. Local Docker: `docker exec` into the agent container, browse a long page, and check that
    `/workspace/web-cache/` holds the saved file, that `read_file_lines` and `search_files` read it,
    that a full cache returns the "free space and call again" message without deleting anything, and
    that `edit_file` on a file made by sandboxed code keeps its owner.
-6. Memory: watch container memory while `edit_file` runs on a 10 MiB file and while a regex search
+7. Memory: watch container memory while `edit_file` runs on a 10 MiB file and while a regex search
    runs.
 
 Staging (the owner): deploy the application change and soak. No infrastructure step is needed.
@@ -973,6 +1127,14 @@ Rollback (config only; restart agents, because policy is passed at container sta
   twice. The result reports `sizeBytes` so the agent can check, and the description says so.
 - Tool-call logging (`agent.ts:1968`) logs `args` at `info`. A 16,000 character append is one big
   log line. Existing behaviour for `write_file`; not changed here.
+- Messages and hints cost tokens. Mitigation: about 350 characters at most, hints only when they
+  help, no file lists, the hint placed before the content so it survives the stale cut. Measure the
+  total with the prompt-cost check (WP7 step 9).
+- The signature helper can create an import cycle with the tool registry, and domain text
+  (system skill instructions) cannot call it. Mitigation: the static-map option and the drift test
+  (Design 0b). The signature style in skill text adds a few lines of prompt on every call.
+- Wording drift: message templates are in one module and tested for signatures, but not for
+  quality. Read a sample of real messages in the live runs (Live verification) and fix unclear ones.
 - `maxToolResultChars` is not what its name says (F3). Documented in code comments and in a UI help
   line, not changed. A later behaviour change needs its own approval.
 - `read_document` now fetches PDFs up to 1 MiB (shared setting). PDF text extraction memory at that
@@ -1047,6 +1209,14 @@ Status of each gate after the owner's review on 2026-11-15:
 - The stale marker shows kept and original sizes for every tool and a re-read hint for the four
   tools above. Tests for the old marker are updated.
 - No new literal for an operator-tunable value; all values are in `default.yaml` and the Zod schema.
+- Every error code in Design 0a is covered by a test, and every message names the next call with a
+  signature that matches `toolSignature()`. A disk-full write tells the agent to call
+  `delete_file(path)`; a search result tells the agent how to call `read_file_lines`. The drift
+  test passes.
+- `docs/tech/agents/tools/file-tools.md` and `docs/tech/agents/tools/README.md` exist, the audit
+  table has rows for the four new tools with "Agent Has Info?", the sandboxing and permission docs
+  are updated, and every relative link resolves.
+- The `file-management` instructions use the signature style and stay short.
 - `AGENT_WORKSPACE_QUOTA_MB` is in `IGNORED_ENV_VARS`; no `.env*.example` drift.
 - `pnpm lint`, `pnpm test` and `pnpm build` pass. `CHANGELOG.md` is updated. The platform docs index
   is regenerated, with only the intended diff.
