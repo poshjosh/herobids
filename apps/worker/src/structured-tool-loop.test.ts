@@ -830,7 +830,7 @@ describe('runStructuredToolLoop', () => {
       expect(toolMsgs).toHaveLength(4);
 
       // Oldest tool result (age 4 at loop end): truncated
-      expect(toolMsgs[0]!.content).toBe('x'.repeat(20) + '...[truncated]');
+      expect(toolMsgs[0]!.content).toBe('x'.repeat(20) + '...[cut: kept 20 of 100 chars]');
 
       // Next 3 tool results (ages 3, 2, 1 at loop end): full retention
       for (let i = 1; i < 4; i++) {
@@ -904,7 +904,7 @@ describe('runStructuredToolLoop', () => {
       const firstPositions = messages.find(m => m.role === 'tool' && m.toolName === 'list_positions');
 
       // The oldest non-durable result (age 4 at loop end) is still truncated — guard against over-exemption.
-      expect(firstPositions!.content).toBe('x'.repeat(20) + '...[truncated]');
+      expect(firstPositions!.content).toBe('x'.repeat(20) + '...[cut: kept 20 of 100 chars]');
     });
 
     it('notifies onToolResultTruncated when a stale tool result is truncated', async () => {
@@ -1187,7 +1187,7 @@ describe('runStructuredToolLoop', () => {
       // Idempotency guard. retentionTurns=3, maxStaleChars=20. call_1 is added at turn 0 and
       // ages past the window at turn 4, where it truncates. The loop then continues for several
       // more turns (maxTurns=9) with call_1 still in the message list. Because post-truncation
-      // content (maxStaleChars + '...[truncated]') stays longer than maxStaleChars, a naive gate
+      // content (maxStaleChars + the cut marker) stays longer than maxStaleChars, a naive gate
       // would re-enter the block every turn, re-firing the callback and re-slicing. It must fire
       // EXACTLY ONCE and leave the content as the single-truncation result.
       const toolTurn = (id: string) => ({
@@ -1259,7 +1259,80 @@ describe('runStructuredToolLoop', () => {
       const callArgs = vi.mocked(callLlmWithRetry).mock.calls;
       const messages = (callArgs[0]![1] as { messages: Array<{ role: string; content: string; toolCallId?: string }> }).messages;
       const call1Msg = messages.find((m) => m.role === 'tool' && m.toolCallId === 'call_1');
-      expect(call1Msg!.content).toBe('x'.repeat(20) + '...[truncated]');
+      expect(call1Msg!.content).toBe('x'.repeat(20) + '...[cut: kept 20 of 100 chars]');
+    });
+
+    describe('cut marker hint', () => {
+      const toolTurn = (id: string, name: string, args: Record<string, unknown>) => ({
+        result: {
+          ok: true as const,
+          data: {
+            content: `calling ${name}`,
+            toolCalls: [{ id, name, args }],
+            model: 'test-model', provider: 'openai' as const, tokensUsed: 10, latencyMs: 5, cached: false,
+          },
+        },
+        attempts: 1, delaysMs: [],
+      });
+      const doneTurn = {
+        result: {
+          ok: true as const,
+          data: {
+            content: 'done',
+            toolCalls: [],
+            model: 'test-model', provider: 'openai' as const, tokensUsed: 5, latencyMs: 3, cached: false,
+          },
+        },
+        attempts: 1, delaysMs: [],
+      };
+
+      async function runWithHint(
+        describeCutResult: ((info: { toolName: string | undefined; args: Record<string, unknown>; originalContent: string }) => string | undefined) | undefined,
+        resultLength: number,
+        maxStaleChars: number,
+      ) {
+        vi.mocked(callLlmWithRetry)
+          .mockResolvedValueOnce(toolTurn('call_1', 'read_file', { path: 'jobs.json' }))
+          .mockResolvedValueOnce(toolTurn('call_2', 'list_positions', {}))
+          .mockResolvedValueOnce(toolTurn('call_3', 'list_positions', {}))
+          .mockResolvedValueOnce(toolTurn('call_4', 'list_positions', {}))
+          .mockResolvedValueOnce(doneTurn);
+        await runStructuredToolLoop({
+          providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+          requestBase: { maxTokens: 128, temperature: 0 },
+          initialMessages: [{ role: 'user', content: 'hello' }],
+          tools: [{ name: 'read_file', description: 'Read', inputSchema: { type: 'object' } }],
+          maxTurns: 5,
+          toolResultFullRetentionTurns: 3,
+          toolResultMaxStaleChars: maxStaleChars,
+          describeCutResult,
+          executeTool: async (call) => (call.id === 'call_1' ? 'y'.repeat(resultLength) : 'z'),
+        });
+        const callArgs = vi.mocked(callLlmWithRetry).mock.calls;
+        const messages = (callArgs[0]![1] as { messages: Array<{ role: string; content: string; toolCallId?: string }> }).messages;
+        return messages.find((m) => m.role === 'tool' && m.toolCallId === 'call_1')!.content;
+      }
+
+      it('writes the kept and original sizes with thousands separators', async () => {
+        const content = await runWithHint(undefined, 10_119, 1_000);
+        expect(content).toBe('y'.repeat(1_000) + '...[cut: kept 1,000 of 10,119 chars]');
+      });
+
+      it('adds the hint from describeCutResult using the original call args', async () => {
+        const describeCutResult = vi.fn(({ args }: { args: Record<string, unknown> }) => `Re-read ${String(args['path'])}.`);
+        const content = await runWithHint(describeCutResult, 100, 20);
+        expect(content).toBe('y'.repeat(20) + '...[cut: kept 20 of 100 chars. Re-read jobs.json.]');
+        expect(describeCutResult).toHaveBeenCalledWith({
+          toolName: 'read_file',
+          args: { path: 'jobs.json' },
+          originalContent: 'y'.repeat(100),
+        });
+      });
+
+      it('omits the hint when describeCutResult returns nothing', async () => {
+        const content = await runWithHint(() => undefined, 100, 20);
+        expect(content).toBe('y'.repeat(20) + '...[cut: kept 20 of 100 chars]');
+      });
     });
   });
 });

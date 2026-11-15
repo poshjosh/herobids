@@ -849,6 +849,7 @@ export const messages: Record<string, string> = {
   'agents.runtimePolicy.toolResultMaxStaleChars': 'الحد الأقصى لأحرف النتائج القديمة',
   'agents.runtimePolicy.maxHoldDurationMs': 'الحد الأقصى لمدة الاحتفاظ (دقيقة)',
   'agents.runtimePolicy.maxHoldDurationHelp': 'تؤدي القيمة 0 إلى تعطيل انتهاء صلاحية الاحتفاظ التلقائي. اترك الحقل فارغاً لاستخدام الإعداد الافتراضي للنمط.',
+  'agents.runtimePolicy.maxToolResultCharsHelp': 'لا يحدّ مما يراه النموذج في التشغيل الحالي. ينطبق فقط على نسخة كل نتيجة أداة المحفوظة في السجل.',
   'agents.detail.activityTimeline': 'Activity Timeline',
   'agents.evaluations.alreadyRunning': 'An evaluation is already running for this agent.',
   'agents.evaluations.critical': '{count} critical',

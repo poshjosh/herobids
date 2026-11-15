@@ -849,6 +849,7 @@ export const messages: Record<string, string> = {
   'agents.runtimePolicy.toolResultMaxStaleChars': 'अधिकतम पुराने टूल परिणाम वर्ण',
   'agents.runtimePolicy.maxHoldDurationMs': 'अधिकतम होल्ड अवधि (मिनट)',
   'agents.runtimePolicy.maxHoldDurationHelp': '0 देने पर स्वचालित होल्ड समाप्ति बंद हो जाती है। शैली के डिफ़ॉल्ट का उपयोग करने के लिए इसे खाली छोड़ें।',
+  'agents.runtimePolicy.maxToolResultCharsHelp': 'यह मौजूदा रन में मॉडल को दिखने वाली सामग्री को सीमित नहीं करता। यह केवल इतिहास में रखी गई हर टूल परिणाम की प्रति पर लागू होता है।',
   'agents.detail.activityTimeline': 'Activity Timeline',
   'agents.evaluations.alreadyRunning': 'An evaluation is already running for this agent.',
   'agents.evaluations.critical': '{count} critical',

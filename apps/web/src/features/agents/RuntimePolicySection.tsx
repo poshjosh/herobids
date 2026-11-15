@@ -271,6 +271,11 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
                 {intl.formatMessage({ id: 'agents.runtimePolicy.maxHoldDurationHelp' })}
               </div>
             )}
+            {field === 'maxToolResultChars' && (
+              <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                {intl.formatMessage({ id: 'agents.runtimePolicy.maxToolResultCharsHelp' })}
+              </div>
+            )}
           </div>
         ))}
 

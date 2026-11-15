@@ -24,6 +24,10 @@ export interface RuntimeBudgetPolicy {
   maxHistoryMessages: number;
   maxHistoryTokens: number;
   maxRecentToolMessages: number;
+  /**
+   * Caps the copy of a tool result kept in cross-tick history. It does not cap the result the
+   * model sees in the current loop (per-tool read limits do that).
+   */
   maxToolResultChars: number;
   maxVisibleToolSchemas: number;
   maxContextBlockChars: number;

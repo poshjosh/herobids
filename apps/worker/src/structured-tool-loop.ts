@@ -81,8 +81,22 @@ export interface StructuredToolLoopOptions {
   getTurnContext?: (info: { turnIndex: number }) => string | undefined;
   /** After this many retention turns, truncate older tool results to maxStaleChars. Omit to disable. */
   toolResultFullRetentionTurns?: number;
-  /** Max chars to keep in a stale tool result (appends '...[truncated]'). */
+  /** Max chars to keep in a stale tool result (appends '...[cut: kept N of M chars]'). */
   toolResultMaxStaleChars?: number;
+  /** Optional re-read hint added to the cut marker of a stale result (for example how to read the file again). */
+  describeCutResult?: (info: {
+    toolName: string | undefined;
+    args: Record<string, unknown>;
+    originalContent: string;
+  }) => string | undefined;
+}
+
+const cutNumberFormat = new Intl.NumberFormat('en-US');
+
+/** `...[cut: kept 1,000 of 10,119 chars]`, with an optional hint after the sizes. */
+function formatCutMarker(keptChars: number, originalChars: number, hint: string | undefined): string {
+  const sizes = `kept ${cutNumberFormat.format(keptChars)} of ${cutNumberFormat.format(originalChars)} chars`;
+  return hint ? `...[cut: ${sizes}. ${hint}]` : `...[cut: ${sizes}]`;
 }
 
 export interface StructuredToolLoopSuccess {
@@ -109,10 +123,12 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
 
   // Tracks tool messages that have already been stale-truncated so each is
   // truncated (and reported via onToolResultTruncated) AT MOST ONCE. Without
-  // this guard the post-truncation content (maxStaleChars + '...[truncated]')
+  // this guard the post-truncation content (maxStaleChars + the '...[cut: ...]' marker)
   // stays longer than maxStaleChars, so the message would re-enter the block
   // every subsequent turn, re-firing the observability callback and redoing work.
   const truncatedToolMessages = new WeakSet<LlmMessage>();
+  // Call args by tool call id, so a cut result can still name the path/URL it came from.
+  const toolCallArgsById = new Map<string, Record<string, unknown>>();
 
   for (let turnIndex = 0; turnIndex < options.maxTurns; turnIndex++) {
     // Truncate tool results from turns older than retentionTurns.
@@ -129,7 +145,14 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
           const age = turnIndex - msg.addedAtTurn;
           if (age > options.toolResultFullRetentionTurns && msg.content.length > options.toolResultMaxStaleChars) {
             const originalChars = msg.content.length;
-            msg.content = msg.content.slice(0, options.toolResultMaxStaleChars) + '...[truncated]';
+            const hint = options.describeCutResult?.({
+              toolName: msg.toolName,
+              args: toolCallArgsById.get(msg.toolCallId) ?? {},
+              originalContent: msg.content,
+            });
+            msg.content =
+              msg.content.slice(0, options.toolResultMaxStaleChars) +
+              formatCutMarker(options.toolResultMaxStaleChars, originalChars, hint);
             truncatedToolMessages.add(msg);
             // Notify callers so the previously-silent truncation is observable
             // (bug 002) and context pressure is meterable per tick (lesson #9).
@@ -139,7 +162,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
               toolCallId: msg.toolCallId,
               originalChars,
               // Retained original-content length (= toolResultMaxStaleChars), EXCLUDING the
-              // appended '...[truncated]' marker — do not treat this as the final stored message length.
+              // appended '...[cut: ...]' marker — do not treat this as the final stored message length.
               retainedChars: options.toolResultMaxStaleChars,
               ageTurns: age,
             });
@@ -222,6 +245,9 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
       content: assistantResponse,
       toolCalls,
     });
+    for (const toolCall of toolCalls) {
+      toolCallArgsById.set(toolCall.id, toolCall.args);
+    }
 
     for (const toolCall of toolCalls) {
       const toolResult = await options.executeTool(toolCall);

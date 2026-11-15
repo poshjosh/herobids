@@ -99,6 +99,7 @@ import { getWorkspacePaths } from './tools/workspace.js';
 import { installExternalSkillsAtStart, type InstallableExternalSkill } from './external-skill-startup.js';
 import { npxSkillsCliInstaller } from './tools/skills.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
+import { describeCutResult } from './stale-result-hints.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults, type OperatorModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
 import { canRouteToHybridEvaluator, runHybridEvaluator } from './hybrid-agent-evaluator.js';
@@ -4020,6 +4021,7 @@ async function runActiveTick(): Promise<void> {
         maxTurns: scoutLoopConfig.maxTurns,
         toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,
         toolResultMaxStaleChars: runtimeState.runtimeDescriptor.budgets.toolResultMaxStaleChars,
+        describeCutResult,
         initialMessages: [
           { role: 'system', content: scoutSystemPrompt },
           { role: 'user', content: userContext },
@@ -4299,6 +4301,7 @@ async function runActiveTick(): Promise<void> {
       },
       toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,
       toolResultMaxStaleChars: runtimeState.runtimeDescriptor.budgets.toolResultMaxStaleChars,
+      describeCutResult,
       initialMessages: messages,
       tools: judgeToolDefinitions,
       getTools: () => toolRegistry.getDefinitions([...allowedTools()]).map((tool) => ({

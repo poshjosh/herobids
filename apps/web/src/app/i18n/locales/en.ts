@@ -930,6 +930,7 @@ export const messages: Record<string, string> = {
   'agents.runtimePolicy.toolResultMaxStaleChars': 'Max stale tool result chars',
   'agents.runtimePolicy.maxHoldDurationMs': 'Max hold duration (min)',
   'agents.runtimePolicy.maxHoldDurationHelp': '0 disables automatic hold expiry. Leave blank to use the style default.',
+  'agents.runtimePolicy.maxToolResultCharsHelp': 'Does not limit what the model sees in the current run. Only applies to the copy of each tool result kept in history.',
 
   // Landing page
   'landing.tagline': 'Affordable AI agents that get the job done',

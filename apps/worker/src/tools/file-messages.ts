@@ -252,6 +252,11 @@ export function readLineCutHint(path: string, line: number, continueOffset: numb
   return `Line ${line} is longer than maxChars and was cut. Read the rest of it with ${toolCall('read_file', { path, offset: continueOffset })}.${more}`;
 }
 
+/** Added to the cut marker of an old read_file / read_file_lines result. */
+export function staleReadHint(path: string): string {
+  return `Read it again with ${toolCall('read_file_lines', { path, startLine: 1, limit: 200 })} or ${toolCall('read_file', { path })}.`;
+}
+
 export function searchMatchesHint(file: string, line: number): string {
   return `Read around a match with ${toolCall('read_file_lines', { path: file, startLine: Math.max(line - 5, 1), limit: 20 })}.`;
 }

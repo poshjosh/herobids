@@ -60,3 +60,28 @@ Checks: focused tests (`file-read-tools.test.ts`, 29 tests, plus updated `filesy
 
 - No test for a folder vanishing mid-walk in `workspace-quota.ts` (race hard to stage); the per-directory ENOENT handling is covered only by the existing missing-root test.
 - Prompt-cost measure for the new schemas is left for WP7.
+
+## WP3. Truncation marker and `maxToolResultChars` documentation (done, not committed)
+
+Checks: focused tests (`structured-tool-loop.test.ts`, new `stale-result-hints.test.ts`, new `RuntimePolicySection.dom.test.tsx`); `pnpm lint`, `pnpm test` and `pnpm build` pass.
+
+### What was added
+
+- `structured-tool-loop.ts`: stale marker is now `...[cut: kept 1,000 of 10,119 chars]` (en-US thousands separators). New option `describeCutResult({ toolName, args, originalContent })`; when it returns text the marker reads `...[cut: kept N of M chars. <hint>]`. The loop records `toolCall.args` by call id when it pushes the assistant message. `onToolResultTruncated` fields are unchanged.
+- `stale-result-hints.ts`: `describeCutResult` with `read_file` and `read_file_lines` rows only (path from the original call args; no hint if the path is missing or not a string). Hint text is `staleReadHint(path)` in `file-messages.ts`, built with `toolCall()`.
+- `agent.ts`: `describeCutResult` passed at the scout and judge loop call sites.
+- Old marker assertions in `structured-tool-loop.test.ts` updated (three assertions, one comment); new tests for sizes, hint with args, and no hint.
+- `maxToolResultChars` documented only (no behaviour change): comments in `default.yaml`, JSDoc in `runtime-composition.ts` and `schema.ts`; help line `agents.runtimePolicy.maxToolResultCharsHelp` in en/ar/hi, rendered under the field in `RuntimePolicySection.tsx`.
+
+### Decisions and deviations
+
+1. Hint is placed inside the bracket after the sizes (`...[cut: kept 20 of 100 chars. Read it again with ...]`) so the marker stays one unit.
+2. The hint wording is one fixed string: `read_file_lines(path, startLine: 1, limit: 200)` or `read_file(path)`. The plan's example named only the first call; both are named because Design 10's table names both tools.
+3. A throwing `describeCutResult` is not caught (the shipped one cannot throw: pure string checks). A caught error would have been swallowed silently, against `AGENTS.md`.
+4. Added a small DOM test for the help line (no component test existed). The Arabic and Hindi strings are my translations of the owner's English wording; a native review is advisable.
+5. Search/browse rows and their tests land with WP5/WP6.
+
+### Unverified
+
+- Older docs that describe `...[truncated]` as history were left as the plan says.
+- No live check of the marker in a real agent run.

@@ -891,7 +891,7 @@ The tool's `description` states the unit of every parameter and names its compan
 |---|---|---|---|
 | WP1 | Foundation | none | DONE |
 | WP2 | Read side | WP1 | DONE |
-| WP3 | Truncation marker | WP2 (hint targets) | PENDING |
+| WP3 | Truncation marker | WP2 (hint targets) | DONE |
 | WP4 | Write side | WP1 | PENDING |
 | WP5 | `search_files` | WP1 | PENDING |
 | WP6 | `browse_url` and web cache | WP1 | PENDING |
@@ -1413,3 +1413,8 @@ Status of each gate after the owner's review on 2026-11-15:
 - M: Plan text stale: `truncated` for `read_file_lines` is `nextLine !== null || lineCut`; WP2 step 1 "keep today's error strings" is superseded by Design 0a; add `file.not_a_directory` to the Design 0a table.
 - M: Scout/context sets wiring for `read_file_lines` and `stat_file` not asserted in `scout-dispatch` / composition tests.
 - L: TOCTOU between `resolveWorkspacePath` and open; file growth after `stat`; coercion of `""`/`null` to 0; unused `ReadableFile.sizeBytes`; 5 s wall-clock 10 MiB test may flake; `list_files` reads the whole directory.
+
+### WP3. Truncation marker
+- M: `staleReadHint` embeds the agent-supplied path twice with no length bound; may bloat the cut marker.
+- M: `describeCutResult` could throw if `toolCall()` strict mode is active (strict is test-only, so likely low).
+- L: Hint also added to error-payload results; `toolCallArgsById` never pruned; ar/hi translations need native review; long yaml comment; DOM test uses `previousElementSibling`; visual check of help line in en/ar/hi outstanding.

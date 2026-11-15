@@ -301,6 +301,7 @@ export interface ResolvedAgentRuntimePolicy {
   maxHistoryMessages: number;
   maxHistoryTokens: number;
   maxRecentToolMessages: number;
+  /** Caps the copy of a tool result kept in cross-tick history; it does not cap results in the current loop. */
   maxToolResultChars: number;
   maxVisibleToolSchemas: number;
   maxContextBlockChars: number;

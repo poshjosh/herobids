@@ -570,7 +570,7 @@ agentRuntime:
     maxHistoryMessages: 40
     maxHistoryTokens: 80000
     maxRecentToolMessages: 12
-    maxToolResultChars: 8000
+    maxToolResultChars: 8000   # caps the copy of a tool result kept in cross-tick history; it does not cap results in the current loop
     maxVisibleToolSchemas: 128
     maxContextBlockChars: 8000
     toolResultFullRetentionTurns: 5    # keep full tool results for the most recent N turns; older results are truncated
