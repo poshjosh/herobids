@@ -44,7 +44,8 @@ TARGET_ENV="dev"
 AGENT_PROMPT="Grow this portfolio aggressively"
 AGENT_EXECUTION_MODE="shadow"
 AGENT_CAPITAL="1000"
-AGENT_TELEGRAM_CHAT_ID="6846862012"
+# No Telegram field: Telegram is user-level only (the API drops agent-scoped Telegram addresses).
+# quick-setup.sh links TELEGRAM_CHAT_ID for the user, and every agent of that user uses it.
 AGENT_SKILL_IDS='["trading"]'
 
 # Wake preferences — all notices enabled
@@ -359,7 +360,6 @@ build_agent_payload() {
     --arg heavyModel "$AGENT_HEAVY_MODEL" \
     --arg executionMode "$AGENT_EXECUTION_MODE" \
     --arg capital "$AGENT_CAPITAL" \
-    --arg telegramChatId "$AGENT_TELEGRAM_CHAT_ID" \
     --arg strategyPreset "$strategy_preset" \
     --argjson skillIds "$AGENT_SKILL_IDS" \
     --argjson wakePreferences "$AGENT_WAKE_PREFERENCES" \
@@ -376,7 +376,6 @@ build_agent_payload() {
         mode: $executionMode
       },
       capital: $capital,
-      telegramChatId: $telegramChatId,
       strategyPreset: $strategyPreset,
       wakePreferences: $wakePreferences,
       connectionIds: [$connectionId]
@@ -434,7 +433,7 @@ log_info "All agents share:"
 log_info "  execution mode : ${AGENT_EXECUTION_MODE}"
 log_info "  capital        : ${AGENT_CAPITAL}"
 log_info "  connection     : Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
-log_info "  telegram       : ${AGENT_TELEGRAM_CHAT_ID}"
+log_info "  telegram       : user-level (linked by quick-setup.sh)"
 log_info "  provider       : ${AGENT_PROVIDER}"
 log_info "  light model    : ${AGENT_LIGHT_MODEL}"
 log_info "  heavy model    : ${AGENT_HEAVY_MODEL}"

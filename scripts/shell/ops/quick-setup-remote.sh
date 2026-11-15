@@ -962,10 +962,15 @@ else
   log_section "Step 5: Set Telegram chat ID"
 fi
 
+# Telegram is a user-level chat address: PATCH /auth/me { chatAddresses: [{ provider, address }] }.
+# The API ignores unknown fields, so the retired { telegramChatId } returned 200 and stored nothing.
+# See docs/bug-reports/2026/11/15/002-session-started-message-gated-on-telegram.md
+TELEGRAM_ADDRESS_JQ='[.chatAddresses[]? | select(.provider == "telegram" and .status == "active") | .address][0] // ""'
+
 retry_api_call GET /auth/me
 CURRENT_CHAT_ID=""
 if [[ "$HTTP_STATUS" -eq 200 ]]; then
-  CURRENT_CHAT_ID="$(echo "$RESPONSE_BODY" | jq -r '.telegramChatId // ""')"
+  CURRENT_CHAT_ID="$(echo "$RESPONSE_BODY" | jq -r "$TELEGRAM_ADDRESS_JQ")"
 fi
 
 if [[ "$CURRENT_CHAT_ID" == "$TELEGRAM_CHAT_ID" ]]; then
@@ -973,14 +978,19 @@ if [[ "$CURRENT_CHAT_ID" == "$TELEGRAM_CHAT_ID" ]]; then
 else
   retry_api_call PATCH /auth/me "$(jq -n \
     --arg chatId "$TELEGRAM_CHAT_ID" \
-    '{ telegramChatId: $chatId }')"
+    '{ chatAddresses: [{ provider: "telegram", address: $chatId }] }')"
 
-  if [[ "$HTTP_STATUS" -eq 200 ]]; then
-    log_ok "Telegram chat ID set: ${TELEGRAM_CHAT_ID}"
-  else
+  if [[ "$HTTP_STATUS" -ne 200 ]]; then
     log_error "Telegram update failed (HTTP ${HTTP_STATUS})"
     die "Telegram step failed."
   fi
+  # Confirm the address was stored, not just accepted.
+  SAVED_CHAT_ID="$(echo "$RESPONSE_BODY" | jq -r "$TELEGRAM_ADDRESS_JQ")"
+  if [[ "$SAVED_CHAT_ID" != "$TELEGRAM_CHAT_ID" ]]; then
+    log_error "Telegram update returned 200 but the stored address does not match TELEGRAM_CHAT_ID"
+    die "Telegram step failed."
+  fi
+  log_ok "Telegram chat ID set: ${TELEGRAM_CHAT_ID}"
 fi
 
 # ---------------------------------------------------------------------------

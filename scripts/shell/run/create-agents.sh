@@ -10,6 +10,8 @@
 # Prerequisites:
 #   - The API must be healthy.
 #   - quick-setup.sh must have run first to provision trading bindings.
+#     It also links TELEGRAM_CHAT_ID at the user level; Telegram is user-level only, so agent
+#     payloads carry no Telegram field (the API drops agent-scoped Telegram addresses).
 #   - .env.ops.dev must contain valid credentials.
 #
 # Usage:
@@ -273,7 +275,6 @@ build_thyper_agent_payload() {
     --arg authorizationMode "direct" \
     --argjson platformAssessment "$PLATFORM_ASSESSMENT_15M" \
     --arg connectionId "$connection_id" \
-    --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     '{
       name: $name,
       prompt: $prompt,
@@ -289,7 +290,6 @@ build_thyper_agent_payload() {
       platformAssessment: $platformAssessment,
       connectionIds: [$connectionId],
       executionDefaults: { mode: "shadow" },
-      telegramChatId: $telegramChatId,
       capital: "1000"
     }'
 }
@@ -309,7 +309,6 @@ build_t1inch_agent_payload() {
     --arg authorizationMode "approval_required" \
     --argjson platformAssessment "$PLATFORM_ASSESSMENT_15M" \
     --arg connectionId "$connection_id" \
-    --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     '{
       name: $name,
       prompt: $prompt,
@@ -325,7 +324,6 @@ build_t1inch_agent_payload() {
       platformAssessment: $platformAssessment,
       connectionIds: [$connectionId],
       executionDefaults: { mode: "shadow" },
-      telegramChatId: $telegramChatId,
       capital: "1000"
     }'
 }
@@ -342,7 +340,6 @@ build_tintel_agent_payload() {
     --arg executionVenue "hyperliquid" \
     --arg authorizationMode "direct" \
     --arg connectionId "$connection_id" \
-    --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     '{
       name: $name,
       prompt: $prompt,
@@ -355,7 +352,6 @@ build_tintel_agent_payload() {
       connectionIds: [$connectionId],
       skillIds: ["traderton/skills/crypto-trading"],
       executionDefaults: { mode: "shadow" },
-      telegramChatId: $telegramChatId,
     capital: "1000"
     }'
 }
@@ -413,7 +409,6 @@ build_non_trading_agent_payload() {
     --arg lightModel "$AGENT_LIGHT_MODEL" \
     --arg heavyModel "$AGENT_HEAVY_MODEL" \
     --arg tickIntervalMs "$tick_interval_ms" \
-    --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     --argjson skillIds "$skill_ids_json" \
     --argjson connectionIds "$connection_ids_json" \
     '{
@@ -425,7 +420,6 @@ build_non_trading_agent_payload() {
       skillIds: $skillIds,
       tickIntervalMs: ($tickIntervalMs | tonumber),
       runtimePolicyOverrides: { maxHoldDurationMs: 0 },
-      telegramChatId: $telegramChatId,
       capital: "1000"
     } + (if ($connectionIds | length) > 0 then { connectionIds: $connectionIds, executionDefaults: { mode: "shadow" } } else {} end)'
 }
