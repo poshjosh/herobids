@@ -1,6 +1,6 @@
 # Run-status hint for long-running agent runs (current time + run elapsed)
 
-Status: IMPLEMENTED 2026-11-14 (WP1 to WP6), not committed, live A/B not yet run. Slimmed
+Status: IMPLEMENTED 2026-11-14 (WP1 to WP6). Slimmed
 the same day after reviewing live agents. Read "Will this solve the problem?" before
 relying on it. The message text is the owner-approved one: `Current time is (UTC) ...; this
 run has been in progress for ...`.

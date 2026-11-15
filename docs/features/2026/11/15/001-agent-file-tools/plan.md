@@ -1,7 +1,8 @@
 # Agent file tools: files up to 10 MiB without loading them into the model context
 
-Status: PLAN, not implemented. Written 2026-11-15. The 16 decisions below were confirmed by
-the owner in an interview. Facts about the code were read from the repo in this session and carry
+Status: PLAN, not implemented. Written 2026-11-15. The 19 decisions below (1 to 16 from the
+interview, 17 to 19 added at the owner's request) were confirmed by the owner. A review on
+2026-11-15 added the fixes marked "Review fix" (see "Review fixes"). Facts about the code were read from the repo in this session and carry
 file and line references. Anything not confirmed is marked "unverified" and is collected in
 "Unverified items". Read "What this will and will not fix" before relying on it.
 
@@ -130,7 +131,7 @@ should confirm the ones marked "confirm".
 | `read_file_lines` char cap (4, 5) | A separate `maxChars` argument (default 50,000, max 500,000) sets the character cap. `limit` still counts lines. **Owner decision**, replaces my earlier "fixed cap" proposal. | In this tool `limit` counts lines, so the character cap needs its own argument. |
 | `search_files` `offset` field (6) | Each match also carries `offset`, the character offset of the match, so the agent can call `read_file`. | A minified one-line JSON file gives line 1 for every match. |
 | Quota transport (11) | The effective `workspaceDiskMb` reaches the container as env var `AGENT_WORKSPACE_QUOTA_MB`, set by the launcher. The Docker and Nomad adapters need no change. | The quota is enforced inside the container. `AGENT_RUNTIME_CONFIG_JSON` is the same for every tier (`apps/worker/src/index.ts:186-199`), so it cannot carry a per-tier value. Memory limits reach the container through the scheduler, which a soft quota does not use. **Confirmed by the owner.** |
-| Quota walk and `sandbox/` (11) | The walk skips `sandbox/`. | `execute_code` wipes `sandbox/` before every run (`code.ts:107-110`) and `npm install` fills it with `node_modules`. Counting it would hit the 2,000-file cap and block all writes. **Confirmed by the owner.** |
+| Quota walk and ignored folders (11) | The walk skips `platformDirs` (top level only: `sandbox`, `.agents`, `.claude`, `agent`) and `dependencyDirs` (any depth: `node_modules`, `.git`). Both lists are config (`tools.files`). **Review fix.** | `execute_code` wipes `sandbox/` before every run (`code.ts:107-110`) and `npm install` fills it with `node_modules`. Counting them would hit the 2,000-file cap and block all writes. `.agents`, `.claude` and `agent` hold the installed skill copies, which the platform put there, not the agent. **The `sandbox/` part was confirmed by the owner; the rest was added in review.** |
 | Quota walk and `web-cache/` (11) | `web-cache/` is counted. | It is a plain workspace folder on the same disk, so it must count. See Design 8. **Confirmed by the owner.** |
 | `list_files` max limit (10) | `limit` max is 2,000 (config). | The decision gives no maximum. |
 | `write_file` cap (9) | Explicit cap of 16,000 characters with a clear error. | Same value as `append_file`. See Design 6. |
@@ -147,7 +148,6 @@ The owner answered the 10 review questions. Recorded here so the sections above 
 | 2 | Fixed 50,000 cap for `read_file_lines`? | No. The limit is an argument, default 50,000, max 500,000, and the agent may change it. | `read_file_lines` gets a `maxChars` argument. Updated in the decision table, Design 2, interpretations and tests. |
 | 3 | Rename `offset` in `read_file_lines` to `startLine`? | Yes | Updated everywhere (`startLine`, `nextLine` passed back as `startLine`). |
 | 4 | `read_document` cap: accept or split? | Accept: `read_document` and `browse_url` share the same setting (revisited 2026-11-15). | Gate 4 closed. One config key. PDF fetch cap rises to 1 MiB. Risk recorded. |
-| 3g | `maxToolResultChars` (gate 3) | Document only, and add a UI hint: "Does not limit what the model sees in the current run. Only applies to the copy of each tool result kept in history." | Gate 3 closed. WP3 step 5 adds the help line in the three locale files and `RuntimePolicySection.tsx`. |
 | 5 | Remove the 512 KiB literal from the default `browse_url` grant? | Yes | Gate 5 approved. |
 | 6 | Skip `sandbox/` in the quota walk, and use an env var for the quota? | Yes to both | Confirmed in the interpretations table. |
 | 6r | Regex worker thread (owner, 2026-11-15) | Leave the final decision to the implementing agent: attempt regex; if too complex, fall back to literal search. | Design 3, WP5 step 4, risks, gate 6 and acceptance criteria updated. |
