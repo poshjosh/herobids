@@ -34,7 +34,8 @@ test.describe('Journey 20: agent chat home', () => {
     const secondId = await createAgentViaApi(page, 'Chat home second');
 
     await page.goto('/agents');
-    await expect(page.getByRole('heading', { name: 'My agents' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'AI Agents' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.agent-summary-card')).toHaveCount(2, { timeout: 10_000 });
     await expect(page.getByRole('button', { name: 'Marketplace' })).toHaveCount(0);
 
     const secondCard = page.locator('.agent-summary-card', { hasText: 'Chat home second' });

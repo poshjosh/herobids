@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.10.0 - 2026-11-15
+
 ### Added
 
 - Agent file tools for files up to 10 MiB. New `read_file_lines`, `search_files` (literal or regex, one match per line, regex in a worker thread with a timeout), `append_file` and `edit_file`. `read_file` and `list_files` now page (`offset`, `limit`, `nextOffset`), `delete_file` takes `recursive`, and `write_file` is capped at 16,000 characters per call. Errors carry namespaced codes (including `file.not_a_directory` and `file.not_text`) and name the next call. A soft per-tier workspace quota (`workspaceDiskMb`, env `AGENT_WORKSPACE_QUOTA_MB`) applies. Limits are operator config under `agentRuntime.tools.files`. Docs: docs/tech/agents/tools/file-tools.md. Plan: docs/features/2026/11/15/001-agent-file-tools/plan.md. Known gaps: the quota and web cache cap are soft and not atomic, `append_file` is not idempotent.
