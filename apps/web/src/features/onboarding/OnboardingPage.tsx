@@ -58,6 +58,31 @@ const INLINE_ICON_STYLE: CSSProperties = {
   color: 'var(--color-text-secondary)',
 };
 
+const ADVANCED_SETUP_ROW_STYLE: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: '8px 12px',
+  margin: '16px 0 0',
+  fontSize: '0.8125rem',
+  color: 'var(--color-text-secondary)',
+};
+
+// Matches the small secondary Button, so the way into the full form reads as an action rather than inline text.
+const ADVANCED_SETUP_LINK_STYLE: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  padding: '5px 12px',
+  fontSize: '0.8125rem',
+  fontWeight: 500,
+  borderRadius: '7px',
+  textDecoration: 'none',
+  background: 'var(--color-surface-2)',
+  color: 'var(--color-text-primary)',
+  border: '1px solid var(--color-border)',
+};
+
 const editMessageValues = {
   play: <span style={{ ...INLINE_ICON_STYLE, color: 'var(--color-success)', borderColor: 'var(--color-success)' }}><PlayIcon /></span>,
   pause: <span style={INLINE_ICON_STYLE}><PauseIcon /></span>,
@@ -266,10 +291,13 @@ export function OnboardingPage() {
           {nameError && <div className="try-page-error">{nameError}</div>}
           {createError && <div className="try-page-error">{createError}</div>}
         </form>
-        <p style={{ margin: '12px 0 0', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
-          {intl.formatMessage({ id: 'onboarding.advancedSetupHint' })}{' '}
-          <Link to="/agents/new">{intl.formatMessage({ id: 'onboarding.advancedSetup' })}</Link>
-        </p>
+        <div style={ADVANCED_SETUP_ROW_STYLE}>
+          <span>{intl.formatMessage({ id: 'onboarding.advancedSetupHint' })}</span>
+          <Link to="/agents/new" style={ADVANCED_SETUP_LINK_STYLE}>
+            {intl.formatMessage({ id: 'onboarding.advancedSetup' })}
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
       </PageShell>
     );
   }

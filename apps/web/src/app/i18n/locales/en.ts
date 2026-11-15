@@ -313,7 +313,6 @@ export const messages: Record<string, string> = {
   'agents.title': 'AI Agents',
   'agents.chat.selectAgent': 'Chat with',
   'agents.statusOverview': 'Status overview',
-  'agents.myAgents': 'My agents',
   'agents.marketplace.useAgent': 'Use this agent',
   'agents.createAgent': 'Create',
   'agents.executionMode.label': 'Execution mode',

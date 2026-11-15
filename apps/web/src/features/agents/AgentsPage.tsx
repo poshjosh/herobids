@@ -178,12 +178,8 @@ export function AgentsPage() {
         </section>
       )}
 
-      {/* ── My agents ───────────────────────────────────────────── */}
+      {/* ── Agents list ─────────────────────────────────────────── */}
       <section>
-        <h2 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-          {intl.formatMessage({ id: 'agents.myAgents' })}
-        </h2>
-
         {query.isLoading && <LoadingRows count={3} />}
         {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
 

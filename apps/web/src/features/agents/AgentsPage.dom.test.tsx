@@ -205,7 +205,6 @@ describe('AgentsPage chat box', () => {
   it('shows the agents list and the create button below the chat, with no marketplace tab', async () => {
     renderPage();
     await screen.findByTestId('chat');
-    expect(screen.getByRole('heading', { name: text('agents.myAgents') })).toBeTruthy();
     expect(screen.getByText('hierarchy')).toBeTruthy();
     expect(screen.getByRole('button', { name: text('agents.create.title') })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Marketplace' })).toBeNull();

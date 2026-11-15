@@ -315,7 +315,6 @@ export const messages: Record<string, string> = {
   'agents.title': 'AI एजेंट',
   'agents.chat.selectAgent': 'इसके साथ चैट करें',
   'agents.statusOverview': 'स्थिति का सारांश',
-  'agents.myAgents': 'मेरे एजेंट',
   'agents.marketplace.useAgent': 'इस एजेंट का उपयोग करें',
   'agents.createAgent': 'बनाएं',
   'agents.executionMode.label': 'निष्पादन मोड',

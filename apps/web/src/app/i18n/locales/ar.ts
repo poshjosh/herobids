@@ -315,7 +315,6 @@ export const messages: Record<string, string> = {
   'agents.title': 'وكلاء الذكاء الاصطناعي',
   'agents.chat.selectAgent': 'الدردشة مع',
   'agents.statusOverview': 'نظرة عامة على الحالة',
-  'agents.myAgents': 'وكلائي',
   'agents.marketplace.useAgent': 'استخدم هذا الوكيل',
   'agents.createAgent': 'إنشاء',
   'agents.executionMode.label': 'وضع التنفيذ',
