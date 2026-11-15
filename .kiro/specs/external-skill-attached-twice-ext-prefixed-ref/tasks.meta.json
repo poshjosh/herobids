@@ -1,0 +1,237 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1. Write bug condition exploration test": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088448
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698092118
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698226554
+      }
+    ],
+    "2. Write migration exploration test (legacy rows exist, no migration yet)": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088494
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698229022
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698342165
+      }
+    ],
+    "3. Capture the web create-agent request body (one-time manual check)": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088528
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698346287
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698570801
+      }
+    ],
+    "4. Write preservation property tests (BEFORE implementing fix)": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088558
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698573900
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698749944
+      }
+    ],
+    "5.1 Canonicalize in `normalizeSourceRefToSlug` (`packages/db/src/external-skill-catalog.ts`)": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088584
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698754016
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698787613
+      }
+    ],
+    "5.2 Canonicalize before lookup in `ensureExternalSkillIds` (same file)": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088623
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698790604
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698844440
+      }
+    ],
+    "5.3 Reuse the normalizer in worker `normalizeExternalRef` (`apps/worker/src/tools/skills.ts`)": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088661
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698847857
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698910092
+      }
+    ],
+    "5.4 Preserve provenance in `syncAgentSkillAssignmentsInTx` (`packages/db/src/skill-assignment.ts`)": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088694
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698913002
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698956460
+      }
+    ],
+    "5.5 Add migration 0091 (`packages/db/drizzle/0091_<name>.sql`, `meta/_journal.json`, `meta/0091_snapshot.json`)": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088726
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698959469
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794699117226
+      }
+    ],
+    "5.6 Verify bug condition exploration tests now pass": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088765
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794699120742
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794699153285
+      }
+    ],
+    "5.7 Verify preservation tests still pass": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088791
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794699156460
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794699193446
+      }
+    ],
+    "6. Add flow-level tests for the fix": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088829
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794699196750
+      },
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794699419631
+      }
+    ],
+    "7. Local end-to-end verification on a fresh local agent": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088859
+      }
+    ],
+    "8. Update the bug report": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088902
+      }
+    ],
+    "9. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794698088945
+      }
+    ],
+    "5. Fix for external skill attached twice under an `ext:`-prefixed ref": [
+      {
+        "executionId": "298a1f92-41e3-4101-aa1c-fea5fffd35ef",
+        "chatSessionId": "sess_014533c2-855e-41f5-9059-f1b6f1f44138",
+        "timestamp": 1794699193477
+      }
+    ]
+  }
+}

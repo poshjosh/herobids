@@ -13,17 +13,28 @@ import { resolveSkillIdsBySlugOrId } from './skill-assignment.js';
 import type { SourceKind } from '@herobids/domain';
 
 /**
+ * Leading `ext:` UI-layer id prefix (repeated prefixes included). Matched only
+ * when the remainder contains a `/`, so `ext:foo` and `ext:` are not refs and
+ * are left alone.
+ */
+const UI_ID_PREFIX = /^(?:ext:)+(?=.*\/)/;
+
+/**
  * Normalise a skills.sh ref to its canonical three-segment slug form
- * `owner/repo/skill`. Accepts either `owner/repo/skill` or the CLI's
- * `owner/repo@skill` form. Returns the input unchanged if it is not ref-shaped.
+ * `owner/repo/skill`. Accepts `owner/repo/skill`, the CLI's `owner/repo@skill`
+ * form, or either of those carrying the `ext:` prefix. The `ext:` prefix is a
+ * UI-layer id (the skills list hands out `ext:<ref>`); it is stripped here and
+ * is never stored in `skills.source_ref` or `skills.slug`. Returns the input
+ * unchanged if it is not ref-shaped.
  */
 export function normalizeSourceRefToSlug(ref: string): string {
+  const bare = ref.replace(UI_ID_PREFIX, '');
   // owner/repo@skill → owner/repo/skill
-  const at = ref.indexOf('@');
-  if (at >= 0 && ref.slice(0, at).includes('/')) {
-    return `${ref.slice(0, at)}/${ref.slice(at + 1)}`;
+  const at = bare.indexOf('@');
+  if (at >= 0 && bare.slice(0, at).includes('/')) {
+    return `${bare.slice(0, at)}/${bare.slice(at + 1)}`;
   }
-  return ref;
+  return bare;
 }
 
 /**
@@ -108,23 +119,32 @@ export async function ensureExternalSkillIds(
   skillIds: readonly string[],
   familyByRef: ReadonlyMap<string, string> = new Map(),
 ): Promise<string[]> {
+  // Canonicalise refs first (`ext:o/r/s`, `o/r@s` → `o/r/s`) so the known-row
+  // lookup hits the canonical slug. Only values that are external refs AFTER
+  // normalisation are rewritten; everything else (ids, platform slugs,
+  // `author/name`, `ext:foo`) is looked up as given.
+  const lookupKeys = skillIds.map((idOrRef) => {
+    const normalized = normalizeSourceRefToSlug(idOrRef);
+    return isExternalRef(normalized) ? normalized : idOrRef;
+  });
   // Resolve everything already known (by slug or id) in one query first, so an
   // already-catalogued ref (installed earlier, or seeded) is reused as-is and we
   // only create a placeholder for a genuinely-unknown skills.sh ref.
-  const known = await resolveSkillIdsBySlugOrId(db, [...skillIds]);
+  const known = await resolveSkillIdsBySlugOrId(db, lookupKeys);
   const out: string[] = [];
-  for (const idOrRef of skillIds) {
-    const resolved = known.get(idOrRef);
+  for (const [index, idOrRef] of skillIds.entries()) {
+    const key = lookupKeys[index] ?? idOrRef;
+    const resolved = known.get(key);
     if (resolved) {
       out.push(resolved);
       continue;
     }
-    if (!isExternalRef(idOrRef)) {
+    if (!isExternalRef(key)) {
       // Unknown non-ref id/slug — leave it unresolved so the caller reports it.
       out.push(idOrRef);
       continue;
     }
-    const slug = normalizeSourceRefToSlug(idOrRef);
+    const slug = key;
     const lastSegment = slug.split('/').pop() ?? slug;
     const family = familyByRef.get(slug) ?? familyByRef.get(idOrRef);
     const row = await upsertExternalSkill(db, {

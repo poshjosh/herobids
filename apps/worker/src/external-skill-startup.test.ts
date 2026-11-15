@@ -4,7 +4,7 @@
 // Installer) against a temporary source tree — the same seam the real `npx
 // skills` CLI plugs into — so a committed-edit-then-reinstall is exercised
 // without the network.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -75,6 +75,28 @@ describe('installExternalSkillsAtStart', () => {
     const body = await readInstalledSkillBody(workspaceRoot, REF);
     expect(body).toContain('EDITED BODY LINE');
     expect(body).not.toContain('ORIGINAL BODY LINE');
+  });
+
+  // A skill picked as `ext:o/r/s` at creation is stored with the canonical ref (or, on a row the migration has
+  // not reached yet, with the `ext:` prefix). Either way the CLI must get `owner/repo@skill` on the first attempt.
+  it.each([
+    ['a canonical stored source_ref', REF],
+    ['a legacy ext:-prefixed stored source_ref', `ext:${REF}`],
+  ])('installs on the first attempt via the CLI form example/skills@echo for %s', async (_label, storedRef) => {
+    const install = vi.fn((ref: string, cwd: string) => installer().install(ref, cwd));
+
+    const availability = await installExternalSkillsAtStart({
+      externalSkills: [{ id: 'ext', name: 'echo', description: 'd', sourceRef: storedRef }],
+      workspaceRoot,
+      installer: { install },
+    });
+
+    expect(install).toHaveBeenCalledTimes(1);
+    expect(install).toHaveBeenCalledWith('example/skills@echo', workspaceRoot);
+    const state = availability.get(storedRef);
+    expect(state?.available).toBe(true);
+    expect(state?.unavailableReason).toBeUndefined();
+    expect(await readInstalledSkillBody(workspaceRoot, storedRef)).toContain('ORIGINAL BODY LINE');
   });
 
   it('marks the skill unavailable with a reason when the CLI exits 0 but writes no SKILL.md', async () => {

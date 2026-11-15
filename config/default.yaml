@@ -691,7 +691,7 @@ agentRuntime:
   # Repeating-reminder bounds and coordinator settings.
   reminders:
     pollIntervalMs: 10000              # how often the reminder coordinator polls for due reminders
-    minRepeatIntervalMs: 300000        # 5 min — minimum allowed repeat interval
+    minRepeatIntervalMs: 900000        # 15 min — minimum allowed repeat interval
     maxRepeatIntervalMs: 2678400000    # 31 days — maximum allowed repeat interval
     maxActivePerAgent: 50              # max active reminders a single agent may hold
     promptMaxEntries: 10               # max reminders listed in the agent prompt

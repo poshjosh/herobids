@@ -1916,6 +1916,31 @@ describe('GET /skills sourceKind filter', () => {
   });
 });
 
+describe('mapExternalToSkillView — view ids keep the ext: UI prefix (preservation)', () => {
+  const owners = ['openaidom', 'o', 'acme-labs'];
+  const repos = ['skills', 'r', 'tools'];
+  const skillNames = ['job-search', 's', 'x1'];
+  const triples = owners.flatMap((owner) =>
+    repos.flatMap((repo) => skillNames.map((skill) => ({ owner, repo, skill }))),
+  );
+
+  it.each(triples)('returns id ext:$owner/$repo/$skill and slug $owner/$repo@$skill', ({ owner, repo, skill }) => {
+    const view = mapExternalToSkillView({
+      ref: `${owner}/${repo}/${skill}`,
+      skillId: skill,
+      name: skill,
+      description: 'd',
+      owner,
+      repo,
+      installs: 1,
+    });
+
+    expect(view.id).toBe(`ext:${owner}/${repo}/${skill}`);
+    expect(view.slug).toBe(`${owner}/${repo}@${skill}`);
+    expect(view.sourceKind).toBe('external');
+  });
+});
+
 describe('mapExternalToSkillView — backend-approved family surfacing', () => {
   // The approved-ref map is module-level global state; reset it after each case
   // so registrations here cannot leak into other tests if blocks are reordered.

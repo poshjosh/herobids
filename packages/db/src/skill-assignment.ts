@@ -162,7 +162,13 @@ export async function syncAgentSkillAssignments(
   await db.transaction((tx) => syncAgentSkillAssignmentsInTx(tx, agentId, userId, assignments, assignmentSource));
 }
 
-/** {@link syncAgentSkillAssignments} inside the caller's transaction, so a write can commit with its own row changes. */
+/**
+ * {@link syncAgentSkillAssignments} inside the caller's transaction, so a write can commit with its own row changes.
+ *
+ * `assignmentSource` (and `assignedAt` / `assignedByUserId`) describe how an assignment was first created, so they
+ * apply only to newly inserted assignments. Assignments that already exist keep their provenance; only
+ * `skillRevisionId` and `orderIndex` are updated.
+ */
 export async function syncAgentSkillAssignmentsInTx(
   tx: DatabaseTransaction,
   agentId: string,
@@ -203,9 +209,6 @@ export async function syncAgentSkillAssignmentsInTx(
       set: {
         skillRevisionId: assignment.skillRevisionId,
         orderIndex,
-        assignedAt: now,
-        assignedByUserId: userId,
-        assignmentSource,
       },
     });
 

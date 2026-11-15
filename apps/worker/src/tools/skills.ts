@@ -76,12 +76,15 @@ function runExternalSubprocess(
 /**
  * Normalize an external skill ref: if the ref has exactly 3 slash-separated
  * segments (owner/repo/skill), rewrite to owner/repo@skill which is the
- * format the skills CLI expects.
+ * format the skills CLI expects. The UI-layer `ext:` prefix is stripped first
+ * (via the shared normalizer), so `ext:o/r/s` installs as `o/r@s`.
  */
 export function normalizeExternalRef(ref: string): { ref: string; wasNormalized: boolean } {
-  const parts = ref.split('/');
-  if (parts.length === 3 && !ref.includes('@')) {
-    return { ref: `${parts[0]}/${parts[1]}@${parts[2]}`, wasNormalized: true };
+  const slug = normalizeSourceRefToSlug(ref);
+  const parts = slug.split('/');
+  if (parts.length === 3 && !slug.includes('@')) {
+    const cliRef = `${parts[0]}/${parts[1]}@${parts[2]}`;
+    return { ref: cliRef, wasNormalized: cliRef !== ref };
   }
   return { ref, wasNormalized: false };
 }

@@ -312,6 +312,34 @@ describe('agent routes slug resolution (POST /agents)', () => {
     expect(body.details[0]?.message).toContain('bob/nonexistent');
   });
 
+  it.each(['ext:foo', 'ext_5ed356e3a5c0385824eb9fbf', 'ghost-skill-id'])(
+    'rejects the unknown non-ref id %s with 400 validation_error and the same message',
+    async (unknownId) => {
+      const { agentRoutes } = await import('./agents.js');
+
+      const { db } = buildDb({
+        agentRows: [],
+        userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await agentRoutes(app, db, makePlansConfig());
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/agents',
+        payload: { name: 'Unknown Id Agent', prompt: 'test', skillIds: ['system/email', unknownId] },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({
+        error: 'validation_error',
+        details: [{ code: 'custom', path: ['skillIds'], message: `Unknown skills: ${unknownId}` }],
+      });
+    },
+  );
+
   it('skips slug resolution when skillIds contain no slugs (plain IDs)', async () => {
     const { agentRoutes } = await import('./agents.js');
 
