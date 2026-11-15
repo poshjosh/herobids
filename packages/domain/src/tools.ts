@@ -116,6 +116,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'add_skills',
   'adjust_bot_config',
   'adjust_risk_limits',
+  'append_file',
   'cancel_reminder',
   'browse_interactive',
   'browse_url',
@@ -128,6 +129,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'delete_file',
   'delete_memory',
   'discover_tokens',
+  'edit_file',
   'execute_code',
   'execute_shell',
   'find_instrument',
@@ -308,8 +310,10 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   load_skill:          { category: 'write-database',      description: 'Add an external skill and load its full instructions in one call (add_skills then read_skill). Skips the add if the skill is already assigned.' },
 
   // write-filesystem
-  write_file:          { category: 'write-filesystem',    description: 'Create or overwrite a file in the agent workspace.' },
-  delete_file:         { category: 'write-filesystem',    description: 'Delete a file from the agent workspace.' },
+  write_file:          { category: 'write-filesystem',    description: 'Create or overwrite a file in the agent workspace (up to 16,000 characters per call).' },
+  append_file:         { category: 'write-filesystem',    description: 'Append text to the end of a file in the agent workspace, creating it if missing. Appending twice writes twice.' },
+  edit_file:           { category: 'write-filesystem',    description: 'Replace exact text in a file in the agent workspace without rewriting the whole file.' },
+  delete_file:         { category: 'write-filesystem',    description: 'Delete a file from the agent workspace, or a folder and its contents with recursive: true.' },
 
   // execute-filesystem
   execute_code:        { category: 'execute-filesystem',  description: 'Execute JavaScript (Node.js) or Python code in a workspace-backed environment. Supports optional package installation.' },

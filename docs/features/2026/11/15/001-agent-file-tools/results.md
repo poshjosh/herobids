@@ -85,3 +85,34 @@ Checks: focused tests (`structured-tool-loop.test.ts`, new `stale-result-hints.t
 
 - Older docs that describe `...[truncated]` as history were left as the plan says.
 - No live check of the marker in a real agent run.
+
+## WP4. Write side (done, not committed)
+
+Checks: focused tests (`file-write-tools.test.ts`, 47 tests; `filesystem.test.ts`, `tool-signature.test.ts`, `file-messages.test.ts`); `pnpm lint`, `pnpm test` (452 files, 8,597 tests) and `pnpm build` pass.
+
+### What was added
+
+- `file-write.ts`: `resolveWritableTarget` (reserved dir, path safety, directory and non-regular-file refusal, existing size/mode/owner), `checkWriteChars` (`writeMaxChars`, code points), `checkWriteBudget` (`maxFileBytes`, then soft quota on net growth only), `writeFileAtomic` (temp file `.write-<uuid>.tmp` with `wx`, mode copy, best-effort `chown` with a warn log, `rename`, temp removed on error).
+- `append_file` (`append-file.ts`), `edit_file` (`edit-file.ts`), `delete_file` (`delete-file.ts`, now with `recursive`), all re-exported through `filesystemTools`. `write_file` stays in `filesystem.ts` with the cap, size and quota checks and new description.
+- Wiring: `KNOWN_AGENT_TOOL_NAMES`, `TOOL_CATALOG` (new `append_file`, `edit_file`; updated `write_file`, `delete_file` text), `FILE_MANAGEMENT_SKILL` and `LONG_RUNNING_TASK_SKILL` `requiredTools`, instruction lines for `append_file`, `edit_file` and `delete_file(recursive)`, both `WORKSPACE_CONTEXT_TOOL_NAMES` sets, two rows in the capability manifest doc. `append_file`, `edit_file`, `delete_file` removed from `NOT_YET_IMPLEMENTED`.
+
+### Decisions and deviations
+
+1. New code `file.not_text` (message `notText`): `edit_file` on a file that is not valid UTF-8 is refused, because rewriting it would turn bad bytes into U+FFFD and corrupt it. Not in the plan's code table. Check: re-encoding the decoded text must equal the original bytes.
+2. `deleteTooMany(path, max)` no longer takes a file count. The walk stops as soon as the count passes `maxDeleteFiles`, so the real total is unknown; the message says "more than <max> files". The WP1 message test was changed to match.
+3. `notAFile(path, action)` takes `'read' | 'written'` so a write to a FIFO does not say "cannot be read".
+4. `delete_file` protected paths: the workspace root (also via `.`, `./`, `notes/..`) and the exact top-level `platformDirs` entries give `file.reserved_path` with the "managed by the platform" message. Paths inside `.agents`, `.claude` or `agent` can still be deleted (as before; the plan lists only the directories). `sandbox/...` keeps the old "reserved" message (`reservedPath`), which the existing test matches.
+5. `delete_file` uses `lstat`: a symlink path is unlinked (counts 1 file, 0 bytes freed). A symlink whose target is outside the workspace is still refused by `resolveWorkspacePath` (`file.path_invalid`), as before. Symlinks inside a recursively deleted folder count as files and are removed as links.
+6. `delete_file` failure part-way through `fs.rm` returns the mapped fs error without a "deleted so far" count (not tracked; plan said "if known").
+7. `append_file`: an empty `content` never adds a lone newline. `bytesAppended` includes the added newline byte. A call that adds no bytes skips the quota walk.
+8. `edit_file` on an in-workspace symlink writes the temp file next to the real target (`realpath`), so the link stays a link and the target is edited. Replacement uses `indexOf` and slicing, never `String.replace`, so `$&` in `newText` is literal. `oldText === newText` is checked before the file is opened.
+9. Quota check runs only when the net growth is above zero (`write_file` overwrite, `edit_file`, `append_file`), so shrinking or same-size edits still work when the workspace is full or the walk cap is hit.
+10. Limits that tests change (`maxFileBytes`, `writeMaxChars`, `maxDeleteFiles`, `platformDirs`) are read with `getFileToolLimits()` at call time; module-level values are used only for tool descriptions and parameter text.
+11. `write_file` keeps a plain `writeFile` (not atomic); the plan asks for the atomic helper only for `edit_file`.
+
+### Measured / unverified
+
+- Editing a file of exactly 10 MiB (in-memory replace plus atomic write) takes about 20 ms in the test; peak memory was not measured (plan item "WP4 measures it" is open).
+- `chown` preservation cannot be proven in unit tests (runs as a normal user); the mode copy is tested. Live check needed in the container (root runtime, file made by user `agent`).
+- `delete_file` descriptions and the audit table row were not updated here (docs are WP7); the catalog text was.
+- Not done in WP4 on purpose: `file-tools.md`, audit rows, CHANGELOG, platform docs index (WP7).

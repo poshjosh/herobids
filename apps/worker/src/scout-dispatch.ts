@@ -13,6 +13,8 @@ const SCOUT_WORKSPACE_CONTEXT_TOOL_NAMES = new Set([
   'read_file_lines',
   'list_files',
   'write_file',
+  'append_file',
+  'edit_file',
   'delete_file',
   'stat_file',
 ]);

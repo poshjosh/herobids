@@ -148,6 +148,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `add_skills` | `core` | Agent skill assignment. |
 | `adjust_bot_config` | `external:trading` | Trading bot configuration. |
 | `adjust_risk_limits` | `external:trading` | Trading risk policy. |
+| `append_file` | `core` | Agent workspace operation. |
 | `browse_url` | `general` | Reusable web-research expertise. |
 | `browse_interactive` | `external:automation` | Interactive browser automation — requires external stateful resource with provider lifecycle. |
 | `cancel_reminder` | `core` | Base-skill reminder management. |
@@ -159,6 +160,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `delete_file` | `core` | Agent workspace operation. |
 | `delete_memory` | `core` | Generic agent memory operation. |
 | `discover_tokens` | `external:trading` | Trading market discovery. |
+| `edit_file` | `core` | Agent workspace operation. |
 | `execute_code` | `general` | Reusable sandboxed programming expertise. |
 | `execute_shell` | `core` | Agent workspace operation. |
 | `find_instrument` | `external:trading` | Tradable-instrument resolution. |

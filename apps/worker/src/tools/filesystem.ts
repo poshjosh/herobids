@@ -1,66 +1,70 @@
 import { z } from 'zod';
-import { writeFile as fsWriteFile, mkdir, unlink, readdir, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { writeFile as fsWriteFile, mkdir, readdir, stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { appendFileTool } from './append-file.js';
+import { deleteFileTool } from './delete-file.js';
+import { editFileTool } from './edit-file.js';
 import { resolveReadableFile } from './file-access.js';
 import { getFileToolLimits } from './file-limits.js';
 import * as messages from './file-messages.js';
 import { readCharPage } from './file-text.js';
+import { checkWriteBudget, checkWriteChars, resolveWritableTarget } from './file-write.js';
 import { readFileLinesTool } from './read-file-lines.js';
 import { toolUse } from './tool-signature.js';
-import { getWorkspacePaths, ensureWorkspaceDirs, resolveWorkspacePath, checkReservedDir } from './workspace.js';
+import { getWorkspacePaths, ensureWorkspaceDirs, resolveWorkspacePath } from './workspace.js';
 
 const logger = createLogger('tools:filesystem');
 
 // --- write_file ---
 
+const fileLimits = getFileToolLimits();
+
 const WriteFileParamsSchema = z.object({
   path: z.string().min(1).describe('Relative path within the workspace (e.g. "notes/log.txt")'),
-  content: z.string().describe('File content to write'),
+  content: z.string().describe(`File content to write. At most ${fileLimits.writeMaxChars} characters per call.`),
 });
 
 const writeFileTool: AgentTool = {
   name: 'write_file',
-  description: 'Create or overwrite a file in the agent workspace. Path is relative to the workspace root. The sandbox directory is reserved for code execution and cannot be written here.',
+  description: `Create or overwrite a file in the agent workspace. Path is relative to the workspace root. At most ${fileLimits.writeMaxChars} characters per call (keep each write under about 12000); for more, write the first part here and add the rest with ${toolUse('append_file', 'path', 'content')}. Change part of a file with ${toolUse('edit_file', 'path', 'oldText', 'newText')} instead of rewriting it. The sandbox directory is reserved for code execution and cannot be written here.`,
   parametersSchema: WriteFileParamsSchema,
   parameters: convertZodToJsonSchema(WriteFileParamsSchema),
   category: 'write-filesystem',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { path: relativePath, content } = params as z.infer<typeof WriteFileParamsSchema>;
 
-    const reservedErr = checkReservedDir(relativePath);
-    if (reservedErr) {
-      return { success: false, error: reservedErr, retryable: false, fault: false };
-    }
+    const tooLong = checkWriteChars(content, 'write_file');
+    if (tooLong) return tooLong;
 
-    const paths = getWorkspacePaths(ctx.agentId);
-    await ensureWorkspaceDirs(paths);
-
-    const resolved = await resolveWorkspacePath(paths.root, relativePath);
-    if (!resolved.ok) {
-      return { success: false, error: resolved.error, retryable: false, fault: false };
-    }
+    const target = await resolveWritableTarget(ctx.agentId, relativePath);
+    if (!target.ok) return target.result;
 
     try {
-      const parentDir = join(resolved.absolutePath, '..');
-      await mkdir(parentDir, { recursive: true });
-      await fsWriteFile(resolved.absolutePath, content, 'utf8');
       const bytesWritten = Buffer.byteLength(content, 'utf8');
+      // Overwriting counts only the net growth against the quota.
+      const rejected = await checkWriteBudget(
+        target.root,
+        relativePath,
+        bytesWritten,
+        bytesWritten - (target.existing?.sizeBytes ?? 0),
+      );
+      if (rejected) return rejected;
+
+      await mkdir(dirname(target.absolutePath), { recursive: true });
+      await fsWriteFile(target.absolutePath, content, 'utf8');
       logger.debug({ agentId: ctx.agentId, path: relativePath, bytes: bytesWritten }, 'write_file success');
       return { success: true, data: { path: relativePath, bytesWritten } };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'write_file error');
-      return { success: false, error: `write_file failed: ${msg}`, retryable: false, fault: false };
+      logger.warn({ agentId: ctx.agentId, path: relativePath, err: err instanceof Error ? err.message : String(err) }, 'write_file error');
+      return messages.fromFsError(err, { action: 'writing', path: relativePath });
     }
   },
 };
 
 // --- read_file ---
-
-const fileLimits = getFileToolLimits();
 
 const ReadFileParamsSchema = z.object({
   path: z.string().min(1).describe('Relative path within the workspace to read'),
@@ -178,55 +182,6 @@ const listFilesTool: AgentTool = {
   },
 };
 
-// --- delete_file ---
-
-const DeleteFileParamsSchema = z.object({
-  path: z.string().min(1).describe('Relative path of the file to delete'),
-});
-
-const deleteFileTool: AgentTool = {
-  name: 'delete_file',
-  description: 'Delete a file from the agent workspace. Path is relative to the workspace root. The sandbox directory is reserved and cannot be deleted.',
-  parametersSchema: DeleteFileParamsSchema,
-  parameters: convertZodToJsonSchema(DeleteFileParamsSchema),
-  category: 'write-filesystem',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { path: relativePath } = params as z.infer<typeof DeleteFileParamsSchema>;
-
-    const reservedErr = checkReservedDir(relativePath);
-    if (reservedErr) {
-      return { success: false, error: reservedErr, retryable: false, fault: false };
-    }
-
-    const paths = getWorkspacePaths(ctx.agentId);
-    await ensureWorkspaceDirs(paths);
-
-    const resolved = await resolveWorkspacePath(paths.root, relativePath);
-    if (!resolved.ok) {
-      return { success: false, error: resolved.error, retryable: false, fault: false };
-    }
-
-    try {
-      const fileStat = await stat(resolved.absolutePath);
-      if (fileStat.isDirectory()) {
-        return { success: false, error: 'path is a directory; delete_file only removes files', retryable: false, fault: false };
-      }
-
-      await unlink(resolved.absolutePath);
-      logger.debug({ agentId: ctx.agentId, path: relativePath }, 'delete_file success');
-      return { success: true, data: { path: relativePath, deleted: true } };
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        return { success: false, error: `file not found: ${relativePath}`, retryable: false, fault: false };
-      }
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'delete_file error');
-      return { success: false, error: `delete_file failed: ${msg}`, retryable: false, fault: false };
-    }
-  },
-};
-
 // --- stat_file ---
 
 const StatFileParamsSchema = z.object({
@@ -290,6 +245,8 @@ const statFileTool: AgentTool = {
 
 export const filesystemTools: AgentTool[] = [
   writeFileTool,
+  appendFileTool,
+  editFileTool,
   readFileTool,
   readFileLinesTool,
   listFilesTool,

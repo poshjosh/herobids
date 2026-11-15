@@ -892,7 +892,7 @@ The tool's `description` states the unit of every parameter and names its compan
 | WP1 | Foundation | none | DONE |
 | WP2 | Read side | WP1 | DONE |
 | WP3 | Truncation marker | WP2 (hint targets) | DONE |
-| WP4 | Write side | WP1 | PENDING |
+| WP4 | Write side | WP1 | DONE |
 | WP5 | `search_files` | WP1 | PENDING |
 | WP6 | `browse_url` and web cache | WP1 | PENDING |
 | WP7 | Docs and wrap-up | WP2 to WP6 | PENDING |
@@ -1418,3 +1418,9 @@ Status of each gate after the owner's review on 2026-11-15:
 - M: `staleReadHint` embeds the agent-supplied path twice with no length bound; may bloat the cut marker.
 - M: `describeCutResult` could throw if `toolCall()` strict mode is active (strict is test-only, so likely low).
 - L: Hint also added to error-payload results; `toolCallArgsById` never pruned; ar/hi translations need native review; long yaml comment; DOM test uses `previousElementSibling`; visual check of help line in en/ar/hi outstanding.
+
+### WP4. Write side
+- M: `delete-file.ts` protected-path check is lexical only; an agent-made symlink alias (`x -> .`) lets `delete_file(x/agent, recursive: true)` remove platform dirs. Same gap in `checkReservedDir` for `sandbox`. Compute protected segments against realpath of root; add alias tests.
+- M: `fromFsError` default branch echoes `error.message` (may leak absolute container paths); add ENOTDIR mapping and use the error code instead; add a test.
+- L: `z.boolean()` rejects string "true" (fails closed); crash leaves `.write-*.tmp` files counting toward quota; hard links broken by rename; no "deleted so far" count on partial `fs.rm` failure; `write_file` not atomic; check order cosmetic; small races accepted.
+- Unverified: `chown` preservation (needs live root run), peak memory for a 10 MiB edit.

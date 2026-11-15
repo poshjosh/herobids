@@ -18,6 +18,7 @@ export type FileErrorCode =
   | 'file.not_found'
   | 'file.is_directory'
   | 'file.not_a_file'
+  | 'file.not_text'
   | 'file.not_a_directory'
   | 'file.too_large'
   | 'file.write_too_large'
@@ -89,15 +90,23 @@ export function isDirectory(path: string, options: { forDelete?: boolean } = {})
   return agentError('file.is_directory', message);
 }
 
-export function deleteTooMany(path: string, fileCount: number, max: number): ToolResult {
+export function deleteTooMany(path: string, max: number): ToolResult {
   return agentError(
     'file.delete_too_many',
-    `This folder holds ${fileCount} files; the limit per call is ${max}. Delete subfolders one at a time: ${toolCall('list_files', { path })}, then ${toolCall('delete_file', { path: `${path}/<sub>`, recursive: true })}.`,
+    `This folder holds more than ${max} files, the limit per call. Delete subfolders one at a time: ${toolCall('list_files', { path })}, then ${toolCall('delete_file', { path: `${path}/<sub>`, recursive: true })}.`,
   );
 }
 
-export function notAFile(path: string): ToolResult {
-  return agentError('file.not_a_file', `${shown(path)} is not a regular file, so it cannot be read.`);
+export function notAFile(path: string, action: 'read' | 'written' = 'read'): ToolResult {
+  return agentError('file.not_a_file', `${shown(path)} is not a regular file, so it cannot be ${action}.`);
+}
+
+/** edit_file on a file that is not valid UTF-8: rewriting it would corrupt the bytes. */
+export function notText(path: string): ToolResult {
+  return agentError(
+    'file.not_text',
+    `${shown(path)} is not valid UTF-8 text, so editing it would corrupt it. Replace it whole with ${toolUse('write_file', 'path', 'content')} or use another file.`,
+  );
 }
 
 export function tooLarge(path: string, sizeBytes: number, maxBytes: number, options: { forEdit?: boolean } = {}): ToolResult {
