@@ -889,7 +889,7 @@ The tool's `description` states the unit of every parameter and names its compan
 
 | WP | Scope | Depends on | Status |
 |---|---|---|---|
-| WP1 | Foundation | none | PENDING |
+| WP1 | Foundation | none | DONE |
 | WP2 | Read side | WP1 | PENDING |
 | WP3 | Truncation marker | WP2 (hint targets) | PENDING |
 | WP4 | Write side | WP1 | PENDING |
@@ -1394,3 +1394,15 @@ Status of each gate after the owner's review on 2026-11-15:
 - Whether existing running agents pick up a changed system-skill revision without being recreated.
 - Whether any test outside my greps hard-codes a tool total or the old truncation marker.
 - Whether the traderton copy of the tool catalog needs the new names.
+
+## Outstanding Issues
+
+### WP1. Foundation
+- M: `workspace-quota.ts` swallows ENOENT at any depth; a folder removed mid-walk gives a silent partial sum. Handle per directory, treat only a missing root as empty.
+- M: `file-messages.ts` `shown()` shortens long paths, so call examples with `recursive: true` use a non-callable path. Use the full path in call examples.
+- M: `quotaExceeded` walk_capped branch suggests deleting `topDirs[0]`, which is partial. State sizes are partial or choose differently.
+- L: `file-limits.ts` casts parsed JSON; prefer a small Zod schema.
+- L: No upper bounds on `readMaxChars`, `writeMaxChars`, `list.maxEntries`, `search.maxMatches` in `FileToolsConfigSchema`.
+- L: `tool-signature` strict mode depends on `NODE_ENV === 'test'`.
+- L: `browseUrl.maxResponseBytes` default is 1 MiB before WP6 removes the 512 KiB grant literal.
+- L: Legacy launcher path without envConfig does not set the quota env (theoretical).

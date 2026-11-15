@@ -365,6 +365,20 @@ export class AgentRuntimeLauncher {
     });
     const toolPolicyJson = JSON.stringify(config.toolPolicy ?? {});
 
+    const profile = this.resolveProfile(config.planTier);
+
+    const resources: RuntimeResourceProfile = {
+      memoryLimitMb: config.limits?.memoryMb ?? profile.memoryLimitMb ?? 512,
+      memoryReservationMb: config.limits?.memoryMb !== undefined
+        ? undefined // caller set explicit memory; reservation is implicit
+        : profile.memoryReservationMb,
+      cpuShares: config.limits?.cpuShares ?? profile.cpuShares ?? 256,
+      maxProcesses: config.limits?.maxProcesses ?? profile.maxProcesses ?? 50,
+      tempStorageMb: config.limits?.tempStorageMb ?? profile.tempStorageMb ?? 100,
+      workspaceDiskMb: profile.workspaceDiskMb ?? this.defaultResources.workspaceDiskMb,
+      maxWallClockMs: config.limits?.wallClockMs ?? profile.maxWallClockMs,
+    };
+
     const env: Record<string, string> = this.envConfig
       ? buildAgentEnv(
           config.agentId,
@@ -381,18 +395,12 @@ export class AgentRuntimeLauncher {
       ? buildAgentLabels(config.agentId, config.sessionId)
       : {};
 
-    const profile = this.resolveProfile(config.planTier);
+    // The quota is enforced inside the container by the file tools, so the tier's value travels as an env var.
+    // Only set when the launcher builds the env; an empty env means the adapter uses its own defaults.
+    if (this.envConfig && resources.workspaceDiskMb !== undefined) {
+      env['AGENT_WORKSPACE_QUOTA_MB'] = String(resources.workspaceDiskMb);
+    }
 
-    const resources: RuntimeResourceProfile = {
-      memoryLimitMb: config.limits?.memoryMb ?? profile.memoryLimitMb ?? 512,
-      memoryReservationMb: config.limits?.memoryMb !== undefined
-        ? undefined // caller set explicit memory; reservation is implicit
-        : profile.memoryReservationMb,
-      cpuShares: config.limits?.cpuShares ?? profile.cpuShares ?? 256,
-      maxProcesses: config.limits?.maxProcesses ?? profile.maxProcesses ?? 50,
-      tempStorageMb: config.limits?.tempStorageMb ?? profile.tempStorageMb ?? 100,
-      maxWallClockMs: config.limits?.wallClockMs ?? profile.maxWallClockMs,
-    };
 
     const portResult = await this.port.launch({
       agentId: config.agentId,

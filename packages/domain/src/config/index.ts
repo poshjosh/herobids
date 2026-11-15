@@ -76,6 +76,8 @@ export {
   WebAccessToolsConfigSchema,
   BrowserPoolConfigSchema,
   HttpClientConfigSchema,
+  FileToolsConfigSchema,
+  WebCacheConfigSchema,
   ServicesConfigSchema,
   ServiceEntrySchema,
   AgentRiskDefaultsSchema,
@@ -243,6 +245,8 @@ export type {
   WakeGateConfig,
   BrowserPoolConfig,
   HttpClientConfig,
+  FileToolsConfig,
+  WebCacheConfig,
 } from './schema.js';
 
 export { resolveStyleTradingTickIntervalMs, deriveStyleMaxHoldDurationMs, resolveTradingTickIntervalMs } from './agent-schedule.js';

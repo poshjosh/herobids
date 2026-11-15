@@ -580,6 +580,7 @@ agentRuntime:
     memoryMb: 512              # Docker Memory limit in MB (cgroup hard limit)
     maxWallClockMs: 0          # how long an agent session lives. 0 = unlimited
     tempStorageMb: 100         # Docker tmpfs/storage limit in MB
+    workspaceDiskMb: 100       # soft app-level workspace quota (MiB) used when a tier has no value; enforced by the file tools
     maxProcesses: 128          # ulimit nproc: max concurrent processes inside container
     maxRequestsPerMinute: 60   # in-process outbound request rate limit
     maxConcurrentConnections: 10  # in-process concurrent connection limit
@@ -598,6 +599,7 @@ agentRuntime:
   #   cpuShares           — relative CPU weight (Docker CpuShares / Nomad cpu shares)
   #   maxProcesses        — PID limit inside the container
   #   tempStorageMb       — /tmp tmpfs size limit
+  #   workspaceDiskMb     — soft workspace quota in MiB (not RAM, not tmpfs); enforced by the file tools
   #   maxWallClockMs      — runtime wall-clock timeout (0 = unlimited)
   #
   # Strategy: soft-overcommit model.
@@ -633,6 +635,7 @@ agentRuntime:
       cpuShares: 256
       maxProcesses: 128
       tempStorageMb: 100
+      workspaceDiskMb: 100     # soft workspace quota (MiB)
       maxWallClockMs: 0
     starter:
       memoryLimitMb: 512
@@ -640,6 +643,7 @@ agentRuntime:
       cpuShares: 256
       maxProcesses: 128
       tempStorageMb: 100
+      workspaceDiskMb: 100     # soft workspace quota (MiB)
       maxWallClockMs: 0
     pro:
       memoryLimitMb: 2048
@@ -647,11 +651,37 @@ agentRuntime:
       cpuShares: 512
       maxProcesses: 200
       tempStorageMb: 500
+      workspaceDiskMb: 500     # soft workspace quota (MiB)
       maxWallClockMs: 0
   tools:
     codeExecute:
       defaultTimeoutMs: 60000      # execute_code timeout when no capability grant present
       defaultMaxOutputBytes: 51200  # execute_code max output when no capability grant present
+    files:
+      maxFileBytes: 10485760     # largest file the file tools open or grow to (10 MiB)
+      readDefaultChars: 50000    # default page for read_file, read_file_lines and the browse_url inline page
+      readMaxChars: 500000       # largest `limit` (read_file, browse_url) or `maxChars` (read_file_lines) an agent may ask for (about 125k tokens)
+      writeMaxChars: 16000       # per-call text cap for write_file, append_file and edit_file
+      quotaWalkMaxFiles: 2000    # files counted when summing workspace size; over this the write fails
+      maxDeleteFiles: 5000       # most files delete_file(recursive: true) removes in one call; a bigger folder is refused
+      platformDirs: [sandbox, .agents, .claude, agent]  # top-level folders the platform manages; skipped by the quota walk and by default searches
+      dependencyDirs: [node_modules, .git]              # folders skipped at any depth by the quota walk and by default searches
+      list:
+        defaultEntries: 500      # list_files entries returned when no limit is given
+        maxEntries: 2000         # largest list_files limit
+      search:
+        defaultMatches: 20       # search_files maxMatches when not given
+        maxMatches: 200          # largest search_files maxMatches
+        lineMaxChars: 300        # longest matching line text returned (a window around the match)
+        defaultResultChars: 8000 # result text cap at the default match count
+        contextMaxLines: 3       # most context lines before and after a match
+        maxFiles: 500            # files scanned per call
+        maxScanMb: 50            # MiB scanned per call
+        deadlineMs: 3000         # wall-clock limit per call
+        maxDepth: 8              # directory depth searched
+        maxQueryChars: 200       # longest query
+        maxRegexChars: 100       # longest regex pattern
+        regexLineMaxChars: 2000  # regex skips lines longer than this
     webAccess:
       tavily:
         baseUrl: "https://api.tavily.com"
@@ -659,8 +689,11 @@ agentRuntime:
         maxResults: 5
         timeoutMs: 15000
       browseUrl:
-        maxResponseBytes: 524288   # 512 KB
+        maxResponseBytes: 1048576  # 1 MiB fetch cap, shared by browse_url and read_document (was 524288); the default browse_url grant no longer overrides it
         timeoutMs: 15000
+      webCache:
+        sizeMb: 50               # tool-enforced cap on the web-cache folder (MiB); 0 turns saving off. Nothing is deleted automatically
+        dir: web-cache           # folder under the workspace root
     httpClient:
       enabled: true
       maxResponseBytes: 51200

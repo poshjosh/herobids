@@ -350,6 +350,7 @@ const agentRuntimeLauncher = await (async () => {
     cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
     maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
     tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
+    workspaceDiskMb: appConfig.agentRuntime.sandboxDefaults.workspaceDiskMb,
     maxWallClockMs: appConfig.agentRuntime.sandboxDefaults.maxWallClockMs,
   };
 

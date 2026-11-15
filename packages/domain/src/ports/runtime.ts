@@ -19,6 +19,8 @@ export interface RuntimeResourceProfile {
   maxProcesses: number;
   /** Temp storage limit in MB (e.g. /tmp tmpfs size). */
   tempStorageMb: number;
+  /** Soft workspace quota in MB, enforced inside the container by the file tools (not a disk limit). */
+  workspaceDiskMb?: number;
   /** Wall-clock timeout in ms (0 = no limit, runtime is killed after this). */
   maxWallClockMs?: number;
 }

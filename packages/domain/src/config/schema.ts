@@ -1259,6 +1259,48 @@ export const WorkerConfigSchema = z.object({
   }).default({}),
 });
 
+/** Operator limits for the agent file tools (read, search, write, list, delete). */
+export const FileToolsConfigSchema = z.object({
+  maxFileBytes: z.number().int().min(1024).max(104_857_600).default(10_485_760),
+  readDefaultChars: z.number().int().min(1).default(50_000),
+  readMaxChars: z.number().int().min(1).default(500_000),
+  writeMaxChars: z.number().int().min(1).default(16_000),
+  quotaWalkMaxFiles: z.number().int().min(1).default(2_000),
+  maxDeleteFiles: z.number().int().min(1).default(5_000),
+  platformDirs: z.array(z.string().min(1)).default(['sandbox', '.agents', '.claude', 'agent']),
+  dependencyDirs: z.array(z.string().min(1)).default(['node_modules', '.git']),
+  list: z.object({
+    defaultEntries: z.number().int().min(1).default(500),
+    maxEntries: z.number().int().min(1).default(2_000),
+  }).default({}),
+  search: z.object({
+    defaultMatches: z.number().int().min(1).default(20),
+    maxMatches: z.number().int().min(1).default(200),
+    lineMaxChars: z.number().int().min(1).default(300),
+    defaultResultChars: z.number().int().min(1).default(8_000),
+    contextMaxLines: z.number().int().min(0).default(3),
+    maxFiles: z.number().int().min(1).default(500),
+    maxScanMb: z.number().int().min(1).default(50),
+    deadlineMs: z.number().int().min(1).default(3_000),
+    maxDepth: z.number().int().min(0).default(8),
+    maxQueryChars: z.number().int().min(1).default(200),
+    maxRegexChars: z.number().int().min(1).default(100),
+    regexLineMaxChars: z.number().int().min(1).default(2_000),
+  }).default({}),
+}).default({}).refine(
+  (c) =>
+    c.readDefaultChars <= c.readMaxChars
+    && c.list.defaultEntries <= c.list.maxEntries
+    && c.search.defaultMatches <= c.search.maxMatches,
+  { message: 'tools.files: default values must not exceed their maximums (readDefaultChars <= readMaxChars, list.defaultEntries <= list.maxEntries, search.defaultMatches <= search.maxMatches)' },
+);
+
+/** Web page cache: a plain folder in the agent workspace. Nothing is deleted automatically. */
+export const WebCacheConfigSchema = z.object({
+  sizeMb: z.number().int().min(0).default(50),
+  dir: z.string().min(1).regex(/^[A-Za-z0-9._-]+$/).default('web-cache'),
+}).default({});
+
 export const WebAccessToolsConfigSchema = z.object({
   tavily: z.object({
     baseUrl: z.string().url().default('https://api.tavily.com'),
@@ -1267,10 +1309,12 @@ export const WebAccessToolsConfigSchema = z.object({
     timeoutMs: z.number().int().min(1000).default(15_000),
   }).default({}),
   browseUrl: z.object({
-    maxResponseBytes: z.number().int().min(1024).default(512 * 1024),
+    // Shared by browse_url and read_document (fetch cap).
+    maxResponseBytes: z.number().int().min(1024).default(1024 * 1024),
     timeoutMs: z.number().int().min(1000).default(15_000),
     maxRedirects: z.number().int().min(0).max(10).default(3),
   }).default({}),
+  webCache: WebCacheConfigSchema,
 });
 
 // ── Infrastructure Services ──────────────────────────────────────────────────
@@ -1534,6 +1578,8 @@ export const AgentRuntimeConfigSchema = z.object({
     memoryMb: z.number().int().min(64).default(512),
     maxWallClockMs: z.number().int().min(0).default(300_000),
     tempStorageMb: z.number().int().min(1).default(100),
+    /** Soft app-level workspace quota in MiB (not RAM, not tmpfs). Fallback when a tier has no value. */
+    workspaceDiskMb: z.number().int().min(1).default(100),
     maxProcesses: z.number().int().min(1).default(10),
     maxRequestsPerMinute: z.number().int().min(1).default(60),
     maxConcurrentConnections: z.number().int().min(1).default(10),
@@ -1568,6 +1614,8 @@ export const AgentRuntimeConfigSchema = z.object({
     maxProcesses: z.number().int().min(1),
     /** Temp storage limit in MB (e.g. /tmp tmpfs size). */
     tempStorageMb: z.number().int().min(1),
+    /** Soft workspace quota in MiB, enforced by the file tools (not a disk limit). */
+    workspaceDiskMb: z.number().int().min(1).optional(),
     /** Wall-clock timeout in ms (0 = unlimited, runtime is killed after this). */
     maxWallClockMs: z.number().int().min(0).optional(),
   })).default({}).refine(
@@ -1598,6 +1646,7 @@ export const AgentRuntimeConfigSchema = z.object({
     }).default({}),
     webAccess: WebAccessToolsConfigSchema.default({}),
     httpClient: HttpClientConfigSchema,
+    files: FileToolsConfigSchema,
   }).default({}),
   /** Repeating-reminder bounds and coordinator settings (operator config). */
   reminders: RemindersConfigSchema.default({}),
@@ -2056,6 +2105,8 @@ export type BrowserPoolConfig = z.infer<typeof BrowserPoolConfigSchema>;
 export type ServiceEntry = z.infer<typeof ServiceEntrySchema>;
 export type ServicesConfig = z.infer<typeof ServicesConfigSchema>;
 export type HttpClientConfig = z.infer<typeof HttpClientConfigSchema>;
+export type FileToolsConfig = z.infer<typeof FileToolsConfigSchema>;
+export type WebCacheConfig = z.infer<typeof WebCacheConfigSchema>;
 export type UsageBillingConfig = z.infer<typeof UsageBillingConfigSchema>;
 export type PlanUsagePackaging = z.infer<typeof PlanUsagePackagingSchema>;
 export type PlanEntitlements = z.infer<typeof PlanEntitlementsSchema>;

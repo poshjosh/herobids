@@ -297,3 +297,57 @@ describe('AgentRuntimeLauncher — agent key redaction', () => {
     expect(logged).toContain('[REDACTED]');
   });
 });
+
+describe('AgentRuntimeLauncher — workspace quota env', () => {
+  const profile = (workspaceDiskMb?: number) => ({
+    memoryLimitMb: 512,
+    cpuShares: 256,
+    maxProcesses: 128,
+    tempStorageMb: 100,
+    ...(workspaceDiskMb !== undefined ? { workspaceDiskMb } : {}),
+  });
+
+  async function launchWith(options: {
+    profiles: Record<string, ReturnType<typeof profile>>;
+    defaults: ReturnType<typeof profile>;
+    planTier?: string;
+    withEnvConfig?: boolean;
+  }) {
+    const port = new StubRuntimeAdapter();
+    const launchSpy = vi.spyOn(port, 'launch');
+    const launcher = new AgentRuntimeLauncher({
+      port,
+      resourceProfiles: options.profiles,
+      defaultResources: options.defaults,
+      ...(options.withEnvConfig === false
+        ? {}
+        : { envConfig: { redisUrl: 'redis://localhost:6379', databaseUrl: 'postgres://localhost/test', agentRuntimeConfigJson: '{}' } }),
+    });
+    await launcher.launch({ ...BASE_LAUNCH, ...(options.planTier ? { planTier: options.planTier } : {}) });
+    return launchSpy.mock.calls[0]![0];
+  }
+
+  it('puts the tier workspace quota in the container env and resources', async () => {
+    const config = await launchWith({
+      profiles: { pro: profile(500), free: profile(100) },
+      defaults: profile(100),
+      planTier: 'pro',
+    });
+    expect(config.env['AGENT_WORKSPACE_QUOTA_MB']).toBe('500');
+    expect(config.resources.workspaceDiskMb).toBe(500);
+  });
+
+  it('falls back to the default workspace quota when the tier profile has none', async () => {
+    const config = await launchWith({
+      profiles: { free: profile() },
+      defaults: profile(80),
+      planTier: 'free',
+    });
+    expect(config.env['AGENT_WORKSPACE_QUOTA_MB']).toBe('80');
+  });
+
+  it('leaves the env empty on the legacy path so the adapter builds its own', async () => {
+    const config = await launchWith({ profiles: {}, defaults: profile(80), withEnvConfig: false });
+    expect(config.env).toEqual({});
+  });
+});
