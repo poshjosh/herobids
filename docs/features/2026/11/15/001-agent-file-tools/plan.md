@@ -114,7 +114,7 @@ State this plainly to avoid over-selling.
 | 12 | Truncation marker with sizes for every tool; re-read hint for `read_file`, `read_file_lines`, `search_files`, `browse_url`. Keep stale truncation. Do not pin file reads. | Design 10 |
 | 13 | `browse_url`: 1 MiB fetch cap; first page inline; full text saved to `/workspace/web-cache/<name>.txt` (a plain workspace folder, no mount) when longer than one page. **Revised 2026-11-15:** no tmpfs, no Nomad spike, no automatic cleanup or eviction; when the cache cap or the quota is full, nothing is saved or deleted and the agent gets the first page plus an instruction to free space and call again. No memory fallback. | Design 9; approval gates |
 | 14 | Skills wiring: new tools go into `file-management` and `long-running-task`; update catalog, known names, both `WORKSPACE_CONTEXT_TOOL_NAMES` sets, platform docs index, drift-guard tests, `CHANGELOG.md`. | Design 11 |
-| 15 | The job-search skill is out of scope. | Follow-ups |
+| 15 | The job-search skill is out of scope. External skills are portable and must not name platform tools; any change is tool-neutral wording only, and optional. | Follow-ups |
 | 16 | Naming per `AGENTS.md`. Existing `ToolResult` shapes and namespaced error codes. Zod validation. `resolveWorkspacePath` and `checkReservedDir` on every path. | Design 0 |
 | 17 | Message standard (owner request, 2026-11-15): every error and every limit-hit result says what happened (with the numbers) and the exact next call, written with the tool signature. The next step is inside the `error` text, because that is what the model reads. Success hints appear only on truncation, paging, incomplete or match results, never on a plain success. Example: disk full tells the agent to call `delete_file(path)`; a search result tells the agent how to read around a match with `read_file_lines`. | Design 0a; WP1 to WP6 |
 | 18 | One helper builds tool signatures from the Zod schemas (`toolSignature()`), so messages, tool descriptions and docs cannot drift when a parameter is renamed. A drift test fails if a message or a doc names an unknown tool or parameter. | Design 0b; WP1 |
@@ -1384,8 +1384,13 @@ Status of each gate after the owner's review on 2026-11-15:
   addresses and SSRF (reuse `isHostPrivate`, re-check redirects), counting bytes while streaming (not
   trusting `Content-Length`), disk fill (quota and total caps), timeouts, no overwrite by default,
   binary files, untrusted content, and the ephemeral workspace.
-- The job-search skill in `openaidom-skills`, after the staging tests (for example `jobs.jsonl`
-  with `append_file`, and `search_files` instead of re-reading the whole list).
+- The job-search skill in `openaidom-skills`: optional, and only if the live checks show agents still
+  re-read whole data files. External skills must stay portable, so they must not name platform tools
+  such as `search_files` or `append_file`. The tool names and signatures live in the platform's
+  `file-management` skill, which every agent with file tools already sees. If needed, add tool-neutral
+  wording only, for example: "Look up a record without loading the whole data file, and add or change
+  a record without rewriting the whole file, if your tools allow it." The "results not saved" problem
+  is a separate skill and model behaviour issue.
 - Hard disk limits for `/workspace` (Docker `StorageOpt` or Nomad `ephemeral_disk`).
 - A model-aware clamp of the read size, using the model's context window.
 - Mirror the file-tool limits in the web UI runtime policy view, if operators want to see them.
