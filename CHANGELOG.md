@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## v0.10.1 - 2026-11-16
 ### Fixed
 - A CV or other document attached in the create-agent form now reaches the agent with its document id. On the agent's first tick the stored caption row (`Uploaded cv.pdf`) shared its id with the live notice, so the window dropped the notice and the agent never called `read_agent_document`. The window now keeps the notice text. A restart still loses the id. See docs/bug-reports/2026/11/16/001-document-notice-dropped-by-hydrated-caption-row.md.
 - `infra/hetzner/scripts/maintenance-restart.sh` no longer exits silently after the memory check. Since its runtime detection was added (`6aa925d7`, in v0.10.0) it read a `NOMAD_NAMESPACE` `.env` key that no environment has, and the grep miss under `set -euo pipefail` ended the script on every server. Missing `.env` keys now read as empty; the namespace comes from `NOMAD_AGENT_NAMESPACE` (default `herobids-agents`, matching `config/default.yaml`). With `RUNTIME_BACKEND=nomad` and Nomad unusable, the script now exits with the reason before stopping any agent, instead of marking agents stopped and falling back to a `docker stop` that cannot reach them. Test: `infra/hetzner/scripts/tests/test-maintenance-restart-runtime.sh`. See docs/bug-reports/2026/11/15/004-maintenance-restart-exits-silently-after-memory-check.md.
