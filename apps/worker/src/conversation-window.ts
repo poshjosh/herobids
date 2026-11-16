@@ -1,4 +1,5 @@
 import type { ConversationMessage } from '@herobids/domain';
+import { parseDocumentNoticeText } from '@herobids/documents/agent-document-notice';
 
 /**
  * The Conversation window: the user's and the agent's messages, chronological, kept apart from the activity timeline
@@ -128,4 +129,25 @@ export function sentMessageRefFromToolResult(toolResult: string): string | null 
   } catch {
     return null;
   }
+}
+
+/**
+ * Text to keep when the window already holds a message and the stream delivers the same id again. A control-plane
+ * upload stores only a short caption row, while its stream envelope carries the document id and the read tool pointer.
+ * The notice wins, so the agent keeps the id. Anything else keeps the stored text.
+ */
+export function preferDocumentNoticeText(storedText: string, liveText: string): string {
+  return parseDocumentNoticeText(liveText) && !parseDocumentNoticeText(storedText) ? liveText : storedText;
+}
+
+/**
+ * The window after a message arrives whose id the window may already hold, or null when the id is new (the caller
+ * appends it). For a known id the stored entry stays, with its text upgraded by `preferDocumentNoticeText`. Returns a
+ * new array and never mutates `entries`.
+ */
+export function mergeKnownEntry(entries: ConversationWindowEntry[], entry: ConversationWindowEntry): ConversationWindowEntry[] | null {
+  if (!entries.some((existing) => existing.id === entry.id)) return null;
+  return entries.map((existing) =>
+    existing.id === entry.id ? { ...existing, text: preferDocumentNoticeText(existing.text, entry.text) } : existing,
+  );
 }

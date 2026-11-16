@@ -78,7 +78,7 @@ import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailur
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState, isUserMessageType, timelineEventForUserMessage } from './tick-gate-state.js';
-import { sentMessageRefFromToolResult, trimConversationWindow, userMessageQueuedAt, windowEntryFromConversationRow, type ConversationWindowEntry } from './conversation-window.js';
+import { mergeKnownEntry, sentMessageRefFromToolResult, trimConversationWindow, userMessageQueuedAt, windowEntryFromConversationRow, type ConversationWindowEntry } from './conversation-window.js';
 import { createThreadReader } from './conversation-thread-reader.js';
 import { resolveReplyDelivery } from './fallback-reply.js';
 import { createPauseStateTracker, HeldMessageQueue, PAUSED_TICK_GATE, PAUSED_TICK_REASON, resolvePausedTickDelay, resolvePausedWakeAction, runPauseGatedTick } from './runtime-pause.js';
@@ -1435,11 +1435,20 @@ function conversationWindowEnabled(): boolean {
   return agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.conversation.enabled;
 }
 
-/** Adds an entry to the Conversation window, trims it to the policy, and skips an id the window already holds. */
+/**
+ * Adds an entry to the Conversation window and trims it to the policy. An id the window already holds is not added
+ * again: the stored entry stays, and only its text is upgraded to a document notice (see `mergeKnownEntry`).
+ */
 function appendConversationEntry(entry: ConversationWindowEntry): void {
   const metrics = runtimeState.metrics;
-  // A hydrated window can already hold the message this tick captured from the stream.
-  if (metrics.conversationWindow.some((existing) => existing.id === entry.id)) return;
+  // A hydrated window can already hold the message this tick captured from the stream. A control-plane upload stores
+  // only a short caption row; the stream envelope with the same id carries the document id the agent needs.
+  // Bug: docs/bug-reports/2026/11/16/001-document-notice-dropped-by-hydrated-caption-row.md
+  const merged = mergeKnownEntry(metrics.conversationWindow, entry);
+  if (merged) {
+    metrics.conversationWindow = merged;
+    return;
+  }
   metrics.conversationWindow.push(entry);
   const trimmed = trimConversationWindow(
     metrics.conversationWindow,
