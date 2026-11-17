@@ -1,5 +1,4 @@
-import { FINISH_RUN_STATUSES } from '@herobids/domain';
-import { FinishRunParamsSchema } from './tools/finish-run.js';
+import { FinishRunParamsSchema, normalizeFinishRun, type FinishRunRecord } from './tools/finish-run.js';
 
 /**
  * Nudge sent when a model stops without calling `finish_run`.
@@ -9,7 +8,7 @@ import { FinishRunParamsSchema } from './tools/finish-run.js';
 export const CONTINUATION_NUDGE_TEXT =
   'You stopped without calling `finish_run`, which is required to end a run. ' +
   'Check whether you are done. ' +
-  'If you are, call `finish_run` with a status (`complete`, `waiting` or `blocked`) and a short reason. ' +
+  'If you are, call `finish_run`; with no arguments it records `complete`, or pass a status (`waiting` or `blocked`) and an optional short reason. ' +
   'If you are not, continue working.';
 
 export interface ContinuationNudgeInput {
@@ -41,10 +40,7 @@ export function decideContinuationNudge(input: ContinuationNudgeInput): string |
   return CONTINUATION_NUDGE_TEXT;
 }
 
-export interface FinishRunRecord {
-  status: (typeof FINISH_RUN_STATUSES)[number];
-  reason: string;
-}
+export type { FinishRunRecord };
 
 /**
  * Reads a `finish_run` call's arguments. Use `recordFinishRun` to also check the call's result.
@@ -52,7 +48,7 @@ export interface FinishRunRecord {
  */
 export function parseFinishRunArgs(args: Record<string, unknown>): FinishRunRecord | undefined {
   const parsed = FinishRunParamsSchema.safeParse(args);
-  return parsed.success ? parsed.data : undefined;
+  return parsed.success ? normalizeFinishRun(parsed.data) : undefined;
 }
 
 /**

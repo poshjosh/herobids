@@ -105,7 +105,7 @@ in production.
 Agents whose skill needs a long run can stop early, because a reply with no tool call ends the run. The
 continuation guard gives the agent an explicit way to end a run and asks it to check before it stops.
 
-- Tool. `finish_run` (`status`: `complete`, `waiting` or `blocked`; `reason`, 1 to 300 characters). It is
+- Tool. `finish_run` (`status`: `complete` (default), `waiting` or `blocked`; `reason`: optional, up to 300 characters, default `Done`; a blank reason also becomes `Done`). Called with no arguments it records `complete` / `Done`. It is
   delivered by the `system/long-running-task` skill and is not capability-gated.
 - Stop hook. After a turn's tool calls have all run, `shouldStopAfterToolResults` ends the run if a
   `finish_run` call succeeded in that turn. There is no further model call. A call that fails validation

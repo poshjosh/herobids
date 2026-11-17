@@ -116,6 +116,10 @@ export const FINISH_RUN_STATUSES = ['complete', 'waiting', 'blocked'] as const;
 export type FinishRunStatus = typeof FINISH_RUN_STATUSES[number];
 /** Maximum length of the stored finish_run reason. */
 export const FINISH_RUN_REASON_MAX_LENGTH = 300;
+/** Status used when finish_run is called without one. */
+export const FINISH_RUN_DEFAULT_STATUS: FinishRunStatus = 'complete';
+/** Reason used when finish_run is called without one (or with a blank one). */
+export const FINISH_RUN_DEFAULT_REASON = 'Done';
 
 export const KNOWN_AGENT_TOOL_NAMES = [
   'add_skills',
@@ -307,7 +311,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system. For user-directed communication only — use send_email for email delivery.' },
   send_email:          { category: 'write-messaging',     description: 'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId.' },
   publish_artifact:    { category: 'write-messaging',     description: 'Publish an artifact (analysis result, chart, report) for user review.' },
-  finish_run:          { category: 'write-messaging',     description: `End the current run with a status (${FINISH_RUN_STATUSES.join(', ')}) and a short reason (up to ${FINISH_RUN_REASON_MAX_LENGTH} characters). Only records why the run ended; it does not wake or schedule anything.` },
+  finish_run:          { category: 'write-messaging',     description: `End the current run with a status (${FINISH_RUN_STATUSES.join(', ')}) and an optional short reason (up to ${FINISH_RUN_REASON_MAX_LENGTH} characters). With no arguments it records \`${FINISH_RUN_DEFAULT_STATUS}\` and "${FINISH_RUN_DEFAULT_REASON}". Only records why the run ended; it does not wake or schedule anything.` },
 
   // read-filesystem
   read_file:           { category: 'read-filesystem',     description: 'Read a page of text from a file in the agent workspace (up to 10 MiB files, paged by characters).' },

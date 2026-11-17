@@ -21,7 +21,7 @@ const base: ContinuationNudgeInput = {
 describe('CONTINUATION_NUDGE_TEXT', () => {
   it('is exactly the agreed text', () => {
     expect(CONTINUATION_NUDGE_TEXT).toBe(
-      'You stopped without calling `finish_run`, which is required to end a run. Check whether you are done. If you are, call `finish_run` with a status (`complete`, `waiting` or `blocked`) and a short reason. If you are not, continue working.',
+      'You stopped without calling `finish_run`, which is required to end a run. Check whether you are done. If you are, call `finish_run`; with no arguments it records `complete`, or pass a status (`waiting` or `blocked`) and an optional short reason. If you are not, continue working.',
     );
   });
 
@@ -78,13 +78,20 @@ describe('parseFinishRunArgs', () => {
   it('returns undefined for an unknown status', () => {
     expect(parseFinishRunArgs({ status: 'done', reason: 'x' })).toBeUndefined();
   });
-  it('returns undefined for an empty reason', () => {
-    expect(parseFinishRunArgs({ status: 'complete', reason: '' })).toBeUndefined();
+  it('uses the defaults for no arguments', () => {
+    expect(parseFinishRunArgs({})).toEqual({ status: 'complete', reason: 'Done' });
+  });
+  it('uses the default reason for an empty reason', () => {
+    expect(parseFinishRunArgs({ status: 'complete', reason: '' })).toEqual({ status: 'complete', reason: 'Done' });
   });
 });
 
 describe('recordFinishRun', () => {
   const args = { status: 'complete', reason: 'all done' };
+  it('records a successful call made with no arguments as complete / Done', () => {
+    const result = JSON.stringify({ ok: true, status: 'complete', note: 'run end recorded' });
+    expect(recordFinishRun(result, {})).toEqual({ status: 'complete', reason: 'Done' });
+  });
   it('records a successful call', () => {
     const result = JSON.stringify({ ok: true, status: 'complete', note: 'run end recorded' });
     expect(recordFinishRun(result, args)).toEqual({ status: 'complete', reason: 'all done' });
