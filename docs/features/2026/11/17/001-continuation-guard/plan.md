@@ -316,7 +316,7 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 - Task 4 (WP4): config schema `continuationGuard.maxNudges` (no `enabled`), `config/default.yaml`, schema tests - DONE
 - Task 5 (WP6): `agent.llm.completed` fields (`nudgeCount`, `finishRunStatus`, `finishRunReason`) and activity timeline summary with tests - DONE
 - Task 6 (WP7): `long-running-task` skill `requiredTools`, ENDING A RUN section, changed sentence, `skills.test.ts` cases - DONE
-- Task 7 (WP5): judge wiring in `apps/worker/src/agent.ts` (opt-in by tool visibility, callbacks, side-effect gating on `continues`, closure state, payload fields) - PENDING
+- Task 7 (WP5): judge wiring in `apps/worker/src/agent.ts` (opt-in by tool visibility, callbacks, side-effect gating on `continues`, closure state, payload fields) - DONE
 - Task 8 (WP8, docs only): `docs/best-practices/agent-runtime.md` section and cost review, CHANGELOG, plan status - PENDING
 
 ## Outstanding Issues
@@ -326,3 +326,4 @@ Live verification, baseline capture, image release and `results.md` (Verificatio
 - Task 4 (: (low) test for maxNudges uses 'success && value' style; no non-integer test.
 - Task 5 (: (medium) finishRunReason schema accepts empty string (tool requires min 1); mapper does not restrict to judge phase; empty-reason fallback untested.
 - Task 6 (: (low) skill instruction 'waiting' wording should be rechecked against D8 (records only) when skills are reconciled; apps/web tool-name lists not re-checked.
+- Task 7 (: (low) judge wiring in agent.ts has no direct test (only pure helpers); post-loop persistence of the stop-hook final text uses the loop's last non-empty text, which may come from an earlier turn; continuation-guard.ts imports ./tools/finish-run.js (consider moving FinishRunParamsSchema to domain).

@@ -148,7 +148,11 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
   // Reported only when a continuation option is given, so results are unchanged for other callers.
   const continuationFields = (endedBy: NonNullable<StructuredToolLoopSuccess['endedBy']>) =>
     continuationOptionsGiven ? { nudgesUsed, endedBy } : {};
-  const finalText = (text: string): string => (text === '' && continuationOptionsGiven ? lastNonEmptyResponse : text);
+  // Fallback to the last non-empty text only when the continuation features changed how the run ended
+  // (a nudge was sent, or a terminal tool ended it, so the last turn is often a bare tool call).
+  // Otherwise the final turn's text is returned as is, even if empty.
+  const finalText = (text: string, endedBy: NonNullable<StructuredToolLoopSuccess['endedBy']>): string =>
+    text === '' && (nudgesUsed > 0 || endedBy === 'terminal_tool') ? lastNonEmptyResponse : text;
 
   // Tracks tool messages that have already been stale-truncated so each is
   // truncated (and reported via onToolResultTruncated) AT MOST ONCE. Without
@@ -281,7 +285,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
       }
       return {
         ok: true,
-        assistantResponse: finalText(assistantResponse),
+        assistantResponse: finalText(assistantResponse, 'no_tool_calls'),
         toolCalls,
         turnsUsed,
         terminatedByLimit: false,
@@ -319,7 +323,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
     if (options.shouldStopAfterToolResults?.()) {
       return {
         ok: true,
-        assistantResponse: finalText(assistantResponse),
+        assistantResponse: finalText(assistantResponse, 'terminal_tool'),
         toolCalls,
         turnsUsed,
         terminatedByLimit: false,
@@ -330,7 +334,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
 
   return {
     ok: true,
-    assistantResponse: finalText(lastAssistantResponse),
+    assistantResponse: finalText(lastAssistantResponse, 'turn_limit'),
     toolCalls: lastToolCalls,
     turnsUsed,
     terminatedByLimit: true,

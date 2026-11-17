@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   CONTINUATION_NUDGE_TEXT,
+  buildContinuationCompletionFields,
   decideContinuationNudge,
+  parseFinishRunArgs,
+  recordFinishRun,
   type ContinuationNudgeInput,
 } from './continuation-guard.js';
 
@@ -64,5 +67,58 @@ describe('decideContinuationNudge', () => {
   it('never nudges when only one or two turns are allowed and the first is the last', () => {
     expect(decideContinuationNudge({ ...base, turnIndex: 0, maxTurns: 1 })).toBeUndefined();
     expect(decideContinuationNudge({ ...base, turnIndex: 1, maxTurns: 2 })).toBeUndefined();
+  });
+});
+
+describe('parseFinishRunArgs', () => {
+  it('returns the status and reason for valid arguments', () => {
+    expect(parseFinishRunArgs({ status: 'waiting', reason: 'need the answer' })).toEqual({ status: 'waiting', reason: 'need the answer' });
+  });
+  it('returns undefined for an unknown status', () => {
+    expect(parseFinishRunArgs({ status: 'done', reason: 'x' })).toBeUndefined();
+  });
+  it('returns undefined for an empty reason', () => {
+    expect(parseFinishRunArgs({ status: 'complete', reason: '' })).toBeUndefined();
+  });
+});
+
+describe('recordFinishRun', () => {
+  const args = { status: 'complete', reason: 'all done' };
+  it('records a successful call', () => {
+    const result = JSON.stringify({ ok: true, status: 'complete', note: 'run end recorded' });
+    expect(recordFinishRun(result, args)).toEqual({ status: 'complete', reason: 'all done' });
+  });
+  it('records nothing for a rejection with valid args (tool not in the skill set)', () => {
+    const result = JSON.stringify({ ok: false, error: 'tool rejected: finish_run is not available in the current skill set', retryable: false, fault: false });
+    expect(recordFinishRun(result, args)).toBeUndefined();
+  });
+  it('records nothing for a validation error', () => {
+    const result = JSON.stringify({ ok: false, error: 'bad', errorCode: 'validation.invalid_parameters', retryable: false, fault: false });
+    expect(recordFinishRun(result, { status: 'complete' })).toBeUndefined();
+  });
+  it('records nothing for a fault failure', () => {
+    expect(recordFinishRun(JSON.stringify({ ok: false, error: 'x', fault: true }), args)).toBeUndefined();
+  });
+  it('records nothing when ok is true but the args do not fit the schema', () => {
+    expect(recordFinishRun(JSON.stringify({ ok: true }), { status: 'nope', reason: 'x' })).toBeUndefined();
+  });
+  it('records nothing for a result that is not JSON', () => {
+    expect(recordFinishRun('not json', args)).toBeUndefined();
+  });
+});
+
+describe('buildContinuationCompletionFields', () => {
+  it('adds nothing when the tool is not visible and no nudge was sent', () => {
+    expect(buildContinuationCompletionFields({ toolVisible: false, nudgesUsed: 0, finishRun: undefined })).toEqual({});
+  });
+  it('reports a zero nudge count when the tool is visible', () => {
+    expect(buildContinuationCompletionFields({ toolVisible: true, nudgesUsed: 0, finishRun: undefined })).toEqual({ nudgeCount: 0 });
+  });
+  it('reports nudges sent even when the tool is no longer visible', () => {
+    expect(buildContinuationCompletionFields({ toolVisible: false, nudgesUsed: 1, finishRun: undefined })).toEqual({ nudgeCount: 1 });
+  });
+  it('reports the finish_run status and reason when recorded', () => {
+    expect(buildContinuationCompletionFields({ toolVisible: true, nudgesUsed: 2, finishRun: { status: 'blocked', reason: 'no access' } }))
+      .toEqual({ nudgeCount: 2, finishRunStatus: 'blocked', finishRunReason: 'no access' });
   });
 });

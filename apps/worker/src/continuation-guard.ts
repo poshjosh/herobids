@@ -1,3 +1,6 @@
+import { FINISH_RUN_STATUSES } from '@herobids/domain';
+import { FinishRunParamsSchema } from './tools/finish-run.js';
+
 /**
  * Nudge sent when a model stops without calling `finish_run`.
  * It states the rule and asks the agent to check its own definition of done.
@@ -36,4 +39,57 @@ export function decideContinuationNudge(input: ContinuationNudgeInput): string |
     return undefined;
   }
   return CONTINUATION_NUDGE_TEXT;
+}
+
+export interface FinishRunRecord {
+  status: (typeof FINISH_RUN_STATUSES)[number];
+  reason: string;
+}
+
+/**
+ * Reads a `finish_run` call's arguments. Use `recordFinishRun` to also check the call's result.
+ * Returns undefined when the arguments do not fit the tool's schema, so nothing is recorded.
+ */
+export function parseFinishRunArgs(args: Record<string, unknown>): FinishRunRecord | undefined {
+  const parsed = FinishRunParamsSchema.safeParse(args);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * Records a `finish_run` call only when its serialized result says `ok: true`.
+ * Rejections (`ok: false`, even with `fault: false`, e.g. tool not in the skill set) and
+ * unparseable results record nothing.
+ */
+export function recordFinishRun(toolResult: string, args: Record<string, unknown>): FinishRunRecord | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(toolResult);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null || (parsed as { ok?: unknown }).ok !== true) {
+    return undefined;
+  }
+  return parseFinishRunArgs(args);
+}
+
+export interface ContinuationCompletionInput {
+  toolVisible: boolean;
+  nudgesUsed: number;
+  finishRun: FinishRunRecord | undefined;
+}
+
+/**
+ * Optional fields for the judge `agent.llm.completed` event.
+ * `finishRun.status` says why the agent stopped. It is not the replied/no_reply outcome of the tick.
+ */
+export function buildContinuationCompletionFields(input: ContinuationCompletionInput): {
+  nudgeCount?: number;
+  finishRunStatus?: FinishRunRecord['status'];
+  finishRunReason?: string;
+} {
+  return {
+    ...(input.toolVisible || input.nudgesUsed > 0 ? { nudgeCount: input.nudgesUsed } : {}),
+    ...(input.finishRun ? { finishRunStatus: input.finishRun.status, finishRunReason: input.finishRun.reason } : {}),
+  };
 }

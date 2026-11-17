@@ -99,6 +99,7 @@ import { getWorkspacePaths } from './tools/workspace.js';
 import { installExternalSkillsAtStart, type InstallableExternalSkill } from './external-skill-startup.js';
 import { npxSkillsCliInstaller } from './tools/skills.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
+import { buildContinuationCompletionFields, decideContinuationNudge, recordFinishRun, type FinishRunRecord } from './continuation-guard.js';
 import { describeCutResult } from './stale-result-hints.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults, type OperatorModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
@@ -4277,6 +4278,37 @@ async function runActiveTick(): Promise<void> {
         });
     };
     let judgeToolCallsUsed = 0;
+    // Set by a successful finish_run call. Its status says why the agent stopped; it is NOT the replied/no_reply
+    // outcome of the tick, which depends only on whether a message was sent (activeTick.replied).
+    let judgeFinishRun: FinishRunRecord | undefined;
+    let judgeNudgesSent = 0;
+    // Stores a closing reply (no tool calls, not nudged) in history, the judge response history and the timeline.
+    const persistJudgeFinalText = (assistantResponse: string): void => {
+      addToHistory('assistant', assistantResponse);
+      // ── Prompt enrichment: judge response history ────────────────────
+      if (agentRuntimePolicy.promptStyle === 'enriched') {
+        judgeResponseHistory.push(assistantResponse);
+        const tickMax = agentRuntimePolicy.promptEnrichment.judgeHistory.tickMaxDisplayed;
+        while (judgeResponseHistory.length > tickMax) {
+          judgeResponseHistory.shift();
+        }
+        // ── Activity timeline: capture judge decisions ─────────────────
+        // A tick that already sent the user a message has said it in the Conversation section; its closing text
+        // would repeat that message, cut short.
+        if (agentRuntimePolicy.promptEnrichment.activityTimeline.enabled && !judgeSentReply) {
+          const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
+          // Truncate to a brief summary — first 200 chars
+          const summary = assistantResponse.length > 200
+            ? assistantResponse.slice(0, 200) + '…'
+            : assistantResponse;
+          judgeDecision.event = { kind: 'DECISION', text: summary, timestamp: Date.now() };
+          runtimeState.metrics.activityTimeline.push(judgeDecision.event);
+          while (runtimeState.metrics.activityTimeline.length > maxEvents) {
+            runtimeState.metrics.activityTimeline.shift();
+          }
+        }
+      }
+    };
     const judgeLoopResult = await runStructuredToolLoop({
       providerConfig: {
         provider: provider,
@@ -4320,7 +4352,22 @@ async function runActiveTick(): Promise<void> {
       })),
       retryPolicy: agentRuntimePolicy.llm.retry,
       executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
-      onAssistantTurn: ({ result, assistantResponse, toolCalls, turnIndex }) => {
+      // Opt-in is the tool being visible now (decided by the agent's skills), checked when the model stops.
+      onNoToolCalls: ({ turnIndex, nudgesUsed }) => {
+        const nudge = decideContinuationNudge({
+          toolVisible: allowedTools().has('finish_run'),
+          finishRunCalled: judgeFinishRun !== undefined,
+          nudgesUsed,
+          maxNudges: agentRuntimePolicy.continuationGuard.maxNudges,
+          turnIndex,
+          maxTurns: judgeLoopConfig.maxTurns,
+        });
+        if (nudge === undefined) return undefined;
+        judgeNudgesSent += 1;
+        return { nudge };
+      },
+      shouldStopAfterToolResults: () => judgeFinishRun !== undefined,
+      onAssistantTurn: ({ result, assistantResponse, toolCalls, turnIndex, continues }) => {
         recordSessionCost(runtimeState, {
           tokensUsed: result.data.tokensUsed,
           thinkingTokens: result.data.thinkingTokens,
@@ -4340,36 +4387,17 @@ async function runActiveTick(): Promise<void> {
         });
         logger.info({ tokensUsed: result.data.tokensUsed, thinkingTokens: result.data.thinkingTokens ?? 0, latencyMs: result.data.latencyMs, toolCalls: toolCalls.length }, 'LLM response received');
         logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
-        if (toolCalls.length === 0) {
-          addToHistory('assistant', assistantResponse);
-          // ── Prompt enrichment: judge response history ────────────────────
-          if (agentRuntimePolicy.promptStyle === 'enriched') {
-            judgeResponseHistory.push(assistantResponse);
-            const tickMax = agentRuntimePolicy.promptEnrichment.judgeHistory.tickMaxDisplayed;
-            while (judgeResponseHistory.length > tickMax) {
-              judgeResponseHistory.shift();
-            }
-            // ── Activity timeline: capture judge decisions ─────────────────
-            // A tick that already sent the user a message has said it in the Conversation section; its closing text
-            // would repeat that message, cut short.
-            if (agentRuntimePolicy.promptEnrichment.activityTimeline.enabled && !judgeSentReply) {
-              const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
-              // Truncate to a brief summary — first 200 chars
-              const summary = assistantResponse.length > 200
-                ? assistantResponse.slice(0, 200) + '…'
-                : assistantResponse;
-              judgeDecision.event = { kind: 'DECISION', text: summary, timestamp: Date.now() };
-              runtimeState.metrics.activityTimeline.push(judgeDecision.event);
-              while (runtimeState.metrics.activityTimeline.length > maxEvents) {
-                runtimeState.metrics.activityTimeline.shift();
-              }
-            }
-          }
+        // A nudged turn is not the end of the run, so its reply must not reach history or the timeline.
+        if (toolCalls.length === 0 && !continues) {
+          persistJudgeFinalText(assistantResponse);
         }
       },
       onToolResult: ({ toolCall, toolResult }) => {
         judgeToolCallsUsed += 1;
         if (toolResult) {
+          if (toolCall.name === 'finish_run' && judgeFinishRun === undefined) {
+            judgeFinishRun = recordFinishRun(toolResult, toolCall.args);
+          }
           addToHistory('user', toolResult, { truncateToToolBudget: true });
           if (toolResultIndicatesFailure(toolResult)) {
             recordToolFailure(toolCall.name);
@@ -4431,6 +4459,11 @@ async function runActiveTick(): Promise<void> {
       },
     });
 
+    // A run ended by finish_run has no closing no-tool turn, so store its final text the way that turn would be.
+    if (judgeLoopResult.ok && judgeLoopResult.endedBy === 'terminal_tool' && judgeLoopResult.assistantResponse.trim() !== '') {
+      persistJudgeFinalText(judgeLoopResult.assistantResponse);
+    }
+
     // Deliver the judge's plain-text reply when it never called send_message. No extra LLM call.
     if (judgeLoopResult.ok && hasPendingUserMessage && !judgeSentReply && !judgeLoopResult.terminatedByLimit) {
       const delivery = resolveReplyDelivery(judgeLoopResult.assistantResponse);
@@ -4475,6 +4508,11 @@ async function runActiveTick(): Promise<void> {
       elapsedMs: Date.now() - tickStartedAtMs,
       toolCallsUsed: judgeToolCallsUsed,
       finishReason: !judgeLoopResult.ok ? 'error' : judgeLoopResult.terminatedByLimit ? 'turn_limit' : (hasPendingUserMessage && !judgeSentReply) ? 'stop_without_reply' : 'stop',
+      ...buildContinuationCompletionFields({
+        toolVisible: allowedTools().has('finish_run'),
+        nudgesUsed: judgeNudgesSent,
+        finishRun: judgeFinishRun,
+      }),
       errorMessage: !judgeLoopResult.ok ? judgeLoopResult.error.message : undefined,
     });
 

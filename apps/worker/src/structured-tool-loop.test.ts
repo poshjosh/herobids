@@ -894,6 +894,21 @@ describe('runStructuredToolLoop', () => {
       expect(result).toMatchObject({ ok: true, assistantResponse: 'my real answer', nudgesUsed: 1 });
     });
 
+    it('keeps an empty final text when options are given but no nudge fired and no terminal tool ended the run', async () => {
+      scriptModel([{ content: 'working', tools: ['a_tool'] }, { content: '' }]);
+      const onNoToolCalls = vi.fn().mockReturnValue(undefined);
+
+      const result = await runStructuredToolLoop({
+        ...baseOptions,
+        maxTurns: 5,
+        executeTool: async () => '{}',
+        onNoToolCalls,
+        shouldStopAfterToolResults: () => false,
+      });
+
+      expect(result).toMatchObject({ ok: true, assistantResponse: '', nudgesUsed: 0, endedBy: 'no_tool_calls' });
+    });
+
     it('returns right after the tool results of a turn when the stop check says so, without another model call', async () => {
       scriptModel([{ content: 'bye', tools: ['finish'] }, { content: 'extra' }]);
 
