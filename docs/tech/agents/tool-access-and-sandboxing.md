@@ -102,6 +102,14 @@ Required properties:
 - outputs are bounded in size and lifetime so context cannot grow without bound
 - audit records cover both brokered calls and direct sandbox egress activity
 
+### Gated tools need a default grant
+
+A tool that calls `checkAccess('<name>', ...)` needs a row with that exact name in `DEFAULT_CAPABILITY_GRANTS` (`apps/worker/src/agents/capability-policy.ts`). Without one the engine fails closed with `Unknown capability: <name>.` for every agent. Per-agent `toolPolicy` merges over the default; it does not replace the need for it.
+
+- A drift-guard test in `capability-policy.test.ts` (`every capability a tool gates on has an enabled default grant`) scans the worker sources. It fails if a literal `checkAccess` name has no enabled default grant, or if the first argument is not a string literal.
+- Exemption: `agents/agent-message-broker.ts` resolves its capability from a `capabilityByType` table, so it is skipped by the scan. Add a grant row (enabled or not) for every value in that table by hand.
+- Adding a tool: add the grant row in the same change. The grant only opens the gate; the tool keeps its own checks (SSRF, deny list, operator switches).
+
 ## Network Policy
 
 The baseline network stance is open internet egress from the sandbox, but no direct access to privileged internal systems or secret-bearing services.

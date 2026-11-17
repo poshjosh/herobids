@@ -213,7 +213,7 @@ Implement the wrapper function per D1 and D2. The function:
 - On timeout: calls `onTimeout` if provided, returns `{ success: false, errorCode: 'capability.timeout', retryable: false }`.
 - In `finally`: calls `recordEnd` with a `ToolInvocationRecord`.
 
-**1.2 — Add missing grants to `DEFAULT_CAPABILITY_GRANTS`**
+**1.2 — Add missing grants to `DEFAULT_CAPABILITY_GRANTS`** — DONE (2026-11-17, see `docs/bug-reports/2026/11/17/002-gated-tools-without-default-grant-denied-for-every-agent.md`)
 
 Add entries for `read_document` and `make_http_request` per D7.
 

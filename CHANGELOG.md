@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Fixed
+- `make_http_request` and `read_document` were denied for every agent with `Unknown capability`, because the tools gate on a capability that had no row in `DEFAULT_CAPABILITY_GRANTS`. Both now have a default grant (`direct`, 30 per minute, 3 concurrent). The default limit for `search_web` and `browse_url` is now 30 per minute (was 10). A new test fails when a tool gates on a capability without an enabled default grant. Agents pick this up with the next agent image release and relaunch. See docs/bug-reports/2026/11/17/002-gated-tools-without-default-grant-denied-for-every-agent.md.
 
 ## v0.10.2 - 2026-11-17
 ### Added

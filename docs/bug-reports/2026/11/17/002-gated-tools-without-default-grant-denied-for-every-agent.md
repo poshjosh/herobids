@@ -1,6 +1,6 @@
 # Bug Report: tools that gate on a capability have no default grant, so every agent is denied (`make_http_request`, `read_document`)
 
-- **Status:** OPEN. Draft for review. No code has been changed; this document describes the fix, it does not apply it.
+- **Status:** Fix implemented (grants, drift-guard test, docs), pending rollout (section D: agent image release and relaunch). Not yet verified on staging.
 - **Severity:** High. Two tools that the built-in `web-access` skill promises to agents cannot be used by any agent. It blocks the validation work the `job-search` skill requires (checking whether a posting is still open through a job board or employer API).
 - **Date:** 2026-11-17
 - **Environment:** observed on staging (agent `job-searcher`, `8365d836-7e09-470c-bbf0-06f69f3848b7`). The cause is in shared worker code, so production is affected the same way (it is pinned to the same agent image, see `docs/bug-reports/2026/11/17/001-staging-agents-run-stale-pinned-agent-image.md`). This was not verified on production.
@@ -152,7 +152,7 @@ None open. The one remaining detail is whether the new rows should also carry a 
 
 - Task 1 (Section A): add default grants for `make_http_request` and `read_document`, and set `maxPerMinute` 30 on `search_web` and `browse_url` - DONE
 - Task 2 (Section B): add the drift-guard test and the capability-policy default-grant tests - DONE
-- Task 3 (Section C): documentation and bookkeeping (plan task 1.2, CHANGELOG, tool-access doc, lesson) - PENDING
+- Task 3 (Section C): documentation and bookkeeping (plan task 1.2, CHANGELOG, tool-access doc, lesson) - DONE
 
 Section D (rollout) and staging verification are operational and not part of this implementation.
 
@@ -162,3 +162,4 @@ Section D (rollout) and staging verification are operational and not part of thi
 - Task 2: (medium) Deviation from acceptance criterion: the drift guard exempts `apps/worker/src/agents/agent-message-broker.ts` from the non-literal rule, because it resolves the capability from a `capabilityByType` table that includes `manage_bot`, which is disabled by default. All table values were checked by hand and have grant rows.
 - Task 2: (medium) New message types added to the broker table are not covered by the guard. Suggested follow-up: export `capabilityByType` and test that every value has a grant row (enabled or not).
 - Task 2: (low) The scan can match `.checkAccess(` in comments, and misses aliased calls.
+- Task 3: (low) Lesson 13 sits after the "Meta-principle" paragraph in `docs/lessons/lessons-from-previous-project.md`; consider moving it above the separator. The optional `requiredTools` test was deliberately omitted (duplicates the drift guard).
