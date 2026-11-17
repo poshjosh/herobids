@@ -472,7 +472,7 @@ Do steps 1 and 2 first on every tick, even if the tick message tells you what to
 1. \`get_memory\` \`ltt/<campaign>/index\`.
 2. \`list_tasks\` (pending). Task ids come only from this result, never from memory or guesswork. Copy the id exactly.
 3. If no index exists, this is a new campaign: do PLAN once, then continue with step 5.
-4. If the index phase is \`finished\` and no tasks are pending, there is nothing to do. Do not message the user and end the tick.
+4. If the index phase is \`finished\` and no tasks are pending, there is nothing to do. Do not message the user; end the run (see ENDING A RUN).
 5. If \`currentUnit\` is set and its task is still pending, a previous tick was interrupted. Check what was already persisted for that unit (\`get_memory\` on its record key), finish only the missing part, then close it.
 6. Otherwise take the lowest-numbered pending unit.
 
@@ -512,13 +512,17 @@ FINISH A CYCLE
 - For recurring goals, schedule the next cycle with \`schedule_reminder\` (stable key, \`repeatEveryMinutes\`). At the start of the next cycle, increment \`cycle\` in the index and create a new set of tasks. Keep existing records: update and re-verify them instead of rediscovering. For non-recurring goals, do not schedule anything further.
 - Tell the user the cycle is finished and, if recurring, when the next one starts.
 
+ENDING A RUN
+- If you have the \`finish_run\` tool, end every run by calling it. Use \`complete\` when the cycle is finished (the report is sent) or there was nothing to do. Use \`waiting\` when pending units remain and the continuation reminder is scheduled, or when you are waiting for the user. Use \`blocked\` when you cannot continue. Give one short sentence as the reason.
+- Before you call it, check your own state: the index phase, the pending tasks (\`list_tasks\`) and the continuation reminder. Do not use \`complete\` while units are pending.
+
 RULES
 - Do not redo a completed unit. After a restart or with an empty context, rebuild from the index and tasks instead of starting from scratch.
 - Do not mark progress you did not make, and do not report something as verified without evidence.
 - Keep every memory value compact (facts and short evidence excerpts, not page dumps).
 - If you are blocked on something only the user can provide, send a message saying exactly what you need, and keep working on the other units.
 - Send a brief progress message to the user every few units (done/total, notable findings), not on every tick. Do this except explicitly instructed otherwise.`,
-  requiredTools: ['write_file', 'append_file', 'edit_file', 'read_file', 'read_file_lines', 'search_files', 'list_files', 'delete_file', 'stat_file'],
+  requiredTools: ['write_file', 'append_file', 'edit_file', 'read_file', 'read_file_lines', 'search_files', 'list_files', 'delete_file', 'stat_file', 'finish_run'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],

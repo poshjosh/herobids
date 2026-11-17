@@ -359,6 +359,27 @@ describe('LONG_RUNNING_TASK_SKILL', () => {
     expect(LONG_RUNNING_TASK_SKILL.instructions).toContain('Workspace files are NOT durable');
   });
 
+  it('lists finish_run as a required tool', () => {
+    expect(LONG_RUNNING_TASK_SKILL.requiredTools).toContain('finish_run');
+  });
+
+  it('tells the agent to end every run with finish_run', () => {
+    const { instructions } = LONG_RUNNING_TASK_SKILL;
+    expect(instructions).toContain('ENDING A RUN');
+    expect(instructions).toContain('end every run by calling it');
+    expect(instructions).toContain('end the run (see ENDING A RUN)');
+    expect(instructions.indexOf('FINISH A CYCLE')).toBeLessThan(instructions.indexOf('\nENDING A RUN\n'));
+    expect(instructions.indexOf('\nENDING A RUN\n')).toBeLessThan(instructions.indexOf('\nRULES'));
+  });
+
+  it('keeps depending only on file-management after adding finish_run', () => {
+    expect(inferDependsOn(LONG_RUNNING_TASK_SKILL.requiredTools, LONG_RUNNING_TASK_SKILL.id)).toEqual(['file-management']);
+  });
+
+  it('owns finish_run in the tool ownership map', () => {
+    expect(buildToolOwnershipMap().get('finish_run')).toBe(LONG_RUNNING_TASK_SKILL.id);
+  });
+
   it('is domain-agnostic', () => {
     expect(LONG_RUNNING_TASK_SKILL.instructions).not.toMatch(/farm|hofnachfolge|probe|sourdough/i);
   });
