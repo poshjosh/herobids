@@ -472,6 +472,28 @@ describe('callLlmProvider invalid tool arguments message', () => {
     expect(message).toContain('finished with reason "length"');
   });
 
+  it('keeps the cut-off hint and finish reason for a very long tool name and call id', async () => {
+    const message = await callWithToolCalls(
+      [{ id: `id_${'i'.repeat(5_000)}`, name: `tool_${'n'.repeat(5_000)}`, arguments: '{"path":"a","content":"abc' }],
+      'length',
+    );
+    expect(message.length).toBeLessThanOrEqual(600);
+    expect(message).toContain('cut off');
+    expect(message).toContain('finished with reason "length"');
+    expect(message).not.toContain('n'.repeat(100));
+    expect(message).not.toContain('i'.repeat(100));
+  });
+
+  it('escapes a quote and newline in the tool name so the message stays single-line', async () => {
+    const message = await callWithToolCalls(
+      [{ id: 'call_1', name: 'bad"name\nnext', arguments: '{"path":' }],
+      'stop',
+    );
+    expect(message).toContain('"bad\\"name next"');
+    expect(message).not.toContain('\n');
+    expect(message).toContain('finished with reason "stop"');
+  });
+
   it('says which of several tool calls was invalid', async () => {
     const message = await callWithToolCalls([
       { id: 'call_a', name: 'read_file', arguments: '{"path":"a"}' },

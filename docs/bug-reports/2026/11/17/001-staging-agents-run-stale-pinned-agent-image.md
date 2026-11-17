@@ -67,6 +67,6 @@ Docs: `infra/hetzner/docs/deploy.md` ("Agent image pin"), `.env.environment.exam
 
 These are separate from the stale pin and are not fixed here:
 
-- 6 of 11 scheduled `job-searcher` ticks (and the 07:38 reply tick) ended with `provider.invalid_tool_args`: the model sent malformed tool-call JSON. `callLlmWithRetry` replays the identical request twice, then drops the tick. The failing call was not identified.
+- 6 of 11 scheduled `job-searcher` ticks (and the 07:38 reply tick) ended with `provider.invalid_tool_args`: the model sent malformed tool-call JSON. `callLlmWithRetry` replays the identical request twice, then drops the tick. The failing call was not identified. The error message is improved in `docs/bug-reports/2026/11/17/003-invalid-tool-args-error-names-no-tool-and-gives-no-position-context.md`.
 - The agent has no `make_http_request` grant (`Unknown capability`) and only generic web search (Tavily, at most 10 results per call), so it cannot reach job-board or ATS APIs.
 - The skill's early stop and repeated-query behaviour (about 5% of the run budget, one query reissued about 10 times) is the under-running problem in the run-status-hint plan.

@@ -1,6 +1,6 @@
 # Bug Report: `provider.invalid_tool_args` names no tool and gives no context, so the failing call cannot be diagnosed
 
-- **Status:** OPEN. Draft for review. No code has been changed. The scope of this report is **error messages only** (see "Scope").
+- **Status:** Implemented, pending verification and rollout. The scope of this report is **error messages only** (see "Scope").
 - **Severity:** Medium. The failure itself is High (it ended 7 of 18 ticks on staging), but this report only covers the missing diagnostics. The failure behaviour is deliberately not changed here.
 - **Date:** 2026-11-17
 - **Environment:** staging, agent `job-searcher` (`8365d836-7e09-470c-bbf0-06f69f3848b7`), model `anthropic/claude-haiku-5.5` through the OpenAI-compatible (OpenRouter) request path.
@@ -148,11 +148,12 @@ No open questions.
 
 - Task 1 (Fix sections 1-3): improved `provider.invalid_tool_args` message (tool, call id, index, position, length, offending chars, finish_reason, cap, non-object case) in `packages/llm/src/llm-provider.ts` with tests - DONE
 - Task 2 (Silent drops): warn once per dropped tool call in `normalizeOpenAiToolCalls`, behavior unchanged, with tests - DONE
-- Task 3 (Fix section 4): documentation (report 001 link, CHANGELOG, agent-runtime docs entry) - PENDING
+- Task 3 (Fix section 4): documentation (report 001 link, CHANGELOG, agent-runtime docs entry in `docs/tech/agents/recovery-and-replay.md`) - DONE
 
 Out of scope: any behavior change after the error, skill guidance, model switch, call-signature changes (verdict: do nothing).
 
 ## Outstanding Issues
 
-- Task 1: (low) Cap truncation can cut diagnostic sentences when a model-supplied tool name or call id is very long. The sanitizer keeps only the leading `Unexpected token 'X'` of V8 messages with an input excerpt. Cut-off hint does not include configured max tokens.
-- Task 2: (low) Array entries are reported as "no function name"; tests for drops sit in the invalid-args describe block; forged `[llm-provider]` text can still appear inside a sanitized id (single line, 64 chars).
+- Task 1: (low) The cut-off hint does not include the configured max tokens. Tool name and call id are now sanitized (single line, JSON-quoted name) and cut to 64 characters (`MAX_TOOL_CALL_LABEL_LENGTH`), so the cut-off hint and `finish_reason` survive the 600 cap; tests cover a very long name and id and a name containing a quote. The sanitizer keeps only the leading `Unexpected token 'X'` of V8 messages with an input excerpt.
+- Task 2: (low) Array entries are reported as "no function name"; tests for drops sit in the invalid-args describe block; forged `[llm-provider]` text can still appear inside a sanitized id (single line, 64 chars). The drop warning exists on the OpenAI-compatible path only.
+- Rollout: not yet verified on staging; confirm the new message appears in `agent.llm.completed.errorMessage` after deploy.

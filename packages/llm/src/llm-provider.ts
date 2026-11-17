@@ -754,14 +754,15 @@ function appendAnthropicUserBlock(messages: Array<Record<string, unknown>>, bloc
   messages.push({ role: 'user', content: [block] });
 }
 
-const MAX_LOGGED_TOOL_CALL_ID_LENGTH = 64;
+// Shared cap for model-supplied tool names and call ids echoed into logs and error messages.
+const MAX_TOOL_CALL_LABEL_LENGTH = 64;
 
 // The id is model-supplied: collapse whitespace/control chars so it stays on one log line, then cap it.
 function sanitizeToolCallIdForLog(id: string): string {
   return id
     .replace(/[\s\p{Cc}]+/gu, ' ')
     .trim()
-    .slice(0, MAX_LOGGED_TOOL_CALL_ID_LENGTH);
+    .slice(0, MAX_TOOL_CALL_LABEL_LENGTH);
 }
 
 // Logs position, reason and call id only; never argument content or name text.
@@ -840,8 +841,12 @@ interface ToolCallContext {
   finishReason?: string;
 }
 
+// Name and id are model-supplied: truncate and flatten them so a long or hostile value
+// cannot push the cut-off hint and finish_reason past the message cap. The name is
+// JSON-quoted so embedded quotes stay escaped.
 function describeToolCall(context: ToolCallContext): string {
-  return `"${context.name}" (call ${context.id}, call ${context.index + 1} of ${context.total})`;
+  const name = JSON.stringify(sanitizeToolCallIdForLog(context.name));
+  return `${name} (call ${sanitizeToolCallIdForLog(context.id)}, call ${context.index + 1} of ${context.total})`;
 }
 
 function capMessage(message: string): string {
